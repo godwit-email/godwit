@@ -32,7 +32,7 @@ type syncEnv struct {
 	dir string
 }
 
-func newSyncEnv(t *testing.T) *syncEnv {
+func newSyncEnv(t *testing.T, opts ...testmail.Option) *syncEnv {
 	t.Helper()
 	keyring.MockInit()
 	dir := t.TempDir()
@@ -40,7 +40,7 @@ func newSyncEnv(t *testing.T) *syncEnv {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	smtpAddr, _ := testmail.StartSMTP(t)
-	im := testmail.StartIMAP(t)
+	im := testmail.StartIMAP(t, opts...)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
 	return &syncEnv{s: s, im: im, acc: acc, dir: dir}

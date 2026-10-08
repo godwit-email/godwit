@@ -12,7 +12,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 )
 
-type config struct{ move, uidplus bool }
+type config struct{ move, uidplus, copyuid bool }
 
 // Option customises StartIMAP.
 type Option func(*config)
@@ -22,7 +22,10 @@ func WithoutMove() Option { return func(c *config) { c.move = false } }
 
 // WithoutUIDPlus removes UIDPLUS and suppresses COPYUID/APPENDUID response codes
 // (the memory backend always returns them).
-func WithoutUIDPlus() Option { return func(c *config) { c.uidplus = false } }
+func WithoutUIDPlus() Option { return func(c *config) { c.uidplus, c.copyuid = false, false } }
+
+// WithoutCOPYUID keeps UIDPLUS advertised but suppresses COPYUID response codes.
+func WithoutCOPYUID() Option { return func(c *config) { c.copyuid = false } }
 
 // IMAP is a running in-memory IMAP server with one user, alice/secret.
 type IMAP struct {
@@ -91,10 +94,10 @@ type session struct {
 	conn *tconn
 }
 
-// Copy drops the COPYUID data when UIDPLUS is disabled.
+// Copy drops the COPYUID data when COPYUID is disabled.
 func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
 	d, err := s.Session.Copy(set, dest)
-	if !s.s.cfg.uidplus {
+	if !s.s.cfg.copyuid {
 		d = nil
 	}
 	return d, err
@@ -111,7 +114,7 @@ func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) 
 
 // Move cannot return nil data (MoveWriter is concrete), so the connection strips COPYUID.
 func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) error {
-	if !s.s.cfg.uidplus {
+	if !s.s.cfg.copyuid {
 		s.conn.stripCopyUID.Store(true)
 		defer s.conn.stripCopyUID.Store(false)
 	}
@@ -137,7 +140,7 @@ func (s session) Fetch(w *imapserver.FetchWriter, set imap.NumSet, o *imap.Fetch
 // StartIMAP starts a server on 127.0.0.1:0 with INBOX, Sent, Trash and Archive.
 func StartIMAP(t *testing.T, opts ...Option) *IMAP {
 	t.Helper()
-	s := &IMAP{cfg: config{move: true, uidplus: true}, conn: map[*tconn]struct{}{}}
+	s := &IMAP{cfg: config{move: true, uidplus: true, copyuid: true}, conn: map[*tconn]struct{}{}}
 	for _, o := range opts {
 		o(&s.cfg)
 	}

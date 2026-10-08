@@ -31,6 +31,8 @@ type Service struct {
 
 	locksMu sync.Mutex
 	locks   map[int64]*sync.Mutex // per-account: sync and op pushing never overlap
+
+	editMu sync.Mutex // local changes (SetFlags, Move, Delete) read then write
 }
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
@@ -122,9 +124,20 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
 	return s.setStatus(ctx, accountID, "ok")
 }
 
-// pushOps pushes queued local changes before fetching. A no-op until the ops
-// queue exists (mailsync.PushOps).
-func (s *Service) pushOps(context.Context, *imapclient.Client, int64) error { return nil }
+// pushOps pushes queued local changes. Ops that became conflict or failed are
+// announced with SyncFailed and the sync goes on.
+func (s *Service) pushOps(ctx context.Context, c *imapclient.Client, accountID int64) error {
+	err := mailsync.PushOps(ctx, s.db, c, accountID)
+	var problems *mailsync.OpsError
+	if errors.As(err, &problems) && err == error(problems) {
+		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: problems.Error()})
+		return nil
+	}
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
 
 func (s *Service) setStatus(ctx context.Context, accountID int64, status string) error {
 	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ? WHERE id = ?", status, accountID)

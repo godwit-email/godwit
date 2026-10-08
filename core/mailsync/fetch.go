@@ -30,7 +30,10 @@ type account struct {
 }
 
 // result collects what one Fetch changed, for the events it publishes.
-type result struct{ received, threads, changed, changedThreads []int64 }
+type result struct {
+	received, threads, changed, changedThreads []int64
+	conflicts                                  []string
+}
 
 // gone records messages about to be deleted (or moved between threads) as changed.
 func (r *result) gone(ids, tids []int64) {
@@ -62,6 +65,9 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 		if len(r.changed) > 0 {
 			bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: r.changed,
 				ThreadIDs: slices.Compact(slices.Sorted(slices.Values(r.changedThreads)))})
+		}
+		if len(r.conflicts) > 0 {
+			bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: strings.Join(r.conflicts, "; ")})
 		}
 	}()
 	rows, err := db.Query(ctx, "SELECT email, sync_limit FROM accounts WHERE id = ?", accountID)
@@ -197,13 +203,17 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 	}
 	slices.SortFunc(todo, func(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) })
+	twins := map[string]int{} // arrivals per Message-ID and size, for claims
+	for _, m := range todo {
+		twins[twinKey(m)]++
+	}
 	for batch := range slices.Chunk(todo, textBatch) {
 		texts, err := fetchTexts(c, batch)
 		if err != nil {
 			return err
 		}
 		for _, m := range batch {
-			if err := importMessage(ctx, db, a, f, m, texts[m.UID], r); err != nil {
+			if err := importMessage(ctx, db, a, f, m, texts[m.UID], twins[twinKey(m)], r); err != nil {
 				return err
 			}
 		}
@@ -216,6 +226,13 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	}
 	f.lastUID = last
 	return nil
+}
+
+func twinKey(m *imapclient.FetchMessageBuffer) string {
+	if m.Envelope == nil {
+		return ""
+	}
+	return m.Envelope.MessageID + "\x00" + strconv.FormatInt(m.RFC822Size, 10)
 }
 
 // fetchTexts downloads the displayable text parts of msgs, keyed by UID then part

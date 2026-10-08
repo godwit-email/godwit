@@ -2,6 +2,7 @@ package mailsync
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -12,11 +13,12 @@ import (
 )
 
 // importMessage claims the message for a local row awaiting it or inserts it,
-// with its attachments and thread, in one transaction.
-func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, r *result) error {
+// with its attachments and thread, in one transaction. twins is how many messages
+// of this fetch share its Message-ID and size.
+func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, twins int, r *result) error {
 	p := toParsed(m, texts)
 	uid := uint32(m.UID)
-	if id, err := claim(ctx, db, a.id, f, uid, p.MessageID, m.RFC822Size); err != nil || id != 0 {
+	if id, err := claim(ctx, db, a.id, f, uid, p.MessageID, m.RFC822Size, twins, r); err != nil || id != 0 {
 		if id != 0 {
 			r.changed = append(r.changed, id)
 		}
@@ -67,30 +69,61 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 // claim gives a new UID in f to the local message whose MOVE finished without a
 // COPYUID: exactly one awaiting_claim op targeting f whose message has the same
 // non-empty Message-ID and size. It returns the claimed message id, or 0.
-func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid uint32, messageID string, size int64) (int64, error) {
+//
+// When the arrival cannot be told apart from another copy (another local row
+// waiting, another arrival, or a message already in f with the same Message-ID
+// and size), nothing is merged: the ops become conflicts, the local rows waiting
+// are deleted and every server copy is imported as a message of its own.
+func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid uint32, messageID string, size int64, twins int, r *result) (int64, error) {
 	if messageID == "" {
 		return 0, nil
 	}
 	rows, err := db.Query(ctx, `SELECT o.id, m.id FROM ops o JOIN messages m ON m.id = o.message_id
 		WHERE o.account_id = ? AND o.state = 'awaiting_claim' AND o.dst_folder_id = ? AND m.message_id = ? AND m.size = ?`,
 		accountID, f.id, messageID, size)
-	if err != nil || len(rows.Values) != 1 {
+	if err != nil || len(rows.Values) == 0 {
 		return 0, err
 	}
-	op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
-	_, err = db.Transaction(ctx, []sqlite.Statement{
-		{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?",
-			Args: []any{f.id, f.uidValidity, uid, id}},
-		{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}},
-	})
+	present, err := db.Query(ctx, "SELECT count(*) FROM messages WHERE server_folder_id = ? AND message_id = ? AND size = ?", f.id, messageID, size)
 	if err != nil {
 		return 0, err
 	}
-	return id, nil
+	if len(rows.Values) == 1 && twins <= 1 && store.Int(present.Values[0][0]) == 0 {
+		op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
+		_, err = db.Transaction(ctx, []sqlite.Statement{
+			{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?",
+				Args: []any{f.id, f.uidValidity, uid, id}},
+			{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}},
+		})
+		if err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+	msg := fmt.Sprintf("a message moved to %q (Message-ID %s) could not be told apart from another copy there; the copies are kept as separate messages", f.name, messageID)
+	var ops, msgs []any
+	for _, v := range rows.Values {
+		ops, msgs = append(ops, v[0]), append(msgs, v[1])
+	}
+	ids, tids, err := doomed(ctx, db, "id IN ("+marks(len(msgs))+")", msgs...)
+	if err != nil {
+		return 0, err
+	}
+	stmts := []sqlite.Statement{
+		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE id IN (" + marks(len(ops)) + ")", Args: append([]any{msg}, ops...)},
+		{SQL: "DELETE FROM messages WHERE id IN (" + marks(len(msgs)) + ")", Args: msgs},
+	}
+	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+		return 0, err
+	}
+	r.gone(ids, tids)
+	r.conflicts = append(r.conflicts, msg)
+	return 0, nil
 }
 
-// syncFlags refreshes flags of 1:last_uid and deletes local rows whose UID the
-// server no longer returns. It changes nothing unless the FETCH completed.
+// syncFlags refreshes flags of 1:last_uid (except where a flags op is pending)
+// and deletes local rows whose UID the server no longer returns. It changes
+// nothing unless the FETCH completed.
 // ponytail: refetches every FLAGS each round; switch to CONDSTORE/QRESYNC.
 func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, f *folder, r *result) error {
 	if f.lastUID == 0 {
@@ -106,7 +139,10 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 	for _, b := range bufs {
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
-	rows, err := db.Query(ctx, "SELECT id, server_uid, flags, thread_id FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
+	// A flags change still queued wins over the server's flags until it is pushed.
+	rows, err := db.Query(ctx, `SELECT id, server_uid, flags, thread_id,
+		EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.id AND o.kind = 'flags' AND o.state = 'pending')
+		FROM messages WHERE server_folder_id = ? AND server_uid <= ?`, f.id, f.lastUID)
 	if err != nil {
 		return err
 	}
@@ -119,7 +155,7 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		case !ok:
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{id}})
 			tids = append(tids, store.Int(v[3]))
-		case fl != flags:
+		case fl != flags && store.Int(v[4]) == 0:
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{fl, id}})
 		default:
 			continue

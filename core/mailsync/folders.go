@@ -48,8 +48,8 @@ func role(d *imap.ListData) string {
 }
 
 // syncFolders mirrors the server's selectable folders into the folders table and
-// returns them in LIST order. Folders gone from the server are deleted (cascading
-// to their messages).
+// returns them in LIST order. Folders gone from the server are deleted with the
+// messages in them; a message only moved there locally returns to its server folder.
 func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, r *result) ([]*folder, error) {
 	list, err := c.List("", "*", nil).Collect()
 	if err != nil {
@@ -70,11 +70,19 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	}
 	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
 	staleArgs := append([]any{accountID}, anys(names)...)
-	ids, tids, err := doomed(ctx, db, "folder_id IN (SELECT id FROM folders WHERE "+stale+")", staleArgs...)
+	gone := "(SELECT id FROM folders WHERE " + stale + ")"
+	twice := append(append([]any{}, staleArgs...), staleArgs...)
+	ids, tids, err := doomed(ctx, db, "folder_id IN "+gone+" OR server_folder_id IN "+gone, twice...)
 	if err != nil {
 		return nil, err
 	}
-	stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
+	stmts = append(stmts,
+		// Moved locally into a vanished folder but still elsewhere on the server: back to where it is.
+		sqlite.Statement{SQL: "UPDATE messages SET folder_id = server_folder_id WHERE folder_id IN " + gone +
+			" AND server_folder_id NOT IN " + gone, Args: twice},
+		// On the server only in a vanished folder: gone, wherever it is shown locally.
+		sqlite.Statement{SQL: "DELETE FROM messages WHERE server_folder_id IN " + gone, Args: staleArgs},
+		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs}) // cascades to the rest
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return nil, err
 	}
