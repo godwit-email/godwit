@@ -193,7 +193,7 @@ func TestRefreshIsSingleFlight(t *testing.T) {
 				_, _, err := e.s.GetAttachment(bg, att)
 				errs <- err
 			default: // like the worker's IDLE dial, which does not take the sync lock
-				_, _, err := e.s.credentials(bg, e.acc, false)
+				_, _, err := e.s.credentials(bg, e.acc, "")
 				errs <- err
 			}
 		})
@@ -292,4 +292,50 @@ func TestSendWithOAuth(t *testing.T) {
 	e.sendNew(t)
 	require.Eventually(t, func() bool { return len(e.smtp.Messages()) == 1 }, 5*time.Second, 20*time.Millisecond)
 	assert.Equal(t, []string{"bob@example.com"}, e.smtp.Messages()[0].To)
+}
+
+// Two callers were refused the same token; the second must not refresh again.
+func TestForcedRefreshReusesNewerToken(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	t0, _ := e.cached()
+	n := e.oa.TokenRequests()
+	_, t1, err := e.s.credentials(bg, e.acc, t0.access) // caller B refreshes
+	require.NoError(t, err)
+	require.NotEqual(t, t0.access, t1)
+	_, got, err := e.s.credentials(bg, e.acc, t0.access) // caller A, refused T0 earlier
+	require.NoError(t, err)
+	assert.Equal(t, t1, got)
+	assert.Equal(t, n+1, e.oa.TokenRequests())
+}
+
+func TestAddOAuthAccountProviderMismatch(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	flow := e.signIn(t, "alice@example.com") // begun for outlook
+	in := e.input(t, "alice@example.com", flow)
+	in.Provider = "gmail"
+	_, err := e.s.AddAccount(bg, in)
+	require.ErrorIs(t, err, ErrProviderMismatch)
+	accs, err := e.s.ListAccounts(bg)
+	require.NoError(t, err)
+	assert.Empty(t, accs)
+	_, err = keyring.Get(keyringService, e.s.keyringUser(1))
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+
+	in.Provider = "" // the grant is still there; the flow names the provider
+	acc, err := e.s.AddAccount(bg, in)
+	require.NoError(t, err)
+	assert.Equal(t, "outlook", acc.Provider)
+}
+
+func TestZeroExpiryLasts30Minutes(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	e.expire(t)
+	e.oa.RespondNext(200, `{"access_token":"no-expiry","token_type":"Bearer"}`)
+	_, tok, err := e.s.credentials(bg, e.acc, "")
+	require.NoError(t, err)
+	require.Equal(t, "no-expiry", tok)
+	c, _ := e.cached()
+	assert.WithinDuration(t, time.Now().Add(30*time.Minute), c.expiry, time.Minute)
 }

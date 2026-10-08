@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -52,8 +51,8 @@ type Service struct {
 	removing    map[int64]bool // accounts RemoveAccount is deleting
 
 	oauthMu sync.Mutex
-	flows   map[string]*auth.Flow // OAuth flows begun and not yet awaited or cancelled
-	grants  map[string]auth.Grant // finished flows' grants, kept for grantTTL
+	flows   map[string]oauthFlow  // OAuth flows begun and not yet awaited or cancelled
+	grants  map[string]oauthGrant // finished flows' grants, kept for grantTTL
 
 	tokMu      sync.Mutex
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
@@ -305,17 +304,18 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
-	for force := false; ; force = true {
+	for rejected := ""; ; {
 		var pw, tok string
-		if pw, tok, err = s.credentials(ctx, acc, force); err != nil {
+		if pw, tok, err = s.credentials(ctx, acc, rejected); err != nil {
 			return nil, nil, nil, err
 		}
 		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
 			Username: acc.Username, Password: pw, AccessToken: tok}, h)
 		// A refused access token may just be stale: refresh it and try once more.
-		if force || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {
+		if rejected != "" || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {
 			break
 		}
+		rejected = tok
 	}
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
@@ -380,13 +380,13 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	if !explicit {
 		return false, nil
 	}
-	ep, _, err := s.smtpEndpoint(ctx, accountID, false)
+	ep, _, err := s.smtpEndpoint(ctx, accountID, "")
 	if err != nil {
 		return false, err
 	}
 	sc, err := conn.DialSMTP(ctx, ep)
 	if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
-		if ep, _, err = s.smtpEndpoint(ctx, accountID, true); err == nil {
+		if ep, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
 			sc, err = conn.DialSMTP(ctx, ep)
 		}
 	}

@@ -45,15 +45,15 @@ func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) 
 	flowID = rand.Text()
 	s.oauthMu.Lock()
 	if s.flows == nil {
-		s.flows = map[string]*auth.Flow{}
+		s.flows = map[string]oauthFlow{}
 	}
-	s.flows[flowID] = f
+	s.flows[flowID] = oauthFlow{f, providerID}
 	s.oauthMu.Unlock()
 	// The flow closes itself at auth.FlowTimeout; forget it then too, so a result
 	// nobody awaits does not stay in memory. A pending AwaitOAuth gets ErrFlowExpired.
 	time.AfterFunc(auth.FlowTimeout, func() {
 		s.oauthMu.Lock()
-		if s.flows[flowID] == f {
+		if s.flows[flowID].Flow == f {
 			delete(s.flows, flowID)
 		}
 		s.oauthMu.Unlock()
@@ -71,8 +71,9 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	}
 	defer end()
 	s.oauthMu.Lock()
-	f := s.flows[flowID]
+	of := s.flows[flowID]
 	s.oauthMu.Unlock()
+	f := of.Flow
 	if f == nil {
 		return "", ErrUnknownFlow
 	}
@@ -84,7 +85,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	// AwaitOAuth may have taken it while Wait returned.
 	s.oauthMu.Lock()
 	defer s.oauthMu.Unlock()
-	if s.flows[flowID] != f {
+	if s.flows[flowID].Flow != f {
 		if err == nil {
 			err = ErrUnknownFlow
 		}
@@ -95,9 +96,9 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 		return "", err
 	}
 	if s.grants == nil {
-		s.grants = map[string]auth.Grant{}
+		s.grants = map[string]oauthGrant{}
 	}
-	s.grants[flowID] = g
+	s.grants[flowID] = oauthGrant{g, of.provider}
 	time.AfterFunc(grantTTL, func() {
 		s.oauthMu.Lock()
 		delete(s.grants, flowID)
@@ -110,7 +111,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 // its grant. Unknown IDs are ignored.
 func (s *Service) CancelOAuth(flowID string) {
 	s.oauthMu.Lock()
-	f := s.flows[flowID]
+	f := s.flows[flowID].Flow
 	delete(s.flows, flowID)
 	delete(s.grants, flowID)
 	s.oauthMu.Unlock()
@@ -119,8 +120,20 @@ func (s *Service) CancelOAuth(flowID string) {
 	}
 }
 
+// oauthFlow is a flow begun for a provider.
+type oauthFlow struct {
+	*auth.Flow
+	provider string
+}
+
+// oauthGrant is a finished flow's grant and the provider it was signed in with.
+type oauthGrant struct {
+	auth.Grant
+	provider string
+}
+
 // takeGrant removes and returns a finished flow's grant.
-func (s *Service) takeGrant(flowID string) (auth.Grant, bool) {
+func (s *Service) takeGrant(flowID string) (oauthGrant, bool) {
 	s.oauthMu.Lock()
 	defer s.oauthMu.Unlock()
 	g, ok := s.grants[flowID]

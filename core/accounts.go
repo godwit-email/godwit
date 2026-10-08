@@ -56,11 +56,7 @@ func (in AccountInput) validate() error {
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
-	if in.OAuthFlowID != "" {
-		if _, err := oauthConfig(in.Provider); err != nil {
-			return err
-		}
-	} else if in.Password == "" {
+	if in.OAuthFlowID == "" && in.Password == "" {
 		return errors.New("password is required")
 	}
 	for _, e := range []struct {
@@ -106,16 +102,19 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 }
 
 // flowGrant returns the grant of in's finished OAuth flow without using it up.
-// Its signed-in address must be in.Email, ignoring case.
-func (s *Service) flowGrant(in AccountInput) (auth.Grant, error) {
+// Its signed-in address must be in.Email, ignoring case, and in.Provider, if
+// set, the provider the flow began with.
+func (s *Service) flowGrant(in AccountInput) (oauthGrant, error) {
 	s.oauthMu.Lock()
 	g, ok := s.grants[in.OAuthFlowID]
 	s.oauthMu.Unlock()
-	if !ok {
-		return auth.Grant{}, ErrUnknownFlow
-	}
-	if !strings.EqualFold(g.Email, strings.TrimSpace(in.Email)) {
-		return auth.Grant{}, ErrWrongAccount
+	switch {
+	case !ok:
+		return oauthGrant{}, ErrUnknownFlow
+	case in.Provider != "" && in.Provider != g.provider:
+		return oauthGrant{}, ErrProviderMismatch
+	case !strings.EqualFold(g.Email, strings.TrimSpace(in.Email)):
+		return oauthGrant{}, ErrWrongAccount
 	}
 	return g, nil
 }
@@ -132,7 +131,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	authType, secret := "password", in.Password
-	var g auth.Grant
+	var g oauthGrant
 	if in.OAuthFlowID != "" {
 		if g, err = s.flowGrant(in); err != nil {
 			return Account{}, err
@@ -149,7 +148,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		if _, ok := s.takeGrant(in.OAuthFlowID); !ok {
 			return Account{}, ErrUnknownFlow
 		}
-		authType, secret, in.Username = "oauth", g.RefreshToken, g.Email
+		authType, secret, in.Username, in.Provider = "oauth", g.RefreshToken, g.Email, g.provider
 	}
 	if in.SyncLimit == 0 {
 		in.SyncLimit = defaultSyncLim
@@ -208,7 +207,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		if s.tokens == nil {
 			s.tokens = map[int64]oauthToken{}
 		}
-		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
+		s.tokens[id] = newToken(g.Grant)
 		s.tokMu.Unlock()
 	}
 	s.startWorker(id)

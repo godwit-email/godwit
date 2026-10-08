@@ -167,7 +167,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		switch o.state {
 		case "queued":
 			if ep == nil {
-				e, f, err := s.smtpEndpoint(ctx, accountID, false)
+				e, f, err := s.smtpEndpoint(ctx, accountID, "")
 				if err != nil {
 					return err
 				}
@@ -177,7 +177,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
 				// The access token may just be stale: refresh it once per round.
 				refreshed = true
-				e, _, rerr := s.smtpEndpoint(ctx, accountID, true)
+				e, _, rerr := s.smtpEndpoint(ctx, accountID, ep.AccessToken)
 				if rerr != nil {
 					return rerr
 				}
@@ -222,13 +222,13 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 }
 
 // smtpEndpoint returns the account's SMTP server with its credentials, and its
-// address. forceRefresh: SMTP refused the access token last returned.
-func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, forceRefresh bool) (conn.Endpoint, string, error) {
+// address. rejected: an access token SMTP refused, or "".
+func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}
-	pw, tok, err := s.credentials(ctx, acc, forceRefresh)
+	pw, tok, err := s.credentials(ctx, acc, rejected)
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}
