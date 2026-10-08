@@ -59,6 +59,35 @@ func TestStaleRefusalAfterUpdatePassword(t *testing.T) {
 	assert.Equal(t, []string{"ok", ""}, []string{st, d})
 }
 
+// A refusal of an older access token that arrives after another caller
+// refreshed to a newer one must not mark the account reauth_required.
+func TestStaleTokenRefusalAfterRefresh(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	e.oa.RevokeAccess() // A's first token T0 is refused; A refreshes to T1
+	entered, release := e.im.BlockLoginAfter(1)
+	t.Cleanup(release)
+	errA := make(chan error, 1)
+	go func() { errA <- e.s.SyncNow(bg, e.acc.ID) }()
+	waitSignal(t, entered, "A's login with T1", 5*time.Second)
+	t1, _ := e.cached()
+	e.oa.RevokeAccess()                                    // T1 goes too
+	_, t2, _, err := e.s.credentials(bg, e.acc, t1.access) // B refreshes to T2
+	require.NoError(t, err)
+	require.NotEqual(t, t1.access, t2)
+	release() // A's refusal of T1 arrives now
+	require.Error(t, <-errA)
+	st, d := e.status(t)
+	assert.Equal(t, []string{"ok", ""}, []string{st, d})
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM accounts WHERE smtp_reauth = 1"))
+
+	n := e.oa.TokenRequests()
+	e.put(t, "INBOX", msg("t2@x"))
+	e.sync(t) // with T2, no further refresh
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 't2@x'"))
+	assert.Equal(t, n, e.oa.TokenRequests())
+}
+
 func TestUpdatePasswordWrong(t *testing.T) {
 	e := newSendEnv(t, false)
 	err := e.s.UpdatePassword(bg, e.acc.ID, "wrong")

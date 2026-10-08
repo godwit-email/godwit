@@ -75,15 +75,16 @@ func (s *Service) KeychainStatus(ctx context.Context) error {
 // keeps retrying), and a successful read clears error. rejected is an access
 // token the server refused, or "": a token other than it is returned. ver is the
 // credential version they belong to; a refusal is recorded only through
-// ifCurrent(ver), so a stale one cannot undo UpdatePassword or Reauthorize.
+// ifCurrent(ver), so a stale one cannot undo UpdatePassword, Reauthorize or a
+// newer token refresh.
 func (s *Service) credentials(ctx context.Context, acc Account, rejected string) (password, accessToken string, ver uint64, err error) {
+	if acc.AuthType == "oauth" {
+		tok, ver, err := s.accessToken(ctx, acc, rejected)
+		return "", tok, ver, err
+	}
 	s.credMu.Lock()
 	ver = s.credVer[acc.ID]
 	s.credMu.Unlock()
-	if acc.AuthType == "oauth" {
-		tok, err := s.accessToken(ctx, acc, rejected, ver)
-		return "", tok, ver, err
-	}
 	pw, err := s.secret(ctx, acc, ver)
 	return pw, "", ver, err
 }
@@ -99,15 +100,41 @@ func (s *Service) ifCurrent(id int64, ver uint64, write func() error) error {
 	return write()
 }
 
-// credentialsUpdated clears the account's credential problems once new
-// credentials are in place, makes refusals of older ones stale, and wakes its worker.
-func (s *Service) credentialsUpdated(ctx context.Context, id int64) error {
-	s.credMu.Lock()
-	defer s.credMu.Unlock()
+// newCredentials makes refusals of the account's older credentials stale and
+// caches g's access token, if any, as the current one. The caller holds tokMu
+// and credMu (always taken in that order).
+func (s *Service) newCredentials(id int64, g *auth.Grant) uint64 {
 	if s.credVer == nil {
 		s.credVer = map[int64]uint64{}
 	}
 	s.credVer[id]++
+	if g != nil {
+		if s.tokens == nil {
+			s.tokens = map[int64]oauthToken{}
+		}
+		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry, s.credVer[id]}
+	}
+	return s.credVer[id]
+}
+
+// cacheToken caches g's access token as the account's current credentials.
+func (s *Service) cacheToken(id int64, g auth.Grant) uint64 {
+	s.tokMu.Lock()
+	defer s.tokMu.Unlock()
+	s.credMu.Lock()
+	defer s.credMu.Unlock()
+	return s.newCredentials(id, &g)
+}
+
+// credentialsUpdated is newCredentials for credentials the user just gave
+// (a password in the keychain, or g): it also clears the account's credential
+// problems and wakes its worker.
+func (s *Service) credentialsUpdated(ctx context.Context, id int64, g *auth.Grant) error {
+	s.tokMu.Lock()
+	defer s.tokMu.Unlock()
+	s.credMu.Lock()
+	defer s.credMu.Unlock()
+	s.newCredentials(id, g)
 	_, err := s.db.Execute(context.WithoutCancel(ctx),
 		"UPDATE accounts SET status = 'ok', status_detail = '', smtp_reauth = 0 WHERE id = ?", id)
 	s.wakeWorker(id)
@@ -158,59 +185,57 @@ func (t oauthToken) fresh() bool {
 // rotated refresh token is saved before the new access token is used; if that
 // fails the old one stays in the keychain. A revoked grant is reauth_required
 // (token_revoked); other failures change no status, so the worker backs off.
-func (s *Service) accessToken(ctx context.Context, acc Account, rejected string, ver uint64) (string, error) {
+// Every new token is a new credential version, returned with it.
+func (s *Service) accessToken(ctx context.Context, acc Account, rejected string) (string, uint64, error) {
 	s.tokMu.Lock()
 	seen := s.tokens[acc.ID]
 	s.tokMu.Unlock()
 	sem := s.refreshLock(acc.ID)
 	if seen.fresh() && seen.access != rejected {
-		return seen.access, nil
+		return seen.access, seen.ver, nil
 	}
 	select {
 	case sem <- struct{}{}:
 		defer func() { <-sem }()
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", 0, ctx.Err()
 	}
 	s.tokMu.Lock()
 	cur := s.tokens[acc.ID]
 	if cur.fresh() && cur.access != rejected {
 		s.tokMu.Unlock()
-		return cur.access, nil // refreshed by someone else
+		return cur.access, cur.ver, nil // refreshed by someone else
 	}
 	delete(s.tokens, acc.ID)
 	s.tokMu.Unlock()
+	s.credMu.Lock()
+	ver := s.credVer[acc.ID] // for the statuses below; refreshes are serialised by sem
+	s.credMu.Unlock()
 
 	rt, err := s.secret(ctx, acc, ver)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	cfg, err := oauthConfig(acc.Provider)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	g, err := auth.Refresh(ctx, cfg, http.DefaultClient, rt)
 	if errors.Is(err, auth.ErrInvalidGrant) {
-		return "", errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
 			return s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked")
 		}))
 	}
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if g.RefreshToken != "" {
 		if err := keychainSet(s.keyringUser(acc.ID), g.RefreshToken); err != nil {
 			err = fmt.Errorf("save rotated refresh token: %w", err)
-			return "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+			return "", 0, errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
 		}
 	}
-	s.tokMu.Lock()
-	if s.tokens == nil {
-		s.tokens = map[int64]oauthToken{}
-	}
-	s.tokens[acc.ID] = oauthToken{g.AccessToken, g.Expiry}
-	s.tokMu.Unlock()
-	return g.AccessToken, nil
+	return g.AccessToken, s.cacheToken(acc.ID, g), nil
 }
 
 // ErrWrongAccount: the OAuth sign-in was for another address than the account's.
@@ -224,4 +249,5 @@ var ErrProviderMismatch = errors.New("signed in with a different provider")
 type oauthToken struct {
 	access string
 	expiry time.Time
+	ver    uint64 // its credential version
 }

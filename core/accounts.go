@@ -201,12 +201,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, fmt.Errorf("save credentials to keychain: %w", err)
 	}
 	if g.AccessToken != "" {
-		s.tokMu.Lock()
-		if s.tokens == nil {
-			s.tokens = map[int64]oauthToken{}
-		}
-		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
-		s.tokMu.Unlock()
+		s.cacheToken(id, g.Grant)
 	}
 	s.startWorker(id)
 	return s.account(ctx, id)
@@ -335,7 +330,7 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, password string)
 	if err := keychainSet(s.keyringUser(id), password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	return s.credentialsUpdated(ctx, id)
+	return s.credentialsUpdated(ctx, id, nil)
 }
 
 // Reauthorize gives an OAuth account the tokens of a finished flow, which must
@@ -376,13 +371,7 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	if err := keychainSet(s.keyringUser(id), g.RefreshToken); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	s.tokMu.Lock()
-	if s.tokens == nil {
-		s.tokens = map[int64]oauthToken{}
-	}
-	s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
-	s.tokMu.Unlock()
-	return s.credentialsUpdated(ctx, id)
+	return s.credentialsUpdated(ctx, id, &g.Grant)
 }
 
 func (a Account) servers() ServerSettings {

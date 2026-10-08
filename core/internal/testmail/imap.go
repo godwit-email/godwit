@@ -293,27 +293,40 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 // SetPassword changes alice's password, as a user does on the provider's website.
 func (s *IMAP) SetPassword(pw string) { s.password.Store(pw) }
 
-type loginBlock struct{ entered, release chan struct{} }
+type loginBlock struct {
+	entered, release chan struct{}
+	skip             atomic.Int32
+}
 
-// BlockLogin makes the next LOGIN check the password and then hold its reply
-// until release is called (release may be called more than once). entered
-// fires once that LOGIN is held.
-func (s *IMAP) BlockLogin() (entered <-chan struct{}, release func()) {
-	b := &loginBlock{make(chan struct{}), make(chan struct{})}
+// BlockLogin is BlockLoginAfter(0).
+func (s *IMAP) BlockLogin() (entered <-chan struct{}, release func()) { return s.BlockLoginAfter(0) }
+
+// BlockLoginAfter lets n logins (LOGIN or XOAUTH2) through and holds the next
+// one until release is called (release may be called more than once); the held
+// login checks its password or token only then. entered fires once it is held.
+func (s *IMAP) BlockLoginAfter(n int) (entered <-chan struct{}, release func()) {
+	b := &loginBlock{entered: make(chan struct{}), release: make(chan struct{})}
+	b.skip.Store(int32(n))
 	s.blockLogin.Store(b)
 	var once sync.Once
 	return b.entered, func() { once.Do(func() { close(b.release) }) }
 }
 
+// holdLogin holds a login BlockLoginAfter picked.
+func (s *IMAP) holdLogin() {
+	b := s.blockLogin.Load()
+	if b == nil || b.skip.Add(-1) >= 0 || !s.blockLogin.CompareAndSwap(b, nil) {
+		return
+	}
+	close(b.entered)
+	<-b.release
+}
+
 // Login counts logins and checks the current password.
 func (s session) Login(username, password string) error {
 	s.s.logins.Add(1)
-	ok := password == s.s.password.Load().(string)
-	if b := s.s.blockLogin.Swap(nil); b != nil {
-		close(b.entered)
-		<-b.release
-	}
-	if !ok {
+	s.s.holdLogin()
+	if password != s.s.password.Load().(string) {
 		return imapserver.ErrAuthFailed
 	}
 	return s.Session.Login(username, "secret")
@@ -334,7 +347,8 @@ func (s session) Authenticate(mech string) (sasl.Server, error) {
 		return sasl.NewPlainServer(func(_, user, pass string) error { return s.Login(user, pass) }), nil
 	case mech == "XOAUTH2" && s.s.cfg.xoauth2 != nil:
 		s.s.logins.Add(1)
-		return &xoauth2Server{valid: s.s.cfg.xoauth2, login: func(user string) error {
+		valid := func(tok string) bool { s.s.holdLogin(); return s.s.cfg.xoauth2(tok) }
+		return &xoauth2Server{valid: valid, login: func(user string) error {
 			return s.Session.Login(user, "secret")
 		}}, nil
 	}
