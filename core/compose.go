@@ -173,7 +173,11 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 		return Draft{}, err
 	}
 	if r.Changes == 0 && d.Revision != 0 {
-		if _, err := s.GetDraft(ctx, d.ID); err == nil {
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM drafts WHERE id = ?", d.ID)
+		if err != nil {
+			return Draft{}, err
+		}
+		if len(rows.Values) > 0 {
 			return Draft{}, ErrStaleDraft
 		}
 	}

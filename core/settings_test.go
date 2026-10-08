@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +36,12 @@ func TestSettingsRoundTrip(t *testing.T) {
 	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-CN", []string{"en", "fr"}, "svc/m"
 	_, err := s.SetSettings(t.Context(), in)
 	require.NoError(t, err)
-	assert.Equal(t, events.SettingsChanged, (<-ch).Type)
+	select {
+	case ev := <-ch:
+		assert.Equal(t, events.SettingsChanged, ev.Type)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no settings.changed event")
+	}
 	require.NoError(t, s.Close())
 
 	s = settingsService(t, dir, "")
@@ -55,6 +61,9 @@ func TestSettingsRoundTrip(t *testing.T) {
 func TestSettingsValidation(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	base, _ := s.GetSettings(t.Context())
+	base.Theme, base.FontSize, base.UILanguage = "dark", 20, "fr"
+	_, err := s.SetSettings(t.Context(), base)
+	require.NoError(t, err)
 	for name, mod := range map[string]func(*Settings){
 		"theme":    func(x *Settings) { x.Theme = "neon" },
 		"density":  func(x *Settings) { x.Density = "tiny" },

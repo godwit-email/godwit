@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,4 +125,20 @@ func TestDraftRevision(t *testing.T) {
 	got, err := s.SaveDraft(ctx, stale)
 	require.NoError(t, err)
 	assert.Equal(t, r0+3, got.Revision)
+}
+
+func TestSaveDraftCancelledContext(t *testing.T) {
+	keyring.MockInit()
+	s, err := core.New(ctx, core.Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	d, err := s.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	c, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = s.SaveDraft(c, d)
+	assert.ErrorIs(t, err, context.Canceled)
 }
