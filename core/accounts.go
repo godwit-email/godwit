@@ -139,6 +139,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 		return Account{}, fmt.Errorf("save password to keychain: %w", err)
 	}
+	s.startWorker(id)
 	return s.account(ctx, id)
 }
 
@@ -188,6 +189,7 @@ func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
 
 // RemoveAccount deletes the account, its keychain entry and its cache directory.
 func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
+	s.stopWorker(id)
 	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}

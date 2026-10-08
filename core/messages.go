@@ -305,6 +305,7 @@ func (s *Service) apply(ctx context.Context, accountID int64, ts []target, stmts
 	}
 	s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids,
 		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
+	s.wakeWorker(accountID)
 	return nil
 }
 

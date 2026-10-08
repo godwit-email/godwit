@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
@@ -135,6 +136,23 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 		defer s.conn.stripCopyUID.Store(false)
 	}
 	return s.Session.(imapserver.SessionMove).Move(w, set, dest)
+}
+
+// Idle polls for updates instead of using the memory backend's tracker, which
+// ignores updates queued before IDLE began; real servers report those at once.
+func (s session) Idle(w *imapserver.UpdateWriter, stop <-chan struct{}) error {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for {
+		if err := s.Session.Poll(w, true); err != nil {
+			return err
+		}
+		select {
+		case <-stop:
+			return nil
+		case <-t.C:
+		}
+	}
 }
 
 func (s session) Namespace() (*imap.NamespaceData, error) {

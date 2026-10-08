@@ -101,14 +101,15 @@ func ctxErr(ctx context.Context, err error) error {
 
 // DialIMAP connects to e and logs in.
 func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
-	c, _, err := DialIMAPAbortable(ctx, e)
+	c, _, err := DialIMAPAbortable(ctx, e, nil)
 	return c, err
 }
 
 // DialIMAPAbortable is DialIMAP that also returns abort, which closes the network
 // connection at once. Unlike Client.Close it does not wait for a response literal
-// being read, so it can cut off a download.
-func DialIMAPAbortable(ctx context.Context, e Endpoint) (*imapclient.Client, func(), error) {
+// being read, so it can cut off a download. h, if not nil, receives unsolicited
+// server updates (IDLE).
+func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandler) (*imapclient.Client, func(), error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
@@ -116,6 +117,8 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint) (*imapclient.Client, fun
 	opts := &imapclient.Options{
 		TLSConfig:   &tls.Config{ServerName: e.Host},
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 subjects in ENVELOPE
+
+		UnilateralDataHandler: h,
 	}
 	var c *imapclient.Client
 	switch e.Security {

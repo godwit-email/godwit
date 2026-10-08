@@ -139,7 +139,7 @@ func (s *Service) touch(ctx context.Context, id int64) error {
 
 // download fetches the raw (still transfer-encoded) part from the server.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
-	c, release, abort, err := s.dialAccount(ctx, a.accountID)
+	c, release, abort, err := s.dialAccount(ctx, a.accountID, nil)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
 			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error()})

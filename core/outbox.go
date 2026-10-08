@@ -92,6 +92,7 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		}
 	}
 	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: store.Int(rows.Values[0][0])})
+	s.wakeWorker(store.Int(rows.Values[0][0]))
 	return nil
 }
 

@@ -368,6 +368,7 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: d.AccountID})
+	s.wakeWorker(d.AccountID)
 	// ponytail: a failed removal leaves an orphan directory; sweep drafts/ on startup if it matters.
 	os.RemoveAll(s.draftDir(draftID))
 	return nil

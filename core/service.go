@@ -4,6 +4,7 @@ package core
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,7 +21,7 @@ import (
 // Options configures a Service.
 type Options struct {
 	DataDir  string
-	AutoSync bool // background workers arrive with the worker task; unused for now
+	AutoSync bool // run a background sync worker per account
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -34,6 +35,10 @@ type Service struct {
 	locks   map[int64]*sync.Mutex // per-account: sync and op pushing never overlap
 
 	editMu sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+
+	workersMu sync.Mutex
+	workers   map[int64]*worker
+	closed    bool
 }
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
@@ -49,11 +54,77 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts}, nil
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts}
+	if err := s.cleanOrphans(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	accs, err := s.ListAccounts(ctx)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	for _, a := range accs {
+		s.startWorker(a.ID)
+	}
+	return s, nil
 }
 
-// Close releases the database.
-func (s *Service) Close() error { return s.db.Close() }
+// Close stops the background workers, waits for them and releases the database.
+func (s *Service) Close() error {
+	s.workersMu.Lock()
+	s.closed = true
+	ws := s.workers
+	s.workers = nil
+	s.workersMu.Unlock()
+	for _, w := range ws {
+		w.cancel()
+	}
+	for _, w := range ws {
+		<-w.done
+	}
+	return s.db.Close()
+}
+
+// cleanOrphans removes files under cache/, drafts/ and outbox/ that no row refers
+// to: leftovers of crashes and failed removals. It runs before any worker starts.
+func (s *Service) cleanOrphans(ctx context.Context) error {
+	keep := map[string]bool{}
+	for _, q := range []string{
+		"SELECT cache_path FROM attachments WHERE cache_path IS NOT NULL",
+		"SELECT raw_path FROM outbox WHERE state != 'done'",
+	} {
+		rows, err := s.db.Query(ctx, q)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows.Values {
+			if p, err := filepath.Abs(store.Str(r[0])); err == nil {
+				keep[p] = true
+			}
+		}
+	}
+	drafts, err := s.db.Query(ctx, "SELECT id FROM drafts")
+	if err != nil {
+		return err
+	}
+	for _, r := range drafts.Values {
+		if p, err := filepath.Abs(s.draftDir(store.Int(r[0]))); err == nil {
+			keep[p] = true
+		}
+	}
+	for _, sub := range []string{"cache", "drafts", "outbox"} {
+		err := store.CleanOrphans(filepath.Join(s.dataDir, sub), func(p string) bool {
+			p, err := filepath.Abs(p)
+			// A draft's files live in its directory; everything else is kept by its own path.
+			return err != nil || keep[p] || sub == "drafts" && keep[filepath.Dir(p)]
+		})
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
 
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
@@ -89,8 +160,8 @@ func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 
 // dialAccount connects and logs in to the account's IMAP server. An auth failure
 // also marks the account reauth_required. release closes the connection and must
-// be called; cancelling ctx aborts blocked reads.
-func (s *Service) dialAccount(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
+// be called; cancelling ctx aborts blocked reads. h, if not nil, receives IDLE updates.
+func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclient.UnilateralDataHandler) (c *imapclient.Client, release, abort func(), err error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -100,7 +171,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (c *imapclie
 		return nil, nil, nil, err
 	}
 	c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
-		Username: acc.Username, Password: pw})
+		Username: acc.Username, Password: pw}, h)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
 			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
@@ -112,7 +183,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (c *imapclie
 }
 
 func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
-	c, release, _, err := s.dialAccount(ctx, accountID)
+	c, release, _, err := s.dialAccount(ctx, accountID, nil)
 	if err != nil {
 		return err
 	}
