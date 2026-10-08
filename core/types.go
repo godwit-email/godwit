@@ -1,6 +1,6 @@
 package core
 
-import "github.com/godwitmail/godwit/core/conn"
+import "github.com/godwit-email/godwit/core/conn"
 
 // Security is the transport protection of an IMAP or SMTP connection.
 type Security = conn.Security

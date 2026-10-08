@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/godwitmail/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

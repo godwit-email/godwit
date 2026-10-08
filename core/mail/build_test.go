@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godwitmail/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

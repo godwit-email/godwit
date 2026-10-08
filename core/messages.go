@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/godwitmail/godwit/core/events"
-	gomail "github.com/godwitmail/godwit/core/mail"
-	"github.com/godwitmail/godwit/core/mailsync"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mailsync"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // MessageSummary is a message as listed.

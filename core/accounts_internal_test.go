@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/godwitmail/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"

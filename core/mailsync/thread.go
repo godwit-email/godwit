@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/godwitmail/godwit/core/mail"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 const subjectWindow = 7 * 24 * time.Hour

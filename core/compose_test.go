@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godwitmail/godwit/core/internal/testmail"
-	"github.com/godwitmail/godwit/core/mail"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"

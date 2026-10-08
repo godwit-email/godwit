@@ -23,7 +23,7 @@
 
 ## Global Constraints
 
-- Go 版本由 `mise.toml` 固定为 1.27.1；module 路径 `github.com/godwitmail/godwit`。
+- Go 版本由 `mise.toml` 固定为 1.27.1；module 路径 `github.com/godwit-email/godwit`。
 - 不用 cgo：`CGO_ENABLED=0 go build ./...` 和 `CGO_ENABLED=0 go test ./...` 必须通过（`go test -race` 需要 cgo，仅本机使用）。
 - 存储只用 mygo sqlite 的 Go API，**不调用** `mygo.Use(sqlite.Plugin)`。`Execute` / `Query` 一次只接受**一条语句**；多条语句用 `Transaction([]sqlite.Statement)`，它在全部执行完才返回，中间拿不到结果，需要关联新插入的行时在 SQL 里用 `last_insert_rowid()`。
 - 迁移用 `PRAGMA user_version` + 迁移列表，列表每项是单条语句；数据库版本高于程序认识的版本时返回 `store.ErrNewerDatabase`，不写入任何东西。
@@ -92,7 +92,7 @@ core/
   - `store.Int(v any) int64`、`store.Str(v any) string`
   - `store.WriteFileAtomic(path string, data []byte) error`；`store.CleanOrphans(dir string, keep func(path string) bool) error`
 
-- [ ] **Step 1: 初始化 module**：`go mod init github.com/godwitmail/godwit`，`go get github.com/egoist/mygo@v0.3.0 github.com/stretchr/testify`。
+- [ ] **Step 1: 初始化 module**：`go mod init github.com/godwit-email/godwit`，`go get github.com/egoist/mygo@v0.3.0 github.com/stretchr/testify`。
 
 - [ ] **Step 2: 写失败的测试**
 

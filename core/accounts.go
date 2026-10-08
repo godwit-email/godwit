@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/godwitmail/godwit/core/conn"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
 

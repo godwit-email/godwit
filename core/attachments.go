@@ -15,10 +15,10 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwitmail/godwit/core/conn"
-	"github.com/godwitmail/godwit/core/events"
-	"github.com/godwitmail/godwit/core/mail"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 const (

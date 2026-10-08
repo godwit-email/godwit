@@ -8,7 +8,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 type folder struct {

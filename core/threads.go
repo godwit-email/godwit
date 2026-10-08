@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/godwitmail/godwit/core/store"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // View selects what a list shows: one folder or a unified view ("inbox", "starred").

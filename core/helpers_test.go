@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/godwitmail/godwit/core"
+	"github.com/godwit-email/godwit/core"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
 )

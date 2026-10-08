@@ -1,4 +1,4 @@
-module github.com/godwitmail/godwit
+module github.com/godwit-email/godwit
 
 go 1.27.1
 

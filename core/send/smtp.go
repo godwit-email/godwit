@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/emersion/go-smtp"
-	"github.com/godwitmail/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/conn"
 )
 
 // ErrUncertain means the whole message reached the server but its verdict did

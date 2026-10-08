@@ -3,7 +3,7 @@
 - 日期：2026-10-08
 - 状态：待审阅
 - 官网：godwit.email
-- 仓库：github.com/godwitmail/godwit
+- 仓库：github.com/godwit-email/godwit
 - 插件 SDK（npm）：`@godwit/sdk`
 - CLI 命令：`godwit`
 - 命名由来：斑尾塍鹬（bar-tailed godwit）保持着鸟类不间断飞行的世界纪录，寓意可靠送达；开头的 Go 也呼应实现语言
@@ -404,4 +404,4 @@ Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统�
 - 跟进 [egoist/mygo#104](https://github.com/egoist/mygo/pull/104)（Tailwind 色板）：合并后用 mygo 的 `ui/palette` 替换 `internal/palette`。
 - Genkit 的 OpenTelemetry 依赖能否在不影响功能的前提下关闭或裁剪。
 - 深色模式下邮件正文的显示策略；键盘操作、屏幕阅读器、缩放；日期、时区、复数、从右到左语言的验收标准。
-- 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwitmail`（2026-10-08 查询时均未被占用）。
+- 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwit-email`（已创建；域名与 npm 于 2026-10-08 查询时未被占用）。
