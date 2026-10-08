@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -14,8 +16,9 @@ var ErrKeychainUnavailable = errors.New("system keychain is unavailable")
 
 // Replaced in tests.
 var (
-	keyringGet = keyring.Get
-	keyringSet = keyring.Set
+	keyringGet    = keyring.Get
+	keyringSet    = keyring.Set
+	keyringDelete = keyring.Delete
 )
 
 // keychainErr passes nil and keyring.ErrNotFound through and wraps anything
@@ -37,13 +40,15 @@ func keychainSet(user, secret string) error {
 }
 
 func keychainDelete(user string) error {
-	return keychainErr(keyring.Delete(keyringService, user))
+	return keychainErr(keyringDelete(keyringService, user))
 }
 
-// KeychainStatus writes, reads back and deletes a probe entry; any failure is
+// KeychainStatus writes, reads back and deletes a fresh probe entry; any failure is
 // ErrKeychainUnavailable. Onboarding calls it before showing the account form.
 func (s *Service) KeychainStatus(ctx context.Context) error {
-	user := s.installID + "/probe"
+	b := make([]byte, 8)
+	rand.Read(b)
+	user := s.installID + "/probe/" + hex.EncodeToString(b) // concurrent probes must not delete each other's
 	err := keychainSet(user, "probe")
 	if err == nil {
 		var v string

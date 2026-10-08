@@ -200,8 +200,8 @@ func scanAccount(r []any) Account {
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
-	// status_detail are IMAP's (and the keychain's); an IMAP reauth keeps its detail.
-	if store.Int(r[16]) != 0 && a.Status != "reauth_required" {
+	// status_detail are IMAP's and the keychain's, and they take precedence.
+	if store.Int(r[16]) != 0 && a.Status == "ok" {
 		a.Status, a.StatusDetail = "reauth_required", "auth_rejected"
 	}
 	return a

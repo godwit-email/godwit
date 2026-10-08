@@ -31,7 +31,7 @@ func internalInput(t *testing.T, imapAddr, smtpAddr, email string, def bool) Acc
 // calling before; the KeychainStatus probe still works.
 func failAccountWrites(t *testing.T, before func()) {
 	setFor(t, &keyringSet, func(svc, user, pw string) error {
-		if strings.HasSuffix(user, "/probe") {
+		if strings.Contains(user, "/probe/") {
 			return keyring.Set(svc, user, pw)
 		}
 		before()

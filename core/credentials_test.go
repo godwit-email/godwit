@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
@@ -101,18 +102,127 @@ func TestAuthRejectedDetail(t *testing.T) {
 	assert.Empty(t, a.StatusDetail)
 }
 
+// probeWrites records the keychain entries KeychainStatus writes.
+func probeWrites(t *testing.T) *[]string {
+	var users []string
+	setFor(t, &keyringSet, func(svc, user, pw string) error {
+		users = append(users, user)
+		return keyring.Set(svc, user, pw)
+	})
+	return &users
+}
+
+func assertNoProbes(t *testing.T, users []string) {
+	t.Helper()
+	require.NotEmpty(t, users)
+	for _, u := range users {
+		_, err := keyring.Get(keyringService, u)
+		assert.ErrorIs(t, err, keyring.ErrNotFound, u)
+	}
+}
+
 func TestKeychainStatusLeavesNoProbe(t *testing.T) {
 	keyring.MockInit()
 	s, err := New(bg, Options{DataDir: t.TempDir()})
 	require.NoError(t, err)
 	defer s.Close()
+	users := probeWrites(t)
 	require.NoError(t, s.KeychainStatus(bg))
-	_, err = keyring.Get(keyringService, s.installID+"/probe")
-	assert.ErrorIs(t, err, keyring.ErrNotFound)
+	assertNoProbes(t, *users)
 
 	keyring.MockInitWithError(errors.New("locked"))
 	t.Cleanup(keyring.MockInit)
 	assert.ErrorIs(t, s.KeychainStatus(bg), ErrKeychainUnavailable)
+}
+
+// Each failing step of the probe is ErrKeychainUnavailable, and the probe is
+// still cleaned up when deleting works.
+func TestKeychainStatusFailures(t *testing.T) {
+	for name, tc := range map[string]struct {
+		get       func(svc, user string) (string, error)
+		del       func(svc, user string) error
+		cleanedUp bool
+	}{
+		"read error":   {get: func(string, string) (string, error) { return "", errors.New("denied") }, cleanedUp: true},
+		"wrong value":  {get: func(string, string) (string, error) { return "other", nil }, cleanedUp: true},
+		"delete error": {del: func(string, string) error { return errors.New("denied") }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			keyring.MockInit()
+			s, err := New(bg, Options{DataDir: t.TempDir()})
+			require.NoError(t, err)
+			defer s.Close()
+			users := probeWrites(t)
+			if tc.get != nil {
+				setFor(t, &keyringGet, tc.get)
+			}
+			if tc.del != nil {
+				setFor(t, &keyringDelete, tc.del)
+			}
+			assert.ErrorIs(t, s.KeychainStatus(bg), ErrKeychainUnavailable)
+			if tc.cleanedUp {
+				assertNoProbes(t, *users)
+			}
+		})
+	}
+}
+
+// Two probes at once (two onboarding windows) must not delete each other's entry.
+func TestConcurrentKeychainStatus(t *testing.T) {
+	keyring.MockInit()
+	s, err := New(bg, Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	defer s.Close()
+	users := probeWrites(t)
+	firstWrote, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	setFor(t, &keyringGet, func(svc, user string) (string, error) {
+		if calls.Add(1) == 1 { // the first probe reads only after the second finished
+			close(firstWrote)
+			<-release
+		}
+		return keyring.Get(svc, user)
+	})
+	first := make(chan error, 1)
+	go func() { first <- s.KeychainStatus(bg) }()
+	<-firstWrote
+	require.NoError(t, s.KeychainStatus(bg))
+	close(release)
+	require.NoError(t, <-first)
+	assertNoProbes(t, *users)
+}
+
+// A keychain failure is shown over a stale SMTP refusal, which shows again once
+// the keychain works and SMTP still refuses.
+func TestKeychainErrorOutranksSMTPRefusal(t *testing.T) {
+	var locked atomic.Bool
+	setFor(t, &keyringGet, func(svc, user string) (string, error) {
+		if locked.Load() {
+			return "", errors.New("keychain is locked")
+		}
+		return keyring.Get(svc, user)
+	})
+	e := newSendEnv(t, false)
+	status := func() (string, string) {
+		a, err := e.s.account(bg, e.acc.ID)
+		require.NoError(t, err)
+		return a.Status, a.StatusDetail
+	}
+	e.smtp.RejectAuth(true)
+	e.sendNew(t)
+	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	st, d := status()
+	assert.Equal(t, []string{"reauth_required", "auth_rejected"}, []string{st, d})
+
+	locked.Store(true)
+	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), ErrKeychainUnavailable)
+	st, d = status()
+	assert.Equal(t, []string{"error", "keychain_unavailable"}, []string{st, d})
+
+	locked.Store(false)
+	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	st, d = status()
+	assert.Equal(t, []string{"reauth_required", "auth_rejected"}, []string{st, d})
 }
 
 func TestAddAccountStoresProvider(t *testing.T) {
