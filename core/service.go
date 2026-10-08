@@ -3,11 +3,17 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwitmail/godwit/core/conn"
 	"github.com/godwitmail/godwit/core/events"
+	"github.com/godwitmail/godwit/core/mailsync"
 	"github.com/godwitmail/godwit/core/store"
+	"github.com/zalando/go-keyring"
 )
 
 // Options configures a Service.
@@ -22,6 +28,9 @@ type Service struct {
 	bus     *events.Bus
 	dataDir string
 	opts    Options
+
+	locksMu sync.Mutex
+	locks   map[int64]*sync.Mutex // per-account: sync and op pushing never overlap
 }
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
@@ -41,3 +50,88 @@ func (s *Service) Close() error { return s.db.Close() }
 
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
+
+// accountLock returns the account's sync mutex, creating it on first use.
+func (s *Service) accountLock(id int64) *sync.Mutex {
+	s.locksMu.Lock()
+	defer s.locksMu.Unlock()
+	if s.locks == nil {
+		s.locks = map[int64]*sync.Mutex{}
+	}
+	if s.locks[id] == nil {
+		s.locks[id] = new(sync.Mutex)
+	}
+	return s.locks[id]
+}
+
+// SyncNow connects to the account's IMAP server, pushes queued local changes and
+// fetches new mail. Calls for the same account run one at a time.
+func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
+	mu := s.accountLock(accountID)
+	mu.Lock()
+	defer mu.Unlock()
+	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
+	if err := s.syncAccount(ctx, accountID); err != nil {
+		// Safe to show: conn never includes server text or the password in login errors.
+		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error()})
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.SyncFinished, AccountID: accountID})
+	return nil
+}
+
+func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	pw, err := keyring.Get(keyringService, keyringUser(accountID))
+	if err != nil {
+		return err
+	}
+	c, err := conn.DialIMAP(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
+		Username: acc.Username, Password: pw})
+	if err != nil {
+		if errors.Is(err, conn.ErrAuthFailed) {
+			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
+		}
+		return err
+	}
+	defer c.Close()
+	defer context.AfterFunc(ctx, func() { c.Close() })() // cancellation aborts blocked IMAP reads
+	if err := s.pushOps(ctx, c, accountID); err != nil {
+		return err
+	}
+	if err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	return s.setStatus(ctx, accountID, "ok")
+}
+
+// pushOps pushes queued local changes before fetching. A no-op until the ops
+// queue exists (mailsync.PushOps).
+func (s *Service) pushOps(context.Context, *imapclient.Client, int64) error { return nil }
+
+func (s *Service) setStatus(ctx context.Context, accountID int64, status string) error {
+	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ? WHERE id = ?", status, accountID)
+	return err
+}
+
+// ListFolders returns the account's folders with their unread counts.
+func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
+	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, f.role,
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0)
+		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Folder, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, Folder{ID: store.Int(r[0]), AccountID: store.Int(r[1]), Name: store.Str(r[2]),
+			Role: store.Str(r[3]), Unread: int(store.Int(r[4]))})
+	}
+	return out, nil
+}

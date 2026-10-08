@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-func addrKey(s string) string {
+// AddrKey is the lowercased bare address of an address string ("Bob <b@x>" → "b@x").
+func AddrKey(s string) string {
 	if a, err := mail.ParseAddress(s); err == nil {
 		return strings.ToLower(a.Address)
 	}
@@ -17,11 +18,11 @@ func addrKey(s string) string {
 // ReplyRecipients picks reply targets: Reply-To if set, else From. With all,
 // the original To/Cc are added to cc. self and duplicates are dropped.
 func ReplyRecipients(orig *Parsed, self string, all bool) (to, cc []string) {
-	seen := map[string]bool{addrKey(self): true}
+	seen := map[string]bool{AddrKey(self): true}
 	add := func(dst *[]string, in ...string) {
 		for _, s := range in {
-			if s = strings.TrimSpace(s); s != "" && !seen[addrKey(s)] {
-				seen[addrKey(s)] = true
+			if s = strings.TrimSpace(s); s != "" && !seen[AddrKey(s)] {
+				seen[AddrKey(s)] = true
 				*dst = append(*dst, s)
 			}
 		}

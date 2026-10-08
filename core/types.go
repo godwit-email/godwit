@@ -38,3 +38,11 @@ type Account struct {
 	SMTPPort                                int
 	SMTPSecurity                            Security
 }
+
+// Folder is a mailbox of an account. Role is inbox, sent, trash, drafts, junk,
+// archive or empty.
+type Folder struct {
+	ID, AccountID int64
+	Name, Role    string
+	Unread        int
+}

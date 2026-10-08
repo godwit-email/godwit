@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"strconv"
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
@@ -103,7 +105,10 @@ func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
 	}
-	opts := &imapclient.Options{TLSConfig: &tls.Config{ServerName: e.Host}}
+	opts := &imapclient.Options{
+		TLSConfig:   &tls.Config{ServerName: e.Host},
+		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 subjects in ENVELOPE
+	}
 	var c *imapclient.Client
 	switch e.Security {
 	case TLS, None:
