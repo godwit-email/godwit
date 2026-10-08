@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Date: Wed, 08 Oct 2026 10:00:00 +0000
+Message-ID: <evil@example.com>
+MIME-Version: 1.0
+Subject: Evil
+Content-Type: text/html; charset=utf-8
+
+<html><head><base href="https://evil.test/"><meta http-equiv="refresh" content="0;url=https://evil.test/"><script>alert(1)</script></head>
+<body><p style="background:url(https://t.example/a)">hi</p>
+<img src="x" onerror="alert(2)">
+<a href="javascript:alert(3)">click</a>
+<form action="/x"><input name="a"></form>
+<iframe src="about:blank"></iframe>
+<img srcset="https://t.example/b 2x">
+<img src="//t.example/c">
+<img src="https://t.example/p.gif">
+</body></html>

@@ -1,0 +1,21 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Date: Wed, 08 Oct 2026 10:00:00 +0000
+Message-ID: <img@example.com>
+MIME-Version: 1.0
+Subject: Logo
+Content-Type: multipart/related; boundary="b1"
+
+--b1
+Content-Type: text/html; charset=utf-8
+
+<p>hi</p><img src="cid:logo">
+--b1
+Content-Type: image/png
+Content-ID: <logo>
+Content-Disposition: inline; filename="logo.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6
+kgAAAABJRU5ErkJggg==
+--b1--
