@@ -67,6 +67,15 @@ type Service struct {
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
 	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
 
+	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
+	active map[int64]*runJob // runs in flight, guarded by runMu
+
+	subsMu sync.Mutex
+	subs   map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
+
+	toolsMu sync.Mutex
+	tools   map[string]registeredTool // tools Wit runs can offer, by name
+
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
@@ -104,6 +113,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	for _, a := range accs {
 		s.startWorker(a.ID)
+	}
+	if err := s.recoverRuns(ctx); err != nil {
+		s.Close()
+		return nil, err
 	}
 	return s, nil
 }

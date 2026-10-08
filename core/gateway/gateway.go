@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -86,13 +87,20 @@ func (g *Gateway) Wrap(scope *Scope, source string, t ai.ToolSpec, write bool, e
 // Record writes one audit_log row for a host-initiated event that is not a
 // tool call, such as a skill run (decision "run").
 func (g *Gateway) Record(ctx context.Context, source, tool, targetKind string, targetID int64, decision string) error {
+	st := Audit(source, tool, targetKind, targetID, decision)
+	if _, err := g.db.Execute(ctx, st.SQL, st.Args...); err != nil {
+		return fmt.Errorf("gateway: audit: %w", err)
+	}
+	return nil
+}
+
+// Audit is Record's audit_log row as a statement, for a caller that writes it
+// in the same transaction as the event, such as an approval executing.
+func Audit(source, tool, targetKind string, targetID int64, decision string) sqlite.Statement {
 	var target any
 	if targetID != 0 {
 		target = targetID
 	}
-	if _, err := g.db.Execute(ctx, "INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision) VALUES (?, ?, ?, ?, ?, ?)",
-		time.Now().Unix(), source, tool, targetKind, target, decision); err != nil {
-		return fmt.Errorf("gateway: audit: %w", err)
-	}
-	return nil
+	return sqlite.Statement{SQL: "INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision) VALUES (?, ?, ?, ?, ?, ?)",
+		Args: []any{time.Now().Unix(), source, tool, targetKind, target, decision}}
 }

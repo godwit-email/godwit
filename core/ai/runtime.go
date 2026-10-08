@@ -336,6 +336,12 @@ func (r *runner) stream(_ context.Context, c *gai.ModelResponseChunk) error {
 
 type callIDKey struct{}
 
+// CallID is the ID of the tool call whose Gate or Run is given ctx.
+func CallID(ctx context.Context) string {
+	id, _ := ctx.Value(callIDKey{}).(string)
+	return id
+}
+
 // callIDs hands each tool call's ID to the tool function through its context.
 type callIDs struct{}
 
@@ -387,7 +393,7 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 		}
 	}
 	return gai.NewTool(s.Name, desc, func(tc *gai.ToolContext, input any) (any, error) {
-		id, _ := tc.Value(callIDKey{}).(string)
+		id := CallID(tc)
 		args := rawJSON(input)
 		r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: s.Name, Args: args}})
 		d := Allow
@@ -542,6 +548,15 @@ func CloseState(state []byte, responses []ToolResult) ([]byte, error) {
 		toolMsg.Content = append(toolMsg.Content, gai.NewResponseForToolRequest(p, out))
 	}
 	return json.Marshal(append(history, toolMsg))
+}
+
+// Messages decodes state for display.
+func Messages(state []byte) ([]Message, error) {
+	history, err := decodeState(state)
+	if err != nil {
+		return nil, err
+	}
+	return display(history), nil
 }
 
 func decodeState(state []byte) ([]*gai.Message, error) {
