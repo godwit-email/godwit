@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // WriteFileAtomic writes data via a same-directory temp file, fsync and rename,
@@ -57,8 +58,12 @@ func mkdirAllSync(dir string) error {
 }
 
 // syncDir fsyncs a directory, making renames and creations in it durable. A
-// variable so tests can watch it.
+// variable so tests can watch it. Windows cannot fsync a directory (opening one
+// for sync is "Access is denied"); NTFS journals the rename itself.
 var syncDir = func(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	f, err := os.Open(dir)
 	if err != nil {
 		return err

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -502,6 +503,9 @@ func TestSyncExpungeRecomputesLastDate(t *testing.T) {
 }
 
 func TestSyncResetSurvivesUndeletableCache(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directory permissions do not stop deletion on Windows")
+	}
 	e := newSyncEnv(t)
 	e.put(t, "Archive", withAttachments("old@x", "old", 1))
 	e.sync(t)
