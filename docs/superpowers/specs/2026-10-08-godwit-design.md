@@ -281,7 +281,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 ### 7.0 设计系统
 
 - **实现方式**：全部界面用 mygo 原生 UI 绘制。组件外观**按 shadcn/ui 的 Nova 风格、neutral 基础色**来做：用 mygo 提供的无样式基础组件（`ButtonBase`、`SwitchBase`、`SelectBase`、`PopoverBase`、`DialogBase` 等）实现自己的一套组件，尺寸、圆角、间距、状态样式对齐 shadcn Nova。
-- **色板**：只用 **Tailwind v4 默认色板**（oklch，用 `ui.Oklch` 绘制，P3 屏幕上和浏览器里一样鲜艳）。mygo PR [#104](https://github.com/egoist/mygo/pull/104)（`ui/palette`）合并前，项目里放一份同样从 Tailwind v4 `theme.css` 生成的 `internal/palette`，只收录用到的颜色；合并后改用 mygo 的。
+- **色板**：只用 **Tailwind v4 默认色板**（oklch，用 `ui.Oklch` 绘制，P3 屏幕上和浏览器里一样鲜艳）。项目里放一份从 Tailwind v4 `theme.css` 生成的 `internal/palette`，只收录用到的颜色。
 - **主题变量**：在 mygo 主题（`c.Theme()`）之上定义 Godwit 的语义颜色，全部引用色板，不写自定义十六进制值：
 
   | 变量 | 浅色 | 用途 |
@@ -401,7 +401,6 @@ Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统�
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿。
 - 跟进 [egoist/mygo#148](https://github.com/egoist/mygo/issues/148)（原生界面嵌入网页视图）：解决后评估邮件正文和撰写编辑器是否改用网页视图。
-- 跟进 [egoist/mygo#104](https://github.com/egoist/mygo/pull/104)（Tailwind 色板）：合并后用 mygo 的 `ui/palette` 替换 `internal/palette`。
 - Genkit 的 OpenTelemetry 依赖能否在不影响功能的前提下关闭或裁剪。
 - 深色模式下邮件正文的显示策略；键盘操作、屏幕阅读器、缩放；日期、时区、复数、从右到左语言的验收标准。
 - 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwit-email`（已创建；域名与 npm 于 2026-10-08 查询时未被占用）。
