@@ -269,7 +269,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 1. **工具参数格式预处理**：插件和 MCP 的工具注册进来时统一处理：把 `#/$defs/*`、`#/definitions/*` 引用展开成内联定义并删掉根级定义；根级 `description` 合并进工具描述；根级 `anyOf` / `oneOf` / `allOf` 以及无法展开的自引用 `$ref` 记录警告。原因：Genkit 的 Anthropic 插件只保留根级的 `type`、`properties`、`required`。
 2. **插件和 MCP 的工具一律 `ai.WithStrictSchema(false)`**；内置工具可以开启严格模式。
-3. **审批用 Genkit 的工具中断**：需要审批的工具在未获批准时调用 `ToolContext.Interrupt`，不产生任何副作用；对话历史和待审批的调用序列化后存入 SQLite；用户批准后用 `ToolAction.Restart` + `ai.WithToolRestarts` 恢复执行，拒绝时用 `Respond` 返回「用户拒绝」。应用重启后待审批的调用仍可继续。
+3. **审批用 Genkit 的工具中断**：需要审批的工具在未获批准时调用 `ToolContext.Interrupt`，不产生任何副作用；对话历史和待审批的调用序列化后存入 SQLite；用户批准后由宿主执行实际操作，再用 `Respond` + `WithToolResponses` 把结果交还（不用 `Restart`，见 5.5「审批只执行一次」）；拒绝时同样用 `Respond` 返回「用户拒绝」。应用重启后待审批的调用仍可继续。
 4. **多个待审批调用**：同时显示多张卡片（按调用顺序），支持逐个处理和「全部允许 / 全部拒绝」。Genkit 要求恢复时一次处理完所有被中断的调用，所以：用户批准一张卡片时，宿主**立即执行**这个工具的实际操作并记下结果；所有卡片都处理完后，再用这些结果一次性恢复 agent。修改同一封草稿的写操作排队执行，只读工具和不同对象上的写操作可以并行。关闭面板时取消所有未决调用。
 5. **隔离框架**：`ai` 模块对外只暴露自己的接口（流式事件、工具定义、审批），不把 Genkit 的类型泄漏到 Service API，方便以后替换。
 6. **上游**：给 Genkit 提 issue / PR，让 Anthropic 插件通过 SDK 的 `ExtraFields` 保留根级字段；合并后可以去掉第 1 条里的部分处理。
