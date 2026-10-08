@@ -16,9 +16,9 @@
 
 1. **核心邮件引擎**（本文件）
 2. 账户接入：服务商识别、Outlook OAuth（公开客户端 + PKCE、XOAUTH2、刷新互斥、撤销）、重新登录、钥匙串不可用时的行为
-3. AI 与 Wit：Genkit、模型服务、Skill、总结 / 翻译 / 即时回复、Wit 与审批
+3. AI 与 Wit：Genkit、模型服务、Skill、总结 / 翻译 / 即时回复、Wit 与审批，以及权限网关的最小版本（数据来源标记、外发检查、审批状态持久化），插件计划在此基础上扩展
 4. 插件运行时：QuickJS 沙箱、权限网关、配置声明、Hook 可靠投递、actions / cards / tools、MCP
-5. GUI：mygo 窗口、会话列表与阅读、富文本撰写、设置
+5. GUI：mygo 窗口、会话列表与阅读、富文本撰写、设置；Tailwind CSS v4 + shadcn/ui（Nova、neutral），色板与变量按 spec 7.0
 6. Headless：`--headless` 下的 JSON-RPC 与 MCP
 
 ## Global Constraints
@@ -58,6 +58,7 @@ core/
   messages.go         GetMessage、Search、GetAttachment、SetFlags、Move、Delete
   compose.go          NewDraft、SaveDraft、AddAttachment、RemoveAttachment、Send
   outbox.go           ListOutbox、ResolveOutbox
+  conn/conn.go        Endpoint、Security、DialIMAP、DialSMTP（sync 与 send 共用，避免循环依赖）
   events/bus.go       界面事件总线（可丢弃）
   store/store.go      打开、迁移、版本保护
   store/schema.go     迁移列表（每项一条语句）
@@ -72,7 +73,7 @@ core/
   sync/fetch.go       文件夹与邮件拉取
   sync/ops.go         操作队列推送
   send/smtp.go        SMTP 发送
-  internal/testmail/  内存 IMAP 服务器、捕获型 SMTP 服务器、故障注入
+  internal/testmail/  内存 IMAP 服务器（可配置能力、可抑制 COPYUID）、捕获型 SMTP 服务器、故障注入
 ```
 
 ---
@@ -116,7 +117,10 @@ func TestRefuseNewerDatabase(t *testing.T) {
 	// 打开后把 user_version 设为 len(Migrations)+1 → 再次 Open 返回 ErrNewerDatabase，且文件内容（大小与修改时间）不变
 }
 func TestForeignKeysCascade(t *testing.T) {
-	// 插入 account → folder → message → attachment；删除 account 后四张表都为空
+	// 插入 account → folder → message → attachment；删除 account 后四张表都为空，messages_fts 也为空（触发器）
+}
+func TestTriggersMaintainFTSAndEventLog(t *testing.T) {
+	// 插入一封 → FTS 可搜到、events_log 多一条 message.received；更新 body_text → 搜新词命中、旧词不命中；删除 → FTS 无此行
 }
 func TestWriteFileAtomic(t *testing.T) {
 	// 写入后内容正确；目录里没有残留的临时文件；CleanOrphans 删除 keep 返回 false 的文件
@@ -127,7 +131,7 @@ func TestWriteFileAtomic(t *testing.T) {
 
 - [ ] **Step 4: 实现**
 
-`Open`：确保父目录存在 → `sqlite.Open` → `PRAGMA foreign_keys = ON`、`PRAGMA journal_mode = WAL` → 读 `user_version`，大于 `len(Migrations)` 返回 `ErrNewerDatabase` → 剩余每个版本的语句加上 `PRAGMA user_version = N` 放进一个 `Transaction`。`WriteFileAtomic`：同目录写 `.tmp-*` 文件、`Sync`、`os.Rename`。
+`Open`：确保父目录存在 → `sqlite.Open` → **先**读 `user_version`，大于 `len(Migrations)` 时关闭并返回 `ErrNewerDatabase`（此前不执行任何可能写库的语句）→ `PRAGMA foreign_keys = ON`、`PRAGMA journal_mode = WAL` → 剩余每个版本的语句加上 `PRAGMA user_version = N` 放进一个 `Transaction`。`WriteFileAtomic`：同目录写 `.tmp-*` 文件、`Sync`、`os.Rename`。
 
 迁移 1 的表（列名即后续任务使用的名字；外键都 `ON DELETE CASCADE`，标注 SET NULL 的除外）：
 
@@ -136,13 +140,15 @@ func TestWriteFileAtomic(t *testing.T) {
 | `accounts` | `id INTEGER PK`, `email TEXT NOT NULL UNIQUE`, `name`, `alias`, `signature`, `is_default INTEGER DEFAULT 0`, `sync_limit INTEGER DEFAULT 2000`, `auth_type TEXT DEFAULT 'password'`, `status TEXT DEFAULT 'ok'`, `username`, `imap_host`, `imap_port INTEGER`, `imap_security`, `smtp_host`, `smtp_port INTEGER`, `smtp_security`, `created_at INTEGER` |
 | `folders` | `id INTEGER PK`, `account_id` → accounts, `name TEXT`, `role TEXT NOT NULL DEFAULT ''`, `uidvalidity INTEGER`, `last_uid INTEGER DEFAULT 0`；`UNIQUE(account_id, name)` |
 | `threads` | `id INTEGER PK`, `account_id` → accounts, `subject TEXT`, `last_date INTEGER`；索引 `(account_id, last_date DESC)` |
-| `messages` | `id INTEGER PK`, `account_id` → accounts, `folder_id` → folders, `thread_id` → threads, `uidvalidity INTEGER`, `uid INTEGER`（可空）, `message_id TEXT`, `in_reply_to TEXT`, `refs TEXT`（空格分隔）, `subject`, `from_addr`, `to_addrs`, `cc_addrs`, `reply_to`, `date INTEGER`, `flags TEXT NOT NULL DEFAULT ''`, `size INTEGER`, `snippet`, `body_text TEXT`, `body_html TEXT`, `has_attachments INTEGER`；`UNIQUE(folder_id, uid)`；索引 `(folder_id, date DESC, id DESC)`、`(thread_id)`、`(account_id, message_id)` |
-| `attachments` | `id INTEGER PK`, `message_id` → messages, `part TEXT`（MIME 段路径，如 `2.1`）, `filename`, `content_type`, `size INTEGER`, `content_id`, `inline INTEGER`, `cache_path TEXT` |
-| `messages_fts` | `fts5(subject, from_addr, body, tokenize='trigram')`，`rowid` = `messages.id` |
+| `messages` | `id INTEGER PK`, `account_id` → accounts, `folder_id` → folders（**期望位置**，用户看到的文件夹）, `server_folder_id` → folders（SET NULL）, `server_uidvalidity INTEGER`, `server_uid INTEGER`（**服务器位置**，未确认时为空）, `thread_id` → threads, `message_id TEXT`, `in_reply_to TEXT`, `refs TEXT`（空格分隔）, `subject`, `from_addr`, `to_addrs`, `cc_addrs`, `reply_to`, `date INTEGER`, `flags TEXT NOT NULL DEFAULT ''`, `size INTEGER`, `snippet`, `body_text TEXT`, `body_html TEXT`, `body_truncated INTEGER DEFAULT 0`, `has_attachments INTEGER`；`UNIQUE(server_folder_id, server_uid)`；索引 `(folder_id, date DESC, id DESC)`、`(thread_id)`、`(account_id, message_id)` |
+| `attachments` | `id INTEGER PK`, `message_id` → messages, `part TEXT`（MIME 段路径，如 `2.1`）, `encoding TEXT`（Content-Transfer-Encoding）, `charset TEXT`, `filename`, `content_type`, `size INTEGER`, `content_id`, `inline INTEGER`, `cache_path TEXT`, `last_used INTEGER` |
+| `thread_refs` | `account_id` → accounts, `message_id_hdr TEXT`, `thread_id` → threads；`PRIMARY KEY(account_id, message_id_hdr)`。记录见过的每个 Message-ID（包括被引用但还没收到的占位） |
+| `events_log` | `seq INTEGER PK AUTOINCREMENT`, `type TEXT`, `account_id INTEGER`, `message_id INTEGER`, `created_at INTEGER`。只增不减，供插件 Hook 可靠投递（插件计划使用） |
+| `messages_fts` | `fts5(subject, from_addr, body, tokenize='trigram')`，`rowid` = `messages.id`。**由触发器维护**：`messages` 的 AFTER INSERT / UPDATE / DELETE 触发器同步写入、更新、删除 FTS 行（级联删除也会触发），同时 AFTER INSERT 往 `events_log` 写一条 `message.received` |
 | `drafts` | `id INTEGER PK`, `account_id` → accounts, `mode TEXT`（new / reply / reply_all / forward）, `source_message_id` → messages（SET NULL）, `to_addrs`, `cc_addrs`, `bcc_addrs`, `reply_to`, `subject`, `body_html`, `body_text`, `updated_at INTEGER` |
 | `draft_attachments` | `id INTEGER PK`, `draft_id` → drafts, `filename`, `content_type`, `size INTEGER`, `path TEXT`（应用目录内的快照） |
-| `ops` | `id INTEGER PK`, `account_id` → accounts, `message_id` → messages（SET NULL）, `kind TEXT`（flags / move）, `folder_id INTEGER`, `uidvalidity INTEGER`, `uid INTEGER`, `payload TEXT`（JSON）, `depends_on INTEGER`（前一个操作的 id，可空）, `state TEXT DEFAULT 'pending'`（pending / done / conflict / failed）, `attempts INTEGER DEFAULT 0`, `last_error TEXT`, `created_at INTEGER` |
-| `outbox` | `id INTEGER PK`, `account_id` → accounts, `message_id_hdr TEXT`, `raw_path TEXT`, `rcpts TEXT`（JSON）, `state TEXT`（queued / sending / sent / uncertain / done / failed）, `attempts INTEGER DEFAULT 0`, `last_error TEXT`, `created_at INTEGER` |
+| `ops` | `id INTEGER PK`, `account_id` → accounts, `message_id` → messages（SET NULL）, `kind TEXT`（flags / move）, `dst_folder_id INTEGER`（move 的目标）, `payload TEXT`（JSON，flags 的增删）, `depends_on INTEGER`（同一封邮件上前一个未完成操作的 id）, `state TEXT DEFAULT 'pending'`（pending / awaiting_claim / done / conflict / failed）, `attempts INTEGER DEFAULT 0`, `last_error TEXT`, `created_at INTEGER`。操作执行时读取邮件**当时的服务器位置**作为来源 |
+| `outbox` | `id INTEGER PK`, `account_id` → accounts, `message_id_hdr TEXT`, `raw_path TEXT`, `rcpts TEXT`（JSON）, `state TEXT`（queued / sending / sent / archiving / done / send_uncertain / archive_uncertain / failed）, `attempts INTEGER DEFAULT 0`, `last_error TEXT`, `created_at INTEGER` |
 
 - [ ] **Step 5: 运行，确认通过**：`go test ./core/store/` → PASS；`CGO_ENABLED=0 go build ./...` 无输出。
 
@@ -164,14 +170,15 @@ git commit -m "feat(store): sqlite with single-statement migrations, version gua
 **Interfaces:**
 - Produces:
   - `mail.Parse(raw []byte) (*mail.Parsed, error)`
-  - `type Parsed struct { MessageID, Subject, From, ReplyTo, InReplyTo string; To, Cc, References []string; Date time.Time; Text, HTML string; Attachments []Attachment }`
-  - `type Attachment struct { Part, Filename, ContentType, ContentID string; Inline bool; Size int; Data []byte }`（`Part` 为 MIME 段路径；同步时 `Data` 为空）
-  - `mail.ParseStructure(bs *imap.BodyStructure) (textParts []string, atts []Attachment)`：从 `BODYSTRUCTURE` 得出要拉取的正文段路径和附件元数据
-  - `mail.Sanitize(html string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int)`：`inline` 以 Content-ID 为键
+  - `type Parsed struct { MessageID, Subject, From, ReplyTo, InReplyTo string; To, Cc, References []string; Date time.Time; Text, HTML string; Truncated bool; Attachments []Attachment }`（Text 与 HTML 各最多 `MaxBodyBytes = 2 << 20`，超出截断并置 `Truncated`）
+  - `type Attachment struct { Part, Encoding, Charset, Filename, ContentType, ContentID string; Inline bool; Size int; Data []byte }`（`Part` 为 MIME 段路径；同步时 `Data` 为空）
+  - `mail.DecodePart(data []byte, encoding, charset string) ([]byte, error)`：单独取回的 MIME 段按记录的编码解码
+  - `mail.ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attachment)`：`imap.BodyStructure` 是接口，递归处理 single / multipart；得出要拉取的正文段（含路径、编码、charset）和附件元数据；嵌套超过 `MaxMIMEDepth = 20` 时停止并只保留已解析部分
+  - `mail.Sanitize(html string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int)`：`inline` 以 Content-ID 为键；`<a href>` 改写为 `<a data-href>`（不可导航，点击交给宿主）
   - `mail.SanitizeCompose(html string) string`：撰写时粘贴内容的清洗（同一白名单，不允许任何远程资源）
   - `mail.Snippet(text string) string`：前 200 个字符，空白折叠
 
-- [ ] **Step 1: 测试样本**：`testdata/` 下放 `alternative.eml`、`attachment.eml`（PDF）、`gbk.eml`（`=?GBK?B?...?=` 标题 + `charset=gbk` 正文）、`big5.eml`、`iso2022jp.eml`、`inline-image.eml`（`<img src="cid:logo">`，附件类型 `image/png`）、`cid-not-image.eml`（`cid:` 指向 `application/pdf`）、`hostile.eml`（`<script>`、`onerror`、`javascript:` 链接、`<form>`、`<iframe>`、`<base href>`、`<meta http-equiv="refresh">`、`style="background:url(https://t.example/a)"`、`<img srcset="https://t.example/b 2x">`、`<img src="//t.example/c">`、`<img src="https://t.example/p.gif">`）。
+- [ ] **Step 1: 依赖与测试样本**：`go get github.com/emersion/go-message@v0.18.2 github.com/emersion/go-imap/v2@v2.0.0-beta.8 github.com/microcosm-cc/bluemonday@v1.0.27 golang.org/x/net`。`testdata/` 下放 `alternative.eml`、`attachment.eml`（PDF）、`gbk.eml`（`=?GBK?B?...?=` 标题 + `charset=gbk` 正文）、`big5.eml`、`iso2022jp.eml`、`inline-image.eml`（`<img src="cid:logo">`，附件类型 `image/png`）、`cid-not-image.eml`（`cid:` 指向 `application/pdf`）、`hostile.eml`（`<script>`、`onerror`、`javascript:` 链接、`<form>`、`<iframe>`、`<base href>`、`<meta http-equiv="refresh">`、`style="background:url(https://t.example/a)"`、`<img srcset="https://t.example/b 2x">`、`<img src="//t.example/c">`、`<img src="https://t.example/p.gif">`）。
 
 - [ ] **Step 2: 写失败的测试**
 
@@ -181,7 +188,9 @@ func TestParseCharsets(t *testing.T) {
 	assert.Contains(t, mustParse(t, "gbk.eml").Text, "请查收发票")
 	// big5.eml、iso2022jp.eml 同样断言标题与正文的已知内容
 }
-func TestParseAttachment(t *testing.T) { /* 1 个非 inline 附件，Filename=invoice.pdf，Part 非空 */ }
+func TestParseAttachment(t *testing.T) { /* 1 个非 inline 附件，Filename=invoice.pdf，Part、Encoding（base64）非空；DecodePart 还原出原 PDF 字节 */ }
+func TestParseLimits(t *testing.T) { /* 正文 3 MB 的邮件 → Text 长度 ≤ MaxBodyBytes 且 Truncated；嵌套 30 层的 multipart 不 panic、不超时 */ }
+func TestLinksNotNavigable(t *testing.T) { /* <a href="https://x"> → 输出含 data-href="https://x"，不含 href= */ }
 func TestSanitizeHostile(t *testing.T) {
 	safe, blocked := mail.Sanitize(mustParse(t, "hostile.eml").HTML, nil, false)
 	for _, bad := range []string{"<script", "onerror", "javascript:", "<form", "<iframe", "<base", "http-equiv", "url(", "srcset", "t.example"} {
@@ -196,6 +205,7 @@ func TestSanitizeHostile(t *testing.T) {
 func TestSanitizeInlineCID(t *testing.T) {
 	// inline-image.eml → src 变成 data:image/png;base64,…，不含 cid:
 	// cid-not-image.eml → src 被删除（非图片类型不允许内联）
+	// 声明为 image/png 但内容其实是 HTML 的附件 → src 被删除（按内容识别格式）
 }
 func TestSanitizeComposeStripsRemote(t *testing.T) {
 	// SanitizeCompose 去掉所有 http(s) 与 // 开头的资源，保留 <b><i><a href><ul><ol><li><blockquote><p><br>
@@ -204,11 +214,11 @@ func TestSanitizeComposeStripsRemote(t *testing.T) {
 
 - [ ] **Step 3: 运行，确认失败**：`go test ./core/mail/` → FAIL
 
-- [ ] **Step 4: 实现 `Parse` / `ParseStructure`**：`go-message/mail.CreateReader` 遍历，`import _ "github.com/emersion/go-message/charset"` 注册编码；记录每段的 MIME 路径。
+- [ ] **Step 4: 实现 `Parse` / `ParseStructure`**：用 `go-message` 的 `message.Read` + `MultipartReader` **自己递归**（`mail.Reader.NextPart` 会把结构展平，拿不到段路径），`import _ "github.com/emersion/go-message/charset"` 注册编码；用 `io.LimitReader` 限制正文读取量。
 
 - [ ] **Step 5: 实现 `Sanitize` / `SanitizeCompose`**
 
-先把 `cid:` 地址换成占位标记（bluemonday 不认识 `cid:` 会删掉），再用 bluemonday：`UGCPolicy()` 为基础，允许表格元素；`style` 只允许这些属性且值里不能含 `url(`、`expression(`：`color`、`background-color`、`font-family`、`font-size`、`font-weight`、`font-style`、`text-align`、`text-decoration`、`line-height`、`margin*`、`padding*`、`border*`、`width`、`height`、`display`、`vertical-align`。然后用 `golang.org/x/net/html` 遍历：去掉所有 `srcset`；`img` 的 `src` 若是 `//` 开头视为 `https:`；占位标记还原为对应附件的 `data:` 地址（只允许 `image/*`，否则删除 `src`）；`loadRemote == false` 时删除所有 `http(s)` 的 `src` 并计数。
+第一遍用 `golang.org/x/net/html` 遍历原始 HTML，统计要拦截的远程资源（`img` 的 `src` / `srcset`、协议相对地址、带 `url(` 的 `style`），结果作为 `blockedRemote`；同时把 `cid:` 地址换成占位标记（bluemonday 不认识 `cid:` 会删掉）。再用 bluemonday：`UGCPolicy()` 为基础，允许表格元素；`style` 用 bluemonday 的 `AllowStyles(...).Matching(...)` 按属性逐条白名单（值的正则不允许 `url(`、`expression(`、`@import`）：`color`、`background-color`、`font-family`、`font-size`、`font-weight`、`font-style`、`text-align`、`text-decoration`、`line-height`、`margin*`、`padding*`、`border*`、`width`、`height`、`display`、`vertical-align`。然后用 `golang.org/x/net/html` 遍历：去掉所有 `srcset`；`img` 的 `src` 若是 `//` 开头视为 `https:`；占位标记还原为对应附件的 `data:` 地址（用 `http.DetectContentType` 识别实际格式，只允许 PNG、JPEG、GIF、WebP，否则删除 `src`）；`loadRemote == false` 时删除所有 `http(s)` 的 `src`；所有 `<a href>` 改写为 `data-href`。
 
 - [ ] **Step 6: 运行，确认通过**：`go test ./core/mail/` → PASS
 
@@ -292,12 +302,12 @@ func TestSubjects(t *testing.T) {
 - Consumes: `store.Open`（Task 1）、`events.New`（Task 4）
 - Produces:
   - `type Options struct { DataDir string; AutoSync bool }`；`core.New(ctx, Options) (*Service, error)`；`(*Service).Close() error`；`(*Service).Subscribe() (<-chan events.Event, func())`
-  - `type Security string`：`SecurityTLS`、`SecurityStartTLS`、`SecurityNone`
+  - `conn.Security`（`TLS` / `StartTLS` / `None`）；`type conn.Endpoint struct { Host string; Port int; Security Security; Username, Password string }`；`conn.DialIMAP(ctx, Endpoint) (*imapclient.Client, error)`（已登录）；`conn.DialSMTP(ctx, Endpoint) (*smtp.Client, error)`（已认证）；`core.Security = conn.Security`（类型别名）
   - `type AccountInput struct { Email, Name, Alias, Signature, Username, Password string; IsDefault bool; SyncLimit int; IMAPHost string; IMAPPort int; IMAPSecurity Security; SMTPHost string; SMTPPort int; SMTPSecurity Security }`（`SyncLimit` 为 0 时取 2000；第一个账户自动成为默认发件账户）
   - `type Account`：同上去掉 `Password`，加 `ID int64`、`AuthType`、`Status string`
   - `(*Service).TestAccount(ctx, AccountInput) error`；`AddAccount(ctx, AccountInput) (Account, error)`；`ListAccounts(ctx) ([]Account, error)`；`RemoveAccount(ctx, id int64) error`
   - 本计划只实现密码 / 授权码登录；OAuth 在「账户接入」计划。IMAP 认证失败时把 `status` 置为 `reauth_required` 并发 `SyncFailed`。
-  - 测试辅助：`testmail.StartIMAP(t) *testmail.IMAP`（字段 `Addr`、`User *imapmemserver.User`；方法 `Stop()`、`Restart()`、`DropNextFetch()`（下一次 FETCH 中途断开））；用户 `alice` / `secret`，预建 `INBOX`、`Sent`、`Trash`、`Archive`
+  - 测试辅助：`testmail.StartIMAP(t, opts ...testmail.Option) *testmail.IMAP`（字段 `Addr`、`User *imapmemserver.User`；方法 `Stop()`、`Restart()`、`DropNextFetch()`（下一次 FETCH 中途断开））；选项 `testmail.WithoutMove()`、`testmail.WithoutUIDPlus()`（同时包装后端，抑制 COPYUID 响应，因为内存后端默认总会返回）；默认能力显式设为 `IMAP4rev1 + MOVE + UIDPLUS`；用户 `alice` / `secret`，预建 `INBOX`、`Sent`、`Trash`、`Archive`
   - `testmail.StartSMTP(t) (addr string, in *testmail.Inbox)`；`Inbox.Messages() []testmail.Received`；`Inbox.FailAfterData(n int)`（接下来 n 次在收完 DATA 后直接断开连接，不回 250）
   - `newTestService(t) *core.Service`：`keyring.MockInit()`，`DataDir` 用 `t.TempDir()`，`AutoSync: false`
 
@@ -332,6 +342,7 @@ func TestSyncNewMessages(t *testing.T) {
 	// INBOX 追加 3 封 → SyncNow：folders 含四种 role；messages 3 行，body_text、snippet 正确；
 	// 带附件的那封 attachments 有 1 行且 cache_path 为空（未下载）；FTS 能搜到正文；收到 1 次 MessageReceived（3 个 ID）
 	// 再次 SyncNow：不新增行、不再发 MessageReceived（覆盖 last_uid+1:* 在无新邮件时返回最大旧 UID 的情况）
+	// 一封带 3 个附件的邮件：attachments 3 行，message_id 都指向它（不是指向别的邮件）
 }
 func TestSyncRemoteFlagsAndExpunge(t *testing.T) { /* 远端标记 \Seen、删除并 expunge 一封 → 本地对应变化，FTS 条目也删除 */ }
 func TestSyncIncompleteFetchDoesNotDelete(t *testing.T) {
@@ -339,8 +350,12 @@ func TestSyncIncompleteFetchDoesNotDelete(t *testing.T) {
 }
 func TestSyncUIDValidityChange(t *testing.T) { /* 在 Archive 上做：删除重建（新 UIDVALIDITY）+ 追加 2 封 → 只剩新的 2 行，旧附件缓存与 FTS 条目清掉 */ }
 func TestThreading(t *testing.T) {
-	// INBOX：A（Message-ID a）、B（In-Reply-To a）；Sent：C（References a b）；另一封 D 无引用头但主题 "Re: 同一主题" 与 A 相同且参与者重叠、时间在 30 天内
-	// 同步两个文件夹后 A、B、C、D 的 thread_id 相同；主题相同但参与者不重叠的 E 是另一个会话
+	// INBOX：A（Message-ID a）、B（In-Reply-To a）；Sent：C（References a b）→ 同一会话
+	// D 无任何引用头，主题 "Re: 同一主题" 与 A 相同、除自己外的参与者有交集、7 天内 → 并入；E 同主题但只和自己有交集 → 另一个会话
+}
+func TestThreadingOutOfOrder(t *testing.T) {
+	// 先只同步 C（References a b），再同步 A、B → 三封同一会话
+	// X 引用会话 1 的 a 和会话 2 的 y → 两个会话合并为一个
 }
 func TestSyncNowSerializesPerAccount(t *testing.T) {
 	// 并发调用两次 SyncNow：都成功，没有重复行（-race 下运行）
@@ -352,8 +367,9 @@ func TestSyncNowSerializesPerAccount(t *testing.T) {
 - [ ] **Step 3: 实现 `sync.Fetch`**，对每个文件夹：
 1. `LIST` 得到文件夹，`Role` 取 SPECIAL-USE，没有时按名字匹配（`INBOX`；`Sent`/`Sent Items`/`已发送`；`Trash`/`Deleted Items`/`已删除`；`Drafts`/`草稿`；`Junk`/`Spam`/`垃圾邮件`；`Archive`/`归档`）。服务器上已不存在的文件夹删除。
 2. `SELECT`；UIDVALIDITY 与库里不同 → 删除该文件夹的邮件行（级联清附件、FTS 手动删）、清对应缓存文件，`last_uid` 归零，并把该文件夹上 `pending` 的操作标为 `conflict`。
-3. `UID FETCH (last_uid+1):* (UID FLAGS RFC822.SIZE ENVELOPE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (REFERENCES IN-REPLY-TO REPLY-TO)])`，**丢弃 `uid <= last_uid` 的结果**；首次同步只取最近 `sync_limit` 封。对每封用 `ParseStructure` 得到正文段，再 `UID FETCH uid (BODY.PEEK[段]...)` 拉正文文本 / HTML（解码后存库）。一个 `Transaction` 内插入 `messages`、`attachments`、`messages_fts`（`rowid` 用 `last_insert_rowid()`）。
-4. 会话：按 `ThreadKeys` 在同账户内找已有 `message_id` 命中 → 用其 `thread_id`；否则按 `subjectKey` + 参与者有交集 + 30 天内找；都没有则新建 `threads` 行。更新 `threads.last_date`。
+3. `UID FETCH (last_uid+1):* (UID FLAGS RFC822.SIZE ENVELOPE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (REFERENCES IN-REPLY-TO REPLY-TO)])`，**丢弃 `uid <= last_uid` 的结果**，并跳过服务器位置已存在于库里的（按 `server_folder_id + server_uid` 去重）；首次同步只取最近 `sync_limit` 封。对每封用 `ParseStructure` 得到正文段，再 `UID FETCH uid (BODY.PEEK[段]...)` 拉正文文本 / HTML，用 `DecodePart` 解码，超过 `MaxBodyBytes` 截断。一个 `Transaction` 内先插入 `messages`（FTS 和事件日志由触发器写入），再插入 `attachments`，附件的 `message_id` 用子查询 `(SELECT id FROM messages WHERE server_folder_id = ? AND server_uid = ?)` 取得，**不用 `last_insert_rowid()`**。
+   插入前先尝试**认领**（Task 8 的「待认领」规则）：目标文件夹里出现的新 UID 若与某个 `awaiting_claim` 操作的邮件 Message-ID 非空、与大小都唯一匹配，则只更新那封邮件的服务器位置，不新建行。
+4. 会话：查 `thread_refs` 中 `ThreadKeys.ids` 命中的所有 `thread_id`：0 个 → 新建会话；1 个 → 并入；多个 → 合并为其中最小的那个（更新 `messages.thread_id`、`thread_refs`，删掉多余的 `threads` 行）。然后把 `ids` 里每个 Message-ID 都写进 `thread_refs`（被引用但没收到的就是占位）。只有邮件**完全没有** In-Reply-To / References 时，才按 `subjectKey` + 除自己以外的参与者有交集 + 7 天内兜底。更新 `threads.last_date`。
 5. `UID FETCH 1:last_uid (UID FLAGS)`：**只有完整返回时**才更新标记、删除未返回的 UID（`ponytail:` CONDSTORE/QRESYNC 以后替换）；连接中断则整轮作废，返回错误。
 6. 发 `MessageReceived` / `MessagesChanged`。
 
@@ -377,8 +393,9 @@ func TestSyncNowSerializesPerAccount(t *testing.T) {
   - `type MessageSummary struct { ID, ThreadID, FolderID int64; Subject, From, Snippet string; To, Cc []string; Date time.Time; Flags []string; HasAttachments bool }`
   - `type Message struct { MessageSummary; ReplyTo string; HTML, Text string; RemoteImagesBlocked int; Attachments []AttachmentInfo }`；`type AttachmentInfo struct { ID int64; Filename, ContentType string; Size int; Inline bool }`
   - `(*Service).GetMessage(ctx, id int64, loadRemoteImages bool) (Message, error)`：inline 图片需要时先下载（走 `GetAttachment` 的同一路径）再交给 `Sanitize`
-  - `(*Service).Search(ctx, accountID int64, query string, limit int) ([]MessageSummary, error)`
-  - `(*Service).GetAttachment(ctx, attachmentID int64) (path string, info AttachmentInfo, err error)`：未缓存时 `UID FETCH uid (BODY.PEEK[part])`，解码后 `WriteFileAtomic` 到 `DataDir/cache/<account>/<attachmentID>`，再写 `cache_path`；超过 `MaxMessageBytes` 返回 `ErrTooLarge`
+  - `(*Service).Search(ctx, accountID int64, query string, limit int) ([]MessageSummary, error)`：`accountID == 0` 时搜全部账户；只覆盖已同步的邮件
+  - `(*Service).ListMessages(ctx, v View, cursor string, limit int) (MessagePage, error)`；`type MessagePage struct { Items []MessageSummary; NextCursor string }`：关闭会话视图时使用
+  - `(*Service).GetAttachment(ctx, attachmentID int64) (path string, info AttachmentInfo, err error)`：未缓存时 `UID FETCH uid (BODY.PEEK[part])`，按 `encoding` 用 `DecodePart` 解码后 `WriteFileAtomic` 到 `DataDir/cache/<account>/<attachmentID>`，再写 `cache_path` 和 `last_used`；超过 `MaxMessageBytes` 返回 `ErrTooLarge`；缓存总量超过 `MaxCacheBytes = 2 << 30` 时按 `last_used` 淘汰最旧的文件（清空 `cache_path`）
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -391,6 +408,8 @@ func TestSearchChineseBodyOnly(t *testing.T) {
 	// Search("发票") 命中（2 个字，只在正文）；Search("报销单") 命中；Search("不存在") 为空
 }
 func TestSearchQueryIsNotFTSSyntax(t *testing.T) { /* Search(`"unbalanced AND (`) 不报错 */ }
+func TestSearchAllAccounts(t *testing.T) { /* 两个账户各有一封含「发票」→ Search(0, "发票") 返回 2 条 */ }
+func TestListMessagesFlat(t *testing.T) { /* 同一会话的 3 封在 ListMessages 里是 3 行，按日期倒序分页 */ }
 func TestGetAttachmentLazy(t *testing.T) {
 	// 同步后 cache_path 为空 → GetAttachment 下载，文件内容与原附件一致，cache_path 写入；再次调用不再访问服务器（Stop 服务器后仍能返回）
 }
@@ -416,12 +435,13 @@ func TestGetAttachmentLazy(t *testing.T) {
   - `sync.PushOps(ctx, db, c, accountID) error`
 
 **规则**（对应 spec 第 4 节原则 6、7）：
-- 每个操作记录创建时邮件所在的 `folder_id`、`uidvalidity`、`uid`；同一封邮件已有未完成操作时，新操作的 `depends_on` 指向它。
-- 本地移动：只改 `messages.folder_id`，`uid` 置空、`uidvalidity` 置空；**本地 ID 不变**。
-- 推送：按 id 顺序；`depends_on` 未完成的跳过；`SELECT` 目标文件夹并核对 `uidvalidity`，不一致标 `conflict`（发 `SyncFailed` 带说明）。依赖的移动操作完成后，用它得到的新位置补全本操作的 `folder_id/uidvalidity/uid`。
-- `UID MOVE`：有 COPYUID 时写回新 `uid`、`uidvalidity`；没有时保持 `uid` 为空，下次拉取目标文件夹时，对 `uid` 为空且 `message_id` 相同的本地邮件**认领**新 UID，不新建行。服务器不支持 MOVE 时用 `UID COPY` + `STORE \Deleted` + `UID EXPUNGE`（需 UIDPLUS），都不支持则标 `failed`。
-- 失败 `attempts+1`、记录 `last_error`；满 5 次标 `failed`，不再执行，发 `SyncFailed`。
-- 远端拉取的标记与本地 `pending` 的 flags 操作冲突时，以本地待推送的结果为准（拉取时跳过有未完成 flags 操作的邮件）。
+- 本地修改立即生效：`SetFlags` 改 `messages.flags`；`Move` 只改 `messages.folder_id`（期望位置），**服务器位置不动**，本地 ID 不变。同一封邮件已有未完成操作时，新操作的 `depends_on` 指向它。
+- 推送时按 id 顺序；`depends_on` 未完成（含 `awaiting_claim`）的跳过。操作的来源取邮件**当前的服务器位置**；服务器位置为空（还没认领）就跳过本轮。
+- `SELECT` 来源文件夹并核对 `server_uidvalidity`，不一致标 `conflict` 并发 `SyncFailed`。
+- move：服务器支持 MOVE 时 `UID MOVE`；不支持但支持 UIDPLUS 时，**手动依次**执行 `UID COPY` → 等成功响应 → `UID STORE +FLAGS (\Deleted)` → 等成功 → `UID EXPUNGE`（**不用 `Client.Move` 的内置回退**，它会提前发出后续命令，没有 UIDPLUS 时还会执行普通 `EXPUNGE` 误删其他邮件）；两者都不支持则标 `failed`。有 COPYUID 时更新服务器位置为目标并标 `done`；没有时把服务器位置置空、操作标 `awaiting_claim`，由 Task 6 的拉取认领后标 `done`；认领有歧义时标 `conflict`，按新邮件导入并删除原来那条本地记录。
+- move 的结果不确定（发出命令后断线）：下一轮先 `SELECT` 来源文件夹查这个 UID 是否还在，在就重试，不在就当成功处理（进入 `awaiting_claim`）。
+- 失败 `attempts+1`、记录 `last_error`；满 5 次标 `failed`，发 `SyncFailed`。
+- 拉取到的远端标记与本地未完成的 flags 操作冲突时，以本地为准（拉取时跳过有未完成 flags 操作的邮件）。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -431,7 +451,9 @@ func TestMoveThenFlagOffline(t *testing.T) {
 	// 离线：Move 到 Archive，再 SetFlags \Seen → Close → 同 DataDir 重开 → 服务器恢复 → SyncNow
 	// 服务器上邮件在 Archive 且带 \Seen；本地 ID 与移动前相同；Archive 里只有 1 行
 }
-func TestMoveWithoutUIDPLUS(t *testing.T) { /* 关闭测试服务器的 UIDPLUS → 同上，结果相同（靠 Message-ID 认领） */ }
+func TestMoveWithoutCOPYUID(t *testing.T) { /* testmail.WithoutMove()（只剩 UIDPLUS，且抑制 COPYUID）→ 同上，结果相同（靠 Message-ID 认领）；其他标了 \Deleted 的邮件不受影响 */ }
+func TestClaimAmbiguity(t *testing.T) { /* 目标文件夹里已有一封同 Message-ID、同大小的邮件 → 移动后操作 State == "conflict"，不会把两封合成一封 */ }
+func TestMoveNotReimportedBeforePush(t *testing.T) { /* 离线 Move 到 Archive → 联网后先拉取（推送前）：源文件夹里这封不会被当成新邮件导入，本地仍只有 1 行 */ }
 func TestStaleUIDNeverReplayed(t *testing.T) {
 	// 离线 SetFlags（针对 Archive 里 UID 1）→ 服务器上重建 Archive 并放入另一封（同样 UID 1）→ SyncNow
 	// 新邮件没有被打上 \Seen；该操作 State == "conflict"
@@ -450,7 +472,7 @@ func TestDeleteMovesToTrash(t *testing.T) { /* 进 Trash；Trash 里再删仍在
 
 ### Task 9: 草稿与发送
 
-**Files:** Create `core/compose.go`, `core/outbox.go`, `core/send/smtp.go`；Modify `core/sync/worker.go`（处理发件箱）；Test `core/compose_test.go`
+**Files:** Create `core/compose.go`, `core/outbox.go`, `core/send/smtp.go`；Modify `core/service.go`（`SyncNow` 调用 `processOutbox`）、`core/internal/testmail/smtp.go`（自动保存到 Sent、APPEND 后断开的选项）；Test `core/compose_test.go`
 
 **Interfaces:**
 - Consumes: `mail.Build`、`mail.ReplyRecipients`、`mail.QuoteHTML`、`mail.ReplySubject`、`mail.ForwardSubject`（Task 3）、`store.WriteFileAtomic`（Task 1）
@@ -460,10 +482,15 @@ func TestDeleteMovesToTrash(t *testing.T) { /* 进 Trash；Trash 里再删仍在
   - `(*Service).SaveDraft(ctx, Draft) (Draft, error)`；`AddAttachment(ctx, draftID int64, srcPath string) (DraftAttachment, error)`（复制进 `DataDir/drafts/<id>/`，超过 `MaxMessageBytes` 返回 `ErrTooLarge`）；`RemoveAttachment(ctx, draftID, attachmentID int64) error`
   - `(*Service).Send(ctx, draftID int64) error`：校验收件人（To/Cc/Bcc 至少一个且地址合法）与总大小 → `Build` → `WriteFileAtomic` 原文到 `DataDir/outbox/<id>.eml` → 一个 `Transaction` 内插入 `outbox`（`queued`）并删除草稿及其附件记录 → 删除草稿附件目录
   - `type OutboxItem struct { ID int64; Subject string; State, LastError string; CreatedAt time.Time }`；`(*Service).ListOutbox(ctx, accountID int64) ([]OutboxItem, error)`
-  - `(*Service).ResolveOutbox(ctx, id int64, action string) error`：`action` 为 `confirm_sent`（视为已发出，进入存入已发送）/ `resend`（回到 `queued`）/ `discard`（删除）
-  - `send.Send(ctx, a Account, password string, from string, rcpts []string, raw []byte) error`：返回的错误能区分「提交前失败」（可安全重试）和「提交后结果未知」（`send.ErrUncertain`）
+  - `(*Service).ResolveOutbox(ctx, id int64, action string) error`：只对 `send_uncertain`、`archive_uncertain`、`failed` 有效，其他状态返回 `ErrInvalidState`；`action` 为 `confirm_sent`（视为已发出，进入存档）/ `resend`（回到 `queued`）/ `discard`（删除）
+  - `send.Send(ctx, ep conn.Endpoint, from string, rcpts []string, raw []byte) error`：返回的错误能区分「提交前失败」（可安全重试）和「提交后结果未知」（`send.ErrUncertain`）
+  - `core.processOutbox(ctx, accountID)`：处理该账户的发件箱；`SyncNow` 在推送操作之后、拉取之前调用它，worker 也通过 `SyncNow` 间接调用
 
-**发件箱状态机**（spec 第 4 节原则 8）：`queued → sending`（写库后才连接 SMTP）→ 成功 `sent` / 提交前失败回 `queued`（`attempts+1`，满 5 次 `failed`）/ `ErrUncertain` 或启动时发现停在 `sending` → `uncertain`。`uncertain` 时 worker 去 Sent 文件夹 `UID SEARCH HEADER Message-ID <id>`：找到则直接 `done`；找不到则保持 `uncertain` 等用户 `ResolveOutbox`，**绝不自动重发**。`sent → APPEND` 到 Sent（带 `\Seen`）→ `done`，删除原文文件；APPEND 失败只重试 APPEND。
+**发件箱状态机**（spec 第 4 节原则 8）：
+- `queued → sending`（先写库再连接 SMTP）→ 成功 `sent`；提交前失败回 `queued`（`attempts+1`，满 5 次 `failed`）；`ErrUncertain`，或启动时发现停在 `sending` → `send_uncertain`。
+- `send_uncertain`：在 Sent 文件夹查找（见下）；找到 → `done`；找不到 → 保持，等用户 `ResolveOutbox`，**绝不自动重发**。
+- `sent → archiving`（先写库）→ 先查找；已存在（服务商自动保存了）→ `done`；不存在 → `APPEND` 到 Sent（带 `\Seen`）→ `done`，删除原文文件。`APPEND` 发出后结果不确定，或启动时发现停在 `archiving` → `archive_uncertain`，下一轮先查找再决定是否 APPEND。
+- **查找**：`UID SEARCH HEADER Message-ID <id>`（子串匹配），对每个结果再 `UID FETCH (BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])` 逐字比对，完全相同才算找到。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -474,13 +501,21 @@ func TestSendHTMLWithBcc(t *testing.T) {
 	// HTML 正文 + Bcc 一人 → Send → SyncNow：SMTP 收到 1 次，RCPT 含 Bcc 地址，原文头部不含 Bcc；
 	// 解析为 multipart/alternative；InReplyTo 正确；Sent 里有这封；outbox 为空；草稿附件目录已删除
 }
+func TestProviderAutoSavedSentNotDuplicated(t *testing.T) {
+	// 测试 SMTP 后端在收到邮件时自动往 Sent 放一份 → Send → SyncNow：Sent 里只有 1 封，State == "done"
+}
+func TestArchiveUncertainNotDuplicated(t *testing.T) {
+	// 让 APPEND 成功后断开连接（不回 OK）→ State == "archive_uncertain" → 再 SyncNow：Sent 里只有 1 封，State == "done"
+}
+func TestResolveOnlyUncertainOrFailed(t *testing.T) { /* 对 queued / sending 的条目 ResolveOutbox → ErrInvalidState */ }
 func TestUncertainSendIsNotResent(t *testing.T) {
 	// FailAfterData(1)（服务器收下了邮件但不回 250）→ Send → SyncNow：State == "uncertain"
 	// 再 SyncNow：SMTP 总共只收到 1 次
-	// 测试里往 Sent 放入同 Message-ID 的邮件 → SyncNow：State == "done"
+	// 测试里往 Sent 放入一封 Message-ID 只是包含它的邮件（子串）→ SyncNow：仍为 send_uncertain
+	// 再放入 Message-ID 完全相同的 → SyncNow：State == "done"
 }
-func TestCrashDuringSendingBecomesUncertain(t *testing.T) { /* 直接把 outbox 行写成 sending → 重开 Service → State == "uncertain" */ }
-func TestResolveOutboxResend(t *testing.T) { /* uncertain → ResolveOutbox(resend) → SyncNow → SMTP 再收到 1 次，State == "done" */ }
+func TestCrashDuringSendingBecomesUncertain(t *testing.T) { /* 直接把 outbox 行写成 sending → 重开 Service → State == "send_uncertain" */ }
+func TestResolveOutboxResend(t *testing.T) { /* send_uncertain → ResolveOutbox(resend) → SyncNow → SMTP 再收到 1 次，State == "done" */ }
 func TestSendValidates(t *testing.T) { /* 无收件人、地址非法、附件超限 → 返回错误，草稿保留，outbox 为空 */ }
 ```
 
@@ -500,6 +535,6 @@ func TestSendValidates(t *testing.T) { /* 无收件人、地址非法、附件�
 
 - [ ] **Step 1: 写失败的测试**：`TestWorkerPicksUpNewMail`（5 秒内收到 `MessageReceived`）；`TestWorkerPushesLocalChangesPromptly`；`TestWorkerReconnectsAfterServerRestart`（`Stop` → `SyncFailed` → `Restart` → 30 秒内收到新邮件）；`TestCloseStopsWorkers`（5 秒内返回，`-race` 下无数据竞争）；`TestStartupCleansOrphans`。
 - [ ] **Step 2: 运行，确认失败**：`go test -race ./core/ -run 'Worker|CloseStops|Orphans'` → FAIL
-- [ ] **Step 3: 实现**：循环 `SyncNow` + 处理发件箱 → 支持 IDLE 时对 INBOX IDLE 最多 25 分钟，否则等 5 分钟；收到 IDLE 通知或本地唤醒立即进入下一轮；失败发 `SyncFailed`，按 2、4、8… 秒退避，上限 5 分钟（包级变量，测试中调低）。
+- [ ] **Step 3: 实现**：循环 `SyncNow` + 处理发件箱 → 支持 IDLE 时对 INBOX IDLE **最多 5 分钟**（然后做一轮包含所有文件夹的同步，保证其他文件夹的变化最晚 5 分钟可见），否则等 5 分钟；收到 IDLE 通知或本地唤醒立即进入下一轮；失败发 `SyncFailed`，按 2、4、8… 秒退避，上限 5 分钟（包级变量，测试中调低）。
 - [ ] **Step 4: 运行，确认通过**：`go test -race ./core/...` 全部 PASS；`CGO_ENABLED=0 go build ./...` 无输出
 - [ ] **Step 5: Commit**：`git commit -m "feat(sync): background workers with IDLE, wake-ups, backoff and orphan cleanup"`
