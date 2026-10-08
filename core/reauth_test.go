@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"github.com/godwit-email/godwit/core/store"
 	"net"
 	"os"
@@ -329,4 +330,29 @@ func TestRefreshDeadline(t *testing.T) {
 	})
 	e.expire(t)
 	within(t, 3*time.Second, "SyncNow", func() { e.sync(t) }) // refreshes again
+}
+
+// Raising SyncLimit fetches the older mail the old limit left out; the
+// messages already stored keep their IDs.
+func TestRaiseSyncLimitBackfills(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+	lim := 2
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	require.NoError(t, err)
+	for i := range 5 {
+		e.put(t, "Archive", msg(fmt.Sprintf("a%d@x", i))) // not INBOX: no IDLE wake-up
+	}
+	e.sync(t)
+	archive := "SELECT id FROM messages WHERE server_folder_id = ? ORDER BY id"
+	before := e.rows(t, archive, e.folderID(t, "Archive"))
+	require.Len(t, before, 2)
+	assert.Equal(t, e.idOf(t, "a4@x"), store.Int(before[1][0]))
+
+	lim = 5
+	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return len(e.rows(t, archive, e.folderID(t, "Archive"))) == 5 },
+		5*time.Second, 20*time.Millisecond)
+	assert.Equal(t, before, e.rows(t, archive+" LIMIT 2", e.folderID(t, "Archive")), "new rows, old IDs kept")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'a0@x'"))
 }

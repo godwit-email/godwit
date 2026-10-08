@@ -486,8 +486,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if err != nil {
 		return Account{}, err
 	}
-	if p.Servers != nil {
-		s.wakeWorker(id) // the next round dials the new servers
+	if p.Servers != nil || p.SyncLimit != nil {
+		s.wakeWorker(id) // the next round dials the new servers or backfills
 	}
 	return s.account(ctx, id)
 }

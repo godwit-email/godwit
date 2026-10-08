@@ -112,6 +112,9 @@ func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *acco
 	if err := fetchNew(ctx, db, c, a, f, sel.NumMessages, r); err != nil {
 		return err
 	}
+	if err := backfill(ctx, db, c, a, f, sel.NumMessages, r); err != nil {
+		return err
+	}
 	return syncFlags(ctx, db, c, a.id, f, r)
 }
 
@@ -187,8 +190,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		s.AddRange(imap.UID(f.lastUID+1), 0)
 		set = s
 	}
-	msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, Envelope: true, InternalDate: true,
-		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}).Collect()
+	msgs, err := c.Fetch(set, importItems()).Collect()
 	if err != nil {
 		return err
 	}
@@ -211,12 +213,33 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 			todo = append(todo, m)
 		}
 	}
-	slices.SortFunc(todo, func(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) })
+	if err := importAll(ctx, db, c, a, f, todo, r); err != nil {
+		return err
+	}
+	if last == f.lastUID {
+		return nil
+	}
+	if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ? WHERE id = ?", last, f.id); err != nil {
+		return err
+	}
+	f.lastUID = last
+	return nil
+}
+
+// importItems is what a sync fetches of each message before its text parts.
+func importItems() *imap.FetchOptions {
+	return &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, Envelope: true, InternalDate: true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}
+}
+
+// importAll imports msgs in UID order, fetching their text parts in batches.
+func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, r *result) error {
+	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) })
 	twins := map[string]int{} // arrivals per Message-ID and size, for claims
-	for _, m := range todo {
+	for _, m := range msgs {
 		twins[twinKey(m)]++
 	}
-	for _, batch := range textBatches(todo) {
+	for _, batch := range textBatches(msgs) {
 		texts, err := fetchTexts(c, batch)
 		if err != nil {
 			return err
@@ -227,14 +250,45 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 			}
 		}
 	}
-	if last == f.lastUID {
-		return nil
+	return nil
+}
+
+// backfill imports older messages a lower sync_limit left out: while the folder
+// holds fewer than sync_limit messages, the newest server UIDs below the oldest
+// one stored, up to the shortfall (n is the mailbox's message count). Stored
+// messages and pending ops are untouched; a lower limit never deletes mail.
+func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
+	if a.limit <= 0 || f.lastUID == 0 {
+		return nil // the first sync applies the limit itself
 	}
-	if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ? WHERE id = ?", last, f.id); err != nil {
+	rows, err := db.Query(ctx, "SELECT count(*), min(server_uid) FROM messages WHERE server_folder_id = ?", f.id)
+	if err != nil {
 		return err
 	}
-	f.lastUID = last
-	return nil
+	have, below := int(store.Int(rows.Values[0][0])), f.lastUID+1
+	if have > 0 {
+		below = uint32(store.Int(rows.Values[0][1]))
+	}
+	if have >= a.limit || have >= int(n) || below <= 1 {
+		return nil
+	}
+	var older imap.UIDSet
+	older.AddRange(1, imap.UID(below-1))
+	found, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{older}}, nil).Wait()
+	if err != nil {
+		return err
+	}
+	uids := found.AllUIDs()
+	slices.Sort(uids)
+	uids = uids[max(len(uids)-(a.limit-have), 0):]
+	if len(uids) == 0 {
+		return nil
+	}
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), importItems()).Collect()
+	if err != nil {
+		return err
+	}
+	return importAll(ctx, db, c, a, f, msgs, r)
 }
 
 func twinKey(m *imapclient.FetchMessageBuffer) string {
