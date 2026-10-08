@@ -18,7 +18,9 @@ type threadPlan struct {
 	pre    []sqlite.Statement
 	expr   string
 	args   []any
-	target int64 // existing thread, 0 when pre creates one
+	target int64   // existing thread, 0 when pre creates one
+	others []int64 // threads merged into target
+	moved  []int64 // messages moved from others to target
 }
 
 func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed) (threadPlan, error) {
@@ -44,9 +46,12 @@ func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed)
 		}, nil
 	}
 	target, others := tids[0], anys(tids[1:]) // tids are sorted: merge into the smallest
-	plan := threadPlan{expr: "?", args: []any{target}, target: target}
+	plan := threadPlan{expr: "?", args: []any{target}, target: target, others: tids[1:]}
 	if len(others) > 0 {
 		in := "(" + marks(len(others)) + ")"
+		if plan.moved, _, err = doomed(ctx, db, "thread_id IN "+in, others...); err != nil {
+			return threadPlan{}, err
+		}
 		args := append([]any{target}, others...)
 		plan.pre = []sqlite.Statement{
 			{SQL: "UPDATE messages SET thread_id = ? WHERE thread_id IN " + in, Args: args},

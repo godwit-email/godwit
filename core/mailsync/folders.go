@@ -50,7 +50,7 @@ func role(d *imap.ListData) string {
 // syncFolders mirrors the server's selectable folders into the folders table and
 // returns them in LIST order. Folders gone from the server are deleted (cascading
 // to their messages).
-func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) ([]*folder, error) {
+func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, r *result) ([]*folder, error) {
 	list, err := c.List("", "*", nil).Collect()
 	if err != nil {
 		return nil, err
@@ -68,13 +68,17 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 			Args: []any{accountID, d.Mailbox, role(d)},
 		})
 	}
-	stmts = append(stmts, sqlite.Statement{
-		SQL:  "DELETE FROM folders WHERE account_id = ? AND name NOT IN (" + marks(len(names)) + ")",
-		Args: append([]any{accountID}, anys(names)...),
-	}, pruneThreads(accountID))
-	if _, err := db.Transaction(ctx, stmts); err != nil {
+	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
+	staleArgs := append([]any{accountID}, anys(names)...)
+	ids, tids, err := doomed(ctx, db, "folder_id IN (SELECT id FROM folders WHERE "+stale+")", staleArgs...)
+	if err != nil {
 		return nil, err
 	}
+	stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
+	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+		return nil, err
+	}
+	r.gone(ids, tids)
 	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
@@ -91,12 +95,20 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	return out, nil
 }
 
-// pruneThreads deletes conversations left without messages (their thread_refs cascade).
-func pruneThreads(accountID int64) sqlite.Statement {
-	return sqlite.Statement{
+// tidyThreads deletes conversations left without messages (their thread_refs
+// cascade) and recomputes last_date of the touched ones that survive.
+func tidyThreads(accountID int64, tids []int64) []sqlite.Statement {
+	out := []sqlite.Statement{{
 		SQL:  "DELETE FROM threads WHERE account_id = ? AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = threads.id)",
 		Args: []any{accountID},
+	}}
+	for _, t := range slices.Compact(slices.Sorted(slices.Values(tids))) {
+		out = append(out, sqlite.Statement{
+			SQL:  "UPDATE threads SET last_date = (SELECT max(date) FROM messages WHERE thread_id = threads.id) WHERE id = ?",
+			Args: []any{t},
+		})
 	}
+	return out
 }
 
 func marks(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }

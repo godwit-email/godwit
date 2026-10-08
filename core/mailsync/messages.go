@@ -55,6 +55,10 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	if tid == 0 {
 		tid = res[0].LastInsertID
 	}
+	if len(plan.others) > 0 {
+		r.gone(plan.moved, nil)
+		r.merged(tid, plan.others)
+	}
 	r.received = append(r.received, res[msgAt].LastInsertID)
 	r.threads = append(r.threads, tid)
 	return nil
@@ -102,20 +106,19 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 	for _, b := range bufs {
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
-	rows, err := db.Query(ctx, "SELECT id, server_uid, flags FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
+	rows, err := db.Query(ctx, "SELECT id, server_uid, flags, thread_id FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
 	if err != nil {
 		return err
 	}
 	var stmts []sqlite.Statement
-	var changed []int64
-	deleted := false
+	var changed, tids []int64
 	for _, v := range rows.Values {
 		id, uid, flags := store.Int(v[0]), uint32(store.Int(v[1])), store.Str(v[2])
 		fl, ok := remote[uid]
 		switch {
 		case !ok:
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{id}})
-			deleted = true
+			tids = append(tids, store.Int(v[3]))
 		case fl != flags:
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{fl, id}})
 		default:
@@ -123,12 +126,12 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		}
 		changed = append(changed, id)
 	}
-	if deleted {
-		stmts = append(stmts, pruneThreads(accountID))
+	if len(tids) > 0 {
+		stmts = append(stmts, tidyThreads(accountID, tids)...)
 	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
-	r.changed = append(r.changed, changed...)
+	r.gone(changed, tids)
 	return nil
 }

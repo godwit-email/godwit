@@ -30,7 +30,25 @@ type account struct {
 }
 
 // result collects what one Fetch changed, for the events it publishes.
-type result struct{ received, threads, changed []int64 }
+type result struct{ received, threads, changed, changedThreads []int64 }
+
+// gone records messages about to be deleted (or moved between threads) as changed.
+func (r *result) gone(ids, tids []int64) {
+	r.changed = append(r.changed, ids...)
+	r.changedThreads = append(r.changedThreads, tids...)
+}
+
+// merged repoints thread IDs collected so far from the merged-away threads to target.
+func (r *result) merged(target int64, others []int64) {
+	for _, l := range [][]int64{r.threads, r.changedThreads} {
+		for i, t := range l {
+			if slices.Contains(others, t) {
+				l[i] = target
+			}
+		}
+	}
+	r.changedThreads = append(r.changedThreads, target)
+}
 
 // Fetch syncs every folder of the account over c: folder list, new messages
 // (headers and text parts only; attachments stay lazy), threading, remote flag
@@ -42,7 +60,8 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			bus.Publish(events.Event{Type: events.MessageReceived, AccountID: accountID, MessageIDs: r.received, ThreadIDs: r.threads})
 		}
 		if len(r.changed) > 0 {
-			bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: r.changed})
+			bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: r.changed,
+				ThreadIDs: slices.Compact(slices.Sorted(slices.Values(r.changedThreads)))})
 		}
 	}()
 	rows, err := db.Query(ctx, "SELECT email, sync_limit FROM accounts WHERE id = ?", accountID)
@@ -53,7 +72,7 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 		return fmt.Errorf("account %d not found", accountID)
 	}
 	a := &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1]))}
-	folders, err := syncFolders(ctx, db, c, accountID)
+	folders, err := syncFolders(ctx, db, c, accountID, &r)
 	if err != nil {
 		return err
 	}
@@ -82,10 +101,12 @@ func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *acco
 }
 
 // resetFolder drops everything known about the folder's old UIDs: their messages
-// (attachments, FTS rows and empty threads go with them), cached attachment files,
-// and pending ops that would act on them become conflicts.
+// (attachments and FTS rows go with them), and pending ops that would act on them
+// become conflicts. Cached attachment files are removed best effort after the
+// commit; one that cannot be removed is no longer referenced, so the startup
+// orphan sweep of the cache directory (store.CleanOrphans) collects it.
 func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, uidValidity uint32, r *result) error {
-	ids, err := db.Query(ctx, "SELECT id FROM messages WHERE server_folder_id = ?", f.id)
+	ids, tids, err := doomed(ctx, db, "server_folder_id = ?", f.id)
 	if err != nil {
 		return err
 	}
@@ -94,26 +115,36 @@ func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, 
 	if err != nil {
 		return err
 	}
-	_, err = db.Transaction(ctx, []sqlite.Statement{
+	stmts := []sqlite.Statement{
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
 			AND message_id IN (SELECT id FROM messages WHERE server_folder_id = ?)`, Args: []any{accountID, f.id}},
 		{SQL: "DELETE FROM messages WHERE server_folder_id = ?", Args: []any{f.id}},
 		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0 WHERE id = ?", Args: []any{uidValidity, f.id}},
-		pruneThreads(accountID),
-	})
-	if err != nil {
+	}
+	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
 	}
+	r.gone(ids, tids)
+	f.uidValidity, f.lastUID = uidValidity, 0
 	for _, p := range files.Values {
-		if err := os.Remove(store.Str(p[0])); err != nil && !os.IsNotExist(err) {
-			return err
+		os.Remove(store.Str(p[0])) // best effort, see above
+	}
+	return nil
+}
+
+// doomed returns the IDs and thread IDs of the messages matching where.
+func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, tids []int64, err error) {
+	rows, err := db.Query(ctx, "SELECT id, thread_id FROM messages WHERE "+where, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, v := range rows.Values {
+		ids = append(ids, store.Int(v[0]))
+		if t := store.Int(v[1]); t != 0 {
+			tids = append(tids, t)
 		}
 	}
-	for _, v := range ids.Values {
-		r.changed = append(r.changed, store.Int(v[0]))
-	}
-	f.uidValidity, f.lastUID = uidValidity, 0
-	return nil
+	return ids, tids, nil
 }
 
 func headerSection() *imap.FetchItemBodySection {

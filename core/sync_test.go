@@ -77,6 +77,13 @@ func (e *syncEnv) threadOf(t *testing.T, mid string) int64 {
 	return store.Int(r[0][0])
 }
 
+func (e *syncEnv) idOf(t *testing.T, mid string) int64 {
+	t.Helper()
+	r := e.rows(t, "SELECT id FROM messages WHERE message_id = ?", mid)
+	require.Len(t, r, 1, mid)
+	return store.Int(r[0][0])
+}
+
 func (e *syncEnv) dial(t *testing.T) *imapclient.Client {
 	t.Helper()
 	host, port := splitAddr(t, e.im.Addr)
@@ -338,8 +345,25 @@ func TestThreadingOutOfOrder(t *testing.T) {
 	t2 := e.threadOf(t, "y@t")
 	require.NotEqual(t, t1, t2)
 	e.put(t, "INBOX", eml("x@t", "dave@example.com", "alice@example.com", "Re: both", day, "x", "References: <a@t> <y@t>"))
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
 	e.sync(t)
-	merged := min(t1, t2)
+	merged, dropped := min(t1, t2), max(t1, t2)
+	evs := collect(ch)
+	changed := ofType(evs, events.MessagesChanged)
+	require.Len(t, changed, 1)
+	assert.Equal(t, []int64{merged}, changed[0].ThreadIDs)
+	if dropped == t2 {
+		assert.Equal(t, []int64{e.idOf(t, "y@t")}, changed[0].MessageIDs)
+	} else {
+		assert.ElementsMatch(t, []int64{e.idOf(t, "a@t"), e.idOf(t, "b@t"), e.idOf(t, "c@t")}, changed[0].MessageIDs)
+	}
+	for _, ev := range evs {
+		assert.NotContains(t, ev.ThreadIDs, dropped, ev.Type)
+	}
+	received := ofType(evs, events.MessageReceived)
+	require.Len(t, received, 1)
+	assert.Equal(t, []int64{merged}, received[0].ThreadIDs)
 	for _, id := range []string{"a@t", "b@t", "c@t", "y@t", "x@t"} {
 		assert.Equal(t, merged, e.threadOf(t, id), id)
 	}
@@ -412,4 +436,99 @@ func TestSyncClaimsAwaitingMove(t *testing.T) {
 	assert.Equal(t, int64(1), store.Int(r[0][1]))
 	assert.NotZero(t, store.Int(r[0][2]))
 	assert.Equal(t, "done", store.Str(e.rows(t, "SELECT state FROM ops")[0][0]))
+}
+
+func TestSyncInterruptedFlagsFetchChangesNothing(t *testing.T) {
+	e := newSyncEnv(t)
+	for i := 1; i <= 3; i++ {
+		e.put(t, "INBOX", eml(fmt.Sprintf("m%d@x", i), "bob@example.com", "alice@example.com", "s", day, "b"))
+	}
+	e.sync(t)
+	c := e.dial(t)
+	_, err := c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close())
+	require.NoError(t, c.Store(imap.UIDSetNum(2, 3), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	require.NoError(t, c.Expunge().Close())
+	e.put(t, "INBOX", eml("m4@x", "bob@example.com", "alice@example.com", "s", day, "b"))
+
+	// INBOX is the first non-empty folder: FETCH new (1), FETCH texts of m4 (2), FETCH FLAGS (3, dropped).
+	e.im.DropFetchAfter(2)
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'm4@x'"), "the drop must hit the FLAGS phase")
+	assert.Equal(t, [][]any{{"m1@x", ""}, {"m2@x", ""}, {"m3@x", ""}},
+		e.rows(t, "SELECT message_id, flags FROM messages WHERE message_id != 'm4@x' ORDER BY server_uid"))
+
+	e.sync(t)
+	assert.Equal(t, [][]any{{"m1@x", `\Seen`}, {"m4@x", ""}}, e.rows(t, "SELECT message_id, flags FROM messages ORDER BY server_uid"))
+}
+
+func TestSyncFolderDeletedOnServer(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Old", nil))
+	e.put(t, "Old", eml("o@x", "bob@example.com", "alice@example.com", "s", day, "b"))
+	e.sync(t)
+	gone := e.idOf(t, "o@x")
+	tid := e.threadOf(t, "o@x")
+	require.NoError(t, e.im.User.Delete("Old"))
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	e.sync(t)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM threads"))
+	changed := ofType(collect(ch), events.MessagesChanged)
+	require.Len(t, changed, 1)
+	assert.Equal(t, []int64{gone}, changed[0].MessageIDs)
+	assert.Equal(t, []int64{tid}, changed[0].ThreadIDs)
+}
+
+func TestSyncExpungeRecomputesLastDate(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("a@t", "bob@example.com", "alice@example.com", "x", day, "a"))
+	e.put(t, "INBOX", eml("b@t", "bob@example.com", "alice@example.com", "Re: x", "Wed, 07 Oct 2026 09:00:00 +0000", "b", "In-Reply-To: <a@t>"))
+	e.sync(t)
+	tid := e.threadOf(t, "a@t")
+	require.Equal(t, tid, e.threadOf(t, "b@t"))
+	c := e.dial(t)
+	_, err := c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(2), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	require.NoError(t, c.Expunge().Close())
+	e.sync(t)
+	want := time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC).Unix()
+	assert.Equal(t, want, store.Int(e.rows(t, "SELECT last_date FROM threads WHERE id = ?", tid)[0][0]))
+}
+
+func TestSyncResetSurvivesUndeletableCache(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Archive", withAttachments("old@x", "old", 1))
+	e.sync(t)
+	old := e.idOf(t, "old@x")
+	cache := filepath.Join(e.dir, "cache", strconv.FormatInt(e.acc.ID, 10))
+	require.NoError(t, os.MkdirAll(cache, 0o700))
+	cached := filepath.Join(cache, "1")
+	require.NoError(t, os.WriteFile(cached, []byte("pdf"), 0o600))
+	_, err := e.s.db.Execute(bg, "UPDATE attachments SET cache_path = ?", cached)
+	require.NoError(t, err)
+	require.NoError(t, os.Chmod(cache, 0o500)) // the file cannot be removed
+	t.Cleanup(func() { os.Chmod(cache, 0o700) })
+
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	e.sync(t)
+	changed := ofType(collect(ch), events.MessagesChanged)
+	require.Len(t, changed, 1)
+	assert.Equal(t, []int64{old}, changed[0].MessageIDs)
+	_, err = os.Stat(cached)
+	require.NoError(t, err, "removal failed as arranged")
+
+	// The startup orphan sweep collects it: nothing references it any more.
+	require.NoError(t, os.Chmod(cache, 0o700))
+	require.NoError(t, store.CleanOrphans(cache, func(p string) bool {
+		return e.count(t, "SELECT count(*) FROM attachments WHERE cache_path = ?", p) > 0
+	}))
+	_, err = os.Stat(cached)
+	assert.True(t, os.IsNotExist(err))
 }

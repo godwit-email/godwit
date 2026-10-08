@@ -34,7 +34,7 @@ type IMAP struct {
 	mu   sync.Mutex
 	ln   net.Listener
 	conn map[*tconn]struct{}
-	drop atomic.Bool
+	drop atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
 }
 
 // uidCodes matches the COPYUID code of a status line.
@@ -119,8 +119,13 @@ func (s session) Namespace() (*imap.NamespaceData, error) {
 }
 
 func (s session) Fetch(w *imapserver.FetchWriter, set imap.NumSet, o *imap.FetchOptions) error {
-	if s.s.drop.CompareAndSwap(true, false) {
-		s.conn.fetch.Store(true)
+	for v := s.s.drop.Load(); v > 0; v = s.s.drop.Load() {
+		if s.s.drop.CompareAndSwap(v, v-1) {
+			if v == 1 {
+				s.conn.fetch.Store(true)
+			}
+			break
+		}
 	}
 	return s.Session.Fetch(w, set, o)
 }
@@ -199,4 +204,8 @@ func (s *IMAP) Restart() {
 
 // DropNextFetch makes the next FETCH write at most one write of response and
 // then close the client's connection.
-func (s *IMAP) DropNextFetch() { s.drop.Store(true) }
+func (s *IMAP) DropNextFetch() { s.DropFetchAfter(0) }
+
+// DropFetchAfter lets n FETCH commands complete and drops the connection during
+// the one after, like DropNextFetch.
+func (s *IMAP) DropFetchAfter(n int) { s.drop.Store(int32(n) + 1) }
