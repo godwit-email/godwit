@@ -530,18 +530,18 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
-// translate-draft) on the draft's editable part, or on sel of it if the skill
-// runs on selections; the model sees that and nothing else. The skill has no tools, as every skill: the host turns its
+// translate-draft) on the draft's editable part, or on opts.Selection of it if
+// the skill runs on selections; the model sees that and nothing else. The skill has no tools, as every skill: the host turns its
 // output into an update_draft proposal in the draft's assist conversation,
 // which the user decides like any other (an empty draft's is applied at
 // once). The conversation's history is left as it is. The channel streams
 // the skill's text and ends with interrupted (the proposal) or error.
-func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, sel *Selection) (<-chan WitEvent, error) {
+func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, opts SkillOptions) (<-chan WitEvent, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.assistSkill(ctx, end, draftID, skill, sel)
+	w, err := s.assistSkill(ctx, end, draftID, skill, opts)
 	if err != nil {
 		end()
 		return nil, err
@@ -549,7 +549,16 @@ func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, 
 	return w.ch, nil
 }
 
-func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, name string, sel *Selection) (*witStream, error) {
+// SkillOptions are AssistSkill's options. Selection, if set, limits the skill
+// to that range; TargetLanguage is translate-draft's target (empty: the
+// reading language).
+type SkillOptions struct {
+	Selection      *Selection
+	TargetLanguage string
+}
+
+func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, name string, opts SkillOptions) (*witStream, error) {
+	sel := opts.Selection
 	if sel != nil { // the caller keeps its struct: work on a copy
 		c := *sel
 		sel = &c
@@ -601,12 +610,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		return nil, err
 	}
 	system := sk.Body + "\n\n" + ai.UntrustedSystemNote
-	if name == "translate-draft" {
-		target, err := s.draftLanguage(ctx, d)
-		if err != nil {
-			return nil, err
-		}
-		system += "\n\nTarget language: " + target + "."
+	if name == "translate-draft" { // never "the original's language": the skill does not see it
+		system += "\n\nTarget language: " + cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx)) + "."
 	}
 	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "skill:"+name, "draft", d.ID, "run"); err != nil {
 		return nil, err

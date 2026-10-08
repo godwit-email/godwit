@@ -375,7 +375,7 @@ func TestIncompleteReplyNotUsed(t *testing.T) {
 		e := newAssistEnv(t)
 		d := e.replyDraft(t, "<p>Long text here.</p>")
 		e.srv.Script(testllm.Turn{Text: []string{"<p>Short"}, Finish: "length"})
-		ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", nil)
+		ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", SkillOptions{})
 		require.NoError(t, err)
 		evs := drainWit(t, ch)
 		last := evs[len(evs)-1]

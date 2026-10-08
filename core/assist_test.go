@@ -290,11 +290,11 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	_, q, sig := parts(t, d.HTML)
 	_, err := e.s.RunSkill(t.Context(), "translate-draft", Target{Kind: "draft", ID: d.ID})
 	require.ErrorIs(t, err, ErrUseAssist)
-	_, err = e.s.AssistSkill(t.Context(), d.ID, "summarize", nil)
+	_, err = e.s.AssistSkill(t.Context(), d.ID, "summarize", SkillOptions{})
 	require.Error(t, err, "only replace-draft skills")
 
 	e.srv.Script(testllm.Turn{Text: []string{"```html\n<p>I'll be there on Friday.</p>", "\n```"}})
-	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", nil)
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{})
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
 	last := evs[len(evs)-1]
@@ -311,7 +311,8 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.True(t, len(reqs[0].Tools) == 0 || string(reqs[0].Tools) == "null", "the skill has no tools: %s", reqs[0].Tools)
 	sys := string(reqs[0].System)
 	assert.Contains(t, sys, "Translate the draft")
-	assert.Contains(t, sys, "Target language: the language of the email this draft replies to")
+	assert.Contains(t, sys, "Target language: zh-CN.", "no target given: the reading language")
+	assert.NotContains(t, sys, "language of the email")
 	p := promptOf(t, reqs[0])
 	assert.Contains(t, p, "我周五到。")
 	// Final review #4: a skill gets its target only, no other mail.
@@ -429,7 +430,7 @@ func TestAssistCancelLeavesDraft(t *testing.T) {
 	assert.Equal(t, "rejected", ap.State, "no proposal is left hanging")
 	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
 
-	ch, err = e.s.AssistSkill(t.Context(), d.ID, "shorter", nil)
+	ch, err = e.s.AssistSkill(t.Context(), d.ID, "shorter", SkillOptions{})
 	require.NoError(t, err)
 	evs = drainWit(t, ch)
 	h := evs[len(evs)-1].Approvals[0]
@@ -522,7 +523,7 @@ func TestAssistSkillSelectionCopied(t *testing.T) {
 	sel := selectionOf(t, d, "Alpha beta gamma.")
 	want := ed[:sel.Start] + "Short." + ed[sel.End:]
 	e.srv.Script(testllm.Turn{Text: []string{"Short."}, Hang: true})
-	ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", &sel)
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", SkillOptions{Selection: &sel})
 	require.NoError(t, err)
 	sel.Start, sel.End = 0, len(ed) // the caller reuses its struct
 	e.srv.Release()
@@ -643,4 +644,18 @@ func TestAttachmentChangeStalesProposal(t *testing.T) {
 	require.NoError(t, e.s.RemoveAttachment(t.Context(), d.ID, att.ID))
 	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), b.ID, true), ErrStaleDraft)
 	assert.Contains(t, e.getDraft(t, d.ID).HTML, "Hello.", "the draft is untouched")
+}
+
+// Residual R3: translate-draft takes the caller's target language.
+func TestAssistSkillTargetLanguage(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>我周五到。</p>")
+	e.srv.Script(testllm.Turn{Text: []string{"<p>J'arrive vendredi.</p>"}})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{TargetLanguage: "fr"})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	sys := string(e.srv.Requests()[0].System)
+	assert.Contains(t, sys, "Target language: fr.")
+	assert.NotContains(t, sys, "zh-CN")
 }

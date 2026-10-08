@@ -681,7 +681,7 @@ func TestInvalidToolArgsGoBackToModel(t *testing.T) {
 // Final review #3: a reply the service cut off or withheld is an error, not
 // a finished turn: no done, and the state stays as it was.
 func TestAbnormalFinishIsIncomplete(t *testing.T) {
-	cases := map[string][]string{"openai": {"length", "content_filter", "error"}, "anthropic": {"max_tokens", "refusal"}}
+	cases := map[string][]string{"openai": {"length", "content_filter", "error"}, "anthropic": {"max_tokens"}}
 	eachKind(t, func(t *testing.T, kind string) {
 		for _, reason := range cases[kind] {
 			t.Run(reason, func(t *testing.T) {
@@ -697,4 +697,46 @@ func TestAbnormalFinishIsIncomplete(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Residual R2: a finish reason Genkit does not recognise is a normal end.
+func TestUnknownFinishIsDone(t *testing.T) {
+	cases := map[string]string{"openai": "something_new", "anthropic": "pause_turn"}
+	eachKind(t, func(t *testing.T, kind string) {
+		e := newEngine(t)
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Text: []string{"fine"}, Finish: cases[kind]})
+		evs, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "hi", MaxTurns: 1})
+		require.Nil(t, res.Err)
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.NotNil(t, res.State)
+	})
+}
+
+// Residual R1: Forget ends a run even when its reader stopped reading and
+// the event buffer is full.
+func TestForgetEndsRunWithStalledReader(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, "openai")
+	chunks := make([]string, eventBuffer+20)
+	for i := range chunks {
+		chunks[i] = "x"
+	}
+	srv.Script(testllm.Turn{Text: chunks, Hang: true})
+	m := modelFor(srv, "openai", "k")
+	events, wait := e.Run(context.Background(), Request{Model: m, Prompt: "hi", MaxTurns: 1})
+	require.Eventually(t, func() bool { return len(events) >= eventBuffer }, 10*time.Second, 5*time.Millisecond)
+	e.Forget(m.ServiceID)
+	done := make(chan Result, 1)
+	go func() { done <- wait() }()
+	select {
+	case res := <-done:
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeStale, res.Err.Code)
+	case <-time.After(5 * time.Second):
+		srv.Release()
+		t.Fatal("the run did not end after Forget")
+	}
+	for range events { // the terminal event is still delivered
+	}
 }

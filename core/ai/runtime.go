@@ -287,6 +287,10 @@ func (r *runner) run(req Request) Result {
 	defer cancel(nil)
 	stop := context.AfterFunc(in.ctx, func() { cancel(context.Cause(in.ctx)) })
 	defer stop()
+	// Sends give up with it too, so a stalled reader cannot hold the run.
+	r.mu.Lock()
+	r.ctx = ctx
+	r.mu.Unlock()
 	model := genkit.LookupModel(in.g, in.provider+"/"+req.Model.Model)
 	if model == nil {
 		return fail(fmt.Errorf("ai: model %q unavailable", req.Model.Model))
@@ -326,11 +330,17 @@ func (r *runner) run(req Request) Result {
 	}
 
 	resp, err := genkit.Generate(r.e.logCtx(ctx), in.g, opts...)
+	if err == nil && ctx.Err() != nil {
+		err = context.Cause(ctx) // ended as Generate returned: events may have been dropped
+	}
 	if err != nil {
 		// The state stays as it was: a failed run leaves no half turn behind.
 		return Result{State: req.State, Err: classify(ctx, err)}
 	}
-	if resp.FinishReason != gai.FinishReasonStop && resp.FinishReason != gai.FinishReasonInterrupted {
+	switch resp.FinishReason {
+	case gai.FinishReasonStop, gai.FinishReasonInterrupted,
+		gai.FinishReasonUnknown, "": // a reason Genkit does not map: a normal end, as Genkit treats it
+	default:
 		// Cut off, filtered or failed part-way: nothing of it is kept.
 		return Result{State: req.State, Err: incomplete(resp.FinishReason)}
 	}
