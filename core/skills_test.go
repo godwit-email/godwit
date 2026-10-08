@@ -3,6 +3,8 @@ package core_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -78,4 +80,36 @@ func TestSetSkillEnabled(t *testing.T) {
 	infos, _ = s.ListSkills(ctx)
 	i, _ = find(infos, "summarize")
 	assert.True(t, i.Enabled)
+}
+
+func TestConcurrentSetSkillEnabled(t *testing.T) {
+	s, _ := skillService(t)
+	names := []string{"summarize", "translate", "shorter", "longer", "proofread", "tone-formal"}
+	var wg sync.WaitGroup
+	for _, n := range names {
+		wg.Add(1)
+		go func() { defer wg.Done(); assert.NoError(t, s.SetSkillEnabled(ctx, n, false)) }()
+	}
+	wg.Wait()
+	infos, err := s.ListSkills(ctx)
+	require.NoError(t, err)
+	for _, n := range names {
+		i, _ := find(infos, n)
+		assert.False(t, i.Enabled, n)
+	}
+}
+
+func TestUnreadableSkillsDirIsAnError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not restrict directories on Windows")
+	}
+	s, root := skillService(t)
+	require.NoError(t, os.MkdirAll(root, 0o755))
+	require.NoError(t, os.Chmod(root, 0))
+	t.Cleanup(func() { os.Chmod(root, 0o755) })
+	if _, err := os.ReadDir(root); err == nil {
+		t.Skip("running with privileges that ignore permissions")
+	}
+	_, err := s.ListSkills(ctx)
+	require.Error(t, err)
 }

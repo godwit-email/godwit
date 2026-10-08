@@ -34,6 +34,7 @@ type Options struct {
 
 // Service owns the database and event bus of one Godwit data directory.
 type Service struct {
+	skillsMu  sync.Mutex
 	db        *store.DB
 	bus       *events.Bus
 	dataDir   string

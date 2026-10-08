@@ -64,27 +64,48 @@ func TestScriptsWarnOnly(t *testing.T) {
 	assert.Len(t, warns, 1)
 }
 
+func userSkill(t *testing.T, dir, name string) skills.Skill {
+	t.Helper()
+	ok, failed, err := skills.LoadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, failed)
+	for _, s := range ok {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatal("skill not loaded")
+	return skills.Skill{}
+}
+
 func TestSkillReadFile(t *testing.T) {
 	dir := t.TempDir()
 	sk := filepath.Join(dir, "demo")
 	require.NoError(t, os.MkdirAll(filepath.Join(sk, "references"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(sk, "scripts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "other/references"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other/SKILL.md"), []byte(strings.ReplaceAll(good, "demo", "other")), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other/references/o.md"), []byte("other"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(sk, "SKILL.md"), []byte(good), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(sk, "references/a.md"), []byte("ref"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(sk, "references/big.md"), make([]byte, skills.MaxFileBytes+1), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(sk, "scripts/run.sh"), []byte("x"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "x"), []byte("secret"), 0o644))
-	linked := os.Symlink(filepath.Join(dir, "x"), filepath.Join(sk, "references/link.md")) == nil
+	links := map[string]string{
+		"references/out.md":    filepath.Join(dir, "x"),
+		"references/other.md":  "../../other/references/o.md",
+		"references/script.sh": "../scripts/run.sh",
+		"references/self.md":   "a.md", // even a link inside references/ is refused
+	}
+	linked := true
+	for l, target := range links {
+		if os.Symlink(target, filepath.Join(sk, l)) != nil {
+			linked = false
+		}
+	}
+	s := userSkill(t, dir, "demo")
 
-	root, err := os.OpenRoot(dir) // user skills are loaded through os.Root: symlinks cannot escape
-	require.NoError(t, err)
-	defer root.Close()
-	sub, err := fs.Sub(root.FS(), "demo")
-	require.NoError(t, err)
-	s, _, err := skills.Parse("demo", sub)
-	require.NoError(t, err)
-
-	b, err := s.ReadFile("references/a.md")
+	b, err := s.ReadFile("references/a.md") // still works after loading finished
 	require.NoError(t, err)
 	assert.Equal(t, "ref", string(b))
 	for _, p := range []string{"../x", "references/../../x", "/etc/passwd", "scripts/run.sh", "SKILL.md", "references/big.md", "references"} {
@@ -92,11 +113,22 @@ func TestSkillReadFile(t *testing.T) {
 		assert.Error(t, err, p)
 	}
 	if linked {
-		_, err := s.ReadFile("references/link.md")
-		assert.Error(t, err, "symlink escape")
+		for l := range links {
+			_, err := s.ReadFile(l)
+			assert.Error(t, err, l)
+		}
 	} else {
-		t.Log("symlink creation not permitted; skipping escape sub-test")
+		t.Log("symlink creation not permitted; skipping link sub-tests")
 	}
+}
+
+func TestLoadDirErrors(t *testing.T) {
+	_, _, err := skills.LoadDir(filepath.Join(t.TempDir(), "missing"))
+	require.NoError(t, err)
+	f := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(f, nil, 0o644))
+	_, _, err = skills.LoadDir(f) // not a directory
+	require.Error(t, err)
 }
 
 func TestBuiltinSkillsValid(t *testing.T) {

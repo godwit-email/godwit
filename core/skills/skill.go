@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,7 +33,8 @@ type Skill struct {
 	Output, Model           string
 	Builtin                 bool
 	Version                 string // first 16 hex digits of SHA-256 of SKILL.md
-	FS                      fs.FS  // the skill directory
+	FS                      fs.FS  // the skill directory (built-ins)
+	dir                     string // real directory (user skills); read through a fresh os.Root per call
 }
 
 var (
@@ -98,7 +101,8 @@ func Parse(name string, fsys fs.FS) (Skill, []string, error) {
 }
 
 // ReadFile returns a file under references/ or assets/ of the skill directory.
-// Symlinks leaving the directory are refused when FS comes from os.Root.FS.
+// For user skills every path component must be a real directory or file inside
+// the skill: symlinks are refused, so links cannot reach scripts/ or other skills.
 func (s Skill) ReadFile(p string) ([]byte, error) {
 	if strings.HasPrefix(p, "/") || strings.Contains(p, `\`) || slices.Contains(strings.Split(p, "/"), "..") {
 		return nil, fmt.Errorf("%w: %q", errRead, p)
@@ -107,7 +111,27 @@ func (s Skill) ReadFile(p string) ([]byte, error) {
 	if !strings.HasPrefix(p, "references/") && !strings.HasPrefix(p, "assets/") {
 		return nil, fmt.Errorf("%w: only references/ and assets/ can be read", errRead)
 	}
-	f, err := s.FS.Open(p)
+	fsys := s.FS
+	if s.dir != "" {
+		root, err := os.OpenRoot(s.dir)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		for i := 0; i < len(p); i++ {
+			if i == len(p)-1 || p[i+1] == '/' {
+				st, err := root.Lstat(p[:i+1])
+				if err != nil {
+					return nil, err
+				}
+				if st.Mode()&fs.ModeSymlink != 0 {
+					return nil, fmt.Errorf("%w: %q contains a symlink", errRead, p)
+				}
+			}
+		}
+		fsys = root.FS()
+	}
+	f, err := fsys.Open(p)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +170,39 @@ func Load(root fs.FS, builtin bool) (ok []Skill, failed map[string]error) {
 		failed[e.Name()] = err
 	}
 	return ok, failed
+}
+
+// LoadDir loads the user skills in dir. A missing dir means none; any other
+// error reading it is returned. Per-skill failures go in failed.
+func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
+	failed = map[string]error{}
+	ents, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, failed, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, e := range ents {
+		if !e.IsDir() { // a symlinked skill directory is not a directory entry here
+			continue
+		}
+		sd := filepath.Join(dir, e.Name())
+		root, err := os.OpenRoot(sd)
+		if err != nil {
+			failed[e.Name()] = err
+			continue
+		}
+		sk, _, err := Parse(e.Name(), root.FS())
+		root.Close()
+		if err != nil {
+			failed[e.Name()] = err
+			continue
+		}
+		sk.FS, sk.dir = nil, sd
+		ok = append(ok, sk)
+	}
+	return ok, failed, nil
 }
 
 // Builtins returns the skills compiled into the binary.

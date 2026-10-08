@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -28,26 +27,22 @@ type SkillInfo struct {
 
 // loadSkills merges the built-ins with DataDir/skills; a user skill replaces a
 // built-in of the same name, even a broken one (it is reported, not hidden).
-func (s *Service) loadSkills() (ok map[string]skills.Skill, failed map[string]error) {
+func (s *Service) loadSkills() (ok map[string]skills.Skill, failed map[string]error, err error) {
 	ok = map[string]skills.Skill{}
 	for _, b := range skills.Builtins() {
 		ok[b.Name] = b
 	}
-	failed = map[string]error{}
-	root, err := os.OpenRoot(filepath.Join(s.dataDir, "skills")) // symlinks cannot leave the directory
+	good, failed, err := skills.LoadDir(filepath.Join(s.dataDir, "skills"))
 	if err != nil {
-		return ok, failed
+		return nil, nil, err
 	}
-	defer root.Close()
-	good, bad := skills.Load(root.FS(), false)
-	// ponytail: files are read at call time, so SKILL.md is re-read per call; cache if profiling says so
-	for n := range bad {
+	for n := range failed {
 		delete(ok, n)
 	}
 	for _, u := range good {
 		ok[u.Name] = u
 	}
-	return ok, bad
+	return ok, failed, nil
 }
 
 func (s *Service) disabledSkills(ctx context.Context) ([]string, error) {
@@ -70,7 +65,10 @@ func (s *Service) ListSkills(ctx context.Context) ([]SkillInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	ok, failed := s.loadSkills()
+	ok, failed, err := s.loadSkills()
+	if err != nil {
+		return nil, err
+	}
 	var out []SkillInfo
 	for n, sk := range ok {
 		out = append(out, SkillInfo{Name: n, Description: sk.Description, On: sk.On, Output: sk.Output,
@@ -90,7 +88,12 @@ func (s *Service) SetSkillEnabled(ctx context.Context, name string, enabled bool
 		return err
 	}
 	defer end()
-	ok, failed := s.loadSkills()
+	s.skillsMu.Lock() // serialize the read-modify-write of skills.disabled
+	defer s.skillsMu.Unlock()
+	ok, failed, err := s.loadSkills()
+	if err != nil {
+		return err
+	}
 	_, known := ok[name]
 	if _, bad := failed[name]; !known && !bad {
 		return ErrSkillNotFound
@@ -111,7 +114,10 @@ func (s *Service) SetSkillEnabled(ctx context.Context, name string, enabled bool
 
 // skill returns an enabled, loadable skill.
 func (s *Service) skill(ctx context.Context, name string) (skills.Skill, error) {
-	ok, failed := s.loadSkills()
+	ok, failed, err := s.loadSkills()
+	if err != nil {
+		return skills.Skill{}, err
+	}
 	sk, found := ok[name]
 	if !found {
 		if e, bad := failed[name]; bad {
