@@ -26,6 +26,7 @@
 | 领域 | 选择 | 理由 |
 |---|---|---|
 | 语言 | Go | 一种语言贯穿全项目，没有跨语言调用 |
+| 工具链版本 | mise（`mise.toml`）固定 Go 1.27.1、Bun 1.4.2 | mygo 要求 Go 1.27+；Bun 只用于开发和构建期的前端工具链，不进入最终产物 |
 | GUI | mygo，webview 模式 | 纯 Go，不需要 cgo，可交叉编译；渲染 HTML 邮件必须用 webview |
 | IMAP | `github.com/emersion/go-imap/v2` | 成熟，支持 IDLE 和 CONDSTORE |
 | SMTP | `github.com/emersion/go-smtp` | |
