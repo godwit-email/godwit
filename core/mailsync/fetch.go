@@ -213,6 +213,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 			todo = append(todo, m)
 		}
 	}
+	slices.SortFunc(todo, byUID)
 	if err := importAll(ctx, db, c, a, f, todo, r); err != nil {
 		return err
 	}
@@ -232,9 +233,8 @@ func importItems() *imap.FetchOptions {
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}
 }
 
-// importAll imports msgs in UID order, fetching their text parts in batches.
+// importAll imports msgs in the order given, fetching their text parts in batches.
 func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, r *result) error {
-	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) })
 	twins := map[string]int{} // arrivals per Message-ID and size, for claims
 	for _, m := range msgs {
 		twins[twinKey(m)]++
@@ -288,8 +288,13 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	if err != nil {
 		return err
 	}
+	// Newest first: if this stops partway, the oldest stored UID still bounds
+	// what is missing and the next round resumes below it.
+	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
 	return importAll(ctx, db, c, a, f, msgs, r)
 }
+
+func byUID(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) }
 
 func twinKey(m *imapclient.FetchMessageBuffer) string {
 	if m.Envelope == nil {

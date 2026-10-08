@@ -356,3 +356,31 @@ func TestRaiseSyncLimitBackfills(t *testing.T) {
 	assert.Equal(t, before, e.rows(t, archive+" LIMIT 2", e.folderID(t, "Archive")), "new rows, old IDs kept")
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'a0@x'"))
 }
+
+// A backfill cut off partway resumes in the next round: it imports newest
+// first, so what is stored stays contiguous from the top.
+func TestBackfillResumesAfterDrop(t *testing.T) {
+	e := newSyncEnv(t)
+	lim := 2
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	require.NoError(t, err)
+	for i := range 60 {
+		e.put(t, "Archive", msg(fmt.Sprintf("a%02d@x", i)))
+	}
+	e.sync(t)
+	all := "SELECT id FROM messages ORDER BY id"
+	before := e.rows(t, all)
+	require.Len(t, before, 2)
+
+	lim = 60 // the backfill of 58 takes two text batches
+	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	require.NoError(t, err)
+	e.im.DropFetchAfter(3) // the round's 4th FETCH: the second text batch (checked below)
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	require.Equal(t, 2+50, e.count(t, "SELECT count(*) FROM messages"), "dropped in the second batch")
+
+	e.sync(t)
+	assert.Equal(t, 60, e.count(t, "SELECT count(DISTINCT message_id) FROM messages"))
+	assert.Equal(t, 60, e.count(t, "SELECT count(*) FROM messages"))
+	assert.Equal(t, before, e.rows(t, all+" LIMIT 2"), "original IDs kept")
+}
