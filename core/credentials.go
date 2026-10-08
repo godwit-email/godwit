@@ -99,6 +99,19 @@ func (s *Service) secret(ctx context.Context, acc Account) (string, error) {
 	return v, nil
 }
 
+// refreshLock returns the account's refresh semaphore: send to take it.
+func (s *Service) refreshLock(id int64) chan struct{} {
+	s.tokMu.Lock()
+	defer s.tokMu.Unlock()
+	if s.refreshing == nil {
+		s.refreshing = map[int64]chan struct{}{}
+	}
+	if s.refreshing[id] == nil {
+		s.refreshing[id] = make(chan struct{}, 1)
+	}
+	return s.refreshing[id]
+}
+
 // tokenMargin: a cached access token closer than this to its expiry is refreshed.
 const tokenMargin = 2 * time.Minute
 
@@ -115,14 +128,8 @@ func (t oauthToken) fresh() bool {
 func (s *Service) accessToken(ctx context.Context, acc Account, rejected string) (string, error) {
 	s.tokMu.Lock()
 	seen := s.tokens[acc.ID]
-	if s.refreshing == nil {
-		s.refreshing = map[int64]chan struct{}{}
-	}
-	if s.refreshing[acc.ID] == nil {
-		s.refreshing[acc.ID] = make(chan struct{}, 1)
-	}
-	sem := s.refreshing[acc.ID]
 	s.tokMu.Unlock()
+	sem := s.refreshLock(acc.ID)
 	if seen.fresh() && seen.access != rejected {
 		return seen.access, nil
 	}

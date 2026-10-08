@@ -56,9 +56,6 @@ func (in AccountInput) validate() error {
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
-	if in.OAuthFlowID == "" && in.Password == "" {
-		return errors.New("password is required")
-	}
 	for _, e := range []struct {
 		name string
 		host string
@@ -95,7 +92,7 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 		return err
 	}
 	defer end()
-	if r, err := s.check(ctx, in); err != nil {
+	if r, err := s.check(ctx, in, ""); err != nil {
 		return &CheckError{Report: r, err: err}
 	}
 	return nil
@@ -305,3 +302,179 @@ func (s *Service) DetectProvider(ctx context.Context, email string) (auth.Provid
 }
 
 func (s *Service) ListProviders() []auth.Provider { return auth.ListProviders() }
+
+var errNotPassword = errors.New("the account does not sign in with a password")
+
+// UpdatePassword checks password against the account's servers and, if both
+// accept it, saves it and clears reauth_required and a paused outbox; the worker
+// resumes and the outbox sends in its next round. A failed check is a
+// *CheckError and leaves the keychain unchanged.
+func (s *Service) UpdatePassword(ctx context.Context, id int64, password string) error {
+	ctx, end, err := s.begin(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer end()
+	acc, err := s.account(ctx, id)
+	if err != nil {
+		return err
+	}
+	if acc.AuthType != "password" {
+		return errNotPassword
+	}
+	in := serverInput(acc.Email, acc.servers())
+	in.Password = password
+	if r, err := s.check(ctx, in, ""); err != nil {
+		return &CheckError{Report: r, err: err}
+	}
+	// A sync in flight still uses the old password; let it finish first, or its
+	// refusal would set reauth_required again after the status is cleared below.
+	unlock, err := s.lockAccount(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := keychainSet(s.keyringUser(id), password); err != nil {
+		return fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	return s.credentialsUpdated(ctx, id)
+}
+
+// Reauthorize gives an OAuth account the tokens of a finished flow, which must
+// have signed in to the account's address with its provider (ErrWrongAccount,
+// ErrProviderMismatch; the old tokens stay). It clears reauth_required and a
+// paused outbox; the worker resumes.
+func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) error {
+	ctx, end, err := s.begin(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer end()
+	acc, err := s.account(ctx, id)
+	if err != nil {
+		return err
+	}
+	if acc.AuthType != "oauth" {
+		return fmt.Errorf("account %d does not sign in with OAuth", id)
+	}
+	g, err := s.flowGrant(AccountInput{OAuthFlowID: flowID, Email: acc.Email, Provider: acc.Provider})
+	if err != nil {
+		return err
+	}
+	if g.RefreshToken == "" {
+		return errors.New("the provider granted no refresh token")
+	}
+	// No refresh with the old refresh token may finish after the swap.
+	sem := s.refreshLock(id)
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if _, ok := s.takeGrant(flowID); !ok {
+		return ErrUnknownFlow
+	}
+	if err := keychainSet(s.keyringUser(id), g.RefreshToken); err != nil {
+		return fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	s.tokMu.Lock()
+	if s.tokens == nil {
+		s.tokens = map[int64]oauthToken{}
+	}
+	s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
+	s.tokMu.Unlock()
+	return s.credentialsUpdated(ctx, id)
+}
+
+// credentialsUpdated clears the account's credential problems once new
+// credentials are in the keychain, and wakes its worker.
+func (s *Service) credentialsUpdated(ctx context.Context, id int64) error {
+	_, err := s.db.Execute(context.WithoutCancel(ctx),
+		"UPDATE accounts SET status = 'ok', status_detail = '', smtp_reauth = 0 WHERE id = ?", id)
+	s.wakeWorker(id)
+	return err
+}
+
+func (a Account) servers() ServerSettings {
+	return ServerSettings{a.Username, a.IMAPHost, a.IMAPPort, a.IMAPSecurity, a.SMTPHost, a.SMTPPort, a.SMTPSecurity}
+}
+
+// serverInput is the AccountInput that checks email's account on ss.
+func serverInput(email string, ss ServerSettings) AccountInput {
+	return AccountInput{Email: email, Username: ss.Username, IMAPHost: ss.IMAPHost, IMAPPort: ss.IMAPPort,
+		IMAPSecurity: ss.IMAPSecurity, SMTPHost: ss.SMTPHost, SMTPPort: ss.SMTPPort, SMTPSecurity: ss.SMTPSecurity}
+}
+
+// UpdateAccount writes p's fields in one transaction. New Servers are first
+// checked with the stored credentials (a failure is a *CheckError and nothing is
+// saved). IsDefault true makes the account the only default; false fails on the
+// default account, as one account is always the default. SyncLimit is 1–100000.
+func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (Account, error) {
+	ctx, end, err := s.begin(ctx, id)
+	if err != nil {
+		return Account{}, err
+	}
+	defer end()
+	acc, err := s.account(ctx, id)
+	if err != nil {
+		return Account{}, err
+	}
+	if p.SyncLimit != nil && (*p.SyncLimit < 1 || *p.SyncLimit > 100000) {
+		return Account{}, fmt.Errorf("sync limit %d is out of range 1–100000", *p.SyncLimit)
+	}
+	if p.IsDefault != nil && !*p.IsDefault && acc.IsDefault {
+		return Account{}, errors.New("make another account the default instead")
+	}
+	var cols []string
+	var args []any
+	set := func(col string, v any) { cols, args = append(cols, col+" = ?"), append(args, v) }
+	if p.Name != nil {
+		set("name", *p.Name)
+	}
+	if p.Alias != nil {
+		set("alias", *p.Alias)
+	}
+	if p.Signature != nil {
+		set("signature", *p.Signature)
+	}
+	if p.SyncLimit != nil {
+		set("sync_limit", *p.SyncLimit)
+	}
+	if p.Servers != nil {
+		in := serverInput(acc.Email, *p.Servers)
+		pw, tok, err := s.credentials(ctx, acc, "")
+		if err != nil {
+			return Account{}, err
+		}
+		in.Password = pw
+		if r, err := s.check(ctx, in, tok); err != nil {
+			return Account{}, &CheckError{Report: r, err: err}
+		}
+		set("username", in.username())
+		set("imap_host", in.IMAPHost)
+		set("imap_port", in.IMAPPort)
+		set("imap_security", string(in.IMAPSecurity))
+		set("smtp_host", in.SMTPHost)
+		set("smtp_port", in.SMTPPort)
+		set("smtp_security", string(in.SMTPSecurity))
+	}
+	var stmts []sqlite.Statement
+	if p.IsDefault != nil && *p.IsDefault {
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0 WHERE id <> ?", Args: []any{id}})
+		set("is_default", 1)
+	}
+	if len(cols) > 0 {
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
+			Args: append(args, id)})
+	}
+	if len(stmts) > 0 {
+		if _, err := s.db.Transaction(ctx, stmts); err != nil {
+			return Account{}, err
+		}
+	}
+	if p.Servers != nil {
+		s.wakeWorker(id) // the next round dials the new servers
+	}
+	return s.account(ctx, id)
+}

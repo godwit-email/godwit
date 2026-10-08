@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 	"unicode/utf8"
 
@@ -60,22 +61,29 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 		return CheckReport{}, err
 	}
 	defer end()
-	r, _ := s.check(ctx, in)
+	r, _ := s.check(ctx, in, "")
 	return r, ctx.Err()
 }
 
 // check returns the report and the first failing step's underlying error.
-func (s *Service) check(ctx context.Context, in AccountInput) (CheckReport, error) {
+// token is a stored OAuth account's access token, used instead of in.Password.
+func (s *Service) check(ctx context.Context, in AccountInput, token string) (CheckReport, error) {
 	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: "imap"}, {Name: "smtp"}}}
 	var first error
 	fail := func(i int, kind conn.FailureKind, err error) {
 		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
 	}
-	user, token := in.username(), ""
+	user := in.username()
 	steps := []func() (conn.FailureKind, error){
 		func() (conn.FailureKind, error) {
-			if err := in.validate(); err != nil || in.OAuthFlowID == "" {
+			if err := in.validate(); err != nil {
 				return KindInvalid, err
+			}
+			if in.OAuthFlowID == "" {
+				if in.Password == "" && token == "" {
+					return KindInvalid, errors.New("password is required")
+				}
+				return KindInvalid, nil
 			}
 			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
 			user, token = g.Email, g.AccessToken

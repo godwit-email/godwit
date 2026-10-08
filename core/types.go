@@ -56,3 +56,23 @@ type Folder struct {
 	Name, Role    string
 	Unread        int
 }
+
+// ServerSettings replaces an account's username and IMAP and SMTP servers. An
+// empty Username means the email address.
+type ServerSettings struct {
+	Username     string
+	IMAPHost     string
+	IMAPPort     int
+	IMAPSecurity Security
+	SMTPHost     string
+	SMTPPort     int
+	SMTPSecurity Security
+}
+
+// AccountPatch changes the account settings that are not nil.
+type AccountPatch struct {
+	Name, Alias, Signature *string
+	IsDefault              *bool
+	SyncLimit              *int
+	Servers                *ServerSettings
+}

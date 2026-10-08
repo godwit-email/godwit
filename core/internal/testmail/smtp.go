@@ -3,6 +3,7 @@ package testmail
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"net"
@@ -28,6 +29,7 @@ type Inbox struct {
 	fail       int
 	sent       *IMAP // SaveToSent target
 	rejectAuth bool
+	password   string                  // alice's; "" means secret
 	xoauth2    func(token string) bool // nil = XOAUTH2 not offered
 	auths      int
 	block      chan struct{} // closed by the BlockData release func
@@ -50,6 +52,13 @@ func (in *Inbox) BlockData() (entered <-chan struct{}, release func()) {
 func (in *Inbox) RejectAuth(reject bool) {
 	in.mu.Lock()
 	in.rejectAuth = reject
+	in.mu.Unlock()
+}
+
+// SetPassword changes alice's password.
+func (in *Inbox) SetPassword(pw string) {
+	in.mu.Lock()
+	in.password = pw
 	in.mu.Unlock()
 }
 
@@ -109,10 +118,10 @@ func (s *smtpSession) AuthMechanisms() []string {
 func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 	s.in.mu.Lock()
 	s.in.auths++
-	reject := s.in.rejectAuth
+	reject, password := s.in.rejectAuth, cmp.Or(s.in.password, "secret")
 	s.in.mu.Unlock()
 	login := func(user, pass string) error {
-		if reject || user != "alice" || pass != "secret" {
+		if reject || user != "alice" || pass != password {
 			return errors.New("invalid credentials")
 		}
 		s.auth = true
@@ -122,7 +131,7 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 	case mech == sasl.Plain:
 		return sasl.NewPlainServer(func(_, user, pass string) error { return login(user, pass) }), nil
 	case mech == "XOAUTH2" && s.in.xoauth2 != nil:
-		return &xoauth2Server{valid: s.in.xoauth2, login: func(user string) error { return login(user, "secret") }}, nil
+		return &xoauth2Server{valid: s.in.xoauth2, login: func(user string) error { return login(user, password) }}, nil
 	}
 	return nil, errors.New("unsupported mechanism")
 }

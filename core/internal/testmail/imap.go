@@ -60,6 +60,8 @@ func WithoutIdle() Option { return func(c *config) { c.noIdle = true } }
 
 // IMAP is a running in-memory IMAP server with one user, alice/secret.
 type IMAP struct {
+	password atomic.Value // string; SetPassword changes it
+
 	Addr string
 	User *imapmemserver.User
 
@@ -287,10 +289,16 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 	return s.Session.(imapserver.SessionMove).Move(w, set, dest)
 }
 
-// Login counts logins.
+// SetPassword changes alice's password, as a user does on the provider's website.
+func (s *IMAP) SetPassword(pw string) { s.password.Store(pw) }
+
+// Login counts logins and checks the current password.
 func (s session) Login(username, password string) error {
 	s.s.logins.Add(1)
-	return s.Session.Login(username, password)
+	if password != s.s.password.Load().(string) {
+		return imapserver.ErrAuthFailed
+	}
+	return s.Session.Login(username, "secret")
 }
 
 // AuthenticateMechanisms offers XOAUTH2 when configured.
@@ -360,6 +368,7 @@ func (s session) Fetch(w *imapserver.FetchWriter, set imap.NumSet, o *imap.Fetch
 func StartIMAP(t *testing.T, opts ...Option) *IMAP {
 	t.Helper()
 	s := &IMAP{cfg: config{move: true, uidplus: true, copyuid: true}, conn: map[*tconn]struct{}{}}
+	s.password.Store("secret")
 	for _, o := range opts {
 		o(&s.cfg)
 	}
