@@ -52,11 +52,11 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 		host := strings.ToLower(mxs[0].Host)
 		id := ""
 		switch {
-		case strings.HasSuffix(host, "google.com.") || strings.HasSuffix(host, "googlemail.com."):
+		case inDomain(host, "google.com.") || inDomain(host, "googlemail.com."):
 			id = "gmail"
-		case strings.HasSuffix(host, ".qq.com.") && strings.HasPrefix(host, "mxbiz"):
+		case inDomain(host, "qq.com.") && strings.HasPrefix(host, "mxbiz"):
 			id = "exmail"
-		case strings.HasSuffix(host, "messagingengine.com."):
+		case inDomain(host, "messagingengine.com."):
 			id = "fastmail"
 		}
 		if p, ok := ByID(id); ok {
@@ -98,4 +98,9 @@ func lookupSRV(ctx context.Context, r Resolver, service, domain string) (Server,
 		return Server{host, int(s.Port), sec}, true
 	}
 	return Server{}, false
+}
+
+// inDomain reports whether host is domain or a subdomain of it (label boundary).
+func inDomain(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }

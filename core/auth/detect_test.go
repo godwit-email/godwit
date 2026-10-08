@@ -108,3 +108,50 @@ func TestProvidersComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectMXBoundaryPriorityAndSRVFallback(t *testing.T) {
+	r := fakeResolver{
+		mx: map[string][]*net.MX{
+			"prio.example":  {{Host: "mxbiz1.qq.com.", Pref: 20}, {Host: "in.messagingengine.com.", Pref: 1}},
+			"evil1.example": {{Host: "mx.evilgoogle.com.", Pref: 1}},
+			"evil2.example": {{Host: "mxbiz1.evilqq.com.", Pref: 1}},
+			"evil3.example": {{Host: "in.notmessagingengine.com.", Pref: 1}},
+			"evil4.example": {{Host: "x.googlemail.com.evil.example.", Pref: 1}},
+		},
+		srv: map[string][]*net.SRV{
+			"imaps/sub.example":          {{Target: "imap.sub.example.", Port: 993}},
+			"submission/sub.example":     {{Target: "smtp.sub.example.", Port: 587}},
+			"imaps/dot.example":          {{Target: "imap.dot.example.", Port: 993}},
+			"submissions/dot.example":    {{Target: ".", Port: 0}},
+			"submission/dot.example":     {{Target: "smtp.dot.example.", Port: 587}},
+			"imaps/alldot.example":       {{Target: "imap.alldot.example.", Port: 993}},
+			"submissions/alldot.example": {{Target: ".", Port: 0}},
+		},
+	}
+	get := func(email string) (auth.Provider, auth.Source) {
+		p, s, err := auth.Detect(context.Background(), r, email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p, s
+	}
+	if p, s := get("a@prio.example"); p.ID != "fastmail" || s != "mx" {
+		t.Errorf("lowest preference must win: got %s/%s", p.ID, s)
+	}
+	for _, d := range []string{"evil1", "evil2", "evil3", "evil4"} {
+		if p, s := get("a@" + d + ".example"); p.ID != "other" || s != "guess" {
+			t.Errorf("%s: lookalike MX matched %s/%s", d, p.ID, s)
+		}
+	}
+	p, s := get("a@sub.example")
+	if s != "srv" || p.IMAP.Security != conn.TLS || p.SMTP.Security != conn.StartTLS || p.SMTP.Port != 587 || p.SMTP.Host != "smtp.sub.example" {
+		t.Errorf("submission fallback: %s %+v %+v", s, p.IMAP, p.SMTP)
+	}
+	p, s = get("a@dot.example")
+	if s != "srv" || p.SMTP.Host != "smtp.dot.example" || p.SMTP.Security != conn.StartTLS {
+		t.Errorf("dot target: %s %+v", s, p.SMTP)
+	}
+	if _, s = get("a@alldot.example"); s != "guess" {
+		t.Errorf("all-dot SMTP: source %s, want guess", s)
+	}
+}
