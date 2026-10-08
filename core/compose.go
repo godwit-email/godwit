@@ -67,6 +67,24 @@ func nullID(id int64) any {
 // its non-inline attachments, downloading them if needed. The account signature
 // ends the body.
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
+	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
+	if err != nil {
+		return Draft{}, err
+	}
+	if d, err = s.SaveDraft(ctx, d); err != nil {
+		return Draft{}, err
+	}
+	if mode == "forward" {
+		if err := s.copyAttachments(ctx, d.ID, sourceMessageID); err != nil {
+			return Draft{}, errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
+		}
+	}
+	return s.GetDraft(ctx, d.ID)
+}
+
+// buildDraft is NewDraft's draft before it is saved: addresses, subject,
+// quote and signature, without attachments.
+func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
 	if !draftModes[mode] {
 		return Draft{}, fmt.Errorf("unknown draft mode %q", mode)
 	}
@@ -92,15 +110,7 @@ func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, so
 	if acc.Signature != "" {
 		d.HTML += "<p>-- <br>" + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p>"
 	}
-	if d, err = s.SaveDraft(ctx, d); err != nil {
-		return Draft{}, err
-	}
-	if mode == "forward" {
-		if err := s.copyAttachments(ctx, d.ID, sourceMessageID); err != nil {
-			return Draft{}, errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
-		}
-	}
-	return s.GetDraft(ctx, d.ID)
+	return d, nil
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.

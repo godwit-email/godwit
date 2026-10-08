@@ -48,9 +48,6 @@ type Citation struct {
 // approvals or resuming.
 var ErrRunActive = errors.New("the conversation already has an active run")
 
-// witSystem is the system prompt of every Wit run, started or resumed.
-const witSystem = ai.UntrustedSystemNote
-
 // NewConversation starts an empty conversation: kind "ask" without a draft,
 // or "assist" on draftID.
 func (s *Service) NewConversation(ctx context.Context, kind string, draftID int64) (Conversation, error) {
@@ -356,6 +353,10 @@ type runJob struct {
 	scope    *gateway.Scope
 	round    int      // seq of the first approval the next interrupt records
 	prepared sync.Map // call ID -> prepared, stored by write tools' gates
+	cites    sync.Map // call ID -> []Citation, stored by read tools
+	clued    sync.Map // recipients create_draft has shown language clues for
+	full     []byte   // the conversation state before TrimState
+	dropped  int      // messages TrimState left out of the request
 	ctx      context.Context
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -367,6 +368,29 @@ type snapshot struct {
 	Round    int  `json:"round"` // seq of the current interrupt's first approval
 }
 
+type runKey struct{}
+
+// runOf is the run whose tool is given ctx.
+func runOf(ctx context.Context) *runJob { return ctx.Value(runKey{}).(*runJob) }
+
+// historyBudget caps the runes of the conversation state sent to the model.
+const historyBudget = 60000
+
+// request builds the run's request on state, trimmed to historyBudget; the
+// job keeps what drive needs to save the whole history.
+func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []registeredTool) (ai.Request, error) {
+	system, err := s.witSystem(ctx, job.conv)
+	if err != nil {
+		return ai.Request{}, err
+	}
+	sent, dropped, err := ai.TrimState(state, historyBudget)
+	if err != nil {
+		return ai.Request{}, err
+	}
+	job.full, job.dropped = state, dropped
+	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools)}, nil
+}
+
 // track registers a run in flight. The caller holds runMu.
 func (s *Service) track(ctx context.Context, id int64, conv Conversation, scope *gateway.Scope, round int) *runJob {
 	ctx, cancel := context.WithCancel(ctx)
@@ -376,6 +400,15 @@ func (s *Service) track(ctx context.Context, id int64, conv Conversation, scope 
 	}
 	s.active[id] = job
 	return job
+}
+
+// untrack ends tracking job. The caller holds runMu.
+func (s *Service) untrack(job *runJob) {
+	if s.active[job.id] == job { // a resume may already track this run ID
+		delete(s.active, job.id)
+	}
+	job.cancel()
+	close(job.done)
 }
 
 // startRun runs prompt in conv with tools. Its events also go to the
@@ -446,8 +479,14 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), st))
 	}
 	job := s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0)
+	req, err := s.request(ctx, job, model, state, tools)
+	if err != nil {
+		s.untrack(job)
+		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
+	}
+	req.Prompt = prompt
 	out := s.newStream()
-	go s.drive(job, end, e, ai.Request{Model: model, System: witSystem, State: state, Prompt: prompt, Tools: s.specs(job, tools)}, out)
+	go s.drive(job, end, e, req, out)
 	return out, nil
 }
 
@@ -460,6 +499,11 @@ func (s *Service) specs(job *runJob, tools []registeredTool) []ai.ToolSpec {
 	out := make([]ai.ToolSpec, 0, len(tools))
 	for _, t := range tools {
 		spec := g.Wrap(job.scope, gateway.SourceWit, t.Spec, t.Write, t.Egress)
+		if run := spec.Run; run != nil {
+			spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
+				return run(context.WithValue(ctx, runKey{}, job), args)
+			}
+		}
 		gate, ex := spec.Gate, t.Exec
 		spec.Gate = func(ctx context.Context, args json.RawMessage) (ai.Decision, error) {
 			d, err := gate(ctx, args)
@@ -469,7 +513,7 @@ func (s *Service) specs(job *runJob, tools []registeredTool) []ai.ToolSpec {
 			if ex == nil {
 				return ai.Deny, errors.New("this call needs an approval that this tool cannot take")
 			}
-			p, err := ex.Prepare(ctx, job.conv, args)
+			p, err := ex.Prepare(context.WithValue(ctx, runKey{}, job), job.conv, args)
 			if err != nil {
 				return ai.Deny, err
 			}
@@ -490,11 +534,8 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 			beforeUntrack(job.id)
 		}
 		s.runMu.Lock()
-		if s.active[job.id] == job { // a resume may already track this run ID
-			delete(s.active, job.id)
-		}
+		s.untrack(job)
 		s.runMu.Unlock()
-		close(job.done)
 	}()
 	emit := func(ev WitEvent) {
 		ev.RunID = job.id
@@ -506,11 +547,26 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	events, wait := e.Run(job.ctx, req)
 	for ev := range events {
 		if !terminal(WitEvent{Event: ev}) {
-			emit(WitEvent{Event: ev})
+			wev := WitEvent{Event: ev}
+			if ev.Kind == "tool_result" {
+				if c, ok := job.cites.LoadAndDelete(ev.Result.CallID); ok {
+					wev.Citations = c.([]Citation)
+				}
+			}
+			emit(wev)
 		}
 	}
 	ctx := context.WithoutCancel(job.ctx) // the outcome is recorded even when cancelled
-	fin, err := s.settleRun(ctx, job, req, wait())
+	res := wait()
+	if res.Err == nil {
+		// Save the whole history, not just what this run was sent.
+		if st, err := ai.RestoreState(job.full, res.State, job.dropped); err != nil {
+			res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
+		} else {
+			res.State = st
+		}
+	}
+	fin, err := s.settleRun(ctx, job, req, res)
 	if err != nil {
 		if _, ferr := s.db.Execute(ctx, "UPDATE runs SET state = 'failed', updated_at = ? WHERE id = ? AND state IN ('running', 'resuming')",
 			time.Now().Unix(), job.id); ferr != nil {
@@ -639,6 +695,12 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		scope.MarkReadMail()
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	go s.drive(job, end, e, ai.Request{Model: model, System: witSystem, State: state, Tools: s.specs(job, s.registered(names...)), Responses: results}, nil)
+	req, err := s.request(ctx, job, model, state, s.registered(names...))
+	if err != nil {
+		s.untrack(job)
+		return err
+	}
+	req.Responses = results
+	go s.drive(job, end, e, req, nil)
 	return nil
 }

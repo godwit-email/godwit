@@ -149,6 +149,33 @@ func (s Skill) ReadFile(p string) ([]byte, error) {
 	return b, nil
 }
 
+// References lists the regular files under references/, as paths ReadFile
+// takes. Symlinks are left out (ReadFile refuses them).
+func (s Skill) References() ([]string, error) {
+	fsys := s.FS
+	if s.dir != "" {
+		root, err := os.OpenRoot(s.dir)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		fsys = root.FS()
+	}
+	var out []string
+	err := fs.WalkDir(fsys, "references", func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case p == "references" && errors.Is(err, fs.ErrNotExist):
+			return fs.SkipAll
+		case err != nil:
+			return err
+		case d.Type().IsRegular():
+			out = append(out, p)
+		}
+		return nil
+	})
+	return out, err
+}
+
 // Load parses every directory of root as a skill. Directories that fail are
 // returned in failed, keyed by name.
 func Load(root fs.FS, builtin bool) (ok []Skill, failed map[string]error) {

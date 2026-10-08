@@ -141,6 +141,19 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 	return out
 }
 
+// subjectContext wraps subject lines only (language clues) the same way and
+// marks scope as having read mail.
+func (s *Service) subjectContext(scope *gateway.Scope, list []MessageSummary) []mailItem {
+	scope.MarkReadMail()
+	out := make([]mailItem, 0, len(list))
+	for _, m := range list {
+		suspect := ai.SuspectInjection(m.Subject)
+		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From,
+			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), "Subject: "+m.Subject, suspect)})
+	}
+	return out
+}
+
 func mailHeader(m MessageSummary) string {
 	return "Subject: " + m.Subject + "\nFrom: " + m.From + "\nDate: " + m.Date.UTC().Format(time.RFC3339) + "\n"
 }
