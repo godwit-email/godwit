@@ -59,8 +59,8 @@ func (s *Service) scanModelService(r []any) (ModelService, error) {
 	if err := json.Unmarshal([]byte(store.Str(r[4])), &m.Models); err != nil {
 		return m, fmt.Errorf("stored models: %w", err)
 	}
-	k, _ := keychainGet(s.modelKeyUser(m.ID)) // a keychain error is just "no key" here
-	m.HasKey = k != ""
+	k, kerr := keychainGet(s.modelKeyUser(m.ID)) // a keychain error is just "no key" here
+	m.HasKey = kerr == nil && k != ""
 	return m, nil
 }
 
@@ -167,7 +167,8 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 			return ModelService{}, fmt.Errorf("save API key to keychain: %w", err)
 		}
 	}
-	return s.modelServiceBy(ctx, "id = ?", id)
+	// The write is done: a cancelled ctx must not turn it into an error.
+	return s.modelServiceBy(context.WithoutCancel(ctx), "id = ?", id)
 }
 
 func (s *Service) RemoveModelService(ctx context.Context, id int64) error {

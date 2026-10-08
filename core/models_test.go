@@ -40,7 +40,8 @@ func TestModelServiceCRUD(t *testing.T) {
 	ms2, err := s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "or", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k2", Models: []string{"m", "n"}})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, ms2.Version)
-	k, _ = keyring.Get(keyringService, s.installID+"/model:"+itoa(ms.ID))
+	k, err = keyring.Get(keyringService, s.installID+"/model:"+itoa(ms.ID))
+	require.NoError(t, err)
 	assert.Equal(t, "k2", k)
 
 	list, err := s.ListModelServices(bg)
@@ -236,9 +237,27 @@ func TestListModelServicesSurvivesKeychainError(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	_, err := s.AddModelService(bg, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "k"})
 	require.NoError(t, err)
-	setFor(t, &keyringGet, func(svc, user string) (string, error) { return "", errors.New("locked") })
+	setFor(t, &keyringGet, func(svc, user string) (string, error) { return "partial", errors.New("locked") })
 	list, err := s.ListModelServices(bg)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.False(t, list[0].HasKey)
+}
+
+func TestUpdateSurvivesCancelDuringKeyWrite(t *testing.T) {
+	s := modelSvc(t)
+	cctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a, err := s.AddModelService(cctx, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "old"})
+	require.NoError(t, err)
+	setFor(t, &keyringSet, func(svc, user, pw string) error {
+		cancel()
+		return keyring.Set(svc, user, pw)
+	})
+	got, err := s.UpdateModelService(cctx, a.ID, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "new"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, got.Version)
+	k, err := keyring.Get(keyringService, s.modelKeyUser(a.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "new", k)
 }
