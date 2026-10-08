@@ -35,7 +35,7 @@
 | 存储 | mygo sqlite 插件的 Go API（`github.com/egoist/mygo/plugins/sqlite`） | 原生 SQLite 3.53，通过 purego 加载，不需要 cgo，已开启 FTS5 |
 | 凭据 | `golang.org/x/oauth2`，`github.com/zalando/go-keyring` | 存进系统钥匙串，不需要 cgo |
 | Agent 框架 | Genkit Go（`github.com/firebase/genkit/go`）v1.13.1，锁定版本；插件 `anthropic`、`compat_oai` | 1.x 稳定版、体积最小、自带工具中断 / 恢复；选型依据见 6.3 |
-| 插件运行时 | esbuild（Go 库）把 TS 转成 JS，再用 QuickJS-on-wazero 运行（如 `fastschema/qjs`） | 纯 Go，支持 ES2023 和 async；备选 goja |
+| 插件运行时 | esbuild（Go 库）把 TS 转成 JS（目标 ES2022，降级 async generator / for-await），再用 goja（`github.com/dop251/goja`）运行 | 纯 Go、可被抢占、默认不暴露任何全局对象；2026-10-09 原型对比后取代 QuickJS-on-wazero（`fastschema/qjs` 已停止维护、与新版 wazero 不兼容、死循环会卡住整个进程、默认挂载工作目录） |
 
 不采用的方案：pimalaya（Rust 库，没有 C ABI，接入要么需要 cgo，要么要单独跑一个进程）；DuckDB（面向分析查询，不适合邮件这种频繁读写单条记录的场景，Go 驱动还需要 cgo）；Go `plugin` 包（不支持 Windows，且要求和主程序用同一个 Go 版本编译）。
 
@@ -211,7 +211,7 @@ export default function (ctx: Ctx) {
 - **防外泄**：网关为数据打上来源标记。任何外发（插件的 `ctx.net`、MCP 工具、Hook 内的联网）在**实际发出请求的那一刻**检查：本次调用链里是否读过邮件内容（包括工具内部自己读的、预先放进上下文的、Hook 收到的），以及目的地是否在批准范围内。读过邮件内容的外发需要用户审批，卡片上显示目的域名；插件 Hook 只能外发到 manifest 声明并经用户安装时同意的域名。
 - **防 prompt 注入**：邮件内容交给模型时统一标记为不可信数据；写操作工具一律需要审批；审批绑定调用 ID、最终参数（修复后的参数）和目标对象的版本，参数或对象变化后审批失效。
 - **审批只执行一次**：每个待审批调用持久化为「待审批 → 已批准 → 执行中 → 已完成 / 已拒绝」，带幂等键。宿主执行完后用 `Respond` + `WithToolResponses` 把结果交还 Genkit，**不用 `Restart`**（否则会再执行一次）；崩溃后停在「执行中」的调用，先按幂等键核对是否已生效，再决定交还结果还是标为失败。
-- **插件沙箱**：每个插件一个 QuickJS 实例，设内存上限、单次调用的 CPU 时间上限（`beforeSend` 最多 5 秒），宿主侧调用可随插件超时一起取消；崩溃或连续超时的插件自动停用并通知用户。WASM 本身不限制宿主调用，所以网络限制在宿主的 `ctx.net` 实现里做：只允许 manifest 声明的域名，跟随重定向时每一跳都重新校验，DNS 解析后拒绝内网、回环和链路本地地址，限制响应大小。
+- **插件沙箱**：每个插件一个 goja 实例（由一个专属 goroutine 驱动，Promise 只在该 goroutine 上 resolve），单次调用的 CPU 时间上限（`beforeSend` 最多 5 秒，到时 `Interrupt`，实例可继续使用），宿主侧调用可随插件超时一起取消；goja 没有单实例内存上限，用堆用量看门狗（超阈值中断正在运行的插件）加宿主侧数据大小上限代替，需要硬上限时再改为子进程运行插件。崩溃、超时或触发内存看门狗的插件连续出错后自动停用并通知用户。WASM 本身不限制宿主调用，所以网络限制在宿主的 `ctx.net` 实现里做：只允许 manifest 声明的域名，跟随重定向时每一跳都重新校验，DNS 解析后拒绝内网、回环和链路本地地址，限制响应大小。
 - 调用没有声明权限的 `ctx` API 时直接抛错。
 - 日志按值动态脱敏：收集所有 secret 和凭据的字符串值，输出前替换，不依赖字段名。
 
@@ -396,7 +396,6 @@ Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统�
 
 ## 10. 待定
 
-- QuickJS-on-wazero 和 goja 二选一，原型阶段测一下性能和兼容性再定。
 - mygo 托盘、通知、开机自启在三个平台上的实际表现，原型阶段验证。
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿。
