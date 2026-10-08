@@ -278,14 +278,14 @@ func TestGetAttachmentRereadsRowUnderLock(t *testing.T) {
 	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
 	e.sync(t)
 	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
-	mu := e.s.accountLock(e.acc.ID)
-	mu.Lock()
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
 	done := make(chan error, 1)
 	go func() { _, _, err := e.s.GetAttachment(bg, aid); done <- err }()
 	time.Sleep(100 * time.Millisecond) // the call has read its row and waits for the lock
-	_, err := e.s.db.Execute(bg, "DELETE FROM messages")
+	_, err = e.s.db.Execute(bg, "DELETE FROM messages")
 	require.NoError(t, err)
-	mu.Unlock()
+	unlock()
 	assert.ErrorContains(t, <-done, "not found")
 }
 

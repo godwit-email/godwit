@@ -1,9 +1,11 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,9 +17,17 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// newWorkerEnv is newSyncEnv with AutoSync on and a short backoff. The IDLE and poll
-// intervals stay at 5 minutes, so anything a test sees sooner came from IDLE or a wake.
-func newWorkerEnv(t *testing.T) (*syncEnv, <-chan events.Event) {
+// setFor sets *v to x for the rest of the test.
+func setFor[T any](t *testing.T, v *T, x T) {
+	old := *v
+	*v = x
+	t.Cleanup(func() { *v = old })
+}
+
+// newWorkerEnv is newSendEnv with AutoSync on and a short backoff. The IDLE and poll
+// intervals stay at 5 minutes unless a test lowers them first, so anything a test
+// sees sooner came from IDLE or a wake.
+func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*sendEnv, <-chan events.Event) {
 	t.Helper()
 	b0, b1 := backoffMin, backoffMax
 	backoffMin, backoffMax = 20*time.Millisecond, 200*time.Millisecond
@@ -29,11 +39,11 @@ func newWorkerEnv(t *testing.T) (*syncEnv, <-chan events.Event) {
 	t.Cleanup(func() { s.Close() })
 	ch, unsub := s.Subscribe()
 	t.Cleanup(unsub)
-	smtpAddr, _ := testmail.StartSMTP(t)
-	im := testmail.StartIMAP(t)
+	smtpAddr, in := testmail.StartSMTP(t)
+	im := testmail.StartIMAP(t, opts...)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
-	e := &syncEnv{s: s, im: im, acc: acc, dir: dir}
+	e := &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in}
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
 	return e, ch
 }
@@ -134,6 +144,7 @@ func TestStartupCleansOrphans(t *testing.T) {
 	require.NoError(t, err)
 	da, err := e.s.addAttachment(bg, d.ID, "k.txt", "text/plain", []byte("keep"))
 	require.NoError(t, err)
+	orphanInDraft := filepath.Join(filepath.Dir(store.Str(e.rows(t, "SELECT path FROM draft_attachments WHERE id = ?", da.ID)[0][0])), "9999")
 	draftFile := store.Str(e.rows(t, "SELECT path FROM draft_attachments WHERE id = ?", da.ID)[0][0])
 	e.sendNew(t) // stays queued: nothing syncs
 	queued := store.Str(e.rows(t, "SELECT raw_path FROM outbox WHERE state = 'queued'")[0][0])
@@ -144,6 +155,7 @@ func TestStartupCleansOrphans(t *testing.T) {
 		filepath.Join(e.dir, "cache", strconv.FormatInt(e.acc.ID, 10), ".tmp-123"),
 		filepath.Join(e.dir, "drafts", "9999", "1"),
 		filepath.Join(e.dir, "outbox", "9999.eml"),
+		orphanInDraft, // a live draft's directory does not shelter files no row names
 	}
 	for _, p := range orphans {
 		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o700))
@@ -157,4 +169,152 @@ func TestStartupCleansOrphans(t *testing.T) {
 	for _, p := range []string{cached, draftFile, queued} {
 		assert.FileExists(t, p)
 	}
+}
+
+// lockedWorkerEnv returns a worker env whose worker is blocked waiting for the
+// account lock, which the test holds until it ends.
+func lockedWorkerEnv(t *testing.T) *sendEnv {
+	t.Helper()
+	e, ch := newWorkerEnv(t)
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
+	t.Cleanup(unlock)
+	e.put(t, "INBOX", msg("wait@x")) // IDLE ends; the next round waits for the lock
+	time.Sleep(200 * time.Millisecond)
+	assert.Empty(t, ofType(collect(ch), events.SyncStarted), "the round must be waiting for the lock")
+	return e
+}
+
+// within fails the test unless f returns within d.
+func within(t *testing.T, d time.Duration, what string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { defer close(done); f() }()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("%s did not return within %s", what, d)
+	}
+}
+
+func TestCloseWhileAccountLocked(t *testing.T) {
+	e := lockedWorkerEnv(t)
+	within(t, 5*time.Second, "Close", func() { require.NoError(t, e.s.Close()) })
+}
+
+func TestRemoveAccountWhileAccountLocked(t *testing.T) {
+	e := lockedWorkerEnv(t)
+	within(t, 5*time.Second, "RemoveAccount", func() { require.NoError(t, e.s.RemoveAccount(bg, e.acc.ID)) })
+}
+
+// slowExit makes every worker take 300ms to exit; call it before newWorkerEnv.
+func slowExit(t *testing.T) {
+	setFor(t, &beforeWorkerExit, func() { time.Sleep(300 * time.Millisecond) })
+}
+
+func workerOf(t *testing.T, e *sendEnv) *worker {
+	t.Helper()
+	e.s.workersMu.Lock()
+	defer e.s.workersMu.Unlock()
+	require.NotNil(t, e.s.workers[e.acc.ID])
+	return e.s.workers[e.acc.ID]
+}
+
+func exited(w *worker) bool {
+	select {
+	case <-w.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestConcurrentClose(t *testing.T) {
+	slowExit(t)
+	e, _ := newWorkerEnv(t)
+	w := workerOf(t, e)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.NoError(t, e.s.Close())
+			assert.True(t, exited(w), "Close returned before the worker exited")
+		}()
+	}
+	within(t, 5*time.Second, "Close", wg.Wait)
+}
+
+func TestRemoveAccountRacingClose(t *testing.T) {
+	slowExit(t)
+	e, _ := newWorkerEnv(t)
+	w := workerOf(t, e)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); e.s.RemoveAccount(bg, e.acc.ID) }() // may lose to Close: the DB is closed
+	go func() {
+		defer wg.Done()
+		assert.NoError(t, e.s.Close())
+		assert.True(t, exited(w), "Close returned before the removed account's worker exited")
+	}()
+	within(t, 5*time.Second, "RemoveAccount and Close", wg.Wait)
+}
+
+func TestWorkerParksWhileReauthRequired(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
+	e.put(t, "INBOX", msg("r1@x")) // the next round fails to log in
+	waitEvent(t, ch, events.SyncFailed, 5*time.Second)
+	require.Eventually(t, func() bool {
+		a, err := e.s.account(bg, e.acc.ID)
+		return err == nil && a.Status == "reauth_required"
+	}, 5*time.Second, 10*time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // let a retry already scheduled run
+	n := e.im.Logins()
+	e.s.wakeWorker(e.acc.ID) // a local change must not log in either
+	time.Sleep(time.Second)  // backoff alone would retry about 7 times
+	assert.Equal(t, n, e.im.Logins(), "no logins while reauth_required")
+
+	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID)) // resumes the worker
+	e.put(t, "INBOX", msg("r2@x"))
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'r2@x'") == 1
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestCancelledSyncIsNotAFailure(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	ctx, cancel := context.WithCancel(bg)
+	beforeOutboxItem = func(int64) { cancel() }
+	t.Cleanup(func() { beforeOutboxItem = nil })
+	require.Error(t, e.s.SyncNow(ctx, e.acc.ID))
+	assert.Empty(t, ofType(collect(ch), events.SyncFailed))
+}
+
+func TestWorkerPollsWithoutIdle(t *testing.T) {
+	setFor(t, &pollInterval, 200*time.Millisecond)
+	e, ch := newWorkerEnv(t, testmail.WithoutIdle())
+	e.put(t, "INBOX", msg("p@x"))
+	waitEvent(t, ch, events.MessageReceived, 5*time.Second)
+}
+
+func TestWorkerFullRoundFindsOtherFolders(t *testing.T) {
+	setFor(t, &idleMax, 200*time.Millisecond)
+	e, ch := newWorkerEnv(t)
+	e.put(t, "Archive", msg("arch@x"))
+	waitEvent(t, ch, events.MessageReceived, 5*time.Second)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x' AND folder_id = ?", e.folderID(t, "Archive")))
+}
+
+func TestWorkerDeliversSend(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+	mid := e.sendNew(t)
+	require.Eventually(t, func() bool { return len(e.smtp.Messages()) == 1 }, 5*time.Second, 20*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM outbox WHERE message_id_hdr = ? AND state = 'done'", mid) == 1
+	}, 5*time.Second, 20*time.Millisecond)
 }

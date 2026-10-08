@@ -18,6 +18,9 @@ var (
 	backoffMax   = 5 * time.Minute
 )
 
+// beforeWorkerExit, when set, runs as a worker exits. Tests use it to make exits slow.
+var beforeWorkerExit func()
+
 // worker is one account's background sync goroutine.
 type worker struct {
 	cancel context.CancelFunc
@@ -45,19 +48,28 @@ func (s *Service) startWorker(id int64) {
 	go func() {
 		defer close(w.done)
 		s.runWorker(ctx, id, w.wake)
+		if beforeWorkerExit != nil {
+			beforeWorkerExit()
+		}
 	}()
 }
 
-// stopWorker stops the account's worker, if any, and waits for it to exit.
+// stopWorker stops the account's worker, if any, and waits for it to exit. The
+// worker stays registered until then, so a concurrent Close waits for it too.
 func (s *Service) stopWorker(id int64) {
 	s.workersMu.Lock()
 	w := s.workers[id]
-	delete(s.workers, id)
 	s.workersMu.Unlock()
-	if w != nil {
-		w.cancel()
-		<-w.done
+	if w == nil {
+		return
 	}
+	w.cancel()
+	<-w.done
+	s.workersMu.Lock()
+	if s.workers[id] == w {
+		delete(s.workers, id)
+	}
+	s.workersMu.Unlock()
 }
 
 // wakeWorker asks the account's worker for a sync now.
@@ -76,6 +88,9 @@ func (s *Service) wakeWorker(id int64) {
 func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	var delay time.Duration
 	for {
+		if !s.awaitCredentials(ctx, id, wake) {
+			return
+		}
 		err := s.syncRound(ctx, id, wake)
 		if ctx.Err() != nil {
 			return
@@ -91,6 +106,24 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 		case <-ctx.Done():
 			t.Stop()
 			return
+		}
+	}
+}
+
+// awaitCredentials parks the worker while the account is reauth_required, so it
+// makes no login attempts. A successful SyncNow, which follows new credentials,
+// wakes it; so does any local change, which only re-reads the status. It reports
+// false when ctx ends.
+func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan struct{}) bool {
+	for {
+		acc, err := s.account(ctx, id)
+		if err != nil || acc.Status != "reauth_required" {
+			return ctx.Err() == nil // on a read error the round reports it
+		}
+		select {
+		case <-wake:
+		case <-ctx.Done():
+			return false
 		}
 	}
 }
@@ -123,8 +156,8 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) e
 	} else {
 		release() // only needed for IDLE; a second release is harmless
 	}
-	if err := s.SyncNow(ctx, id); err != nil {
-		return err // SyncNow announced it
+	if err := s.syncNow(ctx, id); err != nil {
+		return err // syncNow announced it
 	}
 	if idle {
 		if err := mailsync.Idle(ctx, c, updates, wake, idleMax); err != nil {

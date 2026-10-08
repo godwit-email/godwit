@@ -87,9 +87,11 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if p, ok, err := s.cached(ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
-	mu := s.accountLock(a.accountID)
-	mu.Lock()
-	defer mu.Unlock()
+	unlock, err := s.lockAccount(ctx, a.accountID)
+	if err != nil {
+		return "", AttachmentInfo{}, err
+	}
+	defer unlock()
 	// The row may have changed (cached, moved, deleted) while we waited for the lock.
 	if a, err = s.loadAttachment(ctx, attachmentID); err != nil {
 		return "", AttachmentInfo{}, err

@@ -51,6 +51,14 @@ func TestDefaultCaps(t *testing.T) {
 	assert.True(t, c.Caps().Has(imap.CapIdle))
 }
 
+func TestWithoutIdleAndLogins(t *testing.T) {
+	s := testmail.StartIMAP(t, testmail.WithoutIdle())
+	c := dial(t, s)
+	assert.False(t, c.Caps().Has(imap.CapIdle))
+	assert.True(t, c.Caps().Has(imap.CapMove))
+	assert.Equal(t, int64(1), s.Logins())
+}
+
 func TestWithoutMove(t *testing.T) {
 	c := dial(t, testmail.StartIMAP(t, testmail.WithoutMove()))
 	assert.False(t, c.Caps().Has(imap.CapMove))

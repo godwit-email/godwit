@@ -1,6 +1,7 @@
 package testmail
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"regexp"
@@ -14,7 +15,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 )
 
-type config struct{ move, uidplus, copyuid bool }
+type config struct{ move, uidplus, copyuid, noIdle bool }
 
 // Option customises StartIMAP.
 type Option func(*config)
@@ -28,6 +29,10 @@ func WithoutUIDPlus() Option { return func(c *config) { c.uidplus, c.copyuid = f
 
 // WithoutCOPYUID keeps UIDPLUS advertised but suppresses COPYUID response codes.
 func WithoutCOPYUID() Option { return func(c *config) { c.copyuid = false } }
+
+// WithoutIdle removes IDLE from the advertised capabilities (the server adds it
+// on its own, so the connection strips it from CAPABILITY lines).
+func WithoutIdle() Option { return func(c *config) { c.noIdle = true } }
 
 // IMAP is a running in-memory IMAP server with one user, alice/secret.
 type IMAP struct {
@@ -43,7 +48,11 @@ type IMAP struct {
 	drop       atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
 	cmds       atomic.Int64 // MOVE and COPY commands handled
 	dropAppend atomic.Bool
+	logins     atomic.Int64
 }
+
+// Logins is how many LOGIN commands the server has handled.
+func (s *IMAP) Logins() int64 { return s.logins.Load() }
 
 // DropAfterNextAppend makes the next APPEND store the message and then close the
 // client's connection before the tagged OK.
@@ -55,6 +64,9 @@ func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
 // uidCodes matches the COPYUID code of a status line.
 var uidCodes = regexp.MustCompile(`^\* OK \[COPYUID [^\]]*\] `)
 
+// capLine matches a capability list in a server response.
+var capLine = regexp.MustCompile(`CAPABILITY[^\r\n]*`)
+
 // tconn is an accepted connection that can be killed mid-FETCH. While stripCopyUID
 // is set (only during a MOVE, which writes nothing but status lines and EXPUNGEs, never
 // a literal) it removes the COPYUID code from the untagged OK line.
@@ -62,6 +74,7 @@ type tconn struct {
 	net.Conn
 	fetch        atomic.Bool
 	stripCopyUID atomic.Bool
+	noIdle       bool
 	written      atomic.Int32
 	sent         *atomic.Int64
 }
@@ -70,6 +83,13 @@ func (c *tconn) Write(b []byte) (int, error) {
 	if c.fetch.Load() && c.written.Add(1) > 1 {
 		c.Conn.Close()
 		return 0, net.ErrClosed
+	}
+	if c.noIdle && capLine.Match(b) {
+		out := capLine.ReplaceAllFunc(b, func(l []byte) []byte { return bytes.ReplaceAll(l, []byte(" IDLE"), nil) })
+		if _, err := c.Conn.Write(out); err != nil {
+			return 0, err
+		}
+		return len(b), nil
 	}
 	if c.stripCopyUID.Load() && uidCodes.Match(b) {
 		if _, err := c.Conn.Write(uidCodes.ReplaceAll(b, []byte("* OK "))); err != nil {
@@ -92,7 +112,7 @@ func (l tln) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &tconn{Conn: nc, sent: &l.s.sent}
+	c := &tconn{Conn: nc, sent: &l.s.sent, noIdle: l.s.cfg.noIdle}
 	l.s.mu.Lock()
 	l.s.conn[c] = struct{}{}
 	l.s.mu.Unlock()
@@ -136,6 +156,12 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 		defer s.conn.stripCopyUID.Store(false)
 	}
 	return s.Session.(imapserver.SessionMove).Move(w, set, dest)
+}
+
+// Login counts logins.
+func (s session) Login(username, password string) error {
+	s.s.logins.Add(1)
+	return s.Session.Login(username, password)
 }
 
 // Idle polls for updates instead of using the memory backend's tracker, which

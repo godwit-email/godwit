@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,13 +33,16 @@ type Service struct {
 	opts    Options
 
 	locksMu sync.Mutex
-	locks   map[int64]*sync.Mutex // per-account: sync and op pushing never overlap
+	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
 
 	editMu sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
 
 	workersMu sync.Mutex
 	workers   map[int64]*worker
 	closed    bool
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
@@ -71,19 +75,25 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 }
 
 // Close stops the background workers, waits for them and releases the database.
+// Concurrent and repeated calls all wait for the same shutdown.
 func (s *Service) Close() error {
-	s.workersMu.Lock()
-	s.closed = true
-	ws := s.workers
-	s.workers = nil
-	s.workersMu.Unlock()
-	for _, w := range ws {
-		w.cancel()
-	}
-	for _, w := range ws {
-		<-w.done
-	}
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		s.workersMu.Lock()
+		s.closed = true
+		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping
+		s.workersMu.Unlock()
+		for _, w := range ws {
+			w.cancel()
+		}
+		for _, w := range ws {
+			<-w.done
+		}
+		s.workersMu.Lock()
+		s.workers = nil
+		s.workersMu.Unlock()
+		s.closeErr = s.db.Close()
+	})
+	return s.closeErr
 }
 
 // cleanOrphans removes files under cache/, drafts/ and outbox/ that no row refers
@@ -93,6 +103,7 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 	for _, q := range []string{
 		"SELECT cache_path FROM attachments WHERE cache_path IS NOT NULL",
 		"SELECT raw_path FROM outbox WHERE state != 'done'",
+		"SELECT path FROM draft_attachments WHERE path IS NOT NULL",
 	} {
 		rows, err := s.db.Query(ctx, q)
 		if err != nil {
@@ -104,20 +115,10 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			}
 		}
 	}
-	drafts, err := s.db.Query(ctx, "SELECT id FROM drafts")
-	if err != nil {
-		return err
-	}
-	for _, r := range drafts.Values {
-		if p, err := filepath.Abs(s.draftDir(store.Int(r[0]))); err == nil {
-			keep[p] = true
-		}
-	}
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(s.dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			// A draft's files live in its directory; everything else is kept by its own path.
-			return err != nil || keep[p] || sub == "drafts" && keep[filepath.Dir(p)]
+			return err != nil || keep[p]
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -129,29 +130,56 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
 
-// accountLock returns the account's sync mutex, creating it on first use.
-func (s *Service) accountLock(id int64) *sync.Mutex {
+// lockAccount takes the account's sync lock, or gives up when ctx ends.
+func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err error) {
 	s.locksMu.Lock()
-	defer s.locksMu.Unlock()
 	if s.locks == nil {
-		s.locks = map[int64]*sync.Mutex{}
+		s.locks = map[int64]chan struct{}{}
 	}
 	if s.locks[id] == nil {
-		s.locks[id] = new(sync.Mutex)
+		s.locks[id] = make(chan struct{}, 1)
 	}
-	return s.locks[id]
+	sem := s.locks[id]
+	s.locksMu.Unlock()
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // SyncNow connects to the account's IMAP server, pushes queued local changes,
-// sends and files the outbox, and fetches new mail. Calls for the same account run one at a time.
+// sends and files the outbox, and fetches new mail. Calls for the same account
+// run one at a time. Success on an account that needed new credentials resumes
+// its background worker.
 func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
-	mu := s.accountLock(accountID)
-	mu.Lock()
-	defer mu.Unlock()
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if err := s.syncNow(ctx, accountID); err != nil {
+		return err
+	}
+	if acc.Status == "reauth_required" {
+		s.wakeWorker(accountID)
+	}
+	return nil
+}
+
+// syncNow is SyncNow for the worker. A cancelled sync is a shutdown, not a failure.
+func (s *Service) syncNow(ctx context.Context, accountID int64) error {
+	unlock, err := s.lockAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
 	if err := s.syncAccount(ctx, accountID); err != nil {
-		// Safe to show: conn never includes server text or the password in login errors.
-		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error()})
+		if ctx.Err() == nil {
+			// Safe to show: conn never includes server text or the password in login errors.
+			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error()})
+		}
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.SyncFinished, AccountID: accountID})

@@ -64,9 +64,11 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("outbox item %d not found", id)
 	}
-	mu := s.accountLock(store.Int(rows.Values[0][0])) // never while a sync is handling the item
-	mu.Lock()
-	defer mu.Unlock()
+	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0])) // never while a sync is handling the item
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
 	var sql string
 	switch action {
