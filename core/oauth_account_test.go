@@ -193,7 +193,7 @@ func TestRefreshIsSingleFlight(t *testing.T) {
 				_, _, err := e.s.GetAttachment(bg, att)
 				errs <- err
 			default: // like the worker's IDLE dial, which does not take the sync lock
-				_, _, err := e.s.credentials(bg, e.acc, "")
+				_, _, _, err := e.s.credentials(bg, e.acc, "")
 				errs <- err
 			}
 		})
@@ -300,10 +300,10 @@ func TestForcedRefreshReusesNewerToken(t *testing.T) {
 	e.add(t)
 	t0, _ := e.cached()
 	n := e.oa.TokenRequests()
-	_, t1, err := e.s.credentials(bg, e.acc, t0.access) // caller B refreshes
+	_, t1, _, err := e.s.credentials(bg, e.acc, t0.access) // caller B refreshes
 	require.NoError(t, err)
 	require.NotEqual(t, t0.access, t1)
-	_, got, err := e.s.credentials(bg, e.acc, t0.access) // caller A, refused T0 earlier
+	_, got, _, err := e.s.credentials(bg, e.acc, t0.access) // caller A, refused T0 earlier
 	require.NoError(t, err)
 	assert.Equal(t, t1, got)
 	assert.Equal(t, n+1, e.oa.TokenRequests())
@@ -333,7 +333,7 @@ func TestZeroExpiryLasts30Minutes(t *testing.T) {
 	e.add(t)
 	e.expire(t)
 	e.oa.RespondNext(200, `{"access_token":"no-expiry","token_type":"Bearer"}`)
-	_, tok, err := e.s.credentials(bg, e.acc, "")
+	_, tok, _, err := e.s.credentials(bg, e.acc, "")
 	require.NoError(t, err)
 	require.Equal(t, "no-expiry", tok)
 	c, _ := e.cached()

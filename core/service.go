@@ -58,6 +58,9 @@ type Service struct {
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
 	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
 
+	credMu  sync.Mutex
+	credVer map[int64]uint64 // bumped when the user gives an account new credentials
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -304,9 +307,10 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
+	var ver uint64
 	for rejected := ""; ; {
 		var pw, tok string
-		if pw, tok, err = s.credentials(ctx, acc, rejected); err != nil {
+		if pw, tok, ver, err = s.credentials(ctx, acc, rejected); err != nil {
 			return nil, nil, nil, err
 		}
 		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
@@ -319,7 +323,9 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	}
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
-			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required", "auth_rejected"))
+			err = errors.Join(err, s.ifCurrent(accountID, ver, func() error {
+				return s.setStatus(ctx, accountID, "reauth_required", "auth_rejected")
+			}))
 		}
 		return nil, nil, nil, err
 	}
@@ -380,13 +386,13 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	if !explicit {
 		return false, nil
 	}
-	ep, _, err := s.smtpEndpoint(ctx, accountID, "")
+	ep, _, _, err := s.smtpEndpoint(ctx, accountID, "")
 	if err != nil {
 		return false, err
 	}
 	sc, err := conn.DialSMTP(ctx, ep)
 	if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
-		if ep, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
+		if ep, _, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
 			sc, err = conn.DialSMTP(ctx, ep)
 		}
 	}

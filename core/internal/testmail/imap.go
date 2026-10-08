@@ -60,7 +60,8 @@ func WithoutIdle() Option { return func(c *config) { c.noIdle = true } }
 
 // IMAP is a running in-memory IMAP server with one user, alice/secret.
 type IMAP struct {
-	password atomic.Value // string; SetPassword changes it
+	password   atomic.Value // string; SetPassword changes it
+	blockLogin atomic.Pointer[loginBlock]
 
 	Addr string
 	User *imapmemserver.User
@@ -292,10 +293,27 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 // SetPassword changes alice's password, as a user does on the provider's website.
 func (s *IMAP) SetPassword(pw string) { s.password.Store(pw) }
 
+type loginBlock struct{ entered, release chan struct{} }
+
+// BlockLogin makes the next LOGIN check the password and then hold its reply
+// until release is called (release may be called more than once). entered
+// fires once that LOGIN is held.
+func (s *IMAP) BlockLogin() (entered <-chan struct{}, release func()) {
+	b := &loginBlock{make(chan struct{}), make(chan struct{})}
+	s.blockLogin.Store(b)
+	var once sync.Once
+	return b.entered, func() { once.Do(func() { close(b.release) }) }
+}
+
 // Login counts logins and checks the current password.
 func (s session) Login(username, password string) error {
 	s.s.logins.Add(1)
-	if password != s.s.password.Load().(string) {
+	ok := password == s.s.password.Load().(string)
+	if b := s.s.blockLogin.Swap(nil); b != nil {
+		close(b.entered)
+		<-b.release
+	}
+	if !ok {
 		return imapserver.ErrAuthFailed
 	}
 	return s.Session.Login(username, "secret")

@@ -73,23 +73,56 @@ func (s *Service) KeychainStatus(ctx context.Context) error {
 // token, and records the outcome in its status: a missing keychain entry is
 // reauth_required (the worker parks), an unusable keychain is error (the worker
 // keeps retrying), and a successful read clears error. rejected is an access
-// token the server refused, or "": a token other than it is returned.
-func (s *Service) credentials(ctx context.Context, acc Account, rejected string) (password, accessToken string, err error) {
+// token the server refused, or "": a token other than it is returned. ver is the
+// credential version they belong to; a refusal is recorded only through
+// ifCurrent(ver), so a stale one cannot undo UpdatePassword or Reauthorize.
+func (s *Service) credentials(ctx context.Context, acc Account, rejected string) (password, accessToken string, ver uint64, err error) {
+	s.credMu.Lock()
+	ver = s.credVer[acc.ID]
+	s.credMu.Unlock()
 	if acc.AuthType == "oauth" {
-		tok, err := s.accessToken(ctx, acc, rejected)
-		return "", tok, err
+		tok, err := s.accessToken(ctx, acc, rejected, ver)
+		return "", tok, ver, err
 	}
-	pw, err := s.secret(ctx, acc)
-	return pw, "", err
+	pw, err := s.secret(ctx, acc, ver)
+	return pw, "", ver, err
+}
+
+// ifCurrent runs write, a record of a refusal of version ver's credentials,
+// unless the account has newer credentials by now.
+func (s *Service) ifCurrent(id int64, ver uint64, write func() error) error {
+	s.credMu.Lock()
+	defer s.credMu.Unlock()
+	if s.credVer[id] != ver {
+		return nil // the new credentials get their own try
+	}
+	return write()
+}
+
+// credentialsUpdated clears the account's credential problems once new
+// credentials are in place, makes refusals of older ones stale, and wakes its worker.
+func (s *Service) credentialsUpdated(ctx context.Context, id int64) error {
+	s.credMu.Lock()
+	defer s.credMu.Unlock()
+	if s.credVer == nil {
+		s.credVer = map[int64]uint64{}
+	}
+	s.credVer[id]++
+	_, err := s.db.Execute(context.WithoutCancel(ctx),
+		"UPDATE accounts SET status = 'ok', status_detail = '', smtp_reauth = 0 WHERE id = ?", id)
+	s.wakeWorker(id)
+	return err
 }
 
 // secret reads the account's keychain entry: a password or a refresh token.
-func (s *Service) secret(ctx context.Context, acc Account) (string, error) {
+func (s *Service) secret(ctx context.Context, acc Account, ver uint64) (string, error) {
 	v, err := keychainGet(s.keyringUser(acc.ID))
 	switch {
 	case errors.Is(err, keyring.ErrNotFound):
 		err = fmt.Errorf("credentials not found in keychain: %w", err)
-		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing"))
+		return "", errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+			return s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing")
+		}))
 	case err != nil:
 		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
 	}
@@ -125,7 +158,7 @@ func (t oauthToken) fresh() bool {
 // rotated refresh token is saved before the new access token is used; if that
 // fails the old one stays in the keychain. A revoked grant is reauth_required
 // (token_revoked); other failures change no status, so the worker backs off.
-func (s *Service) accessToken(ctx context.Context, acc Account, rejected string) (string, error) {
+func (s *Service) accessToken(ctx context.Context, acc Account, rejected string, ver uint64) (string, error) {
 	s.tokMu.Lock()
 	seen := s.tokens[acc.ID]
 	s.tokMu.Unlock()
@@ -148,7 +181,7 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	delete(s.tokens, acc.ID)
 	s.tokMu.Unlock()
 
-	rt, err := s.secret(ctx, acc)
+	rt, err := s.secret(ctx, acc, ver)
 	if err != nil {
 		return "", err
 	}
@@ -158,7 +191,9 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	}
 	g, err := auth.Refresh(ctx, cfg, http.DefaultClient, rt)
 	if errors.Is(err, auth.ErrInvalidGrant) {
-		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked"))
+		return "", errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+			return s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked")
+		}))
 	}
 	if err != nil {
 		return "", err

@@ -140,6 +140,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	wctx := context.WithoutCancel(ctx)
 	var (
 		ep         *conn.Endpoint
+		epVer      uint64 // ep's credential version
 		from       string
 		sent       string
 		sentLooked bool
@@ -167,27 +168,30 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		switch o.state {
 		case "queued":
 			if ep == nil {
-				e, f, err := s.smtpEndpoint(ctx, accountID, "")
+				e, f, v, err := s.smtpEndpoint(ctx, accountID, "")
 				if err != nil {
 					return err
 				}
-				ep, from = &e, f
+				ep, from, epVer = &e, f, v
 			}
 			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
 			if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
 				// The access token may just be stale: refresh it once per round.
 				refreshed = true
-				e, _, rerr := s.smtpEndpoint(ctx, accountID, ep.AccessToken)
+				e, _, v, rerr := s.smtpEndpoint(ctx, accountID, ep.AccessToken)
 				if rerr != nil {
 					return rerr
 				}
-				ep = &e
+				ep, epVer = &e, v
 				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
 			}
 			if errors.Is(err, conn.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
 				// outbox waits for new credentials instead of trying each item.
-				_, derr := s.db.Execute(wctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", accountID)
+				derr := s.ifCurrent(accountID, epVer, func() error {
+					_, err := s.db.Execute(wctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", accountID)
+					return err
+				})
 				return errors.Join(err, derr)
 			}
 			if err != nil {
@@ -221,19 +225,19 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	return nil
 }
 
-// smtpEndpoint returns the account's SMTP server with its credentials, and its
-// address. rejected: an access token SMTP refused, or "".
-func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, error) {
+// smtpEndpoint returns the account's SMTP server with its credentials, its
+// address and the credential version. rejected: an access token SMTP refused, or "".
+func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, uint64, error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
-		return conn.Endpoint{}, "", err
+		return conn.Endpoint{}, "", 0, err
 	}
-	pw, tok, err := s.credentials(ctx, acc, rejected)
+	pw, tok, ver, err := s.credentials(ctx, acc, rejected)
 	if err != nil {
-		return conn.Endpoint{}, "", err
+		return conn.Endpoint{}, "", 0, err
 	}
 	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username,
-		Password: pw, AccessToken: tok}, acc.Email, nil
+		Password: pw, AccessToken: tok}, acc.Email, ver, nil
 }
 
 // sendItem submits a queued item and reports whether it is now sent. A refused

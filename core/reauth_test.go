@@ -42,6 +42,23 @@ func TestUpdatePasswordResumes(t *testing.T) {
 	assert.Equal(t, []string{"ok", ""}, []string{st, d})
 }
 
+// A login refused for the old password after UpdatePassword saved the new one
+// must not mark the account reauth_required again.
+func TestStaleRefusalAfterUpdatePassword(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+	e.im.SetPassword("new")
+	e.smtp.SetPassword("new")
+	entered, release := e.im.BlockLogin()
+	t.Cleanup(release)
+	e.put(t, "INBOX", msg("b1@x")) // the worker's next dial still uses "secret"
+	waitSignal(t, entered, "old-password login", 5*time.Second)
+	require.NoError(t, e.s.UpdatePassword(bg, e.acc.ID, "new"))
+	release() // the refusal of the old password arrives now
+	workerResumed(t, e, "b2@x")
+	st, d := e.status(t)
+	assert.Equal(t, []string{"ok", ""}, []string{st, d})
+}
+
 func TestUpdatePasswordWrong(t *testing.T) {
 	e := newSendEnv(t, false)
 	err := e.s.UpdatePassword(bg, e.acc.ID, "wrong")
@@ -114,8 +131,22 @@ func TestReauthorizeWrongAccount(t *testing.T) {
 	assert.ErrorIs(t, e.s.Reauthorize(bg, e.acc.ID, "nope"), ErrUnknownFlow)
 }
 
+// UpdateAccount checks new servers with a refreshed token when the cached one is refused.
+func TestUpdateAccountOAuthRefreshes(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	e.oa.RevokeAccess()
+	n := e.oa.TokenRequests()
+	name := "Work"
+	srv := e.acc.servers()
+	a, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Name: &name, Servers: &srv})
+	require.NoError(t, err)
+	assert.Equal(t, "Work", a.Name)
+	assert.Equal(t, n+1, e.oa.TokenRequests())
+}
+
 func TestUpdateAccountServersChecked(t *testing.T) {
-	e := newSendEnv(t, false)
+	e, _ := newWorkerEnv(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	closed := ln.Addr().(*net.TCPAddr).Port
@@ -139,9 +170,11 @@ func TestUpdateAccountServersChecked(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Changed", a.Name)
 	assert.Equal(t, port, a.IMAPPort)
-	n := im2.Logins()
-	e.sync(t)
-	assert.Greater(t, im2.Logins(), n, "syncs use the new server")
+	// The worker moves to the new server by itself.
+	(&syncEnv{im: im2}).put(t, "INBOX", msg("new-server@x"))
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'new-server@x'") == 1
+	}, 5*time.Second, 20*time.Millisecond)
 }
 
 func TestUpdateAccountDefault(t *testing.T) {

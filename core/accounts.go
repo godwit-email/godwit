@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -288,6 +289,9 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	s.tokMu.Lock()
 	delete(s.tokens, id)
 	s.tokMu.Unlock()
+	s.credMu.Lock()
+	delete(s.credVer, id)
+	s.credMu.Unlock()
 	if err := keychainDelete(s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}
@@ -327,13 +331,7 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, password string)
 	if r, err := s.check(ctx, in, ""); err != nil {
 		return &CheckError{Report: r, err: err}
 	}
-	// A sync in flight still uses the old password; let it finish first, or its
-	// refusal would set reauth_required again after the status is cleared below.
-	unlock, err := s.lockAccount(ctx, id)
-	if err != nil {
-		return err
-	}
-	defer unlock()
+	// A refusal of the old password still in flight is stale after credentialsUpdated.
 	if err := keychainSet(s.keyringUser(id), password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
@@ -387,15 +385,6 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	return s.credentialsUpdated(ctx, id)
 }
 
-// credentialsUpdated clears the account's credential problems once new
-// credentials are in the keychain, and wakes its worker.
-func (s *Service) credentialsUpdated(ctx context.Context, id int64) error {
-	_, err := s.db.Execute(context.WithoutCancel(ctx),
-		"UPDATE accounts SET status = 'ok', status_detail = '', smtp_reauth = 0 WHERE id = ?", id)
-	s.wakeWorker(id)
-	return err
-}
-
 func (a Account) servers() ServerSettings {
 	return ServerSettings{a.Username, a.IMAPHost, a.IMAPPort, a.IMAPSecurity, a.SMTPHost, a.SMTPPort, a.SMTPSecurity}
 }
@@ -443,12 +432,19 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if p.Servers != nil {
 		in := serverInput(acc.Email, *p.Servers)
-		pw, tok, err := s.credentials(ctx, acc, "")
+		pw, tok, _, err := s.credentials(ctx, acc, "")
 		if err != nil {
 			return Account{}, err
 		}
 		in.Password = pw
-		if r, err := s.check(ctx, in, tok); err != nil {
+		r, err := s.check(ctx, in, tok)
+		if tok != "" && errors.Is(err, conn.ErrAuthFailed) { // the cached token may be stale
+			if _, tok, _, err = s.credentials(ctx, acc, tok); err != nil {
+				return Account{}, err
+			}
+			r, err = s.check(ctx, in, tok)
+		}
+		if err != nil {
 			return Account{}, &CheckError{Report: r, err: err}
 		}
 		set("username", in.username())
