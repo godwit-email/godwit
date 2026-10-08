@@ -280,3 +280,31 @@ func TestUpdateAccountNewServerForgetsOldUIDs(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'new@x'"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'old@x'"))
 }
+
+// Fixing the servers is fixing the sign-in: a worker parked on reauth_required
+// resumes and a paused outbox sends, with no SyncNow.
+func TestUpdateAccountServersResumes(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+	e.smtp.RejectAuth(true)
+	e.sendNew(t)
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM accounts WHERE smtp_reauth = 1") == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	e.im.SetPassword("other")
+	e.put(t, "INBOX", msg("p1@x")) // the next round's login is refused
+	waitSignal(t, e.parked, "worker parking", 5*time.Second)
+
+	im2 := testmail.StartIMAP(t)
+	smtp2, in2 := testmail.StartSMTP(t)
+	srv := e.acc.servers()
+	srv.IMAPHost, srv.IMAPPort = splitAddr(t, im2.Addr)
+	srv.SMTPHost, srv.SMTPPort = splitAddr(t, smtp2)
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
+	require.NoError(t, err)
+	st, d := e.status(t)
+	assert.Equal(t, []string{"ok", ""}, []string{st, d})
+	(&syncEnv{im: im2}).put(t, "INBOX", msg("fixed@x"))
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'fixed@x'") == 1 && len(in2.Messages()) == 1
+	}, 5*time.Second, 20*time.Millisecond)
+}

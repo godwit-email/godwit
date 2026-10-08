@@ -443,6 +443,10 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("smtp_host", in.SMTPHost)
 		set("smtp_port", in.SMTPPort)
 		set("smtp_security", string(in.SMTPSecurity))
+		// The checked settings work: the user just fixed the sign-in.
+		set("status", "ok")
+		set("status_detail", "")
+		set("smtp_reauth", 0)
 	}
 	var stmts []sqlite.Statement
 	if p.IsDefault != nil && *p.IsDefault {
@@ -467,10 +471,20 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		}
 		defer unlock()
 	}
-	if len(stmts) > 0 {
-		if _, err := s.db.Transaction(ctx, stmts); err != nil {
-			return Account{}, err
-		}
+	if p.Servers != nil {
+		// Under credMu, like credentialsUpdated: refusals by the old servers still
+		// in flight are stale and cannot undo the cleared status.
+		s.tokMu.Lock()
+		s.credMu.Lock()
+		s.newCredentials(id, nil)
+		_, err = s.db.Transaction(ctx, stmts)
+		s.credMu.Unlock()
+		s.tokMu.Unlock()
+	} else if len(stmts) > 0 {
+		_, err = s.db.Transaction(ctx, stmts)
+	}
+	if err != nil {
+		return Account{}, err
 	}
 	if p.Servers != nil {
 		s.wakeWorker(id) // the next round dials the new servers
