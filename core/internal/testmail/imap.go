@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"maps"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -73,7 +75,11 @@ func (s *IMAP) Logins() int64 { return s.logins.Load() }
 func (s *IMAP) IDs() []map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]map[string]string(nil), s.ids...)
+	out := make([]map[string]string, len(s.ids))
+	for i, id := range s.ids {
+		out[i] = maps.Clone(id)
+	}
+	return out
 }
 
 // DropAfterNextAppend makes the next APPEND store the message and then close the
@@ -86,8 +92,21 @@ func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
 // uidCodes matches the COPYUID code of a status line.
 var uidCodes = regexp.MustCompile(`^\* OK \[COPYUID [^\]]*\] `)
 
-// capLine matches a capability list in a server response.
-var capLine = regexp.MustCompile(`CAPABILITY[^\r\n]*`)
+// capLine matches the capability list of an untagged CAPABILITY response or a
+// [CAPABILITY] response code.
+var capLine = regexp.MustCompile(`^(\* |[^ ]+ OK \[)CAPABILITY [^\]\r\n]*`)
+
+// literal matches a line announcing a literal ({n}, {n+}, ~{n}) and captures n.
+var literal = regexp.MustCompile(`\{(\d+)\+?\}\r?\n$`)
+
+func literalLen(line []byte) int {
+	m := literal.FindSubmatch(line)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(string(m[1]))
+	return n
+}
 
 // idCmd matches an ID command line from the client.
 var idCmd = regexp.MustCompile(`(?i)^([^ ]+) ID (.*)\r?\n$`)
@@ -95,10 +114,11 @@ var idCmd = regexp.MustCompile(`(?i)^([^ ]+) ID (.*)\r?\n$`)
 // idString matches a quoted string in ID parameters.
 var idString = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
 
-// tconn is an accepted connection that can be killed mid-FETCH. While stripCopyUID
-// is set (only during a MOVE, which writes nothing but status lines and EXPUNGEs, never
-// a literal) it removes the COPYUID code from the untagged OK line. It also answers
-// ID itself, since imapserver has no ID command.
+// tconn is an accepted connection that can be killed mid-FETCH. Both directions
+// are parsed into lines and literals; only lines are ever touched. On the way out
+// it adds ID to (and with noIdle strips IDLE from) capability lists and, while
+// stripCopyUID is set, removes the COPYUID code from untagged OK lines. On the way
+// in it answers ID itself, since imapserver has no ID command.
 type tconn struct {
 	net.Conn
 	fetch        atomic.Bool
@@ -109,22 +129,32 @@ type tconn struct {
 	s            *IMAP
 	r            *bufio.Reader
 	pending      []byte // read from r, not yet returned
+	rlit         int    // client literal bytes still to pass through
+	midCmd       bool   // the next client line continues a command
+	wline        []byte // server line not yet complete
+	wlit         int    // server literal bytes still to pass through
 	gotID        atomic.Bool
 }
 
-// Read passes the client's bytes through line by line, consuming ID commands.
-// ponytail: a literal line that looks exactly like an ID command would be eaten
-// too; track literal lengths if a test ever APPENDs such a message.
 func (c *tconn) Read(p []byte) (int, error) {
 	for len(c.pending) == 0 {
+		if c.rlit > 0 {
+			n, err := c.r.Read(p[:min(len(p), c.rlit)])
+			c.rlit -= n
+			return n, err
+		}
 		line, err := c.r.ReadSlice('\n')
 		if len(line) == 0 {
 			return 0, err
 		}
-		if m := idCmd.FindSubmatch(line); m != nil && err == nil {
-			c.handleID(string(m[1]), string(m[2]))
-			continue
+		if err == nil {
+			if m := idCmd.FindSubmatch(line); m != nil && !c.midCmd {
+				c.handleID(string(m[1]), string(m[2]))
+				continue
+			}
+			c.rlit = literalLen(line)
 		}
+		c.midCmd = err != nil || c.rlit > 0
 		c.pending = append(c.pending[:0], line...)
 	}
 	n := copy(p, c.pending)
@@ -151,27 +181,46 @@ func (c *tconn) Write(b []byte) (int, error) {
 		c.Conn.Close()
 		return 0, net.ErrClosed
 	}
-	if capLine.Match(b) { // advertise ID (answered by Read); strip IDLE if asked
-		out := capLine.ReplaceAllFunc(b, func(l []byte) []byte {
+	out := c.rewrite(b)
+	n, err := c.Conn.Write(out)
+	c.sent.Add(int64(n))
+	if err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}
+
+// rewrite edits complete server lines, passing literals through untouched. A
+// partial line is held until its end arrives (the server always ends a flush
+// with CRLF unless its buffer filled mid-line).
+func (c *tconn) rewrite(b []byte) []byte {
+	var out []byte
+	for len(b) > 0 {
+		if c.wlit > 0 {
+			n := min(c.wlit, len(b))
+			out, b, c.wlit = append(out, b[:n]...), b[n:], c.wlit-n
+			continue
+		}
+		i := bytes.IndexByte(b, '\n')
+		if i < 0 {
+			c.wline = append(c.wline, b...)
+			break
+		}
+		line := append(c.wline, b[:i+1]...)
+		c.wline, b = nil, b[i+1:]
+		c.wlit = literalLen(line)
+		line = capLine.ReplaceAllFunc(line, func(l []byte) []byte {
 			if c.noIdle {
 				l = bytes.ReplaceAll(l, []byte(" IDLE"), nil)
 			}
-			return bytes.Replace(l, []byte("CAPABILITY IMAP4rev1"), []byte("CAPABILITY IMAP4rev1 ID"), 1)
+			return append(l[:len(l):len(l)], " ID"...) // copy: l aliases line; ID is answered by Read
 		})
-		if _, err := c.Conn.Write(out); err != nil {
-			return 0, err
+		if c.stripCopyUID.Load() {
+			line = uidCodes.ReplaceAll(line, []byte("* OK "))
 		}
-		return len(b), nil
+		out = append(out, line...)
 	}
-	if c.stripCopyUID.Load() && uidCodes.Match(b) {
-		if _, err := c.Conn.Write(uidCodes.ReplaceAll(b, []byte("* OK "))); err != nil {
-			return 0, err
-		}
-		return len(b), nil
-	}
-	n, err := c.Conn.Write(b)
-	c.sent.Add(int64(n))
-	return n, err
+	return out
 }
 
 type tln struct {

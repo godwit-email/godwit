@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"net"
+	"strings"
 	"syscall"
 )
 
@@ -72,5 +73,7 @@ func isTLS(err error) bool {
 		ci    x509.CertificateInvalidError
 	)
 	return errors.As(err, &rh) || errors.As(err, &alert) || errors.As(err, &cv) ||
-		errors.As(err, &ua) || errors.As(err, &he) || errors.As(err, &ci)
+		errors.As(err, &ua) || errors.As(err, &he) || errors.As(err, &ci) ||
+		// an alert from the server arrives as an unexported type over TCP
+		strings.Contains(err.Error(), "remote error: tls:")
 }

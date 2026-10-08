@@ -2,7 +2,9 @@ package conn_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -27,9 +29,9 @@ func TestClassify(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// dns
-	e := conn.Endpoint{Host: "no-such-host.invalid", Port: 993, Security: conn.TLS, Username: "alice", Password: "secret"}
-	assert.Equal(t, conn.FailureDNS, conn.Classify(dial(ctx, e)))
+	// dns: constructed, so no resolver is touched
+	dnsErr := &net.DNSError{Err: "no such host", Name: "x.invalid", IsNotFound: true}
+	assert.Equal(t, conn.FailureDNS, conn.Classify(fmt.Errorf("imap connect: %w", dnsErr)))
 
 	// connect: a closed port on 127.0.0.1
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -46,9 +48,20 @@ func TestClassify(t *testing.T) {
 	// tls: self-signed certificate
 	srv := httptest.NewTLSServer(nil)
 	defer srv.Close()
-	e = endpoint(t, srv.Listener.Addr().String())
+	e := endpoint(t, srv.Listener.Addr().String())
 	e.Security = conn.TLS
 	assert.Equal(t, conn.FailureTLS, conn.Classify(dial(ctx, e)))
+
+	// tls: the server rejects the handshake with an alert (protocol_version)
+	old := httptest.NewUnstartedServer(nil)
+	old.TLS = &tls.Config{MaxVersion: tls.VersionTLS10}
+	old.StartTLS()
+	defer old.Close()
+	e = endpoint(t, old.Listener.Addr().String())
+	e.Security = conn.TLS
+	err = dial(ctx, e)
+	assert.Contains(t, err.Error(), "remote error: tls:")
+	assert.Equal(t, conn.FailureTLS, conn.Classify(err))
 
 	// auth
 	im := testmail.StartIMAP(t)
