@@ -15,7 +15,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -90,26 +89,16 @@ func (in AccountInput) username() string {
 	return in.Email
 }
 
-// TestAccount validates in and checks that both servers accept the credentials.
+// TestAccount runs the connection check; a failure is a *CheckError.
 func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	if err := in.validate(); err != nil {
-		return err
+	if r, err := s.check(ctx, in); err != nil {
+		return &CheckError{Report: r, err: err}
 	}
-	ic, err := conn.DialIMAP(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: in.username(), Password: in.Password})
-	if err != nil {
-		return err
-	}
-	ic.Close()
-	sc, err := conn.DialSMTP(ctx, conn.Endpoint{Host: in.SMTPHost, Port: in.SMTPPort, Security: in.SMTPSecurity, Username: in.username(), Password: in.Password})
-	if err != nil {
-		return err
-	}
-	sc.Close()
 	return nil
 }
 
