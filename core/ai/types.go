@@ -44,12 +44,24 @@ type ToolResult struct {
 	Error        string
 }
 
-// ToolSpec is a tool offered to the model for one Run. A NeedsApproval tool's
-// Run is never called: its calls interrupt the run instead.
+// Decision is a permission gate's verdict on one tool call.
+type Decision string
+
+const (
+	Allow   Decision = "allow"
+	Approve Decision = "approve"
+	Deny    Decision = "deny"
+)
+
+// ToolSpec is a tool offered to the model for one Run. Gate, if set, decides
+// each call first: Deny (or a Gate error) gives an error result, Approve
+// interrupts, Allow goes on. A NeedsApproval tool's Run is never called: its
+// calls interrupt the run instead.
 type ToolSpec struct {
 	Name, Description     string
 	Schema                map[string]any
 	Strict, NeedsApproval bool
+	Gate                  func(ctx context.Context, args json.RawMessage) (Decision, error)
 	Run                   func(ctx context.Context, args json.RawMessage) (any, error)
 }
 

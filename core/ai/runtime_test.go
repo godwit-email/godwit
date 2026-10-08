@@ -614,3 +614,35 @@ func TestRedactionIgnoresShortSecrets(t *testing.T) {
 	slog.New(h).Error("abc and 12345678")
 	assert.Contains(t, buf.String(), "abc and [redacted]")
 }
+
+func TestRunGate(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{
+			{ID: "g1", Name: "gated"}, {ID: "d1", Name: "denied"}, {ID: "e1", Name: "failing"}, {ID: "o1", Name: "open"},
+		}})
+		var runs atomic.Int64
+		count := func(context.Context, json.RawMessage) (any, error) { runs.Add(1); return "ran", nil }
+		gate := func(d Decision, err error) func(context.Context, json.RawMessage) (Decision, error) {
+			return func(context.Context, json.RawMessage) (Decision, error) { return d, err }
+		}
+		tools := []ToolSpec{
+			{Name: "gated", Run: count, Gate: gate(Approve, nil)},
+			{Name: "denied", Run: count, NeedsApproval: true, Gate: gate(Deny, nil)},
+			{Name: "failing", Run: count, Gate: gate(Allow, errors.New("audit failed sekret-key-6"))},
+			{Name: "open", Run: count, Gate: gate(Allow, nil)},
+		}
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "sekret-key-6"), Prompt: "go", Tools: tools})
+		require.Nil(t, res.Err)
+		end := last(t, evs)
+		require.Equal(t, "interrupted", end.Kind)
+		require.Len(t, end.Interrupts, 1)
+		assert.Equal(t, "g1", end.Interrupts[0].ID)
+		assert.EqualValues(t, 1, runs.Load(), "only the allowed tool runs")
+		errs := map[string]string{}
+		for _, ev := range kindsOf(evs, "tool_result") {
+			errs[ev.Result.CallID] = ev.Result.Error
+		}
+		assert.Equal(t, map[string]string{"d1": "tool call denied", "e1": "audit failed [redacted]", "o1": ""}, errs)
+	})
+}

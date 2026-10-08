@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -98,4 +99,21 @@ func TestMailContextBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 24000, bodyRunes(items[0].Block))
 	require.Contains(t, items[0].Block, "[truncated]")
+}
+
+func TestMailContextReadsOnlyTheDatabase(t *testing.T) {
+	e := newSyncEnv(t)
+	raw, err := os.ReadFile("mail/testdata/inline-image.eml")
+	require.NoError(t, err)
+	e.put(t, "INBOX", string(raw))
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	logins := e.im.Logins()
+	items, err := e.s.mailContext(bg, &gateway.Scope{}, []int64{id}, defaultMailBudget)
+	require.NoError(t, err)
+	require.Contains(t, items[0].Block, "logo.png")
+	require.Contains(t, items[0].Block, "hi")
+	require.NotContains(t, items[0].Block, "<p>")
+	require.Equal(t, logins, e.im.Logins(), "no IMAP connection")
+	require.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"), "no attachment fetched")
 }

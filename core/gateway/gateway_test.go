@@ -3,13 +3,16 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,28 +50,14 @@ func TestGatewayDecisions(t *testing.T) {
 func TestGatewayScopeAcrossTools(t *testing.T) {
 	g, _ := newGateway(t)
 	scope := &Scope{}
-	var mu sync.Mutex
-	sent := 0
-	readTool := g.Wrap(scope, "wit", ai.ToolSpec{Name: "read_message", Run: func(context.Context, json.RawMessage) (any, error) {
-		scope.MarkReadMail()
-		return "ok", nil
-	}}, false, "")
-	postTool := g.Wrap(scope, "mcp", ai.ToolSpec{Name: "post", Run: func(context.Context, json.RawMessage) (any, error) {
-		mu.Lock()
-		sent++
-		mu.Unlock()
-		return "sent", nil
-	}}, false, "example.com")
-	require.False(t, postTool.NeedsApproval)
-
-	_, err := postTool.Run(t.Context(), nil)
+	run := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
+	post := g.Wrap(scope, "mcp", ai.ToolSpec{Name: "post", Run: run}, false, "example.com")
+	require.False(t, post.NeedsApproval)
+	d, err := post.Gate(t.Context(), nil)
 	require.NoError(t, err)
-	_, err = readTool.Run(t.Context(), nil)
-	require.NoError(t, err)
-	_, err = postTool.Run(t.Context(), nil)
-	require.ErrorIs(t, err, ErrApprovalRequired)
-	require.Equal(t, 1, sent)
-	d, err := g.Check(t.Context(), scope, Call{Source: "mcp", Tool: "post", Egress: "example.com"})
+	require.Equal(t, Allow, d)
+	scope.MarkReadMail() // tool A read mail
+	d, err = post.Gate(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, Approve, d)
 
@@ -83,11 +72,61 @@ func TestGatewayScopeAcrossTools(t *testing.T) {
 				s2.MarkReadMail()
 			}
 			_, err := g.Check(context.Background(), s2, Call{Source: "wit", Tool: "post", Egress: "example.com"})
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		}()
 	}
 	wg.Wait()
 	require.True(t, s2.ReadMail())
+}
+
+func engineRun(t *testing.T, script []testllm.Turn, tools []ai.ToolSpec) []ai.Event {
+	t.Helper()
+	srv := testllm.Start(t, "openai")
+	srv.Script(script...)
+	e, err := ai.NewEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	require.NoError(t, err)
+	t.Cleanup(e.Close)
+	events, wait := e.Run(t.Context(), ai.Request{Model: ai.ResolvedModel{ServiceID: 1, Version: 1, Kind: "openai", BaseURL: srv.URL, Model: "m", APIKey: "k"},
+		Prompt: "go", Tools: tools})
+	var evs []ai.Event
+	for ev := range events {
+		evs = append(evs, ev)
+	}
+	require.Nil(t, wait().Err)
+	return evs
+}
+
+func TestWrappedWriteInterruptsAndAudits(t *testing.T) {
+	g, db := newGateway(t)
+	ran := false
+	w := g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "create_draft", Run: func(context.Context, json.RawMessage) (any, error) { ran = true; return nil, nil }}, true, "")
+	evs := engineRun(t, []testllm.Turn{{Calls: []testllm.Call{{ID: "c1", Name: "create_draft"}}}}, []ai.ToolSpec{w})
+	end := evs[len(evs)-1]
+	require.Equal(t, "interrupted", end.Kind)
+	require.False(t, ran)
+	rows, err := db.Query(t.Context(), "SELECT source, tool, decision FROM audit_log")
+	require.NoError(t, err)
+	require.Equal(t, [][]any{{"wit", "create_draft", "approve"}}, rows.Values)
+}
+
+func TestEgressAfterReadInterrupts(t *testing.T) {
+	g, _ := newGateway(t)
+	scope := &Scope{}
+	posted := false
+	read := g.Wrap(scope, "wit", ai.ToolSpec{Name: "read_message", Run: func(context.Context, json.RawMessage) (any, error) {
+		scope.MarkReadMail()
+		return "mail", nil
+	}}, false, "")
+	post := g.Wrap(scope, "mcp", ai.ToolSpec{Name: "post", Run: func(context.Context, json.RawMessage) (any, error) { posted = true; return nil, nil }}, false, "example.com")
+	evs := engineRun(t, []testllm.Turn{
+		{Calls: []testllm.Call{{ID: "r1", Name: "read_message"}}},
+		{Calls: []testllm.Call{{ID: "p1", Name: "post"}}},
+	}, []ai.ToolSpec{read, post})
+	end := evs[len(evs)-1]
+	require.Equal(t, "interrupted", end.Kind)
+	require.Len(t, end.Interrupts, 1)
+	require.Equal(t, "p1", end.Interrupts[0].ID)
+	require.False(t, posted)
 }
 
 func TestAuditLogStructured(t *testing.T) {
@@ -117,21 +156,25 @@ func TestAuditLogStructured(t *testing.T) {
 
 func TestWrapDenyForSkill(t *testing.T) {
 	g, _ := newGateway(t)
-	ran := false
-	run := func(context.Context, json.RawMessage) (any, error) { ran = true; return nil, nil }
-	for _, write := range []bool{false, true} {
-		w := g.Wrap(&Scope{}, "skill", ai.ToolSpec{Name: "x", Run: run}, write, "")
-		require.False(t, w.NeedsApproval) // denied, never offered for approval
-		_, err := w.Run(t.Context(), nil)
-		require.True(t, errors.Is(err, ErrDenied), "%v", err)
+	run := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	for _, needs := range []bool{false, true} {
+		for _, write := range []bool{false, true} {
+			for _, src := range []string{"skill", "other"} {
+				w := g.Wrap(&Scope{}, src, ai.ToolSpec{Name: "x", Run: run, NeedsApproval: needs}, write, "")
+				require.False(t, w.NeedsApproval, "deny beats a NeedsApproval flag")
+				d, err := w.Gate(t.Context(), nil)
+				require.NoError(t, err)
+				require.Equal(t, Deny, d)
+			}
+		}
 	}
-	require.False(t, ran)
-
-	w := g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "create_draft", Run: run}, true, "")
-	require.True(t, w.NeedsApproval)
-	w = g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "search", Run: run}, false, "")
-	require.False(t, w.NeedsApproval)
-	_, err := w.Run(t.Context(), nil)
-	require.NoError(t, err)
-	require.True(t, ran)
+	for _, c := range []struct {
+		needs, write bool
+		want         Decision
+	}{{false, false, Allow}, {false, true, Approve}, {true, false, Approve}} {
+		w := g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "y", Run: run, NeedsApproval: c.needs}, c.write, "")
+		d, err := w.Gate(t.Context(), nil)
+		require.NoError(t, err)
+		require.Equal(t, c.want, d, "%+v", c)
+	}
 }

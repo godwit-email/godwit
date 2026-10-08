@@ -5,18 +5,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/store"
-)
-
-var (
-	ErrDenied           = errors.New("gateway: tool call denied")
-	ErrApprovalRequired = errors.New("gateway: approval required")
 )
 
 // Scope is one run's data provenance. The Service rebuilds it from
@@ -44,12 +38,12 @@ type Call struct {
 	TargetID     int64
 }
 
-type Decision string
+type Decision = ai.Decision
 
 const (
-	Allow   Decision = "allow"
-	Approve Decision = "approve"
-	Deny    Decision = "deny"
+	Allow   = ai.Allow
+	Approve = ai.Approve
+	Deny    = ai.Deny
 )
 
 type Gateway struct{ db *store.DB }
@@ -84,28 +78,12 @@ func (g *Gateway) Check(ctx context.Context, scope *Scope, c Call) (Decision, er
 }
 
 // Wrap routes t through the gateway; every tool handed to ai.Run goes through
-// it. Writes from an allowed source always need approval (NeedsApproval). Run
-// checks at call time, so a scope tainted mid-run affects later calls: denied
-// calls and egress that now needs approval fail closed with an error result.
+// it. Its Gate runs Check (and so audits) on every call, when the call
+// happens: a scope tainted mid-run makes later egress calls interrupt for
+// approval. A NeedsApproval tool counts as a write; a denied source wins over it.
 func (g *Gateway) Wrap(scope *Scope, source string, t ai.ToolSpec, write bool, egress string) ai.ToolSpec {
-	call := Call{Source: source, Tool: t.Name, Write: write, Egress: egress}
-	t.NeedsApproval = t.NeedsApproval || decide(call, false) == Approve
-	run := t.Run
-	t.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
-		d, err := g.Check(ctx, scope, call)
-		switch {
-		case err != nil:
-			return nil, err
-		case d == Deny:
-			return nil, ErrDenied
-		case d == Approve && !write:
-			// ponytail: egress approval fails closed; plan 4 adds the approval card with the host.
-			return nil, ErrApprovalRequired
-		case run == nil:
-			return nil, ErrDenied
-		}
-		// Allow, or a write the user approved and the host now executes.
-		return run(ctx, args)
-	}
+	call := Call{Source: source, Tool: t.Name, Write: write || t.NeedsApproval, Egress: egress}
+	t.NeedsApproval = false
+	t.Gate = func(ctx context.Context, _ json.RawMessage) (Decision, error) { return g.Check(ctx, scope, call) }
 	return t
 }

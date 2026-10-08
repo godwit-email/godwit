@@ -55,6 +55,8 @@ type instance struct {
 // noPrompts keeps Init from loading ./prompts from the working directory.
 var noPrompts = fstest.MapFS{"prompts": {Mode: fs.ModeDir}}
 
+var errDenied = errors.New("tool call denied")
+
 var toolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // NewEngine refuses GENKIT_ENV=dev, which would start Genkit's reflection
@@ -244,7 +246,7 @@ func (r *runner) run(req Request) Result {
 		if !toolName.MatchString(s.Name) || seen[s.Name] {
 			return fail(fmt.Errorf("ai: invalid or duplicate tool name %q", s.Name))
 		}
-		if s.Run == nil && !s.NeedsApproval {
+		if s.Run == nil && !s.NeedsApproval && s.Gate == nil {
 			return fail(fmt.Errorf("ai: tool %q has no Run", s.Name))
 		}
 		seen[s.Name] = true
@@ -388,10 +390,24 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 		id, _ := tc.Value(callIDKey{}).(string)
 		args := rawJSON(input)
 		r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: s.Name, Args: args}})
-		if s.NeedsApproval {
+		d := Allow
+		var err error
+		if s.Gate != nil {
+			if d, err = s.Gate(tc, args); err == nil && d != Allow && d != Approve {
+				err = errDenied
+			}
+		}
+		if err == nil && (d == Approve || s.NeedsApproval) {
 			return nil, tc.Interrupt(nil)
 		}
-		out, err := s.Run(tc, args)
+		var out any
+		switch {
+		case err != nil:
+		case s.Run == nil: // a gate allowed a tool that can only be approved
+			err = errDenied
+		default:
+			out, err = s.Run(tc, args)
+		}
 		res := ToolResult{CallID: id, Name: s.Name}
 		if err != nil {
 			res.Error = r.redact(err.Error())

@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
 	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // mailItem is one message as handed to a model: every mail-derived field sits
@@ -29,6 +30,32 @@ var defaultMailBudget = mailBudget{PerMessage: 24000, Total: 48000}
 
 const truncatedNote = "\n[truncated]"
 
+// mailForModel reads a message's text and attachment metadata from the
+// database only: no IMAP, no attachment bytes. HTML is the sanitized body
+// without inline images; callers use it only through HTMLToText.
+func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
+	if err != nil {
+		return Message{}, err
+	}
+	if len(rows.Values) == 0 {
+		return Message{}, fmt.Errorf("message %d not found", id)
+	}
+	r := rows.Values[0]
+	m := Message{MessageSummary: scanSummary(r), Text: store.Str(r[11]), Truncated: store.Int(r[13]) != 0}
+	if raw := store.Str(r[12]); raw != "" {
+		m.HTML, _ = gomail.Sanitize(raw, nil, false)
+	}
+	ar, err := s.db.Query(ctx, "SELECT filename, content_type, size FROM attachments WHERE message_id = ? ORDER BY id", id)
+	if err != nil {
+		return Message{}, err
+	}
+	for _, a := range ar.Values {
+		m.Attachments = append(m.Attachments, AttachmentInfo{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Size: int(store.Int(a[2]))})
+	}
+	return m, nil
+}
+
 // mailContext loads ids for a model, in the order given. Bodies are plain
 // text (never HTML) cut to budget: the newest message is kept whole (up to
 // PerMessage), older ones are cut or omitted, oldest first. Calling it marks
@@ -37,7 +64,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 	scope.MarkReadMail()
 	msgs := make([]Message, len(ids))
 	for i, id := range ids {
-		m, err := s.GetMessage(ctx, id, false)
+		m, err := s.mailForModel(ctx, id)
 		if err != nil {
 			return nil, err
 		}
