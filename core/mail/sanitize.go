@@ -66,9 +66,23 @@ func delAttr(n *html.Node, key string) {
 	n.Attr = out
 }
 
+func isSlash(b byte) bool { return b == '/' || b == '\\' }
+
+// protoRelative also covers browser-normalised forms like `\\host/x` and `/\host`.
+func protoRelative(u string) bool { return len(u) >= 2 && isSlash(u[0]) && isSlash(u[1]) }
+
 func isRemote(u string) bool {
 	u = strings.ToLower(strings.TrimSpace(u))
-	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "//")
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") || protoRelative(u)
+}
+
+// safeRemoteImage accepts only plain absolute http(s) URLs with a host and no backslashes.
+func safeRemoteImage(u string) bool {
+	if strings.ContainsAny(u, "\\\t\r\n ") {
+		return false
+	}
+	p, err := url.Parse(u)
+	return err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != ""
 }
 
 func walkNodes(n *html.Node, f func(*html.Node)) {
@@ -118,7 +132,7 @@ func prepare(src string) (string, int) {
 			setAttr(n, "src", cidScheme+url.QueryEscape(cleanID(s[4:])))
 		case isRemote(s):
 			blocked++
-			if strings.HasPrefix(s, "//") {
+			if strings.HasPrefix(s, "//") { // backslash forms stay as-is and are rejected later
 				setAttr(n, "src", "https:"+s)
 			}
 		}
@@ -160,7 +174,9 @@ func finish(safe string, inline map[string]Attachment, loadRemote, compose bool)
 				} else {
 					setAttr(n, "src", "data:"+ct+";base64,"+base64.StdEncoding.EncodeToString(a.Data))
 				}
-			case isRemote(src) && (compose || !loadRemote):
+			case !compose && loadRemote && safeRemoteImage(src):
+				// validated absolute http(s): keep
+			default: // relative, backslash forms, data:, other schemes, remote when not allowed
 				delAttr(n, "src")
 			}
 		case atom.A:

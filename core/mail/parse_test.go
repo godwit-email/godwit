@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwitmail/godwit/core/mail"
@@ -112,4 +113,47 @@ func TestParseStructure(t *testing.T) {
 func TestSnippet(t *testing.T) {
 	assert.Equal(t, "a b c", mail.Snippet("  a \n\n b\t c "))
 	assert.Len(t, []rune(mail.Snippet(strings.Repeat("好", 300))), 200)
+}
+
+func TestParseTruncationRuneBoundary(t *testing.T) {
+	hdr := "Subject: x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+	// "好" is 3 bytes; 2<<20 is not a multiple of 3, so the limit falls mid-rune.
+	for _, pad := range []int{0, 1, 2} {
+		body := strings.Repeat("a", pad) + strings.Repeat("好", (3<<20)/3)
+		p, err := mail.Parse([]byte(hdr + body))
+		require.NoError(t, err)
+		assert.True(t, utf8.ValidString(p.Text), "pad %d", pad)
+		assert.True(t, p.Truncated)
+		assert.LessOrEqual(t, len(p.Text), mail.MaxBodyBytes)
+		assert.Greater(t, len(p.Text), mail.MaxBodyBytes-3)
+		assert.True(t, strings.HasPrefix(body, p.Text))
+	}
+	// exactly at the limit: kept whole, not truncated
+	body := strings.Repeat("a", mail.MaxBodyBytes-3) + "好"
+	p, err := mail.Parse([]byte(hdr + body))
+	require.NoError(t, err)
+	assert.Equal(t, body, p.Text)
+	assert.False(t, p.Truncated)
+}
+
+func TestParseDamagedBase64(t *testing.T) {
+	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n--b\r\nContent-Type: application/pdf; name=a.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nQUJD!!!!not-base64\r\n--b--\r\n"))
+	require.NoError(t, err)
+	assert.True(t, p.Damaged)
+	assert.NotEmpty(t, p.Warnings)
+	assert.Contains(t, p.Text, "hello")
+	require.Len(t, p.Attachments, 1)
+	assert.Equal(t, "a.pdf", p.Attachments[0].Filename)
+}
+
+func TestParseBrokenBoundary(t *testing.T) {
+	// no closing boundary: the first part is recovered and the damage is reported
+	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n"))
+	require.NoError(t, err)
+	assert.True(t, p.Damaged)
+	assert.Contains(t, p.Text, "hello")
+
+	// clean messages are not flagged
+	assert.False(t, mustParse(t, "alternative.eml").Damaged)
+	assert.False(t, mustParse(t, "attachment.eml").Damaged)
 }

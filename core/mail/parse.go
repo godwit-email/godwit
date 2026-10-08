@@ -5,6 +5,7 @@ package mail
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"mime/quotedprintable"
 	"strconv"
@@ -32,6 +33,8 @@ type Parsed struct {
 	Date                                         time.Time
 	Text, HTML                                   string
 	Truncated                                    bool
+	Damaged                                      bool     // best-effort result: some part failed to read or decode
+	Warnings                                     []string // what went wrong, for logs
 	Attachments                                  []Attachment
 }
 
@@ -91,8 +94,16 @@ func Parse(raw []byte) (*Parsed, error) {
 		p.InReplyTo = l[0]
 	}
 	p.References, _ = h.MsgIDList("References")
+	if err != nil {
+		p.warn("header: %v", err)
+	}
 	p.walk(e, "", 0)
 	return p, nil
+}
+
+func (p *Parsed) warn(format string, a ...any) {
+	p.Damaged = true
+	p.Warnings = append(p.Warnings, fmt.Sprintf(format, a...))
 }
 
 func (p *Parsed) walk(e *message.Entity, path string, depth int) {
@@ -106,8 +117,15 @@ func (p *Parsed) walk(e *message.Entity, path string, depth int) {
 		}
 		for i := 1; ; i++ {
 			c, err := mr.NextPart()
-			if err != nil && (c == nil || !message.IsUnknownCharset(err)) {
-				return
+			if err != nil {
+				if message.IsUnknownCharset(err) {
+					p.warn("part %s: %v", path, err)
+				} else {
+					if err != io.EOF {
+						p.warn("multipart %q: %v", path, err)
+					}
+					return
+				}
 			}
 			cp := strconv.Itoa(i)
 			if path != "" {
@@ -126,9 +144,12 @@ func (p *Parsed) walk(e *message.Entity, path string, depth int) {
 	}
 	cid := cleanID(e.Header.Get("Content-ID"))
 	if body, inline := classify(ct, disp, filename, cid); body {
-		p.addBody(ct == "text/html", e.Body)
+		p.addBody(ct == "text/html", e.Body, path)
 	} else {
-		data, _ := io.ReadAll(io.LimitReader(e.Body, maxAttachmentBytes))
+		data, err := io.ReadAll(io.LimitReader(e.Body, maxAttachmentBytes))
+		if err != nil {
+			p.warn("part %s: %v", path, err)
+		}
 		p.Attachments = append(p.Attachments, Attachment{
 			Part: path, Encoding: strings.ToLower(strings.TrimSpace(e.Header.Get("Content-Transfer-Encoding"))),
 			Charset: params["charset"], Filename: filename, ContentType: ct, ContentID: cid,
@@ -137,7 +158,7 @@ func (p *Parsed) walk(e *message.Entity, path string, depth int) {
 	}
 }
 
-func (p *Parsed) addBody(isHTML bool, r io.Reader) {
+func (p *Parsed) addBody(isHTML bool, r io.Reader, path string) {
 	dst := &p.Text
 	if isHTML {
 		dst = &p.HTML
@@ -147,12 +168,16 @@ func (p *Parsed) addBody(isHTML bool, r io.Reader) {
 		p.Truncated = true
 		return
 	}
-	b, _ := io.ReadAll(io.LimitReader(r, int64(room)+1))
+	b, err := io.ReadAll(io.LimitReader(r, int64(room)+1))
+	if err != nil {
+		p.warn("part %s: %v", path, err)
+	}
 	if len(b) > room {
-		b = b[:room]
-		for len(b) > 0 && !utf8.RuneStart(b[len(b)-1]) {
-			b = b[:len(b)-1]
+		cut := room // last complete rune boundary <= room
+		for cut > 0 && !utf8.RuneStart(b[cut]) {
+			cut--
 		}
+		b = b[:cut]
 		p.Truncated = true
 	}
 	*dst += string(b)

@@ -72,3 +72,17 @@ func TestSanitizeComposeStripsRemote(t *testing.T) {
 	assert.NotContains(t, safe, "t.example")
 	assert.NotContains(t, safe, "<script")
 }
+
+func TestSanitizeImageSrcForms(t *testing.T) {
+	bad := []string{"/tracking", "tracking.gif", "../x.gif", `\\host/x`, `/\host/x`, `\/host/x`, "data:image/png;base64,AAAA", "ftp://h/x", "https:///x", "https://h/\tx"}
+	for _, src := range bad {
+		in := `<img src="` + src + `">`
+		for _, load := range []bool{false, true} {
+			safe, _ := mail.Sanitize(in, nil, load)
+			assert.NotContains(t, safe, "src", "%q load=%v -> %s", src, load, safe)
+		}
+		assert.NotContains(t, mail.SanitizeCompose(in), "src", "%q compose", src)
+	}
+	safe, _ := mail.Sanitize(`<img src="https://h.example/x.gif">`, nil, true)
+	assert.Contains(t, safe, `src="https://h.example/x.gif"`)
+}
