@@ -157,3 +157,22 @@ func TestParseBrokenBoundary(t *testing.T) {
 	assert.False(t, mustParse(t, "alternative.eml").Damaged)
 	assert.False(t, mustParse(t, "attachment.eml").Damaged)
 }
+
+func TestParseUnknownEncodingTopLevel(t *testing.T) {
+	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: text/plain\r\nContent-Transfer-Encoding: x-weird\r\n\r\nraw body\r\n"))
+	require.NoError(t, err)
+	assert.True(t, p.Damaged)
+	assert.NotEmpty(t, p.Warnings)
+	assert.Equal(t, "x", p.Subject)
+	assert.Contains(t, p.Text, "raw body")
+}
+
+func TestParseUnknownEncodingPartKeepsSiblings(t *testing.T) {
+	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: application/pdf; name=a.pdf\r\nContent-Transfer-Encoding: x-weird\r\n\r\nzzz\r\n--b\r\nContent-Type: text/plain\r\n\r\nsibling\r\n--b--\r\n"))
+	require.NoError(t, err)
+	assert.True(t, p.Damaged)
+	assert.Contains(t, p.Text, "sibling")
+	require.Len(t, p.Attachments, 1)
+	assert.Equal(t, "1", p.Attachments[0].Part)
+	assert.Equal(t, "x-weird", p.Attachments[0].Encoding)
+}

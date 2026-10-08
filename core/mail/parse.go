@@ -75,7 +75,7 @@ func classify(ct, disp, filename, cid string) (body, inline bool) {
 // Parse parses a full RFC 5322 message.
 func Parse(raw []byte) (*Parsed, error) {
 	e, err := message.Read(bytes.NewReader(raw))
-	if err != nil && !message.IsUnknownCharset(err) {
+	if err != nil && !recoverable(err) {
 		return nil, err
 	}
 	h := gomail.Header{Header: e.Header}
@@ -101,6 +101,11 @@ func Parse(raw []byte) (*Parsed, error) {
 	return p, nil
 }
 
+// recoverable: go-message still returns a readable entity (raw body) for these.
+func recoverable(err error) bool {
+	return message.IsUnknownCharset(err) || message.IsUnknownEncoding(err)
+}
+
 func (p *Parsed) warn(format string, a ...any) {
 	p.Damaged = true
 	p.Warnings = append(p.Warnings, fmt.Sprintf(format, a...))
@@ -118,7 +123,7 @@ func (p *Parsed) walk(e *message.Entity, path string, depth int) {
 		for i := 1; ; i++ {
 			c, err := mr.NextPart()
 			if err != nil {
-				if message.IsUnknownCharset(err) {
+				if recoverable(err) {
 					p.warn("part %s: %v", path, err)
 				} else {
 					if err != io.EOF {
