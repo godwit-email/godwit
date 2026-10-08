@@ -33,7 +33,7 @@ type Service struct {
 	locksMu sync.Mutex
 	locks   map[int64]*sync.Mutex // per-account: sync and op pushing never overlap
 
-	editMu sync.Mutex // local changes (SetFlags, Move, Delete) read then write
+	editMu sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
 }
 
 // New creates DataDir if needed and opens DataDir/godwit.db.

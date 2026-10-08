@@ -25,6 +25,10 @@ var ErrInvalidState = errors.New("outbox item is not waiting for a decision")
 
 const maxSendAttempts = 5
 
+// beforeOutboxItem, when set, runs after processOutbox read the items and before
+// it handles each one. Tests use it to change an item under a running sync.
+var beforeOutboxItem func(id int64)
+
 // OutboxItem is a message that has not finished sending and archiving. State is
 // queued, sending, sent, archiving, send_uncertain, archive_uncertain or failed.
 type OutboxItem struct {
@@ -60,6 +64,9 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("outbox item %d not found", id)
 	}
+	mu := s.accountLock(store.Int(rows.Values[0][0])) // never while a sync is handling the item
+	mu.Lock()
+	defer mu.Unlock()
 	const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
 	var sql string
 	switch action {
@@ -72,7 +79,6 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	default:
 		return fmt.Errorf("unknown outbox action %q", action)
 	}
-	// Conditional, so a sync that moved the item on in the meantime wins.
 	r, err := s.db.Execute(ctx, sql, id)
 	if err != nil {
 		return err
@@ -143,6 +149,9 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		}
 		o := outboxRow{id: store.Int(r[0]), messageID: store.Str(r[1]), rawPath: store.Str(r[2]),
 			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4])}
+		if beforeOutboxItem != nil {
+			beforeOutboxItem(o.id)
+		}
 		switch o.state {
 		case "queued":
 			if ep == nil {
@@ -164,6 +173,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			if !ok {
 				continue
 			}
+			o.state = "sent"
 			fallthrough
 		case "sent", "archive_uncertain":
 			if err := s.archiveItem(ctx, wctx, c, sentFolder, o); err != nil {
@@ -176,13 +186,12 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			}
 			found, err := inFolder(c, folder, o.messageID)
 			if err != nil {
-				if err := s.setOutbox(wctx, o.id, "send_uncertain", err.Error()); err != nil {
-					return err
-				}
+				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 			} else if found {
-				if err := s.finishOutbox(wctx, o); err != nil {
-					return err
-				}
+				err = s.finishOutbox(wctx, o)
+			}
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -191,23 +200,26 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 
 // sendItem submits a queued item and reports whether it is now sent.
 func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
-	r, err := s.db.Execute(ctx, "UPDATE outbox SET state = 'sending' WHERE id = ? AND state = 'queued'", o.id)
-	if err != nil || r.Changes == 0 {
-		return false, err // resolved or discarded meanwhile
+	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
+		return false, err
 	}
+	o.state = "sending"
 	raw, err := os.ReadFile(o.rawPath)
 	if err != nil {
-		return false, s.setOutbox(wctx, o.id, "failed", err.Error())
+		_, err = s.setOutbox(wctx, o, "failed", err.Error())
+		return false, err
 	}
 	err = send.Send(ctx, ep, from, o.rcpts, raw)
 	switch {
 	case err == nil:
-		return true, s.setOutbox(wctx, o.id, "sent", "")
+		return s.setOutbox(wctx, o, "sent", "")
 	case errors.Is(err, send.ErrUncertain):
-		return false, s.setOutbox(wctx, o.id, "send_uncertain", err.Error())
+		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
+		return false, err
 	}
 	_, derr := s.db.Execute(wctx, `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
-		state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'queued' END WHERE id = ?`, err.Error(), maxSendAttempts, o.id)
+		state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'queued' END WHERE id = ? AND state = 'sending'`,
+		err.Error(), maxSendAttempts, o.id)
 	return false, derr
 }
 
@@ -215,9 +227,10 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 // (the provider saved it, or an earlier uncertain APPEND went through). Without
 // a Sent folder there is nowhere to file it, so it is done.
 func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, sentFolder func() (string, error), o outboxRow) error {
-	if _, err := s.db.Execute(ctx, "UPDATE outbox SET state = 'archiving' WHERE id = ?", o.id); err != nil {
+	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
 		return err
 	}
+	o.state = "archiving"
 	err := func() error {
 		folder, err := sentFolder()
 		if err != nil || folder == "" {
@@ -244,19 +257,22 @@ func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, s
 	}()
 	if err != nil {
 		// Possibly appended: the next round looks before appending again.
-		return s.setOutbox(wctx, o.id, "archive_uncertain", err.Error())
+		_, err = s.setOutbox(wctx, o, "archive_uncertain", err.Error())
+		return err
 	}
 	return s.finishOutbox(wctx, o)
 }
 
-func (s *Service) setOutbox(ctx context.Context, id int64, state, lastError string) error {
-	_, err := s.db.Execute(ctx, "UPDATE outbox SET state = ?, last_error = ? WHERE id = ?", state, lastError, id)
-	return err
+// setOutbox moves the item from o.state to state and reports whether it did: an
+// item changed since it was read (resolved, discarded) is left alone.
+func (s *Service) setOutbox(ctx context.Context, o outboxRow, state, lastError string) (bool, error) {
+	r, err := s.db.Execute(ctx, "UPDATE outbox SET state = ?, last_error = ? WHERE id = ? AND state = ?", state, lastError, o.id, o.state)
+	return err == nil && r.Changes == 1, err
 }
 
 // finishOutbox marks the item done and drops its raw copy, which the Sent folder now holds.
 func (s *Service) finishOutbox(ctx context.Context, o outboxRow) error {
-	if err := s.setOutbox(ctx, o.id, "done", ""); err != nil {
+	if ok, err := s.setOutbox(ctx, o, "done", ""); !ok || err != nil {
 		return err
 	}
 	os.Remove(o.rawPath) // ponytail: a failed removal leaves an orphan .eml; sweep outbox/ if it matters

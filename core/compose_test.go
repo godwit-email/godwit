@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwitmail/godwit/core/internal/testmail"
 	"github.com/godwitmail/godwit/core/mail"
@@ -287,7 +288,134 @@ func TestSendValidates(t *testing.T) {
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
 	assert.Len(t, d.Attachments, 1)
+	attachLimit = old // the encoded message is bigger than 150 bytes; TestSendRejectsOversizeEncodedMessage covers that
 	require.NoError(t, e.s.Send(bg, d.ID))
 	assert.Error(t, e.s.Send(bg, d.ID), "a draft is sent once")
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM outbox"))
+}
+
+func TestSendRejectsOversizeEncodedMessage(t *testing.T) {
+	e := newSendEnv(t, false)
+	old := attachLimit
+	attachLimit = 1000
+	t.Cleanup(func() { attachLimit = old })
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To = []string{"bob@example.com"}
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	src := filepath.Join(t.TempDir(), "a.bin")
+	require.NoError(t, os.WriteFile(src, make([]byte, 900), 0o600)) // under the limit; base64 and headers push it over
+	_, err = e.s.AddAttachment(bg, d.ID, src)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.Send(bg, d.ID), ErrTooLarge)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM drafts"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM draft_attachments"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+	entries, _ := os.ReadDir(filepath.Join(e.dir, "outbox"))
+	assert.Empty(t, entries)
+}
+
+// The user's decision taken while a sync is under way is applied after it, not lost.
+func TestResolveWaitsForSync(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.FailAfterData(1)
+	e.sendNew(t)
+	e.sync(t)
+	require.Equal(t, "send_uncertain", e.state(t))
+	id := store.Int(e.rows(t, "SELECT id FROM outbox")[0][0])
+	done := make(chan error, 1)
+	beforeOutboxItem = func(int64) {
+		beforeOutboxItem = nil
+		go func() { done <- e.s.ResolveOutbox(bg, id, "confirm_sent") }()
+		select {
+		case err := <-done:
+			t.Errorf("ResolveOutbox ran during the sync: %v", err)
+			done <- err
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	t.Cleanup(func() { beforeOutboxItem = nil })
+	e.sync(t)
+	require.NoError(t, <-done)
+	assert.Equal(t, "sent", e.state(t))
+}
+
+// A row changed after processOutbox read it is left alone.
+func TestOutboxSkipsChangedItem(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	e.im.DropAfterNextAppend()
+	_ = e.s.SyncNow(bg, e.acc.ID)
+	require.Equal(t, "archive_uncertain", e.state(t))
+	require.NoError(t, e.s.ResolveOutbox(bg, 1, "resend")) // queued again
+	_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = 'archive_uncertain'")
+	require.NoError(t, err)
+	beforeOutboxItem = func(id int64) {
+		beforeOutboxItem = nil
+		_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = 'queued' WHERE id = ?", id) // as if resolved meanwhile
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() { beforeOutboxItem = nil })
+	e.sync(t)
+	assert.Equal(t, "queued", e.state(t), "the stale archive_uncertain snapshot must not overwrite it")
+}
+
+// SaveDraft overlapping Send either lands before Send reads the draft or fails;
+// it never succeeds only to have the older content queued and the draft deleted.
+func TestSaveDraftDuringSend(t *testing.T) {
+	e := newSendEnv(t, false)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject = []string{"bob@example.com"}, "old"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	saved := make(chan error, 1)
+	afterDraftLoad = func() {
+		afterDraftLoad = nil
+		nd := d
+		nd.Subject = "new"
+		go func() { _, err := e.s.SaveDraft(bg, nd); saved <- err }()
+		select {
+		case err := <-saved:
+			t.Error("SaveDraft ran while Send was building the message")
+			saved <- err
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	t.Cleanup(func() { afterDraftLoad = nil })
+	require.NoError(t, e.s.Send(bg, d.ID))
+	assert.Error(t, <-saved, "the draft is gone once sent")
+	out, err := e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "old", out[0].Subject)
+}
+
+func TestResolveDiscard(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.FailAfterData(1)
+	e.sendNew(t)
+	e.sync(t)
+	raw := store.Str(e.rows(t, "SELECT raw_path FROM outbox")[0][0])
+	require.FileExists(t, raw)
+	require.NoError(t, e.s.ResolveOutbox(bg, 1, "discard"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+	assert.NoFileExists(t, raw)
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1)
+	assert.Empty(t, e.onServer(t, "Sent"))
+}
+
+func TestResolveConfirmSent(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.FailAfterData(1)
+	mid := e.sendNew(t)
+	e.sync(t)
+	raw := store.Str(e.rows(t, "SELECT raw_path FROM outbox")[0][0])
+	require.NoError(t, e.s.ResolveOutbox(bg, 1, "confirm_sent"))
+	e.sync(t)
+	assert.Equal(t, "done", e.state(t))
+	assert.Equal(t, []string{mid + ` \Seen`}, e.onServer(t, "Sent"))
+	assert.NoFileExists(t, raw)
+	assert.Len(t, e.smtp.Messages(), 1, "confirm_sent does not resend")
 }

@@ -38,6 +38,10 @@ type DraftAttachment struct {
 	Size                  int
 }
 
+// afterDraftLoad, when set, runs in Send right after the draft is read. Tests use
+// it to edit the draft while Send is building the message.
+var afterDraftLoad func()
+
 var draftModes = map[string]bool{"new": true, "reply": true, "reply_all": true, "forward": true}
 
 func encodeList(l []string) string {
@@ -133,6 +137,8 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 // SaveDraft inserts d (ID 0) or updates its addresses, subject and body.
 // Attachments are changed with AddAttachment and RemoveAttachment.
 func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
+	s.editMu.Lock() // draft changes and Send never interleave
+	defer s.editMu.Unlock()
 	now := time.Now().Unix()
 	if d.ID == 0 {
 		if !draftModes[d.Mode] {
@@ -211,6 +217,8 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 	if int64(len(data)) > attachLimit {
 		return DraftAttachment{}, ErrTooLarge
 	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	r, err := s.db.Execute(ctx, "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
 		draftID, filename, contentType, len(data))
 	if err != nil {
@@ -236,6 +244,8 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 
 // RemoveAttachment deletes the attachment from the draft and its file.
 func (s *Service) RemoveAttachment(ctx context.Context, draftID, attachmentID int64) error {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, "SELECT path FROM draft_attachments WHERE id = ? AND draft_id = ?", attachmentID, draftID)
 	if err != nil {
 		return err
@@ -285,11 +295,14 @@ func recipients(d Draft) ([]string, error) {
 // Send moves the draft into the outbox; the next sync submits it. Nothing is
 // sent and the draft stays when validation or building fails.
 func (s *Service) Send(ctx context.Context, draftID int64) error {
-	s.editMu.Lock() // a draft must enter the outbox once, even if Send is called twice
+	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
 	d, err := s.loadDraft(ctx, draftID)
 	if err != nil {
 		return err
+	}
+	if afterDraftLoad != nil {
+		afterDraftLoad()
 	}
 	rcpts, err := recipients(d)
 	if err != nil {
@@ -332,6 +345,9 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 	raw, messageID, err := mail.Build(o, time.Now())
 	if err != nil {
 		return err
+	}
+	if int64(len(raw)) > attachLimit { // encoding, headers and the text part count too
+		return ErrTooLarge
 	}
 	dir := filepath.Join(s.dataDir, "outbox")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
