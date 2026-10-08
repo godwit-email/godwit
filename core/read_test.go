@@ -325,3 +325,21 @@ func TestAuthFailureDuringDownload(t *testing.T) {
 	assert.Equal(t, "reauth_required", acc.Status)
 	assert.Len(t, ofType(collect(ch), events.SyncFailed), 1)
 }
+
+func TestReadSectionBase64Tolerance(t *testing.T) {
+	want := []byte("hello, tolerant world!!")
+	enc := base64.StdEncoding.EncodeToString(want)
+	for name, in := range map[string]string{
+		"unpadded":   strings.TrimRight(enc, "="),
+		"padded":     enc,
+		"spaces":     enc[:8] + " \t" + enc[8:16] + "\r\n " + enc[16:],
+		"unpadded+w": strings.TrimRight(enc, "=")[:10] + "\t\r\n" + strings.TrimRight(enc, "=")[10:],
+	} {
+		got, err := readSection(strings.NewReader(in), "base64", func() {})
+		require.NoError(t, err, name)
+		assert.Equal(t, want, got, name)
+	}
+	got, err := readSection(strings.NewReader("YQ"), "base64", func() {})
+	require.NoError(t, err)
+	assert.Equal(t, "a", string(got))
+}

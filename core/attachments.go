@@ -157,7 +157,6 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 // fetchPart streams the part and undoes its transfer encoding on the fly. Once
 // more than attachLimit decoded bytes arrive it cuts the connection with abort
 // and returns ErrTooLarge.
-// ponytail: base64 must be padded here; DecodePart alone also accepts unpadded input.
 func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity uint32, uid imap.UID, part, encoding string) ([]byte, error) {
 	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
@@ -248,7 +247,7 @@ func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
 	r := lit
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "base64":
-		r = base64.NewDecoder(base64.StdEncoding, r)
+		r = base64.NewDecoder(base64.RawStdEncoding, &b64Filter{r}) // as tolerant as mail.DecodePart
 	case "quoted-printable":
 		r = quotedprintable.NewReader(r)
 	}
@@ -258,4 +257,24 @@ func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
 		return nil, ErrTooLarge
 	}
 	return data, err
+}
+
+// b64Filter drops whitespace and '=' padding so the unpadded decoder accepts what
+// mail.DecodePart accepts.
+type b64Filter struct{ r io.Reader }
+
+func (f *b64Filter) Read(p []byte) (int, error) {
+	for {
+		n, err := f.r.Read(p)
+		k := 0
+		for _, c := range p[:n] {
+			if c != '=' && c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+				p[k] = c
+				k++
+			}
+		}
+		if k > 0 || err != nil {
+			return k, err
+		}
+	}
 }
