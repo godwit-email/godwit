@@ -24,8 +24,6 @@ const (
 	defaultSyncLim = 2000
 )
 
-var keyringSet = keyring.Set // replaced in tests
-
 // keyringUser is the account's keychain entry name (service "godwit"). The
 // install id keeps data directories from sharing entries: account ids restart at
 // 1 in every database.
@@ -109,11 +107,17 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	defer end()
+	if err := s.KeychainStatus(ctx); err != nil {
+		return Account{}, err
+	}
 	if err := s.TestAccount(ctx, in); err != nil {
 		return Account{}, err
 	}
 	if in.SyncLimit == 0 {
 		in.SyncLimit = defaultSyncLim
+	}
+	if in.Provider == "" {
+		in.Provider = "other"
 	}
 	rows, err := s.db.Query(ctx, "SELECT count(*) FROM accounts")
 	if err != nil {
@@ -137,17 +141,17 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, auth_type, status, username,
-			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, 'password', 'ok', ?, ?, ?, ?, ?, ?, ?, ?)`,
+			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
+			VALUES (?, ?, ?, ?, ?, ?, 'password', 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), in.SyncLimit, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix()},
+			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
 		return Account{}, err
 	}
 	id := res[len(res)-1].LastInsertID
-	if err := keyringSet(keyringService, s.keyringUser(id), in.Password); err != nil {
+	if err := keychainSet(s.keyringUser(id), in.Password); err != nil {
 		// Compensate on a fresh context: the caller's may already be cancelled, and a
 		// row without credentials must not survive.
 		undo := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
@@ -173,7 +177,7 @@ func b2i(b bool) int {
 }
 
 const accountCols = `id, email, name, alias, signature, username, is_default, sync_limit, auth_type, status,
-	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth`
+	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail`
 
 func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts WHERE id = ?", id)
@@ -193,9 +197,12 @@ func scanAccount(r []any) Account {
 		SyncLimit: int(store.Int(r[7])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
+		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]),
 	}
-	if store.Int(r[16]) != 0 { // SMTP refuses the password: the user is asked for it the same way
-		a.Status = "reauth_required"
+	// SMTP refuses the password: the user is asked for it the same way. status and
+	// status_detail are IMAP's (and the keychain's); an IMAP reauth keeps its detail.
+	if store.Int(r[16]) != 0 && a.Status != "reauth_required" {
+		a.Status, a.StatusDetail = "reauth_required", "auth_rejected"
 	}
 	return a
 }
@@ -236,7 +243,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}
-	if err := keyring.Delete(keyringService, s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := keychainDelete(s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}
 	return os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10)))

@@ -116,4 +116,8 @@ var Migrations = [][]string{{
 	// 1 while SMTP refuses the password: the outbox pauses (IMAP sync goes on)
 	// until an SMTP login on an explicit SyncNow succeeds. status is IMAP's.
 	`ALTER TABLE accounts ADD COLUMN smtp_reauth INTEGER NOT NULL DEFAULT 0`,
+}, {
+	`ALTER TABLE accounts ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
+	// Why status is not ok: credentials_missing, keychain_unavailable or auth_rejected.
+	`ALTER TABLE accounts ADD COLUMN status_detail TEXT NOT NULL DEFAULT ''`,
 }}

@@ -17,7 +17,6 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
-	"github.com/zalando/go-keyring"
 )
 
 // ErrClosed is returned by calls made after Close.
@@ -296,7 +295,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
-	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
+	pw, _, err := s.credentials(ctx, acc, false)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -304,14 +303,14 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		Username: acc.Username, Password: pw}, h)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
-			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
+			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required", "auth_rejected"))
 		}
 		return nil, nil, nil, err
 	}
 	// The credentials work: clear reauth_required as it is now, not as it was read
 	// above, since another login may have failed meanwhile. A parked worker resumes.
 	// SMTP's refusal (smtp_reauth) is separate and stays until checkSMTP clears it.
-	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok' WHERE id = ? AND status = 'reauth_required'", accountID)
+	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok', status_detail = '' WHERE id = ? AND status = 'reauth_required'", accountID)
 	if err != nil {
 		c.Close()
 		return nil, nil, nil, err
@@ -411,8 +410,8 @@ func (s *Service) announce(ctx context.Context, accountID int64, ids []int64) {
 	s.bus.Publish(ev)
 }
 
-func (s *Service) setStatus(ctx context.Context, accountID int64, status string) error {
-	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ? WHERE id = ?", status, accountID)
+func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail string) error {
+	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ?, status_detail = ? WHERE id = ?", status, detail, accountID)
 	return err
 }
 

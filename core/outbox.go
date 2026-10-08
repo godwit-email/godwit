@@ -17,7 +17,6 @@ import (
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/send"
 	"github.com/godwit-email/godwit/core/store"
-	"github.com/zalando/go-keyring"
 )
 
 // ErrInvalidState is returned by ResolveOutbox for an item that needs no decision.
@@ -217,7 +216,7 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64) (conn.Endpo
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}
-	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
+	pw, _, err := s.credentials(ctx, acc, false)
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}

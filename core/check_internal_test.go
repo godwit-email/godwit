@@ -21,9 +21,13 @@ func TestAddAccountFailedCheckWritesNoKeychain(t *testing.T) {
 	defer s.Close()
 	smtpAddr, _ := testmail.StartSMTP(t)
 	im := testmail.StartIMAP(t)
-	writes := 0
-	keyringSet = func(string, string, string) error { writes++; return nil }
-	t.Cleanup(func() { keyringSet = keyring.Set })
+	writes := 0 // of the password; the KeychainStatus probe comes first
+	setFor(t, &keyringSet, func(svc, user, pw string) error {
+		if !strings.HasSuffix(user, "/probe") {
+			writes++
+		}
+		return keyring.Set(svc, user, pw)
+	})
 	in := internalInput(t, im.Addr, smtpAddr, "a@example.com", false)
 	in.Password = "wrong"
 	_, err = s.AddAccount(context.Background(), in)
