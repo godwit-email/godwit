@@ -66,13 +66,8 @@ func decide(c Call, readMail bool) Decision {
 // row cannot be written the call is denied.
 func (g *Gateway) Check(ctx context.Context, scope *Scope, c Call) (Decision, error) {
 	d := decide(c, scope.ReadMail())
-	var target any
-	if c.TargetID != 0 {
-		target = c.TargetID
-	}
-	if _, err := g.db.Execute(ctx, "INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision) VALUES (?, ?, ?, ?, ?, ?)",
-		time.Now().Unix(), c.Source, c.Tool, c.TargetKind, target, string(d)); err != nil {
-		return Deny, fmt.Errorf("gateway: audit: %w", err)
+	if err := g.Record(ctx, c.Source, c.Tool, c.TargetKind, c.TargetID, string(d)); err != nil {
+		return Deny, err
 	}
 	return d, nil
 }
@@ -86,4 +81,18 @@ func (g *Gateway) Wrap(scope *Scope, source string, t ai.ToolSpec, write bool, e
 	t.NeedsApproval = false
 	t.Gate = func(ctx context.Context, _ json.RawMessage) (Decision, error) { return g.Check(ctx, scope, call) }
 	return t
+}
+
+// Record writes one audit_log row for a host-initiated event that is not a
+// tool call, such as a skill run (decision "run").
+func (g *Gateway) Record(ctx context.Context, source, tool, targetKind string, targetID int64, decision string) error {
+	var target any
+	if targetID != 0 {
+		target = targetID
+	}
+	if _, err := g.db.Execute(ctx, "INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision) VALUES (?, ?, ?, ?, ?, ?)",
+		time.Now().Unix(), source, tool, targetKind, target, decision); err != nil {
+		return fmt.Errorf("gateway: audit: %w", err)
+	}
+	return nil
 }

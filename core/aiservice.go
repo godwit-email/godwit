@@ -1,12 +1,14 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +21,12 @@ import (
 
 // ErrUseAssist: skills on drafts run through AssistSkill, which makes proposals.
 var ErrUseAssist = errors.New("draft skills run through AssistSkill")
+
+// mailSource is one entry of RunSkill's leading context event.
+type mailSource struct {
+	MessageID int64 `json:"message_id"`
+	Suspect   bool  `json:"suspect"`
+}
 
 // Target is what a skill runs on: message, thread, selection (ID is the
 // message the text was selected in) or draft.
@@ -33,10 +41,13 @@ const (
 	sentinelBuffer = 32 // runes a translate run holds back before forwarding text
 )
 
-// RunSkill runs an enabled skill on t with no tools. message and thread runs
-// are cached by everything that changes their output; a hit replays one text
-// event and done without asking the model. The channel ends with exactly one
-// of done or error and is closed after it; cancel ctx to stop early.
+// RunSkill runs an enabled skill on t with no tools. The first event is
+// "context": Text is a JSON list of {message_id, suspect} for the mail the
+// model sees, so the UI can flag suspected prompt injection. message and
+// thread runs are cached by everything that changes their output; a hit
+// replays context, one text event and done without asking the model. The
+// channel ends with exactly one of done or error and is closed after it;
+// cancel ctx to stop early.
 func (s *Service) RunSkill(ctx context.Context, name string, t Target) (<-chan ai.Event, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -66,45 +77,52 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	}
 
 	// Target: its account, members, and content version (which also proves it still exists).
-	var account int64
-	ids := []int64{t.ID}
-	var version string
-	switch t.Kind {
-	case "message", "selection":
-		rows, err := s.db.Query(ctx, "SELECT account_id, subject, body_text, body_html FROM messages WHERE id = ?", t.ID)
-		if err != nil {
-			return nil, err
-		}
-		if len(rows.Values) == 0 {
-			return nil, fmt.Errorf("message %d not found", t.ID)
-		}
-		r := rows.Values[0]
-		account = store.Int(r[0])
-		sum := sha256.Sum256([]byte(store.Str(r[1]) + "\x00" + store.Str(r[2]) + "\x00" + store.Str(r[3])))
-		version = fmt.Sprintf("%d:%x", t.ID, sum)
-		if t.Kind == "selection" && strings.TrimSpace(t.Text) == "" {
-			return nil, errors.New("selection is empty")
-		}
-	case "thread":
-		rows, err := s.db.Query(ctx, "SELECT id, account_id FROM messages WHERE thread_id = ? ORDER BY date, id", t.ID)
-		if err != nil {
-			return nil, err
-		}
-		if len(rows.Values) == 0 {
-			return nil, fmt.Errorf("thread %d not found", t.ID)
-		}
-		ids = nil
-		for _, r := range rows.Values {
-			ids = append(ids, store.Int(r[0]))
-		}
-		account = store.Int(rows.Values[0][1])
-		sorted := slices.Sorted(slices.Values(ids))
-		b, _ := json.Marshal(sorted)
-		version = string(b)
+	where, arg := "id = ?", t.ID
+	if t.Kind == "thread" {
+		where = "thread_id = ?"
 	}
+	rows, err := s.db.Query(ctx, "SELECT id, account_id, subject, body_text, body_html FROM messages WHERE "+where+" ORDER BY date, id", arg)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("%s %d not found", t.Kind, t.ID)
+	}
+	if t.Kind == "selection" && strings.TrimSpace(t.Text) == "" {
+		return nil, errors.New("selection is empty")
+	}
+	account := store.Int(rows.Values[0][1])
+	var ids []int64
+	type member struct {
+		ID   int64
+		Hash string // sha256 of subject and bodies
+	}
+	var members []member // sorted by ID
+	for _, r := range rows.Values {
+		ids = append(ids, store.Int(r[0]))
+		sum := sha256.Sum256([]byte(store.Str(r[2]) + "\x00" + store.Str(r[3]) + "\x00" + store.Str(r[4])))
+		members = append(members, member{store.Int(r[0]), hex.EncodeToString(sum[:])})
+	}
+	slices.SortFunc(members, func(a, b member) int { return cmp.Compare(a.ID, b.ID) })
 	if err := s.bind(ctx, account); err != nil {
 		return nil, err
 	}
+
+	scope := &gateway.Scope{}
+	var items []mailItem
+	if t.Kind == "selection" {
+		items = []mailItem{s.selectionContext(scope, t.ID, t.Text, defaultMailBudget)}
+	} else if items, err = s.mailContext(ctx, scope, ids, defaultMailBudget); err != nil {
+		return nil, err
+	}
+	var blocks []string
+	var srcs []mailSource
+	for _, it := range items {
+		blocks = append(blocks, it.Block)
+		srcs = append(srcs, mailSource{it.MessageID, it.Suspect})
+	}
+	b, _ := json.Marshal(srcs)
+	ctxEvent := ai.Event{Kind: "context", Text: string(b)}
 
 	st, err := s.loadSettings(ctx)
 	if err != nil {
@@ -122,7 +140,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		b, _ := json.Marshal([]any{sk.Name, sk.Version, t.Kind, t.ID, version,
+		b, _ := json.Marshal([]any{sk.Name, sk.Version, t.Kind, t.ID, members,
 			model.ServiceID, model.Version, model.Model, lang, keep})
 		sum := sha256.Sum256(b)
 		key = hex.EncodeToString(sum[:])
@@ -131,7 +149,8 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 			return nil, err
 		}
 		if len(rows.Values) > 0 {
-			out := make(chan ai.Event, 2)
+			out := make(chan ai.Event, 3)
+			out <- ctxEvent
 			if o := store.Str(rows.Values[0][0]); o != "" {
 				out <- ai.Event{Kind: "text", Text: o}
 			}
@@ -142,32 +161,15 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		}
 	}
 
-	scope := &gateway.Scope{}
-	var prompt string
-	if t.Kind == "selection" {
-		scope.MarkReadMail()
-		prompt = ai.Untrusted(fmt.Sprintf("selection:%d", t.ID), t.Text)
-	} else {
-		items, err := s.mailContext(ctx, scope, ids, defaultMailBudget)
-		if err != nil {
-			return nil, err
-		}
-		var blocks []string
-		for _, it := range items {
-			blocks = append(blocks, it.Block)
-		}
-		prompt = strings.Join(blocks, "\n\n")
-	}
-	// Skills get no tools; the run itself is audited once. The gateway's
-	// verdict is about tool calls, which a skill cannot make.
-	if _, err := gateway.New(s.db).Check(ctx, scope, gateway.Call{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: t.Kind, TargetID: t.ID}); err != nil {
+	// Skills get no tools; the run itself is audited once.
+	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "skill:"+name, t.Kind, t.ID, "run"); err != nil {
 		return nil, err
 	}
 	e, err := s.aiEngine()
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
 
 	out := make(chan ai.Event, 1)
 	go func() {
@@ -178,6 +180,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 			case <-ctx.Done():
 			}
 		}
+		send(ctxEvent)
 		var text strings.Builder
 		holding := translate
 		for ev := range events {
@@ -201,9 +204,11 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 					send(ai.Event{Kind: "text", Text: o})
 				}
 				if key != "" {
-					// A failed write only costs a later cache miss.
-					_, _ = s.db.Execute(ctx, "INSERT OR REPLACE INTO ai_cache(key, account_id, output, created_at) VALUES (?, ?, ?, ?)",
-						key, account, o, time.Now().Unix())
+					// The user has the output: a failed write only costs a later miss.
+					if _, err := s.db.Execute(ctx, "INSERT OR REPLACE INTO ai_cache(key, account_id, output, created_at) VALUES (?, ?, ?, ?)",
+						key, account, o, time.Now().Unix()); err != nil {
+						slog.Default().Warn("ai cache write failed", "skill", name, "err", err)
+					}
 				}
 			}
 			// The terminal event always fits: once ctx is done the reader may be

@@ -111,6 +111,22 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 	return out, nil
 }
 
+// selectionContext wraps text selected in message id like a message body:
+// same block, PerMessage budget and suspect check. It marks scope as having read mail.
+func (s *Service) selectionContext(scope *gateway.Scope, id int64, text string, budget mailBudget) mailItem {
+	scope.MarkReadMail()
+	suspect := ai.SuspectInjection(text)
+	cut := utf8.RuneCountInString(text) > budget.PerMessage
+	if cut {
+		text = string([]rune(text)[:budget.PerMessage])
+	}
+	block := ai.Untrusted(fmt.Sprintf("selection:%d", id), text)
+	if cut {
+		block += truncatedNote
+	}
+	return mailItem{MessageID: id, Suspect: suspect, Block: block}
+}
+
 // summaryContext wraps search results (subject, from, date, snippet) the same
 // way and marks scope as having read mail.
 func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []mailItem {

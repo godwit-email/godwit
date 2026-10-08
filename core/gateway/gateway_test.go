@@ -154,6 +154,15 @@ func TestAuditLogStructured(t *testing.T) {
 	require.Equal(t, []any{"skill", "search", "", nil, "deny"}, []any{store.Str(r[1]), store.Str(r[2]), store.Str(r[3]), r[4], store.Str(r[5])})
 }
 
+func TestRecord(t *testing.T) {
+	g, db := newGateway(t)
+	require.NoError(t, g.Record(t.Context(), "skill", "skill:summarize", "thread", 3, "run"))
+	require.NoError(t, g.Record(t.Context(), "skill", "skill:translate", "", 0, "run"))
+	rows, err := db.Query(t.Context(), "SELECT source, tool, target_kind, target_id, decision FROM audit_log ORDER BY id")
+	require.NoError(t, err)
+	require.Equal(t, [][]any{{"skill", "skill:summarize", "thread", int64(3), "run"}, {"skill", "skill:translate", "", nil, "run"}}, rows.Values)
+}
+
 func TestWrapDenyForSkill(t *testing.T) {
 	g, _ := newGateway(t)
 	run := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
