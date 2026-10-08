@@ -125,3 +125,20 @@ func TestDialCancelDuringStalledTLSHandshake(t *testing.T) {
 	returnsPromptly(t, func(ctx context.Context) error { _, err := conn.DialIMAP(ctx, silent); return err })
 	returnsPromptly(t, func(ctx context.Context) error { _, err := conn.DialSMTP(ctx, silent); return err })
 }
+
+func TestTLSHandshakeFailureIsNotReportedAsCancel(t *testing.T) {
+	plain := fake(t, func(c net.Conn) {
+		c.Write([]byte("this is not a TLS server\r\n"))
+		stall(c)
+	})
+	plain.Security = conn.TLS
+	for name, dial := range map[string]func() error{
+		"imap": func() error { _, err := conn.DialIMAP(context.Background(), plain); return err },
+		"smtp": func() error { _, err := conn.DialSMTP(context.Background(), plain); return err },
+	} {
+		err := dial()
+		require.Error(t, err, name)
+		assert.NotErrorIs(t, err, context.Canceled, name)
+		assert.NotErrorIs(t, err, context.DeadlineExceeded, name)
+	}
+}

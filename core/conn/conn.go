@@ -60,10 +60,11 @@ func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context
 	if implicitTLS {
 		tc := tls.Client(raw, &tls.Config{ServerName: e.Host})
 		if err := tc.HandshakeContext(ctx2); err != nil {
+			err = ctxErr(ctx2, err) // before cancel(), which would make every failure look cancelled
 			stop()
 			raw.Close()
 			cancel()
-			return nil, nil, nil, ctxErr(ctx2, err)
+			return nil, nil, nil, err
 		}
 		nc = tc
 	}
