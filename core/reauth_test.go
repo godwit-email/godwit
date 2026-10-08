@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
 	"github.com/godwit-email/godwit/core/store"
 	"net"
@@ -307,4 +308,25 @@ func TestUpdateAccountServersResumes(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'fixed@x'") == 1 && len(in2.Messages()) == 1
 	}, 5*time.Second, 20*time.Millisecond)
+}
+
+// A token endpoint that never answers costs one refresh its deadline; the
+// refresh lock is free afterwards for Reauthorize and later syncs.
+func TestRefreshDeadline(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	setFor(t, &refreshTimeout, 200*time.Millisecond)
+	release := e.oa.Hang(t)
+	e.expire(t)
+	within(t, 3*time.Second, "refresh", func() {
+		_, _, _, err := e.s.credentials(bg, e.acc, "")
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+	assert.Error(t, e.s.SyncNow(bg, e.acc.ID), "still hanging: this sync fails too")
+	release()
+	within(t, 3*time.Second, "Reauthorize", func() {
+		require.NoError(t, e.s.Reauthorize(bg, e.acc.ID, e.signIn(t, "alice@example.com")))
+	})
+	e.expire(t)
+	within(t, 3*time.Second, "SyncNow", func() { e.sync(t) }) // refreshes again
 }

@@ -172,6 +172,10 @@ func (s *Service) refreshLock(id int64) chan struct{} {
 	return s.refreshing[id]
 }
 
+// refreshTimeout bounds one OAuth refresh, so a token endpoint that never answers
+// cannot hold the account's refresh lock. Tests lower it.
+var refreshTimeout = 30 * time.Second
+
 // tokenMargin: a cached access token closer than this to its expiry is refreshed.
 const tokenMargin = 2 * time.Minute
 
@@ -220,7 +224,9 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	if err != nil {
 		return "", 0, err
 	}
-	g, err := auth.Refresh(ctx, cfg, http.DefaultClient, rt)
+	rctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	g, err := auth.Refresh(rctx, cfg, http.DefaultClient, rt)
+	cancel()
 	if errors.Is(err, auth.ErrInvalidGrant) {
 		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
 			return s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked")

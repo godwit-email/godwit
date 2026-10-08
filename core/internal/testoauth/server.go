@@ -36,6 +36,7 @@ type Server struct {
 	email         string           // SetEmail override for id_tokens; "" = the signed-in email
 	deny          bool             // the user refuses consent
 	next          *canned          // RespondNext: the next token response
+	hang          chan struct{}    // Hang: token requests wait until it closes
 	rotate        bool             // refreshes issue a new refresh token
 	noExpiry      bool             // token responses omit expires_in
 	codes         map[string]grant // code -> pending exchange
@@ -77,6 +78,26 @@ func (s *Server) RespondNext(status int, body string) {
 	s.mu.Lock()
 	s.next = &canned{status, body}
 	s.mu.Unlock()
+}
+
+// Hang makes token requests wait, without an answer, until release is called
+// or the client goes away. release also runs when the test ends.
+func (s *Server) Hang(t *testing.T) (release func()) {
+	c := make(chan struct{})
+	s.mu.Lock()
+	s.hang = c
+	s.mu.Unlock()
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			s.mu.Lock()
+			s.hang = nil
+			s.mu.Unlock()
+			close(c)
+		})
+	}
+	t.Cleanup(release) // before Start's cleanup closes the server, which waits for requests
+	return release
 }
 
 // RotateRefresh makes each refresh issue a new refresh token. The old one stays
@@ -196,6 +217,15 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	hang := s.hang
+	s.mu.Unlock()
+	if hang != nil {
+		select {
+		case <-hang:
+		case <-r.Context().Done():
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokenRequests++
