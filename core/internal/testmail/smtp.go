@@ -23,10 +23,26 @@ type Received struct {
 
 // Inbox records what the test SMTP server received.
 type Inbox struct {
-	mu   sync.Mutex
-	msgs []Received
-	fail int
-	sent *IMAP // SaveToSent target
+	mu         sync.Mutex
+	msgs       []Received
+	fail       int
+	sent       *IMAP // SaveToSent target
+	rejectAuth bool
+	auths      int
+}
+
+// RejectAuth makes the server refuse (or, with false, accept again) alice/secret.
+func (in *Inbox) RejectAuth(reject bool) {
+	in.mu.Lock()
+	in.rejectAuth = reject
+	in.mu.Unlock()
+}
+
+// AuthAttempts is how many AUTH exchanges the server has handled.
+func (in *Inbox) AuthAttempts() int {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.auths
 }
 
 // SMTPOption customises StartSMTP.
@@ -72,7 +88,11 @@ func (s *smtpSession) AuthMechanisms() []string { return []string{sasl.Plain} }
 
 func (s *smtpSession) Auth(string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(_, user, pass string) error {
-		if user != "alice" || pass != "secret" {
+		s.in.mu.Lock()
+		s.in.auths++
+		reject := s.in.rejectAuth
+		s.in.mu.Unlock()
+		if reject || user != "alice" || pass != "secret" {
 			return errors.New("invalid credentials")
 		}
 		s.auth = true

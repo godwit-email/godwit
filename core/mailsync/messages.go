@@ -3,6 +3,7 @@ package mailsync
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -119,6 +120,41 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 	r.gone(ids, tids)
 	r.conflicts = append(r.conflicts, msg)
 	return 0, nil
+}
+
+// unclaimable ends moves still awaiting their claim after a complete Fetch: every
+// arrival since the move was imported, so none matched (the message has no
+// Message-ID, or the server changed it). The op and the message's other pending
+// ops become conflicts and the local row, which has no server location, is
+// deleted; the copy in the destination was imported as a message of its own.
+func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) error {
+	rows, err := db.Query(ctx, `SELECT o.message_id, f.name FROM ops o LEFT JOIN folders f ON f.id = o.dst_folder_id
+		WHERE o.account_id = ? AND o.state = 'awaiting_claim' AND o.message_id IS NOT NULL`, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	var msgs []any
+	var names []string
+	for _, v := range rows.Values {
+		msgs, names = append(msgs, v[0]), append(names, fmt.Sprintf("%q", store.Str(v[1])))
+	}
+	msg := fmt.Sprintf("%d message(s) moved to %s could not be matched to the copy there; the copy is kept as a new message and changes queued for the original were not applied",
+		len(msgs), strings.Join(slices.Compact(slices.Sorted(slices.Values(names))), ", "))
+	ids, tids, err := doomed(ctx, db, "server_folder_id IS NULL AND id IN ("+marks(len(msgs))+")", msgs...)
+	if err != nil {
+		return err
+	}
+	stmts := []sqlite.Statement{
+		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE state IN ('pending', 'awaiting_claim') AND message_id IN (" + marks(len(msgs)) + ")",
+			Args: append([]any{msg}, msgs...)},
+		{SQL: "DELETE FROM messages WHERE server_folder_id IS NULL AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
+	}
+	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+		return err
+	}
+	r.gone(ids, tids)
+	r.conflicts = append(r.conflicts, msg)
+	return nil
 }
 
 // pendingFlags is true for a messages row with a flags op not yet pushed.

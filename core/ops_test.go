@@ -441,3 +441,31 @@ func TestFetchKeepsConcurrentLocalFlags(t *testing.T) {
 	assert.Equal(t, `\Flagged \Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
 	assert.Equal(t, []string{`m@x \Flagged \Seen`}, e.onServer(t, "INBOX"))
 }
+
+// A move the server reports without COPYUID, of a message without Message-ID,
+// can never be claimed: it ends as a conflict instead of waiting forever, the
+// stale row goes and the server copy is a message of its own.
+func TestUnclaimableMoveEndsInConflict(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutCOPYUID())
+	e.put(t, "INBOX", "From: bob@example.com\r\nTo: alice@example.com\r\nSubject: anon\r\nDate: "+day+"\r\n\r\nno id\r\n")
+	e.sync(t)
+	id := store.Int(e.rows(t, "SELECT id FROM messages WHERE subject = 'anon'")[0][0])
+	archive := e.folderID(t, "Archive")
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	e.sync(t)
+
+	assert.NotEmpty(t, ofType(collect(ch), events.SyncFailed))
+	assert.Equal(t, []string{"conflict", "conflict"}, e.opStates(t))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE id = ?", id))
+	r := e.rows(t, "SELECT folder_id, server_folder_id FROM messages WHERE subject = 'anon'")
+	require.Len(t, r, 1)
+	assert.Equal(t, []any{archive, archive}, r[0])
+	assert.Equal(t, []string{""}, e.onServer(t, "Archive"), "moved, and the flag change was not applied")
+	assert.Empty(t, e.onServer(t, "INBOX"))
+	e.sync(t)
+	assert.Equal(t, []string{"conflict", "conflict"}, e.opStates(t))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE subject = 'anon'"))
+}

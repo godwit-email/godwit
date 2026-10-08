@@ -2,6 +2,7 @@
 package mailsync
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -20,8 +21,16 @@ import (
 	"github.com/godwitmail/godwit/core/store"
 )
 
-// textBatch is how many new messages share one round of body-text FETCHes.
-const textBatch = 50
+// One round of body-text FETCHes covers at most textBatch messages and asks for
+// at most textBatchBytes (or one message's text), which bounds sync memory.
+const (
+	textBatch      = 50
+	textBatchBytes = 32 << 20
+)
+
+// PartFetchBytes is how much of one text part a sync downloads: enough encoded
+// bytes for mail.MaxBodyBytes of text even in quoted-printable. Tests lower it.
+var PartFetchBytes int64 = 3 * mail.MaxBodyBytes
 
 type account struct {
 	id    int64
@@ -87,7 +96,7 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			return fmt.Errorf("sync %q: %w", f.name, err)
 		}
 	}
-	return nil
+	return unclaimable(ctx, db, accountID, &r)
 }
 
 func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, r *result) error {
@@ -207,7 +216,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	for _, m := range todo {
 		twins[twinKey(m)]++
 	}
-	for batch := range slices.Chunk(todo, textBatch) {
+	for _, batch := range textBatches(todo) {
 		texts, err := fetchTexts(c, batch)
 		if err != nil {
 			return err
@@ -235,13 +244,58 @@ func twinKey(m *imapclient.FetchMessageBuffer) string {
 	return m.Envelope.MessageID + "\x00" + strconv.FormatInt(m.RFC822Size, 10)
 }
 
-// fetchTexts downloads the displayable text parts of msgs, keyed by UID then part
-// path. Messages with the same part layout share one UID FETCH.
+// textParts returns the text parts of m that a sync downloads: in order, until
+// the message used enough for MaxBodyBytes of both text and HTML. Each is
+// fetched up to PartFetchBytes; toParsed marks what was left out as truncated.
+func textParts(m *imapclient.FetchMessageBuffer) []mail.Attachment {
+	parts, _ := mail.ParseStructure(m.BodyStructure)
+	budget := 2 * PartFetchBytes
+	for i, p := range parts {
+		if budget <= 0 {
+			return parts[:i]
+		}
+		budget -= partCost(p)
+	}
+	return parts
+}
+
+// partCost is how many bytes fetching the text part may return.
+func partCost(p mail.Attachment) int64 {
+	if p.Size > 0 && int64(p.Size) < PartFetchBytes {
+		return int64(p.Size)
+	}
+	return PartFetchBytes
+}
+
+// textBatches splits msgs into rounds of at most textBatch messages and
+// textBatchBytes of requested text; a message never splits.
+func textBatches(msgs []*imapclient.FetchMessageBuffer) [][]*imapclient.FetchMessageBuffer {
+	var out [][]*imapclient.FetchMessageBuffer
+	var cur []*imapclient.FetchMessageBuffer
+	var size int64
+	for _, m := range msgs {
+		var cost int64
+		for _, p := range textParts(m) {
+			cost += partCost(p)
+		}
+		if len(cur) > 0 && (len(cur) == textBatch || size+cost > textBatchBytes) {
+			out, cur, size = append(out, cur), nil, 0
+		}
+		cur, size = append(cur, m), size+cost
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// fetchTexts downloads the first PartFetchBytes of each of textParts of msgs,
+// keyed by UID then part path. Messages with the same parts share one UID FETCH.
 func fetchTexts(c *imapclient.Client, msgs []*imapclient.FetchMessageBuffer) (map[imap.UID]map[string][]byte, error) {
 	groups := map[string][]imap.UID{}
 	layout := map[string][]mail.Attachment{}
 	for _, m := range msgs {
-		parts, _ := mail.ParseStructure(m.BodyStructure)
+		parts := textParts(m)
 		if len(parts) == 0 {
 			continue
 		}
@@ -257,10 +311,9 @@ func fetchTexts(c *imapclient.Client, msgs []*imapclient.FetchMessageBuffer) (ma
 	for k, uids := range groups {
 		var secs []*imap.FetchItemBodySection
 		for _, p := range layout[k] {
-			secs = append(secs, &imap.FetchItemBodySection{Part: partPath(p.Part), Peek: true})
+			secs = append(secs, &imap.FetchItemBodySection{Part: partPath(p.Part), Peek: true,
+				Partial: &imap.SectionPartial{Size: PartFetchBytes}})
 		}
-		// ponytail: whole text parts are downloaded and cut to MaxBodyBytes afterwards;
-		// a partial FETCH would need care with base64/QP boundaries.
 		bufs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: secs}).Collect()
 		if err != nil {
 			return nil, err
@@ -308,9 +361,16 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 	parts, atts := mail.ParseStructure(m.BodyStructure)
 	p.Attachments = atts
 	for _, tp := range parts {
-		b, err := mail.DecodePart(texts[tp.Part], tp.Encoding, tp.Charset)
+		raw, fetched := texts[tp.Part]
+		if cut := int64(tp.Size) > PartFetchBytes; cut || !fetched {
+			p.Truncated = true
+			if i := bytes.LastIndexByte(raw, '\n'); cut && i >= 0 {
+				raw = raw[:i+1] // whole lines decode cleanly in base64 and quoted-printable
+			}
+		}
+		b, err := mail.DecodePart(raw, tp.Encoding, tp.Charset)
 		if err != nil {
-			b = texts[tp.Part] // undecodable: keep the raw text rather than nothing
+			b = raw // undecodable: keep the raw text rather than nothing
 		}
 		dst := &p.Text
 		if tp.ContentType == "text/html" {

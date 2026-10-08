@@ -36,11 +36,13 @@ type MessagePage struct {
 	NextCursor string
 }
 
-// Message is a fully loaded message. HTML is always sanitized.
+// Message is a fully loaded message. HTML is always sanitized. Truncated means
+// HTML and Text hold only the start of the body; GetRawMessage has all of it.
 type Message struct {
 	MessageSummary
 	ReplyTo             string
 	HTML, Text          string
+	Truncated           bool
 	RemoteImagesBlocked int
 	Attachments         []AttachmentInfo
 }
@@ -187,7 +189,7 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 // GetMessage returns the message with sanitized HTML. Inline images are
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html FROM messages m WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -195,7 +197,7 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		return Message{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12])}
+	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0}
 	raw := store.Str(r[13])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {

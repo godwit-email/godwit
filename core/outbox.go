@@ -118,8 +118,9 @@ type outboxRow struct {
 // processOutbox sends the account's queued messages and files sent ones into the
 // Sent folder over c. Every state change is written before the network action it
 // guards, and a message whose submission may have succeeded is never sent again
-// automatically. Network failures are recorded on the items; only database
-// errors are returned.
+// automatically. Network failures are recorded on the items; database errors are
+// returned, and so is a refused SMTP login, which stops the round and sets the
+// account reauth_required.
 func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
 	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state FROM outbox
 		WHERE account_id = ? AND state IN ('queued', 'sent', 'send_uncertain', 'archive_uncertain') ORDER BY id`, accountID)
@@ -158,18 +159,19 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		switch o.state {
 		case "queued":
 			if ep == nil {
-				acc, err := s.account(ctx, accountID)
+				e, f, err := s.smtpEndpoint(ctx, accountID)
 				if err != nil {
 					return err
 				}
-				pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
-				if err != nil {
-					return err
-				}
-				ep = &conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username, Password: pw}
-				from = acc.Email
+				ep, from = &e, f
 			}
 			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
+			if errors.Is(err, conn.ErrAuthFailed) {
+				// Not this message's fault: it is queued again, uncharged, and the
+				// account waits for new credentials instead of trying each item.
+				_, derr := s.db.Execute(wctx, "UPDATE accounts SET status = 'reauth_required', smtp_reauth = 1 WHERE id = ?", accountID)
+				return errors.Join(err, derr)
+			}
 			if err != nil {
 				return err
 			}
@@ -201,7 +203,21 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	return nil
 }
 
-// sendItem submits a queued item and reports whether it is now sent.
+// smtpEndpoint returns the account's SMTP server with its password, and its address.
+func (s *Service) smtpEndpoint(ctx context.Context, accountID int64) (conn.Endpoint, string, error) {
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return conn.Endpoint{}, "", err
+	}
+	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
+	if err != nil {
+		return conn.Endpoint{}, "", err
+	}
+	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username, Password: pw}, acc.Email, nil
+}
+
+// sendItem submits a queued item and reports whether it is now sent. A refused
+// login puts the item back to queued and returns the conn.ErrAuthFailed error.
 func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
 	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
 		return false, err
@@ -219,6 +235,9 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 	case errors.Is(err, send.ErrUncertain):
 		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 		return false, err
+	case errors.Is(err, conn.ErrAuthFailed):
+		_, derr := s.setOutbox(wctx, o, "queued", err.Error())
+		return false, errors.Join(err, derr)
 	}
 	_, derr := s.db.Execute(wctx, `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
 		state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'queued' END WHERE id = ? AND state = 'sending'`,

@@ -112,4 +112,8 @@ var Migrations = [][]string{{
 	`ALTER TABLE outbox ADD COLUMN subject TEXT`,
 }, {
 	`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+}, {
+	// 1 while status is reauth_required because SMTP refused the password: an
+	// IMAP login does not clear that, only an SMTP login does.
+	`ALTER TABLE accounts ADD COLUMN smtp_reauth INTEGER NOT NULL DEFAULT 0`,
 }}

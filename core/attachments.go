@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"mime/quotedprintable"
 	"os"
@@ -130,12 +131,48 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	return path, info, s.evict(ctx, MaxCacheBytes, attachmentID)
 }
 
+// GetRawMessage downloads the message's full original from the server, for a
+// Truncated message or for saving. Messages over MaxMessageBytes give ErrTooLarge.
+func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, error) {
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("message %d not found", messageID)
+	}
+	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0]))
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	// Read under the lock: a sync may have moved or deleted it meanwhile.
+	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, m.server_uidvalidity, m.server_uid, m.size
+		FROM messages m LEFT JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("message %d not found", messageID)
+	}
+	r := rows.Values[0]
+	if store.Int(r[4]) > attachLimit {
+		return nil, ErrTooLarge
+	}
+	if store.Str(r[1]) == "" || r[3] == nil {
+		return nil, ErrNotOnServerYet
+	}
+	return s.download(ctx, attRow{accountID: store.Int(r[0]), folder: store.Str(r[1]),
+		uidValidity: uint32(store.Int(r[2])), uid: imap.UID(store.Int(r[3]))})
+}
+
 func (s *Service) touch(ctx context.Context, id int64) error {
 	_, err := s.db.Execute(ctx, "UPDATE attachments SET last_used = ? WHERE id = ?", time.Now().Unix(), id)
 	return err
 }
 
-// download fetches the raw (still transfer-encoded) part from the server.
+// download fetches the raw (still transfer-encoded) part from the server, or the
+// whole message when a.part is empty.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 	c, release, abort, err := s.dialAccount(ctx, a.accountID, nil)
 	if err != nil {
@@ -163,13 +200,15 @@ func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity ui
 	if sel.UIDValidity != uidValidity {
 		return nil, errors.New("server folder changed since sync; sync again")
 	}
-	var path []int
-	for _, p := range strings.Split(part, ".") {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return nil, errors.New("bad attachment part " + part)
+	var path []int // none: the whole message
+	if part != "" {
+		for p := range strings.SplitSeq(part, ".") {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil, errors.New("bad attachment part " + part)
+			}
+			path = append(path, n)
 		}
-		path = append(path, n)
 	}
 	sec := &imap.FetchItemBodySection{Part: path, Peek: true}
 	cmd := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}})

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwitmail/godwit/core/conn"
 	"github.com/godwitmail/godwit/core/events"
 	"github.com/godwitmail/godwit/core/internal/testmail"
 	"github.com/godwitmail/godwit/core/store"
@@ -402,4 +403,48 @@ func TestLoginClearsReauthSetAfterDialReadStatus(t *testing.T) {
 	a, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", a.Status)
+}
+
+// IMAP accepts the password but SMTP refuses it: the account parks after one
+// SMTP login, the message waits unharmed, and only an SMTP login clears it.
+func TestSMTPAuthFailureParksAccount(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	e.smtp.RejectAuth(true)
+	base := e.smtp.AuthAttempts()
+	e.sendNew(t) // wakes the worker
+	ev := waitEvent(t, ch, events.SyncFailed, 5*time.Second)
+	assert.Contains(t, ev.Error, "authentication failed")
+	waitSignal(t, e.parked, "worker parking", 5*time.Second)
+	acc, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "reauth_required", acc.Status)
+	r := e.rows(t, "SELECT state, attempts FROM outbox")
+	assert.Equal(t, []any{"queued", int64(0)}, r[0], "the item is not charged for the login")
+
+	logins := e.im.Logins()
+	for range 3 {
+		e.sendNew(t) // a local change wakes the worker; it only re-reads the status
+		waitSignal(t, e.parked, "worker parking again", 5*time.Second)
+	}
+	assert.Equal(t, 1, e.smtp.AuthAttempts()-base, "one SMTP login across the rounds")
+	assert.Equal(t, logins, e.im.Logins(), "no IMAP logins while parked")
+
+	// An explicit sync logs in to IMAP (which must not clear SMTP's failure), still
+	// fetches mail, and tries SMTP once.
+	e.put(t, "INBOX", msg("while-parked@x"))
+	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	assert.Equal(t, 2, e.smtp.AuthAttempts()-base)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'while-parked@x'"))
+	acc, err = e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "reauth_required", acc.Status)
+	assert.Empty(t, e.smtp.Messages())
+
+	e.smtp.RejectAuth(false)
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID))
+	acc, err = e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", acc.Status)
+	assert.Len(t, e.smtp.Messages(), 4)
+	workerResumed(t, e, "after@x")
 }

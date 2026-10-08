@@ -12,6 +12,7 @@ import (
 	"github.com/godwitmail/godwit/core/conn"
 	"github.com/godwitmail/godwit/core/events"
 	"github.com/godwitmail/godwit/core/internal/testmail"
+	"github.com/godwitmail/godwit/core/mailsync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
@@ -365,4 +366,29 @@ func TestRebuildSearchIndex(t *testing.T) {
 	assert.Equal(t, 1, search("报销单"))
 	assert.Equal(t, 0, search("stale words"))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages_fts"))
+}
+
+// A message whose body was cut says so, and its full original can be fetched
+// within MaxMessageBytes.
+func TestTruncatedMessageAndRawOriginal(t *testing.T) {
+	setFor(t, &mailsync.PartFetchBytes, 4096)
+	e := newSyncEnv(t)
+	raw := eml("big@x", "bob@example.com", "alice@example.com", "big", day, strings.Repeat("all of the words\r\n", 2000))
+	e.put(t, "INBOX", raw)
+	e.put(t, "INBOX", msg("small@x"))
+	e.sync(t)
+	big, err := e.s.GetMessage(bg, e.idOf(t, "big@x"), false)
+	require.NoError(t, err)
+	assert.True(t, big.Truncated)
+	small, err := e.s.GetMessage(bg, e.idOf(t, "small@x"), false)
+	require.NoError(t, err)
+	assert.False(t, small.Truncated)
+
+	got, err := e.s.GetRawMessage(bg, big.ID)
+	require.NoError(t, err)
+	assert.Equal(t, raw, string(got))
+
+	setFor(t, &attachLimit, int64(len(raw)-1))
+	_, err = e.s.GetRawMessage(bg, big.ID)
+	assert.ErrorIs(t, err, ErrTooLarge)
 }

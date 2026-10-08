@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/godwitmail/godwit/core/conn"
 	"github.com/godwitmail/godwit/core/events"
 	"github.com/godwitmail/godwit/core/internal/testmail"
+	"github.com/godwitmail/godwit/core/mailsync"
 	"github.com/godwitmail/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -531,4 +533,35 @@ func TestSyncResetSurvivesUndeletableCache(t *testing.T) {
 	}))
 	_, err = os.Stat(cached)
 	assert.True(t, os.IsNotExist(err))
+}
+
+// A huge text part is downloaded only up to mailsync.PartFetchBytes, stored as
+// truncated, and not downloaded again by later syncs.
+func TestSyncHugeBodyIsBounded(t *testing.T) {
+	setFor(t, &mailsync.PartFetchBytes, 4096)
+	e := newSyncEnv(t)
+	text := strings.Repeat("the quick brown fox jumps over the lazy dog 0123456789\r\n", 6000) // ~330 KB
+	e.put(t, "INBOX", eml("big@x", "bob@example.com", "alice@example.com", "big", day, text))
+	b64 := base64.StdEncoding.EncodeToString([]byte(text))
+	var wrapped strings.Builder
+	for i := 0; i < len(b64); i += 76 {
+		wrapped.WriteString(b64[i:min(i+76, len(b64))] + "\r\n")
+	}
+	e.put(t, "INBOX", "Message-ID: <b64@x>\r\nFrom: bob@example.com\r\nTo: alice@example.com\r\nSubject: b64\r\nDate: "+day+
+		"\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"+wrapped.String())
+	before := e.im.BytesSent()
+	e.sync(t)
+	assert.Less(t, e.im.BytesSent()-before, int64(48<<10), "two 4 KB slices, not 750 KB")
+	for _, id := range []string{"big@x", "b64@x"} {
+		r := e.rows(t, "SELECT body_text, body_truncated FROM messages WHERE message_id = ?", id)
+		require.Len(t, r, 1, id)
+		body := store.Str(r[0][0])
+		assert.Equal(t, int64(1), store.Int(r[0][1]), id)
+		assert.NotEmpty(t, body, id)
+		assert.LessOrEqual(t, len(body), 4096, id)
+		assert.True(t, strings.HasPrefix(text, body), "%s: a clean prefix of the text", id)
+	}
+	before = e.im.BytesSent()
+	e.sync(t)
+	assert.Less(t, e.im.BytesSent()-before, int64(8<<10), "nothing is downloaded again")
 }
