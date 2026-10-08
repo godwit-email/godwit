@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/zalando/go-keyring"
 )
 
@@ -66,21 +69,112 @@ func (s *Service) KeychainStatus(ctx context.Context) error {
 	return err
 }
 
-// credentials reads the account's secret from the keychain and records the
-// outcome in its status: a missing entry is reauth_required (the worker parks),
-// an unusable keychain is error (the worker keeps retrying), and a successful
-// read clears error. Password accounts only; forceRefresh is for OAuth.
+// credentials returns the account's password, or for an OAuth account an access
+// token, and records the outcome in its status: a missing keychain entry is
+// reauth_required (the worker parks), an unusable keychain is error (the worker
+// keeps retrying), and a successful read clears error. forceRefresh means the
+// server refused the access token last returned: a new one is fetched.
 func (s *Service) credentials(ctx context.Context, acc Account, forceRefresh bool) (password, accessToken string, err error) {
-	pw, err := keychainGet(s.keyringUser(acc.ID))
+	if acc.AuthType == "oauth" {
+		tok, err := s.accessToken(ctx, acc, forceRefresh)
+		return "", tok, err
+	}
+	pw, err := s.secret(ctx, acc)
+	return pw, "", err
+}
+
+// secret reads the account's keychain entry: a password or a refresh token.
+func (s *Service) secret(ctx context.Context, acc Account) (string, error) {
+	v, err := keychainGet(s.keyringUser(acc.ID))
 	switch {
 	case errors.Is(err, keyring.ErrNotFound):
-		err = fmt.Errorf("password not found in keychain: %w", err)
-		return "", "", errors.Join(err, s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing"))
+		err = fmt.Errorf("credentials not found in keychain: %w", err)
+		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing"))
 	case err != nil:
-		return "", "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
 	}
 	if _, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok', status_detail = '' WHERE id = ? AND status = 'error'", acc.ID); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return pw, "", nil
+	return v, nil
+}
+
+// tokenMargin: a cached access token closer than this to its expiry is refreshed.
+const tokenMargin = 2 * time.Minute
+
+func (t oauthToken) fresh() bool {
+	return t.access != "" && (t.expiry.IsZero() || time.Until(t.expiry) > tokenMargin)
+}
+
+// accessToken returns a cached access token or refreshes it, one refresh per
+// account at a time: callers that waited use the token the first one got. A
+// rotated refresh token is saved before the new access token is used; if that
+// fails the old one stays in the keychain. A revoked grant is reauth_required
+// (token_revoked); other failures change no status, so the worker backs off.
+func (s *Service) accessToken(ctx context.Context, acc Account, force bool) (string, error) {
+	s.tokMu.Lock()
+	seen := s.tokens[acc.ID]
+	if s.refreshing == nil {
+		s.refreshing = map[int64]chan struct{}{}
+	}
+	if s.refreshing[acc.ID] == nil {
+		s.refreshing[acc.ID] = make(chan struct{}, 1)
+	}
+	sem := s.refreshing[acc.ID]
+	s.tokMu.Unlock()
+	if !force && seen.fresh() {
+		return seen.access, nil
+	}
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	s.tokMu.Lock()
+	cur := s.tokens[acc.ID]
+	if cur.fresh() && (!force || cur.access != seen.access) {
+		s.tokMu.Unlock()
+		return cur.access, nil // refreshed while we waited
+	}
+	delete(s.tokens, acc.ID)
+	s.tokMu.Unlock()
+
+	rt, err := s.secret(ctx, acc)
+	if err != nil {
+		return "", err
+	}
+	cfg, err := oauthConfig(acc.Provider)
+	if err != nil {
+		return "", err
+	}
+	g, err := auth.Refresh(ctx, cfg, http.DefaultClient, rt)
+	if errors.Is(err, auth.ErrInvalidGrant) {
+		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked"))
+	}
+	if err != nil {
+		return "", err
+	}
+	if g.RefreshToken != "" {
+		if err := keychainSet(s.keyringUser(acc.ID), g.RefreshToken); err != nil {
+			err = fmt.Errorf("save rotated refresh token: %w", err)
+			return "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+		}
+	}
+	s.tokMu.Lock()
+	if s.tokens == nil {
+		s.tokens = map[int64]oauthToken{}
+	}
+	s.tokens[acc.ID] = oauthToken{g.AccessToken, g.Expiry}
+	s.tokMu.Unlock()
+	return g.AccessToken, nil
+}
+
+// ErrWrongAccount: the OAuth sign-in was for another address than the account's.
+var ErrWrongAccount = errors.New("signed in with a different account")
+
+// oauthToken is an access token held in memory only.
+type oauthToken struct {
+	access string
+	expiry time.Time
 }

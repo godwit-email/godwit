@@ -22,15 +22,23 @@ import (
 
 type config struct {
 	move, uidplus, copyuid, noIdle, requireID bool
-	xoauth2                                   string // valid XOAUTH2 token; "" = not offered
-	sent                                      *IMAP  // SMTP only: SaveToSent target
+	xoauth2                                   func(token string) bool // accepts an XOAUTH2 token; nil = not offered
+	sent                                      *IMAP                   // SMTP only: SaveToSent target
 }
 
 // Option customises StartIMAP and StartSMTP; each option says which servers it affects.
 type Option func(*config)
 
 // WithXOAuth2 makes the IMAP and SMTP servers offer XOAUTH2 and accept token for alice.
-func WithXOAuth2(token string) Option { return func(c *config) { c.xoauth2 = token } }
+func WithXOAuth2(token string) Option {
+	return WithXOAuth2Func(func(t string) bool { return t == token })
+}
+
+// WithXOAuth2Func is WithXOAuth2 with a validator, such as a testoauth server's
+// ValidAccess. The XOAUTH2 user may be alice or an alice@ address.
+func WithXOAuth2Func(valid func(token string) bool) Option {
+	return func(c *config) { c.xoauth2 = valid }
+}
 
 // RequireID makes the IMAP server refuse SELECT with "NO Unsafe Login" until the
 // client has sent ID, as NetEase does.
@@ -287,7 +295,7 @@ func (s session) Login(username, password string) error {
 
 // AuthenticateMechanisms offers XOAUTH2 when configured.
 func (s session) AuthenticateMechanisms() []string {
-	if s.s.cfg.xoauth2 != "" {
+	if s.s.cfg.xoauth2 != nil {
 		return []string{sasl.Plain, "XOAUTH2"}
 	}
 	return []string{sasl.Plain}
@@ -298,9 +306,9 @@ func (s session) Authenticate(mech string) (sasl.Server, error) {
 	switch {
 	case mech == sasl.Plain:
 		return sasl.NewPlainServer(func(_, user, pass string) error { return s.Login(user, pass) }), nil
-	case mech == "XOAUTH2" && s.s.cfg.xoauth2 != "":
+	case mech == "XOAUTH2" && s.s.cfg.xoauth2 != nil:
 		s.s.logins.Add(1)
-		return &xoauth2Server{token: s.s.cfg.xoauth2, login: func(user string) error {
+		return &xoauth2Server{valid: s.s.cfg.xoauth2, login: func(user string) error {
 			return s.Session.Login(user, "secret")
 		}}, nil
 	}
@@ -434,7 +442,7 @@ func (s *IMAP) DropFetchAfter(n int) { s.drop.Store(int32(n) + 1) }
 // xoauth2Server checks a SASL XOAUTH2 exchange. A bad token gets the JSON error
 // challenge, and the exchange fails after the client's empty reply, as Gmail does.
 type xoauth2Server struct {
-	token  string
+	valid  func(token string) bool
 	login  func(user string) error
 	failed bool
 }
@@ -454,7 +462,9 @@ func (x *xoauth2Server) Next(resp []byte) ([]byte, bool, error) {
 			auth = v
 		}
 	}
-	if auth != "Bearer "+x.token || x.login(user) != nil {
+	user, _, _ = strings.Cut(user, "@")
+	token, ok := strings.CutPrefix(auth, "Bearer ")
+	if !ok || !x.valid(token) || x.login(user) != nil {
 		x.failed = true
 		return []byte(`{"status":"401","schemes":"bearer","scope":"https://mail.google.com/"}`), false, nil
 	}

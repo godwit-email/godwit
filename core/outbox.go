@@ -143,6 +143,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		from       string
 		sent       string
 		sentLooked bool
+		refreshed  bool // the access token was refreshed after SMTP refused it
 	)
 	sentFolder := func() (string, error) {
 		if !sentLooked {
@@ -166,13 +167,23 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 		switch o.state {
 		case "queued":
 			if ep == nil {
-				e, f, err := s.smtpEndpoint(ctx, accountID)
+				e, f, err := s.smtpEndpoint(ctx, accountID, false)
 				if err != nil {
 					return err
 				}
 				ep, from = &e, f
 			}
 			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
+			if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
+				// The access token may just be stale: refresh it once per round.
+				refreshed = true
+				e, _, rerr := s.smtpEndpoint(ctx, accountID, true)
+				if rerr != nil {
+					return rerr
+				}
+				ep = &e
+				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
+			}
 			if errors.Is(err, conn.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
 				// outbox waits for new credentials instead of trying each item.
@@ -210,17 +221,19 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	return nil
 }
 
-// smtpEndpoint returns the account's SMTP server with its password, and its address.
-func (s *Service) smtpEndpoint(ctx context.Context, accountID int64) (conn.Endpoint, string, error) {
+// smtpEndpoint returns the account's SMTP server with its credentials, and its
+// address. forceRefresh: SMTP refused the access token last returned.
+func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, forceRefresh bool) (conn.Endpoint, string, error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}
-	pw, _, err := s.credentials(ctx, acc, false)
+	pw, tok, err := s.credentials(ctx, acc, forceRefresh)
 	if err != nil {
 		return conn.Endpoint{}, "", err
 	}
-	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username, Password: pw}, acc.Email, nil
+	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username,
+		Password: pw, AccessToken: tok}, acc.Email, nil
 }
 
 // sendItem submits a queued item and reports whether it is now sent. A refused

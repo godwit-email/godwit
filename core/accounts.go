@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -55,7 +56,11 @@ func (in AccountInput) validate() error {
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
-	if in.Password == "" {
+	if in.OAuthFlowID != "" {
+		if _, err := oauthConfig(in.Provider); err != nil {
+			return err
+		}
+	} else if in.Password == "" {
 		return errors.New("password is required")
 	}
 	for _, e := range []struct {
@@ -100,7 +105,23 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 	return nil
 }
 
+// flowGrant returns the grant of in's finished OAuth flow without using it up.
+// Its signed-in address must be in.Email, ignoring case.
+func (s *Service) flowGrant(in AccountInput) (auth.Grant, error) {
+	s.oauthMu.Lock()
+	g, ok := s.grants[in.OAuthFlowID]
+	s.oauthMu.Unlock()
+	if !ok {
+		return auth.Grant{}, ErrUnknownFlow
+	}
+	if !strings.EqualFold(g.Email, strings.TrimSpace(in.Email)) {
+		return auth.Grant{}, ErrWrongAccount
+	}
+	return g, nil
+}
+
 // AddAccount tests in, stores the account and saves the password in the keychain.
+// With OAuthFlowID it uses up the flow's grant and saves its refresh token instead.
 func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -110,8 +131,25 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if err := s.KeychainStatus(ctx); err != nil {
 		return Account{}, err
 	}
+	authType, secret := "password", in.Password
+	var g auth.Grant
+	if in.OAuthFlowID != "" {
+		if g, err = s.flowGrant(in); err != nil {
+			return Account{}, err
+		}
+		if g.RefreshToken == "" {
+			return Account{}, errors.New("the provider granted no refresh token")
+		}
+	}
 	if err := s.TestAccount(ctx, in); err != nil {
 		return Account{}, err
+	}
+	if in.OAuthFlowID != "" {
+		// Peeked for the check; taken now, so one grant adds one account.
+		if _, ok := s.takeGrant(in.OAuthFlowID); !ok {
+			return Account{}, ErrUnknownFlow
+		}
+		authType, secret, in.Username = "oauth", g.RefreshToken, g.Email
 	}
 	if in.SyncLimit == 0 {
 		in.SyncLimit = defaultSyncLim
@@ -142,8 +180,8 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, auth_type, status, username,
 			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
-			VALUES (?, ?, ?, ?, ?, ?, 'password', 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), in.SyncLimit, in.username(),
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), in.SyncLimit, authType, in.username(),
 			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
@@ -151,7 +189,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	id := res[len(res)-1].LastInsertID
-	if err := keychainSet(s.keyringUser(id), in.Password); err != nil {
+	if err := keychainSet(s.keyringUser(id), secret); err != nil {
 		// Compensate on a fresh context: the caller's may already be cancelled, and a
 		// row without credentials must not survive.
 		undo := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
@@ -163,7 +201,15 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		if _, derr := s.db.Transaction(uctx, undo); derr != nil {
 			err = errors.Join(err, derr)
 		}
-		return Account{}, fmt.Errorf("save password to keychain: %w", err)
+		return Account{}, fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	if g.AccessToken != "" {
+		s.tokMu.Lock()
+		if s.tokens == nil {
+			s.tokens = map[int64]oauthToken{}
+		}
+		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
+		s.tokMu.Unlock()
 	}
 	s.startWorker(id)
 	return s.account(ctx, id)
@@ -243,6 +289,9 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}
+	s.tokMu.Lock()
+	delete(s.tokens, id)
+	s.tokMu.Unlock()
 	if err := keychainDelete(s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}

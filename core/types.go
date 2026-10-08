@@ -23,12 +23,17 @@ type AccountInput struct {
 	SMTPPort                                          int
 	SMTPSecurity                                      Security
 	Provider                                          string // auth.Provider ID; empty is stored as other
+	// OAuthFlowID names a finished AwaitOAuth flow: the account signs in with its
+	// tokens instead of Password, and Email must be the signed-in address.
+	OAuthFlowID string
 }
 
 // Account is a stored account. The password lives only in the system keychain.
 // Status is ok; reauth_required when the password is missing from the keychain
 // (StatusDetail credentials_missing) or the IMAP or SMTP server refuses it
-// (auth_rejected); or error when the keychain is unavailable (keychain_unavailable).
+// (auth_rejected) or the provider revoked an OAuth grant (token_revoked); or
+// error when the keychain is unavailable (keychain_unavailable). An OAuth
+// account's keychain entry holds its refresh token; access tokens stay in memory.
 type Account struct {
 	ID                                      int64
 	Email, Name, Alias, Signature, Username string

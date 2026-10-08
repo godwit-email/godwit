@@ -28,7 +28,7 @@ type Inbox struct {
 	fail       int
 	sent       *IMAP // SaveToSent target
 	rejectAuth bool
-	xoauth2    string // valid XOAUTH2 token; "" = not offered
+	xoauth2    func(token string) bool // nil = XOAUTH2 not offered
 	auths      int
 	block      chan struct{} // closed by the BlockData release func
 	entered    chan struct{}
@@ -100,7 +100,7 @@ type smtpSession struct {
 }
 
 func (s *smtpSession) AuthMechanisms() []string {
-	if s.in.xoauth2 != "" {
+	if s.in.xoauth2 != nil {
 		return []string{sasl.Plain, "XOAUTH2"}
 	}
 	return []string{sasl.Plain}
@@ -121,8 +121,8 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 	switch {
 	case mech == sasl.Plain:
 		return sasl.NewPlainServer(func(_, user, pass string) error { return login(user, pass) }), nil
-	case mech == "XOAUTH2" && s.in.xoauth2 != "":
-		return &xoauth2Server{token: s.in.xoauth2, login: func(user string) error { return login(user, "secret") }}, nil
+	case mech == "XOAUTH2" && s.in.xoauth2 != nil:
+		return &xoauth2Server{valid: s.in.xoauth2, login: func(user string) error { return login(user, "secret") }}, nil
 	}
 	return nil, errors.New("unsupported mechanism")
 }

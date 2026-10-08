@@ -71,11 +71,19 @@ func (s *Service) check(ctx context.Context, in AccountInput) (CheckReport, erro
 	fail := func(i int, kind conn.FailureKind, err error) {
 		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
 	}
+	user, token := in.username(), ""
 	steps := []func() (conn.FailureKind, error){
-		func() (conn.FailureKind, error) { return KindInvalid, in.validate() },
+		func() (conn.FailureKind, error) {
+			if err := in.validate(); err != nil || in.OAuthFlowID == "" {
+				return KindInvalid, err
+			}
+			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
+			user, token = g.Email, g.AccessToken
+			return KindInvalid, err
+		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				return conn.DialIMAP(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: in.username(), Password: in.Password})
+				return conn.DialIMAP(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: user, Password: in.Password, AccessToken: token})
 			})
 			if err == nil {
 				c.Close()
@@ -84,7 +92,7 @@ func (s *Service) check(ctx context.Context, in AccountInput) (CheckReport, erro
 		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.SMTPHost, Port: in.SMTPPort, Security: in.SMTPSecurity, Username: in.username(), Password: in.Password})
+				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.SMTPHost, Port: in.SMTPPort, Security: in.SMTPSecurity, Username: user, Password: in.Password, AccessToken: token})
 			})
 			if err == nil {
 				c.Close()

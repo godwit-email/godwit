@@ -78,7 +78,8 @@ func (s *Server) RespondNext(status int, body string) {
 	s.mu.Unlock()
 }
 
-// RotateRefresh makes each refresh replace the refresh token.
+// RotateRefresh makes each refresh issue a new refresh token. The old one stays
+// valid, as Microsoft's do until they expire.
 func (s *Server) RotateRefresh(on bool) { s.mu.Lock(); s.rotate = on; s.mu.Unlock() }
 
 // RevokeAll invalidates every refresh and access token issued so far.
@@ -88,6 +89,9 @@ func (s *Server) RevokeAll() {
 	clear(s.refresh)
 	clear(s.access)
 }
+
+// RevokeAccess invalidates every access token issued so far; refresh tokens still work.
+func (s *Server) RevokeAccess() { s.mu.Lock(); clear(s.access); s.mu.Unlock() }
 
 // TokenRequests is how many requests the token endpoint has received.
 func (s *Server) TokenRequests() int { s.mu.Lock(); defer s.mu.Unlock(); return s.tokenRequests }
@@ -233,7 +237,6 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 			s.issue(w, email, "")
 			return
 		}
-		delete(s.refresh, rt)
 		rt = random()
 		s.refresh[rt] = email
 		s.issue(w, email, rt)

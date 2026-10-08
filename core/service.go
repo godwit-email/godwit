@@ -55,6 +55,10 @@ type Service struct {
 	flows   map[string]*auth.Flow // OAuth flows begun and not yet awaited or cancelled
 	grants  map[string]auth.Grant // finished flows' grants, kept for grantTTL
 
+	tokMu      sync.Mutex
+	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
+	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -301,12 +305,18 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
-	pw, _, err := s.credentials(ctx, acc, false)
-	if err != nil {
-		return nil, nil, nil, err
+	for force := false; ; force = true {
+		var pw, tok string
+		if pw, tok, err = s.credentials(ctx, acc, force); err != nil {
+			return nil, nil, nil, err
+		}
+		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
+			Username: acc.Username, Password: pw, AccessToken: tok}, h)
+		// A refused access token may just be stale: refresh it and try once more.
+		if force || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {
+			break
+		}
 	}
-	c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
-		Username: acc.Username, Password: pw}, h)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
 			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required", "auth_rejected"))
@@ -370,11 +380,16 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	if !explicit {
 		return false, nil
 	}
-	ep, _, err := s.smtpEndpoint(ctx, accountID)
+	ep, _, err := s.smtpEndpoint(ctx, accountID, false)
 	if err != nil {
 		return false, err
 	}
 	sc, err := conn.DialSMTP(ctx, ep)
+	if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
+		if ep, _, err = s.smtpEndpoint(ctx, accountID, true); err == nil {
+			sc, err = conn.DialSMTP(ctx, ep)
+		}
+	}
 	if err != nil {
 		return false, err
 	}
