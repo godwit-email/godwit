@@ -201,3 +201,10 @@ func TestNormalizeRootRef(t *testing.T) {
 	require.Len(t, warns, 1)
 	assert.Contains(t, warns[0], "oneOf")
 }
+
+func TestNormalizeRootBooleanRef(t *testing.T) {
+	out, _, _ := NormalizeSchema(map[string]any{"$ref": "#/$defs/F", "$defs": map[string]any{"F": false}})
+	assert.Equal(t, map[string]any{"not": map[string]any{}}, out)
+	out, _, _ = NormalizeSchema(map[string]any{"$ref": "#/$defs/T", "$defs": map[string]any{"T": true}})
+	assert.Equal(t, map[string]any{}, out)
+}

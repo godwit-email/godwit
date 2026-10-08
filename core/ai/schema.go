@@ -110,9 +110,14 @@ func NormalizeSchema(in map[string]any) (out map[string]any, descr string, warni
 		sibs["$ref"] = ref
 		return sibs
 	}
-	out, _ = walk(out, map[string]bool{}).(map[string]any)
-	if out == nil {
+	switch r := walk(out, map[string]bool{}).(type) {
+	case map[string]any:
+		out = r
+	case bool: // a root $ref to a boolean schema keeps its meaning
 		out = map[string]any{}
+		if !r {
+			out["not"] = map[string]any{}
+		}
 	}
 	// The root may itself have been a $ref: inspect the expanded root.
 	if d, ok := out["description"].(string); ok {
