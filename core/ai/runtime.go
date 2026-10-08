@@ -370,7 +370,15 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 	if schema == nil {
 		schema = map[string]any{"type": "object", "properties": map[string]any{}}
 	}
-	return gai.NewTool(s.Name, s.Description, func(tc *gai.ToolContext, input any) (any, error) {
+	desc := s.Description
+	if !s.Strict {
+		var descr string
+		schema, descr, _ = NormalizeSchema(schema)
+		if descr != "" {
+			desc += "\n\n" + descr
+		}
+	}
+	return gai.NewTool(s.Name, desc, func(tc *gai.ToolContext, input any) (any, error) {
 		id, _ := tc.Value(callIDKey{}).(string)
 		args := rawJSON(input)
 		r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: s.Name, Args: args}})
