@@ -218,12 +218,10 @@ func parseBody(src string) *html.Node {
 	return root
 }
 
-// StripMarkers removes every data-godwit attribute, so marked HTML from a model
-// or another mail becomes ordinary content.
+// StripMarkers removes every data-godwit attribute, in any letter case (the
+// parser lowercases names), so marked HTML from a model or another mail
+// becomes ordinary content.
 func StripMarkers(src string) string {
-	if !strings.Contains(src, marker) {
-		return src
-	}
 	root := parseBody(src)
 	walkNodes(root, func(n *html.Node) { delAttr(n, marker) })
 	return render(root)
@@ -247,6 +245,21 @@ func SplitDraft(src string) (editable, quote, signature string) {
 		}
 	}
 	return ed.String(), quote, signature
+}
+
+// Blank reports whether HTML has no content at all: only whitespace and the
+// editor's empty placeholders (p, div, br). An image, a rule or a table is content.
+func Blank(src string) bool {
+	blank := true
+	walkNodes(parseBody(src), func(n *html.Node) {
+		switch n.Type {
+		case html.TextNode:
+			blank = blank && strings.TrimSpace(n.Data) == ""
+		case html.ElementNode:
+			blank = blank && (n.DataAtom == atom.P || n.DataAtom == atom.Div || n.DataAtom == atom.Br)
+		}
+	})
+	return blank
 }
 
 // JoinDraft is the draft body of its parts, as SplitDraft returns them.

@@ -76,6 +76,8 @@ type Service struct {
 	streamsEnd chan struct{}  // closed by Close: every witStream stops delivering
 	streams    sync.WaitGroup // witStream goroutines
 
+	assistMu sync.Mutex // finding or creating a draft's assist conversation
+
 	toolsMu sync.Mutex
 	tools   map[string]registeredTool // tools Wit runs can offer, by name
 

@@ -91,11 +91,15 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []registered
 
 // cite records the mail a read tool showed the model, for its tool_result event.
 func cite(ctx context.Context, items []mailItem) {
+	runOf(ctx).cites.Store(ai.CallID(ctx), citations(items))
+}
+
+func citations(items []mailItem) []Citation {
 	cs := make([]Citation, 0, len(items))
 	for _, it := range items {
 		cs = append(cs, Citation{MessageID: it.MessageID, Subject: it.Subject, From: it.From, Suspect: it.Suspect})
 	}
-	runOf(ctx).cites.Store(ai.CallID(ctx), cs)
+	return cs
 }
 
 func blocks(items []mailItem) []map[string]any {
@@ -334,27 +338,12 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	}
 	var from []MessageSummary
 	for _, k := range slices.Compact(keys) {
-		like := likePattern(k)
-		// LIKE only narrows the candidates; the exact address is checked here,
-		// page by page, until three match or none are left.
-		// ponytail: LIKE scan over the account's mail; index from addresses if it gets slow
-		const page = 50
-		for n, off := 0, 0; n < languageClues; off += page {
-			rows, err := s.db.Query(ctx, "SELECT "+msgCols+` FROM messages m WHERE m.account_id = ? AND m.from_addr LIKE ? ESCAPE '\'
-				ORDER BY m.date DESC, m.id DESC LIMIT ? OFFSET ?`, in.AccountID, like, page, off)
-			if err != nil {
-				return err
-			}
-			for _, r := range rows.Values {
-				if m := scanSummary(r); n < languageClues && mail.AddrKey(m.From) == k {
-					from = append(from, m)
-					n++
-				}
-			}
-			if len(rows.Values) < page {
-				break
-			}
+		ms, err := s.mailWith(ctx, in.AccountID, k, languageClues, []string{"from_addr"},
+			func(m MessageSummary) bool { return mail.AddrKey(m.From) == k })
+		if err != nil {
+			return err
 		}
+		from = append(from, ms...)
 	}
 	if len(from) == 0 {
 		return nil
@@ -367,6 +356,42 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	}
 	b.WriteString("Call create_draft again with the body in that language.")
 	return errors.New(b.String())
+}
+
+func likePattern(s string) string {
+	return "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s) + "%"
+}
+
+// mailWith returns the account's latest n messages, newest first, that match
+// says involve addr. A LIKE on cols only narrows the candidates; match is
+// checked here, page by page, until n match or none are left.
+// ponytail: LIKE scan over the account's mail; index addresses if it gets slow
+func (s *Service) mailWith(ctx context.Context, accountID int64, addr string, n int, cols []string, match func(MessageSummary) bool) ([]MessageSummary, error) {
+	var conds []string
+	args := []any{accountID}
+	for _, c := range cols {
+		conds = append(conds, "m."+c+` LIKE ? ESCAPE '\'`)
+		args = append(args, likePattern(addr))
+	}
+	q := "SELECT " + msgCols + " FROM messages m WHERE m.account_id = ? AND (" + strings.Join(conds, " OR ") +
+		") ORDER BY m.date DESC, m.id DESC LIMIT ? OFFSET ?"
+	const page = 50
+	var out []MessageSummary
+	for off := 0; len(out) < n; off += page {
+		rows, err := s.db.Query(ctx, q, append(args, page, off)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows.Values {
+			if m := scanSummary(r); len(out) < n && match(m) {
+				out = append(out, m)
+			}
+		}
+		if len(rows.Values) < page {
+			break
+		}
+	}
+	return out, nil
 }
 
 // applyDraft inserts the approved snapshot as it is, linked to its approval.

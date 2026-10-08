@@ -127,11 +127,13 @@ func (s *Service) assistDraft(ctx context.Context, draftID int64) (Draft, error)
 
 // assistConversation returns the draft's assist conversation, creating it.
 // Conversations RewriteSelection made (their runs offer update_selection) are not it.
-// ponytail: two concurrent first calls can create two; a unique index if it matters
 func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conversation, error) {
 	if _, err := s.assistDraft(ctx, draftID); err != nil {
 		return Conversation{}, err
 	}
+	// ponytail: one lock for every draft's find-or-create; per draft if it ever contends
+	s.assistMu.Lock()
+	defer s.assistMu.Unlock()
 	rows, err := s.db.Query(ctx, `SELECT c.id FROM conversations c WHERE c.kind = 'assist' AND c.draft_id = ? AND NOT EXISTS
 		(SELECT 1 FROM runs r WHERE r.conversation_id = c.id AND r.tools LIKE '%"update_selection"%') ORDER BY c.id LIMIT 1`, draftID)
 	if err != nil {
@@ -171,10 +173,11 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []r
 	if err != nil {
 		return "", err
 	}
-	c, err := s.assistContext(ctx, job.scope, d)
+	c, cited, err := s.assistContext(ctx, job.scope, d)
 	if err != nil {
 		return "", err
 	}
+	job.cited = cited
 	return assistSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
 }
 
@@ -199,7 +202,8 @@ func (s *Service) draftLanguage(ctx context.Context, d Draft) (string, error) {
 // assistContext is what an Assist run knows about the draft. Mail-derived
 // fields go through the mail context builders; attachment names, which a
 // forward copies from mail, are wrapped the same way.
-func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Draft) (string, error) {
+func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Draft) (string, []Citation, error) {
+	var cited []mailItem
 	editable, _, _ := mail.SplitDraft(d.HTML)
 	var b strings.Builder
 	b.WriteString("The editable part of the draft, as HTML (the quoted email and the signature are not shown and stay as they are):\n<draft>\n" +
@@ -207,8 +211,9 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 	if d.SourceMessageID != 0 {
 		items, err := s.mailContext(ctx, scope, []int64{d.SourceMessageID}, defaultMailBudget)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
+		cited = append(cited, items...)
 		how := "replies to"
 		if d.Mode == "forward" {
 			how = "forwards"
@@ -227,38 +232,35 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 	}
 	recent, err := s.correspondence(ctx, d.AccountID, slices.Concat(d.To, d.Cc), recentMail)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(recent) > 0 {
 		b.WriteString("\n\nThe latest mail with the recipients, newest first:")
 		for _, it := range s.summaryContext(scope, recent) {
 			b.WriteString("\n" + it.Block)
+			if !slices.ContainsFunc(cited, func(c mailItem) bool { return c.MessageID == it.MessageID }) {
+				cited = append(cited, it)
+			}
 		}
 	}
-	return b.String(), nil
-}
-
-func likePattern(s string) string {
-	return "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s) + "%"
+	return b.String(), citations(cited), nil
 }
 
 // correspondence is the latest n messages of the account from or to any of addrs.
-// ponytail: 50 LIKE candidates per address, exact match checked here; page like languageClues if look-alikes crowd them out
 func (s *Service) correspondence(ctx context.Context, accountID int64, addrs []string, n int) ([]MessageSummary, error) {
 	seen := map[int64]bool{}
 	var out []MessageSummary
 	for _, a := range addrs {
 		k := mail.AddrKey(a)
-		like := likePattern(k)
-		rows, err := s.db.Query(ctx, "SELECT "+msgCols+` FROM messages m WHERE m.account_id = ? AND (m.from_addr LIKE ? ESCAPE '\'
-			OR m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\') ORDER BY m.date DESC, m.id DESC LIMIT 50`, accountID, like, like, like)
+		is := func(x string) bool { return mail.AddrKey(x) == k }
+		ms, err := s.mailWith(ctx, accountID, k, n, []string{"from_addr", "to_addrs", "cc_addrs"}, func(m MessageSummary) bool {
+			return is(m.From) || slices.ContainsFunc(m.To, is) || slices.ContainsFunc(m.Cc, is)
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range rows.Values {
-			m := scanSummary(r)
-			match := func(x string) bool { return mail.AddrKey(x) == k }
-			if !seen[m.ID] && (match(m.From) || slices.ContainsFunc(m.To, match) || slices.ContainsFunc(m.Cc, match)) {
+		for _, m := range ms {
+			if !seen[m.ID] {
 				seen[m.ID] = true
 				out = append(out, m)
 			}
@@ -283,11 +285,15 @@ func (s *Service) proposeUpdate(ctx context.Context, draftID int64, edit func(ol
 	if err != nil {
 		return prepared{}, err
 	}
+	kind, err := changeKind(ctx, old, h)
+	if err != nil {
+		return prepared{}, err
+	}
 	b, err := json.Marshal(updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h})
 	if err != nil {
 		return prepared{}, err
 	}
-	return prepared{Args: b, Summary: changeKind(old, h), TargetKind: "draft", TargetID: d.ID, TargetVersion: d.Revision}, nil
+	return prepared{Args: b, Summary: kind, TargetKind: "draft", TargetID: d.ID, TargetVersion: d.Revision}, nil
 }
 
 func htmlArg(args json.RawMessage) (string, error) {
@@ -380,7 +386,7 @@ func (s *Service) ApplyEditedProposal(ctx context.Context, approvalID int64, edi
 }
 
 // UndoLastAssist puts back the editable part the draft's latest applied
-// proposal replaced. ErrInvalidState: there is none, or the draft changed
+// proposal (by approval ID, not by clock) replaced. ErrInvalidState: there is none, or the draft changed
 // since it was written (an undo counts as a change).
 func (s *Service) UndoLastAssist(ctx context.Context, draftID int64) error {
 	ctx, end, err := s.begin(ctx, 0)
@@ -389,7 +395,7 @@ func (s *Service) UndoLastAssist(ctx context.Context, draftID int64) error {
 	}
 	defer end()
 	rows, err := s.db.Query(ctx, `SELECT undo FROM approvals WHERE target_kind = 'draft' AND target_id = ? AND state = 'done'
-		AND tool IN ('update_draft', 'update_selection') ORDER BY updated_at DESC, id DESC LIMIT 1`, draftID)
+		AND tool IN ('update_draft', 'update_selection') ORDER BY id DESC LIMIT 1`, draftID)
 	if err != nil {
 		return err
 	}
@@ -544,6 +550,10 @@ func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, 
 }
 
 func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, name string, sel *Selection) (*witStream, error) {
+	if sel != nil { // the caller keeps its struct: work on a copy
+		c := *sel
+		sel = &c
+	}
 	sk, err := s.skill(ctx, name)
 	if err != nil {
 		return nil, err
@@ -611,7 +621,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	var prompt string
 	if sel != nil {
 		prompt = "<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>"
-	} else if prompt, err = s.assistContext(ctx, job.scope, d); err != nil {
+	} else if prompt, job.cited, err = s.assistContext(ctx, job.scope, d); err != nil {
 		s.untrack(job)
 		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
 	}
@@ -660,18 +670,30 @@ func unfence(s string) string {
 	return s
 }
 
-// changeKind classifies a new editable part against the old one: initial if
-// the old one has no text; rewrite if more than half of its words changed
-// (replaced, removed or added, counted on the longer side); else partial.
-// Han and kana characters count as one word each.
-// ponytail: O(n·m) word LCS; fine for mail-sized drafts
-func changeKind(old, new string) string {
-	if strings.TrimSpace(mail.HTMLToText(old)) == "" {
-		return kindInitial
+// Bounds of changeKind's word comparison; past them a change is a rewrite.
+const (
+	maxDiffWords = 4000
+	maxDiffCells = 4_000_000
+)
+
+// changeKind classifies a new editable part against the old (sanitized) one:
+// initial if the old one is blank; rewrite if more than half of its words
+// changed (replaced, removed or added, counted on the longer side), or if the
+// texts are too long to compare; else partial. Han and kana characters count
+// as one word each. A cancelled ctx stops the comparison.
+func changeKind(ctx context.Context, old, new string) (string, error) {
+	if mail.Blank(old) {
+		return kindInitial, nil
 	}
 	a, b := words(old), words(new)
+	if len(a) > maxDiffWords || len(b) > maxDiffWords || len(a)*len(b) > maxDiffCells {
+		return kindRewrite, nil
+	}
 	prev, cur := make([]int, len(b)+1), make([]int, len(b)+1)
 	for i := range a {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		for j := range b {
 			if a[i] == b[j] {
 				cur[j+1] = prev[j] + 1
@@ -683,9 +705,9 @@ func changeKind(old, new string) string {
 	}
 	same := prev[len(b)]
 	if 2*max(len(a)-same, len(b)-same) > len(a) {
-		return kindRewrite
+		return kindRewrite, nil
 	}
-	return kindPartial
+	return kindPartial, nil
 }
 
 func words(h string) []string {

@@ -29,7 +29,8 @@ type Conversation struct {
 }
 
 // WitEvent is one event of a Wit run. An interrupted event carries the
-// approvals it recorded, in call order.
+// approvals it recorded, in call order. An Assist run starts with a "context"
+// event whose Citations are the mail its context shows the model.
 type WitEvent struct {
 	ai.Event
 	RunID     int64
@@ -360,6 +361,7 @@ type runJob struct {
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed.
 	host   func(ctx context.Context, res ai.Result) ai.Result
+	cited  []Citation // the mail the run's context shows the model, sent first
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -562,6 +564,9 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 			out.push(ev)
 		}
 		s.publishWit(job.conv.ID, ev)
+	}
+	if len(job.cited) > 0 {
+		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: job.cited})
 	}
 	events, wait := e.Run(job.ctx, req)
 	for ev := range events {
