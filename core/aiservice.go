@@ -369,17 +369,27 @@ func parseQuickReplies(out string) ([]QuickReply, error) {
 		rest = strings.TrimPrefix(rest, "json")
 		out = strings.TrimSuffix(strings.TrimSpace(rest), "```")
 	}
+	// Pointers tell a missing or null field from an empty one: only a real
+	// array of objects with string html is an answer (an empty array is one).
 	var v struct {
-		Replies []struct {
-			HTML string `json:"html"`
+		Replies *[]*struct {
+			HTML *string `json:"html"`
 		} `json:"replies"`
 	}
 	if err := json.Unmarshal([]byte(out), &v); err != nil {
 		return nil, fmt.Errorf("quick replies: the model did not answer with the requested JSON: %w", err)
 	}
+	if v.Replies == nil {
+		return nil, errors.New("quick replies: the model's answer has no replies array")
+	}
+	for _, r := range *v.Replies {
+		if r == nil || r.HTML == nil {
+			return nil, errors.New("quick replies: a reply in the model's answer has no html string")
+		}
+	}
 	rs := []QuickReply{}
-	for _, r := range v.Replies {
-		h := mail.SanitizeCompose(r.HTML)
+	for _, r := range *v.Replies {
+		h := mail.SanitizeCompose(*r.HTML)
 		p := strings.Join(strings.Fields(mail.HTMLToText(h)), " ")
 		if p == "" {
 			continue

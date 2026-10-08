@@ -102,7 +102,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 			body, cut = string([]rune(body)[:max(n, 0)]), true
 		}
 		left -= utf8.RuneCountInString(body)
-		block := ai.Untrusted(fmt.Sprintf("message:%d", m.ID), head+"\n"+body)
+		block := ai.Untrusted(fmt.Sprintf("message:%d", m.ID), head+"\n"+body, suspect)
 		if cut {
 			block += truncatedNote
 		}
@@ -120,7 +120,7 @@ func (s *Service) selectionContext(scope *gateway.Scope, id int64, text string, 
 	if cut {
 		text = string([]rune(text)[:budget.PerMessage])
 	}
-	block := ai.Untrusted(fmt.Sprintf("selection:%d", id), text)
+	block := ai.Untrusted(fmt.Sprintf("selection:%d", id), text, suspect)
 	if cut {
 		block += truncatedNote
 	}
@@ -134,8 +134,9 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 	out := make([]mailItem, 0, len(list))
 	for _, m := range list {
 		text := mailHeader(m) + "\n" + m.Snippet
+		suspect := ai.SuspectInjection(text)
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From,
-			Suspect: ai.SuspectInjection(text), Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text)})
+			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
 	}
 	return out
 }
