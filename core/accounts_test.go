@@ -57,9 +57,7 @@ func TestAddAccount(t *testing.T) {
 	assert.Equal(t, 2000, acc.SyncLimit)
 	assert.Equal(t, "password", acc.AuthType)
 	assert.Equal(t, "ok", acc.Status)
-	pw, err := keyring.Get("godwit", "account:"+strconv.FormatInt(acc.ID, 10))
-	require.NoError(t, err)
-	assert.Equal(t, "secret", pw)
+	require.NoError(t, s.SyncNow(ctx, acc.ID), "the password is in the keychain")
 
 	list, err := s.ListAccounts(ctx)
 	require.NoError(t, err)
@@ -123,8 +121,32 @@ func TestRemoveAccount(t *testing.T) {
 
 	require.NoError(t, s.RemoveAccount(ctx, acc.ID))
 	assert.Zero(t, rowCount(t, s))
-	_, err = keyring.Get("godwit", "account:"+id)
-	assert.ErrorIs(t, err, keyring.ErrNotFound)
 	_, err = os.Stat(cache)
 	assert.True(t, os.IsNotExist(err))
+}
+
+// Two data directories number their accounts independently; their keychain
+// entries must not collide.
+func TestCredentialsIsolatedPerDataDir(t *testing.T) {
+	keyring.MockInit()
+	im, smtpAddr := servers(t)
+	dirA, dirB := t.TempDir(), t.TempDir()
+	a, err := core.New(ctx, core.Options{DataDir: dirA})
+	require.NoError(t, err)
+	defer a.Close()
+	b, err := core.New(ctx, core.Options{DataDir: dirB})
+	require.NoError(t, err)
+	accA, err := a.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	accB, err := b.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	require.Equal(t, accA.ID, accB.ID, "the same local id in both directories")
+
+	require.NoError(t, a.RemoveAccount(ctx, accA.ID))
+	require.NoError(t, b.SyncNow(ctx, accB.ID), "B's password survives removing A's account")
+	require.NoError(t, b.Close())
+	b, err = core.New(ctx, core.Options{DataDir: dirB})
+	require.NoError(t, err)
+	defer b.Close()
+	require.NoError(t, b.SyncNow(ctx, accB.ID), "the namespace is stable across restarts")
 }

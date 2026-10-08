@@ -94,7 +94,7 @@ func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, so
 			return Draft{}, errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
 		}
 	}
-	return s.loadDraft(ctx, d.ID)
+	return s.GetDraft(ctx, d.ID)
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
@@ -134,10 +134,13 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 	return nil
 }
 
-// SaveDraft inserts d (ID 0) or updates its addresses, subject and body.
+// SaveDraft inserts d (ID 0) or updates its addresses, subject and body. The
+// HTML is sanitized for composing (no scripts, handlers or remote resources).
 // Attachments are changed with AddAttachment and RemoveAttachment.
 func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
-	s.editMu.Lock() // draft changes and Send never interleave
+	d.HTML = mail.SanitizeCompose(d.HTML) // stored safe, so every read of a draft is safe
+	// Draft changes and Send never interleave.
+	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	now := time.Now().Unix()
 	if d.ID == 0 {
@@ -151,7 +154,7 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 		if err != nil {
 			return Draft{}, err
 		}
-		return s.loadDraft(ctx, r.LastInsertID)
+		return s.GetDraft(ctx, r.LastInsertID)
 	}
 	r, err := s.db.Execute(ctx, `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
 		body_html = ?, updated_at = ? WHERE id = ?`,
@@ -162,10 +165,28 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	if r.Changes == 0 {
 		return Draft{}, fmt.Errorf("draft %d not found", d.ID)
 	}
-	return s.loadDraft(ctx, d.ID)
+	return s.GetDraft(ctx, d.ID)
 }
 
-func (s *Service) loadDraft(ctx context.Context, id int64) (Draft, error) {
+// ListDrafts returns the account's drafts, most recently saved first.
+func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, error) {
+	rows, err := s.db.Query(ctx, "SELECT id FROM drafts WHERE account_id = ? ORDER BY updated_at DESC, id DESC", accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Draft, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		d, err := s.GetDraft(ctx, store.Int(r[0]))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// GetDraft returns the draft with its attachments.
+func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
 		subject, body_html, updated_at FROM drafts WHERE id = ?`, id)
 	if err != nil {
@@ -293,7 +314,7 @@ func recipients(d Draft) ([]string, error) {
 func (s *Service) Send(ctx context.Context, draftID int64) error {
 	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
-	d, err := s.loadDraft(ctx, draftID)
+	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
 		return err
 	}
@@ -346,7 +367,8 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 		return ErrTooLarge
 	}
 	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+".eml") // draft ids are never reused
-	if err := store.WriteFileAtomic(rawPath, raw); err != nil { // durable before the draft is deleted below
+	// Durable (file and directory entry) before the transaction below deletes the draft.
+	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
 		return err
 	}
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{

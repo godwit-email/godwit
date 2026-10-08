@@ -293,7 +293,7 @@ func TestRemoveAccountRacingClose(t *testing.T) {
 // account is reauth_required. The keychain holds a wrong password afterwards.
 func parkWorker(t *testing.T, e *workerEnv, ch <-chan events.Event) {
 	t.Helper()
-	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
+	require.NoError(t, keyring.Set(keyringService, e.s.keyringUser(e.acc.ID), "wrong"))
 	e.put(t, "INBOX", msg("r1@x")) // the next round fails to log in
 	waitEvent(t, ch, events.SyncFailed, 5*time.Second)
 	require.Eventually(t, func() bool {
@@ -320,7 +320,7 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 	time.Sleep(time.Second)  // backoff alone would retry about 7 times
 	assert.Equal(t, n, e.im.Logins(), "no logins while reauth_required")
 
-	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	require.NoError(t, keyring.Set(keyringService, e.s.keyringUser(e.acc.ID), "secret"))
 	require.NoError(t, e.s.SyncNow(bg, e.acc.ID)) // resumes the worker
 	workerResumed(t, e, "r2@x")
 }
@@ -329,7 +329,7 @@ func TestReauthResumesOnLoginEvenIfSyncFails(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	parkWorker(t, e, ch)
 	n := e.im.Logins() // parked: nothing logs in until SyncNow
-	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	require.NoError(t, keyring.Set(keyringService, e.s.keyringUser(e.acc.ID), "secret"))
 	e.im.DropNextFetch() // LOGIN succeeds, the sync then fails
 	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
 	a, err := e.s.account(bg, e.acc.ID)
@@ -348,7 +348,7 @@ func TestSyncNowQueuedBeforeParkStillResumes(t *testing.T) {
 	go func() { done <- e.s.SyncNow(bg, e.acc.ID) }() // starts while the account is fine
 	waitSignal(t, e.lockWait, "SyncNow waiting for the lock", 5*time.Second)
 	parkWorker(t, e, ch) // the worker's IDLE login fails without needing the lock; it parks
-	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	require.NoError(t, keyring.Set(keyringService, e.s.keyringUser(e.acc.ID), "secret"))
 	unlock()
 	require.NoError(t, <-done)
 	workerResumed(t, e, "r2@x")

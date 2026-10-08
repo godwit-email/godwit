@@ -3,6 +3,7 @@ package mail_test
 import (
 	"encoding/base64"
 	"fmt"
+	netmail "net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,4 +176,27 @@ func TestParseUnknownEncodingPartKeepsSiblings(t *testing.T) {
 	require.Len(t, p.Attachments, 1)
 	assert.Equal(t, "1", p.Attachments[0].Part)
 	assert.Equal(t, "x-weird", p.Attachments[0].Encoding)
+}
+
+func TestFormatAddressRoundTrips(t *testing.T) {
+	for _, name := range []string{"", "Bob", "Doe, Jane", `Jane "JD" Doe`, `back\slash`, "张三", "Dr. Who", "(x) <y> @z; [q]:", " padded "} {
+		s := mail.FormatAddress(name, "jane@example.com")
+		a, err := netmail.ParseAddress(s)
+		require.NoError(t, err, "%q -> %s", name, s)
+		assert.Equal(t, strings.TrimSpace(name), strings.TrimSpace(a.Name), s)
+		assert.Equal(t, "jane@example.com", a.Address, s)
+	}
+	assert.Equal(t, "Bob <b@x>", mail.FormatAddress("Bob", "b@x"), "plain names stay unquoted")
+	assert.Equal(t, "张三 <z@x>", mail.FormatAddress("张三", "z@x"), "UTF-8 stays readable")
+}
+
+func TestParseQuotesDisplayNames(t *testing.T) {
+	p, err := mail.Parse([]byte("From: \"Doe, Jane\" <jane@example.com>\r\nTo: \"a \\\"b\\\" \\\\ c\" <a@x>, plain@x\r\nReply-To: \"Ops, Team\" <ops@x>\r\n\r\nhi"))
+	require.NoError(t, err)
+	for _, s := range append([]string{p.From, p.ReplyTo}, p.To...) {
+		_, err := netmail.ParseAddress(s)
+		assert.NoError(t, err, s)
+	}
+	assert.Equal(t, `"Doe, Jane" <jane@example.com>`, p.From)
+	assert.Equal(t, "plain@x", p.To[1])
 }

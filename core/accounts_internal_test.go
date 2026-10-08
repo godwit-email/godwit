@@ -67,3 +67,23 @@ func TestKeyringFailureWithCancelledContextLeavesNoRow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
+
+// The keychain entry is "godwit" / "<install id>/account:<id>" and goes with the account.
+func TestKeyringEntryNamespaced(t *testing.T) {
+	keyring.MockInit()
+	s, err := New(context.Background(), Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	defer s.Close()
+	smtpAddr, _ := testmail.StartSMTP(t)
+	im := testmail.StartIMAP(t)
+	acc, err := s.AddAccount(context.Background(), internalInput(t, im.Addr, smtpAddr, "a@example.com", false))
+	require.NoError(t, err)
+	assert.Len(t, s.installID, 32)
+	assert.Equal(t, s.installID+"/account:"+strconv.FormatInt(acc.ID, 10), s.keyringUser(acc.ID))
+	pw, err := keyring.Get(keyringService, s.keyringUser(acc.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "secret", pw)
+	require.NoError(t, s.RemoveAccount(context.Background(), acc.ID))
+	_, err = keyring.Get(keyringService, s.keyringUser(acc.ID))
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+}

@@ -345,10 +345,8 @@ func addrs(l []imap.Address) []string {
 	for _, a := range l {
 		switch addr := a.Addr(); {
 		case addr == "": // group syntax marker
-		case a.Name == "":
-			out = append(out, addr)
 		default:
-			out = append(out, a.Name+" <"+addr+">")
+			out = append(out, mail.FormatAddress(a.Name, addr))
 		}
 	}
 	return out

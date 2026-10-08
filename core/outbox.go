@@ -162,7 +162,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 				if err != nil {
 					return err
 				}
-				pw, err := keyring.Get(keyringService, keyringUser(accountID))
+				pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
 				if err != nil {
 					return err
 				}

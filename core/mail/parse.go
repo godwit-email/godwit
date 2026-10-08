@@ -47,12 +47,23 @@ type Attachment struct {
 	Data                                                      []byte
 }
 
-func fmtAddr(a *gomail.Address) string {
-	if a.Name == "" {
-		return a.Address
+// FormatAddress renders a display name and address as one header address that
+// net/mail parses back to the same parts. The name stays readable UTF-8 and is
+// quoted (with \ and " escaped) unless it is a plain run of words.
+func FormatAddress(name, addr string) string {
+	if name = strings.TrimSpace(name); name == "" {
+		return addr
 	}
-	return a.Name + " <" + a.Address + ">"
+	plain := !strings.Contains(name, "  ") && !strings.ContainsFunc(name, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(" !#$%&'*+-/=?^_`{|}~", r)
+	})
+	if !plain {
+		name = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name) + `"`
+	}
+	return name + " <" + addr + ">"
 }
+
+func fmtAddr(a *gomail.Address) string { return FormatAddress(a.Name, a.Address) }
 
 func addrs(h *gomail.Header, key string) []string {
 	l, _ := h.AddressList(key) // partial lists are still useful

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	netmail "net/mail"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -74,6 +76,34 @@ func TestReplyAllDraft(t *testing.T) {
 	assert.Contains(t, d.HTML, "<blockquote>the plan")
 	assert.Contains(t, d.HTML, "Godwit")
 	assert.Greater(t, strings.Index(d.HTML, "Godwit"), strings.Index(d.HTML, "<blockquote>"), "signature at the end")
+}
+
+// Display names with commas, quotes and backslashes survive sync, reply and Send.
+func TestReplyToQuotedDisplayNames(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", `"Doe, Jane \"JD\" \\ x" <jane@example.com>`, "alice@example.com", "plan", day, "the plan",
+		`Cc: "Smith, Bob" <bob@example.com>`))
+	e.sync(t)
+	m, err := e.s.GetMessage(bg, e.idOf(t, "q@x"), false)
+	require.NoError(t, err)
+	from, err := netmail.ParseAddress(m.From)
+	require.NoError(t, err, m.From)
+	assert.Equal(t, `Doe, Jane "JD" \ x`, from.Name)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply_all", e.idOf(t, "q@x"))
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	e.sync(t)
+	got := e.smtp.Messages()
+	require.Len(t, got, 1)
+	assert.ElementsMatch(t, []string{"jane@example.com", "bob@example.com"}, got[0].To)
+	h, err := netmail.ReadMessage(bytes.NewReader(got[0].Data))
+	require.NoError(t, err)
+	to, err := h.Header.AddressList("To")
+	require.NoError(t, err)
+	assert.Equal(t, []*netmail.Address{{Name: `Doe, Jane "JD" \ x`, Address: "jane@example.com"}}, to)
+	cc, err := h.Header.AddressList("Cc")
+	require.NoError(t, err)
+	assert.Equal(t, []*netmail.Address{{Name: "Smith, Bob", Address: "bob@example.com"}}, cc)
 }
 
 func TestForwardCarriesAttachments(t *testing.T) {

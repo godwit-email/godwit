@@ -393,7 +393,7 @@ func TestSyncNowSerializesPerAccount(t *testing.T) {
 
 func TestSyncAuthFailureNeedsReauth(t *testing.T) {
 	e := newSyncEnv(t)
-	require.NoError(t, keyring.Set("godwit", keyringUser(e.acc.ID), "hunter2-wrong"))
+	require.NoError(t, keyring.Set("godwit", e.s.keyringUser(e.acc.ID), "hunter2-wrong"))
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	err := e.s.SyncNow(bg, e.acc.ID)
@@ -407,7 +407,7 @@ func TestSyncAuthFailureNeedsReauth(t *testing.T) {
 	assert.NotEmpty(t, failed[0].Error)
 	assert.NotContains(t, failed[0].Error, "hunter2-wrong")
 
-	require.NoError(t, keyring.Set("godwit", keyringUser(e.acc.ID), "secret"))
+	require.NoError(t, keyring.Set("godwit", e.s.keyringUser(e.acc.ID), "secret"))
 	e.sync(t)
 	acc, _ = e.s.account(bg, e.acc.ID)
 	assert.Equal(t, "ok", acc.Status)

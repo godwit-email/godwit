@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -23,7 +25,26 @@ const (
 
 var keyringSet = keyring.Set // replaced in tests
 
-func keyringUser(id int64) string { return "account:" + strconv.FormatInt(id, 10) }
+// keyringUser is the account's keychain entry name (service "godwit"). The
+// install id keeps data directories from sharing entries: account ids restart at
+// 1 in every database.
+func (s *Service) keyringUser(id int64) string {
+	return s.installID + "/account:" + strconv.FormatInt(id, 10)
+}
+
+// loadInstallID returns the data directory's random id, creating it on first use.
+func loadInstallID(ctx context.Context, db *store.DB) (string, error) {
+	b := make([]byte, 16)
+	rand.Read(b)
+	if _, err := db.Execute(ctx, "INSERT OR IGNORE INTO meta(key, value) VALUES ('install_id', ?)", hex.EncodeToString(b)); err != nil {
+		return "", err
+	}
+	rows, err := db.Query(ctx, "SELECT value FROM meta WHERE key = 'install_id'")
+	if err != nil {
+		return "", err
+	}
+	return store.Str(rows.Values[0][0]), nil
+}
 
 func isLoopback(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
 
@@ -125,7 +146,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	id := res[len(res)-1].LastInsertID
-	if err := keyringSet(keyringService, keyringUser(id), in.Password); err != nil {
+	if err := keyringSet(keyringService, s.keyringUser(id), in.Password); err != nil {
 		// Compensate on a fresh context: the caller's may already be cancelled, and a
 		// row without credentials must not survive.
 		undo := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
@@ -193,7 +214,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}
-	if err := keyring.Delete(keyringService, keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := keyring.Delete(keyringService, s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}
 	return os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10)))

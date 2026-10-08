@@ -27,10 +27,11 @@ type Options struct {
 
 // Service owns the database and event bus of one Godwit data directory.
 type Service struct {
-	db      *store.DB
-	bus     *events.Bus
-	dataDir string
-	opts    Options
+	db        *store.DB
+	bus       *events.Bus
+	dataDir   string
+	opts      Options
+	installID string // namespaces this data directory's keychain entries
 
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
@@ -58,7 +59,12 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts}
+	install, err := loadInstallID(ctx, db)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install}
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -204,7 +210,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
-	pw, err := keyring.Get(keyringService, keyringUser(accountID))
+	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
 	if err != nil {
 		return nil, nil, nil, err
 	}

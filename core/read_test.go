@@ -316,7 +316,7 @@ func TestAuthFailureDuringDownload(t *testing.T) {
 	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
 	e.sync(t)
 	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
-	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
+	require.NoError(t, keyring.Set(keyringService, e.s.keyringUser(e.acc.ID), "wrong"))
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	_, _, err := e.s.GetAttachment(bg, aid)

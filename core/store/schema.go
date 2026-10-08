@@ -110,4 +110,6 @@ var Migrations = [][]string{{
 		created_at INTEGER)`,
 }, {
 	`ALTER TABLE outbox ADD COLUMN subject TEXT`,
+}, {
+	`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 }}
