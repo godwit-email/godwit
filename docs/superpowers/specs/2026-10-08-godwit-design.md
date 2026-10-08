@@ -84,7 +84,8 @@ Accounts   List / Add / Update / Remove / Test / Reauthorize / SyncNow
 Settings   Get / Set（外观、界面语言、阅读语言、回复语言、免翻译语言、启动与窗口、通知、即时回复开关）
 Folders    List(account)
 Threads    List(view, cursor, limit) / Get(threadID)            （view：文件夹或跨账户视图）
-Messages   Get(id, loadRemoteImages) / Search(account, query) / GetAttachment(id)（按需下载）
+Messages   List(view, cursor, limit)（关闭会话视图时用）/ Get(id, loadRemoteImages) / GetAttachment(id)（按需下载）
+           Search(account, query)（account 为 0 时搜全部账户；只覆盖已同步的邮件，界面需提示）
            SetFlags(ids, add, remove) / Move(ids, folder) / Delete(ids)
 Compose    NewDraft(mode, sourceMessageID)（mode：new / reply / reply_all / forward）
            SaveDraft / AddAttachment / RemoveAttachment / Send(draftID)
@@ -103,9 +104,10 @@ Events     Subscribe() → stream
 3. **`Delete` 只是移到废纸篓**，Service 不提供硬删除。
 4. **HTML 在 core 层清洗**，所有出口拿到的都是安全内容。
 5. **一套 Service，三个出口**：mygo `Bind()`、JSON-RPC、MCP。MCP 只开放子集：只读，加上创建草稿；**没有 `Send`**。
-6. **邮件的身份和位置分开**：本地 ID 在邮件的整个生命周期内不变；它在服务器上的位置（文件夹 + UIDVALIDITY + UID）单独记录。移动后服务器给出新 UID 时，只更新位置；服务器不返回 COPYUID 时，下次同步按 Message-ID 把新 UID 认回原来的本地邮件，不新建记录。
+6. **邮件的身份和位置分开**：本地 ID 在邮件的整个生命周期内不变。每封邮件同时记录两个位置：**期望位置**（用户看到的文件夹，本地修改立即生效）和**服务器位置**（最后确认的文件夹 + UIDVALIDITY + UID）。拉取按服务器位置去重，所以移动还没推送时，源文件夹里的这封不会被重复导入。移动成功且服务器返回 COPYUID 时直接更新服务器位置；不返回时进入「待认领」，下次拉取目标文件夹时，只有 Message-ID 非空、且与大小都唯一匹配的那一封才会被认回原来的本地邮件；有歧义时操作标为冲突，按新邮件导入，并提示用户。
 7. **操作队列的安全规则**：每个操作记录它针对的「文件夹 + UIDVALIDITY + UID」。推送前先 SELECT 文件夹并核对 UIDVALIDITY，不一致的操作标为冲突、不再重放。同一封邮件的后续操作依赖前一个操作，按顺序执行。
-8. **发送至多一次**：SMTP 无法保证「恰好一次」。发件箱用状态机记录（排队 → 发送中 → 已发出 → 已存入已发送 / 待核实 / 失败）。服务器是否已接受不确定时（例如提交后断线、或进程崩溃），标为「待核实」，**不自动重发**；先去已发送文件夹按 Message-ID 查找，查不到再由用户决定。
+8. **发送至多一次**：SMTP 无法保证「恰好一次」。发件箱状态机：排队 → 发送中 → 已发出 → 存档中 → 完成；另有「发送待核实」「存档待核实」「失败」。服务器是否已接受不确定时（提交后断线、进程崩溃）标为「发送待核实」，**不自动重发**。存档前先在已发送文件夹搜索这个 Message-ID（很多服务商会自动保存已发送邮件），`SEARCH HEADER` 是子串匹配，命中后还要取回邮件头逐字比对；已存在就不再 APPEND。APPEND 的结果不确定时同样进入「存档待核实」，下次先核对再决定。用户只能对「待核实」和「失败」的条目操作（确认已发出 / 重新发送 / 丢弃）。
+10. **资源预算**：正文文本和 HTML 各最多保存 2 MB（超出截断并标记，可按需取原文）；MIME 嵌套最多 20 层；附件缓存总量默认 2 GB，按最近使用淘汰。
 9. **文件与数据库的一致性**：附件缓存和待发送的原文先写临时文件，再原子改名，最后写库；启动时清理孤立文件、补齐缺失的缓存记录。附件缓存可随时丢弃重建。
 
 ## 5. 扩展机制
@@ -186,7 +188,8 @@ export default function (ctx: Ctx) {
 
 - 扩展点按命名空间分组（`ctx.actions`、`ctx.cards`、`ctx.tools`），避免与邮箱一侧的「账户 / 服务商」概念混淆。
 - v1 只做 `message.received` 和 `message.beforeSend` 两个 Hook。
-- **Hook 可靠投递**：`message.received` 不走可丢弃的界面事件总线，而是按数据库里的游标逐封投递，插件或应用重启后从断点继续，每封邮件对每个插件至少投递一次。
+- **Hook 可靠投递**：`message.received` 不走可丢弃的界面事件总线。新邮件入库时，在同一个事务里写入一张只增不减的事件日志（自增序号）；每个插件记录自己处理到的序号，每次调用带幂等 ID，插件或应用重启后从断点继续，每封邮件对每个插件至少投递一次。
+- **权限矩阵**：`mail:read` 读邮件；`mail:write` 改标记、移动、创建和修改草稿；不存在发信权限。只有 `warn` 能被用户覆盖。
 - **`warn` 和 `block` 的区别**：`warn` 显示提示，用户可以「仍然发送」；`block` 阻止发送，用户只能修改草稿或在扩展设置里停用该插件。
 - **Card** 是声明式数据（标题、字段、按钮），由客户端负责渲染，插件不能注入 HTML。按钮动作只能是 `copy`、`open-url`、`run-action` 之一。
 
@@ -205,8 +208,9 @@ export default function (ctx: Ctx) {
 **统一权限网关**：插件、MCP 和 Wit 的所有工具调用都经过宿主的同一个网关，按「调用来源 + 数据范围 + 外发目的地」判断是否放行，网关记录审计日志。
 
 - **任何扩展都不能发信**：插件、MCP、Wit 都只能创建或修改草稿，发送永远由用户在撰写页亲自点击。
-- **防外泄**：一次 Wit 对话一旦读取过邮件内容，之后调用任何有联网能力的工具（插件的 `net`、MCP 工具）都需要用户审批，审批卡片上显示将发往的域名。
+- **防外泄**：网关为数据打上来源标记。任何外发（插件的 `ctx.net`、MCP 工具、Hook 内的联网）在**实际发出请求的那一刻**检查：本次调用链里是否读过邮件内容（包括工具内部自己读的、预先放进上下文的、Hook 收到的），以及目的地是否在批准范围内。读过邮件内容的外发需要用户审批，卡片上显示目的域名；插件 Hook 只能外发到 manifest 声明并经用户安装时同意的域名。
 - **防 prompt 注入**：邮件内容交给模型时统一标记为不可信数据；写操作工具一律需要审批；审批绑定调用 ID、最终参数（修复后的参数）和目标对象的版本，参数或对象变化后审批失效。
+- **审批只执行一次**：每个待审批调用持久化为「待审批 → 已批准 → 执行中 → 已完成 / 已拒绝」，带幂等键。宿主执行完后用 `Respond` + `WithToolResponses` 把结果交还 Genkit，**不用 `Restart`**（否则会再执行一次）；崩溃后停在「执行中」的调用，先按幂等键核对是否已生效，再决定交还结果还是标为失败。
 - **插件沙箱**：每个插件一个 QuickJS 实例，设内存上限、单次调用的 CPU 时间上限（`beforeSend` 最多 5 秒），宿主侧调用可随插件超时一起取消；崩溃或连续超时的插件自动停用并通知用户。WASM 本身不限制宿主调用，所以网络限制在宿主的 `ctx.net` 实现里做：只允许 manifest 声明的域名，跟随重定向时每一跳都重新校验，DNS 解析后拒绝内网、回环和链路本地地址，限制响应大小。
 - 调用没有声明权限的 `ctx` API 时直接抛错。
 - 日志按值动态脱敏：收集所有 secret 和凭据的字符串值，输出前替换，不依赖字段名。
@@ -214,8 +218,9 @@ export default function (ctx: Ctx) {
 **邮件 HTML 显示契约**：
 
 - core 层用白名单清洗：去掉脚本、事件属性、`javascript:` 等危险协议、`<form>`、`<iframe>`、`<object>`、`<base>`、`<meta http-equiv>`；CSS 只保留白名单属性，去掉 `url()`、`expression()`、`@import`。
-- 远程资源默认全部拦截，包括 `img` 的 `src` 和 `srcset`、`//` 开头的协议相对地址、CSS 背景图；用户选择加载后才放行。`cid:` 内联图片在清洗前保留，清洗后替换成 `data:` 地址，并按附件的实际类型只允许图片类型。
-- 前端用 `sandbox` iframe 显示（不给 `allow-scripts`、`allow-same-origin`、`allow-forms`、`allow-top-navigation`），加上 CSP：`default-src 'none'; img-src data:`（加载远程图片时再放开 `https:`）；`style-src 'unsafe-inline'`。链接一律用系统浏览器打开，iframe 内不允许跳转。
+- 远程资源默认全部拦截，包括 `img` 的 `src` 和 `srcset`、`//` 开头的协议相对地址、CSS 背景图；用户选择加载后才放行（CSS 背景图始终不放行）。被拦截的数量在清洗**之前**统计。`cid:` 内联图片在清洗前保留，清洗后替换成 `data:` 地址；按文件内容实际识别格式，只允许 PNG、JPEG、GIF、WebP。
+- CSS 按属性白名单逐条解析，不靠字符串匹配。
+- 前端用 `sandbox` iframe 显示（不给 `allow-scripts`、`allow-same-origin`、`allow-forms`、`allow-top-navigation`），加上 CSP：`default-src 'none'; img-src data:`（加载远程图片时再放开 `https:`）；`style-src 'unsafe-inline'`。链接改写成不可导航的元素，点击由宿主拦截后用系统浏览器打开，iframe 本身不能跳转。
 
 ## 6. 模型服务
 
@@ -270,9 +275,26 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 设计稿：[Godwit UI 画布](https://claude.ai/artifact/LESLwyFigHSD8Yfvfimruq)（以画布为准，这里记录决定和规则）。
 
+### 7.0 设计系统
+
+- **组件**：shadcn/ui，风格 **Nova**，基础色 **neutral**；图标用 shadcn 默认的 lucide。前端用 Tailwind CSS v4。
+- **色板**：只用 **Tailwind v4 默认色板**（oklch）。语义颜色走 shadcn 的 CSS 变量（`--background`、`--foreground`、`--muted`、`--border`、`--primary` 等，neutral 主题），Godwit 额外定义三层颜色变量，全部引用色板，不写自定义十六进制值：
+
+  | 变量 | 浅色 | 用途 |
+  |---|---|---|
+  | `--window` | `color-mix(in oklch, var(--color-neutral-100), var(--color-neutral-200))` | 顶栏和图标栏底色 |
+  | `--sidebar` | `var(--color-neutral-50)` | 侧栏 |
+  | `--background` | `var(--color-white)` | 内容区 |
+  | 选中项 | 侧栏 `neutral-100`，图标栏 `neutral-200` | |
+  | 状态 | 成功 `green-600`；提醒 `amber-50` 底 / `amber-300` 边 / `amber-800` 字；危险 `red-600` | |
+
+  深色主题沿用 shadcn neutral 的深色变量，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成对应的色板值。
+- **Go 侧**：mygo 的 `WindowOptions.BackgroundColor` 填 `light-dark(浅色窗口底色, 深色窗口底色)`，避免页面加载前闪白；这两个值从同一份变量定义生成，Go 里不另建色板。（mygo PR #104 给 mygo 原生 UI 加了 Tailwind 色板，但我们的界面走 webview，不依赖它。）
+- **字体**：Geist / Geist Mono，中文 Noto Sans SC。
+- **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用 shadcn 对应组件。
+
 ### 7.1 窗口与布局
 
-- 风格：shadcn Nova（紧凑）+ neutral 灰阶；字体 Geist / Geist Mono，中文 Noto Sans SC。实现时前端直接使用 shadcn 组件。
 - 布局参考 Codex，三层颜色：窗口底色（顶栏 + 左侧图标栏）`#ECECEC` → 侧栏 `#F9F9F9`（左上圆角）→ 内容区白色，侧栏与内容区连成一块面板，贴住窗口右边和下边。
 - 左侧图标栏：邮件、Wit；设置固定在底部。扩展只从「设置 › 扩展」进入。没有用户体系，不放头像。
 - 顶栏：系统窗口按钮 + 收起侧栏、后退、前进；内容区上方显示当前标题（如「全部收件箱 · 16 封未读」）和同步状态。
@@ -285,7 +307,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 - 侧栏是账户分组树：顶部是跨账户视图（全部收件箱、已标星、智能视图），下面每个账户可折叠，展开后是各自的文件夹，最后是「添加账户」。只有一个账户时不分组。
 - 写邮件的发件人默认用当前选中的账户；在跨账户视图里写邮件用默认账户。
-- **会话视图**：邮件列表按会话（thread）显示，一行一个会话，显示参与者、最新一封的摘要、封数和未读数；阅读区按时间顺序展示整个会话，较早的邮件默认折叠成一行，未读和最新一封展开。会话按 `References` / `In-Reply-To` / `Message-ID` 归并，同一账户内跨文件夹（含已发送）；没有这些头时，按「规范化后的主题 + 参与者 + 时间窗口」兜底归并。设置里可以关闭会话视图，改回逐封显示。
+- **会话视图**：邮件列表按会话（thread）显示，一行一个会话，显示参与者、最新一封的摘要、封数和未读数；阅读区按时间顺序展示整个会话，较早的邮件默认折叠成一行，未读和最新一封展开。会话按 `References` / `In-Reply-To` / `Message-ID` 归并，同一账户内跨文件夹（含已发送）；被引用但还没收到的邮件也记下占位，后到的父邮件或同时引用两个会话的邮件会把它们合并（与到达顺序无关）。只有完全没有引用头时，才按「规范化后的主题 + 除自己以外的参与者有交集 + 7 天内」兜底归并。设置里可以关闭会话视图，改回逐封显示。
 - 阅读区（单封邮件）自上而下：标题与发件人 → AI 总结（可开关，只显示要点，不带操作按钮）→ 插件 Card → 远程图片拦截提示 → 正文 → 附件 → 即时回复。
 - 翻译不单独占区域：正文直接替换为译文，上方一行「已翻译 · 显示原文」。
 - 即时回复：在收到的邮件底部给出最多 3 条完整回复草稿（只显示一行预览，Tab 切换），选中后进入撰写页继续改。会额外消耗模型额度，设置里可以关闭。
