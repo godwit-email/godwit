@@ -34,6 +34,7 @@
 | HTML 清洗 | `github.com/microcosm-cc/bluemonday` | |
 | 存储 | mygo sqlite 插件的 Go API（`github.com/egoist/mygo/plugins/sqlite`） | 原生 SQLite 3.53，通过 purego 加载，不需要 cgo，已开启 FTS5 |
 | 凭据 | `golang.org/x/oauth2`，`github.com/zalando/go-keyring` | 存进系统钥匙串，不需要 cgo |
+| Agent 框架 | Genkit Go（`github.com/firebase/genkit/go`）v1.13.1，锁定版本；插件 `anthropic`、`compat_oai` | 1.x 稳定版、体积最小、自带工具中断 / 恢复；选型依据见 6.3 |
 | 插件运行时 | esbuild（Go 库）把 TS 转成 JS，再用 QuickJS-on-wazero 运行（如 `fastschema/qjs`） | 纯 Go，支持 ES2023 和 async；备选 goja |
 
 不采用的方案：pimalaya（Rust 库，没有 C ABI，接入要么需要 cgo，要么要单独跑一个进程）；DuckDB（面向分析查询，不适合邮件这种频繁读写单条记录的场景，Go 驱动还需要 cgo）；Go `plugin` 包（不支持 Windows，且要求和主程序用同一个 Go 版本编译）。
@@ -66,7 +67,7 @@ cmd/godwit/    入口；加 --headless 时把同一个 Service 通过 JSON-RPC�
 | `mail` | 解析、组装 MIME，清洗 HTML |
 | `send` | SMTP 和发件箱队列 |
 | `auth` | 钥匙串、OAuth |
-| `ai` | 模型服务：内置 OpenAI 兼容与 Anthropic 兼容两种接口，统一的流式 `Complete` 接口 |
+| `ai` | 模型服务（OpenAI 兼容、Anthropic 兼容，基于 Genkit 插件）、Wit 的 agent 循环、工具注册与参数格式预处理、审批状态 |
 | `skills` | 加载 `SKILL.md`，解析 UI 绑定 |
 | `plugins` | JS 运行时、manifest、权限、Hook 分发 |
 | `events` | 事件总线，推送给 GUI、Hook 和外部订阅者 |
@@ -220,6 +221,30 @@ skill、Action、`Ask` 统一用 `服务名/模型 ID` 指定模型；设置里�
 
 v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 QuickJS 沙箱里、能访问邮箱的邮件插件分开），契约采用 OpenCode 的 `auth` 钩子，pi 通过适配层接入，aio-proxy 插件以后再加适配。
 
+### 6.3 Agent 框架：Genkit Go
+
+**选型过程**（2026-10-08，所有验证都用本地假服务器模拟两种接口的流式协议，`CGO_ENABLED=0`，Go 1.27.1）：
+
+| | Fantasy v0.45.2 | Eino v0.9.21 | Genkit Go v1.13.1 |
+|---|---|---|---|
+| 流式输出 + 工具调用 + 审批（两种接口） | ✅ | ✅ | ✅ |
+| 等待审批时取消 / 输出中途取消 | ✅ / ✅ | ✅ / ✅ | ✅ / ✅ |
+| 复杂工具参数格式（`$defs`、`oneOf`） | 自带 agent 循环会重建参数格式 ❌；只用模型接入层 ✅ | ✅ | OpenAI ✅；Anthropic 丢失根级字段 ❌（可绕开，见下） |
+| 审批状态保存、重启后恢复 | 需自己实现 | 有（未测） | ✅ 自带中断 / 恢复，已验证 |
+| 二进制体积（两种接口，`-s -w`） | 50 MB | 28 MB | **22 MB** |
+| 主要问题 | Anthropic 模块无条件引入 Bedrock / Vertex | 依赖的 sonic 不支持 Go 1.27；概念多 | Anthropic 插件丢根级字段；全局注册表，带 OpenTelemetry |
+
+另外评估过：google/adk-go（无 Anthropic 支持）、langchaingo、自己基于官方 SDK 写循环（Codex / gpt-6-astra 独立评估估算 2–4 人周，协议差异需长期维护）。
+
+**落地要求**：
+
+1. **工具参数格式预处理**：插件和 MCP 的工具注册进来时统一处理：把 `#/$defs/*`、`#/definitions/*` 引用展开成内联定义并删掉根级定义；根级 `description` 合并进工具描述；根级 `anyOf` / `oneOf` / `allOf` 以及无法展开的自引用 `$ref` 记录警告。原因：Genkit 的 Anthropic 插件只保留根级的 `type`、`properties`、`required`。
+2. **插件和 MCP 的工具一律 `ai.WithStrictSchema(false)`**；内置工具可以开启严格模式。
+3. **审批用 Genkit 的工具中断**：需要审批的工具在未获批准时调用 `ToolContext.Interrupt`，不产生任何副作用；对话历史和待审批的调用序列化后存入 SQLite；用户批准后用 `ToolAction.Restart` + `ai.WithToolRestarts` 恢复执行，拒绝时用 `Respond` 返回「用户拒绝」。应用重启后待审批的调用仍可继续。
+4. **多个待审批调用**：同时显示多张卡片（按调用顺序），支持逐个处理和「全部允许 / 全部拒绝」；批准一个执行一个。修改同一封草稿的写操作排队执行，只读工具和不同对象上的写操作可以并行。关闭面板时取消所有未决调用。
+5. **隔离框架**：`ai` 模块对外只暴露自己的接口（流式事件、工具定义、审批），不把 Genkit 的类型泄漏到 Service API，方便以后替换。
+6. **上游**：给 Genkit 提 issue / PR，让 Anthropic 插件通过 SDK 的 `ExtraFields` 保留根级字段；合并后可以去掉第 1 条里的部分处理。
+
 ## 7. 界面与交互
 
 设计稿：[Godwit UI 画布](https://claude.ai/artifact/LESLwyFigHSD8Yfvfimruq)（以画布为准，这里记录决定和规则）。
@@ -319,4 +344,5 @@ AI 助手统一叫 **Wit**（取自 God*wit*）。图标栏上的入口和撰写
 - mygo 托盘、通知、开机自启在三个平台上的实际表现，原型阶段验证。
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿。
+- Genkit 的 OpenTelemetry 依赖能否在不影响功能的前提下关闭或裁剪。
 - 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwitmail`（2026-10-08 查询时均未被占用）。
