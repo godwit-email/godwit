@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	netmail "net/mail"
 	"slices"
@@ -46,21 +45,23 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	if err == nil && conv.Kind != "ask" {
 		err = fmt.Errorf("conversation %d is not an ask conversation", conversationID)
 	}
+	title := input
+	if r := []rune(title); len(r) > titleRunes {
+		title = string(r[:titleRunes])
+	}
+	// The title is saved once the run is claimed and before the run takes
+	// over end, so Close waits for both and a failure fails Ask.
+	setTitle := func(ctx context.Context) error {
+		_, err := s.db.Execute(ctx, "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", title, conv.ID)
+		return err
+	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, s.registered(askTools...))
+		w, err = s.launch(ctx, end, conv, input, s.registered(askTools...), setTitle)
 	}
 	if err != nil {
 		end()
 		return nil, err
-	}
-	title := strings.Join(strings.Fields(input), " ")
-	if r := []rune(title); len(r) > titleRunes {
-		title = string(r[:titleRunes])
-	}
-	if _, err := s.db.Execute(context.WithoutCancel(ctx), "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", title, conv.ID); err != nil {
-		// The run is under way; a missing title only shows as untitled.
-		slog.Default().Warn("could not title a conversation", "conversation", conv.ID, "err", err)
 	}
 	return w.ch, nil
 }
@@ -120,10 +121,8 @@ func (s *Service) registerAskTools() {
 		s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
 	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first.",
-		// No minimum/maximum on limit: arguments that fail the schema end the
-		// whole run, so an out-of-range limit is clamped instead.
 		object(map[string]any{"query": stringProp, "account_id": intProp,
-			"limit": map[string]any{"type": "integer", "description": "at most 20"}}, "query"),
+			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult}}, "query"),
 		s.searchMail)
 	read("get_message", "Read one message by its message_id.", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
@@ -295,10 +294,15 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 			return prepared{}, fmt.Errorf("invalid address %q", a)
 		}
 	}
-	in.HTML = mail.SanitizeCompose(in.HTML)
 	if err := s.languageClues(ctx, in); err != nil {
 		return prepared{}, err
 	}
+	// The approval records the final body, as NewDraft(new) would make it.
+	d, err := s.buildDraft(ctx, in.AccountID, "new", 0)
+	if err != nil {
+		return prepared{}, err
+	}
+	in.HTML = mail.SanitizeCompose(in.HTML + d.HTML)
 	b, err := json.Marshal(in)
 	if err != nil {
 		return prepared{}, err
@@ -326,17 +330,24 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	var from []MessageSummary
 	for _, k := range slices.Compact(keys) {
 		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(k) + "%"
+		// LIKE only narrows the candidates; the exact address is checked here,
+		// page by page, until three match or none are left.
 		// ponytail: LIKE scan over the account's mail; index from addresses if it gets slow
-		rows, err := s.db.Query(ctx, "SELECT "+msgCols+` FROM messages m WHERE m.account_id = ? AND m.from_addr LIKE ? ESCAPE '\'
-			ORDER BY m.date DESC, m.id DESC LIMIT 50`, in.AccountID, like)
-		if err != nil {
-			return err
-		}
-		n := 0
-		for _, r := range rows.Values {
-			if m := scanSummary(r); n < languageClues && mail.AddrKey(m.From) == k {
-				from = append(from, m)
-				n++
+		const page = 50
+		for n, off := 0, 0; n < languageClues; off += page {
+			rows, err := s.db.Query(ctx, "SELECT "+msgCols+` FROM messages m WHERE m.account_id = ? AND m.from_addr LIKE ? ESCAPE '\'
+				ORDER BY m.date DESC, m.id DESC LIMIT ? OFFSET ?`, in.AccountID, like, page, off)
+			if err != nil {
+				return err
+			}
+			for _, r := range rows.Values {
+				if m := scanSummary(r); n < languageClues && mail.AddrKey(m.From) == k {
+					from = append(from, m)
+					n++
+				}
+			}
+			if len(rows.Values) < page {
+				break
 			}
 		}
 	}
@@ -353,20 +364,14 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	return errors.New(b.String())
 }
 
-// applyDraft inserts the approved draft like NewDraft(new) would, with the
-// signature, linked to its approval.
-func (s *Service) applyDraft(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+// applyDraft inserts the approved snapshot as it is, linked to its approval.
+func (s *Service) applyDraft(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
 	var in draftArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	d, err := s.buildDraft(ctx, in.AccountID, "new", 0)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	html := mail.SanitizeCompose(in.HTML + d.HTML)
 	return []sqlite.Statement{{SQL: `INSERT INTO drafts(account_id, mode, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, body_html,
 		updated_at, ai_approval_id) VALUES (?, 'new', ?, ?, '[]', '', ?, ?, ?, ?)`,
-			Args: []any{in.AccountID, encodeList(in.To), encodeList(in.Cc), in.Subject, html, time.Now().Unix(), a.ID}}},
+			Args: []any{in.AccountID, encodeList(in.To), encodeList(in.Cc), in.Subject, in.HTML, time.Now().Unix(), a.ID}}},
 		map[string]any{"created": true, "subject": in.Subject}, nil, nil
 }

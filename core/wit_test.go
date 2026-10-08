@@ -57,7 +57,7 @@ func toolNames(t *testing.T, req testllm.Request) []string {
 func TestAskSearchesAndCites(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
-	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour","limit":50}`}}},
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}},
 		testllm.Turn{Calls: []testllm.Call{{Name: "get_thread", Args: `{"id":1}`}}},
 		testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":` + itoa(e.msg) + `}`}}},
 		testllm.Turn{Text: []string{"Friday at the harbour."}})
@@ -126,6 +126,9 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	require.NoError(t, json.Unmarshal(a.Args, &args))
 	assert.Equal(t, int64(1), args.AccountID, "the default account is resolved before approval")
 	assert.NotContains(t, args.HTML, "script", "the recorded HTML is sanitized")
+	assert.Contains(t, args.HTML, "-- <br/>Me", "the recorded HTML is the final body, signature included")
+	_, err = e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Changed later' WHERE id = 1")
+	require.NoError(t, err)
 
 	sub, unsub := e.s.SubscribeConversation(conv.ID)
 	defer unsub()
@@ -146,7 +149,8 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	assert.Equal(t, []string{"dan@y"}, d.Cc)
 	assert.Equal(t, "Hi", d.Subject)
 	assert.Contains(t, d.HTML, "Hello")
-	assert.Contains(t, d.HTML, "-- <br/>Me", "the account signature ends the body, as in NewDraft")
+	assert.Contains(t, d.HTML, "-- <br/>Me", "the approved snapshot is applied, signature included")
+	assert.NotContains(t, d.HTML, "Changed later", "nothing the user did not approve")
 	assert.NotContains(t, d.HTML, "script")
 	assert.NotContains(t, d.HTML, "t.example")
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM drafts WHERE id = ? AND ai_approval_id = ?", d.ID, a.ID))
@@ -228,7 +232,7 @@ func TestAskUsesSkill(t *testing.T) {
 func TestAskHistoryPersisted(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
-	first := "请帮我找一下上周所有关于港口会议的邮件，并整理出时间地点和参会人，最好按照日期排列，谢谢你"
+	first := "请帮我找一下上周所有关于港口会议的邮件，\n\n并整理出  时间地点和参会人，最好按照日期排列，谢谢你"
 	require.Greater(t, utf8.RuneCountInString(first), 40)
 	e.srv.Script(testllm.Turn{Text: []string{"A1"}}, testllm.Turn{Text: []string{"A2"}})
 	evs := e.ask(t, conv.ID, first)
@@ -370,4 +374,95 @@ func TestAskReplyLanguagePrompt(t *testing.T) {
 		assert.Contains(t, sys, "Write drafts in zh-CN")
 		assert.NotContains(t, sys, "past emails")
 	})
+}
+
+func TestAskSearchLimit(t *testing.T) {
+	e := newSkillEnv(t)
+	for i := range 25 {
+		addMessage(t, e.s, "Harbour report "+itoa(int64(i)), "Port <port@x>", "harbour news", "", 1_700_001_000+int64(i))
+	}
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"Harbour report","limit":50}`}}},
+		testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"Harbour report"}`}}},
+		testllm.Turn{Text: []string{"Many reports."}})
+	evs := e.ask(t, conv.ID, "Harbour reports?")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "an invalid limit does not end the run: %+v", evs[len(evs)-1].Err)
+	rs := witResults(evs, "search_mail")
+	require.Len(t, rs, 2)
+	assert.Contains(t, rs[0].Result.Error, "invalid arguments", "limit 50 goes back to the model as an error")
+	assert.Empty(t, rs[0].Citations)
+	assert.Empty(t, rs[1].Result.Error)
+	var out struct{ Results []json.RawMessage }
+	require.NoError(t, json.Unmarshal(rs[1].Result.Output, &out))
+	assert.Len(t, out.Results, 20)
+	assert.Len(t, rs[1].Citations, 20)
+	assert.Contains(t, string(e.srv.Requests()[0].Tools), `"maximum":20`)
+}
+
+func TestAskTitleWriteFails(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	_, err := e.s.db.Execute(t.Context(), `CREATE TRIGGER no_title BEFORE UPDATE OF title ON conversations
+		BEGIN SELECT RAISE(ABORT, 'no titles'); END`)
+	require.NoError(t, err)
+	_, err = e.s.Ask(t.Context(), conv.ID, "q1")
+	require.Error(t, err, "a title that cannot be saved fails Ask")
+	assert.Empty(t, e.srv.Requests(), "the run never started")
+	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM runs WHERE state IN ('running', 'interrupted', 'resuming')"), "no run is left blocking the conversation")
+
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER no_title")
+	require.NoError(t, err)
+	evs := e.ask(t, conv.ID, "q2")
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+}
+
+// TestAskRacesClose: Close waits for the whole Ask, title included, and for
+// its run, even when the run ends at once.
+func TestAskRacesClose(t *testing.T) {
+	for range 10 {
+		e := newSkillEnv(t)
+		conv := e.askConv(t)
+		e.srv.Script(testllm.Turn{Status: 400})
+		dir := e.s.dataDir
+		var ch <-chan WitEvent
+		var askErr error
+		done := make(chan struct{})
+		go func() { defer close(done); ch, askErr = e.s.Ask(context.Background(), conv.ID, "q") }()
+		require.NoError(t, e.s.Close())
+		<-done
+		if askErr != nil {
+			require.ErrorIs(t, askErr, ErrClosed)
+			continue
+		}
+		for range ch { // ends: the run finished or Close ended the stream
+		}
+		s, err := New(t.Context(), Options{DataDir: dir})
+		require.NoError(t, err)
+		c, err := s.GetConversation(t.Context(), conv.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "q", c.Title, "an Ask that returned a run saved its title before Close returned")
+		require.NoError(t, s.Close())
+	}
+}
+
+func TestAskLanguageCluesExactAddress(t *testing.T) {
+	e := newSkillEnv(t)
+	for i, subj := range []string{"Old one", "Real A", "Real B", "Real C"} {
+		addMessage(t, e.s, subj, "Bob <bob@x>", "hi", "", 1_700_100_000+int64(i))
+	}
+	for i := range 60 { // newer, and their From contains bob@x, but they are not from bob@x
+		addMessage(t, e.s, "Look-alike "+itoa(int64(i)), `"bob@x via list" <list@z>`, "hi", "", 1_700_200_000+int64(i))
+	}
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["bob@x"],"subject":"Re","html":"<p>x</p>"}`}}})
+	ch, err := e.s.Ask(t.Context(), e.askConv(t).ID, "Write to Bob")
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	rs := witResults(evs, "create_draft")
+	require.NotEmpty(t, rs)
+	clue := rs[0].Result.Error
+	for _, subj := range []string{"Real A", "Real B", "Real C"} {
+		assert.Contains(t, clue, "Subject: "+subj)
+	}
+	assert.NotContains(t, clue, "Old one", "only the latest three")
+	assert.NotContains(t, clue, "Look-alike")
 }

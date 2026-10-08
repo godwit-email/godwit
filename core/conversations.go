@@ -419,7 +419,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil)
 	if err != nil {
 		end()
 		return nil, err
@@ -427,7 +427,10 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	return w.ch, nil
 }
 
-func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []registeredTool) (*witStream, error) {
+// launch claims a run and hands end to it. claimed, if set, runs once the run
+// is claimed and before the hand-off; its error fails the run and launch.
+func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []registeredTool,
+	claimed func(context.Context) error) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
@@ -480,6 +483,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	job := s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0)
 	req, err := s.request(ctx, job, model, state, tools)
+	if err == nil && claimed != nil {
+		err = claimed(ctx)
+	}
 	if err != nil {
 		s.untrack(job)
 		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
