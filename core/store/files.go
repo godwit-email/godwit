@@ -5,9 +5,15 @@ import (
 	"path/filepath"
 )
 
-// WriteFileAtomic writes data via a same-directory temp file, fsync and rename.
+// WriteFileAtomic writes data via a same-directory temp file, fsync and rename,
+// creating missing parent directories. When it returns nil the file, its name
+// and any directory it created survive a crash.
 func WriteFileAtomic(path string, data []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	dir := filepath.Dir(path)
+	if err := mkdirAllSync(dir); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -24,6 +30,42 @@ func WriteFileAtomic(path string, data []byte) error {
 	}
 	if err != nil {
 		os.Remove(tmp)
+		return err
+	}
+	return syncDir(dir)
+}
+
+// mkdirAllSync is os.MkdirAll(dir, 0o700) that also fsyncs the parent of each
+// directory it creates, so the new entries are durable.
+func mkdirAllSync(dir string) error {
+	if st, err := os.Stat(dir); err == nil && st.IsDir() {
+		return nil
+	}
+	parent := filepath.Dir(dir)
+	if parent != dir {
+		if err := mkdirAllSync(parent); err != nil {
+			return err
+		}
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	return syncDir(parent)
+}
+
+// syncDir fsyncs a directory, making renames and creations in it durable. A
+// variable so tests can watch it.
+var syncDir = func(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	err = f.Sync()
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
 	return err
 }

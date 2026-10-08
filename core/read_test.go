@@ -343,3 +343,26 @@ func TestReadSectionBase64Tolerance(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "a", string(got))
 }
+
+func TestRebuildSearchIndex(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("r@x", "finance@x", "alice@example.com", "通知", "Mon, 05 Oct 2026 09:00:00 +0000", "请查收本月发票和报销单"))
+	e.sync(t)
+	search := func(q string) int {
+		got, err := e.s.Search(bg, e.acc.ID, q, 10)
+		require.NoError(t, err)
+		return len(got)
+	}
+	require.Equal(t, 1, search("报销单"))
+	// Damage the index: lose the real row, keep a stale one pointing at the message.
+	_, err := e.s.db.Execute(bg, "DELETE FROM messages_fts")
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO messages_fts(rowid, subject, from_addr, body) VALUES (?, 'x', 'x', 'stale words')", e.idOf(t, "r@x"))
+	require.NoError(t, err)
+	require.Equal(t, 0, search("报销单"))
+
+	require.NoError(t, e.s.RebuildSearchIndex(bg))
+	assert.Equal(t, 1, search("报销单"))
+	assert.Equal(t, 0, search("stale words"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages_fts"))
+}

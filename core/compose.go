@@ -225,12 +225,8 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 		return DraftAttachment{}, err
 	}
 	id := r.LastInsertID
-	dir := s.draftDir(draftID)
-	path := filepath.Join(dir, strconv.FormatInt(id, 10))
-	err = os.MkdirAll(dir, 0o700)
-	if err == nil {
-		err = store.WriteFileAtomic(path, data)
-	}
+	path := filepath.Join(s.draftDir(draftID), strconv.FormatInt(id, 10))
+	err = store.WriteFileAtomic(path, data)
 	if err == nil {
 		_, err = s.db.Execute(ctx, "UPDATE draft_attachments SET path = ? WHERE id = ?", path, id)
 	}
@@ -349,12 +345,8 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 	if int64(len(raw)) > attachLimit { // encoding, headers and the text part count too
 		return ErrTooLarge
 	}
-	dir := filepath.Join(s.dataDir, "outbox")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	rawPath := filepath.Join(dir, strconv.FormatInt(draftID, 10)+".eml") // draft ids are never reused
-	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
+	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+".eml") // draft ids are never reused
+	if err := store.WriteFileAtomic(rawPath, raw); err != nil { // durable before the draft is deleted below
 		return err
 	}
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{

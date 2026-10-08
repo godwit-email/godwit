@@ -174,6 +174,16 @@ func (s *Service) Search(ctx context.Context, accountID int64, query string, lim
 	return out, nil
 }
 
+// RebuildSearchIndex recreates the full-text index from the messages table in
+// one transaction, repairing an index that drifted or was damaged.
+func (s *Service) RebuildSearchIndex(ctx context.Context) error {
+	_, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM messages_fts"},
+		{SQL: "INSERT INTO messages_fts(rowid, subject, from_addr, body) SELECT id, subject, from_addr, body_text FROM messages"},
+	})
+	return err
+}
+
 // GetMessage returns the message with sanitized HTML. Inline images are
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
