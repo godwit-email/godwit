@@ -5,12 +5,14 @@ package events
 import "sync"
 
 const (
-	MessageReceived = "message.received"
-	MessagesChanged = "messages.changed"
-	SyncStarted     = "sync.started"
-	SyncFinished    = "sync.finished"
-	SyncFailed      = "sync.failed"
-	OutboxChanged   = "outbox.changed"
+	MessageReceived  = "message.received"
+	MessagesChanged  = "messages.changed"
+	SyncStarted      = "sync.started"
+	SyncFinished     = "sync.finished"
+	SyncFailed       = "sync.failed"
+	OutboxChanged    = "outbox.changed"
+	SettingsChanged  = "settings.changed"
+	ApprovalsChanged = "approvals.changed"
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.
@@ -24,6 +26,8 @@ type Event struct {
 	ThreadIDs  []int64
 	MessageIDs []int64
 	Error      string
+	// ConversationID is set on approvals.changed.
+	ConversationID int64
 }
 
 // Bus fans events out to subscribers. Publish never blocks.

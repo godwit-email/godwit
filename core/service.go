@@ -26,6 +26,8 @@ var ErrClosed = errors.New("service is closed")
 type Options struct {
 	DataDir  string
 	AutoSync bool // run a background sync worker per account
+	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
+	SystemLanguage string
 }
 
 // Service owns the database and event bus of one Godwit data directory.

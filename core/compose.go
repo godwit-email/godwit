@@ -29,6 +29,9 @@ type Draft struct {
 	ReplyTo, Subject, HTML string
 	Attachments            []DraftAttachment
 	UpdatedAt              time.Time
+	// Revision grows by one on every update. SaveDraft with a non-zero Revision
+	// fails with ErrStaleDraft unless it is still the stored one.
+	Revision int64
 }
 
 // DraftAttachment is a file copied into the draft's directory.
@@ -41,6 +44,9 @@ type DraftAttachment struct {
 // afterDraftLoad, when set, runs in Send right after the draft is read. Tests use
 // it to edit the draft while Send is building the message.
 var afterDraftLoad func()
+
+// ErrStaleDraft means the draft changed since the revision the caller saved against.
+var ErrStaleDraft = errors.New("draft changed since it was loaded")
 
 var draftModes = map[string]bool{"new": true, "reply": true, "reply_all": true, "forward": true}
 
@@ -156,11 +162,20 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 		}
 		return s.GetDraft(ctx, r.LastInsertID)
 	}
-	r, err := s.db.Execute(ctx, `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
-		body_html = ?, updated_at = ? WHERE id = ?`,
-		encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID)
+	q, args := `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
+		body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
+		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID}
+	if d.Revision != 0 {
+		q, args = q+" AND revision = ?", append(args, d.Revision)
+	}
+	r, err := s.db.Execute(ctx, q, args...)
 	if err != nil {
 		return Draft{}, err
+	}
+	if r.Changes == 0 && d.Revision != 0 {
+		if _, err := s.GetDraft(ctx, d.ID); err == nil {
+			return Draft{}, ErrStaleDraft
+		}
 	}
 	if r.Changes == 0 {
 		return Draft{}, fmt.Errorf("draft %d not found", d.ID)
@@ -189,7 +204,7 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 // read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
-		subject, body_html, updated_at FROM drafts WHERE id = ?`, id)
+		subject, body_html, updated_at, revision FROM drafts WHERE id = ?`, id)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -199,7 +214,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0)}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
 	if err != nil {
 		return Draft{}, err

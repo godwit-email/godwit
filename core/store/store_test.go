@@ -144,8 +144,39 @@ func TestMigration5(t *testing.T) {
 	defer db.Close()
 	rows, err := db.Query(ctx, "PRAGMA user_version")
 	require.NoError(t, err)
-	assert.Equal(t, int64(5), store.Int(rows.Values[0][0]))
+	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
 	rows, err = db.Query(ctx, "SELECT provider, status_detail, status FROM accounts WHERE id = 1")
 	require.NoError(t, err)
 	assert.Equal(t, []any{"", "", "reauth_required"}, rows.Values[0])
+}
+
+func TestMigration6(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:5]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO accounts(id, email) VALUES (1, 'a@b.c')")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO drafts(id, account_id, mode) VALUES (1, 1, 'new')")
+	require.NoError(t, err)
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "PRAGMA user_version")
+	require.NoError(t, err)
+	assert.Equal(t, int64(6), store.Int(rows.Values[0][0]))
+	rows, err = db.Query(ctx, "SELECT revision, ai_approval_id FROM drafts WHERE id = 1")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), store.Int(rows.Values[0][0]))
+	for _, tbl := range []string{"settings", "model_services", "ai_cache", "conversations", "runs", "approvals", "audit_log"} {
+		_, err = db.Query(ctx, "SELECT * FROM "+tbl+" LIMIT 1")
+		assert.NoError(t, err, tbl)
+	}
+	rows, err = db.Query(ctx, "SELECT name FROM sqlite_master WHERE name = 'runs_one_active'")
+	require.NoError(t, err)
+	assert.Len(t, rows.Values, 1)
 }
