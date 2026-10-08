@@ -18,8 +18,12 @@ var (
 	backoffMax   = 5 * time.Minute
 )
 
-// beforeWorkerExit, when set, runs as a worker exits. Tests use it to make exits slow.
-var beforeWorkerExit func()
+// Test hooks, nil in production: beforeWorkerExit runs as a worker exits (tests
+// make exits slow), onParked each time a worker parks on reauth_required.
+var (
+	beforeWorkerExit func()
+	onParked         func(id int64)
+)
 
 // worker is one account's background sync goroutine.
 type worker struct {
@@ -119,6 +123,9 @@ func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan stru
 		acc, err := s.account(ctx, id)
 		if err != nil || acc.Status != "reauth_required" {
 			return ctx.Err() == nil // on a read error the round reports it
+		}
+		if onParked != nil {
+			onParked(id)
 		}
 		select {
 		case <-wake:

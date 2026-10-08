@@ -27,8 +27,19 @@ func setFor[T any](t *testing.T, v *T, x T) {
 // newWorkerEnv is newSendEnv with AutoSync on and a short backoff. The IDLE and poll
 // intervals stay at 5 minutes unless a test lowers them first, so anything a test
 // sees sooner came from IDLE or a wake.
-func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*sendEnv, <-chan events.Event) {
+func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*workerEnv, <-chan events.Event) {
 	t.Helper()
+	parked, lockWait := make(chan struct{}, 64), make(chan struct{}, 64)
+	signal := func(c chan struct{}) func(int64) {
+		return func(int64) {
+			select {
+			case c <- struct{}{}:
+			default:
+			}
+		}
+	}
+	setFor(t, &onParked, signal(parked)) // set before any worker starts
+	setFor(t, &beforeLockWait, signal(lockWait))
 	b0, b1 := backoffMin, backoffMax
 	backoffMin, backoffMax = 20*time.Millisecond, 200*time.Millisecond
 	t.Cleanup(func() { backoffMin, backoffMax = b0, b1 }) // runs after the Close below
@@ -43,9 +54,27 @@ func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*sendEnv, <-chan event
 	im := testmail.StartIMAP(t, opts...)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
-	e := &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in}
+	e := &workerEnv{sendEnv: &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in},
+		parked: parked, lockWait: lockWait}
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
 	return e, ch
+}
+
+// workerEnv is a sendEnv whose worker reports, through test hooks, when it parks
+// and when any lockAccount call starts waiting.
+type workerEnv struct {
+	*sendEnv
+	parked, lockWait chan struct{}
+}
+
+// waitSignal fails the test unless c fires within d.
+func waitSignal(t *testing.T, c <-chan struct{}, what string, d time.Duration) {
+	t.Helper()
+	select {
+	case <-c:
+	case <-time.After(d):
+		t.Fatalf("%s did not happen within %s", what, d)
+	}
 }
 
 // waitEvent returns the first event of type typ within d.
@@ -173,7 +202,7 @@ func TestStartupCleansOrphans(t *testing.T) {
 
 // lockedWorkerEnv returns a worker env whose worker is blocked waiting for the
 // account lock, which the test holds until it ends.
-func lockedWorkerEnv(t *testing.T) *sendEnv {
+func lockedWorkerEnv(t *testing.T) *workerEnv {
 	t.Helper()
 	e, ch := newWorkerEnv(t)
 	unlock, err := e.s.lockAccount(bg, e.acc.ID)
@@ -212,7 +241,7 @@ func slowExit(t *testing.T) {
 	setFor(t, &beforeWorkerExit, func() { time.Sleep(300 * time.Millisecond) })
 }
 
-func workerOf(t *testing.T, e *sendEnv) *worker {
+func workerOf(t *testing.T, e *workerEnv) *worker {
 	t.Helper()
 	e.s.workersMu.Lock()
 	defer e.s.workersMu.Unlock()
@@ -262,7 +291,7 @@ func TestRemoveAccountRacingClose(t *testing.T) {
 
 // parkWorker makes the worker's next round fail to log in and waits until the
 // account is reauth_required. The keychain holds a wrong password afterwards.
-func parkWorker(t *testing.T, e *sendEnv, ch <-chan events.Event) {
+func parkWorker(t *testing.T, e *workerEnv, ch <-chan events.Event) {
 	t.Helper()
 	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
 	e.put(t, "INBOX", msg("r1@x")) // the next round fails to log in
@@ -271,11 +300,11 @@ func parkWorker(t *testing.T, e *sendEnv, ch <-chan events.Event) {
 		a, err := e.s.account(bg, e.acc.ID)
 		return err == nil && a.Status == "reauth_required"
 	}, 5*time.Second, 10*time.Millisecond)
-	time.Sleep(100 * time.Millisecond) // let a retry already scheduled run into the park
+	waitSignal(t, e.parked, "worker parking", 5*time.Second) // only a reauth_required status parks it
 }
 
 // workerResumed waits until the worker imports a newly arrived message.
-func workerResumed(t *testing.T, e *sendEnv, id string) {
+func workerResumed(t *testing.T, e *workerEnv, id string) {
 	t.Helper()
 	e.put(t, "INBOX", msg(id))
 	require.Eventually(t, func() bool {
@@ -299,14 +328,15 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 func TestReauthResumesOnLoginEvenIfSyncFails(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	parkWorker(t, e, ch)
+	n := e.im.Logins() // parked: nothing logs in until SyncNow
 	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
 	e.im.DropNextFetch() // LOGIN succeeds, the sync then fails
 	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
 	a, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", a.Status, "a successful LOGIN clears reauth_required")
-	n := e.im.Logins()
-	require.Eventually(t, func() bool { return e.im.Logins() > n }, 5*time.Second, 10*time.Millisecond, "worker resumes")
+	// SyncNow's own LOGIN plus at least one by the resumed worker.
+	require.Eventually(t, func() bool { return e.im.Logins() >= n+2 }, 5*time.Second, 10*time.Millisecond, "worker resumes")
 	workerResumed(t, e, "r2@x")
 }
 
@@ -315,9 +345,9 @@ func TestSyncNowQueuedBeforeParkStillResumes(t *testing.T) {
 	unlock, err := e.s.lockAccount(bg, e.acc.ID)
 	require.NoError(t, err)
 	done := make(chan error, 1)
-	go func() { done <- e.s.SyncNow(bg, e.acc.ID) }() // starts while the account is fine, waits for the lock
-	time.Sleep(100 * time.Millisecond)
-	parkWorker(t, e, ch) // the worker's IDLE login fails without needing the lock
+	go func() { done <- e.s.SyncNow(bg, e.acc.ID) }() // starts while the account is fine
+	waitSignal(t, e.lockWait, "SyncNow waiting for the lock", 5*time.Second)
+	parkWorker(t, e, ch) // the worker's IDLE login fails without needing the lock; it parks
 	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
 	unlock()
 	require.NoError(t, <-done)
@@ -358,4 +388,18 @@ func TestWorkerDeliversSend(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return e.count(t, "SELECT count(*) FROM outbox WHERE message_id_hdr = ? AND state = 'done'", mid) == 1
 	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestLoginClearsReauthSetAfterDialReadStatus(t *testing.T) {
+	e := newSyncEnv(t) // no worker: the hook below is only called by this test's SyncNow
+	setFor(t, &afterAccountRead, func(id int64) {
+		_, err := e.s.db.Execute(bg, "UPDATE accounts SET status = 'reauth_required' WHERE id = ?", id)
+		require.NoError(t, err)
+	})
+	e.put(t, "INBOX", msg("f@x")) // something to FETCH
+	e.im.DropNextFetch()          // LOGIN succeeds, the sync then fails, so only the LOGIN can clear it
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	a, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", a.Status)
 }

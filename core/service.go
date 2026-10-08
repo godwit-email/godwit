@@ -144,6 +144,14 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 	select {
 	case sem <- struct{}{}:
 		return func() { <-sem }, nil
+	default:
+	}
+	if beforeLockWait != nil {
+		beforeLockWait(id)
+	}
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -178,6 +186,13 @@ func (s *Service) syncNow(ctx context.Context, accountID int64) error {
 	return nil
 }
 
+// Test hooks, nil in production: afterAccountRead runs in dialAccount after it read
+// the account row, beforeLockWait when lockAccount finds the lock taken and is about to wait.
+var (
+	afterAccountRead func(id int64)
+	beforeLockWait   func(id int64)
+)
+
 // dialAccount connects and logs in to the account's IMAP server. An auth failure
 // also marks the account reauth_required. release closes the connection and must
 // be called; cancelling ctx aborts blocked reads. h, if not nil, receives IDLE updates.
@@ -185,6 +200,9 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if afterAccountRead != nil {
+		afterAccountRead(accountID)
 	}
 	pw, err := keyring.Get(keyringService, keyringUser(accountID))
 	if err != nil {
@@ -198,11 +216,15 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		}
 		return nil, nil, nil, err
 	}
-	if acc.Status == "reauth_required" { // the credentials work again
-		if err := s.setStatus(ctx, accountID, "ok"); err != nil {
-			c.Close()
-			return nil, nil, nil, err
-		}
+	// The credentials work: clear reauth_required as it is now, not as it was read
+	// above, since another login may have failed meanwhile. A parked worker resumes.
+	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok' WHERE id = ? AND status = 'reauth_required'", accountID)
+	if err != nil {
+		c.Close()
+		return nil, nil, nil, err
+	}
+	if r.Changes > 0 {
+		s.wakeWorker(accountID)
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	return c, func() { stop(); c.Close() }, abort, nil
