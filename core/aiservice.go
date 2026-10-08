@@ -389,7 +389,7 @@ func parseQuickReplies(out string) ([]QuickReply, error) {
 	}
 	rs := []QuickReply{}
 	for _, r := range *v.Replies {
-		h := mail.SanitizeCompose(*r.HTML)
+		h := cleanHTML(*r.HTML)
 		p := strings.Join(strings.Fields(mail.HTMLToText(h)), " ")
 		if p == "" {
 			continue
@@ -429,6 +429,6 @@ func (s *Service) DraftFromQuickReply(ctx context.Context, messageID int64, r Qu
 		return Draft{}, err
 	}
 	// NewDraft opens a reply with an empty paragraph for the user's text.
-	d.HTML = mail.SanitizeCompose(r.HTML) + strings.TrimPrefix(d.HTML, "<p></p>")
+	d.HTML = cleanHTML(r.HTML) + strings.TrimPrefix(d.HTML, "<p></p>")
 	return s.SaveDraft(ctx, d)
 }

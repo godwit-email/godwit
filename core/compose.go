@@ -105,10 +105,12 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 			d.To, d.Cc = mail.ReplyRecipients(orig, acc.Email, mode == "reply_all")
 			d.Subject = mail.ReplySubject(orig.Subject)
 		}
-		d.HTML = "<p></p>" + mail.QuoteHTML(orig)
+		// The marker blockquote only marks the quote (attribution line included)
+		// as read-only for Wit; it is styled away so the quote is not indented twice.
+		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTML(orig) + "</blockquote>"
 	}
 	if acc.Signature != "" {
-		d.HTML += "<p>-- <br>" + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p>"
+		d.HTML += `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p></div>"
 	}
 	return d, nil
 }

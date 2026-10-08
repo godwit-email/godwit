@@ -41,7 +41,7 @@ func ReplyRecipients(orig *Parsed, self string, all bool) (to, cc []string) {
 
 // QuoteHTML returns the "on {date}, {from} wrote:" line plus the original in a blockquote.
 func QuoteHTML(orig *Parsed) string {
-	body := SanitizeCompose(orig.HTML)
+	body := StripMarkers(SanitizeCompose(orig.HTML)) // the quoted mail's own markers are content
 	if orig.HTML == "" {
 		body = strings.ReplaceAll(html.EscapeString(strings.ReplaceAll(orig.Text, "\r\n", "\n")), "\n", "<br>")
 	}

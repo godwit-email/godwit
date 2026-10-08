@@ -156,6 +156,13 @@ func (s *Service) ResolveApproval(ctx context.Context, id int64, accept bool) er
 }
 
 func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) error {
+	return s.decide(ctx, id, accept, nil, true)
+}
+
+// decide claims and ends a pending approval. Accepted, it applies args when
+// set (an edited proposal) instead of the recorded arguments. With resume
+// false the caller resumes the run (resumeRun) afterwards.
+func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.RawMessage, resume bool) error {
 	a, err := s.approvalRow(ctx, id)
 	if err != nil {
 		return err
@@ -180,28 +187,45 @@ func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) er
 		return errors.New("simulated crash")
 	}
 	ctx = context.WithoutCancel(ctx) // claimed: always reach an end state
-	err = s.execute(ctx, a, ex)
+	err = s.execute(ctx, a, ex, args)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
-	if cerr := s.claimResume(ctx, a.RunID); cerr != nil {
-		// The run cannot go on; failing it keeps it from blocking the conversation.
-		slog.Default().Warn("could not resume a run", "run", a.RunID, "err", cerr)
-		_, ferr := s.failRun(ctx, a.RunID, cerr)
-		err = errors.Join(err, fmt.Errorf("resuming the run: %w", cerr), ferr)
+	if resume {
+		err = errors.Join(err, s.resumeRun(ctx, a.RunID))
 	}
 	return err
 }
 
-// execute ends a claimed approval: rejected when ex is nil, else applied.
-func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor) error {
+// resumeRun resumes runID once nothing of it is left open; a run that cannot
+// go on is failed, so it does not block the conversation. The caller holds runMu.
+func (s *Service) resumeRun(ctx context.Context, runID int64) error {
+	cerr := s.claimResume(ctx, runID)
+	if cerr == nil {
+		return nil
+	}
+	slog.Default().Warn("could not resume a run", "run", runID, "err", cerr)
+	_, ferr := s.failRun(ctx, runID, cerr)
+	return errors.Join(fmt.Errorf("resuming the run: %w", cerr), ferr)
+}
+
+// execute ends a claimed approval: rejected when ex is nil, else applied with
+// args, if set, in place of the recorded arguments (which done then records).
+func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args json.RawMessage) error {
+	var edited any // NULL keeps the recorded arguments
 	finish := func(state, result string, undo any, decision string, stmts ...sqlite.Statement) error {
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = ?, result = ?, undo = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, result, undo, time.Now().Unix(), a.ID}},
+		if state != "done" {
+			edited = nil
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = ?, args = COALESCE(?, args), result = ?, undo = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
+			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}},
 			gateway.Audit(gateway.SourceWit, a.Tool, a.targetKind, a.targetID, decision))
 		_, err := s.db.Transaction(ctx, stmts)
 		return err
 	}
 	if ex == nil {
 		return finish("rejected", msgRejected, nil, "rejected")
+	}
+	if args != nil {
+		a.Args, edited = args, string(args)
 	}
 	stmts, result, undo, err := ex.Apply(ctx, a.Approval)
 	var res, und []byte
@@ -368,11 +392,14 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 		}
 		results = append(results, a.toolResult())
 	}
-	closed, err := ai.CloseState(state, results)
-	if err != nil {
-		return convID, err
+	if !snap.Host { // a host proposal left no call in the conversation
+		closed, err := ai.CloseState(state, results)
+		if err != nil {
+			return convID, err
+		}
+		stmts = append(stmts, saveState(convID, closed))
 	}
-	stmts = append(stmts, saveState(convID, closed), runState(runID, final))
+	stmts = append(stmts, runState(runID, final))
 	_, err = s.db.Transaction(ctx, stmts)
 	return convID, err
 }

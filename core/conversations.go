@@ -357,15 +357,19 @@ type runJob struct {
 	clued    sync.Map // recipients create_draft has shown language clues for
 	full     []byte   // the conversation state before TrimState
 	dropped  int      // messages TrimState left out of the request
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
+	// host, set for a host-made proposal (AssistSkill), turns the finished
+	// tool-less run into an interrupt on the proposal; it is not resumed.
+	host   func(ctx context.Context, res ai.Result) ai.Result
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // snapshot is runs.snapshot: what a resume needs besides the conversation state.
 type snapshot struct {
 	ReadMail bool `json:"read_mail"`
-	Round    int  `json:"round"` // seq of the current interrupt's first approval
+	Round    int  `json:"round"`          // seq of the current interrupt's first approval
+	Host     bool `json:"host,omitempty"` // a host-made proposal: nothing to resume
 }
 
 type runKey struct{}
@@ -379,7 +383,7 @@ const historyBudget = 60000
 // request builds the run's request on state, trimmed to historyBudget; the
 // job keeps what drive needs to save the whole history.
 func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []registeredTool) (ai.Request, error) {
-	system, err := s.witSystem(ctx, job.conv)
+	system, err := s.witSystem(ctx, job, tools)
 	if err != nil {
 		return ai.Request{}, err
 	}
@@ -457,31 +461,16 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	for _, t := range tools {
 		names = append(names, t.Spec.Name)
 	}
-	toolsJSON, _ := json.Marshal(names)
-	snap, _ := json.Marshal(snapshot{})
-	now := time.Now().Unix()
 
 	if beforeRunClaim != nil {
 		beforeRunClaim(ctx)
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
-		SELECT ?, 'running', ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
-		AND state IN ('running', 'interrupted', 'resuming'))`, conv.ID, ref, string(toolsJSON), snap, now, now, conv.ID)
+	job, state, err := s.claimRun(ctx, conv, ref, names)
 	if err != nil {
 		return nil, err
 	}
-	if r.Changes == 0 {
-		return nil, ErrRunActive
-	}
-	// Read the history only now: a previous run may have ended after the read above.
-	_, state, err := s.conversation(ctx, conv.ID)
-	if err != nil {
-		st := runState(r.LastInsertID, "failed")
-		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), st))
-	}
-	job := s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0)
 	req, err := s.request(ctx, job, model, state, tools)
 	if err == nil && claimed != nil {
 		err = claimed(ctx)
@@ -494,6 +483,30 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	out := s.newStream()
 	go s.drive(job, end, e, req, out)
 	return out, nil
+}
+
+// claimRun records a running run of conv unless the conversation has an
+// active one (ErrRunActive) and tracks it; state is the conversation's history
+// as of the claim. The caller holds runMu.
+func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, tools []string) (*runJob, []byte, error) {
+	toolsJSON, _ := json.Marshal(tools)
+	snap, _ := json.Marshal(snapshot{})
+	now := time.Now().Unix()
+	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
+		SELECT ?, 'running', ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
+		AND state IN ('running', 'interrupted', 'resuming'))`, conv.ID, ref, string(toolsJSON), snap, now, now, conv.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if r.Changes == 0 {
+		return nil, nil, ErrRunActive
+	}
+	// Read the history only now: a previous run may have ended after the caller's read.
+	_, state, err := s.conversation(ctx, conv.ID)
+	if err != nil {
+		return nil, nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(r.LastInsertID, "failed")))
+	}
+	return s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0), state, nil
 }
 
 // specs wraps the tools for one run: every call goes through the gateway, and
@@ -571,8 +584,15 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 		} else {
 			res.State = st
 		}
+		if job.host != nil {
+			res = job.host(ctx, res)
+		}
 	}
 	fin, err := s.settleRun(ctx, job, req, res)
+	applied := false
+	if err == nil && fin.Kind == "interrupted" {
+		fin.Approvals, applied = s.applyInitial(ctx, fin.Approvals)
+	}
 	if err != nil {
 		if _, ferr := s.db.Execute(ctx, "UPDATE runs SET state = 'failed', updated_at = ? WHERE id = ? AND state IN ('running', 'resuming')",
 			time.Now().Unix(), job.id); ferr != nil {
@@ -583,6 +603,13 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	emit(fin)
 	if out != nil {
 		out.close()
+	}
+	if applied { // after the interrupt is out, so the resume's events follow it
+		s.runMu.Lock()
+		if err := s.resumeRun(ctx, job.id); err != nil {
+			slog.Default().Warn("could not resume after a first generation", "run", job.id, "err", err)
+		}
+		s.runMu.Unlock()
 	}
 }
 
@@ -621,7 +648,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
 	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State),
 		{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}}}
 	for i, c := range res.Interrupts {
@@ -675,6 +702,14 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	var snap snapshot
 	if err := errors.Join(json.Unmarshal([]byte(store.Str(r[2])), &names), json.Unmarshal([]byte(store.Str(r[3])), &snap)); err != nil {
 		return err
+	}
+	if snap.Host { // decided: the proposal was the whole run
+		if err := s.exec(ctx, runState(runID, "done")); err != nil {
+			return err
+		}
+		end()
+		s.publishWit(store.Int(r[0]), WitEvent{RunID: runID, Event: ai.Event{Kind: "done"}})
+		return nil
 	}
 	conv, state, err := s.conversation(ctx, store.Int(r[0]))
 	if err != nil {

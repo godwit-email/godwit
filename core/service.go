@@ -106,6 +106,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{})}
 	s.registerAskTools()
+	s.registerAssistTools()
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err

@@ -66,10 +66,15 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	return w.ch, nil
 }
 
-// witSystem is a conversation's system prompt, the same for every run of it,
-// started or resumed.
-func (s *Service) witSystem(ctx context.Context, conv Conversation) (string, error) {
-	if conv.Kind != "ask" {
+// witSystem is the system prompt of a run's requests, started or resumed: for
+// ask the same for every run of the conversation; for assist built from the
+// draft as it is (assistSystemPrompt).
+func (s *Service) witSystem(ctx context.Context, job *runJob, tools []registeredTool) (string, error) {
+	switch job.conv.Kind {
+	case "assist":
+		return s.assistSystemPrompt(ctx, job, tools)
+	case "ask":
+	default:
 		return ai.UntrustedSystemNote, nil
 	}
 	st, err := s.loadSettings(ctx)
@@ -302,7 +307,7 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	in.HTML = mail.SanitizeCompose(in.HTML + d.HTML)
+	in.HTML = mail.SanitizeCompose(mail.StripMarkers(in.HTML) + d.HTML)
 	b, err := json.Marshal(in)
 	if err != nil {
 		return prepared{}, err
@@ -329,7 +334,7 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	}
 	var from []MessageSummary
 	for _, k := range slices.Compact(keys) {
-		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(k) + "%"
+		like := likePattern(k)
 		// LIKE only narrows the candidates; the exact address is checked here,
 		// page by page, until three match or none are left.
 		// ponytail: LIKE scan over the account's mail; index from addresses if it gets slow
