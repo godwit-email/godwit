@@ -30,6 +30,7 @@ import (
 // Engine runs models through Genkit: one Genkit instance per model service
 // configuration, created on first use. Genkit types never leave this package.
 type Engine struct {
+	warn    *slog.Logger // schema normalization warnings: tool name only
 	log     *slog.Logger // what Genkit logs through: Error and above, redacted
 	secrets func() []string
 	client  *http.Client // never follows redirects; Close drops its connections
@@ -73,6 +74,7 @@ func NewEngine(l *slog.Logger, secrets func() []string) (*Engine, error) {
 		keys:    map[string]bool{},
 	}
 	e.log = slog.New(&redactor{l.Handler(), e.allSecrets})
+	e.warn = l
 	return e, nil
 }
 
@@ -373,7 +375,11 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 	desc := s.Description
 	if !s.Strict {
 		var descr string
-		schema, descr, _ = NormalizeSchema(schema)
+		var warns []string
+		schema, descr, warns = NormalizeSchema(schema)
+		if len(warns) > 0 {
+			r.e.warn.Warn("ai: tool schema could not be fully flattened", "tool", s.Name, "warnings", len(warns))
+		}
 		if descr != "" {
 			desc += "\n\n" + descr
 		}

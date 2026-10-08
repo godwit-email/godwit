@@ -22,6 +22,99 @@ func NormalizeSchema(in map[string]any) (out map[string]any, descr string, warni
 		}
 		delete(out, key)
 	}
+	kept := map[string]bool{}
+	warned := map[string]bool{}
+	warn := func(key, msg string) {
+		if !warned[key] {
+			warned[key] = true
+			warnings = append(warnings, msg)
+		}
+	}
+	var walk func(v any, visiting map[string]bool) any
+	walkKeywords := func(m map[string]any, visiting map[string]bool) map[string]any {
+		for k, v := range m {
+			switch {
+			case oneSchema[k]:
+				m[k] = walk(v, visiting)
+			case schemaList[k]:
+				if l, ok := v.([]any); ok {
+					for i := range l {
+						l[i] = walk(l[i], visiting)
+					}
+				} else if k == "items" {
+					m[k] = walk(v, visiting)
+				}
+			case schemaMap[k]:
+				if sm, ok := v.(map[string]any); ok {
+					for n := range sm {
+						sm[n] = walk(sm[n], visiting)
+					}
+				}
+			}
+		}
+		return m
+	}
+	walk = func(v any, visiting map[string]bool) any {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return v
+		}
+		ref, isRef := m["$ref"].(string)
+		if !isRef {
+			return walkKeywords(m, visiting)
+		}
+		delete(m, "$ref")
+		sibs := walkKeywords(m, visiting)
+		def, found := defs[ref]
+		switch {
+		case !found:
+			warn(ref, "unresolved reference "+ref)
+		case visiting[ref]:
+			kept[ref] = true
+			warn(ref, "recursive definition "+ref+" kept as a reference")
+		default:
+			visiting[ref] = true
+			res := walk(deepCopy(def), visiting)
+			delete(visiting, ref)
+			if b, isBool := res.(bool); isBool {
+				if !b {
+					return false
+				}
+				return sibs // true accepts anything: only the siblings remain
+			}
+			rm, _ := res.(map[string]any)
+			if rm == nil {
+				break
+			}
+			asserts := map[string]any{}
+			for k, x := range sibs {
+				if annotation[k] {
+					rm[k] = x
+				} else {
+					asserts[k] = x
+				}
+			}
+			if len(asserts) == 0 {
+				return rm
+			}
+			// Both the definition's and the sibling constraints must hold.
+			outer := map[string]any{"allOf": []any{rm, asserts}}
+			for k := range annotation {
+				if x, ok := rm[k]; ok {
+					outer[k] = x
+					delete(rm, k)
+				}
+			}
+			return outer
+		}
+		sibs["$ref"] = ref
+		return sibs
+	}
+	out, _ = walk(out, map[string]bool{}).(map[string]any)
+	if out == nil {
+		out = map[string]any{}
+	}
+	// The root may itself have been a $ref: inspect the expanded root.
 	if d, ok := out["description"].(string); ok {
 		descr = d
 		delete(out, "description")
@@ -31,55 +124,6 @@ func NormalizeSchema(in map[string]any) (out map[string]any, descr string, warni
 			warnings = append(warnings, fmt.Sprintf("root %s is not supported by every provider", k))
 		}
 	}
-
-	kept := map[string]bool{}
-	warned := map[string]bool{}
-	var inline func(v any, visiting map[string]bool) any
-	inline = func(v any, visiting map[string]bool) any {
-		switch v := v.(type) {
-		case []any:
-			for i := range v {
-				v[i] = inline(v[i], visiting)
-			}
-			return v
-		case map[string]any:
-			if ref, ok := v["$ref"].(string); ok {
-				def, found := defs[ref]
-				switch {
-				case !found:
-					if !warned[ref] {
-						warned[ref] = true
-						warnings = append(warnings, "unresolved reference "+ref)
-					}
-				case visiting[ref]:
-					kept[ref] = true
-					if !warned[ref] {
-						warned[ref] = true
-						warnings = append(warnings, "recursive definition "+ref+" kept as a reference")
-					}
-				default:
-					visiting[ref] = true
-					res, _ := inline(deepCopy(def), visiting).(map[string]any)
-					delete(visiting, ref)
-					if res == nil { // boolean schema etc.
-						return v
-					}
-					for k, s := range v { // siblings of $ref override
-						if k != "$ref" {
-							res[k] = inline(s, visiting)
-						}
-					}
-					return res
-				}
-				return v
-			}
-			for k := range v {
-				v[k] = inline(v[k], visiting)
-			}
-		}
-		return v
-	}
-	out = inline(out, map[string]bool{}).(map[string]any)
 
 	// Kept definitions may reference further recursive ones: process to a fixpoint.
 	done := map[string]bool{}
@@ -96,10 +140,28 @@ func NormalizeSchema(in map[string]any) (out map[string]any, descr string, warni
 				container = map[string]any{}
 				out[parts[1]] = container
 			}
-			container[unescapePtr(parts[2])] = inline(deepCopy(defs[ref]), map[string]bool{ref: true})
+			container[unescapePtr(parts[2])] = walk(deepCopy(defs[ref]), map[string]bool{ref: true})
 		}
 	}
 	return out, descr, warnings
+}
+
+// Keywords whose values are schemas; anything else (const, enum, default,
+// examples...) is data and never rewritten.
+var (
+	oneSchema = set("additionalProperties", "additionalItems", "contains", "not", "if", "then", "else",
+		"propertyNames", "unevaluatedItems", "unevaluatedProperties")
+	schemaList = set("allOf", "anyOf", "oneOf", "prefixItems", "items")
+	schemaMap  = set("properties", "patternProperties", "dependentSchemas", "$defs", "definitions")
+	annotation = set("description", "title", "default", "examples", "example", "deprecated", "readOnly", "writeOnly", "$comment")
+)
+
+func set(k ...string) map[string]bool {
+	m := map[string]bool{}
+	for _, s := range k {
+		m[s] = true
+	}
+	return m
 }
 
 func escapePtr(s string) string { return strings.NewReplacer("~", "~0", "/", "~1").Replace(s) }

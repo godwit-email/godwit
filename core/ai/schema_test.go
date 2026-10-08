@@ -125,3 +125,79 @@ func TestAnthropicReceivesNormalizedSchema(t *testing.T) {
 	assert.Equal(t, map[string]any{"a": map[string]any{"type": "string"}}, got[0].InputSchema["properties"])
 	assert.NotContains(t, got[0].InputSchema, "$defs")
 }
+
+// refsResolve fails for any $ref in a schema position that has no definition.
+func refsResolve(t *testing.T, out map[string]any) {
+	t.Helper()
+	defs, _ := out["$defs"].(map[string]any)
+	var check func(v any)
+	check = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if r, ok := v["$ref"].(string); ok {
+				_, found := defs[strings.TrimPrefix(r, "#/$defs/")]
+				assert.True(t, found, "dangling %s", r)
+			}
+			for k, c := range v {
+				if k != "const" && k != "enum" && k != "default" && k != "examples" {
+					check(c)
+				}
+			}
+		case []any:
+			for _, c := range v {
+				check(c)
+			}
+		}
+	}
+	check(out)
+}
+
+func TestNormalizeBooleanDefs(t *testing.T) {
+	in := obj(map[string]any{"a": map[string]any{"$ref": "#/$defs/T"}, "b": map[string]any{"$ref": "#/$defs/F"}})
+	in["$defs"] = map[string]any{"T": true, "F": false}
+	out, _, _ := NormalizeSchema(in)
+	assert.Equal(t, obj(map[string]any{"a": map[string]any{}, "b": false}), out)
+	refsResolve(t, out)
+}
+
+func TestNormalizeRecursiveSiblingRefs(t *testing.T) {
+	in := obj(map[string]any{"n": map[string]any{"$ref": "#/$defs/N"}})
+	in["$defs"] = map[string]any{
+		"N": obj(map[string]any{"self": map[string]any{"$ref": "#/$defs/N", "properties": map[string]any{"x": map[string]any{"$ref": "#/$defs/S"}}}}),
+		"S": map[string]any{"type": "string"},
+	}
+	out, _, _ := NormalizeSchema(in)
+	refsResolve(t, out)
+	b, _ := json.Marshal(out)
+	assert.NotContains(t, string(b), "#/$defs/S")
+}
+
+func TestNormalizeRefSiblings(t *testing.T) {
+	in := obj(map[string]any{"a": map[string]any{"$ref": "#/$defs/S", "minLength": 2, "description": "d"}})
+	in["$defs"] = map[string]any{"S": map[string]any{"type": "string", "minLength": 5}}
+	out, _, _ := NormalizeSchema(in)
+	a := out["properties"].(map[string]any)["a"].(map[string]any)
+	assert.Equal(t, "d", a["description"])
+	assert.Equal(t, []any{
+		map[string]any{"type": "string", "minLength": 5},
+		map[string]any{"minLength": 2},
+	}, a["allOf"])
+}
+
+func TestNormalizeLeavesDataAlone(t *testing.T) {
+	data := map[string]any{"$ref": "#/$defs/X"}
+	in := obj(map[string]any{"a": map[string]any{"const": data, "enum": []any{data}, "default": data}})
+	in["$defs"] = map[string]any{"X": map[string]any{"type": "string"}}
+	out, _, _ := NormalizeSchema(in)
+	assert.Equal(t, map[string]any{"const": data, "enum": []any{data}, "default": data}, out["properties"].(map[string]any)["a"])
+}
+
+func TestNormalizeRootRef(t *testing.T) {
+	in := map[string]any{"$ref": "#/$defs/Input", "$defs": map[string]any{
+		"Input": map[string]any{"type": "object", "description": "Root words.", "oneOf": []any{map[string]any{"type": "object"}}}}}
+	out, descr, warns := NormalizeSchema(in)
+	assert.Equal(t, "Root words.", descr)
+	assert.NotContains(t, out, "description")
+	require.Len(t, warns, 1)
+	assert.Contains(t, warns[0], "oneOf")
+}
