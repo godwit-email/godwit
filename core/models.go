@@ -46,7 +46,7 @@ func (in ModelServiceInput) validate() error {
 		return fmt.Errorf("invalid service kind %q", in.Kind)
 	}
 	u, err := url.Parse(in.BaseURL)
-	if err != nil || u.Hostname() == "" || !(u.Scheme == "https" || u.Scheme == "http" && isLoopback(u.Hostname())) {
+	if err != nil || u.User != nil || u.Hostname() == "" || !(u.Scheme == "https" || u.Scheme == "http" && isLoopback(u.Hostname())) {
 		return errors.New("base URL must be https://, or http:// to a loopback address")
 	}
 	return nil
@@ -59,10 +59,7 @@ func (s *Service) scanModelService(r []any) (ModelService, error) {
 	if err := json.Unmarshal([]byte(store.Str(r[4])), &m.Models); err != nil {
 		return m, fmt.Errorf("stored models: %w", err)
 	}
-	k, err := keychainGet(s.modelKeyUser(m.ID))
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		return m, err
-	}
+	k, _ := keychainGet(s.modelKeyUser(m.ID)) // a keychain error is just "no key" here
 	m.HasKey = k != ""
 	return m, nil
 }
@@ -148,17 +145,27 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	if err := in.validate(); err != nil {
 		return ModelService{}, err
 	}
-	if _, err := s.modelServiceBy(ctx, "id = ?", id); err != nil {
+	s.modelMu.Lock()
+	defer s.modelMu.Unlock()
+	old, err := s.modelServiceBy(ctx, "id = ?", id)
+	if err != nil {
+		return ModelService{}, err
+	}
+	// Row first: a failure here (e.g. duplicate name) leaves the keychain alone.
+	if _, err := s.db.Execute(ctx, "UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1 WHERE id = ?",
+		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), id); err != nil {
 		return ModelService{}, err
 	}
 	if in.APIKey != "" {
 		if err := keychainSet(s.modelKeyUser(id), in.APIKey); err != nil {
+			uctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, derr := s.db.Execute(uctx, "UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = ? WHERE id = ?",
+				old.Name, old.Kind, old.BaseURL, modelsJSON(old.Models), old.Version, id); derr != nil {
+				err = errors.Join(err, derr)
+			}
 			return ModelService{}, fmt.Errorf("save API key to keychain: %w", err)
 		}
-	}
-	if _, err := s.db.Execute(ctx, "UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1 WHERE id = ?",
-		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), id); err != nil {
-		return ModelService{}, err
 	}
 	return s.modelServiceBy(ctx, "id = ?", id)
 }
@@ -197,7 +204,7 @@ func (s *Service) fetchModels(ctx context.Context, id int64) ([]string, error) {
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return nil, err
 	}
-	return ai.ListModels(ctx, m.Kind, m.BaseURL, key)
+	return ai.ListModels(ctx, s.modelHTTP, m.Kind, m.BaseURL, key)
 }
 
 // TestModelService checks the service answers. Task 3 makes it a real generation.

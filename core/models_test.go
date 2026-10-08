@@ -5,11 +5,15 @@ import (
 	"strconv"
 	"testing"
 
+	"errors"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 )
 
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
@@ -47,7 +51,8 @@ func TestModelServiceCRUD(t *testing.T) {
 	require.NoError(t, s.RemoveModelService(bg, ms.ID))
 	_, err = keyring.Get(keyringService, s.installID+"/model:"+itoa(ms.ID))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
-	list, _ = s.ListModelServices(bg)
+	list, err = s.ListModelServices(bg)
+	require.NoError(t, err)
 	assert.Empty(t, list)
 }
 
@@ -78,7 +83,9 @@ func TestFetchModelsBothKinds(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, []string{"alpha", "zeta"}, got)
 			assert.NoError(t, s.TestModelService(bg, ms.ID))
-			list, _ := s.ListModelServices(bg)
+			list, err := s.ListModelServices(bg)
+			require.NoError(t, err)
+			require.NotEmpty(t, list)
 			assert.Empty(t, list[0].Models, "FetchModels must not save")
 
 			bad, err := s.AddModelService(bg, ModelServiceInput{Name: "y", Kind: kind, BaseURL: srv.URL, APIKey: "wrong-key-123"})
@@ -115,6 +122,7 @@ func TestModelServiceValidation(t *testing.T) {
 		"ftp":          {Name: "a", Kind: "openai", BaseURL: "ftp://localhost"},
 		"no host":      {Name: "a", Kind: "openai", BaseURL: "https://"},
 		"anthropic no": {Name: "a", Kind: "anthropic", BaseURL: "http://example.org:80"},
+		"userinfo":     {Name: "a", Kind: "openai", BaseURL: "https://user:pw@a.com"},
 	} {
 		_, err := s.AddModelService(bg, in)
 		assert.Error(t, err, name)
@@ -161,4 +169,76 @@ func TestResolveModelErrors(t *testing.T) {
 	r, err = s.resolveModel(bg, "")
 	require.NoError(t, err)
 	assert.Equal(t, "m1", r.Model)
+}
+
+func TestUpdateFailureKeepsCredentials(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	in := ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "old", Models: []string{"m"}}
+	a, err := s.AddModelService(bg, in)
+	require.NoError(t, err)
+	in.Name = "b"
+	_, err = s.AddModelService(bg, in)
+	require.NoError(t, err)
+
+	// duplicate name: error, key and version untouched
+	dup := ModelServiceInput{Name: "b", Kind: "openai", BaseURL: "https://a.com", APIKey: "new"}
+	_, err = s.UpdateModelService(bg, a.ID, dup)
+	require.Error(t, err)
+	k, _ := keyring.Get(keyringService, s.modelKeyUser(a.ID))
+	assert.Equal(t, "old", k)
+	got, err := s.modelServiceBy(bg, "id = ?", a.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, got.Version)
+	assert.Equal(t, "a", got.Name)
+
+	// keychain write failure: row rolled back
+	setFor(t, &keyringSet, func(svc, user, pw string) error { return errors.New("boom") })
+	_, err = s.UpdateModelService(bg, a.ID, ModelServiceInput{Name: "c", Kind: "anthropic", BaseURL: "https://c.com", APIKey: "new", Models: []string{"z"}})
+	require.Error(t, err)
+	got, err = s.modelServiceBy(bg, "id = ?", a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, ModelService{ID: a.ID, Name: "a", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m"}, HasKey: true, Version: 1}, got)
+	k, _ = keyring.Get(keyringService, s.modelKeyUser(a.ID))
+	assert.Equal(t, "old", k)
+}
+
+func TestFetchModelsNoRedirectNoLeak(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = true
+	}))
+	t.Cleanup(other.Close)
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/models", http.StatusFound)
+	}))
+	t.Cleanup(redir.Close)
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "r", Kind: "openai", BaseURL: redir.URL, APIKey: "sekret-key"})
+	require.NoError(t, err)
+	_, err = s.FetchModels(bg, ms.ID)
+	require.Error(t, err)
+	assert.False(t, leaked, "redirect was followed")
+
+	// a server echoing the key into an invalid Location header
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "http://%zz/"+strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		w.WriteHeader(http.StatusFound)
+	}))
+	t.Cleanup(bad.Close)
+	ms, err = s.AddModelService(bg, ModelServiceInput{Name: "bad", Kind: "openai", BaseURL: bad.URL, APIKey: "sekret-key"})
+	require.NoError(t, err)
+	_, err = s.FetchModels(bg, ms.ID)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "sekret-key")
+}
+
+func TestListModelServicesSurvivesKeychainError(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	_, err := s.AddModelService(bg, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "k"})
+	require.NoError(t, err)
+	setFor(t, &keyringGet, func(svc, user string) (string, error) { return "", errors.New("locked") })
+	list, err := s.ListModelServices(bg)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.False(t, list[0].HasKey)
 }

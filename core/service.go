@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,6 +49,8 @@ type Service struct {
 	closed    bool
 
 	callsMu     sync.Mutex
+	modelMu     sync.Mutex         // serializes model-service updates (ponytail: global, per-id if contended)
+	modelHTTP   *http.Client       // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
