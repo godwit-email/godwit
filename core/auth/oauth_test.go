@@ -131,7 +131,7 @@ func TestFlowAccessDenied(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, cb.Status)
 	r := recv(t, ch)
 	require.Error(t, r.err)
-	assert.Contains(t, r.err.Error(), "access_denied")
+	require.ErrorIs(t, r.err, auth.ErrAccessDenied)
 	assert.Zero(t, srv.TokenRequests())
 	requirePortClosed(t, f)
 }
@@ -261,4 +261,52 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestTokenErrorsCarryNoSecrets(t *testing.T) {
+	srv := testoauth.Start(t)
+	cfg := srv.Config()
+	for _, c := range []struct {
+		status int
+		body   string
+	}{
+		{200, `{"access_token":"at","token_type":"Bearer","expires_in":"SECRET-expires"}`},
+		{400, `{"error":"weird_SECRET_code","error_description":"SECRET-description"}`},
+		{400, `{"error":"invalid_client","error_description":"SECRET-description"}`},
+		{500, `SECRET-not-json`},
+	} {
+		srv.RespondNext(c.status, c.body)
+		_, err := auth.Refresh(ctx, cfg, nil, "rt")
+		require.Error(t, err, c.body)
+		assert.NotContains(t, err.Error(), "SECRET", c.body)
+	}
+	c, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err := auth.Refresh(c, cfg, nil, "rt")
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestCallbackClosesWithoutWait(t *testing.T) {
+	srv := testoauth.Start(t)
+	f := startFlow(t, srv)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	requirePortClosed(t, f)
+	g, err := f.Wait(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "alice@example.com", g.Email)
+}
+
+func TestCallbackRejectsHEAD(t *testing.T) {
+	srv := testoauth.Start(t)
+	f := startFlow(t, srv)
+	ch := wait(ctx, f)
+	ru := redirectURI(t, f)
+	ru.RawQuery = url.Values{"state": {must(url.Parse(f.AuthURL())).Query().Get("state")}, "code": {"some-code"}}.Encode()
+	resp, err := http.Head(ru.String())
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+	assert.Zero(t, srv.TokenRequests())
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	require.NoError(t, recv(t, ch).err)
 }

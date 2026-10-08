@@ -10,3 +10,6 @@ var (
 	// ErrInvalidGrant: the token endpoint answered invalid_grant (revoked, expired or used).
 	ErrInvalidGrant = errors.New("oauth: the authorization is no longer valid")
 )
+
+// ErrAccessDenied: the user declined at the provider.
+var ErrAccessDenied = errors.New("oauth: access was denied at the provider")

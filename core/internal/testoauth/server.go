@@ -22,6 +22,11 @@ const ClientID = "godwit-test"
 
 type grant struct{ challenge, redirect, email string }
 
+type canned struct {
+	status int
+	body   string
+}
+
 // Server issues codes, tokens and unsigned id_tokens. Refresh tokens do not rotate
 // unless RotateRefresh(true).
 type Server struct {
@@ -30,6 +35,7 @@ type Server struct {
 	mu            sync.Mutex
 	email         string           // SetEmail override for id_tokens; "" = the signed-in email
 	deny          bool             // the user refuses consent
+	next          *canned          // RespondNext: the next token response
 	rotate        bool             // refreshes issue a new refresh token
 	codes         map[string]grant // code -> pending exchange
 	refresh       map[string]string
@@ -63,6 +69,14 @@ func (s *Server) SetEmail(email string) { s.mu.Lock(); s.email = email; s.mu.Unl
 
 // Deny makes the user refuse consent: the server redirects with error=access_denied.
 func (s *Server) Deny(deny bool) { s.mu.Lock(); s.deny = deny; s.mu.Unlock() }
+
+// RespondNext makes the token endpoint answer its next request with status and
+// a JSON body, whatever was asked.
+func (s *Server) RespondNext(status int, body string) {
+	s.mu.Lock()
+	s.next = &canned{status, body}
+	s.mu.Unlock()
+}
 
 // RotateRefresh makes each refresh replace the refresh token.
 func (s *Server) RotateRefresh(on bool) { s.mu.Lock(); s.rotate = on; s.mu.Unlock() }
@@ -177,6 +191,13 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tokenRequests++
+	if c := s.next; c != nil {
+		s.next = nil
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(c.status)
+		io.WriteString(w, c.body)
+		return
+	}
 	if r.ParseForm() != nil || r.PostForm.Get("client_id") != ClientID {
 		oauthError(w, "invalid_client")
 		return

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -46,8 +47,17 @@ func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) 
 	if s.flows == nil {
 		s.flows = map[string]*auth.Flow{}
 	}
-	s.flows[flowID] = f // ponytail: a flow never awaited or cancelled stays here (closed) until Close; prune if UIs abandon flows
+	s.flows[flowID] = f
 	s.oauthMu.Unlock()
+	// The flow closes itself at auth.FlowTimeout; forget it then too, so a result
+	// nobody awaits does not stay in memory. A pending AwaitOAuth gets ErrFlowExpired.
+	time.AfterFunc(auth.FlowTimeout, func() {
+		s.oauthMu.Lock()
+		if s.flows[flowID] == f {
+			delete(s.flows, flowID)
+		}
+		s.oauthMu.Unlock()
+	})
 	return flowID, f.AuthURL(), nil
 }
 
@@ -64,14 +74,23 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	f := s.flows[flowID]
 	s.oauthMu.Unlock()
 	if f == nil {
-		return "", fmt.Errorf("no sign-in flow %q", flowID)
+		return "", ErrUnknownFlow
 	}
 	g, err := f.Wait(ctx)
+	if afterOAuthWait != nil {
+		afterOAuthWait(flowID)
+	}
+	// Commit only while the flow is still ours: CancelOAuth, the expiry or another
+	// AwaitOAuth may have taken it while Wait returned.
 	s.oauthMu.Lock()
 	defer s.oauthMu.Unlock()
-	if s.flows[flowID] == f {
-		delete(s.flows, flowID)
+	if s.flows[flowID] != f {
+		if err == nil {
+			err = ErrUnknownFlow
+		}
+		return "", err
 	}
+	delete(s.flows, flowID)
 	if err != nil {
 		return "", err
 	}
@@ -120,3 +139,9 @@ func (s *Service) closeOAuth() {
 		f.Close()
 	}
 }
+
+// ErrUnknownFlow: no such flow ID, or it was already awaited, cancelled or expired.
+var ErrUnknownFlow = errors.New("no such sign-in flow")
+
+// afterOAuthWait is a test hook between a flow's Wait returning and AwaitOAuth committing its result.
+var afterOAuthWait func(flowID string)

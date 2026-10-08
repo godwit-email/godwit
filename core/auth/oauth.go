@@ -85,7 +85,7 @@ func StartFlow(cfg OAuthConfig, loginHint string, hc *http.Client) (*Flow, error
 	f.authURL = f.cfg.AuthCodeURL(f.state, opts...)
 	f.ctx, f.cancel = context.WithTimeout(context.Background(), FlowTimeout)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /callback", f.callback)
+	mux.HandleFunc("/callback", f.callback)
 	f.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	f.ln = ln
 	go f.srv.Serve(ln)
@@ -135,6 +135,11 @@ const (
 // callback answers the browser with a fixed page that echoes nothing. A request
 // without the flow's state is refused and the flow keeps waiting.
 func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet { // HEAD too: a prefetch must not spend the code
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	q := r.URL.Query()
 	if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(f.state)) != 1 || !f.claimed.CompareAndSwap(false, true) {
 		page(w, false)
@@ -143,6 +148,7 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 	g, err := f.exchange(q)
 	page(w, err == nil)
 	f.finish(g, err)
+	go f.Close() // release the port now, Wait or not; Close waits for this handler to return
 }
 
 func page(w http.ResponseWriter, ok bool) {
@@ -160,7 +166,11 @@ func page(w http.ResponseWriter, ok bool) {
 }
 
 func (f *Flow) exchange(q url.Values) (Grant, error) {
-	if e := q.Get("error"); e != "" {
+	switch e := q.Get("error"); e {
+	case "":
+	case "access_denied":
+		return Grant{}, ErrAccessDenied
+	default:
 		return Grant{}, fmt.Errorf("oauth: authorization refused: %s", errorCode(e))
 	}
 	code := q.Get("code")
@@ -228,23 +238,43 @@ func emailFromIDToken(idToken string) string {
 	return strings.ToLower(strings.TrimSpace(c.Email))
 }
 
-// tokenError drops the response body x/oauth2 puts in its errors: only the
-// OAuth error code survives.
+// tokenMessages are the fixed texts for token endpoint error codes. Nothing from
+// the response body reaches an error: it may echo the code, a token or the verifier.
+var tokenMessages = map[string]string{
+	"invalid_client":      "oauth: the token endpoint does not accept this client (invalid_client)",
+	"invalid_request":     "oauth: the token endpoint rejected the request (invalid_request)",
+	"unauthorized_client": "oauth: this client may not use this grant (unauthorized_client)",
+	"invalid_scope":       "oauth: the token endpoint rejected the scopes (invalid_scope)",
+}
+
+var errBadTokenResponse = errors.New("oauth: the token endpoint returned an invalid response")
+
+// tokenError maps x/oauth2's errors, which quote the response body, to fixed ones.
+// Context cancellation and deadlines still match with errors.Is.
 func tokenError(err error) error {
 	var re *oauth2.RetrieveError
-	if !errors.As(err, &re) {
-		return fmt.Errorf("oauth: token request failed: %w", err)
+	switch {
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("oauth: token request: %w", context.Canceled)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("oauth: token request: %w", context.DeadlineExceeded)
+	case errors.As(err, &re):
+		switch re.ErrorCode {
+		case "invalid_grant":
+			return ErrInvalidGrant
+		case "access_denied":
+			return ErrAccessDenied
+		}
+		if m, ok := tokenMessages[re.ErrorCode]; ok {
+			return errors.New(m)
+		}
+		return errBadTokenResponse
 	}
-	if re.ErrorCode == "invalid_grant" {
-		return ErrInvalidGrant
+	var ue *url.Error
+	if errors.As(err, &ue) { // transport failure: the request never got an answer
+		return errors.New("oauth: could not reach the token endpoint")
 	}
-	if re.ErrorCode != "" {
-		return fmt.Errorf("oauth: token endpoint refused: %s", errorCode(re.ErrorCode))
-	}
-	if re.Response != nil {
-		return fmt.Errorf("oauth: token endpoint answered HTTP %d", re.Response.StatusCode)
-	}
-	return errors.New("oauth: token endpoint refused the request")
+	return errBadTokenResponse
 }
 
 // errorCode keeps an OAuth error code printable and short: it comes from the network.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,7 +90,7 @@ func TestOAuthServiceFlow(t *testing.T) {
 	_, ok = s.takeGrant(id)
 	assert.False(t, ok, "a grant is taken once")
 	_, err = s.AwaitOAuth(context.Background(), id)
-	assert.Error(t, err, "the flow is gone once awaited")
+	assert.ErrorIs(t, err, ErrUnknownFlow, "the flow is gone once awaited")
 }
 
 func TestOAuthGrantDiscarded(t *testing.T) {
@@ -170,4 +171,54 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+func TestCancelBetweenWaitAndCommit(t *testing.T) {
+	s, srv := oauthEnv(t)
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	require.NoError(t, err)
+	setFor(t, &afterOAuthWait, func(string) { s.CancelOAuth(id) })
+	ch := await(s, id)
+	srv.Browse(t, authURL, "alice@outlook.com")
+	require.ErrorIs(t, recvAwait(t, ch).err, ErrUnknownFlow)
+	_, ok := s.takeGrant(id)
+	assert.False(t, ok, "a cancelled flow leaves no grant")
+}
+
+func TestConcurrentAwaitOneWins(t *testing.T) {
+	s, srv := oauthEnv(t)
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	require.NoError(t, err)
+	var both sync.WaitGroup
+	both.Add(2)
+	setFor(t, &afterOAuthWait, func(string) { both.Done(); both.Wait() }) // both Waits returned before either commits
+	a, b := await(s, id), await(s, id)
+	srv.Browse(t, authURL, "alice@outlook.com")
+	ra, rb := recvAwait(t, a), recvAwait(t, b)
+	if ra.err != nil {
+		ra, rb = rb, ra
+	}
+	require.NoError(t, ra.err)
+	assert.Equal(t, "alice@outlook.com", ra.email)
+	require.ErrorIs(t, rb.err, ErrUnknownFlow)
+	_, ok := s.takeGrant(id)
+	assert.True(t, ok)
+}
+
+func TestUnclaimedFlowPurged(t *testing.T) {
+	setFor(t, &auth.FlowTimeout, 300*time.Millisecond)
+	s, srv := oauthEnv(t)
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	require.NoError(t, err)
+	srv.Browse(t, authURL, "alice@outlook.com")
+	requireLoopbackClosed(t, authURL) // the callback was handled: no Wait needed
+	require.Eventually(t, func() bool {
+		s.oauthMu.Lock()
+		defer s.oauthMu.Unlock()
+		return len(s.flows) == 0
+	}, 3*time.Second, 10*time.Millisecond)
+	_, err = s.AwaitOAuth(context.Background(), id)
+	require.ErrorIs(t, err, ErrUnknownFlow)
+	_, ok := s.takeGrant(id)
+	assert.False(t, ok)
 }
