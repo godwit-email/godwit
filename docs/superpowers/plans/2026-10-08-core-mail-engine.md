@@ -121,7 +121,7 @@ Expected: FAIL（`store.Open` 未定义）
 
 | 表 | 列 |
 |---|---|
-| `accounts` | `id INTEGER PK`, `email TEXT NOT NULL UNIQUE`, `name`, `username`, `imap_host`, `imap_port INTEGER`, `imap_security`, `smtp_host`, `smtp_port INTEGER`, `smtp_security`, `created_at INTEGER` |
+| `accounts` | `id INTEGER PK`, `email TEXT NOT NULL UNIQUE`, `name`（发件人名称）, `alias`（侧栏显示名称）, `signature TEXT`, `is_default INTEGER DEFAULT 0`, `sync_limit INTEGER DEFAULT 2000`, `auth_type TEXT DEFAULT 'password'`, `status TEXT DEFAULT 'ok'`（`ok` / `reauth_required` / `error`）, `username`, `imap_host`, `imap_port INTEGER`, `imap_security`, `smtp_host`, `smtp_port INTEGER`, `smtp_security`, `created_at INTEGER` |
 | `folders` | `id INTEGER PK`, `account_id`（外键，级联删除）, `name TEXT`, `role TEXT NOT NULL DEFAULT ''`, `uidvalidity INTEGER`, `last_uid INTEGER DEFAULT 0`；`UNIQUE(account_id, name)` |
 | `messages` | `id INTEGER PK`, `folder_id`（外键，级联删除）, `uid INTEGER`（可空）, `message_id TEXT`, `subject`, `from_addr`, `to_addrs`, `date INTEGER`, `flags TEXT NOT NULL DEFAULT ''`（空格分隔）, `has_attachments INTEGER`, `snippet`, `raw_path TEXT`；`UNIQUE(folder_id, uid)`；索引 `(folder_id, date DESC, id DESC)` |
 | `messages_fts` | `fts5(subject, from_addr, body, tokenize='trigram')` |
@@ -303,8 +303,9 @@ git commit -m "feat(events): add fan-out event bus"
   - `type Options struct { DataDir string; AutoSync bool }`
   - `core.New(ctx context.Context, opts Options) (*Service, error)`；`(*Service).Close() error`；`(*Service).Subscribe() (<-chan events.Event, func())`
   - `type Security string`，取值 `SecurityTLS = "tls"`、`SecurityStartTLS = "starttls"`、`SecurityNone = "none"`
-  - `type AccountInput struct { Email, Name, Username, Password string; IMAPHost string; IMAPPort int; IMAPSecurity Security; SMTPHost string; SMTPPort int; SMTPSecurity Security }`
-  - `type Account struct`：同上字段，去掉 `Password`，加 `ID int64`
+  - `type AccountInput struct { Email, Name, Alias, Signature, Username, Password string; IsDefault bool; SyncLimit int; IMAPHost string; IMAPPort int; IMAPSecurity Security; SMTPHost string; SMTPPort int; SMTPSecurity Security }`（`SyncLimit` 为 0 时取 2000；第一个账户自动成为默认发件账户）
+  - `type Account struct`：同上字段，去掉 `Password`，加 `ID int64`、`AuthType string`、`Status string`
+  - 本计划只实现密码 / 授权码登录（`auth_type = 'password'`）。Outlook 所需的 OAuth（XOAUTH2）和 `Reauthorize` 放在后续的账户接入计划里；`status` 列现在就建好，IMAP 认证失败时置为 `reauth_required` 并发 `SyncFailed`。
   - `(*Service).TestAccount(ctx, in AccountInput) error`
   - `(*Service).AddAccount(ctx, in AccountInput) (Account, error)`：先校验并 `TestAccount`，通过后写库、把密码存进钥匙串（service 名 `godwit`，user 为 `account:<id>`）
   - `(*Service).ListAccounts(ctx) ([]Account, error)`；`(*Service).RemoveAccount(ctx, id int64) error`：同时删除钥匙串条目和该账户的 .eml 目录
@@ -404,7 +405,7 @@ Run: `go test ./core/ -run TestSync` → FAIL
 对每个文件夹：
 1. `LIST` 得到所有文件夹，`Role` 优先取 SPECIAL-USE 属性（`\Sent` 等），没有时按名字匹配（`INBOX`→inbox；`Sent`/`Sent Items`/`已发送`→sent；`Trash`/`Deleted Items`/`已删除`→trash；`Drafts`/`草稿`→drafts；`Junk`/`Spam`/`垃圾邮件`→junk；`Archive`/`归档`→archive）。服务器上已不存在的文件夹从本地删除。
 2. `SELECT` 后若 UIDVALIDITY 与库里不同：删除该文件夹的所有邮件行、FTS 条目、.eml 文件，`last_uid` 归零。
-3. `UID FETCH (last_uid+1):* (UID FLAGS BODY.PEEK[])`，每封：保存 `.eml` 到 `rawDir/<accountID>/<messageRowID>.eml`，`Parse`，在一个 `Transaction` 里插入 `messages` 和 `messages_fts`。首次同步只拉最近 2000 封（`ponytail:` 注释：更早的邮件按需加载以后再做）。
+3. `UID FETCH (last_uid+1):* (UID FLAGS BODY.PEEK[])`，每封：保存 `.eml` 到 `rawDir/<accountID>/<messageRowID>.eml`，`Parse`，在一个 `Transaction` 里插入 `messages` 和 `messages_fts`。首次同步只拉最近 `sync_limit` 封（默认 2000）（`ponytail:` 注释：更早的邮件按需加载以后再做）。
 4. `UID FETCH 1:last_uid (UID FLAGS)`：更新变化的 flags；本地有、服务器没返回的 UID 视为已 expunge 并删除（`ponytail:` 注释：CONDSTORE/QRESYNC 以后替换全量 FLAGS）。
 5. 有新邮件发 `MessageReceived`，有 flags 变化或删除发 `MessagesChanged`。
 
