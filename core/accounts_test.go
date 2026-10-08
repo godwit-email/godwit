@@ -1,0 +1,130 @@
+package core_test
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/godwitmail/godwit/core"
+	"github.com/godwitmail/godwit/core/internal/testmail"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
+)
+
+func hostPort(t *testing.T, addr string) (string, int) {
+	t.Helper()
+	i := strings.LastIndex(addr, ":")
+	p, err := strconv.Atoi(addr[i+1:])
+	require.NoError(t, err)
+	return addr[:i], p
+}
+
+func input(t *testing.T, imapAddr, smtpAddr, password string) core.AccountInput {
+	t.Helper()
+	ih, ip := hostPort(t, imapAddr)
+	sh, sp := hostPort(t, smtpAddr)
+	return core.AccountInput{
+		Email: "alice@example.com", Name: "Alice", Username: "alice", Password: password,
+		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone,
+		SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone,
+	}
+}
+
+func servers(t *testing.T) (*testmail.IMAP, string) {
+	t.Helper()
+	smtpAddr, _ := testmail.StartSMTP(t)
+	return testmail.StartIMAP(t), smtpAddr
+}
+
+func rowCount(t *testing.T, s *core.Service) int {
+	t.Helper()
+	a, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	return len(a)
+}
+
+func TestAddAccount(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	assert.NotZero(t, acc.ID)
+	assert.True(t, acc.IsDefault)
+	assert.Equal(t, 2000, acc.SyncLimit)
+	assert.Equal(t, "password", acc.AuthType)
+	assert.Equal(t, "ok", acc.Status)
+	pw, err := keyring.Get("godwit", "account:"+strconv.FormatInt(acc.ID, 10))
+	require.NoError(t, err)
+	assert.Equal(t, "secret", pw)
+
+	list, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, acc, list[0])
+
+	in2 := input(t, im.Addr, smtpAddr, "secret")
+	in2.Email = "second@example.com"
+	acc2, err := s.AddAccount(ctx, in2)
+	require.NoError(t, err)
+	assert.False(t, acc2.IsDefault)
+}
+
+func TestAddAccountWrongPassword(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	_, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "hunter2-wrong"))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "hunter2-wrong")
+	assert.Zero(t, rowCount(t, s))
+	_, err = keyring.Get("godwit", "account:1")
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+}
+
+func TestKeyringFailureRollsBack(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	keyring.MockInitWithError(errors.New("boom"))
+	t.Cleanup(keyring.MockInit)
+	_, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.ErrorContains(t, err, "boom")
+	assert.Zero(t, rowCount(t, s))
+}
+
+func TestPlaintextOnlyForLoopback(t *testing.T) {
+	s := newTestService(t)
+	in := input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.IMAPHost = "mail.example.com"
+	require.ErrorContains(t, s.TestAccount(ctx, in), "plaintext")
+	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.SMTPHost = "mail.example.com"
+	require.ErrorContains(t, s.TestAccount(ctx, in), "plaintext")
+	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.Email = "not-an-email"
+	require.Error(t, s.TestAccount(ctx, in))
+}
+
+func TestRemoveAccount(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s, err := core.New(ctx, core.Options{DataDir: dir})
+	require.NoError(t, err)
+	defer s.Close()
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	id := strconv.FormatInt(acc.ID, 10)
+	cache := filepath.Join(dir, "cache", id)
+	require.NoError(t, os.MkdirAll(cache, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(cache, "x"), []byte("x"), 0o600))
+
+	require.NoError(t, s.RemoveAccount(ctx, acc.ID))
+	assert.Zero(t, rowCount(t, s))
+	_, err = keyring.Get("godwit", "account:"+id)
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+	_, err = os.Stat(cache)
+	assert.True(t, os.IsNotExist(err))
+}
