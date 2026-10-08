@@ -27,8 +27,8 @@ type Server struct {
 }
 
 // Turn is one scripted model response. Status != 0 answers with that HTTP error
-// (its body echoes the key the request carried). Hang streams the first text
-// chunk, then waits for Release or the client to go away.
+// (its body echoes the key the request carried). Hang streams the text,
+// then waits for Release or the client to go away.
 type Turn struct {
 	Text   []string
 	Calls  []Call
@@ -196,14 +196,11 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 		return "data: " + js(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m",
 			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
 	}
-	if t.Hang && len(t.Text) == 0 && !hang() {
-		return
-	}
-	for i, txt := range t.Text {
+	for _, txt := range t.Text {
 		send(chunk(map[string]any{"role": "assistant", "content": txt}, nil))
-		if i == 0 && t.Hang && !hang() {
-			return
-		}
+	}
+	if t.Hang && !hang() {
+		return
 	}
 	for i, c := range t.Calls {
 		send(chunk(map[string]any{"tool_calls": []any{map[string]any{"index": i, "id": c.ID, "type": "function",
@@ -223,18 +220,15 @@ func anthropicStream(send func(...string), t Turn, hang func() bool) {
 	}
 	send(ev("message_start", map[string]any{"message": map[string]any{"id": "m1", "type": "message", "role": "assistant", "model": "claude",
 		"content": []any{}, "stop_reason": nil, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1}}}))
-	if t.Hang && len(t.Text) == 0 && !hang() {
-		return
-	}
 	idx := 0
-	for i, txt := range t.Text {
+	for _, txt := range t.Text {
 		send(ev("content_block_start", map[string]any{"index": idx, "content_block": map[string]any{"type": "text", "text": ""}}),
 			ev("content_block_delta", map[string]any{"index": idx, "delta": map[string]any{"type": "text_delta", "text": txt}}),
 			ev("content_block_stop", map[string]any{"index": idx}))
 		idx++
-		if i == 0 && t.Hang && !hang() {
-			return
-		}
+	}
+	if t.Hang && !hang() {
+		return
 	}
 	for _, c := range t.Calls {
 		send(ev("content_block_start", map[string]any{"index": idx, "content_block": map[string]any{"type": "tool_use", "id": c.ID, "name": c.Name, "input": map[string]any{}}}),

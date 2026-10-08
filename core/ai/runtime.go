@@ -10,9 +10,11 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing/fstest"
+	"time"
 
 	ant "github.com/anthropics/anthropic-sdk-go/option"
 	gai "github.com/firebase/genkit/go/ai"
@@ -169,7 +171,8 @@ func (e *Engine) instance(m ResolvedModel) (in *instance, err error) {
 // error; wait returns the Result once the run has ended, even if nobody reads
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
-	r := &runner{e: e, ctx: ctx, ch: make(chan Event, 64)}
+	// One slot more than the events use: the terminal event always fits.
+	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey}
 	done := make(chan struct{})
 	var res Result
 	go func() {
@@ -187,10 +190,13 @@ func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Res
 	return r.ch, func() Result { <-done; return res }
 }
 
+const eventBuffer = 64
+
 type runner struct {
 	e   *Engine
 	ctx context.Context
 	ch  chan Event
+	key string
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
@@ -198,37 +204,45 @@ type runner struct {
 
 // send drops events after the last one: a tool Genkit abandoned after a failed
 // round may still be running.
+// Events leave the last buffer slot free, waiting for the reader or ctx.
 func (r *runner) send(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// ponytail: polls while the reader lags; a wake-up channel if it matters
+	for !r.ended && len(r.ch) >= eventBuffer {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	if !r.ended {
-		r.sendLocked(ev)
+		r.ch <- ev // sends are serialized and readers only make room
 	}
 }
 
+// finish sends the terminal event into the reserved slot and closes the stream.
 func (r *runner) finish(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.sendLocked(ev)
+	r.ch <- ev
 	r.ended = true
 	close(r.ch)
 }
 
-func (r *runner) sendLocked(ev Event) {
-	select {
-	case r.ch <- ev:
-		return
-	default:
+// redact replaces every known key in s.
+func (r *runner) redact(s string) string {
+	for _, k := range append(r.e.allSecrets(), r.key) {
+		if k != "" {
+			s = strings.ReplaceAll(s, k, "[redacted]")
+		}
 	}
-	select {
-	case r.ch <- ev:
-	case <-r.ctx.Done():
-	}
+	return s
 }
 
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
-		return Result{State: req.State, Err: &Error{Code: CodeInternal, Msg: err.Error()}}
+		return Result{State: req.State, Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 	}
 	seen := map[string]bool{}
 	for _, s := range req.Tools {
@@ -276,7 +290,7 @@ func (r *runner) run(req Request) Result {
 		opts = append(opts, gai.WithPrompt(req.Prompt))
 	}
 	if len(req.Responses) > 0 {
-		parts, err := respond(history, tools, req.Responses)
+		parts, err := respond(history, tools, req.Responses, r.redact)
 		if err != nil {
 			return fail(err)
 		}
@@ -293,7 +307,8 @@ func (r *runner) run(req Request) Result {
 	}
 	var msgs []*gai.Message
 	for _, m := range resp.History() {
-		if m.Role != gai.RoleSystem { // the system prompt comes with each Request
+		// The system prompt comes with each Request; an empty reply carries nothing.
+		if m.Role != gai.RoleSystem && len(m.Content) > 0 {
 			msgs = append(msgs, m)
 		}
 	}
@@ -327,10 +342,30 @@ type callIDs struct{}
 func (callIDs) Name() string { return "godwit_call_ids" }
 
 func (callIDs) New(context.Context) (*gai.Hooks, error) {
-	return &gai.Hooks{WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
-		return next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
-	}}, nil
+	return &gai.Hooks{
+		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
+			return next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
+		},
+		// Results bind to call IDs, so a turn that repeats one is unusable.
+		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {
+			resp, err := next(ctx, p)
+			if err == nil && resp.Message != nil {
+				seen := map[string]bool{}
+				for _, part := range resp.Message.Content {
+					if part != nil && part.IsToolRequest() && part.ToolRequest != nil && part.ToolRequest.Ref != "" {
+						if seen[part.ToolRequest.Ref] {
+							return nil, errDuplicateCallID
+						}
+						seen[part.ToolRequest.Ref] = true
+					}
+				}
+			}
+			return resp, err
+		},
+	}, nil
 }
+
+var errDuplicateCallID = errors.New("ai: the model repeated a tool call ID")
 
 // tool is a dynamic tool for one run; Genkit registers it in a throwaway child
 // registry. A tool error goes back to the model as {"error": ...}.
@@ -349,7 +384,7 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 		out, err := s.Run(tc, args)
 		res := ToolResult{CallID: id, Name: s.Name}
 		if err != nil {
-			res.Error = err.Error()
+			res.Error = r.redact(err.Error())
 			out = map[string]any{"error": res.Error}
 		} else {
 			res.Output = rawJSON(out)
@@ -363,17 +398,22 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 }
 
 // respond answers the interrupted calls of history's last message.
-func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any], results []ToolResult) ([]*gai.Part, error) {
+func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any], results []ToolResult, redact func(string) string) ([]*gai.Part, error) {
+	calls, byID, err := matchResults(history, results)
+	if err != nil {
+		return nil, err
+	}
 	var parts []*gai.Part
-	for _, res := range results {
-		p := pendingCall(history, res.CallID)
-		if p == nil {
-			return nil, fmt.Errorf("ai: no pending tool call %q", res.CallID)
+	for _, p := range calls {
+		res, open := byID[p.ToolRequest.Ref]
+		if !open {
+			continue // ran before the interrupt; Genkit replays its result
 		}
 		t := tools[p.ToolRequest.Name]
 		if t == nil {
 			return nil, fmt.Errorf("ai: tool %q is not offered to this run", p.ToolRequest.Name)
 		}
+		res.Error = redact(res.Error)
 		out, err := resultOutput(res)
 		if err != nil {
 			return nil, err
@@ -383,16 +423,48 @@ func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any],
 	return parts, nil
 }
 
-func pendingCall(history []*gai.Message, id string) *gai.Part {
-	if len(history) == 0 {
-		return nil
+// matchResults returns the tool calls of history's last message, and results
+// keyed by call ID once they answer the open calls (no pendingOutput) one to
+// one by ID and name.
+func matchResults(history []*gai.Message, results []ToolResult) ([]*gai.Part, map[string]ToolResult, error) {
+	if len(history) == 0 || history[len(history)-1].Role != gai.RoleModel {
+		return nil, nil, errors.New("ai: no open tool calls")
 	}
+	open := map[string]string{} // ID -> tool name
+	var calls []*gai.Part
 	for _, p := range history[len(history)-1].Content {
-		if p.IsToolRequest() && p.ToolRequest.Ref == id {
-			return p
+		if !p.IsToolRequest() {
+			continue
+		}
+		calls = append(calls, p)
+		if _, ran := p.Metadata["pendingOutput"]; !ran {
+			if _, dup := open[p.ToolRequest.Ref]; dup {
+				return nil, nil, fmt.Errorf("ai: tool call ID %q is repeated", p.ToolRequest.Ref)
+			}
+			open[p.ToolRequest.Ref] = p.ToolRequest.Name
 		}
 	}
-	return nil
+	if len(open) == 0 {
+		return nil, nil, errors.New("ai: no open tool calls")
+	}
+	byID := map[string]ToolResult{}
+	for _, r := range results {
+		name, ok := open[r.CallID]
+		switch {
+		case !ok:
+			return nil, nil, fmt.Errorf("ai: no open tool call %q", r.CallID)
+		case r.Name != name:
+			return nil, nil, fmt.Errorf("ai: result for %q names tool %q, the call is to %q", r.CallID, r.Name, name)
+		}
+		if _, dup := byID[r.CallID]; dup {
+			return nil, nil, fmt.Errorf("ai: more than one result for %q", r.CallID)
+		}
+		byID[r.CallID] = r
+	}
+	if len(byID) != len(open) {
+		return nil, nil, errors.New("ai: every open tool call needs exactly one result")
+	}
+	return calls, byID, nil
 }
 
 func resultOutput(res ToolResult) (any, error) {
@@ -409,32 +481,23 @@ func resultOutput(res ToolResult) (any, error) {
 }
 
 // CloseState answers every open call of state's last message, without asking
-// the model: calls that already ran keep their result, the rest take one from
-// responses. A cancelled run uses it so the conversation can go on.
+// the model: calls that already ran keep their result, the others take theirs
+// from responses, which must match them one to one by ID and name. A cancelled
+// run uses it so the conversation can go on.
 func CloseState(state []byte, responses []ToolResult) ([]byte, error) {
 	history, err := decodeState(state)
 	if err != nil {
 		return nil, err
 	}
-	if len(history) == 0 || history[len(history)-1].Role != gai.RoleModel {
-		return nil, errors.New("ai: no open tool calls")
-	}
-	byID := map[string]ToolResult{}
-	for _, r := range responses {
-		byID[r.CallID] = r
+	calls, byID, err := matchResults(history, responses)
+	if err != nil {
+		return nil, err
 	}
 	toolMsg := &gai.Message{Role: gai.RoleTool}
-	for _, p := range history[len(history)-1].Content {
-		if !p.IsToolRequest() {
-			continue
-		}
-		out, ok := p.Metadata["pendingOutput"]
-		if !ok {
-			res, found := byID[p.ToolRequest.Ref]
-			if !found {
-				return nil, fmt.Errorf("ai: tool call %q has no result", p.ToolRequest.Ref)
-			}
-			if out, err = resultOutput(res); err != nil {
+	for _, p := range calls {
+		out, ran := p.Metadata["pendingOutput"]
+		if !ran {
+			if out, err = resultOutput(byID[p.ToolRequest.Ref]); err != nil {
 				return nil, err
 			}
 		}
@@ -443,9 +506,6 @@ func CloseState(state []byte, responses []ToolResult) ([]byte, error) {
 		}
 		toolMsg.Content = append(toolMsg.Content, gai.NewResponseForToolRequest(p, out))
 	}
-	if len(toolMsg.Content) == 0 {
-		return nil, errors.New("ai: no open tool calls")
-	}
 	return json.Marshal(append(history, toolMsg))
 }
 
@@ -453,9 +513,23 @@ func decodeState(state []byte) ([]*gai.Message, error) {
 	if len(state) == 0 {
 		return nil, nil
 	}
+	bad := errors.New("ai: unreadable conversation state")
 	var msgs []*gai.Message
 	if err := json.Unmarshal(state, &msgs); err != nil {
-		return nil, errors.New("ai: unreadable conversation state")
+		return nil, bad
+	}
+	for _, m := range msgs {
+		if m == nil || len(m.Content) == 0 || (m.Role != gai.RoleUser && m.Role != gai.RoleModel && m.Role != gai.RoleTool) {
+			return nil, bad
+		}
+		for _, p := range m.Content {
+			switch {
+			case p == nil,
+				p.IsToolRequest() && (p.ToolRequest == nil || p.ToolRequest.Name == "" || p.ToolRequest.Ref == ""),
+				p.IsToolResponse() && (p.ToolResponse == nil || p.ToolResponse.Name == "" || p.ToolResponse.Ref == ""):
+				return nil, bad
+			}
+		}
 	}
 	return msgs, nil
 }
@@ -494,6 +568,9 @@ func display(msgs []*gai.Message) []Message {
 // classify turns a Genkit error into an Error whose message never carries the
 // key or a request or response body.
 func classify(ctx context.Context, err error) *Error {
+	if errors.Is(err, errDuplicateCallID) {
+		return &Error{CodeBadResponse, "the model repeated a tool call ID"}
+	}
 	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 		return &Error{CodeCanceled, "the run was cancelled"}
 	}

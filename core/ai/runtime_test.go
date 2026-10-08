@@ -103,7 +103,7 @@ func TestRunStreamsText(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Text: []string{"Hel", "lo"}})
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), System: "be brief", Prompt: "hi there"})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", Prompt: "hi there"})
 		require.Nil(t, res.Err)
 		var text strings.Builder
 		for _, ev := range kindsOf(evs, "text") {
@@ -122,7 +122,7 @@ func TestRunStreamsText(t *testing.T) {
 
 		// the state continues the conversation, with one system prompt
 		srv.Script(testllm.Turn{Text: []string{"again"}})
-		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), System: "be brief", State: res.State, Prompt: "more"})
+		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", State: res.State, Prompt: "more"})
 		require.Nil(t, res2.Err)
 		reqs = srv.Requests()
 		assert.Contains(t, string(reqs[1].Messages), "hi there")
@@ -153,7 +153,7 @@ func TestRunToolLoop(t *testing.T) {
 				return nil, errors.New("disk on fire")
 			}},
 		}
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), Prompt: "find x", Tools: tools})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "find x", Tools: tools})
 		require.Nil(t, res.Err)
 		args, _ := gotArgs.Load().(string)
 		assert.JSONEq(t, `{"q":"x"}`, args)
@@ -200,7 +200,7 @@ func TestRunMixedInterrupt(t *testing.T) {
 			{ID: "a2", Name: "write", Args: `{"n":2}`},
 		}}, testllm.Turn{Text: []string{"all done"}})
 		var readRuns atomic.Int64
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), Prompt: "go", Tools: mixedTools(&readRuns)})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: mixedTools(&readRuns)})
 		require.Nil(t, res.Err)
 		assert.EqualValues(t, 1, readRuns.Load())
 		end := last(t, evs)
@@ -216,8 +216,8 @@ func TestRunMixedInterrupt(t *testing.T) {
 		// a restart: the state goes through JSON and a fresh engine
 		var stored json.RawMessage
 		require.NoError(t, json.Unmarshal(must(json.Marshal(json.RawMessage(res.State))), &stored))
-		evs, res = run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), State: stored, Tools: mixedTools(&readRuns),
-			Responses: []ToolResult{{CallID: "a1", Output: json.RawMessage(`{"draft":7}`)}, {CallID: "a2", Error: "user rejected"}}})
+		evs, res = run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: stored, Tools: mixedTools(&readRuns),
+			Responses: []ToolResult{{CallID: "a1", Name: "write", Output: json.RawMessage(`{"draft":7}`)}, {CallID: "a2", Name: "write", Error: "user rejected"}}})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
 		assert.EqualValues(t, 1, readRuns.Load(), "the read tool must not run again")
@@ -244,7 +244,7 @@ func TestRunCancelMidStream(t *testing.T) {
 		srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		events, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "k"), Prompt: "x"})
+		events, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x"})
 		var evs []Event
 		for ev := range events {
 			evs = append(evs, ev)
@@ -266,7 +266,7 @@ func TestRunConsumerGone(t *testing.T) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
 		ctx, cancel := context.WithCancel(context.Background())
-		_, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "k"), Prompt: "x"})
+		_, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x"})
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 		done := make(chan Result)
@@ -343,14 +343,14 @@ func TestRunIgnoresEnv(t *testing.T) {
 func TestEngineLifecycle(t *testing.T) {
 	srv := testllm.Start(t, "openai")
 	warm := newEngine(t) // one-time global setup is not a leak
-	run(warm, Request{Model: modelFor(srv, "openai", "k"), Prompt: "x"})
+	run(warm, Request{Model: modelFor(srv, "openai", "test-key-1"), Prompt: "x"})
 	warm.Close()
 	time.Sleep(50 * time.Millisecond)
 	base := runtime.NumGoroutine()
 
 	e, err := NewEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	require.NoError(t, err)
-	m := modelFor(srv, "openai", "k")
+	m := modelFor(srv, "openai", "test-key-1")
 	for range 100 {
 		_, res := run(e, Request{Model: m, Prompt: "x"})
 		require.Nil(t, res.Err)
@@ -408,16 +408,16 @@ func TestCloseState(t *testing.T) {
 		}}, testllm.Turn{Text: []string{"fine"}})
 		var readRuns atomic.Int64
 		tools := mixedTools(&readRuns)
-		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), Prompt: "go", Tools: tools})
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: tools})
 		require.Len(t, res.Interrupts, 2)
 
-		_, err := CloseState(res.State, []ToolResult{{CallID: "a1", Error: "cancelled"}})
+		_, err := CloseState(res.State, []ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}})
 		assert.Error(t, err, "every pending call needs a result")
-		closed, err := CloseState(res.State, []ToolResult{{CallID: "a1", Error: "cancelled"}, {CallID: "a2", Output: json.RawMessage(`"skipped"`)}})
+		closed, err := CloseState(res.State, []ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}, {CallID: "a2", Name: "write", Output: json.RawMessage(`"skipped"`)}})
 		require.NoError(t, err)
 		assert.Len(t, srv.Requests(), 1, "CloseState sends nothing")
 
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), State: closed, Prompt: "next", Tools: tools})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: closed, Prompt: "next", Tools: tools})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
 		reqs := srv.Requests()
@@ -439,10 +439,140 @@ func TestDuplicateToolNames(t *testing.T) {
 		"bad name":  {{Name: "has space", Run: noop}},
 		"too long":  {{Name: strings.Repeat("a", 65), Run: noop}},
 	} {
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), Prompt: "x", Tools: tools})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), Prompt: "x", Tools: tools})
 		require.NotNil(t, res.Err, name)
 		assert.Equal(t, CodeInternal, res.Err.Code, name)
 		assert.Equal(t, "error", last(t, evs).Kind, name)
+	}
+	assert.Empty(t, srv.Requests())
+}
+
+func TestTerminalEventAlwaysDelivered(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		var texts []string
+		for i := range 100 {
+			texts = append(texts, fmt.Sprintf("t%d ", i))
+		}
+		srv.Script(testllm.Turn{Text: texts, Hang: true})
+		ctx, cancel := context.WithCancel(context.Background())
+		events, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x"})
+		time.Sleep(300 * time.Millisecond) // nobody reads; the buffer fills
+		cancel()
+		done := make(chan Result)
+		go func() { done <- wait() }()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("wait blocked")
+		}
+		var evs []Event
+		for ev := range events {
+			evs = append(evs, ev)
+		}
+		terminal := 0
+		for _, ev := range evs {
+			if ev.Kind == "done" || ev.Kind == "interrupted" || ev.Kind == "error" {
+				terminal++
+			}
+		}
+		assert.Equal(t, 1, terminal)
+		assert.Equal(t, "error", last(t, evs).Kind)
+		assert.GreaterOrEqual(t, len(evs), 64)
+	})
+}
+
+func TestToolErrorRedacted(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "leaky"}}}, testllm.Turn{Text: []string{"ok"}})
+		tools := []ToolSpec{{Name: "leaky", Run: func(context.Context, json.RawMessage) (any, error) {
+			return nil, errors.New("auth failed for sekret-key-5")
+		}}}
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "sekret-key-5"), Prompt: "x", Tools: tools})
+		require.Nil(t, res.Err)
+		rs := kindsOf(evs, "tool_result")
+		require.Len(t, rs, 1)
+		assert.Equal(t, "auth failed for [redacted]", rs[0].Result.Error)
+		assert.NotContains(t, fmt.Sprint(evs), "sekret-key-5")
+		assert.NotContains(t, string(res.State), "sekret-key-5")
+		reqs := srv.Requests()
+		require.Len(t, reqs, 2)
+		assert.NotContains(t, string(reqs[1].Messages), "sekret-key-5")
+		assert.Contains(t, string(reqs[1].Messages), "[redacted]")
+	})
+}
+
+func TestDuplicateCallIDs(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "d", Name: "read"}, {ID: "d", Name: "write"}}})
+		var readRuns atomic.Int64
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeBadResponse, res.Err.Code)
+		assert.Equal(t, "error", last(t, evs).Kind)
+		assert.Zero(t, readRuns.Load())
+		assert.Empty(t, kindsOf(evs, "tool_call"))
+	})
+}
+
+func TestResponsesMatchOneToOne(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write"}, {ID: "a2", Name: "write"}}})
+		var readRuns atomic.Int64
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+		require.Len(t, res.Interrupts, 2)
+		ok := func(id string) ToolResult { return ToolResult{CallID: id, Name: "write", Output: json.RawMessage(`1`)} }
+		for name, resps := range map[string][]ToolResult{
+			"missing":       {ok("a1")},
+			"extra":         {ok("a1"), ok("a2"), ok("zz")},
+			"duplicate":     {ok("a1"), ok("a1"), ok("a2")},
+			"name mismatch": {ok("a1"), {CallID: "a2", Name: "read", Output: json.RawMessage(`1`)}},
+			"no name":       {ok("a1"), {CallID: "a2", Output: json.RawMessage(`1`)}},
+			"already ran":   {ok("a1"), ok("a2"), {CallID: "r1", Name: "read", Output: json.RawMessage(`1`)}},
+		} {
+			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Tools: mixedTools(&readRuns), Responses: resps})
+			require.NotNil(t, r.Err, name)
+			assert.Equal(t, CodeInternal, r.Err.Code, name)
+			assert.Equal(t, "error", last(t, evs).Kind, name)
+			_, err := CloseState(res.State, resps)
+			assert.Error(t, err, name)
+		}
+		assert.Len(t, srv.Requests(), 1)
+		_, err := CloseState(res.State, []ToolResult{ok("a1"), ok("a2")})
+		assert.NoError(t, err)
+	})
+}
+
+func TestMalformedState(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	var readRuns atomic.Int64
+	for _, st := range []string{
+		`[null]`,
+		`[{"role":"user"}]`,
+		`[{"role":"user","content":[]}]`,
+		`[{"role":"model","content":[null]}]`,
+		`[{"role":"model","content":[{"toolRequest":{}}]}]`,
+		`[{"role":"model","content":[{"toolRequest":{"name":"write"}}]}]`,
+		`[{"role":"model","content":[{"toolRequest":{"ref":"a1"}}]}]`,
+		`[{"role":"tool","content":[{"toolResponse":{}}]}]`,
+		`[{"role":"robot","content":[{"text":"hi"}]}]`,
+		`{"not":"a list"}`,
+	} {
+		assert.NotPanics(t, func() {
+			_, err := decodeState([]byte(st))
+			assert.Error(t, err, st)
+			_, err = CloseState([]byte(st), []ToolResult{{CallID: "a1", Name: "write"}})
+			assert.Error(t, err, st)
+			_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), State: []byte(st), Prompt: "x"})
+			require.NotNil(t, res.Err, st)
+			assert.Equal(t, CodeInternal, res.Err.Code, st)
+			_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), State: []byte(st), Tools: mixedTools(&readRuns),
+				Responses: []ToolResult{{CallID: "a1", Name: "write"}}})
+			require.NotNil(t, res.Err, st)
+		}, st)
 	}
 	assert.Empty(t, srv.Requests())
 }
