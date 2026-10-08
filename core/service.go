@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -49,8 +50,10 @@ type Service struct {
 	closed    bool
 
 	callsMu     sync.Mutex
-	modelMu     sync.Mutex         // serializes model-service updates (ponytail: global, per-id if contended)
-	modelHTTP   *http.Client       // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
+	modelMu     sync.Mutex   // serializes model-service updates (ponytail: global, per-id if contended)
+	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
+	aiMu        sync.Mutex
+	ai          *ai.Engine         // created on first use; see aiEngine
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
@@ -114,6 +117,11 @@ func (s *Service) Close() error {
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
 		s.closeOAuth()
+		s.aiMu.Lock()
+		if s.ai != nil {
+			s.ai.Close() // every call using it has ended
+		}
+		s.aiMu.Unlock()
 		s.workersMu.Lock()
 		s.closed = true
 		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping

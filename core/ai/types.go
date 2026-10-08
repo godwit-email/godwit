@@ -2,6 +2,8 @@
 package ai
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -21,4 +23,85 @@ func ParseModelRef(s string) (ModelRef, error) {
 type ResolvedModel struct {
 	ServiceID, Version           int64
 	Kind, BaseURL, Model, APIKey string
+}
+
+// Message is a conversation message for display; it is never used to resume.
+type Message struct {
+	Role    string // user, model or tool
+	Text    string
+	Calls   []ToolCall
+	Results []ToolResult
+}
+
+type ToolCall struct {
+	ID, Name string
+	Args     json.RawMessage
+}
+
+type ToolResult struct {
+	CallID, Name string
+	Output       json.RawMessage
+	Error        string
+}
+
+// ToolSpec is a tool offered to the model for one Run. A NeedsApproval tool's
+// Run is never called: its calls interrupt the run instead.
+type ToolSpec struct {
+	Name, Description     string
+	Schema                map[string]any
+	Strict, NeedsApproval bool
+	Run                   func(ctx context.Context, args json.RawMessage) (any, error)
+}
+
+type Code string
+
+const (
+	CodeCanceled     Code = "canceled"
+	CodeUnauthorized Code = "unauthorized"
+	CodeRateLimited  Code = "rate_limited"
+	CodeUnavailable  Code = "unavailable"
+	CodeBadResponse  Code = "bad_response"
+	CodeInternal     Code = "internal"
+)
+
+// Error is a run failure. Msg never holds a key or a request or response body.
+type Error struct {
+	Code Code
+	Msg  string
+}
+
+func (e *Error) Error() string { return e.Msg }
+
+// Is makes errors.Is(err, context.Canceled) hold for a canceled run.
+func (e *Error) Is(target error) bool { return e.Code == CodeCanceled && target == context.Canceled }
+
+// Event kinds: text, tool_call, tool_result, interrupted (every call of the round
+// awaiting approval, in call order), done, error. Exactly one of the last three
+// ends the stream.
+type Event struct {
+	Kind       string
+	Text       string
+	Call       *ToolCall
+	Result     *ToolResult
+	Interrupts []ToolCall
+	Err        *Error
+}
+
+// Request is one run. State is the previous run's opaque state (empty = new
+// conversation); Responses answer the calls that interrupted it.
+type Request struct {
+	Model     ResolvedModel
+	System    string
+	State     []byte
+	Prompt    string
+	Tools     []ToolSpec
+	Responses []ToolResult
+	MaxTurns  int
+}
+
+type Result struct {
+	State      []byte
+	Messages   []Message
+	Interrupts []ToolCall
+	Err        *Error
 }

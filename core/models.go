@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -167,6 +168,7 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 			return ModelService{}, fmt.Errorf("save API key to keychain: %w", err)
 		}
 	}
+	s.forgetModel(id)
 	// The write is done: a cancelled ctx must not turn it into an error.
 	return s.modelServiceBy(context.WithoutCancel(ctx), "id = ?", id)
 }
@@ -180,6 +182,7 @@ func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
 	if _, err := s.db.Execute(ctx, "DELETE FROM model_services WHERE id = ?", id); err != nil {
 		return err
 	}
+	s.forgetModel(id)
 	if err := keychainDelete(s.modelKeyUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return err
 	}
@@ -197,26 +200,86 @@ func (s *Service) FetchModels(ctx context.Context, id int64) ([]string, error) {
 }
 
 func (s *Service) fetchModels(ctx context.Context, id int64) ([]string, error) {
-	m, err := s.modelServiceBy(ctx, "id = ?", id)
+	m, key, err := s.modelServiceKey(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	key, err := keychainGet(s.modelKeyUser(id))
-	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 		return nil, err
 	}
 	return ai.ListModels(ctx, s.modelHTTP, m.Kind, m.BaseURL, key)
 }
 
-// TestModelService checks the service answers. Task 3 makes it a real generation.
+func (s *Service) modelServiceKey(ctx context.Context, id int64) (ModelService, string, error) {
+	m, err := s.modelServiceBy(ctx, "id = ?", id)
+	if err != nil {
+		return m, "", err
+	}
+	key, err := keychainGet(s.modelKeyUser(id))
+	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return m, "", err
+	}
+	return m, key, nil
+}
+
+// TestModelService runs the shortest real generation on the service's first
+// saved model, or the first one it lists when none is saved.
 func (s *Service) TestModelService(ctx context.Context, id int64) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	_, err = s.fetchModels(ctx, id)
-	return err
+	m, key, err := s.modelServiceKey(ctx, id)
+	if err != nil {
+		return err
+	}
+	models := m.Models
+	if len(models) == 0 {
+		if models, err = ai.ListModels(ctx, s.modelHTTP, m.Kind, m.BaseURL, key); err != nil {
+			return err
+		}
+		if len(models) == 0 {
+			return fmt.Errorf("%w: the service lists no models", ErrModelNotFound)
+		}
+	}
+	e, err := s.aiEngine()
+	if err != nil {
+		return err
+	}
+	events, wait := e.Run(ctx, ai.Request{
+		Model:    ai.ResolvedModel{ServiceID: m.ID, Version: m.Version, Kind: m.Kind, BaseURL: m.BaseURL, Model: models[0], APIKey: key},
+		Prompt:   "Reply with OK.",
+		MaxTurns: 1,
+	})
+	for range events {
+	}
+	if r := wait(); r.Err != nil {
+		return r.Err
+	}
+	return nil
+}
+
+// aiEngine creates the engine on first use, so GENKIT_ENV=dev fails only AI
+// calls. The engine redacts every key it is handed from Genkit's logs; no other
+// secret reaches Genkit.
+func (s *Service) aiEngine() (*ai.Engine, error) {
+	s.aiMu.Lock()
+	defer s.aiMu.Unlock()
+	if s.ai == nil {
+		e, err := ai.NewEngine(slog.Default(), nil)
+		if err != nil {
+			return nil, err
+		}
+		s.ai = e
+	}
+	return s.ai, nil
+}
+
+// forgetModel drops the service's Genkit instance after a change or removal.
+func (s *Service) forgetModel(id int64) {
+	s.aiMu.Lock()
+	defer s.aiMu.Unlock()
+	if s.ai != nil {
+		s.ai.Forget(id)
+	}
 }
 
 // resolveModel resolves override, or Settings.DefaultModel when empty.

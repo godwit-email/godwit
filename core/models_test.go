@@ -261,3 +261,22 @@ func TestUpdateSurvivesCancelDuringKeyWrite(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new", k)
 }
+
+func TestModelServiceTestGenerates(t *testing.T) {
+	for _, kind := range []string{"openai", "anthropic"} {
+		t.Run(kind, func(t *testing.T) {
+			s, bg := modelSvc(t), context.Background()
+			srv := testllm.Start(t, kind)
+			ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: kind, BaseURL: srv.URL, APIKey: "sekret-key-7", Models: []string{"m1"}})
+			require.NoError(t, err)
+			require.NoError(t, s.TestModelService(bg, ms.ID))
+			reqs := srv.Requests()
+			require.Len(t, reqs, 1, "a real generation")
+
+			srv.Script(testllm.Turn{Status: 401})
+			err = s.TestModelService(bg, ms.ID)
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "sekret-key-7")
+		})
+	}
+}
