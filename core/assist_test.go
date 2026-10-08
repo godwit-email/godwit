@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -312,7 +314,12 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.Contains(t, sys, "Target language: the language of the email this draft replies to")
 	p := promptOf(t, reqs[0])
 	assert.Contains(t, p, "我周五到。")
-	assert.Contains(t, p, "Meet on Friday at the harbour.")
+	// Final review #4: a skill gets its target only, no other mail.
+	for _, other := range []string{"Meet on Friday at the harbour.", "Plans"} {
+		assert.NotContains(t, p, other)
+		assert.NotContains(t, sys, other)
+	}
+	assert.NotContains(t, p, "<untrusted_email source")
 
 	e.accept(t, a)
 	ed, q2, sig2 := parts(t, e.getDraft(t, d.ID).HTML)
@@ -612,4 +619,28 @@ func TestAssistConversationOnce(t *testing.T) {
 		wg.Wait()
 		assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM conversations WHERE kind = 'assist' AND draft_id = ?", d.ID))
 	}
+}
+
+// Final review #5: adding or removing an attachment changes the draft's
+// revision, so a proposal made before it is stale.
+func TestAttachmentChangeStalesProposal(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Hello.</p>")
+	src := filepath.Join(t.TempDir(), "invoice.pdf")
+	require.NoError(t, os.WriteFile(src, []byte("%PDF"), 0o600))
+
+	a := e.propose(t, d.ID, "<p>Please find the invoice attached.</p>").Approvals[0]
+	att, err := e.s.AddAttachment(t.Context(), d.ID, src)
+	require.NoError(t, err)
+	assert.Greater(t, e.getDraft(t, d.ID).Revision, d.Revision)
+	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), a.ID, true), ErrStaleDraft)
+	ap, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "stale", ap.State)
+	e.waitRunOf(t, a.RunID, "done")
+
+	b := e.propose(t, d.ID, "<p>Invoice attached.</p>").Approvals[0]
+	require.NoError(t, e.s.RemoveAttachment(t.Context(), d.ID, att.ID))
+	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), b.ID, true), ErrStaleDraft)
+	assert.Contains(t, e.getDraft(t, d.ID).HTML, "Hello.", "the draft is untouched")
 }

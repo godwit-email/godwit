@@ -316,6 +316,10 @@ func TestSendValidates(t *testing.T) {
 	check()
 
 	require.NoError(t, e.s.RemoveAttachment(bg, d.ID, a1.ID))
+	_, err = e.s.SaveDraft(bg, d)
+	require.ErrorIs(t, err, ErrStaleDraft, "an attachment change is a new revision")
+	d, err = e.s.GetDraft(bg, d.ID)
+	require.NoError(t, err)
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
 	assert.Len(t, d.Attachments, 1)

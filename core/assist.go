@@ -530,8 +530,8 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
-// translate-draft) on the draft, or on sel of it if the skill runs on
-// selections. The skill has no tools, as every skill: the host turns its
+// translate-draft) on the draft's editable part, or on sel of it if the skill
+// runs on selections; the model sees that and nothing else. The skill has no tools, as every skill: the host turns its
 // output into an update_draft proposal in the draft's assist conversation,
 // which the user decides like any other (an empty draft's is applied at
 // once). The conversation's history is left as it is. The channel streams
@@ -618,12 +618,10 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if err != nil {
 		return nil, err
 	}
-	var prompt string
+	// A skill reads only its target (spec 5.1): no mail, not even the one replied to.
+	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
 	if sel != nil {
 		prompt = "<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>"
-	} else if prompt, job.cited, err = s.assistContext(ctx, job.scope, d); err != nil {
-		s.untrack(job)
-		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
 	}
 	job.host = func(ctx context.Context, res ai.Result) ai.Result {
 		out := ""

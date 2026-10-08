@@ -29,7 +29,8 @@ type Draft struct {
 	ReplyTo, Subject, HTML string
 	Attachments            []DraftAttachment
 	UpdatedAt              time.Time
-	// Revision grows by one on every update. SaveDraft with a non-zero Revision
+	// Revision grows by one on every update, an attachment added or removed
+	// included (refetch it after one). SaveDraft with a non-zero Revision
 	// fails with ErrStaleDraft unless it is still the stored one.
 	Revision int64
 }
@@ -272,12 +273,12 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	r, err := s.db.Execute(ctx, "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
-		draftID, filename, contentType, len(data))
+	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
+		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(draftID)})
 	if err != nil {
 		return DraftAttachment{}, err
 	}
-	id := r.LastInsertID
+	id := rs[0].LastInsertID
 	path := filepath.Join(s.draftDir(draftID), strconv.FormatInt(id, 10))
 	err = store.WriteFileAtomic(path, data)
 	if err == nil {
@@ -285,10 +286,17 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 	}
 	if err != nil {
 		os.Remove(path)
-		_, derr := s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM draft_attachments WHERE id = ?", id)
+		_, derr := s.db.Transaction(context.WithoutCancel(ctx), []sqlite.Statement{
+			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(draftID)})
 		return DraftAttachment{}, errors.Join(err, derr)
 	}
 	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, nil
+}
+
+// bumpRevision marks the draft changed: an attachment change makes the
+// proposals and saves bound to its old revision stale, as a body change does.
+func bumpRevision(draftID int64) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ? WHERE id = ?", Args: []any{time.Now().Unix(), draftID}}
 }
 
 // RemoveAttachment deletes the attachment from the draft and its file.
@@ -302,7 +310,8 @@ func (s *Service) RemoveAttachment(ctx context.Context, draftID, attachmentID in
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
-	if _, err := s.db.Execute(ctx, "DELETE FROM draft_attachments WHERE id = ?", attachmentID); err != nil {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
 		return err
 	}
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {

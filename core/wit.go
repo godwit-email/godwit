@@ -351,7 +351,9 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	var b strings.Builder
 	b.WriteString("Not created yet. Write the draft in the language of the recipient's past emails to the user. " +
 		"Subjects of their latest emails, as language clues:\n")
-	for _, it := range s.subjectContext(job.scope, from) {
+	items := s.subjectContext(job.scope, from)
+	cite(ctx, items)
+	for _, it := range items {
 		b.WriteString(it.Block + "\n")
 	}
 	b.WriteString("Call create_draft again with the body in that language.")
