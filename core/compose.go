@@ -185,7 +185,8 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 	return out, nil
 }
 
-// GetDraft returns the draft with its attachments.
+// GetDraft returns the draft with its attachments. HTML is sanitized again on
+// read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
 		subject, body_html, updated_at FROM drafts WHERE id = ?`, id)
@@ -198,7 +199,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: store.Str(r[8]), UpdatedAt: time.Unix(store.Int(r[9]), 0)}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0)}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
 	if err != nil {
 		return Draft{}, err

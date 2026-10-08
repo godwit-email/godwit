@@ -123,9 +123,12 @@ type call struct {
 	done      chan struct{}
 }
 
-// begin registers an explicit call on accountID. Its context also ends when the
-// Service closes or the account is removed, which then wait for end; end must
-// be called once the call has recorded its outcome.
+type callKey struct{}
+
+// begin registers an explicit call on accountID (0 until bind names it) before it
+// touches the database or network. Its context also ends when the Service closes
+// or the account is removed, which then wait for end; end must be called once
+// the call has recorded its outcome.
 func (s *Service) begin(ctx context.Context, accountID int64) (context.Context, func(), error) {
 	s.callsMu.Lock()
 	defer s.callsMu.Unlock()
@@ -137,6 +140,7 @@ func (s *Service) begin(ctx context.Context, accountID int64) (context.Context, 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	c := &call{accountID: accountID, cancel: cancel, done: make(chan struct{})}
+	ctx = context.WithValue(ctx, callKey{}, c)
 	if s.calls == nil {
 		s.calls = map[*call]struct{}{}
 	}
@@ -148,6 +152,18 @@ func (s *Service) begin(ctx context.Context, accountID int64) (context.Context, 
 		s.callsMu.Unlock()
 		close(c.done)
 	}, nil
+}
+
+// bind ties the call begun with ctx to accountID once the call has read it, so
+// removing that account stops it.
+func (s *Service) bind(ctx context.Context, accountID int64) error {
+	s.callsMu.Lock()
+	defer s.callsMu.Unlock()
+	if s.removing[accountID] {
+		return fmt.Errorf("account %d is being removed", accountID)
+	}
+	ctx.Value(callKey{}).(*call).accountID = accountID
+	return nil
 }
 
 // stopCalls cancels the calls whose account matches and waits for them to end.
@@ -294,8 +310,8 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	}
 	// The credentials work: clear reauth_required as it is now, not as it was read
 	// above, since another login may have failed meanwhile. A parked worker resumes.
-	// A refusal by SMTP stays until an SMTP login succeeds (checkSMTP).
-	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok' WHERE id = ? AND status = 'reauth_required' AND smtp_reauth = 0", accountID)
+	// SMTP's refusal (smtp_reauth) is separate and stays until checkSMTP clears it.
+	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok' WHERE id = ? AND status = 'reauth_required'", accountID)
 	if err != nil {
 		c.Close()
 		return nil, nil, nil, err
@@ -318,8 +334,8 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
-	smtpErr := s.checkSMTP(ctx, accountID, explicit)
-	if smtpErr == nil {
+	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
+	if useSMTP {
 		smtpErr = s.processOutbox(ctx, c, accountID)
 		if smtpErr != nil && !errors.Is(smtpErr, conn.ErrAuthFailed) {
 			return smtpErr
@@ -338,31 +354,28 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	return smtpErr
 }
 
-// checkSMTP returns nil when the outbox may use SMTP. After SMTP refused the
-// password only an explicit SyncNow tries it again, with one login; success
-// clears reauth_required (IMAP has just logged in too) and resumes the worker.
-func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool) error {
+// checkSMTP reports whether the outbox may use SMTP. After SMTP refused the
+// password the outbox pauses: a worker sync skips it without logging in, and an
+// explicit SyncNow tries one SMTP login, which on success clears smtp_reauth.
+func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool) (bool, error) {
 	rows, err := s.db.Query(ctx, "SELECT smtp_reauth FROM accounts WHERE id = ?", accountID)
 	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][0]) == 0 {
-		return err
+		return err == nil, err
 	}
 	if !explicit {
-		return fmt.Errorf("smtp: %w", conn.ErrAuthFailed)
+		return false, nil
 	}
 	ep, _, err := s.smtpEndpoint(ctx, accountID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	sc, err := conn.DialSMTP(ctx, ep)
 	if err != nil {
-		return err
+		return false, err
 	}
 	sc.Close()
-	if _, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok', smtp_reauth = 0 WHERE id = ?", accountID); err != nil {
-		return err
-	}
-	s.wakeWorker(accountID)
-	return nil
+	_, err = s.db.Execute(ctx, "UPDATE accounts SET smtp_reauth = 0 WHERE id = ?", accountID)
+	return err == nil, err
 }
 
 // pushOps pushes queued local changes. Ops that became conflict or failed are

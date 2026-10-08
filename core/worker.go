@@ -8,6 +8,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwitmail/godwit/core/events"
 	"github.com/godwitmail/godwit/core/mailsync"
+	"github.com/godwitmail/godwit/core/store"
 )
 
 // Background sync timing; tests lower the backoff.
@@ -114,14 +115,15 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	}
 }
 
-// awaitCredentials parks the worker while the account is reauth_required, so it
+// awaitCredentials parks the worker while IMAP refuses the password (status
+// reauth_required; SMTP refusing it only pauses the outbox), so it
 // makes no login attempts. SyncNow wakes it afterwards (a LOGIN that succeeds
 // clears the status); so does any local change, which only re-reads the status. It reports
 // false when ctx ends.
 func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan struct{}) bool {
 	for {
-		acc, err := s.account(ctx, id)
-		if err != nil || acc.Status != "reauth_required" {
+		r, err := s.db.Query(ctx, "SELECT status FROM accounts WHERE id = ?", id) // IMAP's; SMTP's never parks
+		if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) != "reauth_required" {
 			return ctx.Err() == nil // on a read error the round reports it
 		}
 		if onParked != nil {

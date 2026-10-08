@@ -468,14 +468,17 @@ func (e *sendEnv) sendBlocked(t *testing.T) <-chan error {
 	return done
 }
 
-// returned reports SyncNow's result if it has returned already.
+// returned waits briefly for SyncNow's result. The call's work ended before the
+// shutdown returned (the registry waits for it); only handing the result back to
+// this goroutine may still be pending. A SyncNow still blocked in SMTP never
+// returns here, because the server is held until the test ends.
 func returned(t *testing.T, done <-chan error) error {
 	t.Helper()
 	select {
 	case err := <-done:
 		return err
-	default:
-		t.Fatal("returned while an explicit SyncNow was still running")
+	case <-time.After(2 * time.Second):
+		t.Fatal("the explicit SyncNow was not stopped")
 		return nil
 	}
 }
@@ -499,4 +502,58 @@ func TestCloseWaitsForExplicitSync(t *testing.T) {
 	r := e.rows(t, "SELECT state, last_error FROM outbox")
 	assert.Equal(t, "send_uncertain", store.Str(r[0][0]))
 	assert.NotEmpty(t, store.Str(r[0][1]), "the sync recorded its result before the database closed")
+}
+
+// Every explicit call refuses to run after Close.
+func TestExplicitCallsAfterClose(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", withAttachments("c@x", "hi", 1))
+	e.sync(t)
+	mid := e.idOf(t, "c@x")
+	att := store.Int(e.rows(t, "SELECT id FROM attachments")[0][0])
+	in := internalInput(t, e.im.Addr, "127.0.0.1:1", "x@example.com", false)
+	require.NoError(t, e.s.Close())
+	_, _, err := e.s.GetAttachment(bg, att)
+	assert.ErrorIs(t, err, ErrClosed, "GetAttachment")
+	_, err = e.s.GetRawMessage(bg, mid)
+	assert.ErrorIs(t, err, ErrClosed, "GetRawMessage")
+	assert.ErrorIs(t, e.s.ResolveOutbox(bg, 1, "discard"), ErrClosed, "ResolveOutbox")
+	assert.ErrorIs(t, e.s.TestAccount(bg, in), ErrClosed, "TestAccount")
+	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), ErrClosed, "SyncNow")
+}
+
+// Drafts are sanitized on read too (rows written before sanitizing on save),
+// and saving what was read changes nothing.
+func TestDraftReadSanitizedAndStable(t *testing.T) {
+	e := newSendEnv(t, false)
+	_, err := e.s.db.Execute(bg, `INSERT INTO drafts(account_id, mode, to_addrs, cc_addrs, bcc_addrs, subject, body_html, updated_at)
+		VALUES (?, 'new', '[]', '[]', '[]', 'old', ?, 0)`, e.acc.ID, `<p onclick="x()">hi</p><script>alert(1)</script><img src="https://t.example/p.png">`)
+	require.NoError(t, err)
+	list, err := e.s.ListDrafts(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	got, err := e.s.GetDraft(bg, list[0].ID)
+	require.NoError(t, err)
+	for _, h := range []string{list[0].HTML, got.HTML} {
+		for _, bad := range []string{"<script", "onclick", "t.example"} {
+			assert.NotContains(t, h, bad)
+		}
+		assert.Contains(t, h, "hi")
+	}
+
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.HTML = `<div style="color: red; font-size: 14px"><b>bold</b> <a href="https://example.com/a?b=1&amp;c=2">link</a> &lt;tag&gt; 中文</div>` +
+		`<table><tr><td colspan="2">cell</td></tr></table><blockquote><p>quoted</p></blockquote>`
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	first := d.HTML
+	for range 3 {
+		d, err = e.s.GetDraft(bg, d.ID)
+		require.NoError(t, err)
+		assert.Equal(t, first, d.HTML, "load is stable")
+		d, err = e.s.SaveDraft(bg, d)
+		require.NoError(t, err)
+		assert.Equal(t, first, d.HTML, "save of a loaded draft is stable")
+	}
 }

@@ -49,18 +49,41 @@ type Attachment struct {
 
 // FormatAddress renders a display name and address as one header address that
 // net/mail parses back to the same parts. The name stays readable UTF-8 and is
-// quoted (with \ and " escaped) unless it is a plain run of words.
+// quoted (with \ and " escaped) unless it is a plain run of words; so is a local
+// part that is not a dot-atom ("a b"@example.com).
 func FormatAddress(name, addr string) string {
+	if at := strings.LastIndexByte(addr, '@'); at > 0 && !dotAtom(addr[:at]) {
+		addr = quote(addr[:at]) + addr[at:]
+	}
 	if name = strings.TrimSpace(name); name == "" {
 		return addr
 	}
 	plain := !strings.Contains(name, "  ") && !strings.ContainsFunc(name, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune(" !#$%&'*+-/=?^_`{|}~", r)
+		return r != ' ' && !atext(r)
 	})
 	if !plain {
-		name = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name) + `"`
+		name = quote(name)
 	}
 	return name + " <" + addr + ">"
+}
+
+// atext reports whether r may appear in an RFC 5322 atom (UTF-8 letters allowed).
+func atext(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("!#$%&'*+-/=?^_`{|}~", r)
+}
+
+// dotAtom reports whether s is atoms joined by single dots.
+func dotAtom(s string) bool {
+	for a := range strings.SplitSeq(s, ".") {
+		if a == "" || strings.ContainsFunc(a, func(r rune) bool { return !atext(r) }) {
+			return false
+		}
+	}
+	return true
+}
+
+func quote(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
 func fmtAddr(a *gomail.Address) string { return FormatAddress(a.Name, a.Address) }

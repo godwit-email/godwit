@@ -25,6 +25,7 @@ type AccountInput struct {
 }
 
 // Account is a stored account. The password lives only in the system keychain.
+// Status is ok, or reauth_required when the IMAP or SMTP server refuses it.
 type Account struct {
 	ID                                      int64
 	Email, Name, Alias, Signature, Username string

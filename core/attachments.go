@@ -81,15 +81,18 @@ func (s *Service) cached(ctx context.Context, a attRow) (string, bool, error) {
 
 // GetAttachment returns the attachment's cached file, downloading it first if needed.
 func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string, AttachmentInfo, error) {
-	a, err := s.loadAttachment(ctx, attachmentID)
-	if err != nil {
-		return "", AttachmentInfo{}, err
-	}
-	ctx, end, err := s.begin(ctx, a.accountID)
+	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
 	defer end()
+	a, err := s.loadAttachment(ctx, attachmentID)
+	if err != nil {
+		return "", AttachmentInfo{}, err
+	}
+	if err := s.bind(ctx, a.accountID); err != nil {
+		return "", AttachmentInfo{}, err
+	}
 	if p, ok, err := s.cached(ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
@@ -139,6 +142,11 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 // GetRawMessage downloads the message's full original from the server, for a
 // Truncated message or for saving. Messages over MaxMessageBytes give ErrTooLarge.
 func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
 	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return nil, err
@@ -146,11 +154,9 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if len(rows.Values) == 0 {
 		return nil, fmt.Errorf("message %d not found", messageID)
 	}
-	ctx, end, err := s.begin(ctx, store.Int(rows.Values[0][0]))
-	if err != nil {
+	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
 		return nil, err
 	}
-	defer end()
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0]))
 	if err != nil {
 		return nil, err

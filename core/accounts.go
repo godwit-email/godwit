@@ -90,6 +90,11 @@ func (in AccountInput) username() string {
 
 // TestAccount validates in and checks that both servers accept the credentials.
 func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
 	if err := in.validate(); err != nil {
 		return err
 	}
@@ -177,7 +182,7 @@ func b2i(b bool) int {
 }
 
 const accountCols = `id, email, name, alias, signature, username, is_default, sync_limit, auth_type, status,
-	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security`
+	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth`
 
 func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts WHERE id = ?", id)
@@ -191,13 +196,17 @@ func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 }
 
 func scanAccount(r []any) Account {
-	return Account{
+	a := Account{
 		ID: store.Int(r[0]), Email: store.Str(r[1]), Name: store.Str(r[2]), Alias: store.Str(r[3]),
 		Signature: store.Str(r[4]), Username: store.Str(r[5]), IsDefault: store.Int(r[6]) == 1,
 		SyncLimit: int(store.Int(r[7])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 	}
+	if store.Int(r[16]) != 0 { // SMTP refuses the password: the user is asked for it the same way
+		a.Status = "reauth_required"
+	}
+	return a
 }
 
 // ListAccounts returns all accounts in creation order.

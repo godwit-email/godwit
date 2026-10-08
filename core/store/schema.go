@@ -113,7 +113,7 @@ var Migrations = [][]string{{
 }, {
 	`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 }, {
-	// 1 while status is reauth_required because SMTP refused the password: an
-	// IMAP login does not clear that, only an SMTP login does.
+	// 1 while SMTP refuses the password: the outbox pauses (IMAP sync goes on)
+	// until an SMTP login on an explicit SyncNow succeeds. status is IMAP's.
 	`ALTER TABLE accounts ADD COLUMN smtp_reauth INTEGER NOT NULL DEFAULT 0`,
 }}

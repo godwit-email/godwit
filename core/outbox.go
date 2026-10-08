@@ -57,6 +57,11 @@ func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem
 // confirm_sent treats it as sent (it is archived next), resend queues it again
 // and discard drops it.
 func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
 	rows, err := s.db.Query(ctx, "SELECT account_id, raw_path FROM outbox WHERE id = ?", id)
 	if err != nil {
 		return err
@@ -64,11 +69,9 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("outbox item %d not found", id)
 	}
-	ctx, end, err := s.begin(ctx, store.Int(rows.Values[0][0]))
-	if err != nil {
+	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
 		return err
 	}
-	defer end()
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0])) // never while a sync is handling the item
 	if err != nil {
 		return err
@@ -124,8 +127,8 @@ type outboxRow struct {
 // Sent folder over c. Every state change is written before the network action it
 // guards, and a message whose submission may have succeeded is never sent again
 // automatically. Network failures are recorded on the items; database errors are
-// returned, and so is a refused SMTP login, which stops the round and sets the
-// account reauth_required.
+// returned, and so is a refused SMTP login, which stops the round and pauses the
+// account's outbox (smtp_reauth).
 func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
 	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state FROM outbox
 		WHERE account_id = ? AND state IN ('queued', 'sent', 'send_uncertain', 'archive_uncertain') ORDER BY id`, accountID)
@@ -173,8 +176,8 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
 			if errors.Is(err, conn.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
-				// account waits for new credentials instead of trying each item.
-				_, derr := s.db.Execute(wctx, "UPDATE accounts SET status = 'reauth_required', smtp_reauth = 1 WHERE id = ?", accountID)
+				// outbox waits for new credentials instead of trying each item.
+				_, derr := s.db.Execute(wctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", accountID)
 				return errors.Join(err, derr)
 			}
 			if err != nil {

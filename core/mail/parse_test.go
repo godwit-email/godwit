@@ -200,3 +200,16 @@ func TestParseQuotesDisplayNames(t *testing.T) {
 	assert.Equal(t, `"Doe, Jane" <jane@example.com>`, p.From)
 	assert.Equal(t, "plain@x", p.To[1])
 }
+
+func TestFormatAddressQuotesLocalPart(t *testing.T) {
+	for _, addr := range []string{"a b@example.com", `we"ird@example.com`, "x..y@example.com", ".a@example.com", "plain.dot+tag@example.com"} {
+		for _, name := range []string{"", "Name"} {
+			s := mail.FormatAddress(name, addr)
+			a, err := netmail.ParseAddress(s)
+			require.NoError(t, err, s)
+			assert.Equal(t, addr, a.Address, s)
+		}
+	}
+	assert.Equal(t, `"a b"@example.com`, mail.FormatAddress("", "a b@example.com"))
+	assert.Equal(t, "plain.dot+tag@example.com", mail.FormatAddress("", "plain.dot+tag@example.com"))
+}
