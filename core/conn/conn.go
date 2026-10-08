@@ -4,11 +4,13 @@ package conn
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
@@ -25,6 +27,10 @@ const (
 
 const timeout = 30 * time.Second
 
+// ErrAuthFailed means the server rejected the credentials. Server text is never
+// included, because servers may echo the submitted password.
+var ErrAuthFailed = errors.New("authentication failed")
+
 // Endpoint describes one server and the credentials to use on it.
 type Endpoint struct {
 	Host               string
@@ -35,78 +41,117 @@ type Endpoint struct {
 
 func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
 
-func (e Endpoint) dialer(ctx context.Context) (*net.Dialer, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+// open dials e and returns the raw connection plus a bound context. Everything
+// until the returned release func runs (dial, TLS, greeting, auth) is limited to
+// 30 seconds or ctx, whichever ends first; cancellation closes the connection.
+func (e Endpoint) open(ctx context.Context, implicitTLS bool) (nc net.Conn, ctx2 context.Context, release func(), err error) {
+	ctx2, cancel := context.WithTimeout(ctx, timeout)
+	fail := func(err error) (net.Conn, context.Context, func(), error) {
+		cancel()
+		return nil, nil, nil, err
 	}
-	d := &net.Dialer{Timeout: timeout}
-	// ponytail: ctx only bounds the dial, not the login exchange; the 30s read/write deadlines do.
-	if dl, ok := ctx.Deadline(); ok {
-		d.Deadline = dl
+	nc, err = (&net.Dialer{}).DialContext(ctx2, "tcp", e.addr())
+	if err != nil {
+		return fail(err)
 	}
-	return d, nil
+	dl, _ := ctx2.Deadline()
+	nc.SetDeadline(dl)
+	stop := context.AfterFunc(ctx2, func() { nc.Close() })
+	if implicitTLS {
+		tc := tls.Client(nc, &tls.Config{ServerName: e.Host})
+		if err := tc.HandshakeContext(ctx2); err != nil {
+			stop()
+			nc.Close()
+			return fail(err)
+		}
+		nc = tc
+	}
+	return nc, ctx2, func() {
+		stop()
+		nc.SetDeadline(time.Time{})
+		cancel()
+	}, nil
+}
+
+// ctxErr prefers the context's error over the "use of closed connection" it caused.
+func ctxErr(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // DialIMAP connects to e and logs in.
 func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
-	d, err := e.dialer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	opts := &imapclient.Options{Dialer: d, TLSConfig: &tls.Config{ServerName: e.Host}}
-	var c *imapclient.Client
-	switch e.Security {
-	case TLS:
-		c, err = imapclient.DialTLS(e.addr(), opts)
-	case StartTLS:
-		c, err = imapclient.DialStartTLS(e.addr(), opts)
-	case None:
-		c, err = imapclient.DialInsecure(e.addr(), opts)
-	default:
-		return nil, fmt.Errorf("conn: unknown security %q", e.Security)
-	}
+	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
 	}
-	if err := c.Login(e.Username, e.Password).Wait(); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("imap login: %w", err)
+	opts := &imapclient.Options{TLSConfig: &tls.Config{ServerName: e.Host}}
+	var c *imapclient.Client
+	switch e.Security {
+	case TLS, None:
+		c = imapclient.New(nc, opts)
+		err = c.WaitGreeting()
+	case StartTLS:
+		c, err = imapclient.NewStartTLS(nc, opts)
+	default:
+		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
+	if err == nil {
+		err = c.Login(e.Username, e.Password).Wait()
+		if err != nil {
+			var ie *imap.Error
+			if errors.As(err, &ie) {
+				err = fmt.Errorf("imap: %w", ErrAuthFailed)
+			} else {
+				err = fmt.Errorf("imap login: %w", ctxErr(cctx, err))
+			}
+		}
+	} else {
+		err = fmt.Errorf("imap connect %s: %w", e.addr(), ctxErr(cctx, err))
+	}
+	if err != nil {
+		nc.Close()
+		release()
+		return nil, err
+	}
+	release()
 	return c, nil
 }
 
 // DialSMTP connects to e and authenticates with PLAIN.
 func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
-	d, err := e.dialer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	cfg := &tls.Config{ServerName: e.Host}
-	var c *smtp.Client
-	switch e.Security {
-	case TLS:
-		var nc net.Conn
-		if nc, err = (&tls.Dialer{NetDialer: d, Config: cfg}).DialContext(ctx, "tcp", e.addr()); err == nil {
-			c = smtp.NewClient(nc)
-		}
-	case StartTLS, None:
-		var nc net.Conn
-		if nc, err = d.DialContext(ctx, "tcp", e.addr()); err == nil {
-			if e.Security == StartTLS {
-				c, err = smtp.NewClientStartTLS(nc, cfg)
-			} else {
-				c = smtp.NewClient(nc)
-			}
-		}
-	default:
-		return nil, fmt.Errorf("conn: unknown security %q", e.Security)
-	}
+	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, fmt.Errorf("smtp connect %s: %w", e.addr(), err)
 	}
-	if err := c.Auth(sasl.NewPlainClient("", e.Username, e.Password)); err != nil {
-		c.Close()
-		return nil, fmt.Errorf("smtp auth: %w", err)
+	var c *smtp.Client
+	switch e.Security {
+	case TLS, None:
+		c = smtp.NewClient(nc)
+	case StartTLS:
+		c, err = smtp.NewClientStartTLS(nc, &tls.Config{ServerName: e.Host})
+	default:
+		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
+	if err == nil {
+		if err = c.Auth(sasl.NewPlainClient("", e.Username, e.Password)); err != nil {
+			var se *smtp.SMTPError
+			if errors.As(err, &se) {
+				err = fmt.Errorf("smtp: %w", ErrAuthFailed)
+			} else {
+				err = fmt.Errorf("smtp auth: %w", ctxErr(cctx, err))
+			}
+		}
+	} else {
+		err = fmt.Errorf("smtp connect %s: %w", e.addr(), ctxErr(cctx, err))
+	}
+	if err != nil {
+		nc.Close()
+		release()
+		return nil, err
+	}
+	release()
 	return c, nil
 }

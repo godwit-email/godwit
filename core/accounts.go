@@ -21,6 +21,8 @@ const (
 	defaultSyncLim = 2000
 )
 
+var keyringSet = keyring.Set // replaced in tests
+
 func keyringUser(id int64) string { return "account:" + strconv.FormatInt(id, 10) }
 
 func isLoopback(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
@@ -96,6 +98,16 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	isDefault := in.IsDefault || store.Int(rows.Values[0][0]) == 0
+	var prevDefault int64
+	if isDefault {
+		prev, err := s.db.Query(ctx, "SELECT id FROM accounts WHERE is_default = 1 LIMIT 1")
+		if err != nil {
+			return Account{}, err
+		}
+		if len(prev.Values) > 0 {
+			prevDefault = store.Int(prev.Values[0][0])
+		}
+	}
 
 	var stmts []sqlite.Statement
 	if isDefault {
@@ -113,8 +125,16 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	id := res[len(res)-1].LastInsertID
-	if err := keyring.Set(keyringService, keyringUser(id), in.Password); err != nil {
-		if _, derr := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); derr != nil {
+	if err := keyringSet(keyringService, keyringUser(id), in.Password); err != nil {
+		// Compensate on a fresh context: the caller's may already be cancelled, and a
+		// row without credentials must not survive.
+		undo := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
+		if prevDefault != 0 {
+			undo = append(undo, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 1 WHERE id = ?", Args: []any{prevDefault}})
+		}
+		uctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, derr := s.db.Transaction(uctx, undo); derr != nil {
 			err = errors.Join(err, derr)
 		}
 		return Account{}, fmt.Errorf("save password to keychain: %w", err)

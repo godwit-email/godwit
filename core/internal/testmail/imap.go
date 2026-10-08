@@ -20,7 +20,7 @@ type Option func(*config)
 // WithoutMove removes MOVE from the advertised capabilities.
 func WithoutMove() Option { return func(c *config) { c.move = false } }
 
-// WithoutUIDPlus removes UIDPLUS and strips COPYUID/APPENDUID response codes
+// WithoutUIDPlus removes UIDPLUS and suppresses COPYUID/APPENDUID response codes
 // (the memory backend always returns them).
 func WithoutUIDPlus() Option { return func(c *config) { c.uidplus = false } }
 
@@ -37,16 +37,17 @@ type IMAP struct {
 	drop atomic.Bool
 }
 
-// uidCodes matches the UIDPLUS response codes. Each response is written as one
-// buffered line, so a per-Write rewrite is enough.
-var uidCodes = regexp.MustCompile(`\[(COPYUID|APPENDUID) [^\]]*\] `)
+// uidCodes matches the COPYUID code of a status line.
+var uidCodes = regexp.MustCompile(`^\* OK \[COPYUID [^\]]*\] `)
 
-// tconn is an accepted connection that can be killed mid-FETCH and can strip UIDPLUS codes.
+// tconn is an accepted connection that can be killed mid-FETCH. While stripCopyUID
+// is set (only during a MOVE, which writes nothing but status lines and EXPUNGEs, never
+// a literal) it removes the COPYUID code from the untagged OK line.
 type tconn struct {
 	net.Conn
-	s       *IMAP
-	fetch   atomic.Bool
-	written atomic.Int32
+	fetch        atomic.Bool
+	stripCopyUID atomic.Bool
+	written      atomic.Int32
 }
 
 func (c *tconn) Write(b []byte) (int, error) {
@@ -54,8 +55,8 @@ func (c *tconn) Write(b []byte) (int, error) {
 		c.Conn.Close()
 		return 0, net.ErrClosed
 	}
-	if !c.s.cfg.uidplus && uidCodes.Match(b) {
-		if _, err := c.Conn.Write(uidCodes.ReplaceAll(b, nil)); err != nil {
+	if c.stripCopyUID.Load() && uidCodes.Match(b) {
+		if _, err := c.Conn.Write(uidCodes.ReplaceAll(b, []byte("* OK "))); err != nil {
 			return 0, err
 		}
 		return len(b), nil
@@ -73,7 +74,7 @@ func (l tln) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &tconn{Conn: nc, s: l.s}
+	c := &tconn{Conn: nc}
 	l.s.mu.Lock()
 	l.s.conn[c] = struct{}{}
 	l.s.mu.Unlock()
@@ -86,8 +87,30 @@ type session struct {
 	conn *tconn
 }
 
-// Move delegates to the memory session; COPYUID is stripped at the connection.
+// Copy drops the COPYUID data when UIDPLUS is disabled.
+func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
+	d, err := s.Session.Copy(set, dest)
+	if !s.s.cfg.uidplus {
+		d = nil
+	}
+	return d, err
+}
+
+// Append drops the APPENDUID data when UIDPLUS is disabled.
+func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) (*imap.AppendData, error) {
+	d, err := s.Session.Append(mb, r, o)
+	if !s.s.cfg.uidplus {
+		d = nil
+	}
+	return d, err
+}
+
+// Move cannot return nil data (MoveWriter is concrete), so the connection strips COPYUID.
 func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) error {
+	if !s.s.cfg.uidplus {
+		s.conn.stripCopyUID.Store(true)
+		defer s.conn.stripCopyUID.Store(false)
+	}
 	return s.Session.(imapserver.SessionMove).Move(w, set, dest)
 }
 

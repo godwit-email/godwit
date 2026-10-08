@@ -142,3 +142,32 @@ func TestSMTPFailAfterData(t *testing.T) {
 	_, err := conn.DialSMTP(ctx, ep)
 	assert.Error(t, err)
 }
+
+func TestWithoutUIDPlusKeepsBodiesIntact(t *testing.T) {
+	s := testmail.StartIMAP(t, testmail.WithoutUIDPlus())
+	body := "From: a@b.c\r\nSubject: x\r\n\r\n* OK [COPYUID 1 2 3] and [APPENDUID 1 2] stay\r\n"
+	_, err := s.User.Append("INBOX", bytesLiteral(body), &imap.AppendOptions{})
+	require.NoError(t, err)
+	c := dial(t, s)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	sec := &imap.FetchItemBodySection{}
+	msgs, err := c.Fetch(imap.UIDSetNum(1), &imap.FetchOptions{BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, body, string(msgs[0].FindBodySection(sec)))
+}
+
+func TestInboxMessagesAreCopies(t *testing.T) {
+	addr, in := testmail.StartSMTP(t)
+	host, port := split(t, addr)
+	c, err := conn.DialSMTP(ctx, conn.Endpoint{Host: host, Port: port, Security: conn.None, Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+	defer c.Close()
+	require.NoError(t, c.SendMail("a@b.c", []string{"d@e.f"}, strings.NewReader(rfc822)))
+	m := in.Messages()
+	m[0].To[0] = "x"
+	m[0].Data[0] = 'X'
+	assert.Equal(t, "d@e.f", in.Messages()[0].To[0])
+	assert.NotEqual(t, byte('X'), in.Messages()[0].Data[0])
+}

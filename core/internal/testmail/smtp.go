@@ -30,7 +30,11 @@ type Inbox struct {
 func (in *Inbox) Messages() []Received {
 	in.mu.Lock()
 	defer in.mu.Unlock()
-	return append([]Received(nil), in.msgs...)
+	out := make([]Received, len(in.msgs))
+	for i, m := range in.msgs {
+		out[i] = Received{From: m.From, To: append([]string(nil), m.To...), Data: append([]byte(nil), m.Data...)}
+	}
+	return out
 }
 
 // FailAfterData makes the next n sessions read the full DATA and then drop the
