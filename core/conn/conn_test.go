@@ -95,3 +95,33 @@ func TestAuthErrorsDoNotLeakServerText(t *testing.T) {
 	require.ErrorIs(t, err, conn.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "hunter2")
 }
+
+func TestMalformedAuthResponsesDoNotLeakPassword(t *testing.T) {
+	imapBad := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK hi\r\n"))
+		bufio.NewReader(c).ReadString('\n')
+		c.Write([]byte("hunter2 NO rejected\r\n")) // unknown tag line echoing the password
+	})
+	_, err := conn.DialIMAP(context.Background(), imapBad)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "hunter2")
+
+	smtpBad := fake(t, func(c net.Conn) {
+		c.Write([]byte("220 hi\r\n"))
+		r := bufio.NewReader(c)
+		r.ReadString('\n')
+		c.Write([]byte("250-hi\r\n250 AUTH PLAIN\r\n"))
+		r.ReadString('\n')
+		c.Write([]byte("hunter2 is not a reply code\r\n"))
+	})
+	_, err = conn.DialSMTP(context.Background(), smtpBad)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "hunter2")
+}
+
+func TestDialCancelDuringStalledTLSHandshake(t *testing.T) {
+	silent := fake(t, stall) // accepts, never answers the ClientHello
+	silent.Security = conn.TLS
+	returnsPromptly(t, func(ctx context.Context) error { _, err := conn.DialIMAP(ctx, silent); return err })
+	returnsPromptly(t, func(ctx context.Context) error { _, err := conn.DialSMTP(ctx, silent); return err })
+}

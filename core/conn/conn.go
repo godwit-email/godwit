@@ -6,11 +6,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
@@ -44,33 +44,48 @@ func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e
 // open dials e and returns the raw connection plus a bound context. Everything
 // until the returned release func runs (dial, TLS, greeting, auth) is limited to
 // 30 seconds or ctx, whichever ends first; cancellation closes the connection.
-func (e Endpoint) open(ctx context.Context, implicitTLS bool) (nc net.Conn, ctx2 context.Context, release func(), err error) {
+func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context.Context, func(), error) {
 	ctx2, cancel := context.WithTimeout(ctx, timeout)
-	fail := func(err error) (net.Conn, context.Context, func(), error) {
+	raw, err := (&net.Dialer{}).DialContext(ctx2, "tcp", e.addr())
+	if err != nil {
 		cancel()
 		return nil, nil, nil, err
 	}
-	nc, err = (&net.Dialer{}).DialContext(ctx2, "tcp", e.addr())
-	if err != nil {
-		return fail(err)
-	}
 	dl, _ := ctx2.Deadline()
-	nc.SetDeadline(dl)
-	stop := context.AfterFunc(ctx2, func() { nc.Close() })
+	raw.SetDeadline(dl)
+	// The callback closes only the immutable raw conn; closing it also aborts a TLS
+	// handshake or any later I/O on a wrapper around it.
+	stop := context.AfterFunc(ctx2, func() { raw.Close() })
+	var nc net.Conn = raw
 	if implicitTLS {
-		tc := tls.Client(nc, &tls.Config{ServerName: e.Host})
+		tc := tls.Client(raw, &tls.Config{ServerName: e.Host})
 		if err := tc.HandshakeContext(ctx2); err != nil {
 			stop()
-			nc.Close()
-			return fail(err)
+			raw.Close()
+			cancel()
+			return nil, nil, nil, ctxErr(ctx2, err)
 		}
 		nc = tc
 	}
 	return nc, ctx2, func() {
 		stop()
-		nc.SetDeadline(time.Time{})
+		raw.SetDeadline(time.Time{})
 		cancel()
 	}, nil
+}
+
+// loginErr maps a failure of LOGIN/AUTH to an error without server text: context
+// and network errors are kept, everything else (status replies, malformed or
+// unexpected protocol data, which may echo the password) becomes ErrAuthFailed.
+func loginErr(ctx context.Context, proto string, err error) error {
+	var ne net.Error
+	switch {
+	case ctx.Err() != nil:
+		return fmt.Errorf("%s login: %w", proto, ctx.Err())
+	case errors.As(err, &ne), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
+		return fmt.Errorf("%s login: %w", proto, err)
+	}
+	return fmt.Errorf("%s: %w", proto, ErrAuthFailed)
 }
 
 // ctxErr prefers the context's error over the "use of closed connection" it caused.
@@ -101,12 +116,7 @@ func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
 	if err == nil {
 		err = c.Login(e.Username, e.Password).Wait()
 		if err != nil {
-			var ie *imap.Error
-			if errors.As(err, &ie) {
-				err = fmt.Errorf("imap: %w", ErrAuthFailed)
-			} else {
-				err = fmt.Errorf("imap login: %w", ctxErr(cctx, err))
-			}
+			err = loginErr(cctx, "imap", err)
 		}
 	} else {
 		err = fmt.Errorf("imap connect %s: %w", e.addr(), ctxErr(cctx, err))
@@ -137,12 +147,7 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	}
 	if err == nil {
 		if err = c.Auth(sasl.NewPlainClient("", e.Username, e.Password)); err != nil {
-			var se *smtp.SMTPError
-			if errors.As(err, &se) {
-				err = fmt.Errorf("smtp: %w", ErrAuthFailed)
-			} else {
-				err = fmt.Errorf("smtp auth: %w", ctxErr(cctx, err))
-			}
+			err = loginErr(cctx, "smtp", err)
 		}
 	} else {
 		err = fmt.Errorf("smtp connect %s: %w", e.addr(), ctxErr(cctx, err))
