@@ -102,16 +102,6 @@ func (s *Service) secret(ctx context.Context, acc Account) (string, error) {
 // tokenMargin: a cached access token closer than this to its expiry is refreshed.
 const tokenMargin = 2 * time.Minute
 
-// noExpiryTTL is how long an access token whose response gave no expiry is used.
-const noExpiryTTL = 30 * time.Minute
-
-func newToken(g auth.Grant) oauthToken {
-	if g.Expiry.IsZero() {
-		g.Expiry = time.Now().Add(noExpiryTTL)
-	}
-	return oauthToken{g.AccessToken, g.Expiry}
-}
-
 func (t oauthToken) fresh() bool {
 	return t.access != "" && time.Until(t.expiry) > tokenMargin
 }
@@ -176,7 +166,7 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	if s.tokens == nil {
 		s.tokens = map[int64]oauthToken{}
 	}
-	s.tokens[acc.ID] = newToken(g)
+	s.tokens[acc.ID] = oauthToken{g.AccessToken, g.Expiry}
 	s.tokMu.Unlock()
 	return g.AccessToken, nil
 }

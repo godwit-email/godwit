@@ -207,7 +207,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		if s.tokens == nil {
 			s.tokens = map[int64]oauthToken{}
 		}
-		s.tokens[id] = newToken(g.Grant)
+		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry}
 		s.tokMu.Unlock()
 	}
 	s.startWorker(id)

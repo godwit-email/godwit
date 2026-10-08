@@ -339,3 +339,21 @@ func TestZeroExpiryLasts30Minutes(t *testing.T) {
 	c, _ := e.cached()
 	assert.WithinDuration(t, time.Now().Add(30*time.Minute), c.expiry, time.Minute)
 }
+
+// The 30 minutes for a token without expires_in run from its receipt, not from
+// when AddAccount caches it.
+func TestZeroExpiryCountsFromReceipt(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.oa.OmitExpiry(true)
+	before := time.Now()
+	flow := e.signIn(t, "alice@example.com")
+	after := time.Now()
+	time.Sleep(500 * time.Millisecond)
+	acc, err := e.s.AddAccount(bg, e.input(t, "alice@example.com", flow))
+	require.NoError(t, err)
+	e.acc = acc
+	c, ok := e.cached()
+	require.True(t, ok)
+	assert.False(t, c.expiry.Before(before.Add(30*time.Minute)), "expiry %v", c.expiry)
+	assert.False(t, c.expiry.After(after.Add(30*time.Minute)), "expiry %v is later than receipt + 30m", c.expiry)
+}

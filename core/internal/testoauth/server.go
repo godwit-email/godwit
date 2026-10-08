@@ -37,6 +37,7 @@ type Server struct {
 	deny          bool             // the user refuses consent
 	next          *canned          // RespondNext: the next token response
 	rotate        bool             // refreshes issue a new refresh token
+	noExpiry      bool             // token responses omit expires_in
 	codes         map[string]grant // code -> pending exchange
 	refresh       map[string]string
 	access        map[string]bool
@@ -89,6 +90,9 @@ func (s *Server) RevokeAll() {
 	clear(s.refresh)
 	clear(s.access)
 }
+
+// OmitExpiry makes token responses leave out expires_in.
+func (s *Server) OmitExpiry(on bool) { s.mu.Lock(); s.noExpiry = on; s.mu.Unlock() }
 
 // RevokeAccess invalidates every access token issued so far; refresh tokens still work.
 func (s *Server) RevokeAccess() { s.mu.Lock(); clear(s.access); s.mu.Unlock() }
@@ -258,6 +262,9 @@ func (s *Server) issue(w http.ResponseWriter, email, refreshToken string) {
 		"id_token": enc([]byte(`{"alg":"none"}`)) + "." + enc(claims) + "."}
 	if refreshToken != "" {
 		body["refresh_token"] = refreshToken
+	}
+	if s.noExpiry {
+		delete(body, "expires_in")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(body)

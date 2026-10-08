@@ -23,6 +23,7 @@ import (
 var FlowTimeout = 10 * time.Minute
 
 // Grant is the outcome of an authorization or a refresh. Secrets: never log it.
+// Expiry is never zero: without expires_in it is 30 minutes after receipt.
 type Grant struct {
 	Email, RefreshToken, AccessToken string
 	Expiry                           time.Time
@@ -206,8 +207,15 @@ func Refresh(ctx context.Context, cfg OAuthConfig, hc *http.Client, refreshToken
 	return g, nil
 }
 
+// noExpiryTTL is how long an access token whose response gave no expires_in is
+// trusted, counted from its receipt.
+const noExpiryTTL = 30 * time.Minute
+
 func grantFrom(tok *oauth2.Token) Grant {
 	g := Grant{AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, Expiry: tok.Expiry}
+	if g.Expiry.IsZero() {
+		g.Expiry = time.Now().Add(noExpiryTTL)
+	}
 	if id, ok := tok.Extra("id_token").(string); ok {
 		g.Email = emailFromIDToken(id)
 	}
