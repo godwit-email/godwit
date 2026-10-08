@@ -252,7 +252,7 @@ func (s *Service) claimResume(ctx context.Context, runID int64) error {
 		return err
 	}
 	if r.Changes == 1 {
-		s.resume(runID)
+		return s.resume(runID)
 	}
 	return nil
 }

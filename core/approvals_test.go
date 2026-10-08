@@ -504,16 +504,12 @@ func TestCloseWaitsForResume(t *testing.T) {
 	evs := e.start(t, conv, "do it")
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind)
-	sub, unsub := e.s.SubscribeConversation(conv.ID)
-	defer unsub()
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
 	require.Eventually(t, func() bool { return len(e.srv.Requests()) == 2 }, 10*time.Second, 5*time.Millisecond)
 
 	require.NoError(t, e.s.Close())
-	// Close ended the subscription only after the resume ended and published its outcome.
-	got := drainWit(t, sub)
-	require.NotEmpty(t, got)
-	assert.Equal(t, "error", got[len(got)-1].Kind)
+	// Close returned after the resume recorded its outcome: cancelled, not left
+	// resuming (which the next start would turn into failed).
 
 	e.restart(t)
 	rows, err := e.s.db.Query(t.Context(), "SELECT state FROM runs WHERE id = ?", in.RunID)
@@ -605,14 +601,30 @@ func TestWitStreamKeepsAllTerminals(t *testing.T) {
 func TestSubscriptionsCloseWithService(t *testing.T) {
 	e := newApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
-	sub, unsub := e.s.SubscribeConversation(conv.ID)
+	stalled, unsub := e.s.SubscribeConversation(conv.ID) // never read
 	defer unsub()
+	chunks := make([]string, 3*witBuffer)
+	for i := range chunks {
+		chunks[i] = "x"
+	}
+	e.srv.Script(testllm.Turn{Text: chunks})
 	evs := e.start(t, conv, "hello")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
-	require.NoError(t, e.s.Close())
-	got := drainWit(t, sub) // ends: Close closed it, after delivering what was queued
-	require.NotEmpty(t, got)
-	assert.Equal(t, "done", got[len(got)-1].Kind)
+
+	closed := make(chan error, 1)
+	go func() { closed <- e.s.Close() }()
+	select {
+	case err := <-closed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waits on a stalled consumer")
+	}
+	select {
+	case _, ok := <-stalled:
+		assert.False(t, ok, "Close ends delivery: queued events are discarded and the channel is closed")
+	case <-time.After(time.Second):
+		t.Fatal("the subscription stays open after Close")
+	}
 
 	after, unsub2 := e.s.SubscribeConversation(conv.ID)
 	defer unsub2()
@@ -622,6 +634,49 @@ func TestSubscriptionsCloseWithService(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("subscription after Close stays open")
 	}
+}
+
+func TestCancelStillDeliversTerminal(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
+	ctx, cancel := context.WithCancel(t.Context())
+	ch, err := e.s.startRun(ctx, conv, "hello", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "text", (<-ch).Kind)
+	cancel()
+	time.Sleep(50 * time.Millisecond) // a slow reader
+	evs := drainWit(t, ch)
+	require.NotEmpty(t, evs, "the stream delivers until the run's terminal event")
+	last := evs[len(evs)-1]
+	require.Equal(t, "error", last.Kind)
+	assert.Equal(t, ai.CodeCanceled, last.Err.Code)
+}
+
+func TestStartupResumeFailureErrorsNew(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "fake_draft", Args: `{"subject":"A"}`}}})
+	evs := e.start(t, conv, "do it")
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind)
+	beforeResumeClaim = func() bool { return true }
+	t.Cleanup(func() { beforeResumeClaim = nil })
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	beforeResumeClaim = nil
+	// The resume cannot start (its model is gone), and recording its failure fails too.
+	_, err := e.s.db.Execute(t.Context(), "UPDATE runs SET model = 'gone/m' WHERE id = ?", in.RunID)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(t.Context(), `CREATE TRIGGER fail_failed BEFORE UPDATE OF state ON runs WHEN NEW.state = 'failed'
+		BEGIN SELECT RAISE(ABORT, 'injected fail-run failure'); END`)
+	require.NoError(t, err)
+	dir := e.s.dataDir
+	require.NoError(t, e.s.Close())
+	s, err := New(t.Context(), Options{DataDir: dir})
+	if err == nil {
+		s.Close()
+	}
+	require.ErrorContains(t, err, "injected fail-run failure")
 }
 
 func TestCancelAfterRunHandOff(t *testing.T) {
@@ -639,10 +694,14 @@ func TestCancelAfterRunHandOff(t *testing.T) {
 	evs := e.start(t, conv, "do it")
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind)
+	e.s.runMu.Lock()
+	old := e.s.active[in.RunID] // the interrupted run, its cleanup held
+	e.s.runMu.Unlock()
+	require.NotNil(t, old)
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
 	require.Eventually(t, func() bool { return len(e.srv.Requests()) == 2 }, 10*time.Second, 5*time.Millisecond)
 	close(hold) // now the old run's cleanup runs
-	time.Sleep(20 * time.Millisecond)
+	<-old.done
 
 	require.NoError(t, e.s.CancelRun(t.Context(), in.RunID))
 	e.waitRun(t, in.RunID, "cancelled")

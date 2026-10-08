@@ -73,6 +73,8 @@ type Service struct {
 	subsMu     sync.Mutex
 	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
 	subsClosed bool
+	streamsEnd chan struct{}  // closed by Close: every witStream stops delivering
+	streams    sync.WaitGroup // witStream goroutines
 
 	toolsMu sync.Mutex
 	tools   map[string]registeredTool // tools Wit runs can offer, by name
@@ -102,7 +104,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install}
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{})}
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -131,7 +133,7 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
-		s.closeSubscriptions() // every run, resumes included, has published its end
+		s.endStreams() // every run, resumes included, has published its end
 		s.closeOAuth()
 		s.aiMu.Lock()
 		if s.ai != nil {
