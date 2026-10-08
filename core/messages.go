@@ -319,6 +319,25 @@ func checkFlag(f string) error {
 	return nil
 }
 
+// systemFlags maps lower-cased IMAP system flags to their canonical spelling.
+var systemFlags = map[string]string{`\seen`: `\Seen`, `\answered`: `\Answered`, `\flagged`: `\Flagged`,
+	`\deleted`: `\Deleted`, `\draft`: `\Draft`}
+
+// flagSet canonicalises system flags and drops case-insensitive duplicates
+// (IMAP flags are case-insensitive), keeping the first spelling.
+func flagSet(fl []string) []string {
+	var out []string
+	for _, f := range fl {
+		if c, ok := systemFlags[strings.ToLower(f)]; ok {
+			f = c
+		}
+		if !slices.ContainsFunc(out, func(g string) bool { return strings.EqualFold(f, g) }) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // SetFlags adds then removes flags on the messages locally and queues the change
 // for the server.
 func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []string) error {
@@ -327,6 +346,7 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 			return err
 		}
 	}
+	add, remove = flagSet(add), flagSet(remove)
 	if len(add)+len(remove) == 0 {
 		return nil
 	}
@@ -342,10 +362,12 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
-		set := slices.DeleteFunc(append(strings.Fields(m.flags), add...), func(f string) bool { return slices.Contains(remove, f) })
+		set := slices.DeleteFunc(flagSet(append(strings.Fields(m.flags), add...)), func(f string) bool {
+			return slices.ContainsFunc(remove, func(r string) bool { return strings.EqualFold(f, r) })
+		})
 		slices.Sort(set)
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{strings.Join(slices.Compact(set), " "), m.id}},
+			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{strings.Join(set, " "), m.id}},
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, depends_on, created_at)
 				VALUES (?, ?, 'flags', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, string(payload), m.id}})
 	}

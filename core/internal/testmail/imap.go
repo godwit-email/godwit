@@ -39,7 +39,11 @@ type IMAP struct {
 	conn map[*tconn]struct{}
 	sent atomic.Int64 // bytes written to clients
 	drop atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
+	cmds atomic.Int64 // MOVE and COPY commands handled
 }
+
+// MovesAndCopies is how many MOVE and COPY commands the server has handled.
+func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
 
 // uidCodes matches the COPYUID code of a status line.
 var uidCodes = regexp.MustCompile(`^\* OK \[COPYUID [^\]]*\] `)
@@ -96,6 +100,7 @@ type session struct {
 
 // Copy drops the COPYUID data when COPYUID is disabled.
 func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
+	s.s.cmds.Add(1)
 	d, err := s.Session.Copy(set, dest)
 	if !s.s.cfg.copyuid {
 		d = nil
@@ -114,6 +119,7 @@ func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) 
 
 // Move cannot return nil data (MoveWriter is concrete), so the connection strips COPYUID.
 func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) error {
+	s.s.cmds.Add(1)
 	if !s.s.cfg.copyuid {
 		s.conn.stripCopyUID.Store(true)
 		defer s.conn.stripCopyUID.Store(false)

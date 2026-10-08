@@ -23,7 +23,11 @@ type FlagsPayload struct {
 }
 
 // OpsError lists ops that PushOps marked conflict or failed; the push went on.
-type OpsError struct{ Problems []string }
+// Changed holds messages shown in a different folder because a move ended so.
+type OpsError struct {
+	Problems []string
+	Changed  []int64
+}
 
 func (e *OpsError) Error() string { return strings.Join(e.Problems, "; ") }
 
@@ -37,11 +41,23 @@ type op struct {
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
 // message has no server location yet, or whose dependency is still pending or
-// awaiting its claim, wait for a later round (a conflict or failed dependency no
-// longer holds them back). Problems with single ops come back as *OpsError; any other error
-// means the connection is unusable and the push stopped.
+// awaiting its claim, wait for a later round; once the dependency failed or
+// conflicted the op is re-based (depends_on cleared) and runs from the message's
+// current server location. Problems with single ops come back as *OpsError; any
+// other error means the connection is unusable and the push stopped.
 func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
+	return push(ctx, db, c, accountID, "")
+}
+
+// PushNewOps is PushOps limited to ops never attempted, for a second round after
+// a fetch claimed moves: ops that were waiting run, ones that failed are not retried.
+func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
+	return push(ctx, db, c, accountID, " AND attempts = 0")
+}
+
+func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, filter string) error {
 	var problems []string
+	var changed []int64
 	res, err := db.Execute(ctx, `UPDATE ops SET state = 'conflict', last_error = 'the message no longer exists'
 		WHERE account_id = ? AND message_id IS NULL AND state IN ('pending', 'awaiting_claim')`, accountID)
 	if err != nil {
@@ -51,7 +67,7 @@ func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID 
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
 	rows, err := db.Query(ctx, `SELECT id, kind, message_id, dst_folder_id, payload, depends_on, attempts FROM ops
-		WHERE account_id = ? AND state = 'pending' ORDER BY id`, accountID)
+		WHERE account_id = ? AND state = 'pending'`+filter+` ORDER BY id`, accountID)
 	if err != nil {
 		return err
 	}
@@ -61,16 +77,19 @@ func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID 
 		problem, err := pushOp(ctx, db, c, o)
 		if problem != "" {
 			problems = append(problems, problem)
+			if o.kind == "move" {
+				changed = append(changed, o.msg)
+			}
 		}
 		if err != nil {
 			if len(problems) > 0 {
-				err = errors.Join(err, &OpsError{problems})
+				err = errors.Join(err, &OpsError{problems, changed})
 			}
 			return err
 		}
 	}
 	if len(problems) > 0 {
-		return &OpsError{problems}
+		return &OpsError{problems, changed}
 	}
 	return nil
 }
@@ -86,6 +105,9 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		if len(r.Values) > 0 && (store.Str(r.Values[0][0]) == "pending" || store.Str(r.Values[0][0]) == "awaiting_claim") {
 			return "", nil
 		}
+		if _, err := db.Execute(ctx, "UPDATE ops SET depends_on = NULL WHERE id = ?", o.id); err != nil {
+			return "", err
+		}
 	}
 	r, err := db.Query(ctx, `SELECT m.server_folder_id, m.server_uidvalidity, m.server_uid, f.name FROM messages m
 		JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, o.msg)
@@ -95,7 +117,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	src, srcValidity, uid, srcName := store.Int(r.Values[0][0]), uint32(store.Int(r.Values[0][1])),
 		imap.UID(store.Int(r.Values[0][2])), store.Str(r.Values[0][3])
 	if o.kind == "move" && o.dst == src {
-		return "", finish(ctx, db, o.id, "done", "")
+		return "", finish(ctx, db, o, "done", "")
 	}
 	// Counted before anything is sent: after a dropped connection the next round
 	// knows the command may have reached the server.
@@ -112,7 +134,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	case "move":
 		if !c.Caps().Has(imap.CapMove) && !c.Caps().Has(imap.CapUIDPlus) {
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
-			return msg, finish(ctx, db, o.id, "failed", msg)
+			return msg, finish(ctx, db, o, "failed", msg)
 		}
 		d, err := db.Query(ctx, "SELECT name, uidvalidity FROM folders WHERE id = ?", o.dst)
 		if err != nil {
@@ -124,7 +146,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		dstName, dstValidity = store.Str(d.Values[0][0]), uint32(store.Int(d.Values[0][1]))
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
-		return msg, finish(ctx, db, o.id, "failed", msg)
+		return msg, finish(ctx, db, o, "failed", msg)
 	}
 
 	sel, err := c.Select(srcName, nil).Wait()
@@ -133,19 +155,19 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	}
 	if sel.UIDValidity != srcValidity {
 		msg := fmt.Sprintf("folder %q was recreated on the server, so a change to a message in it was not applied", srcName)
-		return msg, finish(ctx, db, o.id, "conflict", msg)
+		return msg, finish(ctx, db, o, "conflict", msg)
 	}
 	set := imap.UIDSetNum(uid)
 	if o.kind == "flags" {
 		var p FlagsPayload
 		if err := json.Unmarshal([]byte(o.payload), &p); err != nil {
 			msg := "unreadable flags change: " + err.Error()
-			return msg, finish(ctx, db, o.id, "failed", msg)
+			return msg, finish(ctx, db, o, "failed", msg)
 		}
 		if err := storeFlags(c, set, p); err != nil {
 			return fail(ctx, db, o, err)
 		}
-		return "", finish(ctx, db, o.id, "done", "")
+		return "", finish(ctx, db, o, "done", "")
 	}
 	if sent {
 		// The last attempt may have moved it before the connection dropped.
@@ -239,8 +261,16 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 	return err
 }
 
-func finish(ctx context.Context, db *store.DB, id int64, state, lastError string) error {
-	_, err := db.Execute(ctx, "UPDATE ops SET state = ?, last_error = ? WHERE id = ?", state, nullable(lastError), id)
+// finish sets o's state. A move that ends failed or conflict puts the message
+// back in the folder the server has it in, unless another move of it is queued.
+func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
+	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE id = ?", Args: []any{state, nullable(lastError), o.id}}}
+	if o.kind == "move" && (state == "failed" || state == "conflict") {
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id
+			WHERE id = ? AND server_folder_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ops
+				WHERE message_id = messages.id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))`, Args: []any{o.msg}})
+	}
+	_, err := db.Transaction(ctx, stmts)
 	return err
 }
 
@@ -251,7 +281,7 @@ func fail(ctx context.Context, db *store.DB, o op, cause error) (string, error) 
 	if o.attempts >= MaxAttempts {
 		state, problem = "failed", fmt.Sprintf("a change was given up after %d attempts: %v", o.attempts, cause)
 	}
-	if err := finish(ctx, db, o.id, state, cause.Error()); err != nil {
+	if err := finish(ctx, db, o, state, cause.Error()); err != nil {
 		return problem, errors.Join(cause, err)
 	}
 	var refused *imap.Error

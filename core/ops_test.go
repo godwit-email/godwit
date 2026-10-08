@@ -155,10 +155,7 @@ func TestMoveWithoutCOPYUID(t *testing.T) {
 			require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 			require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
 			e.im.Restart()
-			e.sync(t)
-			assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", id)[0][0]),
-				"a claimed message keeps its queued flags")
-			e.sync(t) // the flags change waited for the move's claim
+			e.sync(t) // one round: the flags change that waited for the move's claim goes out too
 
 			assert.Equal(t, []string{`keep@x \Deleted`, "other@x"}, e.onServer(t, "INBOX"))
 			assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "Archive"))
@@ -175,7 +172,8 @@ func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	e.putFlagged(t, "INBOX", msg("keep@x"), imap.FlagDeleted)
 	e.put(t, "INBOX", msg("m@x"))
 	e.sync(t)
-	require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "m@x")}, e.folderID(t, "Archive")))
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	e.sync(t)
@@ -183,7 +181,15 @@ func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	require.Len(t, ops, 1)
 	assert.Equal(t, "failed", ops[0].State)
 	assert.Contains(t, ops[0].LastError, "MOVE")
-	assert.Len(t, ofType(collect(ch), events.SyncFailed), 1)
+	evs := collect(ch)
+	assert.Len(t, ofType(evs, events.SyncFailed), 1)
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]),
+		"shown where the server still has it")
+	var announced bool
+	for _, ev := range ofType(evs, events.MessagesChanged) {
+		announced = announced || slices.Contains(ev.MessageIDs, id)
+	}
+	assert.True(t, announced)
 	assert.Equal(t, []string{`keep@x \Deleted`, "m@x"}, e.onServer(t, "INBOX"))
 }
 
@@ -248,11 +254,13 @@ func TestUncertainMoveNotRepeated(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Move(imap.UIDSetNum(1), "Archive").Wait()
 	require.NoError(t, err)
+	before := e.im.MovesAndCopies()
 
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
 	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
 	assert.Equal(t, []string{"done"}, e.opStates(t))
+	assert.Equal(t, before, e.im.MovesAndCopies(), "the MOVE is not sent again")
 }
 
 func TestStaleUIDNeverReplayed(t *testing.T) {
@@ -372,4 +380,64 @@ func TestOpsRejectBadInput(t *testing.T) {
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
 	assert.Equal(t, "", store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", id)[0][0]))
 	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
+}
+
+func TestDependentRunsAfterFailedMove(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	e.im.Stop()
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
+	require.NoError(t, e.im.User.Delete("Archive"))
+	e.im.Restart()
+	for i := 0; i < mailsync.MaxAttempts; i++ {
+		e.sync(t)
+	}
+	assert.Equal(t, []string{"failed", "done"}, e.opStates(t))
+	assert.Nil(t, e.rows(t, "SELECT depends_on FROM ops WHERE kind = 'flags'")[0][0], "re-based once its dependency failed")
+	assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "INBOX"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX"), `\Seen`}}, e.rows(t, "SELECT id, folder_id, flags FROM messages"))
+}
+
+func TestSetFlagsCaseInsensitive(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\SEEN`, `\flagged`, "$Label", "$label"}, nil))
+	m, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"$Label", `\Flagged`, `\Seen`}, m.Flags)
+	e.sync(t)
+	assert.Equal(t, []string{`m@x $label \Flagged \Seen`}, e.onServer(t, "INBOX")) // the memory server lower-cases keywords
+
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, nil, []string{`\seen`, "$LABEL"}))
+	m, _ = e.s.GetMessage(bg, id, false)
+	assert.Equal(t, []string{`\Flagged`}, m.Flags)
+	e.sync(t)
+	assert.Equal(t, []string{`m@x \Flagged`}, e.onServer(t, "INBOX"))
+}
+
+func TestFetchKeepsConcurrentLocalFlags(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	c := e.dial(t)
+	_, err := c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
+	// The user marks it read after fetch read the local flags but before it writes.
+	mailsync.BeforeFlagsWrite = func() {
+		mailsync.BeforeFlagsWrite = nil
+		require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
+	}
+	t.Cleanup(func() { mailsync.BeforeFlagsWrite = nil })
+	require.NoError(t, mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus))
+	assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
+	e.sync(t)
+	assert.Equal(t, `\Flagged \Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
+	assert.Equal(t, []string{`m@x \Flagged \Seen`}, e.onServer(t, "INBOX"))
 }

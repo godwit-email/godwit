@@ -121,6 +121,9 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 	return 0, nil
 }
 
+// pendingFlags is true for a messages row with a flags op not yet pushed.
+const pendingFlags = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.id AND o.kind = 'flags' AND o.state = 'pending')"
+
 // syncFlags refreshes flags of 1:last_uid (except where a flags op is pending)
 // and deletes local rows whose UID the server no longer returns. It changes
 // nothing unless the FETCH completed.
@@ -140,9 +143,8 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
 	// A flags change still queued wins over the server's flags until it is pushed.
-	rows, err := db.Query(ctx, `SELECT id, server_uid, flags, thread_id,
-		EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.id AND o.kind = 'flags' AND o.state = 'pending')
-		FROM messages WHERE server_folder_id = ? AND server_uid <= ?`, f.id, f.lastUID)
+	rows, err := db.Query(ctx, "SELECT id, server_uid, flags, thread_id, "+pendingFlags+
+		" FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
 	if err != nil {
 		return err
 	}
@@ -156,7 +158,8 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{id}})
 			tids = append(tids, store.Int(v[3]))
 		case fl != flags && store.Int(v[4]) == 0:
-			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{fl, id}})
+			// Checked again in the UPDATE: a local edit may commit between this read and the write.
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND NOT " + pendingFlags, Args: []any{fl, id}})
 		default:
 			continue
 		}
@@ -165,9 +168,16 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 	if len(tids) > 0 {
 		stmts = append(stmts, tidyThreads(accountID, tids)...)
 	}
+	if BeforeFlagsWrite != nil {
+		BeforeFlagsWrite()
+	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
 	r.gone(changed, tids)
 	return nil
 }
+
+// BeforeFlagsWrite, when set, runs between syncFlags reading the local flags and
+// writing the server's. Tests only.
+var BeforeFlagsWrite func()

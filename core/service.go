@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -112,7 +113,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
 		return err
 	}
 	defer release()
-	if err := s.pushOps(ctx, c, accountID); err != nil {
+	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
 	if err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus); err != nil {
@@ -121,22 +122,44 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
 		}
 		return err
 	}
+	// Ops that waited for a move's claim can go now; ones already tried are not retried.
+	if err := s.pushOps(ctx, c, accountID, mailsync.PushNewOps); err != nil {
+		return err
+	}
 	return s.setStatus(ctx, accountID, "ok")
 }
 
 // pushOps pushes queued local changes. Ops that became conflict or failed are
 // announced with SyncFailed and the sync goes on.
-func (s *Service) pushOps(ctx context.Context, c *imapclient.Client, accountID int64) error {
-	err := mailsync.PushOps(ctx, s.db, c, accountID)
+func (s *Service) pushOps(ctx context.Context, c *imapclient.Client, accountID int64,
+	push func(context.Context, *store.DB, *imapclient.Client, int64) error) error {
+	err := push(ctx, s.db, c, accountID)
 	var problems *mailsync.OpsError
-	if errors.As(err, &problems) && err == error(problems) {
-		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: problems.Error()})
-		return nil
+	if errors.As(err, &problems) {
+		if len(problems.Changed) > 0 {
+			s.announce(ctx, accountID, problems.Changed)
+		}
+		if err == error(problems) {
+			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: problems.Error()})
+			return nil
+		}
 	}
 	if err != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
 	return err
+}
+
+// announce publishes MessagesChanged for messages changed outside a local edit.
+func (s *Service) announce(ctx context.Context, accountID int64, ids []int64) {
+	ev := events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids}
+	for _, id := range ids {
+		if r, err := s.db.Query(ctx, "SELECT thread_id FROM messages WHERE id = ?", id); err == nil && len(r.Values) > 0 && r.Values[0][0] != nil {
+			ev.ThreadIDs = append(ev.ThreadIDs, store.Int(r.Values[0][0]))
+		}
+	}
+	ev.ThreadIDs = slices.Compact(slices.Sorted(slices.Values(ev.ThreadIDs)))
+	s.bus.Publish(ev)
 }
 
 func (s *Service) setStatus(ctx context.Context, accountID int64, status string) error {

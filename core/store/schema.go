@@ -3,7 +3,7 @@ package store
 // Migrations[i] holds the statements of schema version i+1, one statement each.
 var Migrations = [][]string{{
 	`CREATE TABLE accounts (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		email TEXT NOT NULL UNIQUE,
 		name TEXT, alias TEXT, signature TEXT,
 		is_default INTEGER DEFAULT 0,
@@ -15,7 +15,7 @@ var Migrations = [][]string{{
 		smtp_host TEXT, smtp_port INTEGER, smtp_security TEXT,
 		created_at INTEGER)`,
 	`CREATE TABLE folders (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		name TEXT,
 		role TEXT NOT NULL DEFAULT '',
@@ -23,13 +23,13 @@ var Migrations = [][]string{{
 		last_uid INTEGER DEFAULT 0,
 		UNIQUE(account_id, name))`,
 	`CREATE TABLE threads (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		subject TEXT,
 		last_date INTEGER)`,
 	`CREATE INDEX threads_account_date ON threads(account_id, last_date DESC)`,
 	`CREATE TABLE messages (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
 		server_folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
@@ -49,7 +49,7 @@ var Migrations = [][]string{{
 	`CREATE INDEX messages_thread ON messages(thread_id)`,
 	`CREATE INDEX messages_account_mid ON messages(account_id, message_id)`,
 	`CREATE TABLE attachments (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
 		part TEXT, encoding TEXT, charset TEXT, filename TEXT, content_type TEXT,
 		size INTEGER, content_id TEXT, inline INTEGER, cache_path TEXT, last_used INTEGER)`,
@@ -78,18 +78,18 @@ var Migrations = [][]string{{
 		DELETE FROM messages_fts WHERE rowid = old.id;
 	END`,
 	`CREATE TABLE drafts (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		mode TEXT,
 		source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
 		to_addrs TEXT, cc_addrs TEXT, bcc_addrs TEXT, reply_to TEXT,
 		subject TEXT, body_html TEXT, body_text TEXT, updated_at INTEGER)`,
 	`CREATE TABLE draft_attachments (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		draft_id INTEGER NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
 		filename TEXT, content_type TEXT, size INTEGER, path TEXT)`,
 	`CREATE TABLE ops (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
 		kind TEXT,
@@ -101,7 +101,7 @@ var Migrations = [][]string{{
 		last_error TEXT,
 		created_at INTEGER)`,
 	`CREATE TABLE outbox (
-		id INTEGER PRIMARY KEY,
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		message_id_hdr TEXT, raw_path TEXT, rcpts TEXT,
 		state TEXT,

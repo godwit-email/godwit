@@ -116,3 +116,13 @@ func TestTriggersMaintainFTSAndEventLog(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, count(t, db, "messages_fts"))
 }
+
+func TestIDsNeverReused(t *testing.T) {
+	db := open(t)
+	seedMessage(t, db)
+	_, err := db.Execute(ctx, "DELETE FROM messages WHERE id = 1")
+	require.NoError(t, err)
+	res, err := db.Execute(ctx, "INSERT INTO messages(account_id, folder_id) VALUES (1, 1)")
+	require.NoError(t, err)
+	assert.Greater(t, res.LastInsertID, int64(1), "a deleted message's id must never point at another message")
+}
