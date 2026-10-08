@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -49,6 +50,10 @@ type Service struct {
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
+
+	oauthMu sync.Mutex
+	flows   map[string]*auth.Flow // OAuth flows begun and not yet awaited or cancelled
+	grants  map[string]auth.Grant // finished flows' grants, kept for grantTTL
 
 	closeOnce sync.Once
 	closeErr  error
@@ -97,6 +102,7 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.closeOAuth()
 		s.workersMu.Lock()
 		s.closed = true
 		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping
