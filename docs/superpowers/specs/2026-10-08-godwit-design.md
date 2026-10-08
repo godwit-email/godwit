@@ -42,7 +42,11 @@
 ### 存储相关约束
 
 - 只在 Go 侧使用 sqlite，**不调用** `mygo.Use(sqlite.Plugin)`，前端碰不到数据库。
-- 迁移用 `PRAGMA user_version` 加一个按顺序执行的 SQL 列表。
+- 迁移用 `PRAGMA user_version` 加一个按顺序执行的 SQL 列表；mygo 的 `Execute` 一次只接受一条语句，所以列表里每项都是单条语句，一个版本的所有语句放进同一个 `Transaction`。
+- 数据库版本高于当前程序认识的版本时（用户降级了程序）拒绝打开，提示升级，不做任何写入。
+- 开启外键约束；草稿、操作队列、附件都通过外键挂在账户或邮件上，删除时级联清理。
+- 同步时只拉邮件头、`BODYSTRUCTURE` 和正文的文本部分（纯文本与 HTML），存进数据库；附件只记录元数据，打开或保存时再按 MIME 段下载进缓存。原始 .eml 只在需要时（查看原文、作为附件转发）临时获取。
+- 全文索引可以从邮件表完整重建（启动检查或设置里手动触发）。
 - headless 发布时，要把 SQLite 动态库和二进制放在一起；离线环境通过 `MYGO_SQLITE_LIBRARY` 环境变量指定库文件路径。
 
 ## 3. 架构
@@ -79,9 +83,12 @@ Accounts   List / Add / Update / Remove / Test / Reauthorize / SyncNow
            （Account 含发件人名称、侧栏显示名称、签名、是否默认发件、同步范围、登录方式与状态 ok / reauth_required / error）
 Settings   Get / Set（外观、界面语言、阅读语言、回复语言、免翻译语言、启动与窗口、通知、即时回复开关）
 Folders    List(account)
-Messages   List(folder, cursor, limit) / Get(id) / Search(query)
+Threads    List(view, cursor, limit) / Get(threadID)            （view：文件夹或跨账户视图）
+Messages   Get(id, loadRemoteImages) / Search(account, query) / GetAttachment(id)（按需下载）
            SetFlags(ids, add, remove) / Move(ids, folder) / Delete(ids)
-Compose    SaveDraft / Send(draftID) / GetAttachment(id)
+Compose    NewDraft(mode, sourceMessageID)（mode：new / reply / reply_all / forward）
+           SaveDraft / AddAttachment / RemoveAttachment / Send(draftID)
+Outbox     List / Resolve(id, action)（处理「待核实」的发送：确认已发出 / 重新发送 / 丢弃）
 Models     ListServices / AddService / UpdateService / RemoveService / ListModels(service)
 AI         RunSkill(name, target) → stream / RunAction(id, target) / QuickReplies(messageID)
            Ask(conversationID, input) → stream / Assist(draftID, input) → stream / Resolve(proposalID, accept)
@@ -95,7 +102,11 @@ Events     Subscribe() → stream
 2. **稳定的内部 ID**：不暴露 IMAP UID，因为 UIDVALIDITY 变化后 UID 会全部失效。
 3. **`Delete` 只是移到废纸篓**，Service 不提供硬删除。
 4. **HTML 在 core 层清洗**，所有出口拿到的都是安全内容。
-5. **一套 Service，三个出口**：mygo `Bind()`、JSON-RPC、MCP。MCP 只开放子集，默认只读，`Send` 必须经过用户批准。
+5. **一套 Service，三个出口**：mygo `Bind()`、JSON-RPC、MCP。MCP 只开放子集：只读，加上创建草稿；**没有 `Send`**。
+6. **邮件的身份和位置分开**：本地 ID 在邮件的整个生命周期内不变；它在服务器上的位置（文件夹 + UIDVALIDITY + UID）单独记录。移动后服务器给出新 UID 时，只更新位置；服务器不返回 COPYUID 时，下次同步按 Message-ID 把新 UID 认回原来的本地邮件，不新建记录。
+7. **操作队列的安全规则**：每个操作记录它针对的「文件夹 + UIDVALIDITY + UID」。推送前先 SELECT 文件夹并核对 UIDVALIDITY，不一致的操作标为冲突、不再重放。同一封邮件的后续操作依赖前一个操作，按顺序执行。
+8. **发送至多一次**：SMTP 无法保证「恰好一次」。发件箱用状态机记录（排队 → 发送中 → 已发出 → 已存入已发送 / 待核实 / 失败）。服务器是否已接受不确定时（例如提交后断线、或进程崩溃），标为「待核实」，**不自动重发**；先去已发送文件夹按 Message-ID 查找，查不到再由用户决定。
+9. **文件与数据库的一致性**：附件缓存和待发送的原文先写临时文件，再原子改名，最后写库；启动时清理孤立文件、补齐缺失的缓存记录。附件缓存可随时丢弃重建。
 
 ## 5. 扩展机制
 
@@ -119,7 +130,7 @@ name: translate
 description: Translate the email into the user's preferred language
 metadata:
   godwit-action-on: "message,selection"   # message | thread | selection | draft
-  godwit-action-output: "panel"           # panel | replace-draft
+  godwit-action-output: "panel"           # panel | replace-body（只替换显示，不改原邮件，可切回原文）| replace-draft
 ---
 ```
 
@@ -175,6 +186,8 @@ export default function (ctx: Ctx) {
 
 - 扩展点按命名空间分组（`ctx.actions`、`ctx.cards`、`ctx.tools`），避免与邮箱一侧的「账户 / 服务商」概念混淆。
 - v1 只做 `message.received` 和 `message.beforeSend` 两个 Hook。
+- **Hook 可靠投递**：`message.received` 不走可丢弃的界面事件总线，而是按数据库里的游标逐封投递，插件或应用重启后从断点继续，每封邮件对每个插件至少投递一次。
+- **`warn` 和 `block` 的区别**：`warn` 显示提示，用户可以「仍然发送」；`block` 阻止发送，用户只能修改草稿或在扩展设置里停用该插件。
 - **Card** 是声明式数据（标题、字段、按钮），由客户端负责渲染，插件不能注入 HTML。按钮动作只能是 `copy`、`open-url`、`run-action` 之一。
 
 ### 5.4 配置声明
@@ -189,12 +202,20 @@ export default function (ctx: Ctx) {
 
 ### 5.5 运行时与安全
 
-- 每个插件运行在独立的 QuickJS 实例里，有内存上限和超时限制（`beforeSend` 最多 5 秒）。插件崩溃时自动禁用并通知用户。
+**统一权限网关**：插件、MCP 和 Wit 的所有工具调用都经过宿主的同一个网关，按「调用来源 + 数据范围 + 外发目的地」判断是否放行，网关记录审计日志。
+
+- **任何扩展都不能发信**：插件、MCP、Wit 都只能创建或修改草稿，发送永远由用户在撰写页亲自点击。
+- **防外泄**：一次 Wit 对话一旦读取过邮件内容，之后调用任何有联网能力的工具（插件的 `net`、MCP 工具）都需要用户审批，审批卡片上显示将发往的域名。
+- **防 prompt 注入**：邮件内容交给模型时统一标记为不可信数据；写操作工具一律需要审批；审批绑定调用 ID、最终参数（修复后的参数）和目标对象的版本，参数或对象变化后审批失效。
+- **插件沙箱**：每个插件一个 QuickJS 实例，设内存上限、单次调用的 CPU 时间上限（`beforeSend` 最多 5 秒），宿主侧调用可随插件超时一起取消；崩溃或连续超时的插件自动停用并通知用户。WASM 本身不限制宿主调用，所以网络限制在宿主的 `ctx.net` 实现里做：只允许 manifest 声明的域名，跟随重定向时每一跳都重新校验，DNS 解析后拒绝内网、回环和链路本地地址，限制响应大小。
 - 调用没有声明权限的 `ctx` API 时直接抛错。
-- **插件和 MCP 都不能直接发信**，只能创建草稿，发送永远要用户自己点按钮。
-- **防 prompt 注入**：邮件内容交给 LLM 时统一标记为不可信数据；agent 在处理邮件内容的过程中，如果想调用有写操作的工具，必须由用户批准。
-- 邮件 HTML 放在沙箱 iframe 里显示，禁止脚本，默认不加载远程图片。
 - 日志按值动态脱敏：收集所有 secret 和凭据的字符串值，输出前替换，不依赖字段名。
+
+**邮件 HTML 显示契约**：
+
+- core 层用白名单清洗：去掉脚本、事件属性、`javascript:` 等危险协议、`<form>`、`<iframe>`、`<object>`、`<base>`、`<meta http-equiv>`；CSS 只保留白名单属性，去掉 `url()`、`expression()`、`@import`。
+- 远程资源默认全部拦截，包括 `img` 的 `src` 和 `srcset`、`//` 开头的协议相对地址、CSS 背景图；用户选择加载后才放行。`cid:` 内联图片在清洗前保留，清洗后替换成 `data:` 地址，并按附件的实际类型只允许图片类型。
+- 前端用 `sandbox` iframe 显示（不给 `allow-scripts`、`allow-same-origin`、`allow-forms`、`allow-top-navigation`），加上 CSP：`default-src 'none'; img-src data:`（加载远程图片时再放开 `https:`）；`style-src 'unsafe-inline'`。链接一律用系统浏览器打开，iframe 内不允许跳转。
 
 ## 6. 模型服务
 
@@ -241,7 +262,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 1. **工具参数格式预处理**：插件和 MCP 的工具注册进来时统一处理：把 `#/$defs/*`、`#/definitions/*` 引用展开成内联定义并删掉根级定义；根级 `description` 合并进工具描述；根级 `anyOf` / `oneOf` / `allOf` 以及无法展开的自引用 `$ref` 记录警告。原因：Genkit 的 Anthropic 插件只保留根级的 `type`、`properties`、`required`。
 2. **插件和 MCP 的工具一律 `ai.WithStrictSchema(false)`**；内置工具可以开启严格模式。
 3. **审批用 Genkit 的工具中断**：需要审批的工具在未获批准时调用 `ToolContext.Interrupt`，不产生任何副作用；对话历史和待审批的调用序列化后存入 SQLite；用户批准后用 `ToolAction.Restart` + `ai.WithToolRestarts` 恢复执行，拒绝时用 `Respond` 返回「用户拒绝」。应用重启后待审批的调用仍可继续。
-4. **多个待审批调用**：同时显示多张卡片（按调用顺序），支持逐个处理和「全部允许 / 全部拒绝」；批准一个执行一个。修改同一封草稿的写操作排队执行，只读工具和不同对象上的写操作可以并行。关闭面板时取消所有未决调用。
+4. **多个待审批调用**：同时显示多张卡片（按调用顺序），支持逐个处理和「全部允许 / 全部拒绝」。Genkit 要求恢复时一次处理完所有被中断的调用，所以：用户批准一张卡片时，宿主**立即执行**这个工具的实际操作并记下结果；所有卡片都处理完后，再用这些结果一次性恢复 agent。修改同一封草稿的写操作排队执行，只读工具和不同对象上的写操作可以并行。关闭面板时取消所有未决调用。
 5. **隔离框架**：`ai` 模块对外只暴露自己的接口（流式事件、工具定义、审批），不把 Genkit 的类型泄漏到 Service API，方便以后替换。
 6. **上游**：给 Genkit 提 issue / PR，让 Anthropic 插件通过 SDK 的 `ExtraFields` 保留根级字段；合并后可以去掉第 1 条里的部分处理。
 
@@ -264,7 +285,8 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 - 侧栏是账户分组树：顶部是跨账户视图（全部收件箱、已标星、智能视图），下面每个账户可折叠，展开后是各自的文件夹，最后是「添加账户」。只有一个账户时不分组。
 - 写邮件的发件人默认用当前选中的账户；在跨账户视图里写邮件用默认账户。
-- 阅读区自上而下：标题与发件人 → AI 总结（可开关，只显示要点，不带操作按钮）→ 插件 Card → 远程图片拦截提示 → 正文 → 附件 → 即时回复。
+- **会话视图**：邮件列表按会话（thread）显示，一行一个会话，显示参与者、最新一封的摘要、封数和未读数；阅读区按时间顺序展示整个会话，较早的邮件默认折叠成一行，未读和最新一封展开。会话按 `References` / `In-Reply-To` / `Message-ID` 归并，同一账户内跨文件夹（含已发送）；没有这些头时，按「规范化后的主题 + 参与者 + 时间窗口」兜底归并。设置里可以关闭会话视图，改回逐封显示。
+- 阅读区（单封邮件）自上而下：标题与发件人 → AI 总结（可开关，只显示要点，不带操作按钮）→ 插件 Card → 远程图片拦截提示 → 正文 → 附件 → 即时回复。
 - 翻译不单独占区域：正文直接替换为译文，上方一行「已翻译 · 显示原文」。
 - 即时回复：在收到的邮件底部给出最多 3 条完整回复草稿（只显示一行预览，Tab 切换），选中后进入撰写页继续改。会额外消耗模型额度，设置里可以关闭。
 
@@ -272,6 +294,9 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 - 草稿和发信是同一个撰写页，内容自动保存为草稿；发送后草稿变为发件箱里的操作。
 - 撰写区直接铺满内容区（不套卡片）；编辑区工具栏只有格式和附件。
+- **HTML 撰写**：富文本编辑器（加粗、斜体、链接、列表、引用），发出的邮件是 `multipart/alternative`（HTML + 自动生成的纯文本）。粘贴的内容经过与阅读相同的白名单清洗。
+- 收件人区支持抄送、密送、Reply-To；回复、全部回复（自动去掉自己的地址）、转发（正文引用原邮件，附件随转发带上）。
+- 附件添加时复制进应用自己的目录（草稿快照），不引用外部路径；单个附件和整封邮件有大小上限（默认 25 MB，超出时提示），超限前提示用户。
 - 右侧是Wit：多轮对话，结果直接写入左侧正文。输入框上方两个入口：「调整 ▾」（语气：正式 / 友好；长度：更短 / 更长；校对）和「翻译 ▾」。菜单项都是 skill。另有 ⌘K：选中一段只改这一段。
 - 撰写状态：① 空白 ② 生成中（正文锁定，可停止）③ 局部修改待确认 ④ 整体重写待确认 ⑤ 已应用（最近一轮可撤销）⑥ ⌘K 改写一段 ⑦ 出错（正文不变，可重试）。
 - 正文 diff 规则：
@@ -327,16 +352,19 @@ AI 助手统一叫 **Wit**（取自 God*wit*）。图标栏上的入口和撰写
 
 ## 8. v1 范围
 
-**做**：IMAP/SMTP 账户；同步和离线操作；文件夹和邮件列表、阅读、搜索（FTS5）；撰写、回复、转发、草稿；托盘常驻；OpenAI 兼容和 Anthropic 兼容模型服务；内置总结、翻译、调整（语气 / 长度 / 校对）skill；即时回复；Wit；`Ask`；Skill 和 Plugin 的加载、配置与权限；两个 Hook；Action、Card、Tool；`--headless` 下的 JSON-RPC 和 MCP（只读，加上草稿）。
+**做**：IMAP/SMTP 账户（含 Outlook OAuth）；同步和离线操作；会话视图；文件夹、阅读、搜索（FTS5）；HTML 撰写、回复、全部回复、转发、抄送 / 密送、草稿；托盘常驻；OpenAI 兼容和 Anthropic 兼容模型服务；内置总结、翻译、调整（语气 / 长度 / 校对）skill；即时回复；Wit；`Ask`；Skill 和 Plugin 的加载、配置与权限；两个 Hook；Action、Card、Tool；`--headless` 下的 JSON-RPC 和 MCP（只读，加上草稿）。
 
-**不做**：模型服务插件和订阅登录（见 6.2）；Gmail API、JMAP、Outlook Graph 后端；日历和联系人；PGP；插件市场（先手动安装）；规则编辑器 UI；DuckDB 分析。
+**发布节奏**：v1 内部按阶段交付，每个阶段都能独立使用：① 核心邮件（收发、会话、搜索、撰写）→ ② AI（总结、翻译、即时回复、Wit）→ ③ 插件与 MCP → ④ headless 与 JSON-RPC。
+
+**不做**：完整的备份与恢复（v2；v1 只保证迁移安全和拒绝旧版本打开新数据库）；模型服务插件和订阅登录（见 6.2）；Gmail API、JMAP、Outlook Graph 后端；日历和联系人；PGP；插件市场（先手动安装）；规则编辑器 UI；DuckDB 分析。
 
 ## 9. 测试
 
 - `core` 的各模块用单元测试覆盖；`sync` 和 `send` 跑在本地 IMAP/SMTP 测试服务器上（go-imap v2 自带服务端实现，可以搭内存服务器）。
 - 插件运行时：用一组夹具插件验证权限拦截、超时、崩溃隔离。
 - Service 层：对 mygo `Bind()` 和 JSON-RPC 两个出口跑同一套契约测试，确保两边行为一致。
-- 安全：用恶意 HTML 和 prompt 注入邮件样本做回归测试。
+- 安全：用恶意 HTML 和 prompt 注入邮件样本做回归测试；样本覆盖 CSS `url()`、`srcset`、协议相对地址、`<base>`、`<meta http-equiv="refresh">`、表单。
+- 同步与发送的故障注入：IMAP 拉取中途断开、UIDVALIDITY 变化、服务器不支持 MOVE / UIDPLUS、SMTP 提交后断线、进程在各步骤之间崩溃。
 
 ## 10. 待定
 
@@ -345,4 +373,5 @@ AI 助手统一叫 **Wit**（取自 God*wit*）。图标栏上的入口和撰写
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿。
 - Genkit 的 OpenTelemetry 依赖能否在不影响功能的前提下关闭或裁剪。
+- 深色模式下邮件正文的显示策略；键盘操作、屏幕阅读器、缩放；日期、时区、复数、从右到左语言的验收标准。
 - 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwitmail`（2026-10-08 查询时均未被占用）。
