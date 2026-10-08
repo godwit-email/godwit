@@ -59,10 +59,10 @@ const (
 var afterApprovalClaim, beforeResumeClaim func() bool
 
 // More test hooks, nil in production: beforeRunClaim runs in startRun right
-// before it claims the run row, beforeUntrack when a finished run is about to
+// before it claims the run row, with the call's context, beforeUntrack when a finished run is about to
 // stop being tracked.
 var (
-	beforeRunClaim func()
+	beforeRunClaim func(ctx context.Context)
 	beforeUntrack  func(runID int64)
 )
 

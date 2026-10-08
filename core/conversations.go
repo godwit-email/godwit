@@ -462,7 +462,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	now := time.Now().Unix()
 
 	if beforeRunClaim != nil {
-		beforeRunClaim()
+		beforeRunClaim(ctx)
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()

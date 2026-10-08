@@ -3,11 +3,13 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -431,7 +433,8 @@ func TestAskRacesClose(t *testing.T) {
 		require.NoError(t, e.s.Close())
 		<-done
 		if askErr != nil {
-			require.ErrorIs(t, askErr, ErrClosed)
+			// Closed before Ask registered, or Close cancelled it after.
+			require.True(t, errors.Is(askErr, ErrClosed) || errors.Is(askErr, context.Canceled), "%v", askErr)
 			continue
 		}
 		for range ch { // ends: the run finished or Close ended the stream
@@ -443,6 +446,28 @@ func TestAskRacesClose(t *testing.T) {
 		assert.Equal(t, "q", c.Title, "an Ask that returned a run saved its title before Close returned")
 		require.NoError(t, s.Close())
 	}
+}
+
+// TestAskRegisteredThenClosed: Close arrives after Ask registered and before
+// it claims the run. Close cancels Ask and waits for it; Ask fails cleanly.
+func TestAskRegisteredThenClosed(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	closed := make(chan error, 1)
+	beforeRunClaim = func(ctx context.Context) {
+		go func() { closed <- e.s.Close() }()
+		<-ctx.Done() // Close has cancelled this registered call
+	}
+	t.Cleanup(func() { beforeRunClaim = nil })
+	_, err := e.s.Ask(context.Background(), conv.ID, "q")
+	require.ErrorIs(t, err, context.Canceled, "Ask had registered, so Close cancelled it")
+	select {
+	case err := <-closed:
+		require.NoError(t, err, "Close waited for Ask and finished")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not finish")
+	}
+	assert.Empty(t, e.srv.Requests(), "the model was never asked")
 }
 
 func TestAskLanguageCluesExactAddress(t *testing.T) {

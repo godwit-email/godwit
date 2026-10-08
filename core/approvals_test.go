@@ -715,7 +715,7 @@ func TestNewRunSeesFinishedHistory(t *testing.T) {
 	require.NoError(t, err)
 	<-ch // the first run is in flight
 	var once sync.Once
-	beforeRunClaim = func() {
+	beforeRunClaim = func(context.Context) {
 		once.Do(func() { // the first run finishes after the second read the conversation
 			e.srv.Release()
 			drainWit(t, ch)
