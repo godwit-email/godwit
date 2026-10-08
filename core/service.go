@@ -20,6 +20,9 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// ErrClosed is returned by calls made after Close.
+var ErrClosed = errors.New("service is closed")
+
 // Options configures a Service.
 type Options struct {
 	DataDir  string
@@ -42,6 +45,11 @@ type Service struct {
 	workersMu sync.Mutex
 	workers   map[int64]*worker
 	closed    bool
+
+	callsMu     sync.Mutex
+	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
+	callsClosed bool
+	removing    map[int64]bool // accounts RemoveAccount is deleting
 
 	closeOnce sync.Once
 	closeErr  error
@@ -81,10 +89,15 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	return s, nil
 }
 
-// Close stops the background workers, waits for them and releases the database.
-// Concurrent and repeated calls all wait for the same shutdown.
+// Close refuses new calls with ErrClosed, cancels the explicit network calls and
+// background workers, waits for them (each records its outcome) and releases the
+// database. Concurrent and repeated calls all wait for the same shutdown.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
+		s.callsMu.Lock()
+		s.callsClosed = true
+		s.callsMu.Unlock()
+		s.stopCalls(func(int64) bool { return true })
 		s.workersMu.Lock()
 		s.closed = true
 		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping
@@ -101,6 +114,56 @@ func (s *Service) Close() error {
 		s.closeErr = s.db.Close()
 	})
 	return s.closeErr
+}
+
+// call is an explicit network call in flight.
+type call struct {
+	accountID int64 // 0 before the account exists (AddAccount)
+	cancel    context.CancelFunc
+	done      chan struct{}
+}
+
+// begin registers an explicit call on accountID. Its context also ends when the
+// Service closes or the account is removed, which then wait for end; end must
+// be called once the call has recorded its outcome.
+func (s *Service) begin(ctx context.Context, accountID int64) (context.Context, func(), error) {
+	s.callsMu.Lock()
+	defer s.callsMu.Unlock()
+	if s.callsClosed {
+		return nil, nil, ErrClosed
+	}
+	if s.removing[accountID] {
+		return nil, nil, fmt.Errorf("account %d is being removed", accountID)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	c := &call{accountID: accountID, cancel: cancel, done: make(chan struct{})}
+	if s.calls == nil {
+		s.calls = map[*call]struct{}{}
+	}
+	s.calls[c] = struct{}{}
+	return ctx, func() {
+		cancel()
+		s.callsMu.Lock()
+		delete(s.calls, c)
+		s.callsMu.Unlock()
+		close(c.done)
+	}, nil
+}
+
+// stopCalls cancels the calls whose account matches and waits for them to end.
+func (s *Service) stopCalls(match func(accountID int64) bool) {
+	s.callsMu.Lock()
+	var stop []*call
+	for c := range s.calls {
+		if match(c.accountID) {
+			c.cancel()
+			stop = append(stop, c)
+		}
+	}
+	s.callsMu.Unlock()
+	for _, c := range stop {
+		<-c.done
+	}
 }
 
 // cleanOrphans removes files under cache/, drafts/ and outbox/ that no row refers
@@ -169,7 +232,12 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 // run one at a time. Afterwards the background worker is woken; if it was parked
 // on reauth_required and this call logged in, it resumes.
 func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
-	err := s.syncNow(ctx, accountID, true)
+	ctx, end, err := s.begin(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	defer end()
+	err = s.syncNow(ctx, accountID, true)
 	s.wakeWorker(accountID) // the worker re-reads the status itself, so no stale decision here
 	return err
 }

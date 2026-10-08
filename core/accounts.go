@@ -108,6 +108,11 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 
 // AddAccount tests in, stores the account and saves the password in the keychain.
 func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return Account{}, err
+	}
+	defer end()
 	if err := s.TestAccount(ctx, in); err != nil {
 		return Account{}, err
 	}
@@ -209,7 +214,24 @@ func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
 }
 
 // RemoveAccount deletes the account, its keychain entry and its cache directory.
+// It first cancels the account's explicit calls and worker and waits for them.
 func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
+	s.callsMu.Lock()
+	if s.callsClosed {
+		s.callsMu.Unlock()
+		return ErrClosed
+	}
+	if s.removing == nil {
+		s.removing = map[int64]bool{}
+	}
+	s.removing[id] = true
+	s.callsMu.Unlock()
+	defer func() {
+		s.callsMu.Lock()
+		delete(s.removing, id)
+		s.callsMu.Unlock()
+	}()
+	s.stopCalls(func(a int64) bool { return a == id })
 	s.stopWorker(id)
 	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err

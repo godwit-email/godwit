@@ -64,6 +64,11 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("outbox item %d not found", id)
 	}
+	ctx, end, err := s.begin(ctx, store.Int(rows.Values[0][0]))
+	if err != nil {
+		return err
+	}
+	defer end()
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0])) // never while a sync is handling the item
 	if err != nil {
 		return err

@@ -29,6 +29,20 @@ type Inbox struct {
 	sent       *IMAP // SaveToSent target
 	rejectAuth bool
 	auths      int
+	block      chan struct{} // closed by the BlockData release func
+	entered    chan struct{}
+}
+
+// BlockData makes the next sessions hold their reply after reading the full DATA
+// until release is called (release may be called more than once). entered
+// receives once per held session.
+func (in *Inbox) BlockData() (entered <-chan struct{}, release func()) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.block, in.entered = make(chan struct{}), make(chan struct{}, 16)
+	block := in.block
+	var once sync.Once
+	return in.entered, func() { once.Do(func() { close(block) }) }
 }
 
 // RejectAuth makes the server refuse (or, with false, accept again) alice/secret.
@@ -122,6 +136,13 @@ func (s *smtpSession) Data(r io.Reader) error {
 		return err
 	}
 	s.cur.Data = data
+	s.in.mu.Lock()
+	block, entered := s.in.block, s.in.entered
+	s.in.mu.Unlock()
+	if block != nil {
+		entered <- struct{}{}
+		<-block
+	}
 	s.in.mu.Lock()
 	defer s.in.mu.Unlock()
 	s.in.msgs = append(s.in.msgs, s.cur)

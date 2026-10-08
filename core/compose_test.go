@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	netmail "net/mail"
 	"os"
 	"path/filepath"
@@ -448,4 +449,54 @@ func TestResolveConfirmSent(t *testing.T) {
 	assert.Equal(t, []string{mid + ` \Seen`}, e.onServer(t, "Sent"))
 	assert.NoFileExists(t, raw)
 	assert.Len(t, e.smtp.Messages(), 1, "confirm_sent does not resend")
+}
+
+// sendBlocked queues a message and starts an explicit SyncNow that is held by
+// the SMTP server after DATA. It returns the SyncNow result channel.
+func (e *sendEnv) sendBlocked(t *testing.T) <-chan error {
+	t.Helper()
+	entered, release := e.smtp.BlockData()
+	t.Cleanup(release)
+	e.sendNew(t)
+	done := make(chan error, 1)
+	go func() { done <- e.s.SyncNow(bg, e.acc.ID) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SyncNow did not reach SMTP DATA")
+	}
+	return done
+}
+
+// returned reports SyncNow's result if it has returned already.
+func returned(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	default:
+		t.Fatal("returned while an explicit SyncNow was still running")
+		return nil
+	}
+}
+
+func TestRemoveAccountWaitsForExplicitSync(t *testing.T) {
+	e := newSendEnv(t, false)
+	done := e.sendBlocked(t)
+	require.NoError(t, e.s.RemoveAccount(bg, e.acc.ID))
+	assert.ErrorIs(t, returned(t, done), context.Canceled)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM accounts"))
+}
+
+func TestCloseWaitsForExplicitSync(t *testing.T) {
+	e := newSendEnv(t, false)
+	done := e.sendBlocked(t)
+	require.NoError(t, e.s.Close())
+	assert.ErrorIs(t, returned(t, done), context.Canceled)
+	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), ErrClosed)
+	e.reopen(t)
+	r := e.rows(t, "SELECT state, last_error FROM outbox")
+	assert.Equal(t, "send_uncertain", store.Str(r[0][0]))
+	assert.NotEmpty(t, store.Str(r[0][1]), "the sync recorded its result before the database closed")
 }

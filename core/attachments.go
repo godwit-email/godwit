@@ -85,6 +85,11 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
+	ctx, end, err := s.begin(ctx, a.accountID)
+	if err != nil {
+		return "", AttachmentInfo{}, err
+	}
+	defer end()
 	if p, ok, err := s.cached(ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
@@ -141,6 +146,11 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if len(rows.Values) == 0 {
 		return nil, fmt.Errorf("message %d not found", messageID)
 	}
+	ctx, end, err := s.begin(ctx, store.Int(rows.Values[0][0]))
+	if err != nil {
+		return nil, err
+	}
+	defer end()
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0]))
 	if err != nil {
 		return nil, err
