@@ -273,7 +273,7 @@ func (r *runner) run(req Request) Result {
 		tools[s.Name] = r.tool(s)
 		refs = append(refs, tools[s.Name])
 	}
-	opts := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{})}
+	opts := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r})}
 	if len(refs) > 0 {
 		opts = append(opts, gai.WithTools(refs...))
 	}
@@ -342,15 +342,26 @@ func CallID(ctx context.Context) string {
 	return id
 }
 
-// callIDs hands each tool call's ID to the tool function through its context.
-type callIDs struct{}
+// callIDs hands each tool call's ID to the tool function through its context,
+// and turns arguments that fail the tool's schema into an error result for the
+// model, which can then retry, instead of a failed run.
+type callIDs struct{ r *runner }
 
 func (callIDs) Name() string { return "godwit_call_ids" }
 
-func (callIDs) New(context.Context) (*gai.Hooks, error) {
+func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 	return &gai.Hooks{
 		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
-			return next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
+			resp, err := next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
+			if err == nil || !errors.Is(err, status.ErrInvalidInput) {
+				return resp, err
+			}
+			// Genkit validated the arguments before the tool function ran.
+			call := toolCall(p.Request)
+			res := ToolResult{CallID: call.ID, Name: call.Name, Error: c.r.redact("invalid arguments: " + err.Error())}
+			c.r.send(Event{Kind: "tool_call", Call: &call})
+			c.r.send(Event{Kind: "tool_result", Result: &res})
+			return &gai.MultipartToolResponse{Output: map[string]any{"error": res.Error}}, nil
 		},
 		// Results bind to call IDs, so a turn that repeats one is unusable.
 		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {

@@ -646,3 +646,34 @@ func TestRunGate(t *testing.T) {
 		assert.Equal(t, map[string]string{"d1": "tool call denied", "e1": "audit failed [redacted]", "o1": ""}, errs)
 	})
 }
+
+func TestInvalidToolArgsGoBackToModel(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"limit":50}`}}},
+			testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"limit":5}`}}},
+			testllm.Turn{Text: []string{"found"}})
+		var runs atomic.Int64
+		tools := []ToolSpec{{Name: "search", Description: "search",
+			Schema: map[string]any{"type": "object", "properties": map[string]any{"limit": map[string]any{"type": "integer", "maximum": 20}}},
+			Run:    func(context.Context, json.RawMessage) (any, error) { runs.Add(1); return "ok", nil }}}
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "find", Tools: tools})
+		require.Nil(t, res.Err, "an invalid argument does not end the run")
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.Equal(t, int64(1), runs.Load(), "the invalid call never reaches the tool")
+		results := kindsOf(evs, "tool_result")
+		require.Len(t, results, 2)
+		assert.Equal(t, "c1", results[0].Result.CallID)
+		assert.Equal(t, "search", results[0].Result.Name)
+		assert.Contains(t, results[0].Result.Error, "invalid arguments")
+		assert.Empty(t, results[1].Result.Error)
+		require.Len(t, kindsOf(evs, "tool_call"), 2)
+
+		reqs := srv.Requests()
+		require.Len(t, reqs, 3)
+		assert.Contains(t, string(reqs[1].Messages), "invalid arguments", "the model is told why")
+		calls, ids := toolIDs(t, kind, reqs[2].Messages)
+		assert.ElementsMatch(t, calls, ids)
+		assert.Contains(t, string(reqs[0].Tools), "maximum", "the model still sees the real schema")
+	})
+}
