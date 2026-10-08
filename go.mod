@@ -10,6 +10,7 @@ require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.25.0
 	github.com/firebase/genkit/go v1.13.1
+	github.com/goccy/go-yaml v1.19.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/openai/openai-go v1.8.2
 	github.com/stretchr/testify v1.12.1
@@ -27,7 +28,6 @@ require (
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/dotprompt/go v0.0.0-20260708220100-73beb993ac95 // indirect
 	github.com/google/uuid v1.6.0 // indirect
