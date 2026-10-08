@@ -80,7 +80,8 @@ Messages   List(folder, cursor, limit) / Get(id) / Search(query)
            SetFlags(ids, add, remove) / Move(ids, folder) / Delete(ids)
 Compose    SaveDraft / Send(draftID) / GetAttachment(id)
 Models     ListServices / AddService / UpdateService / RemoveService / ListModels(service)
-AI         RunSkill(name, target) → stream / RunAction(id, target) / Ask(question) → stream
+AI         RunSkill(name, target) → stream / RunAction(id, target) / QuickReplies(messageID)
+           Ask(conversationID, input) → stream / Assist(draftID, input) → stream / Resolve(proposalID, accept)
 Extensions ListSkills / ListPlugins / SetEnabled / GrantPermission / GetConfig / SetConfig
 Events     Subscribe() → stream
 ```
