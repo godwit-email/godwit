@@ -1,11 +1,12 @@
-# Curlew 设计文档
+# Godwit 设计文档
 
 - 日期：2026-10-08
 - 状态：待审阅
-- 官网：curlew.si
-- 仓库：github.com/curlewmail/curlew
-- 插件 SDK（npm）：`curlewmail`（备选 `@curlewmail/sdk`）
-- CLI 命令：`curlew`
+- 官网：godwit.email
+- 仓库：github.com/godwitmail/godwit
+- 插件 SDK（npm）：`@godwit/sdk`
+- CLI 命令：`godwit`
+- 命名由来：斑尾塍鹬（bar-tailed godwit）保持着鸟类不间断飞行的世界纪录，寓意可靠送达；开头的 Go 也呼应实现语言
 
 ## 1. 目标
 
@@ -49,7 +50,7 @@
 ```
 core/          Go 库：所有业务逻辑，对外只暴露 Service
 app/           mygo 托盘应用（默认）：进程内直接调用 core.Service
-cmd/curlew/    入口；加 --headless 时把同一个 Service 通过 JSON-RPC（本地 socket）和 MCP 暴露出去
+cmd/godwit/    入口；加 --headless 时把同一个 Service 通过 JSON-RPC（本地 socket）和 MCP 暴露出去
 ```
 
 - 应用常驻托盘，关闭窗口只是隐藏，后台同步和 Hook 继续运行。
@@ -182,4 +183,4 @@ export default function (ctx: Ctx) {
 
 - QuickJS-on-wazero 和 goja 二选一，原型阶段测一下性能和兼容性再定。
 - mygo 托盘、通知、开机自启在三个平台上的实际表现，原型阶段验证。
-- npm 包名 `curlew` 能否申请转让，不成就用 `curlewmail`。
+- 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwitmail`（2026-10-08 查询时均未被占用）。
