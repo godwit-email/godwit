@@ -18,7 +18,7 @@
 2. 账户接入：服务商识别、Outlook OAuth（公开客户端 + PKCE、XOAUTH2、刷新互斥、撤销）、重新登录、钥匙串不可用时的行为
 3. AI 与 Wit：Genkit、模型服务、Skill、总结 / 翻译 / 即时回复、Wit 与审批，以及权限网关的最小版本（数据来源标记、外发检查、审批状态持久化），插件计划在此基础上扩展
 4. 插件运行时：QuickJS 沙箱、权限网关、配置声明、Hook 可靠投递、actions / cards / tools、MCP
-5. GUI：mygo 窗口、会话列表与阅读、富文本撰写、设置；Tailwind CSS v4 + shadcn/ui（Nova、neutral），色板与变量按 spec 7.0
+5. GUI：mygo 原生 UI；按 spec 7.0 实现 Nova / neutral 风格的组件和色板；窗口、侧栏、会话列表、设置、Wit 面板在前，**内容渲染放在最后**（HTML 正文转原生富文本、原生富文本编辑器），以便 egoist/mygo#148 有进展时调整
 6. Headless：`--headless` 下的 JSON-RPC 与 MCP
 
 ## Global Constraints

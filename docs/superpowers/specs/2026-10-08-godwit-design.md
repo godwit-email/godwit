@@ -26,8 +26,8 @@
 | 领域 | 选择 | 理由 |
 |---|---|---|
 | 语言 | Go | 一种语言贯穿全项目，没有跨语言调用 |
-| 工具链版本 | mise（`mise.toml`）固定 Go 1.27.1、Bun 1.4.2 | mygo 要求 Go 1.27+；Bun 只用于开发和构建期的前端工具链，不进入最终产物 |
-| GUI | mygo，webview 模式 | 纯 Go，不需要 cgo，可交叉编译；渲染 HTML 邮件必须用 webview |
+| 工具链版本 | mise（`mise.toml`）固定 Go 1.27.1 | 原生 UI 不需要前端工具链；插件的 TS 由 Go 侧的 esbuild 编译 |
+| GUI | mygo **原生 UI**（`ui` 包，GPU 渲染：Metal / Direct3D 11 / OpenGL） | 纯 Go、不需要 cgo；全部界面由 GPU 绘制。HTML 邮件正文先转成原生富文本显示（7.2），等 mygo 支持在原生界面里嵌入网页视图（[egoist/mygo#148](https://github.com/egoist/mygo/issues/148)）后再评估是否改用 |
 | IMAP | `github.com/emersion/go-imap/v2` | 成熟，支持 IDLE 和 CONDSTORE |
 | SMTP | `github.com/emersion/go-smtp` | |
 | MIME | `github.com/emersion/go-message` | |
@@ -41,7 +41,7 @@
 
 ### 存储相关约束
 
-- 只在 Go 侧使用 sqlite，**不调用** `mygo.Use(sqlite.Plugin)`，前端碰不到数据库。
+- 只在 Go 侧使用 sqlite，**不调用** `mygo.Use(sqlite.Plugin)`。
 - 迁移用 `PRAGMA user_version` 加一个按顺序执行的 SQL 列表；mygo 的 `Execute` 一次只接受一条语句，所以列表里每项都是单条语句，一个版本的所有语句放进同一个 `Transaction`。
 - 数据库版本高于当前程序认识的版本时（用户降级了程序）拒绝打开，提示升级，不做任何写入。
 - 开启外键约束；草稿、操作队列、附件都通过外键挂在账户或邮件上，删除时级联清理。
@@ -215,12 +215,15 @@ export default function (ctx: Ctx) {
 - 调用没有声明权限的 `ctx` API 时直接抛错。
 - 日志按值动态脱敏：收集所有 secret 和凭据的字符串值，输出前替换，不依赖字段名。
 
-**邮件 HTML 显示契约**：
+**邮件 HTML 显示契约**（原生渲染，没有 HTML 引擎）：
 
 - core 层用白名单清洗：去掉脚本、事件属性、`javascript:` 等危险协议、`<form>`、`<iframe>`、`<object>`、`<base>`、`<meta http-equiv>`；CSS 只保留白名单属性，去掉 `url()`、`expression()`、`@import`。
-- 远程资源默认全部拦截，包括 `img` 的 `src` 和 `srcset`、`//` 开头的协议相对地址、CSS 背景图；用户选择加载后才放行（CSS 背景图始终不放行）。被拦截的数量在清洗**之前**统计。`cid:` 内联图片在清洗前保留，清洗后替换成 `data:` 地址；按文件内容实际识别格式，只允许 PNG、JPEG、GIF、WebP。
-- CSS 按属性白名单逐条解析，不靠字符串匹配。
-- 前端用 `sandbox` iframe 显示（不给 `allow-scripts`、`allow-same-origin`、`allow-forms`、`allow-top-navigation`），加上 CSP：`default-src 'none'; img-src data:`（加载远程图片时再放开 `https:`）；`style-src 'unsafe-inline'`。链接改写成不可导航的元素，点击由宿主拦截后用系统浏览器打开，iframe 本身不能跳转。
+- 清洗后的 HTML 转成 **Godwit 富文本模型**（段落、标题、粗体 / 斜体 / 下划线 / 删除线、颜色、链接、有序 / 无序列表、引用、代码、分隔线、图片、简单表格），再由原生界面绘制。模型表达不了的排版（多列布局、绝对定位、复杂嵌套表格）会被简化为从上到下的流式排版。
+- 远程资源默认全部拦截（`img` 的 `src` 和 `srcset`、协议相对地址、CSS 背景图），被拦截的数量在清洗**之前**统计。用户选择加载后，由 Go 侧下载图片（不带 Cookie 和 Referer），CSS 背景图始终不加载。`cid:` 内联图片直接读本地附件，按文件内容实际识别格式，只允许 PNG、JPEG、GIF、WebP。
+- 链接点击由宿主处理，用系统浏览器打开，并在打开前显示真实地址。
+- 中西文混排时自动加间距（相当于 CSS 的 `text-autospace: normal`），在富文本模型渲染时处理，所有平台效果一致。
+- 兜底：阅读区提供「在浏览器中查看原文」。把清洗后的 HTML 写入临时文件（文件里加上禁止远程资源的 CSP），用系统浏览器打开。
+- 以后如果正文改用网页视图（mygo#148），沿用同样的清洗规则，并补上 iframe sandbox 和 CSP 的约束。
 
 ## 6. 模型服务
 
@@ -277,28 +280,31 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 ### 7.0 设计系统
 
-- **组件**：shadcn/ui，风格 **Nova**，基础色 **neutral**；图标用 shadcn 默认的 lucide。前端用 Tailwind CSS v4。
-- **色板**：只用 **Tailwind v4 默认色板**（oklch）。语义颜色走 shadcn 的 CSS 变量（`--background`、`--foreground`、`--muted`、`--border`、`--primary` 等，neutral 主题），Godwit 额外定义三层颜色变量，全部引用色板，不写自定义十六进制值：
+- **实现方式**：全部界面用 mygo 原生 UI 绘制。组件外观**按 shadcn/ui 的 Nova 风格、neutral 基础色**来做：用 mygo 提供的无样式基础组件（`ButtonBase`、`SwitchBase`、`SelectBase`、`PopoverBase`、`DialogBase` 等）实现自己的一套组件，尺寸、圆角、间距、状态样式对齐 shadcn Nova。
+- **色板**：只用 **Tailwind v4 默认色板**（oklch，用 `ui.Oklch` 绘制，P3 屏幕上和浏览器里一样鲜艳）。mygo PR [#104](https://github.com/egoist/mygo/pull/104)（`ui/palette`）合并前，项目里放一份同样从 Tailwind v4 `theme.css` 生成的 `internal/palette`，只收录用到的颜色；合并后改用 mygo 的。
+- **主题变量**：在 mygo 主题（`c.Theme()`）之上定义 Godwit 的语义颜色，全部引用色板，不写自定义十六进制值：
 
   | 变量 | 浅色 | 用途 |
   |---|---|---|
-  | `--window` | `color-mix(in oklch, var(--color-neutral-100), var(--color-neutral-200))` | 顶栏和图标栏底色 |
-  | `--sidebar` | `var(--color-neutral-50)` | 侧栏 |
-  | `--background` | `var(--color-white)` | 内容区 |
+  | `Window` | `neutral-100` 与 `neutral-200` 的 oklch 中点 | 顶栏和图标栏底色 |
+  | `Sidebar` | `neutral-50` | 侧栏 |
+  | `Background` | `white` | 内容区 |
+  | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、分隔线 |
+  | `Primary` | `neutral-900` | 主按钮、开关打开、选中强调 |
   | 选中项 | 侧栏 `neutral-100`，图标栏 `neutral-200` | |
   | 状态 | 成功 `green-600`；提醒 `amber-50` 底 / `amber-300` 边 / `amber-800` 字；危险 `red-600` | |
 
-  深色主题沿用 shadcn neutral 的深色变量，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成对应的色板值。
-- **Go 侧**：mygo 的 `WindowOptions.BackgroundColor` 填 `light-dark(浅色窗口底色, 深色窗口底色)`，避免页面加载前闪白；这两个值从同一份变量定义生成，Go 里不另建色板。（mygo PR #104 给 mygo 原生 UI 加了 Tailwind 色板，但我们的界面走 webview，不依赖它。）
-- **字体**：Geist / Geist Mono，中文 Noto Sans SC。
-- **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用 shadcn 对应组件。
+  深色主题对应 shadcn neutral 的深色取值，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成色板值。
+- **图标**：Lucide 的 SVG，用 `ui.Icon` 显示，随文字颜色变化。
+- **字体**：用 `ui.RegisterFont` 内嵌 Geist / Geist Mono；中文使用系统字体（苹方、微软雅黑、Noto Sans CJK），不内嵌，以免安装包过大。
+- **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用上面那套组件。
 
 ### 7.1 窗口与布局
 
 - 布局参考 Codex，三层颜色：窗口底色（顶栏 + 左侧图标栏）`#ECECEC` → 侧栏 `#F9F9F9`（左上圆角）→ 内容区白色，侧栏与内容区连成一块面板，贴住窗口右边和下边。
 - 左侧图标栏：邮件、Wit；设置固定在底部。扩展只从「设置 › 扩展」进入。没有用户体系，不放头像。
 - 顶栏：系统窗口按钮 + 收起侧栏、后退、前进；内容区上方显示当前标题（如「全部收件箱 · 16 封未读」）和同步状态。
-- 系统窗口按钮（mygo `TitleBarHiddenInset` / `TitleBarHeight` / `--mygo-titlebar-inset-*` / `--app-region: drag`）：
+- 系统窗口按钮（mygo `TitleBarHiddenInset` / `TitleBarHeight`；原生 UI 里用 `ui.Context.TitleBar` 得到要让出的位置，用 `Element.DragWindow` 标记可拖动区域）：
   - macOS：红绿灯嵌在左上角；背景 `VibrancySidebar`。
   - Windows 11：右上角最小化、最大化、关闭，标题栏高 40；窗口圆角 8px；背景 `VibrancyMica`。
   - Linux：按钮由 GTK 绘制，位置取决于桌面设置，只能靠 inset 变量让位。
@@ -316,7 +322,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
 - 草稿和发信是同一个撰写页，内容自动保存为草稿；发送后草稿变为发件箱里的操作。
 - 撰写区直接铺满内容区（不套卡片）；编辑区工具栏只有格式和附件。
-- **HTML 撰写**：富文本编辑器（加粗、斜体、链接、列表、引用），发出的邮件是 `multipart/alternative`（HTML + 自动生成的纯文本）。粘贴的内容经过与阅读相同的白名单清洗。
+- **HTML 撰写**：原生富文本编辑器，基于 mygo 的 `TextInputClient`（输入法、选区、撤销由 mygo 接入系统，文档模型和绘制由我们实现），文档就是 7.2 的 Godwit 富文本模型的子集（加粗、斜体、链接、列表、引用）。发出的邮件是 `multipart/alternative`（HTML + 自动生成的纯文本）。粘贴的 HTML 先清洗再转成模型。mygo#148 解决后，可以评估改用网页的 `contenteditable`。
 - 收件人区支持抄送、密送、Reply-To；回复、全部回复（自动去掉自己的地址）、转发（正文引用原邮件，附件随转发带上）。
 - 附件添加时复制进应用自己的目录（草稿快照），不引用外部路径；单个附件和整封邮件有大小上限（默认 25 MB，超出时提示），超限前提示用户。
 - 右侧是Wit：多轮对话，结果直接写入左侧正文。输入框上方两个入口：「调整 ▾」（语气：正式 / 友好；长度：更短 / 更长；校对）和「翻译 ▾」。菜单项都是 skill。另有 ⌘K：选中一段只改这一段。
@@ -339,7 +345,7 @@ AI 助手统一叫 **Wit**（取自 God*wit*）。图标栏上的入口和撰写
 | 工具权限 | 读邮件、`update_draft`（只改当前草稿） | 读邮件、`create_draft` |
 | 结果去向 | 写入正文，带修订 | 显示在对话里，引用来源列在右侧 |
 
-面板元素统一：用户消息、工具调用记录（可折叠）、「待确认」卡片（接受 / 拒绝）、引用邮件和模型选择、底部输入框。疑似 prompt 注入的来源会被标出，并说明「只作为数据处理」。
+Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统一：用户消息、工具调用记录（可折叠）、「待确认」卡片（接受 / 拒绝）、引用邮件和模型选择、底部输入框。疑似 prompt 注入的来源会被标出，并说明「只作为数据处理」。
 
 ### 7.5 账户接入
 
@@ -394,6 +400,8 @@ AI 助手统一叫 **Wit**（取自 God*wit*）。图标栏上的入口和撰写
 - mygo 托盘、通知、开机自启在三个平台上的实际表现，原型阶段验证。
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿。
+- 跟进 [egoist/mygo#148](https://github.com/egoist/mygo/issues/148)（原生界面嵌入网页视图）：解决后评估邮件正文和撰写编辑器是否改用网页视图。
+- 跟进 [egoist/mygo#104](https://github.com/egoist/mygo/pull/104)（Tailwind 色板）：合并后用 mygo 的 `ui/palette` 替换 `internal/palette`。
 - Genkit 的 OpenTelemetry 依赖能否在不影响功能的前提下关闭或裁剪。
 - 深色模式下邮件正文的显示策略；键盘操作、屏幕阅读器、缩放；日期、时区、复数、从右到左语言的验收标准。
 - 尽快注册：域名 `godwit.email`、npm org `godwit`、GitHub org `godwitmail`（2026-10-08 查询时均未被占用）。
