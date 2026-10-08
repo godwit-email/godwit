@@ -16,6 +16,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -76,34 +77,17 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		return nil, err
 	}
 
-	// Target: its account, members, and content version (which also proves it still exists).
-	where, arg := "id = ?", t.ID
-	if t.Kind == "thread" {
-		where = "thread_id = ?"
-	}
-	rows, err := s.db.Query(ctx, "SELECT id, account_id, subject, body_text, body_html FROM messages WHERE "+where+" ORDER BY date, id", arg)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows.Values) == 0 {
-		return nil, fmt.Errorf("%s %d not found", t.Kind, t.ID)
-	}
 	if t.Kind == "selection" && strings.TrimSpace(t.Text) == "" {
 		return nil, errors.New("selection is empty")
 	}
-	account := store.Int(rows.Values[0][1])
-	var ids []int64
-	type member struct {
-		ID   int64
-		Hash string // sha256 of subject and bodies
+	kind := t.Kind
+	if kind == "selection" {
+		kind = "message"
 	}
-	var members []member // sorted by ID
-	for _, r := range rows.Values {
-		ids = append(ids, store.Int(r[0]))
-		sum := sha256.Sum256([]byte(store.Str(r[2]) + "\x00" + store.Str(r[3]) + "\x00" + store.Str(r[4])))
-		members = append(members, member{store.Int(r[0]), hex.EncodeToString(sum[:])})
+	account, ids, members, err := s.mailTarget(ctx, kind, t.ID)
+	if err != nil {
+		return nil, err
 	}
-	slices.SortFunc(members, func(a, b member) int { return cmp.Compare(a.ID, b.ID) })
 	if err := s.bind(ctx, account); err != nil {
 		return nil, err
 	}
@@ -140,18 +124,15 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		b, _ := json.Marshal([]any{sk.Name, sk.Version, t.Kind, t.ID, members,
-			model.ServiceID, model.Version, model.Model, lang, keep})
-		sum := sha256.Sum256(b)
-		key = hex.EncodeToString(sum[:])
-		rows, err := s.db.Query(ctx, "SELECT output FROM ai_cache WHERE key = ?", key)
+		key = cacheKey(sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep)
+		o, hit, err := s.cacheGet(ctx, key)
 		if err != nil {
 			return nil, err
 		}
-		if len(rows.Values) > 0 {
+		if hit {
 			out := make(chan ai.Event, 3)
 			out <- ctxEvent
-			if o := store.Str(rows.Values[0][0]); o != "" {
+			if o != "" {
 				out <- ai.Event{Kind: "text", Text: o}
 			}
 			out <- ai.Event{Kind: "done"}
@@ -204,11 +185,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 					send(ai.Event{Kind: "text", Text: o})
 				}
 				if key != "" {
-					// The user has the output: a failed write only costs a later miss.
-					if _, err := s.db.Execute(ctx, "INSERT OR REPLACE INTO ai_cache(key, account_id, output, created_at) VALUES (?, ?, ?, ?)",
-						key, account, o, time.Now().Unix()); err != nil {
-						slog.Default().Warn("ai cache write failed", "skill", name, "err", err)
-					}
+					s.cachePut(ctx, key, account, o, name)
 				}
 			}
 			// The terminal event always fits: once ctx is done the reader may be
@@ -226,4 +203,222 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		close(out)
 	}()
 	return out, nil
+}
+
+// contentMember is one message of a cached target's content version.
+type contentMember struct {
+	ID   int64
+	Hash string // sha256 of subject and bodies
+}
+
+// mailTarget loads a message or thread: its account, member IDs by date, and
+// its content version (members sorted by ID). It also proves the target exists.
+func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64, []int64, []contentMember, error) {
+	where := "id = ?"
+	if kind == "thread" {
+		where = "thread_id = ?"
+	}
+	rows, err := s.db.Query(ctx, "SELECT id, account_id, subject, body_text, body_html FROM messages WHERE "+where+" ORDER BY date, id", id)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, nil, nil, fmt.Errorf("%s %d not found", kind, id)
+	}
+	var ids []int64
+	var members []contentMember
+	for _, r := range rows.Values {
+		ids = append(ids, store.Int(r[0]))
+		sum := sha256.Sum256([]byte(store.Str(r[2]) + "\x00" + store.Str(r[3]) + "\x00" + store.Str(r[4])))
+		members = append(members, contentMember{store.Int(r[0]), hex.EncodeToString(sum[:])})
+	}
+	slices.SortFunc(members, func(a, b contentMember) int { return cmp.Compare(a.ID, b.ID) })
+	return store.Int(rows.Values[0][1]), ids, members, nil
+}
+
+// cacheKey hashes everything that changes a cached output.
+func cacheKey(parts ...any) string {
+	b, _ := json.Marshal(parts)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Service) cacheGet(ctx context.Context, key string) (string, bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT output FROM ai_cache WHERE key = ?", key)
+	if err != nil || len(rows.Values) == 0 {
+		return "", false, err
+	}
+	return store.Str(rows.Values[0][0]), true, nil
+}
+
+// cachePut stores output. The user already has it: a failed write only costs
+// a later miss, so it is logged (without content), not returned.
+func (s *Service) cachePut(ctx context.Context, key string, account int64, output, what string) {
+	if _, err := s.db.Execute(ctx, "INSERT OR REPLACE INTO ai_cache(key, account_id, output, created_at) VALUES (?, ?, ?, ?)",
+		key, account, output, time.Now().Unix()); err != nil {
+		slog.Default().Warn("ai cache write failed", "skill", what, "err", err)
+	}
+}
+
+// QuickReply is one suggested reply: sanitized HTML and a plain-text preview.
+type QuickReply struct{ Preview, HTML string }
+
+const (
+	maxQuickReplies    = 3
+	quickPreviewRunes  = 80
+	quickRepliesSystem = `Suggest up to three short, distinct replies the user could send to the email you are given, written as the user. ` +
+		`Answer with JSON only, exactly in this shape: {"replies":[{"html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). ` +
+		`No greeting placeholders, no signature, no quoted text.`
+)
+
+// QuickReplies suggests up to three replies to a message with the default
+// model. It returns none, without asking the model, when Settings.QuickReplies
+// is off or the message is from the account itself. Results are cached like
+// RunSkill's; an answer that is not the requested JSON is an error.
+func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickReply, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	st, err := s.loadSettings(ctx)
+	if err != nil || !st.QuickReplies {
+		return nil, err
+	}
+	account, ids, members, err := s.mailTarget(ctx, "message", messageID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.bind(ctx, account); err != nil {
+		return nil, err
+	}
+	acc, err := s.account(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT from_addr FROM messages WHERE id = ?", messageID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) > 0 && mail.AddrKey(store.Str(rows.Values[0][0])) == mail.AddrKey(acc.Email) {
+		return nil, nil
+	}
+	model, err := s.resolveModel(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	system := quickRepliesSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n"
+	if st.ReplyLanguage == "reading" {
+		system += "Write the replies in " + s.readingLanguage(ctx) + "."
+	} else {
+		system += "Write the replies in the language of the email."
+	}
+	key := cacheKey("quick-replies", messageID, members, model.ServiceID, model.Version, model.Model, st.ReplyLanguage, system)
+	if o, hit, err := s.cacheGet(ctx, key); err != nil || hit {
+		var rs []QuickReply
+		if hit {
+			err = json.Unmarshal([]byte(o), &rs)
+		}
+		return rs, err
+	}
+
+	items, err := s.mailContext(ctx, &gateway.Scope{}, ids, defaultMailBudget)
+	if err != nil {
+		return nil, err
+	}
+	var blocks []string
+	for _, it := range items {
+		blocks = append(blocks, it.Block)
+	}
+	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "quick_replies", "message", messageID, "run"); err != nil {
+		return nil, err
+	}
+	e, err := s.aiEngine()
+	if err != nil {
+		return nil, err
+	}
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	var text strings.Builder
+	for ev := range events {
+		switch ev.Kind {
+		case "text":
+			text.WriteString(ev.Text)
+			continue
+		case "error":
+			wait()
+			return nil, ev.Err
+		}
+		wait() // no tools: anything else is done
+	}
+
+	rs, err := parseQuickReplies(text.String())
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(rs)
+	s.cachePut(ctx, key, account, string(b), "quick_replies")
+	return rs, nil
+}
+
+// parseQuickReplies reads {"replies":[{"html":...}]}, optionally inside a
+// markdown code fence, keeping the first three non-empty replies, sanitized.
+func parseQuickReplies(out string) ([]QuickReply, error) {
+	out = strings.TrimSpace(out)
+	if rest, ok := strings.CutPrefix(out, "```"); ok {
+		rest = strings.TrimPrefix(rest, "json")
+		out = strings.TrimSuffix(strings.TrimSpace(rest), "```")
+	}
+	var v struct {
+		Replies []struct {
+			HTML string `json:"html"`
+		} `json:"replies"`
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		return nil, fmt.Errorf("quick replies: the model did not answer with the requested JSON: %w", err)
+	}
+	rs := []QuickReply{}
+	for _, r := range v.Replies {
+		h := mail.SanitizeCompose(r.HTML)
+		p := strings.Join(strings.Fields(mail.HTMLToText(h)), " ")
+		if p == "" {
+			continue
+		}
+		if runes := []rune(p); len(runes) > quickPreviewRunes {
+			p = string(runes[:quickPreviewRunes])
+		}
+		if rs = append(rs, QuickReply{Preview: p, HTML: h}); len(rs) == maxQuickReplies {
+			break
+		}
+	}
+	return rs, nil
+}
+
+// DraftFromQuickReply starts a reply draft to messageID with r's HTML,
+// sanitized again, at the start of the editable part, above the quote and
+// signature.
+func (s *Service) DraftFromQuickReply(ctx context.Context, messageID int64, r QuickReply) (Draft, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return Draft{}, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
+	if err != nil {
+		return Draft{}, err
+	}
+	if len(rows.Values) == 0 {
+		return Draft{}, fmt.Errorf("message %d not found", messageID)
+	}
+	account := store.Int(rows.Values[0][0])
+	if err := s.bind(ctx, account); err != nil {
+		return Draft{}, err
+	}
+	d, err := s.NewDraft(ctx, account, "reply", messageID)
+	if err != nil {
+		return Draft{}, err
+	}
+	// NewDraft opens a reply with an empty paragraph for the user's text.
+	d.HTML = mail.SanitizeCompose(r.HTML) + strings.TrimPrefix(d.HTML, "<p></p>")
+	return s.SaveDraft(ctx, d)
 }
