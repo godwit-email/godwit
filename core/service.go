@@ -70,8 +70,9 @@ type Service struct {
 	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
 	active map[int64]*runJob // runs in flight, guarded by runMu
 
-	subsMu sync.Mutex
-	subs   map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
+	subsMu     sync.Mutex
+	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
+	subsClosed bool
 
 	toolsMu sync.Mutex
 	tools   map[string]registeredTool // tools Wit runs can offer, by name
@@ -130,6 +131,7 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.closeSubscriptions() // every run, resumes included, has published its end
 		s.closeOAuth()
 		s.aiMu.Lock()
 		if s.ai != nil {

@@ -52,10 +52,19 @@ const (
 	msgCancelled = "cancelled"
 	msgQuit      = "the app quit before this finished"
 	msgNotSaved  = "the change could not be saved"
+	msgRecovery  = "recovery failed"
 )
 
 // Test hooks, nil in production; true simulates a crash at that point.
 var afterApprovalClaim, beforeResumeClaim func() bool
+
+// More test hooks, nil in production: beforeRunClaim runs in startRun right
+// before it claims the run row, beforeUntrack when a finished run is about to
+// stop being tracked.
+var (
+	beforeRunClaim func()
+	beforeUntrack  func(runID int64)
+)
 
 // approvalRow is an approval with the columns only the Service uses.
 type approvalRow struct {
@@ -173,7 +182,12 @@ func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) er
 	ctx = context.WithoutCancel(ctx) // claimed: always reach an end state
 	err = s.execute(ctx, a, ex)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
-	s.claimResume(ctx, a.RunID)
+	if cerr := s.claimResume(ctx, a.RunID); cerr != nil {
+		// The run cannot go on; failing it keeps it from blocking the conversation.
+		slog.Default().Warn("could not resume a run", "run", a.RunID, "err", cerr)
+		_, ferr := s.failRun(ctx, a.RunID, cerr)
+		err = errors.Join(err, fmt.Errorf("resuming the run: %w", cerr), ferr)
+	}
 	return err
 }
 
@@ -228,19 +242,36 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor) erro
 
 // claimResume resumes runID if it is interrupted with no approval left open.
 // Only the caller whose update changes the row resumes it. The caller holds runMu.
-func (s *Service) claimResume(ctx context.Context, runID int64) {
+func (s *Service) claimResume(ctx context.Context, runID int64) error {
 	if beforeResumeClaim != nil && beforeResumeClaim() {
-		return
+		return nil
 	}
 	r, err := s.db.Execute(ctx, `UPDATE runs SET state = 'resuming', updated_at = ? WHERE id = ? AND state = 'interrupted'
 		AND NOT EXISTS (SELECT 1 FROM approvals WHERE run_id = ? AND state IN ('pending', 'executing'))`, time.Now().Unix(), runID, runID)
-	if err != nil { // it stays interrupted; the next start resumes it
-		slog.Default().Warn("could not claim a run to resume", "run", runID, "err", err)
-		return
+	if err != nil {
+		return err
 	}
 	if r.Changes == 1 {
 		s.resume(runID)
 	}
+	return nil
+}
+
+// failRun ends runID as failed after cause stopped it: closed like a cancel
+// (pending approvals rejected with "recovery failed"), or, if that is not
+// possible, just marked failed with its pending approvals rejected, so it
+// never blocks the conversation. The error is only a database error from that.
+func (s *Service) failRun(ctx context.Context, runID int64, cause error) (int64, error) {
+	convID, err := s.closeRun(ctx, runID, "failed", msgRecovery)
+	if err == nil {
+		return convID, nil
+	}
+	slog.Default().Warn("could not close a failed run", "run", runID, "cause", cause, "err", err)
+	_, err = s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE run_id = ? AND state = 'pending'",
+			Args: []any{msgRecovery, time.Now().Unix(), runID}},
+		runState(runID, "failed")})
+	return convID, err
 }
 
 // ResolveAll resolves the run's pending approvals one by one in seq order.
@@ -298,16 +329,17 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 	if store.Str(rows.Values[0][0]) != "interrupted" {
 		return nil
 	}
-	convID, err := s.closeRun(ctx, runID, "cancelled")
+	convID, err := s.closeRun(ctx, runID, "cancelled", msgCancelled)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: convID})
 	return err
 }
 
-// closeRun ends runID as final without asking the model: its pending
-// approvals become rejected ("cancelled"), and every call of its current
-// interrupt gets its approval's result in the conversation state. No approval
-// may be executing: the caller holds runMu, or none is left open.
-func (s *Service) closeRun(ctx context.Context, runID int64, final string) (int64, error) {
+// closeRun ends runID as final without asking the model, in one transaction:
+// its pending approvals become rejected with pendingMsg, and every call of its
+// current interrupt gets its approval's result in the conversation state. If
+// the state cannot be closed nothing is written. No approval may be
+// executing: the caller holds runMu, or none is left open.
+func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg string) (int64, error) {
 	rows, err := s.db.Query(ctx, "SELECT r.conversation_id, r.snapshot, c.state FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE r.id = ?", runID)
 	if err != nil {
 		return 0, err
@@ -330,25 +362,27 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final string) (int6
 	now := time.Now().Unix()
 	for _, a := range as {
 		if a.State == "pending" {
-			a.State, a.result = "rejected", msgCancelled
+			a.State, a.result = "rejected", pendingMsg
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-				Args: []any{msgCancelled, now, a.ID}}, gateway.Audit(gateway.SourceWit, a.Tool, a.targetKind, a.targetID, "rejected"))
+				Args: []any{pendingMsg, now, a.ID}}, gateway.Audit(gateway.SourceWit, a.Tool, a.targetKind, a.targetID, "rejected"))
 		}
 		results = append(results, a.toolResult())
 	}
 	closed, err := ai.CloseState(state, results)
-	if err == nil {
-		stmts = append(stmts, saveState(convID, closed))
+	if err != nil {
+		return convID, err
 	}
-	stmts = append(stmts, runState(runID, final))
-	_, terr := s.db.Transaction(ctx, stmts)
-	return convID, errors.Join(err, terr)
+	stmts = append(stmts, saveState(convID, closed), runState(runID, final))
+	_, err = s.db.Transaction(ctx, stmts)
+	return convID, err
 }
 
 // recoverRuns runs at startup. An approval left executing never took effect
 // (its writes commit with done), so it failed. A run cut off while running
 // failed and keeps its last saved state; one cut off while resuming failed
 // with its calls answered. An interrupted run with nothing left open resumes.
+// A run that cannot be recovered fails (failRun) so the app still starts;
+// only a database error while recording that is returned.
 func (s *Service) recoverRuns(ctx context.Context) error {
 	if _, err := s.db.Execute(ctx, "UPDATE approvals SET state = 'failed', result = ?, updated_at = ? WHERE state = 'executing'",
 		msgQuit, time.Now().Unix()); err != nil {
@@ -362,17 +396,19 @@ func (s *Service) recoverRuns(ctx context.Context) error {
 	defer s.runMu.Unlock()
 	for _, r := range rows.Values {
 		id := store.Int(r[0])
-		err = nil
 		switch store.Str(r[1]) {
 		case "running":
-			_, err = s.db.Execute(ctx, runState(id, "failed").SQL, runState(id, "failed").Args...)
+			err = s.exec(ctx, runState(id, "failed"))
 		case "resuming":
-			_, err = s.closeRun(ctx, id, "failed")
+			_, err = s.closeRun(ctx, id, "failed", msgRecovery)
 		default:
-			s.claimResume(ctx, id)
+			err = s.claimResume(ctx, id)
 		}
 		if err != nil {
 			slog.Default().Warn("could not recover a run", "run", id, "err", err)
+			if _, err := s.failRun(ctx, id, err); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

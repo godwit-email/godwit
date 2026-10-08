@@ -510,12 +510,10 @@ func TestCloseWaitsForResume(t *testing.T) {
 	require.Eventually(t, func() bool { return len(e.srv.Requests()) == 2 }, 10*time.Second, 5*time.Millisecond)
 
 	require.NoError(t, e.s.Close())
-	// Close returned only after the resume ended and recorded its outcome.
-	var last WitEvent
-	for len(sub) > 0 {
-		last = <-sub
-	}
-	assert.Equal(t, "error", last.Kind)
+	// Close ended the subscription only after the resume ended and published its outcome.
+	got := drainWit(t, sub)
+	require.NotEmpty(t, got)
+	assert.Equal(t, "error", got[len(got)-1].Kind)
 
 	e.restart(t)
 	rows, err := e.s.db.Query(t.Context(), "SELECT state FROM runs WHERE id = ?", in.RunID)
@@ -542,6 +540,16 @@ func TestPrepareFailureNeedsNoApproval(t *testing.T) {
 	assert.Contains(t, string(reqs[1].Messages), "subject is required")
 }
 
+// collectStream closes w and reads everything it delivers.
+func collectStream(w *witStream) []WitEvent {
+	w.close()
+	var evs []WitEvent
+	for ev := range w.ch {
+		evs = append(evs, ev)
+	}
+	return evs
+}
+
 func TestWitStreamKeepsTerminal(t *testing.T) {
 	w := newWitStream()
 	for i := range witBuffer * 2 {
@@ -550,12 +558,183 @@ func TestWitStreamKeepsTerminal(t *testing.T) {
 			w.push(WitEvent{Event: ai.Event{Kind: "done"}})
 		}
 	}
-	var kinds []string
-	for len(w.ch) > 0 {
-		kinds = append(kinds, (<-w.ch).Kind)
+	evs := collectStream(w)
+	var texts []string
+	done := 0
+	for _, ev := range evs {
+		if ev.Kind == "done" {
+			done++
+		} else {
+			texts = append(texts, ev.Text)
+		}
 	}
-	assert.Len(t, kinds, witBuffer)
-	assert.Equal(t, "done", kinds[0], "the terminal event survives; older text was dropped")
+	assert.Equal(t, 1, done, "the terminal event survives")
+	assert.LessOrEqual(t, len(texts), witBuffer+1, "older text was dropped")
+	assert.Equal(t, fmt.Sprint(witBuffer*2-1), texts[len(texts)-1], "the newest text is kept")
+}
+
+func TestWitStreamKeepsAllTerminals(t *testing.T) {
+	w := newWitStream()
+	for i := range 3 * witBuffer {
+		w.push(WitEvent{Event: ai.Event{Kind: "text"}})
+		w.push(WitEvent{RunID: int64(i), Event: ai.Event{Kind: "done"}})
+	}
+	var runs []int64
+	for _, ev := range collectStream(w) {
+		if ev.Kind == "done" {
+			runs = append(runs, ev.RunID)
+		}
+	}
+	require.Len(t, runs, 3*witBuffer, "a slow reader still gets every terminal event")
+	assert.True(t, slices.IsSorted(runs))
+
+	w = newWitStream()
+	for range witBuffer {
+		w.push(WitEvent{Event: ai.Event{Kind: "interrupted"}})
+	}
+	w.push(WitEvent{Event: ai.Event{Kind: "text"}})
+	n := 0
+	for _, ev := range collectStream(w) {
+		if ev.Kind == "interrupted" {
+			n++
+		}
+	}
+	assert.Equal(t, witBuffer, n, "text never pushes out a terminal event")
+}
+
+func TestSubscriptionsCloseWithService(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	sub, unsub := e.s.SubscribeConversation(conv.ID)
+	defer unsub()
+	evs := e.start(t, conv, "hello")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+	require.NoError(t, e.s.Close())
+	got := drainWit(t, sub) // ends: Close closed it, after delivering what was queued
+	require.NotEmpty(t, got)
+	assert.Equal(t, "done", got[len(got)-1].Kind)
+
+	after, unsub2 := e.s.SubscribeConversation(conv.ID)
+	defer unsub2()
+	select {
+	case _, ok := <-after:
+		assert.False(t, ok, "a subscription after Close is closed")
+	case <-time.After(time.Second):
+		t.Fatal("subscription after Close stays open")
+	}
+}
+
+func TestCancelAfterRunHandOff(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	hold := make(chan struct{})
+	var first atomic.Bool
+	beforeUntrack = func(int64) {
+		if first.CompareAndSwap(false, true) {
+			<-hold // the interrupted run's cleanup waits until its resume is running
+		}
+	}
+	t.Cleanup(func() { beforeUntrack = nil })
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "fake_draft", Args: `{"subject":"Hi"}`}}}, testllm.Turn{Text: []string{"..."}, Hang: true})
+	evs := e.start(t, conv, "do it")
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	require.Eventually(t, func() bool { return len(e.srv.Requests()) == 2 }, 10*time.Second, 5*time.Millisecond)
+	close(hold) // now the old run's cleanup runs
+	time.Sleep(20 * time.Millisecond)
+
+	require.NoError(t, e.s.CancelRun(t.Context(), in.RunID))
+	e.waitRun(t, in.RunID, "cancelled")
+}
+
+func TestNewRunSeesFinishedHistory(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"Alpha answer"}, Hang: true})
+	ch, err := e.s.startRun(t.Context(), conv, "first", nil)
+	require.NoError(t, err)
+	<-ch // the first run is in flight
+	var once sync.Once
+	beforeRunClaim = func() {
+		once.Do(func() { // the first run finishes after the second read the conversation
+			e.srv.Release()
+			drainWit(t, ch)
+		})
+	}
+	t.Cleanup(func() { beforeRunClaim = nil })
+	evs := e.start(t, conv, "second")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.Contains(t, string(reqs[1].Messages), "Alpha answer", "the second run continues from the first one's final turn")
+}
+
+func TestCancelRunKeepsStateOnCloseFailure(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"A"}`})
+	_, err := e.s.db.Execute(t.Context(), "UPDATE conversations SET state = ? WHERE id = ?", []byte("not json"), conv.ID)
+	require.NoError(t, err)
+	require.Error(t, e.s.CancelRun(t.Context(), in.RunID))
+	e.waitRun(t, in.RunID, "interrupted")
+	assert.Equal(t, "pending", e.approval(t, in.Approvals[0].ID).State, "nothing committed: the user can retry")
+}
+
+// failClaims makes every resume claim fail with a database error.
+func failClaims(t *testing.T, s *Service) {
+	t.Helper()
+	_, err := s.db.Execute(t.Context(), `CREATE TRIGGER fail_claim BEFORE UPDATE OF state ON runs WHEN NEW.state = 'resuming'
+		BEGIN SELECT RAISE(ABORT, 'injected claim failure'); END`)
+	require.NoError(t, err)
+}
+
+func TestResumeClaimFailureFailsRun(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"A"}`})
+	failClaims(t, e.s)
+	err := e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true)
+	require.ErrorContains(t, err, "injected claim failure")
+	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
+	e.waitRun(t, in.RunID, "failed")
+	evs := e.start(t, conv, "again") // the failed run blocks nothing and left no open calls
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+}
+
+func TestRecoveryFailureFailsRun(t *testing.T) {
+	e := newApprovalEnv(t)
+	// A run left interrupted with nothing open, whose resume claim will fail at startup.
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "fake_draft", Args: `{"subject":"A"}`}}})
+	evs := e.start(t, conv, "do it")
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind)
+	beforeResumeClaim = func() bool { return true }
+	t.Cleanup(func() { beforeResumeClaim = nil })
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	beforeResumeClaim = nil
+	// A run left resuming whose state cannot be closed, with an approval still pending.
+	other := e.newConv(t, "ask", 0)
+	in2 := e.interrupt(t, other, testllm.Call{Name: "fake_draft", Args: `{"subject":"C"}`})
+	_, err := e.s.db.Execute(t.Context(), "UPDATE runs SET state = 'resuming' WHERE id = ?", in2.RunID)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET state = ? WHERE id = ?", []byte("not json"), other.ID)
+	require.NoError(t, err)
+	failClaims(t, e.s)
+
+	e.restart(t) // New succeeds
+	e.waitRun(t, in.RunID, "failed")
+	e.waitRun(t, in2.RunID, "failed")
+	got := e.approval(t, in2.Approvals[0].ID)
+	assert.Equal(t, "rejected", got.State)
+	assert.Equal(t, msgRecovery, got.Error)
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER fail_claim")
+	require.NoError(t, err)
+	evs = e.start(t, conv, "again")
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	_, err = e.s.startRun(t.Context(), other, "again", nil)
+	assert.NotErrorIs(t, err, ErrRunActive)
 }
 
 func TestSecondInterruptAfterResume(t *testing.T) {

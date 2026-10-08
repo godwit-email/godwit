@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -143,17 +144,27 @@ func (s *Service) DeleteConversation(ctx context.Context, id int64) error {
 	return ErrRunActive
 }
 
-// witStream is a lossy event queue: when full it drops its oldest event that
-// does not end a run, so a reader that falls behind still learns every outcome.
+// witStream delivers a run's events in order through ch. A reader that falls
+// behind loses the oldest text-like events once more than witBuffer wait, but
+// never an event that ends a run: there is one per run, so they are kept.
 type witStream struct {
-	mu     sync.Mutex
-	ch     chan WitEvent
-	closed bool
+	ch      chan WitEvent
+	mu      sync.Mutex
+	q       []WitEvent
+	waiting int           // events in q that do not end a run
+	closing bool          // no more pushes; ch closes once q is delivered
+	wake    chan struct{} // 1 slot: q or closing changed
+	quit    chan struct{} // closed by stop
+	stopped sync.Once
 }
 
 const witBuffer = 64
 
-func newWitStream() *witStream { return &witStream{ch: make(chan WitEvent, witBuffer)} }
+func newWitStream() *witStream {
+	w := &witStream{ch: make(chan WitEvent), wake: make(chan struct{}, 1), quit: make(chan struct{})}
+	go w.pump()
+	return w
+}
 
 func terminal(ev WitEvent) bool {
 	return ev.Kind == "done" || ev.Kind == "error" || ev.Kind == "interrupted"
@@ -161,53 +172,83 @@ func terminal(ev WitEvent) bool {
 
 func (w *witStream) push(ev WitEvent) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	for !w.closed {
-		select {
-		case w.ch <- ev:
-			return
-		default:
+	if w.closing {
+		w.mu.Unlock()
+		return
+	}
+	w.q = append(w.q, ev)
+	if !terminal(ev) {
+		if w.waiting++; w.waiting > witBuffer {
+			i := slices.IndexFunc(w.q, func(e WitEvent) bool { return !terminal(e) })
+			w.q = slices.Delete(w.q, i, i+1)
+			w.waiting--
 		}
-		// Full. Readers only make room, and pushes hold mu, so the re-sends fit.
-		var kept []WitEvent
-		dropped := false
-	drain:
-		for {
-			select {
-			case old := <-w.ch:
-				if !dropped && !terminal(old) {
-					dropped = true
-					continue
-				}
-				kept = append(kept, old)
-			default:
-				break drain
-			}
-		}
-		if !dropped && len(kept) > 0 {
-			kept = kept[1:] // only run ends queued: the oldest goes
-		}
-		for _, k := range kept {
-			w.ch <- k
-		}
+	}
+	w.mu.Unlock()
+	w.signal()
+}
+
+func (w *witStream) signal() {
+	select {
+	case w.wake <- struct{}{}:
+	default:
 	}
 }
 
+// close delivers what is queued, then closes ch.
 func (w *witStream) close() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.closed {
-		w.closed = true
-		close(w.ch)
+	w.closing = true
+	w.mu.Unlock()
+	w.signal()
+}
+
+// stop drops what is queued and closes ch now.
+func (w *witStream) stop() { w.stopped.Do(func() { close(w.quit) }) }
+
+func (w *witStream) pump() {
+	defer close(w.ch)
+	for {
+		w.mu.Lock()
+		if len(w.q) == 0 {
+			closing := w.closing
+			w.mu.Unlock()
+			if closing {
+				return
+			}
+			select {
+			case <-w.wake:
+			case <-w.quit:
+				return
+			}
+			continue
+		}
+		ev := w.q[0] // taken out first, so push never drops the event in flight
+		w.q = w.q[1:]
+		if !terminal(ev) {
+			w.waiting--
+		}
+		w.mu.Unlock()
+		select {
+		case w.ch <- ev:
+		case <-w.quit:
+			return
+		}
 	}
 }
 
 // SubscribeConversation streams the events of the conversation's runs,
-// including resumes after approvals, until the returned func is called. A slow
-// reader loses the oldest events but never the one that ends a run.
+// including resumes after approvals, until the returned func is called or the
+// Service closes (after the last run's events). A slow reader loses the oldest
+// text but never an event that ends a run. After Close the channel is closed.
 func (s *Service) SubscribeConversation(id int64) (<-chan WitEvent, func()) {
 	w := newWitStream()
 	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	if s.subsClosed {
+		w.close()
+		return w.ch, func() {}
+	}
 	if s.subs == nil {
 		s.subs = map[int64]map[*witStream]bool{}
 	}
@@ -215,13 +256,25 @@ func (s *Service) SubscribeConversation(id int64) (<-chan WitEvent, func()) {
 		s.subs[id] = map[*witStream]bool{}
 	}
 	s.subs[id][w] = true
-	s.subsMu.Unlock()
 	return w.ch, func() {
 		s.subsMu.Lock()
 		delete(s.subs[id], w)
 		s.subsMu.Unlock()
-		w.close()
+		w.stop()
 	}
+}
+
+// closeSubscriptions ends every subscription once no run is left to publish.
+func (s *Service) closeSubscriptions() {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	s.subsClosed = true
+	for _, ws := range s.subs {
+		for w := range ws {
+			w.close()
+		}
+	}
+	s.subs = nil
 }
 
 func (s *Service) publishWit(convID int64, ev WitEvent) {
@@ -306,19 +359,22 @@ func (s *Service) track(ctx context.Context, id int64, conv Conversation, scope 
 // conversation's subscribers; the channel ends with done, error or interrupted
 // (then the run waits for its approvals and resumes in the background).
 func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string, tools []registeredTool) (<-chan WitEvent, error) {
+	caller := ctx
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
-	ch, err := s.launch(ctx, end, conv, prompt, tools)
+	w, err := s.launch(ctx, end, conv, prompt, tools)
 	if err != nil {
 		end()
+		return nil, err
 	}
-	return ch, err
+	context.AfterFunc(caller, w.stop) // a caller that gives up stops reading
+	return w.ch, nil
 }
 
-func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []registeredTool) (<-chan WitEvent, error) {
-	conv, state, err := s.conversation(ctx, conv.ID)
+func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []registeredTool) (*witStream, error) {
+	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,6 +404,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	snap, _ := json.Marshal(snapshot{})
 	now := time.Now().Unix()
 
+	if beforeRunClaim != nil {
+		beforeRunClaim()
+	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
@@ -359,10 +418,16 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	if r.Changes == 0 {
 		return nil, ErrRunActive
 	}
+	// Read the history only now: a previous run may have ended after the read above.
+	_, state, err := s.conversation(ctx, conv.ID)
+	if err != nil {
+		st := runState(r.LastInsertID, "failed")
+		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), st))
+	}
 	job := s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0)
 	out := newWitStream()
 	go s.drive(job, end, e, ai.Request{Model: model, System: witSystem, State: state, Prompt: prompt, Tools: s.specs(job, tools)}, out)
-	return out.ch, nil
+	return out, nil
 }
 
 // specs wraps the tools for one run: every call goes through the gateway, and
@@ -400,8 +465,13 @@ func (s *Service) specs(job *runJob, tools []registeredTool) []ai.ToolSpec {
 func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, out *witStream) {
 	defer end()
 	defer func() {
+		if beforeUntrack != nil {
+			beforeUntrack(job.id)
+		}
 		s.runMu.Lock()
-		delete(s.active, job.id)
+		if s.active[job.id] == job { // a resume may already track this run ID
+			delete(s.active, job.id)
+		}
 		s.runMu.Unlock()
 		close(job.done)
 	}()
@@ -437,6 +507,11 @@ func saveState(convID int64, state []byte) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE conversations SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), convID}}
 }
 
+func (s *Service) exec(ctx context.Context, st sqlite.Statement) error {
+	_, err := s.db.Execute(ctx, st.SQL, st.Args...)
+	return err
+}
+
 func runState(runID int64, state string) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE runs SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), runID}}
 }
@@ -453,9 +528,9 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		}
 		var err error
 		if len(req.Responses) > 0 {
-			_, err = s.closeRun(ctx, job.id, state)
+			_, err = s.closeRun(ctx, job.id, state, msgCancelled)
 		} else {
-			_, err = s.db.Execute(ctx, runState(job.id, state).SQL, runState(job.id, state).Args...)
+			err = s.exec(ctx, runState(job.id, state))
 		}
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
@@ -496,10 +571,10 @@ func (s *Service) resume(runID int64) {
 		return
 	}
 	if err := s.startResume(ctx, end, runID); err != nil {
-		convID, cerr := s.closeRun(ctx, runID, "failed")
+		convID, ferr := s.failRun(ctx, runID, err)
 		end()
-		if cerr != nil {
-			slog.Default().Warn("could not close a run that failed to resume", "run", runID, "err", cerr)
+		if ferr != nil {
+			slog.Default().Warn("could not record a run that failed to resume", "run", runID, "err", ferr)
 		}
 		s.publishWit(convID, WitEvent{RunID: runID, Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}})
 	}
