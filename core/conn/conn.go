@@ -101,9 +101,17 @@ func ctxErr(ctx context.Context, err error) error {
 
 // DialIMAP connects to e and logs in.
 func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
+	c, _, err := DialIMAPAbortable(ctx, e)
+	return c, err
+}
+
+// DialIMAPAbortable is DialIMAP that also returns abort, which closes the network
+// connection at once. Unlike Client.Close it does not wait for a response literal
+// being read, so it can cut off a download.
+func DialIMAPAbortable(ctx context.Context, e Endpoint) (*imapclient.Client, func(), error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
-		return nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
+		return nil, nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
 	}
 	opts := &imapclient.Options{
 		TLSConfig:   &tls.Config{ServerName: e.Host},
@@ -130,10 +138,10 @@ func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
 	if err != nil {
 		nc.Close()
 		release()
-		return nil, err
+		return nil, nil, err
 	}
 	release()
-	return c, nil
+	return c, func() { nc.Close() }, nil
 }
 
 // DialSMTP connects to e and authenticates with PLAIN.

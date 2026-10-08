@@ -83,29 +83,29 @@ func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 // dialAccount connects and logs in to the account's IMAP server. An auth failure
 // also marks the account reauth_required. release closes the connection and must
 // be called; cancelling ctx aborts blocked reads.
-func (s *Service) dialAccount(ctx context.Context, accountID int64) (c *imapclient.Client, release func(), err error) {
+func (s *Service) dialAccount(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	pw, err := keyring.Get(keyringService, keyringUser(accountID))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	c, err = conn.DialIMAP(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
+	c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
 		Username: acc.Username, Password: pw})
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
 			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
 		}
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
-	return c, func() { stop(); c.Close() }, nil
+	return c, func() { stop(); c.Close() }, abort, nil
 }
 
 func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
-	c, release, err := s.dialAccount(ctx, accountID)
+	c, release, _, err := s.dialAccount(ctx, accountID)
 	if err != nil {
 		return err
 	}

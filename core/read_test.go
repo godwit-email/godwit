@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -219,19 +221,56 @@ func TestGetAttachmentNotOnServerAndEvict(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNotOnServerYet)
 }
 
+func bigAttachment(id string, n int) string {
+	enc := base64.StdEncoding.EncodeToString(make([]byte, n))
+	var b strings.Builder
+	for len(enc) > 76 {
+		b.WriteString(enc[:76] + "\r\n")
+		enc = enc[76:]
+	}
+	b.WriteString(enc + "\r\n")
+	return "Message-ID: <" + id + ">\r\nFrom: bob@example.com\r\nTo: alice@example.com\r\nSubject: big\r\nDate: Mon, 05 Oct 2026 10:00:00 +0000\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=XX\r\n\r\n--XX\r\nContent-Type: text/plain\r\n\r\nhi\r\n" +
+		"--XX\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"big.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b.String() + "--XX--\r\n"
+}
+
 func TestGetAttachmentStreamLimit(t *testing.T) {
 	e := newSyncEnv(t)
-	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
+	e.put(t, "INBOX", bigAttachment("a1@x", 4<<20))
 	e.sync(t)
 	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
 	_, err := e.s.db.Execute(bg, "UPDATE attachments SET size = 1") // understated metadata
 	require.NoError(t, err)
 	old := attachLimit
-	attachLimit = 4
+	attachLimit = 1000
 	t.Cleanup(func() { attachLimit = old })
+	before := e.im.BytesSent()
 	_, _, err = e.s.GetAttachment(bg, aid)
 	assert.ErrorIs(t, err, ErrTooLarge)
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
+	assert.Less(t, e.im.BytesSent()-before, int64(1<<20), "download must stop early, not read the whole 5.6 MB literal")
+}
+
+func TestReadSectionNilLiteral(t *testing.T) {
+	_, err := readSection(nil, "base64", func() {})
+	assert.Error(t, err) // IMAP allows BODY[...] NIL; must not panic
+}
+
+func TestEvictReportsRemovalFailure(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 2))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	p1, _, err := e.s.GetAttachment(bg, ids[0][0].(int64))
+	require.NoError(t, err)
+	_, _, err = e.s.GetAttachment(bg, ids[1][0].(int64))
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(p1))
+	require.NoError(t, os.MkdirAll(filepath.Join(p1, "sub"), 0o700)) // cannot be removed as a file
+	require.NoError(t, os.WriteFile(filepath.Join(p1, "sub", "x"), []byte("x"), 0o600))
+	err = e.s.evict(bg, 0, 0)
+	assert.Error(t, err)
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NULL"), "rows are cleared even when a file stays behind")
 }
 
 func TestGetAttachmentRereadsRowUnderLock(t *testing.T) {

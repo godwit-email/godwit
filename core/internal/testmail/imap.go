@@ -34,6 +34,7 @@ type IMAP struct {
 	mu   sync.Mutex
 	ln   net.Listener
 	conn map[*tconn]struct{}
+	sent atomic.Int64 // bytes written to clients
 	drop atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
 }
 
@@ -48,6 +49,7 @@ type tconn struct {
 	fetch        atomic.Bool
 	stripCopyUID atomic.Bool
 	written      atomic.Int32
+	sent         *atomic.Int64
 }
 
 func (c *tconn) Write(b []byte) (int, error) {
@@ -61,7 +63,9 @@ func (c *tconn) Write(b []byte) (int, error) {
 		}
 		return len(b), nil
 	}
-	return c.Conn.Write(b)
+	n, err := c.Conn.Write(b)
+	c.sent.Add(int64(n))
+	return n, err
 }
 
 type tln struct {
@@ -74,7 +78,7 @@ func (l tln) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &tconn{Conn: nc}
+	c := &tconn{Conn: nc, sent: &l.s.sent}
 	l.s.mu.Lock()
 	l.s.conn[c] = struct{}{}
 	l.s.mu.Unlock()
@@ -178,6 +182,9 @@ func (s *IMAP) serve(ln net.Listener) {
 	s.mu.Unlock()
 	go s.srv.Serve(l)
 }
+
+// BytesSent is the total written to all client connections so far.
+func (s *IMAP) BytesSent() int64 { return s.sent.Load() }
 
 // Stop closes the listener and every live connection. Data is kept.
 func (s *IMAP) Stop() {

@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
+	"mime/quotedprintable"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -106,7 +108,7 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if err != nil {
 		return "", info, err
 	}
-	if data, err = mail.DecodePart(data, a.encoding, a.charset); err != nil {
+	if data, err = mail.DecodePart(data, "", a.charset); err != nil { // transfer encoding was undone while streaming
 		return "", info, err
 	}
 	if int64(len(data)) > attachLimit {
@@ -137,7 +139,7 @@ func (s *Service) touch(ctx context.Context, id int64) error {
 
 // download fetches the raw (still transfer-encoded) part from the server.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
-	c, release, err := s.dialAccount(ctx, a.accountID)
+	c, release, abort, err := s.dialAccount(ctx, a.accountID)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
 			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error()})
@@ -145,16 +147,18 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 		return nil, err
 	}
 	defer release()
-	data, err := fetchPart(c, a.folder, a.uidValidity, a.uid, a.part)
+	data, err := fetchPart(c, abort, a.folder, a.uidValidity, a.uid, a.part, a.encoding)
 	if err != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	return data, err
 }
 
-// fetchPart streams the part, giving up with ErrTooLarge once it exceeds what a
-// transfer-encoded attachment of attachLimit bytes can take (base64 plus line breaks).
-func fetchPart(c *imapclient.Client, folder string, uidValidity uint32, uid imap.UID, part string) ([]byte, error) {
+// fetchPart streams the part and undoes its transfer encoding on the fly. Once
+// more than attachLimit decoded bytes arrive it cuts the connection with abort
+// and returns ErrTooLarge.
+// ponytail: base64 must be padded here; DecodePart alone also accepts unpadded input.
+func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity uint32, uid imap.UID, part, encoding string) ([]byte, error) {
 	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
 		return nil, err
@@ -180,17 +184,10 @@ func fetchPart(c *imapclient.Client, folder string, uidValidity uint32, uid imap
 			if !ok {
 				continue
 			}
-			data, err = io.ReadAll(io.LimitReader(bs.Literal, 2*attachLimit+1))
+			data, err = readSection(bs.Literal, encoding, abort)
 			if err != nil {
-				cmd.Close()
+				cmd.Close() // after abort this unblocks the client's reader: the dead connection ends the literal
 				return nil, err
-			}
-			if int64(len(data)) > 2*attachLimit {
-				// ponytail: the rest is read and discarded (memory stays bounded) because the
-				// client cannot be closed mid-literal; a huge stream still costs bandwidth.
-				io.Copy(io.Discard, bs.Literal)
-				cmd.Close()
-				return nil, ErrTooLarge
 			}
 			found = true
 		}
@@ -206,12 +203,14 @@ func fetchPart(c *imapclient.Client, folder string, uidValidity uint32, uid imap
 
 // evict deletes the least recently used cached files until the cache fits max.
 // keep is never evicted. cache_path is cleared before the file is removed, so a
-// file that cannot be removed is merely unreferenced (the orphan sweep collects it).
+// file that cannot be removed is merely unreferenced (the orphan sweep collects it)
+// and its error is returned.
 func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
 	rows, err := s.db.Query(ctx, "SELECT id, cache_path FROM attachments WHERE cache_path IS NOT NULL ORDER BY last_used, id")
 	if err != nil {
 		return err
 	}
+	var rmErr error
 	sizes := make([]int64, len(rows.Values))
 	var total int64
 	for i, r := range rows.Values {
@@ -222,7 +221,7 @@ func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
 	}
 	for i, r := range rows.Values {
 		if total <= max {
-			return nil
+			break
 		}
 		id := store.Int(r[0])
 		if id == keep {
@@ -232,7 +231,31 @@ func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
 			return err
 		}
 		total -= sizes[i]
-		os.Remove(store.Str(r[1])) // best effort, see above
+		if err := os.Remove(store.Str(r[1])); err != nil && !os.IsNotExist(err) {
+			rmErr = errors.Join(rmErr, err) // reported; the file stays for the orphan sweep
+		}
 	}
-	return nil
+	return rmErr
+}
+
+// readSection reads a literal (nil is allowed by IMAP) through its transfer
+// decoding. Past attachLimit decoded bytes it calls abort, which must cut the
+// network connection, and returns ErrTooLarge.
+func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
+	if lit == nil {
+		return nil, errors.New("attachment part not available on the server")
+	}
+	r := lit
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "base64":
+		r = base64.NewDecoder(base64.StdEncoding, r)
+	case "quoted-printable":
+		r = quotedprintable.NewReader(r)
+	}
+	data, err := io.ReadAll(io.LimitReader(r, attachLimit+1))
+	if int64(len(data)) > attachLimit {
+		abort() // Client.Close would wait for the rest of the literal
+		return nil, ErrTooLarge
+	}
+	return data, err
 }
