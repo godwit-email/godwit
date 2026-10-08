@@ -576,3 +576,41 @@ func TestMalformedState(t *testing.T) {
 	}
 	assert.Empty(t, srv.Requests())
 }
+
+func TestOpenCallsNeedResponses(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "a1", Name: "write"}}})
+		var readRuns atomic.Int64
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+		require.Len(t, res.Interrupts, 1)
+		for _, prompt := range []string{"", "go on"} {
+			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Prompt: prompt, Tools: mixedTools(&readRuns)})
+			require.NotNil(t, r.Err, prompt)
+			assert.Equal(t, CodeInternal, r.Err.Code, prompt)
+			assert.Equal(t, "error", last(t, evs).Kind, prompt)
+		}
+		assert.Len(t, srv.Requests(), 1, "no model request")
+	})
+}
+
+func TestRedactionIgnoresShortSecrets(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "leaky"}}})
+	tools := []ToolSpec{{Name: "leaky", Run: func(context.Context, json.RawMessage) (any, error) {
+		return nil, errors.New("abc failed, key 12345678 rejected")
+	}}}
+	e, err := NewEngine(slog.New(slog.NewTextHandler(io.Discard, nil)), func() []string { return []string{"12345678"} })
+	require.NoError(t, err)
+	defer e.Close()
+	evs, res := run(e, Request{Model: modelFor(srv, "openai", "abc"), Prompt: "x", Tools: tools})
+	require.Nil(t, res.Err)
+	rs := kindsOf(evs, "tool_result")
+	require.Len(t, rs, 1)
+	assert.Equal(t, "abc failed, key [redacted] rejected", rs[0].Result.Error)
+
+	var buf bytes.Buffer
+	h := &redactor{slog.NewTextHandler(&buf, nil), func() []string { return []string{"abc", "12345678"} }}
+	slog.New(h).Error("abc and 12345678")
+	assert.Contains(t, buf.String(), "abc and [redacted]")
+}

@@ -10,7 +10,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"strings"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing/fstest"
@@ -231,14 +231,7 @@ func (r *runner) finish(ev Event) {
 }
 
 // redact replaces every known key in s.
-func (r *runner) redact(s string) string {
-	for _, k := range append(r.e.allSecrets(), r.key) {
-		if k != "" {
-			s = strings.ReplaceAll(s, k, "[redacted]")
-		}
-	}
-	return s
-}
+func (r *runner) redact(s string) string { return redact(s, append(r.e.allSecrets(), r.key)) }
 
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
@@ -288,6 +281,9 @@ func (r *runner) run(req Request) Result {
 	}
 	if req.Prompt != "" {
 		opts = append(opts, gai.WithPrompt(req.Prompt))
+	}
+	if len(req.Responses) == 0 && openCalls(history) {
+		return fail(errors.New("ai: the conversation has unanswered tool calls; pass Responses or close the state"))
 	}
 	if len(req.Responses) > 0 {
 		parts, err := respond(history, tools, req.Responses, r.redact)
@@ -421,6 +417,15 @@ func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any],
 		parts = append(parts, t.Respond(p, out, nil))
 	}
 	return parts, nil
+}
+
+// openCalls reports whether history ends with a model turn's tool calls, which
+// only an interrupted run leaves behind.
+func openCalls(history []*gai.Message) bool {
+	if len(history) == 0 || history[len(history)-1].Role != gai.RoleModel {
+		return false
+	}
+	return slices.ContainsFunc(history[len(history)-1].Content, (*gai.Part).IsToolRequest)
 }
 
 // matchResults returns the tool calls of history's last message, and results
