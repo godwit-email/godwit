@@ -1,10 +1,12 @@
 package testmail
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,12 +15,24 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
+	"github.com/emersion/go-sasl"
 )
 
-type config struct{ move, uidplus, copyuid, noIdle bool }
+type config struct {
+	move, uidplus, copyuid, noIdle, requireID bool
+	xoauth2                                   string // valid XOAUTH2 token; "" = not offered
+	sent                                      *IMAP  // SMTP only: SaveToSent target
+}
 
-// Option customises StartIMAP.
+// Option customises StartIMAP and StartSMTP; each option says which servers it affects.
 type Option func(*config)
+
+// WithXOAuth2 makes the IMAP and SMTP servers offer XOAUTH2 and accept token for alice.
+func WithXOAuth2(token string) Option { return func(c *config) { c.xoauth2 = token } }
+
+// RequireID makes the IMAP server refuse SELECT with "NO Unsafe Login" until the
+// client has sent ID, as NetEase does.
+func RequireID() Option { return func(c *config) { c.requireID = true } }
 
 // WithoutMove removes MOVE from the advertised capabilities.
 func WithoutMove() Option { return func(c *config) { c.move = false } }
@@ -49,10 +63,18 @@ type IMAP struct {
 	cmds       atomic.Int64 // MOVE and COPY commands handled
 	dropAppend atomic.Bool
 	logins     atomic.Int64
+	ids        []map[string]string // guarded by mu
 }
 
-// Logins is how many LOGIN commands the server has handled.
+// Logins is how many LOGIN and AUTHENTICATE commands the server has handled.
 func (s *IMAP) Logins() int64 { return s.logins.Load() }
+
+// IDs returns the parameters of every ID command received, in order.
+func (s *IMAP) IDs() []map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]map[string]string(nil), s.ids...)
+}
 
 // DropAfterNextAppend makes the next APPEND store the message and then close the
 // client's connection before the tagged OK.
@@ -67,9 +89,16 @@ var uidCodes = regexp.MustCompile(`^\* OK \[COPYUID [^\]]*\] `)
 // capLine matches a capability list in a server response.
 var capLine = regexp.MustCompile(`CAPABILITY[^\r\n]*`)
 
+// idCmd matches an ID command line from the client.
+var idCmd = regexp.MustCompile(`(?i)^([^ ]+) ID (.*)\r?\n$`)
+
+// idString matches a quoted string in ID parameters.
+var idString = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
+
 // tconn is an accepted connection that can be killed mid-FETCH. While stripCopyUID
 // is set (only during a MOVE, which writes nothing but status lines and EXPUNGEs, never
-// a literal) it removes the COPYUID code from the untagged OK line.
+// a literal) it removes the COPYUID code from the untagged OK line. It also answers
+// ID itself, since imapserver has no ID command.
 type tconn struct {
 	net.Conn
 	fetch        atomic.Bool
@@ -77,6 +106,44 @@ type tconn struct {
 	noIdle       bool
 	written      atomic.Int32
 	sent         *atomic.Int64
+	s            *IMAP
+	r            *bufio.Reader
+	pending      []byte // read from r, not yet returned
+	gotID        atomic.Bool
+}
+
+// Read passes the client's bytes through line by line, consuming ID commands.
+// ponytail: a literal line that looks exactly like an ID command would be eaten
+// too; track literal lengths if a test ever APPENDs such a message.
+func (c *tconn) Read(p []byte) (int, error) {
+	for len(c.pending) == 0 {
+		line, err := c.r.ReadSlice('\n')
+		if len(line) == 0 {
+			return 0, err
+		}
+		if m := idCmd.FindSubmatch(line); m != nil && err == nil {
+			c.handleID(string(m[1]), string(m[2]))
+			continue
+		}
+		c.pending = append(c.pending[:0], line...)
+	}
+	n := copy(p, c.pending)
+	c.pending = c.pending[n:]
+	return n, nil
+}
+
+func (c *tconn) handleID(tag, args string) {
+	id := map[string]string{}
+	unq := strings.NewReplacer(`\"`, `"`, `\\`, `\`)
+	ss := idString.FindAllStringSubmatch(args, -1)
+	for i := 0; i+1 < len(ss); i += 2 {
+		id[unq.Replace(ss[i][1])] = unq.Replace(ss[i+1][1])
+	}
+	c.s.mu.Lock()
+	c.s.ids = append(c.s.ids, id)
+	c.s.mu.Unlock()
+	c.gotID.Store(true)
+	c.Conn.Write([]byte("* ID NIL\r\n" + tag + " OK ID completed\r\n"))
 }
 
 func (c *tconn) Write(b []byte) (int, error) {
@@ -84,8 +151,13 @@ func (c *tconn) Write(b []byte) (int, error) {
 		c.Conn.Close()
 		return 0, net.ErrClosed
 	}
-	if c.noIdle && capLine.Match(b) {
-		out := capLine.ReplaceAllFunc(b, func(l []byte) []byte { return bytes.ReplaceAll(l, []byte(" IDLE"), nil) })
+	if capLine.Match(b) { // advertise ID (answered by Read); strip IDLE if asked
+		out := capLine.ReplaceAllFunc(b, func(l []byte) []byte {
+			if c.noIdle {
+				l = bytes.ReplaceAll(l, []byte(" IDLE"), nil)
+			}
+			return bytes.Replace(l, []byte("CAPABILITY IMAP4rev1"), []byte("CAPABILITY IMAP4rev1 ID"), 1)
+		})
 		if _, err := c.Conn.Write(out); err != nil {
 			return 0, err
 		}
@@ -112,7 +184,7 @@ func (l tln) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &tconn{Conn: nc, sent: &l.s.sent, noIdle: l.s.cfg.noIdle}
+	c := &tconn{Conn: nc, sent: &l.s.sent, noIdle: l.s.cfg.noIdle, s: l.s, r: bufio.NewReader(nc)}
 	l.s.mu.Lock()
 	l.s.conn[c] = struct{}{}
 	l.s.mu.Unlock()
@@ -162,6 +234,36 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 func (s session) Login(username, password string) error {
 	s.s.logins.Add(1)
 	return s.Session.Login(username, password)
+}
+
+// AuthenticateMechanisms offers XOAUTH2 when configured.
+func (s session) AuthenticateMechanisms() []string {
+	if s.s.cfg.xoauth2 != "" {
+		return []string{sasl.Plain, "XOAUTH2"}
+	}
+	return []string{sasl.Plain}
+}
+
+// Authenticate counts XOAUTH2 attempts as logins; PLAIN goes through Login.
+func (s session) Authenticate(mech string) (sasl.Server, error) {
+	switch {
+	case mech == sasl.Plain:
+		return sasl.NewPlainServer(func(_, user, pass string) error { return s.Login(user, pass) }), nil
+	case mech == "XOAUTH2" && s.s.cfg.xoauth2 != "":
+		s.s.logins.Add(1)
+		return &xoauth2Server{token: s.s.cfg.xoauth2, login: func(user string) error {
+			return s.Session.Login(user, "secret")
+		}}, nil
+	}
+	return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "SASL mechanism not supported"}
+}
+
+// Select refuses until ID was sent when RequireID is set.
+func (s session) Select(mb string, o *imap.SelectOptions) (*imap.SelectData, error) {
+	if s.s.cfg.requireID && !s.conn.gotID.Load() {
+		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "Unsafe Login"}
+	}
+	return s.Session.Select(mb, o)
 }
 
 // Idle polls for updates instead of using the memory backend's tracker, which
@@ -279,3 +381,33 @@ func (s *IMAP) DropNextFetch() { s.DropFetchAfter(0) }
 // DropFetchAfter lets n FETCH commands complete and drops the connection during
 // the one after, like DropNextFetch.
 func (s *IMAP) DropFetchAfter(n int) { s.drop.Store(int32(n) + 1) }
+
+// xoauth2Server checks a SASL XOAUTH2 exchange. A bad token gets the JSON error
+// challenge, and the exchange fails after the client's empty reply, as Gmail does.
+type xoauth2Server struct {
+	token  string
+	login  func(user string) error
+	failed bool
+}
+
+func (x *xoauth2Server) Next(resp []byte) ([]byte, bool, error) {
+	switch {
+	case x.failed:
+		return nil, true, errors.New("invalid credentials")
+	case resp == nil:
+		return nil, false, nil // ask for the initial response
+	}
+	var user, auth string
+	for _, f := range strings.Split(string(resp), "\x01") {
+		if v, ok := strings.CutPrefix(f, "user="); ok {
+			user = v
+		} else if v, ok := strings.CutPrefix(f, "auth="); ok {
+			auth = v
+		}
+	}
+	if auth != "Bearer "+x.token || x.login(user) != nil {
+		x.failed = true
+		return []byte(`{"status":"401","schemes":"bearer","scope":"https://mail.google.com/"}`), false, nil
+	}
+	return nil, true, nil
+}

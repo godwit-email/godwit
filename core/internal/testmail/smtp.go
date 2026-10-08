@@ -28,6 +28,7 @@ type Inbox struct {
 	fail       int
 	sent       *IMAP // SaveToSent target
 	rejectAuth bool
+	xoauth2    string // valid XOAUTH2 token; "" = not offered
 	auths      int
 	block      chan struct{} // closed by the BlockData release func
 	entered    chan struct{}
@@ -59,12 +60,12 @@ func (in *Inbox) AuthAttempts() int {
 	return in.auths
 }
 
-// SMTPOption customises StartSMTP.
-type SMTPOption func(*Inbox)
+// SMTPOption customises StartSMTP; WithXOAuth2 applies to both servers.
+type SMTPOption = Option
 
-// SaveToSent makes the server file every accepted message into im's Sent folder,
-// as providers that auto-save sent mail do.
-func SaveToSent(im *IMAP) SMTPOption { return func(in *Inbox) { in.sent = im } }
+// SaveToSent makes the SMTP server file every accepted message into im's Sent
+// folder, as providers that auto-save sent mail do.
+func SaveToSent(im *IMAP) SMTPOption { return func(c *config) { c.sent = im } }
 
 // Messages returns a copy of the received messages.
 func (in *Inbox) Messages() []Received {
@@ -98,20 +99,32 @@ type smtpSession struct {
 	auth bool
 }
 
-func (s *smtpSession) AuthMechanisms() []string { return []string{sasl.Plain} }
+func (s *smtpSession) AuthMechanisms() []string {
+	if s.in.xoauth2 != "" {
+		return []string{sasl.Plain, "XOAUTH2"}
+	}
+	return []string{sasl.Plain}
+}
 
-func (s *smtpSession) Auth(string) (sasl.Server, error) {
-	return sasl.NewPlainServer(func(_, user, pass string) error {
-		s.in.mu.Lock()
-		s.in.auths++
-		reject := s.in.rejectAuth
-		s.in.mu.Unlock()
+func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
+	s.in.mu.Lock()
+	s.in.auths++
+	reject := s.in.rejectAuth
+	s.in.mu.Unlock()
+	login := func(user, pass string) error {
 		if reject || user != "alice" || pass != "secret" {
 			return errors.New("invalid credentials")
 		}
 		s.auth = true
 		return nil
-	}), nil
+	}
+	switch {
+	case mech == sasl.Plain:
+		return sasl.NewPlainServer(func(_, user, pass string) error { return login(user, pass) }), nil
+	case mech == "XOAUTH2" && s.in.xoauth2 != "":
+		return &xoauth2Server{token: s.in.xoauth2, login: func(user string) error { return login(user, "secret") }}, nil
+	}
+	return nil, errors.New("unsupported mechanism")
 }
 
 func (s *smtpSession) Reset()        { s.cur = Received{} }
@@ -166,10 +179,11 @@ func StartSMTP(t *testing.T, opts ...SMTPOption) (addr string, in *Inbox) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in = &Inbox{}
+	var cfg config
 	for _, o := range opts {
-		o(in)
+		o(&cfg)
 	}
+	in = &Inbox{sent: cfg.sent, xoauth2: cfg.xoauth2}
 	srv := smtp.NewServer(backend{in})
 	srv.Domain = "localhost"
 	srv.AllowInsecureAuth = true

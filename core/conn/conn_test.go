@@ -4,11 +4,15 @@ import (
 	"bufio"
 	"context"
 	"net"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -152,4 +156,118 @@ func TestTLSHandshakeFailureIsNotReportedAsCancel(t *testing.T) {
 		assert.NotErrorIs(t, err, context.Canceled, name)
 		assert.NotErrorIs(t, err, context.DeadlineExceeded, name)
 	}
+}
+
+func endpoint(t *testing.T, addr string) conn.Endpoint {
+	t.Helper()
+	host, port, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	p, err := strconv.Atoi(port)
+	require.NoError(t, err)
+	return conn.Endpoint{Host: host, Port: p, Security: conn.None, Username: "alice", Password: "secret"}
+}
+
+func TestXOAuth2IMAPAndSMTP(t *testing.T) {
+	ctx := context.Background()
+	im := testmail.StartIMAP(t, testmail.WithXOAuth2("tok"))
+	smtpAddr, _ := testmail.StartSMTP(t, testmail.WithXOAuth2("tok"))
+	ie, se := endpoint(t, im.Addr), endpoint(t, smtpAddr)
+	ie.Password, se.Password = "wrong", "wrong" // ignored when AccessToken is set
+	ie.AccessToken, se.AccessToken = "tok", "tok"
+
+	c, err := conn.DialIMAP(ctx, ie)
+	require.NoError(t, err)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	c.Close()
+	assert.EqualValues(t, 1, im.Logins())
+	s, err := conn.DialSMTP(ctx, se)
+	require.NoError(t, err)
+	s.Close()
+
+	ie.AccessToken, se.AccessToken = "bad", "bad"
+	_, err = conn.DialIMAP(ctx, ie)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.NotContains(t, err.Error(), "bad")
+	assert.EqualValues(t, 2, im.Logins())
+	_, err = conn.DialSMTP(ctx, se)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.NotContains(t, err.Error(), "bad")
+
+	// servers without XOAUTH2
+	plainIMAP := testmail.StartIMAP(t)
+	plainSMTP, _ := testmail.StartSMTP(t)
+	ie, se = endpoint(t, plainIMAP.Addr), endpoint(t, plainSMTP)
+	ie.AccessToken, se.AccessToken = "tok", "tok"
+	_, err = conn.DialIMAP(ctx, ie)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	_, err = conn.DialSMTP(ctx, se)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+}
+
+func TestXOAuth2InitialResponse(t *testing.T) {
+	mech, ir, err := conn.NewXOAuth2Client("alice", "tok").Start()
+	require.NoError(t, err)
+	assert.Equal(t, "XOAUTH2", mech)
+	assert.Equal(t, "user=alice\x01auth=Bearer tok\x01\x01", string(ir))
+	resp, err := conn.NewXOAuth2Client("alice", "tok").Next([]byte(`{"status":"401"}`))
+	require.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Empty(t, resp)
+}
+
+func TestIMAPSendsIDWhenAdvertised(t *testing.T) {
+	im := testmail.StartIMAP(t, testmail.RequireID())
+
+	// without ID the server refuses SELECT, like NetEase
+	raw, err := imapclient.DialInsecure(im.Addr, nil)
+	require.NoError(t, err)
+	require.NoError(t, raw.Login("alice", "secret").Wait())
+	_, err = raw.Select("INBOX", nil).Wait()
+	require.Error(t, err)
+	raw.Close()
+
+	c, err := conn.DialIMAP(context.Background(), endpoint(t, im.Addr))
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	ids := im.IDs()
+	require.Len(t, ids, 1)
+	assert.Equal(t, "Godwit", ids[0]["name"])
+	assert.Equal(t, conn.ClientVersion, ids[0]["version"])
+}
+
+func TestIDFailureIsNotLoginFailure(t *testing.T) {
+	var gotID atomic.Bool
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1 ID] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "ID":
+				gotID.Store(true)
+				c.Write([]byte(f[0] + " BAD ID not today\r\n"))
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1 ID] logged in\r\n"))
+			case "LOGOUT":
+				c.Write([]byte("* BYE\r\n" + f[0] + " OK bye\r\n"))
+				return
+			default: // CAPABILITY, NOOP
+				c.Write([]byte("* CAPABILITY IMAP4rev1 ID\r\n" + f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	c.Close()
+	assert.True(t, gotID.Load())
 }
