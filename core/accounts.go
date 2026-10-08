@@ -453,6 +453,20 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
 	}
+	if p.Servers != nil && (p.Servers.IMAPHost != acc.IMAPHost || p.Servers.IMAPPort != acc.IMAPPort ||
+		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
+		// Another mailbox: its UIDs are not the old one's even where UIDVALIDITY
+		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads
+		// see a recreated folder and the next fetch re-imports every folder.
+		stmts = append(stmts,
+			sqlite.Statement{SQL: "UPDATE folders SET uidvalidity = 0 WHERE account_id = ?", Args: []any{id}},
+			sqlite.Statement{SQL: "UPDATE messages SET server_uidvalidity = 0 WHERE account_id = ? AND server_uid IS NOT NULL", Args: []any{id}})
+		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old UIDs meanwhile
+		if err != nil {
+			return Account{}, err
+		}
+		defer unlock()
+	}
 	if len(stmts) > 0 {
 		if _, err := s.db.Transaction(ctx, stmts); err != nil {
 			return Account{}, err

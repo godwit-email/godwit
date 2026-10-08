@@ -1,7 +1,11 @@
 package core
 
 import (
+	"encoding/base64"
+	"github.com/godwit-email/godwit/core/store"
 	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,4 +245,38 @@ func TestUpdateAccountDefault(t *testing.T) {
 	assert.Equal(t, "-- b", got.Signature)
 	_, err = e.s.UpdateAccount(bg, 999, AccountPatch{Signature: &sig})
 	assert.Error(t, err)
+}
+
+// Another server's UIDs are not this one's, even when UIDVALIDITY and UID match:
+// after a server change, queued changes to old messages conflict instead of
+// hitting the new server's UID, and downloads of old parts fail.
+func TestUpdateAccountNewServerForgetsOldUIDs(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("old@x", "old", 1))
+	e.sync(t)
+	old := e.idOf(t, "old@x")
+	att := store.Int(e.rows(t, "SELECT id FROM attachments WHERE message_id = ?", old)[0][0])
+	require.NoError(t, e.s.Move(bg, []int64{old}, e.folderID(t, "Archive")))
+
+	im2 := testmail.StartIMAP(t) // same UIDVALIDITY, its UID 1 is another message
+	e2 := &syncEnv{im: im2}
+	e2.put(t, "INBOX", strings.ReplaceAll(withAttachments("new@x", "new", 1), "JVBERi0xLjQK",
+		base64.StdEncoding.EncodeToString([]byte("new server"))))
+	host, port := splitAddr(t, im2.Addr)
+	srv := e.acc.servers()
+	srv.IMAPHost, srv.IMAPPort = host, port
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
+	require.NoError(t, err)
+
+	if p, _, err := e.s.GetAttachment(bg, att); err == nil {
+		b, _ := os.ReadFile(p)
+		t.Fatalf("old attachment downloaded from the new server: %q", b)
+	}
+	e.s.SyncNow(bg, e.acc.ID) // reports the conflict
+	assert.Equal(t, []string{"conflict"}, e.opStates(t))
+	e.im = im2
+	assert.Equal(t, []string{"new@x"}, e.onServer(t, "INBOX"), "the new server's UID 1 stays")
+	assert.Empty(t, e.onServer(t, "Archive"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'new@x'"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'old@x'"))
 }
