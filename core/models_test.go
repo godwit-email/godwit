@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 )
 
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
@@ -279,4 +280,87 @@ func TestModelServiceTestGenerates(t *testing.T) {
 			assert.NotContains(t, err.Error(), "sekret-key-7")
 		})
 	}
+}
+
+// Final review #1: a reader during an update gets the old service with the
+// old key or the new one with the new key, never a mix.
+func TestModelKeyNeverPairsAcrossUpdate(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	a, b := testllm.Start(t, "openai"), testllm.Start(t, "openai")
+	a.SetModels("m")
+	b.SetModels("m")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: a.URL, APIKey: "key-A-123456", Models: []string{"m"}})
+	require.NoError(t, err)
+
+	paused, release := make(chan struct{}), make(chan struct{})
+	setFor(t, &keyringSet, func(svc, user, pw string) error {
+		close(paused)
+		<-release
+		return keyring.Set(svc, user, pw)
+	})
+	updated := make(chan error, 1)
+	go func() {
+		_, err := s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: b.URL, APIKey: "key-B-654321", Models: []string{"m"}})
+		updated <- err
+	}()
+	<-paused
+	type pair struct{ url, key string }
+	got := make(chan pair, 1)
+	fetched := make(chan error, 1)
+	go func() {
+		_, err := s.FetchModels(bg, ms.ID)
+		fetched <- err
+	}()
+	go func() {
+		m, err := s.resolveModel(bg, "x/m")
+		assert.NoError(t, err)
+		got <- pair{m.BaseURL, m.APIKey}
+	}()
+	time.Sleep(200 * time.Millisecond) // the readers race the paused write
+	close(release)
+	require.NoError(t, <-updated)
+	require.NoError(t, <-fetched)
+	assert.Contains(t, []pair{{a.URL, "key-A-123456"}, {b.URL, "key-B-654321"}}, <-got)
+	for _, h := range a.Headers() {
+		assert.NotContains(t, h.Get("Authorization"), "key-B", "service A got B's key")
+	}
+	for _, h := range b.Headers() {
+		assert.NotContains(t, h.Get("Authorization"), "key-A", "service B got A's key")
+	}
+}
+
+// Final review #2: a model snapshot taken before its service changed or went
+// away is rejected without a new Genkit instance or a request.
+func TestStaleModelSnapshotRejected(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	srv := testllm.Start(t, "openai")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: srv.URL, APIKey: "key-1234567", Models: []string{"m"}})
+	require.NoError(t, err)
+	runWith := func(m ai.ResolvedModel) *ai.Error {
+		e, err := s.aiEngine()
+		require.NoError(t, err)
+		events, wait := e.Run(bg, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1})
+		for range events {
+		}
+		return wait().Err
+	}
+
+	old, err := s.resolveModel(bg, "x/m")
+	require.NoError(t, err)
+	_, err = s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: srv.URL, Models: []string{"m"}})
+	require.NoError(t, err)
+	rerr := runWith(old)
+	require.NotNil(t, rerr, "an updated service's old snapshot")
+	assert.Equal(t, ai.CodeStale, rerr.Code)
+
+	cur, err := s.resolveModel(bg, "x/m")
+	require.NoError(t, err)
+	assert.Nil(t, runWith(cur), "the current snapshot runs")
+	require.Len(t, srv.Requests(), 1)
+
+	require.NoError(t, s.RemoveModelService(bg, ms.ID))
+	rerr = runWith(cur)
+	require.NotNil(t, rerr, "a removed service's snapshot")
+	assert.Equal(t, ai.CodeStale, rerr.Code)
+	assert.Len(t, srv.Requests(), 1, "no request after removal")
 }

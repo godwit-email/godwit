@@ -43,14 +43,23 @@ type Engine struct {
 	keys   map[string]bool // every API key handed to Genkit, redacted from its logs
 
 	inits atomic.Int64 // genkit.Init calls, for tests
+
+	// Current, if set, returns the service's stored version (an error when it
+	// is gone). A run whose model has another version fails with CodeStale.
+	// Set it before the first Run; it is called holding the engine's lock.
+	Current func(ctx context.Context, serviceID int64) (int64, error)
 }
 
 type instance struct {
 	cfg      ResolvedModel // Model cleared
 	g        *genkit.Genkit
 	provider string
-	cancel   context.CancelFunc
+	ctx      context.Context // ends when the instance is dropped; so do its runs
+	cancel   context.CancelCauseFunc
 }
+
+// errStale ends the runs of an instance whose service changed or went away.
+var errStale = errors.New("ai: the model service changed")
 
 // noPrompts keeps Init from loading ./prompts from the working directory.
 var noPrompts = fstest.MapFS{"prompts": {Mode: fs.ModeDir}}
@@ -95,29 +104,30 @@ func (e *Engine) allSecrets() []string {
 
 func (e *Engine) logCtx(ctx context.Context) context.Context { return logger.WithContext(ctx, e.log) }
 
-// Forget drops the service's instance (the service changed or was removed).
+// Forget drops the service's instance (the service changed or was removed);
+// its runs in flight end with CodeStale.
 func (e *Engine) Forget(serviceID int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if in := e.insts[serviceID]; in != nil {
-		in.cancel()
+		in.cancel(errStale)
 		delete(e.insts, serviceID)
 	}
 }
 
-// Close drops every instance; later runs fail. Runs in flight end with their ctx.
+// Close drops every instance; later runs fail and runs in flight are cancelled.
 func (e *Engine) Close() {
 	e.mu.Lock()
 	e.closed = true
 	for id, in := range e.insts {
-		in.cancel()
+		in.cancel(context.Canceled)
 		delete(e.insts, id)
 	}
 	e.mu.Unlock()
 	e.client.CloseIdleConnections()
 }
 
-func (e *Engine) instance(m ResolvedModel) (in *instance, err error) {
+func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, err error) {
 	cfg := m
 	cfg.Model = ""
 	e.mu.Lock()
@@ -125,11 +135,18 @@ func (e *Engine) instance(m ResolvedModel) (in *instance, err error) {
 	if e.closed {
 		return nil, errors.New("ai: engine closed")
 	}
+	// Checked under the lock: a service changed after this check is
+	// Forgotten after it too, which ends the run through the instance.
+	if e.Current != nil {
+		if v, err := e.Current(ctx, m.ServiceID); err != nil || v != m.Version {
+			return nil, errStale
+		}
+	}
 	if in := e.insts[m.ServiceID]; in != nil {
 		if in.cfg == cfg {
 			return in, nil
 		}
-		in.cancel()
+		in.cancel(errStale)
 		delete(e.insts, m.ServiceID)
 	}
 	if api.CurrentEnvironment() == api.EnvironmentDev {
@@ -157,16 +174,16 @@ func (e *Engine) instance(m ResolvedModel) (in *instance, err error) {
 		e.keysMu.Unlock()
 	}
 	// Init's signal.NotifyContext ends with this context.
-	ctx, cancel := context.WithCancel(e.logCtx(context.Background()))
+	ictx, cancel := context.WithCancelCause(e.logCtx(context.Background()))
 	defer func() {
 		if r := recover(); r != nil {
-			cancel()
+			cancel(context.Canceled)
 			in, err = nil, errors.New("ai: model service setup failed")
 		}
 	}()
-	g := genkit.Init(ctx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
+	g := genkit.Init(ictx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
 	e.inits.Add(1)
-	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), cancel: cancel}
+	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }
@@ -258,10 +275,18 @@ func (r *runner) run(req Request) Result {
 	if err != nil {
 		return fail(err)
 	}
-	in, err := r.e.instance(req.Model)
+	in, err := r.e.instance(r.ctx, req.Model)
+	if errors.Is(err, errStale) {
+		return Result{State: req.State, Err: &Error{CodeStale, "the model service changed; try again"}}
+	}
 	if err != nil {
 		return fail(err)
 	}
+	// The run ends with its instance: a changed or removed service sends nothing more.
+	ctx, cancel := context.WithCancelCause(r.ctx)
+	defer cancel(nil)
+	stop := context.AfterFunc(in.ctx, func() { cancel(context.Cause(in.ctx)) })
+	defer stop()
 	model := genkit.LookupModel(in.g, in.provider+"/"+req.Model.Model)
 	if model == nil {
 		return fail(fmt.Errorf("ai: model %q unavailable", req.Model.Model))
@@ -300,10 +325,14 @@ func (r *runner) run(req Request) Result {
 		opts = append(opts, gai.WithMaxTurns(req.MaxTurns))
 	}
 
-	resp, err := genkit.Generate(r.e.logCtx(r.ctx), in.g, opts...)
+	resp, err := genkit.Generate(r.e.logCtx(ctx), in.g, opts...)
 	if err != nil {
 		// The state stays as it was: a failed run leaves no half turn behind.
-		return Result{State: req.State, Err: classify(r.ctx, err)}
+		return Result{State: req.State, Err: classify(ctx, err)}
+	}
+	if resp.FinishReason != gai.FinishReasonStop && resp.FinishReason != gai.FinishReasonInterrupted {
+		// Cut off, filtered or failed part-way: nothing of it is kept.
+		return Result{State: req.State, Err: incomplete(resp.FinishReason)}
 	}
 	var msgs []*gai.Message
 	for _, m := range resp.History() {
@@ -632,6 +661,9 @@ func classify(ctx context.Context, err error) *Error {
 	if errors.Is(err, errDuplicateCallID) {
 		return &Error{CodeBadResponse, "the model repeated a tool call ID"}
 	}
+	if errors.Is(context.Cause(ctx), errStale) {
+		return &Error{CodeStale, "the model service changed during the run"}
+	}
 	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 		return &Error{CodeCanceled, "the run was cancelled"}
 	}
@@ -648,4 +680,16 @@ func classify(ctx context.Context, err error) *Error {
 		return &Error{CodeUnavailable, "could not reach the model service"}
 	}
 	return &Error{CodeBadResponse, "the model service returned an unusable response"}
+}
+
+// incomplete is the error for a reply that did not finish normally. The
+// service's own finish message is not used: it may repeat the request.
+func incomplete(r gai.FinishReason) *Error {
+	switch r {
+	case gai.FinishReasonLength:
+		return &Error{CodeIncomplete, "the model's reply was cut off at its output limit"}
+	case gai.FinishReasonBlocked:
+		return &Error{CodeIncomplete, "the model service withheld the reply"}
+	}
+	return &Error{CodeIncomplete, "the model did not finish its reply"}
 }

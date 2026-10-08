@@ -74,6 +74,12 @@ const (
 	CodeUnavailable  Code = "unavailable"
 	CodeBadResponse  Code = "bad_response"
 	CodeInternal     Code = "internal"
+	// CodeStale: the model service changed or was removed since the model was
+	// resolved, or while the run was in flight.
+	CodeStale Code = "stale"
+	// CodeIncomplete: the service ended the reply abnormally (cut off at the
+	// output limit, filtered, failed part-way); nothing of it is kept.
+	CodeIncomplete Code = "incomplete"
 )
 
 // Error is a run failure. Msg never holds a key or a request or response body.

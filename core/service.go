@@ -51,7 +51,7 @@ type Service struct {
 	closed    bool
 
 	callsMu     sync.Mutex
-	modelMu     sync.Mutex   // serializes model-service updates (ponytail: global, per-id if contended)
+	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
 	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	aiMu        sync.Mutex
 	ai          *ai.Engine         // created on first use; see aiEngine

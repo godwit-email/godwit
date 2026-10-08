@@ -341,3 +341,48 @@ func TestAINotConfigured(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAINotConfigured)
 	assert.Empty(t, e.srv.Headers(), "no network request")
 }
+
+// Final review #3: a cut-off reply is never kept as a result: RunSkill does
+// not cache it, QuickReplies fails, Ask saves no turn, AssistSkill proposes nothing.
+func TestIncompleteReplyNotUsed(t *testing.T) {
+	cut := testllm.Turn{Text: []string{`{"replies":[{"html":"<p>Yes</p>"}]}`}, Finish: "length"}
+	t.Run("RunSkill", func(t *testing.T) {
+		e := newSkillEnv(t)
+		e.srv.Script(cut)
+		evs := e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+		require.Equal(t, "error", evs[len(evs)-1].Kind)
+		assert.Equal(t, ai.CodeIncomplete, evs[len(evs)-1].Err.Code)
+		e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+		assert.Len(t, e.srv.Requests(), 2, "nothing was cached")
+	})
+	t.Run("QuickReplies", func(t *testing.T) {
+		e := newSkillEnv(t)
+		e.srv.Script(cut)
+		_, err := e.s.QuickReplies(t.Context(), e.msg)
+		require.Error(t, err)
+	})
+	t.Run("Ask", func(t *testing.T) {
+		e := newSkillEnv(t)
+		conv := e.askConv(t)
+		e.srv.Script(cut)
+		evs := e.ask(t, conv.ID, "hi")
+		require.Equal(t, "error", evs[len(evs)-1].Kind)
+		c, err := e.s.GetConversation(t.Context(), conv.ID)
+		require.NoError(t, err)
+		assert.Empty(t, c.Messages, "no turn saved")
+	})
+	t.Run("AssistSkill", func(t *testing.T) {
+		e := newAssistEnv(t)
+		d := e.replyDraft(t, "<p>Long text here.</p>")
+		e.srv.Script(testllm.Turn{Text: []string{"<p>Short"}, Finish: "length"})
+		ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", nil)
+		require.NoError(t, err)
+		evs := drainWit(t, ch)
+		last := evs[len(evs)-1]
+		require.Equal(t, "error", last.Kind)
+		assert.Empty(t, last.Approvals)
+		rows, err := e.s.db.Query(t.Context(), "SELECT id FROM approvals")
+		require.NoError(t, err)
+		assert.Empty(t, rows.Values, "no proposal")
+	})
+}

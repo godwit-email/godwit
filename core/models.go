@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -116,6 +117,8 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	if err := in.validate(); err != nil {
 		return ModelService{}, err
 	}
+	s.modelMu.Lock()
+	defer s.modelMu.Unlock()
 	res, err := s.db.Execute(ctx, "INSERT INTO model_services(name, kind, base_url, models, created_at) VALUES (?, ?, ?, ?, ?)",
 		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), time.Now().Unix())
 	if err != nil {
@@ -179,6 +182,8 @@ func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
 		return err
 	}
 	defer end()
+	s.modelMu.Lock()
+	defer s.modelMu.Unlock()
 	if _, err := s.db.Execute(ctx, "DELETE FROM model_services WHERE id = ?", id); err != nil {
 		return err
 	}
@@ -207,7 +212,10 @@ func (s *Service) fetchModels(ctx context.Context, id int64) ([]string, error) {
 	return ai.ListModels(ctx, s.modelHTTP, m.Kind, m.BaseURL, key)
 }
 
+// modelServiceKey reads the service and its key as one snapshot (modelMu).
 func (s *Service) modelServiceKey(ctx context.Context, id int64) (ModelService, string, error) {
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
 	m, err := s.modelServiceBy(ctx, "id = ?", id)
 	if err != nil {
 		return m, "", err
@@ -268,6 +276,14 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 		if err != nil {
 			return nil, err
 		}
+		// No modelMu here: an update holds it while it calls Forget.
+		e.Current = func(ctx context.Context, id int64) (int64, error) {
+			rows, err := s.db.Query(context.WithoutCancel(ctx), "SELECT version FROM model_services WHERE id = ?", id)
+			if err != nil || len(rows.Values) == 0 {
+				return 0, cmp.Or(err, ErrModelServiceNotFound)
+			}
+			return store.Int(rows.Values[0][0]), nil
+		}
 		s.ai = e
 	}
 	return s.ai, nil
@@ -298,6 +314,9 @@ func (s *Service) resolveModel(ctx context.Context, override string) (ai.Resolve
 	if err != nil {
 		return ai.ResolvedModel{}, err
 	}
+	// The row and the key as one snapshot: never one service's URL with another's key.
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
 	m, err := s.modelServiceBy(ctx, "name = ?", r.Service)
 	if err != nil {
 		return ai.ResolvedModel{}, err

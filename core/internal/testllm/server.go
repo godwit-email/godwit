@@ -28,12 +28,14 @@ type Server struct {
 
 // Turn is one scripted model response. Status != 0 answers with that HTTP error
 // (its body echoes the key the request carried). Hang streams the text,
-// then waits for Release or the client to go away.
+// then waits for Release or the client to go away. Finish, if set, is the
+// raw finish reason sent (OpenAI finish_reason, Anthropic stop_reason).
 type Turn struct {
 	Text   []string
 	Calls  []Call
 	Hang   bool
 	Status int
+	Finish string
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -210,6 +212,9 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 	if len(t.Calls) > 0 {
 		finish = "tool_calls"
 	}
+	if t.Finish != "" {
+		finish = t.Finish
+	}
 	send(chunk(map[string]any{}, finish), "data: [DONE]")
 }
 
@@ -239,6 +244,9 @@ func anthropicStream(send func(...string), t Turn, hang func() bool) {
 	stop := "end_turn"
 	if len(t.Calls) > 0 {
 		stop = "tool_use"
+	}
+	if t.Finish != "" {
+		stop = t.Finish
 	}
 	send(ev("message_delta", map[string]any{"delta": map[string]any{"stop_reason": stop}, "usage": map[string]any{"output_tokens": 1}}),
 		ev("message_stop", map[string]any{}))

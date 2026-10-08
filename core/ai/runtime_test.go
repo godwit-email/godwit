@@ -677,3 +677,24 @@ func TestInvalidToolArgsGoBackToModel(t *testing.T) {
 		assert.Contains(t, string(reqs[0].Tools), "maximum", "the model still sees the real schema")
 	})
 }
+
+// Final review #3: a reply the service cut off or withheld is an error, not
+// a finished turn: no done, and the state stays as it was.
+func TestAbnormalFinishIsIncomplete(t *testing.T) {
+	cases := map[string][]string{"openai": {"length", "content_filter", "error"}, "anthropic": {"max_tokens", "refusal"}}
+	eachKind(t, func(t *testing.T, kind string) {
+		for _, reason := range cases[kind] {
+			t.Run(reason, func(t *testing.T) {
+				e := newEngine(t)
+				srv := testllm.Start(t, kind)
+				srv.Script(testllm.Turn{Text: []string{"half a transla"}, Finish: reason})
+				evs, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "translate", MaxTurns: 1})
+				require.NotNil(t, res.Err)
+				assert.Equal(t, CodeIncomplete, res.Err.Code)
+				assert.Nil(t, res.State)
+				assert.Equal(t, "error", last(t, evs).Kind)
+				assert.Empty(t, kindsOf(evs, "done"))
+			})
+		}
+	})
+}
