@@ -1,0 +1,293 @@
+package core
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/godwitmail/godwit/core/internal/testmail"
+	"github.com/godwitmail/godwit/core/mail"
+	"github.com/godwitmail/godwit/core/store"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
+)
+
+type sendEnv struct {
+	*syncEnv
+	smtp *testmail.Inbox
+}
+
+// newSendEnv is newSyncEnv with access to the SMTP inbox. With autoSave the SMTP
+// server also files every accepted message into the IMAP Sent folder.
+func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
+	t.Helper()
+	keyring.MockInit()
+	dir := t.TempDir()
+	s, err := New(bg, Options{DataDir: dir})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	im := testmail.StartIMAP(t)
+	var opts []testmail.SMTPOption
+	if autoSave {
+		opts = append(opts, testmail.SaveToSent(im))
+	}
+	smtpAddr, in := testmail.StartSMTP(t, opts...)
+	ai := internalInput(t, im.Addr, smtpAddr, "alice@example.com", true)
+	ai.Name, ai.Signature = "Alice", "Alice Liddell\nGodwit"
+	acc, err := s.AddAccount(bg, ai)
+	require.NoError(t, err)
+	return &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in}
+}
+
+// sendNew sends a fresh draft to bob and returns its Message-ID.
+func (e *sendEnv) sendNew(t *testing.T) string {
+	t.Helper()
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "hello", "<p>hi</p>"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	return store.Str(e.rows(t, "SELECT message_id_hdr FROM outbox ORDER BY id DESC LIMIT 1")[0][0])
+}
+
+func (e *sendEnv) state(t *testing.T) string {
+	t.Helper()
+	return store.Str(e.rows(t, "SELECT state FROM outbox ORDER BY id DESC LIMIT 1")[0][0])
+}
+
+func TestReplyAllDraft(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com, Carol <carol@example.com>", "plan",
+		day, "the plan", "Cc: dan@example.com"))
+	e.sync(t)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply_all", e.idOf(t, "o@x"))
+	require.NoError(t, err)
+	assert.NotZero(t, d.ID)
+	assert.Equal(t, []string{"Bob <bob@example.com>"}, d.To)
+	assert.Equal(t, []string{"Carol <carol@example.com>", "dan@example.com"}, d.Cc)
+	assert.Equal(t, "Re: plan", d.Subject)
+	assert.Contains(t, d.HTML, "<blockquote>the plan")
+	assert.Contains(t, d.HTML, "Godwit")
+	assert.Greater(t, strings.Index(d.HTML, "Godwit"), strings.Index(d.HTML, "<blockquote>"), "signature at the end")
+}
+
+func TestForwardCarriesAttachments(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", withAttachments("f@x", "hi", 1))
+	e.sync(t)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "forward", e.idOf(t, "f@x"))
+	require.NoError(t, err)
+	assert.Equal(t, "Fwd: files f@x", d.Subject)
+	assert.Empty(t, d.To)
+	require.Len(t, d.Attachments, 1)
+	assert.Equal(t, "f0.pdf", d.Attachments[0].Filename)
+	path := store.Str(e.rows(t, "SELECT path FROM draft_attachments")[0][0])
+	assert.Equal(t, filepath.Join(e.dir, "drafts", strconv.FormatInt(d.ID, 10)), filepath.Dir(path))
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "%PDF-1.4\n", string(b))
+}
+
+func TestSendHTMLWithBcc(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com", "plan", day, "the plan"))
+	e.sync(t)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "o@x"))
+	require.NoError(t, err)
+	d.HTML = "<p>Hi <b>Bob</b></p>" + d.HTML
+	d.Bcc = []string{"dave@example.com"}
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	src := filepath.Join(t.TempDir(), "notes.txt")
+	require.NoError(t, os.WriteFile(src, []byte("notes"), 0o600))
+	_, err = e.s.AddAttachment(bg, d.ID, src)
+	require.NoError(t, err)
+	draftDir := filepath.Join(e.dir, "drafts", strconv.FormatInt(d.ID, 10))
+	require.DirExists(t, draftDir)
+
+	require.NoError(t, e.s.Send(bg, d.ID))
+	e.sync(t)
+
+	got := e.smtp.Messages()
+	require.Len(t, got, 1)
+	assert.ElementsMatch(t, []string{"bob@example.com", "dave@example.com"}, got[0].To)
+	assert.Equal(t, "alice@example.com", got[0].From)
+	head, _, _ := strings.Cut(string(got[0].Data), "\r\n\r\n")
+	assert.NotContains(t, strings.ToLower(head), "bcc")
+	assert.NotContains(t, string(got[0].Data), "dave@example.com")
+	assert.Contains(t, string(got[0].Data), "multipart/alternative")
+	p, err := mail.Parse(got[0].Data)
+	require.NoError(t, err)
+	assert.Equal(t, "o@x", p.InReplyTo)
+	assert.Equal(t, []string{"o@x"}, p.References)
+	assert.Contains(t, p.HTML, "<b>Bob</b>")
+	assert.Contains(t, p.Text, "Hi Bob")
+	require.Len(t, p.Attachments, 1)
+	assert.Equal(t, "notes", string(p.Attachments[0].Data))
+
+	sent := e.onServer(t, "Sent")
+	require.Len(t, sent, 1)
+	assert.Equal(t, p.MessageID+` \Seen`, sent[0])
+	out, err := e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, out)
+	assert.Equal(t, "done", e.state(t))
+	assert.NoDirExists(t, draftDir)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM draft_attachments"))
+	entries, _ := os.ReadDir(filepath.Join(e.dir, "outbox"))
+	assert.Empty(t, entries, "raw file removed once archived")
+}
+
+func TestProviderAutoSavedSentNotDuplicated(t *testing.T) {
+	e := newSendEnv(t, true)
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Sent"), 1)
+	assert.Equal(t, "done", e.state(t))
+}
+
+func TestArchiveUncertainNotDuplicated(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	e.im.DropAfterNextAppend()
+	_ = e.s.SyncNow(bg, e.acc.ID) // the connection dies mid-sync
+	assert.Equal(t, "archive_uncertain", e.state(t))
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Sent"), 1)
+	assert.Equal(t, "done", e.state(t))
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+func TestResolveOnlyUncertainOrFailed(t *testing.T) {
+	e := newSendEnv(t, false)
+	for _, st := range []string{"queued", "sending", "sent", "archiving", "done"} {
+		r, err := e.s.db.Execute(bg, "INSERT INTO outbox(account_id, state) VALUES (?, ?)", e.acc.ID, st)
+		require.NoError(t, err)
+		for _, a := range []string{"confirm_sent", "resend", "discard"} {
+			assert.ErrorIs(t, e.s.ResolveOutbox(bg, r.LastInsertID, a), ErrInvalidState, st+" "+a)
+		}
+	}
+	assert.Error(t, e.s.ResolveOutbox(bg, 999, "discard"))
+	r, err := e.s.db.Execute(bg, "INSERT INTO outbox(account_id, state) VALUES (?, 'failed')", e.acc.ID)
+	require.NoError(t, err)
+	assert.Error(t, e.s.ResolveOutbox(bg, r.LastInsertID, "bogus"))
+	require.NoError(t, e.s.ResolveOutbox(bg, r.LastInsertID, "confirm_sent"))
+	assert.Equal(t, "sent", e.state(t))
+}
+
+func TestUncertainSendIsNotResent(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.FailAfterData(1)
+	mid := e.sendNew(t)
+	e.sync(t)
+	assert.Equal(t, "send_uncertain", e.state(t))
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1)
+	assert.Equal(t, "send_uncertain", e.state(t))
+
+	e.put(t, "Sent", eml("x"+mid, "alice@example.com", "bob@example.com", "hello", day, "near miss"))
+	e.sync(t)
+	assert.Equal(t, "send_uncertain", e.state(t))
+
+	e.put(t, "Sent", eml(mid, "alice@example.com", "bob@example.com", "hello", day, "the one"))
+	e.sync(t)
+	assert.Equal(t, "done", e.state(t))
+	assert.Len(t, e.onServer(t, "Sent"), 2, "found, so not appended")
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+func TestCrashDuringSendingBecomesUncertain(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	e.sendNew(t)
+	_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = CASE WHEN id = 1 THEN 'sending' ELSE 'archiving' END")
+	require.NoError(t, err)
+	e.reopen(t)
+	var states []string
+	for _, r := range e.rows(t, "SELECT state FROM outbox ORDER BY id") {
+		states = append(states, store.Str(r[0]))
+	}
+	assert.Equal(t, []string{"send_uncertain", "archive_uncertain"}, states)
+	out, err := e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	assert.Equal(t, "hello", out[0].Subject)
+}
+
+func TestResolveOutboxResend(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.FailAfterData(1)
+	e.sendNew(t)
+	e.sync(t)
+	require.Equal(t, "send_uncertain", e.state(t))
+	out, err := e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ResolveOutbox(bg, out[0].ID, "resend"))
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 2)
+	assert.Equal(t, "done", e.state(t))
+	assert.Len(t, e.onServer(t, "Sent"), 1)
+}
+
+func TestSendRetriesThenFails(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = 1")
+	require.NoError(t, err)
+	for i := 0; i < 5; i++ {
+		e.sync(t)
+	}
+	assert.Equal(t, "failed", e.state(t))
+	assert.Equal(t, 5, e.count(t, "SELECT attempts FROM outbox"))
+	out, _ := e.s.ListOutbox(bg, e.acc.ID)
+	require.Len(t, out, 1)
+	assert.NotEmpty(t, out[0].LastError)
+}
+
+func TestSendValidates(t *testing.T) {
+	e := newSendEnv(t, false)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	check := func() {
+		t.Helper()
+		assert.Error(t, e.s.Send(bg, d.ID))
+		assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM drafts"))
+		assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+	}
+	check() // no recipients
+	d.Cc = []string{"not an address"}
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	check()
+
+	d.Cc = []string{"bob@example.com"}
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	old := attachLimit
+	attachLimit = 150
+	t.Cleanup(func() { attachLimit = old })
+	src := filepath.Join(t.TempDir(), "a.bin")
+	require.NoError(t, os.WriteFile(src, make([]byte, 200), 0o600))
+	_, err = e.s.AddAttachment(bg, d.ID, src)
+	assert.ErrorIs(t, err, ErrTooLarge)
+	require.NoError(t, os.WriteFile(src, make([]byte, 100), 0o600))
+	a1, err := e.s.AddAttachment(bg, d.ID, src)
+	require.NoError(t, err)
+	_, err = e.s.AddAttachment(bg, d.ID, src)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.Send(bg, d.ID), ErrTooLarge)
+	check()
+
+	require.NoError(t, e.s.RemoveAttachment(bg, d.ID, a1.ID))
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	assert.Len(t, d.Attachments, 1)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	assert.Error(t, e.s.Send(bg, d.ID), "a draft is sent once")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM outbox"))
+}

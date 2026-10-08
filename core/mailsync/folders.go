@@ -128,3 +128,18 @@ func anys[T any](s []T) []any {
 	}
 	return out
 }
+
+// SentFolder returns the name of the server's Sent folder, found the way sync
+// assigns roles, or "" when the server has none.
+func SentFolder(c *imapclient.Client) (string, error) {
+	list, err := c.List("", "*", nil).Collect()
+	if err != nil {
+		return "", err
+	}
+	for _, d := range list {
+		if role(d) == "sent" && !slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) && !slices.Contains(d.Attrs, imap.MailboxAttrNonExistent) {
+			return d.Mailbox, nil
+		}
+	}
+	return "", nil
+}

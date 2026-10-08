@@ -134,9 +134,9 @@ func TestSMTPFailAfterData(t *testing.T) {
 	assert.Equal(t, []string{"d@e.f"}, in.Messages()[0].To)
 	in.FailAfterData(1)
 	assert.Error(t, send())
-	assert.Len(t, in.Messages(), 1)
+	assert.Len(t, in.Messages(), 2, "the server got it even though it never replied")
 	require.NoError(t, send())
-	assert.Len(t, in.Messages(), 2)
+	assert.Len(t, in.Messages(), 3)
 
 	ep.Password = "nope"
 	_, err := conn.DialSMTP(ctx, ep)

@@ -2,12 +2,14 @@
 package testmail
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net"
 	"sync"
 	"testing"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 )
@@ -24,7 +26,15 @@ type Inbox struct {
 	mu   sync.Mutex
 	msgs []Received
 	fail int
+	sent *IMAP // SaveToSent target
 }
+
+// SMTPOption customises StartSMTP.
+type SMTPOption func(*Inbox)
+
+// SaveToSent makes the server file every accepted message into im's Sent folder,
+// as providers that auto-save sent mail do.
+func SaveToSent(im *IMAP) SMTPOption { return func(in *Inbox) { in.sent = im } }
 
 // Messages returns a copy of the received messages.
 func (in *Inbox) Messages() []Received {
@@ -38,7 +48,7 @@ func (in *Inbox) Messages() []Received {
 }
 
 // FailAfterData makes the next n sessions read the full DATA and then drop the
-// connection without replying. Dropped messages are not recorded.
+// connection without replying. The server has the message, so it is recorded.
 func (in *Inbox) FailAfterData(n int) {
 	in.mu.Lock()
 	in.fail = n
@@ -94,23 +104,31 @@ func (s *smtpSession) Data(r io.Reader) error {
 	s.cur.Data = data
 	s.in.mu.Lock()
 	defer s.in.mu.Unlock()
+	s.in.msgs = append(s.in.msgs, s.cur)
 	if s.in.fail > 0 {
 		s.in.fail--
 		s.conn.Close()
 		return errors.New("dropped")
 	}
-	s.in.msgs = append(s.in.msgs, s.cur)
+	if s.in.sent != nil {
+		if _, err := s.in.sent.User.Append("Sent", bytes.NewReader(data), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagSeen}}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // StartSMTP starts a plaintext SMTP server accepting only alice/secret (PLAIN).
-func StartSMTP(t *testing.T) (addr string, in *Inbox) {
+func StartSMTP(t *testing.T, opts ...SMTPOption) (addr string, in *Inbox) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	in = &Inbox{}
+	for _, o := range opts {
+		o(in)
+	}
 	srv := smtp.NewServer(backend{in})
 	srv.Domain = "localhost"
 	srv.AllowInsecureAuth = true

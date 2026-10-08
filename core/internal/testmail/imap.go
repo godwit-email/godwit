@@ -1,6 +1,7 @@
 package testmail
 
 import (
+	"errors"
 	"net"
 	"regexp"
 	"sync"
@@ -32,15 +33,20 @@ type IMAP struct {
 	Addr string
 	User *imapmemserver.User
 
-	cfg  config
-	srv  *imapserver.Server
-	mu   sync.Mutex
-	ln   net.Listener
-	conn map[*tconn]struct{}
-	sent atomic.Int64 // bytes written to clients
-	drop atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
-	cmds atomic.Int64 // MOVE and COPY commands handled
+	cfg        config
+	srv        *imapserver.Server
+	mu         sync.Mutex
+	ln         net.Listener
+	conn       map[*tconn]struct{}
+	sent       atomic.Int64 // bytes written to clients
+	drop       atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
+	cmds       atomic.Int64 // MOVE and COPY commands handled
+	dropAppend atomic.Bool
 }
+
+// DropAfterNextAppend makes the next APPEND store the message and then close the
+// client's connection before the tagged OK.
+func (s *IMAP) DropAfterNextAppend() { s.dropAppend.Store(true) }
 
 // MovesAndCopies is how many MOVE and COPY commands the server has handled.
 func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
@@ -111,6 +117,10 @@ func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
 // Append drops the APPENDUID data when UIDPLUS is disabled.
 func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) (*imap.AppendData, error) {
 	d, err := s.Session.Append(mb, r, o)
+	if err == nil && s.s.dropAppend.CompareAndSwap(true, false) {
+		s.conn.Conn.Close()
+		return nil, errors.New("dropped")
+	}
 	if !s.s.cfg.uidplus {
 		d = nil
 	}

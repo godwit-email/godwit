@@ -108,4 +108,6 @@ var Migrations = [][]string{{
 		attempts INTEGER DEFAULT 0,
 		last_error TEXT,
 		created_at INTEGER)`,
+}, {
+	`ALTER TABLE outbox ADD COLUMN subject TEXT`,
 }}

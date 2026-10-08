@@ -45,6 +45,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := recoverOutbox(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts}, nil
 }
 
@@ -67,8 +71,8 @@ func (s *Service) accountLock(id int64) *sync.Mutex {
 	return s.locks[id]
 }
 
-// SyncNow connects to the account's IMAP server, pushes queued local changes and
-// fetches new mail. Calls for the same account run one at a time.
+// SyncNow connects to the account's IMAP server, pushes queued local changes,
+// sends and files the outbox, and fetches new mail. Calls for the same account run one at a time.
 func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 	mu := s.accountLock(accountID)
 	mu.Lock()
@@ -114,6 +118,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64) error {
 	}
 	defer release()
 	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
+		return err
+	}
+	if err := s.processOutbox(ctx, c, accountID); err != nil {
 		return err
 	}
 	if err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus); err != nil {
