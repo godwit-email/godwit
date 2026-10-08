@@ -105,19 +105,23 @@ Events     Subscribe() → stream
 
 ### 5.2 Skill 的 UI 绑定
 
-规范里的 `metadata` 只允许字符串到字符串的映射，所以用扁平的 key：
+`metadata` 是 Agent Skills 规范定义的可选字段，专门留给客户端存放规范之外的属性。它只允许字符串到字符串的映射，规范还建议 key 取得足够独特以免冲突，所以统一加 `godwit-` 前缀：
 
 ```yaml
 ---
 name: translate
 description: Translate the email into the user's preferred language
 metadata:
-  mail-action-on: "message,selection"   # message | thread | selection | draft
-  mail-action-output: "panel"           # panel | replace-draft
+  godwit-action-on: "message,selection"   # message | thread | selection | draft
+  godwit-action-output: "panel"           # panel | replace-draft
 ---
 ```
 
-没有 `mail-action-*` 的 skill，不会出现在 UI 上，只由 `Ask` 里的 agent 按需调用。
+没有 `godwit-action-*` 的 skill，不会出现在 UI 上，只由 `Ask` 里的 agent 按需调用。
+
+其他约束：
+- `name` 必须和 skill 所在目录同名，只能用小写字母、数字和连字符（规范要求）。
+- 规范允许 skill 带 `scripts/` 目录，但 Godwit **不执行 skill 里的脚本**；要运行代码就写成 Plugin，走权限声明。`references/`、`assets/` 照常可以读取。
 
 ### 5.3 Plugin
 
