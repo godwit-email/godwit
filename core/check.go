@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"time"
+	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/conn"
 )
@@ -53,14 +54,14 @@ func (e *CheckError) Unwrap() error { return e.err }
 
 // CheckAccount runs the settings, imap and smtp checks in order; after a failure
 // the remaining steps are Skipped.
-func (s *Service) CheckAccount(ctx context.Context, in AccountInput) CheckReport {
+func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckReport, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
-		return CheckReport{Steps: []CheckStep{{Name: "settings", Kind: KindInvalid, Detail: err.Error()}, {Name: "imap", Skipped: true}, {Name: "smtp", Skipped: true}}}
+		return CheckReport{}, err
 	}
 	defer end()
 	r, _ := s.check(ctx, in)
-	return r
+	return r, ctx.Err()
 }
 
 // check returns the report and the first failing step's underlying error.
@@ -68,7 +69,7 @@ func (s *Service) check(ctx context.Context, in AccountInput) (CheckReport, erro
 	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: "imap"}, {Name: "smtp"}}}
 	var first error
 	fail := func(i int, kind conn.FailureKind, err error) {
-		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, err.Error(), err
+		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
 	}
 	steps := []func() (conn.FailureKind, error){
 		func() (conn.FailureKind, error) { return KindInvalid, in.validate() },
@@ -109,4 +110,18 @@ func dialStep(ctx context.Context, dial func(context.Context) (interface{ Close(
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	return dial(ctx)
+}
+
+const maxDetail = 200
+
+// capDetail cuts s to maxDetail bytes on a UTF-8 boundary.
+func capDetail(s string) string {
+	if len(s) <= maxDetail {
+		return s
+	}
+	s = s[:maxDetail]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }

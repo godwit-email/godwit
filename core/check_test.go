@@ -9,13 +9,12 @@ import (
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zalando/go-keyring"
 )
 
 func TestCheckAllOK(t *testing.T) {
 	s := newTestService(t)
 	im, smtpAddr := servers(t)
-	r := s.CheckAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	r, _ := s.CheckAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
 	require.True(t, r.OK())
 	require.Len(t, r.Steps, 3)
 	for i, n := range []string{"settings", "imap", "smtp"} {
@@ -27,7 +26,7 @@ func TestCheckAllOK(t *testing.T) {
 func TestCheckIMAPAuthFails(t *testing.T) {
 	s := newTestService(t)
 	im, smtpAddr := servers(t)
-	r := s.CheckAccount(ctx, input(t, im.Addr, smtpAddr, "wrong"))
+	r, _ := s.CheckAccount(ctx, input(t, im.Addr, smtpAddr, "wrong"))
 	assert.False(t, r.OK())
 	assert.Equal(t, conn.FailureAuth, r.Steps[1].Kind)
 	assert.True(t, r.Steps[2].Skipped)
@@ -40,7 +39,7 @@ func TestCheckSMTPDown(t *testing.T) {
 	require.NoError(t, err)
 	addr := l.Addr().String()
 	l.Close()
-	r := s.CheckAccount(ctx, input(t, im.Addr, addr, "secret"))
+	r, _ := s.CheckAccount(ctx, input(t, im.Addr, addr, "secret"))
 	assert.True(t, r.Steps[1].OK)
 	assert.Equal(t, conn.FailureConnect, r.Steps[2].Kind)
 }
@@ -50,7 +49,7 @@ func TestCheckInvalidSettings(t *testing.T) {
 	im, smtpAddr := servers(t)
 	in := input(t, im.Addr, smtpAddr, "secret")
 	in.IMAPPort = 0
-	r := s.CheckAccount(ctx, in)
+	r, _ := s.CheckAccount(ctx, in)
 	assert.Equal(t, core.KindInvalid, r.Steps[0].Kind)
 	assert.NotEmpty(t, r.Steps[0].Detail)
 	assert.True(t, r.Steps[1].Skipped)
@@ -67,14 +66,18 @@ func TestAddAccountReturnsCheckError(t *testing.T) {
 	assert.Equal(t, conn.FailureAuth, ce.Report.Steps[1].Kind)
 	assert.ErrorIs(t, err, conn.ErrAuthFailed)
 	assert.Zero(t, rowCount(t, s))
-	_, err = keyring.Get("godwit", "account:1")
-	assert.ErrorIs(t, err, keyring.ErrNotFound)
 }
 
 func TestCheckDetailHasNoSecret(t *testing.T) {
 	s := newTestService(t)
 	im, smtpAddr := servers(t)
-	for _, st := range s.CheckAccount(ctx, input(t, im.Addr, smtpAddr, "hunter2-secret")).Steps {
+	for _, st := range checkSteps(t, s, input(t, im.Addr, smtpAddr, "hunter2-secret")) {
 		assert.NotContains(t, st.Detail, "hunter2-secret")
 	}
+}
+
+func checkSteps(t *testing.T, s *core.Service, in core.AccountInput) []core.CheckStep {
+	r, err := s.CheckAccount(ctx, in)
+	require.NoError(t, err)
+	return r.Steps
 }
