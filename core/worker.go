@@ -111,8 +111,8 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 }
 
 // awaitCredentials parks the worker while the account is reauth_required, so it
-// makes no login attempts. A successful SyncNow, which follows new credentials,
-// wakes it; so does any local change, which only re-reads the status. It reports
+// makes no login attempts. SyncNow wakes it afterwards (a LOGIN that succeeds
+// clears the status); so does any local change, which only re-reads the status. It reports
 // false when ctx ends.
 func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan struct{}) bool {
 	for {

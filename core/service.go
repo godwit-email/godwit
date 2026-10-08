@@ -151,20 +151,12 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 
 // SyncNow connects to the account's IMAP server, pushes queued local changes,
 // sends and files the outbox, and fetches new mail. Calls for the same account
-// run one at a time. Success on an account that needed new credentials resumes
-// its background worker.
+// run one at a time. Afterwards the background worker is woken; if it was parked
+// on reauth_required and this call logged in, it resumes.
 func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
-	acc, err := s.account(ctx, accountID)
-	if err != nil {
-		return err
-	}
-	if err := s.syncNow(ctx, accountID); err != nil {
-		return err
-	}
-	if acc.Status == "reauth_required" {
-		s.wakeWorker(accountID)
-	}
-	return nil
+	err := s.syncNow(ctx, accountID)
+	s.wakeWorker(accountID) // the worker re-reads the status itself, so no stale decision here
+	return err
 }
 
 // syncNow is SyncNow for the worker. A cancelled sync is a shutdown, not a failure.
@@ -205,6 +197,12 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
 		}
 		return nil, nil, nil, err
+	}
+	if acc.Status == "reauth_required" { // the credentials work again
+		if err := s.setStatus(ctx, accountID, "ok"); err != nil {
+			c.Close()
+			return nil, nil, nil, err
+		}
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	return c, func() { stop(); c.Close() }, abort, nil

@@ -260,8 +260,10 @@ func TestRemoveAccountRacingClose(t *testing.T) {
 	within(t, 5*time.Second, "RemoveAccount and Close", wg.Wait)
 }
 
-func TestWorkerParksWhileReauthRequired(t *testing.T) {
-	e, ch := newWorkerEnv(t)
+// parkWorker makes the worker's next round fail to log in and waits until the
+// account is reauth_required. The keychain holds a wrong password afterwards.
+func parkWorker(t *testing.T, e *sendEnv, ch <-chan events.Event) {
+	t.Helper()
 	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
 	e.put(t, "INBOX", msg("r1@x")) // the next round fails to log in
 	waitEvent(t, ch, events.SyncFailed, 5*time.Second)
@@ -269,7 +271,21 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 		a, err := e.s.account(bg, e.acc.ID)
 		return err == nil && a.Status == "reauth_required"
 	}, 5*time.Second, 10*time.Millisecond)
-	time.Sleep(100 * time.Millisecond) // let a retry already scheduled run
+	time.Sleep(100 * time.Millisecond) // let a retry already scheduled run into the park
+}
+
+// workerResumed waits until the worker imports a newly arrived message.
+func workerResumed(t *testing.T, e *sendEnv, id string) {
+	t.Helper()
+	e.put(t, "INBOX", msg(id))
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = ?", id) == 1
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestWorkerParksWhileReauthRequired(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	parkWorker(t, e, ch)
 	n := e.im.Logins()
 	e.s.wakeWorker(e.acc.ID) // a local change must not log in either
 	time.Sleep(time.Second)  // backoff alone would retry about 7 times
@@ -277,10 +293,35 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 
 	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
 	require.NoError(t, e.s.SyncNow(bg, e.acc.ID)) // resumes the worker
-	e.put(t, "INBOX", msg("r2@x"))
-	require.Eventually(t, func() bool {
-		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'r2@x'") == 1
-	}, 5*time.Second, 20*time.Millisecond)
+	workerResumed(t, e, "r2@x")
+}
+
+func TestReauthResumesOnLoginEvenIfSyncFails(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	parkWorker(t, e, ch)
+	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	e.im.DropNextFetch() // LOGIN succeeds, the sync then fails
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	a, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", a.Status, "a successful LOGIN clears reauth_required")
+	n := e.im.Logins()
+	require.Eventually(t, func() bool { return e.im.Logins() > n }, 5*time.Second, 10*time.Millisecond, "worker resumes")
+	workerResumed(t, e, "r2@x")
+}
+
+func TestSyncNowQueuedBeforeParkStillResumes(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { done <- e.s.SyncNow(bg, e.acc.ID) }() // starts while the account is fine, waits for the lock
+	time.Sleep(100 * time.Millisecond)
+	parkWorker(t, e, ch) // the worker's IDLE login fails without needing the lock
+	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "secret"))
+	unlock()
+	require.NoError(t, <-done)
+	workerResumed(t, e, "r2@x")
 }
 
 func TestCancelledSyncIsNotAFailure(t *testing.T) {
