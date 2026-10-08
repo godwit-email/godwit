@@ -1,13 +1,18 @@
 package core
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/godwitmail/godwit/core/conn"
+	"github.com/godwitmail/godwit/core/events"
 	"github.com/godwitmail/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func (e *syncEnv) inboxView(t *testing.T) View {
@@ -34,14 +39,19 @@ func (e *syncEnv) second(t *testing.T) *syncEnv {
 
 func TestListThreadsPaging(t *testing.T) {
 	e := newSyncEnv(t)
-	for i := 1; i <= 5; i++ {
-		id := string(rune('a' + i))
-		e.put(t, "INBOX", eml(id+"@x", "Bob <bob@example.com>", "alice@example.com", "s"+id, "Mon, 0"+string(rune('0'+i))+" Oct 2026 09:00:00 +0000", "b"))
+	days := []string{"01", "02", "02", "04", "05"} // threads 2 and 3 tie on last_date
+	for i, d := range days {
+		id := string(rune('b' + i))
+		e.put(t, "INBOX", eml(id+"@x", "Bob <bob@example.com>", "alice@example.com", "s"+id, "Mon, "+d+" Oct 2026 09:00:00 +0000", "b"))
 	}
 	e.put(t, "INBOX", eml("re@x", "Dan <dan@example.com>", "alice@example.com", "Re: sb", "Tue, 06 Oct 2026 09:00:00 +0000", "b", "In-Reply-To: <b@x>"))
 	e.sync(t)
 	v := e.inboxView(t)
-	var got []string
+	var want []int64
+	for _, r := range e.rows(t, "SELECT id FROM threads ORDER BY last_date DESC, id DESC") {
+		want = append(want, r[0].(int64))
+	}
+	var got []int64
 	cur := ""
 	sizes := []int{}
 	for {
@@ -49,7 +59,7 @@ func TestListThreadsPaging(t *testing.T) {
 		require.NoError(t, err)
 		sizes = append(sizes, len(p.Items))
 		for _, it := range p.Items {
-			got = append(got, it.Subject)
+			got = append(got, it.ID)
 		}
 		if p.NextCursor == "" {
 			break
@@ -57,8 +67,8 @@ func TestListThreadsPaging(t *testing.T) {
 		cur = p.NextCursor
 	}
 	assert.Equal(t, []int{2, 2, 1}, sizes)
-	assert.Len(t, got, 5)
-	assert.Equal(t, "sb", got[0]) // reply on Oct 6 bumps its thread
+	assert.Equal(t, want, got) // full order, no duplicates, ties broken by id DESC
+	assert.Equal(t, e.threadOf(t, "b@x"), got[0])
 	p, _ := e.s.ListThreads(bg, v, "", 50)
 	assert.Equal(t, 2, p.Items[0].Count)
 	assert.Equal(t, 2, p.Items[0].Unread)
@@ -196,16 +206,83 @@ func TestGetAttachmentNotOnServerAndEvict(t *testing.T) {
 	require.NoError(t, err)
 	p2, _, err := e.s.GetAttachment(bg, ids[1][0].(int64))
 	require.NoError(t, err)
-	e.s.evict(bg, 9, ids[1][0].(int64)) // each file is 9 bytes; room for one
+	require.NoError(t, e.s.evict(bg, 9, ids[1][0].(int64))) // each file is 9 bytes; room for one
 	_, err = os.Stat(p1)
 	assert.True(t, os.IsNotExist(err))
 	_, err = os.Stat(p2)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NULL"))
 
-	e.rows(t, "SELECT 1")
 	_, err = e.s.db.Execute(bg, "UPDATE messages SET server_folder_id = NULL, server_uid = NULL")
 	require.NoError(t, err)
 	_, _, err = e.s.GetAttachment(bg, ids[0][0].(int64))
 	assert.ErrorIs(t, err, ErrNotOnServerYet)
+}
+
+func TestGetAttachmentStreamLimit(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
+	e.sync(t)
+	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
+	_, err := e.s.db.Execute(bg, "UPDATE attachments SET size = 1") // understated metadata
+	require.NoError(t, err)
+	old := attachLimit
+	attachLimit = 4
+	t.Cleanup(func() { attachLimit = old })
+	_, _, err = e.s.GetAttachment(bg, aid)
+	assert.ErrorIs(t, err, ErrTooLarge)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
+}
+
+func TestGetAttachmentRereadsRowUnderLock(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
+	e.sync(t)
+	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
+	mu := e.s.accountLock(e.acc.ID)
+	mu.Lock()
+	done := make(chan error, 1)
+	go func() { _, _, err := e.s.GetAttachment(bg, aid); done <- err }()
+	time.Sleep(100 * time.Millisecond) // the call has read its row and waits for the lock
+	_, err := e.s.db.Execute(bg, "DELETE FROM messages")
+	require.NoError(t, err)
+	mu.Unlock()
+	assert.ErrorContains(t, <-done, "not found")
+}
+
+func TestCacheFailuresAreReported(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 2))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	p1, _, err := e.s.GetAttachment(bg, ids[0][0].(int64))
+	require.NoError(t, err)
+	_, _, err = e.s.GetAttachment(bg, ids[1][0].(int64))
+	require.NoError(t, err)
+
+	dead, cancel := context.WithCancel(bg)
+	cancel()
+	assert.Error(t, e.s.touch(dead, ids[0][0].(int64)))
+	assert.Error(t, e.s.evict(dead, 0, 0))
+
+	_, err = e.s.db.Execute(bg, `CREATE TRIGGER nope BEFORE UPDATE OF cache_path ON attachments BEGIN SELECT RAISE(ABORT, 'boom'); END`)
+	require.NoError(t, err)
+	assert.Error(t, e.s.evict(bg, 0, 0))
+	_, err = os.Stat(p1)
+	assert.NoError(t, err, "file must survive when its row could not be cleared")
+}
+
+func TestAuthFailureDuringDownload(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
+	e.sync(t)
+	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
+	require.NoError(t, keyring.Set(keyringService, keyringUser(e.acc.ID), "wrong"))
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	_, _, err := e.s.GetAttachment(bg, aid)
+	assert.ErrorIs(t, err, conn.ErrAuthFailed)
+	acc, _ := e.s.account(bg, e.acc.ID)
+	assert.Equal(t, "reauth_required", acc.Status)
+	assert.Len(t, ofType(collect(ch), events.SyncFailed), 1)
 }
