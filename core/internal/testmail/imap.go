@@ -130,7 +130,7 @@ type tconn struct {
 	r            *bufio.Reader
 	pending      []byte // read from r, not yet returned
 	rlit         int    // client literal bytes still to pass through
-	midCmd       bool   // the next client line continues a command
+	midCmd       bool   // the next client line continues a command (after a literal)
 	wline        []byte // server line not yet complete
 	wlit         int    // server literal bytes still to pass through
 	gotID        atomic.Bool
@@ -143,7 +143,7 @@ func (c *tconn) Read(p []byte) (int, error) {
 			c.rlit -= n
 			return n, err
 		}
-		line, err := c.r.ReadSlice('\n')
+		line, err := c.r.ReadBytes('\n') // whole line, however long, so {n} is never split
 		if len(line) == 0 {
 			return 0, err
 		}
@@ -154,8 +154,8 @@ func (c *tconn) Read(p []byte) (int, error) {
 			}
 			c.rlit = literalLen(line)
 		}
-		c.midCmd = err != nil || c.rlit > 0
-		c.pending = append(c.pending[:0], line...)
+		c.midCmd = c.rlit > 0
+		c.pending = line
 	}
 	n := copy(p, c.pending)
 	c.pending = c.pending[n:]

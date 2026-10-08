@@ -212,3 +212,29 @@ func TestIDsAreCopies(t *testing.T) {
 	s.IDs()[0]["name"] = "x"
 	assert.Equal(t, "Godwit", s.IDs()[0]["name"])
 }
+
+func TestLiteralHeaderAcrossReadBuffer(t *testing.T) {
+	s := testmail.StartIMAP(t)
+	c := dial(t, s)
+	body := "From: a@b.c\r\nSubject: x\r\n\r\na ID (\"name\" \"example\")\r\n"
+	// The APPEND line is "T<n> APPEND <name> {<len>}\r\n"; sweeping the name length
+	// puts the 4096-byte read-buffer boundary inside "{<len>}" for some of them.
+	for n := 4060; n < 4096; n++ { // longer names go as literals, which imapserver caps at 4096
+		name := strings.Repeat("m", n)
+		require.NoError(t, c.Create(name, nil).Wait())
+		a := c.Append(name, int64(len(body)), nil)
+		_, err := a.Write([]byte(body))
+		require.NoError(t, err)
+		require.NoError(t, a.Close())
+		_, err = a.Wait()
+		require.NoError(t, err, n)
+		_, err = c.Select(name, nil).Wait()
+		require.NoError(t, err)
+		sec := &imap.FetchItemBodySection{}
+		msgs, err := c.Fetch(imap.UIDSetNum(1), &imap.FetchOptions{BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+		require.NoError(t, err)
+		require.Len(t, msgs, 1)
+		require.Equal(t, body, string(msgs[0].FindBodySection(sec)), n)
+		require.Len(t, s.IDs(), 1, n)
+	}
+}
