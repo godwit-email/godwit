@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
@@ -250,3 +252,12 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	}
 	return os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10)))
 }
+
+// DetectProvider finds the provider for an email address; DNS gets 5 seconds in total.
+func (s *Service) DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return auth.Detect(ctx, net.DefaultResolver, email)
+}
+
+func (s *Service) ListProviders() []auth.Provider { return auth.ListProviders() }
