@@ -75,9 +75,20 @@ func TestDialCancelWhileStalled(t *testing.T) {
 func TestAuthErrorsDoNotLeakServerText(t *testing.T) {
 	imapEcho := fake(t, func(c net.Conn) {
 		c.Write([]byte("* OK hi\r\n"))
-		line, _ := bufio.NewReader(c).ReadString('\n')
-		tag := strings.Fields(line)[0]
-		c.Write([]byte(tag + " NO login failed for password hunter2\r\n"))
+		r := bufio.NewReader(c)
+		for { // the client may ask for CAPABILITY before LOGIN
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) > 1 && strings.EqualFold(f[1], "LOGIN") {
+				c.Write([]byte(f[0] + " NO login failed for password hunter2\r\n"))
+				stall(c)
+				return
+			}
+			c.Write([]byte("* CAPABILITY IMAP4rev1\r\n" + f[0] + " OK done\r\n"))
+		}
 	})
 	_, err := conn.DialIMAP(context.Background(), imapEcho)
 	require.ErrorIs(t, err, conn.ErrAuthFailed)
