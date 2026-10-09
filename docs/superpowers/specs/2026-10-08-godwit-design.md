@@ -227,16 +227,22 @@ export default function (ctx: Ctx) {
 
 ## 6. 模型服务
 
-### 6.1 v1：两种兼容接口
+### 6.1 v1：三种兼容接口
 
-v1 只内置两种模型服务，用户在设置里添加任意多个：
+v1 内置三种接口类型，用户在设置里添加任意多个服务：
 
-| 类型 | 配置项 |
-|---|---|
-| OpenAI 兼容 | 名称、base URL、API key、模型列表（可从 `/models` 拉取，也可手动填写） |
-| Anthropic 兼容 | 名称、base URL、API key、模型列表 |
+| 类型 | 端点 | 配置项 |
+|---|---|---|
+| OpenAI 兼容 · Chat Completions | `{base}/chat/completions` | 名称、base URL、API key（本机服务可不填）、模型列表 |
+| OpenAI 兼容 · Responses | `{base}/responses` | 同上 |
+| Anthropic 兼容 · Messages | `{base}/v1/messages` | 同上 |
 
-skill、Action、`Ask` 统一用 `服务名/模型 ID` 指定模型；设置里可以选默认模型，单个 skill 可以覆盖。
+- **预设**只预填表单：OpenAI、Anthropic、OpenRouter、Google Gemini（OpenAI 兼容端点）、DeepSeek、Groq、Ollama、LM Studio。
+- **base URL 规范化**：粘贴完整端点（如 `…/v1/chat/completions`）会截回根地址，界面显示实际请求的端点；`http` 只允许本机回环地址。
+- **保存前探测**：拉取模型列表（`/models`），401 / 403 视为 key 被拒绝、不保存；服务没有列表接口或列表为空时手动填写模型 ID。模型 ID 任何时候都可以手填，拉取到的列表只是推荐。
+- **凭据只发往所属地址**：编辑服务时，已存的 key 只在接口类型与地址都不变时沿用；改了地址需要重新输入 key 或明确选择不使用 key。
+- **引用**：skill、Action、`Ask` 统一用 `服务/模型 ID`，「服务」是服务的引用名（slug）：创建时由名称生成，之后不随改名变化；slug 不与其他服务的 slug 或名称重复；解析时找不到 slug 再按名称精确匹配，兼容旧写法。设置里可以选默认模型，单个 skill 可以覆盖。
+- **小任务模型**：可选；内置的总结、翻译与即时回复使用它，未设置或失效时回退默认模型。
 
 订阅账户（ChatGPT、Claude、Copilot 等）不在 Godwit 内处理。需要的用户可以自行运行 aio-proxy、magpie、CLIProxyAPI 之类的本地网关，再把 base URL 填进来。Godwit 不做自动发现。
 
@@ -403,6 +409,7 @@ Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统�
 - Microsoft OAuth 应用注册（Outlook / Hotmail 必需），以及 Gmail 以后是否申请 OAuth 审核。
 - 深色模式的三层颜色还没有设计稿（GUI 计划暂定：窗口 `neutral-900`/`neutral-800` 中点、侧栏 `neutral-900`、内容区 `neutral-950`，只在主题一处定义）。
 - 设计稿里有、v1 Service 没有对应能力而暂不做界面的：智能视图（待回复、订阅与账单，以及「只通知智能视图里的邮件」）、「始终信任此发件人」、定时发送、审批卡片的「本次对话都允许」（v1 为「全部允许」当前运行的待审批项）、按对话选择模型、按时间（「最近 3 个月」「全部」）设定同步范围（v1 按封数：2000 / 10000 / 100000）。
+- 按模型的上下文长度、视觉等能力元数据（目前没有使用方，v1 不做）。
 - 撰写页「翻译 ▾」里的「回复语言」目标：要先识别所回复邮件的语言（core 尚无语言识别），v1 只提供阅读语言与明确选择的语言。
 - 撰写页「生成中」逐字出现的正文预览：v1 的 Assist 只在工具调用完成时写入草稿，生成中正文区显示占位，流式文字显示在 Wit 面板里。
 - 打包用的应用图标（.icns / .ico，由 `assets/logo.svg` 生成）随打包计划处理。
