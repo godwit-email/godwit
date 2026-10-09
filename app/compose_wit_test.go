@@ -392,28 +392,3 @@ func TestFreeInputAfterCmdKRunsAssist(t *testing.T) {
 	}
 	t.Fatal("the free input did not run Assist in the draft's conversation")
 }
-
-func TestTranslateReplyLanguage(t *testing.T) {
-	h, p, llm := witCompose(t, "<p>我周五到。</p>")
-	var mu sync.Mutex
-	var got []string
-	run := p.wit.skill
-	p.wit.skill = func(ctx context.Context, id int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error) {
-		mu.Lock()
-		got = append(got, skill+":"+o.TargetLanguage)
-		mu.Unlock()
-		return run(ctx, id, skill, o)
-	}
-	llm.Script(coretest.Turn{Text: []string{"<p>I'll be there on Friday.</p>"}})
-	h.click("翻译 ▾")
-	if err := h.tt.ChooseMenuItem("与收件人相同的语言"); err != nil {
-		t.Fatalf("%v; menu %q", err, h.tt.Menu())
-	}
-	h.drain()
-	h.until("the proposal", func() bool { return p.wit.review != nil })
-	mu.Lock()
-	defer mu.Unlock()
-	if len(got) != 1 || got[0] != "translate-draft:" {
-		t.Fatalf("skills %q, want translate-draft with no target (the reply language)", got)
-	}
-}

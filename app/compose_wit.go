@@ -21,17 +21,12 @@ import (
 // adjustSkills are the 调整 menu's skills, in its order.
 var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer", "proofread"}
 
-// languages are the 翻译 menu's targets: under ReplyLanguage "match" the
-// reply language (tag "": the Service resolves it as Assist writes the
-// draft), the reading language, then the common ones.
+// languages are the 翻译 menu's targets: the reading language, then the
+// common ones.
 func (w *composeWit) languages() []struct{ tag, name string } {
 	st := w.p.a.settings
 	read := cmp.Or(st.ReadingLanguage, st.UILanguage, w.p.a.sysLang, "en")
-	var out []struct{ tag, name string }
-	if st.ReplyLanguage == "match" {
-		out = append(out, struct{ tag, name string }{"", i18n.T("wit.compose.reply_language")})
-	}
-	out = append(out, struct{ tag, name string }{read, langName(read)})
+	out := []struct{ tag, name string }{{read, langName(read)}}
 	for _, l := range languages {
 		if !slices.ContainsFunc(out, func(x struct{ tag, name string }) bool { return x.name == l.name }) {
 			out = append(out, l)
