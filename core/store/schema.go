@@ -169,4 +169,6 @@ var Migrations = [][]string{{
 }, {
 	// The active version's directory under DataDir/plugins/<name>/ (written once per install).
 	`ALTER TABLE plugins ADD COLUMN install_dir TEXT NOT NULL DEFAULT ''`,
+	// JSON list of the config keys that may have a keychain entry (deleted by uninstall).
+	`ALTER TABLE plugins ADD COLUMN secret_keys TEXT NOT NULL DEFAULT '[]'`,
 }}

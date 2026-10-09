@@ -2,9 +2,11 @@ package core_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -84,6 +86,8 @@ func TestSecretsLoadedAtStart(t *testing.T) {
 	dir := t.TempDir()
 	s := openService(t, dir)
 	configPlugin(t, s)
+	require.NoError(t, s.GrantPermission(ctx, "cfg"))
+	require.NoError(t, s.SetPluginEnabled(ctx, "cfg", true))
 	require.NoError(t, s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`"tok-abcdefgh"`)}))
 	s.Close()
 	s2, err := core.New(ctx, core.Options{DataDir: dir}) // the mock keyring keeps its entries
@@ -224,4 +228,101 @@ func TestUpdateDropsUndeclaredSecrets(t *testing.T) {
 	_, err = s.PluginSecretForTest("cfg", "token")
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
 	assert.Empty(t, s.SecretsForTest())
+}
+
+var errLocked = errors.New("locked")
+
+func failAt(ns ...int) func(int) error {
+	return func(n int) error {
+		if slices.Contains(ns, n) {
+			return errLocked
+		}
+		return nil
+	}
+}
+
+func TestSecretReadFailureKeepsRedaction(t *testing.T) {
+	s := newTestService(t)
+	configPlugin(t, s)
+	require.NoError(t, s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`"tok-abcdefgh"`)}))
+	restore := core.KeyringFaultForTest("get", func(int) error { return errLocked })
+	defer restore()
+	err := s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`"tok-new-12345"`)})
+	require.ErrorIs(t, err, core.ErrKeychainUnavailable)
+	assert.Contains(t, s.SecretsForTest(), "tok-abcdefgh")
+	require.Error(t, s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`null`)}))
+	assert.Contains(t, s.SecretsForTest(), "tok-abcdefgh")
+}
+
+func TestSecretsUnreadableAtStartDisable(t *testing.T) {
+	dir := t.TempDir()
+	s := openService(t, dir)
+	configPlugin(t, s)
+	require.NoError(t, s.GrantPermission(ctx, "cfg"))
+	require.NoError(t, s.SetPluginEnabled(ctx, "cfg", true))
+	require.NoError(t, s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`"tok-abcdefgh"`)}))
+	s.Close()
+	restore := core.KeyringFaultForTest("get", func(int) error { return errLocked })
+	defer restore()
+	s2, err := core.New(ctx, core.Options{DataDir: dir})
+	require.NoError(t, err)
+	defer s2.Close()
+	_, running := s2.RunningPluginForTest("cfg")
+	assert.False(t, running)
+	p, ok := pluginByName(t, s2, "cfg")
+	require.True(t, ok)
+	assert.False(t, p.Enabled)
+	assert.Equal(t, "keychain_unavailable", p.DisabledReason)
+}
+
+func TestSecretKeysListedForRetry(t *testing.T) {
+	s := newTestService(t)
+	configPlugin(t, s)
+	require.NoError(t, s.SetPluginConfig(ctx, "cfg", raw{"host": json.RawMessage(`"h"`), "token": json.RawMessage(`"tok-abcdefgh"`)}))
+	keys, err := s.PluginSecretKeysForTest("cfg")
+	require.NoError(t, err)
+	assert.JSONEq(t, `["token"]`, keys)
+
+	// An update drops the secret; its keychain delete fails, so it stays listed.
+	restore := core.KeyringFaultForTest("delete", func(int) error { return errLocked })
+	dir := pluginSrc(t, "cfg", "2.0.0", readPerms, `export default function () {}`)
+	m := fmt.Sprintf(`{"name":"cfg","version":"2.0.0","main":"index.ts","permissions":%s}`, readPerms)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(m), 0o600))
+	_, err = s.InstallPlugin(ctx, dir)
+	assert.ErrorIs(t, err, core.ErrKeychainUnavailable)
+	restore()
+	keys, err = s.PluginSecretKeysForTest("cfg")
+	require.NoError(t, err)
+	assert.JSONEq(t, `["token"]`, keys)
+	_, err = s.PluginSecretForTest("cfg", "token")
+	require.NoError(t, err)
+
+	// Uninstall deletes by the list, though the manifest no longer declares it.
+	require.NoError(t, s.UninstallPlugin(ctx, "cfg"))
+	_, err = s.PluginSecretForTest("cfg", "token")
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+	assert.Empty(t, s.SecretsForTest())
+}
+
+func TestPartialSecretWriteBumpsVersion(t *testing.T) {
+	s := newTestService(t)
+	configPlugin(t, s)
+	both := func(a, b string) raw {
+		return raw{"host": json.RawMessage(`"h"`), "mode": json.RawMessage(`"b"`), "apiKey": json.RawMessage(a), "token": json.RawMessage(b)}
+	}
+	require.NoError(t, s.SetPluginConfig(ctx, "cfg", both(`"api-old-1"`, `"tok-old-1"`)))
+	_, v0, err := s.PluginConfigForTest("cfg")
+	require.NoError(t, err)
+	// apiKey is written, token fails, putting apiKey back fails too.
+	restore := core.KeyringFaultForTest("set", failAt(2, 3))
+	err = s.SetPluginConfig(ctx, "cfg", both(`"api-new-2"`, `"tok-new-2"`))
+	restore()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "apiKey", "the failed rollback is reported")
+	_, v1, err := s.PluginConfigForTest("cfg")
+	require.NoError(t, err)
+	assert.Greater(t, v1, v0)
+	// The keychain may hold either apiKey value: both stay redacted.
+	assert.Contains(t, s.SecretsForTest(), "api-old-1")
+	assert.Contains(t, s.SecretsForTest(), "api-new-2")
 }

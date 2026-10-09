@@ -41,8 +41,9 @@ type PluginInfo struct {
 
 // disabled_reason values set here (Task 5 adds failures).
 const (
-	disabledFiles = "files_changed" // the version directory is damaged
-	disabledLoad  = "load_failed"   // the plugin did not start
+	disabledFiles    = "files_changed"        // the version directory is damaged
+	disabledLoad     = "load_failed"          // the plugin did not start
+	disabledKeychain = "keychain_unavailable" // its secrets could not be read
 )
 
 // pluginHook, if set, runs at "switch" (before the row points at a new
@@ -53,6 +54,7 @@ type pluginRow struct {
 	m                             plugins.Manifest
 	sourceHash, permHash, granted string
 	installDir                    string
+	secretKeys                    []string // keys that may have a keychain entry
 	enabled                       bool
 	reason                        string
 }
@@ -91,7 +93,7 @@ func (s *Service) removeOldVersions(name, keep string) error {
 }
 
 func (s *Service) pluginRows(ctx context.Context, name string) (map[string]pluginRow, error) {
-	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir FROM plugins"
+	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir, secret_keys FROM plugins"
 	var args []any
 	if name != "" {
 		q += " WHERE name = ?"
@@ -107,7 +109,11 @@ func (s *Service) pluginRows(ctx context.Context, name string) (map[string]plugi
 		if err := json.Unmarshal([]byte(store.Str(r[1])), &m); err != nil {
 			return nil, err
 		}
-		out[store.Str(r[0])] = pluginRow{m: m, sourceHash: store.Str(r[2]), permHash: store.Str(r[3]), granted: store.Str(r[4]),
+		var keys []string
+		if err := json.Unmarshal([]byte(store.Str(r[8])), &keys); err != nil {
+			return nil, err
+		}
+		out[store.Str(r[0])] = pluginRow{secretKeys: keys, m: m, sourceHash: store.Str(r[2]), permHash: store.Str(r[3]), granted: store.Str(r[4]),
 			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7])}
 	}
 	return out, nil
@@ -245,15 +251,14 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 		}
 	}
 	s.bus.Publish(events.Event{Type: events.PluginsChanged})
-	// Secrets the new version no longer declares would outlive an uninstall.
+	// Secrets the new version no longer declares are deleted (or stay listed for uninstall).
 	var dropped []string
-	for _, k := range secretKeys(before[m.Name].m.Config) {
+	for _, k := range before[m.Name].secretKeys {
 		if !slices.Contains(secretKeys(m.Config), k) {
 			dropped = append(dropped, k)
 		}
 	}
-	secretErr := s.deletePluginSecrets(m.Name, dropped)
-	s.loadPluginSecrets(m.Name, m.Config)
+	secretErr := s.dropSecrets(ctx, m.Name, before[m.Name].secretKeys, dropped)
 	s.stopPlugin(m.Name)
 	rows, err := s.pluginRows(ctx, m.Name)
 	if err != nil {
@@ -282,6 +287,9 @@ func (s *Service) startOrDisable(ctx context.Context, name string, r *pluginRow)
 		reason = disabledLoad
 		if err = s.loadPlugin(name, *r); err == nil {
 			return nil
+		}
+		if errors.Is(err, ErrKeychainUnavailable) {
+			reason = disabledKeychain
 		}
 	}
 	if _, dbErr := s.db.Execute(ctx, "UPDATE plugins SET enabled = 0, disabled_reason = ? WHERE name = ?", reason, name); dbErr != nil {
@@ -376,11 +384,12 @@ func (s *Service) UninstallPlugin(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	// Secrets first: if the keychain is unavailable nothing is removed yet.
-	if err := s.deletePluginSecrets(name, secretKeys(rows[name].m.Config)); err != nil {
+	// Secrets first: a key the keychain could not delete stays listed, and
+	// nothing else is removed yet.
+	keys := rows[name].secretKeys
+	if err := s.dropSecrets(ctx, name, keys, keys); err != nil {
 		return err
 	}
-	s.secrets.RemoveOwner(pluginOwner(name))
 	s.stopPlugin(name)
 	r, err := s.db.Execute(ctx, "DELETE FROM plugins WHERE name = ?", name)
 	if err != nil {
@@ -424,7 +433,9 @@ func (s *Service) startPlugins(ctx context.Context) error {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	for n, r := range rows {
-		s.loadPluginSecrets(n, r.m.Config)
+		if !r.enabled {
+			s.loadPluginSecrets(n, r.secretKeys) // best effort; a running plugin needs them (loadPlugin)
+		}
 		if r.enabled {
 			s.startOrDisable(ctx, n, &r) // a failure is recorded on the row
 		}
@@ -436,6 +447,9 @@ func (s *Service) startPlugins(ctx context.Context) error {
 // stops it. Both are called with pluginsMu held.
 // ponytail: records the running code's hash only; Task 5 starts and stops the VM here.
 func (s *Service) loadPlugin(name string, r pluginRow) error {
+	if err := s.loadPluginSecrets(name, r.secretKeys); err != nil {
+		return err // never run with secrets the redaction does not know
+	}
 	if pluginHook != nil {
 		if err := pluginHook("load", name); err != nil {
 			return err
@@ -464,7 +478,8 @@ func (s *Service) pluginSecretUser(name, key string) string {
 	return s.installID + "/plugin:" + name + ":" + key
 }
 
-func pluginOwner(name string) string { return "plugin:" + name }
+// Each secret is its own owner in the secret set, so one can change alone.
+func secretOwner(name, key string) string { return "plugin:" + name + ":" + key }
 
 // secretValue reads a plugin secret; ok is false when it is not set.
 func (s *Service) secretValue(name, key string) (v string, ok bool, err error) {
@@ -475,28 +490,49 @@ func (s *Service) secretValue(name, key string) (v string, ok bool, err error) {
 	return v, err == nil, err
 }
 
-// loadPluginSecrets puts the plugin's secret values in the secret set; an
-// unreadable keychain leaves them out.
-func (s *Service) loadPluginSecrets(name string, fields []plugins.ConfigField) {
-	var vs []string
-	for _, f := range fields {
-		if f.Type == "secret" {
-			if v, ok, _ := s.secretValue(name, f.Key); ok {
-				vs = append(vs, v)
-			}
+// loadPluginSecrets puts the stored secrets in the secret set. If any cannot
+// be read it changes nothing (the set never shrinks on a read failure).
+func (s *Service) loadPluginSecrets(name string, keys []string) error {
+	vals := map[string]string{}
+	for _, k := range keys {
+		v, ok, err := s.secretValue(name, k)
+		if err != nil {
+			return fmt.Errorf("read plugin secret %s: %w", k, err)
+		}
+		if ok {
+			vals[k] = v
 		}
 	}
-	s.secrets.Set(pluginOwner(name), vs...)
-}
-
-// deletePluginSecrets deletes the keychain entries of keys; missing ones are fine.
-func (s *Service) deletePluginSecrets(name string, keys []string) error {
-	for _, k := range keys {
-		if err := keychainDelete(s.pluginSecretUser(name, k)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
-			return err
-		}
+	for k, v := range vals {
+		s.secrets.Set(secretOwner(name, k), v)
 	}
 	return nil
+}
+
+// dropSecrets deletes the keychain entries of drop (missing ones are fine)
+// and records listed minus the deleted ones as the plugin's secret_keys; a key
+// whose delete failed stays listed and redacted, for the next try.
+func (s *Service) dropSecrets(ctx context.Context, name string, listed, drop []string) error {
+	var errs error
+	keep := []string{}
+	for _, k := range listed {
+		if !slices.Contains(drop, k) {
+			keep = append(keep, k)
+			continue
+		}
+		if err := keychainDelete(s.pluginSecretUser(name, k)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			errs = errors.Join(errs, fmt.Errorf("delete plugin secret %s: %w", k, err))
+			keep = append(keep, k)
+			continue
+		}
+		s.secrets.RemoveOwner(secretOwner(name, k))
+	}
+	if len(drop) == 0 {
+		return nil
+	}
+	kj, _ := json.Marshal(keep)
+	_, err := s.db.Execute(ctx, "UPDATE plugins SET secret_keys = ? WHERE name = ?", string(kj), name)
+	return errors.Join(errs, err)
 }
 
 func secretKeys(fields []plugins.ConfigField) []string {
@@ -621,6 +657,10 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 	if err != nil {
 		return err
 	}
+	rows, err := s.pluginRows(ctx, name)
+	if err != nil {
+		return err
+	}
 	declared := map[string]bool{}
 	for _, f := range m.Config {
 		declared[f.Key] = true
@@ -684,53 +724,85 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 		}
 	}
 
-	// Keychain first, then the rows; a failure puts the old secrets back.
+	// Read the old secrets before changing anything.
 	type prev struct {
 		v  string
 		ok bool
 	}
-	done := map[string]prev{}
-	restore := func() {
-		for k, p := range done {
-			if p.ok {
-				keychainSet(s.pluginSecretUser(name, k), p.v)
-			} else {
-				keychainDelete(s.pluginSecretUser(name, k))
+	olds := map[string]prev{}
+	listed := slices.Clone(rows[name].secretKeys)
+	for _, k := range secretKeys(m.Config) {
+		if _, set := secretSet[k]; set || slices.Contains(secretClear, k) {
+			v, ok, err := s.secretValue(name, k)
+			if err != nil {
+				return fmt.Errorf("read plugin secret %s: %w", k, err)
+			}
+			olds[k] = prev{v, ok}
+			if !slices.Contains(listed, k) {
+				listed = append(listed, k)
 			}
 		}
 	}
-	err = func() error {
-		for _, k := range secretKeys(m.Config) {
-			v, set := secretSet[k]
-			if !set && !slices.Contains(secretClear, k) {
-				continue
-			}
-			old, ok, err := s.secretValue(name, k)
-			if err != nil {
-				return err
-			}
-			done[k] = prev{old, ok}
-			if set {
-				err = keychainSet(s.pluginSecretUser(name, k), v)
-			} else {
-				err = s.deletePluginSecrets(name, []string{k})
-			}
-			if err != nil {
-				return fmt.Errorf("save plugin secret %s: %w", k, err)
-			}
+	// The version goes up before the keychain changes, so whatever happens
+	// below, nothing bound to the old config stays valid.
+	lj, _ := json.Marshal(listed)
+	if _, err := s.db.Execute(ctx, "UPDATE plugins SET config_version = config_version + 1, secret_keys = ? WHERE name = ?", string(lj), name); err != nil {
+		return err
+	}
+	done := []string{}
+	for _, k := range secretKeys(m.Config) {
+		if _, ok := olds[k]; !ok {
+			continue
 		}
+		done = append(done, k)
+		if v, set := secretSet[k]; set {
+			s.secrets.Add(secretOwner(name, k), v) // redacted before it is stored
+			err = keychainSet(s.pluginSecretUser(name, k), v)
+		} else if err = keychainDelete(s.pluginSecretUser(name, k)); errors.Is(err, keyring.ErrNotFound) {
+			err = nil
+		}
+		if err != nil {
+			err = fmt.Errorf("save plugin secret %s: %w", k, err)
+			break
+		}
+	}
+	if err == nil {
+		keep := slices.DeleteFunc(listed, func(k string) bool { return slices.Contains(secretClear, k) })
+		kj, _ := json.Marshal(keep)
 		stmts := []sqlite.Statement{{SQL: "DELETE FROM plugin_config WHERE plugin = ?", Args: []any{name}}}
 		for k, v := range final {
 			stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO plugin_config(plugin, key, value) VALUES (?, ?, ?)", Args: []any{name, k, string(v)}})
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE plugins SET config_version = config_version + 1 WHERE name = ?", Args: []any{name}})
-		_, err := s.db.Transaction(ctx, stmts)
-		return err
-	}()
-	if err != nil {
-		restore()
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE plugins SET secret_keys = ? WHERE name = ?", Args: []any{string(kj), name}})
+		_, err = s.db.Transaction(ctx, stmts)
 	}
-	s.loadPluginSecrets(name, m.Config)
+	if err == nil {
+		for k := range olds {
+			if v, set := secretSet[k]; set {
+				s.secrets.Set(secretOwner(name, k), v)
+			} else {
+				s.secrets.RemoveOwner(secretOwner(name, k))
+			}
+		}
+		return nil
+	}
+	// Put the old secrets back; one that cannot be restored keeps both values redacted.
+	for _, k := range done {
+		p, user := olds[k], s.pluginSecretUser(name, k)
+		var rerr error
+		if p.ok {
+			rerr = keychainSet(user, p.v)
+		} else if rerr = keychainDelete(user); errors.Is(rerr, keyring.ErrNotFound) {
+			rerr = nil
+		}
+		if rerr != nil {
+			err = errors.Join(err, fmt.Errorf("restore plugin secret %s: %w", k, rerr))
+		} else if p.ok {
+			s.secrets.Set(secretOwner(name, k), p.v)
+		} else {
+			s.secrets.RemoveOwner(secretOwner(name, k))
+		}
+	}
 	return err
 }
 

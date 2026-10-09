@@ -45,3 +45,51 @@ func (s *Service) PluginSecretForTest(name, key string) (string, error) {
 
 // SecretsForTest lists the extension secret set.
 func (s *Service) SecretsForTest() []string { return s.secrets.Values() }
+
+// KeyringFaultForTest makes every keychain op ("get", "set", "delete") ask
+// fail(n), n counting that op's calls from 1; a non-nil error is returned
+// instead of calling the keyring. It returns a restore func.
+func KeyringFaultForTest(op string, fail func(n int) error) func() {
+	n := 0
+	switch op {
+	case "get":
+		orig := keyringGet
+		keyringGet = func(svc, user string) (string, error) {
+			if n++; fail(n) != nil {
+				return "", fail(n)
+			}
+			return orig(svc, user)
+		}
+		return func() { keyringGet = orig }
+	case "set":
+		orig := keyringSet
+		keyringSet = func(svc, user, v string) error {
+			if n++; fail(n) != nil {
+				return fail(n)
+			}
+			return orig(svc, user, v)
+		}
+		return func() { keyringSet = orig }
+	default:
+		orig := keyringDelete
+		keyringDelete = func(svc, user string) error {
+			if n++; fail(n) != nil {
+				return fail(n)
+			}
+			return orig(svc, user)
+		}
+		return func() { keyringDelete = orig }
+	}
+}
+
+// PluginSecretKeysForTest reads the plugin's secret_keys column.
+func (s *Service) PluginSecretKeysForTest(name string) (string, error) {
+	rows, err := s.db.Query(context.Background(), "SELECT secret_keys FROM plugins WHERE name = ?", name)
+	if err != nil {
+		return "", err
+	}
+	if len(rows.Values) == 0 {
+		return "", ErrPluginNotFound
+	}
+	return rows.Values[0][0].(string), nil
+}
