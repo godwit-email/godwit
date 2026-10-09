@@ -311,7 +311,8 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.True(t, len(reqs[0].Tools) == 0 || string(reqs[0].Tools) == "null", "the skill has no tools: %s", reqs[0].Tools)
 	sys := string(reqs[0].System)
 	assert.Contains(t, sys, "Translate the draft")
-	assert.Contains(t, sys, "Target language: the language of the email this draft replies to.", "no target given: the reply language")
+	assert.Contains(t, sys, "Target language: zh-CN.", "no target given: the reading language")
+	assert.NotContains(t, sys, "language of the email")
 	p := promptOf(t, reqs[0])
 	assert.Contains(t, p, "我周五到。")
 	// Final review #4: a skill gets its target only, no other mail.
@@ -657,34 +658,4 @@ func TestAssistSkillTargetLanguage(t *testing.T) {
 	sys := string(e.srv.Requests()[0].System)
 	assert.Contains(t, sys, "Target language: fr.")
 	assert.NotContains(t, sys, "zh-CN")
-}
-
-// Task 16 fix round 1: an empty target is the reply language, as the draft
-// is written in, not the reading language.
-func TestAssistSkillTranslateReplyLanguage(t *testing.T) {
-	translate := func(t *testing.T, e skillEnv, d Draft) string {
-		t.Helper()
-		e.srv.Script(testllm.Turn{Text: []string{"<p>x</p>"}})
-		ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{})
-		require.NoError(t, err)
-		evs := drainWit(t, ch)
-		require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
-		reqs := e.srv.Requests()
-		return string(reqs[len(reqs)-1].System)
-	}
-	t.Run("match", func(t *testing.T) {
-		e := newAssistEnv(t)
-		sys := translate(t, e, e.replyDraft(t, "<p>我周五到。</p>"))
-		assert.Contains(t, sys, "Target language: the language of the email this draft replies to.")
-		assert.NotContains(t, sys, "Target language: zh-CN.")
-	})
-	t.Run("reading", func(t *testing.T) {
-		e := newAssistEnv(t)
-		st, err := e.s.GetSettings(t.Context())
-		require.NoError(t, err)
-		st.ReadingLanguage, st.ReplyLanguage = "ja", "reading"
-		_, err = e.s.SetSettings(t.Context(), st)
-		require.NoError(t, err)
-		assert.Contains(t, translate(t, e, e.replyDraft(t, "<p>我周五到。</p>")), "Target language: ja.")
-	})
 }

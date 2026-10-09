@@ -552,7 +552,7 @@ func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, 
 
 // SkillOptions are AssistSkill's options. Selection, if set, limits the skill
 // to that range; TargetLanguage is translate-draft's target (empty: the
-// reply language, see draftLanguage).
+// reading language).
 type SkillOptions struct {
 	Selection      *Selection
 	TargetLanguage string
@@ -611,14 +611,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		return nil, err
 	}
 	system := sk.Body + "\n\n" + ai.UntrustedSystemNote
-	if name == "translate-draft" { // no target: the reply language, as an Assist run writes the draft
-		target := strings.TrimSpace(opts.TargetLanguage)
-		if target == "" {
-			if target, err = s.draftLanguage(ctx, d); err != nil {
-				return nil, err
-			}
-		}
-		system += "\n\nTarget language: " + target + "."
+	if name == "translate-draft" { // never "the original's language": the skill does not see it
+		system += "\n\nTarget language: " + cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx)) + "."
 	}
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
