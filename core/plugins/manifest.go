@@ -275,6 +275,9 @@ func checkConfig(fields []ConfigField) error {
 	return nil
 }
 
+// Accepts reports whether v is a value f can hold (not for a secret).
+func (f ConfigField) Accepts(v json.RawMessage) bool { return fits(f, v) }
+
 // fits reports whether v is a value field f can hold.
 func fits(f ConfigField, v json.RawMessage) bool {
 	switch s := scalar(v).(type) {

@@ -32,3 +32,16 @@ func (s *Service) ExecForTest(q string) error {
 	_, err := s.db.Execute(context.Background(), q)
 	return err
 }
+
+// PluginConfigForTest is pluginConfig.
+func (s *Service) PluginConfigForTest(name string) (map[string]any, int64, error) {
+	return s.pluginConfig(context.Background(), name)
+}
+
+// PluginSecretForTest reads the plugin secret's keychain entry.
+func (s *Service) PluginSecretForTest(name, key string) (string, error) {
+	return keychainGet(s.pluginSecretUser(name, key))
+}
+
+// SecretsForTest lists the extension secret set.
+func (s *Service) SecretsForTest() []string { return s.secrets.Values() }

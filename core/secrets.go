@@ -23,6 +23,16 @@ func (s *secretSet) Add(owner string, values ...string) {
 	s.m[owner] = append(s.m[owner], values...)
 }
 
+// Set replaces owner's values in one step.
+func (s *secretSet) Set(owner string, values ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[string][]string{}
+	}
+	s.m[owner] = values
+}
+
 func (s *secretSet) RemoveOwner(owner string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
