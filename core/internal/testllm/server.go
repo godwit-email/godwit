@@ -1,5 +1,6 @@
 // Package testllm is a fake model service for tests: the model-list endpoint and
-// a scripted, streaming chat endpoint for both protocols.
+// a scripted, streaming chat endpoint for each protocol (openai, openai-responses,
+// anthropic). Requests a real service would reject get a 400 and are marked.
 package testllm
 
 import (
@@ -24,6 +25,8 @@ type Server struct {
 	turns      []Turn
 	requests   []Request
 	release    chan struct{}
+	stuck      bool                 // the head turn is a Status that keeps answering
+	reasoned   map[string]reasoning // call_id -> the reasoning item emitted with it
 	Mux        *http.ServeMux
 }
 
@@ -31,12 +34,22 @@ type Server struct {
 // (its body echoes the key the request carried). Hang streams the text,
 // then waits for Release or the client to go away. Finish, if set, is the
 // raw finish reason sent (OpenAI finish_reason, Anthropic stop_reason).
+//
+// openai-responses only: Reasoning adds a reasoning item with that
+// encrypted_content; Fail ends with response.failed carrying that message,
+// Incomplete with response.incomplete, Truncate with no terminal event. A
+// Status turn that is the last one scripted keeps answering (the SDK's
+// retries) until Script adds more.
 type Turn struct {
-	Text   []string
-	Calls  []Call
-	Hang   bool
-	Status int
-	Finish string
+	Text       []string
+	Calls      []Call
+	Hang       bool
+	Status     int
+	Finish     string
+	Reasoning  string
+	Fail       string
+	Incomplete bool
+	Truncate   bool
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -45,19 +58,26 @@ type Call struct {
 	Args     string // JSON object
 }
 
-// Request is the raw JSON of one chat request.
+// Request is the raw JSON of one chat request. For openai-responses System is
+// the instructions and Messages the input. Invalid says why the fake rejected
+// it with a 400; empty means it was answered from the script.
 type Request struct {
 	System, Messages, Tools json.RawMessage
 	Header                  http.Header
+	Model, Path, Invalid    string
+	Body                    json.RawMessage
 }
 
-// Start serves the endpoints of kind ("openai" or "anthropic").
+// Start serves the endpoints of kind ("openai", "openai-responses" or "anthropic").
 func Start(t *testing.T, kind string) *Server {
 	t.Helper()
-	s := &Server{Mux: http.NewServeMux(), release: make(chan struct{})}
+	s := &Server{Mux: http.NewServeMux(), release: make(chan struct{}), reasoned: map[string]reasoning{}}
 	list, chat := "/models", "/chat/completions"
-	if kind == "anthropic" {
+	switch kind {
+	case "anthropic":
 		list, chat = "/v1/models", "/v1/messages"
+	case "openai-responses":
+		chat = "/responses"
 	}
 	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
@@ -93,7 +113,7 @@ func Start(t *testing.T, kind string) *Server {
 }
 
 func sentKey(kind string, r *http.Request) string {
-	if kind == "openai" {
+	if kind != "anthropic" {
 		return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
 	return r.Header.Get("x-api-key")
@@ -108,6 +128,9 @@ func (s *Server) SetListStatus(code int) { s.mu.Lock(); s.listStatus = code; s.m
 // Script appends turns; once they run out every request gets the text "ok".
 func (s *Server) Script(turns ...Turn) {
 	s.mu.Lock()
+	if s.stuck {
+		s.turns, s.stuck = s.turns[1:], false
+	}
 	s.turns = append(s.turns, turns...)
 	s.mu.Unlock()
 }
@@ -139,8 +162,14 @@ func (s *Server) Requests() []Request {
 
 func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
-	var in struct{ System, Messages, Tools json.RawMessage }
+	var in struct {
+		Model                                        string
+		System, Messages, Tools, Instructions, Input json.RawMessage
+	}
 	json.Unmarshal(body, &in)
+	if kind == "openai-responses" {
+		in.System, in.Messages = in.Instructions, in.Input
+	}
 	if kind == "openai" { // the system prompt is the first message
 		var msgs []struct {
 			Role    string
@@ -153,13 +182,40 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	n := len(s.requests)
-	s.requests = append(s.requests, Request{in.System, in.Messages, in.Tools, r.Header.Clone()})
 	turn := Turn{Text: []string{"ok"}}
 	if len(s.turns) > 0 {
-		turn, s.turns = s.turns[0], s.turns[1:]
+		turn = s.turns[0]
+	}
+	req := Request{System: in.System, Messages: in.Messages, Tools: in.Tools, Header: r.Header.Clone(),
+		Model: in.Model, Path: r.URL.Path, Body: body, Invalid: s.validate(kind, body, turn)}
+	s.requests = append(s.requests, req)
+	if req.Invalid == "" && len(s.turns) > 0 {
+		if kind == "openai-responses" && turn.Status != 0 && len(s.turns) == 1 {
+			s.stuck = true
+		} else {
+			s.turns = s.turns[1:]
+		}
+	}
+	turn.Calls = append([]Call(nil), turn.Calls...)
+	for i := range turn.Calls {
+		if turn.Calls[i].ID == "" {
+			turn.Calls[i].ID = fmt.Sprintf("call_%d_%d", n, i)
+		}
+		if turn.Calls[i].Args == "" {
+			turn.Calls[i].Args = "{}"
+		}
+		if turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" {
+			s.reasoned[turn.Calls[i].ID] = reasoning{fmt.Sprintf("rs_%d", n), turn.Reasoning}
+		}
 	}
 	s.mu.Unlock()
 
+	if req.Invalid != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"type":"invalid_request_error","message":`+js(req.Invalid)+`}}`)
+		return
+	}
 	if turn.Status != 0 {
 		w.Header().Set("retry-after-ms", "1") // SDK retries come back at once
 		w.Header().Set("Content-Type", "application/json")
@@ -175,18 +231,14 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		}
 		f.Flush()
 	}
-	for i := range turn.Calls {
-		if turn.Calls[i].ID == "" {
-			turn.Calls[i].ID = fmt.Sprintf("call_%d_%d", n, i)
-		}
-		if turn.Calls[i].Args == "" {
-			turn.Calls[i].Args = "{}"
-		}
-	}
-	if kind == "openai" {
-		openAIStream(send, turn, func() bool { return s.hang(r) })
-	} else {
-		anthropicStream(send, turn, func() bool { return s.hang(r) })
+	hang := func() bool { return s.hang(r) }
+	switch kind {
+	case "openai":
+		openAIStream(send, turn, hang)
+	case "openai-responses":
+		responsesStream(send, turn, n, in.Model, hang)
+	default:
+		anthropicStream(send, turn, hang)
 	}
 }
 
