@@ -3,6 +3,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // Platform is what the App needs from the operating system. OpenFiles,
@@ -60,6 +62,10 @@ type Deps struct {
 	Post     func(func())
 	Clock    Clock
 	OAuth    OAuthFlow
+
+	// SystemLanguage is the system's language tag; the interface uses it
+	// while Settings.UILanguage is "".
+	SystemLanguage string
 }
 
 // Page is a top-level screen.
@@ -104,11 +110,12 @@ type App struct {
 	accounts    []core.Account
 	settings    core.Settings // what the interface shows: the newest edit while one saves
 
-	settingsOK    core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
-	settingsGen   uint64                                                             // bumped per settings save; only the newest one's result counts
-	settingsEpoch uint64                                                             // bumped per settings save; a load begun before it keeps its settings out
-	saveSettings  func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
-	sysLang       string                                                             // the system's language, once detected; "" before
+	settingsOK   core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
+	settingsGen  uint64                                                             // bumped per settings save; only the newest one's result counts
+	settingsVer  uint64                                                             // bumped per local settings change; a load begun before it keeps its settings out
+	saveSettings func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	sysLang      string                                                             // Deps.SystemLanguage
+	accountsGen  uint64                                                             // the load gen that read a.accounts
 
 	foreground bool
 
@@ -135,7 +142,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth}
+	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage}
 	if a.clock == nil {
 		a.clock = realClock{}
 	}
@@ -192,7 +199,7 @@ func (a *App) load() {
 	var accs []core.Account
 	var st core.Settings
 	var unread map[int64]int
-	fetch, epoch := a.fetch, a.settingsEpoch
+	fetch, ver := a.fetch, a.settingsVer
 	a.do(func(ctx context.Context) error {
 		var err error
 		if st, accs, err = fetch(ctx); err != nil {
@@ -224,9 +231,12 @@ func (a *App) load() {
 		}
 		a.loadFailing = false
 		first := !a.loaded
-		a.accounts, a.unread, a.loaded = accs, unread, true
-		if epoch == a.settingsEpoch && a.writes.keys["settings"] == nil { // else a save is newer than st
+		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		if ver == a.settingsVer { // else the user changed the settings since st was read
 			a.settings, a.settingsOK = st, st
+		}
+		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {
+			i18n.SetLanguage(tag)
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)

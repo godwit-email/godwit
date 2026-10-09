@@ -19,17 +19,40 @@ import (
 // fields save.
 const accountSaveDelay = 600 * time.Millisecond
 
-// accountForm is an account's editable fields. While an edit is
-// unconfirmed (pending) the fields keep what the user typed; otherwise they
-// follow the account.
+// accountForm is an account's editable fields. A field with an unconfirmed
+// edit keeps what the user typed; otherwise it follows the account, though
+// not to a snapshot read before its last confirmed save.
 type accountForm struct {
 	name, alias, sig string
 	limit, okLimit   int          // the sync range shown, and the account's
 	ok               core.Account // the values last confirmed
-	gen              uint64       // bumped per text edit; only the newest save's result counts
-	pending          bool
-	limitBusy        int // sync-range writes in flight
-	stop             func()
+	okAt             uint64       // a.loadGen when ok was confirmed; older loads are stale
+	edits            [3]fieldEdit // name, alias, signature
+	limitBusy        int          // sync-range writes in flight
+}
+
+// fieldEdit is one text field's debounce: typing restarts it, and only the
+// newest edit's result counts.
+type fieldEdit struct {
+	gen     uint64
+	pending bool
+	stop    func()
+}
+
+func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias, &f.sig}[i] }
+
+func accountField(acc core.Account, i int) string {
+	return [...]string{acc.Name, acc.Alias, acc.Signature}[i]
+}
+
+func fieldPatch(i int, v string) core.AccountPatch {
+	switch i {
+	case 0:
+		return core.AccountPatch{Name: &v}
+	case 1:
+		return core.AccountPatch{Alias: &v}
+	}
+	return core.AccountPatch{Signature: &v}
 }
 
 type serverForm struct {
@@ -43,9 +66,13 @@ func (p *settingsPage) form(acc core.Account) *accountForm {
 		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sig: acc.Signature, limit: acc.SyncLimit, okLimit: acc.SyncLimit}
 		p.forms[acc.ID] = f
 	}
-	if !f.pending && (acc.Name != f.ok.Name || acc.Alias != f.ok.Alias || acc.Signature != f.ok.Signature) {
+	if p.a.accountsGen > f.okAt {
+		for i := range f.edits {
+			if v := accountField(acc, i); !f.edits[i].pending && v != accountField(f.ok, i) {
+				*f.field(i) = v
+			}
+		}
 		f.ok = acc
-		f.name, f.alias, f.sig = acc.Name, acc.Alias, acc.Signature
 	}
 	if f.limitBusy == 0 && acc.SyncLimit != f.okLimit {
 		f.limit, f.okLimit = acc.SyncLimit, acc.SyncLimit
@@ -53,58 +80,88 @@ func (p *settingsPage) form(acc core.Account) *accountForm {
 	return f
 }
 
-// edited saves the account's fields once typing pauses.
-func (p *settingsPage) edited(id int64, f *accountForm) {
-	f.gen++
-	f.pending = true
-	if f.stop != nil {
-		f.stop()
+// edited saves field i once typing in it pauses.
+func (p *settingsPage) edited(id int64, f *accountForm, i int) {
+	e := &f.edits[i]
+	e.gen++
+	e.pending = true
+	if e.stop != nil {
+		e.stop()
 	}
-	f.stop = p.a.after(accountSaveDelay, func() {
-		f.stop = nil
-		p.saveForm(id, f)
+	e.stop = p.a.after(accountSaveDelay, func() {
+		e.stop = nil
+		p.saveField(id, f, i)
 	})
 }
 
-// saveForm writes the fields as one snapshot; a failure of the newest
-// restores the last confirmed values.
-func (p *settingsPage) saveForm(id int64, f *accountForm) {
-	a := p.a
-	name, alias, sig := f.name, f.alias, f.sig
-	update := p.update
-	var saved core.Account
-	a.writes.Submit(accountRoute(id), f.gen, func(ctx context.Context) (err error) {
-		saved, err = update(ctx, id, core.AccountPatch{Name: &name, Alias: &alias, Signature: &sig})
-		return err
-	}, func(gen uint64, err error) {
+// cancelEdits drops the account's edits not yet saved.
+func (f *accountForm) cancelEdits() {
+	for i := range f.edits {
+		if e := &f.edits[i]; e.stop != nil {
+			e.stop()
+			e.stop, e.pending = nil, false
+		}
+	}
+}
+
+// saveField writes field i as it is now, after the account's earlier
+// writes; a failure of its newest edit restores the last confirmed value.
+func (p *settingsPage) saveField(id int64, f *accountForm, i int) {
+	a, e := p.a, &f.edits[i]
+	gen := e.gen
+	p.write(id, fieldPatch(i, *f.field(i)), func(saved core.Account, err error) {
 		if err == nil {
-			f.ok.Name, f.ok.Alias, f.ok.Signature = saved.Name, saved.Alias, saved.Signature
+			f.ok, f.okAt = saved, a.loadGen
 		}
-		if gen != f.gen {
+		if gen != e.gen {
 			return
 		}
-		f.pending = false
+		e.pending = false
 		if err != nil {
-			f.name, f.alias, f.sig = f.ok.Name, f.ok.Alias, f.ok.Signature
+			*f.field(i) = accountField(f.ok, i)
 			a.toastErr(err)
-			return
+		}
+	})
+}
+
+// write runs UpdateAccount after the account's earlier writes. On success
+// the returned account replaces the shown one at once; either way the
+// accounts reload.
+func (p *settingsPage) write(id int64, patch core.AccountPatch, done func(saved core.Account, err error)) {
+	a, update := p.a, p.update
+	var saved core.Account
+	a.writes.Chain(accountRoute(id), func(ctx context.Context) (err error) {
+		saved, err = update(ctx, id, patch)
+		return err
+	}, func(err error) {
+		if err == nil {
+			a.mergeAccount(saved)
+		}
+		if done != nil {
+			done(saved, err)
 		}
 		a.load()
 	})
 }
 
-// patch writes p for the account after its earlier commands, then reloads.
+// mergeAccount shows acc in place of the account's older copy.
+func (a *App) mergeAccount(acc core.Account) {
+	for i := range a.accounts {
+		if a.accounts[i].ID == acc.ID {
+			a.accounts[i] = acc
+		} else if acc.IsDefault {
+			a.accounts[i].IsDefault = false
+		}
+	}
+}
+
+// patch writes a command (default, sync range); a failure shows as a toast.
 func (p *settingsPage) patch(id int64, patch core.AccountPatch, done func(err error)) {
-	a, update := p.a, p.update
-	a.writes.Chain(accountRoute(id), func(ctx context.Context) error {
-		_, err := update(ctx, id, patch)
-		return err
-	}, func(err error) {
+	p.write(id, patch, func(_ core.Account, err error) {
 		if done != nil {
 			done(err)
 		}
-		a.toastErr(err)
-		a.load()
+		p.a.toastErr(err)
 	})
 }
 
@@ -146,33 +203,41 @@ func (p *settingsPage) syncNow(id int64) {
 	a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
 }
 
-// startReauth signs in again in the browser and gives the account the new
-// tokens. ponytail: the wait has no cancel button; closing the app cancels it.
+// startReauth signs in again in the browser, then gives the account the
+// new tokens after its earlier writes. ponytail: the wait has no cancel
+// button; closing the app cancels it.
 func (p *settingsPage) startReauth(acc core.Account) {
 	a := p.a
 	id, oauth, plat := acc.ID, a.oauth, a.plat
 	p.reauth[id] = true
+	var flow string
 	a.do(func(ctx context.Context) error {
-		flow, url, err := oauth.Begin(ctx, acc.Provider, acc.Email)
-		if err != nil {
+		var url string
+		var err error
+		if flow, url, err = oauth.Begin(ctx, acc.Provider, acc.Email); err != nil {
 			return err
 		}
 		if err := plat.OpenURL(url); err != nil {
 			oauth.Cancel(flow)
 			return err
 		}
-		if _, err := oauth.Await(ctx, flow); err != nil {
-			return err
-		}
-		return a.svc.Reauthorize(ctx, id, flow)
+		_, err = oauth.Await(ctx, flow)
+		return err
 	}, func(err error) {
-		delete(p.reauth, id)
 		if err != nil {
+			delete(p.reauth, id)
 			a.toastErr(err)
 			return
 		}
-		a.toast(i18n.T("settings.account.reauth.done"))
-		a.load()
+		a.writes.Chain(accountRoute(id), func(ctx context.Context) error { return a.svc.Reauthorize(ctx, id, flow) }, func(err error) {
+			delete(p.reauth, id)
+			if err != nil {
+				a.toastErr(err)
+			} else {
+				a.toast(i18n.T("settings.account.reauth.done"))
+			}
+			a.load()
+		})
 	})
 }
 
@@ -245,12 +310,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 			ui.Field(c, i18n.T("settings.account.name"), func() {
 				if kit.Input(c, &f.name, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f)
+					p.edited(acc.ID, f, 0)
 				}
 			})
 			ui.Field(c, i18n.T("settings.account.alias"), func() {
 				if kit.Input(c, &f.alias, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f)
+					p.edited(acc.ID, f, 1)
 				}
 			})
 			on := acc.IsDefault
@@ -260,7 +325,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		})
 		settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
 			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(84 * s).Label(i18n.T("settings.account.signature.label")).Changed() {
-				p.edited(acc.ID, f)
+				p.edited(acc.ID, f, 2)
 			}
 		})
 		settingsSection(c, i18n.T("settings.account.sync"), "", func() {
@@ -380,6 +445,7 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 
 func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dialog, p.open, p.busy, p.dlgErr, p.dlgAcc = kind, true, false, nil, acc.ID
+	p.dlgGen++
 	p.secret = ""
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
 		smtpPort: strconv.Itoa(acc.SMTPPort), username: acc.Username, imapSec: acc.IMAPSecurity, smtpSec: acc.SMTPSecurity}
@@ -389,24 +455,25 @@ func (p *settingsPage) closeDialog() {
 	p.dialog, p.open, p.busy, p.dlgErr, p.secret = "", false, false, nil, ""
 }
 
-// act runs the dialog's action; success closes the dialog and reloads,
-// failure shows in it.
-func (p *settingsPage) act(fn func(ctx context.Context) error, ok func()) {
+// act runs the dialog's action after the account's earlier writes. Success
+// closes the dialog and runs ok, failure shows in it, and the accounts
+// reload either way; a dialog opened since (current false) is left alone.
+func (p *settingsPage) act(id int64, fn func(ctx context.Context) error, ok func(current bool)) {
 	a := p.a
 	p.busy, p.dlgErr = true, nil
-	kind := p.dialog
-	a.do(fn, func(err error) {
-		if p.dialog != kind {
-			return
+	gen := p.dlgGen
+	a.writes.Chain(accountRoute(id), fn, func(err error) {
+		current := gen == p.dlgGen && p.dialog != ""
+		if current {
+			p.busy, p.dlgErr = false, err
 		}
-		p.busy = false
-		if err != nil {
-			p.dlgErr = err
-			return
-		}
-		p.closeDialog()
-		if ok != nil {
-			ok()
+		if err == nil {
+			if current {
+				p.closeDialog()
+			}
+			if ok != nil {
+				ok(current)
+			}
 		}
 		a.load()
 	})
@@ -446,8 +513,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 		secret := p.secret
 		confirm = func() {
-			p.act(func(ctx context.Context) error { return a.svc.UpdatePassword(ctx, id, secret) },
-				func() { a.toast(i18n.Tf("settings.account.password.updated", secretName(prov))) })
+			p.act(id, func(ctx context.Context) error { return a.svc.UpdatePassword(ctx, id, secret) },
+				func(bool) { a.toast(i18n.Tf("settings.account.password.updated", secretName(prov))) })
 		}
 	case "servers":
 		title = i18n.T("settings.account.servers")
@@ -458,20 +525,26 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			sp, _ := strconv.Atoi(strings.TrimSpace(sf.smtpPort))
 			ss := core.ServerSettings{Username: strings.TrimSpace(sf.username), IMAPHost: strings.TrimSpace(sf.imapHost), IMAPPort: ip,
 				IMAPSecurity: sf.imapSec, SMTPHost: strings.TrimSpace(sf.smtpHost), SMTPPort: sp, SMTPSecurity: sf.smtpSec}
-			p.act(func(ctx context.Context) error {
-				_, err := update(ctx, id, core.AccountPatch{Servers: &ss})
+			var saved core.Account
+			p.act(id, func(ctx context.Context) (err error) {
+				saved, err = update(ctx, id, core.AccountPatch{Servers: &ss})
 				return err
-			}, nil)
+			}, func(bool) { a.mergeAccount(saved) })
 		}
 	case "remove":
 		title = i18n.Tf("settings.account.remove.title", acc.Email)
 		body = func() { ui.Text(c, i18n.T("settings.account.remove.help")).TextColor(t.Muted) }
 		label, variant = i18n.T("common.delete"), kit.Destructive
 		confirm = func() {
-			p.act(func(ctx context.Context) error { return a.svc.RemoveAccount(ctx, id) }, func() {
+			if f := p.forms[id]; f != nil {
+				f.cancelEdits()
+			}
+			p.act(id, func(ctx context.Context) error { return a.svc.RemoveAccount(ctx, id) }, func(current bool) {
 				delete(p.forms, id)
 				delete(p.usage, id)
-				a.navigate(Route{Page: PageSettings})
+				if current {
+					a.navigate(Route{Page: PageSettings})
+				}
 			})
 		}
 	case "cache":
@@ -479,7 +552,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		body = func() { ui.Text(c, i18n.T("settings.account.clear_cache.body")).TextColor(t.Muted) }
 		label = i18n.T("settings.account.clear_cache.confirm")
 		confirm = func() {
-			p.act(func(ctx context.Context) error { return a.svc.ClearAttachmentCache(ctx, id) }, func() { p.readUsage(id) })
+			p.act(id, func(ctx context.Context) error { return a.svc.ClearAttachmentCache(ctx, id) }, func(bool) { p.readUsage(id) })
 		}
 	}
 	kit.Dialog(c, &p.open, title, func() {

@@ -12,7 +12,6 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
-	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -34,6 +33,7 @@ type settingsPage struct {
 	usage   map[int64]int64                                                                // attachment cache bytes per account; absent until read
 	dialog  string                                                                         // the open dialog: "password", "servers", "remove", "cache"; "" none
 	dlgAcc  int64                                                                          // the account the dialog is about
+	dlgGen  uint64                                                                         // bumped per dialog opened; an older dialog's result leaves it alone
 	open    bool                                                                           // the dialog shows; Escape or a click outside clears it
 	busy    bool                                                                           // the dialog's action runs
 	dlgErr  error                                                                          // the dialog action's failure
@@ -81,10 +81,6 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	a := p.a
 	if hints == nil {
 		p.closeDialog()
-	}
-	if a.sysLang == "" {
-		var tag string
-		a.do(func(context.Context) error { tag = syslang.Detect(); return nil }, func(error) { a.sysLang = tag })
 	}
 	switch sec, acc := p.section(); {
 	case acc != nil:

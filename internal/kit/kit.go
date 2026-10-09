@@ -103,34 +103,31 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	})
 }
 
-// Switch is a 32×18 switch; give it a Label.
-func Switch(c *ui.Context, on *bool) ui.Element {
+// switchTrack draws a switch: a 32×18 track and its thumb.
+func switchTrack(c *ui.Context, on bool) ui.Element {
 	t := theme.Of(c)
-	s := ui.SwitchBase(c, on).Size(32, 18).Padding(2).Radius(9).Background(t.Border).Justify(ui.Start)
-	if *on {
-		s.Background(t.Primary).Justify(ui.End)
-	}
+	tr := ui.Row(c).Size(32, 18).Shrink(0).Padding(2).Radius(9).Background(t.Border).Justify(ui.Start)
 	thumb := t.Background
-	if t.Dark && !*on {
+	switch {
+	case on:
+		tr.Background(t.Primary).Justify(ui.End)
+	case t.Dark:
 		thumb = t.Foreground // a dark thumb would vanish into the dark track
 	}
-	return s.Children(func() {
+	return tr.Children(func() {
 		ui.Box(c).Size(14, 14).Radius(7).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
 	})
+}
+
+// Switch is a 32×18 switch; give it a Label.
+func Switch(c *ui.Context, on *bool) ui.Element {
+	return ui.SwitchBase(c, on).Radius(9).Children(func() { switchTrack(c, *on) })
 }
 
 // SwitchRow is a full-width switch named label: label and help on the left,
 // the track on the right; a click anywhere on the row toggles it.
 func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t := theme.Of(c)
-	track := t.Border
-	if *on {
-		track = t.Primary
-	}
-	thumb := t.Background
-	if t.Dark && !*on {
-		thumb = t.Foreground
-	}
 	return ui.SwitchBase(c, on).FillWidth().Gap(px(t, 16)).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(px(t, 2)).Children(func() {
 			ui.Text(c, label)
@@ -138,13 +135,7 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 				ui.Text(c, help).FontSize(small(t)).TextColor(t.Muted)
 			}
 		})
-		tr := ui.Row(c).Size(32, 18).Padding(2).Radius(9).Background(track).Justify(ui.Start)
-		if *on {
-			tr.Justify(ui.End)
-		}
-		tr.Children(func() {
-			ui.Box(c).Size(14, 14).Radius(7).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
-		})
+		switchTrack(c, *on)
 	})
 }
 

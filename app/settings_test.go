@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -61,7 +62,10 @@ func TestSettingsAccountEdit(t *testing.T) {
 		got := h.account(acc.ID)
 		return got.Name == "Alice Liddell" && got.Alias == "个人" && got.Signature == "Alice"
 	})
-	h.until("the form settles", func() bool { return !h.app.pages[PageSettings].(*settingsPage).forms[acc.ID].pending })
+	h.until("the form settles", func() bool {
+		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
+		return !f.edits[0].pending && !f.edits[1].pending && !f.edits[2].pending
+	})
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封（推荐）")
@@ -192,7 +196,6 @@ func TestSettingsGeneralApplies(t *testing.T) {
 	}
 	h.click("开机时自动启动")
 	h.called("SetOpenAtLogin true")
-	h.until("system language", func() bool { return h.app.sysLang != "" })
 	h.click(i18n.Tf("settings.ui_language.system", langName(h.app.sysLang)))
 	h.click("English")
 	h.see("General")
@@ -271,4 +274,157 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.see("版本 " + Version)
 	h.click("github.com/godwit-email/godwit")
 	h.called("OpenURL https://github.com/godwit-email/godwit")
+}
+
+// blockingUpdate is an UpdateAccount whose first call waits for release; it
+// records each call's IMAP host as it starts and ends.
+type blockingUpdate struct {
+	mu      sync.Mutex
+	log     []string
+	release chan struct{}
+	calls   int
+}
+
+func (b *blockingUpdate) update(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
+	b.mu.Lock()
+	b.calls++
+	n := b.calls
+	host := p.Servers.IMAPHost
+	b.log = append(b.log, "start "+host)
+	b.mu.Unlock()
+	if n == 1 {
+		<-b.release
+	}
+	b.mu.Lock()
+	b.log = append(b.log, "end "+host)
+	b.mu.Unlock()
+	return core.Account{ID: id, Email: "alice@example.com", IMAPHost: host, Status: "ok"}, nil
+}
+
+func (b *blockingUpdate) Log() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.log)
+}
+
+// saveServers opens the servers dialog, sets the IMAP host and saves.
+func (h *harness) saveServers(host string) {
+	h.t.Helper()
+	h.click("编辑服务器设置")
+	h.fill("IMAP 服务器", host)
+	h.click("保存")
+}
+
+func TestSettingsAccountWritesOrdered(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	b := &blockingUpdate{release: make(chan struct{})}
+	p.update = b.update
+	h.saveServers("first.example")
+	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
+	h.click("取消")
+	h.saveServers("second.example")
+	h.drain()
+	if got := b.Log(); len(got) != 1 {
+		t.Fatalf("the second save started while the first ran: %q", got)
+	}
+	close(b.release)
+	want := []string{"start first.example", "end first.example", "start second.example", "end second.example"}
+	h.until("both saves", func() bool { return slices.Equal(b.Log(), want) })
+	h.until("the dialog closes", func() bool { return p.dialog == "" })
+}
+
+func TestSettingsStaleDialogResult(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	b := &blockingUpdate{release: make(chan struct{})}
+	p.update = b.update
+	h.saveServers("first.example")
+	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
+	h.click("取消")
+	h.click("编辑服务器设置")
+	h.fill("IMAP 服务器", "typing.example")
+	close(b.release)
+	h.until("the first save ends", func() bool { return len(b.Log()) == 2 })
+	h.until("the reload after it", func() bool { h.drain(); return h.app.writes.chains[accountRoute(acc.ID)] == nil })
+	h.tt.Frame()
+	if p.dialog != "servers" || !p.open || p.busy || p.servers.imapHost != "typing.example" {
+		t.Fatalf("the old save touched the new dialog: %q open %v busy %v host %q", p.dialog, p.open, p.busy, p.servers.imapHost)
+	}
+}
+
+func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	stale := slices.Clone(h.app.accounts)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		if calls.Add(1) == 1 { // read before the save: hand back the old accounts
+			<-release
+			return st, stale, err
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	staleGen := h.app.loadGen
+	h.until("the stale load runs", func() bool { return calls.Load() == 1 })
+	h.fill("发件人名称", "Alice Liddell")
+	h.advance(accountSaveDelay)
+	h.until("saved", func() bool { return p.forms[acc.ID].ok.Name == "Alice Liddell" })
+	if h.app.accounts[0].Name != "Alice Liddell" {
+		t.Fatalf("the saved account was not merged: %+v", h.app.accounts[0])
+	}
+	h.until("the reload after the save", func() bool { return h.app.accountsGen > staleGen })
+	h.app.loadGen = staleGen // let the stale load apply, as if it were the newest
+	close(release)
+	h.until("the stale load applies", func() bool { return h.app.accountsGen == staleGen && h.app.accounts[0].Name == "alice" })
+	h.tt.Frame()
+	if f := p.forms[acc.ID]; f.name != "Alice Liddell" {
+		t.Fatalf("a stale load reverted the field to %q", f.name)
+	}
+}
+
+func TestSettingsStaleLoadKeepsSavedSettings(t *testing.T) {
+	h, _ := withAccount(t)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx) // reads the settings before the save
+		if calls.Add(1) == 1 {
+			<-release
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("the load read", func() bool { return calls.Load() == 1 })
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("saved", func() bool { return h.app.writes.keys["settings"] == nil && h.app.settingsOK.LaunchAtLogin })
+	gen := h.app.loadGen
+	close(release)
+	h.until("the old load finishes", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load begun before the save reverted the setting")
+	}
+}
+
+func TestSettingsLanguageAtStart(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		st, err := e.Svc.GetSettings(context.Background())
+		if err == nil {
+			st.UILanguage = "en"
+			_, err = e.Svc.SetSettings(context.Background(), st)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.see("Mail")
+	h.see("Settings")
 }

@@ -42,7 +42,7 @@ func newHarnessWith(t *testing.T, opts []coretest.Option, setup ...func(*coretes
 	for _, s := range setup {
 		s(h.env)
 	}
-	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock})
+	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN"})
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop

@@ -30,7 +30,8 @@ func main() {
 			log.Fatal(err)
 		}
 		var win *mygo.Window
-		a := app.New(app.Deps{Svc: svc, Platform: platform{}, Post: func(f func()) { win.Update(f) }})
+		a := app.New(app.Deps{Svc: svc, Platform: platform{}, Post: func(f func()) { win.Update(f) },
+			SystemLanguage: mygo.App.Locale()})
 		win = mygo.NewWindow(mygo.WindowOptions{
 			Title: "Godwit", Width: 1280, Height: 820, MinWidth: 960, MinHeight: 600, StateKey: "main",
 			TitleBarStyle: mygo.TitleBarHiddenInset,
