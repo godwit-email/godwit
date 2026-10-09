@@ -226,13 +226,19 @@ func (w *composeWit) pending() *core.Approval {
 }
 
 // locked reports whether the body is read-only: Wit writes it, an edit
-// waits for review, or the draft Wit left is being read.
-func (w *composeWit) locked() bool { return w.panel.running || w.pending() != nil || w.syncing }
+// waits for review, the draft Wit left is being read, or it is being sent.
+func (w *composeWit) locked() bool {
+	return w.panel.running || w.pending() != nil || w.syncing || w.p.frozen
+}
 
 func (w *composeWit) lockedInput() {
 	if !w.told {
 		w.told = true
-		w.p.a.toast(i18n.T("wit.compose.locked"))
+		if w.p.frozen {
+			w.p.a.toast(i18n.T("compose.sending.locked"))
+		} else {
+			w.p.a.toast(i18n.T("wit.compose.locked"))
+		}
 	}
 }
 

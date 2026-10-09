@@ -494,6 +494,7 @@ var en = map[string]string{
 	"compose.warn.from":        "From plugin %s (message.beforeSend)",
 	"compose.send_anyway":      "Send anyway",
 	"compose.send":             "Send",
+	"compose.sending.locked":   "Sending… the draft can't be changed now",
 	"compose.sent":             "Moved to the outbox",
 	"compose.note":             "Only you can send: plugins and agents can only write drafts",
 	"compose.discard":          "Discard draft",

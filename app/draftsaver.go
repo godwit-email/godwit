@@ -113,16 +113,25 @@ func (s *draftSaver) Flush(done func(err error)) {
 // becomes the stored one, error or not). ErrStaleDraft is a conflict. done
 // gets fn's error, or the flush's without running fn.
 func (s *draftSaver) Run(fn func(ctx context.Context, rev int64) (core.Draft, error), done func(err error)) {
+	s.RunFrom(nil, fn, done)
+}
+
+// RunFrom is Run calling start, unless nil, as fn starts: once the flush
+// is done, nothing else will be saved before fn.
+func (s *draftSaver) RunFrom(start func(), fn func(ctx context.Context, rev int64) (core.Draft, error), done func(err error)) {
 	s.Flush(func(err error) {
 		if err != nil && !s.held { // a draft being deleted: its saves no longer matter
 			done(err)
 			return
 		}
 		if s.busy { // another waiter started a write first
-			s.Run(fn, done)
+			s.RunFrom(start, fn, done)
 			return
 		}
 		s.busy = true
+		if start != nil {
+			start()
+		}
 		rev, get := s.rev, s.getLatest
 		var d, latest core.Draft
 		var lerr error

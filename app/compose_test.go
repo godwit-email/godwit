@@ -592,3 +592,43 @@ func TestReopenReadsChangesAfterLeaving(t *testing.T) {
 	h.composerLoaded()
 	h.see("Changed elsewhere")
 }
+
+func TestEditsWhileSendingAreRefused(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@example.com")
+	h.env.InstallPlugin(t, "send-warn")
+	p := h.fillNew("Plans")
+	h.writeBody("A")
+	h.advance(time.Second)
+	h.until("saved", func() bool { return strings.Contains(h.draft(p.id).HTML, "A") && !p.s.busy })
+	started, release := make(chan struct{}), make(chan struct{})
+	send := p.sendFn
+	p.sendFn = func(ctx context.Context, id int64, digest string) error {
+		if started != nil {
+			close(started)
+			started = nil
+			<-release
+		}
+		return send(ctx, id, digest)
+	}
+	wait := started
+	h.click("发送")
+	<-wait // beforeSend runs
+	h.writeBody(" lost")
+	h.tt.Click("填写主题")
+	h.typeText(" lost")
+	if strings.Contains(p.ed.HTML(), "lost") || p.subject != "Plans" {
+		t.Errorf("an edit was taken while sending: subject %q, body %q", p.subject, p.ed.HTML())
+	}
+	h.see("正在发送，暂时不能修改草稿")
+	close(release)
+	h.see("check before sending: Plans")
+
+	h.writeBody(" B")
+	h.click("发送")
+	h.see("check before sending: Plans")
+	h.click("仍然发送")
+	out := h.sent(accs[0], 1)
+	if !strings.Contains(out[0], "A B") || strings.Contains(out[0], "lost") {
+		t.Fatalf("sent %s, want the edit after the warning and none made while sending", out[0])
+	}
+}

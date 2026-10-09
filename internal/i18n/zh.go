@@ -494,6 +494,7 @@ var zh = map[string]string{
 	"compose.warn.from":        "来自插件 %s（message.beforeSend）",
 	"compose.send_anyway":      "仍然发送",
 	"compose.send":             "发送",
+	"compose.sending.locked":   "正在发送，暂时不能修改草稿",
 	"compose.sent":             "已放入发件箱",
 	"compose.note":             "发送永远需要你亲自点击，插件和 agent 只能写草稿",
 	"compose.discard":          "丢弃草稿",

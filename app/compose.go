@@ -47,9 +47,11 @@ type composer struct {
 	wit      *composeWit
 	s        *draftSaver
 	sending  bool
-	warn     *core.SendCheck                           // beforeSend's warnings, until sent anyway or edited
-	blocked  string                                    // a plugin's refusal
-	deleteFn func(ctx context.Context, id int64) error // tests swap it
+	frozen   bool                                                     // the draft is being sent: no edit is taken
+	warn     *core.SendCheck                                          // beforeSend's warnings, until sent anyway or edited
+	blocked  string                                                   // a plugin's refusal
+	deleteFn func(ctx context.Context, id int64) error                // tests swap it
+	sendFn   func(ctx context.Context, id int64, digest string) error // tests swap it
 }
 
 // prepared is a draft with its body taken apart and converted for the
@@ -71,7 +73,7 @@ func (a *App) composerFor(id int64) *composer {
 	if p := a.drafts[id]; p != nil {
 		return p
 	}
-	p := &composer{a: a, id: id, deleteFn: a.svc.DeleteDraft}
+	p := &composer{a: a, id: id, deleteFn: a.svc.DeleteDraft, sendFn: a.sendDraft}
 	a.drafts[id] = p
 	var pd prepared
 	get := a.getDraft
@@ -322,20 +324,18 @@ func (p *composer) removeAttachment(attID int64) {
 }
 
 // send saves the newest draft and then sends it; with digest, despite the
-// warnings of that check.
+// warnings of that check. From the last save until Send returns the draft
+// is frozen: an edit then would be neither sent nor saved.
 func (p *composer) send(digest string) {
 	if p.sending {
 		return
 	}
 	p.sending, p.warn, p.blocked = true, nil, ""
-	svc, id := p.a.svc, p.id
-	p.s.Run(func(ctx context.Context, _ int64) (core.Draft, error) {
-		if digest != "" {
-			return core.Draft{}, svc.SendAcknowledged(ctx, id, digest)
-		}
-		return core.Draft{}, svc.Send(ctx, id)
+	send, id := p.sendFn, p.id
+	p.s.RunFrom(func() { p.frozen = true }, func(ctx context.Context, _ int64) (core.Draft, error) {
+		return core.Draft{}, send(ctx, id, digest)
 	}, func(err error) {
-		p.sending = false
+		p.sending, p.frozen = false, false
 		var warned *core.SendWarningsError
 		var blocked *core.SendBlockedError
 		switch {
@@ -351,6 +351,14 @@ func (p *composer) send(digest string) {
 			p.a.toastErr(err)
 		}
 	})
+}
+
+// sendDraft sends draft id; with digest, despite that check's warnings.
+func (a *App) sendDraft(ctx context.Context, id int64, digest string) error {
+	if digest != "" {
+		return a.svc.SendAcknowledged(ctx, id, digest)
+	}
+	return a.svc.Send(ctx, id)
 }
 
 // gone ends the composer of a draft sent or deleted: it never saves again.
@@ -451,8 +459,10 @@ func (p *composer) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p.wit.sync()
 	ui.Column(c).Grow(1).Shrink(1).Children(func() {
-		p.fields(c)
-		p.toolbar(c)
+		ui.Column(c).Disabled(p.frozen).Children(func() {
+			p.fields(c)
+			p.toolbar(c)
+		})
 		p.wit.banner(c)
 		if p.s.conflict {
 			ui.Box(c).Padding(th.Space(3), th.Space(5), 0, th.Space(5)).Children(func() { p.conflictNotice(c) })
@@ -463,7 +473,7 @@ func (p *composer) view(c *ui.Context) {
 		p.notices(c)
 		ui.Row(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(5)).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 			kit.Button(c, i18n.T("compose.send"), kit.ButtonOpts{Disabled: p.sending}).OnClick(func() { p.send("") })
-			kit.Button(c, i18n.T("compose.discard"), kit.ButtonOpts{Variant: kit.Ghost}).OnClick(func() { p.discardOpen = true })
+			kit.Button(c, i18n.T("compose.discard"), kit.ButtonOpts{Variant: kit.Ghost, Disabled: p.sending}).OnClick(func() { p.discardOpen = true })
 			ui.Spacer(c)
 			ui.Text(c, i18n.T("compose.note")).FontSize(t.Text.Sm).TextColor(t.Muted).Shrink(1)
 		})
