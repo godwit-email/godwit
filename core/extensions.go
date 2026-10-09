@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	ErrNeedsGrant     = errors.New("plugin permissions are not granted")
+	ErrNeedsGrant     = errors.New("permissions are not granted")
 	ErrPluginNotFound = errors.New("plugin not found")
 )
 

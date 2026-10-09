@@ -3,7 +3,9 @@
 package core
 
 import (
+	"context"
 	"os/exec"
+	"strconv"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -11,15 +13,20 @@ import (
 
 func setProcessGroup(*exec.Cmd) {}
 
-// groupKiller puts the started command in a Job Object that kills every
-// process in it when terminated. If the job cannot be set up it kills the
-// command's process alone. A child the command starts before it is assigned
-// to the job escapes it.
+// groupKiller kills the started command's process tree: taskkill /T walks
+// the tree as it is (children started before the command joined the job
+// included), then the Job Object kills whatever is in the job. If the job
+// cannot be set up, taskkill /T and killing the process remain.
 func groupKiller(cmd *exec.Cmd) func() {
-	one := func() { cmd.Process.Kill() }
+	pid := cmd.Process.Pid
+	tree := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), mcpGrace)
+		defer cancel()
+		exec.CommandContext(ctx, "taskkill", "/T", "/F", "/PID", strconv.Itoa(pid)).Run()
+	}
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return one
+		return func() { tree(); cmd.Process.Kill() }
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE}}
@@ -27,7 +34,7 @@ func groupKiller(cmd *exec.Cmd) func() {
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
 	var h windows.Handle
 	if err == nil {
-		h, err = windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
+		h, err = windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
 	}
 	if err == nil {
 		err = windows.AssignProcessToJobObject(job, h)
@@ -35,9 +42,10 @@ func groupKiller(cmd *exec.Cmd) func() {
 	}
 	if err != nil {
 		windows.CloseHandle(job)
-		return one
+		return func() { tree(); cmd.Process.Kill() }
 	}
 	return func() {
+		tree()
 		windows.TerminateJobObject(job, 1)
 		windows.CloseHandle(job)
 	}

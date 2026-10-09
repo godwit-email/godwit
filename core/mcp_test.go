@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -418,7 +420,7 @@ func TestMCPStdioEnvIsolated(t *testing.T) {
 	require.NoError(t, e.s.GrantMCPServer(t.Context(), srv.ID))
 	require.NoError(t, e.s.SetMCPServerEnabled(t.Context(), srv.ID, true))
 	srv = mcpServer(t, e.s, srv.ID)
-	out, err := e.s.callMCP(t.Context(), srv.ID, "env", mcpTool(t, srv, "env").DefinitionHash, json.RawMessage(`{}`))
+	out, err := e.s.callMCP(t.Context(), mcpCall{id: srv.ID, version: srv.Version, tool: "env", hash: mcpTool(t, srv, "env").DefinitionHash}, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, mcpServerEnv+",PATH,SECRET_ONE", out)
 }
@@ -434,7 +436,7 @@ func TestMCPStdioKilledOnClose(t *testing.T) {
 	require.NoError(t, e.s.GrantMCPServer(t.Context(), srv.ID))
 	require.NoError(t, e.s.SetMCPServerEnabled(t.Context(), srv.ID, true))
 	srv = mcpServer(t, e.s, srv.ID)
-	out, err := e.s.callMCP(t.Context(), srv.ID, "spawn", mcpTool(t, srv, "spawn").DefinitionHash, json.RawMessage(`{}`))
+	out, err := e.s.callMCP(t.Context(), mcpCall{id: srv.ID, version: srv.Version, tool: "spawn", hash: mcpTool(t, srv, "spawn").DefinitionHash}, json.RawMessage(`{}`))
 	require.NoError(t, err)
 	var server, child int
 	_, err = fmt.Sscan(out, &server, &child)
@@ -492,6 +494,18 @@ func TestMCPHTTPHeadersStayOnOrigin(t *testing.T) {
 	require.Empty(t, srv.Error)
 	assert.Len(t, srv.Tools, 1)
 	assert.Equal(t, "Bearer web-secret-1", auth.Load())
+	webHost := strings.TrimPrefix(web.URL, "http://")
+	allowed := func() int {
+		return e.count(t, "SELECT COUNT(*) FROM audit_log WHERE source = 'mcp' AND tool = 'mcp:web:http' AND decision = 'allow' AND destination = ? AND extension = ?",
+			webHost, strconv.FormatInt(srv.ID, 10))
+	}
+	before := allowed()
+	assert.GreaterOrEqual(t, before, 2, "initialize and tools/list are audited")
+	_, err := e.s.callMCP(t.Context(), mcpCall{id: srv.ID, version: srv.Version, tool: "ping", hash: mcpTool(t, srv, "ping").DefinitionHash,
+		callID: "tool:c1"}, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.Greater(t, allowed(), before)
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'mcp:web:http' AND call_id = 'tool:c1'"), "the call's request carries its call ID")
 
 	moved, err := e.s.AddMCPServer(t.Context(), MCPServerInput{Name: "moved", Transport: "http", URL: web.URL + "/moved",
 		Headers: map[string]string{"Authorization": "Bearer web-secret-1"}})
@@ -499,7 +513,145 @@ func TestMCPHTTPHeadersStayOnOrigin(t *testing.T) {
 	require.NoError(t, e.s.GrantMCPServer(t.Context(), moved.ID))
 	require.Error(t, e.s.RefreshMCPTools(t.Context(), moved.ID))
 	assert.Zero(t, other.Load(), "the other origin got nothing")
+	assert.Positive(t, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'mcp:moved:http' AND decision = 'deny' AND destination = ? AND reason = 'host_not_allowed'",
+		strings.TrimPrefix(elsewhere.URL, "http://")), "every refused redirect is audited")
 
 	_, err = e.s.AddMCPServer(t.Context(), MCPServerInput{Name: "plain", Transport: "http", URL: "http://mcp.example.com/mcp"})
 	assert.Error(t, err, "http only for loopback")
+}
+
+// Trust revoked after the run listed the tool: the call does not run.
+func TestMCPTrustRevokedMidRun(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "lookup", true))
+	beforeMCPToolRun = func(context.Context) { require.NoError(t, e.s.SetMCPToolTrusted(bg, srv.ID, "lookup", false)) }
+	t.Cleanup(func() { beforeMCPToolRun = nil })
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "lookup"), `{}`), finished)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	assert.Contains(t, toolOutput(t, evs), "needs approval")
+	assert.Zero(t, f.calls.Load())
+}
+
+// The run reads mail after a trusted call passed the gate: the call does not run.
+func TestMCPToolEgressFailsClosed(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "lookup", true))
+	beforeMCPToolRun = func(ctx context.Context) { runOf(ctx).scope.MarkReadMail() }
+	t.Cleanup(func() { beforeMCPToolRun = nil })
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "lookup"), `{}`), finished)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	assert.Contains(t, toolOutput(t, evs), "needs approval")
+	assert.Zero(t, f.calls.Load())
+}
+
+// The server changes version (update, grant, enable) after the approval's
+// binding was checked and before it runs: nothing is sent, the approval is stale.
+func TestMCPExecutionBoundToApprovedVersion(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	srv := fakeServer(t, e.s)
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "write"), `{}`), finished)
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
+	beforeMCPApprovedRun = func() {
+		_, err := e.s.UpdateMCPServer(bg, srv.ID, MCPServerInput{Name: "fake", Transport: "stdio", Command: "other-mcp"})
+		require.NoError(t, err)
+		require.NoError(t, e.s.GrantMCPServer(bg, srv.ID))
+		require.NoError(t, e.s.SetMCPServerEnabled(bg, srv.ID, true))
+	}
+	t.Cleanup(func() { beforeMCPApprovedRun = nil })
+	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), ErrStaleApproval)
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "stale", e.approval(t, in.Approvals[0].ID).State)
+	assert.Zero(t, f.calls.Load(), "nothing sent to the new version")
+}
+
+// A secret across the 64 KB cut is redacted whole before the text is cut.
+func TestMCPRedactBeforeCut(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "lookup", true))
+	e.s.secrets.Add("test", "straddle-secret-77")
+	f.setReply(&mcp.TextContent{Text: strings.Repeat("y", maxMCPResult-5) + "straddle-secret-77 tail"})
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, mcpServer(t, e.s, srv.ID), "lookup"), `{}`), finished)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	out := toolOutput(t, evs)
+	assert.NotContains(t, out, "strad")
+	assert.Contains(t, out, "[cut at 64 KB]")
+}
+
+// Keychain failures keep old values redacted and keys tracked for a retry.
+func TestMCPKeychainFailuresKeepTracking(t *testing.T) {
+	e := newApprovalEnv(t)
+	s := e.s
+	srv, err := s.AddMCPServer(t.Context(), MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"OLD": "old-secret-123", "KEEP": "keep-secret-123"}})
+	require.NoError(t, err)
+
+	// A failed save keeps the old value redacted and the old config.
+	restore := KeyringFaultForTest("set", func(int) error { return errors.New("locked") })
+	_, err = s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"OLD": "", "KEEP": "new-secret-456"}})
+	restore()
+	require.Error(t, err)
+	assert.Subset(t, s.SecretsForTest(), []string{"keep-secret-123", "new-secret-456"})
+	got := mcpServer(t, s, srv.ID)
+	assert.Equal(t, []string{"KEEP", "OLD"}, got.EnvKeys)
+	assert.False(t, got.Enabled)
+	assert.False(t, got.Granted)
+
+	// A failed delete keeps the key listed and redacted; a retry removes it.
+	restore = KeyringFaultForTest("delete", func(int) error { return errors.New("locked") })
+	_, err = s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"KEEP": ""}})
+	restore()
+	require.Error(t, err)
+	assert.Equal(t, []string{"KEEP", "OLD"}, mcpServer(t, s, srv.ID).EnvKeys)
+	assert.Contains(t, s.SecretsForTest(), "old-secret-123")
+	_, err = s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"KEEP": ""}})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"KEEP"}, mcpServer(t, s, srv.ID).EnvKeys)
+	assert.NotContains(t, s.SecretsForTest(), "old-secret-123")
+	_, err = keychainGet(fmt.Sprintf("%s/mcp:%d:env:OLD", s.installID, srv.ID))
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+
+	// An add whose save and rollback both fail keeps the row, keys listed.
+	restoreSet := KeyringFaultForTest("set", func(n int) error {
+		if n > 1 {
+			return errors.New("locked")
+		}
+		return nil
+	})
+	restoreDel := KeyringFaultForTest("delete", func(int) error { return errors.New("locked") })
+	_, err = s.AddMCPServer(t.Context(), MCPServerInput{Name: "half", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"A": "a-secret-12345", "B": "b-secret-12345"}})
+	restoreDel()
+	restoreSet()
+	require.Error(t, err)
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM mcp_servers WHERE name = 'half' AND enabled = 0"))
+}
+
+func TestMCPChangedEvents(t *testing.T) {
+	e := newApprovalEnv(t)
+	newFakeMCP(t)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	srv := fakeServer(t, e.s) // add, grant, enable
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "lookup", true))
+	_, err := e.s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "fake", Transport: "stdio", Command: "x"})
+	require.NoError(t, err)
+	require.NoError(t, e.s.RemoveMCPServer(t.Context(), srv.ID))
+	n := 0
+	for len(ch) > 0 {
+		if ev := <-ch; ev.Type == events.MCPChanged {
+			n++
+		}
+	}
+	assert.Equal(t, 6, n)
 }

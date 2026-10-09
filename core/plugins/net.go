@@ -229,12 +229,14 @@ func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (Fe
 	case ctx.Err() != nil:
 		last.Decision, last.Reason = "error", "cancelled"
 	default:
-		last.Decision, last.Reason = "error", failReason(err)
+		last.Decision, last.Reason = "error", FailReason(err)
 	}
 	return r, hops, err
 }
 
-func failReason(err error) string {
+// FailReason is the audit reason of a request the policy allowed that failed:
+// dns_error, tls_error or network_error.
+func FailReason(err error) string {
 	var (
 		dns     *net.DNSError
 		verify  *tls.CertificateVerificationError

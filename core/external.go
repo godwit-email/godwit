@@ -103,6 +103,9 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	// own limits or stop interrupted it mid-call.
 	cut := rc.Err() != nil || errors.Is(err, plugins.ErrTimeout) || errors.Is(err, plugins.ErrMemoryLimit) || errors.Is(err, plugins.ErrClosed)
 	cancel()
+	if errors.Is(err, ErrStaleApproval) { // the tool refused: what it was bound to changed, nothing ran
+		return errors.Join(ErrStaleApproval, record("stale", msgStale, "stale"))
+	}
 	if err != nil {
 		result := s.clean(err.Error())
 		if cut { // it may have done part of its work
