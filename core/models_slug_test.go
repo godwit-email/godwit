@@ -194,7 +194,7 @@ func TestRenameKeepsSlug(t *testing.T) {
 
 func TestRenameRejectsOtherSlug(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
-	in := ModelServiceInput{Name: "Foo Bar", Kind: "openai", BaseURL: "https://a.com"}
+	in := ModelServiceInput{Name: "Foo Bar", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m"}}
 	_, err := s.AddModelService(bg, in)
 	require.NoError(t, err)
 	in.Name = "b"

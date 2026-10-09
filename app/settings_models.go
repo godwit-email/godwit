@@ -21,7 +21,7 @@ type modelsView struct {
 	form     *modelForm // nil until a service is chosen or added
 	defModel string     // the default model select's value; follows a.settings between frames
 
-	fetchModels func(ctx context.Context, id int64) ([]string, error) // tests swap these
+	fetchModels func(ctx context.Context, id int64, in core.ModelServiceInput) ([]string, error) // tests swap these
 	testService func(ctx context.Context, id int64) error
 }
 
@@ -36,6 +36,22 @@ type modelForm struct {
 	busy, testing, fetching  bool
 	testMsg                  string
 	testOK                   bool
+}
+
+// checkModels lists the models of a service as the form has it, saved or not.
+func checkModels(svc *core.Service) func(context.Context, int64, core.ModelServiceInput) ([]string, error) {
+	return func(ctx context.Context, id int64, in core.ModelServiceInput) ([]string, error) {
+		c, err := svc.CheckModelService(ctx, id, in)
+		return c.Models, err
+	}
+}
+
+// input is the form as a service input. An empty KeyAction lets core decide:
+// a typed key replaces, an empty one keeps the stored key (refused for a
+// changed address or protocol) or, for a new service, means none.
+func (f *modelForm) input() core.ModelServiceInput {
+	return core.ModelServiceInput{Name: strings.TrimSpace(f.name), Kind: f.kind, BaseURL: strings.TrimSpace(f.baseURL),
+		APIKey: f.key, Models: slices.Clone(f.models)}
 }
 
 func (m *modelsView) load() {
@@ -76,9 +92,7 @@ func (m *modelsView) save(f *modelForm) {
 	a := m.a
 	snap := *f
 	snap.models = slices.Clone(f.models)
-	in := core.ModelServiceInput{Name: strings.TrimSpace(f.name), Kind: f.kind, BaseURL: strings.TrimSpace(f.baseURL),
-		APIKey: f.key, Models: slices.Clone(f.models)}
-	id := f.id
+	in, id := f.input(), f.id
 	f.busy = true
 	var saved core.ModelService
 	a.writes.Chain("models", func(ctx context.Context) (err error) {
@@ -154,11 +168,11 @@ func (m *modelsView) remove(f *modelForm) {
 // fetch offers the service's models. The form stays busy until the call
 // returns; its result shows only on the form and page visit that asked.
 func (m *modelsView) fetch(f *modelForm) {
-	a, id, fetch, gen := m.a, f.id, m.fetchModels, m.a.gen
+	a, id, in, fetch, gen := m.a, f.id, f.input(), m.fetchModels, m.a.gen
 	f.fetching = true
 	var got []string
 	a.do(func(ctx context.Context) (err error) {
-		got, err = fetch(ctx, id)
+		got, err = fetch(ctx, id, in)
 		return err
 	}, func(err error) {
 		f.fetching = false
@@ -270,7 +284,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			Description(i18n.T("settings.models.api_key.help"))
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			ui.Text(c, i18n.T("settings.models.models")).FontWeight(500).Grow(1)
-			kit.Button(c, i18n.T("settings.models.fetch"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: f.id == 0 || f.fetching}).
+			kit.Button(c, i18n.T("settings.models.fetch"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: f.fetching}).
 				OnClick(func() { m.fetch(f) })
 		})
 		if len(f.offered) == 0 {

@@ -45,20 +45,19 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.fill("名称", "local")
 	h.fill("Base URL", test.BaseURL)
 	h.fill("API Key", "test-key")
-	h.click("保存")
-	h.until("added", func() bool { _, ok := h.modelService("local"); return ok })
-	h.see("编辑：local")
 
+	// a new service lists its models before its first save: it needs one
 	m := h.app.pages[PageSettings].(*settingsPage).models
 	fetch := m.fetchModels
-	m.fetchModels = func(ctx context.Context, id int64) ([]string, error) {
+	m.fetchModels = func(ctx context.Context, id int64, in core.ModelServiceInput) ([]string, error) {
 		time.Sleep(50 * time.Millisecond) // "test / m1" shows already: the click must wait for the box itself
-		return fetch(ctx, id)
+		return fetch(ctx, id, in)
 	}
 	h.click("从 /models 拉取")
 	h.click("m1")
 	h.click("保存")
-	h.until("models saved", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
+	h.until("added", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
+	h.see("编辑：local")
 
 	h.click("test / m1") // the default model
 	h.click("local / m1")
@@ -161,11 +160,15 @@ func TestRenameServiceKeepsDefault(t *testing.T) {
 
 func TestDeselectDefaultClears(t *testing.T) {
 	h := withLLM(t)
+	s, _ := h.modelService("test")
+	if _, err := h.env.Svc.UpdateModelService(context.Background(), s.ID, core.ModelServiceInput{Name: s.Name, Kind: s.Kind, BaseURL: s.BaseURL, Models: []string{"m1", "m2"}}); err != nil {
+		t.Fatal(err) // a service keeps at least one model
+	}
 	h.openSettings("models")
 	h.see("编辑：test")
 	h.click("m1") // untick the default model
 	h.click("保存")
-	h.until("models saved", func() bool { s, _ := h.modelService("test"); return len(s.Models) == 0 })
+	h.until("models saved", func() bool { s, _ := h.modelService("test"); return slices.Equal(s.Models, []string{"m2"}) })
 	h.until("default cleared", func() bool { return h.savedDefault() == "" })
 }
 
@@ -187,7 +190,10 @@ func TestModelServiceBusyAcrossNavigation(t *testing.T) {
 	h.see("编辑：test")
 	m := p.models
 	release := make(chan struct{})
-	m.fetchModels = func(context.Context, int64) ([]string, error) { <-release; return []string{"stale-model"}, nil }
+	m.fetchModels = func(context.Context, int64, core.ModelServiceInput) ([]string, error) {
+		<-release
+		return []string{"stale-model"}, nil
+	}
 	m.testService = func(context.Context, int64) error { <-release; return nil }
 	h.click("从 /models 拉取")
 	h.click("测试连接")

@@ -60,7 +60,7 @@ func TestModelServiceCRUD(t *testing.T) {
 
 func TestUpdateKeepsKeyWhenEmpty(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
-	in := ModelServiceInput{Name: "a", Kind: "anthropic", BaseURL: "https://example.com", APIKey: "keep"}
+	in := ModelServiceInput{Name: "a", Kind: "anthropic", BaseURL: "https://example.com", APIKey: "keep", Models: []string{"m"}}
 	ms, err := s.AddModelService(bg, in)
 	require.NoError(t, err)
 	in.APIKey, in.Name = "", "b"
@@ -79,7 +79,7 @@ func TestFetchModelsBothKinds(t *testing.T) {
 			srv := testllm.Start(t, kind)
 			srv.SetModels("zeta", "alpha")
 			srv.RequireKey("right")
-			ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: kind, BaseURL: srv.URL, APIKey: "right"})
+			ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: kind, BaseURL: srv.URL, APIKey: "right", Models: []string{"saved"}})
 			require.NoError(t, err)
 			got, err := s.FetchModels(bg, ms.ID)
 			require.NoError(t, err)
@@ -88,9 +88,9 @@ func TestFetchModelsBothKinds(t *testing.T) {
 			list, err := s.ListModelServices(bg)
 			require.NoError(t, err)
 			require.NotEmpty(t, list)
-			assert.Empty(t, list[0].Models, "FetchModels must not save")
+			assert.Equal(t, []string{"saved"}, list[0].Models, "FetchModels must not save")
 
-			bad, err := s.AddModelService(bg, ModelServiceInput{Name: "y", Kind: kind, BaseURL: srv.URL, APIKey: "wrong-key-123"})
+			bad, err := s.AddModelService(bg, ModelServiceInput{Name: "y", Kind: kind, BaseURL: srv.URL, APIKey: "wrong-key-123", Models: []string{"m"}})
 			require.NoError(t, err)
 			_, err = s.FetchModels(bg, bad.ID)
 			require.Error(t, err)
@@ -103,7 +103,7 @@ func TestFetchModelsAnthropicNoKey(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	srv := testllm.Start(t, "anthropic")
 	srv.SetModels("m")
-	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "gw", Kind: "anthropic", BaseURL: srv.URL})
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "gw", Kind: "anthropic", BaseURL: srv.URL, Models: []string{"m"}})
 	require.NoError(t, err)
 	_, err = s.FetchModels(bg, ms.ID)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestModelServiceValidation(t *testing.T) {
 		assert.Error(t, err, name)
 	}
 	for i, u := range []string{"http://localhost:11434/v1", "http://127.0.0.1:8080", "http://[::1]:9", "https://a.com"} {
-		_, err := s.AddModelService(bg, ModelServiceInput{Name: "ok" + itoa(int64(i)), Kind: "openai", BaseURL: u})
+		_, err := s.AddModelService(bg, ModelServiceInput{Name: "ok" + itoa(int64(i)), Kind: "openai", BaseURL: u, Models: []string{"m"}})
 		assert.NoError(t, err, u)
 	}
 }
@@ -215,7 +215,7 @@ func TestFetchModelsNoRedirectNoLeak(t *testing.T) {
 		http.Redirect(w, r, other.URL+"/models", http.StatusFound)
 	}))
 	t.Cleanup(redir.Close)
-	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "r", Kind: "openai", BaseURL: redir.URL, APIKey: "sekret-key"})
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "r", Kind: "openai", BaseURL: redir.URL, APIKey: "sekret-key", Models: []string{"m"}})
 	require.NoError(t, err)
 	_, err = s.FetchModels(bg, ms.ID)
 	require.Error(t, err)
@@ -227,7 +227,7 @@ func TestFetchModelsNoRedirectNoLeak(t *testing.T) {
 		w.WriteHeader(http.StatusFound)
 	}))
 	t.Cleanup(bad.Close)
-	ms, err = s.AddModelService(bg, ModelServiceInput{Name: "bad", Kind: "openai", BaseURL: bad.URL, APIKey: "sekret-key"})
+	ms, err = s.AddModelService(bg, ModelServiceInput{Name: "bad", Kind: "openai", BaseURL: bad.URL, APIKey: "sekret-key", Models: []string{"m"}})
 	require.NoError(t, err)
 	_, err = s.FetchModels(bg, ms.ID)
 	require.Error(t, err)
@@ -236,7 +236,7 @@ func TestFetchModelsNoRedirectNoLeak(t *testing.T) {
 
 func TestListModelServicesSurvivesKeychainError(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
-	_, err := s.AddModelService(bg, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "k"})
+	_, err := s.AddModelService(bg, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "k", Models: []string{"m"}})
 	require.NoError(t, err)
 	setFor(t, &keyringGet, func(svc, user string) (string, error) { return "partial", errors.New("locked") })
 	list, err := s.ListModelServices(bg)
@@ -249,13 +249,13 @@ func TestUpdateSurvivesCancelDuringKeyWrite(t *testing.T) {
 	s := modelSvc(t)
 	cctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	a, err := s.AddModelService(cctx, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "old"})
+	a, err := s.AddModelService(cctx, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "old", Models: []string{"m"}})
 	require.NoError(t, err)
 	setFor(t, &keyringSet, func(svc, user, pw string) error {
 		cancel()
 		return keyring.Set(svc, user, pw)
 	})
-	got, err := s.UpdateModelService(cctx, a.ID, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "new"})
+	got, err := s.UpdateModelService(cctx, a.ID, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "new", Models: []string{"m"}})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, got.Version)
 	k, err := keyring.Get(keyringService, s.modelKeyUser(a.ID))

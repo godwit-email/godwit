@@ -16,14 +16,15 @@ import (
 type Server struct {
 	URL string // base URL, as a user would enter it
 
-	mu       sync.Mutex
-	models   []string
-	key      string
-	headers  []http.Header
-	turns    []Turn
-	requests []Request
-	release  chan struct{}
-	Mux      *http.ServeMux
+	mu         sync.Mutex
+	models     []string
+	key        string
+	listStatus int
+	headers    []http.Header
+	turns      []Turn
+	requests   []Request
+	release    chan struct{}
+	Mux        *http.ServeMux
 }
 
 // Turn is one scripted model response. Status != 0 answers with that HTTP error
@@ -60,8 +61,12 @@ func Start(t *testing.T, kind string) *Server {
 	}
 	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
-		models, key := s.models, s.key
+		models, key, status := s.models, s.key, s.listStatus
 		s.mu.Unlock()
+		if status != 0 {
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
 		got := sentKey(kind, r)
 		if key != "" && got != key {
 			// echoes what it got, so tests can prove errors don't repeat it
@@ -95,6 +100,9 @@ func sentKey(kind string, r *http.Request) string {
 
 func (s *Server) SetModels(m ...string) { s.mu.Lock(); s.models = m; s.mu.Unlock() }
 func (s *Server) RequireKey(k string)   { s.mu.Lock(); s.key = k; s.mu.Unlock() }
+
+// SetListStatus makes the model list answer with that HTTP status; 0 restores it.
+func (s *Server) SetListStatus(code int) { s.mu.Lock(); s.listStatus = code; s.mu.Unlock() }
 
 // Script appends turns; once they run out every request gets the text "ok".
 func (s *Server) Script(turns ...Turn) {
