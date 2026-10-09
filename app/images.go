@@ -174,10 +174,15 @@ func (l *imageLoader) download(src string) ([]byte, error) {
 	case <-l.ctx.Done():
 		return nil, l.ctx.Err()
 	}
-	if l.left.Load() <= 0 {
-		return nil, errImagesTooLarge // spent: no request goes out
+	held := reserve(&l.left, readChunk) // the first read's share: none left, no request
+	if held == 0 {
+		return nil, errImagesTooLarge
 	}
-	req, err := http.NewRequestWithContext(l.ctx, http.MethodGet, src, nil)
+	body := &budgetReader{left: &l.left, held: held}
+	defer body.release()
+	ctx, cancel := context.WithCancel(l.ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -185,11 +190,14 @@ func (l *imageLoader) download(src string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// Cancel before Close: closing a body not read to the end would read
+	// up to 256 KiB more of it, past the budget, to reuse the connection.
+	defer func() { cancel(); resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("image: %s", resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(budgetReader{resp.Body, &l.left}, maxImageBytes+1))
+	body.r = resp.Body
+	data, err := io.ReadAll(io.LimitReader(body, maxImageBytes+1))
 	switch {
 	case err != nil:
 		return nil, err
@@ -199,24 +207,46 @@ func (l *imageLoader) download(src string) ([]byte, error) {
 	return data, nil
 }
 
-// budgetReader spends left on every byte read and fails once it is gone;
-// reads at the same time may overrun it by a buffer each.
+// readChunk is the most a read reserves of the budget at once.
+const readChunk = 32 << 10
+
+// reserve takes up to want bytes of left in one step; 0 when none is left.
+func reserve(left *atomic.Int64, want int64) int64 {
+	for {
+		l := left.Load()
+		if l <= 0 {
+			return 0
+		}
+		n := min(want, l)
+		if left.CompareAndSwap(l, l-n) {
+			return n
+		}
+	}
+}
+
+// budgetReader reads only bytes reserved from left beforehand, so readers
+// at the same time never overrun it together; release gives back what
+// was reserved and not read.
 type budgetReader struct {
 	r    io.Reader
 	left *atomic.Int64
+	held int64 // reserved, not read yet
 }
 
-func (b budgetReader) Read(p []byte) (int, error) {
-	left := b.left.Load()
-	if left <= 0 {
-		return 0, errImagesTooLarge
+func (b *budgetReader) Read(p []byte) (int, error) {
+	if b.held == 0 {
+		if b.held = reserve(b.left, min(int64(len(p)), readChunk)); b.held == 0 {
+			return 0, errImagesTooLarge
+		}
 	}
-	if int64(len(p)) > left {
-		p = p[:left]
-	}
-	n, err := b.r.Read(p)
-	b.left.Add(-int64(n))
+	n, err := b.r.Read(p[:min(int64(len(p)), b.held)])
+	b.held -= int64(n)
 	return n, err
+}
+
+func (b *budgetReader) release() {
+	b.left.Add(b.held)
+	b.held = 0
 }
 
 // dataURL decodes a data: URL's bytes.

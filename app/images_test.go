@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -154,28 +156,59 @@ func TestImageBudgets(t *testing.T) {
 	})
 }
 
-// TestImageTotalBudget: the 20 MB budget is spent as bytes arrive; once it is
-// gone no further request goes out and reads in flight stop.
+// pipeListener serves HTTP over net.Pipe: a write returns only once the
+// other end has read it, so what the server sent is what the client read
+// (plus the client's 4 KiB read buffer).
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   *sync.Once
+}
+
+func (p pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-p.conns:
+		return c, nil
+	case <-p.closed:
+		return nil, net.ErrClosed
+	}
+}
+func (p pipeListener) Close() error   { p.once.Do(func() { close(p.closed) }); return nil }
+func (p pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)} }
+
+// TestImageTotalBudget: the 20 MB budget is reserved as bytes are read;
+// once it is gone no further request goes out and reads in flight stop.
 func TestImageTotalBudget(t *testing.T) {
-	const n, size = 20, 3 << 20 // 60 MB offered
+	const n, size, chunk = 20, 3 << 20, 32 << 10 // 60 MB offered, written 32 KiB at a time
 	var hits, sent atomic.Int64
-	chunk := make([]byte, 32<<10)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	buf := make([]byte, chunk)
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.Write(pngHeader(10, 10))
-		for left := size; left > 0; left -= len(chunk) {
-			k, err := w.Write(chunk[:min(len(chunk), left)])
+		for left := size; left > 0; left -= chunk {
+			k, err := w.Write(buf[:min(chunk, left)])
 			sent.Add(int64(k))
 			if err != nil {
 				return
 			}
 		}
-	}))
+	})}
+	ln := pipeListener{make(chan net.Conn), make(chan struct{}), &sync.Once{}}
+	go srv.Serve(ln)
 	defer srv.Close()
 	l, wait := testLoader(t, true)
+	l.client.Transport.(*http.Transport).DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		client, server := net.Pipe()
+		select {
+		case ln.conns <- server:
+			return client, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	var srcs []string
 	for i := range n {
-		srcs = append(srcs, fmt.Sprintf("%s/%d.png", srv.URL, i))
+		srcs = append(srcs, fmt.Sprintf("http://images.example/%d.png", i))
 		l.Load(srcs[i])
 	}
 	wait("all settled", func() bool {
@@ -186,14 +219,16 @@ func TestImageTotalBudget(t *testing.T) {
 		}
 		return true
 	})
-	if got := maxImagesBytes - l.left.Load(); got > maxImagesBytes+int64(imageWorkers*len(chunk)) {
-		t.Errorf("read %d bytes, budget %d", got, maxImagesBytes)
+	if left := l.left.Load(); left < 0 {
+		t.Errorf("the budget overran by %d bytes", -left)
+	}
+	// Each of the imageWorkers requests may have one chunk in the server's
+	// write and the client's read buffer when the budget runs out.
+	if s, most := sent.Load(), int64(maxImagesBytes+imageWorkers*chunk); s > most {
+		t.Errorf("the server sent %d bytes, at most %d expected; read %d, %d requests", s, most, maxImagesBytes-l.left.Load(), hits.Load())
 	}
 	if h := hits.Load(); h >= n {
 		t.Errorf("%d of %d requests sent after the budget ran out", h, n)
-	}
-	if s := sent.Load(); s > maxImagesBytes+8<<20 { // the kernel's socket buffers take some more
-		t.Errorf("the server sent %d bytes", s)
 	}
 	if !slices.ContainsFunc(srcs, func(s string) bool { return errors.Is(l.imgs[s].err, errImagesTooLarge) }) {
 		t.Error("no image refused for the total budget")
