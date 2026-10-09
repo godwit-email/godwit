@@ -207,10 +207,19 @@ func Load(root fs.FS, builtin bool) (ok []Skill, failed map[string]error) {
 // error reading it is returned. Per-skill failures go in failed.
 func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
 	failed = map[string]error{}
-	ents, err := os.ReadDir(dir)
+	// Stat first: Windows reports reading a file as a directory as a missing
+	// path, which must not pass for "no skills installed".
+	fi, err := os.Stat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, failed, nil
 	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if !fi.IsDir() {
+		return nil, nil, fmt.Errorf("skills: %s is not a directory", dir)
+	}
+	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, nil, err
 	}
