@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log"
 	"maps"
 	"time"
 
@@ -71,6 +72,10 @@ type Deps struct {
 
 	// Vibrancy: the window has a material, which shows around the panel.
 	Vibrancy bool
+
+	// Logf logs what fails out of the user's sight (log.Printf by default).
+	// Lines carry no secrets and no mail content.
+	Logf func(format string, args ...any)
 }
 
 // Page is a top-level screen.
@@ -124,9 +129,13 @@ type App struct {
 	accountsGen      uint64                                                             // the load gen that read a.accounts
 
 	foreground bool
-	vibrancy   bool              // Deps.Vibrancy
-	newMail    map[int64][]int64 // per account, messages arrived for its pending notification
-	trayUnread int               // what the tray shows
+	vibrancy   bool                // Deps.Vibrancy
+	newMail    map[int64]*arrivals // per account, what arrived for its pending notification
+	logf       func(format string, args ...any)
+	noteRoute  func(ctx context.Context, id string) (Route, error) // where a notification leads; tests wrap it
+	noteGen    uint64                                              // bumped per notification click; only the newest navigates
+	noteFirst  string                                              // a click that came before the first load
+	trayUnread int                                                 // what the tray shows
 
 	history, ahead []Route           // navigation: routes behind and, after back, ahead
 	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
@@ -164,6 +173,10 @@ func New(d Deps) *App {
 	if a.clock == nil {
 		a.clock = realClock{}
 	}
+	if a.logf = d.Logf; a.logf == nil {
+		a.logf = log.Printf
+	}
+	a.noteRoute = a.notificationRoute
 	if a.oauth == nil {
 		a.oauth = serviceOAuth{d.Svc}
 	}
@@ -273,6 +286,10 @@ func (a *App) load() {
 			a.setRoute(Route{Page: PageOnboarding})
 		case len(accs) > 0 && first:
 			a.setRoute(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
+		}
+		if id := a.noteFirst; first && id != "" {
+			a.noteFirst = ""
+			a.NotificationClicked(id)
 		}
 	})
 }

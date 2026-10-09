@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,10 @@ import (
 // notifyWait is how long new mail gathers into one notification per account.
 const notifyWait = time.Second
 
+// arrivals are an account's new messages and their threads, gathering for
+// one notification.
+type arrivals struct{ msgs, threads []int64 }
+
 // mailArrived gathers ev's new messages for their account's notification,
 // shown notifyWait after the first of them.
 func (a *App) mailArrived(ev events.Event) {
@@ -22,92 +27,156 @@ func (a *App) mailArrived(ev events.Event) {
 		return
 	}
 	if a.newMail == nil {
-		a.newMail = map[int64][]int64{}
+		a.newMail = map[int64]*arrivals{}
 	}
 	acc := ev.AccountID
-	if _, waiting := a.newMail[acc]; !waiting {
+	got := a.newMail[acc]
+	if got == nil {
+		got = &arrivals{}
+		a.newMail[acc] = got
 		a.after(notifyWait, func() {
-			ids := a.newMail[acc]
 			delete(a.newMail, acc)
-			a.notify(acc, ids)
+			a.notify(acc, got)
 		})
 	}
-	a.newMail[acc] = append(a.newMail[acc], ev.MessageIDs...)
+	got.msgs = append(got.msgs, ev.MessageIDs...)
+	got.threads = append(got.threads, ev.ThreadIDs...)
 }
 
-// notify shows one notification for ids, unless the settings turn it off or
-// the window is in front: one message by its sender (and subject, with
-// preview on), more by their number.
-func (a *App) notify(acc int64, ids []int64) {
+// notify shows one notification for what arrived in the account's inboxes,
+// unless the settings turn it off or the window is in front. With preview on
+// one message shows its sender and subject, more their account and number;
+// with preview off it says only "Godwit" and how many.
+func (a *App) notify(acc int64, got *arrivals) {
 	st := a.settings
-	if !st.NotifyNewMail || a.foreground || len(ids) == 0 {
+	if !st.NotifyNewMail || a.foreground {
 		return
 	}
 	email := ""
 	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.ID == acc }); i >= 0 {
 		email = a.accounts[i].Email
 	}
-	n := Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: email, Body: i18n.Tf("notify.new_mails", len(ids))}
-	newMail, plat, svc := i18n.T("notify.new_mail"), a.plat, a.svc
+	one, several := i18n.T("notify.new_mail"), i18n.T("notify.new_mails")
+	plat, svc, logf := a.plat, a.svc, a.logf
 	a.do(func(ctx context.Context) error {
 		if !plat.NotificationsSupported() {
 			return nil
 		}
-		if len(ids) == 1 {
-			m, err := svc.GetMessage(ctx, ids[0], false)
-			if err != nil {
-				return err
-			}
-			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: displayName(m.From), Body: newMail}
+		msgs, err := inboxArrivals(ctx, svc, acc, got)
+		if err != nil {
+			logf("notify: account %d: reading new mail: %v", acc, err)
+			return nil
+		}
+		var n Notification
+		switch {
+		case len(msgs) == 0:
+			return nil
+		case len(msgs) == 1:
+			m := msgs[0]
+			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: one}
 			if st.NotifyPreview {
-				n.Body = m.Subject
+				n.Title, n.Body = displayName(m.From), m.Subject
+			}
+		default:
+			n = Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: "Godwit", Body: fmt.Sprintf(several, len(msgs))}
+			if st.NotifyPreview {
+				n.Title = email
 			}
 		}
-		return plat.Notify(n) // ponytail: a denied or failed notification is dropped silently
+		if err := plat.Notify(n); err != nil {
+			logf("notify: account %d: %v", acc, err)
+		}
+		return nil
 	}, nil)
 }
 
+// inboxArrivals are the arrived messages that are in an inbox-role folder.
+func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arrivals) ([]core.MessageSummary, error) {
+	fs, err := svc.ListFolders(ctx, acc)
+	if err != nil {
+		return nil, err
+	}
+	inbox := map[int64]bool{}
+	for _, f := range fs {
+		if f.Role == "inbox" {
+			inbox[f.ID] = true
+		}
+	}
+	want := map[int64]bool{}
+	for _, id := range got.msgs {
+		want[id] = true
+	}
+	var out []core.MessageSummary
+	for _, tid := range slices.Compact(slices.Sorted(slices.Values(got.threads))) {
+		th, err := svc.GetThread(ctx, tid)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range th.Messages {
+			if want[m.ID] && inbox[m.FolderID] {
+				delete(want, m.ID) // a message in two gathered threads counts once
+				out = append(out, m)
+			}
+		}
+	}
+	return out, nil
+}
+
 // NotificationClicked shows the window with what a notification was about:
-// its message, or the account's inbox for a gathered one.
+// its message, or the account's inbox for a gathered one. Only the newest
+// click navigates, and only if the route has not changed meanwhile; a click
+// before the first load waits for it.
 func (a *App) NotificationClicked(id string) {
 	a.plat.ShowWindow()
+	if !a.loaded {
+		a.noteFirst = id
+		return
+	}
+	a.noteGen++
+	gen, look := a.noteGen, a.noteRoute
+	var r Route
+	a.query(func(ctx context.Context) (err error) {
+		r, err = look(ctx, id)
+		return err
+	}, func(err error) {
+		switch {
+		case gen != a.noteGen:
+		case err != nil:
+			a.toastErr(err)
+		case r.Page == PageMail:
+			if a.settings.ThreadView {
+				r.MessageID = 0 // the whole thread, as the list opens it
+			}
+			a.navigate(r)
+		}
+	})
+}
+
+// notificationRoute is where the notification id leads (MessageID set for a
+// message); a zero Route for an id of no known kind.
+func (a *App) notificationRoute(ctx context.Context, id string) (Route, error) {
 	kind, num, _ := strings.Cut(id, ":")
 	n, err := strconv.ParseInt(num, 10, 64)
 	if err != nil {
-		return
+		return Route{}, nil
 	}
 	switch kind {
 	case "message":
-		var m core.Message
-		a.do(func(ctx context.Context) (err error) {
-			m, err = a.svc.GetMessage(ctx, n, false)
-			return err
-		}, func(err error) {
-			if err != nil {
-				a.toastErr(err)
-				return
-			}
-			r := Route{Page: PageMail, View: core.View{FolderID: m.FolderID}, ThreadID: m.ThreadID}
-			if !a.settings.ThreadView {
-				r.MessageID = m.ID // as the list opens a message
-			}
-			a.navigate(r)
-		})
+		m, err := a.svc.GetMessage(ctx, n, false)
+		if err != nil {
+			return Route{}, err
+		}
+		return Route{Page: PageMail, View: core.View{FolderID: m.FolderID}, ThreadID: m.ThreadID, MessageID: m.ID}, nil
 	case "account":
-		var fs []core.Folder
-		a.do(func(ctx context.Context) (err error) {
-			fs, err = a.svc.ListFolders(ctx, n)
-			return err
-		}, func(err error) {
-			if err != nil {
-				a.toastErr(err)
-				return
-			}
-			if i := slices.IndexFunc(fs, func(f core.Folder) bool { return f.Role == "inbox" }); i >= 0 {
-				a.navigate(Route{Page: PageMail, View: core.View{FolderID: fs[i].ID}})
-			}
-		})
+		fs, err := a.svc.ListFolders(ctx, n)
+		if err != nil {
+			return Route{}, err
+		}
+		if i := slices.IndexFunc(fs, func(f core.Folder) bool { return f.Role == "inbox" }); i >= 0 {
+			return Route{Page: PageMail, View: core.View{FolderID: fs[i].ID}}, nil
+		}
 	}
+	return Route{}, nil
 }
 
 // showTrayUnread puts the inboxes' unread total on the tray when the

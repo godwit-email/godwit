@@ -43,6 +43,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var svc *core.Service
+	var a *app.App
+	var clicked []string                           // notification clicks before the App exists, as the one that launched it
+	mygo.App.OnNotificationClick(func(id string) { // before Run, to get that one
+		if a == nil {
+			clicked = append(clicked, id)
+			return
+		}
+		a.NotificationClicked(id) // it shows the window
+	})
 	mygo.App.WhenReady(func() {
 		dir, err := mygo.App.Path(mygo.PathUserData)
 		if err != nil {
@@ -53,20 +62,24 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		st, _ := svc.GetSettings(ctx)
-		i18n.SetLanguage(cmp.Or(st.UILanguage, lang)) // for the menus; the App applies it to itself
+		uiLang := lang // for the menus; the App applies the language to itself
+		if st, err := svc.GetSettings(ctx); err != nil {
+			log.Printf("reading settings: %v; the menus use the system language", err)
+		} else {
+			uiLang = cmp.Or(st.UILanguage, lang)
+		}
+		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
 		plat := &platform{}
 		var win *mygo.Window
-		a := app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
+		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone})
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })
-		mygo.App.OnNotificationClick(a.NotificationClicked) // it shows the window
 		mygo.App.OnSecondInstance(func([]string, string) { plat.ShowWindow() })
 		mygo.App.OnActivate(func(visible bool) {
 			if !visible {
@@ -122,6 +135,10 @@ func main() {
 		})
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
+		for _, id := range clicked { // the App takes them once it has loaded; the last one wins
+			a.NotificationClicked(id)
+		}
+		clicked = nil
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

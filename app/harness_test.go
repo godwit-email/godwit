@@ -27,6 +27,7 @@ type harness struct {
 
 	mu    sync.Mutex
 	queue []func()
+	logs  []string // what the App logged
 }
 
 func newHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
@@ -42,7 +43,7 @@ func newHarnessWith(t *testing.T, opts []coretest.Option, setup ...func(*coretes
 	for _, s := range setup {
 		s(h.env)
 	}
-	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN"})
+	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf})
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop
@@ -50,6 +51,18 @@ func newHarnessWith(t *testing.T, opts []coretest.Option, setup ...func(*coretes
 	h.app.Start(ctx)
 	t.Cleanup(h.app.Close) // before the Env's cleanup closes the Service
 	return h
+}
+
+func (h *harness) logf(format string, args ...any) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.logs = append(h.logs, fmt.Sprintf(format, args...))
+}
+
+func (h *harness) logged() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.logs)
 }
 
 func (h *harness) post(f func()) {
@@ -206,6 +219,7 @@ type fakePlatform struct {
 	dir       string   // OpenDirectory
 	savePath  string   // SaveFile
 	supported bool     // NotificationsSupported
+	notifyErr error    // Notify
 	clipHTML  string
 	tempDir   string
 }
@@ -248,7 +262,7 @@ func (p *fakePlatform) Notify(n Notification) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.notes = append(p.notes, n)
-	return nil
+	return p.notifyErr
 }
 func (p *fakePlatform) Notes() []Notification {
 	p.mu.Lock()
