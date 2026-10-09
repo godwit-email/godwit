@@ -197,3 +197,31 @@ func deepCopy(v any) any {
 	}
 	return v
 }
+
+// strictSchema is a copy of in with additionalProperties:false on every object
+// reached through properties and items: what Genkit's compat_oai does for a
+// strict tool, so both OpenAI protocols send the same schema.
+func strictSchema(in map[string]any) map[string]any {
+	out := copyMap(in)
+	var walk func(s map[string]any)
+	walk = func(s map[string]any) {
+		switch s["type"] {
+		case "object":
+			s["additionalProperties"] = false
+			props, _ := s["properties"].(map[string]any)
+			for _, p := range props {
+				if p, ok := p.(map[string]any); ok {
+					walk(p)
+				}
+			}
+		case "array":
+			if it, ok := s["items"].(map[string]any); ok {
+				walk(it)
+			}
+		}
+	}
+	if out != nil {
+		walk(out)
+	}
+	return out
+}

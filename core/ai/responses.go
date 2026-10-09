@@ -219,6 +219,9 @@ func responsesParams(model string, req *gai.ModelRequest) (responses.ResponseNew
 		if schema == nil {
 			schema = map[string]any{"type": "object", "properties": map[string]any{}}
 		}
+		if strict {
+			schema = strictSchema(schema)
+		}
 		params.Tools = append(params.Tools, responses.ToolUnionParam{OfFunction: &responses.FunctionToolParam{
 			Name: t.Name, Description: param.NewOpt(t.Description), Parameters: schema, Strict: param.NewOpt(strict)}})
 	}

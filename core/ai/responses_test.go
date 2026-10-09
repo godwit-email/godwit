@@ -286,3 +286,50 @@ func TestResponsesStrictFlag(t *testing.T) {
 	}
 	assert.Equal(t, map[string]any{"plugin_tool": false, "builtin": true}, strict)
 }
+
+// A strict tool gets additionalProperties:false on every object, as the Chat
+// Completions path does; a non-strict tool's schema goes out as given.
+func TestResponsesStrictSchema(t *testing.T) {
+	srv := testllm.Start(t, kindResp)
+	noop := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	schema := func() map[string]any {
+		return map[string]any{"type": "object", "properties": map[string]any{
+			"inner": map[string]any{"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string"}}},
+			"list":  map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{}}},
+		}}
+	}
+	given := schema()
+	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: []ToolSpec{
+		{Name: "builtin", Strict: true, Schema: given, Run: noop},
+		{Name: "plugin_tool", Schema: schema(), Run: noop},
+	}})
+	require.Nil(t, res.Err)
+	assert.Equal(t, schema(), given, "the caller's schema is not modified")
+	reqs := srv.Requests()
+	require.Len(t, reqs, 1)
+	var b struct {
+		Tools []struct {
+			Name       string
+			Strict     bool
+			Parameters json.RawMessage
+		}
+	}
+	require.NoError(t, json.Unmarshal(reqs[0].Body, &b))
+	require.Len(t, b.Tools, 2)
+	tools := map[string]int{}
+	for i, tl := range b.Tools {
+		tools[tl.Name] = i
+	}
+	st, pl := b.Tools[tools["builtin"]], b.Tools[tools["plugin_tool"]]
+	var strict map[string]any
+	require.NoError(t, json.Unmarshal(st.Parameters, &strict))
+	assert.True(t, st.Strict)
+	assert.Equal(t, false, strict["additionalProperties"])
+	props := strict["properties"].(map[string]any)
+	assert.Equal(t, false, props["inner"].(map[string]any)["additionalProperties"])
+	assert.Equal(t, false, props["list"].(map[string]any)["items"].(map[string]any)["additionalProperties"])
+
+	assert.False(t, pl.Strict)
+	want, _ := json.Marshal(schema())
+	assert.JSONEq(t, string(want), string(pl.Parameters), "a non-strict schema goes out unchanged")
+}
