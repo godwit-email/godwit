@@ -462,6 +462,9 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 		}
 		results = append(results, a.toolResult())
 	}
+	if snap.ReadMail {
+		stmts = append(stmts, markConvReadMail(convID))
+	}
 	if !snap.Host { // a host proposal left no call in the conversation
 		closed, err := ai.CloseState(state, results)
 		if err != nil {

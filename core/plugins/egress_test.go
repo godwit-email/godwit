@@ -58,7 +58,7 @@ func TestEgressFor(t *testing.T) {
 		{"unknown kind", InvocationKind("other"), netOnly, true, true, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, approval := EgressFor(tc.kind, tc.m, tc.granted, tc.readMail)
+			got, approval := EgressFor(tc.kind, tc.m, tc.granted, false, tc.readMail)
 			assert.Equal(t, tc.hosts, got)
 			assert.Equal(t, tc.approval, approval)
 		})
@@ -68,7 +68,20 @@ func TestEgressFor(t *testing.T) {
 // The returned hosts are a copy: an Invocation cannot change the manifest.
 func TestEgressForCopies(t *testing.T) {
 	m := Manifest{Permissions: Permissions{Net: []string{"api.example.com"}}}
-	got, _ := EgressFor(KindHook, m, true, false)
+	got, _ := EgressFor(KindHook, m, true, false, false)
 	got[0] = "evil.example.com"
 	assert.Equal(t, []string{"api.example.com"}, m.Permissions.Net)
+}
+
+// A plugin holding mail (its state was handed mail content) needs approval
+// for action and tool egress like one with mail:read; other kinds are unchanged.
+func TestEgressForHoldsMail(t *testing.T) {
+	netOnly := Manifest{Permissions: Permissions{Net: []string{"api.example.com"}}}
+	for kind, want := range map[InvocationKind]bool{KindAction: true, KindTool: true, KindHook: false} {
+		_, approval := EgressFor(kind, netOnly, true, true, false)
+		assert.Equal(t, want, approval, kind)
+	}
+	got, approval := EgressFor(KindCard, netOnly, true, true, false)
+	assert.Nil(t, got)
+	assert.False(t, approval)
 }

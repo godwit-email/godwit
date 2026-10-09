@@ -104,10 +104,32 @@ func (h *pluginHost) StorageDelete(ctx context.Context, key string) error {
 // MailGet reads the message from the database only (no IMAP), HTML sanitized.
 func (h *pluginHost) MailGet(ctx context.Context, id int64) (out plugins.MailMessage, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
+		if err := h.s.markHoldsMail(ctx, h.name); err != nil {
+			return err
+		}
 		out, err = h.s.pluginMail(ctx, id)
 		return err
 	})
 	return out, err
+}
+
+// markHoldsMail records that plugin name is about to be handed mail content:
+// from then on its state may hold mail, and EgressFor treats it so until it
+// is uninstalled. Call it before the content reaches the plugin; if it fails,
+// do not hand it over.
+func (s *Service) markHoldsMail(ctx context.Context, name string) error {
+	_, err := s.db.Execute(ctx, "UPDATE plugins SET holds_mail = 1 WHERE name = ? AND holds_mail = 0", name)
+	return err
+}
+
+// holdsMail reports whether plugin name was ever handed mail content; a
+// read failure counts as holding mail (fail closed).
+func (s *Service) holdsMail(ctx context.Context, name string) (bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT holds_mail FROM plugins WHERE name = ?", name)
+	if err != nil {
+		return true, err
+	}
+	return len(rows.Values) > 0 && store.Int(rows.Values[0][0]) != 0, nil
 }
 
 // pluginMail is message id for a plugin: from the database only, HTML sanitized.
@@ -126,6 +148,9 @@ func (s *Service) pluginMail(ctx context.Context, id int64) (plugins.MailMessage
 
 func (h *pluginHost) MailSearch(ctx context.Context, q string, limit int) (out []plugins.MailSummary, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
+		if err := h.s.markHoldsMail(ctx, h.name); err != nil {
+			return err
+		}
 		list, err := h.s.Search(ctx, 0, q, limit)
 		for _, m := range list {
 			out = append(out, plugins.MailSummary{ID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date.UTC(), Snippet: m.Snippet})
@@ -327,8 +352,32 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 	pc := pluginCall{name, rp.gen, rp.p, rp.row}
 	m, granted := rp.row.m, rp.row.granted == rp.row.permHash
 	readsMail := slices.Contains(m.Permissions.Mail, "read")
-	_, always := plugins.EgressFor(plugins.KindTool, m, granted, false) // mail:read and net: every call
-	spec := ai.ToolSpec{Name: pluginToolName(name, ti.Name), Description: ti.Description, Schema: ti.Schema, NeedsApproval: always}
+	spec := ai.ToolSpec{Name: pluginToolName(name, ti.Name), Description: ti.Description, Schema: ti.Schema,
+		// Decided per call: whether the plugin holds mail can change at any time.
+		Gate: func(ctx context.Context, _ json.RawMessage) (ai.Decision, error) {
+			held, err := s.holdsMail(ctx, name)
+			if err != nil {
+				return ai.Deny, err
+			}
+			if _, need := plugins.EgressFor(plugins.KindTool, m, granted, held, false); need {
+				return ai.Approve, nil // mail:read or held mail, and net: every call
+			}
+			return ai.Allow, nil
+		}}
+	// taint: the scope's mail goes into the plugin with the call's arguments,
+	// and the result may be mail the plugin read or holds.
+	taint := func(ctx context.Context, scope *gateway.Scope) (held bool, err error) {
+		if scope.ReadMail() {
+			if err := s.markHoldsMail(ctx, name); err != nil {
+				return true, err
+			}
+		}
+		held, err = s.holdsMail(ctx, name)
+		if readsMail || held || err != nil {
+			scope.MarkReadMail()
+		}
+		return held, err
+	}
 	if !ti.Write {
 		spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
 			if beforePluginToolRun != nil {
@@ -338,12 +387,14 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 			inv := plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool}
 			// Decided again now: a scope that read mail since the gate allowed
 			// the call leaves it without hosts (fail closed).
-			hosts, need := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			readMail := scope.ReadMail()
+			held, err := taint(ctx, scope)
+			if err != nil {
+				return nil, err
+			}
+			hosts, need := plugins.EgressFor(plugins.KindTool, m, granted, held, readMail)
 			if inv.Unapproved = need; !need {
 				inv.EgressHosts = hosts
-			}
-			if readsMail {
-				defer scope.MarkReadMail() // what it returns may be mail
 			}
 			res, err := s.runPluginTool(ctx, pc, ti.Name, args, inv)
 			if err != nil {
@@ -358,17 +409,17 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 	}
 	return toolDesc{Spec: spec, Source: gateway.SourcePlugin, Extension: name, Write: ti.Write, Mode: modeExternal,
 		Egress: func(scope *gateway.Scope) []string {
-			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, false, scope.ReadMail())
 			return hosts
 		},
 		Prepare: func(ctx context.Context, _ Conversation, args json.RawMessage) (prepared, error) {
-			if readsMail {
-				runOf(ctx).scope.MarkReadMail() // its result, once approved, may be mail
+			if _, err := taint(ctx, runOf(ctx).scope); err != nil { // before the approval: its result, once approved, may be mail
+				return prepared{}, err
 			}
 			return prepared{Args: args, Summary: "Run " + ti.Name + " of plugin " + name}, nil
 		},
 		Run: func(ctx context.Context, a Approval) (any, error) {
-			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, true) // the approval listed them
+			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, true, true) // the approval listed them
 			return s.runPluginTool(ctx, pc, ti.Name, a.Args, plugins.Invocation{ID: fmt.Sprintf("approval:%d", a.ID),
 				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts})
 		},

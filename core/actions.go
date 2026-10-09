@@ -135,7 +135,11 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 	}
 
 	m := pc.row.m
-	hosts, needsApproval := plugins.EgressFor(plugins.KindAction, m, pc.row.granted == pc.row.permHash, t.Kind == "selection")
+	held, err := s.holdsMail(ctx, name)
+	if err != nil {
+		return ActionResult{}, err
+	}
+	hosts, needsApproval := plugins.EgressFor(plugins.KindAction, m, pc.row.granted == pc.row.permHash, held, t.Kind == "selection")
 	if needsApproval && !opts.ApproveEgress {
 		return ActionResult{}, &EgressApprovalRequired{Plugin: name, Hosts: hosts}
 	}
@@ -148,6 +152,11 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		}
 	}
 
+	if t.Kind == "selection" { // mail content
+		if err := s.markHoldsMail(ctx, name); err != nil {
+			return ActionResult{}, err
+		}
+	}
 	res, err := pc.p.RunAction(ctx, inv, aid, target)
 	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
 		return ActionResult{}, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
@@ -217,6 +226,10 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 	var out []Card
 	var acct error // failures to record the plugins' failures: the host's, returned
 	for _, pc := range s.runningPlugins((*plugins.Plugin).HasCard) {
+		if err := s.markHoldsMail(ctx, pc.name); err != nil { // the host's failure: the card is left out
+			acct = errors.Join(acct, err)
+			continue
+		}
 		c, matched, err := s.pluginCard(ctx, pc, msg)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -243,7 +256,7 @@ func (s *Service) pluginCard(ctx context.Context, pc pluginCall, msg plugins.Mai
 		clock = realClock{}
 	}
 	defer clock.AfterFunc(cardBudget, func() { cancel(plugins.ErrTimeout) })()
-	egress, _ := plugins.EgressFor(plugins.KindCard, pc.row.m, false, false) // none, whatever the plugin holds
+	egress, _ := plugins.EgressFor(plugins.KindCard, pc.row.m, false, true, false) // none, whatever the plugin holds
 	inv := plugins.Invocation{ID: fmt.Sprintf("card:%s:%d", pc.name, msg.ID), Kind: plugins.KindCard, EgressHosts: egress}
 	res, matched, err := pc.p.Card(ctx, inv, msg)
 	if err != nil || !matched {

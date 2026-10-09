@@ -554,10 +554,34 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 	}
 	// Read the history only now: a previous run may have ended after the caller's read.
 	_, state, err := s.conversation(ctx, conv.ID)
+	var scope *gateway.Scope
+	if err == nil {
+		scope, err = s.convScope(ctx, conv.ID, false)
+	}
 	if err != nil {
 		return nil, nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(r.LastInsertID, "failed")))
 	}
-	return s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0), state, nil
+	return s.track(ctx, r.LastInsertID, conv, scope, 0), state, nil
+}
+
+// convScope is a new scope for a run of conversation id: it has read mail if
+// readMail or once any earlier run of the conversation did (its history may
+// hold that mail).
+func (s *Service) convScope(ctx context.Context, id int64, readMail bool) (*gateway.Scope, error) {
+	rows, err := s.db.Query(ctx, "SELECT read_mail FROM conversations WHERE id = ?", id)
+	if err != nil {
+		return nil, err
+	}
+	scope := &gateway.Scope{}
+	if readMail || len(rows.Values) > 0 && store.Int(rows.Values[0][0]) != 0 {
+		scope.MarkReadMail()
+	}
+	return scope, nil
+}
+
+// markConvReadMail records that mail content entered conversation id.
+func markConvReadMail(id int64) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE conversations SET read_mail = 1 WHERE id = ? AND read_mail = 0", Args: []any{id}}
 }
 
 // specs wraps the tools for one run: every call goes through the gateway as
@@ -708,6 +732,12 @@ func runState(runID int64, state string) sqlite.Statement {
 // pending approval per call, in one transaction; a failure keeps the saved
 // state, closed with the approvals' results if the run was a resume.
 func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, res ai.Result) (WitEvent, error) {
+	// First, whatever the outcome: the history about to be saved may hold mail.
+	if job.scope.ReadMail() {
+		if err := s.exec(ctx, markConvReadMail(job.conv.ID)); err != nil {
+			return WitEvent{}, err
+		}
+	}
 	switch {
 	case res.Err != nil:
 		state := "failed"
@@ -815,9 +845,9 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	if err != nil {
 		return err
 	}
-	scope := &gateway.Scope{}
-	if snap.ReadMail {
-		scope.MarkReadMail()
+	scope, err := s.convScope(ctx, conv.ID, snap.ReadMail)
+	if err != nil {
+		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
 	req, err := s.request(ctx, job, model, state, offered(conv.Kind, s.registered(names...)))

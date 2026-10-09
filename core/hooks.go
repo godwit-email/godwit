@@ -79,7 +79,7 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 	}
 	s.hookWakes[wake] = struct{}{}
 	s.hooksMu.Unlock()
-	egress, _ := plugins.EgressFor(plugins.KindHook, r.m, r.granted == r.permHash, false)
+	egress, _ := plugins.EgressFor(plugins.KindHook, r.m, r.granted == r.permHash, true, false)
 	inv := plugins.Invocation{Kind: plugins.KindHook, Write: slices.Contains(r.m.Permissions.Mail, "write"), EgressHosts: egress}
 	go func() {
 		defer end()
@@ -113,6 +113,14 @@ func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plu
 				return
 			}
 			continue
+		}
+		if len(evs) > 0 { // events carry mail content
+			if err := s.markHoldsMail(ctx, name); err != nil {
+				if ctx.Err() != nil || !fail() {
+					return
+				}
+				continue
+			}
 		}
 		for _, ev := range evs {
 			for {
@@ -345,7 +353,7 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 	if len(html) > plugins.MaxBodyBytes {
 		html = strings.ToValidUTF8(html[:plugins.MaxBodyBytes], "")
 	}
-	egress, _ := plugins.EgressFor(plugins.KindBeforeSend, plugins.Manifest{}, false, false) // none, whatever the plugin holds
+	egress, _ := plugins.EgressFor(plugins.KindBeforeSend, plugins.Manifest{}, false, true, false) // none, whatever the plugin holds
 	var warns []SendWarning
 	for _, c := range cs {
 		if duringSendCheck != nil {
@@ -355,6 +363,10 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 		// A fresh argument each: what one plugin does to it, the next never sees.
 		arg := map[string]any{"id": d.ID, "accountId": d.AccountID, "to": slices.Clone(d.To), "cc": slices.Clone(d.Cc),
 			"subject": d.Subject, "html": html}
+		if err := s.markHoldsMail(ctx, c.name); err != nil { // the host's failure: not the plugin's
+			warns = append(warns, SendWarning{Plugin: c.name, Code: WarningNoResponse, Message: "plugin " + c.name + " did not respond"})
+			continue
+		}
 		res, err := c.p.EmitResult(ctx, inv, plugins.EventBeforeSend, arg)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

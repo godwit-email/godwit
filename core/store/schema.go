@@ -183,4 +183,11 @@ var Migrations = [][]string{{
 	// from then on what sync imports above last_uid is new mail (message.received).
 	`ALTER TABLE folders ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`,
 	`UPDATE folders SET synced = 1 WHERE last_uid > 0`,
+}, {
+	// 1 once mail content entered the conversation (a run's scope read mail):
+	// every later run of it starts as having read mail.
+	`ALTER TABLE conversations ADD COLUMN read_mail INTEGER NOT NULL DEFAULT 0`,
+	// 1 once the plugin was handed mail content: its storage may hold mail, so
+	// its action and tool egress needs approval until it is uninstalled.
+	`ALTER TABLE plugins ADD COLUMN holds_mail INTEGER NOT NULL DEFAULT 0`,
 }}
