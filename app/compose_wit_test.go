@@ -249,6 +249,7 @@ func TestAssistErrorRetry(t *testing.T) {
 	llm.Script(failed, failed, failed) // the model client retries a server error twice
 	h.tellWit("改一下")
 	h.see("重试")
+	h.until("the draft read again", func() bool { return !p.wit.syncing })
 	if n := llm.Requests(); n != 3 {
 		t.Fatalf("%d requests for a failed run", n)
 	}
@@ -258,4 +259,161 @@ func TestAssistErrorRetry(t *testing.T) {
 	llm.Script(coretest.Turn{Text: []string{"这次好了。"}})
 	h.click("重试")
 	h.see("这次好了。")
+}
+
+// gateDrafts makes the composer's draft reads wait: each read sends its
+// reply channel on the returned one; the test answers it.
+func gateDrafts(w *composeWit) chan chan func() (core.Draft, error) {
+	reads := make(chan chan func() (core.Draft, error), 8)
+	w.getDraft = func(ctx context.Context, id int64) (core.Draft, error) {
+		reply := make(chan func() (core.Draft, error))
+		reads <- reply
+		return (<-reply)()
+	}
+	return reads
+}
+
+// saveEditable stores editable as the draft's editable part, as Wit would.
+func (h *harness) saveEditable(id int64, editable string) core.Draft {
+	h.t.Helper()
+	d := h.draft(id)
+	_, q, sig := mail.SplitDraft(d.HTML)
+	d.HTML = mail.JoinDraft(editable, q, sig)
+	d, err := h.env.Svc.SaveDraft(context.Background(), d)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return d
+}
+
+func TestReloadKeepsLocalEdit(t *testing.T) {
+	h, p, llm := witCompose(t, "<p>Hello</p>")
+	reads := gateDrafts(p.wit)
+	llm.Script(coretest.Turn{Text: []string{"好的。"}})
+	h.tellWit("看看")
+	h.until("the run over and its reads asked", func() bool {
+		return !p.wit.panel.running && p.wit.reloads > 0 && len(reads) == int(p.wit.reloads)
+	})
+	var reply chan func() (core.Draft, error)
+	for len(reads) > 0 { // the reads before the last are dropped
+		if reply != nil {
+			reply <- func() (core.Draft, error) { return h.env.Svc.GetDraft(context.Background(), p.id) }
+		}
+		reply = <-reads
+	}
+	h.drain()
+	h.tt.Frame()
+	if !p.wit.locked() {
+		t.Fatal("the body opens before the draft is read again")
+	}
+	before := p.ed.HTML()
+	h.writeBody(" there")
+	if p.ed.HTML() != before {
+		t.Fatalf("typed while the draft is read again: %q", p.ed.HTML())
+	}
+	p.ed.Replace(p.ed.Doc()) // an edit that got in anyway
+	h.saveEditable(p.id, "<p>From elsewhere</p>")
+	reply <- func() (core.Draft, error) { return h.env.Svc.GetDraft(context.Background(), p.id) }
+	h.until("the read done", func() bool { return !p.wit.locked() })
+	if got := p.ed.HTML(); got != before {
+		t.Fatalf("the read replaced a local edit: %q", got)
+	}
+}
+
+func TestReloadNewestWins(t *testing.T) {
+	h, p, _ := witCompose(t, "<p>Hello</p>")
+	reads := gateDrafts(p.wit)
+	older := h.saveEditable(p.id, "<p>Older</p>")
+	newer := h.saveEditable(p.id, "<p>Newer</p>")
+	p.wit.reload()
+	first := <-reads
+	p.wit.reload()
+	second := <-reads
+	second <- func() (core.Draft, error) { return newer, nil }
+	h.until("the newer read", func() bool { return p.ed.HTML() == "<p>Newer</p>" })
+	first <- func() (core.Draft, error) { return older, nil }
+	h.queued("the older read", 1)
+	h.drain()
+	h.tt.Frame()
+	if got := p.ed.HTML(); got != "<p>Newer</p>" || p.s.rev != newer.Revision {
+		t.Fatalf("after the older read: %q at revision %d", got, p.s.rev)
+	}
+}
+
+func TestReloadErrorRetry(t *testing.T) {
+	h, p, _ := witCompose(t, "<p>Hello</p>")
+	reads := gateDrafts(p.wit)
+	d := h.saveEditable(p.id, "<p>Changed</p>")
+	p.wit.reload()
+	(<-reads) <- func() (core.Draft, error) { return core.Draft{}, core.ErrClosed }
+	h.see("重试")
+	h.click("重试")
+	(<-reads) <- func() (core.Draft, error) { return d, nil }
+	h.until("read again", func() bool { return p.ed.HTML() == "<p>Changed</p>" && !h.tt.HasText("重试") })
+}
+
+func TestFreeInputAfterCmdKRunsAssist(t *testing.T) {
+	h, p, llm := witCompose(t, "<p>First para.</p><p>Second para.</p>")
+	llm.Script(proposeTurn("update_selection", "Second, more concrete."), coretest.Turn{Text: []string{"改好了。"}})
+	h.click("正文")
+	h.tt.Key(ui.Cmd, ui.KeyDown)
+	h.tt.Key(ui.Shift, ui.KeyHome)
+	h.tt.Frame()
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.drain()
+	h.tt.Frame()
+	h.click("修改选中的内容")
+	h.typeText("更具体一点")
+	h.tt.Key(0, ui.KeyEnter)
+	h.drain()
+	h.see("1 处修改待确认")
+	h.click("全部拒绝")
+	h.until("rejected", func() bool { return p.wit.review == nil && !p.wit.locked() })
+	llm.Script(coretest.Turn{Text: []string{"这是 Assist 的回答。"}})
+	h.tellWit("更具体一点")
+	h.see("这是 Assist 的回答。")
+	cs, err := draftConversations(context.Background(), h.env.Svc, p.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		if c.Title != "" {
+			continue
+		}
+		full, err := h.env.Svc.GetConversation(context.Background(), c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range full.Messages {
+			if m.Role == "user" && m.Text == "更具体一点" {
+				return
+			}
+		}
+	}
+	t.Fatal("the free input did not run Assist in the draft's conversation")
+}
+
+func TestTranslateReplyLanguage(t *testing.T) {
+	h, p, llm := witCompose(t, "<p>我周五到。</p>")
+	var mu sync.Mutex
+	var got []string
+	run := p.wit.skill
+	p.wit.skill = func(ctx context.Context, id int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error) {
+		mu.Lock()
+		got = append(got, skill+":"+o.TargetLanguage)
+		mu.Unlock()
+		return run(ctx, id, skill, o)
+	}
+	llm.Script(coretest.Turn{Text: []string{"<p>I'll be there on Friday.</p>"}})
+	h.click("翻译 ▾")
+	if err := h.tt.ChooseMenuItem("与收件人相同的语言"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
+	h.until("the proposal", func() bool { return p.wit.review != nil })
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 || got[0] != "translate-draft:" {
+		t.Fatalf("skills %q, want translate-draft with no target (the reply language)", got)
+	}
 }

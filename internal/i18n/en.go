@@ -567,6 +567,7 @@ var en = map[string]string{
 	"wit.compose.adjust":               "Adjust ▾",
 	"wit.compose.translate":            "Translate ▾",
 	"wit.compose.translate_to":         "Translate to %s",
+	"wit.compose.reply_language":       "The recipients' language",
 	"wit.compose.source":               "Original email",
 	"wit.compose.history":              "%[2]d emails with %[1]s",
 	"wit.skill.tone-formal":            "More formal",

@@ -80,7 +80,13 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 	if msg := humanize(p.err); msg != "" {
 		kit.Alert(c, kit.Danger, msg, func() {
 			if p.retry != "" && !p.running {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { p.ask(o, p.retry) })
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() {
+					ro := o
+					if p.retryO.Start != nil {
+						ro = p.retryO
+					}
+					p.ask(ro, p.retry)
+				})
 			}
 		})
 	}

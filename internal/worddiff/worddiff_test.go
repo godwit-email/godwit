@@ -91,3 +91,17 @@ func TestWordDiffBudget(t *testing.T) {
 		t.Fatal("within a large budget, not ok")
 	}
 }
+
+func TestWordDiffBudgetIdenticalBlocks(t *testing.T) {
+	var a strings.Builder
+	for range 2000 {
+		a.WriteString(" same")
+	}
+	same := toks("<p>" + a.String() + "</p><p>" + a.String() + "</p>")
+	if _, ok := Diff(same, same, 100); ok {
+		t.Fatal("identical blocks compared past the budget, still ok")
+	}
+	if _, ok := Diff(same, same, DefaultBudget); !ok {
+		t.Fatal("within the budget, not ok")
+	}
+}

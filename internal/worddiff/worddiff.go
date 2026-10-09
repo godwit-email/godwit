@@ -100,7 +100,20 @@ func words(s string) []string {
 // when their text and their style, link included, are. ok is false once it
 // would make more than budget comparisons.
 func Diff(old, new [][]Token, budget int) (blocks []BlockDiff, ok bool) {
-	edits, ok := myers(old, new, slices.Equal[[]Token], &budget)
+	// Blocks compare token by token, each token one of budget.
+	same := func(x, y []Token) bool {
+		if len(x) != len(y) {
+			budget--
+			return false
+		}
+		for i := range x {
+			if budget--; budget < 0 || x[i] != y[i] {
+				return false
+			}
+		}
+		return true
+	}
+	edits, ok := myers(old, new, same, &budget)
 	if !ok {
 		return nil, false
 	}
@@ -196,7 +209,8 @@ type edit struct {
 }
 
 // myers is the shortest edit script from a to b (Myers' O(ND) algorithm).
-// Each diagonal tried and each element compared costs one of budget.
+// Each diagonal tried costs one of budget, and eq charges its comparisons;
+// it stops as soon as budget is spent.
 func myers[T any](a, b []T, eq func(x, y T) bool, budget *int) ([]edit, bool) {
 	n, m := len(a), len(b)
 	// trace[d] holds, for diagonals k = -d, -d+2 … d, the furthest x reached.
@@ -220,7 +234,11 @@ func myers[T any](a, b []T, eq func(x, y T) bool, budget *int) ([]edit, bool) {
 			y := x - k
 			for x < n && y < m {
 				*budget--
-				if !eq(a[x], b[y]) {
+				same := eq(a[x], b[y])
+				if *budget < 0 {
+					return nil, false
+				}
+				if !same {
 					break
 				}
 				x, y = x+1, y+1

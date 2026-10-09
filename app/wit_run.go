@@ -43,6 +43,7 @@ type witOptions struct {
 	Start              func(ctx context.Context, input string) (conv int64, ch <-chan core.WitEvent, stop func(), err error)
 	Changed            func()
 	Gate               func(run func())
+	Pinned             bool // Start is the turn's own: Retry runs it, not the Start of the moment
 	Card               func(c *ui.Context, ap core.Approval) bool
 	Tools, After       func(c *ui.Context)
 }
@@ -72,6 +73,7 @@ type witPanel struct {
 	runID    int64
 	err      error          // how the last run failed
 	retry    string         // the question Retry asks again
+	retryO   witOptions     // the options it was asked with, when pinned
 	deciding map[int64]bool // approvals whose decision is on its way
 
 	follows uint64             // bumped per follow: an older one's events are dropped
@@ -432,7 +434,10 @@ func (p *witPanel) run(o witOptions, in string) {
 			p.err, p.liveUser, p.running = err, "", false
 		}
 	})
-	p.cancel = cancel
+	p.cancel, p.retryO = cancel, witOptions{}
+	if o.Pinned {
+		p.retryO = o
+	}
 	p.retry, p.err, p.liveUser, p.live, p.fresh, p.running, p.runID = in, nil, in, nil, true, true, 0
 	p.scroll.Y = math.MaxFloat32
 }

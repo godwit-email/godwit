@@ -567,6 +567,7 @@ var zh = map[string]string{
 	"wit.compose.adjust":               "调整 ▾",
 	"wit.compose.translate":            "翻译 ▾",
 	"wit.compose.translate_to":         "翻译为%s",
+	"wit.compose.reply_language":       "与收件人相同的语言",
 	"wit.compose.source":               "原邮件",
 	"wit.compose.history":              "与 %s 的往来 %d 封",
 	"wit.skill.tone-formal":            "更正式",
