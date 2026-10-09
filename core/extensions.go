@@ -14,8 +14,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/dop251/goja"
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -39,8 +41,9 @@ type PluginInfo struct {
 	Config                []plugins.ConfigField
 }
 
-// disabled_reason values set here (Task 5 adds failures).
+// disabled_reason values.
 const (
+	disabledFailures = "failures"             // maxFailures calls in a row failed
 	disabledFiles    = "files_changed"        // the version directory is damaged
 	disabledLoad     = "load_failed"          // the plugin did not start
 	disabledKeychain = "keychain_unavailable" // its secrets could not be read
@@ -285,7 +288,7 @@ func (s *Service) startOrDisable(ctx context.Context, name string, r *pluginRow)
 	err := s.checkPluginFiles(name, *r)
 	if err == nil {
 		reason = disabledLoad
-		if err = s.loadPlugin(name, *r); err == nil {
+		if err = s.loadPlugin(ctx, name, *r); err == nil {
 			return nil
 		}
 		if errors.Is(err, ErrKeychainUnavailable) {
@@ -352,7 +355,7 @@ func (s *Service) SetPluginEnabled(ctx context.Context, name string, enabled boo
 		}
 		_, running := s.running[name]
 		if !running {
-			if err := s.loadPlugin(name, r); err != nil {
+			if err := s.loadPlugin(ctx, name, r); err != nil {
 				return err
 			}
 		}
@@ -443,10 +446,16 @@ func (s *Service) startPlugins(ctx context.Context) error {
 	return nil
 }
 
-// loadPlugin (re)starts an enabled plugin on its installed code; stopPlugin
-// stops it. Both are called with pluginsMu held.
-// ponytail: records the running code's hash only; Task 5 starts and stops the VM here.
-func (s *Service) loadPlugin(name string, r pluginRow) error {
+// runningPlugin is a started plugin: the code it runs and its VM.
+type runningPlugin struct {
+	hash string // source hash of the code it runs
+	p    *plugins.Plugin
+}
+
+// loadPlugin (re)starts an enabled plugin on its installed code: it builds the
+// bundle (cached in the version directory), creates the VM and runs the
+// plugin's initialization. stopPlugin stops it. Both are called with pluginsMu held.
+func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) error {
 	if err := s.loadPluginSecrets(name, r.secretKeys); err != nil {
 		return err // never run with secrets the redaction does not know
 	}
@@ -455,14 +464,82 @@ func (s *Service) loadPlugin(name string, r pluginRow) error {
 			return err
 		}
 	}
-	if s.running == nil {
-		s.running = map[string]string{}
+	code, err := plugins.Build(s.versionDir(name, r.installDir), r.m.Main)
+	if err != nil {
+		return err
 	}
-	s.running[name] = r.sourceHash
+	prog, err := goja.Compile(name+".js", string(code), false)
+	if err != nil {
+		return fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
+	}
+	// Initialization runs under our lock, so it gets the config read here;
+	// later calls read it themselves (pluginHost.Config).
+	cfg, _, err := s.pluginConfigLocked(ctx, name)
+	if err != nil {
+		return err
+	}
+	h := &pluginHost{s: s, name: name}
+	h.initConfig.Store(&cfg)
+	vm := plugins.NewVM(name, prog, plugins.VMOptions{Redact: s.secrets.Redact})
+	p, err := plugins.Load(ctx, vm, r.m, h)
+	h.initConfig.Store(nil)
+	if err != nil {
+		vm.Close()
+		return err
+	}
+	s.stopPlugin(name)
+	if s.running == nil {
+		s.running = map[string]*runningPlugin{}
+	}
+	s.running[name] = &runningPlugin{hash: r.sourceHash, p: p}
 	return nil
 }
 
-func (s *Service) stopPlugin(name string) { delete(s.running, name) }
+func (s *Service) stopPlugin(name string) {
+	if rp := s.running[name]; rp != nil {
+		rp.p.VM().Close()
+		delete(s.running, name)
+	}
+}
+
+// stopPlugins stops every plugin (Close).
+func (s *Service) stopPlugins() {
+	s.pluginsMu.Lock()
+	defer s.pluginsMu.Unlock()
+	for n := range s.running {
+		s.stopPlugin(n)
+	}
+}
+
+// maxFailures consecutive failed calls disable a plugin.
+const maxFailures = 3
+
+// pluginFailed counts a failed call (an error, a timeout, the watchdog) of an
+// enabled plugin; the third in a row disables and stops it. Never call it
+// from the plugin's own VM goroutine or holding pluginsMu.
+func (s *Service) pluginFailed(ctx context.Context, name string) error {
+	s.pluginsMu.Lock()
+	defer s.pluginsMu.Unlock()
+	if _, err := s.db.Execute(ctx, "UPDATE plugins SET failures = failures + 1 WHERE name = ? AND enabled = 1", name); err != nil {
+		return err
+	}
+	r, err := s.db.Execute(ctx, "UPDATE plugins SET enabled = 0, disabled_reason = ? WHERE name = ? AND enabled = 1 AND failures >= ?",
+		disabledFailures, name, maxFailures)
+	if err != nil {
+		return err
+	}
+	if r.Changes > 0 {
+		s.stopPlugin(name)
+		s.bus.Publish(events.Event{Type: events.PluginsChanged})
+	}
+	return nil
+}
+
+// pluginSucceeded resets the plugin's failure count.
+func (s *Service) pluginSucceeded(ctx context.Context, name string) error {
+	_, err := s.db.Execute(ctx, "UPDATE plugins SET failures = 0 WHERE name = ? AND failures <> 0", name)
+	return err
+}
 
 // ConfigValue is a plugin setting as the settings form shows it: the stored
 // value, or with Set false the default. A secret's Value is always empty.
@@ -810,8 +887,21 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 // or defaults, secrets in plain text, and the config version they belong to.
 // The caller must not hold pluginsMu.
 func (s *Service) pluginConfig(ctx context.Context, name string) (map[string]any, int64, error) {
-	s.pluginsMu.RLock()
+	// ponytail: polls instead of RLock, so a running plugin's call gives up
+	// when the writer holding the lock is waiting for that call to end (stopPlugin).
+	for !s.pluginsMu.TryRLock() {
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	defer s.pluginsMu.RUnlock()
+	return s.pluginConfigLocked(ctx, name)
+}
+
+// pluginConfigLocked is pluginConfig for a caller holding pluginsMu.
+func (s *Service) pluginConfigLocked(ctx context.Context, name string) (map[string]any, int64, error) {
 	m, ver, stored, err := s.storedConfig(ctx, name)
 	if err != nil {
 		return nil, 0, err

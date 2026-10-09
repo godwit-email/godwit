@@ -85,8 +85,8 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu sync.RWMutex      // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running   map[string]string // running plugins: name → source hash of the code they run
+	pluginsMu sync.RWMutex              // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running   map[string]*runningPlugin // started plugins by name
 
 	closeOnce sync.Once
 	closeErr  error
@@ -145,6 +145,7 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.stopPlugins()
 		s.endStreams() // every run, resumes included, has published its end
 		s.closeOAuth()
 		s.aiMu.Lock()

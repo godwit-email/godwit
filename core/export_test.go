@@ -16,8 +16,11 @@ func (s *Service) registerExecutorForTest(name string, ex executor) {
 func (s *Service) RunningPluginForTest(name string) (string, bool) {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
-	h, ok := s.running[name]
-	return h, ok
+	rp, ok := s.running[name]
+	if !ok {
+		return "", false
+	}
+	return rp.hash, true
 }
 
 // SetPluginHookForTest makes InstallPlugin and loading call f at "switch"
