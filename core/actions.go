@@ -162,7 +162,7 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 	if err := s.pluginSucceeded(ctx, name, pc.gen); err != nil {
 		return ActionResult{}, err
 	}
-	out.Text = s.pluginText(out.Text)
+	out.Text = s.pluginTextKeep(out.Text, "\n\t") // multi-line results stay multi-line
 	return out, nil
 }
 
@@ -275,8 +275,16 @@ func (s *Service) cardOf(pc pluginCall, res any) (Card, error) {
 			Value text `json:"value"`
 		} `json:"buttons"`
 	}
-	if _, ok := res.(map[string]any); !ok || json.Unmarshal(b, &raw) != nil || raw.Title == nil || *raw.Title == "" {
+	m, ok := res.(map[string]any)
+	if !ok || json.Unmarshal(b, &raw) != nil || raw.Title == nil || *raw.Title == "" {
 		return Card{}, bad
+	}
+	for _, k := range []string{"fields", "buttons"} { // absent is empty; null is not
+		if v, has := m[k]; has {
+			if _, ok := v.([]any); !ok {
+				return Card{}, bad
+			}
+		}
 	}
 	if len(raw.Fields) > maxCardFields || len(raw.Buttons) > maxCardButtons {
 		return Card{}, fmt.Errorf("a card has at most %d fields and %d buttons", maxCardFields, maxCardButtons)

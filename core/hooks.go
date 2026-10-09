@@ -417,11 +417,14 @@ func (s *Service) sendText(t string) string {
 
 // pluginText is plugin text as the user sees it: secrets redacted, each run
 // of control characters one space.
-func (s *Service) pluginText(t string) string {
+func (s *Service) pluginText(t string) string { return s.pluginTextKeep(t, "") }
+
+// pluginTextKeep is pluginText that keeps the control characters in keep.
+func (s *Service) pluginTextKeep(t, keep string) string {
 	var b strings.Builder
 	ctl := false
 	for _, r := range s.secrets.Redact(strings.ToValidUTF8(t, "")) {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) && !strings.ContainsRune(keep, r) {
 			if !ctl {
 				b.WriteByte(' ')
 			}

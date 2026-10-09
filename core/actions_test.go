@@ -312,13 +312,16 @@ func TestCardMatchedInvalidRenderFails(t *testing.T) {
   let n = 0
   const renders: any[] = [null, undefined, {}, { title: "" }, { title: 7 }, { title: "t", fields: [{ label: "x" }] },
     { title: "t", fields: [{ label: "x", value: 1 }] }, { title: "t", buttons: [{ label: "b", value: "v" }] },
-    { title: "t", buttons: [{ label: "b", kind: "copy" }] }, { title: "t", fields: {} }, "title"]
+    { title: "t", buttons: [{ label: "b", kind: "copy" }] }, { title: "t", fields: {} }, "title",
+    { title: "t", fields: null }, { title: "t", buttons: null }, { title: "t", buttons: "copy" }, { title: "t", fields: 3 }]
   ctx.cards.register({ match: (m: any) => m.subject === "Invoice", render: () => n < renders.length ? renders[n++] : { title: "fine" } })
 }`)
-	// Keep the plugin enabled across more than three failures.
+	// Keep the plugin enabled across more than three failures. Absent fields and
+	// buttons are fine (the last, valid card); null or non-arrays are not.
 	_, err := s.db.Execute(t.Context(), `CREATE TRIGGER keep_enabled BEFORE UPDATE OF enabled ON plugins BEGIN SELECT RAISE(IGNORE); END`)
 	require.NoError(t, err)
-	for i := range 11 {
+	const invalid = 15
+	for i := range invalid {
 		cards, err := s.PluginCards(t.Context(), id)
 		require.NoError(t, err)
 		assert.Empty(t, cards, "render %d", i)
@@ -327,7 +330,7 @@ func TestCardMatchedInvalidRenderFails(t *testing.T) {
 	cards, err := s.PluginCards(t.Context(), other)
 	require.NoError(t, err)
 	assert.Empty(t, cards)
-	assert.Equal(t, int64(11), pluginFailures(t, s, "strict"), "no match is neutral")
+	assert.Equal(t, int64(invalid), pluginFailures(t, s, "strict"), "no match is neutral")
 	cards, err = s.PluginCards(t.Context(), id)
 	require.NoError(t, err)
 	assert.Equal(t, []Card{{Plugin: "strict", Title: "fine"}}, cards)
@@ -368,14 +371,18 @@ func TestPluginTextCleaned(t *testing.T) {
   const t = "a\n\r\tb hunter2-secret"
   ctx.actions.register({ id: "say", label: "Say", on: ["message"], run: () => ({ text: t }) })
   ctx.actions.register({ id: "plain", label: "Plain", on: ["message"], run: () => t })
+  ctx.actions.register({ id: "lines", label: "Lines", on: ["message"], run: () => "line 1\n\tline 2\n\nline 3\u0000\u0007x" })
   ctx.cards.register({ match: () => true, render: () => ({ title: t, fields: [{ label: t, value: t }], buttons: [{ label: t, kind: "copy", value: "v" }] }) })
 }`)
 	want := "a b [redacted]"
 	for _, a := range []string{"talker/say", "talker/plain"} {
 		res, err := s.RunAction(t.Context(), a, Target{Kind: "message", ID: id}, RunActionOptions{})
 		require.NoError(t, err)
-		assert.Equal(t, want, res.Text)
+		assert.Equal(t, "a\n \tb [redacted]", res.Text, "action text keeps newlines and tabs")
 	}
+	res, err := s.RunAction(t.Context(), "talker/lines", Target{Kind: "message", ID: id}, RunActionOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "line 1\n\tline 2\n\nline 3 x", res.Text)
 	cards, err := s.PluginCards(t.Context(), id)
 	require.NoError(t, err)
 	assert.Equal(t, []Card{{Plugin: "talker", Title: want, Fields: []CardField{{Label: want, Value: want}},
