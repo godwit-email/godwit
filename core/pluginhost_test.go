@@ -1,6 +1,9 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -205,14 +208,14 @@ func TestLoadFailureCounts(t *testing.T) {
 		r := rows.Values[0]
 		return store.Int(r[0]), store.Str(r[1]), store.Int(r[2]) != 0
 	}
-	require.NoError(t, s.pluginFailed(t.Context(), "flaky"))
-	require.NoError(t, s.pluginFailed(t.Context(), "flaky"))
-	require.NoError(t, s.pluginSucceeded(t.Context(), "flaky"))
+	require.NoError(t, s.pluginFailed(t.Context(), "flaky", flakyGen(t, s)))
+	require.NoError(t, s.pluginFailed(t.Context(), "flaky", flakyGen(t, s)))
+	require.NoError(t, s.pluginSucceeded(t.Context(), "flaky", flakyGen(t, s)))
 	n, _, on := failures()
 	assert.Equal(t, int64(0), n, "a success resets the count")
 	assert.True(t, on)
 	for range 3 {
-		require.NoError(t, s.pluginFailed(t.Context(), "flaky"))
+		require.NoError(t, s.pluginFailed(t.Context(), "flaky", flakyGen(t, s)))
 	}
 	n, reason, on := failures()
 	assert.Equal(t, int64(3), n)
@@ -272,4 +275,114 @@ func TestNoSendCapability(t *testing.T) {
 	assert.Equal(t, int64(0), store.Int(e.rows(t, "SELECT COUNT(*) FROM outbox")[0][0]))
 	assert.Empty(t, e.smtp.Messages())
 	assert.Equal(t, int64(1), store.Int(e.rows(t, "SELECT COUNT(*) FROM drafts")[0][0]))
+}
+
+// A failure or success reported for an instance that is no longer running
+// does not touch the count of the one that replaced it.
+func TestFailureCountsBoundToInstance(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "gen", `{}`, stashCtx)
+	gen := func() uint64 {
+		s.pluginsMu.RLock()
+		defer s.pluginsMu.RUnlock()
+		return s.running["gen"].gen
+	}
+	failures := func() int64 {
+		rows, err := s.db.Query(t.Context(), "SELECT failures FROM plugins WHERE name = 'gen'")
+		require.NoError(t, err)
+		return store.Int(rows.Values[0][0])
+	}
+	old := gen()
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "gen", false))
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "gen", true))
+	cur := gen()
+	require.NotEqual(t, old, cur)
+
+	for range 3 {
+		require.NoError(t, s.pluginFailed(t.Context(), "gen", old))
+	}
+	assert.Equal(t, int64(0), failures(), "the old instance's failures are not counted")
+	_, running := s.RunningPluginForTest("gen")
+	assert.True(t, running)
+
+	require.NoError(t, s.pluginFailed(t.Context(), "gen", cur))
+	require.NoError(t, s.pluginSucceeded(t.Context(), "gen", old))
+	assert.Equal(t, int64(1), failures(), "a late success of the old instance does not reset it")
+	require.NoError(t, s.pluginSucceeded(t.Context(), "gen", cur))
+	assert.Equal(t, int64(0), failures())
+}
+
+// ctx.config comes from the running instance's snapshot: reading it never
+// waits for pluginsMu, a call sees one snapshot, and a saved config is seen
+// by the next call.
+func TestConfigSnapshot(t *testing.T) {
+	s := newMailContextService(t)
+	dir := filepath.Join(t.TempDir(), "cfg")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"cfg","version":"1.0.0","main":"index.ts","permissions":{},
+		"config":[{"key":"plan","type":"text","label":"Plan","default":"free"}]}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(stashCtx), 0o600))
+	_, err := s.InstallPlugin(t.Context(), dir)
+	require.NoError(t, err)
+	require.NoError(t, s.GrantPermission(t.Context(), "cfg"))
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "cfg", true))
+	s.pluginsMu.RLock()
+	vm := s.running["cfg"].p.VM()
+	s.pluginsMu.RUnlock()
+	// No require inside a call: FailNow there would end the VM's goroutine.
+	read := func(c *plugins.CallScope) string {
+		v, err := c.Runtime().RunString(`ctx.config.plan`)
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		return v.String()
+	}
+
+	// A writer holds the lock (as one waiting for this call to end would).
+	s.pluginsMu.Lock()
+	cctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	got, err := vm.Call(cctx, toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	cancel()
+	s.pluginsMu.Unlock()
+	require.NoError(t, err)
+	assert.Equal(t, "free", got)
+
+	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) {
+		before := read(c)
+		done := make(chan error, 1)
+		go func() {
+			done <- s.SetPluginConfig(t.Context(), "cfg", map[string]json.RawMessage{"plan": json.RawMessage(`"pro"`)})
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				return nil, err
+			}
+		case <-time.After(5 * time.Second):
+			return nil, errors.New("SetPluginConfig blocked")
+		}
+		return before + "," + read(c), nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "free,free", got, "one snapshot per call")
+	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	require.NoError(t, err)
+	assert.Equal(t, "pro", got)
+	_, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) {
+		return c.Runtime().RunString(`ctx.config.plan = "hacked"`)
+	})
+	require.NoError(t, err)
+	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	require.NoError(t, err)
+	assert.Equal(t, "pro", got, "a plugin cannot change the snapshot")
+}
+
+func flakyGen(t *testing.T, s *Service) uint64 {
+	t.Helper()
+	s.pluginsMu.RLock()
+	defer s.pluginsMu.RUnlock()
+	if rp := s.running["flaky"]; rp != nil {
+		return rp.gen
+	}
+	return 0
 }

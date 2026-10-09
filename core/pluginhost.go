@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	netmail "net/mail"
 	"slices"
 	"strings"
@@ -19,11 +20,32 @@ import (
 // (s.begin), so Close cancels and waits for host work a plugin started.
 // Permissions were checked by the plugins package before any of it runs.
 type pluginHost struct {
-	s    *Service
-	name string
-	// initConfig is ctx.config during initialization, which runs under
-	// pluginsMu (loadPlugin); nil afterwards.
-	initConfig atomic.Pointer[map[string]any]
+	s      *Service
+	name   string
+	config atomic.Pointer[configSnapshot] // ctx.config of this instance
+}
+
+type configSnapshot struct {
+	vals map[string]any
+	err  error
+}
+
+// refreshConfig replaces the snapshot with the stored config. The caller
+// holds pluginsMu. A read failure is kept, so ctx.config throws rather than
+// serving values that are no longer saved.
+func (h *pluginHost) refreshConfig(ctx context.Context) error {
+	vals, _, err := h.s.pluginConfigLocked(ctx, h.name)
+	h.config.Store(&configSnapshot{vals, err})
+	return err
+}
+
+// Config is a copy of the snapshot: what a plugin does to it stays in its call.
+func (h *pluginHost) Config(context.Context) (map[string]any, error) {
+	c := h.config.Load()
+	if c == nil || c.err != nil {
+		return nil, errors.New("the plugin's configuration could not be read")
+	}
+	return maps.Clone(c.vals), nil
 }
 
 func (h *pluginHost) do(ctx context.Context, f func(ctx context.Context) error) error {
@@ -33,17 +55,6 @@ func (h *pluginHost) do(ctx context.Context, f func(ctx context.Context) error) 
 	}
 	defer end()
 	return f(ctx)
-}
-
-func (h *pluginHost) Config(ctx context.Context) (cfg map[string]any, err error) {
-	if c := h.initConfig.Load(); c != nil {
-		return *c, nil
-	}
-	err = h.do(ctx, func(ctx context.Context) error {
-		cfg, _, err = h.s.pluginConfig(ctx, h.name)
-		return err
-	})
-	return cfg, err
 }
 
 func (h *pluginHost) StorageGet(ctx context.Context, key string) (v string, ok bool, err error) {

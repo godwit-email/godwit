@@ -87,6 +87,7 @@ type Service struct {
 
 	pluginsMu sync.RWMutex              // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running   map[string]*runningPlugin // started plugins by name
+	pluginGen uint64                    // last runningPlugin.gen handed out
 
 	closeOnce sync.Once
 	closeErr  error

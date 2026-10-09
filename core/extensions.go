@@ -14,7 +14,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/dop251/goja"
@@ -449,6 +448,8 @@ func (s *Service) startPlugins(ctx context.Context) error {
 // runningPlugin is a started plugin: the code it runs and its VM.
 type runningPlugin struct {
 	hash string // source hash of the code it runs
+	gen  uint64 // this instance, among every instance started by the Service
+	host *pluginHost
 	p    *plugins.Plugin
 }
 
@@ -472,17 +473,14 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
 	}
-	// Initialization runs under our lock, so it gets the config read here;
-	// later calls read it themselves (pluginHost.Config).
-	cfg, _, err := s.pluginConfigLocked(ctx, name)
-	if err != nil {
+	// ctx.config is a snapshot read here (under our lock) and replaced by
+	// SetPluginConfig, so reading it never waits for pluginsMu.
+	h := &pluginHost{s: s, name: name}
+	if err := h.refreshConfig(ctx); err != nil {
 		return err
 	}
-	h := &pluginHost{s: s, name: name}
-	h.initConfig.Store(&cfg)
 	vm := plugins.NewVM(name, prog, plugins.VMOptions{Redact: s.secrets.Redact})
 	p, err := plugins.Load(ctx, vm, r.m, h)
-	h.initConfig.Store(nil)
 	if err != nil {
 		vm.Close()
 		return err
@@ -491,7 +489,8 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	if s.running == nil {
 		s.running = map[string]*runningPlugin{}
 	}
-	s.running[name] = &runningPlugin{hash: r.sourceHash, p: p}
+	s.pluginGen++
+	s.running[name] = &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h}
 	return nil
 }
 
@@ -514,12 +513,15 @@ func (s *Service) stopPlugins() {
 // maxFailures consecutive failed calls disable a plugin.
 const maxFailures = 3
 
-// pluginFailed counts a failed call (an error, a timeout, the watchdog) of an
-// enabled plugin; the third in a row disables and stops it. Never call it
+// pluginFailed counts a failed call (an error, a timeout, the watchdog) of the
+// running instance gen (runningPlugin.gen) of an enabled plugin; the third in a row disables and stops it. Never call it
 // from the plugin's own VM goroutine or holding pluginsMu.
-func (s *Service) pluginFailed(ctx context.Context, name string) error {
+func (s *Service) pluginFailed(ctx context.Context, name string, gen uint64) error {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
+	if rp := s.running[name]; rp == nil || rp.gen != gen {
+		return nil // an instance since stopped or replaced
+	}
 	if _, err := s.db.Execute(ctx, "UPDATE plugins SET failures = failures + 1 WHERE name = ? AND enabled = 1", name); err != nil {
 		return err
 	}
@@ -535,8 +537,13 @@ func (s *Service) pluginFailed(ctx context.Context, name string) error {
 	return nil
 }
 
-// pluginSucceeded resets the plugin's failure count.
-func (s *Service) pluginSucceeded(ctx context.Context, name string) error {
+// pluginSucceeded resets the failure count if instance gen still runs.
+func (s *Service) pluginSucceeded(ctx context.Context, name string, gen uint64) error {
+	s.pluginsMu.Lock()
+	defer s.pluginsMu.Unlock()
+	if rp := s.running[name]; rp == nil || rp.gen != gen {
+		return nil
+	}
 	_, err := s.db.Execute(ctx, "UPDATE plugins SET failures = 0 WHERE name = ? AND failures <> 0", name)
 	return err
 }
@@ -861,6 +868,9 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 				s.secrets.RemoveOwner(secretOwner(name, k))
 			}
 		}
+		if rp := s.running[name]; rp != nil {
+			rp.host.refreshConfig(ctx) // the next call sees the saved config
+		}
 		return nil
 	}
 	// Put the old secrets back; one that cannot be restored keeps both values redacted.
@@ -887,15 +897,7 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 // or defaults, secrets in plain text, and the config version they belong to.
 // The caller must not hold pluginsMu.
 func (s *Service) pluginConfig(ctx context.Context, name string) (map[string]any, int64, error) {
-	// ponytail: polls instead of RLock, so a running plugin's call gives up
-	// when the writer holding the lock is waiting for that call to end (stopPlugin).
-	for !s.pluginsMu.TryRLock() {
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	s.pluginsMu.RLock()
 	defer s.pluginsMu.RUnlock()
 	return s.pluginConfigLocked(ctx, name)
 }
