@@ -939,3 +939,13 @@ func (s *Service) pluginConfigLocked(ctx context.Context, name string) (map[stri
 	}
 	return out, ver, nil
 }
+
+// SetPluginNetForTest replaces the network plugins and MCP servers over HTTP
+// use (resolver, dialer, plain HTTP and loopback allowed or not). Tests only:
+// it lets fixture plugins reach a local server. Call it right after New,
+// before any plugin or MCP server starts.
+func (s *Service) SetPluginNetForTest(n plugins.NetOptions) {
+	s.pluginsMu.Lock()
+	defer s.pluginsMu.Unlock()
+	s.pluginNet = n
+}

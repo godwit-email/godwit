@@ -111,10 +111,16 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
 		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTML(orig) + "</blockquote>"
 	}
-	if acc.Signature != "" {
-		d.HTML += `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p></div>"
-	}
+	d.HTML += signatureHTML(acc.Signature)
 	return d, nil
+}
+
+// signatureHTML is the marked signature block that ends a draft body, "" for none.
+func signatureHTML(sig string) string {
+	if sig == "" {
+		return ""
+	}
+	return `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(sig), "\n", "<br>") + "</p></div>"
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
@@ -322,8 +328,12 @@ func (s *Service) RemoveAttachment(ctx context.Context, draftID, attachmentID in
 }
 
 func (s *Service) deleteDraft(ctx context.Context, id int64) error {
-	if _, err := s.db.Execute(ctx, "DELETE FROM drafts WHERE id = ?", id); err != nil { // attachments cascade
+	r, err := s.db.Execute(ctx, "DELETE FROM drafts WHERE id = ?", id) // attachments cascade
+	if err != nil {
 		return err
+	}
+	if r.Changes == 0 {
+		return fmt.Errorf("draft %d not found", id)
 	}
 	return os.RemoveAll(s.draftDir(id))
 }
