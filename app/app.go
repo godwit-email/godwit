@@ -261,6 +261,16 @@ func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 }
 
+// FlushDrafts saves the open draft's last edits, then calls done: before
+// the window closes.
+func (a *App) FlushDrafts(done func()) {
+	if d := a.mail.draft; d != nil {
+		d.leave(done)
+		return
+	}
+	done()
+}
+
 // SetForeground records whether the window is in front.
 func (a *App) SetForeground(on bool) { a.foreground = on }
 

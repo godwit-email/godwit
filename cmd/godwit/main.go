@@ -40,7 +40,21 @@ func main() {
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })
 		mygo.App.OnNotificationClick(a.NotificationClicked)
-		mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.Close() })
+		// Closing the window or quitting first saves the open draft's last
+		// edits, then closes again (mygo's calls are goroutine-safe).
+		flushed := false
+		saveThen := func(prevent, then func()) {
+			if !flushed {
+				prevent()
+				a.FlushDrafts(func() { flushed = true; go then() })
+			}
+		}
+		win.OnClose(func(e *mygo.CloseEvent) { saveThen(e.PreventDefault, win.Close) })
+		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+			if saveThen(e.PreventDefault, mygo.App.Quit); flushed {
+				a.Close()
+			}
+		})
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
 	})

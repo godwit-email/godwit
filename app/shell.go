@@ -78,6 +78,9 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
+	if a.route.Page == PageCompose {
+		a.mail.closeDraft()
+	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
