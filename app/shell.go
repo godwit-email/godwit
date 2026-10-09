@@ -178,6 +178,7 @@ func (a *App) View(c *ui.Context) {
 	if a.addAccount != nil {
 		a.addAccount.sheetView(c)
 	}
+	a.linkDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 }
 

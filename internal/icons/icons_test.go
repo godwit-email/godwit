@@ -7,7 +7,7 @@ var names = []string{"mail", "sparkles", "sliders-horizontal", "panel-left", "ar
 	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
 	"triangle-alert", "loader", "copy", "external-link", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "puzzle", "server",
-	"globe", "languages", "wand-sparkles", "download"}
+	"globe", "languages", "wand-sparkles", "download", "ellipsis"}
 
 func TestIconsParse(t *testing.T) {
 	for _, n := range names {

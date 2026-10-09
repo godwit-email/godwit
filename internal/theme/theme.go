@@ -54,11 +54,13 @@ const (
 	PortWidth         = 90   // port fields
 	SelectMinWidth    = 120
 	ToastMaxWidth     = 420
-	TitleButtonHeight = 24 // buttons in the top bar
-	PopupOffset       = 4  // room between a popup and its anchor
-	SelectedBorder    = 2  // the border of a chosen tile
-	QuoteBar          = 2  // the bar left of a quote in a mail body
-	ImagePlaceholder  = 64 // an image not loaded, when its size is unknown
+	TitleButtonHeight = 24  // buttons in the top bar
+	PopupOffset       = 4   // room between a popup and its anchor
+	SelectedBorder    = 2   // the border of a chosen tile
+	QuoteBar          = 2   // the bar left of a quote in a mail body
+	ImagePlaceholder  = 64  // an image not loaded, when its size is unknown
+	ReaderMaxWidth    = 720 // the reading pane's text column
+	AttachmentWidth   = 260 // an attachment in the reading pane
 )
 
 // HeadingScale is the size of mail body headings h1–h6 in body font sizes.

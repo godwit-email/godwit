@@ -381,8 +381,10 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.click("first")
+	h.waitMail("first read by the reader", func() bool { return h.items()[0].Unread == 0 })
+	h.click("first") // the list has the focus again
 	h.tt.Key(0, ui.KeyU)
-	h.waitMail("first read", func() bool { return h.items()[0].Unread == 0 })
+	h.waitMail("first unread", func() bool { return h.items()[0].Unread == 1 })
 	h.tt.Key(0, ui.KeyS)
 	h.until("first starred", func() bool {
 		page, err := h.env.Svc.ListMessages(context.Background(), core.View{Unified: "starred"}, "", 10)

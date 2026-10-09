@@ -137,6 +137,9 @@ type App struct {
 	mail       *mailPage   // the Mail section
 	writes     *writeQueue // writes to the Service, ordered per resource
 
+	link     string // the link waiting for confirmation
+	linkOpen bool   // the link dialog shows
+
 	unread map[int64]int // per account, summed over its folders
 	toasts []ui.Toast    // shown on the next frame
 }

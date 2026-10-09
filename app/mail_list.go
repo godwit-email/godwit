@@ -88,6 +88,8 @@ type mailPage struct {
 	results              []mailItem
 	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
 
+	reader *reader // the thread or message the route names
+
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
 	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
 }
@@ -115,6 +117,7 @@ func newMailPage(a *App) *mailPage {
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
+	p.reader = newReader(p)
 	return p
 }
 
@@ -146,7 +149,10 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 	return fmt.Errorf("unknown mail action %q", op)
 }
 
-func (p *mailPage) refresh([]events.Event) { p.reload() }
+func (p *mailPage) refresh([]events.Event) {
+	p.reload()
+	p.reader.sync(true)
+}
 
 // reload re-reads the folders, the outbox and the list. In the same view it
 // re-queries the range already loaded (everything, when all was loaded);
@@ -334,6 +340,7 @@ func (p *mailPage) open(rows []mailItem, i int) {
 	} else {
 		r.ThreadID, r.MessageID = it.Msg.ThreadID, it.ID
 	}
+	p.reader.sync(false)
 }
 
 // chosen are the rows chosen, or the one open when none is.
@@ -464,7 +471,7 @@ func (p *mailPage) Content(c *ui.Context) {
 				p.listView(c)
 			}
 		})
-		ui.Column(c).Grow(1) // ponytail: the reader (Task 11) fills this
+		p.reader.view(c)
 	})
 }
 
