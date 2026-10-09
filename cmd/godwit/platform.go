@@ -6,7 +6,6 @@ import (
 	"errors"
 	"image/png"
 	"log"
-	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -37,10 +36,7 @@ type platform struct {
 	closeAPI  func(*rpc.Server) error                  // Server.Close; tests swap it
 }
 
-func (p *platform) DataDir() (string, bool) {
-	def, err := defaultDataDir()
-	return p.dataDir, err != nil || filepath.Clean(def) != filepath.Clean(p.dataDir)
-}
+func (p *platform) DataDir() (string, bool) { return p.dataDir, !singleInstance(p.dataDir) }
 
 func (p *platform) SetLocalAPI(gen uint64, on bool) (string, error) {
 	p.apiMu.Lock()

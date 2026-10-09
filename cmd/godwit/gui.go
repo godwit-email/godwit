@@ -30,12 +30,13 @@ func windowOptions(goos string) mygo.WindowOptions {
 	return o
 }
 
-// gui runs the desktop app on dataDir until it quits or ctx ends. It owns
+// gui runs the desktop app on dataDir until it quits or ctx ends. On the
+// default directory a second GUI focuses the first (singleInstance). It owns
 // dataDir (ownerlock) before opening it; if another process does, it says so
 // in an error dialog and exits 2.
 func gui(ctx context.Context, dataDir string) int {
 	mygo.App.SetName("Godwit")
-	if !mygo.App.RequestSingleInstanceLock() {
+	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}
 	if err := theme.RegisterFonts(); err != nil {

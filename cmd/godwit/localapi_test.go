@@ -13,6 +13,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpc"
 )
 
@@ -182,4 +183,33 @@ func TestLocalAPICleanupRace(t *testing.T) {
 	}
 	dialWait(t, dir)
 	p.SetLocalAPI(4, false)
+}
+
+// Only a GUI on the default data directory takes mygo's single-instance
+// lock (a second one focuses the first); one on another directory runs
+// beside it, guarded by that directory's owner lock alone.
+func TestSingleInstanceOnlyOnDefaultDir(t *testing.T) {
+	def, err := defaultDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !singleInstance(def) || !singleInstance(def+string(filepath.Separator)) {
+		t.Error("the default directory does not take the single-instance lock")
+	}
+	dir := shortDir(t)
+	if singleInstance(dir) {
+		t.Error("a custom directory takes the single-instance lock")
+	}
+	// The owner lock still keeps a second GUI off that directory.
+	release, err := ownerlock.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if _, err := ownerlock.Acquire(dir); !errors.Is(err, ownerlock.ErrAnotherOwner) {
+		t.Fatalf("second owner: %v", err)
+	}
+	if _, code := lockFailure(ownerlock.ErrAnotherOwner); code != 2 {
+		t.Fatalf("exit code %d", code)
+	}
 }
