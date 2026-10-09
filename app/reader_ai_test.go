@@ -577,3 +577,21 @@ func TestSummaryLabelFromRun(t *testing.T) {
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
 	h.see("总结 · summarize · m2")
 }
+
+// Final whole-branch review #3: with only a small-task model the reader's
+// small tasks run (summary, translate, quick replies); the skill menu still
+// needs the default model.
+func TestSmallModelOnlyReaderAI(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, func(st *core.Settings) { st.DefaultModel, st.SmallModel = "", "test/m1" })
+	llm.Script(coretest.Turn{Text: []string{"the summary"}},
+		coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Reply one</p>"}]}`}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m1")
+	h.see("翻译")
+	h.see("Reply one")
+	if h.tt.HasText("更多 skill ▾") {
+		t.Fatal("the skill menu shows without a default model")
+	}
+}
