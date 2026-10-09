@@ -268,7 +268,7 @@ func TestUpdateSurvivesCancelDuringKeyWrite(t *testing.T) {
 }
 
 func TestModelServiceTestGenerates(t *testing.T) {
-	for _, kind := range []string{"openai", "anthropic"} {
+	for _, kind := range []string{"openai", "openai-responses", "anthropic"} {
 		t.Run(kind, func(t *testing.T) {
 			s, bg := modelSvc(t), context.Background()
 			srv := testllm.Start(t, kind)

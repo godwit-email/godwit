@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var kinds = []string{"openai", "anthropic"}
+var kinds = []string{"openai", "openai-responses", "anthropic"}
 
 func eachKind(t *testing.T, f func(t *testing.T, kind string)) {
 	for _, k := range kinds {
@@ -75,6 +75,15 @@ func toolIDs(t *testing.T, kind string, raw json.RawMessage) (calls, results []s
 	var msgs []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &msgs))
 	for _, m := range msgs {
+		if kind == "openai-responses" { // input items
+			switch m["type"] {
+			case "function_call":
+				calls = append(calls, m["call_id"].(string))
+			case "function_call_output":
+				results = append(results, m["call_id"].(string))
+			}
+			continue
+		}
 		if kind == "openai" {
 			if id, ok := m["tool_call_id"].(string); ok {
 				results = append(results, id)
@@ -128,7 +137,7 @@ func TestRunStreamsText(t *testing.T) {
 		assert.Contains(t, string(reqs[1].Messages), "hi there")
 		assert.Contains(t, string(reqs[1].Messages), "Hel")
 		system := string(reqs[1].Messages) // openai: the system prompt is the first message
-		if kind == "anthropic" {
+		if kind != "openai" {
 			system += string(reqs[1].System)
 		}
 		assert.Equal(t, 1, strings.Count(system, "be brief"))
@@ -327,7 +336,7 @@ func TestRunIgnoresEnv(t *testing.T) {
 				}
 			}
 			wantAuth, wantXKey := "", ""
-			if key != "" && kind == "openai" {
+			if key != "" && kind != "anthropic" {
 				wantAuth = "Bearer " + key
 			}
 			if key != "" && kind == "anthropic" {

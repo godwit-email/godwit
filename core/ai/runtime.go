@@ -166,6 +166,8 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
 		}
 		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: m.BaseURL, Opts: opts}
+	case KindResponses:
+		plugin = newResponsesPlugin(m.BaseURL, m.APIKey, e.client)
 	default:
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}
