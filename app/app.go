@@ -119,6 +119,8 @@ type App struct {
 	syncedAt time.Time        // the last successful sync; zero before one
 	ticking  bool             // a minute tick redraws the sync age
 
+	addAccount *onboarding // the add-account sheet; nil when closed
+
 	unread map[int64]int // per account, summed over its folders
 	toasts []ui.Toast    // shown on the next frame
 }
@@ -140,7 +142,8 @@ func New(d Deps) *App {
 		st, err := a.svc.GetSettings(ctx)
 		return st, accs, err
 	}
-	a.pages = map[Page]pageView{PageMail: placeholder{}, PageWit: placeholder{}, PageSettings: placeholder{}, PageOnboarding: placeholder{}}
+	a.pages = map[Page]pageView{PageMail: placeholder{}, PageWit: placeholder{}, PageSettings: placeholder{}}
+	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})

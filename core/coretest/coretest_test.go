@@ -159,3 +159,12 @@ func TestCoretestMsg(t *testing.T) {
 	}
 	assert.Contains(t, raw, "\r\n\r\n")
 }
+
+func TestCoretestStartServers(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ih, ip, sh, sp, user, pass := e.StartServers(t)
+	acc, err := e.Svc.AddAccount(t.Context(), core.AccountInput{Email: "new@example.com", Username: user, Password: pass,
+		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone})
+	require.NoError(t, err)
+	assert.Equal(t, "new@example.com", acc.Email)
+}

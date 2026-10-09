@@ -177,6 +177,9 @@ func (a *App) View(c *ui.Context) {
 			a.panel(c)
 		})
 	}
+	if a.addAccount != nil {
+		a.addAccount.sheetView(c)
+	}
 	kit.ToastHost(c, i18n.T("toast.close"))
 }
 

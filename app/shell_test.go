@@ -46,7 +46,7 @@ func TestFirstRunRoute(t *testing.T) {
 	if h.app.route.Page != PageOnboarding {
 		t.Fatalf("route %+v", h.app.route)
 	}
-	if h.tt.HasText("邮件") {
+	if _, rail := h.tt.Find("邮件"); rail { // exact: the promises mention 邮件 too
 		t.Fatalf("the rail shows on first run: %q", h.tt.Texts())
 	}
 }

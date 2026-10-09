@@ -178,6 +178,17 @@ func (e *Env) AddAccount(t *testing.T, email string) core.Account {
 	return acc
 }
 
+// StartServers starts fake IMAP and SMTP servers for an account not added
+// yet, as the onboarding form takes them, with the user and password they accept.
+func (e *Env) StartServers(t *testing.T) (imapHost string, imapPort int, smtpHost string, smtpPort int, user, password string) {
+	t.Helper()
+	im := testmail.StartIMAP(t)
+	addr, _ := testmail.StartSMTP(t, testmail.SaveToSent(im))
+	imapHost, imapPort = splitHostPort(t, im.Addr)
+	smtpHost, smtpPort = splitHostPort(t, addr)
+	return imapHost, imapPort, smtpHost, smtpPort, "alice", "secret"
+}
+
 func (e *Env) mail(accountID int64) *mailServers {
 	e.mu.Lock()
 	defer e.mu.Unlock()
