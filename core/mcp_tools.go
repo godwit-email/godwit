@@ -222,6 +222,7 @@ type mcpCallKey struct{}
 // is ErrStaleApproval: nothing is sent. A call that times out stops the server.
 func (s *Service) callMCP(ctx context.Context, call mcpCall, args json.RawMessage) (string, error) {
 	id, tool, hash := call.id, call.tool, call.hash
+	ctx = context.WithValue(ctx, mcpCallKey{}, call.callID) // for its HTTP requests' audit rows, a reconnect's too
 	c, err := s.mcpLive(ctx, id)
 	if err != nil {
 		return "", s.mcpError(err)
@@ -229,7 +230,6 @@ func (s *Service) callMCP(ctx context.Context, call mcpCall, args json.RawMessag
 	if c.version != call.version {
 		return "", ErrStaleApproval
 	}
-	ctx = context.WithValue(ctx, mcpCallKey{}, call.callID) // for its HTTP requests' audit rows
 	if d := c.def(tool); d == nil || d.DefinitionHash != hash {
 		return "", fmt.Errorf("the MCP tool %q changed; refresh the server's tools", s.pluginText(tool))
 	}

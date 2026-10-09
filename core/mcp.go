@@ -299,8 +299,9 @@ func (s *Service) AddMCPServer(ctx context.Context, in MCPServerInput) (MCPServe
 	}
 	id := r.LastInsertID
 	if err := errors.Join(s.saveMCPSecrets(id, "env", in.Env), s.saveMCPSecrets(id, "header", in.Headers)); err != nil {
-		derr := errors.Join(s.dropMCPSecrets(id, "env", slices.Collect(maps.Keys(in.Env))),
-			s.dropMCPSecrets(id, "header", slices.Collect(maps.Keys(in.Headers))))
+		_, derr1 := s.dropMCPSecrets(id, "env", slices.Collect(maps.Keys(in.Env)))
+		_, derr2 := s.dropMCPSecrets(id, "header", slices.Collect(maps.Keys(in.Headers)))
+		derr := errors.Join(derr1, derr2)
 		if derr == nil { // else the row, disabled, keeps the keys listed for RemoveMCPServer
 			_, derr = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM mcp_servers WHERE id = ?", id)
 		}
@@ -328,34 +329,40 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 	if err := checkMCPInput(&in, &old); err != nil {
 		return MCPServer{}, err
 	}
-	// First a new version, disabled, without grant or trust: nothing bound
-	// to the old one stays valid, whatever happens below.
+	// First, in one step: a new version, disabled, without grant or trust,
+	// so nothing bound to the old one stays valid; and old ∪ new keys
+	// listed, so every keychain entry touched below is found by a retry or
+	// RemoveMCPServer whatever happens.
 	s.disconnectMCP(id, "")
+	newEnv, newHeaders := slices.Collect(maps.Keys(in.Env)), slices.Collect(maps.Keys(in.Headers))
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
 		{SQL: "UPDATE mcp_servers SET version = version + 1, enabled = 0, granted_version = 0 WHERE id = ?", Args: []any{id}},
 		{SQL: "DELETE FROM mcp_tool_trust WHERE server_id = ?", Args: []any{id}},
+		listMCPKeys(id, slices.Concat(old.EnvKeys, newEnv), slices.Concat(old.HeaderKeys, newHeaders)),
 	}); err != nil {
 		return MCPServer{}, err
 	}
 	if err := s.staleMCPApprovals(ctx, id); err != nil {
 		return MCPServer{}, err
 	}
-	// The new config is saved only once the keychain has the new values and
-	// lost the dropped ones: until then the row keeps the old config and
-	// keys, so a retry (or RemoveMCPServer) finds every entry.
-	dropped := func(oldKeys []string, now map[string]string) []string {
-		return slices.DeleteFunc(slices.Clone(oldKeys), func(k string) bool { _, ok := now[k]; return ok })
-	}
+	// The new config is saved only once the keychain has every new value;
+	// the lists are pruned to the new keys, plus those whose delete failed.
 	if err := errors.Join(s.saveMCPSecrets(id, "env", in.Env), s.saveMCPSecrets(id, "header", in.Headers)); err != nil {
 		return MCPServer{}, err
 	}
-	if err := errors.Join(s.dropMCPSecrets(id, "env", dropped(old.EnvKeys, in.Env)),
-		s.dropMCPSecrets(id, "header", dropped(old.HeaderKeys, in.Headers))); err != nil {
-		return MCPServer{}, err
+	dropped := func(oldKeys []string, now map[string]string) []string {
+		return slices.DeleteFunc(slices.Clone(oldKeys), func(k string) bool { _, ok := now[k]; return ok })
 	}
-	if _, err := s.db.Execute(ctx, `UPDATE mcp_servers SET name = ?, transport = ?, command = ?, args = ?, env_keys = ?, url = ?,
-		header_keys = ? WHERE id = ?`,
-		in.Name, in.Transport, in.Command, mcpList(in.Args), encodeKeys(in.Env), in.URL, encodeKeys(in.Headers), id); err != nil {
+	failedEnv, err1 := s.dropMCPSecrets(id, "env", dropped(old.EnvKeys, in.Env))
+	failedHeaders, err2 := s.dropMCPSecrets(id, "header", dropped(old.HeaderKeys, in.Headers))
+	stmts := []sqlite.Statement{listMCPKeys(id, slices.Concat(newEnv, failedEnv), slices.Concat(newHeaders, failedHeaders))}
+	if err := errors.Join(err1, err2); err != nil {
+		_, terr := s.db.Transaction(ctx, stmts) // the old config stays
+		return MCPServer{}, errors.Join(err, terr)
+	}
+	stmts = append(stmts, sqlite.Statement{SQL: "UPDATE mcp_servers SET name = ?, transport = ?, command = ?, args = ?, url = ? WHERE id = ?",
+		Args: []any{in.Name, in.Transport, in.Command, mcpList(in.Args), in.URL, id}})
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return MCPServer{}, err
 	}
 	return s.mcpServer(ctx, id)
@@ -376,10 +383,17 @@ func (s *Service) RemoveMCPServer(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	s.disconnectMCP(id, "")
-	// Secrets first: if one cannot be deleted the server stays, for a retry.
-	if err := errors.Join(s.dropMCPSecrets(id, "env", old.EnvKeys), s.dropMCPSecrets(id, "header", old.HeaderKeys)); err != nil {
+	// Stopped and disabled first; then the secrets: if one cannot be deleted
+	// the server stays, disabled, listing only the keys left, for a retry.
+	if _, err := s.db.Execute(ctx, "UPDATE mcp_servers SET enabled = 0 WHERE id = ?", id); err != nil {
 		return err
+	}
+	s.disconnectMCP(id, "")
+	failedEnv, err1 := s.dropMCPSecrets(id, "env", old.EnvKeys)
+	failedHeaders, err2 := s.dropMCPSecrets(id, "header", old.HeaderKeys)
+	if err := errors.Join(err1, err2); err != nil {
+		_, lerr := s.db.Transaction(ctx, []sqlite.Statement{listMCPKeys(id, failedEnv, failedHeaders)})
+		return errors.Join(err, lerr)
 	}
 	if _, err := s.db.Execute(ctx, "DELETE FROM mcp_servers WHERE id = ?", id); err != nil {
 		return err

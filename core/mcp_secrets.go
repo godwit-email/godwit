@@ -1,9 +1,12 @@
 package core
 
 import (
+	"slices"
+
 	"context"
 	"errors"
 	"fmt"
+	"github.com/egoist/mygo/plugins/sqlite"
 	"log/slog"
 
 	"github.com/zalando/go-keyring"
@@ -38,18 +41,28 @@ func (s *Service) saveMCPSecrets(id int64, kind string, values map[string]string
 	return nil
 }
 
-// dropMCPSecrets deletes the keys' entries (missing ones are fine). A key
-// whose entry cannot be deleted stays redacted.
-func (s *Service) dropMCPSecrets(id int64, kind string, keys []string) error {
+// dropMCPSecrets deletes the keys' entries (missing ones are fine) and
+// returns the keys it could not delete, which stay redacted.
+func (s *Service) dropMCPSecrets(id int64, kind string, keys []string) (failed []string, err error) {
 	var errs []error
 	for _, k := range keys {
 		if err := keychainDelete(s.mcpSecretUser(id, kind, k)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			errs = append(errs, fmt.Errorf("delete MCP %s %s: %w", kind, k, err))
+			failed = append(failed, k)
 			continue
 		}
 		s.secrets.RemoveOwner(mcpSecretOwner(id, kind, k))
 	}
-	return errors.Join(errs...)
+	return failed, errors.Join(errs...)
+}
+
+// listMCPKeys records the server's env and header keys that may have a
+// keychain entry (the plugin secret_keys pattern: listed before a write,
+// unlisted only after a delete).
+func listMCPKeys(id int64, env, headers []string) sqlite.Statement {
+	sorted := func(l []string) string { return mcpList(slices.Compact(slices.Sorted(slices.Values(l)))) }
+	return sqlite.Statement{SQL: "UPDATE mcp_servers SET env_keys = ?, header_keys = ? WHERE id = ?",
+		Args: []any{sorted(env), sorted(headers), id}}
 }
 
 // mcpValues reads the keys' values and puts them in the secret set.

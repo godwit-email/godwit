@@ -506,6 +506,13 @@ func TestMCPHTTPHeadersStayOnOrigin(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, allowed(), before)
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'mcp:web:http' AND call_id = 'tool:c1'"), "the call's request carries its call ID")
+	// A call that has to connect first: the reconnect's requests carry its call ID too.
+	e.s.disconnectMCP(srv.ID, "")
+	_, err = e.s.callMCP(t.Context(), mcpCall{id: srv.ID, version: srv.Version, tool: "ping", hash: mcpTool(t, srv, "ping").DefinitionHash,
+		callID: "tool:c2"}, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'mcp:web:http' AND call_id = 'tool:c2'"), 3,
+		"initialize, tools/list and the call")
 
 	moved, err := e.s.AddMCPServer(t.Context(), MCPServerInput{Name: "moved", Transport: "http", URL: web.URL + "/moved",
 		Headers: map[string]string{"Authorization": "Bearer web-secret-1"}})
@@ -654,4 +661,52 @@ func TestMCPChangedEvents(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 6, n)
+}
+
+// A save that fails after another new key was saved leaves every key listed,
+// so a later Remove deletes them all.
+func TestMCPPartialSaveTracked(t *testing.T) {
+	e := newApprovalEnv(t)
+	s := e.s
+	srv, err := s.AddMCPServer(t.Context(), MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"OLD": "old-secret-123"}})
+	require.NoError(t, err)
+	restore := KeyringFaultForTest("set", func(n int) error {
+		if n == 2 {
+			return errors.New("locked")
+		}
+		return nil
+	})
+	_, err = s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "local", Transport: "stdio", Command: "tool",
+		Env: map[string]string{"N1": "n1-secret-123", "N2": "n2-secret-123"}})
+	restore()
+	require.Error(t, err)
+	got := mcpServer(t, s, srv.ID)
+	assert.Subset(t, got.EnvKeys, []string{"N1", "N2", "OLD"})
+	assert.False(t, got.Enabled)
+
+	require.NoError(t, s.RemoveMCPServer(t.Context(), srv.ID))
+	for _, k := range []string{"N1", "N2", "OLD"} {
+		_, err := keychainGet(fmt.Sprintf("%s/mcp:%d:env:%s", s.installID, srv.ID, k))
+		assert.ErrorIs(t, err, keyring.ErrNotFound, k)
+	}
+}
+
+// A Remove whose delete fails leaves the server disabled, disconnected and
+// the key listed for a retry.
+func TestMCPRemoveDeleteFailure(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	srv := addMCP(t, e.s, MCPServerInput{Name: "fake", Transport: "stdio", Command: "fake-mcp", Env: map[string]string{"K": "k-secret-123"}})
+	require.True(t, srv.Enabled)
+	restore := KeyringFaultForTest("delete", func(int) error { return errors.New("locked") })
+	err := e.s.RemoveMCPServer(t.Context(), srv.ID)
+	restore()
+	require.Error(t, err)
+	got := mcpServer(t, e.s, srv.ID)
+	assert.False(t, got.Enabled)
+	assert.Equal(t, []string{"K"}, got.EnvKeys)
+	assert.Contains(t, e.s.SecretsForTest(), "k-secret-123")
+	require.Eventually(t, func() bool { return f.open.Load() == 0 }, 10*time.Second, 5*time.Millisecond)
+	require.NoError(t, e.s.RemoveMCPServer(t.Context(), srv.ID))
 }
