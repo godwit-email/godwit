@@ -195,7 +195,7 @@ func (p *askPage) citations(c *ui.Context) {
 		now := p.a.clock.Now()
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
-				for i, ct := range p.wit.cites {
+				for i, ct := range p.wit.cited() {
 					border := t.Border
 					if ct.Suspect {
 						border = t.WarningBorder

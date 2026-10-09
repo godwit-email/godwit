@@ -98,8 +98,12 @@ func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int) {
 		if len(m.calls) > 0 {
 			p.tools(c, turn, m.calls)
 		}
-		for i, ct := range p.cites {
-			if !ct.Suspect || !slices.Contains(m.cited, ct.MessageID) {
+		cited := m.cited
+		if !live {
+			cited = p.citedBy(m)
+		}
+		for i, ct := range p.cited() {
+			if !ct.Suspect || !slices.Contains(cited, ct.MessageID) {
 				continue
 			}
 			n := i + 1

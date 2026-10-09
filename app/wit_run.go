@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math"
 	"slices"
@@ -16,15 +15,16 @@ import (
 )
 
 // witMsg is a message of a Wit conversation as the panel shows it: a
-// question, or the answer to it with the tools the model called and the
-// messages their results cited.
+// question, or the answer to it with the tools the model called. The live
+// answer also notes the messages its events cited; a saved one finds them
+// by its calls' IDs (citedBy).
 type witMsg struct {
 	user  bool
 	text  string
 	doc   richtext.Doc // the answer converted from docOf
 	docOf string
 	calls []ai.ToolCall
-	cited []int64
+	cited []int64 // the live answer's
 }
 
 // witOptions are what the panel's owner decides. Start begins a run on
@@ -54,7 +54,7 @@ type witPanel struct {
 
 	msgs      []witMsg        // as saved
 	approvals []core.Approval // pending, in order
-	cites     []core.Citation // numbered from 1 as they came
+	cites     []core.Citation // every citation, saved then streamed, in the order they came
 
 	live     *witMsg // the answer streaming in; nil before any
 	liveUser string  // the question just asked, until it is saved
@@ -235,13 +235,45 @@ func (p *witPanel) apply(ev core.WitEvent) {
 	}
 }
 
-// cite numbers a citation once; suspect once any citation of it is.
+// cite adds a citation unless it is there: the same run, call and message.
 func (p *witPanel) cite(c core.Citation) {
-	if i := slices.IndexFunc(p.cites, func(x core.Citation) bool { return x.MessageID == c.MessageID }); i >= 0 {
-		p.cites[i].Suspect = p.cites[i].Suspect || c.Suspect
-		return
+	if !slices.ContainsFunc(p.cites, func(x core.Citation) bool {
+		return x.RunID == c.RunID && x.CallID == c.CallID && x.MessageID == c.MessageID
+	}) {
+		p.cites = append(p.cites, c)
 	}
-	p.cites = append(p.cites, c)
+}
+
+// cited is each cited message once, numbered from 1 as it first came;
+// suspect once any citation of it is.
+func (p *witPanel) cited() []core.Citation {
+	var out []core.Citation
+	for _, c := range p.cites {
+		if i := slices.IndexFunc(out, func(x core.Citation) bool { return x.MessageID == c.MessageID }); i >= 0 {
+			out[i].Suspect = out[i].Suspect || c.Suspect
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// citedBy is the messages a saved answer's calls cited, and the context
+// citations of the runs those calls belong to.
+func (p *witPanel) citedBy(m *witMsg) []int64 {
+	var ids []int64
+	runs := map[int64]bool{}
+	for _, c := range p.cites {
+		if c.CallID != "" && slices.ContainsFunc(m.calls, func(x ai.ToolCall) bool { return x.ID == c.CallID }) {
+			ids, runs[c.RunID] = append(ids, c.MessageID), true
+		}
+	}
+	for _, c := range p.cites {
+		if c.CallID == "" && runs[c.RunID] {
+			ids = append(ids, c.MessageID)
+		}
+	}
+	return ids
 }
 
 func (p *witPanel) users() int {
@@ -311,8 +343,7 @@ func (p *witPanel) reconcile() {
 }
 
 // witMsgs groups saved messages into questions and answers: an answer is
-// everything the model said and called up to the next question, with the
-// messages its tools' results showed.
+// everything the model said and called up to the next question.
 func witMsgs(ms []ai.Message) []witMsg {
 	var out []witMsg
 	for _, m := range ms {
@@ -331,12 +362,6 @@ func witMsgs(ms []ai.Message) []witMsg {
 			ans.text += m.Text
 		}
 		ans.calls = append(ans.calls, m.Calls...)
-		for _, r := range m.Results {
-			var v any
-			if json.Unmarshal(r.Output, &v) == nil {
-				ans.cited = messageIDs(v, ans.cited)
-			}
-		}
 	}
 	for i := range out {
 		if !out[i].user {
@@ -344,25 +369,6 @@ func witMsgs(ms []ai.Message) []witMsg {
 		}
 	}
 	return out
-}
-
-// messageIDs adds the "message_id" values anywhere in a tool result.
-func messageIDs(v any, ids []int64) []int64 {
-	switch v := v.(type) {
-	case map[string]any:
-		for k, x := range v {
-			if n, ok := x.(float64); ok && k == "message_id" && !slices.Contains(ids, int64(n)) {
-				ids = append(ids, int64(n))
-			} else {
-				ids = messageIDs(x, ids)
-			}
-		}
-	case []any:
-		for _, x := range v {
-			ids = messageIDs(x, ids)
-		}
-	}
-	return ids
 }
 
 // send asks what the input holds.
