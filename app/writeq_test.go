@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestWriteQueueSerialAndLatest(t *testing.T) {
@@ -53,8 +52,7 @@ func TestWriteQueueFlush(t *testing.T) {
 		func(g uint64, err error) { events = append(events, "saved2") })
 	var flushErr error
 	q.Flush("k", func(err error) { flushErr = err; events = append(events, "flushed") })
-	time.Sleep(20 * time.Millisecond)
-	h.drain()
+	h.drain() // the first write is blocked: nothing can be posted yet
 	if len(events) != 0 {
 		t.Fatalf("flushed before the write finished: %v", events)
 	}

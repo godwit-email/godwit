@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
 )
 
 func TestAppStartsAndRenders(t *testing.T) {
@@ -16,8 +19,15 @@ func TestAppStartsAndRenders(t *testing.T) {
 	}
 }
 
-func TestDoRunsOffUIThread(t *testing.T) {
+// startedIdle is a harness whose initial load has applied, so the post queue is empty.
+func startedIdle(t *testing.T) *harness {
 	h := newHarness(t)
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h
+}
+
+func TestDoRunsOffUIThread(t *testing.T) {
+	h := startedIdle(t)
 	ran := make(chan struct{})
 	var done bool
 	h.app.do(func(context.Context) error { close(ran); return errors.New("boom") }, func(err error) {
@@ -27,15 +37,18 @@ func TestDoRunsOffUIThread(t *testing.T) {
 		done = true
 	})
 	<-ran
-	time.Sleep(20 * time.Millisecond) // give a misbehaving do time to call done itself
+	h.queued("done", 1)
 	if done {
 		t.Fatal("done ran before the post queue was drained")
 	}
-	h.until("done", func() bool { return done })
+	h.drain()
+	if !done {
+		t.Fatal("done did not run when the queue was drained")
+	}
 }
 
 func TestCloseCancelsWork(t *testing.T) {
-	h := newHarness(t)
+	h := startedIdle(t)
 	started := make(chan struct{})
 	ctxErr := make(chan error, 1)
 	var done bool
@@ -55,7 +68,7 @@ func TestCloseCancelsWork(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close did not cancel the work's context")
 	}
-	time.Sleep(20 * time.Millisecond)
+	h.queued("the cancelled work's done", 1)
 	h.drain()
 	if done {
 		t.Fatal("done ran after Close")
@@ -70,16 +83,14 @@ func TestCloseCancelsWork(t *testing.T) {
 }
 
 func TestStaleResultDropped(t *testing.T) {
-	h := newHarness(t)
+	h := startedIdle(t)
 	release := make(chan struct{})
 	var result string
 	var fresh string
-	finished := make(chan struct{})
-	h.app.query(func(context.Context) error { <-release; result = "old"; close(finished); return nil }, func(error) { fresh = result })
+	h.app.query(func(context.Context) error { <-release; result = "old"; return nil }, func(error) { fresh = result })
 	h.app.gen++ // a navigation
 	close(release)
-	<-finished
-	time.Sleep(20 * time.Millisecond) // the result is posted
+	h.queued("the old result", 1)
 	h.drain()
 	if fresh != "" {
 		t.Fatalf("a stale result was applied: %q", fresh)
@@ -115,5 +126,65 @@ func TestFakeClockAfter(t *testing.T) {
 	}
 	if !h.clock.Now().Equal(newFakeClock().Now().Add(6999 * time.Millisecond)) {
 		t.Fatalf("clock now %v", h.clock.Now())
+	}
+}
+
+func TestLoadError(t *testing.T) {
+	h := newHarness(t, func(e *coretest.Env) { e.Svc.Close() })
+	h.until("load error", func() bool { return h.app.loadErr != nil })
+	if h.app.loaded { // the closed Service fails the read
+		t.Fatalf("loadErr %v loaded %v", h.app.loadErr, h.app.loaded)
+	}
+	h.app.fetch = func(context.Context) (core.Settings, []core.Account, error) {
+		return core.Settings{Theme: "dark"}, nil, nil
+	}
+	h.app.load()
+	h.until("a later load succeeds", func() bool { return h.app.loaded })
+	if h.app.loadErr != nil || h.app.settings.Theme != "dark" {
+		t.Fatalf("loadErr %v settings %+v", h.app.loadErr, h.app.settings)
+	}
+}
+
+func TestLoadNewestWins(t *testing.T) {
+	h := startedIdle(t)
+	gate := func(theme string, release chan struct{}) func(context.Context) (core.Settings, []core.Account, error) {
+		return func(context.Context) (core.Settings, []core.Account, error) {
+			<-release
+			return core.Settings{Theme: theme}, nil, nil
+		}
+	}
+	first, second := make(chan struct{}), make(chan struct{})
+	h.app.fetch = gate("light", first)
+	h.app.load()
+	h.app.fetch = gate("dark", second)
+	h.app.load()
+	close(second)
+	h.until("the newer load applied", func() bool { return h.app.settings.Theme == "dark" })
+	close(first)
+	h.queued("the older load's result", 1)
+	h.drain()
+	if h.app.settings.Theme != "dark" {
+		t.Fatalf("an older load rolled settings back to %q", h.app.settings.Theme)
+	}
+}
+
+func TestStartCtxStopsEventPump(t *testing.T) {
+	h := startedIdle(t)
+	h.stop()
+	select {
+	case <-h.app.pumpDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the event pump kept running after Start's ctx was cancelled")
+	}
+	st := h.app.settings
+	st.Theme = "dark"
+	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil { // publishes settings.changed
+		t.Fatal(err)
+	}
+	h.mu.Lock()
+	n := len(h.queue)
+	h.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d callbacks posted after the pump stopped", n)
 	}
 }

@@ -23,6 +23,7 @@ type harness struct {
 	tt    *ui.Tester
 	plat  *fakePlatform
 	clock *fakeClock
+	stop  context.CancelFunc // cancels the ctx the App was started with
 
 	mu    sync.Mutex
 	queue []func()
@@ -36,7 +37,10 @@ func newHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 	}
 	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock})
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
-	h.app.Start(context.Background())
+	ctx, stop := context.WithCancel(context.Background())
+	h.stop = stop
+	t.Cleanup(stop)
+	h.app.Start(ctx)
 	t.Cleanup(h.app.Close) // before the Env's cleanup closes the Service
 	return h
 }
@@ -79,6 +83,25 @@ func (h *harness) until(desc string, cond func() bool) {
 			h.t.Fatalf("timed out waiting for %s; texts %q", desc, h.tt.Texts())
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// queued waits until at least n callbacks are posted and not yet drained,
+// failing after 10 real seconds.
+func (h *harness) queued(desc string, n int) {
+	h.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		h.mu.Lock()
+		got := len(h.queue)
+		h.mu.Unlock()
+		if got >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatalf("timed out waiting for %s to be posted", desc)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -226,6 +249,7 @@ func (p *fakePlatform) Notes() []Notification {
 	return slices.Clone(p.notes)
 }
 func (p *fakePlatform) NotificationsSupported() bool {
+	p.record("NotificationsSupported")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.supported
@@ -234,11 +258,13 @@ func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin"
 func (p *fakePlatform) SetTrayUnread(n int)          { p.record("SetTrayUnread", n) }
 func (p *fakePlatform) SetThemeSource(theme string)  { p.record("SetThemeSource", theme) }
 func (p *fakePlatform) ClipboardHTML() string {
+	p.record("ClipboardHTML")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.clipHTML
 }
 func (p *fakePlatform) TempDir() string {
+	p.record("TempDir")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.tempDir

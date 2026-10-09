@@ -88,16 +88,20 @@ type App struct {
 	clock Clock
 	oauth OAuthFlow
 
-	ctx    context.Context // cancelled by Close
-	cancel context.CancelFunc
-	unsub  func()
+	ctx      context.Context // cancelled by Close or Start's ctx
+	cancel   context.CancelFunc
+	pumpDone chan struct{} // closed when the event pump has stopped and unsubscribed
 
 	route Route
 	gen   uint64 // bumped on every navigation; async results from an older gen are dropped
 
-	loaded     bool
-	accounts   []core.Account
-	settings   core.Settings
+	fetch    func(ctx context.Context) (core.Settings, []core.Account, error) // what load reads; tests swap it
+	loadGen  uint64                                                           // bumped per load; older completions are dropped
+	loaded   bool
+	loadErr  error // the newest load's error; nil once a load succeeds
+	accounts []core.Account
+	settings core.Settings
+
 	foreground bool
 }
 
@@ -110,7 +114,16 @@ func New(d Deps) *App {
 	if a.oauth == nil {
 		a.oauth = serviceOAuth{d.Svc}
 	}
+	a.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		accs, err := a.svc.ListAccounts(ctx)
+		if err != nil {
+			return core.Settings{}, nil, err
+		}
+		st, err := a.svc.GetSettings(ctx)
+		return st, accs, err
+	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.pumpDone = make(chan struct{})
 	return a
 }
 
@@ -119,30 +132,43 @@ func New(d Deps) *App {
 func (a *App) Start(ctx context.Context) {
 	context.AfterFunc(ctx, a.cancel)
 	ch, unsub := a.svc.Subscribe()
-	a.unsub = unsub
 	go func() {
-		for ev := range ch {
-			a.onUI(func() { a.onEvent(ev) })
+		defer close(a.pumpDone)
+		defer unsub()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				a.onUI(func() { a.onEvent(ev) })
+			}
 		}
 	}()
 	a.load()
 }
 
+// load re-reads accounts and settings; only the newest load's result applies.
 func (a *App) load() {
+	a.loadGen++
+	gen := a.loadGen
 	var accs []core.Account
 	var st core.Settings
+	fetch := a.fetch
 	a.do(func(ctx context.Context) error {
 		var err error
-		if accs, err = a.svc.ListAccounts(ctx); err != nil {
-			return err
-		}
-		st, err = a.svc.GetSettings(ctx)
+		st, accs, err = fetch(ctx)
 		return err
 	}, func(err error) {
-		if err != nil {
-			return // ponytail: load errors surface with the shell's status bar (Task 4)
+		if gen != a.loadGen {
+			return
 		}
-		a.accounts, a.settings, a.loaded = accs, st, true
+		a.loadErr = err
+		if err == nil {
+			a.accounts, a.settings, a.loaded = accs, st, true
+		}
 	})
 }
 
@@ -154,10 +180,7 @@ func (a *App) onEvent(ev events.Event) {
 
 // Close cancels all work in flight; their done callbacks never run.
 func (a *App) Close() {
-	a.cancel()
-	if a.unsub != nil {
-		a.unsub()
-	}
+	a.cancel() // the event pump unsubscribes as it stops
 }
 
 // SetForeground records whether the window is in front.
