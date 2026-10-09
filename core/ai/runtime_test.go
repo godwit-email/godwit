@@ -769,3 +769,20 @@ func TestForgetEndsRunWithStalledReader(t *testing.T) {
 	for range events { // the terminal event is still delivered
 	}
 }
+
+// Final whole-branch review #5: an escaped "/" in the base path reaches the
+// service as it is shown in the settings preview (ai.Endpoint), for every kind.
+func TestEscapedBasePathKept(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		uris := make(chan string, 4)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uris <- r.RequestURI
+			http.Error(w, "no", http.StatusBadRequest) // not retried
+		}))
+		t.Cleanup(srv.Close)
+		base := srv.URL + "/a%2Fb/v1"
+		_, res := run(newEngine(t), Request{Model: ResolvedModel{ServiceID: 1, Version: 1, Kind: kind, BaseURL: base, Model: "m", APIKey: "k"}, Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, strings.TrimPrefix(Endpoint(kind, base), srv.URL), <-uris)
+	})
+}

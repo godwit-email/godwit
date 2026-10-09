@@ -153,11 +153,15 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	if api.CurrentEnvironment() == api.EnvironmentDev {
 		return nil, errors.New("ai: refusing to run with GENKIT_ENV=dev")
 	}
+	// The SDKs append a "/" to a base path without one and lose its escapes
+	// (openai-go and anthropic-sdk-go WithBaseURL drop RawPath): given one,
+	// they keep it as it is, so "%2F" reaches the service as previewed.
+	base := m.BaseURL + "/" // normalized: it never ends in "/"
 	var plugin api.Plugin
 	switch m.Kind {
 	case "openai":
 		// compat_oai clears the identity the SDK reads from the environment.
-		plugin = &compat_oai.OpenAICompatible{Provider: "godwit", APIKey: m.APIKey, BaseURL: m.BaseURL,
+		plugin = &compat_oai.OpenAICompatible{Provider: "godwit", APIKey: m.APIKey, BaseURL: base,
 			Opts: []oai.RequestOption{oai.WithHTTPClient(e.client)}}
 	case "anthropic":
 		// The SDK also reads ANTHROPIC_AUTH_TOKEN and sends it as Authorization.
@@ -165,9 +169,9 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 		if key == "" { // a local gateway: no auth at all
 			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
 		}
-		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: m.BaseURL, Opts: opts}
+		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: base, Opts: opts}
 	case KindResponses:
-		plugin = newResponsesPlugin(m.BaseURL, m.APIKey, e.client)
+		plugin = newResponsesPlugin(base, m.APIKey, e.client)
 	default:
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}
