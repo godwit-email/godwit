@@ -436,9 +436,15 @@ const maxToolDescription = 1000
 // pluginToolDescription is a plugin tool's description as the model gets it:
 // cleaned (pluginText), capped and marked as the plugin's.
 func (s *Service) pluginToolDescription(name, d string) string {
+	return s.extToolDescription("plugin "+name, d)
+}
+
+// extToolDescription is an extension tool's description, cleaned, capped and
+// marked "[<label>] ".
+func (s *Service) extToolDescription(label, d string) string {
 	r := []rune(s.pluginText(d))
 	if len(r) > maxToolDescription {
 		r = r[:maxToolDescription]
 	}
-	return "[plugin " + name + "] " + string(r)
+	return "[" + label + "] " + string(r)
 }

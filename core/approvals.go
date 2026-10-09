@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -84,6 +85,7 @@ type approvalRow struct {
 	callID, result, targetKind string
 	targetID, targetVersion    int64
 	binding, source, extension string
+	label                      string // the extension's name, for an MCP server too (else extension)
 }
 
 // audit is the audit_log row of the approval's decision.
@@ -92,22 +94,25 @@ func (a approvalRow) audit(decision string) sqlite.Statement {
 		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision})
 }
 
-// toolResult is the approval's outcome as the model gets it. A plugin tool's
-// outcome of any kind is wrapped (pluginUntrusted); a done result that is a
-// JSON string is wrapped as its text.
+// toolResult is the approval's outcome as the model gets it. A plugin or
+// MCP tool's outcome of any kind is wrapped (as "<source>:<name>"); a done
+// result that is a JSON string is wrapped as its text.
 func (a approvalRow) toolResult() ai.ToolResult {
 	r := ai.ToolResult{CallID: a.callID, Name: a.Tool}
-	if a.source == gateway.SourcePlugin {
+	if a.source == gateway.SourcePlugin || a.source == gateway.SourceMCP {
+		wrap := func(text string) string {
+			return ai.Untrusted(a.source+":"+cmp.Or(a.label, a.extension), text, ai.SuspectInjection(text))
+		}
 		text := a.result
 		if a.State != "done" {
-			r.Error = pluginUntrusted(a.extension, text)
+			r.Error = wrap(text)
 			return r
 		}
 		var str string
 		if len(text) > 0 && text[0] == '"' && json.Unmarshal([]byte(text), &str) == nil { // null and the rest stay JSON
 			text = str
 		}
-		r.Output, _ = json.Marshal(pluginUntrusted(a.extension, text))
+		r.Output, _ = json.Marshal(wrap(text))
 		return r
 	}
 	if a.State == "done" {
@@ -120,7 +125,8 @@ func (a approvalRow) toolResult() ai.ToolResult {
 
 func (s *Service) approvalRows(ctx context.Context, where string, args ...any) ([]approvalRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.id, a.run_id, r.conversation_id, a.seq, a.tool, a.args, a.summary, a.state, a.result,
-		a.call_id, a.target_kind, a.target_id, a.target_version, a.destinations, a.binding, a.source, a.extension
+		a.call_id, a.target_kind, a.target_id, a.target_version, a.destinations, a.binding, a.source, a.extension,
+		CASE a.source WHEN 'mcp' THEN (SELECT name FROM mcp_servers WHERE id = CAST(a.extension AS INTEGER)) END
 		FROM approvals a JOIN runs r ON r.id = a.run_id
 		WHERE `+where+" ORDER BY a.run_id, a.seq", args...)
 	if err != nil {
@@ -132,7 +138,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 			Seq: int(store.Int(r[3])), Tool: store.Str(r[4]), Args: json.RawMessage(store.Str(r[5])), Summary: store.Str(r[6]),
 			State: store.Str(r[7])}, result: store.Str(r[8]), callID: store.Str(r[9]), targetKind: store.Str(r[10]),
 			targetID: store.Int(r[11]), targetVersion: store.Int(r[12]), binding: store.Str(r[14]), source: store.Str(r[15]),
-			extension: store.Str(r[16])}
+			extension: store.Str(r[16]), label: store.Str(r[17])}
 		if err := json.Unmarshal([]byte(store.Str(r[13])), &a.Destinations); err != nil {
 			return nil, err
 		}

@@ -193,6 +193,10 @@ func dropped(k string) bool {
 	return k == "Cookie" || k == "Host" || k == "User-Agent" || strings.HasPrefix(k, "Proxy-")
 }
 
+// Transport is the client's transport, for a caller with its own request
+// policy (an MCP server): no proxy, and only addresses that pass the IP rules.
+func (c *Client) Transport() *http.Transport { return c.tr }
+
 // Hop is one request of a fetch, the first or a redirect: its host:port and
 // its outcome. Decision is "allow" (answered, or redirected onward), "deny"
 // (refused by the policy; Reason is the NetError code) or "error" (the policy

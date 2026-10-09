@@ -108,7 +108,7 @@ func (s *Service) Assist(ctx context.Context, draftID int64, input string) (<-ch
 	conv, err := s.assistConversation(ctx, draftID)
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, append(s.registered(assistTools...), s.pluginTools(false)...), nil)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), nil)
 	}
 	if err != nil {
 		end()

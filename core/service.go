@@ -97,6 +97,10 @@ type Service struct {
 	pluginNet   plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock              // plugin VM call limits; nil is the real clock
 
+	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
+	mcpStMu sync.Mutex          // guards mcpSt
+	mcpSt   map[int64]*mcpState // MCP servers' connections, listed tools and errors
+
 	checksMu   sync.Mutex
 	sendChecks map[string]keptCheck // beforeSend checks with warnings, by digest, until they expire
 	sendNow    func() time.Time     // stored checks' clock; nil is time.Now
@@ -135,6 +139,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		s.Close() // stops dispatchers already started
 		return nil, err
 	}
+	if err := s.loadMCPSecrets(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.startJanitor()
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
@@ -161,6 +169,7 @@ func (s *Service) Close() error {
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
 		s.stopPlugins()
+		s.stopMCP()    // after stopCalls: nothing connects any more
 		s.endStreams() // every run, resumes included, has published its end
 		s.closeOAuth()
 		s.aiMu.Lock()

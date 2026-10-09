@@ -19,7 +19,7 @@ import (
 )
 
 // askTools are the built-in tools of an Ask run, which also offers every
-// running plugin's tools. None of them sends mail.
+// running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
 var askTools = []string{"search_mail", "get_message", "get_thread", "list_skills", "use_skill", "read_skill_file", "create_draft"}
 
 const (
@@ -58,7 +58,7 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, append(s.registered(askTools...), s.pluginTools(true)...), setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), setTitle)
 	}
 	if err != nil {
 		end()
