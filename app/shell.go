@@ -179,6 +179,7 @@ func (a *App) View(c *ui.Context) {
 		a.addAccount.sheetView(c)
 	}
 	a.linkDialog(c)
+	a.mail.reader.egressDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 }
 

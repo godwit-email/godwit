@@ -19,6 +19,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/richtext"
@@ -42,8 +43,18 @@ type reader struct {
 
 	allowLoopback bool // tests: images from httptest servers
 
-	getThread  func(ctx context.Context, id int64) (core.Thread, error)               // tests wrap it
-	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error) // tests wrap it
+	ai        map[int64]*msgAI   // by message; kept across switches so a summary runs once
+	aiCtx     context.Context    // the AI work of the key shown; nil until some starts
+	aiStop    context.CancelFunc // cancels aiCtx
+	menuGen   uint64             // the gen the skill menu was loaded for
+	skills    []core.SkillInfo   // the skill menu: skills on messages but summarize and translate
+	actions   []core.ActionInfo  // and plugin actions on messages
+	egress    egressAsk          // the action waiting for egress approval
+	egressDlg bool               // its dialog shows
+
+	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
+	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
+	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
 }
 
 // msgBody is a message read in full and its body converted.
@@ -59,8 +70,8 @@ type msgBody struct {
 }
 
 func newReader(p *mailPage) *reader {
-	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{},
-		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage}
+	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, runSkill: p.a.svc.RunSkill}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -92,6 +103,7 @@ func (r *reader) reset(k [2]int64) {
 			b.images.cancel()
 		}
 	}
+	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
 	r.open, r.bodies = map[int64]bool{}, map[int64]*msgBody{}
 	r.gen++
@@ -134,6 +146,7 @@ func (r *reader) load() {
 			}
 		}
 		r.markRead(unread)
+		r.startAI()
 	})
 }
 
@@ -487,6 +500,7 @@ func (r *reader) toolbar(c *ui.Context) {
 		kit.Button(c, i18n.T("mail.action.archive"), out).OnClick(func() { r.act("archive") })
 		kit.Button(c, i18n.T("mail.action.delete"), out).OnClick(func() { r.act("delete") })
 		ui.Spacer(c)
+		r.aiTools(c)
 		starred := !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) })
 		if starred {
 			kit.IconButton(c, "star", i18n.T("reader.unstar"), ghost).OnClick(func() { r.act("unstar") })
@@ -558,7 +572,7 @@ func (r *reader) recipients(m core.MessageSummary) string {
 
 // message is a message in full: who and when (a click folds it when the
 // thread has others), the AI area and plugin cards, the remote image
-// notice, the body and the attachments.
+// notice, the body (or its translation), the attachments and quick replies.
 func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	b := r.bodies[m.ID]
@@ -601,7 +615,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					OnClick(func() { r.loadBody(m.ID, true) })
 			})
 		}
-		richtext.Render(c, b.doc, richtext.RenderOptions{Images: b.images.Load, OnLink: r.p.a.openLink})
+		if !r.translated(c, m) {
+			richtext.Render(c, b.doc, richtext.RenderOptions{Images: b.images.Load, OnLink: r.p.a.openLink})
+		}
 		if b.cut {
 			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, i18n.T("reader.truncated")).FontSize(t.Text.Sm).TextColor(t.Muted)
@@ -610,14 +626,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			})
 		}
 		r.attachments(c, b.msg.Attachments)
+		r.quickReplies(c, m)
 	})
 }
-
-// aiArea is where the summary and translation show (Task 12).
-func (r *reader) aiArea(*ui.Context, core.MessageSummary) {}
-
-// cards is where plugin cards show (Task 12).
-func (r *reader) cards(*ui.Context, core.MessageSummary) {}
 
 // attachments lists the files attached: a click opens one, Save as copies it.
 func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
