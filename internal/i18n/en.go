@@ -501,7 +501,7 @@ var en = map[string]string{
 	"compose.discard.title":    "Discard this draft?",
 	"compose.discard.body":     "The draft and its attachments will be deleted. This can't be undone.",
 	"compose.discard.confirm":  "Discard",
-	"close.unsaved.title":      "A draft wasn't saved",
+	"close.unsaved.title":      "Some changes weren't saved",
 	"close.unsaved.quit":       "Quit anyway",
 	"close.unsaved.back":       "Go back",
 	"error.flush_slow":         "A draft is still saving after 3 seconds",

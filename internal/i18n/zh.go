@@ -501,7 +501,7 @@ var zh = map[string]string{
 	"compose.discard.title":    "丢弃这封草稿？",
 	"compose.discard.body":     "草稿和它的附件会被删除，无法恢复。",
 	"compose.discard.confirm":  "丢弃",
-	"close.unsaved.title":      "草稿没有保存",
+	"close.unsaved.title":      "有修改没有保存",
 	"close.unsaved.quit":       "仍然退出",
 	"close.unsaved.back":       "返回",
 	"error.flush_slow":         "草稿 3 秒内还没保存完",

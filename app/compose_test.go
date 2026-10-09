@@ -440,12 +440,12 @@ func TestCloseWithUnsavedDraft(t *testing.T) {
 	h.writeBody("precious")
 	closed := false
 	h.app.BeforeClose(func() { closed = true })
-	h.see("草稿没有保存")
+	h.see("有修改没有保存")
 	if closed {
 		t.Fatal("closed although the draft failed to save")
 	}
 	h.click("返回")
-	h.until("the dialog gone", func() bool { return !h.tt.HasText("草稿没有保存") })
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("有修改没有保存") })
 	if closed || h.app.route.Page != PageCompose {
 		t.Fatal("going back closed or left the draft")
 	}
@@ -631,4 +631,32 @@ func TestEditsWhileSendingAreRefused(t *testing.T) {
 	if !strings.Contains(out[0], "A B") || strings.Contains(out[0], "lost") {
 		t.Fatalf("sent %s, want the edit after the warning and none made while sending", out[0])
 	}
+}
+
+func TestCloseAsksAfterEarlierWriteFailed(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	started, releaseDraft := blockSaves(p)
+	h.writeBody("slow")
+	h.advance(time.Second)
+	<-started
+	settingsDone := make(chan struct{})
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		defer close(settingsDone)
+		return core.Settings{}, errors.New("disk full")
+	}
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	<-settingsDone
+	h.until("the settings write failed", func() bool { return h.app.settings.Theme != "dark" })
+	close(releaseDraft)
+	h.until("the draft saved", func() bool { return strings.Contains(h.draft(p.id).HTML, "slow") && !p.s.busy })
+	h.drain()
+	if closed {
+		t.Fatal("closed although a settings write failed")
+	}
+	h.see("有修改没有保存")
 }

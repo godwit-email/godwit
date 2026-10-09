@@ -295,7 +295,7 @@ func TestBeforeCloseWaitsAtMostFlushWait(t *testing.T) {
 	h.app.BeforeClose(func() { closed = true })
 	<-started
 	h.advance(flushWait)
-	h.see("草稿没有保存")
+	h.see("有修改没有保存")
 	if closed || !h.hasCall("ShowWindow") {
 		t.Fatalf("closed %v, calls %q", closed, h.plat.Calls())
 	}
@@ -311,7 +311,7 @@ func TestBeforeCloseSlowSaveFinishes(t *testing.T) {
 		h.app.BeforeClose(func() { closed = true })
 		<-started
 		h.advance(flushWait)
-		h.see("草稿没有保存")
+		h.see("有修改没有保存")
 		close(release)
 		h.until("closed", func() bool { return closed })
 		if h.app.closeAsk {
