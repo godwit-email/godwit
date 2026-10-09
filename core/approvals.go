@@ -104,7 +104,7 @@ func (a approvalRow) toolResult() ai.ToolResult {
 			return r
 		}
 		var str string
-		if json.Unmarshal([]byte(text), &str) == nil {
+		if len(text) > 0 && text[0] == '"' && json.Unmarshal([]byte(text), &str) == nil { // null and the rest stay JSON
 			text = str
 		}
 		r.Output, _ = json.Marshal(pluginUntrusted(a.extension, text))

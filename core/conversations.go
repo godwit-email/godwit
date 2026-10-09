@@ -364,11 +364,29 @@ func (s *Service) registered(names ...string) []toolDesc {
 	for _, n := range names {
 		t, ok := s.tools[n]
 		if !ok {
-			t = toolDesc{Spec: ai.ToolSpec{Name: n, Description: "No longer available."}, Write: true}
+			t = unavailable(n)
 		}
 		out = append(out, t)
 	}
 	return out
+}
+
+// unavailable is a tool no longer offered: a write tool without an executor,
+// whose calls are denied.
+func unavailable(name string) toolDesc {
+	return toolDesc{Spec: ai.ToolSpec{Name: name, Description: "No longer available."}, Write: true}
+}
+
+// offered applies a conversation kind's tool policy, the start's (Ask,
+// Assist) as well as a resume's: Assist offers no plugin write tool (spec
+// 7.4), so one that became a write tool since is unavailable.
+func offered(kind string, tools []toolDesc) []toolDesc {
+	for i, t := range tools {
+		if kind == "assist" && t.Source == gateway.SourcePlugin && t.Write {
+			tools[i] = unavailable(t.Spec.Name)
+		}
+	}
+	return tools
 }
 
 func (s *Service) desc(name string) (toolDesc, bool) {
@@ -802,7 +820,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		scope.MarkReadMail()
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	req, err := s.request(ctx, job, model, state, s.registered(names...))
+	req, err := s.request(ctx, job, model, state, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)
 		return err

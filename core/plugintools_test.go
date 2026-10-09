@@ -411,7 +411,7 @@ func TestAssistToolsOneSnapshot(t *testing.T) {
 // their kind; other tools' are not wrapped.
 func TestPluginApprovalResultsWrapped(t *testing.T) {
 	cases := []struct{ state, result string }{
-		{"done", `"wrote it"`}, {"done", `{"n":1}`}, {"failed", "boom"}, {"rejected", msgRejected},
+		{"done", `"wrote it"`}, {"done", `{"n":1}`}, {"done", "null"}, {"failed", "boom"}, {"rejected", msgRejected},
 		{"stale", msgStale}, {"failed", msgUncertain}, {"failed", msgCancelled},
 	}
 	for _, c := range cases {
@@ -472,4 +472,47 @@ func TestNetOnlyPluginToolNoMail(t *testing.T) {
 	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
 	assert.Equal(t, []string{api}, in.Approvals[0].Destinations)
 	assert.Equal(t, int64(1), hits.Load(), "no fetch before approval")
+}
+
+// A resumed Assist run applies the start's tool policy: a read tool that an
+// update made a write tool comes back as unavailable, never as a write tool.
+func TestAssistResumeKeepsReadOnlyPolicy(t *testing.T) {
+	e := newApprovalEnv(t)
+	api, _ := netServer(t, e.s)
+	const code = `export default function (ctx: any) {
+  ctx.tools.register({ name: "look", description: "Reads.", write: %s, schema: { type: "object" }, run: async () => {
+    await ctx.storage.set("runs", "ran"); return "seen" } })
+}`
+	perms := `{"mail":["read","write"],"net":["` + api + `"]}` // mail:read and net: every call is approved first
+	startTestPlugin(t, e.s, "mix", perms, fmt.Sprintf(code, "false"))
+	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
+	require.NoError(t, err)
+	e.srv.Script(callArgs("plugin_mix_look", `{}`), callArgs("plugin_mix_look", `{}`), finished)
+	ch, err := e.s.Assist(t.Context(), d.ID, "help")
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
+
+	startTestPlugin(t, e.s, "mix", perms, fmt.Sprintf(code, "true"))
+	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), ErrStaleApproval)
+	var state string
+	require.Eventually(t, func() bool {
+		rows, err := e.s.db.Query(bg, "SELECT state FROM runs WHERE id = ?", in.RunID)
+		state = store.Str(rows.Values[0][0])
+		return err == nil && state != "running" && state != "resuming"
+	}, 10*time.Second, 5*time.Millisecond)
+	assert.Equal(t, "done", state)
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM approvals"), "the resumed call was not proposed as a write")
+	assert.Empty(t, pluginRuns(t, e.s, "mix"), "never ran")
+	reqs := e.srv.Requests()
+	var tools []struct {
+		Function struct{ Name, Description string }
+	}
+	require.NoError(t, json.Unmarshal(reqs[1].Tools, &tools))
+	for _, tl := range tools {
+		if tl.Function.Name == "plugin_mix_look" {
+			assert.Equal(t, "No longer available.", tl.Function.Description)
+		}
+	}
 }
