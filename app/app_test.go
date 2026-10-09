@@ -21,7 +21,7 @@ func TestAppStartsAndRenders(t *testing.T) {
 // startedIdle is a harness whose initial load has applied, so the post queue is empty.
 func startedIdle(t *testing.T) *harness {
 	h := newHarness(t)
-	h.until("initial load", func() bool { return h.app.loaded })
+	h.until("initial load", func() bool { return h.app.loaded && h.app.taskModels != nil }) // and its task query
 	return h
 }
 

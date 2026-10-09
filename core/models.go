@@ -507,6 +507,27 @@ func (s *Service) resolveTask(ctx context.Context, override string, small bool) 
 	return s.resolveRef(ctx, override)
 }
 
+// TaskModel is the "slug/model" skill runs on (quick replies when skill is
+// ""), resolved as RunSkill and QuickReplies resolve it, without running it.
+// ErrAINotConfigured, ErrModelServiceNotFound or ErrModelNotFound: it has none.
+func (s *Service) TaskModel(ctx context.Context, skill string) (string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	defer end()
+	override, small := "", true
+	if skill != "" {
+		sk, err := s.skill(ctx, skill)
+		if err != nil {
+			return "", err
+		}
+		override, small = sk.Model, sk.Tier == "small"
+	}
+	_, ref, err := s.resolveTask(ctx, override, small)
+	return ref, err
+}
+
 // resolveRef is resolveModel plus the reference in its "slug/model" form. The
 // service part matches a slug, else an old name (references from before slugs).
 func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedModel, string, error) {

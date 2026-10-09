@@ -104,13 +104,9 @@ func (r *reader) state(id int64) *msgAI {
 // aiReady reports whether a default model is set: the skill menu's skills need it.
 func (r *reader) aiReady() bool { return r.p.a.settings.DefaultModel != "" }
 
-// smallReady reports whether the small tasks (summary, translation, quick
-// replies) have a model: SmallModel, else DefaultModel, as core resolves them.
-// Removing a service clears the settings that name it, so a set one resolves.
-func (r *reader) smallReady() bool {
-	st := r.p.a.settings
-	return st.SmallModel != "" || st.DefaultModel != ""
-}
+// taskReady reports whether core resolves a model for the reader task:
+// "summarize", "translate" or "" for quick replies (App.taskModels).
+func (r *reader) taskReady(task string) bool { return r.p.a.taskModels[task] }
 
 // modelOf is a model reference (service/model) without its service.
 func modelOf(ref string) string {
@@ -133,7 +129,7 @@ func (r *reader) readingLang() string {
 // summaryShown reports whether a message's summary shows: with a model,
 // as the Summary action chose, else as Settings.Summary says.
 func (r *reader) summaryShown(st *msgAI) bool {
-	if !r.smallReady() {
+	if !r.taskReady("summarize") {
 		return false
 	}
 	if st.sumShown != nil {
@@ -182,7 +178,7 @@ func (r *reader) stopAI() {
 // (Settings.Summary with a model) and its plugin cards. Each runs once.
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
-	if r.smallReady() && r.p.a.settings.Summary && st.summary == nil {
+	if r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
 		st.summary = r.stream(id, "summarize")
 	}
 	r.loadCards(id, false)
@@ -208,7 +204,7 @@ func (r *reader) startAI() {
 	for id := range r.open {
 		r.startFor(id)
 	}
-	if r.smallReady() && r.p.a.settings.QuickReplies {
+	if r.taskReady("") && r.p.a.settings.QuickReplies {
 		r.loadQuick(m.ID, false)
 	}
 	a, skills, actions := r.p.a, r.skillsFn, r.actionsFn
@@ -358,15 +354,17 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 func (r *reader) aiTools(c *ui.Context) {
 	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
 	m, _ := r.last()
-	if r.smallReady() {
-		st := r.state(m.ID)
-		on := func(b bool) kit.ButtonOpts {
-			if b {
-				return kit.ButtonOpts{Variant: kit.Primary, Small: true}
-			}
-			return out
+	st := r.state(m.ID)
+	on := func(b bool) kit.ButtonOpts {
+		if b {
+			return kit.ButtonOpts{Variant: kit.Primary, Small: true}
 		}
+		return out
+	}
+	if r.taskReady("summarize") {
 		kit.Button(c, i18n.T("reader.ai.summarize"), on(r.summaryShown(st) && st.summary != nil)).OnClick(r.toggleSummary)
+	}
+	if r.taskReady("translate") {
 		kit.Button(c, i18n.T("reader.ai.translate"), on(r.trShown(st))).OnClick(func() { r.toggleTranslate(m.ID) })
 	}
 	var skills []core.SkillInfo
@@ -558,7 +556,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	last, _ := r.last()
 	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil || !r.smallReady() || !r.p.a.settings.QuickReplies {
+	if m.ID != last.ID || st == nil || !r.taskReady("") || !r.p.a.settings.QuickReplies {
 		return
 	}
 	r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(m.ID, true) })

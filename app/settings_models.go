@@ -215,6 +215,7 @@ func (m *modelsView) submit(f *modelForm) {
 		return err
 	}, func(err error) {
 		f.busy = false
+		a.refreshTasks()
 		if err != nil {
 			a.toastErr(err)
 			m.load()
@@ -267,6 +268,7 @@ func (m *modelsView) remove(f *modelForm) {
 	f.busy = true
 	a.writes.Chain("models", func(ctx context.Context) error { return a.svc.RemoveModelService(ctx, id) }, func(err error) {
 		f.busy = false
+		a.refreshTasks()
 		a.toastErr(err)
 		if err == nil {
 			m.dropRefs(slug, nil)

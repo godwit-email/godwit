@@ -125,6 +125,7 @@ func (h *harness) setSettings(f func(*core.Settings)) {
 	}
 	f(&h.app.settings)
 	f(&h.app.settingsOK)
+	h.app.refreshTasks() // as a settings save in the App does
 	h.tt.Frame()
 }
 
@@ -198,11 +199,8 @@ func TestSummaryFollowsSettings(t *testing.T) {
 	if got := llm.Requests(); got != n {
 		t.Fatalf("requests %d, want %d: the summary ran again", got, n)
 	}
-	h.app.settings.DefaultModel = ""
-	h.tt.Frame()
-	if h.tt.HasText("summarize") || h.tt.HasText("总结") {
-		t.Fatalf("summary shown without a model: %q", h.tt.Texts())
-	}
+	h.setSettings(func(st *core.Settings) { st.DefaultModel = "" })
+	h.until("the summary hidden without a model", func() bool { return !h.tt.HasText("summarize") && !h.tt.HasText("总结") })
 }
 
 func TestSummaryOnDemand(t *testing.T) {
@@ -593,5 +591,72 @@ func TestSmallModelOnlyReaderAI(t *testing.T) {
 	h.see("Reply one")
 	if h.tt.HasText("更多 skill ▾") {
 		t.Fatal("the skill menu shows without a default model")
+	}
+}
+
+// Final re-review R3: the reader asks core which model each task resolves
+// to. With no default or small model, a summarize skill naming its own
+// model still summarizes.
+func TestSummaryBySkillModel(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, func(st *core.Settings) { st.DefaultModel, st.SmallModel, st.QuickReplies = "", "", false },
+		func(e *coretest.Env) {
+			dir := filepath.Join(e.DataDir, "skills", "summarize")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			md := "---\nname: summarize\ndescription: mine\nmetadata:\n  godwit-action-on: \"message\"\n  godwit-action-output: \"panel\"\n  godwit-model: \"test/m1\"\n---\n\nSummarize.\n"
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	r := h.app.mail.reader
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m1")
+	if h.tt.HasText("翻译") {
+		t.Fatal("translate shown: it has no model")
+	}
+}
+
+// Final re-review R3: a small-task model whose model was removed (and no
+// default model) resolves nowhere: the small tasks are hidden.
+func TestSmallTasksHiddenWhenModelGone(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, nil, func(e *coretest.Env) {
+		ctx := context.Background()
+		svcs, err := e.Svc.ListModelServices(ctx)
+		if err != nil || len(svcs) != 1 {
+			t.Fatalf("services %+v, %v", svcs, err)
+		}
+		s := svcs[0]
+		in := core.ModelServiceInput{Name: s.Name, Kind: s.Kind, BaseURL: s.BaseURL, Models: []string{"m1", "m2"}}
+		if _, err := e.Svc.UpdateModelService(ctx, s.ID, in); err != nil {
+			t.Fatal(err)
+		}
+		st, err := e.Svc.GetSettings(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.DefaultModel, st.SmallModel = "", "test/m2"
+		if _, err := e.Svc.SetSettings(ctx, st); err != nil {
+			t.Fatal(err)
+		}
+		in.Models = []string{"m1"} // m2 goes; the setting still names it
+		if _, err := e.Svc.UpdateModelService(ctx, s.ID, in); err != nil {
+			t.Fatal(err)
+		}
+	})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	h.openThread(m.ThreadID)
+	h.see("the plan body")
+	for range 20 {
+		h.drain()
+		h.tt.Frame()
+	}
+	if h.tt.HasText("总结") || h.tt.HasText("翻译") || h.tt.HasText("即时回复") {
+		t.Fatalf("small tasks shown without a model: %q", h.tt.Texts())
+	}
+	if s := h.app.mail.reader.ai[m.ID]; s != nil && s.summary != nil {
+		t.Fatal("a summary started without a model")
 	}
 }
