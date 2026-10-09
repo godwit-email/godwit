@@ -1,14 +1,20 @@
 package contract_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,18 +37,38 @@ type scenario func(t *testing.T, api contract.API, env *coretest.Env) any
 
 // runContract runs s against a fresh typed *core.Service, then against a
 // fresh one behind the Local API (full role), and compares the normalized
-// results.
-func runContract(t *testing.T, s scenario) {
+// results. It returns the server's log of the rpc run: one redacted
+// "internal error" line per unregistered error the scenario recorded, with
+// none of the test secrets in it.
+func runContract(t *testing.T, s scenario) (rpcLog string) {
 	var got [2]string
 	t.Run("typed", func(t *testing.T) {
+		logged := captureLogs(t)
 		env := coretest.New(t, coretest.WithoutAutoSync())
-		got[0] = normalize(t, s(t, env.Svc, env))
+		start := time.Now()
+		got[0] = normalize(t, s(t, env.Svc, env), start, time.Now())
+		assert.Empty(t, logged(), "typed calls log nothing")
 	})
 	t.Run("rpc", func(t *testing.T) {
+		logged := captureLogs(t)
 		env := coretest.New(t, coretest.WithoutAutoSync())
-		r := serve(t, env.Svc)
-		got[1] = normalize(t, s(t, r, env))
+		r, token := serve(t, env.Svc)
+		start := time.Now()
+		v := s(t, r, env)
+		got[1] = normalize(t, v, start, time.Now())
 		assert.Empty(t, r.StreamErrs(), "remote streams ended abnormally")
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		unregistered := strings.Count(string(b), `{"as":{},"is":[]}`)
+		rpcLog = logged()
+		lines := strings.FieldsFunc(rpcLog, func(r rune) bool { return r == '\n' })
+		assert.Len(t, lines, unregistered, "one log line per unregistered error:\n%s", rpcLog)
+		for _, l := range lines {
+			assert.Contains(t, l, `level=ERROR msg="rpc: internal error"`)
+		}
+		for _, secret := range []string{token, "secret", "test-key", "good-key", "bad-key"} {
+			assert.NotContains(t, rpcLog, secret)
+		}
 	})
 	if os.Getenv("CONTRACT_DUMP") != "" {
 		t.Logf("typed, normalized:\n%s", got[0])
@@ -50,11 +76,31 @@ func runContract(t *testing.T, s scenario) {
 	if got[0] != "" && got[1] != "" {
 		assert.Equal(t, got[0], got[1], "typed (expected) vs JSON-RPC (actual), normalized")
 	}
+	return rpcLog
 }
+
+// captureLogs sends slog output to a buffer until the test ends (tests here
+// run one at a time) and returns a func reading it.
+func captureLogs(t *testing.T) func() string {
+	var mu sync.Mutex
+	var b strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return b.Write(p)
+	}), nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return func() string { mu.Lock(); defer mu.Unlock(); return b.String() }
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 // serve puts svc behind the Local API on a fresh short directory (Unix
 // socket paths are short) and dials it with the full role.
-func serve(t *testing.T, svc *core.Service) *contract.Remote {
+func serve(t *testing.T, svc *core.Service) (r *contract.Remote, token string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "gw")
 	require.NoError(t, err)
@@ -69,14 +115,21 @@ func serve(t *testing.T, svc *core.Service) *contract.Remote {
 	c, err := rpc.Dial(dir, rpc.RoleFull, "contract-test", rpcbind.NewCodec())
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
-	return &contract.Remote{C: c}
+	tok, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
+	require.NoError(t, err)
+	return &contract.Remote{C: c}, string(tok)
 }
 
 // normalize renders v as indented JSON with every numeric ID (under a key
-// ending in ID or IDs) and every timestamp replaced by a placeholder numbered in order of
-// first appearance: the same value always gets the same placeholder, so
-// associations survive and both sides must agree on them.
-func normalize(t *testing.T, v any) string {
+// ending in ID or IDs), every timestamp, every RFC 5322 Message-ID (in a
+// string under MessageID, InReplyTo or References) and every opaque value
+// replaced by a placeholder numbered in order of first appearance: the same
+// value always gets the same placeholder, so associations survive and both
+// sides must agree on them. A timestamp taken from the wall clock while the
+// scenario ran (within [start, end], at the store's one-second resolution)
+// becomes "time:now" instead: which of those fall in the same second is
+// timing, not behavior.
+func normalize(t *testing.T, v any, start, end time.Time) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	require.NoError(t, err)
@@ -84,15 +137,16 @@ func normalize(t *testing.T, v any) string {
 	d.UseNumber()
 	var tree any
 	require.NoError(t, d.Decode(&tree))
-	n := &normalizer{seen: map[string]string{}, count: map[string]int{}}
+	n := &normalizer{seen: map[string]string{}, count: map[string]int{}, start: start.Truncate(time.Second), end: end}
 	out, err := json.MarshalIndent(n.walk(tree, false), "", "  ")
 	require.NoError(t, err)
 	return string(out)
 }
 
 type normalizer struct {
-	seen  map[string]string
-	count map[string]int
+	seen       map[string]string
+	count      map[string]int
+	start, end time.Time
 }
 
 func (n *normalizer) placeholder(kind, value string) string {
@@ -116,6 +170,10 @@ func (n *normalizer) walk(v any, id bool) any {
 		sort.Strings(keys)
 		out := make(map[string]any, len(v))
 		for _, k := range keys {
+			if str, ok := v[k].(string); ok && msgIDKeys[k] {
+				out[k] = n.msgIDs(str)
+				continue
+			}
 			out[k] = n.walk(v[k], strings.HasSuffix(k, "ID") || strings.HasSuffix(k, "IDs"))
 		}
 		return out
@@ -129,11 +187,39 @@ func (n *normalizer) walk(v any, id bool) any {
 			return n.placeholder("id", v.String())
 		}
 	case string:
+		if o, ok := strings.CutPrefix(v, opaquePrefix); ok {
+			return n.placeholder("opaque", o)
+		}
 		if ts, err := time.Parse(time.RFC3339Nano, v); err == nil && !ts.IsZero() {
+			if !ts.Before(n.start) && !ts.After(n.end) {
+				return "time:now"
+			}
 			return n.placeholder("time", v)
 		}
 	}
 	return v
+}
+
+// msgIDKeys hold RFC 5322 message identifiers (one, or a list in References).
+var msgIDKeys = map[string]bool{"MessageID": true, "InReplyTo": true, "References": true}
+
+var msgIDRE = regexp.MustCompile(`<[^<>\s]+@[^<>\s]+>`)
+
+// msgIDs replaces every <id@host> in s with its placeholder.
+func (n *normalizer) msgIDs(s string) string {
+	return msgIDRE.ReplaceAllStringFunc(s, func(id string) string { return n.placeholder("msgid", id) })
+}
+
+const opaquePrefix = "opaque:"
+
+// opaque marks v, a random value the product generates, for an
+// association-preserving placeholder once it has the expected format;
+// otherwise v stays as it is, so the difference shows.
+func opaque(format string, v string) string {
+	if regexp.MustCompile(format).MatchString(v) {
+		return opaquePrefix + v
+	}
+	return "bad format " + format + ": " + v
 }
 
 // sentinels are every exported error value a scenario may meet.
@@ -218,11 +304,85 @@ func collect[T any](t *testing.T, ch <-chan T) []T {
 
 func TestNormalizeKeepsAssociations(t *testing.T) {
 	a := normalize(t, map[string]any{"ID": 7, "List": []map[string]any{{"AccountID": 7, "ThreadIDs": []int{9, 7}}},
-		"At": "2026-10-01T09:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7})
+		"At": "2026-10-01T09:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7}, never, never)
 	b := normalize(t, map[string]any{"ID": 3, "List": []map[string]any{{"AccountID": 3, "ThreadIDs": []int{4, 3}}},
-		"At": "2027-01-01T00:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7})
+		"At": "2027-01-01T00:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7}, never, never)
 	assert.Equal(t, a, b)
 	c := normalize(t, map[string]any{"ID": 3, "List": []map[string]any{{"AccountID": 4, "ThreadIDs": []int{4, 3}}},
-		"At": "2027-01-01T00:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7})
+		"At": "2027-01-01T00:00:00Z", "Zero": "0001-01-01T00:00:00Z", "N": 7}, never, never)
 	assert.NotEqual(t, a, c, "a broken association must show")
+
+	// Wall-clock times inside the run's window compare as "now"; one outside it shows.
+	start := time.Date(2026, 10, 10, 9, 0, 0, 500, time.UTC)
+	end := start.Add(3 * time.Second)
+	in := func(at ...string) string { return normalize(t, map[string]any{"At": at}, start, end) }
+	assert.Equal(t, in("2026-10-10T09:00:00Z", "2026-10-10T09:00:00Z"), in("2026-10-10T09:00:00Z", "2026-10-10T09:00:01Z"))
+	assert.Contains(t, in("2026-10-10T09:00:02Z"), `"time:now"`)
+	assert.NotEqual(t, in("2026-10-10T09:00:00Z"), in("2026-10-10T09:00:04Z"), "a time outside the run shows")
+}
+
+var never time.Time // an empty wall-clock window
+
+func TestNormalizeMessageIDs(t *testing.T) {
+	sent := func(own, parent, root, from string) string {
+		return normalize(t, map[string]any{"Sent": map[string]any{"MessageID": own, "InReplyTo": parent,
+			"References": root + " " + parent, "From": from}, "Incoming": map[string]any{"MessageID": parent}}, never, never)
+	}
+	a := sent("<A1@godwit>", "<p1@x>", "<r1@x>", "<bob@x>")
+	assert.Equal(t, a, sent("<B7@godwit>", "<p2@y>", "<r2@y>", "<bob@x>"), "other values, same associations")
+	assert.NotEqual(t, a, sent("<B7@godwit>", "<p2@y>", "<p2@y>", "<bob@x>"), "a changed association must show")
+	assert.NotEqual(t, a, sent("<A1@godwit>", "<p1@x>", "<r1@x>", "<carol@x>"), "other strings are compared literally")
+	assert.Contains(t, a, `"From": "\u003cbob@x\u003e"`)
+	assert.Contains(t, a, `"References": "msgid#3 msgid#1"`)
+
+	o := func(vs ...string) string {
+		var out []string
+		for _, v := range vs {
+			out = append(out, opaque(`^[a-z]{3}$`, v))
+		}
+		return normalize(t, out, never, never)
+	}
+	assert.Equal(t, o("abc", "def", "abc"), o("xyz", "uvw", "xyz"))
+	assert.NotEqual(t, o("abc", "def", "abc"), o("xyz", "uvw", "uvw"), "a changed association must show")
+	assert.NotEqual(t, o("abc"), o("ABCD"), "a bad format must show")
+}
+
+// A stream that delivered its business events and then ended abnormally
+// reports that end even when the caller cancels right after: the error is
+// recorded before the stream is released, and cancel returns only once the
+// forwarder is done. The fake peer keeps the forwarder blocked (nobody reads
+// past the first event), the case where a cancel used to drop the error.
+func TestRemoteStreamErrorSurvivesCancel(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { client.Close(); server.Close() })
+	go func() {
+		r := bufio.NewReader(server)
+		next := func() (id json.RawMessage) {
+			line, err := r.ReadBytes('\n')
+			if err != nil {
+				return nil
+			}
+			var m struct{ ID json.RawMessage }
+			json.Unmarshal(line, &m)
+			return m.ID
+		}
+		send := func(v any) { b, _ := json.Marshal(v); server.Write(append(b, '\n')) }
+		send(map[string]any{"jsonrpc": "2.0", "id": next(), "result": map[string]any{"stream": 7}}) // Subscribe
+		for range rpc.StreamBuffer + 44 {                                                           // fills the typed channel
+			send(map[string]any{"jsonrpc": "2.0", "method": "$/stream", "params": []any{7, map[string]any{"Type": "message.received"}}})
+		}
+		send(map[string]any{"jsonrpc": "2.0", "method": "$/stream.end", "params": []any{7, map[string]any{"code": -32000, "message": "transport broke"}}})
+		send(map[string]any{"jsonrpc": "2.0", "id": next(), "result": nil}) // ping: the end is processed by now
+		for next() != nil {                                                 // $/stream.cancel and the rest
+		}
+	}()
+	r := &contract.Remote{C: rpc.NewClient(client)}
+	ch, cancel := r.Subscribe()
+	ev := <-ch
+	require.Equal(t, "message.received", ev.Type, "the business event arrived")
+	require.NoError(t, r.C.Call(t.Context(), "ping", nil))
+	cancel()
+	errs := r.StreamErrs()
+	require.Len(t, errs, 1)
+	assert.ErrorContains(t, errs[0], "transport broke")
 }

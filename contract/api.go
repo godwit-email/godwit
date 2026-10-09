@@ -117,8 +117,14 @@ func stream[T any](r *Remote, ctx context.Context, method string, args ...any) (
 	if err != nil {
 		return nil, nil, err
 	}
-	out, done := make(chan T, rpc.StreamBuffer), make(chan struct{})
+	out, done, exited := make(chan T, rpc.StreamBuffer), make(chan struct{}), make(chan struct{})
+	record := func() {
+		if err := r.C.StreamErr(raw); err != nil {
+			r.fail(fmt.Errorf("%s: %w", method, err))
+		}
+	}
 	go func() {
+		defer close(exited)
 		defer close(out)
 		for b := range raw {
 			var v T
@@ -132,12 +138,14 @@ func stream[T any](r *Remote, ctx context.Context, method string, args ...any) (
 				return
 			}
 		}
-		if err := r.C.StreamErr(raw); err != nil {
-			r.fail(fmt.Errorf("%s: %w", method, err))
-		}
+		record()
 	}()
+	// Cancelling forgets why the stream ended, so that is recorded first (the
+	// forwarder may be blocked, or gone, before it could); cancel returns once
+	// the forwarder has exited. A stream that ends just between the two counts
+	// as cancelled, since the caller had already given up on it.
 	var once sync.Once
-	return out, func() { once.Do(func() { close(done); cancel() }) }, nil
+	return out, func() { once.Do(func() { close(done); record(); cancel(); <-exited }) }, nil
 }
 
 // streamErr is a (<-chan T, error) method: ctx ending cancels it.

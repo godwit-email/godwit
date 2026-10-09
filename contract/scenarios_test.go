@@ -1,14 +1,16 @@
 package contract_test
 
 import (
+	"bytes"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -143,12 +146,38 @@ func TestCompose(t *testing.T) {
 		out["send"] = errInfo(api.Send(ctx, d2.ID))
 		out["queued"] = res(api.ListOutbox(ctx, acc.ID))
 		out["outbox"] = waitOutbox(t, api, env, acc.ID)
-		sent := env.Sent(acc.ID)
-		require.Len(t, sent, 1)
-		out["sentSubject"] = strings.Contains(string(sent[0]), "Subject: v2")
 		out["sendAgain"] = errInfo(api.Send(ctx, d2.ID))
+
+		// A reply to mail with a generated Message-ID: the product generates the
+		// reply's own and threads it to the incoming one.
+		raw := coretest.Msg("bob@example.com", "alice@example.com", "Plans", "Meet on Friday.", coretest.Date(day1))
+		out["incoming"] = headers(t, raw)
+		env.Deliver(t, acc.ID, "INBOX", raw)
+		r, err := api.NewDraft(ctx, acc.ID, "reply", firstMessage(t, api).ID)
+		require.NoError(t, err)
+		out["reply"] = r
+		r.HTML = "<p>Friday works.</p>"
+		r, err = api.SaveDraft(ctx, r)
+		require.NoError(t, err)
+		out["sendReply"] = errInfo(api.Send(ctx, r.ID))
+		out["outboxAfterReply"] = waitOutbox(t, api, env, acc.ID)
+		var sent []any
+		for _, m := range env.Sent(acc.ID) {
+			sent = append(sent, headers(t, m))
+		}
+		out["sent"] = sent
 		return out
 	})
+}
+
+// headers are a raw message's identifying headers.
+func headers(t *testing.T, raw []byte) map[string]string {
+	t.Helper()
+	m, err := mail.ReadMessage(bytes.NewReader(raw))
+	require.NoError(t, err)
+	return map[string]string{"MessageID": m.Header.Get("Message-ID"), "InReplyTo": m.Header.Get("In-Reply-To"),
+		"References": m.Header.Get("References"), "Subject": m.Header.Get("Subject"), "To": m.Header.Get("To"),
+		"Cc": m.Header.Get("Cc"), "From": m.Header.Get("From")}
 }
 
 func TestSendWarnings(t *testing.T) {
@@ -172,8 +201,9 @@ func TestSendWarnings(t *testing.T) {
 }
 
 func TestSettings(t *testing.T) {
-	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
+	logged := runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		ctx := t.Context()
+		env.LLM(t).Release() // a model service whose key the server knows to redact
 		out := map[string]any{}
 		before, err := api.GetSettings(ctx)
 		require.NoError(t, err)
@@ -195,8 +225,11 @@ func TestSettings(t *testing.T) {
 		bad := st
 		bad.Theme = "neon"
 		out["invalid"] = res(api.SetSettings(ctx, bad))
+		bad.Theme = "test-key" // the model service's API key: logged, so redacted
+		out["invalidSecret"] = res(api.SetSettings(ctx, bad))
 		return out
 	})
+	assert.Contains(t, logged, `invalid theme \"[redacted]\"`)
 }
 
 func TestModelService(t *testing.T) {
@@ -338,6 +371,7 @@ func TestOAuth(t *testing.T) {
 	old := auth.MicrosoftClientID
 	auth.MicrosoftClientID = "contract-client" // before any Env starts, so no goroutine races it
 	defer func() { auth.MicrosoftClientID = old }()
+	const flowFormat, b64Format = `^[A-Z2-7]{26}$`, `^[A-Za-z0-9_-]{43}$` // rand.Text; 32 bytes, base64url
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		ctx := t.Context()
 		out := map[string]any{}
@@ -345,15 +379,40 @@ func TestOAuth(t *testing.T) {
 		require.NoError(t, err)
 		u, err := url.Parse(authURL)
 		require.NoError(t, err)
-		var params []string
-		for k := range u.Query() {
-			params = append(params, k)
+		params := map[string]any{}
+		for k, vs := range u.Query() {
+			require.Len(t, vs, 1, k)
+			params[k] = vs[0]
 		}
-		sort.Strings(params)
-		out["begin"] = map[string]any{"flowIDLen": len(flowID), "url": u.Scheme + "://" + u.Host + u.Path, "params": params,
-			"clientID": u.Query().Get("client_id"), "loginHint": u.Query().Get("login_hint")}
-		api.CancelOAuth(flowID)
+		// Random per flow: compared by format and association.
+		q := u.Query()
+		params["state"] = opaque(b64Format, q.Get("state"))
+		params["code_challenge"] = opaque(b64Format, q.Get("code_challenge"))
+		redirect, err := url.Parse(q.Get("redirect_uri"))
+		require.NoError(t, err)
+		params["redirect_uri"] = map[string]any{"url": redirect.Scheme + "://" + redirect.Hostname() + redirect.Path,
+			"port": opaque(`^[0-9]+$`, redirect.Port())}
+		out["begin"] = map[string]any{"flowID": opaque(flowFormat, flowID),
+			"url": u.Scheme + "://" + u.Host + u.Path, "params": params}
+
+		// The flow ID names this flow: cancelling it closes its redirect listener.
+		listening := func() bool {
+			c, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", redirect.Port()))
+			if err == nil {
+				c.Close()
+			}
+			return err == nil
+		}
+		out["listeningBefore"] = listening()
 		api.CancelOAuth("unknown-flow")
+		out["listeningAfterUnknown"] = listening()
+		api.CancelOAuth(flowID)
+		require.Eventually(t, func() bool { return !listening() }, 5*time.Second, 10*time.Millisecond)
+
+		second, _, err := api.BeginOAuth(ctx, "outlook", "")
+		require.NoError(t, err)
+		out["second"] = map[string]any{"flowID": opaque(flowFormat, second), "err": errInfo(err)}
+		api.CancelOAuth(second)
 		out["notOAuth"] = res2(api.BeginOAuth(ctx, "gmail", ""))
 		return out
 	})
