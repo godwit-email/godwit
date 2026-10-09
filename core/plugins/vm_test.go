@@ -329,16 +329,32 @@ func TestHostPanicSanitized(t *testing.T) {
 		rt.Set("winPath", v.HostFunc("winPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
 			panic(errors.New(`open C:\Users\someone\godwit.db: denied`))
 		}))
+		rt.Set("colonPath", v.HostFunc("colonPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			panic(errors.New("open:/Users/alice/x.db failed"))
+		}))
+		rt.Set("winColon", v.HostFunc("winColon", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			panic(errors.New(`path:C:\Users\alice\x.db`))
+		}))
+		rt.Set("urlErr", v.HostFunc("urlErr", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			panic(errors.New("fetch https://example.com/a/b: status 500"))
+		}))
+		rt.Set("laterColon", v.HostFunc("laterColon", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			return c.Async(func(ctx context.Context) (any, error) {
+				return nil, errors.New("stat:/Users/alice/y|open=C:/Users/alice/z")
+			})
+		}))
 		rt.Set("later", v.HostFunc("later", func(c *CallScope, call goja.FunctionCall) goja.Value {
 			return c.Async(func(ctx context.Context) (any, error) {
 				return nil, fmt.Errorf("read /var/lib/godwit/x: key s3cret-value: %w", os.ErrPermission)
 			})
 		}))
 		return rt.RunString(`(async () => {
-			const out = [crash, crashPath, fail, throwJS, readFile, winPath].map(f => {
+			const out = [crash, crashPath, fail, throwJS, readFile, winPath, colonPath, winColon, urlErr].map(f => {
 				try { f(); return ["none"] } catch (e) { return [String(e.message), typeof e.value, e instanceof Error, e instanceof TypeError] }
 			})
-			try { await later() } catch (e) { out.push([String(e.message), typeof e.value, e instanceof Error, false]) }
+			for (const f of [later, laterColon]) {
+				try { await f() } catch (e) { out.push([String(e.message), typeof e.value, e instanceof Error, false]) }
+			}
 			return out
 		})()`)
 	})
@@ -362,7 +378,11 @@ func TestHostPanicSanitized(t *testing.T) {
 	assert.Equal(t, true, got.([]any)[3].([]any)[3], "a host TypeError stays a TypeError")
 	assert.Equal(t, "readFile: open <path>: file does not exist", msgs[4])
 	assert.Equal(t, "winPath: open <path>: denied", msgs[5])
-	assert.Equal(t, "read <path>: key [redacted]: permission denied", msgs[6])
+	assert.Equal(t, "colonPath: open:<path> failed", msgs[6])
+	assert.Equal(t, "winColon: path:<path>", msgs[7])
+	assert.Equal(t, "urlErr: fetch https://example.com/a/b: status 500", msgs[8], "URLs are not paths")
+	assert.Equal(t, "read <path>: key [redacted]: permission denied", msgs[9])
+	assert.Equal(t, "stat:<path>|open=<path>", msgs[10])
 
 	// A panic in the call body itself does not kill the owner goroutine.
 	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { panic("body /Users/x.go") })
@@ -476,4 +496,55 @@ func TestExportStaysInOwner(t *testing.T) {
 		return map[string]any{"v": c.Runtime().ToValue(1)}, nil
 	})
 	assert.ErrorContains(t, err, "goja")
+
+	// Past the depth limit is an error, not a pass.
+	deep := map[string]any{"v": goja.Undefined()}
+	for range 200 {
+		deep = map[string]any{"n": deep}
+	}
+	_, err = goCall(deep)
+	assert.Error(t, err)
+	plainDeep := map[string]any{}
+	for range 200 {
+		plainDeep = map[string]any{"n": plainDeep}
+	}
+	_, err = goCall(plainDeep)
+	assert.ErrorIs(t, err, ErrTooLarge)
+}
+
+func TestGoResultCycleRejectedPromptly(t *testing.T) {
+	v := NewVM("test", compile(t, ""), VMOptions{Clock: &fakeClock{}, Watchdog: quietWatchdog()})
+	m := map[string]any{}
+	m["a"], m["b"] = m, m
+	type res struct{ err error }
+	resc := make(chan res, 1)
+	go func() {
+		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return m, nil })
+		resc <- res{err}
+	}()
+	select {
+	case r := <-resc:
+		assert.ErrorContains(t, r.err, "cycle")
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("owner goroutine stalled on a cyclic result") // v is left running on purpose
+	}
+	v.Close()
+
+	// Shared but acyclic references are fine; an exponential fan-out is cut off
+	// by the size budget instead of stalling.
+	v = newTestVM(t, "", nil)
+	leaf := map[string]any{"x": 1}
+	got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
+		return map[string]any{"a": leaf, "b": leaf}, nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"a": map[string]any{"x": 1.0}, "b": map[string]any{"x": 1.0}}, got)
+	fan := map[string]any{}
+	for range 60 {
+		fan = map[string]any{"a": fan, "b": fan}
+	}
+	start := time.Now()
+	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return fan, nil })
+	assert.ErrorIs(t, err, ErrTooLarge)
+	assert.Less(t, time.Since(start), 2*time.Second)
 }

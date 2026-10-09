@@ -299,10 +299,15 @@ func decode(b []byte) (any, error) {
 
 var gojaValueType = reflect.TypeFor[goja.Value]()
 
+const maxResultDepth = 64
+
 // normalize turns a host Go result into the same plain JSON data as a JS one.
+// checkResult runs first, so encoding/json never sees a goja value, a cycle
+// or an exponential fan-out of shared references.
 func normalize(r any) (any, error) {
-	if hasGojaValue(reflect.ValueOf(r), 0) {
-		return nil, errors.New("plugin: result holds a goja value")
+	w := resultWalker{budget: MaxResultBytes, onPath: map[resultRef]bool{}}
+	if err := w.walk(reflect.ValueOf(r), 0); err != nil {
+		return nil, err
 	}
 	b, err := json.Marshal(r)
 	if err != nil {
@@ -311,38 +316,84 @@ func normalize(r any) (any, error) {
 	return decode(b)
 }
 
-// hasGojaValue walks r; past maxDepth json.Marshal reports the cycle instead.
-func hasGojaValue(r reflect.Value, depth int) bool {
-	const maxDepth = 100
-	if !r.IsValid() || depth > maxDepth {
-		return false
+type resultRef struct {
+	p uintptr
+	t reflect.Type
+}
+
+// resultWalker visits what encoding/json would encode (exported, non "-"
+// fields). Each value costs at least one byte of JSON (strings their length),
+// so the byte budget also bounds the walk; shared references are walked once
+// per use, exactly as json would expand them.
+type resultWalker struct {
+	budget int
+	onPath map[resultRef]bool
+}
+
+func (w *resultWalker) walk(r reflect.Value, depth int) error {
+	if !r.IsValid() {
+		return nil
+	}
+	if depth > maxResultDepth {
+		return fmt.Errorf("%w: result nested deeper than %d", ErrTooLarge, maxResultDepth)
+	}
+	w.budget--
+	if r.Kind() == reflect.String {
+		w.budget -= r.Len()
+	}
+	if w.budget < 0 {
+		return ErrTooLarge
 	}
 	if r.Type().Implements(gojaValueType) {
-		return true
+		return errors.New("plugin: result holds a goja value")
 	}
 	switch r.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		return !r.IsNil() && hasGojaValue(r.Elem(), depth+1)
+	case reflect.Pointer, reflect.Map, reflect.Slice:
+		if r.IsNil() {
+			return nil
+		}
+		ref := resultRef{r.Pointer(), r.Type()}
+		if w.onPath[ref] {
+			return errors.New("plugin: result has a cycle")
+		}
+		w.onPath[ref] = true
+		defer delete(w.onPath, ref)
+	}
+	switch r.Kind() {
+	case reflect.Interface:
+		return w.walk(r.Elem(), depth)
+	case reflect.Pointer:
+		return w.walk(r.Elem(), depth+1)
 	case reflect.Map:
 		for it := r.MapRange(); it.Next(); {
-			if hasGojaValue(it.Value(), depth+1) {
-				return true
+			if err := w.walk(it.Value(), depth+1); err != nil {
+				return err
 			}
 		}
 	case reflect.Slice, reflect.Array:
+		if r.Type().Elem().Kind() == reflect.Uint8 {
+			w.budget -= r.Len() // json encodes bytes as one base64 string
+			if w.budget < 0 {
+				return ErrTooLarge
+			}
+			return nil
+		}
 		for i := range r.Len() {
-			if hasGojaValue(r.Index(i), depth+1) {
-				return true
+			if err := w.walk(r.Index(i), depth+1); err != nil {
+				return err
 			}
 		}
 	case reflect.Struct:
+		t := r.Type()
 		for i := range r.NumField() {
-			if hasGojaValue(r.Field(i), depth+1) {
-				return true
+			if f := t.Field(i); f.IsExported() && f.Tag.Get("json") != "-" {
+				if err := w.walk(r.Field(i), depth+1); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	return false
+	return nil
 }
 
 // scriptError reports a JS failure by its thrown value only: no JS or Go stack.
@@ -361,8 +412,11 @@ func (v *VM) scriptError(err error) error {
 	return fmt.Errorf("plugin %s: %s", v.name, v.clean(err.Error()))
 }
 
-// absPath matches a token that is an absolute Unix, Windows drive or UNC path.
-var absPath = regexp.MustCompile(`(^|[\s"'(\[=,])(?:/[^\s"'()\[\],;:]+|[A-Za-z]:[\\/][^\s"'()\[\],;:]*|\\\\[^\s"'()\[\],;:]+)`)
+// absPath matches an absolute Unix, Windows drive or UNC path anywhere it is
+// not glued to a preceding word, dot or slash (so "open:/x" and "a=C:\\x" match,
+// but "https://h/p" and "a/b" do not: a Unix path's second character is not
+// '/', and "/p" in a URL follows a word character).
+var absPath = regexp.MustCompile(`(^|[^\w./\\])(?:/[^/\s"'()\[\],;:|][^\s"'()\[\],;:|]*|[A-Za-z]:[\\/][^\s"'()\[\],;:|]*|\\\\[^\s"'()\[\],;:|]+)`)
 
 // clean is what any error text crossing into JS or back to the host goes
 // through: secrets redacted, absolute paths replaced with "<path>".
