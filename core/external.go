@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -112,7 +113,9 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	out, err := json.Marshal(res)
 	var plain any
 	if err == nil {
-		err = json.Unmarshal(out, &plain)
+		dec := json.NewDecoder(bytes.NewReader(out))
+		dec.UseNumber() // numbers stay exact (json.Number passes cleanValue untouched)
+		err = dec.Decode(&plain)
 	}
 	if err == nil {
 		out, err = json.Marshal(s.cleanValue(plain))

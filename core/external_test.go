@@ -434,3 +434,17 @@ func TestExternalOutcomeEscapedSecret(t *testing.T) {
 	}
 	assert.True(t, json.Valid([]byte(store.Str(rows.Values[0][0]))))
 }
+
+func TestExternalResultNumbersExact(t *testing.T) {
+	e := newExtEnv(t)
+	e.outcome = func(context.Context) (any, error) { return map[string]any{"id": uint64(9007199254740993)}, nil }
+	in := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	e.waitRun(t, in.RunID, "done")
+	rows, err := e.s.db.Query(t.Context(), "SELECT result FROM approvals WHERE id = ?", in.Approvals[0].ID)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"id":9007199254740993}`, store.Str(rows.Values[0][0]))
+	assert.Contains(t, store.Str(rows.Values[0][0]), "9007199254740993")
+	reqs := e.srv.Requests()
+	assert.Contains(t, string(reqs[len(reqs)-1].Messages), "9007199254740993", "the model gets it unchanged")
+}

@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -564,7 +565,9 @@ func resultOutput(res ToolResult) (any, error) {
 	}
 	var out any
 	if len(res.Output) > 0 {
-		if err := json.Unmarshal(res.Output, &out); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(res.Output))
+		dec.UseNumber() // large integers reach the model exactly
+		if err := dec.Decode(&out); err != nil || dec.More() {
 			return nil, fmt.Errorf("ai: tool result %q is not JSON", res.CallID)
 		}
 	}
