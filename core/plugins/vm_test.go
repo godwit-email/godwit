@@ -3,6 +3,8 @@ package plugins
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -319,12 +321,35 @@ func TestHostPanicSanitized(t *testing.T) {
 			panic(&PermissionError{Perm: "token s3cret-value"})
 		}))
 		rt.Set("throwJS", v.HostFunc("throwJS", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(rt.NewTypeError("plain type error"))
+			panic(rt.NewTypeError("bad /etc/passwd"))
 		}))
-		return rt.RunString(`[crash, crashPath, fail, throwJS].map(f => { try { f(); return "none" } catch (e) { return String(e.message) } })`)
+		rt.Set("readFile", v.HostFunc("readFile", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			panic(&os.PathError{Op: "open", Path: "/Users/someone/data/godwit.db", Err: os.ErrNotExist})
+		}))
+		rt.Set("winPath", v.HostFunc("winPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			panic(errors.New(`open C:\Users\someone\godwit.db: denied`))
+		}))
+		rt.Set("later", v.HostFunc("later", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			return c.Async(func(ctx context.Context) (any, error) {
+				return nil, fmt.Errorf("read /var/lib/godwit/x: key s3cret-value: %w", os.ErrPermission)
+			})
+		}))
+		return rt.RunString(`(async () => {
+			const out = [crash, crashPath, fail, throwJS, readFile, winPath].map(f => {
+				try { f(); return ["none"] } catch (e) { return [String(e.message), typeof e.value, e instanceof Error, e instanceof TypeError] }
+			})
+			try { await later() } catch (e) { out.push([String(e.message), typeof e.value, e instanceof Error, false]) }
+			return out
+		})()`)
 	})
 	require.NoError(t, err)
-	msgs := got.([]any)
+	var msgs []any
+	for _, r := range got.([]any) {
+		r := r.([]any)
+		msgs = append(msgs, r[0])
+		assert.Equal(t, "undefined", r[1], "e.value exposes the Go error: %v", r[0])
+		assert.Equal(t, true, r[2], "not a JS Error: %v", r[0])
+	}
 	for _, m := range msgs[:2] {
 		assert.Contains(t, m, "internal error")
 		assert.NotContains(t, m, "/Users")
@@ -333,7 +358,11 @@ func TestHostPanicSanitized(t *testing.T) {
 		assert.NotContains(t, m, "index out of range")
 	}
 	assert.Equal(t, "fail: permission denied: token [redacted]", msgs[2])
-	assert.Equal(t, "plain type error", msgs[3])
+	assert.Equal(t, "bad <path>", msgs[3])
+	assert.Equal(t, true, got.([]any)[3].([]any)[3], "a host TypeError stays a TypeError")
+	assert.Equal(t, "readFile: open <path>: file does not exist", msgs[4])
+	assert.Equal(t, "winPath: open <path>: denied", msgs[5])
+	assert.Equal(t, "read <path>: key [redacted]: permission denied", msgs[6])
 
 	// A panic in the call body itself does not kill the owner goroutine.
 	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { panic("body /Users/x.go") })
@@ -427,4 +456,24 @@ func TestExportStaysInOwner(t *testing.T) {
 
 	_, err = run(v, context.Background(), `"x".repeat(1 << 20)`)
 	assert.ErrorIs(t, err, ErrTooLarge)
+
+	// Go results are normalized and capped the same way.
+	goCall := func(r any) (any, error) {
+		return v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return r, nil })
+	}
+	got, err = goCall(MailSummary{ID: 7, Subject: "hi"})
+	require.NoError(t, err)
+	assert.Equal(t, 7.0, got.(map[string]any)["id"])
+	assert.Equal(t, "hi", got.(map[string]any)["subject"])
+
+	_, err = goCall(strings.Repeat("x", 1<<20))
+	assert.ErrorIs(t, err, ErrTooLarge)
+
+	_, err = goCall(func() {})
+	assert.Error(t, err)
+
+	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
+		return map[string]any{"v": c.Runtime().ToValue(1)}, nil
+	})
+	assert.ErrorContains(t, err, "goja")
 }

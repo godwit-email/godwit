@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -48,6 +49,7 @@ type VM struct {
 	redact  func(string) string
 
 	stringify goja.Callable // JSON.stringify as it was before plugin code ran
+	errorCtor goja.Value    // Error as it was before plugin code ran
 
 	calls   chan *callReq
 	jobs    chan job
@@ -109,6 +111,7 @@ func NewVM(name string, program *goja.Program, opts VMOptions) *VM {
 	v.rt.SetMaxCallStackSize(10000)
 	v.rt.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 	v.stringify, _ = goja.AssertFunction(v.rt.Get("JSON").ToObject(v.rt).Get("stringify"))
+	v.errorCtor = v.rt.Get("Error")
 	v.life, v.kill = context.WithCancelCause(context.Background())
 	go v.loop()
 	return v
@@ -140,7 +143,8 @@ func (v *VM) Close() {
 // already running or queued. If fn returns a goja.Value it is awaited when it
 // is a promise (pumping only this call's async completions) and exported as
 // plain JSON data (map[string]any, []any, float64, string, bool, nil; at most
-// MaxResultBytes, else ErrTooLarge); other results are returned as they are.
+// MaxResultBytes, else ErrTooLarge). Go results are normalized the same way
+// through encoding/json; one holding a goja.Value, func or channel is an error.
 // The call ends at settlement, ctx's end, Close (ErrClosed), the kind's time
 // limit (ErrTimeout) or the watchdog (ErrMemoryLimit); JS still running is
 // interrupted.
@@ -244,7 +248,7 @@ func (v *VM) exec(c *CallScope, fn func(c *CallScope) (any, error)) (res any, er
 	}
 	val, ok := r.(goja.Value)
 	if !ok {
-		return r, nil
+		return normalize(r)
 	}
 	if p, ok := val.Export().(*goja.Promise); ok {
 		for p.State() == goja.PromiseStatePending {
@@ -260,7 +264,7 @@ func (v *VM) exec(c *CallScope, fn func(c *CallScope) (any, error)) (res any, er
 			}
 		}
 		if p.State() == goja.PromiseStateRejected {
-			return nil, fmt.Errorf("plugin %s: %s", v.name, v.redact(v.safeString(p.Result())))
+			return nil, fmt.Errorf("plugin %s: %s", v.name, v.clean(v.safeString(p.Result())))
 		}
 		val = p.Result()
 	}
@@ -279,15 +283,66 @@ func (v *VM) export(val goja.Value) (any, error) {
 	if goja.IsUndefined(s) {
 		return nil, nil
 	}
-	str := s.String()
-	if len(str) > MaxResultBytes {
+	return decode([]byte(s.String()))
+}
+
+func decode(b []byte) (any, error) {
+	if len(b) > MaxResultBytes {
 		return nil, ErrTooLarge
 	}
 	var out any
-	if err := json.Unmarshal([]byte(str), &out); err != nil {
+	if err := json.Unmarshal(b, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+var gojaValueType = reflect.TypeFor[goja.Value]()
+
+// normalize turns a host Go result into the same plain JSON data as a JS one.
+func normalize(r any) (any, error) {
+	if hasGojaValue(reflect.ValueOf(r), 0) {
+		return nil, errors.New("plugin: result holds a goja value")
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("plugin: result is not JSON data: %w", err)
+	}
+	return decode(b)
+}
+
+// hasGojaValue walks r; past maxDepth json.Marshal reports the cycle instead.
+func hasGojaValue(r reflect.Value, depth int) bool {
+	const maxDepth = 100
+	if !r.IsValid() || depth > maxDepth {
+		return false
+	}
+	if r.Type().Implements(gojaValueType) {
+		return true
+	}
+	switch r.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		return !r.IsNil() && hasGojaValue(r.Elem(), depth+1)
+	case reflect.Map:
+		for it := r.MapRange(); it.Next(); {
+			if hasGojaValue(it.Value(), depth+1) {
+				return true
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := range r.Len() {
+			if hasGojaValue(r.Index(i), depth+1) {
+				return true
+			}
+		}
+	case reflect.Struct:
+		for i := range r.NumField() {
+			if hasGojaValue(r.Field(i), depth+1) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // scriptError reports a JS failure by its thrown value only: no JS or Go stack.
@@ -301,9 +356,27 @@ func (v *VM) scriptError(err error) error {
 	case errors.As(err, &so):
 		return fmt.Errorf("plugin %s: call stack exceeded", v.name)
 	case errors.As(err, &exc):
-		return fmt.Errorf("plugin %s: %s", v.name, v.redact(v.safeString(exc.Value())))
+		return fmt.Errorf("plugin %s: %s", v.name, v.clean(v.safeString(exc.Value())))
 	}
-	return fmt.Errorf("plugin %s: %s", v.name, v.redact(err.Error()))
+	return fmt.Errorf("plugin %s: %s", v.name, v.clean(err.Error()))
+}
+
+// absPath matches a token that is an absolute Unix, Windows drive or UNC path.
+var absPath = regexp.MustCompile(`(^|[\s"'(\[=,])(?:/[^\s"'()\[\],;:]+|[A-Za-z]:[\\/][^\s"'()\[\],;:]*|\\\\[^\s"'()\[\],;:]+)`)
+
+// clean is what any error text crossing into JS or back to the host goes
+// through: secrets redacted, absolute paths replaced with "<path>".
+func (v *VM) clean(s string) string {
+	return absPath.ReplaceAllString(v.redact(s), "${1}<path>")
+}
+
+// jsError is a plain JS Error carrying only msg (no Go value behind it).
+func (v *VM) jsError(msg string) goja.Value {
+	o, err := v.rt.New(v.errorCtor, v.rt.ToValue(msg))
+	if err != nil {
+		return v.rt.ToValue(msg)
+	}
+	return o
 }
 
 // safeString renders a thrown value; its toString is plugin code and may throw.
@@ -330,17 +403,21 @@ func (v *VM) abort(id uint64, cause error) {
 
 // HostFunc wraps a host function for JS. Call it on the owner goroutine (from
 // inside a Call or Init). fn gets the scope of the call JS invoked it in. To
-// throw, fn panics: goja values (rt.NewTypeError, rt.NewGoError, ...) pass
-// through as they are; an error is thrown as a GoError whose message is
-// "<name>: " + Redact(err.Error()) (errors.Is still sees err from Go); any
-// other panic, Go runtime errors included, becomes "<name>: internal error".
+// throw, fn panics; JS always gets a plain Error (no Go value behind it, so
+// e.value is undefined) whose message went through Redact and path scrubbing:
+//   - an error: "<name>: " + its message
+//   - a goja error value (rt.NewTypeError(...), ...): its message, keeping
+//     TypeError as TypeError
+//   - anything else, Go runtime errors included: "<name>: internal error"
+//
+// Interrupts and stack overflows pass through untouched.
 func (v *VM) HostFunc(name string, fn func(c *CallScope, call goja.FunctionCall) goja.Value) goja.Value {
 	return v.rt.ToValue(func(call goja.FunctionCall) goja.Value {
 		v.mu.Lock()
 		c := v.cur
 		v.mu.Unlock()
 		if c == nil {
-			panic(v.rt.NewGoError(fmt.Errorf("%s: not in a call", name)))
+			panic(v.jsError(name + ": not in a call"))
 		}
 		defer func() {
 			if r := recover(); r != nil {
@@ -352,29 +429,31 @@ func (v *VM) HostFunc(name string, fn func(c *CallScope, call goja.FunctionCall)
 }
 
 func (v *VM) thrown(name string, r any) any {
-	if t := reflect.TypeOf(r); t.PkgPath() == "github.com/dop251/goja" ||
-		t.Kind() == reflect.Pointer && t.Elem().PkgPath() == "github.com/dop251/goja" {
-		return r // goja's own throw (JS error value, exception, interrupt)
-	}
 	if err, ok := r.(error); ok {
-		if _, isRuntime := err.(runtime.Error); !isRuntime {
-			return v.rt.NewGoError(v.hostError(name, err))
+		var intr *goja.InterruptedError
+		var so *goja.StackOverflowError
+		if errors.As(err, &intr) || errors.As(err, &so) {
+			return r
 		}
 	}
-	return v.rt.NewGoError(fmt.Errorf("%s: internal error", name))
+	if exc, ok := r.(*goja.Exception); ok {
+		r = exc.Value()
+	}
+	switch r := r.(type) {
+	case *goja.Object:
+		msg := v.clean(v.safeString(r.Get("message")))
+		if v.safeString(r.Get("name")) == "TypeError" {
+			return v.rt.NewTypeError("%s", msg)
+		}
+		return v.jsError(msg)
+	case goja.Value:
+		return v.jsError(v.clean(v.safeString(r)))
+	case runtime.Error:
+	case error:
+		return v.jsError(name + ": " + v.clean(r.Error()))
+	}
+	return v.jsError(name + ": internal error")
 }
-
-func (v *VM) hostError(name string, err error) error {
-	return &redactedError{msg: name + ": " + v.redact(err.Error()), err: err}
-}
-
-type redactedError struct {
-	msg string
-	err error
-}
-
-func (e *redactedError) Error() string { return e.msg }
-func (e *redactedError) Unwrap() error { return e.err }
 
 // Runtime is the goja runtime; use it only on the owner goroutine during the call.
 func (c *CallScope) Runtime() *goja.Runtime { return c.vm.rt }
@@ -389,7 +468,8 @@ func (c *CallScope) Context() context.Context { return c.ctx }
 
 // Async returns a promise settled by fn, which runs on its own goroutine with
 // the call's context. The result goes through rt.ToValue (json tags name
-// struct fields); an error rejects with a redacted GoError. The settlement is
+// struct fields); an error rejects with a plain Error whose message is
+// redacted and path-scrubbed. The settlement is
 // posted back to the owner goroutine tagged with this call; if the call has
 // ended by then it is dropped and never runs.
 func (c *CallScope) Async(fn func(ctx context.Context) (any, error)) goja.Value {
@@ -407,7 +487,7 @@ func (c *CallScope) Async(fn func(ctx context.Context) (any, error)) goja.Value 
 		j := job{id: c.id, f: func() {
 			// Errors here are interrupts; the pump sees the ended context next.
 			if err != nil {
-				_ = reject(v.rt.NewGoError(&redactedError{msg: v.redact(err.Error()), err: err}))
+				_ = reject(v.jsError(v.clean(err.Error())))
 			} else {
 				_ = resolve(v.rt.ToValue(res))
 			}
