@@ -551,6 +551,9 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 	out := make([]ai.ToolSpec, 0, len(tools))
 	for _, t := range tools {
 		t.Source = cmp.Or(t.Source, gateway.SourceWit)
+		if t.Source == gateway.SourcePlugin {
+			t.Spec.Description = s.pluginToolDescription(t.Extension, t.Spec.Description)
+		}
 		spec := g.Wrap(job.scope, gateway.Call{Source: t.Source, Extension: t.Extension, Write: t.Write}, t.Spec, t.Egress)
 		if run := spec.Run; run != nil {
 			spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {

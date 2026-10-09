@@ -449,8 +449,12 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		if err != nil {
 			panic(err)
 		}
-		if !slices.Contains(p.m.Permissions.Net, host) || !slices.Contains(c.Invocation().EgressHosts, host) {
-			p.denyFetch(c, req.URL, "host_not_allowed", &PermissionError{Perm: "net:" + host})
+		if declared := slices.Contains(p.m.Permissions.Net, host); !declared || !slices.Contains(c.Invocation().EgressHosts, host) {
+			reason := "host_not_allowed"
+			if declared && c.Invocation().Unapproved {
+				reason = "approval_required"
+			}
+			p.denyFetch(c, req.URL, reason, &PermissionError{Perm: "net:" + host})
 		}
 		if init := call.Argument(1); !optional(init) {
 			// Its own type: no field of init can replace the URL checked above.

@@ -85,6 +85,9 @@ type Invocation struct {
 	Kind        InvocationKind
 	Write       bool
 	EgressHosts []string
+	// Unapproved: the call needed an egress approval it did not get, so it
+	// has no hosts; a fetch to a declared host is denied as approval_required.
+	Unapproved bool
 }
 
 // EgressFor is the egress rule for one call of kind into plugin m (plan 4

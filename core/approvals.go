@@ -92,8 +92,24 @@ func (a approvalRow) audit(decision string) sqlite.Statement {
 		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision})
 }
 
+// toolResult is the approval's outcome as the model gets it. A plugin tool's
+// outcome of any kind is wrapped (pluginUntrusted); a done result that is a
+// JSON string is wrapped as its text.
 func (a approvalRow) toolResult() ai.ToolResult {
 	r := ai.ToolResult{CallID: a.callID, Name: a.Tool}
+	if a.source == gateway.SourcePlugin {
+		text := a.result
+		if a.State != "done" {
+			r.Error = pluginUntrusted(a.extension, text)
+			return r
+		}
+		var str string
+		if json.Unmarshal([]byte(text), &str) == nil {
+			text = str
+		}
+		r.Output, _ = json.Marshal(pluginUntrusted(a.extension, text))
+		return r
+	}
 	if a.State == "done" {
 		r.Output = json.RawMessage(a.result)
 	} else {

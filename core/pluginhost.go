@@ -266,20 +266,34 @@ func pluginToolName(plugin, tool string) string {
 	return strings.ReplaceAll("plugin_"+plugin+"_"+tool, "-", "_")
 }
 
-// pluginToolNames lists the running plugins' tools for a Wit run, write
-// tools only with writes (Assist offers read tools only), sorted.
-func (s *Service) pluginToolNames(writes bool) []string {
-	var out []string
-	for _, pc := range s.runningPlugins(func(*plugins.Plugin) bool { return true }) {
-		for _, ti := range pc.p.Tools() {
-			if writes || !ti.Write {
-				out = append(out, pluginToolName(pc.name, ti.Name))
-			}
+// pluginTools are the running plugins' tools for a Wit run, write tools only
+// with writes (Assist offers read tools only), by name. One snapshot under
+// pluginsMu: the filter and the tools offered cannot come from different
+// instances.
+func (s *Service) pluginTools(writes bool) []toolDesc {
+	s.pluginsMu.RLock()
+	s.toolsMu.Lock()
+	var out []toolDesc
+	for _, t := range s.tools {
+		if t.Source == gateway.SourcePlugin && s.running[t.Extension] != nil && (writes || !t.Write) {
+			out = append(out, t)
 		}
 	}
-	slices.Sort(out)
+	s.toolsMu.Unlock()
+	s.pluginsMu.RUnlock()
+	slices.SortFunc(out, func(a, b toolDesc) int { return strings.Compare(a.Spec.Name, b.Spec.Name) })
+	if afterPluginToolList != nil {
+		afterPluginToolList()
+	}
 	return out
 }
+
+// Test hooks, nil in production: beforePluginToolRun runs as a plugin tool's
+// in-run call starts, afterPluginToolList once a run's plugin tools are listed.
+var (
+	beforePluginToolRun func(ctx context.Context)
+	afterPluginToolList func()
+)
 
 // registerPluginTools offers rp's tools to Wit runs; a name taken is an
 // error. The caller holds pluginsMu and stops rp on error (unregistering
@@ -317,12 +331,29 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 	spec := ai.ToolSpec{Name: pluginToolName(name, ti.Name), Description: ti.Description, Schema: ti.Schema, NeedsApproval: always}
 	if !ti.Write {
 		spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
+			if beforePluginToolRun != nil {
+				beforePluginToolRun(ctx)
+			}
 			scope := runOf(ctx).scope
-			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			inv := plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool}
+			// Decided again now: a scope that read mail since the gate allowed
+			// the call leaves it without hosts (fail closed).
+			hosts, need := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			if inv.Unapproved = need; !need {
+				inv.EgressHosts = hosts
+			}
 			if readsMail {
 				defer scope.MarkReadMail() // what it returns may be mail
 			}
-			return s.runPluginTool(ctx, pc, ti.Name, args, plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool, EgressHosts: hosts})
+			res, err := s.runPluginTool(ctx, pc, ti.Name, args, inv)
+			if err != nil {
+				return nil, cleanErr{pluginUntrusted(name, s.clean(err.Error())), err}
+			}
+			text, err := resultText(res)
+			if err != nil {
+				return nil, err
+			}
+			return pluginUntrusted(name, s.clean(text)), nil
 		}
 	}
 	return toolDesc{Spec: spec, Source: gateway.SourcePlugin, Extension: name, Write: ti.Write, Mode: modeExternal,
@@ -362,7 +393,8 @@ func (s *Service) pluginBinding(ctx context.Context, name, hash string) (string,
 }
 
 // runPluginTool runs the tool under inv and accounts for the call. Its
-// result or error text, cleaned, reaches the model as an untrusted block.
+// result and error are plain (the error's text cleaned): callers wrap what
+// they hand the model (pluginUntrusted).
 func (s *Service) runPluginTool(ctx context.Context, pc pluginCall, tool string, args json.RawMessage, inv plugins.Invocation) (any, error) {
 	var in any
 	if len(args) > 0 {
@@ -374,22 +406,39 @@ func (s *Service) runPluginTool(ctx context.Context, pc pluginCall, tool string,
 	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
 		return nil, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
 	}
-	src := "plugin:" + pc.name
 	if err != nil {
-		text := s.clean(err.Error())
-		return nil, errors.Join(cleanErr{ai.Untrusted(src, text, ai.SuspectInjection(text)), err}, s.pluginFailed(ctx, pc.name, pc.gen))
+		return nil, errors.Join(s.cleanError(err), s.pluginFailed(ctx, pc.name, pc.gen))
 	}
 	if err := s.pluginSucceeded(ctx, pc.name, pc.gen); err != nil {
 		return nil, err
 	}
-	text, ok := res.(string)
-	if !ok {
-		b, err := json.Marshal(res)
-		if err != nil {
-			return nil, err
-		}
-		text = string(b)
+	return res, nil
+}
+
+// resultText is a tool result as text: a string as it is, anything else as JSON.
+func resultText(v any) (string, error) {
+	if t, ok := v.(string); ok {
+		return t, nil
 	}
-	text = s.clean(text)
-	return ai.Untrusted(src, text, ai.SuspectInjection(text)), nil
+	b, err := json.Marshal(v)
+	return string(b), err
+}
+
+// pluginUntrusted is text from or about plugin name's tool call as the model
+// gets it: the one place plugin tool output is wrapped.
+func pluginUntrusted(name, text string) string {
+	return ai.Untrusted("plugin:"+name, text, ai.SuspectInjection(text))
+}
+
+// maxToolDescription caps a plugin tool's description, in runes.
+const maxToolDescription = 1000
+
+// pluginToolDescription is a plugin tool's description as the model gets it:
+// cleaned (pluginText), capped and marked as the plugin's.
+func (s *Service) pluginToolDescription(name, d string) string {
+	r := []rune(s.pluginText(d))
+	if len(r) > maxToolDescription {
+		r = r[:maxToolDescription]
+	}
+	return "[plugin " + name + "] " + string(r)
 }

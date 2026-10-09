@@ -58,7 +58,7 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, s.registered(append(slices.Clone(askTools), s.pluginToolNames(true)...)...), setTitle)
+		w, err = s.launch(ctx, end, conv, input, append(s.registered(askTools...), s.pluginTools(true)...), setTitle)
 	}
 	if err != nil {
 		end()
