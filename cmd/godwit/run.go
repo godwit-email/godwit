@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -73,10 +74,12 @@ func parse(fs *flag.FlagSet, args []string) (code int, ok bool) {
 	return 2, err == nil
 }
 
-// dataDirOr is dir, or defaultDataDir if dir is empty.
+// dataDirOr is dir made absolute and clean (a later change of working
+// directory, or a copied MCP config, must not move it), or defaultDataDir
+// if dir is empty.
 func dataDirOr(dir string) (string, error) {
 	if dir != "" {
-		return dir, nil
+		return filepath.Abs(dir)
 	}
 	return defaultDataDir()
 }

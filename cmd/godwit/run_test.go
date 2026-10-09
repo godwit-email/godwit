@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ import (
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/zalando/go-keyring"
 )
 
@@ -398,6 +400,57 @@ func TestGUILockFailure(t *testing.T) {
 		msg, code = lockFailure(fmt.Errorf("open /secret/path: %w", os.ErrPermission))
 		if code != 1 || msg != i18n.T("app.lock_failed") || msg == "app.lock_failed" || strings.Contains(msg, "/secret") {
 			t.Errorf("%s: other failure: %q %d", lang, msg, code)
+		}
+	}
+}
+
+// --data-dir is made absolute and clean before anything uses it.
+func TestDataDirAbsolute(t *testing.T) {
+	parent := shortDir(t)
+	t.Chdir(parent)
+	parent, _ = os.Getwd() // as the OS spells it (macOS: /private/var/…)
+	dir, err := dataDirOr("a/../gw")
+	if err != nil || dir != filepath.Join(parent, "gw") {
+		t.Fatalf("dataDirOr = %q, %v; want %q", dir, err, filepath.Join(parent, "gw"))
+	}
+}
+
+// Headless started with a relative --data-dir serves, and cleans up, the
+// absolute directory however the working directory changes after; godwit mcp
+// reaches it by that absolute path from elsewhere.
+func TestRelativeDataDir(t *testing.T) {
+	parent := shortDir(t)
+	t.Chdir(parent)
+	parent, _ = os.Getwd()
+	abs := filepath.Join(parent, "d")
+	_, _, stop := startHeadless(t, "d")
+	t.Chdir(shortDir(t))
+
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	done := make(chan int, 1)
+	go func() {
+		done <- run(context.Background(), []string{"mcp", "--data-dir", abs}, inR, outW, &syncBuf{})
+		outW.Close()
+	}()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).
+		Connect(t.Context(), &mcp.IOTransport{Reader: outR, Writer: inW}, nil)
+	if err != nil {
+		t.Fatalf("godwit mcp from elsewhere: %v", err)
+	}
+	if _, err := cs.ListTools(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	cs.Close()
+	if code := <-done; code != 0 {
+		t.Fatalf("godwit mcp exit code %d", code)
+	}
+	if code := stop(); code != 0 {
+		t.Fatalf("exit code %d", code)
+	}
+	for _, f := range []string{rpc.SocketName, rpc.TokenName} {
+		if _, err := os.Stat(filepath.Join(abs, f)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s left behind: %v", f, err)
 		}
 	}
 }
