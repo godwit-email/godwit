@@ -33,6 +33,7 @@ type reader struct {
 
 	key     [2]int64 // the route's ThreadID and MessageID shown
 	gen     uint64   // bumped per key; older results are dropped
+	readGen uint64   // bumped per thread read; only the newest read applies
 	loaded  bool
 	subject string
 	msgs    []core.MessageSummary // oldest first
@@ -40,6 +41,9 @@ type reader struct {
 	bodies  map[int64]*msgBody
 
 	allowLoopback bool // tests: images from httptest servers
+
+	getThread  func(ctx context.Context, id int64) (core.Thread, error)               // tests wrap it
+	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error) // tests wrap it
 }
 
 // msgBody is a message read in full and its body converted.
@@ -50,11 +54,13 @@ type msgBody struct {
 	remote  bool // remote images were asked for
 	loading bool
 	ready   bool
+	err     error // the last read failed; a retry reads again
 	images  *imageLoader
 }
 
 func newReader(p *mailPage) *reader {
-	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}}
+	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{},
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -92,13 +98,14 @@ func (r *reader) reset(k [2]int64) {
 }
 
 func (r *reader) load() {
-	a, gen, k := r.p.a, r.gen, r.key
+	r.readGen++
+	a, gen, read, k, get := r.p.a, r.gen, r.readGen, r.key, r.getThread
 	var th core.Thread
 	a.do(func(ctx context.Context) (err error) {
-		th, err = a.svc.GetThread(ctx, k[0])
+		th, err = get(ctx, k[0])
 		return err
 	}, func(err error) {
-		if gen != r.gen {
+		if gen != r.gen || read != r.readGen {
 			return
 		}
 		if err != nil {
@@ -109,13 +116,16 @@ func (r *reader) load() {
 		if k[1] != 0 {
 			msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
-		first := !r.loaded
-		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
-		if !first {
-			return
+		known := map[int64]bool{} // messages shown before keep their state
+		for _, m := range r.msgs {
+			known[m.ID] = true
 		}
+		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
 		var unread []core.MessageSummary
 		for i, m := range msgs {
+			if known[m.ID] {
+				continue
+			}
 			if !isSeen(m) {
 				unread = append(unread, m)
 			}
@@ -143,31 +153,38 @@ func (r *reader) markRead(msgs []core.MessageSummary) {
 		}, a.toastErr)
 	}
 	for i, m := range r.msgs {
-		if !isSeen(m) {
+		if !isSeen(m) && slices.ContainsFunc(msgs, func(u core.MessageSummary) bool { return u.ID == m.ID }) {
 			r.msgs[i].Flags = append(slices.Clone(m.Flags), `\Seen`)
 		}
 	}
 }
 
+// expand shows a message in full, reading it unless it was read already.
 func (r *reader) expand(id int64) {
 	r.open[id] = true
-	if r.bodies[id] == nil {
-		r.loadBody(id, false)
+	if b := r.bodies[id]; b == nil || b.err != nil {
+		r.loadBody(id, b != nil && b.remote)
 	}
 }
 
+// toggle folds or expands a message; expanding an unread one marks it read.
 func (r *reader) toggle(id int64) {
 	if r.open[id] {
 		delete(r.open, id)
 		return
 	}
 	r.expand(id)
+	for _, m := range r.msgs {
+		if m.ID == id && !isSeen(m) {
+			r.markRead([]core.MessageSummary{m})
+		}
+	}
 }
 
 // loadBody reads the message and converts its body off the UI thread; with
 // remote, remote images are kept for its image loader.
 func (r *reader) loadBody(id int64, remote bool) {
-	a, gen := r.p.a, r.gen
+	a, gen, get := r.p.a, r.gen, r.getMessage
 	b := r.bodies[id]
 	if b == nil {
 		b = &msgBody{}
@@ -176,12 +193,12 @@ func (r *reader) loadBody(id int64, remote bool) {
 	if b.loading {
 		return
 	}
-	b.loading = true
+	b.loading, b.err, b.remote = true, nil, remote
 	var m core.Message
 	var doc richtext.Doc
 	var cut bool
 	a.do(func(ctx context.Context) (err error) {
-		if m, err = a.svc.GetMessage(ctx, id, remote); err != nil {
+		if m, err = get(ctx, id, remote); err != nil {
 			return err
 		}
 		doc, cut = messageDoc(m)
@@ -192,7 +209,7 @@ func (r *reader) loadBody(id int64, remote bool) {
 		}
 		b.loading = false
 		if err != nil {
-			a.toastErr(err)
+			b.err = err
 			return
 		}
 		if b.images != nil {
@@ -228,6 +245,24 @@ func messageDoc(m core.Message) (richtext.Doc, bool) {
 func (p *mailPage) accountOf(folderID int64) int64 {
 	f, _ := p.folder(folderID)
 	return f.AccountID
+}
+
+// folderAccount looks up the account of a folder in the Service.
+func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int64, error) {
+	accs, err := svc.ListAccounts(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, acc := range accs {
+		fs, err := svc.ListFolders(ctx, acc.ID)
+		if err != nil {
+			return 0, err
+		}
+		if slices.ContainsFunc(fs, func(f core.Folder) bool { return f.ID == folderID }) {
+			return acc.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("folder %d not found", folderID)
 }
 
 // last is the newest message shown: the one replies and the More menu act on.
@@ -277,7 +312,12 @@ func (r *reader) draft(mode string) {
 	}
 	a, gen, acc := r.p.a, r.gen, r.account()
 	var id int64
-	a.do(func(ctx context.Context) error {
+	a.do(func(ctx context.Context) (err error) {
+		if acc == 0 { // the folders have not loaded yet
+			if acc, err = folderAccount(ctx, a.svc, m.FolderID); err != nil {
+				return err
+			}
+		}
 		d, err := a.svc.NewDraft(ctx, acc, mode, m.ID)
 		id = d.ID
 		return err
@@ -544,7 +584,14 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		}
 		r.aiArea(c, m)
 		r.cards(c, m)
-		if b == nil || !b.ready {
+		switch {
+		case b != nil && b.err != nil && !b.loading:
+			kit.Alert(c, kit.Danger, humanize(b.err), func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+					OnClick(func() { r.loadBody(m.ID, b.remote) })
+			})
+			return
+		case b == nil || !b.ready:
 			kit.Spinner(c)
 			return
 		}

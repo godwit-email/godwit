@@ -10,6 +10,7 @@ import (
 	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,4 +152,50 @@ func TestImageBudgets(t *testing.T) {
 			t.Fatal("an image loaded after cancel")
 		}
 	})
+}
+
+// TestImageTotalBudget: the 20 MB budget is spent as bytes arrive; once it is
+// gone no further request goes out and reads in flight stop.
+func TestImageTotalBudget(t *testing.T) {
+	const n, size = 20, 3 << 20 // 60 MB offered
+	var hits, sent atomic.Int64
+	chunk := make([]byte, 32<<10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write(pngHeader(10, 10))
+		for left := size; left > 0; left -= len(chunk) {
+			k, err := w.Write(chunk[:min(len(chunk), left)])
+			sent.Add(int64(k))
+			if err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+	l, wait := testLoader(t, true)
+	var srcs []string
+	for i := range n {
+		srcs = append(srcs, fmt.Sprintf("%s/%d.png", srv.URL, i))
+		l.Load(srcs[i])
+	}
+	wait("all settled", func() bool {
+		for _, s := range srcs {
+			if !l.settled(s) {
+				return false
+			}
+		}
+		return true
+	})
+	if got := maxImagesBytes - l.left.Load(); got > maxImagesBytes+int64(imageWorkers*len(chunk)) {
+		t.Errorf("read %d bytes, budget %d", got, maxImagesBytes)
+	}
+	if h := hits.Load(); h >= n {
+		t.Errorf("%d of %d requests sent after the budget ran out", h, n)
+	}
+	if s := sent.Load(); s > maxImagesBytes+8<<20 { // the kernel's socket buffers take some more
+		t.Errorf("the server sent %d bytes", s)
+	}
+	if !slices.ContainsFunc(srcs, func(s string) bool { return errors.Is(l.imgs[s].err, errImagesTooLarge) }) {
+		t.Error("no image refused for the total budget")
+	}
 }

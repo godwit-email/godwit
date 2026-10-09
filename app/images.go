@@ -47,12 +47,12 @@ var imageFormats = map[string]bool{"png": true, "jpeg": true, "gif": true, "webp
 // imageLoader loads one message's images within its budget. Load, cancel
 // and imgs belong to the UI thread; downloads post their results to it.
 type imageLoader struct {
-	ctx           context.Context // ends with cancel or after imageTimeout
+	ctx           context.Context // ends with cancel
 	stop          context.CancelFunc
 	post          func(func())
 	client        *http.Client
 	sem           chan struct{}
-	total         atomic.Int64 // bytes downloaded
+	left          atomic.Int64 // bytes the budget has left
 	remote        int          // remote images asked for
 	closed        bool
 	imgs          map[string]*loadedImage
@@ -68,9 +68,10 @@ type loadedImage struct {
 // newImageLoader makes a loader; allowLoopback lets tests reach httptest
 // servers, which listen on loopback.
 func newImageLoader(parent context.Context, post func(func()), allowLoopback bool) *imageLoader {
-	ctx, stop := context.WithTimeout(parent, imageTimeout)
+	ctx, stop := context.WithCancel(parent)
 	l := &imageLoader{ctx: ctx, stop: stop, post: post, sem: make(chan struct{}, imageWorkers),
 		imgs: map[string]*loadedImage{}, allowLoopback: allowLoopback}
+	l.left.Store(maxImagesBytes)
 	l.client = l.newClient()
 	return l
 }
@@ -101,7 +102,7 @@ func (l *imageLoader) newClient() *http.Client {
 	}}
 	tr := &http.Transport{Proxy: nil, DialContext: d.DialContext, DisableKeepAlives: true,
 		TLSHandshakeTimeout: imageTimeout, ResponseHeaderTimeout: imageTimeout, MaxResponseHeaderBytes: 64 << 10}
-	return &http.Client{Transport: tr, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &http.Client{Transport: tr, Timeout: imageTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > maxRedirects {
 			return fmt.Errorf("more than %d redirects", maxRedirects)
 		}
@@ -173,6 +174,9 @@ func (l *imageLoader) download(src string) ([]byte, error) {
 	case <-l.ctx.Done():
 		return nil, l.ctx.Err()
 	}
+	if l.left.Load() <= 0 {
+		return nil, errImagesTooLarge // spent: no request goes out
+	}
 	req, err := http.NewRequestWithContext(l.ctx, http.MethodGet, src, nil)
 	if err != nil {
 		return nil, err
@@ -185,16 +189,34 @@ func (l *imageLoader) download(src string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("image: %s", resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageBytes+1))
+	data, err := io.ReadAll(io.LimitReader(budgetReader{resp.Body, &l.left}, maxImageBytes+1))
 	switch {
 	case err != nil:
 		return nil, err
 	case len(data) > maxImageBytes:
 		return nil, errImageTooLarge
-	case l.total.Add(int64(len(data))) > maxImagesBytes:
-		return nil, errImagesTooLarge
 	}
 	return data, nil
+}
+
+// budgetReader spends left on every byte read and fails once it is gone;
+// reads at the same time may overrun it by a buffer each.
+type budgetReader struct {
+	r    io.Reader
+	left *atomic.Int64
+}
+
+func (b budgetReader) Read(p []byte) (int, error) {
+	left := b.left.Load()
+	if left <= 0 {
+		return 0, errImagesTooLarge
+	}
+	if int64(len(p)) > left {
+		p = p[:left]
+	}
+	n, err := b.r.Read(p)
+	b.left.Add(-int64(n))
+	return n, err
 }
 
 // dataURL decodes a data: URL's bytes.

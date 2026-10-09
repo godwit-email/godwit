@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -313,6 +315,7 @@ func TestReaderArchive(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.app.sidebarHidden = true // its Archive folder is named as the button is
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Done", "file it"))
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 }) // batch finds archives by them
 	h.openThread(m.ThreadID)
 	h.see("file it")
 	h.click("归档")
@@ -370,4 +373,75 @@ func TestReaderTruncatedNotice(t *testing.T) {
 	if u := h.callArg("OpenURL"); !strings.HasPrefix(u, "file://") {
 		t.Fatalf("opened %q", u)
 	}
+}
+
+func TestReaderRefreshKeepsNewest(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Star me", "body"))
+	h.openThread(m.ThreadID)
+	h.see("body")
+	r := h.app.mail.reader
+	fetched, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	real := r.getThread
+	r.getThread = func(ctx context.Context, id int64) (core.Thread, error) {
+		th, err := real(ctx, id)
+		if calls.Add(1) == 1 {
+			close(fetched)
+			<-release
+			defer close(returned)
+		}
+		return th, err
+	}
+	r.sync(true) // the older refresh: reads the thread unstarred, answers last
+	<-fetched
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{m.ID}, []string{`\Flagged`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	r.sync(true) // the newer refresh: reads it starred
+	flagged := func() bool { return len(r.msgs) == 1 && slices.Contains(r.msgs[0].Flags, `\Flagged`) }
+	h.until("the newer refresh applied", flagged)
+	close(release)
+	<-returned
+	frames := 0
+	h.until("the older answer posted and run", func() bool { frames++; return frames > 50 })
+	if !flagged() {
+		t.Fatalf("an older refresh overwrote the newer: %+v", r.msgs)
+	}
+}
+
+func TestReaderNewReplyExpandsAndReads(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "first", coretest.MessageID("p1@x"), at(h.clock.Now(), 2)))
+	h.openThread(m.ThreadID)
+	h.see("first")
+	r := h.app.mail.reader
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "reply words",
+		coretest.MessageID("p2@x"), coretest.InReplyTo("p1@x"), at(h.clock.Now(), 1)))
+	msgs := h.messages(m.ThreadID)
+	if len(msgs) != 2 {
+		t.Fatalf("%d messages", len(msgs))
+	}
+	reply := msgs[1].ID
+	h.waitMail("the reply expanded", func() bool { return r.open[reply] && h.tt.HasText("reply words") })
+	h.until("the reply read", func() bool { return seen(h.messages(m.ThreadID)[1]) })
+}
+
+func TestReaderBodyRetry(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Flaky", "eventually shown"))
+	r := h.app.mail.reader
+	var failed atomic.Bool
+	real := r.getMessage
+	r.getMessage = func(ctx context.Context, id int64, remote bool) (core.Message, error) {
+		if failed.CompareAndSwap(false, true) {
+			return core.Message{}, errors.New("server went away")
+		}
+		return real(ctx, id, remote)
+	}
+	h.openThread(m.ThreadID)
+	h.see("server went away")
+	h.click("重试")
+	h.see("eventually shown")
 }
