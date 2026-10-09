@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -50,9 +51,22 @@ func (s *Service) slugRows(ctx context.Context) ([]slugRow, error) {
 	return out, nil
 }
 
+// aliases returns every service's old names (model_service_aliases).
+func (s *Service) aliases(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT name FROM model_service_aliases")
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, r := range rows.Values {
+		out[store.Str(r[0])] = true
+	}
+	return out, nil
+}
+
 // pickSlug is slugify(name), suffixed -2, -3… while it equals any service's
-// slug or another service's name.
-func pickSlug(name string, exceptID int64, rows []slugRow) string {
+// slug, another service's name or an old name.
+func pickSlug(name string, exceptID int64, rows []slugRow, aliases map[string]bool) string {
 	base := slugify(name)
 	taken := func(c string) bool {
 		for _, r := range rows {
@@ -60,7 +74,7 @@ func pickSlug(name string, exceptID int64, rows []slugRow) string {
 				return true
 			}
 		}
-		return false
+		return aliases[c]
 	}
 	c := base
 	for n := 2; taken(c); n++ {
@@ -74,11 +88,16 @@ func (s *Service) newSlug(ctx context.Context, name string, exceptID int64) (str
 	if err != nil {
 		return "", err
 	}
-	return pickSlug(name, exceptID, rows), nil
+	aliases, err := s.aliases(ctx)
+	if err != nil {
+		return "", err
+	}
+	return pickSlug(name, exceptID, rows, aliases), nil
 }
 
-// backfillSlugs gives the services an older Godwit stored a slug, and rewrites
-// the "name/model" references to them (DefaultModel, runs, conversations) to
+// backfillSlugs gives the services an older Godwit stored a slug, keeps their
+// names as aliases (skill files may say "name/model"), and rewrites the
+// "name/model" references to them (DefaultModel, runs, conversations) to
 // "slug/model", all in one transaction. A name that already is a slug, and is
 // no other service's name, is kept, so its references stay as they are.
 func (s *Service) backfillSlugs(ctx context.Context) error {
@@ -86,21 +105,32 @@ func (s *Service) backfillSlugs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	aliases, err := s.aliases(ctx)
+	if err != nil {
+		return err
+	}
 	var stmts []sqlite.Statement
 	renamed := map[string]string{} // name → slug, where they differ
+	var olds []slugRow             // their services
 	for i, r := range rows {
 		if r.slug != "" {
 			continue
 		}
-		slug := pickSlug(r.name, r.id, rows) // the name itself when it is a free slug
+		slug := pickSlug(r.name, r.id, rows, aliases) // the name itself when it is a free slug
 		rows[i].slug = slug
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE model_services SET slug = ? WHERE id = ?", Args: []any{slug, r.id}})
 		if slug != r.name {
 			renamed[r.name] = slug
+			olds = append(olds, r)
 		}
 	}
 	if len(stmts) == 0 {
 		return nil
+	}
+	for _, o := range olds { // a name equal to some slug is never looked up as an alias
+		if !slices.ContainsFunc(rows, func(r slugRow) bool { return r.slug == o.name }) {
+			stmts = append(stmts, sqlite.Statement{SQL: "INSERT OR IGNORE INTO model_service_aliases(name, service_id) VALUES (?, ?)", Args: []any{o.name, o.id}})
+		}
 	}
 	if len(renamed) > 0 {
 		st, err := s.db.Query(ctx, "SELECT value FROM settings WHERE key = 'app'")

@@ -204,4 +204,8 @@ var Migrations = [][]string{{
 	// Rows from before are filled in at startup (Service.backfillSlugs). NULLs do not collide.
 	`ALTER TABLE model_services ADD COLUMN slug TEXT`,
 	`CREATE UNIQUE INDEX model_services_slug ON model_services(slug)`,
+}, {
+	// The names services had when slugs came (Service.backfillSlugs): skill references
+	// in the "name/model" form keep resolving to that service, and only to it.
+	`CREATE TABLE model_service_aliases (name TEXT PRIMARY KEY, service_id INTEGER NOT NULL REFERENCES model_services(id) ON DELETE CASCADE)`,
 }}

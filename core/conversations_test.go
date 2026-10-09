@@ -44,6 +44,8 @@ func TestRunStoresSlugRef(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.s.db.Execute(t.Context(), "UPDATE model_services SET slug = 'x-gw'")
 	require.NoError(t, err)
+	_, err = e.s.db.Execute(t.Context(), "INSERT INTO model_service_aliases(name, service_id) VALUES ('X GW', ?)", e.ms.ID)
+	require.NoError(t, err)
 	st := defaultSettings()
 	st.DefaultModel = "X GW/m1" // the legacy name form
 	_, err = e.s.SetSettings(t.Context(), st)

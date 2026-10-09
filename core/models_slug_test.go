@@ -211,21 +211,52 @@ func TestRenameRejectsOtherSlug(t *testing.T) {
 
 func TestResolveLegacyName(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
-	a, err := s.AddModelService(bg, ModelServiceInput{Name: "My GW", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m"}})
-	require.NoError(t, err)
+	legacyService(t, s, 1, "My GW", "m")
+	require.NoError(t, s.backfillSlugs(bg))
 	r, err := s.resolveModel(bg, "My GW/m")
 	require.NoError(t, err)
-	assert.Equal(t, a.ID, r.ServiceID)
+	assert.EqualValues(t, 1, r.ServiceID)
 	_, ref, err := s.resolveRef(bg, "My GW/m")
 	require.NoError(t, err)
 	assert.Equal(t, "my-gw/m", ref, "the canonical reference uses the slug")
 
-	// A slug match wins over a name match.
-	b, err := s.AddModelService(bg, ModelServiceInput{Name: "other", Kind: "openai", BaseURL: "https://b.com", Models: []string{"m"}})
+	// A current name is not a reference: only slugs and old names are.
+	b, err := s.AddModelService(bg, ModelServiceInput{Name: "Other GW", Kind: "openai", BaseURL: "https://b.com", Models: []string{"m"}})
 	require.NoError(t, err)
+	_, err = s.resolveModel(bg, "Other GW/m")
+	assert.ErrorIs(t, err, ErrModelServiceNotFound)
+
+	// A slug match wins over an old name.
 	_, err = s.db.Execute(bg, "UPDATE model_services SET slug = 'My GW' WHERE id = ?", b.ID)
 	require.NoError(t, err)
 	r, err = s.resolveModel(bg, "My GW/m")
 	require.NoError(t, err)
 	assert.Equal(t, b.ID, r.ServiceID)
+}
+
+// Final whole-branch review #4: a reference by an old name keeps its service
+// after a rename and a new service taking that name; when its service goes,
+// the reference fails rather than move to another.
+func TestLegacyAliasNeverRetargets(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	legacyService(t, s, 1, "OpenAI", "m1")
+	require.NoError(t, s.backfillSlugs(bg))
+	in := ModelServiceInput{Name: "Work", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m1"}}
+	_, err := s.UpdateModelService(bg, 1, in)
+	require.NoError(t, err)
+
+	in.Name, in.BaseURL = "OpenAI", "https://other.example"
+	_, err = s.AddModelService(bg, in)
+	assert.ErrorContains(t, err, "reference name", "the old name still refers to service 1")
+	// Not even a service holding the name (stored directly) answers to it.
+	_, err = s.db.Execute(bg, `INSERT OR IGNORE INTO model_services(name, kind, base_url, models, slug) VALUES ('OpenAI', 'openai', 'https://other.example', '["m1"]', 'other')`)
+	require.NoError(t, err)
+	r, err := s.resolveModel(bg, "OpenAI/m1")
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, r.ServiceID)
+	assert.Equal(t, "https://a.com", r.BaseURL)
+
+	require.NoError(t, s.RemoveModelService(bg, 1))
+	_, err = s.resolveModel(bg, "OpenAI/m1")
+	assert.ErrorIs(t, err, ErrModelServiceNotFound)
 }

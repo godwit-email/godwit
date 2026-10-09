@@ -260,10 +260,11 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	return s.modelServiceBy(context.WithoutCancel(ctx), "id = ?", id)
 }
 
-// checkNameFree refuses a name that is another service's slug: references
-// resolve by slug first, so that service would answer to it.
+// checkNameFree refuses a name that is another service's slug or old name:
+// references to that name resolve to that service, not to this one.
 func (s *Service) checkNameFree(ctx context.Context, name string, id int64) error {
-	rows, err := s.db.Query(ctx, "SELECT 1 FROM model_services WHERE slug = ? AND id != ?", name, id)
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM model_services WHERE slug = ? AND id != ? UNION ALL SELECT 1 FROM model_service_aliases WHERE name = ? AND service_id != ?",
+		name, id, name, id)
 	if err != nil {
 		return err
 	}
@@ -421,7 +422,7 @@ func (s *Service) resolveTask(ctx context.Context, override string, small bool) 
 }
 
 // resolveRef is resolveModel plus the reference in its "slug/model" form. The
-// service part matches a slug, else a name (references from before slugs).
+// service part matches a slug, else an old name (references from before slugs).
 func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedModel, string, error) {
 	ref := override
 	if ref == "" {
@@ -441,8 +442,8 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 	s.modelMu.RLock()
 	defer s.modelMu.RUnlock()
 	m, err := s.modelServiceBy(ctx, "slug = ?", r.Service)
-	if errors.Is(err, ErrModelServiceNotFound) {
-		m, err = s.modelServiceBy(ctx, "name = ?", r.Service)
+	if errors.Is(err, ErrModelServiceNotFound) { // never by current name: it may have moved to another service
+		m, err = s.modelServiceBy(ctx, "id = (SELECT service_id FROM model_service_aliases WHERE name = ?)", r.Service)
 	}
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
