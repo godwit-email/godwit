@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -73,13 +74,12 @@ type mailPage struct {
 	stalled bool   // the last page failed: no more pages until a refresh
 	gen     uint64 // bumped per reload; older list results are dropped
 
-	list   ui.ListState
-	sel    ui.Selection[int64]
-	cur    int // the row last chosen, -1 for none; the list keeps it on its item
-	filter int // 0 all, 1 unread
+	main   listSel // the list's choice and place
+	found  listSel // the search results', apart: they are other rows
+	filter int     // 0 all, 1 unread
 
 	folders   map[int64][]core.Folder // by account
-	outbox    []core.OutboxItem       // every account's
+	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
 	collapsed map[int64]bool // account groups folded in the sidebar
@@ -87,10 +87,64 @@ type mailPage struct {
 	searchOpen, searched bool
 	query                string
 	results              []mailItem
+	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
+
+	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
+	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
+}
+
+// listSel is a list's place and choice, kept on its items by key.
+type listSel struct {
+	list ui.ListState
+	sel  ui.Selection[string]
+	cur  int // the row last chosen, -1 for none; the list keeps it on its item
+}
+
+func (l *listSel) reset() { *l = listSel{cur: -1} }
+
+// key is the row's identity in the list and its choice: thread and message
+// IDs are separate sequences.
+func (it mailItem) key() string {
+	if it.Thread {
+		return "t:" + strconv.FormatInt(it.ID, 10)
+	}
+	return "m:" + strconv.FormatInt(it.ID, 10)
 }
 
 func newMailPage(a *App) *mailPage {
-	return &mailPage{a: a, cur: -1, folders: map[int64][]core.Folder{}, collapsed: map[int64]bool{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, collapsed: map[int64]bool{}}
+	p.main.reset()
+	p.found.reset()
+	p.exec = p.write
+	return p
+}
+
+// ls is the choice of the rows shown.
+func (p *mailPage) ls() *listSel {
+	if p.searched {
+		return &p.found
+	}
+	return &p.main
+}
+
+// write is a batch's call for one account's messages.
+func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int64) error {
+	svc := p.a.svc
+	switch op {
+	case "read":
+		return svc.SetFlags(ctx, ids, []string{`\Seen`}, nil)
+	case "unread":
+		return svc.SetFlags(ctx, ids, nil, []string{`\Seen`})
+	case "star":
+		return svc.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
+	case "unstar":
+		return svc.SetFlags(ctx, ids, nil, []string{`\Flagged`})
+	case "archive":
+		return svc.Move(ctx, ids, folder)
+	case "delete":
+		return svc.Delete(ctx, ids)
+	}
+	return fmt.Errorf("unknown mail action %q", op)
 }
 
 func (p *mailPage) refresh([]events.Event) { p.reload() }
@@ -110,19 +164,19 @@ func (p *mailPage) reload() {
 	want, toEnd := len(p.items), p.cursor == "" && len(p.items) > 0
 	if reset {
 		p.view, p.items, p.cursor, p.stalled = v, nil, "", false
-		p.sel.Clear()
-		p.cur = -1
+		p.main.reset()
 		p.closeSearch()
-		p.list, p.draftList = ui.ListState{}, ui.ListState{}
+		p.draftList = ui.ListState{}
 		want, toEnd = 0, false
 	}
 	if p.searched {
-		p.runSearch()
+		p.search()
 	}
 	p.loading = true
+	hook := p.fetched
 	var (
 		folders = map[int64][]core.Folder{}
-		outbox  []core.OutboxItem
+		outbox  []outboxEntry
 		drafts  []core.Draft
 		items   []mailItem
 		cursor  string
@@ -141,20 +195,25 @@ func (p *mailPage) reload() {
 			if err != nil {
 				return err
 			}
-			outbox = append(outbox, ob...)
+			for _, it := range ob {
+				outbox = append(outbox, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
+			}
 		}
 		st, err := a.svc.GetSettings(ctx)
 		if err != nil {
 			return err
 		}
 		threads = st.ThreadView
-		f, _ := findFolder(folders, v.FolderID)
+		draftsAcc, isDrafts := draftsOf(folders, v)
 		switch {
 		case v.Unified == "outbox" || v == (core.View{}):
-		case f.Role == "drafts":
-			drafts, err = a.svc.ListDrafts(ctx, f.AccountID)
+		case isDrafts:
+			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
 		default:
 			items, cursor, err = fetchItems(ctx, a.svc, v, threads, "", want, toEnd)
+		}
+		if hook != nil {
+			hook()
 		}
 		return err
 	}, func(err error) {
@@ -167,8 +226,7 @@ func (p *mailPage) reload() {
 			return
 		}
 		if threads != p.threads {
-			p.sel.Clear() // thread IDs and message IDs do not mix
-			p.cur = -1
+			p.main.reset() // thread IDs and message IDs do not mix
 		}
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.items, p.cursor, p.stalled = items, cursor, false
@@ -281,19 +339,46 @@ func (p *mailPage) open(rows []mailItem, i int) {
 
 // chosen are the rows chosen, or the one open when none is.
 func (p *mailPage) chosen(rows []mailItem) []mailItem {
+	l := p.ls()
 	var out []mailItem
 	for _, it := range rows {
-		if p.sel.Has(it.ID) {
+		if l.sel.Has(it.key()) {
 			out = append(out, it)
 		}
 	}
-	if len(out) == 0 && p.cur >= 0 && p.cur < len(rows) {
-		out = append(out, rows[p.cur])
+	if len(out) == 0 && l.cur >= 0 && l.cur < len(rows) {
+		out = append(out, rows[l.cur])
 	}
 	return out
 }
 
 func (p *mailPage) folder(id int64) (core.Folder, bool) { return findFolder(p.folders, id) }
+
+// localDrafts is the drafts entry of an account whose server has no drafts
+// folder: drafts are local, so every account has one.
+func localDrafts(acc int64) core.View {
+	return core.View{Unified: "drafts:" + strconv.FormatInt(acc, 10)}
+}
+
+// draftsOf returns the account whose drafts v lists: a drafts-role folder's,
+// or a localDrafts entry's.
+func draftsOf(folders map[int64][]core.Folder, v core.View) (int64, bool) {
+	if id, ok := strings.CutPrefix(v.Unified, "drafts:"); ok {
+		n, err := strconv.ParseInt(id, 10, 64)
+		return n, err == nil
+	}
+	f, ok := findFolder(folders, v.FolderID)
+	return f.AccountID, ok && f.Role == "drafts"
+}
+
+// viewAccount is the account a view belongs to; 0 for a unified view.
+func (p *mailPage) viewAccount(v core.View) int64 {
+	if acc, ok := draftsOf(p.folders, v); ok {
+		return acc
+	}
+	f, _ := p.folder(v.FolderID)
+	return f.AccountID
+}
 
 func findFolder(folders map[int64][]core.Folder, id int64) (core.Folder, bool) {
 	for _, fs := range folders {
@@ -335,6 +420,9 @@ func (p *mailPage) Title() (string, string) {
 	case "outbox":
 		return i18n.T("mail.outbox"), ""
 	default:
+		if _, ok := draftsOf(p.folders, v); ok && v.FolderID == 0 {
+			return i18n.T("mail.folder.drafts"), ""
+		}
 		if f, ok := p.folder(v.FolderID); ok {
 			return folderName(f), unreadSub(f.Unread)
 		}
@@ -343,7 +431,7 @@ func (p *mailPage) Title() (string, string) {
 }
 
 // listTime is a row's time: HH:mm today, then yesterday, a weekday within
-// the week, else M/D.
+// this calendar week (from Monday), else M/D.
 func listTime(now, t time.Time) string {
 	t = t.In(now.Location())
 	y, m, d := now.Date()
@@ -353,7 +441,7 @@ func listTime(now, t time.Time) string {
 		return t.Format("15:04")
 	case !t.Before(today.AddDate(0, 0, -1)):
 		return i18n.T("mail.yesterday")
-	case !t.Before(today.AddDate(0, 0, -6)):
+	case !t.Before(today.AddDate(0, 0, -(int(now.Weekday())+6)%7)): // this week, from Monday
 		return i18n.T(fmt.Sprintf("mail.weekday.%d", t.Weekday()))
 	}
 	return fmt.Sprintf("%d/%d", t.Month(), t.Day())
@@ -367,11 +455,11 @@ func (p *mailPage) Content(c *ui.Context) {
 	t := theme.Of(c)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(listWidth).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-			f, _ := p.folder(p.view.FolderID)
+			_, isDrafts := draftsOf(p.folders, p.view)
 			switch {
 			case p.view.Unified == "outbox":
 				p.outboxView(c)
-			case f.Role == "drafts":
+			case isDrafts:
 				p.draftsView(c)
 			default:
 				p.listView(c)
@@ -414,10 +502,11 @@ func (p *mailPage) listView(c *ui.Context) {
 	t := theme.Of(c)
 	p.listHeader(c)
 	rows := p.shown()
-	p.list.Key = func(i int) any { return rows[i].ID }
-	p.list.Selected, p.list.Selection = &p.cur, &p.sel
+	ls := p.ls()
+	ls.list.Key = func(i int) any { return rows[i].key() }
+	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := ui.List(c, &p.list, len(rows), func(i int) {
+	l := ui.List(c, &ls.list, len(rows), func(i int) {
 		it := rows[i]
 		p.row(c, it).ContextMenu(func(m *ui.Menu) {
 			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
@@ -425,7 +514,7 @@ func (p *mailPage) listView(c *ui.Context) {
 					m.Separator()
 				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
 					act, target = k, []mailItem{it}
-					if p.sel.Has(it.ID) {
+					if ls.sel.Has(it.key()) {
 						target = p.chosen(rows)
 					}
 				}
@@ -442,21 +531,21 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 	})
 	if l.Changed() {
-		p.open(rows, p.cur)
+		p.open(rows, ls.cur)
 	}
 	for _, k := range []struct {
 		mods ui.Modifiers
 		key  ui.Key
 		act  string
 	}{{0, ui.KeyE, "archive"}, {ui.Shift, ui.Key3, "delete"}, {0, ui.KeyU, "toggle_read"}, {0, ui.KeyS, "toggle_star"}} {
-		if p.list.Shortcut(c, k.mods, k.key) {
+		if ls.list.Shortcut(c, k.mods, k.key) {
 			act, target = k.act, p.chosen(rows)
 		}
 	}
 	if act != "" {
 		p.batch(act, target)
 	}
-	if _, last := p.list.Visible(); last >= len(rows)-5 {
+	if _, last := ls.list.Visible(); last >= len(rows)-5 {
 		p.loadMore()
 	}
 }
@@ -475,6 +564,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(12, 12).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+			}
+			if it.Unread > 0 {
+				ui.Text(c, i18n.Tf("mail.row.unread", it.Unread)).FontSize(small).TextColor(t.Muted)
 			}
 			if it.Count > 1 {
 				ui.Text(c, strconv.Itoa(it.Count)).FontSize(small).TextColor(t.Muted)
@@ -495,23 +587,27 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 // runSearch searches the synced mail of the view's account, every
 // account's in a unified view.
 func (p *mailPage) runSearch() {
+	p.found.reset() // new results, a new choice
+	p.search()
+}
+
+// search runs the query; only the newest request's answer shows, and none
+// once the search is left.
+func (p *mailPage) search() {
+	p.searchGen++
 	q := strings.TrimSpace(p.query)
 	if q == "" {
 		p.searched, p.results = false, nil
 		return
 	}
 	a := p.a
-	var acc int64
-	if f, ok := p.folder(p.view.FolderID); ok {
-		acc = f.AccountID
-	}
-	gen := p.gen
+	acc, gen := p.viewAccount(p.view), p.searchGen
 	var found []core.MessageSummary
 	a.do(func(ctx context.Context) (err error) {
 		found, err = a.svc.Search(ctx, acc, q, 100)
 		return err
 	}, func(err error) {
-		if gen != p.gen || !p.searchOpen {
+		if gen != p.searchGen {
 			return
 		}
 		if err != nil {
@@ -527,7 +623,9 @@ func (p *mailPage) runSearch() {
 }
 
 func (p *mailPage) closeSearch() {
+	p.searchGen++
 	p.searchOpen, p.searched, p.query, p.results = false, false, "", nil
+	p.found.reset()
 }
 
 // batch applies act to rows: threads become their messages (GetThread),
@@ -564,8 +662,11 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		}
 		return m.FolderID == v.FolderID
 	}
-	failed, skipped := 0, []string(nil)
-	a.do(func(ctx context.Context) error {
+	l, exec := p.ls(), p.exec
+	var op string
+	failed, byAcc := 0, map[int64][]int64{}
+	// Expansions run in the order asked, so the writes they chain do too.
+	a.writes.Chain("mail:expand", func(ctx context.Context) error {
 		var msgs []core.MessageSummary
 		for _, it := range rows {
 			if !it.Thread {
@@ -579,7 +680,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 			msgs = append(msgs, th.Messages...)
 		}
-		op := act
+		op = act
 		switch act {
 		case "toggle_read":
 			op = "unread"
@@ -592,7 +693,6 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 				op = "star"
 			}
 		}
-		byAcc := map[int64][]int64{}
 		for _, m := range msgs {
 			if (op == "archive" || op == "delete") && !inView(m) {
 				continue
@@ -604,48 +704,42 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 			byAcc[acc] = append(byAcc[acc], m.ID)
 		}
+		return nil
+	}, func(error) {
+		var skipped []string
+		pending := 0
+		finish := func() {
+			if failed > 0 {
+				a.toast(i18n.Tf("mail.failed", failed))
+			}
+			if len(skipped) > 0 {
+				a.toast(i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
+			}
+			if op == "archive" || op == "delete" {
+				l.sel.Clear()
+			}
+		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
-			var err error
-			switch op {
-			case "read":
-				err = a.svc.SetFlags(ctx, ids, []string{`\Seen`}, nil)
-			case "unread":
-				err = a.svc.SetFlags(ctx, ids, nil, []string{`\Seen`})
-			case "star":
-				err = a.svc.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
-			case "unstar":
-				err = a.svc.SetFlags(ctx, ids, nil, []string{`\Flagged`})
-			case "archive":
-				if archive[acc] == 0 {
-					skipped = append(skipped, names[acc])
-					continue
+			if op == "archive" && archive[acc] == 0 {
+				skipped = append(skipped, names[acc])
+				continue
+			}
+			pending++
+			folder := archive[acc]
+			a.writes.Chain(fmt.Sprintf("account:%d", acc), func(ctx context.Context) error {
+				return exec(ctx, op, ids, folder)
+			}, func(err error) {
+				if err != nil {
+					failed += len(ids)
 				}
-				err = a.svc.Move(ctx, ids, archive[acc])
-			case "delete":
-				err = a.svc.Delete(ctx, ids)
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err != nil {
-				failed += len(ids)
-			}
+				if pending--; pending == 0 {
+					finish()
+				}
+			})
 		}
-		return nil
-	}, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			return
-		}
-		if failed > 0 {
-			a.toast(i18n.Tf("mail.failed", failed))
-		}
-		if len(skipped) > 0 {
-			a.toast(i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
-		}
-		if act == "archive" || act == "delete" {
-			p.sel.Clear()
+		if pending == 0 {
+			finish()
 		}
 	})
 }

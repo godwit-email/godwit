@@ -28,6 +28,7 @@ func TestOutboxResolve(t *testing.T) {
 	h.see("1")
 	h.click("发件箱")
 	h.see("lost in transit")
+	h.see("alice@example.com") // the item's account
 	h.see("不确定是否已发出")
 	h.see("重新发送")
 	h.see("丢弃")

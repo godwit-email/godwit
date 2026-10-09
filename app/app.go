@@ -121,6 +121,7 @@ type App struct {
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
+	writes     *writeQueue // writes to the Service, ordered per resource
 
 	unread map[int64]int // per account, summed over its folders
 	toasts []ui.Toast    // shown on the next frame
@@ -143,6 +144,7 @@ func New(d Deps) *App {
 		st, err := a.svc.GetSettings(ctx)
 		return st, accs, err
 	}
+	a.writes = newWriteQueue(a)
 	a.mail = newMailPage(a)
 	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: placeholder{}}
 	a.pages[PageOnboarding] = newOnboarding(a, false)

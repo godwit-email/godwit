@@ -64,8 +64,16 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 					}
 					indent = 18
 				}
-				for _, f := range sortFolders(p.folders[acc.ID]) {
-					p.navItem(c, folderName(f), core.View{FolderID: f.ID}, f.Unread, indent)
+				fs := p.folders[acc.ID]
+				if !slices.ContainsFunc(fs, func(f core.Folder) bool { return f.Role == "drafts" }) {
+					fs = append(slices.Clone(fs), core.Folder{AccountID: acc.ID, Role: "drafts"})
+				}
+				for _, f := range sortFolders(fs) {
+					v := core.View{FolderID: f.ID}
+					if f.ID == 0 {
+						v = localDrafts(acc.ID)
+					}
+					p.navItem(c, folderName(f), v, f.Unread, indent)
 				}
 			}
 			if n := len(p.outbox); n > 0 {
@@ -127,12 +135,10 @@ func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
 // one, and opens it.
 func (p *mailPage) compose() {
 	a := p.a
-	var acc int64
-	if f, ok := p.folder(a.route.View.FolderID); ok {
-		acc = f.AccountID
-	} else if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.IsDefault }); i >= 0 {
+	acc := p.viewAccount(a.route.View)
+	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.IsDefault }); acc == 0 && i >= 0 {
 		acc = a.accounts[i].ID
-	} else if len(a.accounts) > 0 {
+	} else if acc == 0 && len(a.accounts) > 0 {
 		acc = a.accounts[0].ID
 	}
 	if acc == 0 {

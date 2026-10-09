@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,7 +107,7 @@ func noDuplicates(t *testing.T, items []mailItem) {
 func (h *harness) scrollLoad(n int) {
 	h.t.Helper()
 	h.until(fmt.Sprintf("%d items", n), func() bool {
-		h.app.mail.list.ScrollToEnd()
+		h.app.mail.main.list.ScrollToEnd()
 		h.tt.Frame()
 		return len(h.items()) == n
 	})
@@ -201,10 +202,23 @@ func TestListTime(t *testing.T) {
 		{now.Add(-time.Hour), "08:00"},
 		{now.Add(-10 * time.Hour), "昨天"},
 		{now.AddDate(0, 0, -4), "周一"},
+		{now.AddDate(0, 0, -5), "10/4"}, // last week's Sunday
 		{now.AddDate(0, 0, -7), "10/2"},
 	} {
 		if got := listTime(now, c.t); got != c.want {
 			t.Errorf("listTime(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+	monday := time.Date(2026, 10, 12, 9, 0, 0, 0, time.Local)
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{monday.AddDate(0, 0, -1), "昨天"},
+		{monday.AddDate(0, 0, -2), "10/10"}, // Saturday: the week before
+	} {
+		if got := listTime(monday, c.t); got != c.want {
+			t.Errorf("on Monday listTime(%v) = %q, want %q", c.t, got, c.want)
 		}
 	}
 }
@@ -245,7 +259,7 @@ func TestThreadListPagesOnScroll(t *testing.T) {
 	h.scrollLoad(100)
 	h.scrollLoad(120)
 	noDuplicates(t, h.items())
-	h.app.mail.list.ScrollToEnd()
+	h.app.mail.main.list.ScrollToEnd()
 	h.see("msg 119")
 }
 
@@ -254,12 +268,25 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	h.putMany(accs[0], 120)
 	h.waitMail("the first page", func() bool { return len(h.items()) == 50 })
 	h.click("msg 000")
-	first := h.items()[0].ID
-	if h.app.route.ThreadID != first {
+	first := h.items()[0]
+	if h.app.route.ThreadID != first.ID {
 		t.Fatalf("route %+v", h.app.route)
 	}
 	h.scrollLoad(100)
 	h.scrollLoad(120)
+	h.app.mail.main.list.ScrollTo(60, ui.Start)
+	h.until("row 60 on top", func() bool { top, _ := h.app.mail.main.list.Visible(); return top == 60 })
+	anchor := h.items()[60].ID
+
+	// The next refresh stops once it has read the list, until the new mail is in.
+	entered, release := make(chan struct{}), make(chan struct{})
+	var held atomic.Bool
+	h.app.mail.fetched = func() {
+		if held.CompareAndSwap(false, true) { // only the first refresh waits
+			close(entered)
+			<-release
+		}
+	}
 	target := h.items()[110] // on the third page
 	th, err := h.env.Svc.GetThread(context.Background(), target.ID)
 	if err != nil {
@@ -268,22 +295,35 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	if err := h.env.Svc.SetFlags(context.Background(), []int64{th.Messages[0].ID}, []string{`\Seen`}, nil); err != nil {
 		t.Fatal(err)
 	}
-	h.waitMail("the third page's row read", func() bool {
-		i := slices.IndexFunc(h.items(), func(it mailItem) bool { return it.ID == target.ID })
-		return i >= 0 && h.items()[i].Unread == 0
+	h.until("a refresh in flight", func() bool {
+		h.advance(refreshEvery)
+		select {
+		case <-entered:
+			return true
+		default:
+			return false
+		}
 	})
-	if n := len(h.items()); n != 120 {
-		t.Fatalf("%d items after the refresh, want 120", n)
-	}
-	if h.app.route.ThreadID != first || !h.app.mail.sel.Has(first) {
-		t.Fatalf("the choice moved: route %+v", h.app.route)
-	}
 	h.put(accs[0], "INBOX", coretest.Msg("dan@example.com", "alice@example.com", "newcomer", "x"))
 	h.syncNow(accs[0])
-	h.waitMail("the new mail", func() bool { return len(h.items()) == 121 })
+	h.settle() // the new mail's events are in: the next refresh supersedes the one held
+	close(release)
+	h.waitMail("the new mail and the read row", func() bool {
+		i := slices.IndexFunc(h.items(), func(it mailItem) bool { return it.ID == target.ID })
+		return len(h.items()) == 121 && i >= 0 && h.items()[i].Unread == 0
+	})
+	for range 3 {
+		h.advance(refreshEvery)
+	}
 	noDuplicates(t, h.items())
-	if h.items()[0].Subject != "newcomer" || h.app.route.ThreadID != first || !h.app.mail.sel.Has(first) {
-		t.Fatalf("first %q, route %+v", h.items()[0].Subject, h.app.route)
+	if n := len(h.items()); n != 121 || h.items()[0].Subject != "newcomer" {
+		t.Fatalf("%d items, first %q", n, h.items()[0].Subject)
+	}
+	if h.app.route.ThreadID != first.ID || !h.app.mail.main.sel.Has(first.key()) || h.app.mail.main.sel.Len() != 1 {
+		t.Fatalf("the choice moved: route %+v", h.app.route)
+	}
+	if top, _ := h.app.mail.main.list.Visible(); h.items()[top].ID != anchor {
+		t.Fatalf("the anchor moved: row %d is %q", top, h.items()[top].Subject)
 	}
 }
 
@@ -375,7 +415,7 @@ func TestBatchAcrossAccounts(t *testing.T) {
 	h.click("hello alice@example.com")
 	h.tt.Key(ui.Cmd, ui.KeyA)
 	h.tt.Frame()
-	if n := h.app.mail.sel.Len(); n != 3 {
+	if n := h.app.mail.main.sel.Len(); n != 3 {
 		t.Fatalf("%d chosen, want 3", n)
 	}
 	if err := h.tt.RightClick("hello carol@example.com"); err != nil {
@@ -415,6 +455,9 @@ func TestDraftsListRoute(t *testing.T) {
 		}
 	}
 	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
+	if n := slices.Index(h.tt.Texts(), "草稿"); n < 0 || slices.Contains(h.tt.Texts()[n+1:], "草稿") {
+		t.Fatalf("one 草稿 entry expected: %q", h.tt.Texts())
+	}
 	h.click("草稿")
 	h.see("Draft hello")
 	h.see("bob@example.com")
@@ -433,4 +476,167 @@ func TestDraftsListRoute(t *testing.T) {
 	h.app.back()
 	h.click("写邮件")
 	h.until("a new draft", func() bool { return h.app.route.Page == PageCompose && h.app.route.DraftID > keep.ID })
+}
+
+func TestRowUnreadCount(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plan", "one", coretest.MessageID("a@x"), at(base, 3)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Re: Plan", "two", coretest.MessageID("b@x"), coretest.InReplyTo("a@x"), at(base, 2)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Re: Plan", "three", coretest.MessageID("c@x"), coretest.InReplyTo("b@x"), at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("one thread", func() bool { return len(h.items()) == 1 })
+	th, err := h.env.Svc.GetThread(context.Background(), h.items()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{th.Messages[0].ID}, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("two unread of three", func() bool { return h.items()[0].Unread == 2 })
+	h.see("2 未读")
+	h.see("3")
+}
+
+func TestSearchDropsStaleResults(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Lunch Plans", "eat"))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	h.settle() // nothing else is posted from here on
+	p := h.app.mail
+	h.tt.Key(ui.Cmd, ui.KeyF)
+	h.tt.Frame()
+	p.query = "Invoice"
+	p.runSearch() // A
+	h.queued("search A's answer", 1)
+	p.query = "Lunch"
+	p.runSearch() // B
+	h.queued("search B's answer", 2)
+	h.mu.Lock()
+	slices.Reverse(h.queue) // B answers first, A late
+	h.mu.Unlock()
+	h.drain()
+	h.tt.Frame()
+	if !p.searched || len(p.results) != 1 || p.results[0].Subject != "Lunch Plans" {
+		t.Fatalf("searched %v, results %+v", p.searched, p.results)
+	}
+	// A late answer after leaving the search, reopened before it lands.
+	p.query = "Invoice"
+	p.runSearch()
+	h.queued("the late answer", 1)
+	h.tt.Key(0, ui.KeyEscape)
+	if p.searchOpen {
+		t.Fatal("Escape did not leave the search")
+	}
+	p.searchOpen = true
+	h.drain()
+	h.tt.Frame()
+	if p.searched || p.results != nil {
+		t.Fatalf("a late answer showed: %+v", p.results)
+	}
+}
+
+func TestSelectionKeepsToMode(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "note alpha", "x", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "note beta", "x", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	p := h.app.mail
+	h.click("note alpha")
+	h.tt.Key(ui.Cmd, ui.KeyA)
+	h.tt.Frame()
+	if p.main.sel.Len() != 2 {
+		t.Fatalf("%d chosen", p.main.sel.Len())
+	}
+	threads, msgs := map[int64]bool{}, map[int64]bool{}
+	for _, it := range h.items() {
+		threads[it.ID] = true
+		th, err := h.env.Svc.GetThread(context.Background(), it.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msgs[th.Messages[0].ID] = true
+	}
+	overlap := false
+	for id := range msgs {
+		overlap = overlap || threads[id]
+	}
+	if !overlap {
+		t.Fatalf("fixture: thread IDs %v and message IDs %v do not overlap", threads, msgs)
+	}
+	h.tt.Key(ui.Cmd, ui.KeyF)
+	h.typeText("note")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("both found", func() bool { return p.searched && len(p.results) == 2 })
+	if got := p.chosen(p.shown()); len(got) != 0 {
+		t.Fatalf("search results chosen by the thread list's choice: %+v", got)
+	}
+	h.tt.Key(0, ui.KeyEscape)
+	h.tt.Frame()
+	if p.main.sel.Len() != 2 || len(p.chosen(p.shown())) != 2 {
+		t.Fatalf("the thread list lost its choice: %d", p.main.sel.Len())
+	}
+}
+
+func TestBatchWritesInOrder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "toggle me", "x"))
+	h.syncNow(accs[0])
+	h.waitMail("one thread", func() bool { return len(h.items()) == 1 })
+	p := h.app.mail
+	exec := p.exec
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls, done atomic.Int32
+	p.exec = func(ctx context.Context, op string, ids []int64, folder int64) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		defer done.Add(1)
+		return exec(ctx, op, ids, folder)
+	}
+	rows := h.items()
+	p.batch("read", rows)
+	h.until("the first write blocked", func() bool {
+		select {
+		case <-entered:
+			return true
+		default:
+			return false
+		}
+	})
+	p.batch("unread", rows)
+	wait := time.Now().Add(200 * time.Millisecond)
+	h.until("the second write's chance to overtake", func() bool { return time.Now().After(wait) })
+	close(release)
+	h.until("both written", func() bool { return done.Load() == 2 })
+	th, err := h.env.Svc.GetThread(context.Background(), rows[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(th.Messages[0].Flags, `\Seen`) {
+		t.Fatalf("read after read then unread: %v", th.Messages[0].Flags)
+	}
+}
+
+func TestLocalDraftsEntry(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com") // the fake server has no Drafts folder
+	d, err := h.env.Svc.NewDraft(context.Background(), accs[0].ID, "new", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Subject = "local only"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.click("草稿")
+	h.see("local only")
+	h.click("local only")
+	if r := h.app.route; r.Page != PageCompose || r.DraftID != d.ID {
+		t.Fatalf("route %+v", r)
+	}
 }

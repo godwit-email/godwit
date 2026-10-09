@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -50,7 +51,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 
 func (p *mailPage) deleteDraft(id int64) {
 	a := p.a
-	a.do(func(ctx context.Context) error { return a.svc.DeleteDraft(ctx, id) }, func(err error) {
+	a.writes.Chain(fmt.Sprintf("draft:%d", id), func(ctx context.Context) error { return a.svc.DeleteDraft(ctx, id) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 		}

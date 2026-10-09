@@ -207,6 +207,7 @@ var zh = map[string]string{
 	"mail.no_subject":                "（无主题）",
 	"mail.no_recipient":              "（无收件人）",
 	"mail.attachment":                "附件",
+	"mail.row.unread":                "%d 未读",
 	"mail.yesterday":                 "昨天",
 	"mail.weekday.0":                 "周日",
 	"mail.weekday.1":                 "周一",

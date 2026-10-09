@@ -207,6 +207,7 @@ var en = map[string]string{
 	"mail.no_subject":                "(No subject)",
 	"mail.no_recipient":              "(No recipients)",
 	"mail.attachment":                "Attachment",
+	"mail.row.unread":                "%d unread",
 	"mail.yesterday":                 "Yesterday",
 	"mail.weekday.0":                 "Sun",
 	"mail.weekday.1":                 "Mon",

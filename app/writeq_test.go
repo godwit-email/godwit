@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -60,5 +61,44 @@ func TestWriteQueueFlush(t *testing.T) {
 	h.until("flushed", func() bool { return slices.Contains(events, "flushed") })
 	if !slices.Equal(events, []string{"saved1", "saved2", "flushed"}) || flushErr == nil || flushErr.Error() != "disk full" {
 		t.Fatalf("events %v flush err %v", events, flushErr)
+	}
+}
+
+func TestWriteQueueChain(t *testing.T) {
+	h := newHarness(t)
+	q := newWriteQueue(h.app)
+	release, started := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var ran, finished []int
+	run := func(n int) func(context.Context) error {
+		return func(context.Context) error {
+			mu.Lock()
+			ran = append(ran, n)
+			mu.Unlock()
+			if n == 1 {
+				close(started)
+				<-release
+			}
+			return nil
+		}
+	}
+	for n := 1; n <= 3; n++ {
+		q.Chain("a", run(n), func(error) { finished = append(finished, n) })
+		if n == 1 {
+			<-started
+		}
+	}
+	other := false
+	q.Chain("b", func(context.Context) error { return nil }, func(error) { other = true })
+	h.until("key b while a is blocked", func() bool { return other })
+	mu.Lock()
+	if !slices.Equal(ran, []int{1}) {
+		t.Fatalf("ran %v while the first write was blocked", ran)
+	}
+	mu.Unlock()
+	close(release)
+	h.until("all of a", func() bool { return len(finished) == 3 })
+	if !slices.Equal(finished, []int{1, 2, 3}) || !slices.Equal(ran, []int{1, 2, 3}) {
+		t.Fatalf("finished %v, ran %v", finished, ran)
 	}
 }

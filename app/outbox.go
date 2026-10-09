@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -9,6 +10,12 @@ import (
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
+
+// outboxEntry is an outbox item with its account's name.
+type outboxEntry struct {
+	core.OutboxItem
+	Account string
+}
 
 // outboxView lists mail not yet sent and filed, with its state; mail that
 // may or may not have gone out, or failed, waits for the user's decision.
@@ -28,11 +35,12 @@ func (p *mailPage) outboxView(c *ui.Context) {
 						subject = i18n.T("mail.no_subject")
 					}
 					ui.Text(c, subject).FontWeight(500).SingleLine()
+					ui.Text(c, it.Account).FontSize(small).TextColor(t.Muted).SingleLine()
 					ui.Text(c, i18n.T("outbox.state."+it.State)).FontSize(small).TextColor(t.Muted)
 					if it.LastError != "" {
 						ui.Text(c, it.LastError).FontSize(small).TextColor(t.Danger)
 					}
-					if decidable(it) {
+					if decidable(it.OutboxItem) {
 						ui.Row(c).Wrap().Gap(6*s).Margin(4*s, 0, 0, 0).Children(func() {
 							for _, act := range []string{"confirm_sent", "resend", "discard"} {
 								v := kit.Outline
@@ -56,7 +64,7 @@ func decidable(it core.OutboxItem) bool {
 
 func (p *mailPage) resolve(id int64, action string) {
 	a := p.a
-	a.do(func(ctx context.Context) error { return a.svc.ResolveOutbox(ctx, id, action) }, func(err error) {
+	a.writes.Chain(fmt.Sprintf("outbox:%d", id), func(ctx context.Context) error { return a.svc.ResolveOutbox(ctx, id, action) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 		}

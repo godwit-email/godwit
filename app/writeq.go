@@ -6,8 +6,9 @@ import "context"
 // and while one runs only the newest submitted snapshot waits. All its state
 // lives on the UI thread.
 type writeQueue struct {
-	a    *App
-	keys map[string]*writeKey
+	a      *App
+	keys   map[string]*writeKey
+	chains map[string][]chainJob // Chain's writes per key, the running one first
 }
 
 type writeKey struct {
@@ -21,7 +22,9 @@ type writeJob struct {
 	done func(gen uint64, err error)
 }
 
-func newWriteQueue(a *App) *writeQueue { return &writeQueue{a: a, keys: map[string]*writeKey{}} }
+func newWriteQueue(a *App) *writeQueue {
+	return &writeQueue{a: a, keys: map[string]*writeKey{}, chains: map[string][]chainJob{}}
+}
 
 // Submit runs fn for key now, or after the key's running write; a write still
 // waiting is replaced and its done never called. done gets gen back.
@@ -61,4 +64,35 @@ func (q *writeQueue) Flush(key string, done func(err error)) {
 		return
 	}
 	done(nil)
+}
+
+// Chain runs fn after the writes chained to key before it, in order; none
+// is dropped or merged, unlike Submit's snapshots: for commands (mark read,
+// move, resolve) where every one counts. done gets fn's error, before the
+// next write of key starts.
+func (q *writeQueue) Chain(key string, fn func(ctx context.Context) error, done func(err error)) {
+	q.chains[key] = append(q.chains[key], chainJob{fn, done})
+	if len(q.chains[key]) == 1 {
+		q.runChain(key)
+	}
+}
+
+type chainJob struct {
+	fn   func(ctx context.Context) error
+	done func(err error)
+}
+
+func (q *writeQueue) runChain(key string) {
+	j := q.chains[key][0]
+	q.a.do(j.fn, func(err error) {
+		if j.done != nil {
+			j.done(err)
+		}
+		if rest := q.chains[key][1:]; len(rest) > 0 {
+			q.chains[key] = rest
+			q.runChain(key)
+			return
+		}
+		delete(q.chains, key)
+	})
 }
