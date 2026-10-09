@@ -69,6 +69,11 @@ func TestCoretestLLM(t *testing.T) {
 	}
 	assert.Contains(t, text, "Friday meeting")
 	assert.Equal(t, 1, l.Requests())
+	var log []coretest.Request = l.RequestLog()
+	require.Len(t, log, 1)
+	assert.Equal(t, "m1", log[0].Model)
+	assert.Equal(t, "/chat/completions", log[0].Path)
+	assert.Contains(t, string(log[0].Body), `"model":"m1"`)
 	l.Release()
 }
 

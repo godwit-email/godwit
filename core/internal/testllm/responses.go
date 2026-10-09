@@ -7,11 +7,13 @@ import (
 	"strings"
 )
 
-type reasoning struct{ id, enc string }
+// reasoning is an emitted reasoning item; before is what followed it in that
+// output: "message", a function call's call_id, or "".
+type reasoning struct{ id, enc, before string }
 
-// validate returns why a real service would reject body, or "". next is the
-// turn that would answer it. Called with s.mu held.
-func (s *Server) validate(kind string, body []byte, next Turn) string {
+// validate returns why a real service would reject body, or "". Called with
+// s.mu held.
+func (s *Server) validate(kind string, body []byte) string {
 	switch kind {
 	case "openai":
 		var b struct {
@@ -49,26 +51,39 @@ func (s *Server) validate(kind string, body []byte, next Turn) string {
 				return "tool without an explicit strict"
 			}
 		}
-		if next.Reasoning != "" && !slices.Contains(b.Include, "reasoning.encrypted_content") {
+		if !slices.Contains(b.Include, "reasoning.encrypted_content") {
 			return "include lacks reasoning.encrypted_content"
 		}
-		var items []struct {
-			Type, ID         string
+		type item struct {
+			Type, ID, Role   string
 			CallID           string `json:"call_id"`
 			EncryptedContent string `json:"encrypted_content"`
 			Output           json.RawMessage
 		}
+		var items []item
 		json.Unmarshal(b.Input, &items) // a plain string input has no items
-		calls, carried := map[string]bool{}, map[string]string{}
+		// Every reasoning item sent must come back, in order, before what followed it.
+		last := -1
+		for _, rs := range s.emitted {
+			at := slices.IndexFunc(items, func(it item) bool { return it.Type == "reasoning" && it.ID == rs.id })
+			if at < 0 || items[at].EncryptedContent != rs.enc {
+				return fmt.Sprintf("reasoning %s is not carried back with its encrypted_content", rs.id)
+			}
+			if at < last {
+				return fmt.Sprintf("reasoning %s is out of order", rs.id)
+			}
+			last = at
+			if rs.before != "" && !slices.ContainsFunc(items[at+1:], func(it item) bool {
+				return rs.before == "message" && it.Role == "assistant" || it.Type == "function_call" && it.CallID == rs.before
+			}) {
+				return fmt.Sprintf("reasoning %s does not come before the item that followed it", rs.id)
+			}
+		}
+		calls := map[string]bool{}
 		for _, it := range items {
 			switch it.Type {
-			case "reasoning":
-				carried[it.ID] = it.EncryptedContent
 			case "function_call":
 				calls[it.CallID] = true
-				if rs, ok := s.reasoned[it.CallID]; ok && carried[rs.id] != rs.enc {
-					return fmt.Sprintf("reasoning %s is not carried back before call %s", rs.id, it.CallID)
-				}
 			case "function_call_output":
 				if !calls[it.CallID] {
 					return fmt.Sprintf("function_call_output %q answers no earlier function_call", it.CallID)
@@ -135,7 +150,8 @@ func responsesStream(send func(...string), t Turn, n int, model string, hang fun
 			return map[string]any{"type": "function_call", "id": id, "call_id": c.ID, "name": c.Name, "arguments": args, "status": status}
 		}
 		item(idx, fc("in_progress", ""), fc("completed", c.Args), func() {
-			for _, part := range []string{c.Args[:len(c.Args)/2], c.Args[len(c.Args)/2:]} {
+			r := []rune(c.Args)
+			for _, part := range []string{string(r[:len(r)/2]), string(r[len(r)/2:])} {
 				if part != "" {
 					send(ev("response.function_call_arguments.delta", map[string]any{"item_id": id, "output_index": idx, "delta": part}))
 				}

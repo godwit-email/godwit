@@ -33,10 +33,11 @@ import (
 )
 
 type (
-	IMAP = testmail.IMAP
-	SMTP = testmail.Inbox
-	Turn = testllm.Turn
-	Call = testllm.Call
+	IMAP    = testmail.IMAP
+	SMTP    = testmail.Inbox
+	Turn    = testllm.Turn
+	Call    = testllm.Call
+	Request = testllm.Request
 )
 
 // EgressHost is the host fixture plugins fetch from, as http://egress.godwit.test:80/
@@ -346,6 +347,9 @@ func (l *LLM) Script(turns ...Turn) { l.srv.Script(turns...) }
 
 // Requests is how many chat requests the service got.
 func (l *LLM) Requests() int { return len(l.srv.Requests()) }
+
+// RequestLog returns every chat request the service got, raw.
+func (l *LLM) RequestLog() []Request { return l.srv.Requests() }
 
 // Release lets hanging turns finish.
 func (l *LLM) Release() { l.srv.Release() }

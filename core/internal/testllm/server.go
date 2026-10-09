@@ -25,8 +25,8 @@ type Server struct {
 	turns      []Turn
 	requests   []Request
 	release    chan struct{}
-	stuck      bool                 // the head turn is a Status that keeps answering
-	reasoned   map[string]reasoning // call_id -> the reasoning item emitted with it
+	stuck      bool        // the head turn is a Status that keeps answering
+	emitted    []reasoning // every reasoning item sent, in order
 	Mux        *http.ServeMux
 }
 
@@ -38,8 +38,8 @@ type Server struct {
 // openai-responses only: Reasoning adds a reasoning item with that
 // encrypted_content; Fail ends with response.failed carrying that message,
 // Incomplete with response.incomplete, Truncate with no terminal event. A
-// Status turn that is the last one scripted keeps answering (the SDK's
-// retries) until Script adds more.
+// Status turn keeps answering (the SDK's retries) until Advance or the next
+// Script call.
 type Turn struct {
 	Text       []string
 	Calls      []Call
@@ -71,7 +71,7 @@ type Request struct {
 // Start serves the endpoints of kind ("openai", "openai-responses" or "anthropic").
 func Start(t *testing.T, kind string) *Server {
 	t.Helper()
-	s := &Server{Mux: http.NewServeMux(), release: make(chan struct{}), reasoned: map[string]reasoning{}}
+	s := &Server{Mux: http.NewServeMux(), release: make(chan struct{})}
 	list, chat := "/models", "/chat/completions"
 	switch kind {
 	case "anthropic":
@@ -135,6 +135,16 @@ func (s *Server) Script(turns ...Turn) {
 	s.mu.Unlock()
 }
 
+// Advance drops the current turn, e.g. a Status turn that keeps answering.
+func (s *Server) Advance() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.turns) > 0 {
+		s.turns = s.turns[1:]
+	}
+	s.stuck = false
+}
+
 // Release lets hanging turns finish. It is safe to call more than once.
 func (s *Server) Release() {
 	s.mu.Lock()
@@ -187,10 +197,10 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		turn = s.turns[0]
 	}
 	req := Request{System: in.System, Messages: in.Messages, Tools: in.Tools, Header: r.Header.Clone(),
-		Model: in.Model, Path: r.URL.Path, Body: body, Invalid: s.validate(kind, body, turn)}
+		Model: in.Model, Path: r.URL.Path, Body: body, Invalid: s.validate(kind, body)}
 	s.requests = append(s.requests, req)
 	if req.Invalid == "" && len(s.turns) > 0 {
-		if kind == "openai-responses" && turn.Status != 0 && len(s.turns) == 1 {
+		if kind == "openai-responses" && turn.Status != 0 {
 			s.stuck = true
 		} else {
 			s.turns = s.turns[1:]
@@ -204,9 +214,15 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		if turn.Calls[i].Args == "" {
 			turn.Calls[i].Args = "{}"
 		}
-		if turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" {
-			s.reasoned[turn.Calls[i].ID] = reasoning{fmt.Sprintf("rs_%d", n), turn.Reasoning}
+	}
+	if turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" {
+		rs := reasoning{id: fmt.Sprintf("rs_%d", n), enc: turn.Reasoning}
+		if len(turn.Text) > 0 {
+			rs.before = "message"
+		} else if len(turn.Calls) > 0 {
+			rs.before = turn.Calls[0].ID
 		}
+		s.emitted = append(s.emitted, rs)
 	}
 	s.mu.Unlock()
 

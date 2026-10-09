@@ -100,7 +100,9 @@ func TestResponsesFakeStream(t *testing.T) {
 	rp, fp := rs.ToParam(), fc.ToParam()
 	p.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: responses.ResponseInputParam{
 		responses.ResponseInputItemParamOfMessage("hi", responses.EasyInputMessageRoleUser),
-		{OfReasoning: &rp}, {OfFunctionCall: &fp},
+		{OfReasoning: &rp},
+		responses.ResponseInputItemParamOfMessage("Hello", responses.EasyInputMessageRoleAssistant),
+		{OfFunctionCall: &fp},
 		responses.ResponseInputItemParamOfFunctionCallOutput(fc.CallID, `{"r":1}`),
 	}}
 	evs, err = stream(t, s, p)
@@ -114,7 +116,7 @@ func TestResponsesFakeStream(t *testing.T) {
 
 func TestResponsesFakeEndings(t *testing.T) {
 	s := Start(t, "openai-responses")
-	p := responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false),
+	p := responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false), Include: withReasoning,
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}}
 
 	s.Script(Turn{Text: []string{"a"}, Fail: "boom"})
@@ -139,16 +141,50 @@ func TestResponsesFakeEndings(t *testing.T) {
 	}
 	assert.Equal(t, "response.output_item.done", evs[len(evs)-1].Type)
 
-	// A status keeps answering the SDK's retries until the script moves on.
-	s.Script(Turn{Status: 500})
+	// A status keeps answering the SDK's retries, even with turns scripted
+	// after it, until the test advances the script.
+	s.Script(Turn{Status: 500}, Turn{Text: []string{"back"}})
 	n := len(s.Requests())
 	_, err = stream(t, s, p)
 	require.Error(t, err)
 	assert.Len(t, s.Requests(), n+3, "the first try and two retries all fail")
-	s.Script(Turn{Text: []string{"back"}})
+	_, err = stream(t, s, p)
+	require.Error(t, err, "still failing until Advance")
+	s.Advance()
 	evs, err = stream(t, s, p)
 	require.NoError(t, err)
 	assert.Equal(t, "back", evs[len(evs)-1].Response.OutputText())
+
+	// Script also moves past an answered status.
+	s.Script(Turn{Status: 503})
+	_, err = stream(t, s, p)
+	require.Error(t, err)
+	s.Script(Turn{Text: []string{"again"}})
+	evs, err = stream(t, s, p)
+	require.NoError(t, err)
+	assert.Equal(t, "again", evs[len(evs)-1].Response.OutputText())
+}
+
+func TestResponsesFakeArgsUnicode(t *testing.T) {
+	s := Start(t, "openai-responses")
+	const args = `{"q":"中文🎉 ok"}`
+	s.Script(Turn{Calls: []Call{{Name: "f", Args: args}}})
+	evs, err := stream(t, s, responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false), Include: withReasoning,
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}})
+	require.NoError(t, err)
+	var deltas []string
+	var done string
+	for _, e := range evs {
+		switch e.Type {
+		case "response.function_call_arguments.delta":
+			deltas = append(deltas, e.AsResponseFunctionCallArgumentsDelta().Delta)
+		case "response.function_call_arguments.done":
+			done = e.AsResponseFunctionCallArgumentsDone().Arguments
+		}
+	}
+	assert.Len(t, deltas, 2)
+	assert.Equal(t, args, strings.Join(deltas, ""))
+	assert.Equal(t, args, done)
 }
 
 func post(t *testing.T, s *Server, path, body string) int {
@@ -166,7 +202,7 @@ func TestResponsesFakeValidates(t *testing.T) {
 	bad := map[string]string{
 		"no store":         `{"model":"m","input":"hi"}`,
 		"store true":       `{"model":"m","store":true,"input":"hi"}`,
-		"no include":       `{"model":"m","store":false,"input":"hi"}`, // the next turn has reasoning
+		"no include":       `{"model":"m","store":false,"input":"hi"}`,
 		"tool sans strict": `{"model":"m","store":false,"include":["reasoning.encrypted_content"],"input":"hi","tools":[{"type":"function","name":"f","parameters":{}}]}`,
 		"unknown call_id":  `{"model":"m","store":false,"include":["reasoning.encrypted_content"],"input":[{"type":"function_call_output","call_id":"call_x","output":"r"}]}`,
 		"object output":    `{"model":"m","store":false,"include":["reasoning.encrypted_content"],"input":[{"type":"function_call","call_id":"c","name":"f","arguments":"{}"},{"type":"function_call_output","call_id":"c","output":{"a":1}}]}`,
@@ -187,14 +223,27 @@ func TestResponsesFakeValidates(t *testing.T) {
 	out := `{"type":"function_call_output","call_id":"call_r","output":"r"}`
 	reasoning := `{"type":"reasoning","id":"rs_` + itoa(len(bad)) + `","summary":[],"encrypted_content":"enc-9"}`
 	wrap := func(items ...string) string {
-		return `{"model":"m","store":false,"input":[` + strings.Join(items, ",") + `]}`
+		return `{"model":"m","store":false,"include":["reasoning.encrypted_content"],"input":[` + strings.Join(items, ",") + `]}`
 	}
+	user := `{"role":"user","content":"hi"}`
+	assert.Equal(t, 400, post(t, s, "/responses", wrap(user)), "reasoning and call history both dropped")
+	assert.Equal(t, 400, post(t, s, "/responses", wrap(reasoning)), "the call that followed the reasoning dropped")
 	assert.Equal(t, 400, post(t, s, "/responses", wrap(call, out)), "reasoning not carried back")
 	assert.Equal(t, 400, post(t, s, "/responses", wrap(call, reasoning, out)), "reasoning after its call")
 	assert.Equal(t, 400, post(t, s, "/responses", wrap(strings.Replace(reasoning, "enc-9", "enc-0", 1), call, out)), "reasoning altered")
 	assert.Equal(t, 200, post(t, s, "/responses", wrap(reasoning, call, out)))
 	last := s.Requests()[len(s.Requests())-1]
 	assert.Empty(t, last.Invalid)
+
+	// Reasoning before a plain answer must come back too, before that answer.
+	tx := Start(t, "openai-responses")
+	tx.Script(Turn{Text: []string{"t"}, Reasoning: "enc-t"})
+	require.Equal(t, 200, post(t, tx, "/responses", wrap(user)))
+	rsT := `{"type":"reasoning","id":"rs_0","summary":[],"encrypted_content":"enc-t"}`
+	answer := `{"type":"message","role":"assistant","content":"t"}`
+	assert.Equal(t, 400, post(t, tx, "/responses", wrap(user, answer, user)), "reasoning dropped")
+	assert.Equal(t, 400, post(t, tx, "/responses", wrap(user, answer, rsT, user)), "reasoning after its answer")
+	assert.Equal(t, 200, post(t, tx, "/responses", wrap(user, rsT, answer, user)))
 
 	c := Start(t, "openai")
 	assert.Equal(t, 400, post(t, c, "/chat/completions",
@@ -210,7 +259,7 @@ func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 func TestRequestRecordsModel(t *testing.T) {
 	for kind, path := range map[string]string{"openai": "/chat/completions", "openai-responses": "/responses", "anthropic": "/v1/messages"} {
 		s := Start(t, kind)
-		body := `{"model":"vendor/m2","store":false,"max_tokens":5,"input":"hi","messages":[{"role":"user","content":"hi"}]}`
+		body := `{"model":"vendor/m2","store":false,"include":["reasoning.encrypted_content"],"max_tokens":5,"input":"hi","messages":[{"role":"user","content":"hi"}]}`
 		require.Equal(t, 200, post(t, s, path, body), kind)
 		r := s.Requests()[0]
 		assert.Equal(t, "vendor/m2", r.Model, kind)
