@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -391,4 +392,59 @@ func TestFreeInputAfterCmdKRunsAssist(t *testing.T) {
 		}
 	}
 	t.Fatal("the free input did not run Assist in the draft's conversation")
+}
+
+func TestWitRefusedWhileSending(t *testing.T) {
+	h, p, llm := witCompose(t, inlineOld)
+	llm.Script(proposeTurn("update_draft", inlineNew), coretest.Turn{Text: []string{"改了 2 处。"}})
+	h.tellWit("改一下日期和落款")
+	h.see("2 处修改待确认")
+	h.until("the review", func() bool { return p.wit.review != nil && !p.s.busy })
+	rev, asked := h.draft(p.id).Revision, llm.Requests()
+
+	started, release := make(chan struct{}), make(chan struct{})
+	p.sendFn = func(context.Context, int64, string) error {
+		close(started)
+		<-release
+		return &core.SendWarningsError{Check: core.SendCheck{Warnings: []core.SendWarning{{Plugin: "p", Message: "careful"}}, Digest: "d"}}
+	}
+	h.click("发送")
+	<-started
+	h.drain()
+	w := p.wit
+	w.decideAll(true)
+	w.decideOne(0, true)
+	w.applied = true
+	w.undo()
+	w.panel.ask(w.options(nil), "再改一下")
+	w.runSkill("调整", "shorten", "")
+	w.cmdkInput = "更短"
+	w.rewriteSelection()
+	p.attach()
+	p.removeAttachment(1)
+	p.discard()
+	h.drain()
+	if slices.Contains(h.plat.Calls(), "OpenFiles true") {
+		t.Error("attaching asked for files while sending")
+	}
+	h.tt.Frame()
+	if w.review == nil || w.review.decided[0] != 0 || len(w.panel.deciding) != 0 || w.panel.running {
+		t.Errorf("a decision or a run was taken while sending: review %v, deciding %v, running %v", w.review != nil, w.panel.deciding, w.panel.running)
+	}
+	if !h.tt.HasText("正在发送，暂时不能修改草稿") {
+		t.Error("no hint that the draft is being sent")
+	}
+	close(release)
+	h.see("careful")
+	h.settle()
+	h.drain()
+	if d := h.draft(p.id); d.Revision != rev || llm.Requests() != asked {
+		t.Errorf("the Service was called while sending: revision %d → %d, model requests %d → %d", rev, d.Revision, asked, llm.Requests())
+	}
+
+	if t.Failed() {
+		return
+	}
+	h.click("全部接受") // after the warning, editing works again
+	h.until("accepted", func() bool { return strings.Contains(h.editable(p.id), "Tuesday") && w.review == nil })
 }

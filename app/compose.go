@@ -233,6 +233,10 @@ func (p *composer) here() bool {
 // switchAccount moves the draft to account acc, after the saves before it;
 // the signature becomes acc's.
 func (p *composer) switchAccount(acc int64) {
+	if p.held() {
+		p.accSel = p.acc
+		return
+	}
 	svc, id := p.a.svc, p.id
 	var d core.Draft
 	var sig string
@@ -257,6 +261,9 @@ func (p *composer) switchAccount(acc int64) {
 // per attachment changed (n), then reads the draft back: a revision beyond
 // that is a change from elsewhere, a conflict.
 func (p *composer) attachRun(n func() int64, change func(ctx context.Context) error, done func(err error)) {
+	if p.held() {
+		return
+	}
 	svc, id := p.a.svc, p.id
 	var d core.Draft
 	p.s.Run(func(ctx context.Context, rev int64) (core.Draft, error) {
@@ -279,6 +286,9 @@ func (p *composer) attachRun(n func() int64, change func(ctx context.Context) er
 
 // attach asks for files and adds them, after the saves before them.
 func (p *composer) attach() {
+	if p.held() {
+		return
+	}
 	a, svc, id := p.a, p.a.svc, p.id
 	var paths []string
 	a.do(func(context.Context) (err error) {
@@ -313,6 +323,9 @@ func (p *composer) attach() {
 }
 
 func (p *composer) removeAttachment(attID int64) {
+	if p.held() {
+		return
+	}
 	svc, id := p.a.svc, p.id
 	p.attachRun(func() int64 { return 1 }, func(ctx context.Context) error {
 		return svc.RemoveAttachment(ctx, id, attID)
@@ -353,6 +366,15 @@ func (p *composer) send(digest string) {
 	})
 }
 
+// held is the gate of every change to the draft: true, telling the user
+// once, while the draft is being sent.
+func (p *composer) held() bool {
+	if p.frozen {
+		p.wit.lockedInput()
+	}
+	return p.frozen
+}
+
 // sendDraft sends draft id; with digest, despite that check's warnings.
 func (a *App) sendDraft(ctx context.Context, id int64, digest string) error {
 	if digest != "" {
@@ -374,6 +396,9 @@ func (p *composer) gone() {
 
 // discard deletes the draft; saving pauses meanwhile and resumes if that fails.
 func (p *composer) discard() {
+	if p.held() {
+		return
+	}
 	p.discardOpen = false
 	p.s.Hold()
 	del, id := p.deleteFn, p.id
@@ -390,6 +415,9 @@ func (p *composer) discard() {
 }
 
 func (p *composer) keepMine() {
+	if p.held() {
+		return
+	}
 	p.atts = p.s.latest.Attachments
 	p.s.KeepMine()
 }
@@ -397,6 +425,9 @@ func (p *composer) keepMine() {
 // useLatest loads the latest draft into the page, converted off the UI
 // thread, dropping the local snapshot.
 func (p *composer) useLatest() {
+	if p.held() {
+		return
+	}
 	d := *p.s.latest
 	p.loads++
 	loads := p.loads

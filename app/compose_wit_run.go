@@ -104,6 +104,7 @@ func (w *composeWit) options(job *witJob) witOptions {
 		Pinned:      job != nil,
 		Changed:     w.reload,
 		Gate:        w.gate,
+		Hold:        w.p.held,
 		Card:        w.card,
 		Tools:       w.tools,
 		After:       w.after,
@@ -193,6 +194,9 @@ func (w *composeWit) runSkill(label, skill, lang string) {
 // rewriteSelection sends ⌘K's instruction for the selection: after the
 // flush, the selection in the editable HTML saved.
 func (w *composeWit) rewriteSelection() {
+	if w.p.held() {
+		return
+	}
 	in := strings.TrimSpace(w.cmdkInput)
 	if in == "" {
 		return
@@ -269,6 +273,9 @@ func (w *composeWit) sync() {
 
 // decideAll decides every open change of the review; a rewrite as a whole.
 func (w *composeWit) decideAll(accept bool) {
+	if w.p.held() {
+		return
+	}
 	r := w.review
 	if !r.inline() {
 		w.panel.decide(r.ap, accept, false)
@@ -284,6 +291,9 @@ func (w *composeWit) decideAll(accept bool) {
 
 // decideOne decides change i; with none left open, the edit is settled.
 func (w *composeWit) decideOne(i int, accept bool) {
+	if w.p.held() {
+		return
+	}
 	r := w.review
 	if w.panel.deciding[r.ap.ID] {
 		return
@@ -353,6 +363,9 @@ func (w *composeWit) setBody(pd prepared) {
 
 // undo takes back the latest edit Wit applied.
 func (w *composeWit) undo() {
+	if w.p.held() {
+		return
+	}
 	svc, id := w.p.a.svc, w.p.id
 	var pd prepared
 	w.p.s.Run(func(ctx context.Context, _ int64) (core.Draft, error) {

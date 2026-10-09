@@ -43,7 +43,8 @@ type witOptions struct {
 	Start              func(ctx context.Context, input string) (conv int64, ch <-chan core.WitEvent, stop func(), err error)
 	Changed            func()
 	Gate               func(run func())
-	Pinned             bool // Start is the turn's own: Retry runs it, not the Start of the moment
+	Hold               func() bool // true refuses runs and decisions for now
+	Pinned             bool        // Start is the turn's own: Retry runs it, not the Start of the moment
 	Card               func(c *ui.Context, ap core.Approval) bool
 	Tools, After       func(c *ui.Context)
 }
@@ -415,6 +416,9 @@ func (p *witPanel) ask(o witOptions, in string) {
 
 // run starts a run on in and follows its stream.
 func (p *witPanel) run(o witOptions, in string) {
+	if o.Hold != nil && o.Hold() {
+		return
+	}
 	start, a := o.Start, p.a
 	// Not under a.ctx: only Stop cancels the call, and the run outlives the
 	// panel showing it. The Service's close ends it.
@@ -482,6 +486,9 @@ func (p *witPanel) decide(ap core.Approval, accept, all bool) {
 // settle decides approvals ids of ap's run with decide, following the run
 // it resumes.
 func (p *witPanel) settle(ap core.Approval, ids []int64, decide func(ctx context.Context) error) {
+	if p.o.Hold != nil && p.o.Hold() {
+		return
+	}
 	svc, conv := p.a.svc, p.conv
 	for _, id := range ids {
 		p.deciding[id] = true
