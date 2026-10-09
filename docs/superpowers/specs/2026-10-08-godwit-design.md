@@ -263,6 +263,8 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 | 二进制体积（两种接口，`-s -w`） | 50 MB | 28 MB | **22 MB** |
 | 主要问题 | Anthropic 模块无条件引入 Bedrock / Vertex | 依赖的 sonic 不支持 Go 1.27；概念多 | Anthropic 插件丢根级字段；全局注册表，带 OpenTelemetry |
 
+2026-10-10 复评 Eino ADK（v0.9.21，ChatModelAgent + Runner + CheckPointStore）：审批的核心流程能跑通，且支持逐个恢复待审批调用；但 checkpoint 是无文档、无版本的 gob 内部结构并会冻结系统提示，恢复时会再次调用工具函数、中断 ID 与工具调用 ID 无关，`WithCancel` 不关闭上游流，Anthropic 适配器同样丢根级 `$defs`，Anthropic key 为空时会把环境变量 `ANTHROPIC_API_KEY` 发往配置地址，sonic 在 Go 1.27 上每次启动打印警告，二进制 27.8 MB。结论：不换；仅当 Genkit 的 `Respond` 路径出问题、且 Eino 提供文档化带版本的 checkpoint（或 JSON 历史读写）时再评估。
+
 另外评估过：google/adk-go（无 Anthropic 支持）、langchaingo、自己基于官方 SDK 写循环（Codex / gpt-6-astra 独立评估估算 2–4 人周，协议差异需长期维护）。
 
 **落地要求**：
