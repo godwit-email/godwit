@@ -236,7 +236,7 @@ app/reader_ai.go            （修改）结果标注用运行返回的实际模�
   - 接口类型三选一：OpenAI 兼容（Chat Completions）/ OpenAI 兼容（Responses）/ Anthropic 兼容
   - Base URL 失去焦点时规范化，显示「将请求 `<Endpoint>`」；失败显示原因
   - 编辑已有服务的 API Key：占位「已配置 · 留空表示保持不变」；地址或协议改动后，若 key 留空则提示「地址已改变：请重新输入 API Key，或选择不使用 Key」（选项「不使用 Key」= `clear`），不再自动沿用
-  - 保存流程：①「探测」（`CheckModelService`，请求时记下表单快照的编辑代次）→ ② 选择 / 输入模型（拉取到的列表作推荐勾选；**总有**「手动添加模型 ID」输入；`ListSupported == false` 时提示「这个服务没有提供模型列表，请手动填写模型 ID」；空列表同样提示）→ ③ 提交 `Add/UpdateModelService`。探测结果只在表单快照未变时采用；`ErrModelAuth` → 字段下「API Key 被拒绝（401/403）」，不进入第 ②③ 步
+  - 保存流程：①「探测」（`CheckModelService`，请求时记下表单快照的编辑代次）→ ② 选择 / 输入模型（拉取到的列表作推荐勾选；**总有**「手动添加模型 ID」输入；`ListSupported == false` 时提示「这个服务没有提供模型列表，请手动填写模型 ID」；空列表同样提示）→ ③ 提交 `Add/UpdateModelService`（已有服务的协议、地址与 key 都没变时可以不探测直接保存）。探测结果只在表单快照未变时采用；`ErrModelAuth` → 字段下「API Key 被拒绝（401/403）」，不进入第 ②③ 步
   - 显示服务的「引用名：`<slug>`」（可复制，用于 skill 的 `godwit-model`）
   - 小任务模型选择：「小任务模型（总结、翻译、即时回复）」，选项「与默认模型相同」+ 全部模型，写 `SmallModel`（设置写队列）；取消勾选或删除服务时与默认模型一样清理
   - 阅读区总结 / 翻译的模型标注改用 `context` 事件里的 `Model`
