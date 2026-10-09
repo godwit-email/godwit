@@ -110,12 +110,13 @@ type App struct {
 	accounts    []core.Account
 	settings    core.Settings // what the interface shows: the newest edit while one saves
 
-	settingsOK   core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
-	settingsGen  uint64                                                             // bumped per settings save; only the newest one's result counts
-	settingsVer  uint64                                                             // bumped per local settings change; a load begun before it keeps its settings out
-	saveSettings func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
-	sysLang      string                                                             // Deps.SystemLanguage
-	accountsGen  uint64                                                             // the load gen that read a.accounts
+	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
+	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
+	settingsVer      uint64                                                             // bumped per local settings change
+	settingsSavedVer uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
+	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	sysLang          string                                                             // Deps.SystemLanguage
+	accountsGen      uint64                                                             // the load gen that read a.accounts
 
 	foreground bool
 
@@ -200,6 +201,7 @@ func (a *App) load() {
 	var st core.Settings
 	var unread map[int64]int
 	fetch, ver := a.fetch, a.settingsVer
+	settled := ver == a.settingsSavedVer // no local change waits for its save
 	a.do(func(ctx context.Context) error {
 		var err error
 		if st, accs, err = fetch(ctx); err != nil {
@@ -232,7 +234,7 @@ func (a *App) load() {
 		a.loadFailing = false
 		first := !a.loaded
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
-		if ver == a.settingsVer { // else the user changed the settings since st was read
+		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st
 		}
 		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {

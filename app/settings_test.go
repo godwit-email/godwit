@@ -276,9 +276,10 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.called("OpenURL https://github.com/godwit-email/godwit")
 }
 
-// blockingUpdate is an UpdateAccount whose first call waits for release; it
-// records each call's IMAP host as it starts and ends.
+// blockingUpdate is the Service's UpdateAccount, whose first call waits
+// for release; it records each call's IMAP host as it starts and ends.
 type blockingUpdate struct {
+	svc     *core.Service
 	mu      sync.Mutex
 	log     []string
 	release chan struct{}
@@ -295,10 +296,11 @@ func (b *blockingUpdate) update(ctx context.Context, id int64, p core.AccountPat
 	if n == 1 {
 		<-b.release
 	}
+	acc, err := b.svc.UpdateAccount(ctx, id, p)
 	b.mu.Lock()
 	b.log = append(b.log, "end "+host)
 	b.mu.Unlock()
-	return core.Account{ID: id, Email: "alice@example.com", IMAPHost: host, Status: "ok"}, nil
+	return acc, err
 }
 
 func (b *blockingUpdate) Log() []string {
@@ -307,39 +309,43 @@ func (b *blockingUpdate) Log() []string {
 	return slices.Clone(b.log)
 }
 
-// saveServers opens the servers dialog, sets the IMAP host and saves.
-func (h *harness) saveServers(host string) {
+// saveServers opens the servers dialog, sets the hosts and saves.
+func (h *harness) saveServers(imap, smtp string) {
 	h.t.Helper()
 	h.click("编辑服务器设置")
-	h.fill("IMAP 服务器", host)
+	h.fill("IMAP 服务器", imap)
+	h.fill("SMTP 服务器", smtp)
 	h.click("保存")
 }
 
 func TestSettingsAccountWritesOrdered(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))
-	b := &blockingUpdate{release: make(chan struct{})}
+	b := &blockingUpdate{svc: h.env.Svc, release: make(chan struct{})}
 	p.update = b.update
-	h.saveServers("first.example")
+	h.saveServers("localhost", "127.0.0.1")
 	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
 	h.click("取消")
-	h.saveServers("second.example")
+	h.saveServers("127.0.0.1", "localhost")
 	h.drain()
 	if got := b.Log(); len(got) != 1 {
 		t.Fatalf("the second save started while the first ran: %q", got)
 	}
 	close(b.release)
-	want := []string{"start first.example", "end first.example", "start second.example", "end second.example"}
+	want := []string{"start localhost", "end localhost", "start 127.0.0.1", "end 127.0.0.1"}
 	h.until("both saves", func() bool { return slices.Equal(b.Log(), want) })
 	h.until("the dialog closes", func() bool { return p.dialog == "" })
+	if got := h.account(acc.ID); got.IMAPHost != "127.0.0.1" || got.SMTPHost != "localhost" {
+		t.Fatalf("stored IMAP %q SMTP %q, want the second save's 127.0.0.1 / localhost", got.IMAPHost, got.SMTPHost)
+	}
 }
 
 func TestSettingsStaleDialogResult(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))
-	b := &blockingUpdate{release: make(chan struct{})}
+	b := &blockingUpdate{svc: h.env.Svc, release: make(chan struct{})}
 	p.update = b.update
-	h.saveServers("first.example")
+	h.saveServers("localhost", "127.0.0.1")
 	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
 	h.click("取消")
 	h.click("编辑服务器设置")
@@ -427,4 +433,85 @@ func TestSettingsLanguageAtStart(t *testing.T) {
 	})
 	h.see("Mail")
 	h.see("Settings")
+}
+
+// gatedSettings blocks the App's first settings save until releaseSave, and
+// (once armed) a load after it read the settings until releaseLoad.
+type gatedSettings struct {
+	releaseSave, releaseLoad chan struct{}
+	saves                    atomic.Int32
+	armed, read              atomic.Bool
+}
+
+func gateSettings(h *harness) *gatedSettings {
+	g := &gatedSettings{releaseSave: make(chan struct{}), releaseLoad: make(chan struct{})}
+	save, fetch := h.app.saveSettings, h.app.fetch
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		if g.saves.Add(1) == 1 {
+			select {
+			case <-g.releaseSave:
+			case <-ctx.Done():
+			}
+		}
+		return save(ctx, st)
+	}
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		if g.armed.CompareAndSwap(true, false) {
+			g.read.Store(true)
+			select {
+			case <-g.releaseLoad:
+			case <-ctx.Done():
+			}
+		}
+		return st, accs, err
+	}
+	return g
+}
+
+// staleLoad starts a load that reads the stored settings now and is held;
+// it returns the load's gen.
+func (g *gatedSettings) staleLoad(h *harness) uint64 {
+	g.armed.Store(true)
+	h.app.load()
+	gen := h.app.loadGen
+	h.until("the load read", func() bool { return g.read.Load() })
+	return gen
+}
+
+func TestSettingsLoadDuringSaveKeepsEdit(t *testing.T) {
+	h, _ := withAccount(t)
+	g := gateSettings(h)
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("the save blocks", func() bool { return g.saves.Load() == 1 })
+	gen := g.staleLoad(h)
+	close(g.releaseSave)
+	h.until("saved", func() bool { return h.app.writes.keys["settings"] == nil && h.app.settingsOK.LaunchAtLogin })
+	close(g.releaseLoad)
+	h.until("the load applies", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load that read before the save reverted the edit")
+	}
+}
+
+func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
+	h, _ := withAccount(t)
+	g := gateSettings(h)
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("the save blocks", func() bool { return g.saves.Load() == 1 })
+	gen := g.staleLoad(h)
+	close(g.releaseLoad)
+	h.until("the load applies", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load during the save reverted the edit")
+	}
+	h.click("在菜单栏显示未读数")
+	close(g.releaseSave)
+	h.until("saves done", func() bool { return h.app.writes.keys["settings"] == nil })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !st.LaunchAtLogin || !st.UnreadInMenuBar {
+		t.Fatalf("stored %+v, %v; want both edits", st, err)
+	}
 }

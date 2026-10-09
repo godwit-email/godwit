@@ -22,6 +22,7 @@ func (a *App) changeSettings(st core.Settings) {
 	a.settings = st
 	a.settingsGen++
 	a.settingsVer++
+	ver := a.settingsVer
 	a.settingsEffects(old, st)
 	save := a.saveSettings
 	var saved core.Settings
@@ -30,7 +31,7 @@ func (a *App) changeSettings(st core.Settings) {
 		return err
 	}, func(gen uint64, err error) {
 		if err == nil {
-			a.settingsOK = saved
+			a.settingsOK, a.settingsSavedVer = saved, ver
 		}
 		if gen != a.settingsGen {
 			return
@@ -39,6 +40,7 @@ func (a *App) changeSettings(st core.Settings) {
 			cur := a.settings
 			a.settings = a.settingsOK
 			a.settingsVer++
+			a.settingsSavedVer = a.settingsVer
 			a.settingsEffects(cur, a.settings)
 			a.toastErr(err)
 			return
