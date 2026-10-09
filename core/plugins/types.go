@@ -88,6 +88,9 @@ type Invocation struct {
 	// Unapproved: the call needed an egress approval it did not get, so it
 	// has no hosts; a fetch to a declared host is denied as approval_required.
 	Unapproved bool
+	// Approved: the user approved this call's egress (its hosts were listed).
+	// An action or tool call without it is checked again as it fetches.
+	Approved bool
 	// Config is the call's ctx.config, taken when the host admitted the call
 	// (before it waits for the VM); nil makes ctx.config throw.
 	Config *ConfigSnapshot

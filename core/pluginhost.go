@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	netmail "net/mail"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -49,6 +50,9 @@ func (h *pluginHost) do(ctx context.Context, f func(ctx context.Context) error) 
 }
 
 func (h *pluginHost) StorageGet(ctx context.Context, key string) (v string, ok bool, err error) {
+	if beforePluginStorageGet != nil {
+		beforePluginStorageGet(h.name)
+	}
 	err = h.do(ctx, func(ctx context.Context) error {
 		rows, err := h.s.db.Query(ctx, "SELECT value FROM plugin_kv WHERE plugin = ? AND key = ?", h.name, key)
 		if err == nil && len(rows.Values) > 0 {
@@ -244,7 +248,14 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 // failed) with its destination's host and port only. An audit failure is
 // never hidden: without its rows the call fails, joined with any fetch error.
 func (h *pluginHost) Fetch(ctx context.Context, inv plugins.Invocation, req plugins.FetchRequest) (out plugins.FetchResponse, err error) {
+	unapproved := h.mailSinceAdmission(ctx, inv)
 	err = h.do(ctx, func(ctx context.Context) error {
+		if unapproved {
+			u, _ := url.Parse(req.URL) // the plugin side parsed it
+			dest := plugins.HostPort(u)
+			return errors.Join(&plugins.PermissionError{Perm: "net:" + strings.TrimSuffix(dest, ":443")},
+				h.audit(ctx, inv, dest, "deny", "approval_required"))
+		}
 		r, hops, err := h.net.Do(ctx, inv.EgressHosts, req)
 		var aerr error
 		for _, hop := range hops {
@@ -257,6 +268,22 @@ func (h *pluginHost) Fetch(ctx context.Context, inv plugins.Invocation, req plug
 		return err
 	})
 	return out, err
+}
+
+// mailSinceAdmission reports whether an action or tool call admitted with
+// hosts but no egress approval would now need one: the plugin was handed
+// mail since (holds_mail), or, for a tool, its run read mail. Checked as it
+// fetches, since the call may have waited for the VM behind the call that
+// handed the mail over. A read failure counts as mail (fail closed).
+func (h *pluginHost) mailSinceAdmission(ctx context.Context, inv plugins.Invocation) bool {
+	if inv.Approved || inv.Kind != plugins.KindTool && inv.Kind != plugins.KindAction {
+		return false
+	}
+	if held, err := h.s.holdsMail(ctx, h.name); err != nil || held {
+		return true
+	}
+	job, ok := ctx.Value(runKey{}).(*runJob)
+	return inv.Kind == plugins.KindTool && ok && job.scope.ReadMail()
 }
 
 // AuditEgress records a fetch the plugin side refused before calling Fetch.
@@ -303,9 +330,13 @@ func (s *Service) pluginTools(writes bool) []toolDesc {
 
 // Test hooks, nil in production: beforePluginToolRun runs as a plugin tool's
 // in-run call starts, afterPluginToolList once a run's plugin tools are listed.
+// afterPluginToolAdmit once its Invocation is decided, beforePluginStorageGet
+// as a plugin's ctx.storage.get starts.
 var (
-	beforePluginToolRun func(ctx context.Context)
-	afterPluginToolList func()
+	beforePluginToolRun    func(ctx context.Context)
+	afterPluginToolList    func()
+	afterPluginToolAdmit   func(ctx context.Context)
+	beforePluginStorageGet func(plugin string)
 )
 
 // registerPluginTools offers rp's tools to Wit runs; a name taken is an
@@ -384,6 +415,9 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 			if inv.Unapproved = need; !need {
 				inv.EgressHosts = hosts
 			}
+			if afterPluginToolAdmit != nil {
+				afterPluginToolAdmit(ctx)
+			}
 			res, err := s.runPluginTool(ctx, pc, ti.Name, args, inv)
 			if err != nil {
 				return nil, cleanErr{pluginUntrusted(name, s.clean(err.Error())), err}
@@ -415,7 +449,7 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 			}
 			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, true, true) // the approval listed them
 			return s.runPluginTool(ctx, pc, ti.Name, a.Args, plugins.Invocation{ID: fmt.Sprintf("approval:%d", a.ID),
-				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts, Config: cfg})
+				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts, Approved: true, Config: cfg})
 		},
 		Binding: func(ctx context.Context) (string, error) { return s.pluginBinding(ctx, name, rp.hash) },
 	}

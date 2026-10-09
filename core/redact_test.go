@@ -78,3 +78,41 @@ func TestAuditRowsRedacted(t *testing.T) {
 	assert.Zero(t, e.count(t, `SELECT COUNT(*) FROM audit_log WHERE COALESCE(destination, '') || COALESCE(tool, '') ||
 		COALESCE(reason, '') || COALESCE(extension, '') || COALESCE(call_id, '') LIKE '%secret-token%'`))
 }
+
+// A secret rotated while a call is in flight: the call still holds the old
+// value (its snapshot), and the error it throws with it is redacted.
+func TestSecretRotatedMidCallRedacted(t *testing.T) {
+	e := newApprovalEnv(t)
+	secretPlugin(t, e.s, "rot", `{}`, "first-secret-1", `export default function (ctx: any) {
+  ctx.tools.register({ name: "go", description: "Goes.", write: false, schema: { type: "object" },
+    run: async () => { const k = ctx.config.apiKey; await ctx.storage.get("x"); throw new Error("old " + k + " now " + ctx.config.apiKey) } })
+}`)
+	beforePluginStorageGet = func(string) { // the call is mid-flight, past reading its config
+		assert.NoError(t, e.s.SetPluginConfig(bg, "rot", map[string]json.RawMessage{"apiKey": json.RawMessage(`"second-secret-2"`)}))
+	}
+	t.Cleanup(func() { beforePluginStorageGet = nil })
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs("plugin_rot_go", `{}`), finished)
+	out := toolOutput(t, evs)
+	assert.Contains(t, out, "old [redacted] now [redacted]")
+	assert.NotContains(t, out, "first-secret")
+	assert.NotContains(t, lastSent(t, e), "first-secret")
+}
+
+// A secret the plugin cached at initialization, then cleared: still redacted.
+func TestInitCachedSecretClearedRedacted(t *testing.T) {
+	e := newApprovalEnv(t)
+	secretPlugin(t, e.s, "early", `{}`, "boot-secret-1", `export default function (ctx: any) {
+  ctx.tools.register({ name: "go", description: "Goes.", write: false, schema: { type: "object" }, run: async () => "ok" })
+}`)
+	// Restart the instance so its initialization sees the secret, and caches it.
+	startTestPlugin(t, e.s, "early", `{},"config":[{"key":"apiKey","type":"secret","label":"Key"}]`, `export default function (ctx: any) {
+  const cached = ctx.config.apiKey
+  ctx.tools.register({ name: "go", description: "Goes.", write: false, schema: { type: "object" },
+    run: async () => { throw new Error("cached " + cached) } })
+}`)
+	require.NoError(t, e.s.SetPluginConfig(t.Context(), "early", map[string]json.RawMessage{"apiKey": json.RawMessage(`null`)}))
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs("plugin_early_go", `{}`), finished)
+	out := toolOutput(t, evs)
+	assert.Contains(t, out, "cached [redacted]")
+	assert.NotContains(t, out, "boot-secret")
+}
