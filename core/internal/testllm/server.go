@@ -63,11 +63,12 @@ func Start(t *testing.T, kind string) *Server {
 		s.mu.Lock()
 		models, key, status := s.models, s.key, s.listStatus
 		s.mu.Unlock()
+		got := sentKey(kind, r)
 		if status != 0 {
-			http.Error(w, http.StatusText(status), status)
+			// echoes the key, so tests can prove errors repeat neither it nor the body
+			http.Error(w, "UPSTREAM-BODY bad key "+got, status)
 			return
 		}
-		got := sentKey(kind, r)
 		if key != "" && got != key {
 			// echoes what it got, so tests can prove errors don't repeat it
 			http.Error(w, "bad key "+got, http.StatusUnauthorized)

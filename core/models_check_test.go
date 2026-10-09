@@ -47,10 +47,11 @@ func TestCheckModelService(t *testing.T) {
 	_, err = s.CheckModelService(bg, 0, in)
 	assert.ErrorIs(t, err, ErrModelAuth)
 
-	srv.SetListStatus(http.StatusInternalServerError)
+	srv.SetListStatus(http.StatusInternalServerError) // its body echoes the key
 	_, err = s.CheckModelService(bg, 0, in)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "k-123456")
+	assert.NotContains(t, err.Error(), "UPSTREAM-BODY")
 
 	in.KeyAction = KeyKeep
 	_, err = s.CheckModelService(bg, 0, in)
@@ -161,4 +162,24 @@ func TestAddServiceKeyless(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"llama"}, got)
 	assert.Zero(t, keyed(srv.Headers()))
+}
+
+// Ruling on Task 3: keep with no stored key is allowed across an address
+// change; there is no key to leak.
+func TestKeylessKeepNewAddress(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	a, b := testllm.Start(t, "openai"), testllm.Start(t, "openai")
+	b.SetModels("m")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: a.URL, KeyAction: KeyClear, Models: []string{"m"}})
+	require.NoError(t, err)
+	toB := ModelServiceInput{Name: "x", Kind: "openai", BaseURL: b.URL, KeyAction: KeyKeep, Models: []string{"m"}}
+	c, err := s.CheckModelService(bg, ms.ID, toB)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"m"}, c.Models)
+	saved, err := s.UpdateModelService(bg, ms.ID, toB)
+	require.NoError(t, err)
+	assert.Equal(t, b.URL, saved.BaseURL)
+	assert.False(t, saved.HasKey)
+	require.Len(t, b.Headers(), 1)
+	assert.Zero(t, keyed(b.Headers()), "B got no auth header")
 }

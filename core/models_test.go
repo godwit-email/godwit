@@ -116,18 +116,22 @@ func TestFetchModelsAnthropicNoKey(t *testing.T) {
 
 func TestModelServiceValidation(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
-	for name, in := range map[string]ModelServiceInput{
-		"empty name":   {Name: "", Kind: "openai", BaseURL: "https://a.com"},
-		"slash name":   {Name: "a/b", Kind: "openai", BaseURL: "https://a.com"},
-		"bad kind":     {Name: "a", Kind: "gemini", BaseURL: "https://a.com"},
-		"http remote":  {Name: "a", Kind: "openai", BaseURL: "http://a.com"},
-		"ftp":          {Name: "a", Kind: "openai", BaseURL: "ftp://localhost"},
-		"no host":      {Name: "a", Kind: "openai", BaseURL: "https://"},
-		"anthropic no": {Name: "a", Kind: "anthropic", BaseURL: "http://example.org:80"},
-		"userinfo":     {Name: "a", Kind: "openai", BaseURL: "https://user:pw@a.com"},
+	m := []string{"m"} // valid models, so errNoModels can't mask the case's own error
+	for name, c := range map[string]struct {
+		in   ModelServiceInput
+		want string
+	}{
+		"empty name":   {ModelServiceInput{Name: "", Kind: "openai", BaseURL: "https://a.com", Models: m}, "service name must be non-empty"},
+		"slash name":   {ModelServiceInput{Name: "a/b", Kind: "openai", BaseURL: "https://a.com", Models: m}, "service name must be non-empty"},
+		"bad kind":     {ModelServiceInput{Name: "a", Kind: "gemini", BaseURL: "https://a.com", Models: m}, "invalid service kind"},
+		"http remote":  {ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "http://a.com", Models: m}, "must use https"},
+		"ftp":          {ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "ftp://localhost", Models: m}, "must use https"},
+		"no host":      {ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://", Models: m}, "valid service address"},
+		"anthropic no": {ModelServiceInput{Name: "a", Kind: "anthropic", BaseURL: "http://example.org:80", Models: m}, "must use https"},
+		"userinfo":     {ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://user:pw@a.com", Models: m}, "without credentials"},
 	} {
-		_, err := s.AddModelService(bg, in)
-		assert.Error(t, err, name)
+		_, err := s.AddModelService(bg, c.in)
+		assert.ErrorContains(t, err, c.want, name)
 	}
 	for i, u := range []string{"http://localhost:11434/v1", "http://127.0.0.1:8080", "http://[::1]:9", "https://a.com"} {
 		_, err := s.AddModelService(bg, ModelServiceInput{Name: "ok" + itoa(int64(i)), Kind: "openai", BaseURL: u, Models: []string{"m"}})
