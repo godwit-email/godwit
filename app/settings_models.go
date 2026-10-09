@@ -93,10 +93,10 @@ func (f *modelForm) mustProbe() bool {
 	return (f.reprobe || f.id == 0 || f.moved() || f.keyAction() != core.KeyKeep) && f.checked != f.conn()
 }
 
-// edited counts the form's edits: every change to what it would save since
-// the last call is one.
+// edited counts the form's edits: every change to what it would save, or
+// to the model ID being typed, since the last call is one.
 func (f *modelForm) edited() uint64 {
-	if p := strings.Join(append([]string{f.kind, f.name, f.baseURL, f.key, strconv.FormatBool(f.noKey)}, f.models...), "\n"); p != f.seen {
+	if p := strings.Join(append([]string{f.kind, f.name, f.baseURL, f.key, strconv.FormatBool(f.noKey), f.manual}, f.models...), "\n"); p != f.seen {
 		f.seen, f.edits = p, f.edits+1
 	}
 	return f.edits
@@ -224,6 +224,7 @@ func (m *modelsView) submit(f *modelForm) {
 		case m.form != f:
 		case f.unchanged(snap):
 			m.edit(saved)
+			m.form.manual = f.manual // typed, not added yet
 			m.form.offered = append(m.form.offered, slices.DeleteFunc(slices.Clone(f.offered), func(s string) bool { return slices.Contains(saved.Models, s) })...)
 		default:
 			f.id, f.title, f.slug, f.hasKey, f.savedKind, f.savedURL = saved.ID, saved.Name, saved.Slug, saved.HasKey, saved.Kind, saved.BaseURL

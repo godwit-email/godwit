@@ -535,3 +535,38 @@ func TestAddressBackAndForthDiscardsProbe(t *testing.T) {
 		t.Fatalf("a probe from before the edits was taken: offered %q", f.offered)
 	}
 }
+
+func TestManualTextDuringProbeDiscards(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	gate := make(chan struct{})
+	probes(m, gate, nil)
+	h.fill("名称", "first")
+	h.fill("Base URL", "https://api.example.com/v1")
+	h.typeModel("m1")
+	h.click("保存")
+	h.fill("手动添加模型 ID", "m2")
+	close(gate)
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	h.drain()
+	if _, ok := h.modelService("first"); ok || f.checked != "" {
+		t.Fatal("submitted from a probe the manual model field changed under")
+	}
+}
+
+func TestManualTextKeptAcrossSave(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	release := h.block("models")
+	h.fill("名称", "renamed")
+	h.click("保存")
+	h.fill("手动添加模型 ID", "draft-id")
+	release()
+	h.until("saved", func() bool { _, ok := h.modelService("renamed"); return ok })
+	h.until("the save settles", func() bool { return p.models.form.title == "renamed" && !p.models.form.busy })
+	if got := p.models.form.manual; got != "draft-id" {
+		t.Fatalf("manual text %q, want the typed draft-id", got)
+	}
+}
