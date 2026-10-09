@@ -9,11 +9,13 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/rpc"
 )
 
-// sentinels are core's exported errors (and the context ones) by stable
-// wire code. Their messages are fixed English text.
+// sentinels are core's exported errors (with those of core/ai, core/auth and
+// core/conn that its methods return, and the context ones) by stable wire code. Their messages are fixed English text.
 var sentinels = []struct {
 	code string
 	err  error
@@ -45,13 +47,19 @@ var sentinels = []struct {
 	{"closed", core.ErrClosed},
 	{"canceled", context.Canceled},
 	{"deadline", context.DeadlineExceeded},
+	{"auth_failed", conn.ErrAuthFailed}, // also a failed account check's cause
+	{"oauth_not_configured", auth.ErrOAuthNotConfigured},
+	{"flow_expired", auth.ErrFlowExpired},
+	{"invalid_grant", auth.ErrInvalidGrant},
+	{"access_denied", auth.ErrAccessDenied},
 }
 
 // NewCodec registers core's error types (tried first, so *ai.Error with Code
 // canceled stays an *ai.Error) and sentinels.
 func NewCodec() *rpc.Codec {
 	c := &rpc.Codec{}
-	// The first failing step's error (Unwrap) stays on the server.
+	// The first failing step's error (Unwrap) stays on the server; only the
+	// sentinel it is crosses, as the cause.
 	rpc.RegisterType(c, "check_failed",
 		func(e *core.CheckError) any { return e.Report },
 		func(raw json.RawMessage) (*core.CheckError, error) {

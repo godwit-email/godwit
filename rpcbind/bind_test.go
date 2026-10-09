@@ -15,6 +15,8 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +25,8 @@ import (
 )
 
 // sentinels is every exported error variable of package core
-// (TestAllCoreErrorsRegistered keeps it complete) plus the context errors.
+// (TestAllCoreErrorsRegistered keeps it complete) plus the context errors and
+// those of core/ai, core/auth and core/conn that core's methods return.
 var sentinels = map[string]error{
 	"ErrUseAssist": core.ErrUseAssist, "ErrStaleApproval": core.ErrStaleApproval,
 	"ErrTooLarge": core.ErrTooLarge, "ErrNotOnServerYet": core.ErrNotOnServerYet,
@@ -38,7 +41,9 @@ var sentinels = map[string]error{
 	"ErrInvalidState": core.ErrInvalidState, "ErrSkillDisabled": core.ErrSkillDisabled,
 	"ErrSkillNotFound": core.ErrSkillNotFound, "ErrClosed": core.ErrClosed,
 	"context.Canceled": context.Canceled, "context.DeadlineExceeded": context.DeadlineExceeded,
-	"ai.ErrNoModelList": ai.ErrNoModelList,
+	"ai.ErrNoModelList": ai.ErrNoModelList, "conn.ErrAuthFailed": conn.ErrAuthFailed,
+	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
+	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
 }
 
 func wire(t *testing.T, c *rpc.Codec, err error, redact func(string) string) (*rpc.WireError, string, error) {
@@ -211,6 +216,8 @@ func TestWireCodesPinned(t *testing.T) {
 		"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState,
 		"skill_disabled": core.ErrSkillDisabled, "skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed,
 		"canceled": context.Canceled, "deadline": context.DeadlineExceeded,
+		"auth_failed": conn.ErrAuthFailed, "oauth_not_configured": auth.ErrOAuthNotConfigured,
+		"flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 		"check_failed":             &core.CheckError{},
 		"send_warnings":            &core.SendWarningsError{},
 		"send_blocked":             &core.SendBlockedError{},

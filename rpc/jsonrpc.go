@@ -30,10 +30,13 @@ type WireError struct {
 	Data    *WireErrorData `json:"data,omitempty"`
 }
 
-// WireErrorData carries a stable error code and safe fields.
+// WireErrorData carries a stable error code and safe fields. Cause is, for
+// a registered type, the code of the first registered sentinel the error
+// also is (errors.Is), so that survives the trip too.
 type WireErrorData struct {
 	Code   string          `json:"code"`
 	Detail json.RawMessage `json:"detail,omitempty"`
+	Cause  string          `json:"cause,omitempty"`
 }
 
 func (e *WireError) Error() string { return e.Message }

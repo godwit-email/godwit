@@ -60,12 +60,26 @@ func TestCodecTypeRedactsEveryString(t *testing.T) {
 	assert.Equal(t, "blocked by x [redacted]", we.Message)                // the type's own message, not the wrapper's
 }
 
-// Types are tried before sentinels: a type wrapping a sentinel stays the type.
+// Types are tried before sentinels: a type wrapping a sentinel stays the
+// type, and is still that sentinel (its cause) on the client.
 func TestCodecTypesFirst(t *testing.T) {
 	c := testCodec()
-	_, got := roundTrip(t, c, &wrapsGone{blockedErr{Who: "a"}}, nil)
+	we, got := roundTrip(t, c, &wrapsGone{blockedErr{Who: "a"}}, nil)
+	assert.Equal(t, "gone", we.Data.Cause)
 	var be *blockedErr
-	assert.ErrorAs(t, got, &be)
+	require.ErrorAs(t, got, &be)
+	assert.Equal(t, "a", be.Who)
+	assert.ErrorIs(t, got, errGone)
+	assert.Equal(t, "blocked by a", got.Error())
+
+	we, got = roundTrip(t, c, &blockedErr{Who: "a"}, nil)
+	assert.Empty(t, we.Data.Cause)
+	assert.NotErrorIs(t, got, errGone)
+	got = c.Decode(&rpc.WireError{Code: rpc.CodeApp, Data: &rpc.WireErrorData{Code: "blocked", Detail: json.RawMessage(`{"Who":"a","Tags":null}`), Cause: "newer"}})
+	require.ErrorAs(t, got, &be, "an unknown cause is dropped")
+	got = c.Decode(&rpc.WireError{Code: rpc.CodeApp, Data: &rpc.WireErrorData{Code: "blocked", Detail: json.RawMessage(`{}`), Cause: "gone"}})
+	assert.ErrorIs(t, got, rpc.ErrBadErrorData)
+	assert.NotErrorIs(t, got, errGone, "bad data never decodes to a business error")
 }
 
 type wrapsGone struct{ blockedErr }

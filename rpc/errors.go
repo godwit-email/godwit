@@ -79,8 +79,9 @@ func (c *Codec) RegisterSentinel(code string, err error, message string) {
 }
 
 // Encode turns err into a wire error: registered types first (errors.As, in
-// registration order), then sentinels (errors.Is); redact (nil = none) cleans
-// every string sent for a type.
+// registration order; the first sentinel err also is goes along as Cause),
+// then sentinels (errors.Is); redact (nil = none) cleans every string sent
+// for a type.
 func (c *Codec) Encode(err error, redact func(string) string) *WireError {
 	if err == nil {
 		return nil
@@ -97,15 +98,33 @@ func (c *Codec) Encode(err error, redact func(string) string) *WireError {
 		if derr != nil {
 			break
 		}
-		return &WireError{Code: CodeApp, Message: redact(msg), Data: &WireErrorData{Code: t.code, Detail: raw}}
-	}
-	for _, s := range c.sentinels {
-		if errors.Is(err, s.err) {
-			return &WireError{Code: CodeApp, Message: s.message, Data: &WireErrorData{Code: s.code}}
+		data := &WireErrorData{Code: t.code, Detail: raw}
+		if s := c.sentinelFor(err); s != nil {
+			data.Cause = s.code
 		}
+		return &WireError{Code: CodeApp, Message: redact(msg), Data: data}
+	}
+	if s := c.sentinelFor(err); s != nil {
+		return &WireError{Code: CodeApp, Message: s.message, Data: &WireErrorData{Code: s.code}}
 	}
 	return internalError()
 }
+
+// sentinelFor is the first registered sentinel err is, or nil.
+func (c *Codec) sentinelFor(err error) *sentinel {
+	for i := range c.sentinels {
+		if errors.Is(err, c.sentinels[i].err) {
+			return &c.sentinels[i]
+		}
+	}
+	return nil
+}
+
+// withCause is a decoded type that also is a sentinel, as it was on the server.
+type withCause struct{ err, cause error }
+
+func (w *withCause) Error() string   { return w.err.Error() }
+func (w *withCause) Unwrap() []error { return []error{w.err, w.cause} }
 
 // DecodeDetail decodes raw into a *V strictly: a JSON object holding every
 // field of struct V (by Go field name; nested values are not checked for
@@ -130,14 +149,21 @@ func DecodeDetail[V any](raw json.RawMessage) (*V, error) {
 }
 
 // Decode maps a wire error back: a registered sentinel to the same value, a
-// registered type to that type, anything else to a *RemoteError.
+// registered type to that type (wrapped so it also is its registered cause;
+// an unknown cause is dropped), anything else to a *RemoteError.
 func (c *Codec) Decode(we *WireError) error {
 	if we == nil {
 		return nil
 	}
 	if we.Data != nil {
 		if decode, ok := c.codes[we.Data.Code]; ok {
-			return decode(we.Data.Detail)
+			err := decode(we.Data.Detail)
+			for _, s := range c.sentinels {
+				if s.code == we.Data.Cause && !errors.Is(err, ErrBadErrorData) && !errors.Is(err, s.err) {
+					return &withCause{err, s.err}
+				}
+			}
+			return err
 		}
 	}
 	return &RemoteError{Code: we.Code, Message: we.Message}
