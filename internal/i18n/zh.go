@@ -349,6 +349,7 @@ var zh = map[string]string{
 	"settings.models.kind.openai":                  "OpenAI 兼容",
 	"settings.models.kind.anthropic":               "Anthropic 兼容",
 	"settings.models.name":                         "名称",
+	"settings.models.slug":                         "引用名：%s（skill 和设置里用「引用名/模型」指代，改名不变）",
 	"settings.models.base_url":                     "Base URL",
 	"settings.models.api_key":                      "API Key",
 	"settings.models.api_key.help":                 "保存在系统钥匙串，界面和日志中不会显示。",

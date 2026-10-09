@@ -138,15 +138,34 @@ func TestModelServiceEditDuringSave(t *testing.T) {
 	}
 }
 
-func TestModelServiceDefaultFollows(t *testing.T) {
+func TestRenameServiceKeepsDefault(t *testing.T) {
 	h := withLLM(t)
 	h.openSettings("models")
 	h.see("编辑：test")
+	h.see("引用名：test")
 	h.fill("名称", "renamed")
 	h.click("保存")
-	h.until("default renamed", func() bool { return h.savedDefault() == "renamed/m1" })
+	h.until("renamed", func() bool { _, ok := h.modelService("renamed"); return ok })
 	h.see("编辑：renamed")
+	h.see("引用名：test")
+	if d := h.savedDefault(); d != "test/m1" {
+		t.Fatalf("default %q: a rename must not touch it", d)
+	}
+	h.see("renamed / m1") // the default select still finds it
+	if h.tt.HasText("未找到的模型：test/m1") {
+		t.Fatal("the default shows as missing")
+	}
 	h.click("删除此服务")
+	h.until("default cleared", func() bool { return h.savedDefault() == "" })
+}
+
+func TestDeselectDefaultClears(t *testing.T) {
+	h := withLLM(t)
+	h.openSettings("models")
+	h.see("编辑：test")
+	h.click("m1") // untick the default model
+	h.click("保存")
+	h.until("models saved", func() bool { s, _ := h.modelService("test"); return len(s.Models) == 0 })
 	h.until("default cleared", func() bool { return h.savedDefault() == "" })
 }
 

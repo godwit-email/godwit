@@ -131,6 +131,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		hookClock: testHookClock, pluginClock: testPluginClock}
 	s.registerAskTools()
 	s.registerAssistTools()
+	if err := s.backfillSlugs(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("model service slugs: %w", err)
+	}
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err

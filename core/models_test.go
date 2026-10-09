@@ -199,7 +199,7 @@ func TestUpdateFailureKeepsCredentials(t *testing.T) {
 	require.Error(t, err)
 	got, err = s.modelServiceBy(bg, "id = ?", a.ID)
 	require.NoError(t, err)
-	assert.Equal(t, ModelService{ID: a.ID, Name: "a", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m"}, HasKey: true, Version: 1}, got)
+	assert.Equal(t, ModelService{ID: a.ID, Name: "a", Kind: "openai", BaseURL: "https://a.com", Slug: "a", Models: []string{"m"}, HasKey: true, Version: 1}, got)
 	k, _ = keyring.Get(keyringService, s.modelKeyUser(a.ID))
 	assert.Equal(t, "old", k)
 }

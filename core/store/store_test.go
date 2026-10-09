@@ -245,3 +245,28 @@ func TestMigration8(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", store.Str(rows.Values[0][0]))
 }
+
+func TestMigration12(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:11]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, n := range []string{"a", "b", "c"} {
+		_, err = db.Execute(ctx, "INSERT INTO model_services(name, kind, base_url) VALUES (?, 'openai', 'https://x')", n)
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT count(*) FROM model_services WHERE slug IS NULL")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), store.Int(rows.Values[0][0]), "slugs are backfilled at startup, not by the migration")
+	_, err = db.Execute(ctx, "UPDATE model_services SET slug = 'x' WHERE name = 'a'")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "UPDATE model_services SET slug = 'x' WHERE name = 'b'")
+	assert.Error(t, err, "slugs are unique")
+}

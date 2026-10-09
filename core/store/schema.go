@@ -199,4 +199,9 @@ var Migrations = [][]string{{
 	// The part of the conversation's history the run added: messages [hist_from, hist_to) (Conversation.Runs).
 	`ALTER TABLE runs ADD COLUMN hist_from INTEGER`,
 	`ALTER TABLE runs ADD COLUMN hist_to INTEGER`,
+}, {
+	// The service's reference name in "slug/model" refs; it never changes on rename.
+	// Rows from before are filled in at startup (Service.backfillSlugs). NULLs do not collide.
+	`ALTER TABLE model_services ADD COLUMN slug TEXT`,
+	`CREATE UNIQUE INDEX model_services_slug ON model_services(slug)`,
 }}

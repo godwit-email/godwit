@@ -26,6 +26,7 @@ var (
 type ModelService struct {
 	ID                  int64
 	Name, Kind, BaseURL string
+	Slug                string // the service part of its "slug/model" references; kept on rename
 	Models              []string
 	HasKey              bool
 	Version             int64
@@ -54,10 +55,10 @@ func (in ModelServiceInput) validate() error {
 	return nil
 }
 
-const modelCols = "id, name, kind, base_url, models, version"
+const modelCols = "id, name, kind, base_url, models, version, slug"
 
 func (s *Service) scanModelService(r []any) (ModelService, error) {
-	m := ModelService{ID: store.Int(r[0]), Name: store.Str(r[1]), Kind: store.Str(r[2]), BaseURL: store.Str(r[3]), Version: store.Int(r[5])}
+	m := ModelService{ID: store.Int(r[0]), Name: store.Str(r[1]), Kind: store.Str(r[2]), BaseURL: store.Str(r[3]), Version: store.Int(r[5]), Slug: store.Str(r[6])}
 	if err := json.Unmarshal([]byte(store.Str(r[4])), &m.Models); err != nil {
 		return m, fmt.Errorf("stored models: %w", err)
 	}
@@ -119,8 +120,15 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	}
 	s.modelMu.Lock()
 	defer s.modelMu.Unlock()
-	res, err := s.db.Execute(ctx, "INSERT INTO model_services(name, kind, base_url, models, created_at) VALUES (?, ?, ?, ?, ?)",
-		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), time.Now().Unix())
+	if err := s.checkNameFree(ctx, in.Name, 0); err != nil {
+		return ModelService{}, err
+	}
+	slug, err := s.newSlug(ctx, in.Name, 0)
+	if err != nil {
+		return ModelService{}, err
+	}
+	res, err := s.db.Execute(ctx, "INSERT INTO model_services(name, kind, base_url, models, slug, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix())
 	if err != nil {
 		return ModelService{}, err
 	}
@@ -155,6 +163,9 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	if err != nil {
 		return ModelService{}, err
 	}
+	if err := s.checkNameFree(ctx, in.Name, id); err != nil {
+		return ModelService{}, err
+	}
 	// Row first: a failure here (e.g. duplicate name) leaves the keychain alone.
 	if _, err := s.db.Execute(ctx, "UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1 WHERE id = ?",
 		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), id); err != nil {
@@ -174,6 +185,19 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	s.forgetModel(id)
 	// The write is done: a cancelled ctx must not turn it into an error.
 	return s.modelServiceBy(context.WithoutCancel(ctx), "id = ?", id)
+}
+
+// checkNameFree refuses a name that is another service's slug: references
+// resolve by slug first, so that service would answer to it.
+func (s *Service) checkNameFree(ctx context.Context, name string, id int64) error {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM model_services WHERE slug = ? AND id != ?", name, id)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) > 0 {
+		return fmt.Errorf("service name %q is another service's reference name", name)
+	}
+	return nil
 }
 
 func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
@@ -300,37 +324,48 @@ func (s *Service) forgetModel(id int64) {
 
 // resolveModel resolves override, or Settings.DefaultModel when empty.
 func (s *Service) resolveModel(ctx context.Context, override string) (ai.ResolvedModel, error) {
+	m, _, err := s.resolveRef(ctx, override)
+	return m, err
+}
+
+// resolveRef is resolveModel plus the reference in its "slug/model" form. The
+// service part matches a slug, else a name (references from before slugs).
+func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedModel, string, error) {
 	ref := override
 	if ref == "" {
 		st, err := s.loadSettings(ctx)
 		if err != nil {
-			return ai.ResolvedModel{}, err
+			return ai.ResolvedModel{}, "", err
 		}
 		if ref = st.DefaultModel; ref == "" {
-			return ai.ResolvedModel{}, ErrAINotConfigured
+			return ai.ResolvedModel{}, "", ErrAINotConfigured
 		}
 	}
 	r, err := ai.ParseModelRef(ref)
 	if err != nil {
-		return ai.ResolvedModel{}, err
+		return ai.ResolvedModel{}, "", err
 	}
 	// The row and the key as one snapshot: never one service's URL with another's key.
 	s.modelMu.RLock()
 	defer s.modelMu.RUnlock()
-	m, err := s.modelServiceBy(ctx, "name = ?", r.Service)
+	m, err := s.modelServiceBy(ctx, "slug = ?", r.Service)
+	if errors.Is(err, ErrModelServiceNotFound) {
+		m, err = s.modelServiceBy(ctx, "name = ?", r.Service)
+	}
 	if err != nil {
-		return ai.ResolvedModel{}, err
+		return ai.ResolvedModel{}, "", err
 	}
 	found := false
 	for _, x := range m.Models {
 		found = found || x == r.Model
 	}
 	if !found {
-		return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelNotFound, ref)
+		return ai.ResolvedModel{}, "", fmt.Errorf("%w: %s", ErrModelNotFound, ref)
 	}
 	key, err := keychainGet(s.modelKeyUser(m.ID))
 	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-		return ai.ResolvedModel{}, err
+		return ai.ResolvedModel{}, "", err
 	}
-	return ai.ResolvedModel{ServiceID: m.ID, Version: m.Version, Kind: m.Kind, BaseURL: m.BaseURL, Model: r.Model, APIKey: key}, nil
+	return ai.ResolvedModel{ServiceID: m.ID, Version: m.Version, Kind: m.Kind, BaseURL: m.BaseURL, Model: r.Model, APIKey: key},
+		m.Slug + "/" + r.Model, nil
 }

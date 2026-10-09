@@ -349,6 +349,7 @@ var en = map[string]string{
 	"settings.models.kind.openai":                  "OpenAI compatible",
 	"settings.models.kind.anthropic":               "Anthropic compatible",
 	"settings.models.name":                         "Name",
+	"settings.models.slug":                         "Reference name: %s (skills and settings refer to models as reference-name/model; renaming keeps it)",
 	"settings.models.base_url":                     "Base URL",
 	"settings.models.api_key":                      "API key",
 	"settings.models.api_key.help":                 "Kept in the system keychain; never shown in the interface or logs.",

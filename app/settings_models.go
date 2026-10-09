@@ -29,7 +29,7 @@ type modelsView struct {
 // has been replaced since leaves the new one alone.
 type modelForm struct {
 	id                       int64
-	title                    string
+	title, slug              string // as saved
 	kind, name, baseURL, key string
 	hasKey                   bool
 	models, offered          []string // checked; shown as choices (saved and fetched)
@@ -63,7 +63,7 @@ func (m *modelsView) load() {
 }
 
 func (m *modelsView) edit(s core.ModelService) {
-	m.form = &modelForm{id: s.ID, title: s.Name, kind: s.Kind, name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey,
+	m.form = &modelForm{id: s.ID, title: s.Name, slug: s.Slug, kind: s.Kind, name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey,
 		models: slices.Clone(s.Models), offered: slices.Clone(s.Models)}
 }
 
@@ -71,7 +71,7 @@ func (m *modelsView) add() { m.form = &modelForm{kind: "openai"} }
 
 // save writes the form as it is now. On success an unedited form shows the
 // saved service; one edited meanwhile keeps the edits and takes only the
-// service's ID, name and key state. Default model references follow.
+// service's ID, name and key state. References to models it no longer has are cleared.
 func (m *modelsView) save(f *modelForm) {
 	a := m.a
 	snap := *f
@@ -101,13 +101,13 @@ func (m *modelsView) save(f *modelForm) {
 			m.edit(saved)
 			m.form.offered = append(m.form.offered, slices.DeleteFunc(slices.Clone(f.offered), func(s string) bool { return slices.Contains(saved.Models, s) })...)
 		default:
-			f.id, f.title, f.hasKey = saved.ID, saved.Name, saved.HasKey
+			f.id, f.title, f.slug, f.hasKey = saved.ID, saved.Name, saved.Slug, saved.HasKey
 			if f.key == snap.key {
 				f.key = ""
 			}
 		}
 		if id != 0 {
-			m.followDefault(snap.title, &saved)
+			m.dropRefs(saved.Slug, saved.Models)
 		}
 		a.toast(i18n.T("settings.saved"))
 		m.load()
@@ -118,30 +118,31 @@ func (f *modelForm) unchanged(snap modelForm) bool {
 	return f.kind == snap.kind && f.name == snap.name && f.baseURL == snap.baseURL && f.key == snap.key && slices.Equal(f.models, snap.models)
 }
 
-// followDefault keeps Settings.DefaultModel pointing at service old after it
-// was saved as s (renamed, or the model unticked) or removed (s nil).
-func (m *modelsView) followDefault(old string, s *core.ModelService) {
-	model, ok := strings.CutPrefix(m.a.settings.DefaultModel, old+"/")
-	if !ok {
-		return
+// dropRefs clears the model settings that point at service slug's models
+// other than keep (all of them after a removal, keep nil). A rename keeps the
+// slug, so references need no rewrite.
+func (m *modelsView) dropRefs(slug string, keep []string) {
+	st := m.a.settings
+	changed := false
+	for _, ref := range []*string{&st.DefaultModel} {
+		if model, ok := strings.CutPrefix(*ref, slug+"/"); ok && !slices.Contains(keep, model) {
+			*ref, changed = "", true
+		}
 	}
-	next := ""
-	if s != nil && slices.Contains(s.Models, model) {
-		next = s.Name + "/" + model
-	}
-	if next != m.a.settings.DefaultModel {
-		m.setDefault(next)
+	if changed {
+		st.NoTranslate = slices.Clone(st.NoTranslate)
+		m.a.changeSettings(st)
 	}
 }
 
 func (m *modelsView) remove(f *modelForm) {
-	a, id, name := m.a, f.id, f.title
+	a, id, slug := m.a, f.id, f.slug
 	f.busy = true
 	a.writes.Chain("models", func(ctx context.Context) error { return a.svc.RemoveModelService(ctx, id) }, func(err error) {
 		f.busy = false
 		a.toastErr(err)
 		if err == nil {
-			m.followDefault(name, nil)
+			m.dropRefs(slug, nil)
 			if m.form == f {
 				m.form = nil
 			}
@@ -231,7 +232,7 @@ func (m *modelsView) view(c *ui.Context) {
 						ui.Text(c, s.BaseURL).Font("Geist Mono").FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
 					})
 					ui.Text(c, i18n.Plural("settings.models.count", len(s.Models))).TextColor(t.Muted)
-					if strings.HasPrefix(a.settings.DefaultModel, s.Name+"/") {
+					if strings.HasPrefix(a.settings.DefaultModel, s.Slug+"/") {
 						kit.Badge(c, i18n.T("settings.models.default_badge"))
 					}
 				}).OnClick(func() { m.edit(s) })
@@ -256,7 +257,10 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 				kit.Radio(c.Key(k), &f.kind, k, kindLabel(k))
 			}
 		})
-		ui.Field(c, i18n.T("settings.models.name"), func() { kit.Input(c, &f.name, kit.InputOpts{}) })
+		name := ui.Field(c, i18n.T("settings.models.name"), func() { kit.Input(c, &f.name, kit.InputOpts{}) })
+		if f.slug != "" {
+			name.Description(i18n.Tf("settings.models.slug", f.slug))
+		}
 		ui.Field(c, i18n.T("settings.models.base_url"), func() { kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true}) })
 		ph := ""
 		if f.hasKey {
@@ -318,7 +322,7 @@ func (m *modelsView) defaultSelect(c *ui.Context) {
 	opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.default.none")}}
 	for _, s := range m.services {
 		for _, mod := range s.Models {
-			opts = append(opts, kit.Option[string]{Value: s.Name + "/" + mod, Label: s.Name + " / " + mod})
+			opts = append(opts, kit.Option[string]{Value: s.Slug + "/" + mod, Label: s.Name + " / " + mod})
 		}
 	}
 	label := i18n.T("settings.models.default")
