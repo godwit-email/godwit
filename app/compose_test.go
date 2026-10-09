@@ -549,3 +549,46 @@ func fromLine(raw string) string {
 	}
 	return ""
 }
+
+func TestReopenAfterUnfinishedLoad(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@example.com")
+	d, err := h.env.Svc.NewDraft(context.Background(), accs[0].ID, "new", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Subject = "Loaded at last"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	var loads atomic.Int32
+	h.app.getDraft = func(ctx context.Context, id int64) (core.Draft, error) {
+		if loads.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return h.env.Svc.GetDraft(ctx, id)
+	}
+	h.app.navigate(Route{Page: PageCompose, DraftID: d.ID})
+	<-started
+	h.click("后退")
+	close(release)
+	h.drain()
+	h.click("前进")
+	h.composerLoaded()
+	h.see("Loaded at last")
+}
+
+func TestReopenReadsChangesAfterLeaving(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	h.click("后退") // nothing to save: the flush ends at once
+	d := h.draft(p.id)
+	d.Subject = "Changed elsewhere"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.click("前进")
+	h.composerLoaded()
+	h.see("Changed elsewhere")
+}

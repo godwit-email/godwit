@@ -133,10 +133,11 @@ type App struct {
 	syncedAt time.Time        // the last successful sync; zero before one
 	ticking  bool             // a minute tick redraws the sync age
 
-	addAccount *onboarding         // the add-account sheet; nil when closed
-	mail       *mailPage           // the Mail section
-	writes     *writeQueue         // writes to the Service, ordered per resource
-	drafts     map[int64]*composer // open drafts, and left ones until their saves are done
+	addAccount *onboarding                                             // the add-account sheet; nil when closed
+	mail       *mailPage                                               // the Mail section
+	writes     *writeQueue                                             // writes to the Service, ordered per resource
+	drafts     map[int64]*composer                                     // open drafts, and left ones until their saves are done
+	getDraft   func(ctx context.Context, id int64) (core.Draft, error) // reads a draft to open; tests swap it
 
 	closeAsk    bool   // a draft could not be saved as the window closes: ask
 	closeErr    error  // why
@@ -169,6 +170,7 @@ func New(d Deps) *App {
 	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
 	a.drafts = map[int64]*composer{}
+	a.getDraft = a.svc.GetDraft
 	a.mail = newMailPage(a)
 	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)

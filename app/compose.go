@@ -72,8 +72,9 @@ func (a *App) composerFor(id int64) *composer {
 	p := &composer{a: a, id: id, deleteFn: a.svc.DeleteDraft}
 	a.drafts[id] = p
 	var pd prepared
+	get := a.getDraft
 	a.query(func(ctx context.Context) error {
-		d, err := a.svc.GetDraft(ctx, id)
+		d, err := get(ctx, id)
 		pd = prepare(d)
 		return err
 	}, func(err error) {
@@ -163,15 +164,15 @@ func (p *composer) commitAll() {
 // flush saves what is left; done gets the error that kept it from saving.
 // A composer whose draft is saved and not shown is let go.
 func (p *composer) flush(done func(err error)) {
-	if p.s == nil {
-		if !p.here() {
+	if p.s == nil { // its load is dropped once the route leaves: read it again on reopening
+		if !p.shown() {
 			delete(p.a.drafts, p.id)
 		}
 		done(nil)
 		return
 	}
 	p.s.Flush(func(err error) {
-		if err == nil && !p.here() && p.a.drafts[p.id] == p {
+		if err == nil && !p.shown() && p.a.drafts[p.id] == p {
 			delete(p.a.drafts, p.id)
 		}
 		done(err)
@@ -213,6 +214,10 @@ func (p *composer) title() (string, string) {
 	}
 	return title, p.s.status()
 }
+
+// shown reports whether the page shows this composer; false from the
+// moment the route starts leaving it.
+func (p *composer) shown() bool { return p.a.mail.draft == p }
 
 // here reports whether the route shows this draft.
 func (p *composer) here() bool {
