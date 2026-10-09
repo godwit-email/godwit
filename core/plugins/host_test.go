@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -16,12 +17,21 @@ import (
 
 // fakeHost records which host methods were reached.
 type fakeHost struct {
-	mu     sync.Mutex
-	calls  []string
-	msg    MailMessage
-	limit  int
-	prompt string
-	kv     map[string]string
+	mu       sync.Mutex
+	calls    []string
+	msg      MailMessage
+	limit    int
+	prompt   string
+	kv       map[string]string
+	audits   []string // AuditEgress rows, apart from calls
+	auditErr error
+}
+
+func (h *fakeHost) AuditEgress(_ context.Context, inv Invocation, dest, decision, reason string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.audits = append(h.audits, strings.Join([]string{inv.ID, dest, decision, reason}, " "))
+	return h.auditErr
 }
 
 func (h *fakeHost) rec(name string) {
@@ -320,7 +330,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	for i := range ht.NumMethod() {
 		methods = append(methods, ht.Method(i).Name)
 	}
-	assert.Equal(t, []string{"Config", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
+	assert.Equal(t, []string{"AuditEgress", "Config", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
 		"MailSetFlags", "MailUpdateDraft", "StorageDelete", "StorageGet", "StorageSet"}, methods)
 }
 
@@ -346,4 +356,24 @@ func TestRequiredArgsRejectNull(t *testing.T) {
 	}
 	assert.Empty(t, p.Tools())
 	assert.Empty(t, h.got(), "nothing reached the host")
+}
+
+// What the plugin side refuses before the host fetches is audited too, and
+// a failed audit is never hidden behind the refusal.
+func TestFetchGateAudited(t *testing.T) {
+	h := &fakeHost{}
+	p := mustLoad(t, Permissions{Net: []string{"api.example.com"}}, h, stash)
+	egress := Invocation{ID: "c1", Kind: KindHook, EgressHosts: []string{"api.example.com"}}
+	assert.Contains(t, try(t, p, egress, `ctx.net.fetch("https://evil.example.com/p?q=1")`), "permission denied: net:evil.example.com")
+	assert.Contains(t, try(t, p, egress, `ctx.net.fetch("http://Evil.example.com:8080/p")`), "permission denied: net:evil.example.com:8080")
+	assert.Contains(t, try(t, p, readOnly, `ctx.net.fetch("https://api.example.com/p")`), "permission denied: net:api.example.com")
+	assert.Contains(t, try(t, p, egress, `ctx.net.fetch("https://api.example.com/p", {method: "POST", body: "x".repeat(2 << 20)})`), "too large")
+	assert.Equal(t, []string{"c1 evil.example.com:443 deny host_not_allowed", "c1 evil.example.com:8080 deny host_not_allowed",
+		"r api.example.com:443 deny host_not_allowed", "c1 api.example.com:443 deny too_large"}, h.audits)
+	assert.Empty(t, h.got(), "nothing was fetched")
+
+	h.auditErr = errors.New("audit disk full")
+	got := try(t, p, egress, `ctx.net.fetch("https://evil.example.com/")`)
+	assert.Contains(t, got, "permission denied: net:evil.example.com")
+	assert.Contains(t, got, "audit disk full")
 }

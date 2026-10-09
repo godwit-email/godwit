@@ -145,26 +145,36 @@ func (c *Client) dial(ctx context.Context, network, addr string) (net.Conn, erro
 	return nil, errors.Join(errs...)
 }
 
-// check validates one hop's URL against the policy and returns its host:port.
-func (c *Client) check(u *url.URL, allowed []string) (string, error) {
-	if u.Scheme != "https" && (u.Scheme != "http" || !c.opts.AllowHTTP) {
-		return "", deny("scheme", "")
-	}
-	if u.User != nil {
-		return "", deny("userinfo", "")
-	}
+// HostPort is u's lowercased host with its port, the scheme's default
+// (https 443, http 80) when it has none: the destination an audit row names.
+func HostPort(u *url.URL) string {
 	host := strings.ToLower(u.Hostname())
-	if host == "" || u.Opaque != "" {
-		return "", deny("host_not_allowed", "")
-	}
-	if strings.Contains(host, ":") || net.ParseIP(host) != nil {
-		return "", deny("ip_literal", "")
-	}
 	port := u.Port()
 	if port == "" {
 		port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
 	}
-	hp := net.JoinHostPort(host, port)
+	if host == "" || port == "" {
+		return host
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// check validates one hop's URL against the policy and returns its host:port.
+func (c *Client) check(u *url.URL, allowed []string) (string, error) {
+	hp := HostPort(u)
+	if u.Scheme != "https" && (u.Scheme != "http" || !c.opts.AllowHTTP) {
+		return hp, deny("scheme", "")
+	}
+	if u.User != nil {
+		return hp, deny("userinfo", "")
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" || u.Opaque != "" {
+		return hp, deny("host_not_allowed", "")
+	}
+	if strings.Contains(host, ":") || net.ParseIP(host) != nil {
+		return hp, deny("ip_literal", "")
+	}
 	for _, a := range allowed {
 		a = strings.ToLower(a)
 		if !strings.Contains(a, ":") {
@@ -183,20 +193,72 @@ func dropped(k string) bool {
 	return k == "Cookie" || k == "Host" || k == "User-Agent" || strings.HasPrefix(k, "Proxy-")
 }
 
+// Hop is one request of a fetch, the first or a redirect: its host:port and
+// its outcome. Decision is "allow" (answered, or redirected onward), "deny"
+// (refused by the policy; Reason is the NetError code) or "error" (the policy
+// allowed it and it failed; Reason is dns_error, network_error, tls_error,
+// timeout or cancelled).
+type Hop struct{ Dest, Decision, Reason string }
+
 // Do fetches req if its URL is allowed (host[:port], 443 by default) and
-// returns the response, the request's host:port for the audit, and an error;
-// a policy refusal is a *NetError. No partial body is ever returned.
-func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (FetchResponse, string, error) {
+// returns the response, every hop for the audit (none only for an
+// unparseable URL), and an error; a policy refusal or the timeout is a
+// *NetError. No partial body is ever returned.
+func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (FetchResponse, []Hop, error) {
 	u, err := url.Parse(req.URL)
 	if err != nil {
-		return FetchResponse{}, "", errors.New("invalid URL")
+		return FetchResponse{}, nil, errors.New("invalid URL")
 	}
+	var hops []Hop
+	r, err := c.do(ctx, u, allowed, req, &hops)
+	for i := range hops {
+		hops[i].Decision = "allow"
+	}
+	last := &hops[len(hops)-1]
+	var ne *NetError
+	switch {
+	case err == nil:
+	case errors.As(err, &ne) && ne.Reason == "timeout":
+		last.Decision, last.Reason = "error", "timeout"
+	case errors.As(err, &ne):
+		last.Decision, last.Reason = "deny", ne.Reason
+	case ctx.Err() != nil:
+		last.Decision, last.Reason = "error", "cancelled"
+	default:
+		last.Decision, last.Reason = "error", failReason(err)
+	}
+	return r, hops, err
+}
+
+func failReason(err error) string {
+	var (
+		dns     *net.DNSError
+		verify  *tls.CertificateVerificationError
+		alert   tls.AlertError
+		record  tls.RecordHeaderError
+		unknown x509.UnknownAuthorityError
+		name    x509.HostnameError
+		invalid x509.CertificateInvalidError
+	)
+	switch {
+	case errors.As(err, &dns):
+		return "dns_error"
+	case errors.As(err, &verify), errors.As(err, &alert), errors.As(err, &record),
+		errors.As(err, &unknown), errors.As(err, &name), errors.As(err, &invalid):
+		return "tls_error"
+	}
+	return "network_error"
+}
+
+// do runs the fetch, appending each hop as it is tried (the first always).
+func (c *Client) do(ctx context.Context, u *url.URL, allowed []string, req FetchRequest, hops *[]Hop) (FetchResponse, error) {
 	hp, err := c.check(u, allowed)
+	*hops = append(*hops, Hop{Dest: hp})
 	if err != nil {
-		return FetchResponse{}, hp, err
+		return FetchResponse{}, err
 	}
 	if len(req.Body) > MaxFetchBody {
-		return FetchResponse{}, hp, deny("too_large", "")
+		return FetchResponse{}, deny("too_large", "")
 	}
 	tctx, cancel := context.WithTimeout(ctx, c.opts.Timeout)
 	defer cancel()
@@ -207,7 +269,7 @@ func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (Fe
 	}
 	hr, err := http.NewRequestWithContext(tctx, method, u.String(), body)
 	if err != nil {
-		return FetchResponse{}, hp, errors.New("invalid request")
+		return FetchResponse{}, errors.New("invalid request")
 	}
 	for k, v := range req.Headers {
 		if !dropped(k) {
@@ -217,10 +279,12 @@ func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (Fe
 	hr.Header.Set("User-Agent", c.opts.UserAgent)
 
 	hc := &http.Client{Transport: c.tr, CheckRedirect: func(next *http.Request, via []*http.Request) error {
+		hp, err := c.check(next.URL, allowed)
+		*hops = append(*hops, Hop{Dest: hp})
 		if len(via) > maxRedirects {
 			return deny("too_many_redirects", "")
 		}
-		if _, err := c.check(next.URL, allowed); err != nil {
+		if err != nil {
 			return err
 		}
 		// Authorization is for the first host only: once the chain has left
@@ -236,21 +300,21 @@ func (c *Client) Do(ctx context.Context, allowed []string, req FetchRequest) (Fe
 	}}
 	resp, err := hc.Do(hr)
 	if err != nil {
-		return FetchResponse{}, hp, c.fail(ctx, tctx, err)
+		return FetchResponse{}, c.fail(ctx, tctx, err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, c.opts.MaxBody+1))
 	if err != nil {
-		return FetchResponse{}, hp, c.fail(ctx, tctx, err)
+		return FetchResponse{}, c.fail(ctx, tctx, err)
 	}
 	if int64(len(b)) > c.opts.MaxBody {
-		return FetchResponse{}, hp, deny("too_large", "")
+		return FetchResponse{}, deny("too_large", "")
 	}
 	out := FetchResponse{Status: resp.StatusCode, Headers: map[string]string{}, Body: string(b)}
 	for k, v := range resp.Header {
 		out.Headers[strings.ToLower(k)] = strings.Join(v, ", ")
 	}
-	return out, hp, nil
+	return out, nil
 }
 
 // fail maps a transport error: a policy refusal as is, our own deadline as

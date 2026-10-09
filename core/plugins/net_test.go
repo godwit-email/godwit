@@ -124,9 +124,9 @@ func TestFetchAllowed(t *testing.T) {
 	e := newNetEnv(t)
 	c := e.client(true)
 	allowed := []string{"API.example.com:" + e.port}
-	r, dest, err := c.Do(t.Context(), allowed, FetchRequest{URL: e.url("api.example.com", "/ok?q=secret")})
+	r, hops, err := c.Do(t.Context(), allowed, FetchRequest{URL: e.url("api.example.com", "/ok?q=secret")})
 	require.NoError(t, err)
-	assert.Equal(t, e.hp("api.example.com"), dest)
+	assert.Equal(t, []Hop{{e.hp("api.example.com"), "allow", ""}}, hops)
 	assert.Equal(t, 200, r.Status)
 	assert.Equal(t, "hello", r.Body)
 	assert.Equal(t, "yes", r.Headers["x-test"])
@@ -267,4 +267,48 @@ func TestFetchStripsHeaders(t *testing.T) {
 	h = seen(e.url("api.example.com", "/redirect?to="+strings.ReplaceAll(back, "?", "%3F")))
 	assert.Equal(t, e.hp("api.example.com"), h["host"])
 	assert.NotContains(t, h, "authorization", "not restored once the chain left the host")
+}
+
+// Every request of a fetch is reported with its own destination and outcome:
+// allow (answered or redirected), deny (policy) or error (failed after the
+// policy allowed it).
+func TestFetchHops(t *testing.T) {
+	e := newNetEnv(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	_, closed, _ := net.SplitHostPort(ln.Addr().String())
+	require.NoError(t, ln.Close())
+	api, other := e.hp("api.example.com"), e.hp("other.example.com")
+	allowed := []string{api, other, "loop.example.com", "nodns.example.com", "api.example.com:" + closed}
+	e.dns.ips["loop.example.com"] = []string{"127.0.0.1"}
+	hops := func(c *Client, ctx context.Context, url, body string) []Hop {
+		t.Helper()
+		_, h, _ := c.Do(ctx, allowed, FetchRequest{URL: url, Method: "POST", Body: body})
+		return h
+	}
+	c := e.client(true)
+	assert.Equal(t, []Hop{{api, "allow", ""}, {other, "allow", ""}},
+		hops(c, t.Context(), e.url("api.example.com", "/redirect?to="+e.url("other.example.com", "/ok")), ""))
+	assert.Equal(t, []Hop{{api, "allow", ""}, {e.hp("evil.example.com"), "deny", "host_not_allowed"}},
+		hops(c, t.Context(), e.url("api.example.com", "/redirect?to="+e.url("evil.example.com", "/ok")), ""))
+	chain := hops(c, t.Context(), e.url("api.example.com", "/chain/6"), "")
+	require.Len(t, chain, 7)
+	assert.Equal(t, Hop{api, "deny", "too_many_redirects"}, chain[6])
+	assert.Equal(t, Hop{api, "allow", ""}, chain[5])
+	assert.Equal(t, []Hop{{"127.0.0.1:443", "deny", "ip_literal"}}, hops(c, t.Context(), "https://127.0.0.1/ok", ""))
+	assert.Equal(t, []Hop{{api, "deny", "too_large"}}, hops(c, t.Context(), e.url("api.example.com", "/echo"), strings.Repeat("x", 2<<20)))
+	assert.Equal(t, []Hop{{api, "deny", "too_large"}}, hops(c, t.Context(), e.url("api.example.com", "/big"), ""))
+	assert.Equal(t, []Hop{{"loop.example.com:443", "deny", "private_address"}}, hops(e.client(false), t.Context(), "https://loop.example.com/", ""))
+
+	assert.Equal(t, []Hop{{"nodns.example.com:443", "error", "dns_error"}}, hops(c, t.Context(), "https://nodns.example.com/", ""))
+	assert.Equal(t, []Hop{{"api.example.com:" + closed, "error", "network_error"}}, hops(c, t.Context(), "https://api.example.com:"+closed+"/", ""))
+	untrusted := e.client(true)
+	untrusted.opts.rootCAs = nil
+	assert.Equal(t, []Hop{{api, "error", "tls_error"}}, hops(NewClient(untrusted.opts), t.Context(), e.url("api.example.com", "/ok"), ""))
+	slow := c.opts
+	slow.Timeout = 50 * time.Millisecond
+	assert.Equal(t, []Hop{{api, "error", "timeout"}}, hops(NewClient(slow), t.Context(), e.url("api.example.com", "/slow"), ""))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assert.Equal(t, []Hop{{api, "error", "cancelled"}}, hops(c, ctx, e.url("api.example.com", "/ok"), ""))
 }

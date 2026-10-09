@@ -31,6 +31,7 @@ type Host interface {
 	MailUpdateDraft(ctx context.Context, u DraftUpdate) (int64, error)
 	LLMComplete(ctx context.Context, prompt string) (string, error)
 	Fetch(ctx context.Context, inv Invocation, req FetchRequest) (FetchResponse, error)
+	AuditEgress(ctx context.Context, inv Invocation, dest, decision, reason string) error
 }
 
 // Host-side data limits (spec 5.5).
@@ -217,6 +218,16 @@ func egressHost(raw string) (string, error) {
 	return h, nil
 }
 
+// denyFetch audits a fetch refused before the host saw it, then throws err,
+// joined with the audit's failure if the row could not be written.
+func (p *Plugin) denyFetch(c *CallScope, raw, reason string, err error) {
+	u, _ := url.Parse(raw) // egressHost parsed it
+	if aerr := p.h.AuditEgress(c.ctx, c.Invocation(), HostPort(u), "deny", reason); aerr != nil {
+		panic(errors.Join(err, aerr))
+	}
+	panic(err)
+}
+
 func (p *Plugin) newCtx(c *CallScope) goja.Value {
 	rt, v := c.Runtime(), c.VM()
 	fn := v.HostFunc
@@ -331,7 +342,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 			panic(err)
 		}
 		if !slices.Contains(p.m.Permissions.Net, host) || !slices.Contains(c.Invocation().EgressHosts, host) {
-			panic(&PermissionError{Perm: "net:" + host})
+			p.denyFetch(c, req.URL, "host_not_allowed", &PermissionError{Perm: "net:" + host})
 		}
 		if init := call.Argument(1); !optional(init) {
 			// Its own type: no field of init can replace the URL checked above.
@@ -340,11 +351,20 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 				Headers map[string]string `json:"headers"`
 				Body    string            `json:"body"`
 			}
-			arg(c, "net.fetch", init, &in, "init must be {method?, headers?, body?}")
+			func() {
+				defer func() { // an init over the argument limit is an oversized body: audited
+					if r := recover(); r == ErrTooLarge {
+						p.denyFetch(c, req.URL, "too_large", ErrTooLarge)
+					} else if r != nil {
+						panic(r)
+					}
+				}()
+				arg(c, "net.fetch", init, &in, "init must be {method?, headers?, body?}")
+			}()
 			req.Method, req.Headers, req.Body = in.Method, in.Headers, in.Body
 		}
 		if len(req.Body) > MaxFetchBody {
-			panic(ErrTooLarge)
+			p.denyFetch(c, req.URL, "too_large", ErrTooLarge)
 		}
 		inv, rt := c.Invocation(), c.Runtime()
 		// The host allows redirects only to hosts both declared and granted.

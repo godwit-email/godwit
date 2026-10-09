@@ -219,25 +219,36 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 }
 
 // Fetch runs the request through the plugin's hardened client, the
-// invocation's hosts allowed, and audits it, allowed or denied, with the
-// destination's host and port only.
+// invocation's hosts allowed, and audits every hop (allowed, denied or
+// failed) with its destination's host and port only. An audit failure is
+// never hidden: without its rows the call fails, joined with any fetch error.
 func (h *pluginHost) Fetch(ctx context.Context, inv plugins.Invocation, req plugins.FetchRequest) (out plugins.FetchResponse, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
-		r, dest, err := h.net.Do(ctx, inv.EgressHosts, req)
-		e := gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":net.fetch",
-			CallID: inv.ID, Decision: string(gateway.Allow)}
-		if dest != "" {
-			e.Destinations = []string{dest}
+		r, hops, err := h.net.Do(ctx, inv.EgressHosts, req)
+		var aerr error
+		for _, hop := range hops {
+			aerr = errors.Join(aerr, h.audit(ctx, inv, hop.Dest, hop.Decision, hop.Reason))
 		}
-		if ne := (*plugins.NetError)(nil); errors.As(err, &ne) {
-			e.Decision, e.Reason = string(gateway.Deny), ne.Reason
-		}
-		// Written even when the call was cancelled; without the row there is no response.
-		if aerr := gateway.New(h.s.db).Record(context.WithoutCancel(ctx), e); aerr != nil && err == nil {
-			return aerr
+		if aerr != nil {
+			return errors.Join(err, aerr)
 		}
 		out = r
 		return err
 	})
 	return out, err
+}
+
+// AuditEgress records a fetch the plugin side refused before calling Fetch.
+func (h *pluginHost) AuditEgress(ctx context.Context, inv plugins.Invocation, dest, decision, reason string) error {
+	return h.do(ctx, func(ctx context.Context) error { return h.audit(ctx, inv, dest, decision, reason) })
+}
+
+// audit writes one egress row, even for a cancelled call; its error is cleaned.
+func (h *pluginHost) audit(ctx context.Context, inv plugins.Invocation, dest, decision, reason string) error {
+	e := gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":net.fetch",
+		CallID: inv.ID, Decision: decision, Reason: reason}
+	if dest != "" {
+		e.Destinations = []string{dest}
+	}
+	return h.s.cleanError(gateway.New(h.s.db).Record(context.WithoutCancel(ctx), e))
 }
