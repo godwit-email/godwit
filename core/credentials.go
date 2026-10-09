@@ -55,7 +55,10 @@ func keychainSet(user, secret string) error {
 }
 
 // Redact replaces every credential and extension secret this Service knows of
-// (8 characters or longer) in text. Not for RPC.
+// in text. Not for RPC. Values under 8 characters are skipped (ai.Redact):
+// replacing them would mangle ordinary text, and the ones that matter (keys,
+// tokens) are longer; a short password is a known gap, not leaked by core's
+// own errors, which never carry credentials.
 func (s *Service) Redact(text string) string {
 	return ai.Redact(text, append(s.secrets.Values(), keychainValues.Values()...))
 }

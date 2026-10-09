@@ -54,39 +54,37 @@ func NewCodec() *rpc.Codec {
 	// The first failing step's error (Unwrap) stays on the server.
 	rpc.RegisterType(c, "check_failed",
 		func(e *core.CheckError) any { return e.Report },
-		func(raw json.RawMessage) *core.CheckError {
-			e := &core.CheckError{}
-			_ = json.Unmarshal(raw, &e.Report)
-			return e
+		func(raw json.RawMessage) (*core.CheckError, error) {
+			r, err := rpc.DecodeDetail[core.CheckReport](raw)
+			if err != nil {
+				return nil, err
+			}
+			return &core.CheckError{Report: *r}, nil
 		})
 	rpc.RegisterType(c, "send_warnings",
 		func(e *core.SendWarningsError) any { return e.Check },
-		func(raw json.RawMessage) *core.SendWarningsError {
-			e := &core.SendWarningsError{}
-			_ = json.Unmarshal(raw, &e.Check)
-			return e
+		func(raw json.RawMessage) (*core.SendWarningsError, error) {
+			ch, err := rpc.DecodeDetail[core.SendCheck](raw)
+			if err != nil {
+				return nil, err
+			}
+			return &core.SendWarningsError{Check: *ch}, nil
 		})
 	rpc.RegisterType(c, "send_blocked",
 		func(e *core.SendBlockedError) any { return core.SendBlockedError{Plugin: e.Plugin, Message: e.Message} },
-		decodeInto[core.SendBlockedError])
+		rpc.DecodeDetail[core.SendBlockedError])
 	rpc.RegisterType(c, "egress_approval_required",
 		func(e *core.EgressApprovalRequired) any {
 			return core.EgressApprovalRequired{Plugin: e.Plugin, Hosts: e.Hosts}
 		},
-		decodeInto[core.EgressApprovalRequired])
+		rpc.DecodeDetail[core.EgressApprovalRequired])
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg} },
-		decodeInto[ai.Error])
+		rpc.DecodeDetail[ai.Error])
 	for _, s := range sentinels {
 		c.RegisterSentinel(s.code, s.err, s.err.Error())
 	}
 	return c
-}
-
-func decodeInto[T any](raw json.RawMessage) *T {
-	v := new(T)
-	_ = json.Unmarshal(raw, v)
-	return v
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported

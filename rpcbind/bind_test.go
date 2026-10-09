@@ -194,3 +194,45 @@ func TestExposeCoversService(t *testing.T) {
 	assert.Contains(t, exposed, "Send")
 	t.Logf("%d of %d methods exposed", len(exposed), reflect.TypeOf(svc).NumMethod())
 }
+
+// Wire codes are API: renaming one must break this test.
+func TestWireCodesPinned(t *testing.T) {
+	c := rpcbind.NewCodec()
+	pinned := map[string]error{
+		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge,
+		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive,
+		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
+		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
+		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,
+		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
+		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
+		"base_url_invalid": core.ErrBaseURLInvalid, "base_url_scheme": core.ErrBaseURLScheme,
+		"no_model_list": ai.ErrNoModelList, "key_needs_confirm": core.ErrKeyNeedsConfirm,
+		"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState,
+		"skill_disabled": core.ErrSkillDisabled, "skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed,
+		"canceled": context.Canceled, "deadline": context.DeadlineExceeded,
+		"check_failed":             &core.CheckError{},
+		"send_warnings":            &core.SendWarningsError{},
+		"send_blocked":             &core.SendBlockedError{},
+		"egress_approval_required": &core.EgressApprovalRequired{},
+		"ai_error":                 &ai.Error{Code: ai.CodeCanceled},
+	}
+	assert.Len(t, pinned, len(sentinels)+5, "every registration is pinned")
+	for code, err := range pinned {
+		we := c.Encode(err, nil)
+		assert.Equal(t, rpc.CodeApp, we.Code, code)
+		assert.Equal(t, code, we.Data.Code)
+	}
+}
+
+// Malformed detail for any registered type is a protocol error, never a zero
+// or partial business error.
+func TestBadErrorData(t *testing.T) {
+	c := rpcbind.NewCodec()
+	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error"} {
+		for name, detail := range map[string]string{"missing": ``, "wrong type": `{"Plugin":1,"Steps":1,"Code":1}`, "partial": `{}`} {
+			got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "m", Data: &rpc.WireErrorData{Code: code, Detail: json.RawMessage(detail)}})
+			assert.ErrorIs(t, got, rpc.ErrBadErrorData, "%s %s", code, name)
+		}
+	}
+}

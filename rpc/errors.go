@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 )
 
 // CodeApp is the wire code of a registered (application) error.
 const CodeApp = -32003
+
+// ErrBadErrorData: a registered type's wire detail did not decode.
+var ErrBadErrorData = errors.New("rpc: malformed error data")
 
 // RemoteError is a wire error the Codec has no registration for.
 type RemoteError struct {
@@ -47,9 +52,16 @@ func (c *Codec) add(code string, decode func(json.RawMessage) error) {
 }
 
 // RegisterType registers error type T under code. encode returns the safe
-// fields to send (every string in them is redacted); decode rebuilds a T.
-func RegisterType[T error](c *Codec, code string, encode func(T) any, decode func(json.RawMessage) T) {
-	c.add(code, func(raw json.RawMessage) error { return decode(raw) })
+// fields to send (every string in them is redacted); decode rebuilds a T or
+// fails, and Decode then returns ErrBadErrorData (see DecodeDetail).
+func RegisterType[T error](c *Codec, code string, encode func(T) any, decode func(json.RawMessage) (T, error)) {
+	c.add(code, func(raw json.RawMessage) error {
+		t, err := decode(raw)
+		if err != nil {
+			return fmt.Errorf("%w: %s: %w", ErrBadErrorData, code, err)
+		}
+		return t
+	})
 	c.types = append(c.types, regType{code, func(err error) (any, string, bool) {
 		var t T
 		if !errors.As(err, &t) {
@@ -93,6 +105,28 @@ func (c *Codec) Encode(err error, redact func(string) string) *WireError {
 		}
 	}
 	return &WireError{Code: CodeInternal, Message: "internal error", Data: &WireErrorData{Code: "internal"}}
+}
+
+// DecodeDetail decodes raw into a *V strictly: a JSON object holding every
+// field of struct V (by Go field name; nested values are not checked for
+// completeness) and nothing else.
+func DecodeDetail[V any](raw json.RawMessage) (*V, error) {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil || keys == nil {
+		return nil, fmt.Errorf("want a JSON object: %v", err)
+	}
+	for f := range reflect.TypeFor[V]().Fields() {
+		if _, ok := keys[f.Name]; f.IsExported() && !ok {
+			return nil, fmt.Errorf("missing field %s", f.Name)
+		}
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	v := new(V)
+	if err := d.Decode(v); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 // Decode maps a wire error back: a registered sentinel to the same value, a

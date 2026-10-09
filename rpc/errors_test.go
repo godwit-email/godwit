@@ -23,12 +23,7 @@ var errGone = errors.New("gone away")
 
 func testCodec() *rpc.Codec {
 	c := &rpc.Codec{}
-	rpc.RegisterType(c, "blocked", func(e *blockedErr) any { return e },
-		func(raw json.RawMessage) *blockedErr {
-			var e blockedErr
-			_ = json.Unmarshal(raw, &e)
-			return &e
-		})
+	rpc.RegisterType(c, "blocked", func(e *blockedErr) any { return e }, rpc.DecodeDetail[blockedErr])
 	c.RegisterSentinel("gone", errGone, "it is gone")
 	return c
 }
@@ -98,4 +93,23 @@ func TestCodecUnknown(t *testing.T) {
 func TestCodecDuplicatePanics(t *testing.T) {
 	c := testCodec()
 	assert.Panics(t, func() { c.RegisterSentinel("gone", errors.New("x"), "x") })
+}
+
+// A type's detail that is missing, mistyped, partial or has unknown fields
+// decodes to ErrBadErrorData, never a zero or partial business error.
+func TestCodecBadDetail(t *testing.T) {
+	c := testCodec()
+	for name, detail := range map[string]string{
+		"missing": ``, "null": `null`, "not object": `"x"`,
+		"wrong type": `{"Who":1,"Tags":{}}`, "partial": `{"Who":"a"}`, "unknown field": `{"Who":"a","Tags":{},"X":1}`,
+	} {
+		got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "blocked by a", Data: &rpc.WireErrorData{Code: "blocked", Detail: json.RawMessage(detail)}})
+		assert.ErrorIs(t, got, rpc.ErrBadErrorData, name)
+		var be *blockedErr
+		assert.False(t, errors.As(got, &be), name)
+	}
+	got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Data: &rpc.WireErrorData{Code: "blocked", Detail: json.RawMessage(`{"Who":"a","Tags":null}`)}})
+	var be *blockedErr
+	require.ErrorAs(t, got, &be)
+	assert.Equal(t, "a", be.Who)
 }
