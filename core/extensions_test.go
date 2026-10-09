@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,22 @@ func pluginByName(t *testing.T, s *core.Service, name string) (core.PluginInfo, 
 	return core.PluginInfo{}, false
 }
 
+// versionDirs lists DataDir/plugins/<name>/<hash> directories.
+func versionDirs(t *testing.T, dir, name string) []string {
+	t.Helper()
+	m, err := filepath.Glob(filepath.Join(dir, "plugins", name, "*"))
+	require.NoError(t, err)
+	return m
+}
+
+func installEnabled(t *testing.T, s *core.Service, src string) {
+	t.Helper()
+	_, err := s.InstallPlugin(ctx, src)
+	require.NoError(t, err)
+	require.NoError(t, s.GrantPermission(ctx, filepath.Base(src)[len("src-"):]))
+	require.NoError(t, s.SetPluginEnabled(ctx, filepath.Base(src)[len("src-"):], true))
+}
+
 func waitPluginsChanged(t *testing.T, ch <-chan events.Event) {
 	t.Helper()
 	timeout := time.After(2 * time.Second)
@@ -83,7 +100,11 @@ func TestInstallListGrantEnable(t *testing.T) {
 	assert.Equal(t, plugins.Permissions{Mail: []string{"read"}}, info.Permissions)
 	assert.False(t, info.Enabled)
 	assert.True(t, info.NeedsGrant)
-	assert.FileExists(t, filepath.Join(dir, "plugins", "hello", "index.ts"))
+	vs := versionDirs(t, dir, "hello")
+	require.Len(t, vs, 1)
+	assert.FileExists(t, filepath.Join(vs[0], "index.ts"))
+	left, _ := os.ReadDir(filepath.Join(dir, "plugins"))
+	assert.Len(t, left, 1, "no staging directories left")
 
 	list, err := s.ListPlugins(ctx)
 	require.NoError(t, err)
@@ -151,23 +172,24 @@ func TestUpdateSamePermissionsReloads(t *testing.T) {
 	h2, running := s.RunningPluginForTest("p")
 	assert.True(t, running)
 	assert.NotEqual(t, h1, h2, "the new code is loaded")
-	b, err := os.ReadFile(filepath.Join(dir, "plugins", "p", "index.ts"))
+	vs := versionDirs(t, dir, "p")
+	require.Len(t, vs, 1, "the old version is removed")
+	assert.Equal(t, h2, filepath.Base(vs[0]))
+	b, err := os.ReadFile(filepath.Join(vs[0], "index.ts"))
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "two")
 }
 
-func TestCrashMidUpdateDetected(t *testing.T) {
+func TestDamagedFilesDetected(t *testing.T) {
 	dir := t.TempDir()
 	s := openService(t, dir)
 	src := pluginSrc(t, "p", "1.0.0", readPerms, `export default function () {}`)
-	_, err := s.InstallPlugin(ctx, src)
-	require.NoError(t, err)
-	require.NoError(t, s.GrantPermission(ctx, "p"))
-	require.NoError(t, s.SetPluginEnabled(ctx, "p", true))
+	installEnabled(t, s, src)
 	require.NoError(t, s.Close())
 
-	// The update replaced the files and crashed before writing the row.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugins", "p", "index.ts"), []byte(`export default function () { return 2 }`), 0o600))
+	vs := versionDirs(t, dir, "p")
+	require.Len(t, vs, 1)
+	require.NoError(t, os.WriteFile(filepath.Join(vs[0], "index.ts"), []byte(`export default function () { return 2 }`), 0o600))
 
 	s = openService(t, dir)
 	p, ok := pluginByName(t, s, "p")
@@ -179,27 +201,181 @@ func TestCrashMidUpdateDetected(t *testing.T) {
 	assert.False(t, running)
 	assert.Error(t, s.SetPluginEnabled(ctx, "p", true))
 
-	// Reinstalling repairs it.
-	_, err = s.InstallPlugin(ctx, src)
+	// Reinstalling the same files repairs it.
+	_, err := s.InstallPlugin(ctx, src)
 	require.NoError(t, err)
 	p, _ = pluginByName(t, s, "p")
 	assert.Empty(t, p.Error)
 	require.NoError(t, s.SetPluginEnabled(ctx, "p", true))
 }
 
+// An update that dies before the row points at the new version leaves the old
+// one active and intact; the new directory is removed on the next start.
+func TestCrashBeforeSwitch(t *testing.T) {
+	dir := t.TempDir()
+	s := openService(t, dir)
+	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`))
+	h1, _ := s.RunningPluginForTest("p")
+
+	restore := core.SetPluginHookForTest(func(stage, name string) error {
+		if stage == "switch" {
+			return errors.New("crash")
+		}
+		return nil
+	})
+	_, err := s.InstallPlugin(ctx, pluginSrc(t, "p", "1.1.0", readPerms, `export default function () { return "two" }`))
+	restore()
+	require.Error(t, err)
+	h, running := s.RunningPluginForTest("p")
+	assert.True(t, running)
+	assert.Equal(t, h1, h, "the old version keeps running")
+	require.NoError(t, s.Close())
+
+	s = openService(t, dir)
+	p, _ := pluginByName(t, s, "p")
+	assert.Equal(t, "1.0.0", p.Version)
+	assert.True(t, p.Enabled)
+	assert.Empty(t, p.Error)
+	h, running = s.RunningPluginForTest("p")
+	assert.True(t, running)
+	assert.Equal(t, h1, h)
+	vs := versionDirs(t, dir, "p")
+	require.Len(t, vs, 1)
+	assert.Equal(t, h1, filepath.Base(vs[0]))
+}
+
+// An update that dies after the switch is the new version on the next start;
+// the old directory is removed then.
+func TestCrashAfterSwitch(t *testing.T) {
+	dir := t.TempDir()
+	s := openService(t, dir)
+	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`))
+	h1, _ := s.RunningPluginForTest("p")
+
+	restore := core.SetPluginHookForTest(func(stage, name string) error {
+		if stage == "switched" {
+			return errors.New("crash")
+		}
+		return nil
+	})
+	_, err := s.InstallPlugin(ctx, pluginSrc(t, "p", "1.1.0", readPerms, `export default function () { return "two" }`))
+	restore()
+	require.Error(t, err)
+	require.Len(t, versionDirs(t, dir, "p"), 2)
+	require.NoError(t, s.Close())
+
+	s = openService(t, dir)
+	p, _ := pluginByName(t, s, "p")
+	assert.Equal(t, "1.1.0", p.Version)
+	assert.True(t, p.Enabled)
+	assert.Empty(t, p.Error)
+	h2, running := s.RunningPluginForTest("p")
+	assert.True(t, running)
+	assert.NotEqual(t, h1, h2)
+	vs := versionDirs(t, dir, "p")
+	require.Len(t, vs, 1)
+	assert.Equal(t, h2, filepath.Base(vs[0]))
+}
+
+// The row switch failing changes nothing: the old version stays listed and running.
+func TestUpdateDBFailureKeepsOld(t *testing.T) {
+	s := openService(t, t.TempDir())
+	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`))
+	h1, _ := s.RunningPluginForTest("p")
+	require.NoError(t, s.ExecForTest(`CREATE TRIGGER no_update BEFORE UPDATE ON plugins BEGIN SELECT RAISE(ABORT, 'disk full'); END`))
+
+	_, err := s.InstallPlugin(ctx, pluginSrc(t, "p", "1.1.0", readPerms, `export default function () { return "two" }`))
+	require.Error(t, err)
+	h, running := s.RunningPluginForTest("p")
+	assert.True(t, running)
+	assert.Equal(t, h1, h)
+	p, _ := pluginByName(t, s, "p")
+	assert.Equal(t, "1.0.0", p.Version)
+	assert.True(t, p.Enabled)
+	assert.Empty(t, p.Error)
+}
+
+// A new version that fails to start is recorded as disabled, not left "enabled".
+func TestReloadFailureDisables(t *testing.T) {
+	dir := t.TempDir()
+	s := openService(t, dir)
+	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`))
+	ch, unsub := s.Subscribe()
+	defer unsub()
+
+	restore := core.SetPluginHookForTest(func(stage, name string) error {
+		if stage == "load" {
+			return errors.New("init threw")
+		}
+		return nil
+	})
+	defer restore()
+	info, err := s.InstallPlugin(ctx, pluginSrc(t, "p", "1.1.0", readPerms, `export default function () { return "two" }`))
+	require.Error(t, err)
+	assert.Equal(t, "1.1.0", info.Version)
+	assert.False(t, info.Enabled)
+	assert.Equal(t, "load_failed", info.DisabledReason)
+	waitPluginsChanged(t, ch)
+	_, running := s.RunningPluginForTest("p")
+	assert.False(t, running)
+	assert.Error(t, s.SetPluginEnabled(ctx, "p", true), "still failing")
+	restore()
+
+	require.NoError(t, s.Close())
+	s = openService(t, dir)
+	p, _ := pluginByName(t, s, "p")
+	assert.False(t, p.Enabled, "the disabled state is persisted")
+	assert.Equal(t, "load_failed", p.DisabledReason)
+	require.NoError(t, s.SetPluginEnabled(ctx, "p", true))
+}
+
+// ListPlugins never sees an update half done.
+func TestListDuringUpdate(t *testing.T) {
+	s := openService(t, t.TempDir())
+	srcs := []string{
+		pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`),
+		pluginSrc(t, "p", "1.1.0", readPerms, `export default function () { return "two" }`),
+	}
+	installEnabled(t, s, srcs[0])
+	done := make(chan error)
+	go func() {
+		for i := range 20 {
+			if _, err := s.InstallPlugin(ctx, srcs[i%2]); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for {
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+			return
+		default:
+		}
+		p, ok := pluginByName(t, s, "p")
+		require.True(t, ok)
+		require.Empty(t, p.Error)
+		require.True(t, p.Enabled)
+	}
+}
+
 func TestBrokenPluginListed(t *testing.T) {
 	dir := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "plugins", "bad"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugins", "bad", "plugin.json"), []byte(`{not json`), 0o600))
 	s := openService(t, dir)
-	_, err := s.InstallPlugin(ctx, pluginSrc(t, "good", "1.0.0", readPerms, `export default function () {}`))
-	require.NoError(t, err)
-	require.NoError(t, os.Remove(filepath.Join(dir, "plugins", "good", "plugin.json")))
+	for _, n := range []string{"bad", "gone"} {
+		_, err := s.InstallPlugin(ctx, pluginSrc(t, n, "1.0.0", readPerms, `export default function () {}`))
+		require.NoError(t, err)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(versionDirs(t, dir, "bad")[0], "plugin.json"), []byte(`{not json`), 0o600))
+	require.NoError(t, os.Remove(filepath.Join(versionDirs(t, dir, "gone")[0], "plugin.json")))
+	require.NoError(t, s.GrantPermission(ctx, "bad"))
 
-	for _, n := range []string{"bad", "good"} {
+	for _, n := range []string{"bad", "gone"} {
 		p, ok := pluginByName(t, s, n)
 		require.True(t, ok, n)
-		assert.NotEmpty(t, p.Error, n)
+		assert.Contains(t, p.Error, "reinstall", n)
 		assert.False(t, p.Enabled, n)
 		assert.Error(t, s.SetPluginEnabled(ctx, n, true), n)
 	}

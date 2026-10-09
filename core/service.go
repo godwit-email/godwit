@@ -85,7 +85,7 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu sync.Mutex        // installs, updates, grants, enabling and uninstalls, one at a time
+	pluginsMu sync.RWMutex      // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running   map[string]string // running plugins: name → source hash of the code they run
 
 	closeOnce sync.Once

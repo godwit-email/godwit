@@ -8,10 +8,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/evanw/esbuild/pkg/api"
 )
@@ -90,13 +92,15 @@ func HashDir(dir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Snapshot copies the plugin directory src to dst, replacing dst as a whole,
-// and returns the hash of the copy. A failed snapshot leaves dst as it was.
+// Snapshot copies the plugin directory src to dst, which must not exist yet,
+// and returns the hash of the copy. It copies into a sibling temp directory and
+// renames that to dst, so dst is complete or absent.
 func Snapshot(src, dst string) (sourceHash string, err error) {
-	names, err := files(src)
+	root, err := os.OpenRoot(src)
 	if err != nil {
 		return "", err
 	}
+	defer root.Close()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", err
 	}
@@ -104,60 +108,110 @@ func Snapshot(src, dst string) (sourceHash string, err error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tmp) // gone after Replace renamed it
-	for _, n := range names {
-		if err := copyFile(filepath.Join(src, filepath.FromSlash(n)), filepath.Join(tmp, filepath.FromSlash(n))); err != nil {
-			return "", err
-		}
+	defer os.RemoveAll(tmp) // gone once renamed to dst
+	var total int64
+	if err := copyTree(root, "", tmp, &total); err != nil {
+		return "", err
 	}
-	// Hash the copy, not src, which may have changed while we copied it.
+	// Hash the copy, not src, which may change while we copy it.
 	if sourceHash, err = HashDir(tmp); err != nil {
 		return "", err
 	}
-	return sourceHash, Replace(tmp, dst)
+	return sourceHash, os.Rename(tmp, dst)
 }
 
-func copyFile(from, to string) error {
-	if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
-		return err
-	}
-	in, err := os.Open(from)
+// beforeOpen, if set, runs after an entry was checked and before it is opened (tests).
+var beforeOpen func(rel string)
+
+// copyTree copies the directory r (at slash path prefix) into dst. Every entry
+// is Lstat-ed (regular files and directories only) and then opened through r;
+// the opened file must be the one checked (os.SameFile), so swapping in a
+// symlink, or a symlinked parent, between check and use fails.
+func copyTree(r *os.Root, prefix, dst string, total *int64) error {
+	d, err := r.Open(".")
 	if err != nil {
 		return err
 	}
+	ents, err := d.ReadDir(-1)
+	d.Close()
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		name, rel := e.Name(), path.Join(prefix, e.Name())
+		if rel == BuildDir {
+			continue
+		}
+		fi, err := r.Lstat(name)
+		if err != nil {
+			return err
+		}
+		switch {
+		case fi.IsDir():
+			if beforeOpen != nil {
+				beforeOpen(rel)
+			}
+			sub, err := r.OpenRoot(name)
+			if err != nil {
+				return fmt.Errorf("%s: %w", rel, err)
+			}
+			err = sameFile(rel, fi, func() (fs.FileInfo, error) { return sub.Stat(".") })
+			if err == nil {
+				if err = os.Mkdir(filepath.Join(dst, name), 0o700); err == nil {
+					err = copyTree(sub, rel, filepath.Join(dst, name), total)
+				}
+			}
+			sub.Close()
+			if err != nil {
+				return err
+			}
+		case fi.Mode().IsRegular():
+			if fi.Size() > MaxFileBytes {
+				return fmt.Errorf("%s: larger than %d MB", rel, MaxFileBytes>>20)
+			}
+			if *total += fi.Size(); *total > MaxTotalBytes {
+				return fmt.Errorf("plugin is too large (over %d MB)", MaxTotalBytes>>20)
+			}
+			if beforeOpen != nil {
+				beforeOpen(rel)
+			}
+			if err := copyFile(r, name, rel, fi, filepath.Join(dst, name)); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("%s: only regular files are allowed (no symlinks or devices)", rel)
+		}
+	}
+	return nil
+}
+
+func sameFile(rel string, want fs.FileInfo, stat func() (fs.FileInfo, error)) error {
+	got, err := stat()
+	if err != nil {
+		return fmt.Errorf("%s: %w", rel, err)
+	}
+	if !os.SameFile(want, got) {
+		return fmt.Errorf("%s: changed while copying (no symlinks allowed)", rel)
+	}
+	return nil
+}
+
+func copyFile(r *os.Root, name, rel string, want fs.FileInfo, to string) error {
+	// O_NONBLOCK: a FIFO swapped in after the check must not block the open.
+	in, err := r.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return fmt.Errorf("%s: %w", rel, err)
+	}
 	defer in.Close()
+	if err := sameFile(rel, want, in.Stat); err != nil {
+		return err
+	}
 	out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, io.LimitReader(in, MaxFileBytes+1)) // grown since files(): HashDir rejects it
+	_, err = io.Copy(out, io.LimitReader(in, MaxFileBytes+1)) // grown since the check: HashDir rejects it
 	return errors.Join(err, out.Close())
-}
-
-// Replace moves the directory dir to dst, replacing whatever is there. dst is
-// either the old or the new directory at any time, never a mix; on Windows a
-// rename cannot replace a directory, so the old one is moved aside first.
-func Replace(dir, dst string) error {
-	old := ""
-	if _, err := os.Lstat(dst); err == nil {
-		aside, err := os.MkdirTemp(filepath.Dir(dst), ".old-")
-		if err != nil {
-			return err
-		}
-		old = filepath.Join(aside, "d")
-		if err := os.Rename(dst, old); err != nil {
-			os.Remove(aside)
-			return err
-		}
-		defer os.RemoveAll(aside)
-	}
-	if err := os.Rename(dir, dst); err != nil {
-		if old != "" {
-			err = errors.Join(err, os.Rename(old, dst))
-		}
-		return err
-	}
-	return nil
 }
 
 // Compiler turns a snapshot into the script the plugin VM runs.

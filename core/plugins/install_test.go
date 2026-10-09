@@ -59,14 +59,46 @@ func TestSnapshotRejects(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, h, h2)
 
+	// A version is written once: dst must be a fresh path.
 	writeFiles(t, src, map[string]string{"lib/util.ts": "export const x = 2"})
-	h3, err := Snapshot(src, dst)
+	_, err = Snapshot(src, dst)
+	assert.Error(t, err)
+	b, _ := os.ReadFile(filepath.Join(dst, "lib", "util.ts"))
+	assert.Equal(t, "export const x = 1", string(b), "the existing snapshot is untouched")
+	h3, err := Snapshot(src, dst+"2")
 	require.NoError(t, err)
 	assert.NotEqual(t, h, h3)
-	b, _ := os.ReadFile(filepath.Join(dst, "lib", "util.ts"))
-	assert.Equal(t, "export const x = 2", string(b))
 	left, _ := os.ReadDir(filepath.Dir(dst))
-	assert.Len(t, left, 1, "no temp directories left behind")
+	assert.Len(t, left, 2, "no temp directories left behind")
+}
+
+// A file or a parent directory swapped for a symlink after it was checked and
+// before it is opened is not followed.
+func TestSnapshotSymlinkRace(t *testing.T) {
+	outside := t.TempDir()
+	writeFiles(t, outside, map[string]string{"secret.txt": "SECRET", "lib/util.ts": "SECRET"})
+	for _, tc := range []struct{ name, swap, target string }{
+		{"file to outside", "index.ts", filepath.Join(outside, "secret.txt")},
+		{"file to inside", "index.ts", "other.ts"},
+		{"parent to outside", "lib", filepath.Join(outside, "lib")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := t.TempDir()
+			writeFiles(t, src, map[string]string{"index.ts": "x", "other.ts": "y", "lib/util.ts": "z"})
+			beforeOpen = func(rel string) {
+				if rel == tc.swap {
+					p := filepath.Join(src, tc.swap)
+					require.NoError(t, os.RemoveAll(p))
+					require.NoError(t, os.Symlink(tc.target, p))
+				}
+			}
+			defer func() { beforeOpen = nil }()
+			dst := filepath.Join(t.TempDir(), "p")
+			_, err := Snapshot(src, dst)
+			assert.ErrorContains(t, err, tc.swap)
+			assert.NoDirExists(t, dst)
+		})
+	}
 }
 
 func TestBuildFromSnapshotOnly(t *testing.T) {
