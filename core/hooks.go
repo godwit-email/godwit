@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -21,6 +20,7 @@ import (
 const (
 	hookBatch     = 50
 	maxHookWait   = 5 * time.Minute
+	hookPoll      = 30 * time.Second // dispatchers re-query and the janitor cleans this often
 	eventsKeepFor = 7 * 24 * time.Hour
 )
 
@@ -66,11 +66,23 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 		return nil // closing: nothing to deliver to
 	}
 	hctx, rp.stopHooks = context.WithCancel(hctx)
+	wake := make(chan struct{}, 1) // registered before the first read: no arrival is missed
+	s.hooksMu.Lock()
+	if s.hookWakes == nil {
+		s.hookWakes = map[chan struct{}]struct{}{}
+	}
+	s.hookWakes[wake] = struct{}{}
+	s.hooksMu.Unlock()
 	egress, _ := plugins.EgressFor(plugins.KindHook, r.m, r.granted == r.permHash, false)
 	inv := plugins.Invocation{Kind: plugins.KindHook, Write: slices.Contains(r.m.Permissions.Mail, "write"), EgressHosts: egress}
 	go func() {
 		defer end()
-		s.dispatchHooks(hctx, rp, inv)
+		defer func() {
+			s.hooksMu.Lock()
+			delete(s.hookWakes, wake)
+			s.hooksMu.Unlock()
+		}()
+		s.dispatchHooks(hctx, rp, inv, wake)
 		if pluginHook != nil {
 			pluginHook("hook.stopped", rp.p.Name)
 		}
@@ -81,14 +93,12 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 // dispatchHooks delivers the plugin's events until ctx ends. Each failure is
 // counted (pluginFailed, the third in a row disables the plugin and ends ctx)
 // and waits hookBackoff before the same event is tried again.
-func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plugins.Invocation) {
+func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plugins.Invocation, wake <-chan struct{}) {
 	name := rp.p.Name
-	wake, unsub := s.bus.Subscribe() // before the first read: no arrival is missed
-	defer unsub()
 	failures := 0
 	fail := func() bool {
 		failures++
-		return s.hookWait(ctx, hookBackoff(failures))
+		return s.hookWait(ctx, hookBackoff(failures), nil)
 	}
 	for {
 		evs, err := s.hookEvents(ctx, name)
@@ -132,22 +142,15 @@ func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plu
 		if len(evs) == hookBatch {
 			continue
 		}
-		for waiting := true; waiting; {
-			select {
-			case <-ctx.Done():
-				return
-			case e, ok := <-wake:
-				if !ok {
-					return
-				}
-				waiting = e.Type != events.MessageReceived
-			}
+		if !s.hookWait(ctx, hookPoll, wake) {
+			return
 		}
 	}
 }
 
-// hookWait waits d on the hook clock; false if ctx ended first.
-func (s *Service) hookWait(ctx context.Context, d time.Duration) bool {
+// hookWait waits d on the hook clock, or less if wake (may be nil) fires;
+// false if ctx ended first.
+func (s *Service) hookWait(ctx context.Context, d time.Duration, wake <-chan struct{}) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -159,6 +162,9 @@ func (s *Service) hookWait(ctx context.Context, d time.Duration) bool {
 	stop := clock.AfterFunc(d, func() { close(done) })
 	select {
 	case <-done:
+		return true
+	case <-wake:
+		stop()
 		return true
 	case <-ctx.Done():
 		stop()
@@ -207,4 +213,34 @@ func (s *Service) cleanEvents(ctx context.Context) error {
 		AND seq < COALESCE((SELECT MIN(seq) FROM plugin_cursors), 9223372036854775807)`,
 		time.Now().Add(-eventsKeepFor).Unix())
 	return err
+}
+
+// testHookClock, if set, is the hook clock of Services created afterwards (tests).
+var testHookClock plugins.Clock
+
+// notifyHooks wakes every dispatcher. Each has a 1-slot channel, so a signal
+// sent while it is busy is kept; the periodic re-query covers anything else.
+func (s *Service) notifyHooks() {
+	s.hooksMu.Lock()
+	defer s.hooksMu.Unlock()
+	for ch := range s.hookWakes {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// startJanitor cleans events_log every hookPoll until Close, hook plugins or not.
+func (s *Service) startJanitor() {
+	ctx, end, err := s.begin(context.Background(), 0)
+	if err != nil {
+		return
+	}
+	go func() {
+		defer end()
+		for s.hookWait(ctx, hookPoll, nil) {
+			s.cleanEvents(ctx) // best effort; the next tick tries again
+		}
+	}()
 }

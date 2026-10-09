@@ -137,13 +137,13 @@ func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, 
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
 			AND message_id IN (SELECT id FROM messages WHERE server_folder_id = ?)`, Args: []any{accountID, f.id}},
 		{SQL: "DELETE FROM messages WHERE server_folder_id = ?", Args: []any{f.id}},
-		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0 WHERE id = ?", Args: []any{uidValidity, f.id}},
+		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0 WHERE id = ?", Args: []any{uidValidity, f.id}},
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
 	}
 	r.gone(ids, tids)
-	f.uidValidity, f.lastUID = uidValidity, 0
+	f.uidValidity, f.lastUID, f.synced = uidValidity, 0, false
 	for _, p := range files.Values {
 		os.Remove(store.Str(p[0])) // best effort, see above
 	}
@@ -171,10 +171,11 @@ func headerSection() *imap.FetchItemBodySection {
 }
 
 // fetchNew imports messages above last_uid; the first sync takes only the newest
-// sync_limit (n is the mailbox's message count).
+// sync_limit (n is the mailbox's message count). What it imports into a
+// folder whose first sync completed is new mail; completing one marks it.
 func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
 	if n == 0 {
-		return nil
+		return advance(ctx, db, f, f.lastUID)
 	}
 	var set imap.NumSet
 	if f.lastUID == 0 {
@@ -214,18 +215,23 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 	}
 	slices.SortFunc(todo, byUID)
-	// Only a folder synced before has new arrivals; a first sync (or the
-	// reimport after a UIDVALIDITY reset, which zeroes last_uid) does not.
-	if err := importAll(ctx, db, c, a, f, todo, f.lastUID > 0, r); err != nil {
+	// A first sync, or the reimport after a UIDVALIDITY reset (which clears
+	// synced), is not new mail, even if an earlier attempt stopped partway.
+	if err := importAll(ctx, db, c, a, f, todo, f.synced, r); err != nil {
 		return err
 	}
-	if last == f.lastUID {
+	return advance(ctx, db, f, last)
+}
+
+// advance records a completed fetchNew: last_uid and synced in one write.
+func advance(ctx context.Context, db *store.DB, f *folder, last uint32) error {
+	if last == f.lastUID && f.synced {
 		return nil
 	}
-	if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ? WHERE id = ?", last, f.id); err != nil {
+	if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ?, synced = 1 WHERE id = ?", last, f.id); err != nil {
 		return err
 	}
-	f.lastUID = last
+	f.lastUID, f.synced = last, true
 	return nil
 }
 

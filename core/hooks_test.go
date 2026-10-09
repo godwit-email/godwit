@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -202,18 +201,35 @@ func TestHookDeletedMessage(t *testing.T) {
 	require.Eventually(t, func() bool { return cursor(t, e.s, "rec") == seq }, 5*time.Second, 10*time.Millisecond)
 }
 
-// fakeClock fires at once and records the delays asked for.
+// fakeClock fires backoff waits at once and records them; hookPoll timers
+// are held until tick.
 type fakeClock struct {
 	mu     sync.Mutex
 	delays []time.Duration
+	held   []func()
 }
 
 func (c *fakeClock) AfterFunc(d time.Duration, f func()) func() bool {
 	c.mu.Lock()
-	c.delays = append(c.delays, d)
-	c.mu.Unlock()
-	go f()
+	defer c.mu.Unlock()
+	if d == hookPoll {
+		c.held = append(c.held, f)
+	} else {
+		c.delays = append(c.delays, d)
+		go f()
+	}
 	return func() bool { return false }
+}
+
+// tick fires every held poll timer.
+func (c *fakeClock) tick() {
+	c.mu.Lock()
+	held := c.held
+	c.held = nil
+	c.mu.Unlock()
+	for _, f := range held {
+		f()
+	}
 }
 
 func (c *fakeClock) got() []time.Duration {
@@ -222,10 +238,17 @@ func (c *fakeClock) got() []time.Duration {
 	return append([]time.Duration(nil), c.delays...)
 }
 
+// useFakeClock makes Services created from now on in the test use a fakeClock.
+func useFakeClock(t *testing.T) *fakeClock {
+	c := &fakeClock{}
+	testHookClock = c
+	t.Cleanup(func() { testHookClock = nil })
+	return c
+}
+
 func TestHookBackoffAndDisable(t *testing.T) {
+	clock := useFakeClock(t)
 	e := newSyncedEnv(t)
-	clock := &fakeClock{}
-	e.s.hookClock = clock
 	startTestPlugin(t, e.s, "flaky", hookPerms, `export default function (ctx: any) {
   ctx.on("message.received", async (m: any, info: any) => {
     if (!(await ctx.storage.get("ok"))) throw new Error("not yet")
@@ -296,7 +319,7 @@ func TestHookCleanupRace(t *testing.T) {
 			}
 		}
 	}()
-	s.bus.Publish(events.Event{Type: events.MessageReceived})
+	s.notifyHooks()
 	got := waitLog(t, s, "rec", n)
 	close(stop)
 	<-done
@@ -332,7 +355,7 @@ func TestCloseStopsDispatchers(t *testing.T) {
 }`)
 	_, err := s.db.Execute(bg, `INSERT INTO events_log(type, account_id, message_id, created_at) VALUES ('message.received', 1, 1, unixepoch())`)
 	require.NoError(t, err)
-	s.bus.Publish(events.Event{Type: events.MessageReceived})
+	s.notifyHooks()
 	require.Eventually(t, func() bool {
 		rows, err := s.db.Query(bg, "SELECT count(*) FROM plugin_kv WHERE key = 'entered'")
 		require.NoError(t, err)
@@ -365,7 +388,7 @@ func TestHookFetchDeclaredHost(t *testing.T) {
 	_, err := s.db.Execute(bg, `INSERT INTO events_log(type, account_id, message_id, created_at) VALUES ('message.received', 1, 1, unixepoch())`)
 	require.NoError(t, err)
 	seq := store.Int(must(s.db.Query(bg, "SELECT max(seq) FROM events_log")).Values[0][0])
-	s.bus.Publish(events.Event{Type: events.MessageReceived})
+	s.notifyHooks()
 
 	got := waitLog(t, s, "net", 1)
 	assert.Contains(t, got[0].Subject, "pong|")
@@ -377,4 +400,65 @@ func TestHookFetchDeclaredHost(t *testing.T) {
 	rows, err = s.db.Query(bg, "SELECT count(*) FROM approvals")
 	require.NoError(t, err)
 	assert.Zero(t, store.Int(rows.Values[0][0]), "no approval asked")
+}
+
+// A folder that was empty at its first sync has new mail from then on.
+func TestHookEmptyFolderFirstArrival(t *testing.T) {
+	e := newSyncEnv(t)
+	e.sync(t)
+	e.newMail(t, "first@x", "first ever")
+	e.sync(t)
+	assert.Equal(t, [][]any{{e.idOf(t, "first@x")}}, e.rows(t, "SELECT message_id FROM events_log"))
+}
+
+// The dedicated wake-up keeps a signal sent while the dispatcher is busy,
+// and the periodic re-query finds an event no one signalled.
+func TestHookWakeAndPoll(t *testing.T) {
+	clock := useFakeClock(t)
+	s := newMailContextService(t)
+	release := make(chan struct{})
+	var once sync.Once
+	setPluginHook(t, func(stage, name string) error {
+		if stage == "hook.advance" {
+			once.Do(func() { <-release }) // busy on the first event
+		}
+		return nil
+	})
+	startTestPlugin(t, s, "rec", hookPerms, recorder)
+	add := func(subject string) {
+		_, err := s.db.Execute(bg, `INSERT INTO events_log(type, account_id, message_id, subject, created_at)
+			VALUES ('message.received', 1, 1, ?, unixepoch())`, subject)
+		require.NoError(t, err)
+	}
+	add("one")
+	s.notifyHooks()
+	waitLog(t, s, "rec", 1) // delivered; now blocked before its cursor moves
+	add("two")
+	s.notifyHooks() // while busy
+	close(release)
+	assert.Equal(t, "two", waitLog(t, s, "rec", 2)[1].Subject, "the wake-up sent while busy is kept")
+
+	add("three") // no signal at all
+	time.Sleep(100 * time.Millisecond)
+	assert.Len(t, hookLog(t, s, "rec"), 2, "nothing woke the dispatcher yet")
+	clock.tick()
+	assert.Equal(t, "three", waitLog(t, s, "rec", 3)[2].Subject, "the periodic re-query finds it")
+}
+
+// Cleanup runs on the timer even with no hook plugin (no cursors).
+func TestHookCleanupTimer(t *testing.T) {
+	clock := useFakeClock(t)
+	s := newMailContextService(t)
+	old := time.Now().Add(-8 * 24 * time.Hour).Unix()
+	for _, at := range []int64{old, time.Now().Unix()} {
+		_, err := s.db.Execute(bg, `INSERT INTO events_log(type, account_id, message_id, created_at) VALUES ('message.received', 1, 1, ?)`, at)
+		require.NoError(t, err)
+	}
+	count := func() int64 {
+		rows, err := s.db.Query(bg, "SELECT count(*) FROM events_log")
+		require.NoError(t, err)
+		return store.Int(rows.Values[0][0])
+	}
+	require.Equal(t, int64(2), count())
+	require.Eventually(t, func() bool { clock.tick(); return count() == 1 }, 5*time.Second, 10*time.Millisecond)
 }

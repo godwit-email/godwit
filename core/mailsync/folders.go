@@ -15,6 +15,7 @@ type folder struct {
 	id                   int64
 	name                 string
 	uidValidity, lastUID uint32
+	synced               bool // a first sync at uidValidity completed
 }
 
 var specialUse = map[imap.MailboxAttr]string{
@@ -87,14 +88,14 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		return nil, err
 	}
 	r.gone(ids, tids)
-	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid FROM folders WHERE account_id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid, synced FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
 	}
 	byName := map[string]*folder{}
 	for _, r := range rows.Values {
 		byName[store.Str(r[1])] = &folder{id: store.Int(r[0]), name: store.Str(r[1]),
-			uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3]))}
+			uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
 	}
 	out := make([]*folder, 0, len(names))
 	for _, n := range names {

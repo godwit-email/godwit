@@ -87,12 +87,13 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu sync.RWMutex              // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running   map[string]*runningPlugin // started plugins by name
-	pluginGen uint64                    // last runningPlugin.gen handed out
-	hooksMu   sync.Mutex                // plugin_cursors writes and events_log cleanup
-	hookClock plugins.Clock             // message.received backoff; nil is the real clock
-	pluginNet plugins.NetOptions        // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginsMu sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running   map[string]*runningPlugin  // started plugins by name
+	pluginGen uint64                     // last runningPlugin.gen handed out
+	hooksMu   sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes map[chan struct{}]struct{} // each running dispatcher's wake-up
+	hookClock plugins.Clock              // hook backoff and polling; nil is the real clock
+	pluginNet plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
 
 	closeOnce sync.Once
 	closeErr  error
@@ -116,7 +117,8 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{})}
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
+		hookClock: testHookClock}
 	s.registerAskTools()
 	s.registerAssistTools()
 	if err := s.cleanOrphans(ctx); err != nil {
@@ -124,12 +126,13 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	if err := s.startPlugins(ctx); err != nil {
-		db.Close()
+		s.Close() // stops dispatchers already started
 		return nil, err
 	}
+	s.startJanitor()
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
-		db.Close()
+		s.Close()
 		return nil, err
 	}
 	for _, a := range accs {
@@ -412,7 +415,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 			return smtpErr
 		}
 	}
-	if err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus); err != nil {
+	err = mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
+	s.notifyHooks() // rows committed before an error count too
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

@@ -178,4 +178,9 @@ var Migrations = [][]string{{
 	// The proposing tool's source and extension, for the audit rows of its decision.
 	`ALTER TABLE approvals ADD COLUMN source TEXT NOT NULL DEFAULT 'wit'`,
 	`ALTER TABLE approvals ADD COLUMN extension TEXT NOT NULL DEFAULT ''`,
+}, {
+	// 1 once a first sync of the folder (at its current UIDVALIDITY) completed:
+	// from then on what sync imports above last_uid is new mail (message.received).
+	`ALTER TABLE folders ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE folders SET synced = 1 WHERE last_uid > 0`,
 }}
