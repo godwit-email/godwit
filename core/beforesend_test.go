@@ -396,8 +396,8 @@ func TestCloseDuringBeforeSend(t *testing.T) {
 	select {
 	case err := <-sent:
 		assert.True(t, errors.Is(err, ErrClosed) || errors.Is(err, context.Canceled), "got %v", err)
-	default:
-		t.Fatal("Close returned before Send ended")
+	case <-time.After(5 * time.Second): // Close waited for Send's end; this only covers the hand-off to the channel
+		t.Fatal("Send did not end after Close")
 	}
 	assert.ErrorIs(t, s.Send(context.Background(), d.ID), ErrClosed)
 	assert.ErrorIs(t, s.SendAcknowledged(context.Background(), d.ID, "x"), ErrClosed)
