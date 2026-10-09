@@ -48,11 +48,11 @@ func hasNumber(e ast.Node) (lit *ast.BasicLit) {
 	return lit
 }
 
-// TestNoSizeLiterals: sizes in app/ and internal/kit/ come from the theme
+// TestNoSizeLiterals: sizes in app/, internal/kit/ and internal/richtext/ come from the theme
 // (c.Theme().Space, theme's Radius and Text tokens and its size constants),
 // never from number literals, constants of their own, or the density Scale.
 func TestNoSizeLiterals(t *testing.T) {
-	for _, dir := range []string{".", "../internal/kit"} {
+	for _, dir := range []string{".", "../internal/kit", "../internal/richtext"} {
 		paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil || len(paths) == 0 {
 			t.Fatalf("no Go files in %s: %v", dir, err)

@@ -57,7 +57,12 @@ const (
 	TitleButtonHeight = 24 // buttons in the top bar
 	PopupOffset       = 4  // room between a popup and its anchor
 	SelectedBorder    = 2  // the border of a chosen tile
+	QuoteBar          = 2  // the bar left of a quote in a mail body
+	ImagePlaceholder  = 64 // an image not loaded, when its size is unknown
 )
+
+// HeadingScale is the size of mail body headings h1–h6 in body font sizes.
+var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 
 // Sizes of glyphs and small parts; they do not follow the density.
 const (

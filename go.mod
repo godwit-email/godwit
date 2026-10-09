@@ -17,10 +17,13 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go v1.8.2
 	github.com/stretchr/testify v1.12.1
+	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/image v0.46.0
 	golang.org/x/net v0.59.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.48.0
+	golang.org/x/text v0.42.0
 )
 
 require (
@@ -61,8 +64,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.36.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
-	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/text v0.42.0
 	golang.org/x/time v0.15.0 // indirect
 )
