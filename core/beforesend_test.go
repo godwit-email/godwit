@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -86,7 +88,7 @@ func TestBeforeSendWarnThenAcknowledge(t *testing.T) {
 	assert.Equal(t, d.ID, c.DraftID)
 	assert.Equal(t, d.Revision, c.Revision)
 	assert.Equal(t, []string{pluginID(t, s, "auditor"), pluginID(t, s, "warner")}, c.Plugins, "sorted by name")
-	assert.Equal(t, []SendWarning{{Plugin: "warner", Message: "no attachment: report"}}, c.Warnings)
+	assert.Equal(t, []SendWarning{{Plugin: "warner", Code: "plugin_warning", Message: "no attachment: report"}}, c.Warnings)
 	assert.Len(t, c.Digest, 64)
 	assert.Zero(t, outboxCount(t, s))
 	assert.Equal(t, 1, calls(t, s, "warner"))
@@ -102,7 +104,7 @@ func TestBeforeSendWarnThenAcknowledge(t *testing.T) {
 func TestBeforeSendBlock(t *testing.T) {
 	s := newMailContextService(t)
 	long := strings.Repeat("x", 600)
-	startTestPlugin(t, s, "a-blocker", sendPerms, checker(`d => ({ block: "secret\u0007 leak\n`+long+`" })`))
+	startTestPlugin(t, s, "a-blocker", sendPerms, checker(`d => ({ block: "secret\u0007\u0007leak\n`+long+`" })`))
 	startTestPlugin(t, s, "b-later", sendPerms, checker(`d => undefined`))
 	d := sendDraft(t, s, "report")
 
@@ -110,7 +112,7 @@ func TestBeforeSendBlock(t *testing.T) {
 	var be *SendBlockedError
 	require.ErrorAs(t, err, &be)
 	assert.Equal(t, "a-blocker", be.Plugin)
-	assert.True(t, strings.HasPrefix(be.Message, "secret leak"), be.Message)
+	assert.True(t, strings.HasPrefix(be.Message, "secret leak xxx"), "a run of control characters is one space: %q", be.Message)
 	assert.Equal(t, 500, utf8.RuneCountInString(be.Message))
 	assert.Zero(t, calls(t, s, "b-later"), "a block stops the checks")
 	assert.Zero(t, outboxCount(t, s))
@@ -145,7 +147,7 @@ func TestBeforeSendTimeoutIsWarning(t *testing.T) {
 	err := s.Send(t.Context(), d.ID)
 	var we *SendWarningsError
 	require.ErrorAs(t, err, &we)
-	assert.Equal(t, []SendWarning{{Plugin: "slow", Message: "plugin slow did not respond"}}, we.Check.Warnings)
+	assert.Equal(t, []SendWarning{{Plugin: "slow", Code: "no_response", Message: "plugin slow did not respond"}}, we.Check.Warnings)
 	rows, err := s.db.Query(t.Context(), "SELECT failures FROM plugins WHERE name = 'slow'")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rows.Values[0][0], "a timeout counts as a failure")
@@ -167,7 +169,7 @@ func TestAcknowledgeAfterEditRechecks(t *testing.T) {
 	_, err := s.SaveDraft(t.Context(), d)
 	require.NoError(t, err)
 	require.ErrorAs(t, s.SendAcknowledged(t.Context(), d.ID, old.Digest), &we, "the edit made the old check stale")
-	assert.Equal(t, []SendWarning{{Plugin: "warner", Message: "second"}}, we.Check.Warnings)
+	assert.Equal(t, []SendWarning{{Plugin: "warner", Code: "plugin_warning", Message: "second"}}, we.Check.Warnings)
 	assert.NotEqual(t, old.Digest, we.Check.Digest)
 	assert.Equal(t, 2, calls(t, s, "warner"))
 	assert.Zero(t, outboxCount(t, s))
@@ -188,7 +190,7 @@ func TestAcknowledgeAfterPluginUpdateRechecks(t *testing.T) {
 	startTestPlugin(t, s, "warner", sendPerms, checker(`d => ({ warn: "v2" })`))
 	require.NotEqual(t, old.Plugins, []string{pluginID(t, s, "warner")})
 	require.ErrorAs(t, s.SendAcknowledged(t.Context(), d.ID, old.Digest), &we, "new code checks again")
-	assert.Equal(t, []SendWarning{{Plugin: "warner", Message: "v2"}}, we.Check.Warnings)
+	assert.Equal(t, []SendWarning{{Plugin: "warner", Code: "plugin_warning", Message: "v2"}}, we.Check.Warnings)
 	assert.Equal(t, 2, calls(t, s, "warner"))
 	assert.Zero(t, outboxCount(t, s))
 }
@@ -272,4 +274,131 @@ func TestBeforeSendNoPlugins(t *testing.T) {
 	d = sendDraft(t, s, "again")
 	require.NoError(t, s.SendAcknowledged(t.Context(), d.ID, "nope"))
 	assert.Equal(t, 2, outboxCount(t, s))
+}
+
+// Fix round 1
+
+func TestBeforeSendFreshDraftPerChecker(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "a-mutator", sendPerms, checker(`d => { d.subject = "evil"; d.html = ""; d.to.push("evil@x.example"); d.to[0] = "x@x.example" }`))
+	startTestPlugin(t, s, "b-viewer", sendPerms, checker(`d => ({ warn: JSON.stringify([d.subject, d.to, d.html]) })`))
+	d := sendDraft(t, s, "report")
+	var we *SendWarningsError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &we)
+	require.Len(t, we.Check.Warnings, 1)
+	assert.Equal(t, `["report",["bob@x.example"],"<p>hi</p>"]`, we.Check.Warnings[0].Message)
+}
+
+func TestEmptyBlockAndWarnCount(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "warner", sendPerms, checker(`d => ({ warn: "" })`))
+	d := sendDraft(t, s, "report")
+	var we *SendWarningsError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &we)
+	require.Len(t, we.Check.Warnings, 1)
+	assert.Equal(t, "plugin_warning", we.Check.Warnings[0].Code)
+	assert.NotEmpty(t, we.Check.Warnings[0].Message)
+
+	startTestPlugin(t, s, "blocker", sendPerms, checker(`d => ({ block: "" })`))
+	var be *SendBlockedError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &be)
+	assert.Equal(t, "blocker", be.Plugin)
+	assert.NotEmpty(t, be.Message)
+	assert.Zero(t, outboxCount(t, s))
+}
+
+func TestSendCheckCopies(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "warner", sendPerms, checker(`d => ({ warn: "w" })`))
+	d := sendDraft(t, s, "report")
+	var we *SendWarningsError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &we)
+	digest := we.Check.Digest
+	we.Check.Plugins[0] = "someone@else"
+	we.Check.Warnings[0].Message = "changed"
+	require.NoError(t, s.SendAcknowledged(t.Context(), d.ID, digest))
+	assert.Equal(t, 1, calls(t, s, "warner"), "the stored check kept its own binding")
+	assert.Equal(t, 1, outboxCount(t, s))
+}
+
+func TestSendCheckExpiry(t *testing.T) {
+	s := newMailContextService(t)
+	start := time.Unix(1_700_000_000, 0)
+	var mu sync.Mutex
+	now := start
+	s.sendNow = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	set := func(t time.Time) { mu.Lock(); now = t; mu.Unlock() }
+	startTestPlugin(t, s, "warner", sendPerms, checker(`d => ({ warn: "w" })`))
+	d := sendDraft(t, s, "report")
+	var we *SendWarningsError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &we)
+
+	set(start.Add(10*time.Minute - time.Nanosecond))
+	_, ok := s.sendCheck(we.Check.Digest)
+	assert.True(t, ok, "still valid just before 10 minutes")
+	set(start.Add(10 * time.Minute))
+	require.ErrorAs(t, s.SendAcknowledged(t.Context(), d.ID, we.Check.Digest), &we, "expired: checked again")
+	assert.Equal(t, 2, calls(t, s, "warner"))
+	assert.Zero(t, outboxCount(t, s))
+}
+
+// The plugin list is compared and the draft queued while plugin changes
+// wait: a plugin enabled before the comparison re-checks (and blocks), one
+// enabled after it waits until the draft is queued.
+func TestPluginEnabledDuringSend(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "a-checker", sendPerms, checker(`d => undefined`))
+	startTestPlugin(t, s, "b-blocker", sendPerms, checker(`d => ({ block: "no" })`))
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "b-blocker", false))
+	d := sendDraft(t, s, "one")
+	var once sync.Once
+	duringSendCheck = func() {
+		once.Do(func() { assert.NoError(t, s.SetPluginEnabled(t.Context(), "b-blocker", true)) })
+	}
+	t.Cleanup(func() { duringSendCheck = nil })
+	var be *SendBlockedError
+	require.ErrorAs(t, s.Send(t.Context(), d.ID), &be, "re-checked with the new plugin")
+	assert.Equal(t, "b-blocker", be.Plugin)
+	duringSendCheck = nil
+
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "b-blocker", false))
+	enabled := make(chan error, 1)
+	afterDraftLoad = func() {
+		afterDraftLoad = nil
+		go func() { enabled <- s.SetPluginEnabled(context.Background(), "b-blocker", true) }()
+		select {
+		case err := <-enabled:
+			t.Error("a plugin was enabled between the plugin-list check and the enqueue")
+			enabled <- err
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	t.Cleanup(func() { afterDraftLoad = nil })
+	require.NoError(t, s.Send(t.Context(), d.ID))
+	require.NoError(t, <-enabled)
+	assert.Equal(t, 1, outboxCount(t, s))
+}
+
+func TestCloseDuringBeforeSend(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "slow", sendPerms, `export default function (ctx: any) {
+  ctx.on("message.beforeSend", () => new Promise(() => {}))
+}`)
+	d := sendDraft(t, s, "report")
+	started := make(chan struct{})
+	duringSendCheck = func() { close(started) }
+	t.Cleanup(func() { duringSendCheck = nil })
+	sent := make(chan error, 1)
+	go func() { sent <- s.Send(context.Background(), d.ID) }()
+	<-started
+	time.Sleep(50 * time.Millisecond) // the check is running
+	require.NoError(t, s.Close())
+	select {
+	case err := <-sent:
+		assert.True(t, errors.Is(err, ErrClosed) || errors.Is(err, context.Canceled), "got %v", err)
+	default:
+		t.Fatal("Close returned before Send ended")
+	}
+	assert.ErrorIs(t, s.Send(context.Background(), d.ID), ErrClosed)
+	assert.ErrorIs(t, s.SendAcknowledged(context.Background(), d.ID, "x"), ErrClosed)
 }

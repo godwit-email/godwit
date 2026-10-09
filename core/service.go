@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/ai"
@@ -98,6 +99,7 @@ type Service struct {
 
 	checksMu   sync.Mutex
 	sendChecks map[string]keptCheck // beforeSend checks with warnings, by digest, until they expire
+	sendNow    func() time.Time     // stored checks' clock; nil is time.Now
 
 	closeOnce sync.Once
 	closeErr  error

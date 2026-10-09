@@ -262,7 +262,14 @@ const (
 )
 
 // SendWarning is a plugin's warning about a draft; the user may still send.
-type SendWarning struct{ Plugin, Message string }
+// Code is WarningPlugin (Message is the plugin's) or WarningNoResponse (the
+// check failed or timed out; Message is a fallback in English).
+type SendWarning struct{ Plugin, Code, Message string }
+
+const (
+	WarningPlugin     = "plugin_warning"
+	WarningNoResponse = "no_response"
+)
 
 // SendCheck is a draft revision's beforeSend outcome with warnings. Plugins
 // are the checking plugins as name@source_hash, sorted by name. Digest binds
@@ -307,6 +314,11 @@ type sendChecker struct {
 func (s *Service) sendCheckers() []sendChecker {
 	s.pluginsMu.RLock()
 	defer s.pluginsMu.RUnlock()
+	return s.sendCheckersLocked()
+}
+
+// sendCheckersLocked is sendCheckers for a caller holding pluginsMu.
+func (s *Service) sendCheckersLocked() []sendChecker {
 	var out []sendChecker
 	for name, rp := range s.running {
 		if rp.p.Handles(plugins.EventBeforeSend) {
@@ -333,8 +345,6 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 	if len(html) > plugins.MaxBodyBytes {
 		html = strings.ToValidUTF8(html[:plugins.MaxBodyBytes], "")
 	}
-	arg := map[string]any{"id": d.ID, "accountId": d.AccountID, "to": append([]string{}, d.To...), "cc": append([]string{}, d.Cc...),
-		"subject": d.Subject, "html": html}
 	egress, _ := plugins.EgressFor(plugins.KindBeforeSend, plugins.Manifest{}, false, false) // none, whatever the plugin holds
 	var warns []SendWarning
 	for _, c := range cs {
@@ -342,62 +352,93 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 			duringSendCheck()
 		}
 		inv := plugins.Invocation{ID: fmt.Sprintf("beforeSend:%d:%d", d.ID, d.Revision), Kind: plugins.KindBeforeSend, EgressHosts: egress}
+		// A fresh argument each: what one plugin does to it, the next never sees.
+		arg := map[string]any{"id": d.ID, "accountId": d.AccountID, "to": slices.Clone(d.To), "cc": slices.Clone(d.Cc),
+			"subject": d.Subject, "html": html}
 		res, err := c.p.EmitResult(ctx, inv, plugins.EventBeforeSend, arg)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		var warn, block string
+		var kind, text string
 		if err == nil {
-			warn, block, err = sendResult(res)
+			kind, text, err = sendResult(res)
 		}
 		if err != nil {
 			s.pluginFailed(ctx, c.name, c.gen)
-			warns = append(warns, SendWarning{Plugin: c.name, Message: "plugin " + c.name + " did not respond"})
+			warns = append(warns, SendWarning{Plugin: c.name, Code: WarningNoResponse, Message: "plugin " + c.name + " did not respond"})
 			continue
 		}
 		s.pluginSucceeded(ctx, c.name, c.gen)
-		if block != "" {
-			return nil, &SendBlockedError{Plugin: c.name, Message: s.sendText(block)}
-		}
-		if warn != "" {
-			warns = append(warns, SendWarning{Plugin: c.name, Message: s.sendText(warn)})
+		switch text = s.sendText(text); kind {
+		case "block":
+			if text == "" {
+				text = "plugin " + c.name + " blocked sending this message"
+			}
+			return nil, &SendBlockedError{Plugin: c.name, Message: text}
+		case "warn":
+			if text == "" {
+				text = "plugin " + c.name + " warned about this message"
+			}
+			warns = append(warns, SendWarning{Plugin: c.name, Code: WarningPlugin, Message: text})
 		}
 	}
 	return warns, nil
 }
 
-// sendResult reads a handler's result: nothing, {warn: string} or {block: string}.
-func sendResult(res any) (warn, block string, err error) {
+// sendResult reads a handler's result: nothing, or an object whose block
+// (else warn) field, when present, is the kind; a non-string value there
+// gives empty text (the default message).
+func sendResult(res any) (kind, text string, err error) {
 	if res == nil {
 		return "", "", nil
 	}
 	m, ok := res.(map[string]any)
-	if ok {
-		if b, has := m["block"]; has {
-			block, ok = b.(string)
-		} else if w, has := m["warn"]; has {
-			warn, ok = w.(string)
-		}
-	}
 	if !ok {
 		return "", "", errors.New("beforeSend must return nothing, {warn: string} or {block: string}")
 	}
-	return warn, block, nil
+	for _, k := range []string{"block", "warn"} {
+		if v, has := m[k]; has {
+			text, _ = v.(string)
+			return k, text, nil
+		}
+	}
+	return "", "", nil
 }
 
 // sendText is a plugin's message as the user sees it: secrets redacted,
-// control characters removed, at most maxSendText runes.
+// each run of control characters one space, at most maxSendText runes.
 func (s *Service) sendText(t string) string {
-	t = strings.Map(func(r rune) rune {
+	var b strings.Builder
+	ctl := false
+	for _, r := range s.secrets.Redact(strings.ToValidUTF8(t, "")) {
 		if unicode.IsControl(r) {
-			return -1
+			if !ctl {
+				b.WriteByte(' ')
+			}
+			ctl = true
+			continue
 		}
-		return r
-	}, s.secrets.Redact(strings.ToValidUTF8(t, "")))
+		ctl = false
+		b.WriteRune(r)
+	}
+	t = b.String()
 	if r := []rune(t); len(r) > maxSendText {
 		t = string(r[:maxSendText])
 	}
 	return t
+}
+
+// clone copies the slices, so a caller's changes never reach a stored check.
+func (c SendCheck) clone() SendCheck {
+	c.Plugins, c.Warnings = slices.Clone(c.Plugins), slices.Clone(c.Warnings)
+	return c
+}
+
+func (s *Service) now() time.Time {
+	if s.sendNow != nil {
+		return s.sendNow()
+	}
+	return time.Now()
 }
 
 func sendDigest(c SendCheck) string {
@@ -415,23 +456,24 @@ type keptCheck struct {
 func (s *Service) keepSendCheck(c SendCheck) {
 	s.checksMu.Lock()
 	defer s.checksMu.Unlock()
-	now := time.Now()
+	now := s.now()
 	for k, e := range s.sendChecks {
-		if now.After(e.expires) {
+		if !now.Before(e.expires) {
 			delete(s.sendChecks, k)
 		}
 	}
 	if s.sendChecks == nil {
 		s.sendChecks = map[string]keptCheck{}
 	}
-	s.sendChecks[c.Digest] = keptCheck{c, now.Add(sendCheckTTL)}
+	s.sendChecks[c.Digest] = keptCheck{c.clone(), now.Add(sendCheckTTL)}
 }
 
+// sendCheck is the stored check with digest, if it has not expired.
 func (s *Service) sendCheck(digest string) (SendCheck, bool) {
 	s.checksMu.Lock()
 	defer s.checksMu.Unlock()
 	e, ok := s.sendChecks[digest]
-	return e.c, ok && time.Now().Before(e.expires)
+	return e.c.clone(), ok && s.now().Before(e.expires)
 }
 
 func (s *Service) dropSendCheck(digest string) {
@@ -446,6 +488,11 @@ func (s *Service) dropSendCheck(digest string) {
 // such check, e.g. expired) it is a plain Send, which may warn again. A block
 // has no check, so it can never be acknowledged.
 func (s *Service) SendAcknowledged(ctx context.Context, draftID int64, digest string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
 	if c, ok := s.sendCheck(digest); ok && c.DraftID == draftID {
 		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins)
 		if !errors.Is(err, errSendChanged) {
@@ -455,5 +502,5 @@ func (s *Service) SendAcknowledged(ctx context.Context, draftID int64, digest st
 			return err
 		}
 	}
-	return s.Send(ctx, draftID)
+	return s.send(ctx, draftID)
 }

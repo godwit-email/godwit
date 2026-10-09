@@ -361,6 +361,16 @@ var errSendChanged = errors.New("draft or send checks changed")
 // A draft changed during the checks is checked again; changed twice in a
 // row, Send returns ErrStaleDraft.
 func (s *Service) Send(ctx context.Context, draftID int64) error {
+	ctx, end, err := s.begin(ctx, 0) // Close cancels the checks and waits
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.send(ctx, draftID)
+}
+
+// send is Send inside a begun call.
+func (s *Service) send(ctx context.Context, draftID int64) error {
 	for changes := 0; ; {
 		cs := s.sendCheckers()
 		rev := int64(-1) // no checks: the draft as it is when queued
@@ -382,7 +392,7 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 				c := SendCheck{DraftID: draftID, Revision: d.Revision, Plugins: checkerIDs(cs), Warnings: warns}
 				c.Digest = sendDigest(c)
 				s.keepSendCheck(c)
-				return &SendWarningsError{Check: c}
+				return &SendWarningsError{Check: c.clone()}
 			}
 			rev = d.Revision
 		}
@@ -397,15 +407,18 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 }
 
 // enqueue queues the draft if it is still at revision rev (any, if rev < 0)
-// and the checking plugins are still checked, else errSendChanged.
+// and the checking plugins are still checked, else errSendChanged. Plugin
+// changes wait from the comparison until the draft is queued.
 func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
 	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
+	s.pluginsMu.RLock()
+	defer s.pluginsMu.RUnlock()
 	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
 		return err
 	}
-	if (rev >= 0 && d.Revision != rev) || !slices.Equal(checkerIDs(s.sendCheckers()), checked) {
+	if (rev >= 0 && d.Revision != rev) || !slices.Equal(checkerIDs(s.sendCheckersLocked()), checked) {
 		return errSendChanged
 	}
 	if afterDraftLoad != nil {
