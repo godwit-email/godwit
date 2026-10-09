@@ -438,3 +438,100 @@ func TestSmallModelSetting(t *testing.T) {
 	h.click("保存")
 	h.until("small model cleared", func() bool { return small() == "" })
 }
+
+// probes swaps m's probe for one answering from results in turn, each after
+// a receive on gate when gate is not nil; it returns how many were asked.
+func probes(m *modelsView, gate chan struct{}, results ...error) func() int {
+	var mu sync.Mutex
+	n := 0
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		if gate != nil {
+			<-gate
+		}
+		mu.Lock()
+		err := results[min(n, len(results)-1)]
+		n++
+		mu.Unlock()
+		if err != nil {
+			return core.ServiceCheck{}, err
+		}
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"stale-model"}, ListSupported: true}, nil
+	}
+	return func() int { mu.Lock(); defer mu.Unlock(); return n }
+}
+
+func TestRefusedKeyBlocksSave(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	asked := probes(m, nil, nil, core.ErrModelAuth)
+	h.fill("名称", "fresh")
+	h.fill("Base URL", "https://api.example.com/v1")
+	h.fill("API Key", "k")
+	h.typeModel("m1")
+	h.click("探测")
+	h.until("the first probe taken", func() bool { return m.form.checked != "" })
+	h.click("探测")
+	h.see("API Key 被拒绝（401/403）")
+	h.click("保存")
+	h.until("save probes again", func() bool { return asked() == 3 && !m.form.probing })
+	h.drain()
+	if _, ok := h.modelService("fresh"); ok {
+		t.Fatal("saved after the key was refused")
+	}
+	h.see("API Key 被拒绝（401/403）")
+
+	// a saved service whose connection is unchanged probes again too
+	h.openSettings("models")
+	h.click("test · OpenAI 兼容（Chat Completions）")
+	h.see("编辑：test")
+	h.click("探测")
+	h.see("API Key 被拒绝（401/403）")
+	h.fill("名称", "renamed")
+	h.click("保存")
+	h.until("save probes again", func() bool { return asked() == 5 && !m.form.probing })
+	h.drain()
+	if _, ok := h.modelService("renamed"); ok {
+		t.Fatal("saved after the key was refused")
+	}
+}
+
+func TestEditDuringSaveProbeDiscards(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	gate := make(chan struct{})
+	probes(m, gate, nil)
+	h.fill("名称", "first")
+	h.fill("Base URL", "https://api.example.com/v1")
+	h.typeModel("m1")
+	h.click("保存")
+	h.fill("名称", "second")
+	close(gate)
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	h.drain()
+	for _, n := range []string{"first", "second"} {
+		if _, ok := h.modelService(n); ok {
+			t.Fatalf("%q submitted from a probe the form changed under", n)
+		}
+	}
+	if f.checked != "" {
+		t.Fatal("the probe was taken")
+	}
+}
+
+func TestAddressBackAndForthDiscardsProbe(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	gate := make(chan struct{})
+	probes(m, gate, nil)
+	h.fill("Base URL", "https://api.example.com/v1")
+	h.click("探测")
+	h.fill("Base URL", "https://other.example.com/v1")
+	h.fill("Base URL", "https://api.example.com/v1")
+	close(gate)
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	if slices.Contains(f.offered, "stale-model") || f.checked != "" {
+		t.Fatalf("a probe from before the edits was taken: offered %q", f.offered)
+	}
+}

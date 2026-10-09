@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -41,7 +42,10 @@ type modelForm struct {
 	manual                   string // a model ID being typed
 	models, offered          []string
 	busy, testing, probing   bool
-	checked                  string // conn() of the last probe taken
+	checked                  string // conn() of the last probe taken; "" from a probe's start until it is taken
+	reprobe                  bool   // a probe was not taken: saving probes again
+	edits                    uint64 // bumped by every edit edited sees
+	seen                     string // the form as edited last saw it
 	noList                   bool   // that probe found no model list
 	keyErr                   string // that service refused the key
 	urlFocus                 bool
@@ -86,7 +90,16 @@ func (f *modelForm) conn() string {
 // mustProbe reports whether saving probes first: a new service, or a new
 // address, protocol or key.
 func (f *modelForm) mustProbe() bool {
-	return (f.id == 0 || f.moved() || f.keyAction() != core.KeyKeep) && f.checked != f.conn()
+	return (f.reprobe || f.id == 0 || f.moved() || f.keyAction() != core.KeyKeep) && f.checked != f.conn()
+}
+
+// edited counts the form's edits: every change to what it would save since
+// the last call is one.
+func (f *modelForm) edited() uint64 {
+	if p := strings.Join(append([]string{f.kind, f.name, f.baseURL, f.key, strconv.FormatBool(f.noKey)}, f.models...), "\n"); p != f.seen {
+		f.seen, f.edits = p, f.edits+1
+	}
+	return f.edits
 }
 
 // input is the form as a service input, with an explicit key action.
@@ -265,22 +278,22 @@ func (m *modelsView) remove(f *modelForm) {
 }
 
 // probe checks the service as the form has it, saved or not, and offers its
-// models; then runs after a probe that is taken. The result is taken only on
-// the form and page visit that asked, while what it probed is unchanged; a
-// refused key shows on the key field.
+// models; then runs after a probe that is taken. Until one is taken, saving
+// probes again. The result is taken only on the form and page visit that
+// asked, with no edit since it started; a refused key shows on the key field.
 func (m *modelsView) probe(f *modelForm, then func()) {
 	if f.probing || f.needsKeyDecision() {
 		return
 	}
-	a, id, in, check, gen, conn := m.a, f.id, f.input(), m.checkService, m.a.gen, f.conn()
-	f.probing, f.keyErr = true, ""
+	a, id, in, check, gen, conn, edits := m.a, f.id, f.input(), m.checkService, m.a.gen, f.conn(), f.edited()
+	f.probing, f.keyErr, f.checked, f.reprobe = true, "", "", true
 	var res core.ServiceCheck
 	a.do(func(ctx context.Context) (err error) {
 		res, err = check(ctx, id, in)
 		return err
 	}, func(err error) {
 		f.probing = false
-		if m.form != f || gen != a.gen || f.conn() != conn {
+		if m.form != f || gen != a.gen || f.edited() != edits { // edited since: the user saves again
 			return
 		}
 		switch {
@@ -291,7 +304,7 @@ func (m *modelsView) probe(f *modelForm, then func()) {
 			a.toastErr(err)
 			return
 		}
-		f.checked, f.noList = conn, !res.ListSupported || len(res.Models) == 0
+		f.checked, f.reprobe, f.noList = conn, false, !res.ListSupported || len(res.Models) == 0
 		if res.BaseURL != "" {
 			f.baseURL = res.BaseURL
 		}
@@ -394,6 +407,7 @@ func (m *modelsView) presetView(c *ui.Context, f *modelForm) {
 }
 
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
+	f.edited()
 	a := m.a
 	t, th := theme.Of(c), c.Theme()
 	kit.Card(c, func() {
