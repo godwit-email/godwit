@@ -532,13 +532,16 @@ var en = map[string]string{
 	"error.flush_slow":         "A draft is still saving after 3 seconds",
 
 	// notifications and tray
-	"notify.new_mail":   "New mail",
-	"notify.new_mails":  "%d new messages",
-	"tray.open":         "Open Godwit",
-	"tray.sync_all":     "Sync all accounts now",
-	"tray.quit":         "Quit",
-	"app.another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
-	"app.lock_failed":   "Godwit could not open its data directory.",
+	"notify.new_mail":            "New mail",
+	"notify.new_mails":           "%d new messages",
+	"tray.open":                  "Open Godwit",
+	"tray.sync_all":              "Sync all accounts now",
+	"tray.quit":                  "Quit",
+	"app.another_owner":          "Godwit is already running (the app or godwit --headless) for this data directory.",
+	"app.lock_failed":            "Godwit could not open its data directory.",
+	"app.open_failed":            "Godwit could not open its data directory: %s.",
+	"app.open_failed.permission": "permission denied",
+	"app.open_failed.other":      "the database could not be opened",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",

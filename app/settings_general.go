@@ -66,14 +66,16 @@ func (a *App) settingsEffects(old, st core.Settings) {
 }
 
 // syncLocalAPI asks the platform to serve the Local API as a.settings say.
-// When the newest request fails, the reason shows on the privacy page and
-// the setting turns off.
+// Requests run in order and only the newest one's result counts: when it
+// fails, the reason shows on the privacy page and the setting turns off.
 func (a *App) syncLocalAPI() {
 	on := a.settings.LocalAPI
 	if on == a.localAPIWant {
 		return
 	}
 	a.localAPIWant = on
+	a.localAPIGen++
+	gen := a.localAPIGen
 	if on {
 		a.localAPIErr = nil
 	}
@@ -83,20 +85,34 @@ func (a *App) syncLocalAPI() {
 		path, err = plat.SetLocalAPI(on)
 		return err
 	}, func(err error) {
-		a.localAPIPath = path
-		if err == nil {
+		if gen != a.localAPIGen { // a newer request runs after this one and decides
 			return
 		}
-		a.localAPIErr = err
-		if on == a.localAPIWant { // no newer request
-			a.localAPIWant = false
-			if a.settings.LocalAPI {
-				st := a.settings
-				st.LocalAPI = false
-				a.changeSettings(st)
-			}
+		a.localAPIPath = path
+		if err != nil {
+			a.localAPIWant = false // a failed request leaves the server off
+			a.localAPIFailed(err)
 		}
 	})
+}
+
+// LocalAPIStopped tells the App that the Local API server ended by itself
+// with err. Safe from any goroutine.
+func (a *App) LocalAPIStopped(err error) {
+	a.onUI(func() {
+		a.localAPIPath = ""
+		a.localAPIFailed(err)
+	})
+}
+
+// localAPIFailed shows err on the privacy page and turns the setting off.
+func (a *App) localAPIFailed(err error) {
+	a.localAPIErr = err
+	if a.settings.LocalAPI {
+		st := a.settings
+		st.LocalAPI = false
+		a.changeSettings(st)
+	}
 }
 
 func sameSettings(x, y core.Settings) bool {

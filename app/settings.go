@@ -269,7 +269,7 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		}
 		ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
 		ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
-		config := mcpConfig()
+		config := a.mcpConfig()
 		ui.Text(c, config).Font("Geist Mono").FontSize(t.Text.Sm).Selectable()
 		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).Clicked() {
 			c.WriteClipboard(config)
@@ -277,15 +277,26 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 	})
 }
 
-// mcpConfig is the MCP client entry that runs this executable's godwit mcp.
-var mcpConfig = sync.OnceValue(func() string {
+// godwitExe is this executable's absolute path.
+var godwitExe = sync.OnceValue(func() string {
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "godwit" // found on PATH, if at all
+		return "godwit" // found on PATH, if at all
 	}
-	q, _ := json.Marshal(exe)
-	return `{"command": ` + string(q) + `, "args": ["mcp"]}`
+	return exe
 })
+
+// mcpConfig is the MCP client entry that runs godwit mcp on this data
+// directory.
+func (a *App) mcpConfig() string {
+	args := []string{"mcp"}
+	if dir, custom := a.plat.DataDir(); custom {
+		args = append(args, "--data-dir", dir)
+	}
+	exe, _ := json.Marshal(godwitExe())
+	as, _ := json.Marshal(args)
+	return `{"command": ` + string(exe) + `, "args": ` + string(as) + `}`
+}
 
 func (p *settingsPage) aboutView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()

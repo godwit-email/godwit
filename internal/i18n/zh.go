@@ -532,13 +532,16 @@ var zh = map[string]string{
 	"error.flush_slow":         "草稿 3 秒内还没保存完",
 
 	// notifications and tray
-	"notify.new_mail":   "新邮件",
-	"notify.new_mails":  "%d 封新邮件",
-	"tray.open":         "打开 Godwit",
-	"tray.sync_all":     "立即同步全部账户",
-	"tray.quit":         "退出",
-	"app.another_owner": "Godwit 已在运行（GUI 或 headless）。",
-	"app.lock_failed":   "Godwit 无法打开数据目录。",
+	"notify.new_mail":            "新邮件",
+	"notify.new_mails":           "%d 封新邮件",
+	"tray.open":                  "打开 Godwit",
+	"tray.sync_all":              "立即同步全部账户",
+	"tray.quit":                  "退出",
+	"app.another_owner":          "Godwit 已在运行（GUI 或 headless）。",
+	"app.lock_failed":            "Godwit 无法打开数据目录。",
+	"app.open_failed":            "Godwit 无法打开数据目录：%s。",
+	"app.open_failed.permission": "没有访问权限",
+	"app.open_failed.other":      "数据库无法打开",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",

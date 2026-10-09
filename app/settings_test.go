@@ -655,3 +655,107 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
 	h.see("can only read mail and create drafts, never send")
 }
+
+// localAPIRace clicks the switch on, off and on while the first "on" blocks,
+// then lets it fail; last says how the third request ends. It returns
+// whether the fake server is on at the end.
+func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	n, server := 0, false
+	h := localAPIHarness(t, "", nil, nil)
+	h.plat.localAPIFn = func(on bool) (string, error) {
+		mu.Lock()
+		n++
+		k := n
+		mu.Unlock()
+		if k == 1 {
+			<-release
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case !on:
+			server = false
+			return "", nil
+		case k == 1:
+			server = false
+			return "", errors.New("first start failed")
+		case last != nil:
+			server = false
+			return "", last
+		}
+		server = true
+		return "/tmp/gw/godwit.sock", nil
+	}
+	h.openSettings("privacy")
+	h.click("启用本机 API")
+	h.called("SetLocalAPI true")
+	h.click("启用本机 API")
+	h.click("启用本机 API")
+	close(release)
+	h.until("every request done", func() bool {
+		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil
+	})
+	got := slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "SetLocalAPI") })
+	if !slices.Equal(got, []string{"SetLocalAPI true", "SetLocalAPI false", "SetLocalAPI true"}) {
+		t.Fatalf("calls %v", got)
+	}
+	return h, func() bool { mu.Lock(); defer mu.Unlock(); return server }
+}
+
+// A stale failure of an older "on" neither reverts nor stops the newest one.
+func TestLocalAPIStaleFailureIgnored(t *testing.T) {
+	h, serverOn := localAPIRace(t, nil)
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !st.LocalAPI || !h.app.settings.LocalAPI || !serverOn() {
+		t.Fatalf("saved %v (%v), switch %v, server %v; want all on", st.LocalAPI, err, h.app.settings.LocalAPI, serverOn())
+	}
+	h.see("/tmp/gw/godwit.sock")
+	if h.tt.HasText("first start failed") {
+		t.Fatal("a stale failure shows")
+	}
+}
+
+func TestLocalAPINewestFailureReverts(t *testing.T) {
+	h, serverOn := localAPIRace(t, errors.New("newest start failed"))
+	h.see("newest start failed")
+	h.until("saved off", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI
+	})
+	if serverOn() {
+		t.Fatal("the server is on with the switch off")
+	}
+}
+
+// The server stopping by itself turns the switch off with the reason.
+func TestLocalAPIServerStopped(t *testing.T) {
+	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	h.openSettings("privacy")
+	h.see("/tmp/gw/godwit.sock")
+	h.app.LocalAPIStopped(errors.New("accept: too many open files"))
+	h.see("accept: too many open files")
+	h.until("saved off", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI
+	})
+	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
+}
+
+// A data directory other than the default goes into the MCP config.
+func TestLocalAPIMCPConfigDataDir(t *testing.T) {
+	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	h.plat.mu.Lock()
+	h.plat.dataDir, h.plat.customDir = `/tmp/gw "x"`, true
+	h.plat.mu.Unlock()
+	h.openSettings("privacy")
+	exe, _ := os.Executable()
+	q, _ := json.Marshal(exe)
+	config := `{"command": ` + string(q) + `, "args": ["mcp","--data-dir","/tmp/gw \"x\""]}`
+	h.see(config)
+	h.click("复制配置")
+	if got := h.tt.Clipboard(); got != config {
+		t.Fatalf("clipboard %q, want %q", got, config)
+	}
+}

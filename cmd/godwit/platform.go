@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image/png"
 	"log"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -28,6 +30,14 @@ type platform struct {
 	svc     *core.Service
 	apiMu   sync.Mutex
 	api     *rpc.Server // nil while the Local API is off
+
+	onAPIStop func(error)                              // told when the server ends by itself
+	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
+}
+
+func (p *platform) DataDir() (string, bool) {
+	def, err := defaultDataDir()
+	return p.dataDir, err != nil || filepath.Clean(def) != filepath.Clean(p.dataDir)
 }
 
 func (p *platform) SetLocalAPI(on bool) (string, error) {
@@ -47,11 +57,11 @@ func (p *platform) SetLocalAPI(on bool) (string, error) {
 			return "", err
 		}
 		p.api = srv
-		go func() {
-			if err := srv.Serve(context.Background()); err != nil {
-				log.Print(p.svc.Redact("local API: " + err.Error()))
-			}
-		}()
+		serve := p.serve
+		if serve == nil {
+			serve = func(ctx context.Context, s *rpc.Server) error { return s.Serve(ctx) }
+		}
+		go p.serveAPI(srv, serve)
 	}
 	return p.api.Path(), nil
 }
@@ -101,6 +111,30 @@ func (*platform) TempDir() string {
 		return "" // os.CreateTemp then uses the default
 	}
 	return dir
+}
+
+// serveAPI serves srv until it closes. If it ends while still the current
+// server, which no SetLocalAPI(false) asked for, it closes srv, forgets it
+// and tells the App.
+func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Server) error) {
+	err := serve(context.Background(), srv)
+	p.apiMu.Lock()
+	current := p.api == srv
+	if current {
+		p.api = nil
+	}
+	p.apiMu.Unlock()
+	if !current {
+		return // closed on request
+	}
+	err = errors.Join(err, srv.Close())
+	if err == nil {
+		err = errors.New("the Local API server stopped")
+	}
+	log.Print(p.svc.Redact("local API: " + err.Error()))
+	if p.onAPIStop != nil {
+		p.onAPIStop(err)
+	}
 }
 
 // trayPx is the tray icon's size in pixels: 16 points at 2x.

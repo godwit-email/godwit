@@ -37,6 +37,8 @@ type Platform interface {
 	// SetLocalAPI starts (on) or stops the Local API server, returning its
 	// socket's path while on. Off when it fails. Blocks: call off the UI thread.
 	SetLocalAPI(on bool) (path string, err error)
+	// DataDir is the data directory; custom: it is not the default one.
+	DataDir() (dir string, custom bool)
 }
 
 // Notification is a system notification about a message.
@@ -136,6 +138,7 @@ type App struct {
 	accountsGen      uint64                                                             // the load gen that read a.accounts
 
 	localAPIWant bool   // what the last SetLocalAPI asked for
+	localAPIGen  uint64 // bumped per SetLocalAPI; only the newest one's result counts
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 

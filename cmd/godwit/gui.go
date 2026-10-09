@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"runtime"
 
@@ -69,10 +70,10 @@ func gui(ctx context.Context, dataDir string) int {
 			return
 		}
 		svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, SystemLanguage: lang})
-		if err != nil { // the message never carries err's text
+		if err != nil {
 			i18n.SetLanguage(lang)
 			code = 1
-			mygo.Dialog.Error("Godwit", i18n.T("app.lock_failed"))
+			mygo.Dialog.Error("Godwit", openFailure(err))
 			mygo.App.Quit()
 			return
 		}
@@ -89,6 +90,7 @@ func gui(ctx context.Context, dataDir string) int {
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone})
+		plat.onAPIStop = a.LocalAPIStopped
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win
@@ -167,6 +169,16 @@ func gui(ctx context.Context, dataDir string) int {
 		release()
 	}
 	return code
+}
+
+// openFailure is what the GUI tells the user when core.New fails: a class
+// of reason, never err's text.
+func openFailure(err error) string {
+	reason := "app.open_failed.other"
+	if errors.Is(err, fs.ErrPermission) {
+		reason = "app.open_failed.permission"
+	}
+	return i18n.Tf("app.open_failed", i18n.T(reason))
 }
 
 // lockFailure is what the GUI tells the user when it cannot own the data
