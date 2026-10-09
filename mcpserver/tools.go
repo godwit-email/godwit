@@ -352,11 +352,24 @@ func decode(args json.RawMessage, v any) error {
 	return nil
 }
 
+// systemFlags are IMAP's system flags (matched without case) as summary
+// names them; any other flag is a server's keyword, so mail-derived.
+var systemFlags = map[string]string{`\seen`: `\Seen`, `\answered`: `\Answered`, `\flagged`: `\Flagged`,
+	`\draft`: `\Draft`, `\deleted`: `\Deleted`}
+
 // summary writes a message as listed.
 func summary(b *strings.Builder, m core.MessageSummary) {
 	fmt.Fprintf(b, "message %d · thread %d · folder %d · %s", m.ID, m.ThreadID, m.FolderID, stamp(m.Date))
-	if len(m.Flags) > 0 {
-		fmt.Fprintf(b, " · flags %s", strings.Join(m.Flags, " "))
+	var flags, keywords []string
+	for _, f := range m.Flags {
+		if name, ok := systemFlags[strings.ToLower(f)]; ok {
+			flags = append(flags, name)
+		} else {
+			keywords = append(keywords, f)
+		}
+	}
+	if len(flags) > 0 {
+		fmt.Fprintf(b, " · flags %s", strings.Join(flags, " "))
 	}
 	if m.HasAttachments {
 		b.WriteString(" · has attachments")
@@ -368,6 +381,7 @@ func summary(b *strings.Builder, m core.MessageSummary) {
 	untrusted(b, id, "cc", strings.Join(m.Cc, ", "))
 	untrusted(b, id, "subject", m.Subject)
 	untrusted(b, id, "snippet", m.Snippet)
+	untrusted(b, id, "keywords", strings.Join(keywords, " "))
 }
 
 // draft writes d; full adds its body, quote, signature and attachments. All
