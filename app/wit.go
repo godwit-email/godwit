@@ -1,9 +1,7 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"math"
 	"slices"
 	"strconv"
@@ -19,361 +17,6 @@ import (
 	"github.com/godwit-email/godwit/internal/richtext"
 	"github.com/godwit-email/godwit/internal/theme"
 )
-
-// witMsg is a message of a Wit conversation as the panel shows it: a
-// question, or the answer to it with the tools the model called.
-type witMsg struct {
-	user  bool
-	text  string
-	doc   richtext.Doc // the answer converted from docOf
-	docOf string
-	calls []ai.ToolCall
-}
-
-// witOptions are what the panel's owner decides. Start begins a run on
-// input off the UI thread, creating the conversation first when the panel
-// has none, and returns that conversation (with the error too, once it
-// exists). Changed, if set, hears on the UI thread that the panel took a
-// conversation or a run ended, so lists of conversations read again.
-type witOptions struct {
-	Placeholder string
-	MaxWidth    float32 // 0 fills the width
-	Start       func(ctx context.Context, input string) (conv int64, ch <-chan core.WitEvent, err error)
-	Changed     func()
-}
-
-// witPanel shows a Wit conversation and follows its runs: the Ask page and
-// the compose page each have one. What streams in shows at once; whenever
-// a stream ends, what the conversation saved replaces it, as streams drop
-// text under backpressure. All state is the UI thread's.
-type witPanel struct {
-	a      *App
-	conv   int64
-	opened bool
-	gen    uint64 // bumped per conversation opened: results for another are dropped
-	reads  uint64 // bumped per read of the saved conversation: only the newest applies
-
-	msgs      []witMsg        // as saved
-	approvals []core.Approval // pending, in order
-	cites     []core.Citation // numbered from 1 as they came
-	notes     map[int][]int   // per turn (its question's 1-based number), the suspect citations' numbers
-
-	live     *witMsg // the answer streaming in; nil before any
-	liveUser string  // the question just asked, until it is saved
-	fresh    bool    // the run followed answers a new question, not the saved last one
-	running  bool
-	runID    int64
-	err      error  // how the last run failed
-	retry    string // the question Retry asks again
-	deciding bool   // an approval's decision is on its way
-
-	follows uint64             // bumped per follow: an older one's events are dropped
-	unsub   func()             // ends the subscription followed; nil for none
-	over    bool               // the follow has ended: the next read replaces what streamed
-	cancel  context.CancelFunc // cancels the Ask call in flight
-
-	input     string
-	composing bool
-	toolsOpen map[int]bool // tool records opened, by turn: they stay open as the saved answer replaces the live one
-	scroll    ui.ScrollState
-	o         witOptions // as of the last frame
-
-	resolve    func(ctx context.Context, id int64, accept bool) error // tests swap them
-	resolveAll func(ctx context.Context, runID int64, accept bool) error
-}
-
-func newWitPanel(a *App) *witPanel {
-	return &witPanel{a: a, resolve: a.svc.ResolveApproval, resolveAll: a.svc.ResolveAll, notes: map[int][]int{}, toolsOpen: map[int]bool{}}
-}
-
-// open shows conv (0: a new conversation). Another conversation is read
-// afresh after subscribing to it, so a run in flight is followed to its end;
-// the one shown is read again.
-func (p *witPanel) open(conv int64) {
-	if p.opened && conv == p.conv {
-		p.reconcile()
-		return
-	}
-	p.stopFollow()
-	*p = witPanel{a: p.a, resolve: p.resolve, resolveAll: p.resolveAll, gen: p.gen + 1, follows: p.follows,
-		conv: conv, opened: true, input: p.input, notes: map[int][]int{}, toolsOpen: map[int]bool{}, fresh: true}
-	p.scroll.Y = math.MaxFloat32
-	if conv == 0 {
-		return
-	}
-	svc := p.a.svc
-	p.follow(func(context.Context) (<-chan core.WitEvent, func(), error) {
-		ch, stop := svc.SubscribeConversation(conv)
-		return ch, stop, nil
-	}, nil)
-}
-
-// stopFollow drops the follow in flight and ends its subscription; a run
-// it followed goes on.
-func (p *witPanel) stopFollow() {
-	p.follows++
-	if p.unsub != nil {
-		p.unsub()
-	}
-	p.unsub, p.over, p.cancel = nil, false, nil
-}
-
-// follow shows the events of the stream start opens (off the UI thread)
-// until one ends the run or the stream closes, then reads what the
-// conversation saved. stop, if start returns it, ends the stream: once it
-// is over, or when another follow takes over. opened, if set, hears start's
-// error on the UI thread first. A nil stream has nothing to follow.
-func (p *witPanel) follow(start func(ctx context.Context) (<-chan core.WitEvent, func(), error), opened func(err error)) {
-	p.stopFollow()
-	a, tok := p.a, p.follows
-	a.do(func(ctx context.Context) error {
-		ch, stop, err := start(ctx)
-		a.onUI(func() {
-			if tok != p.follows {
-				if stop != nil {
-					stop()
-				}
-				return
-			}
-			p.unsub = stop
-			if opened != nil {
-				opened(err)
-			}
-			if ch != nil {
-				p.reconcile() // as saved now; the stream brings the rest
-			}
-		})
-		if ch == nil {
-			return nil
-		}
-		for ev := range ch {
-			a.onUI(func() {
-				if tok == p.follows {
-					p.apply(ev)
-				}
-			})
-			if ev.Kind == "done" || ev.Kind == "error" || ev.Kind == "interrupted" {
-				break
-			}
-		}
-		if stop != nil {
-			stop()
-		}
-		return nil
-	}, func(error) {
-		if tok != p.follows {
-			return
-		}
-		p.unsub, p.over, p.running, p.cancel = nil, true, false, nil
-		p.reconcile()
-		if p.o.Changed != nil {
-			p.o.Changed()
-		}
-	})
-}
-
-// apply shows an event of the run followed.
-func (p *witPanel) apply(ev core.WitEvent) {
-	if ev.RunID != 0 {
-		p.runID = ev.RunID
-	}
-	for _, c := range ev.Citations {
-		p.cite(c)
-	}
-	switch ev.Kind {
-	case "text", "tool_call", "tool_result":
-		p.running = true
-		if p.live == nil {
-			p.live = &witMsg{}
-		}
-		if ev.Kind == "text" {
-			p.live.text += ev.Text
-		}
-		if ev.Kind == "tool_call" && ev.Call != nil {
-			p.live.calls = append(p.live.calls, *ev.Call)
-		}
-	case "error":
-		p.running = false
-		if ev.Err != nil && humanize(ev.Err) != "" { // a stop is no failure
-			p.err = ev.Err
-		}
-	case "done", "interrupted":
-		p.running = false
-	}
-}
-
-// cite numbers a citation once; a suspect one gets a note on the turn.
-func (p *witPanel) cite(c core.Citation) {
-	i := slices.IndexFunc(p.cites, func(x core.Citation) bool { return x.MessageID == c.MessageID })
-	if i < 0 {
-		p.cites, i = append(p.cites, c), len(p.cites)
-	}
-	if turn := p.liveTurn(); c.Suspect && !slices.Contains(p.notes[turn], i+1) {
-		p.notes[turn] = append(p.notes[turn], i+1)
-	}
-}
-
-func (p *witPanel) users() int {
-	n := 0
-	for _, m := range p.msgs {
-		if m.user {
-			n++
-		}
-	}
-	return n
-}
-
-// liveTurn is the turn the run followed answers.
-func (p *witPanel) liveTurn() int {
-	if p.fresh {
-		return p.users() + 1
-	}
-	return p.users()
-}
-
-// reconcile reads what the conversation saved and its pending approvals;
-// once the follow is over the saved messages replace what streamed in.
-func (p *witPanel) reconcile() {
-	if p.conv == 0 {
-		return
-	}
-	p.reads++
-	a, gen, read, conv, tok, over := p.a, p.gen, p.reads, p.conv, p.follows, p.over
-	var c core.Conversation
-	var as []core.Approval
-	var msgs []witMsg
-	a.do(func(ctx context.Context) (err error) {
-		if c, err = a.svc.GetConversation(ctx, conv); err != nil {
-			return err
-		}
-		as, err = a.svc.ListApprovals(ctx, conv)
-		msgs = witMsgs(c.Messages)
-		return err
-	}, func(err error) {
-		if gen != p.gen || read != p.reads {
-			return
-		}
-		if err != nil {
-			a.toastErr(err)
-			return
-		}
-		p.msgs = msgs
-		p.approvals = slices.DeleteFunc(as, func(x core.Approval) bool { return x.State != "pending" })
-		if over && tok == p.follows && p.over {
-			p.live, p.liveUser = nil, ""
-		}
-	})
-}
-
-// witMsgs groups saved messages into questions and answers: an answer is
-// everything the model said and called up to the next question.
-func witMsgs(ms []ai.Message) []witMsg {
-	var out []witMsg
-	for _, m := range ms {
-		switch m.Role {
-		case "user":
-			out = append(out, witMsg{user: true, text: m.Text})
-		case "tool":
-		default:
-			if n := len(out); n == 0 || out[n-1].user {
-				out = append(out, witMsg{})
-			}
-			ans := &out[len(out)-1]
-			if strings.TrimSpace(m.Text) != "" {
-				if ans.text != "" {
-					ans.text += "\n\n"
-				}
-				ans.text += m.Text
-			}
-			ans.calls = append(ans.calls, m.Calls...)
-		}
-	}
-	for i := range out {
-		if !out[i].user {
-			out[i].doc, out[i].docOf = richtext.FromMarkdown(out[i].text), out[i].text
-		}
-	}
-	return out
-}
-
-// send asks what the input holds.
-func (p *witPanel) send(o witOptions) {
-	in := strings.TrimSpace(p.input)
-	if in == "" || p.running || o.Start == nil {
-		return
-	}
-	p.input = ""
-	p.ask(o, in)
-}
-
-// ask starts a run on in and follows its stream.
-func (p *witPanel) ask(o witOptions, in string) {
-	start, a := o.Start, p.a
-	// Not under a.ctx: only Stop cancels the call, and the run outlives the
-	// panel showing it. The Service's close ends it.
-	ctx, cancel := context.WithCancel(context.WithoutCancel(a.ctx))
-	var conv int64
-	p.follow(func(context.Context) (ch <-chan core.WitEvent, _ func(), err error) {
-		conv, ch, err = start(ctx, in)
-		return ch, nil, err
-	}, func(err error) {
-		if conv != 0 && conv != p.conv {
-			p.conv = conv
-			if p.o.Changed != nil {
-				p.o.Changed()
-			}
-		}
-		if err != nil {
-			p.err, p.liveUser, p.running = err, "", false
-		}
-	})
-	p.cancel = cancel
-	p.retry, p.err, p.liveUser, p.live, p.fresh, p.running, p.runID = in, nil, in, nil, true, true, 0
-	p.scroll.Y = math.MaxFloat32
-}
-
-// stopRun cancels the run in flight.
-func (p *witPanel) stopRun() {
-	if p.cancel != nil {
-		p.cancel() // the run of an Ask call before its first event
-	}
-	if id := p.runID; id != 0 {
-		p.a.do(func(ctx context.Context) error { return p.a.svc.CancelRun(ctx, id) }, func(err error) {
-			if err != nil {
-				p.a.toastErr(err)
-			}
-		})
-	}
-}
-
-// decide accepts or rejects an approval, or with all every pending one of
-// its run. It subscribes first: the run resumes once nothing of it is left
-// open and may end before the decision returns.
-func (p *witPanel) decide(ap core.Approval, accept, all bool) {
-	svc, conv := p.a.svc, p.conv
-	resolve, resolveAll := p.resolve, p.resolveAll
-	p.deciding, p.err, p.fresh, p.live = true, nil, false, nil
-	p.follow(func(ctx context.Context) (<-chan core.WitEvent, func(), error) {
-		ch, stop := svc.SubscribeConversation(conv)
-		var err error
-		if all {
-			err = resolveAll(ctx, ap.RunID, accept)
-		} else {
-			err = resolve(ctx, ap.ID, accept)
-		}
-		as, lerr := svc.ListApprovals(ctx, conv)
-		if lerr != nil || slices.ContainsFunc(as, func(x core.Approval) bool { return x.RunID == ap.RunID && x.State == "pending" }) {
-			stop() // the run waits for the rest: nothing resumes
-			return nil, nil, errors.Join(err, lerr)
-		}
-		return ch, stop, err
-	}, func(err error) {
-		p.deciding = false
-		if err != nil {
-			p.a.toastErr(err)
-		}
-	})
-}
 
 // View draws the conversation and the input below it.
 func (p *witPanel) View(c *ui.Context, o witOptions) {
@@ -400,7 +43,6 @@ func (p *witPanel) View(c *ui.Context, o witOptions) {
 }
 
 func (p *witPanel) messages(c *ui.Context, o witOptions) {
-	noted := map[int]bool{}
 	turn := 0
 	for i, m := range p.msgs {
 		if m.user {
@@ -408,7 +50,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 			p.bubble(c, m.text)
 			continue
 		}
-		p.answer(c, false, &p.msgs[i], turn, noted)
+		p.answer(c, false, &p.msgs[i], turn)
 	}
 	if p.liveUser != "" {
 		p.bubble(c, p.liveUser)
@@ -418,7 +60,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 		if live == nil {
 			live = &witMsg{}
 		}
-		p.answer(c, true, live, p.liveTurn(), noted)
+		p.answer(c, true, live, p.liveTurn())
 	}
 	for _, ap := range p.approvals {
 		n := 0
@@ -445,9 +87,9 @@ func (p *witPanel) bubble(c *ui.Context, text string) {
 		Background(t.Primary).TextColor(t.PrimaryText).Children(func() { ui.Text(c, text).Selectable() })
 }
 
-// answer is the model's: its tool calls folded, the suspect-mail notes of
-// its turn (once per turn), its text as Markdown.
-func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int, noted map[int]bool) {
+// answer is the model's: its tool calls folded, a note on each suspect
+// message its tools showed, its text as Markdown.
+func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int) {
 	t, th := theme.Of(c), c.Theme()
 	if m.docOf != m.text { // the live answer: converted at most once a frame
 		m.doc, m.docOf = richtext.FromMarkdown(m.text), m.text
@@ -456,15 +98,16 @@ func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int, noted m
 		if len(m.calls) > 0 {
 			p.tools(c, turn, m.calls)
 		}
-		if !noted[turn] {
-			noted[turn] = true
-			for _, n := range p.notes[turn] {
-				ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).
-					Background(t.WarningBg).TextColor(t.WarningText).FontSize(t.Text.Sm).Role(ui.RoleStatus).Children(func() {
-					ui.Icon(c, icons.Get("triangle-alert")).Size(theme.Icon, theme.Icon)
-					ui.Text(c, i18n.Tf("wit.suspect", citeRef(n))).Grow(1).Shrink(1)
-				})
+		for i, ct := range p.cites {
+			if !ct.Suspect || !slices.Contains(m.cited, ct.MessageID) {
+				continue
 			}
+			n := i + 1
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).
+				Background(t.WarningBg).TextColor(t.WarningText).FontSize(t.Text.Sm).Role(ui.RoleStatus).Children(func() {
+				ui.Icon(c, icons.Get("triangle-alert")).Size(theme.Icon, theme.Icon)
+				ui.Text(c, i18n.Tf("wit.suspect", citeRef(n))).Grow(1).Shrink(1)
+			})
 		}
 		if strings.TrimSpace(m.text) != "" {
 			richtext.Render(c, m.doc, richtext.RenderOptions{FontSize: t.Text.Base, OnLink: p.a.openLink})
@@ -582,7 +225,7 @@ func (p *witPanel) card(c *ui.Context, ap core.Approval, many bool) {
 			}
 		})
 		ui.Row(c).Wrap().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3.5)).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-			busy := p.deciding
+			busy := p.deciding[ap.ID]
 			kit.Button(c, i18n.T("wit.approval.allow"), kit.ButtonOpts{Disabled: busy}).OnClick(func() { p.decide(ap, true, false) })
 			if many {
 				kit.Button(c, i18n.T("wit.approval.allow_all"), kit.ButtonOpts{Variant: kit.Outline, Disabled: busy}).OnClick(func() { p.decide(ap, true, true) })

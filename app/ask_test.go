@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,6 +110,21 @@ func TestAskCitationsAndSuspect(t *testing.T) {
 	if n := h.countTexts("含疑似指令，已作为数据处理"); n != 1 {
 		t.Fatalf("%d suspect citations, want 1", n)
 	}
+	day := listTime(h.clock.Now(), good.Date)
+	h.see(day)
+
+	// Restored from the conversation: away and back.
+	conv := h.app.route.ConversationID
+	h.click("新对话")
+	h.until("the new conversation", func() bool { return !h.tt.HasText("引用的邮件") })
+	h.app.navigate(Route{Page: PageWit, ConversationID: conv})
+	h.see("Acme 扣了一次款")
+	h.see("引用的邮件")
+	h.see(fmt.Sprintf("[%d] billing@acme.example", 3-n))
+	h.see(fmt.Sprintf("[%d] billing-notice@unknown.example", n))
+	h.see("含疑似指令，已作为数据处理")
+	h.see(fmt.Sprintf("来源 [%d] 中包含疑似指令", n))
+	h.see(day)
 	h.click("Your receipt for October")
 	h.until("the cited message open", func() bool {
 		r := h.app.route
@@ -343,5 +359,66 @@ func TestAskNoModel(t *testing.T) {
 	h.click("添加模型服务")
 	if r := h.app.route; r.Page != PageSettings || r.Settings != "models" {
 		t.Fatalf("route %+v", r)
+	}
+}
+
+// TestReopenRunningConversationStops: a conversation reopened while its run
+// waits on the model shows Stop at once, which cancels the run.
+func TestReopenRunningConversationStops(t *testing.T) {
+	h, _, llm := askHarness(t, true)
+	llm.Script(coretest.Turn{Text: []string{"第一段"}, Hang: true})
+	h.askQuestion("慢慢回答")
+	h.see("第一段")
+	conv := h.app.route.ConversationID
+	h.click("新对话")
+	h.until("the new conversation", func() bool { return h.ask().wit.conv == 0 && !h.tt.HasText("停止") })
+	h.app.navigate(Route{Page: PageWit, ConversationID: conv})
+	h.click("停止")
+	h.until("the run cancelled", func() bool {
+		c, err := h.env.Svc.GetConversation(context.Background(), conv)
+		return err == nil && c.ActiveRunID == 0 && !h.ask().wit.running
+	})
+	h.see("发送")
+}
+
+// TestApprovalsChainedInOrder: decisions on one conversation run one after
+// another, in the order they were made.
+func TestApprovalsChainedInOrder(t *testing.T) {
+	h, acc, llm := askHarness(t, true)
+	other := strings.Replace(draftCall, "Re: Q4", "Re: Q5", 1)
+	llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "create_draft", Args: draftCall}, {Name: "create_draft", Args: other}}},
+		coretest.Turn{Text: []string{"两封都好了。"}})
+	before := h.drafts(acc)
+	h.askQuestion("回复两封")
+	h.see("Re: Q5")
+	w := h.ask().wit
+	real := w.resolve
+	var mu sync.Mutex
+	var order []int64
+	in, most := 0, 0
+	w.resolve = func(ctx context.Context, id int64, accept bool) error {
+		mu.Lock()
+		order = append(order, id)
+		in++
+		most = max(most, in)
+		mu.Unlock()
+		time.Sleep(30 * time.Millisecond) // room for the second to start, were they not chained
+		err := real(ctx, id, accept)
+		mu.Lock()
+		in--
+		mu.Unlock()
+		return err
+	}
+	first, second := w.approvals[0], w.approvals[1]
+	w.decide(first, true, false)
+	w.decide(second, true, false)
+	h.see("两封都好了。")
+	if got := h.drafts(acc); got != before+2 {
+		t.Fatalf("%d drafts, want %d", got, before+2)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 1 || len(order) != 2 || order[0] != first.ID || order[1] != second.ID {
+		t.Fatalf("decisions %v ran %d at once, want [%d %d] one at a time", order, most, first.ID, second.ID)
 	}
 }

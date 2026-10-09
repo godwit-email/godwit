@@ -120,7 +120,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 // leaves the history.
 func (p *askPage) remove(id int64) {
 	a := p.a
-	a.do(func(ctx context.Context) error { return a.svc.DeleteConversation(ctx, id) }, func(err error) {
+	a.writes.Chain(convKey(id), func(ctx context.Context) error { return a.svc.DeleteConversation(ctx, id) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -185,12 +185,14 @@ func (p *askPage) noModel(c *ui.Context) {
 }
 
 // citations lists the mail the runs showed the model, numbered as the
-// answers cite them; suspect mail is marked. A click opens the message.
+// answers cite them, with sender and date; suspect mail is marked. A click
+// opens the message.
 func (p *askPage) citations(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).Background(t.Sidebar).
 		BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
 		ui.Text(c, i18n.T("ask.citations")).FontWeight(600)
+		now := p.a.clock.Now()
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
 				for i, ct := range p.wit.cites {
@@ -202,7 +204,12 @@ func (p *askPage) citations(c *ui.Context) {
 					ui.ButtonBase(c).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).Background(t.Background).
 						Border(theme.Hairline, border).Justify(ui.Start).Children(func() {
 						ui.Column(c).Gap(th.Space(1)).Grow(1).Shrink(1).Children(func() {
-							ui.Text(c, citeRef(i+1)+" "+ct.From).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+							ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
+								ui.Text(c, citeRef(i+1)+" "+ct.From).SingleLine().Grow(1).Shrink(1)
+								if !ct.Date.IsZero() {
+									ui.Text(c, listTime(now, ct.Date)).Shrink(0)
+								}
+							})
 							ui.Text(c, cmp.Or(ct.Subject, i18n.T("mail.no_subject")))
 							if ct.Suspect {
 								ui.Text(c, i18n.T("ask.citation.suspect")).FontSize(t.Text.Sm).TextColor(t.WarningText)
