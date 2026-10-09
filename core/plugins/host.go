@@ -151,12 +151,18 @@ func (p *Plugin) emit(ctx context.Context, inv Invocation, event string, discard
 	if h == nil {
 		return nil, fmt.Errorf("plugin %s has no %s handler", p.Name, event)
 	}
+	return p.call(ctx, inv, h, discard, args...)
+}
+
+// call runs f(args...) (plain JSON-like Go data) as one top-level call under
+// inv, awaiting it if it is async; discard drops a non-promise result.
+func (p *Plugin) call(ctx context.Context, inv Invocation, f goja.Callable, discard bool, args ...any) (any, error) {
 	return p.vm.Call(ctx, inv, func(c *CallScope) (any, error) {
 		vals := make([]goja.Value, len(args))
 		for i, a := range args {
 			vals[i] = c.Runtime().ToValue(a)
 		}
-		res, err := h(goja.Undefined(), vals...)
+		res, err := f(goja.Undefined(), vals...)
 		if err != nil {
 			return nil, err
 		}
@@ -165,6 +171,65 @@ func (p *Plugin) emit(ctx context.Context, inv Invocation, event string, discard
 		}
 		return res, nil
 	})
+}
+
+// RunAction runs the registered action id on target under inv and returns its
+// (awaited) result as plain JSON data.
+func (p *Plugin) RunAction(ctx context.Context, inv Invocation, id string, target any) (any, error) {
+	for _, a := range p.actions {
+		if a.info.ID == id {
+			return p.call(ctx, inv, a.run, false, target)
+		}
+	}
+	return nil, fmt.Errorf("plugin %s has no action %s", p.Name, id)
+}
+
+// Card runs the card's match(m) and, if its result is truthy, render(m), both
+// under inv; nil without a match. ctx bounds both calls together.
+func (p *Plugin) Card(ctx context.Context, inv Invocation, m MailMessage) (any, error) {
+	if p.card == nil {
+		return nil, fmt.Errorf("plugin %s has no card", p.Name)
+	}
+	msg, err := jsonData(pluginMail(m))
+	if err != nil {
+		return nil, err
+	}
+	ok, err := p.call(ctx, inv, p.card.match, false, msg)
+	if err != nil || !truthy(ok) {
+		return nil, err
+	}
+	if msg, err = jsonData(pluginMail(m)); err != nil { // a fresh copy: match never changes what render gets
+		return nil, err
+	}
+	return p.call(ctx, inv, p.card.render, false, msg)
+}
+
+// truthy is JavaScript truthiness of exported JSON data.
+func truthy(v any) bool {
+	switch v := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return v
+	case float64:
+		return v != 0 // JSON has no NaN
+	case string:
+		return v != ""
+	}
+	return true
+}
+
+// pluginMail is m as a plugin gets it: bodies cut to MaxBodyBytes, no nil lists.
+func pluginMail(m MailMessage) MailMessage {
+	var t1, t2 bool
+	m.Text, t1 = cut(m.Text, MaxBodyBytes)
+	m.HTML, t2 = cut(m.HTML, MaxBodyBytes)
+	m.Truncated = m.Truncated || t1 || t2
+	m.To, m.Cc = nonNil(m.To), nonNil(m.Cc)
+	if m.Attachments == nil {
+		m.Attachments = []AttachmentMeta{}
+	}
+	return m
 }
 
 // Load builds the ctx object and runs the plugin's initialization in an init
@@ -296,15 +361,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 				if err != nil {
 					return nil, err
 				}
-				var t1, t2 bool
-				m.Text, t1 = cut(m.Text, MaxBodyBytes)
-				m.HTML, t2 = cut(m.HTML, MaxBodyBytes)
-				m.Truncated = m.Truncated || t1 || t2
-				m.To, m.Cc = nonNil(m.To), nonNil(m.Cc)
-				if m.Attachments == nil {
-					m.Attachments = []AttachmentMeta{}
-				}
-				return m, nil
+				return pluginMail(m), nil
 			})
 		}),
 		"search", fn("mail.search", func(c *CallScope, call goja.FunctionCall) goja.Value {

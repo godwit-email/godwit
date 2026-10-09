@@ -102,18 +102,24 @@ func (h *pluginHost) StorageDelete(ctx context.Context, key string) error {
 // MailGet reads the message from the database only (no IMAP), HTML sanitized.
 func (h *pluginHost) MailGet(ctx context.Context, id int64) (out plugins.MailMessage, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
-		m, err := h.s.mailForModel(ctx, id)
-		if err != nil {
-			return err
-		}
-		out = plugins.MailMessage{ID: m.ID, Subject: m.Subject, From: m.From, To: m.To, Cc: m.Cc, Date: m.Date.UTC(),
-			Text: m.Text, HTML: m.HTML, Truncated: m.Truncated}
-		for _, a := range m.Attachments {
-			out.Attachments = append(out.Attachments, plugins.AttachmentMeta{Name: a.Filename, Type: a.ContentType, Size: int64(a.Size)})
-		}
-		return nil
+		out, err = h.s.pluginMail(ctx, id)
+		return err
 	})
 	return out, err
+}
+
+// pluginMail is message id for a plugin: from the database only, HTML sanitized.
+func (s *Service) pluginMail(ctx context.Context, id int64) (plugins.MailMessage, error) {
+	m, err := s.mailForModel(ctx, id)
+	if err != nil {
+		return plugins.MailMessage{}, err
+	}
+	out := plugins.MailMessage{ID: m.ID, Subject: m.Subject, From: m.From, To: m.To, Cc: m.Cc, Date: m.Date.UTC(),
+		Text: m.Text, HTML: m.HTML, Truncated: m.Truncated}
+	for _, a := range m.Attachments {
+		out.Attachments = append(out.Attachments, plugins.AttachmentMeta{Name: a.Filename, Type: a.ContentType, Size: int64(a.Size)})
+	}
+	return out, nil
 }
 
 func (h *pluginHost) MailSearch(ctx context.Context, q string, limit int) (out []plugins.MailSummary, err error) {

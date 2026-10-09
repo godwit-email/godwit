@@ -452,6 +452,7 @@ type runningPlugin struct {
 	gen  uint64 // this instance, among every instance started by the Service
 	host *pluginHost
 	p    *plugins.Plugin
+	row  pluginRow // the row it was started from: manifest and permission hashes
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -495,7 +496,7 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h}
+	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r}
 	s.running[name] = rp
 	if err := s.startHooks(ctx, rp, r); err != nil {
 		s.stopPlugin(name)

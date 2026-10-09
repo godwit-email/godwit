@@ -37,11 +37,11 @@ func TestEgressFor(t *testing.T) {
 		{"hook read mail scope", KindHook, readNet, true, true, hosts, false},
 		{"hook net only", KindHook, netOnly, true, false, hosts, false},
 		{"hook no net", KindHook, readOnly, true, false, nil, false},
-		// action: mail:read + net needs approval; without mail:read it doesn't.
+		// action: net and (mail:read or a target carrying mail, a selection) needs approval.
 		{"action read+net", KindAction, readNet, true, false, hosts, true},
 		{"action read+write+net", KindAction, rwNet, true, false, hosts, true},
 		{"action net only", KindAction, netOnly, true, false, hosts, false},
-		{"action net only, scope flag ignored", KindAction, netOnly, true, true, hosts, false},
+		{"action net only, selection target", KindAction, netOnly, true, true, hosts, true},
 		{"action write+net", KindAction, writeNet, true, false, hosts, false},
 		{"action no net", KindAction, readOnly, true, false, nil, false},
 		// tool: net and (mail:read or a scope that read mail) needs approval.
