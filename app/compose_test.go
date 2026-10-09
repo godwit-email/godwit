@@ -475,7 +475,7 @@ func TestEditsDuringSendFlushAreSent(t *testing.T) {
 func TestDiscardFailureKeepsSaving(t *testing.T) {
 	h, _ := mailHarness(t, nil, "me@example.com")
 	p := h.openCompose()
-	p.deleteFn = func(context.Context, int64) error { return errors.New("disk busy") }
+	p.ops.delete = func(context.Context, int64) error { return errors.New("disk busy") }
 	h.click("丢弃草稿")
 	h.click("丢弃")
 	h.see("disk busy")

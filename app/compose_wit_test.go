@@ -3,17 +3,21 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
-	"slices"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/internal/richtext"
 )
 
 // witCompose opens a draft whose editable part is editable, on an App with a model.
@@ -223,8 +227,8 @@ func TestAdjustMenuRunsSkill(t *testing.T) {
 	h, p, llm := witCompose(t, "<p>Hello there, this is a long note about many things.</p>")
 	var mu sync.Mutex
 	var skills []string
-	run := p.wit.skill
-	p.wit.skill = func(ctx context.Context, id int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error) {
+	run := p.ops.skill
+	p.ops.skill = func(ctx context.Context, id int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error) {
 		mu.Lock()
 		skills = append(skills, skill)
 		mu.Unlock()
@@ -394,13 +398,81 @@ func TestFreeInputAfterCmdKRunsAssist(t *testing.T) {
 	t.Fatal("the free input did not run Assist in the draft's conversation")
 }
 
-func TestWitRefusedWhileSending(t *testing.T) {
+// countOps wraps every draft-changing Service call of p with a counter.
+func countOps(p *composer) map[string]*atomic.Int32 {
+	n := map[string]*atomic.Int32{}
+	for _, k := range []string{"assist", "skill", "rewrite", "resolve", "resolveAll", "apply", "undo", "addAtt", "removeAtt", "setAccount", "delete"} {
+		n[k] = new(atomic.Int32)
+	}
+	o := p.ops
+	p.ops = draftOps{
+		assist: func(ctx context.Context, id int64, in string) (<-chan core.WitEvent, error) {
+			n["assist"].Add(1)
+			return o.assist(ctx, id, in)
+		},
+		skill: func(ctx context.Context, id int64, sk string, so core.SkillOptions) (<-chan core.WitEvent, error) {
+			n["skill"].Add(1)
+			return o.skill(ctx, id, sk, so)
+		},
+		rewrite: func(ctx context.Context, id int64, sel core.Selection, in string) (<-chan core.WitEvent, error) {
+			n["rewrite"].Add(1)
+			return o.rewrite(ctx, id, sel, in)
+		},
+		resolve: func(ctx context.Context, id int64, accept bool) error {
+			n["resolve"].Add(1)
+			return o.resolve(ctx, id, accept)
+		},
+		resolveAll: func(ctx context.Context, runID int64, accept bool) error {
+			n["resolveAll"].Add(1)
+			return o.resolveAll(ctx, runID, accept)
+		},
+		apply: func(ctx context.Context, id int64, html string) error {
+			n["apply"].Add(1)
+			return o.apply(ctx, id, html)
+		},
+		undo: func(ctx context.Context, id int64) error {
+			n["undo"].Add(1)
+			return o.undo(ctx, id)
+		},
+		addAtt: func(ctx context.Context, id int64, path string) (core.DraftAttachment, error) {
+			n["addAtt"].Add(1)
+			return o.addAtt(ctx, id, path)
+		},
+		removeAtt: func(ctx context.Context, id, att int64) error {
+			n["removeAtt"].Add(1)
+			return o.removeAtt(ctx, id, att)
+		},
+		setAccount: func(ctx context.Context, id, acc, rev int64) (core.Draft, error) {
+			n["setAccount"].Add(1)
+			return o.setAccount(ctx, id, acc, rev)
+		},
+		delete: func(ctx context.Context, id int64) error {
+			n["delete"].Add(1)
+			return o.delete(ctx, id)
+		},
+	}
+	return n
+}
+
+func TestDraftChangesRefusedWhileSending(t *testing.T) {
 	h, p, llm := witCompose(t, inlineOld)
+	file := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{file}
+	h.plat.mu.Unlock()
+	p.attach()
+	h.until("attached", func() bool { return len(p.atts) == 1 && !p.s.busy })
+	att := p.atts[0].ID
 	llm.Script(proposeTurn("update_draft", inlineNew), coretest.Turn{Text: []string{"改了 2 处。"}})
 	h.tellWit("改一下日期和落款")
 	h.see("2 处修改待确认")
-	h.until("the review", func() bool { return p.wit.review != nil && !p.s.busy })
-	rev, asked := h.draft(p.id).Revision, llm.Requests()
+	h.until("the review", func() bool { return p.wit.review != nil && !p.wit.panel.running && !p.s.busy })
+	w := p.wit
+	ap := w.review.ap
+	n := countOps(p)
 
 	started, release := make(chan struct{}), make(chan struct{})
 	p.sendFn = func(context.Context, int64, string) error {
@@ -411,25 +483,43 @@ func TestWitRefusedWhileSending(t *testing.T) {
 	h.click("发送")
 	<-started
 	h.drain()
-	w := p.wit
-	w.decideAll(true)
-	w.decideOne(0, true)
-	w.applied = true
-	w.undo()
-	w.panel.ask(w.options(nil), "再改一下")
-	w.runSkill("调整", "shorten", "")
-	w.cmdkInput = "更短"
-	w.rewriteSelection()
-	p.attach()
-	p.removeAttachment(1)
-	p.discard()
-	h.drain()
-	if slices.Contains(h.plat.Calls(), "OpenFiles true") {
-		t.Error("attaching asked for files while sending")
+
+	// Every way to change the draft, as its control would.
+	acts := []struct {
+		op  string
+		act func()
+	}{
+		{"addAtt", p.attach},
+		{"removeAtt", func() { p.removeAttachment(att) }},
+		{"setAccount", func() { p.switchAccount(p.acc) }},
+		{"apply", func() { w.decideOne(0, true); w.decideOne(1, false) }},
+		{"resolve", func() { w.decideAll(true); w.panel.decide(ap, true, false) }},
+		{"resolveAll", func() { w.panel.decide(ap, true, true) }},
+		{"undo", w.undo},
+		{"assist", func() { w.panel.input = "再改一下"; w.panel.send(w.options(nil)) }},
+		{"skill", func() { w.runSkill("更短", "shorter", "") }},
+		{"rewrite", func() {
+			w.selFrom, w.selTo, w.cmdkInput = richtext.Pos{}, richtext.Pos{Rune: 5}, "更具体一点"
+			w.rewriteSelection()
+		}},
+		{"delete", p.discard},
 	}
+	for _, a := range acts {
+		a.act()
+	}
+	h.drain()
 	h.tt.Frame()
-	if w.review == nil || w.review.decided[0] != 0 || len(w.panel.deciding) != 0 || w.panel.running {
-		t.Errorf("a decision or a run was taken while sending: review %v, deciding %v, running %v", w.review != nil, w.panel.deciding, w.panel.running)
+	calls := func() map[string]int32 {
+		m := map[string]int32{}
+		for k, v := range n {
+			if v.Load() != 0 {
+				m[k] = v.Load()
+			}
+		}
+		return m
+	}
+	if m := calls(); len(m) != 0 {
+		t.Errorf("Service calls while sending: %v", m)
 	}
 	if !h.tt.HasText("正在发送，暂时不能修改草稿") {
 		t.Error("no hint that the draft is being sent")
@@ -438,13 +528,32 @@ func TestWitRefusedWhileSending(t *testing.T) {
 	h.see("careful")
 	h.settle()
 	h.drain()
-	if d := h.draft(p.id); d.Revision != rev || llm.Requests() != asked {
-		t.Errorf("the Service was called while sending: revision %d → %d, model requests %d → %d", rev, d.Revision, asked, llm.Requests())
+	if m := calls(); len(m) != 0 {
+		t.Errorf("Service calls after the send returned: %v", m)
 	}
-
 	if t.Failed() {
 		return
 	}
-	h.click("全部接受") // after the warning, editing works again
-	h.until("accepted", func() bool { return strings.Contains(h.editable(p.id), "Tuesday") && w.review == nil })
+
+	// The send failed with a warning: each works again.
+	for _, a := range acts {
+		h.until("the panel idle", func() bool { return !w.panel.running && !p.s.busy && len(w.panel.deciding) == 0 })
+		a.act()
+		h.until(a.op+" called", func() bool { return n[a.op].Load() > 0 })
+	}
+}
+
+// TestQueuedChangeRefusedOnceSending: a change that passed held before the
+// send began is still refused right before its Service call.
+func TestQueuedChangeRefusedOnceSending(t *testing.T) {
+	_, p, _ := witCompose(t, "")
+	p.frozen.Store(true)
+	ran := false
+	if err := p.call(func() error { ran = true; return nil }); !errors.Is(err, errDraftSending) || ran {
+		t.Fatalf("call while sending: %v, ran %v", err, ran)
+	}
+	p.frozen.Store(false)
+	if err := p.call(func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("call after: %v, ran %v", err, ran)
+	}
 }

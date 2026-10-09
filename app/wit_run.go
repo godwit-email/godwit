@@ -49,6 +49,8 @@ type witOptions struct {
 	Tools, After       func(c *ui.Context)
 }
 
+func (o witOptions) held() bool { return o.Hold != nil && o.Hold() }
+
 // witPanel shows a Wit conversation and follows its runs: the Ask page and
 // the compose page each have one. What streams in shows at once; whenever
 // a stream ends, what the conversation saved replaces it, as streams drop
@@ -398,7 +400,7 @@ func witMsgs(ms []ai.Message) []witMsg {
 // send asks what the input holds.
 func (p *witPanel) send(o witOptions) {
 	in := strings.TrimSpace(p.input)
-	if in == "" || p.running || o.Start == nil {
+	if in == "" || p.running || o.Start == nil || o.held() {
 		return
 	}
 	p.input = ""
@@ -407,6 +409,9 @@ func (p *witPanel) send(o witOptions) {
 
 // ask starts a run on in, past the owner's gate.
 func (p *witPanel) ask(o witOptions, in string) {
+	if o.held() {
+		return
+	}
 	if o.Gate != nil {
 		o.Gate(func() { p.run(o, in) })
 		return
@@ -416,7 +421,7 @@ func (p *witPanel) ask(o witOptions, in string) {
 
 // run starts a run on in and follows its stream.
 func (p *witPanel) run(o witOptions, in string) {
-	if o.Hold != nil && o.Hold() {
+	if o.held() {
 		return
 	}
 	start, a := o.Start, p.a
@@ -486,7 +491,7 @@ func (p *witPanel) decide(ap core.Approval, accept, all bool) {
 // settle decides approvals ids of ap's run with decide, following the run
 // it resumes.
 func (p *witPanel) settle(ap core.Approval, ids []int64, decide func(ctx context.Context) error) {
-	if p.o.Hold != nil && p.o.Hold() {
+	if p.o.held() {
 		return
 	}
 	svc, conv := p.a.svc, p.conv

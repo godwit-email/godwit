@@ -39,7 +39,7 @@ func (w *composeWit) languages() []struct{ tag, name string } {
 // draft, then the conversation.
 func (w *composeWit) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Width(theme.WitPanelWidth).Shrink(0).BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Disabled(w.p.frozen).Children(func() {
+	ui.Column(c).Width(theme.WitPanelWidth).Shrink(0).BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Disabled(w.p.frozen.Load()).Children(func() {
 		if chips := w.chips(); len(chips) > 0 {
 			ui.Row(c).Wrap().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 				for _, s := range chips {

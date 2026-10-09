@@ -38,8 +38,7 @@ type composeWit struct {
 	cmdkInput      string
 	selFrom, selTo richtext.Pos
 
-	skill    func(ctx context.Context, draftID int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error) // tests swap them
-	getDraft func(ctx context.Context, id int64) (core.Draft, error)
+	getDraft func(ctx context.Context, id int64) (core.Draft, error) // tests swap it
 }
 
 // witJob is the run a question in the panel stands for, when it is not
@@ -50,7 +49,14 @@ type witJob struct {
 }
 
 func newComposeWit(p *composer) *composeWit {
-	return &composeWit{p: p, panel: newWitPanel(p.a), active: -1, skill: p.a.svc.AssistSkill, getDraft: p.a.svc.GetDraft}
+	w := &composeWit{p: p, panel: newWitPanel(p.a), active: -1, getDraft: p.a.svc.GetDraft}
+	w.panel.resolve = func(ctx context.Context, id int64, accept bool) error {
+		return p.call(func() error { return p.ops.resolve(ctx, id, accept) })
+	}
+	w.panel.resolveAll = func(ctx context.Context, runID int64, accept bool) error {
+		return p.call(func() error { return p.ops.resolveAll(ctx, runID, accept) })
+	}
+	return w
 }
 
 // openConversation shows the draft's conversation with an edit waiting, or
@@ -129,7 +135,7 @@ func (w *composeWit) gate(run func()) {
 // the draft's Assist conversation, followed through a subscription made
 // first: a first generation is applied at once and its run resumes.
 func (w *composeWit) start(pinned *witJob) func(ctx context.Context, in string) (int64, <-chan core.WitEvent, func(), error) {
-	svc, id := w.p.a.svc, w.p.id
+	svc, p, id := w.p.a.svc, w.p, w.p.id
 	var job witJob
 	if pinned != nil {
 		job = *pinned
@@ -137,7 +143,12 @@ func (w *composeWit) start(pinned *witJob) func(ctx context.Context, in string) 
 	return func(ctx context.Context, in string) (int64, <-chan core.WitEvent, func(), error) {
 		job := job
 		if job.run == nil {
-			job.run = func(ctx context.Context) (<-chan core.WitEvent, error) { return svc.Assist(ctx, id, in) }
+			job.run = func(ctx context.Context) (<-chan core.WitEvent, error) { return p.ops.assist(ctx, id, in) }
+		}
+		run := job.run
+		job.run = func(ctx context.Context) (ch <-chan core.WitEvent, err error) {
+			err = p.call(func() (err error) { ch, err = run(ctx); return err })
+			return ch, err
 		}
 		if job.selection {
 			ch, err := job.run(ctx)
@@ -185,7 +196,7 @@ func drainWit(ch <-chan core.WitEvent) {
 func (w *composeWit) ask(in string, job witJob) { w.panel.ask(w.options(&job), in) }
 
 func (w *composeWit) runSkill(label, skill, lang string) {
-	run, id := w.skill, w.p.id
+	run, id := w.p.ops.skill, w.p.id
 	w.ask(label, witJob{run: func(ctx context.Context) (<-chan core.WitEvent, error) {
 		return run(ctx, id, skill, core.SkillOptions{TargetLanguage: lang})
 	}})
@@ -212,9 +223,9 @@ func (w *composeWit) rewriteSelection() {
 		}
 		_, off := richtext.ToHTMLOffsets(p.ed.Doc())
 		sel := core.Selection{Revision: p.s.rev, Start: off(from), End: off(to)}
-		svc, id := p.a.svc, p.id
+		rewrite, id := p.ops.rewrite, p.id
 		w.ask(in, witJob{selection: true, run: func(ctx context.Context) (<-chan core.WitEvent, error) {
-			return svc.RewriteSelection(ctx, id, sel, in)
+			return rewrite(ctx, id, sel, in)
 		}})
 	})
 }
@@ -232,13 +243,13 @@ func (w *composeWit) pending() *core.Approval {
 // locked reports whether the body is read-only: Wit writes it, an edit
 // waits for review, the draft Wit left is being read, or it is being sent.
 func (w *composeWit) locked() bool {
-	return w.panel.running || w.pending() != nil || w.syncing || w.p.frozen
+	return w.panel.running || w.pending() != nil || w.syncing || w.p.frozen.Load()
 }
 
 func (w *composeWit) lockedInput() {
 	if !w.told {
 		w.told = true
-		if w.p.frozen {
+		if w.p.frozen.Load() {
 			w.p.a.toast(i18n.T("compose.sending.locked"))
 		} else {
 			w.p.a.toast(i18n.T("wit.compose.locked"))
@@ -318,8 +329,8 @@ func (w *composeWit) finish() {
 		w.panel.decide(r.ap, all, false)
 		return
 	}
-	h, id, apply := richtext.ToHTML(r.result()), r.ap.ID, w.p.a.svc.ApplyEditedProposal
-	w.panel.settle(r.ap, []int64{id}, func(ctx context.Context) error { return apply(ctx, id, h) })
+	h, id, p, apply := richtext.ToHTML(r.result()), r.ap.ID, w.p, w.p.ops.apply
+	w.panel.settle(r.ap, []int64{id}, func(ctx context.Context) error { return p.call(func() error { return apply(ctx, id, h) }) })
 }
 
 // reload reads the draft after a run or a decision, the body locked
@@ -366,10 +377,10 @@ func (w *composeWit) undo() {
 	if w.p.held() {
 		return
 	}
-	svc, id := w.p.a.svc, w.p.id
+	svc, p, id := w.p.a.svc, w.p, w.p.id
 	var pd prepared
 	w.p.s.Run(func(ctx context.Context, _ int64) (core.Draft, error) {
-		if err := svc.UndoLastAssist(ctx, id); err != nil {
+		if err := p.call(func() error { return p.ops.undo(ctx, id) }); err != nil {
 			return core.Draft{}, err
 		}
 		d, err := svc.GetDraft(ctx, id)

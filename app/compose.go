@@ -6,6 +6,7 @@ import (
 	netmail "net/mail"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -43,15 +44,15 @@ type composer struct {
 	link                  string
 	linkOpen, discardOpen bool
 
-	src      int64 // the message the draft replies to or forwards
-	wit      *composeWit
-	s        *draftSaver
-	sending  bool
-	frozen   bool                                                     // the draft is being sent: no edit is taken
-	warn     *core.SendCheck                                          // beforeSend's warnings, until sent anyway or edited
-	blocked  string                                                   // a plugin's refusal
-	deleteFn func(ctx context.Context, id int64) error                // tests swap it
-	sendFn   func(ctx context.Context, id int64, digest string) error // tests swap it
+	src     int64 // the message the draft replies to or forwards
+	wit     *composeWit
+	s       *draftSaver
+	sending bool
+	frozen  atomic.Bool                                              // the draft is being sent: no change is taken; read off the UI thread too
+	ops     draftOps                                                 // tests wrap them
+	warn    *core.SendCheck                                          // beforeSend's warnings, until sent anyway or edited
+	blocked string                                                   // a plugin's refusal
+	sendFn  func(ctx context.Context, id int64, digest string) error // tests swap it
 }
 
 // prepared is a draft with its body taken apart and converted for the
@@ -73,7 +74,7 @@ func (a *App) composerFor(id int64) *composer {
 	if p := a.drafts[id]; p != nil {
 		return p
 	}
-	p := &composer{a: a, id: id, deleteFn: a.svc.DeleteDraft, sendFn: a.sendDraft}
+	p := &composer{a: a, id: id, ops: newDraftOps(a.svc), sendFn: a.sendDraft}
 	a.drafts[id] = p
 	var pd prepared
 	get := a.getDraft
@@ -237,12 +238,11 @@ func (p *composer) switchAccount(acc int64) {
 		p.accSel = p.acc
 		return
 	}
-	svc, id := p.a.svc, p.id
+	set, id := p.ops.setAccount, p.id
 	var d core.Draft
 	var sig string
 	p.s.Run(func(ctx context.Context, rev int64) (core.Draft, error) {
-		var err error
-		d, err = svc.SetDraftAccount(ctx, id, acc, rev)
+		err := p.call(func() (err error) { d, err = set(ctx, id, acc, rev); return err })
 		_, _, sig = mail.SplitDraft(d.HTML)
 		return d, err
 	}, func(err error) {
@@ -289,7 +289,7 @@ func (p *composer) attach() {
 	if p.held() {
 		return
 	}
-	a, svc, id := p.a, p.a.svc, p.id
+	a, add, id := p.a, p.ops.addAtt, p.id
 	var paths []string
 	a.do(func(context.Context) (err error) {
 		paths, err = a.plat.OpenFiles(true)
@@ -304,7 +304,7 @@ func (p *composer) attach() {
 		p.attachRun(func() int64 { return added }, func(ctx context.Context) error {
 			var errs []error
 			for _, path := range paths {
-				if _, err := svc.AddAttachment(ctx, id, path); err != nil {
+				if err := p.call(func() error { _, err := add(ctx, id, path); return err }); err != nil {
 					errs = append(errs, err)
 					continue
 				}
@@ -326,9 +326,9 @@ func (p *composer) removeAttachment(attID int64) {
 	if p.held() {
 		return
 	}
-	svc, id := p.a.svc, p.id
+	remove, id := p.ops.removeAtt, p.id
 	p.attachRun(func() int64 { return 1 }, func(ctx context.Context) error {
-		return svc.RemoveAttachment(ctx, id, attID)
+		return p.call(func() error { return remove(ctx, id, attID) })
 	}, func(err error) {
 		if !errors.Is(err, core.ErrStaleDraft) {
 			p.a.toastErr(err)
@@ -345,10 +345,11 @@ func (p *composer) send(digest string) {
 	}
 	p.sending, p.warn, p.blocked = true, nil, ""
 	send, id := p.sendFn, p.id
-	p.s.RunFrom(func() { p.frozen = true }, func(ctx context.Context, _ int64) (core.Draft, error) {
+	p.s.RunFrom(func() { p.frozen.Store(true) }, func(ctx context.Context, _ int64) (core.Draft, error) {
 		return core.Draft{}, send(ctx, id, digest)
 	}, func(err error) {
-		p.sending, p.frozen = false, false
+		p.sending = false
+		p.frozen.Store(false)
 		var warned *core.SendWarningsError
 		var blocked *core.SendBlockedError
 		switch {
@@ -369,10 +370,45 @@ func (p *composer) send(digest string) {
 // held is the gate of every change to the draft: true, telling the user
 // once, while the draft is being sent.
 func (p *composer) held() bool {
-	if p.frozen {
+	on := p.frozen.Load()
+	if on {
 		p.wit.lockedInput()
 	}
-	return p.frozen
+	return on
+}
+
+// call runs a Service call that changes the draft, unless the draft is
+// being sent by then: held keeps a change from starting, call from running
+// after it was queued. Safe off the UI thread.
+func (p *composer) call(f func() error) error {
+	if p.frozen.Load() {
+		return errDraftSending
+	}
+	return f()
+}
+
+// errDraftSending is why a change waiting while the draft was sent did not run.
+var errDraftSending = errors.New("the draft is being sent")
+
+// draftOps are the Service calls that change a draft, other than saving
+// and sending it; they run through composer.call.
+type draftOps struct {
+	assist     func(ctx context.Context, id int64, in string) (<-chan core.WitEvent, error)
+	skill      func(ctx context.Context, id int64, skill string, o core.SkillOptions) (<-chan core.WitEvent, error)
+	rewrite    func(ctx context.Context, id int64, sel core.Selection, in string) (<-chan core.WitEvent, error)
+	resolve    func(ctx context.Context, id int64, accept bool) error
+	resolveAll func(ctx context.Context, runID int64, accept bool) error
+	apply      func(ctx context.Context, approvalID int64, html string) error
+	undo       func(ctx context.Context, id int64) error
+	addAtt     func(ctx context.Context, id int64, path string) (core.DraftAttachment, error)
+	removeAtt  func(ctx context.Context, id, attID int64) error
+	setAccount func(ctx context.Context, id, acc, rev int64) (core.Draft, error)
+	delete     func(ctx context.Context, id int64) error
+}
+
+func newDraftOps(svc *core.Service) draftOps {
+	return draftOps{svc.Assist, svc.AssistSkill, svc.RewriteSelection, svc.ResolveApproval, svc.ResolveAll,
+		svc.ApplyEditedProposal, svc.UndoLastAssist, svc.AddAttachment, svc.RemoveAttachment, svc.SetDraftAccount, svc.DeleteDraft}
 }
 
 // sendDraft sends draft id; with digest, despite that check's warnings.
@@ -401,9 +437,9 @@ func (p *composer) discard() {
 	}
 	p.discardOpen = false
 	p.s.Hold()
-	del, id := p.deleteFn, p.id
+	del, id := p.ops.delete, p.id
 	p.s.Run(func(ctx context.Context, _ int64) (core.Draft, error) {
-		return core.Draft{}, del(ctx, id)
+		return core.Draft{}, p.call(func() error { return del(ctx, id) })
 	}, func(err error) {
 		if err != nil {
 			p.s.Release()
@@ -490,7 +526,7 @@ func (p *composer) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p.wit.sync()
 	ui.Column(c).Grow(1).Shrink(1).Children(func() {
-		ui.Column(c).Disabled(p.frozen).Children(func() {
+		ui.Column(c).Disabled(p.frozen.Load()).Children(func() {
 			p.fields(c)
 			p.toolbar(c)
 		})
