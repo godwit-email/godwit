@@ -20,6 +20,9 @@ type modelsView struct {
 	listGen  uint64     // bumped per list read; only the newest applies
 	form     *modelForm // nil until a service is chosen or added
 	defModel string     // the default model select's value; follows a.settings between frames
+
+	fetchModels func(ctx context.Context, id int64) ([]string, error) // tests swap these
+	testService func(ctx context.Context, id int64) error
 }
 
 // modelForm edits one service (id 0: a new one). A result for a form that
@@ -147,15 +150,20 @@ func (m *modelsView) remove(f *modelForm) {
 	})
 }
 
+// fetch offers the service's models. The form stays busy until the call
+// returns; its result shows only on the form and page visit that asked.
 func (m *modelsView) fetch(f *modelForm) {
-	a, id := m.a, f.id
+	a, id, fetch, gen := m.a, f.id, m.fetchModels, m.a.gen
 	f.fetching = true
 	var got []string
-	a.query(func(ctx context.Context) (err error) {
-		got, err = a.svc.FetchModels(ctx, id)
+	a.do(func(ctx context.Context) (err error) {
+		got, err = fetch(ctx, id)
 		return err
 	}, func(err error) {
 		f.fetching = false
+		if m.form != f || gen != a.gen {
+			return
+		}
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -168,13 +176,17 @@ func (m *modelsView) fetch(f *modelForm) {
 	})
 }
 
-// test runs the saved service and shows how long it took.
+// test runs the saved service and shows how long it took, as fetch does.
 func (m *modelsView) test(f *modelForm) {
-	a, id := m.a, f.id
+	a, id, test, gen := m.a, f.id, m.testService, m.a.gen
 	f.testing, f.testMsg = true, ""
 	start := a.clock.Now()
-	a.query(func(ctx context.Context) error { return a.svc.TestModelService(ctx, id) }, func(err error) {
-		f.testing, f.testOK = false, err == nil
+	a.do(func(ctx context.Context) error { return test(ctx, id) }, func(err error) {
+		f.testing = false
+		if m.form != f || gen != a.gen {
+			return
+		}
+		f.testOK = err == nil
 		if err != nil {
 			f.testMsg = humanize(err)
 			return

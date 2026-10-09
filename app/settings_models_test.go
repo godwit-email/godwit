@@ -154,3 +154,26 @@ func TestModelServiceMissingDefault(t *testing.T) {
 		t.Fatal("the missing model is offered")
 	}
 }
+
+func TestModelServiceBusyAcrossNavigation(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	m := p.models
+	release := make(chan struct{})
+	m.fetchModels = func(context.Context, int64) ([]string, error) { <-release; return []string{"stale-model"}, nil }
+	m.testService = func(context.Context, int64) error { <-release; return nil }
+	h.click("从 /models 拉取")
+	h.click("测试连接")
+	f := m.form
+	h.openSettings("general")
+	h.openSettings("models")
+	close(release)
+	h.until("fetch and test settle", func() bool { return !f.fetching && !f.testing })
+	if m.form != f {
+		t.Fatal("the form was replaced")
+	}
+	if slices.Contains(f.offered, "stale-model") || f.testMsg != "" || h.tt.HasText("stale-model") {
+		t.Fatalf("a result from before the navigation shows: offered %q, test %q", f.offered, f.testMsg)
+	}
+}
