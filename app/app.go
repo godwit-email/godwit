@@ -96,12 +96,13 @@ type App struct {
 	route Route
 	gen   uint64 // bumped on every navigation; async results from an older gen are dropped
 
-	fetch    func(ctx context.Context) (core.Settings, []core.Account, error) // what load reads; tests swap it
-	loadGen  uint64                                                           // bumped per load; older completions are dropped
-	loaded   bool
-	loadErr  error // the newest load's error; nil once a load succeeds
-	accounts []core.Account
-	settings core.Settings
+	fetch       func(ctx context.Context) (core.Settings, []core.Account, error) // what load reads; tests swap it
+	loadGen     uint64                                                           // bumped per load; older completions are dropped
+	loaded      bool
+	loadErr     error // the newest load's error; nil once a load succeeds
+	loadFailing bool  // loads have failed since the last success: toast once per streak
+	accounts    []core.Account
+	settings    core.Settings
 
 	foreground bool
 
@@ -201,8 +202,13 @@ func (a *App) load() {
 		}
 		a.loadErr = err
 		if err != nil {
+			if a.loaded && !a.loadFailing { // the first load's error shows in place of the shell
+				a.toastErr(err)
+			}
+			a.loadFailing = true
 			return
 		}
+		a.loadFailing = false
 		first := !a.loaded
 		a.accounts, a.settings, a.unread, a.loaded = accs, st, unread, true
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account

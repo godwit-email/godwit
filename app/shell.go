@@ -157,13 +157,16 @@ func (a *App) View(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyBracketRight) {
 		a.forward()
 	}
-	barH := float32(44)
-	if h := c.TitleBar().Height; h >= 40 { // Windows' 40-high bar; macOS's is shorter than ours
-		barH = h
-	}
+	barH := max(44, c.TitleBar().Height) // the window controls only take room beside our bar
 	switch {
 	case !a.loaded:
 		ui.Box(c).Height(barH).FillWidth().DragWindow()
+		if a.loadErr != nil {
+			ui.Column(c).Grow(1).FillWidth().Center().Gap(12 * t.Scale).Children(func() {
+				ui.Text(c, humanize(a.loadErr)).TextColor(t.Muted)
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(a.load)
+			})
+		}
 	case a.route.Page == PageOnboarding:
 		ui.Box(c).Height(barH).FillWidth().DragWindow()
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
@@ -182,10 +185,11 @@ func (a *App) View(c *ui.Context) {
 func (a *App) titleBar(c *ui.Context, h float32) {
 	t := theme.Of(c)
 	bar := c.TitleBar()
-	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+16, 0, bar.Left+8).DragWindow().Children(func() {
-		lead := ui.Row(c).Gap(4)
+	padL := bar.Left + 8*t.Scale
+	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+16*t.Scale, 0, padL).DragWindow().Children(func() {
+		lead := ui.Row(c).Gap(4 * t.Scale)
 		if !a.sidebarHidden {
-			lead.MinWidth(max(0, railWidth+sidebarWidth-bar.Left-8))
+			lead.MinWidth(max(0, railWidth+sidebarWidth-padL))
 		}
 		lead.Children(func() {
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
@@ -200,8 +204,8 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
 		})
 		if title, sub := a.page().Title(); title != "" {
-			ui.Row(c).Gap(8).Children(func() {
-				ui.Box(c).Size(1, 24).Margin(0, 8, 0, 0).Background(t.Border)
+			ui.Row(c).Gap(8 * t.Scale).Children(func() {
+				ui.Box(c).Size(1, 24).Margin(0, 8*t.Scale, 0, 0).Background(t.Border)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					ui.Text(c, sub).FontSize(t.FontSize - 1).TextColor(t.Muted).SingleLine()
@@ -222,14 +226,14 @@ func (a *App) syncStatus(c *ui.Context) {
 	for _, acc := range a.accounts {
 		if acc.Status == "reauth_required" {
 			r := Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)}
-			ui.ButtonBase(c).Gap(6).PaddingX(6).Height(24).Radius(6).FontSize(small).TextColor(t.WarningText).Children(func() {
+			ui.ButtonBase(c).Gap(6 * t.Scale).PaddingX(6 * t.Scale).Height(24).Radius(6).FontSize(small).TextColor(t.WarningText).Children(func() {
 				kit.StatusDot(c, kit.Attention)
 				ui.Text(c, i18n.T("shell.sync.reauth"))
 			}).OnClick(func() { a.navigate(r) })
 			return
 		}
 	}
-	row := ui.Row(c).Gap(6).FontSize(small).TextColor(t.Muted)
+	row := ui.Row(c).Gap(6 * t.Scale).FontSize(small).TextColor(t.Muted)
 	switch {
 	case len(a.syncing) > 0:
 		row.Children(func() { ui.Text(c, i18n.T("shell.sync.syncing")) })
@@ -260,7 +264,8 @@ func (a *App) syncedAgo() string {
 
 // rail is the icon bar: Mail and Wit at the top, Settings at the bottom.
 func (a *App) rail(c *ui.Context) {
-	ui.Column(c).Width(railWidth).AlignItems(ui.Center).Gap(6).Padding(4, 0, 12, 0).Children(func() {
+	t := theme.Of(c)
+	ui.Column(c).Width(railWidth).AlignItems(ui.Center).Gap(6*t.Scale).Padding(4*t.Scale, 0, 12*t.Scale, 0).Children(func() {
 		a.railItem(c, "mail", i18n.T("shell.rail.mail"), Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 		a.railItem(c, "sparkles", i18n.T("shell.rail.wit"), Route{Page: PageWit})
 		ui.Spacer(c)
@@ -271,7 +276,7 @@ func (a *App) rail(c *ui.Context) {
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 	t := theme.Of(c)
 	on := a.route.section() == r.Page
-	b := ui.ButtonBase(c).Size(40, 40).Radius(10).Center().Label(label).Tooltip(label).TextColor(t.Muted)
+	b := ui.ButtonBase(c).Size(40, 40).Radius(8).Center().Label(label).Tooltip(label).TextColor(t.Muted)
 	switch {
 	case on:
 		b.Background(t.RailSelected).TextColor(t.Foreground)
@@ -292,7 +297,7 @@ func (a *App) panel(c *ui.Context) {
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Radius(14, 0, 0, 0).Clip().Background(t.Background).
 		BorderWidth(1, 0, 0, 1).BorderColor(t.Border).Children(func() {
 		if !a.sidebarHidden {
-			ui.Column(c).Width(sidebarWidth).Padding(12*t.Scale).Gap(2).Background(t.Sidebar).
+			ui.Column(c).Width(sidebarWidth).Padding(12*t.Scale).Gap(2*t.Scale).Background(t.Sidebar).
 				BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
 		}
 		ui.Column(c).Grow(1).Children(func() { p.Content(c) })

@@ -47,7 +47,7 @@ var en = map[string]string{
 	"error.model_not_found":      "The selected model was not found. Choose another in Settings.",
 	"error.too_large":            "The attachment exceeds the size limit.",
 	"error.keychain":             "The system keychain is unavailable.",
-	"error.check.settings":       "Server settings not found: %s",
+	"error.check.settings":       "Account settings check failed: %s",
 	"error.check.imap":           "IMAP check failed: %s",
 	"error.check.smtp":           "SMTP check failed: %s",
 	"error.send_blocked":         "Extension “%s” blocked sending: %s",

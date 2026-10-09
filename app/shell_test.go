@@ -193,3 +193,62 @@ func TestTitleBarInset(t *testing.T) {
 		t.Fatalf("back button at %+v (found %v)", r, ok)
 	}
 }
+
+func TestFirstLoadErrorRetry(t *testing.T) {
+	h := newHarness(t, func(e *coretest.Env) { e.Svc.Close() })
+	h.see("出错了") // the closed Service fails the read
+	h.see("重试")
+	h.app.fetch = func(context.Context) (core.Settings, []core.Account, error) {
+		return core.Settings{Theme: "light"}, nil, nil
+	}
+	h.click("重试")
+	h.until("the shell after a retry", func() bool { return h.app.loaded })
+	h.tt.Frame()
+	if h.tt.HasText("重试") || h.app.route.Page != PageOnboarding {
+		t.Fatalf("route %+v texts %q", h.app.route, h.tt.Texts())
+	}
+}
+
+func TestRefreshErrorToastsOnce(t *testing.T) {
+	h, _ := withAccount(t)
+	ok := h.app.fetch
+	h.app.fetch = func(context.Context) (core.Settings, []core.Account, error) {
+		return core.Settings{}, nil, errors.New("disk on fire")
+	}
+	h.app.refresh(nil)
+	h.see("disk on fire")
+	fail := func(msg string) {
+		h.app.fetch = func(context.Context) (core.Settings, []core.Account, error) {
+			return core.Settings{}, nil, errors.New(msg)
+		}
+		h.app.refresh(nil)
+	}
+	fail("disk on fire, again")
+	h.until("the second failure", func() bool { return h.app.loadErr.Error() == "disk on fire, again" })
+	if h.tt.HasText("disk on fire, again") {
+		t.Fatal("a second toast in one failure streak")
+	}
+	h.app.fetch = ok
+	h.app.refresh(nil)
+	h.until("recovered", func() bool { return h.app.loadErr == nil })
+	fail("disk melted")
+	h.see("disk melted") // a new streak toasts again
+}
+
+func TestTitleBarHeight(t *testing.T) {
+	h, _ := withAccount(t)
+	for _, bar := range []ui.TitleBar{{Height: 28, Left: 78}, {Height: 40, Right: 138}} {
+		h.tt.SetTitleBar(bar)
+		r, ok := h.tt.Find("后退")
+		if !ok || r.Y+r.H/2 != 22 {
+			t.Errorf("bar %+v: back button at %+v, want centered in a 44-high bar", bar, r)
+		}
+	}
+}
+
+func TestCheckSettingsCopy(t *testing.T) {
+	got := humanize(&core.CheckError{Report: core.CheckReport{Steps: []core.CheckStep{{Name: "settings", Detail: "password is empty"}}}})
+	if got != "账户设置检查未通过：password is empty" {
+		t.Fatalf("%q", got)
+	}
+}

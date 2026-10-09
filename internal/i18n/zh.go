@@ -47,7 +47,7 @@ var zh = map[string]string{
 	"error.model_not_found":      "找不到所选的模型，请在设置里重新选择。",
 	"error.too_large":            "附件超过了大小上限。",
 	"error.keychain":             "无法访问系统钥匙串。",
-	"error.check.settings":       "找不到服务器设置：%s",
+	"error.check.settings":       "账户设置检查未通过：%s",
 	"error.check.imap":           "IMAP 检查未通过：%s",
 	"error.check.smtp":           "SMTP 检查未通过：%s",
 	"error.send_blocked":         "扩展「%s」阻止了发送：%s",
