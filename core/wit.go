@@ -98,7 +98,7 @@ func cite(ctx context.Context, items []mailItem) {
 func citations(items []mailItem) []Citation {
 	cs := make([]Citation, 0, len(items))
 	for _, it := range items {
-		cs = append(cs, Citation{MessageID: it.MessageID, Subject: it.Subject, From: it.From, Suspect: it.Suspect})
+		cs = append(cs, Citation{MessageID: it.MessageID, Subject: it.Subject, From: it.From, Date: it.Date, Suspect: it.Suspect})
 	}
 	return cs
 }

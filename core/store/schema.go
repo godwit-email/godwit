@@ -190,4 +190,9 @@ var Migrations = [][]string{{
 	// 1 once the plugin was handed mail content: its storage may hold mail, so
 	// its action and tool egress needs approval until it is uninstalled.
 	`ALTER TABLE plugins ADD COLUMN holds_mail INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// The mail each run's events cited, in the order they came (Conversation.Citations).
+	`CREATE TABLE run_citations (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+		message_id INTEGER NOT NULL, subject TEXT NOT NULL, from_addr TEXT NOT NULL, date INTEGER, suspect INTEGER NOT NULL DEFAULT 0)`,
+	`CREATE INDEX run_citations_run ON run_citations(run_id)`,
 }}

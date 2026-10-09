@@ -19,6 +19,7 @@ import (
 type mailItem struct {
 	MessageID     int64
 	Subject, From string
+	Date          time.Time
 	Suspect       bool
 	Block         string
 }
@@ -106,7 +107,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		if cut {
 			block += truncatedNote
 		}
-		out[i] = mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Suspect: suspect, Block: block}
+		out[i] = mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date, Suspect: suspect, Block: block}
 	}
 	return out, nil
 }
@@ -135,7 +136,7 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 	for _, m := range list {
 		text := mailHeader(m) + "\n" + m.Snippet
 		suspect := ai.SuspectInjection(text)
-		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From,
+		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
 			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
 	}
 	return out
@@ -148,7 +149,7 @@ func (s *Service) subjectContext(scope *gateway.Scope, list []MessageSummary) []
 	out := make([]mailItem, 0, len(list))
 	for _, m := range list {
 		suspect := ai.SuspectInjection(m.Subject)
-		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From,
+		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
 			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), "Subject: "+m.Subject, suspect)})
 	}
 	return out

@@ -66,7 +66,8 @@ func TestAskSearchesAndCites(t *testing.T) {
 	evs := e.ask(t, conv.ID, "When do we meet?")
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 
-	want := []Citation{{MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>"}}
+	date := e.msgDate(t)
+	want := []Citation{{MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>", Date: date}}
 	for _, tool := range []string{"search_mail", "get_thread", "get_message"} {
 		rs := witResults(evs, tool)
 		require.Len(t, rs, 1, tool)
@@ -87,6 +88,8 @@ func TestAskSearchesAndCites(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "When do we meet?", c.Title)
+	assert.Equal(t, want, c.Citations, "saved, once per message")
+	assert.Zero(t, c.ActiveRunID)
 
 	other, err := e.s.NewConversation(t.Context(), "assist", e.draft(t))
 	require.NoError(t, err)
@@ -532,4 +535,44 @@ func TestLanguageCluesCited(t *testing.T) {
 		got[c.MessageID] = c.Suspect
 	}
 	assert.Equal(t, want, got)
+}
+
+func (e skillEnv) msgDate(t *testing.T) time.Time {
+	t.Helper()
+	m, err := e.s.GetMessage(t.Context(), e.msg, false)
+	require.NoError(t, err)
+	require.False(t, m.Date.IsZero())
+	return time.Unix(m.Date.Unix(), 0)
+}
+
+func TestConversationActiveRunAndCitations(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":` + itoa(e.msg) + `}`}}},
+		testllm.Turn{Text: []string{"thinking"}, Hang: true})
+	ch, err := e.s.Ask(t.Context(), conv.ID, "q")
+	require.NoError(t, err)
+	var runID int64
+	for ev := range ch {
+		runID = ev.RunID
+		if ev.Kind == "text" {
+			break
+		}
+	}
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, runID, c.ActiveRunID, "the run in flight")
+	require.Len(t, c.Citations, 1, "saved as the event came, before the run ends")
+	assert.Equal(t, e.msg, c.Citations[0].MessageID)
+	assert.Equal(t, e.msgDate(t), c.Citations[0].Date)
+
+	require.NoError(t, e.s.CancelRun(t.Context(), runID))
+	drainWit(t, ch)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Zero(t, c.ActiveRunID)
+	assert.Len(t, c.Citations, 1, "a cancelled run's citations stay")
+
+	require.NoError(t, e.s.DeleteConversation(t.Context(), conv.ID))
+	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM run_citations"), "deleted with the conversation")
 }
