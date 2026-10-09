@@ -121,15 +121,15 @@ func sizeOptions(sizes []int, def, cur int) []kit.Option[int] {
 func (p *settingsPage) generalView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what handlers changed while building
-	t := theme.Of(c)
+	th := c.Theme()
 	st := &p.st
 	sel := func(label, help string, control func() ui.Element) {
-		settingRow(c, label, help, func() { control().Width(220).Label(label) })
+		settingRow(c, label, help, func() { control().Width(theme.ControlWidth).Label(label) })
 	}
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
 	ui.Column(c).Children(func() {
 		settingsSection(c, i18n.T("settings.appearance"), "", func() {
-			ui.Row(c).Gap(12 * t.Scale).Children(func() {
+			ui.Row(c).Gap(th.Space(3)).Children(func() {
 				for _, th := range []string{"system", "light", "dark"} {
 					p.themeTile(c, th)
 				}
@@ -194,19 +194,22 @@ func (p *settingsPage) generalView(c *ui.Context) {
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
+	// The picture has a fixed size: its parts do not follow the density.
+	const rail, inset, gap, line = 14, 10, 6, 5
 	preview := func(tok theme.Tokens, w float32) {
+		side, long, short := w/4, w/3, w/5
 		ui.Row(c).Size(w, 84).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
-			ui.Box(c).Width(min(14, w/4))
-			ui.Box(c).Width(w/4).Margin(10, 0, 0, 0).Background(tok.Sidebar).Radius(6, 0, 0, 0)
-			ui.Column(c).Grow(1).Margin(10, 0, 0, 0).Padding(10).Gap(6).Background(tok.Background).Children(func() {
-				ui.Box(c).Height(5).Width(w / 3).Radius(3).Background(tok.Border)
-				ui.Box(c).Height(5).Width(w / 5).Radius(3).Background(tok.Border)
+			ui.Box(c).Width(min(rail, side))
+			ui.Box(c).Width(side).Margin(inset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Sm, 0, 0, 0)
+			ui.Column(c).Grow(1).Margin(inset, 0, 0, 0).Padding(inset).Gap(gap).Background(tok.Background).Children(func() {
+				ui.Box(c).Height(line).Width(long).Radius(t.Radius.Full).Background(tok.Border)
+				ui.Box(c).Height(line).Width(short).Radius(t.Radius.Full).Background(tok.Border)
 			})
 		})
 	}
-	b := ui.ButtonBase(c).Gap(6 * t.Scale).AlignItems(ui.Start)
+	b := ui.ButtonBase(c).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start)
 	b.Children(func() {
-		frame := ui.Row(c).Size(132, 84).Radius(8).Clip().Border(1, t.Border)
+		frame := ui.Row(c).Size(132, 84).Radius(t.Radius.Md).Clip().Border(1, t.Border)
 		if on {
 			frame.Border(2, t.Primary)
 		}
@@ -221,13 +224,13 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 				preview(theme.Light(), 132)
 			}
 		})
-		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.FontSize - 1)
+		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.Text.Sm)
 	}).OnClick(func() { p.st.Theme = th })
 }
 
 // noTranslate picks the languages that need no translation.
 func (p *settingsPage) noTranslate(c *ui.Context) {
-	t := theme.Of(c)
+	th := c.Theme()
 	var names []string
 	for _, l := range languages {
 		if slices.Contains(p.st.NoTranslate, l.tag) {
@@ -238,10 +241,10 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	anchor := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline}).Width(220).Label(i18n.T("settings.no_translate")).
+	anchor := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline}).Width(theme.ControlWidth).Label(i18n.T("settings.no_translate")).
 		OnClick(func() { p.noTrans = !p.noTrans })
 	kit.Popover(c, anchor, &p.noTrans, func() {
-		ui.Column(c).Gap(8 * t.Scale).Children(func() {
+		ui.Column(c).Gap(th.Space(2)).Children(func() {
 			for _, l := range languages {
 				on := slices.Contains(p.st.NoTranslate, l.tag)
 				if kit.Checkbox(c.Key(l.tag), &on, l.name).Changed() {

@@ -21,7 +21,50 @@ type Tokens struct {
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
 	Attention                                                       ui.Color
-	FontSize, BodyFontSize, Scale                                   float32
+	// Scale is the density (1.25 comfortable); outside this package sizes
+	// come from c.Theme().Space(n), which it scales.
+	FontSize, BodyFontSize, Scale float32
+	Radius                        RadiusScale
+	Text                          TextScale
+}
+
+// RadiusScale are corner radii; they do not follow the density. Xs (4) and
+// Panel (12, cards) are the off-scale radii in use; Full rounds a box's
+// short sides into half circles (renderers fit radii as CSS does).
+type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, Panel, Full float32 }
+
+// TextScale are the interface's text sizes, steps from FontSize. Mail bodies
+// use BodyFontSize. Title (dialog titles), Brand, Heading (page headings)
+// and Display (the onboarding headline) are the off-scale sizes in use.
+type TextScale struct{ Xs, Sm, Base, Lg, Xl, X2l, Title, Brand, Heading, Display float32 }
+
+// Layout sizes that do not follow the density.
+const (
+	Hairline          = 1    // dividers
+	RailWidth         = 56   // the icon rail
+	SidebarWidth      = 248  // the mail and settings sidebars
+	ListWidth         = 360  // the mail list column
+	TopBarHeight      = 44   // the top bar's least height
+	SheetWidth        = 560  // dialogs and the add-account sheet
+	SheetMaxHeight    = 760  // the add-account sheet
+	AsideWidth        = 440  // onboarding's left panel
+	FormMaxWidth      = 520  // onboarding's form column
+	ContentMaxWidth   = 1040 // settings pages
+	ControlWidth      = 220  // settings' selects and buttons
+	PortWidth         = 90   // port fields
+	SelectMinWidth    = 120
+	ToastMaxWidth     = 420
+	TitleButtonHeight = 24 // buttons in the top bar
+	PopupOffset       = 4  // room between a popup and its anchor
+)
+
+// sized fills the size tokens from the font size.
+func sized(t Tokens) Tokens {
+	f := t.FontSize
+	t.Radius = RadiusScale{Xs: 4, Sm: 6, Md: 8, Lg: 10, Xl: 14, Panel: 12, Full: 9999}
+	t.Text = TextScale{Xs: f - 2, Sm: f - 1, Base: f, Lg: f + 2, Xl: f + 5, X2l: f + 7,
+		Title: f + 3, Brand: f + 4, Heading: f + 6, Display: f + 16}
+	return t
 }
 
 // status are the colors both appearances share.
@@ -31,7 +74,7 @@ func status(t Tokens) Tokens {
 	t.Danger, t.DangerBg, t.Attention = p.Red600.Color(), p.Red50.Color(), p.Amber500.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
 	t.FontSize, t.BodyFontSize, t.Scale = 13, 14, 1
-	return t
+	return sized(t)
 }
 
 // Light is the light appearance (spec 7.0).
@@ -71,7 +114,7 @@ func FromSettings(st core.Settings, systemDark bool) Tokens {
 	if st.Density == "comfortable" {
 		t.Scale = 1.25
 	}
-	return t
+	return sized(t)
 }
 
 var (
@@ -105,8 +148,8 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Danger, th.Warning, th.Success = t.Danger, t.Attention, t.Success
 	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Muted.Alpha(0.6), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
-	th.Radius, th.Spacing = 8, 4*t.Scale
-	th.Font, th.FontSize = "Geist", t.FontSize
+	th.Radius, th.Spacing = t.Radius.Md, 4*t.Scale // Space(n) is n Tailwind units
+	th.Font, th.FontSize = "Geist", t.Text.Base
 	return &th
 }
 

@@ -95,3 +95,35 @@ func TestFontsRegister(t *testing.T) {
 		t.Errorf("texts %q", tt.Texts())
 	}
 }
+
+func TestSpaceFollowsDensity(t *testing.T) {
+	for density, want := range map[string]float32{"compact": 32, "comfortable": 40} {
+		var got float32
+		tok := FromSettings(core.Settings{Theme: "light", Density: density, FontSize: 13, BodyFontSize: 14}, false)
+		ui.NewTester(func(c *ui.Context) {
+			Apply(c, tok)
+			got = c.Theme().Space(8)
+		}, 200, 100).Frame()
+		if got != want {
+			t.Errorf("%s: Space(8) = %v, want %v", density, got, want)
+		}
+	}
+}
+
+func TestRadiusAndTextScale(t *testing.T) {
+	tok := FromSettings(core.Settings{Theme: "light", Density: "comfortable", FontSize: 15, BodyFontSize: 16}, false)
+	if r := tok.Radius; [4]float32{r.Sm, r.Md, r.Lg, r.Xl} != [4]float32{6, 8, 10, 14} {
+		t.Errorf("Radius = %+v", r)
+	}
+	if x := tok.Text; [6]float32{x.Xs, x.Sm, x.Base, x.Lg, x.Xl, x.X2l} != [6]float32{13, 14, 15, 17, 20, 22} {
+		t.Errorf("Text = %+v", x)
+	}
+	if Light().Text.Base != 13 {
+		t.Errorf("Light().Text.Base = %v, want 13", Light().Text.Base)
+	}
+	var th *ui.Theme
+	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
+	if th.Radius != 8 || th.FontSize != 15 {
+		t.Errorf("theme radius %v, font size %v; want 8, 15", th.Radius, th.FontSize)
+	}
+}

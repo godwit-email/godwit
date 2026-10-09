@@ -21,9 +21,8 @@ import (
 )
 
 const (
-	listWidth = 360
-	pageSize  = 50
-	maxPage   = 200 // the Service's largest page
+	pageSize = 50
+	maxPage  = 200 // the Service's largest page
 )
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
@@ -454,7 +453,7 @@ func (p *mailPage) Content(c *ui.Context) {
 	}
 	t := theme.Of(c)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(listWidth).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
 			_, isDrafts := draftsOf(p.folders, p.view)
 			switch {
 			case p.view.Unified == "outbox":
@@ -470,15 +469,14 @@ func (p *mailPage) Content(c *ui.Context) {
 }
 
 func (p *mailPage) listHeader(c *ui.Context) {
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
-		ui.Column(c).Padding(12*s, 16*s, 8*s, 16*s).Gap(6 * s).Children(func() {
+		ui.Column(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(1.5)).Children(func() {
 			in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder")}).AutoFocus()
 			if in.Submitted() {
 				p.runSearch()
 			}
-			ui.Text(c, i18n.T("mail.search.hint")).FontSize(t.FontSize - 1).TextColor(t.Muted)
+			ui.Text(c, i18n.T("mail.search.hint")).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
 		if c.Shortcut(0, ui.KeyEscape) {
 			p.closeSearch()
@@ -488,7 +486,7 @@ func (p *mailPage) listHeader(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
 		p.searchOpen = true
 	}
-	ui.Row(c).Padding(12*s, 16*s, 8*s, 16*s).Gap(8 * s).Children(func() {
+	ui.Row(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
 		title, _ := p.Title()
 		ui.Text(c, title).FontWeight(500).TextColor(t.Muted).SingleLine().Shrink(1)
 		ui.Spacer(c)
@@ -499,7 +497,7 @@ func (p *mailPage) listHeader(c *ui.Context) {
 }
 
 func (p *mailPage) listView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	p.listHeader(c)
 	rows := p.shown()
 	ls := p.ls()
@@ -520,14 +518,14 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, 8*t.Scale)
+	}).Grow(1).Padding(0, th.Space(2))
 	l.Children(func() {
 		if len(rows) == 0 && !p.loading {
 			empty := i18n.T("mail.empty")
 			if p.searched {
 				empty = i18n.T("mail.search.empty")
 			}
-			ui.Text(c, empty).TextColor(t.Muted).Padding(12 * t.Scale)
+			ui.Text(c, empty).TextColor(t.Muted).Padding(th.Space(3))
 		}
 	})
 	if l.Changed() {
@@ -554,13 +552,13 @@ func (p *mailPage) listView(c *ui.Context) {
 // text; unread ones in bold.
 func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	t := theme.Of(c)
-	s, small := t.Scale, t.FontSize-1
+	th, small := c.Theme(), t.Text.Sm
 	weight := 400
 	if it.Unread > 0 {
 		weight = 600
 	}
-	return ui.Column(c).Gap(2 * s).Padding(10 * s).Children(func() {
-		ui.Row(c).Gap(6 * s).Children(func() {
+	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5)).Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(12, 12).TextColor(t.Muted).Label(i18n.T("mail.attachment"))

@@ -106,14 +106,13 @@ var appSections = []string{"general", "models", "extensions", "privacy", "about"
 // then Add account; then the app's pages.
 func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
 	group := func(label string) {
-		ui.Text(c, label).FontSize(t.FontSize-1).TextColor(t.Muted).Padding(10*s, 8*s, 4*s, 8*s)
+		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(th.Space(2.5), th.Space(2), th.Space(1), th.Space(2))
 	}
 	item := func(sec string, children func()) {
-		b := ui.ButtonBase(c).Height(32 * s).PaddingX(8 * s).Gap(8 * s).Radius(8)
+		b := ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
 		on := sec == cur
 		switch {
 		case on:
@@ -127,8 +126,8 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		}
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Gap(2 * s).Children(func() {
-			ui.Text(c, i18n.T("settings.heading")).FontSize(t.FontSize+5).FontWeight(600).Padding(4*s, 6*s, 6*s, 6*s)
+		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(1.5), th.Space(1.5))
 			group(i18n.T("settings.accounts"))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID), func() {
@@ -141,7 +140,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 					}
 				})
 			}
-			ui.ButtonBase(c).Height(32 * s).PaddingX(8 * s).Gap(8 * s).Radius(8).TextColor(t.Muted).Children(func() {
+			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Muted).Children(func() {
 				ui.Icon(c, icons.Get("plus")).Size(14, 14)
 				ui.Text(c, i18n.T("settings.add_account"))
 			}).OnClick(a.openAddAccount)
@@ -154,10 +153,10 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 }
 
 func (p *settingsPage) Content(c *ui.Context) {
-	t := theme.Of(c)
+	th := c.Theme()
 	sec, acc := p.section()
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).MaxWidth(1040).Padding(24 * t.Scale).Gap(20 * t.Scale).Children(func() {
+		ui.Column(c).MaxWidth(theme.ContentMaxWidth).Padding(th.Space(6)).Gap(th.Space(5)).Children(func() {
 			switch {
 			case acc != nil:
 				p.accountView(c, *acc)
@@ -176,9 +175,9 @@ func (p *settingsPage) Content(c *ui.Context) {
 }
 
 func pageHeading(c *ui.Context, title, sub string) {
-	t := theme.Of(c)
-	ui.Column(c).Gap(4 * t.Scale).Children(func() {
-		ui.Text(c, title).FontSize(t.FontSize + 7).FontWeight(600)
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		ui.Text(c, title).FontSize(t.Text.X2l).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
@@ -188,28 +187,27 @@ func pageHeading(c *ui.Context, title, sub string) {
 // settingsSection is a titled block: the title (and help) in a 200-wide
 // column, body beside it.
 func settingsSection(c *ui.Context, title, help string, body func()) {
-	t := theme.Of(c)
-	s := t.Scale
-	ui.Row(c).AlignItems(ui.Start).Gap(24*s).Padding(20*s, 0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Column(c).Width(200 * s).Shrink(0).Gap(4 * s).Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(6)).Padding(th.Space(5), 0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Column(c).Width(th.Space(50)).Shrink(0).Gap(th.Space(1)).Children(func() {
 			ui.Text(c, title).FontWeight(600)
 			if help != "" {
 				ui.Text(c, help).TextColor(t.Muted)
 			}
 		})
-		ui.Column(c).Grow(1).Shrink(1).Gap(12 * s).Children(body)
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(3)).Children(body)
 	})
 }
 
 // settingRow is a labelled control: label and help on the left, the
 // control on the right.
 func settingRow(c *ui.Context, label, help string, control func()) {
-	t := theme.Of(c)
-	ui.Row(c).Gap(16 * t.Scale).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(2 * t.Scale).Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(4)).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label)
 			if help != "" {
-				ui.Text(c, help).FontSize(t.FontSize - 1).TextColor(t.Muted)
+				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		control()
@@ -217,16 +215,16 @@ func settingRow(c *ui.Context, label, help string, control func()) {
 }
 
 func (p *settingsPage) privacyView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"))
 	for _, k := range []string{"keychain", "local", "ai"} {
-		ui.Column(c).Gap(4 * t.Scale).Children(func() {
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			ui.Text(c, i18n.T("onboarding.promise."+k)).FontWeight(500)
 			ui.Text(c, i18n.T("onboarding.promise."+k+".sub")).TextColor(t.Muted)
 		})
 	}
 	settingsSection(c, i18n.T("settings.keychain"), "", func() {
-		ui.Row(c).Gap(8 * t.Scale).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			switch {
 			case !p.keychainSet:
 				kit.Spinner(c)
@@ -243,11 +241,11 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 }
 
 func (p *settingsPage) aboutView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	a := p.a
-	ui.Column(c).Gap(10 * t.Scale).AlignItems(ui.Start).Children(func() {
+	ui.Column(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Children(func() {
 		ui.Icon(c, logo).Size(64, 64).TextColor(t.Foreground)
-		ui.Text(c, "Godwit").FontSize(t.FontSize + 7).FontWeight(600)
+		ui.Text(c, "Godwit").FontSize(t.Text.X2l).FontWeight(600)
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
 		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)
 		label := strings.TrimPrefix(repoURL, "https://")

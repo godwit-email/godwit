@@ -14,9 +14,9 @@ import (
 // composer, its menu deletes it.
 func (p *mailPage) draftsView(c *ui.Context) {
 	t := theme.Of(c)
-	s, small := t.Scale, t.FontSize-1
+	th, small := c.Theme(), t.Text.Sm
 	title, _ := p.Title()
-	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(12*s, 16*s, 8*s, 16*s)
+	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
 	ui.List(c, &p.draftList, len(drafts), func(i int) {
@@ -28,9 +28,9 @@ func (p *mailPage) draftsView(c *ui.Context) {
 		if to == "" {
 			to = i18n.T("mail.no_recipient")
 		}
-		ui.ButtonBase(c).Padding(10 * s).Radius(8).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(2 * s).Children(func() {
-				ui.Row(c).Gap(6 * s).Children(func() {
+		ui.ButtonBase(c).Padding(th.Space(2.5)).Radius(t.Radius.Md).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+				ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 					ui.Text(c, to).SingleLine().Grow(1).Shrink(1)
 					ui.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt)).FontSize(small).TextColor(t.Muted)
 				})
@@ -42,9 +42,9 @@ func (p *mailPage) draftsView(c *ui.Context) {
 					p.deleteDraft(d.ID)
 				}
 			})
-	}).Grow(1).Padding(0, 8*s).Children(func() {
+	}).Grow(1).Padding(0, th.Space(2)).Children(func() {
 		if len(drafts) == 0 && !p.loading {
-			ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(12 * s)
+			ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
 		}
 	})
 }

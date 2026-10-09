@@ -34,8 +34,6 @@ func (placeholder) Title() (string, string)      { return "", "" }
 func (placeholder) refresh(hints []events.Event) {}
 
 const (
-	railWidth    = 56
-	sidebarWidth = 248
 	refreshEvery = 250 * time.Millisecond
 )
 
@@ -144,7 +142,7 @@ func (a *App) toastErr(err error) {
 // and content as one panel. First run shows only the onboarding page.
 func (a *App) View(c *ui.Context) {
 	theme.Apply(c, theme.FromSettings(a.settings, c.Theme().Dark))
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	c.Root().Background(t.Window)
 	for _, ts := range a.toasts {
 		c.AddToast(ts)
@@ -157,12 +155,12 @@ func (a *App) View(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyBracketRight) {
 		a.forward()
 	}
-	barH := max(44, c.TitleBar().Height) // the window controls only take room beside our bar
+	barH := max(theme.TopBarHeight, c.TitleBar().Height) // the window controls only take room beside our bar
 	switch {
 	case !a.loaded:
 		ui.Box(c).Height(barH).FillWidth().DragWindow()
 		if a.loadErr != nil {
-			ui.Column(c).Grow(1).FillWidth().Center().Gap(12 * t.Scale).Children(func() {
+			ui.Column(c).Grow(1).FillWidth().Center().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, humanize(a.loadErr)).TextColor(t.Muted)
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(a.load)
 			})
@@ -186,13 +184,13 @@ func (a *App) View(c *ui.Context) {
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
 // window. The page's title starts where the panel does.
 func (a *App) titleBar(c *ui.Context, h float32) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
-	padL := bar.Left + 8*t.Scale
-	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+16*t.Scale, 0, padL).DragWindow().Children(func() {
-		lead := ui.Row(c).Gap(4 * t.Scale)
+	padL := bar.Left + th.Space(2)
+	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+th.Space(4), 0, padL).DragWindow().Children(func() {
+		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
-			lead.MinWidth(max(0, railWidth+sidebarWidth-padL))
+			lead.MinWidth(max(0, theme.RailWidth+theme.SidebarWidth-padL))
 		}
 		lead.Children(func() {
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
@@ -207,11 +205,11 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
 		})
 		if title, sub := a.page().Title(); title != "" {
-			ui.Row(c).Gap(8 * t.Scale).Children(func() {
-				ui.Box(c).Size(1, 24).Margin(0, 8*t.Scale, 0, 0).Background(t.Border)
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				ui.Box(c).Size(1, 24).Margin(0, th.Space(2), 0, 0).Background(t.Border)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
-					ui.Text(c, sub).FontSize(t.FontSize - 1).TextColor(t.Muted).SingleLine()
+					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
 				}
 			})
 		}
@@ -224,19 +222,19 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 // (a click opens its settings), a sync failed (hover for the error), a sync
 // is under way, or how long ago the last one finished.
 func (a *App) syncStatus(c *ui.Context) {
-	t := theme.Of(c)
-	small := t.FontSize - 1
+	t, th := theme.Of(c), c.Theme()
+	small := t.Text.Sm
 	for _, acc := range a.accounts {
 		if acc.Status == "reauth_required" {
 			r := Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)}
-			ui.ButtonBase(c).Gap(6 * t.Scale).PaddingX(6 * t.Scale).Height(24).Radius(6).FontSize(small).TextColor(t.WarningText).Children(func() {
+			ui.ButtonBase(c).Gap(th.Space(1.5)).PaddingX(th.Space(1.5)).Height(theme.TitleButtonHeight).Radius(t.Radius.Sm).FontSize(small).TextColor(t.WarningText).Children(func() {
 				kit.StatusDot(c, kit.Attention)
 				ui.Text(c, i18n.T("shell.sync.reauth"))
 			}).OnClick(func() { a.navigate(r) })
 			return
 		}
 	}
-	row := ui.Row(c).Gap(6 * t.Scale).FontSize(small).TextColor(t.Muted)
+	row := ui.Row(c).Gap(th.Space(1.5)).FontSize(small).TextColor(t.Muted)
 	switch {
 	case len(a.syncing) > 0:
 		row.Children(func() { ui.Text(c, i18n.T("shell.sync.syncing")) })
@@ -267,8 +265,8 @@ func (a *App) syncedAgo() string {
 
 // rail is the icon bar: Mail and Wit at the top, Settings at the bottom.
 func (a *App) rail(c *ui.Context) {
-	t := theme.Of(c)
-	ui.Column(c).Width(railWidth).AlignItems(ui.Center).Gap(6*t.Scale).Padding(4*t.Scale, 0, 12*t.Scale, 0).Children(func() {
+	th := c.Theme()
+	ui.Column(c).Width(theme.RailWidth).AlignItems(ui.Center).Gap(th.Space(1.5)).Padding(th.Space(1), 0, th.Space(3), 0).Children(func() {
 		a.railItem(c, "mail", i18n.T("shell.rail.mail"), Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 		a.railItem(c, "sparkles", i18n.T("shell.rail.wit"), Route{Page: PageWit})
 		ui.Spacer(c)
@@ -279,7 +277,7 @@ func (a *App) rail(c *ui.Context) {
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 	t := theme.Of(c)
 	on := a.route.section() == r.Page
-	b := ui.ButtonBase(c).Size(40, 40).Radius(8).Center().Label(label).Tooltip(label).TextColor(t.Muted)
+	b := ui.ButtonBase(c).Size(40, 40).Radius(t.Radius.Md).Center().Label(label).Tooltip(label).TextColor(t.Muted)
 	switch {
 	case on:
 		b.Background(t.RailSelected).TextColor(t.Foreground)
@@ -295,12 +293,12 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 // panel is the page's sidebar and content as one block, its top-left corner
 // rounded.
 func (a *App) panel(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Radius(14, 0, 0, 0).Clip().Background(t.Background).
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Radius(t.Radius.Xl, 0, 0, 0).Clip().Background(t.Background).
 		BorderWidth(1, 0, 0, 1).BorderColor(t.Border).Children(func() {
 		if !a.sidebarHidden {
-			ui.Column(c).Width(sidebarWidth).Padding(12*t.Scale).Gap(2*t.Scale).Background(t.Sidebar).
+			ui.Column(c).Width(theme.SidebarWidth).Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).
 				BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
 		}
 		ui.Column(c).Grow(1).Children(func() { p.Content(c) })

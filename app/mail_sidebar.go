@@ -42,18 +42,17 @@ func folderName(f core.Folder) string {
 // when there are several accounts; the outbox while it holds mail; Add account.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Gap(2 * s).Children(func() {
-			ui.ButtonBase(c).Height(32 * s).PaddingX(8 * s).Gap(10 * s).Radius(8).FontWeight(500).Children(func() {
+		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Children(func() {
 				ui.Icon(c, icons.Get("square-pen")).Size(16, 16)
 				ui.Text(c, i18n.T("mail.compose"))
 			}).OnClick(p.compose)
-			ui.Box(c).Height(8 * s)
+			ui.Box(c).Height(th.Space(2))
 			p.navItem(c, i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
 			p.navItem(c, i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
-			ui.Box(c).Height(10 * s)
+			ui.Box(c).Height(th.Space(2.5))
 			grouped := len(a.accounts) > 1
 			for _, acc := range a.accounts {
 				indent := float32(0)
@@ -79,7 +78,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			if n := len(p.outbox); n > 0 {
 				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
 			}
-			ui.ButtonBase(c).Height(30 * s).PaddingX(8 * s).Gap(6 * s).Radius(8).TextColor(t.Muted).FontSize(t.FontSize - 1).Children(func() {
+			ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
 				ui.Icon(c, icons.Get("plus")).Size(12, 12)
 				ui.Text(c, i18n.T("mail.add_account"))
 			}).OnClick(func() {
@@ -92,10 +91,9 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 
 // navItem is a view in the sidebar, with its count.
 func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, indent float32) {
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	on := p.a.route.Page == PageMail && p.a.route.View == v
-	b := ui.ButtonBase(c).Height(32*s).Padding(0, 8*s, 0, (8+indent)*s).Radius(8).Gap(8 * s)
+	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+indent/4)).Radius(t.Radius.Md).Gap(th.Space(2))
 	switch {
 	case on:
 		b.Background(t.SidebarSelected).FontWeight(500)
@@ -105,7 +103,7 @@ func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, 
 	b.Children(func() {
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
 		if count > 0 {
-			ui.Text(c, strconv.Itoa(count)).FontSize(t.FontSize - 1).TextColor(t.Muted)
+			ui.Text(c, strconv.Itoa(count)).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 	if !on {
@@ -115,14 +113,13 @@ func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, 
 
 // accountHeader folds an account's folders; folded, it shows the unread count.
 func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	open := !p.collapsed[acc.ID]
 	chevron := "chevron-down"
 	if !open {
 		chevron = "chevron-right"
 	}
-	ui.ButtonBase(c).Height(30 * s).PaddingX(8 * s).Gap(6 * s).Radius(8).TextColor(t.Muted).FontSize(t.FontSize - 1).Children(func() {
+	ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
 		ui.Icon(c, icons.Get(chevron)).Size(12, 12)
 		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
 		if n := p.a.unread[acc.ID]; !open && n > 0 {

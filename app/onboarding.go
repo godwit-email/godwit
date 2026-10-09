@@ -417,35 +417,35 @@ func (o *onboarding) finish(again bool) {
 // Content is the first-run window: the privacy promises on the left, the
 // steps on the right.
 func (o *onboarding) Content(c *ui.Context) {
-	t := theme.Of(c)
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, 8*t.Scale, 8*t.Scale, 8*t.Scale).Radius(12).Clip().Background(t.Background).
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Radius(t.Radius.Panel).Clip().Background(t.Background).
 		Border(1, t.Border).Children(func() {
-		ui.Column(c).Width(440).Padding(48*t.Scale, 44*t.Scale).Gap(28*t.Scale).Background(t.Sidebar).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-			ui.Row(c).Gap(10 * t.Scale).Children(func() {
+		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Background(t.Sidebar).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+			ui.Row(c).Gap(th.Space(2.5)).Children(func() {
 				ui.Icon(c, icons.Get("mail")).Size(28, 28)
-				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.FontSize + 4).FontWeight(600)
+				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.Text.Brand).FontWeight(600)
 			})
-			ui.Column(c).Gap(10 * t.Scale).Children(func() {
-				ui.Text(c, i18n.T("onboarding.headline")).FontSize(t.FontSize + 16).FontWeight(600)
+			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
+				ui.Text(c, i18n.T("onboarding.headline")).FontSize(t.Text.Display).FontWeight(600)
 				ui.Text(c, i18n.T("onboarding.lede")).TextColor(t.Muted).LineHeight(1.7)
 			})
-			ui.Column(c).Gap(18 * t.Scale).Children(func() {
+			ui.Column(c).Gap(th.Space(4.5)).Children(func() {
 				for _, p := range []struct{ icon, key string }{{"shield", "keychain"}, {"server", "local"}, {"sparkles", "ai"}} {
-					ui.Row(c).Gap(12 * t.Scale).AlignItems(ui.Start).Children(func() {
-						ui.Icon(c, icons.Get(p.icon)).Size(18, 18).Margin(2*t.Scale, 0, 0, 0).TextColor(t.Foreground.Mix(t.Background, 0.25))
-						ui.Column(c).Gap(2 * t.Scale).Shrink(1).Children(func() {
+					ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
+						ui.Icon(c, icons.Get(p.icon)).Size(18, 18).Margin(th.Space(0.5), 0, 0, 0).TextColor(t.Foreground.Mix(t.Background, 0.25))
+						ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 							ui.Text(c, i18n.T("onboarding.promise."+p.key)).FontWeight(500)
-							ui.Text(c, i18n.T("onboarding.promise."+p.key+".sub")).FontSize(t.FontSize - 1).TextColor(t.Muted).LineHeight(1.6)
+							ui.Text(c, i18n.T("onboarding.promise."+p.key+".sub")).FontSize(t.Text.Sm).TextColor(t.Muted).LineHeight(1.6)
 						})
 					})
 				}
 			})
 			ui.Spacer(c)
-			ui.Text(c, i18n.T("onboarding.license")).FontSize(t.FontSize - 2).TextColor(t.Muted)
+			ui.Text(c, i18n.T("onboarding.license")).FontSize(t.Text.Xs).TextColor(t.Muted)
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(520).Padding(56*t.Scale, 32*t.Scale).Gap(22 * t.Scale).Children(func() { o.body(c) })
+				ui.Column(c).FillWidth().MaxWidth(theme.FormMaxWidth).Padding(th.Space(14), th.Space(8)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
 			})
 		})
 	})
@@ -453,22 +453,22 @@ func (o *onboarding) Content(c *ui.Context) {
 
 // sheetView is the 560-wide add-account sheet; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	ink := t.Foreground
 	if t.Dark {
 		ink = t.Background
 	}
 	ui.DialogBase(c, &o.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink.Alpha(0.28)).Justify(ui.Start).Padding(64*t.Scale, 0, 0, 0)
-		panel.Width(560).MaxHeight(760).Radius(14).Clip().Background(t.Background).Border(1, t.Border).
+		backdrop.Background(ink.Alpha(0.28)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		panel.Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.Xl).Clip().Background(t.Background).Border(1, t.Border).
 			Shadow(0, 24, 64, 0, ink.Alpha(0.18))
-		ui.Row(c).Padding(20*t.Scale, 24*t.Scale, 0, 24*t.Scale).Children(func() {
-			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(t.FontSize + 2).FontWeight(600)
+		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
+			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(t.Text.Lg).FontWeight(600)
 			ui.Spacer(c)
 			kit.IconButton(c, "x", i18n.T("common.close"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { o.open = false })
 		})
 		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(16*t.Scale, 24*t.Scale, 24*t.Scale, 24*t.Scale).Gap(22 * t.Scale).Children(func() { o.body(c) })
+			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
 		})
 	})
 	if !o.open {
@@ -492,9 +492,9 @@ func (o *onboarding) body(c *ui.Context) {
 }
 
 func heading(c *ui.Context, title, sub string) {
-	t := theme.Of(c)
-	ui.Column(c).Gap(6 * t.Scale).Children(func() {
-		ui.Text(c, title).FontSize(t.FontSize + 6).FontWeight(600)
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+		ui.Text(c, title).FontSize(t.Text.Heading).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
@@ -503,11 +503,12 @@ func heading(c *ui.Context, title, sub string) {
 
 func mark(c *ui.Context, text string, size float32) {
 	t := theme.Of(c)
-	fs := t.FontSize - 2
+	fs := t.Text.Xs
 	if size > 30 {
-		fs = t.FontSize
+		fs = t.Text.Base
 	}
-	ui.Box(c).Size(size, size).Radius(min(8, size/4)).Background(t.Hover).Center().Children(func() {
+	r := min(t.Radius.Md, size/4) // a quarter of small marks
+	ui.Box(c).Size(size, size).Radius(r).Background(t.Hover).Center().Children(func() {
 		ui.Text(c, text).FontSize(fs).FontWeight(600).TextColor(t.Foreground.Mix(t.Background, 0.25))
 	})
 }
@@ -517,10 +518,10 @@ func primary(c *ui.Context, label string, disabled bool) ui.Element {
 }
 
 func (o *onboarding) pickView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
-	ui.Column(c).Gap(6 * t.Scale).Children(func() {
-		ui.Row(c).Gap(8 * t.Scale).Children(func() {
+	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Invalid: o.emailErr != ""}).Label(i18n.T("onboarding.email")).Grow(1)
 			if in.Changed() {
 				o.emailErr = ""
@@ -534,24 +535,24 @@ func (o *onboarding) pickView(c *ui.Context) {
 			}
 		})
 		if o.emailErr != "" {
-			ui.Text(c, o.emailErr).FontSize(t.FontSize - 1).TextColor(t.Danger)
+			ui.Text(c, o.emailErr).FontSize(t.Text.Sm).TextColor(t.Danger)
 		}
 	})
 	primary(c, i18n.T("common.continue"), strings.TrimSpace(o.email) == "").OnClick(o.next)
-	ui.Row(c).Gap(12 * t.Scale).FontSize(t.FontSize - 2).TextColor(t.Muted).Children(func() {
-		ui.Box(c).Height(1).Grow(1).Background(t.Border)
+	ui.Row(c).Gap(th.Space(3)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
+		ui.Box(c).Height(theme.Hairline).Grow(1).Background(t.Border)
 		ui.Text(c, i18n.T("onboarding.or_pick"))
-		ui.Box(c).Height(1).Grow(1).Background(t.Border)
+		ui.Box(c).Height(theme.Hairline).Grow(1).Background(t.Border)
 	})
-	ui.Column(c).Gap(8 * t.Scale).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		for i := 0; i < len(o.providers); i += 2 {
-			ui.Row(c).Gap(8 * t.Scale).AlignItems(ui.Stretch).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
 				for _, p := range o.providers[i:min(i+2, len(o.providers))] {
 					how := i18n.T("onboarding.login." + p.Login)
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")
 					}
-					b := ui.ButtonBase(c).Grow(1).Basis(0).Justify(ui.Start).Height(48*t.Scale).PaddingX(12*t.Scale).Gap(10*t.Scale).Radius(8).Border(1, t.Border).Background(t.Background)
+					b := ui.ButtonBase(c).Grow(1).Basis(0).Justify(ui.Start).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Radius(t.Radius.Md).Border(1, t.Border).Background(t.Background)
 					if b.Hovered() {
 						b.Background(t.Hover)
 					}
@@ -559,7 +560,7 @@ func (o *onboarding) pickView(c *ui.Context) {
 						mark(c, providerMark(p), 28)
 						ui.Column(c).Shrink(1).Children(func() {
 							ui.Text(c, providerName(p)).SingleLine()
-							ui.Text(c, how).FontSize(t.FontSize - 2).TextColor(t.Muted).SingleLine()
+							ui.Text(c, how).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
 						})
 					}).OnClick(func() { o.choose(p) })
 				}
@@ -578,11 +579,11 @@ func (o *onboarding) backLink(c *ui.Context) {
 }
 
 func (o *onboarding) providerHeader(c *ui.Context, sub string) {
-	t := theme.Of(c)
-	ui.Row(c).Gap(12 * t.Scale).Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(3)).Children(func() {
 		mark(c, providerMark(o.prov), 40)
 		ui.Column(c).Children(func() {
-			ui.Text(c, providerName(o.prov)).FontSize(t.FontSize + 6).FontWeight(600)
+			ui.Text(c, providerName(o.prov)).FontSize(t.Text.Heading).FontWeight(600)
 			if sub != "" {
 				ui.Text(c, sub).TextColor(t.Muted)
 			}
@@ -599,7 +600,7 @@ func tr(key string) string {
 }
 
 func (o *onboarding) passwordView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
 	sub := strings.TrimSpace(o.email)
 	if o.askEmail {
@@ -617,13 +618,13 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		hint = i18n.Tf("onboarding.hint."+login, name)
 	}
 	if hint != "" {
-		ui.Column(c).Gap(10*t.Scale).Padding(14*t.Scale, 16*t.Scale).Radius(10).Background(t.Sidebar).Border(1, t.Border).Children(func() {
+		ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Border(1, t.Border).Children(func() {
 			ui.Text(c, hint).FontWeight(500)
 			steps := tr("onboarding.steps." + o.prov.ID)
 			if steps == "" {
 				steps = tr("onboarding.steps." + login)
 			}
-			ui.Column(c).Gap(4 * t.Scale).Children(func() {
+			ui.Column(c).Gap(th.Space(1)).Children(func() {
 				for i, line := range strings.Split(steps, "\n") {
 					ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(1.6)
 				}
@@ -650,7 +651,7 @@ var securities = []kit.Option[core.Security]{
 
 // manualView is the collapsible server form: hosts, ports and TLS or STARTTLS.
 func (o *onboarding) manualView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	icon := "chevron-right"
 	if o.manual {
 		icon = "chevron-down"
@@ -665,13 +666,13 @@ func (o *onboarding) manualView(c *ui.Context) {
 		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
 	}
 	server := func(proto string, host, port *string, sec *core.Security) {
-		ui.Row(c).Gap(8 * t.Scale).AlignItems(ui.Start).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
 			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1)
-			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(90)
+			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(theme.PortWidth)
 			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) })
 		})
 	}
-	ui.Column(c).Gap(12 * t.Scale).Children(func() {
+	ui.Column(c).Gap(th.Space(3)).Children(func() {
 		server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
 		server("smtp", &o.smtpHost, &o.smtpPort, &o.smtpSec)
 		ui.Field(c, i18n.T("onboarding.username"), func() {
@@ -681,23 +682,23 @@ func (o *onboarding) manualView(c *ui.Context) {
 }
 
 func (o *onboarding) oauthView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
 	o.providerHeader(c, i18n.T("onboarding.oauth.sub"))
-	ui.Column(c).Gap(12*t.Scale).Padding(20*t.Scale).Radius(10).Border(1, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Lg).Border(1, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(o.startOAuth)
 			})
 			return
 		}
-		ui.Box(c).Size(10, 10).Radius(5).Background(t.Muted)
+		ui.Box(c).Size(10, 10).Radius(t.Radius.Full).Background(t.Muted)
 		title := i18n.T("onboarding.oauth.opening")
 		if o.authURL != "" {
 			title = i18n.T("onboarding.oauth.opened")
 		}
 		ui.Text(c, title).FontWeight(500)
-		ui.Text(c, i18n.T("onboarding.oauth.body")).FontSize(t.FontSize - 1).TextColor(t.Muted).TextAlign(ui.Center).LineHeight(1.6)
+		ui.Text(c, i18n.T("onboarding.oauth.body")).FontSize(t.Text.Sm).TextColor(t.Muted).TextAlign(ui.Center).LineHeight(1.6)
 		u := o.authURL
 		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: u == ""}).
 			OnClick(func() { o.openURL(u) })
@@ -772,7 +773,7 @@ func (o *onboarding) settingsNext() string {
 }
 
 func (o *onboarding) checkView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	steps := o.report.Steps
 	if o.checking || len(steps) == 0 {
 		steps = []core.CheckStep{{Name: "settings"}, {Name: "imap"}, {Name: "smtp"}}
@@ -783,15 +784,15 @@ func (o *onboarding) checkView(c *ui.Context) {
 		title = i18n.T("onboarding.check.failed")
 	}
 	heading(c, title, strings.TrimSpace(o.email))
-	ui.Column(c).Radius(10).Border(1, t.Border).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Lg).Border(1, t.Border).Clip().Children(func() {
 		for i, st := range steps {
 			text, detail, status := o.checkRow(st)
-			row := ui.Row(c).Gap(12*t.Scale).AlignItems(ui.Start).Padding(12*t.Scale, 14*t.Scale)
+			row := ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Padding(th.Space(3), th.Space(3.5))
 			if i > 0 {
 				row.BorderWidth(1, 0, 0, 0).BorderColor(t.Hover)
 			}
 			row.Children(func() {
-				dot := ui.Box(c).Size(20, 20).Radius(10).Center().FontSize(t.FontSize - 2)
+				dot := ui.Box(c).Size(20, 20).Radius(t.Radius.Full).Center().FontSize(t.Text.Xs)
 				switch status {
 				case 1:
 					dot.Background(t.Success.Alpha(0.12)).TextColor(t.Success).Children(func() { ui.Icon(c, icons.Get("check")).Size(12, 12) })
@@ -800,17 +801,17 @@ func (o *onboarding) checkView(c *ui.Context) {
 				default:
 					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Text(c, "…") })
 				}
-				ui.Column(c).Gap(2 * t.Scale).Grow(1).Shrink(1).Children(func() {
+				ui.Column(c).Gap(th.Space(0.5)).Grow(1).Shrink(1).Children(func() {
 					ui.Text(c, text)
 					if detail != "" {
-						ui.Text(c, detail).FontSize(t.FontSize - 2).TextColor(t.Muted)
+						ui.Text(c, detail).FontSize(t.Text.Xs).TextColor(t.Muted)
 					}
 				})
 			})
 		}
 	})
 	if failed {
-		ui.Row(c).Gap(8 * t.Scale).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if o.prov.Login == "oauth" {
 				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{}).OnClick(func() { o.retry(false) })
 				return
@@ -824,12 +825,12 @@ func (o *onboarding) checkView(c *ui.Context) {
 var syncLimits = []int{2000, 10000, 100000}
 
 func (o *onboarding) doneView(c *ui.Context) {
-	t := theme.Of(c)
-	ui.Column(c).Gap(6 * t.Scale).Children(func() {
-		ui.Box(c).Size(36, 36).Radius(18).Background(t.Success.Alpha(0.12)).TextColor(t.Success).Center().Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+		ui.Box(c).Size(36, 36).Radius(t.Radius.Full).Background(t.Success.Alpha(0.12)).TextColor(t.Success).Center().Children(func() {
 			ui.Icon(c, icons.Get("check")).Size(18, 18)
 		})
-		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(t.FontSize+6).FontWeight(600).Margin(8*t.Scale, 0, 0, 0)
+		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(t.Text.Heading).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 		ui.Text(c, strings.TrimSpace(o.email)).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
@@ -845,7 +846,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(func() { o.finish(o.again) })
 		})
 	}
-	ui.Column(c).Gap(8 * t.Scale).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		label := i18n.T("onboarding.start")
 		if o.sheet {
 			label = i18n.T("common.done")

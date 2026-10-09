@@ -21,15 +21,15 @@ type outboxEntry struct {
 // may or may not have gone out, or failed, waits for the user's decision.
 func (p *mailPage) outboxView(c *ui.Context) {
 	t := theme.Of(c)
-	s, small := t.Scale, t.FontSize-1
-	ui.Text(c, i18n.T("mail.outbox")).FontWeight(500).TextColor(t.Muted).Padding(12*s, 16*s, 8*s, 16*s)
+	th, small := c.Theme(), t.Text.Sm
+	ui.Text(c, i18n.T("mail.outbox")).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Padding(0, 16*s).Gap(12 * s).Children(func() {
+		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
 			if len(p.outbox) == 0 {
 				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted)
 			}
 			for _, it := range p.outbox {
-				ui.Column(c.Key(it.ID)).Gap(4*s).Padding(10*s).Radius(8).Border(1, t.Border).Children(func() {
+				ui.Column(c.Key(it.ID)).Gap(th.Space(1)).Padding(th.Space(2.5)).Radius(t.Radius.Md).Border(1, t.Border).Children(func() {
 					subject := it.Subject
 					if subject == "" {
 						subject = i18n.T("mail.no_subject")
@@ -41,7 +41,7 @@ func (p *mailPage) outboxView(c *ui.Context) {
 						ui.Text(c, it.LastError).FontSize(small).TextColor(t.Danger)
 					}
 					if decidable(it.OutboxItem) {
-						ui.Row(c).Wrap().Gap(6*s).Margin(4*s, 0, 0, 0).Children(func() {
+						ui.Row(c).Wrap().Gap(th.Space(1.5)).Margin(th.Space(1), 0, 0, 0).Children(func() {
 							for _, act := range []string{"confirm_sent", "resend", "discard"} {
 								v := kit.Outline
 								if act == "discard" {

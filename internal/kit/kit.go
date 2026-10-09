@@ -26,13 +26,6 @@ type ButtonOpts struct {
 	Icon            string
 }
 
-// px scales a size by the density: comfortable rows and paddings are 1.25×.
-func px(t theme.Tokens, v float32) float32 { return v * t.Scale }
-
-// small and xsmall are text sizes below the interface font size.
-func small(t theme.Tokens) float32  { return t.FontSize - 1 }
-func xsmall(t theme.Tokens) float32 { return t.FontSize - 2 }
-
 // ink is the color of shadows and backdrops: dark in either appearance.
 func ink(t theme.Tokens) ui.Color {
 	if t.Dark {
@@ -42,14 +35,14 @@ func ink(t theme.Tokens) ui.Color {
 }
 
 func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
-	t := theme.Of(c)
-	h, padX := px(t, 32), px(t, 14)
+	t, th := theme.Of(c), c.Theme()
+	h, padX := th.Space(8), th.Space(3.5)
 	if o.Small {
-		h, padX = px(t, 28), px(t, 10)
+		h, padX = th.Space(7), th.Space(2.5)
 	}
-	b := ui.ButtonBase(c).Height(h).Radius(8).Gap(px(t, 6)).Justify(ui.Center).Disabled(o.Disabled)
+	b := ui.ButtonBase(c).Height(h).Radius(t.Radius.Md).Gap(th.Space(1.5)).Justify(ui.Center).Disabled(o.Disabled)
 	if square {
-		b.Width(h).Radius(6)
+		b.Width(h).Radius(t.Radius.Sm)
 	} else {
 		b.PaddingX(padX)
 	}
@@ -103,10 +96,13 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	})
 }
 
+// switchInset is the room around the thumb inside the 18-high track.
+const switchInset = 2
+
 // switchTrack draws a switch: a 32×18 track and its thumb.
 func switchTrack(c *ui.Context, on bool) ui.Element {
 	t := theme.Of(c)
-	tr := ui.Row(c).Size(32, 18).Shrink(0).Padding(2).Radius(9).Background(t.Border).Justify(ui.Start)
+	tr := ui.Row(c).Size(32, 18).Shrink(0).Padding(switchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start)
 	thumb := t.Background
 	switch {
 	case on:
@@ -115,24 +111,24 @@ func switchTrack(c *ui.Context, on bool) ui.Element {
 		thumb = t.Foreground // a dark thumb would vanish into the dark track
 	}
 	return tr.Children(func() {
-		ui.Box(c).Size(14, 14).Radius(7).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
+		ui.Box(c).Size(14, 14).Radius(t.Radius.Full).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
 	})
 }
 
 // Switch is a 32×18 switch; give it a Label.
 func Switch(c *ui.Context, on *bool) ui.Element {
-	return ui.SwitchBase(c, on).Radius(9).Children(func() { switchTrack(c, *on) })
+	return ui.SwitchBase(c, on).Radius(theme.Of(c).Radius.Full).Children(func() { switchTrack(c, *on) })
 }
 
 // SwitchRow is a full-width switch named label: label and help on the left,
 // the track on the right; a click anywhere on the row toggles it.
 func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
-	t := theme.Of(c)
-	return ui.SwitchBase(c, on).FillWidth().Gap(px(t, 16)).Label(label).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(px(t, 2)).Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(4)).Label(label).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label)
 			if help != "" {
-				ui.Text(c, help).FontSize(small(t)).TextColor(t.Muted)
+				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		switchTrack(c, *on)
@@ -141,9 +137,9 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 
 // Checkbox is a 16×16 check box before its label.
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
-	t := theme.Of(c)
-	return ui.CheckboxBase(c, on).Gap(px(t, 8)).Children(func() {
-		box := ui.Box(c).Size(16, 16).Radius(4).Border(1, t.Border).Background(t.Background).Center()
+	t, th := theme.Of(c), c.Theme()
+	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
+		box := ui.Box(c).Size(16, 16).Radius(t.Radius.Xs).Border(1, t.Border).Background(t.Background).Center()
 		if *on {
 			box.Background(t.Primary).Border(1, t.Primary).TextColor(t.PrimaryText).Children(func() {
 				ui.Icon(c, icons.Get("check")).Size(12, 12)
@@ -155,11 +151,11 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 
 // Radio is a radio button choosing v into *sel.
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
-	t := theme.Of(c)
-	return ui.RadioBase(c, sel, v).Gap(px(t, 8)).Children(func() {
-		dot := ui.Box(c).Size(16, 16).Radius(8).Border(1, t.Border).Background(t.Background).Center()
+	t, th := theme.Of(c), c.Theme()
+	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
+		dot := ui.Box(c).Size(16, 16).Radius(t.Radius.Full).Border(1, t.Border).Background(t.Background).Center()
 		if *sel == v {
-			dot.Border(1, t.Primary).Children(func() { ui.Box(c).Size(8, 8).Radius(4).Background(t.Primary) })
+			dot.Border(1, t.Primary).Children(func() { ui.Box(c).Size(8, 8).Radius(t.Radius.Full).Background(t.Primary) })
 		}
 		ui.Text(c, label)
 	})
@@ -173,7 +169,7 @@ type Option[T comparable] struct {
 
 // Select is a 32-high select of opts; give it a Label.
 func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	s := ui.SelectBase(c, sel)
 	current := ""
 	for _, o := range opts {
@@ -181,15 +177,15 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
-	s.Trigger.Height(px(t, 32)).PaddingX(px(t, 10)).Gap(px(t, 8)).Radius(6).Border(1, t.Border).Background(t.Background).MinWidth(120).Children(func() {
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(1, t.Border).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(16, 16).TextColor(t.Muted)
 	})
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(4, 0, 0, 0).Padding(px(t, 4)).Radius(8).Background(t.Background).Border(1, t.Border).
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
 		for _, o := range opts {
-			item := s.Item(o.Value).Height(px(t, 32)).PaddingX(px(t, 8)).Gap(px(t, 8)).Radius(6)
+			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Sm)
 			if item.Highlighted() {
 				item.Background(t.Hover)
 			}
@@ -212,10 +208,10 @@ type InputOpts struct {
 }
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
-	t := theme.Of(c)
-	e.PaddingX(px(t, 10)).Radius(6).Border(1, t.Border).Background(t.Background).Placeholder(o.Placeholder)
+	t, th := theme.Of(c), c.Theme()
+	e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(1, t.Border).Background(t.Background).Placeholder(o.Placeholder)
 	if o.Mono {
-		e.Font("Geist Mono").FontSize(t.FontSize)
+		e.Font("Geist Mono").FontSize(t.Text.Base)
 	}
 	if o.Password {
 		e.Password()
@@ -228,36 +224,36 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 
 // Input is a 32-high single-line text input.
 func Input(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextInputBase(c, s).Height(px(theme.Of(c), 32)), o)
+	return input(c, ui.TextInputBase(c, s).Height(c.Theme().Space(8)), o)
 }
 
 // TextArea is a multi-line text input.
 func TextArea(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextAreaBase(c, s).PaddingY(px(theme.Of(c), 8)), o)
+	return input(c, ui.TextAreaBase(c, s).PaddingY(c.Theme().Space(2)), o)
 }
 
 // Field is a labelled form control with help text, or an error in its place.
 func Field(c *ui.Context, label, help, errText string, control func()) {
-	t := theme.Of(c)
-	ui.Column(c).Gap(px(t, 6)).Children(func() {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 		ui.Text(c, label).FontWeight(500)
 		control()
 		switch {
 		case errText != "":
-			ui.Text(c, errText).FontSize(small(t)).TextColor(t.Danger)
+			ui.Text(c, errText).FontSize(t.Text.Sm).TextColor(t.Danger)
 		case help != "":
-			ui.Text(c, help).FontSize(small(t)).TextColor(t.Muted)
+			ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }
 
 // Tabs is a segmented tab list choosing *sel.
 func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	tabs := ui.TabsBase(c, sel, len(labels))
-	return tabs.List.Padding(px(t, 3)).Radius(8).Background(t.Hover).Gap(px(t, 2)).Children(func() {
+	return tabs.List.Padding(th.Space(0.75)).Radius(t.Radius.Md).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
 		for i, l := range labels {
-			tab := tabs.Tab(i).Height(px(t, 26)).PaddingX(px(t, 10)).Radius(6).FontWeight(500).TextColor(t.Muted)
+			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).FontWeight(500).TextColor(t.Muted)
 			if i == *sel {
 				tab.Background(t.Background).TextColor(t.Foreground).Shadow(0, 1, 2, 0, ink(t).Alpha(0.1))
 			}
@@ -268,24 +264,24 @@ func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 
 // Dialog is a 560-wide modal panel; Escape and a click outside close it.
 func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4))
-		panel.Width(560).Radius(14).Padding(px(t, 24)).Gap(px(t, 16)).Background(t.Background).Border(1, t.Border).
+		panel.Width(theme.SheetWidth).Radius(t.Radius.Xl).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 16, 48, 0, ink(t).Alpha(0.25))
-		ui.Text(c, title).FontSize(t.FontSize + 3).FontWeight(600)
+		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
 		body()
 		if footer != nil {
-			ui.Row(c).Gap(px(t, 8)).Justify(ui.End).Children(footer)
+			ui.Row(c).Gap(th.Space(2)).Justify(ui.End).Children(footer)
 		}
 	})
 }
 
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Margin(4, 0, 0, 0).Padding(px(t, 12)).Radius(8).Gap(px(t, 8)).Background(t.Background).Border(1, t.Border).
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Md).Gap(th.Space(2)).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
 		body()
 	})
@@ -293,9 +289,9 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
-	t := theme.Of(c)
-	return ui.Box(c).Padding(px(t, 1), px(t, 6)).Radius(4).Background(t.Hover).Children(func() {
-		ui.Text(c, text).FontSize(small(t)).TextColor(t.Foreground)
+	t, th := theme.Of(c), c.Theme()
+	return ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover).Children(func() {
+		ui.Text(c, text).FontSize(t.Text.Sm).TextColor(t.Foreground)
 	})
 }
 
@@ -310,7 +306,7 @@ const (
 
 // Alert is a bordered message bar with optional actions after the text.
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	bg, border, fg := t.Background, t.Border, t.Foreground
 	switch kind {
 	case Warning:
@@ -318,8 +314,8 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	case Danger:
 		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
 	}
-	return ui.Row(c).Wrap().Gap(px(t, 12)).Padding(px(t, 8), px(t, 12)).Radius(8).Background(bg).Border(1, border).TextColor(fg).
-		FontSize(t.FontSize).Children(func() {
+	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(bg).Border(1, border).TextColor(fg).
+		FontSize(t.Text.Base).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
 			actions()
@@ -346,13 +342,13 @@ func StatusDot(c *ui.Context, s Status) ui.Element {
 	case Error:
 		color = t.Danger
 	}
-	return ui.Box(c).Size(6, 6).Radius(3).Background(color)
+	return ui.Box(c).Size(6, 6).Radius(t.Radius.Full).Background(color)
 }
 
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
-	t := theme.Of(c)
-	return ui.Column(c).Gap(px(t, 12)).Padding(px(t, 16)).Radius(12).Background(t.Background).Border(1, t.Border).Children(body)
+	t, th := theme.Of(c), c.Theme()
+	return ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(1, t.Border).Children(body)
 }
 
 // Spinner shows that something is under way.
@@ -362,9 +358,9 @@ func Spinner(c *ui.Context) ui.Element {
 
 // Kbd shows a key or shortcut.
 func Kbd(c *ui.Context, text string) ui.Element {
-	t := theme.Of(c)
-	return ui.Box(c).Height(px(t, 20)).PaddingX(px(t, 5)).Radius(4).Border(1, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font("Geist Mono").FontSize(xsmall(t)).TextColor(t.Muted)
+	t, th := theme.Of(c), c.Theme()
+	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Xs).Border(1, t.Border).Background(t.Sidebar).Center().Children(func() {
+		ui.Text(c, text).Font("Geist Mono").FontSize(t.Text.Xs).TextColor(t.Muted)
 	})
 }
 
@@ -372,30 +368,30 @@ func Kbd(c *ui.Context, text string) ui.Element {
 // right; call it once in the view. closeLabel names the close buttons (pass
 // the translated "Close"). Type "error" shows the error icon.
 func ToastHost(c *ui.Context, closeLabel string) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
-		viewport.Padding(px(t, 16)).AlignItems(ui.End).Justify(ui.End).Gap(px(t, 8))
+		viewport.Padding(th.Space(4)).AlignItems(ui.End).Justify(ui.End).Gap(th.Space(2))
 		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
-			toast.Root.Row().Gap(px(t, 10)).Padding(px(t, 10), px(t, 14)).Radius(8).Background(t.Background).Border(1, t.Border).
-				Shadow(0, 4, 16, 0, ink(t).Alpha(0.12)).MaxWidth(420).
+			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Md).Background(t.Background).Border(1, t.Border).
+				Shadow(0, 4, 16, 0, ink(t).Alpha(0.12)).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 8}, Exit: &ui.Motion{}})
 			toast.Root.Children(func() {
 				if tst.Type == "error" {
 					ui.Icon(c, icons.Get("circle-x")).Size(16, 16).TextColor(t.Danger)
 				}
-				ui.Column(c).Grow(1).Gap(px(t, 2)).Children(func() {
+				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, tst.Title).FontWeight(500)
 					if tst.Description != "" {
-						ui.Text(c, tst.Description).FontSize(small(t)).TextColor(t.Muted)
+						ui.Text(c, tst.Description).FontSize(t.Text.Sm).TextColor(t.Muted)
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(px(t, 28)).PaddingX(px(t, 10)).Radius(6).Border(1, t.Border).Children(func() {
+					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(1, t.Border).Children(func() {
 						ui.Text(c, tst.Action)
 					})
 				}
-				toast.CloseButton().Label(closeLabel).Size(20, 20).Radius(4).Center().TextColor(t.Muted).Children(func() {
+				toast.CloseButton().Label(closeLabel).Size(20, 20).Radius(t.Radius.Xs).Center().TextColor(t.Muted).Children(func() {
 					ui.Icon(c, icons.Get("x")).Size(14, 14)
 				})
 			})

@@ -273,16 +273,15 @@ func formatBytes(n int64) string {
 
 func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	a := p.a
-	t := theme.Of(c)
-	s := t.Scale
+	t, th := theme.Of(c), c.Theme()
 	f := p.form(acc)
 	prov := accountProvider(a, acc)
 
-	ui.Row(c).Gap(14 * s).Children(func() {
+	ui.Row(c).Gap(th.Space(3.5)).Children(func() {
 		mark(c, providerMark(prov), 40)
-		ui.Column(c).Grow(1).Shrink(1).Gap(4 * s).Children(func() {
-			ui.Row(c).Gap(8 * s).Children(func() {
-				ui.Text(c, acc.Email).FontSize(t.FontSize + 7).FontWeight(600).SingleLine().Shrink(1)
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				ui.Text(c, acc.Email).FontSize(t.Text.X2l).FontWeight(600).SingleLine().Shrink(1)
 				if acc.IsDefault {
 					kit.Badge(c, i18n.T("settings.account.default"))
 				}
@@ -293,12 +292,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 			ui.Text(c, meta).TextColor(t.Muted)
 		})
-		pill := ui.Box(c).Padding(2*s, 8*s).Radius(4).Background(t.WarningBg).TextColor(t.WarningText)
+		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Xs).Background(t.WarningBg).TextColor(t.WarningText)
 		if acc.Status == "ok" {
 			pill.Background(t.Success.Alpha(0.1)).TextColor(t.Success)
 		}
 		pill.Children(func() {
-			ui.Text(c, cmpTr("settings.account.status."+acc.Status, acc.Status)).FontSize(t.FontSize - 1)
+			ui.Text(c, cmpTr("settings.account.status."+acc.Status, acc.Status)).FontSize(t.Text.Sm)
 		})
 	})
 
@@ -324,12 +323,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 		settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
-			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(84 * s).Label(i18n.T("settings.account.signature.label")).Changed() {
+			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(th.Space(21)).Label(i18n.T("settings.account.signature.label")).Changed() {
 				p.edited(acc.ID, f, 2)
 			}
 		})
 		settingsSection(c, i18n.T("settings.account.sync"), "", func() {
-			ui.Row(c).Gap(8 * s).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				if st := p.syncState(acc); st != "" {
 					ui.Text(c, st)
 				}
@@ -345,7 +344,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 					p.setLimit(acc.ID, f)
 				}
 			})
-			ui.Row(c).Gap(8 * s).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				usage := "…"
 				if n, ok := p.usage[acc.ID]; ok {
 					usage = formatBytes(n)
@@ -357,15 +356,15 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			})
 		})
 		settingsSection(c, i18n.T("settings.account.login"), "", func() {
-			ui.Row(c).Gap(8 * s).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Text(c, p.authText(acc, prov))
 				ui.Spacer(c)
 				p.authButton(c, acc, prov, false)
 			})
-			ui.Column(c).Gap(4 * s).Children(func() {
+			ui.Column(c).Gap(th.Space(1)).Children(func() {
 				server := func(proto, host string, port int, sec core.Security) {
-					ui.Row(c).Gap(12 * s).Children(func() {
-						ui.Text(c, proto).Width(48 * s).TextColor(t.Muted)
+					ui.Row(c).Gap(th.Space(3)).Children(func() {
+						ui.Text(c, proto).Width(th.Space(12)).TextColor(t.Muted)
 						ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Shrink(1)
 					})
 				}
@@ -567,15 +566,15 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 }
 
 func (p *settingsPage) serversForm(c *ui.Context) {
-	t := theme.Of(c)
+	th := c.Theme()
 	opts := make([]kit.Option[core.Security], len(securities))
 	for i, s := range securities {
 		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
 	}
 	server := func(proto string, host, port *string, sec *core.Security) {
-		ui.Row(c).Gap(8 * t.Scale).AlignItems(ui.Start).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
 			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1)
-			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(90)
+			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(theme.PortWidth)
 			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) })
 		})
 	}
