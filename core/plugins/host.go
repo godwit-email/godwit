@@ -165,7 +165,7 @@ func duringInit(c *CallScope) {
 // arg decodes JS value val into out through JSON; anything else is a TypeError.
 func arg(c *CallScope, fn string, val goja.Value, out any, what string) {
 	bad := func() { panic(c.Runtime().NewTypeError(fn + ": " + what)) }
-	if val == nil || goja.IsUndefined(val) {
+	if optional(val) { // null too: it would decode as the zero value
 		bad()
 	}
 	s, err := c.vm.stringify(goja.Undefined(), val)
@@ -334,7 +334,14 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 			panic(&PermissionError{Perm: "net:" + host})
 		}
 		if init := call.Argument(1); !optional(init) {
-			arg(c, "net.fetch", init, &req, "init must be {method?, headers?, body?}")
+			// Its own type: no field of init can replace the URL checked above.
+			var in struct {
+				Method  string            `json:"method"`
+				Headers map[string]string `json:"headers"`
+				Body    string            `json:"body"`
+			}
+			arg(c, "net.fetch", init, &in, "init must be {method?, headers?, body?}")
+			req.Method, req.Headers, req.Body = in.Method, in.Headers, in.Body
 		}
 		if len(req.Body) > MaxFetchBody {
 			panic(ErrTooLarge)

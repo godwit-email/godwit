@@ -323,3 +323,27 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	assert.Equal(t, []string{"Config", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
 		"MailSetFlags", "MailUpdateDraft", "StorageDelete", "StorageGet", "StorageSet"}, methods)
 }
+
+// The URL that was checked is the one fetched: init cannot carry another.
+func TestFetchInitCannotOverrideURL(t *testing.T) {
+	h := &fakeHost{}
+	p := mustLoad(t, Permissions{Net: []string{"allowed.example"}}, h, stash)
+	egress := Invocation{Kind: KindHook, EgressHosts: []string{"allowed.example"}}
+	got := try(t, p, egress, `ctx.net.fetch("https://allowed.example/a", {url: "https://denied.example/b", URL: "https://denied.example/c", method: "POST"}).then(r => r.text())`)
+	assert.Equal(t, "hi https://allowed.example/a", got)
+}
+
+func TestRequiredArgsRejectNull(t *testing.T) {
+	h := &fakeHost{}
+	p := mustLoad(t, Permissions{Mail: []string{"read"}}, h, `var plugin = {default(ctx){
+		globalThis.ctx = ctx
+		try { ctx.tools.register({name: "t", description: "d", schema: null, run: () => 1}); globalThis.reg = "ok" } catch (e) { globalThis.reg = e.message }
+	}}`)
+	assert.Contains(t, try(t, p, readOnly, `reg`), "schema")
+	for _, expr := range []string{`ctx.storage.set("k", null)`, `ctx.storage.set(null, "v")`, `ctx.storage.get(null)`,
+		`ctx.mail.get(null)`, `ctx.mail.search(null)`} {
+		assert.Contains(t, try(t, p, readOnly, expr), "threw: ", expr)
+	}
+	assert.Empty(t, p.Tools())
+	assert.Empty(t, h.got(), "nothing reached the host")
+}
