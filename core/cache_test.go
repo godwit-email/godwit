@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -49,6 +50,10 @@ func TestAttachmentCacheUsageAndClear(t *testing.T) {
 	attID := openAttachment(t, e, acc.ID)
 	openAttachment(t, e, other.ID)
 	assert.Equal(t, int64(10), usage(acc.ID))
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err := e.Svc.AttachmentCacheUsage(cancelled, acc.ID)
+	assert.ErrorIs(t, err, context.Canceled)
 
 	require.NoError(t, e.Svc.ClearAttachmentCache(ctx, acc.ID))
 	assert.Zero(t, usage(acc.ID))

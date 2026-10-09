@@ -54,8 +54,21 @@ func TestCoretestLLM(t *testing.T) {
 	st, err := e.Svc.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "test/m1", st.DefaultModel)
-	assert.Zero(t, l.Requests())
-	l.Script(coretest.Turn{Text: []string{"hi"}})
+	acc := e.AddAccount(t, "alice@example.com")
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plans", "Meet on Friday."))
+	page, err := e.Svc.ListMessages(t.Context(), core.View{Unified: "inbox"}, "", 0)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+
+	l.Script(coretest.Turn{Text: []string{"Friday ", "meeting"}})
+	ch, err := e.Svc.RunSkill(t.Context(), "summarize", core.Target{Kind: "message", ID: page.Items[0].ID})
+	require.NoError(t, err)
+	var text string
+	for ev := range ch {
+		text += ev.Text
+	}
+	assert.Contains(t, text, "Friday meeting")
+	assert.Equal(t, 1, l.Requests())
 	l.Release()
 }
 

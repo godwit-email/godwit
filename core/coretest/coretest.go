@@ -75,6 +75,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		o(&cfg)
 	}
 	core.SerializeKeyringForTest() // workers read credentials while tests write them
+	claimEnv(t)                    // MockInit empties the keychain of any Env still running
 	keyring.MockInit()
 	dir := t.TempDir()
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN"})
@@ -89,24 +90,50 @@ func New(t *testing.T, opts ...Option) *Env {
 		fmt.Fprint(w, "pong")
 	}))
 	t.Cleanup(api.Close)
-	d := &net.Dialer{Timeout: 10 * time.Second}
-	svc.SetPluginNetForTest(plugins.NetOptions{Resolver: egressDNS{}, AllowHTTP: true, AllowLoopback: true,
-		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if addr == "127.0.0.1:80" { // EgressHost
-				addr = api.Listener.Addr().String()
-			}
-			return d.DialContext(ctx, network, addr)
-		}})
+	svc.SetPluginNetForTest(netOptions(api.Listener.Addr().String()))
 	return e
 }
 
-type egressDNS struct{}
+var live atomic.Bool // an Env is running
 
-func (egressDNS) LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error) {
-	if strings.EqualFold(host, EgressHost) {
-		return []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, nil
+// claimEnv fails tb if another Env is still running, else marks one running
+// until tb ends.
+func claimEnv(tb testing.TB) {
+	tb.Helper()
+	if !live.CompareAndSwap(false, true) {
+		tb.Fatalf("coretest: another Env is still alive; use one Env per test")
+		return
 	}
-	return net.DefaultResolver.LookupIPAddr(ctx, host)
+	tb.Cleanup(func() { live.Store(false) })
+}
+
+// netOptions is the plugins' network: EgressHost reaches egressAddr; besides
+// it only loopback names and addresses resolve and dial, never the internet.
+func netOptions(egressAddr string) plugins.NetOptions {
+	d := &net.Dialer{Timeout: 10 * time.Second}
+	return plugins.NetOptions{Resolver: loopbackDNS{}, AllowHTTP: true, AllowLoopback: true,
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+				return nil, fmt.Errorf("coretest: refusing to dial %s: only loopback is reachable", addr)
+			}
+			if addr == "127.0.0.1:80" { // EgressHost
+				addr = egressAddr
+			}
+			return d.DialContext(ctx, network, addr)
+		}}
+}
+
+type loopbackDNS struct{}
+
+func (loopbackDNS) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	switch h := strings.ToLower(host); {
+	case h == EgressHost || h == "localhost":
+		return []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}}, nil
+	case net.ParseIP(h) != nil && net.ParseIP(h).IsLoopback():
+		return []net.IPAddr{{IP: net.ParseIP(h)}}, nil
+	}
+	return nil, &net.DNSError{Err: "coretest: only loopback names resolve", Name: host, IsNotFound: true}
 }
 
 // EgressHits is how many requests reached EgressHost.
@@ -348,7 +375,10 @@ func ServeMCPIfChild() {
 		func(_ context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "found " + string(r.Params.Arguments)}}}, nil
 		})
-	srv.Run(context.Background(), &mcp.StdioTransport{})
+	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		fmt.Fprintln(os.Stderr, "coretest MCP server:", err)
+		os.Exit(1)
+	}
 	os.Exit(0)
 }
 

@@ -20,6 +20,9 @@ func (s *Service) AttachmentCacheUsage(ctx context.Context, accountID int64) (in
 		if err != nil || d.IsDir() {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		info, err := d.Info()
 		if err == nil {
 			n += info.Size()
