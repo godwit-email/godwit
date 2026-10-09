@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -21,16 +23,18 @@ import (
 // api is a server target with one method the mcp role may call, one it may
 // not, and a stream.
 type api struct {
-	sent    atomic.Int64
-	stopped chan struct{}
+	sent     atomic.Int64
+	stopped  chan struct{}
+	slowStop time.Duration // the stream's stop takes this long
 }
 
 func (a *api) ListAccounts() []string { return []string{"a@example.com"} }
 func (a *api) Send(id int64) error    { a.sent.Add(1); return nil }
+func (a *api) Fail(mode string) error { return fmt.Errorf("bad mode %q", mode) }
 func (a *api) Watch(ctx context.Context) (<-chan int, func()) {
 	ch := make(chan int)
 	go func() { <-ctx.Done(); close(ch) }()
-	return ch, func() { close(a.stopped) }
+	return ch, func() { time.Sleep(a.slowStop); close(a.stopped) }
 }
 
 // shortDir is a data directory short enough for a Unix socket path.
@@ -346,9 +350,9 @@ func TestDialFull(t *testing.T) {
 	if err := m.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeForbidden {
 		t.Fatalf("mcp Send = %v, want forbidden", err)
 	}
-	// An audit that cannot be written refuses the call.
-	if err := m.Call(context.Background(), "ListAccounts", nil); !errors.As(err, &we) || we.Code != rpc.CodeForbidden {
-		t.Fatalf("mcp ListAccounts with a failing audit = %v, want forbidden", err)
+	// An audit that cannot be written stops the call as an internal error.
+	if err := m.Call(context.Background(), "ListAccounts", nil); !errors.As(err, &we) || we.Code != rpc.CodeInternal {
+		t.Fatalf("mcp ListAccounts with a failing audit = %v, want internal error", err)
 	}
 	want := "full ListAccounts,full Send,mcp ListAccounts" // a forbidden call is not audited
 	mu.Lock()
@@ -356,4 +360,117 @@ func TestDialFull(t *testing.T) {
 	if got := strings.Join(audited, ","); got != want {
 		t.Fatalf("audited %s, want %s", got, want)
 	}
+}
+
+// logs captures slog output until the test ends.
+func logs(t *testing.T) func() string {
+	t.Helper()
+	var mu sync.Mutex
+	var b strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return b.Write(p)
+	}), nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return func() string { mu.Lock(); defer mu.Unlock(); return b.String() }
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// A failing audit runs nothing and answers "internal error"; the server log
+// has the cause, redacted.
+func TestAuditFailure(t *testing.T) {
+	logged := logs(t)
+	dir := shortDir(t)
+	_, a, _ := startServer(t, dir, rpc.ServerOptions{
+		Redact: func(s string) string { return strings.ReplaceAll(s, "hunter2", "[redacted]") },
+		Audit:  func(string, string, []json.RawMessage) error { return errors.New("audit db down, pw hunter2") },
+	})
+	c, err := rpc.Dial(dir, rpc.RoleFull, "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	var we *rpc.WireError
+	if err := c.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != "internal error" {
+		t.Fatalf("Send = %v, want internal error", err)
+	}
+	if a.sent.Load() != 0 {
+		t.Fatal("Send ran although its audit failed")
+	}
+	if l := logged(); !strings.Contains(l, "audit db down") || strings.Contains(l, "hunter2") {
+		t.Fatalf("log = %q, want the redacted cause", l)
+	}
+}
+
+// The token never reaches an error response or the log.
+func TestTokenRedacted(t *testing.T) {
+	logged := logs(t)
+	dir := shortDir(t)
+	startServer(t, dir, rpc.ServerOptions{})
+	tok := token(t, dir)
+	c, err := rpc.Dial(dir, rpc.RoleFull, "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	err = c.Call(context.Background(), "Fail", nil, tok)
+	if err == nil || strings.Contains(err.Error(), tok) {
+		t.Fatalf("Fail = %v", err)
+	}
+	if l := logged(); !strings.Contains(l, "bad mode") || strings.Contains(l, tok) {
+		t.Fatalf("log = %q, want the cause without the token", l)
+	}
+}
+
+// Close and a cancelled Serve context racing: both return only after the
+// streams finished and the files are gone.
+func TestConcurrentClose(t *testing.T) {
+	dir := shortDir(t)
+	a := &api{stopped: make(chan struct{}), slowStop: 300 * time.Millisecond}
+	d, _ := rpc.NewDispatcher(a, nil)
+	s, err := rpc.Listen(dir, d, rpc.ServerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(ctx) }()
+	c, err := rpc.Dial(dir, rpc.RoleFull, "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, _, err := c.Stream(context.Background(), "Watch"); err != nil {
+		t.Fatal(err)
+	}
+	cancel() // Serve's own Close starts …
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+		if _, err := os.Lstat(s.Path()); errors.Is(err, os.ErrNotExist) {
+			break // … and has closed the listener
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("ctx did not close the server")
+		}
+	}
+	s.Close() // … while this one joins it
+	check := func(who string) {
+		select {
+		case <-a.stopped:
+		default:
+			t.Fatalf("%s returned before the stream stopped", who)
+		}
+		if _, err := os.Lstat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s returned before the token was removed", who)
+		}
+	}
+	check("Close")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	check("Serve")
 }

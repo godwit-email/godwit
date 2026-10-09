@@ -104,7 +104,7 @@ func (c *Codec) Encode(err error, redact func(string) string) *WireError {
 			return &WireError{Code: CodeApp, Message: s.message, Data: &WireErrorData{Code: s.code}}
 		}
 	}
-	return &WireError{Code: CodeInternal, Message: "internal error", Data: &WireErrorData{Code: "internal"}}
+	return internalError()
 }
 
 // DecodeDetail decodes raw into a *V strictly: a JSON object holding every

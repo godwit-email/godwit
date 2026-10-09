@@ -386,11 +386,16 @@ func TestWriteDeadlineErrorCloses(t *testing.T) {
 
 func TestHelloGate(t *testing.T) {
 	d := newDispatcher(t, newTarget())
-	opts := rpc.ConnOptions{AuthTimeout: time.Minute, Hello: func(params []json.RawMessage) (func(string, []json.RawMessage) bool, any, error) {
+	opts := rpc.ConnOptions{AuthTimeout: time.Minute, Hello: func(params []json.RawMessage) (func(string, []json.RawMessage) error, any, error) {
 		if len(params) != 1 || string(params[0]) != `"tok"` {
 			return nil, nil, &rpc.WireError{Code: 1, Message: "bad token tok=secret"}
 		}
-		return func(m string, _ []json.RawMessage) bool { return m != "Pair" }, "hi", nil
+		return func(m string, _ []json.RawMessage) error {
+			if m == "Pair" {
+				return rpc.ErrForbidden
+			}
+			return nil
+		}, "hi", nil
 	}}
 	t.Run("control before hello closes", func(t *testing.T) {
 		conn, done := serve(t, d, opts)

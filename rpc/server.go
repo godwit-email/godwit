@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,11 +26,17 @@ const (
 
 // ServerOptions configures a Server. Zero fields take the defaults.
 type ServerOptions struct {
-	Conn     ConnOptions // per connection; Hello is set by the Server
+	Conn     ConnOptions // per connection; Hello and EncodeError are set by the Server
 	MaxConns int         // simultaneous connections, 16
 	Version  string      // hello answers "godwit/<Version>"
+	// Codec encodes errors (nil: every error is "internal error"). Every
+	// string it sends, and every error logged, has the API token and then
+	// whatever Redact (nil = nothing more) finds replaced.
+	Codec  *Codec
+	Redact func(string) string
 	// Audit, if set, runs before an authorized call is dispatched, with the
-	// connection's role; an error refuses the call as forbidden.
+	// connection's role. An error stops the call and is answered and logged
+	// like any error the call could have returned.
 	Audit func(role, method string, params []json.RawMessage) error
 }
 
@@ -42,6 +50,10 @@ type Server struct {
 	token     string
 	ctx       context.Context
 	cancel    context.CancelFunc
+
+	closeOnce sync.Once
+	closeDone chan struct{} // closed when Close's cleanup finished
+	closeErr  error
 
 	mu     sync.Mutex
 	closed bool
@@ -89,7 +101,7 @@ func Listen(dataDir string, d *Dispatcher, opts ServerOptions) (*Server, error) 
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{d: d, opts: opts, ln: ln, path: path, tokenPath: filepath.Join(dataDir, TokenName)}
+	s := &Server{d: d, opts: opts, ln: ln, path: path, tokenPath: filepath.Join(dataDir, TokenName), closeDone: make(chan struct{})}
 	if runtime.GOOS != "windows" {
 		err = os.Chmod(path, 0o600)
 	}
@@ -131,7 +143,7 @@ func writeToken(path string) (string, error) {
 func (s *Server) Path() string { return s.path }
 
 // Serve accepts connections until Close or until ctx ends, which closes the
-// Server. It returns nil once closed.
+// Server. It returns nil once closed and Close's cleanup has finished.
 func (s *Server) Serve(ctx context.Context) error {
 	defer context.AfterFunc(ctx, func() { s.Close() })()
 	co := s.connOptions()
@@ -142,7 +154,8 @@ func (s *Server) Serve(ctx context.Context) error {
 			closed := s.closed
 			s.mu.Unlock()
 			if closed {
-				return nil
+				<-s.closeDone
+				return s.closeErr
 			}
 			var ne net.Error
 			if errors.As(err, &ne) && ne.Timeout() {
@@ -171,42 +184,63 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 // Close stops accepting, drops every connection, waits for their streams to
-// drain, and removes the socket and token files.
+// drain, and removes the socket and token files. Every call, concurrent ones
+// included, returns once that has finished, with the same result.
 func (s *Server) Close() error {
-	s.mu.Lock()
-	if s.closed {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
 		s.mu.Unlock()
-		return nil
-	}
-	s.closed = true
-	s.mu.Unlock()
-	err := s.ln.Close()
-	s.cancel()
-	s.wg.Wait()
-	for _, p := range []string{s.path, s.tokenPath} {
-		if rerr := os.Remove(p); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			err = errors.Join(err, rerr)
+		err := s.ln.Close()
+		s.cancel()
+		s.wg.Wait()
+		for _, p := range []string{s.path, s.tokenPath} {
+			if rerr := os.Remove(p); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+				err = errors.Join(err, rerr)
+			}
 		}
+		s.closeErr = err
+		close(s.closeDone)
+	})
+	<-s.closeDone
+	return s.closeErr
+}
+
+// redact removes the API token, then whatever opts.Redact finds.
+func (s *Server) redact(x string) string {
+	x = strings.ReplaceAll(x, s.token, "[redacted]")
+	if s.opts.Redact != nil {
+		x = s.opts.Redact(x)
 	}
-	return err
+	return x
+}
+
+// encode answers err: a hello failure as it is, anything else through the
+// Codec; an unregistered error is logged, redacted.
+func (s *Server) encode(err error) *WireError {
+	var ae authError
+	if errors.As(err, &ae) {
+		return ae.we
+	}
+	we := internalError()
+	if s.opts.Codec != nil {
+		we = s.opts.Codec.Encode(err, s.redact)
+	}
+	if we.Code == CodeInternal {
+		slog.Error("rpc: internal error", "err", s.redact(err.Error()))
+	}
+	return we
 }
 
 func (s *Server) connOptions() ConnOptions {
 	co := s.opts.Conn
-	enc := co.withDefaults().EncodeError
-	co.EncodeError = func(err error) *WireError {
-		var ae authError
-		if errors.As(err, &ae) {
-			return ae.we
-		}
-		return enc(err)
-	}
+	co.EncodeError = s.encode
 	co.Hello = s.hello
 	return co
 }
 
 // hello takes [token, role, client].
-func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage) bool, any, error) {
+func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage) error, any, error) {
 	var token, role, client string
 	if len(params) != 3 || json.Unmarshal(params[0], &token) != nil || json.Unmarshal(params[1], &role) != nil ||
 		json.Unmarshal(params[2], &client) != nil {
@@ -224,11 +258,14 @@ func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage
 	default:
 		return nil, nil, unauthenticated("role must be full or mcp")
 	}
-	allow := func(method string, params []json.RawMessage) bool {
+	allow := func(method string, params []json.RawMessage) error {
 		if !roleOK(method, params) {
-			return false
+			return ErrForbidden
 		}
-		return s.opts.Audit == nil || s.opts.Audit(role, method, params) == nil
+		if s.opts.Audit != nil {
+			return s.opts.Audit(role, method, params)
+		}
+		return nil
 	}
 	return allow, map[string]string{"server": "godwit/" + s.opts.Version, "role": role}, nil
 }

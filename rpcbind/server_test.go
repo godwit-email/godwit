@@ -3,10 +3,13 @@ package rpcbind_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -44,7 +47,7 @@ func auditRows(t *testing.T, dataDir string) [][]any {
 	db, err := store.Open(context.Background(), filepath.Join(dataDir, "godwit.db"))
 	require.NoError(t, err)
 	defer db.Close()
-	r, err := db.Query(context.Background(), "SELECT source, tool, target_id, COALESCE(extension, '') || COALESCE(destination, '') || COALESCE(reason, '') FROM audit_log WHERE source IN ('local_api', 'mcp') ORDER BY id")
+	r, err := db.Query(context.Background(), "SELECT source, tool, target_id, COALESCE(extension, '') || COALESCE(destination, '') || COALESCE(reason, '') FROM audit_log WHERE source IN ('local_api', 'local_mcp') ORDER BY id")
 	require.NoError(t, err)
 	return r.Values
 }
@@ -140,7 +143,6 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		require.NoError(t, err)
 		return string(b)
 	}
-	before := state()
 
 	settings, err := e.Svc.GetSettings(ctx)
 	require.NoError(t, err)
@@ -165,13 +167,14 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"GetAttachment", []any{text.Attachments[0].ID}},
 		{"NewDraft", []any{acc.ID, "forward", msg.ID}},
 	} {
+		before := state()
 		err := c.Call(ctx, call.method, nil, call.args...)
 		var we *rpc.WireError
 		if assert.ErrorAs(t, err, &we, call.method) {
 			assert.Equal(t, rpc.CodeForbidden, we.Code, call.method)
 		}
+		assert.Equal(t, before, state(), "%s changed something", call.method)
 	}
-	assert.Equal(t, before, state(), "a forbidden call changed something")
 
 	// The connection still works for what the role allows.
 	var got core.MessageText
@@ -233,8 +236,8 @@ func TestAuditExternal(t *testing.T) {
 
 	rows := auditRows(t, e.DataDir)
 	assert.Equal(t, [][]any{
-		{"mcp", "NewDraft", nil, ""},
-		{"mcp", "SaveDraft", d.ID, ""},
+		{"local_mcp", "NewDraft", nil, ""},
+		{"local_mcp", "SaveDraft", d.ID, ""},
 		{"local_api", "Send", d.ID, ""},
 	}, rows)
 	b, _ := json.Marshal(rows)
@@ -259,4 +262,76 @@ func TestDialFull(t *testing.T) {
 	var we *rpc.RemoteError
 	require.ErrorAs(t, c.Call(t.Context(), "AuditExternal", nil, "mcp", "x", 1), &we)
 	assert.Equal(t, rpc.CodeMethodNotFound, we.Code)
+}
+
+// logs captures slog output until the test ends.
+func logs(t *testing.T) func() string {
+	t.Helper()
+	var mu sync.Mutex
+	var b strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return b.Write(p)
+	}), nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	return func() string { mu.Lock(); defer mu.Unlock(); return b.String() }
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// The current API token is redacted like any secret: an mcp SaveDraft whose
+// Mode is the token gets an error without it, and the log has none.
+func TestTokenNotLogged(t *testing.T) {
+	logged := logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	dir := listen(t, e.Svc)
+	tok, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
+	require.NoError(t, err)
+	c := dial(t, dir, rpc.RoleMCP)
+	err = c.Call(t.Context(), "SaveDraft", nil, core.Draft{AccountID: acc.ID, Mode: string(tok)})
+	var we *rpc.WireError
+	require.ErrorAs(t, err, &we)
+	b, _ := json.Marshal(we)
+	assert.NotContains(t, string(b), string(tok))
+	assert.Contains(t, logged(), "unknown draft mode")
+	assert.NotContains(t, logged(), string(tok))
+}
+
+// An audit that cannot be written stops the call: "internal error" on the
+// wire, the redacted cause in the log, nothing sent.
+func TestAuditFailureStopsCall(t *testing.T) {
+	logged := logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "out", "<p>hi</p>"
+	_, err = e.Svc.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	c := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	err = c.Call(ctx, "Send", nil, d.ID)
+	var we *rpc.WireError
+	require.ErrorAs(t, err, &we)
+	assert.Equal(t, rpc.CodeInternal, we.Code)
+	assert.Equal(t, "internal error", we.Message)
+	assert.Contains(t, logged(), "audit_log")
+	drafts, err := e.Svc.ListDrafts(ctx, acc.ID)
+	require.NoError(t, err)
+	assert.Len(t, drafts, 1, "the draft was not sent")
+	outbox, err := e.Svc.ListOutbox(ctx, acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, outbox)
+	assert.Empty(t, e.Sent(acc.ID))
 }

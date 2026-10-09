@@ -44,10 +44,11 @@ func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, er
 	return m, nil
 }
 
-// External audit sources: the Local API's full role and its mcp role.
+// External audit sources: the Local API's full role, and its mcp role (the
+// godwit mcp bridge; "local_mcp", unlike the "mcp" of MCP-server tools).
 const (
 	AuditLocalAPI = "local_api"
-	AuditMCP      = "mcp"
+	AuditMCP      = "local_mcp"
 )
 
 // AuditExternal writes an audit_log row for a call made from outside the

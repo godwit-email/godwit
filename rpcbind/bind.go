@@ -5,7 +5,6 @@ package rpcbind
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 
 	"github.com/godwit-email/godwit/core"
@@ -96,25 +95,19 @@ func Expose(method string) bool {
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
-// NewCodec with svc's redaction; an unregistered one is logged redacted.
-// Sends by the full role and drafts by the mcp role are audited before they
-// are dispatched.
+// NewCodec; the API token and svc's secrets are redacted from them and from
+// the log. Sends by the full role and drafts by the mcp role are audited
+// before they are dispatched.
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
 		return nil, err
 	}
-	codec := NewCodec()
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
 		Version: version,
-		Conn: rpc.ConnOptions{EncodeError: func(err error) *rpc.WireError {
-			we := codec.Encode(err, svc.Redact)
-			if we.Code == rpc.CodeInternal {
-				slog.Error("local api: internal error", "err", svc.Redact(err.Error()))
-			}
-			return we
-		}},
-		Audit: func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
+		Codec:   NewCodec(),
+		Redact:  svc.Redact,
+		Audit:   func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 	})
 }
 

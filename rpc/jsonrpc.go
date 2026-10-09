@@ -58,8 +58,10 @@ type ConnOptions struct {
 	QueueBytes    int           // … or 32 MB; overflow drops the connection
 	WriteTimeout  time.Duration // per write, 10 s
 	// Hello, if set, must authenticate the connection: the first request
-	// must be "hello"; its allow func then gates every later call.
-	Hello       func(params []json.RawMessage) (allow func(method string, params []json.RawMessage) bool, result any, err error)
+	// must be "hello"; its allow func then runs before every later call is
+	// dispatched. ErrForbidden refuses the call as forbidden; any other error
+	// stops it and is answered through EncodeError.
+	Hello       func(params []json.RawMessage) (allow func(method string, params []json.RawMessage) error, result any, err error)
 	AuthTimeout time.Duration // 5 s
 	// EncodeError turns a target's error into a wire error; the default
 	// reveals nothing ("internal error").
@@ -92,17 +94,21 @@ func (o ConnOptions) withDefaults() ConnOptions {
 		o.AuthTimeout = 5 * time.Second
 	}
 	if o.EncodeError == nil {
-		o.EncodeError = func(error) *WireError {
-			return &WireError{Code: CodeInternal, Message: "internal error", Data: &WireErrorData{Code: "internal"}}
-		}
+		o.EncodeError = func(error) *WireError { return internalError() }
 	}
 	return o
+}
+
+func internalError() *WireError {
+	return &WireError{Code: CodeInternal, Message: "internal error", Data: &WireErrorData{Code: "internal"}}
 }
 
 var (
 	errSlow      = errors.New("rpc: send queue full")
 	errDuplicate = errors.New("rpc: duplicate in-flight request id")
 	errAuth      = errors.New("rpc: not authenticated")
+	// ErrForbidden is what an allow func returns to refuse a call.
+	ErrForbidden = errors.New("rpc: forbidden")
 )
 
 type message struct {
@@ -148,7 +154,7 @@ type conn struct {
 	requests   map[uint64]context.CancelFunc
 	streams    map[uint64]*serverStream // nil once the connection is torn down
 	nextStream uint64
-	allow      func(string, []json.RawMessage) bool
+	allow      func(string, []json.RawMessage) error
 }
 
 // ServeConn serves one connection until it closes, breaks a budget, or ctx
@@ -261,8 +267,11 @@ func (c *conn) handle(line []byte) bool {
 			c.replyError(m.ID, &WireError{Code: CodeInvalidRequest, Message: "already authenticated"})
 			return true
 		}
-		if !allow(m.Method, params) {
+		if err := allow(m.Method, params); errors.Is(err, ErrForbidden) {
 			c.replyError(m.ID, &WireError{Code: CodeForbidden, Message: "forbidden", Data: &WireErrorData{Code: "forbidden"}})
+			return true
+		} else if err != nil {
+			c.replyError(m.ID, c.opts.EncodeError(err))
 			return true
 		}
 	}
@@ -310,7 +319,7 @@ func (c *conn) hello(m message, params []json.RawMessage) bool {
 		return false
 	}
 	if allow == nil {
-		allow = func(string, []json.RawMessage) bool { return true }
+		allow = func(string, []json.RawMessage) error { return nil }
 	}
 	c.mu.Lock()
 	c.allow = allow
