@@ -132,7 +132,7 @@ func (r *renderer) runs(ins []Inline, size float32, pre bool) [][]ui.Span {
 			s.Italic, s.Strikethrough = in.Italic, in.Strike
 			s.Underline = in.Underline || in.Link != ""
 			if in.Bold {
-				s.Weight = 600
+				s.Weight = theme.BoldWeight
 			}
 			if in.Code {
 				s.Font, s.Background = mono, r.t.Hover

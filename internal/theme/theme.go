@@ -63,6 +63,9 @@ const (
 	AttachmentWidth   = 260 // an attachment in the reading pane
 )
 
+// BoldWeight is the font weight of bold text in mail bodies and the editor.
+const BoldWeight = 600
+
 // HeadingScale is the size of mail body headings h1–h6 in body font sizes.
 var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 
