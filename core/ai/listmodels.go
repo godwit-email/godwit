@@ -20,11 +20,11 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 	base := strings.TrimRight(baseURL, "/")
 	url, hdr := base+"/models", http.Header{}
 	switch kind {
-	case "openai":
+	case KindOpenAI, KindResponses:
 		if apiKey != "" {
 			hdr.Set("Authorization", "Bearer "+apiKey)
 		}
-	case "anthropic":
+	case KindAnthropic:
 		url = base + "/v1/models"
 		hdr.Set("anthropic-version", "2023-06-01")
 		if apiKey != "" {
@@ -52,7 +52,13 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 		return nil, errors.New("list models: could not reach the model service")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrModelAuth
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return nil, ErrNoModelList
+	default:
 		return nil, fmt.Errorf("list models: HTTP %d", resp.StatusCode)
 	}
 	var out struct {
@@ -70,6 +76,11 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 	sort.Strings(ids)
 	return ids, nil
 }
+
+var (
+	ErrModelAuth   = errors.New("the model service rejected the key")
+	ErrNoModelList = errors.New("the model service has no model list")
+)
 
 // NoRedirectClient never follows redirects, so a key is only ever sent to the
 // configured URL; a 3xx comes back as an HTTP error.
