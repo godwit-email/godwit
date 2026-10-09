@@ -135,3 +135,81 @@ func TestKitDarkRenders(t *testing.T) {
 }
 
 func diff(a, b uint8) int { return max(int(a)-int(b), int(b)-int(a)) }
+
+// heights renders body under settings st and returns the heights of the named elements.
+func heights(t *testing.T, st core.Settings, body func(c *ui.Context), names ...string) []float32 {
+	t.Helper()
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.FromSettings(st, false))
+		ui.Column(c).Gap(8).AlignItems(ui.Start).Children(func() { body(c) })
+	}, 600, 600)
+	var hs []float32
+	for _, n := range names {
+		r, ok := tt.Find(n)
+		if !ok {
+			t.Fatalf("no %q in %q", n, tt.Texts())
+		}
+		hs = append(hs, r.H)
+	}
+	return hs
+}
+
+func TestKitDensityScales(t *testing.T) {
+	sel, s := 1, ""
+	body := func(c *ui.Context) {
+		IconButton(c, "archive", "Archive", ButtonOpts{Variant: Ghost})
+		Select(c, &sel, []Option[int]{{1, "Alpha"}}).Label("Letter")
+		Input(c, &s, InputOpts{}).Label("Name")
+		Card(c, func() {}).Label("Box")
+	}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")
+	st.Density = "comfortable"
+	roomy := heights(t, st, body, "Archive", "Letter", "Name", "Box")
+	for i, n := range []string{"Archive", "Letter", "Name", "Box"} {
+		if want := compact[i] * 1.25; roomy[i] < want-0.5 || roomy[i] > want+0.5 {
+			t.Errorf("%s: compact %v, comfortable %v, want %v", n, compact[i], roomy[i], want)
+		}
+	}
+	if compact[0] != 32 || compact[2] != 32 {
+		t.Errorf("compact button %v, input %v, want 32", compact[0], compact[2])
+	}
+}
+
+func TestKitFontSizeFollows(t *testing.T) {
+	body := func(c *ui.Context) {
+		Badge(c, "BadgeText")
+		Alert(c, Warning, "AlertText", nil)
+		Field(c, "FieldLabel", "HelpText", "", func() {})
+		Kbd(c, "KbdText")
+	}
+	names := []string{"BadgeText", "AlertText", "HelpText", "KbdText"}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	small := heights(t, st, body, names...)
+	st.FontSize = 18
+	big := heights(t, st, body, names...)
+	for i, n := range names {
+		if big[i] <= small[i] {
+			t.Errorf("%s: %v at 13, %v at 18", n, small[i], big[i])
+		}
+	}
+}
+
+func TestKitToastCloseLabel(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		if c.Shortcut(0, ui.KeyT) {
+			c.AddToast(ui.Toast{Title: "Saved", Timeout: -1})
+		}
+		ToastHost(c, "关闭")
+	}), 400, 300)
+	tt.Key(0, ui.KeyT)
+	if !tt.HasText("Saved") {
+		t.Fatalf("no toast in %q", tt.Texts())
+	}
+	if err := tt.Click("关闭"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText("Saved") {
+		t.Error("the close button did not close the toast")
+	}
+}

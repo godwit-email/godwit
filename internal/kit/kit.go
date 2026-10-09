@@ -26,6 +26,13 @@ type ButtonOpts struct {
 	Icon            string
 }
 
+// px scales a size by the density: comfortable rows and paddings are 1.25×.
+func px(t theme.Tokens, v float32) float32 { return v * t.Scale }
+
+// small and xsmall are text sizes below the interface font size.
+func small(t theme.Tokens) float32  { return t.FontSize - 1 }
+func xsmall(t theme.Tokens) float32 { return t.FontSize - 2 }
+
 // ink is the color of shadows and backdrops: dark in either appearance.
 func ink(t theme.Tokens) ui.Color {
 	if t.Dark {
@@ -36,11 +43,11 @@ func ink(t theme.Tokens) ui.Color {
 
 func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	t := theme.Of(c)
-	h, padX := float32(32), float32(14)
+	h, padX := px(t, 32), px(t, 14)
 	if o.Small {
-		h, padX = 28, 10
+		h, padX = px(t, 28), px(t, 10)
 	}
-	b := ui.ButtonBase(c).Height(h).Radius(8).Gap(6).Justify(ui.Center).Disabled(o.Disabled)
+	b := ui.ButtonBase(c).Height(h).Radius(8).Gap(px(t, 6)).Justify(ui.Center).Disabled(o.Disabled)
 	if square {
 		b.Width(h).Radius(6)
 	} else {
@@ -115,7 +122,7 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 // Checkbox is a 16×16 check box before its label.
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t := theme.Of(c)
-	return ui.CheckboxBase(c, on).Gap(8).Children(func() {
+	return ui.CheckboxBase(c, on).Gap(px(t, 8)).Children(func() {
 		box := ui.Box(c).Size(16, 16).Radius(4).Border(1, t.Border).Background(t.Background).Center()
 		if *on {
 			box.Background(t.Primary).Border(1, t.Primary).TextColor(t.PrimaryText).Children(func() {
@@ -129,7 +136,7 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 // Radio is a radio button choosing v into *sel.
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	t := theme.Of(c)
-	return ui.RadioBase(c, sel, v).Gap(8).Children(func() {
+	return ui.RadioBase(c, sel, v).Gap(px(t, 8)).Children(func() {
 		dot := ui.Box(c).Size(16, 16).Radius(8).Border(1, t.Border).Background(t.Background).Center()
 		if *sel == v {
 			dot.Border(1, t.Primary).Children(func() { ui.Box(c).Size(8, 8).Radius(4).Background(t.Primary) })
@@ -154,15 +161,15 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
-	s.Trigger.Height(32).PaddingX(10).Gap(8).Radius(6).Border(1, t.Border).Background(t.Background).MinWidth(120).Children(func() {
+	s.Trigger.Height(px(t, 32)).PaddingX(px(t, 10)).Gap(px(t, 8)).Radius(6).Border(1, t.Border).Background(t.Background).MinWidth(120).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(16, 16).TextColor(t.Muted)
 	})
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(4, 0, 0, 0).Padding(4).Radius(8).Background(t.Background).Border(1, t.Border).
+		panel.Margin(4, 0, 0, 0).Padding(px(t, 4)).Radius(8).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
 		for _, o := range opts {
-			item := s.Item(o.Value).Height(32).PaddingX(8).Gap(8).Radius(6)
+			item := s.Item(o.Value).Height(px(t, 32)).PaddingX(px(t, 8)).Gap(px(t, 8)).Radius(6)
 			if item.Highlighted() {
 				item.Background(t.Hover)
 			}
@@ -186,9 +193,9 @@ type InputOpts struct {
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t := theme.Of(c)
-	e.PaddingX(10).Radius(6).Border(1, t.Border).Background(t.Background).Placeholder(o.Placeholder)
+	e.PaddingX(px(t, 10)).Radius(6).Border(1, t.Border).Background(t.Background).Placeholder(o.Placeholder)
 	if o.Mono {
-		e.Font("Geist Mono").FontSize(13)
+		e.Font("Geist Mono").FontSize(t.FontSize)
 	}
 	if o.Password {
 		e.Password()
@@ -201,25 +208,25 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 
 // Input is a 32-high single-line text input.
 func Input(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextInputBase(c, s).Height(32), o)
+	return input(c, ui.TextInputBase(c, s).Height(px(theme.Of(c), 32)), o)
 }
 
 // TextArea is a multi-line text input.
 func TextArea(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextAreaBase(c, s).PaddingY(8), o)
+	return input(c, ui.TextAreaBase(c, s).PaddingY(px(theme.Of(c), 8)), o)
 }
 
 // Field is a labelled form control with help text, or an error in its place.
 func Field(c *ui.Context, label, help, errText string, control func()) {
 	t := theme.Of(c)
-	ui.Column(c).Gap(6).Children(func() {
+	ui.Column(c).Gap(px(t, 6)).Children(func() {
 		ui.Text(c, label).FontWeight(500)
 		control()
 		switch {
 		case errText != "":
-			ui.Text(c, errText).FontSize(12).TextColor(t.Danger)
+			ui.Text(c, errText).FontSize(small(t)).TextColor(t.Danger)
 		case help != "":
-			ui.Text(c, help).FontSize(12).TextColor(t.Muted)
+			ui.Text(c, help).FontSize(small(t)).TextColor(t.Muted)
 		}
 	})
 }
@@ -228,9 +235,9 @@ func Field(c *ui.Context, label, help, errText string, control func()) {
 func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 	t := theme.Of(c)
 	tabs := ui.TabsBase(c, sel, len(labels))
-	return tabs.List.Padding(3).Radius(8).Background(t.Hover).Gap(2).Children(func() {
+	return tabs.List.Padding(px(t, 3)).Radius(8).Background(t.Hover).Gap(px(t, 2)).Children(func() {
 		for i, l := range labels {
-			tab := tabs.Tab(i).Height(26).PaddingX(10).Radius(6).FontWeight(500).TextColor(t.Muted)
+			tab := tabs.Tab(i).Height(px(t, 26)).PaddingX(px(t, 10)).Radius(6).FontWeight(500).TextColor(t.Muted)
 			if i == *sel {
 				tab.Background(t.Background).TextColor(t.Foreground).Shadow(0, 1, 2, 0, ink(t).Alpha(0.1))
 			}
@@ -244,12 +251,12 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 	t := theme.Of(c)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4))
-		panel.Width(560).Radius(14).Padding(24).Gap(16).Background(t.Background).Border(1, t.Border).
+		panel.Width(560).Radius(14).Padding(px(t, 24)).Gap(px(t, 16)).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 16, 48, 0, ink(t).Alpha(0.25))
-		ui.Text(c, title).FontSize(16).FontWeight(600)
+		ui.Text(c, title).FontSize(t.FontSize + 3).FontWeight(600)
 		body()
 		if footer != nil {
-			ui.Row(c).Gap(8).Justify(ui.End).Children(footer)
+			ui.Row(c).Gap(px(t, 8)).Justify(ui.End).Children(footer)
 		}
 	})
 }
@@ -258,7 +265,7 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t := theme.Of(c)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Margin(4, 0, 0, 0).Padding(12).Radius(8).Gap(8).Background(t.Background).Border(1, t.Border).
+		panel.Margin(4, 0, 0, 0).Padding(px(t, 12)).Radius(8).Gap(px(t, 8)).Background(t.Background).Border(1, t.Border).
 			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
 		body()
 	})
@@ -267,8 +274,8 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
 	t := theme.Of(c)
-	return ui.Box(c).Padding(1, 6).Radius(4).Background(t.Hover).Children(func() {
-		ui.Text(c, text).FontSize(12).TextColor(t.Foreground)
+	return ui.Box(c).Padding(px(t, 1), px(t, 6)).Radius(4).Background(t.Hover).Children(func() {
+		ui.Text(c, text).FontSize(small(t)).TextColor(t.Foreground)
 	})
 }
 
@@ -291,8 +298,8 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	case Danger:
 		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
 	}
-	return ui.Row(c).Wrap().Gap(12).Padding(8, 12).Radius(8).Background(bg).Border(1, border).TextColor(fg).
-		FontSize(13).Children(func() {
+	return ui.Row(c).Wrap().Gap(px(t, 12)).Padding(px(t, 8), px(t, 12)).Radius(8).Background(bg).Border(1, border).TextColor(fg).
+		FontSize(t.FontSize).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
 			actions()
@@ -325,7 +332,7 @@ func StatusDot(c *ui.Context, s Status) ui.Element {
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
 	t := theme.Of(c)
-	return ui.Column(c).Gap(12).Padding(16).Radius(12).Background(t.Background).Border(1, t.Border).Children(body)
+	return ui.Column(c).Gap(px(t, 12)).Padding(px(t, 16)).Radius(12).Background(t.Background).Border(1, t.Border).Children(body)
 }
 
 // Spinner shows that something is under way.
@@ -336,38 +343,39 @@ func Spinner(c *ui.Context) ui.Element {
 // Kbd shows a key or shortcut.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t := theme.Of(c)
-	return ui.Box(c).Height(20).PaddingX(5).Radius(4).Border(1, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font("Geist Mono").FontSize(11).TextColor(t.Muted)
+	return ui.Box(c).Height(px(t, 20)).PaddingX(px(t, 5)).Radius(4).Border(1, t.Border).Background(t.Sidebar).Center().Children(func() {
+		ui.Text(c, text).Font("Geist Mono").FontSize(xsmall(t)).TextColor(t.Muted)
 	})
 }
 
 // ToastHost draws the window's toasts (c.Toast, c.AddToast) at the bottom
-// right; call it once in the view. Type "error" shows the error icon.
-func ToastHost(c *ui.Context) {
+// right; call it once in the view. closeLabel names the close buttons (pass
+// the translated "Close"). Type "error" shows the error icon.
+func ToastHost(c *ui.Context, closeLabel string) {
 	t := theme.Of(c)
 	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
-		viewport.Padding(16).AlignItems(ui.End).Justify(ui.End).Gap(8)
+		viewport.Padding(px(t, 16)).AlignItems(ui.End).Justify(ui.End).Gap(px(t, 8))
 		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
-			toast.Root.Row().Gap(10).Padding(10, 14).Radius(8).Background(t.Background).Border(1, t.Border).
+			toast.Root.Row().Gap(px(t, 10)).Padding(px(t, 10), px(t, 14)).Radius(8).Background(t.Background).Border(1, t.Border).
 				Shadow(0, 4, 16, 0, ink(t).Alpha(0.12)).MaxWidth(420).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 8}, Exit: &ui.Motion{}})
 			toast.Root.Children(func() {
 				if tst.Type == "error" {
 					ui.Icon(c, icons.Get("circle-x")).Size(16, 16).TextColor(t.Danger)
 				}
-				ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Column(c).Grow(1).Gap(px(t, 2)).Children(func() {
 					ui.Text(c, tst.Title).FontWeight(500)
 					if tst.Description != "" {
-						ui.Text(c, tst.Description).FontSize(12).TextColor(t.Muted)
+						ui.Text(c, tst.Description).FontSize(small(t)).TextColor(t.Muted)
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(28).PaddingX(10).Radius(6).Border(1, t.Border).Children(func() {
+					toast.ActionButton().Height(px(t, 28)).PaddingX(px(t, 10)).Radius(6).Border(1, t.Border).Children(func() {
 						ui.Text(c, tst.Action)
 					})
 				}
-				toast.CloseButton().Label("Close").Size(20, 20).Radius(4).Center().TextColor(t.Muted).Children(func() {
+				toast.CloseButton().Label(closeLabel).Size(20, 20).Radius(4).Center().TextColor(t.Muted).Children(func() {
 					ui.Icon(c, icons.Get("x")).Size(14, 14)
 				})
 			})

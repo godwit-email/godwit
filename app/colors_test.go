@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,13 @@ import (
 // through theme tokens, never from literals.
 func TestNoColorLiterals(t *testing.T) {
 	for _, dir := range []string{".", "../internal/kit"} {
-		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		var files []string
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.HasSuffix(p, ".go") {
+				files = append(files, p)
+			}
+			return err
+		})
 		if err != nil || len(files) == 0 {
 			t.Fatalf("no Go files in %s: %v", dir, err)
 		}
