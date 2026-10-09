@@ -333,3 +333,25 @@ func TestResponsesStrictSchema(t *testing.T) {
 	want, _ := json.Marshal(schema())
 	assert.JSONEq(t, string(want), string(pl.Parameters), "a non-strict schema goes out unchanged")
 }
+
+// Final whole-branch review #2: a refusal is a withheld reply (as a chat
+// content_filter), never a finished empty one: from the refusal events and
+// from a refusal in the message content alone.
+func TestResponsesRefusal(t *testing.T) {
+	srv := testllm.Start(t, kindResp)
+	srv.Script(testllm.Turn{Refusal: "I can't help with that."})
+	only := sse(t, []string{
+		ev("response.output_item.done", `{"output_index":0,"item":{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"no"}]}}`),
+		ev("response.completed", `{"response":{"id":"r","status":"completed","output":[]}}`),
+	})
+	for name, url := range map[string]string{"events": srv.URL, "content": only} {
+		t.Run(name, func(t *testing.T) {
+			evs, res := run(newEngine(t), Request{Model: respModel(url, "m1"), Prompt: "x", MaxTurns: 1})
+			require.NotNil(t, res.Err)
+			assert.Equal(t, CodeIncomplete, res.Err.Code)
+			assert.Equal(t, "the model service withheld the reply", res.Err.Msg)
+			assert.Nil(t, res.State, "nothing is kept")
+			assert.Empty(t, kindsOf(evs, "done"))
+		})
+	}
+}

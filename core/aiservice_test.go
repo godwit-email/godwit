@@ -490,3 +490,24 @@ func TestRunSkillReportsModel(t *testing.T) {
 	assert.Equal(t, "x/m2", evs[0].Model)
 	assert.Len(t, e.srv.Requests(), 1)
 }
+
+// Final whole-branch review #2: a Responses refusal is not a result: the
+// skill run fails and nothing is cached.
+func TestResponsesRefusalNotCached(t *testing.T) {
+	e := newSkillEnv(t)
+	rs := testllm.Start(t, "openai-responses")
+	_, err := e.s.AddModelService(t.Context(), ModelServiceInput{Name: "r", Kind: "openai-responses", BaseURL: rs.URL, Models: []string{"m1"}})
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.DefaultModel = "r/m1"
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	rs.Script(testllm.Turn{Refusal: "I can't help with that."})
+	evs := e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	require.Equal(t, "error", evs[len(evs)-1].Kind)
+	assert.Equal(t, ai.CodeIncomplete, evs[len(evs)-1].Err.Code)
+	evs = e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	assert.Len(t, rs.Requests(), 2, "the refusal was not cached")
+}

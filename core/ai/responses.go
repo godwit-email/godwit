@@ -67,6 +67,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 	parts := map[int64]*gai.Part{} // by output index
 	text := map[int64]string{}
 	args := map[string]string{} // argument deltas by item ID
+	refused := false            // a refusal is a withheld reply, as a chat content_filter
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type {
@@ -78,11 +79,17 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 					return nil, err
 				}
 			}
+		case "response.refusal.delta", "response.refusal.done":
+			refused = true
 		case "response.function_call_arguments.delta":
 			args[ev.ItemID] += ev.Delta.OfString
 		case "response.output_item.done":
 			it := ev.Item
 			switch it.Type {
+			case "message":
+				for _, c := range it.Content {
+					refused = refused || c.Type == "refusal"
+				}
 			case "function_call":
 				a := it.Arguments
 				if a == "" {
@@ -104,6 +111,9 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 				parts[ev.OutputIndex] = r
 			}
 		case "response.completed":
+			if refused { // its text and tool requests are not used either
+				return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: gai.FinishReasonBlocked}, nil
+			}
 			for i, t := range text {
 				if t != "" {
 					parts[i] = gai.NewTextPart(t)

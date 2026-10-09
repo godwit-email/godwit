@@ -50,6 +50,7 @@ type Turn struct {
 	Fail       string
 	Incomplete bool
 	Truncate   bool
+	Refusal    string // openai-responses: the reply is this refusal, not text
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -216,7 +217,7 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if kind == "openai-responses" && turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" &&
-		turn.Fail == "" && !turn.Incomplete && !turn.Truncate {
+		turn.Fail == "" && !turn.Incomplete && !turn.Truncate && turn.Refusal == "" {
 		out := []outItem{{"reasoning", fmt.Sprintf("rs_%d", n), turn.Reasoning}}
 		if len(turn.Text) > 0 {
 			out = append(out, outItem{typ: "message"})

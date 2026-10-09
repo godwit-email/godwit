@@ -127,6 +127,17 @@ func responsesStream(send func(...string), t Turn, n int, model string, hang fun
 		rs := map[string]any{"type": "reasoning", "id": fmt.Sprintf("rs_%d", n), "summary": []any{}, "encrypted_content": t.Reasoning}
 		item(len(output), rs, rs, func() {})
 	}
+	if t.Refusal != "" {
+		id := fmt.Sprintf("msg_%d", n)
+		msg := func(status string, content []any) map[string]any {
+			return map[string]any{"type": "message", "id": id, "role": "assistant", "status": status, "content": content}
+		}
+		idx := len(output)
+		item(idx, msg("in_progress", []any{}), msg("completed", []any{map[string]any{"type": "refusal", "refusal": t.Refusal}}), func() {
+			send(ev("response.refusal.delta", map[string]any{"item_id": id, "output_index": idx, "content_index": 0, "delta": t.Refusal}),
+				ev("response.refusal.done", map[string]any{"item_id": id, "output_index": idx, "content_index": 0, "refusal": t.Refusal}))
+		})
+	}
 	if len(t.Text) > 0 {
 		idx, id := len(output), fmt.Sprintf("msg_%d", n)
 		msg := func(status string, content []any) map[string]any {
