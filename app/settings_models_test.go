@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -48,6 +49,12 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.until("added", func() bool { _, ok := h.modelService("local"); return ok })
 	h.see("编辑：local")
 
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	fetch := m.fetchModels
+	m.fetchModels = func(ctx context.Context, id int64) ([]string, error) {
+		time.Sleep(50 * time.Millisecond) // "test / m1" shows already: the click must wait for the box itself
+		return fetch(ctx, id)
+	}
 	h.click("从 /models 拉取")
 	h.click("m1")
 	h.click("保存")

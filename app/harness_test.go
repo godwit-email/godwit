@@ -137,9 +137,11 @@ func (h *harness) see(text string) {
 	h.until(fmt.Sprintf("text %q", text), func() bool { return h.tt.HasText(text) })
 }
 
+// click waits for an element whose text or label is exactly label (see
+// matches a part of a text, as "m1" in "test / m1"), then clicks it.
 func (h *harness) click(label string) {
 	h.t.Helper()
-	h.see(label)
+	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
 	if err := h.tt.Click(label); err != nil {
 		h.t.Fatal(err)
 	}
