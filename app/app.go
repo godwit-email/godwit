@@ -8,6 +8,8 @@ import (
 	"errors"
 	"log"
 	"maps"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -163,6 +165,9 @@ type App struct {
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
 
+	tempMu   sync.Mutex
+	tempDirs []string // made by tempDir; Close removes them
+
 	unread map[int64]int // per account, summed over its folders
 	toasts []ui.Toast    // shown on the next frame
 }
@@ -294,9 +299,31 @@ func (a *App) load() {
 	})
 }
 
-// Close cancels all work in flight; their done callbacks never run.
+// Close cancels all work in flight, whose done callbacks never run, and
+// removes the temporary copies of opened attachments.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	a.tempMu.Lock()
+	defer a.tempMu.Unlock()
+	for _, d := range a.tempDirs {
+		os.RemoveAll(d)
+	}
+	a.tempDirs = nil
+}
+
+// tempDir makes a new directory in parent ("" for the system's) that Close
+// removes. Safe off the UI thread.
+func (a *App) tempDir(parent string) (string, error) {
+	a.tempMu.Lock()
+	defer a.tempMu.Unlock()
+	if err := a.ctx.Err(); err != nil {
+		return "", err
+	}
+	d, err := os.MkdirTemp(parent, "godwit-")
+	if err == nil {
+		a.tempDirs = append(a.tempDirs, d)
+	}
+	return d, err
 }
 
 // flushWait is how long BeforeClose waits for the writes before it asks.

@@ -202,11 +202,24 @@ func TestReaderAttachments(t *testing.T) {
 	}
 	h.see(byteSize(full.Attachments[0].Size))
 	h.see("PDF")
+	tmp := t.TempDir()
+	h.plat.mu.Lock()
+	h.plat.tempDir = tmp
+	h.plat.mu.Unlock()
 	h.click("report.pdf")
 	path := h.callArg("OpenPath")
 	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("opened %q: %q, %v", path, got, err)
 	}
+	if filepath.Base(path) != "report.pdf" || !strings.HasPrefix(path, tmp+string(filepath.Separator)) {
+		t.Fatalf("opened %q, not a report.pdf under %q", path, tmp)
+	}
+	defer func() {
+		h.app.Close()
+		if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+			t.Errorf("the opened copy's directory outlived Close: %v", err)
+		}
+	}()
 	h.plat.mu.Lock()
 	h.plat.savePath = filepath.Join(t.TempDir(), "saved.pdf")
 	h.plat.mu.Unlock()
@@ -444,4 +457,25 @@ func TestReaderBodyRetry(t *testing.T) {
 	h.see("server went away")
 	h.click("重试")
 	h.see("eventually shown")
+}
+
+func TestFileName(t *testing.T) {
+	for in, want := range map[string]string{
+		"report.pdf":   "report.pdf",
+		"../../x":      "_.._x",
+		"..":           "attachment",
+		"":             "attachment",
+		"  ":           "attachment",
+		"a/b\\c.txt":   "a_b_c.txt",
+		"tab\there":    "tab_here",
+		"CON":          "_CON",
+		"con.txt":      "_con.txt",
+		"COM1.log":     "_COM1.log",
+		"console.txt":  "console.txt",
+		"trailing. . ": "trailing",
+	} {
+		if got := fileName(in, "attachment"); got != want {
+			t.Errorf("fileName(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

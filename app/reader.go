@@ -410,27 +410,46 @@ func (r *reader) exportEML(m core.MessageSummary) {
 	}, a.toastErr)
 }
 
-// fileName makes s a file name: separators and control characters become _.
+// fileName makes s a file name: separators and control characters become
+// _, leading and trailing dots and spaces go, and a name Windows reserves
+// (CON, COM1.txt…) gets a _ in front. Empty, it is fallback.
 func fileName(s, fallback string) string {
-	s = strings.Map(func(r rune) rune {
+	s = strings.Trim(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || strings.ContainsRune(`/\:*?"<>|`, r) {
 			return '_'
 		}
 		return r
-	}, strings.TrimSpace(s))
+	}, s), ". ")
+	stem, _, _ := strings.Cut(strings.ToUpper(s), ".")
+	if reserved[stem] || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
+		s = "_" + s
+	}
 	return cmp.Or(s, fallback)
 }
 
-// openAttachment fetches the attachment and opens it with its application.
-func (r *reader) openAttachment(id int64) {
+var reserved = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
+
+// openAttachment copies the attachment, under its own name, to a new
+// directory in the platform's temporary one, and opens it with its
+// application: the cache's file has no extension to choose one by. Close
+// removes the copies.
+func (r *reader) openAttachment(att core.AttachmentInfo) {
 	a := r.p.a
 	plat := a.plat
 	a.do(func(ctx context.Context) error {
-		path, _, err := a.svc.GetAttachment(ctx, id)
+		src, _, err := a.svc.GetAttachment(ctx, att.ID)
 		if err != nil {
 			return err
 		}
-		return plat.OpenPath(path)
+		dir, err := a.tempDir(plat.TempDir())
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, fileName(att.Filename, "attachment"))
+		if err := copyFile(src, dst); err != nil {
+			return err
+		}
+		return plat.OpenPath(dst)
 	}, a.toastErr)
 }
 
@@ -653,7 +672,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 						ui.Text(c, att.Filename).SingleLine()
 						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
 					})
-				}).OnClick(func() { r.openAttachment(att.ID) })
+				}).OnClick(func() { r.openAttachment(att) })
 				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
 					OnClick(func() { r.saveAttachment(att) })
 			})
