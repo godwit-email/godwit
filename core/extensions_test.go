@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,7 +176,7 @@ func TestUpdateSamePermissionsReloads(t *testing.T) {
 	assert.NotEqual(t, h1, h2, "the new code is loaded")
 	vs := versionDirs(t, dir, "p")
 	require.Len(t, vs, 1, "the old version is removed")
-	assert.Equal(t, h2, filepath.Base(vs[0]))
+	assert.True(t, strings.HasPrefix(filepath.Base(vs[0]), h2+"-"), vs[0])
 	b, err := os.ReadFile(filepath.Join(vs[0], "index.ts"))
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "two")
@@ -241,7 +243,7 @@ func TestCrashBeforeSwitch(t *testing.T) {
 	assert.Equal(t, h1, h)
 	vs := versionDirs(t, dir, "p")
 	require.Len(t, vs, 1)
-	assert.Equal(t, h1, filepath.Base(vs[0]))
+	assert.True(t, strings.HasPrefix(filepath.Base(vs[0]), h1+"-"), vs[0])
 }
 
 // An update that dies after the switch is the new version on the next start;
@@ -274,10 +276,85 @@ func TestCrashAfterSwitch(t *testing.T) {
 	assert.NotEqual(t, h1, h2)
 	vs := versionDirs(t, dir, "p")
 	require.Len(t, vs, 1)
-	assert.Equal(t, h2, filepath.Base(vs[0]))
+	assert.True(t, strings.HasPrefix(filepath.Base(vs[0]), h2+"-"), vs[0])
 }
 
 // The row switch failing changes nothing: the old version stays listed and running.
+// Reinstalling the same files writes a new directory: the one the row points
+// at is never deleted before the switch, even when it cannot be read.
+func TestSameHashReinstallNeverDeletesReferenced(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod does not make files unreadable on Windows")
+	}
+	dir := t.TempDir()
+	s := openService(t, dir)
+	src := pluginSrc(t, "p", "1.0.0", readPerms, `export default function () {}`)
+	installEnabled(t, s, src)
+	h1, _ := s.RunningPluginForTest("p")
+	vs := versionDirs(t, dir, "p")
+	require.Len(t, vs, 1)
+	old := vs[0]
+	unreadable := filepath.Join(old, "index.ts")
+	require.NoError(t, os.Chmod(unreadable, 0))
+
+	// Crash before the switch: the referenced directory is still there.
+	restore := core.SetPluginHookForTest(func(stage, name string) error {
+		if stage == "switch" {
+			fi, err := os.Lstat(unreadable)
+			if assert.NoError(t, err, "untouched until the switch") {
+				assert.Zero(t, fi.Mode().Perm(), "the old files, not a new copy at the same path")
+			}
+			return errors.New("crash")
+		}
+		return nil
+	})
+	_, err := s.InstallPlugin(ctx, src)
+	restore()
+	require.Error(t, err)
+	require.NoError(t, s.Close())
+	require.NoError(t, os.Chmod(unreadable, 0o600))
+	s = openService(t, dir)
+	assert.Equal(t, []string{old}, versionDirs(t, dir, "p"), "still referenced, intact; the new one is removed")
+	p, _ := pluginByName(t, s, "p")
+	assert.True(t, p.Enabled)
+	assert.Empty(t, p.Error)
+
+	// A completed reinstall switches to a new directory, then removes the old one.
+	require.NoError(t, os.Chmod(unreadable, 0))
+	defer os.Chmod(unreadable, 0o600)
+	restore = core.SetPluginHookForTest(func(stage, name string) error {
+		if stage == "switch" {
+			fi, err := os.Lstat(unreadable)
+			if assert.NoError(t, err, "untouched until the switch") {
+				assert.Zero(t, fi.Mode().Perm(), "the old files, not a new copy at the same path")
+			}
+		}
+		return nil
+	})
+	defer restore()
+	_, err = s.InstallPlugin(ctx, src)
+	require.NoError(t, err)
+	vs = versionDirs(t, dir, "p")
+	require.Len(t, vs, 1)
+	assert.NotEqual(t, old, vs[0])
+	p, _ = pluginByName(t, s, "p")
+	assert.True(t, p.Enabled)
+	assert.Empty(t, p.Error)
+	h, running := s.RunningPluginForTest("p")
+	assert.True(t, running)
+	assert.Equal(t, h1, h, "same files")
+}
+
+// Enabling a running plugin again leaves it running when the write fails.
+func TestReenableDBFailureKeepsRunning(t *testing.T) {
+	s := openService(t, t.TempDir())
+	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () {}`))
+	require.NoError(t, s.ExecForTest(`CREATE TRIGGER no_update BEFORE UPDATE ON plugins BEGIN SELECT RAISE(ABORT, 'disk full'); END`))
+	require.Error(t, s.SetPluginEnabled(ctx, "p", true))
+	_, running := s.RunningPluginForTest("p")
+	assert.True(t, running)
+}
+
 func TestUpdateDBFailureKeepsOld(t *testing.T) {
 	s := openService(t, t.TempDir())
 	installEnabled(t, s, pluginSrc(t, "p", "1.0.0", readPerms, `export default function () { return "one" }`))

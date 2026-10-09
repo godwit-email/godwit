@@ -166,4 +166,7 @@ var Migrations = [][]string{{
 	`ALTER TABLE audit_log ADD COLUMN destination TEXT`,
 	`ALTER TABLE audit_log ADD COLUMN reason TEXT`,
 	`ALTER TABLE approvals ADD COLUMN exec_mode TEXT NOT NULL DEFAULT 'tx'`, // tx or external
+}, {
+	// The active version's directory under DataDir/plugins/<name>/ (written once per install).
+	`ALTER TABLE plugins ADD COLUMN install_dir TEXT NOT NULL DEFAULT ''`,
 }}

@@ -194,7 +194,7 @@ func TestMigration7(t *testing.T) {
 	defer db.Close()
 	rows, err = db.Query(ctx, "PRAGMA user_version")
 	require.NoError(t, err)
-	assert.Equal(t, int64(7), store.Int(rows.Values[0][0]))
+	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
 	rows, err = db.Query(ctx, "SELECT name FROM sqlite_master WHERE name = 'messages_ai_event'")
 	require.NoError(t, err)
 	assert.Empty(t, rows.Values, "the message.received trigger is gone")
@@ -225,4 +225,23 @@ func TestMigration7(t *testing.T) {
 	_, err = db.Execute(ctx, "DELETE FROM plugins WHERE name = 'p'")
 	require.NoError(t, err)
 	assert.Zero(t, count(t, db, "plugin_kv"), "plugin rows cascade")
+}
+
+func TestMigration8(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:7]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO plugins(name, version, manifest, source_hash, permission_hash) VALUES ('p', '1', '{}', 'h', 'ph')")
+	require.NoError(t, err)
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT install_dir FROM plugins WHERE name = 'p'")
+	require.NoError(t, err)
+	assert.Equal(t, "", store.Str(rows.Values[0][0]))
 }

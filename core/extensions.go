@@ -2,12 +2,15 @@ package core
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -45,23 +48,24 @@ var pluginHook func(stage, name string) error
 type pluginRow struct {
 	m                             plugins.Manifest
 	sourceHash, permHash, granted string
+	installDir                    string
 	enabled                       bool
 	reason                        string
 }
 
-// Each installed version lives in DataDir/plugins/<name>/<source hash>/, written
-// once; the row's source_hash points at the active one, so switching versions
-// is a single row update on every platform.
+// Each install writes a fresh directory DataDir/plugins/<name>/<source hash>-<random>/
+// and never changes it; the row's install_dir points at the active one, so
+// switching versions is a single row update on every platform, and a directory
+// the row points at is never deleted.
 func (s *Service) pluginsDir() string { return filepath.Join(s.dataDir, "plugins") }
 
-func (s *Service) versionDir(name, hash string) string {
-	return filepath.Join(s.pluginsDir(), name, hash)
+func (s *Service) versionDir(name, installDir string) string {
+	return filepath.Join(s.pluginsDir(), name, installDir)
 }
 
-func isVersion(n string) bool {
-	_, err := hex.DecodeString(n)
-	return len(n) == 64 && err == nil
-}
+var versionRE = regexp.MustCompile(`^[0-9a-f]{64}-[0-9a-f]{16}$`)
+
+func isVersion(n string) bool { return versionRE.MatchString(n) }
 
 // removeOldVersions removes the version directories of name other than keep
 // ("" removes all), and the plugin's directory if nothing else is left in it.
@@ -83,7 +87,7 @@ func (s *Service) removeOldVersions(name, keep string) error {
 }
 
 func (s *Service) pluginRows(ctx context.Context, name string) (map[string]pluginRow, error) {
-	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason FROM plugins"
+	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir FROM plugins"
 	var args []any
 	if name != "" {
 		q += " WHERE name = ?"
@@ -100,7 +104,7 @@ func (s *Service) pluginRows(ctx context.Context, name string) (map[string]plugi
 			return nil, err
 		}
 		out[store.Str(r[0])] = pluginRow{m: m, sourceHash: store.Str(r[2]), permHash: store.Str(r[3]), granted: store.Str(r[4]),
-			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6])}
+			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7])}
 	}
 	return out, nil
 }
@@ -109,7 +113,10 @@ func (s *Service) pluginRows(ctx context.Context, name string) (map[string]plugi
 // records: a mismatch is an update that crashed between replacing the files and
 // writing the row, or files changed behind our back.
 func (s *Service) checkPluginFiles(name string, r pluginRow) error {
-	dir := s.versionDir(name, r.sourceHash)
+	if r.installDir == "" {
+		return errors.New("plugin files are missing; reinstall the plugin")
+	}
+	dir := s.versionDir(name, r.installDir)
 	data, err := os.ReadFile(filepath.Join(dir, "plugin.json"))
 	if err != nil {
 		return errors.New("plugin.json is missing; reinstall the plugin")
@@ -199,17 +206,13 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
-	ver := s.versionDir(m.Name, hash)
-	if h, err := plugins.HashDir(ver); err != nil || h != hash { // absent, or damaged: replace it
-		if err := os.RemoveAll(ver); err != nil {
-			return PluginInfo{}, err
-		}
-		if err := os.MkdirAll(filepath.Dir(ver), 0o700); err != nil {
-			return PluginInfo{}, err
-		}
-		if err := os.Rename(snap, ver); err != nil {
-			return PluginInfo{}, err
-		}
+	installDir := hash + "-" + hex.EncodeToString(binary.BigEndian.AppendUint64(nil, rand.Uint64()))
+	ver := s.versionDir(m.Name, installDir)
+	if err := os.MkdirAll(filepath.Dir(ver), 0o700); err != nil {
+		return PluginInfo{}, err
+	}
+	if err := os.Rename(snap, ver); err != nil { // a fresh path: nothing is replaced
+		return PluginInfo{}, err
 	}
 	if pluginHook != nil {
 		if err := pluginHook("switch", m.Name); err != nil {
@@ -218,13 +221,13 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 	}
 	// The switch. If it fails nothing changed: the old version keeps running and
 	// the new directory is removed on the next start or install.
-	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, permission_hash, installed_at)
-		VALUES (?, ?, ?, ?, ?, unixepoch())
+	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, installed_at)
+		VALUES (?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(name) DO UPDATE SET version = excluded.version, manifest = excluded.manifest,
-			source_hash = excluded.source_hash, permission_hash = excluded.permission_hash,
+			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
 			enabled = enabled AND permission_hash = excluded.permission_hash,
 			disabled_reason = '', installed_at = excluded.installed_at`,
-		m.Name, m.Version, string(mj), hash, m.PermissionHash())
+		m.Name, m.Version, string(mj), hash, installDir, m.PermissionHash())
 	if err != nil {
 		return PluginInfo{}, err
 	}
@@ -246,7 +249,7 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 			loadErr = fmt.Errorf("plugin %s was installed but did not start: %w", m.Name, loadErr)
 		}
 	}
-	if err := s.removeOldVersions(m.Name, hash); err != nil {
+	if err := s.removeOldVersions(m.Name, installDir); err != nil {
 		loadErr = errors.Join(loadErr, err)
 	}
 	return s.pluginInfo(m.Name, r), loadErr
@@ -321,11 +324,16 @@ func (s *Service) SetPluginEnabled(ctx context.Context, name string, enabled boo
 		if err := s.checkPluginFiles(name, r); err != nil {
 			return err
 		}
-		if err := s.loadPlugin(name, r); err != nil {
-			return err
+		_, running := s.running[name]
+		if !running {
+			if err := s.loadPlugin(name, r); err != nil {
+				return err
+			}
 		}
 		if _, err := s.db.Execute(ctx, "UPDATE plugins SET enabled = 1, failures = 0, disabled_reason = '' WHERE name = ?", name); err != nil {
-			s.stopPlugin(name)
+			if !running {
+				s.stopPlugin(name) // only what this call started
+			}
 			return err
 		}
 	}
@@ -381,7 +389,7 @@ func (s *Service) startPlugins(ctx context.Context) error {
 		if strings.HasPrefix(e.Name(), ".") { // .staging-*
 			err = os.RemoveAll(filepath.Join(s.pluginsDir(), e.Name()))
 		} else if e.IsDir() {
-			err = s.removeOldVersions(e.Name(), rows[e.Name()].sourceHash) // no row: "", all of them
+			err = s.removeOldVersions(e.Name(), rows[e.Name()].installDir) // no row: "", all of them
 		}
 		if err != nil {
 			return err
