@@ -23,6 +23,7 @@ var errorKeys = []struct {
 	{core.ErrModelNotFound, "error.model_not_found"},
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
+	{errFlushSlow, "error.flush_slow"},
 }
 
 // humanize says what err means to the user; "" for a cancellation, which

@@ -93,6 +93,8 @@ func (a *App) onEvent(ev events.Event) {
 	case events.SyncFailed:
 		delete(a.syncing, ev.AccountID)
 		a.syncErr[ev.AccountID] = ev.Error
+	case events.MessageReceived:
+		a.mailArrived(ev)
 	}
 	a.dirty = append(a.dirty, ev)
 	if a.refreshStop == nil {
@@ -138,7 +140,11 @@ func (a *App) toastErr(err error) {
 func (a *App) View(c *ui.Context) {
 	theme.Apply(c, theme.FromSettings(a.settings, c.Theme().Dark))
 	t, th := theme.Of(c), c.Theme()
-	c.Root().Background(t.Window)
+	root := t.Window
+	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
+		root = ui.Transparent // the material shows where the window's own color would
+	}
+	c.Root().Background(root)
 	for _, ts := range a.toasts {
 		c.AddToast(ts)
 	}

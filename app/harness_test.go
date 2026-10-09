@@ -263,6 +263,7 @@ func (p *fakePlatform) NotificationsSupported() bool {
 }
 func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin", on); return nil }
 func (p *fakePlatform) SetTrayUnread(n int)          { p.record("SetTrayUnread", n) }
+func (p *fakePlatform) ShowWindow()                  { p.record("ShowWindow") }
 func (p *fakePlatform) SetThemeSource(theme string)  { p.record("SetThemeSource", theme) }
 func (p *fakePlatform) ClipboardHTML() string {
 	p.record("ClipboardHTML")

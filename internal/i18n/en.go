@@ -503,6 +503,14 @@ var en = map[string]string{
 	"close.unsaved.title":      "A draft wasn't saved",
 	"close.unsaved.quit":       "Quit anyway",
 	"close.unsaved.back":       "Go back",
+	"error.flush_slow":         "A draft is still saving after 3 seconds",
+
+	// notifications and tray
+	"notify.new_mail":  "New mail",
+	"notify.new_mails": "%d new messages",
+	"tray.open":        "Open Godwit",
+	"tray.sync_all":    "Sync all accounts now",
+	"tray.quit":        "Quit",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",

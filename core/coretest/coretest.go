@@ -51,6 +51,7 @@ type Env struct {
 
 	mu      sync.Mutex
 	servers map[int64]*mailServers
+	started map[string]*mailServers // StartServers' servers by IMAP address, until an account adopts them
 	egress  atomic.Int64
 }
 
@@ -83,7 +84,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
-	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}}
+	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}}
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e.egress.Add(1)
@@ -179,20 +180,37 @@ func (e *Env) AddAccount(t *testing.T, email string) core.Account {
 }
 
 // StartServers starts fake IMAP and SMTP servers for an account not added
-// yet, as the onboarding form takes them, with the user and password they accept.
+// yet, as the onboarding form takes them, with the user and password they
+// accept. Once an account is added with them, Deliver, IMAP, SMTP and Sent
+// work for it as for AddAccount's.
 func (e *Env) StartServers(t *testing.T) (imapHost string, imapPort int, smtpHost string, smtpPort int, user, password string) {
 	t.Helper()
 	im := testmail.StartIMAP(t)
-	addr, _ := testmail.StartSMTP(t, testmail.SaveToSent(im))
+	addr, in := testmail.StartSMTP(t, testmail.SaveToSent(im))
 	imapHost, imapPort = splitHostPort(t, im.Addr)
 	smtpHost, smtpPort = splitHostPort(t, addr)
+	e.mu.Lock()
+	e.started[im.Addr] = &mailServers{imap: im, smtp: in, smtpAddr: addr}
+	e.mu.Unlock()
 	return imapHost, imapPort, smtpHost, smtpPort, "alice", "secret"
 }
 
 func (e *Env) mail(accountID int64) *mailServers {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	m := e.servers[accountID]
+	e.mu.Unlock()
+	if m != nil {
+		return m
+	}
+	accs, _ := e.Svc.ListAccounts(context.Background()) // added with StartServers' servers?
+	for _, a := range accs {
+		addr := net.JoinHostPort(a.IMAPHost, strconv.Itoa(a.IMAPPort))
+		e.mu.Lock()
+		if s := e.started[addr]; a.ID == accountID && s != nil {
+			e.servers[accountID], m = s, s
+		}
+		e.mu.Unlock()
+	}
 	if m == nil {
 		panic(fmt.Sprintf("coretest: no account %d", accountID))
 	}

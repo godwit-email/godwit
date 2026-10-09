@@ -5,6 +5,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"maps"
 	"time"
 
@@ -25,7 +26,8 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
-	SetTrayUnread(n int)
+	SetTrayUnread(n int) // the inboxes' unread total on the tray and the app icon; 0 clears it
+	ShowWindow()         // shows the window, in front
 	SetThemeSource(theme string)
 	ClipboardHTML() string
 	TempDir() string
@@ -66,6 +68,9 @@ type Deps struct {
 	// SystemLanguage is the system's language tag; the interface uses it
 	// while Settings.UILanguage is "".
 	SystemLanguage string
+
+	// Vibrancy: the window has a material, which shows around the panel.
+	Vibrancy bool
 }
 
 // Page is a top-level screen.
@@ -119,6 +124,9 @@ type App struct {
 	accountsGen      uint64                                                             // the load gen that read a.accounts
 
 	foreground bool
+	vibrancy   bool              // Deps.Vibrancy
+	newMail    map[int64][]int64 // per account, messages arrived for its pending notification
+	trayUnread int               // what the tray shows
 
 	history, ahead []Route           // navigation: routes behind and, after back, ahead
 	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
@@ -152,7 +160,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage}
+	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy}
 	if a.clock == nil {
 		a.clock = realClock{}
 	}
@@ -211,6 +219,7 @@ func (a *App) load() {
 	var accs []core.Account
 	var st core.Settings
 	var unread map[int64]int
+	inbox := 0
 	fetch, ver := a.fetch, a.settingsVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
 	a.do(func(ctx context.Context) error {
@@ -227,6 +236,9 @@ func (a *App) load() {
 			unread[acc.ID] = 0 // every account has a key, folders or not
 			for _, f := range fs {
 				unread[acc.ID] += f.Unread
+				if f.Role == "inbox" {
+					inbox += f.Unread
+				}
 			}
 		}
 		return nil
@@ -248,6 +260,7 @@ func (a *App) load() {
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st
 		}
+		a.showTrayUnread(inbox)
 		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {
 			i18n.SetLanguage(tag)
 		}
@@ -269,26 +282,42 @@ func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 }
 
+// flushWait is how long BeforeClose waits for the drafts to save before it asks.
+const flushWait = 3 * time.Second
+
+// errFlushSlow is why BeforeClose asks when the drafts take longer than flushWait.
+var errFlushSlow = errors.New("drafts still saving")
+
 // BeforeClose saves every draft's last edits, then calls proceed: before
-// the window closes or the App quits. When a draft cannot be saved the
-// window stays and asks whether to close anyway.
+// the window closes or the App quits. When a draft cannot be saved, or has
+// not saved within flushWait, the window shows and asks whether to close
+// anyway; a save that finishes while it asks closes after all.
 func (a *App) BeforeClose(proceed func()) {
-	a.flushDrafts(func(err error) {
-		if err == nil {
-			proceed()
-			return
-		}
+	settled := false
+	ask := func(err error) {
+		settled = true
 		a.closeErr, a.closeAnyway, a.closeAsk = err, proceed, true
+		a.plat.ShowWindow()
+	}
+	stop := a.after(flushWait, func() {
+		if !settled {
+			ask(errFlushSlow)
+		}
+	})
+	a.flushDrafts(func(err error) {
+		stop()
+		switch {
+		case err == nil && (!settled || a.closeAsk && errors.Is(a.closeErr, errFlushSlow)):
+			settled, a.closeAsk = true, false
+			proceed()
+		case !settled:
+			ask(err)
+		}
 	})
 }
 
 // SetForeground records whether the window is in front.
 func (a *App) SetForeground(on bool) { a.foreground = on }
-
-// NotificationClicked handles a click on a notification the App showed.
-func (a *App) NotificationClicked(id string) {
-	_ = id // ponytail: no notifications yet; the new-mail task routes the click to its message
-}
 
 // onUI posts f to the UI thread unless the App has closed by then.
 func (a *App) onUI(f func()) {
