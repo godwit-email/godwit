@@ -181,7 +181,7 @@ func TestExposeCoversService(t *testing.T) {
 	svc := newService(t)
 	_, err := rpc.NewDispatcher(svc, rpcbind.Expose)
 	require.NoError(t, err)
-	for _, m := range []string{"Close", "Redact", "SetPluginNetForTest"} {
+	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest"} {
 		assert.False(t, rpcbind.Expose(m), m)
 	}
 	var exposed []string

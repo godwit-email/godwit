@@ -5,6 +5,7 @@ package rpcbind
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/godwit-email/godwit/core"
@@ -88,7 +89,57 @@ func NewCodec() *rpc.Codec {
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported
-// one but Close, Redact and the test hooks.
+// one but Close, Redact, AuditExternal and the test hooks.
 func Expose(method string) bool {
-	return method != "Close" && method != "Redact" && !strings.HasSuffix(method, "ForTest")
+	return method != "Close" && method != "Redact" && method != "AuditExternal" && !strings.HasSuffix(method, "ForTest")
+}
+
+// Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
+// rpc.Listen; the caller holds the owner lock). Errors go out through
+// NewCodec with svc's redaction; an unregistered one is logged redacted.
+// Sends by the full role and drafts by the mcp role are audited before they
+// are dispatched.
+func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
+	d, err := rpc.NewDispatcher(svc, Expose)
+	if err != nil {
+		return nil, err
+	}
+	codec := NewCodec()
+	return rpc.Listen(dataDir, d, rpc.ServerOptions{
+		Version: version,
+		Conn: rpc.ConnOptions{EncodeError: func(err error) *rpc.WireError {
+			we := codec.Encode(err, svc.Redact)
+			if we.Code == rpc.CodeInternal {
+				slog.Error("local api: internal error", "err", svc.Redact(err.Error()))
+			}
+			return we
+		}},
+		Audit: func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
+	})
+}
+
+// audit records full's Send and SendAcknowledged (by draft) and mcp's
+// NewDraft (by source message) and SaveDraft (by draft); nothing else.
+func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
+	source := ""
+	switch {
+	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged"):
+		source = core.AuditLocalAPI
+	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
+		source = core.AuditMCP
+	default:
+		return nil
+	}
+	var target int64
+	switch {
+	case method == "NewDraft" && len(params) == 3:
+		json.Unmarshal(params[2], &target)
+	case method == "SaveDraft" && len(params) == 1:
+		var d struct{ ID int64 }
+		json.Unmarshal(params[0], &d)
+		target = d.ID
+	case len(params) > 0:
+		json.Unmarshal(params[0], &target)
+	}
+	return svc.AuditExternal(context.Background(), source, method, target)
 }
