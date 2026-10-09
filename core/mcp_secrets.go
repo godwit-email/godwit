@@ -25,24 +25,22 @@ func mcpSecretOwner(id int64, kind, key string) string {
 }
 
 // saveMCPSecrets stores the non-empty values. A new value is redacted from
-// before it is written; the old one stays redacted until the write succeeded.
+// before it is written; the old one stays redacted (secretSet only grows).
 func (s *Service) saveMCPSecrets(id int64, kind string, values map[string]string) error {
 	for k, v := range values {
 		if v == "" {
 			continue
 		}
-		owner := mcpSecretOwner(id, kind, k)
-		s.secrets.Add(owner, v)
+		s.secrets.Add(v)
 		if err := keychainSet(s.mcpSecretUser(id, kind, k), v); err != nil {
 			return fmt.Errorf("save MCP %s %s: %w", kind, k, err)
 		}
-		s.secrets.Set(owner, v)
 	}
 	return nil
 }
 
 // dropMCPSecrets deletes the keys' entries (missing ones are fine) and
-// returns the keys it could not delete, which stay redacted.
+// returns the keys it could not delete. Their values stay redacted either way.
 func (s *Service) dropMCPSecrets(id int64, kind string, keys []string) (failed []string, err error) {
 	var errs []error
 	for _, k := range keys {
@@ -51,7 +49,6 @@ func (s *Service) dropMCPSecrets(id int64, kind string, keys []string) (failed [
 			failed = append(failed, k)
 			continue
 		}
-		s.secrets.RemoveOwner(mcpSecretOwner(id, kind, k))
 	}
 	return failed, errors.Join(errs...)
 }
@@ -73,7 +70,7 @@ func (s *Service) mcpValues(id int64, kind string, keys []string) (map[string]st
 		if err != nil {
 			return nil, fmt.Errorf("read MCP %s %s: %w", kind, k, err)
 		}
-		s.secrets.Set(mcpSecretOwner(id, kind, k), v)
+		s.secrets.Add(v)
 		out[k] = v
 	}
 	return out, nil

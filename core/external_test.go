@@ -363,7 +363,7 @@ func TestExternalTimeoutUncertain(t *testing.T) {
 
 func TestExternalOutcomeSanitized(t *testing.T) {
 	e := newExtEnv(t)
-	e.s.secrets.Add("plugin:demo", "sekret-value-123")
+	e.s.secrets.Add("sekret-value-123")
 	e.outcome = func(context.Context) (any, error) {
 		return nil, errors.New("upstream said sekret-value-123 while reading /Users/someone/plugins/demo/main.js")
 	}
@@ -405,7 +405,7 @@ func TestExternalOutcomeSanitized(t *testing.T) {
 func TestExternalOutcomeEscapedSecret(t *testing.T) {
 	e := newExtEnv(t)
 	const secret = "<sekret-123>&" // characters JSON escapes
-	e.s.secrets.Add("plugin:demo", secret)
+	e.s.secrets.Add(secret)
 	e.outcome = func(context.Context) (any, error) {
 		return map[string]any{"note": "x " + secret + " y", secret: []any{secret}}, nil
 	}

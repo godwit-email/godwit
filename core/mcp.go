@@ -528,7 +528,7 @@ func (s *Service) staleMCPApprovals(ctx context.Context, id int64) error {
 	runs := map[int64]int64{}
 	for _, a := range as {
 		_, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE approvals SET state = 'stale', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-			Args: []any{msgStale, time.Now().Unix(), a.ID}}, a.audit("stale")})
+			Args: []any{msgStale, time.Now().Unix(), a.ID}}, s.auditRow(a, "stale")})
 		errs = append(errs, err)
 		runs[a.RunID] = a.ConversationID
 	}

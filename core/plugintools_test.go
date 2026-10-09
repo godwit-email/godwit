@@ -432,7 +432,7 @@ func TestPluginApprovalResultsWrapped(t *testing.T) {
 // Plugin tool descriptions are cleaned and marked as the plugin's.
 func TestPluginToolDescriptionCleaned(t *testing.T) {
 	e := newApprovalEnv(t)
-	e.s.secrets.Add("test", "hunter2-secret")
+	e.s.secrets.Add("hunter2-secret")
 	startTestPlugin(t, e.s, "wordy", `{}`, `export default function (ctx: any) {
   ctx.tools.register({ name: "say", description: "Uses hunter2-secret\u0007\nnow " + "x".repeat(2000), write: false,
     schema: { type: "object" }, run: () => "ok" })

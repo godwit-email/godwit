@@ -226,7 +226,7 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		if err != nil {
 			return err
 		}
-		if err := gateway.New(h.s.db).Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.complete", Decision: "run"}); err != nil {
+		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.complete", Decision: "run"}); err != nil {
 			return err
 		}
 		e, err := h.s.aiEngine()
@@ -283,7 +283,7 @@ func (h *pluginHost) audit(ctx context.Context, inv plugins.Invocation, dest, de
 	if dest != "" {
 		e.Destinations = []string{dest}
 	}
-	return h.s.cleanError(gateway.New(h.s.db).Record(context.WithoutCancel(ctx), e))
+	return h.s.cleanError(h.s.gateway().Record(context.WithoutCancel(ctx), e))
 }
 
 // pluginToolName is a plugin tool's name in Wit: plugin_<plugin>_<tool>, "-" as "_".
@@ -400,11 +400,11 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 			if err != nil {
 				return nil, cleanErr{pluginUntrusted(name, s.clean(err.Error())), err}
 			}
-			text, err := resultText(res)
+			text, err := s.cleanText(res)
 			if err != nil {
 				return nil, err
 			}
-			return pluginUntrusted(name, s.clean(text)), nil
+			return pluginUntrusted(name, text), nil
 		}
 	}
 	return toolDesc{Spec: spec, Source: gateway.SourcePlugin, Extension: name, Write: ti.Write, Mode: modeExternal,
@@ -466,13 +466,13 @@ func (s *Service) runPluginTool(ctx context.Context, pc pluginCall, tool string,
 	return res, nil
 }
 
-// resultText is a tool result as text: a string as it is, anything else as JSON.
-func resultText(v any) (string, error) {
+// cleanText is a tool result as cleaned text: a string as it is, anything
+// else as JSON (cleanJSON: cleaned before it is encoded).
+func (s *Service) cleanText(v any) (string, error) {
 	if t, ok := v.(string); ok {
-		return t, nil
+		return s.clean(t), nil
 	}
-	b, err := json.Marshal(v)
-	return string(b), err
+	return s.cleanJSON(v)
 }
 
 // pluginUntrusted is text from or about plugin name's tool call as the model

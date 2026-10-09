@@ -88,11 +88,14 @@ type approvalRow struct {
 	label                      string // the extension's name, for an MCP server too (else extension)
 }
 
-// audit is the audit_log row of the approval's decision.
-func (a approvalRow) audit(decision string) sqlite.Statement {
+// auditRow is the audit_log row of the approval's decision.
+func (s *Service) auditRow(a approvalRow, decision string) sqlite.Statement {
 	return gateway.Audit(gateway.Entry{Source: a.source, Extension: a.extension, Tool: a.Tool, CallID: a.callID,
-		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision})
+		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision}, s.secrets.Redact)
 }
+
+// gateway is the Service's gateway: its audit rows are redacted.
+func (s *Service) gateway() *gateway.Gateway { return gateway.New(s.db, s.secrets.Redact) }
 
 // toolResult is the approval's outcome as the model gets it. A plugin or
 // MCP tool's outcome of any kind is wrapped (as "<source>:<name>"); a done
@@ -272,7 +275,7 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 			edited = nil
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = ?, args = COALESCE(?, args), result = ?, undo = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}}, a.audit(decision))
+			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}}, s.auditRow(a, decision))
 		_, err := s.db.Transaction(ctx, stmts)
 		return err
 	}
@@ -456,7 +459,7 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 		case "pending":
 			a.State, a.result = "rejected", pendingMsg
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-				Args: []any{pendingMsg, now, a.ID}}, a.audit("rejected"))
+				Args: []any{pendingMsg, now, a.ID}}, s.auditRow(a, "rejected"))
 		case "executing": // an external run whose outcome could not be recorded
 			a.result = msgUncertain
 		}
@@ -492,7 +495,7 @@ func (s *Service) recoverRuns(ctx context.Context) error {
 	stmts := []sqlite.Statement{{SQL: `UPDATE approvals SET state = 'failed', result = CASE exec_mode WHEN 'external' THEN ? ELSE ? END,
 		updated_at = ? WHERE state = 'executing'`, Args: []any{msgUncertain, msgQuit, time.Now().Unix()}}}
 	for _, a := range cut {
-		stmts = append(stmts, a.audit("uncertain"))
+		stmts = append(stmts, s.auditRow(a, "uncertain"))
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err

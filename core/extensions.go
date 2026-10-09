@@ -581,9 +581,6 @@ func (s *Service) pluginSecretUser(name, key string) string {
 	return s.installID + "/plugin:" + name + ":" + key
 }
 
-// Each secret is its own owner in the secret set, so one can change alone.
-func secretOwner(name, key string) string { return "plugin:" + name + ":" + key }
-
 // secretValue reads a plugin secret; ok is false when it is not set.
 func (s *Service) secretValue(name, key string) (v string, ok bool, err error) {
 	v, err = keychainGet(s.pluginSecretUser(name, key))
@@ -606,15 +603,16 @@ func (s *Service) loadPluginSecrets(name string, keys []string) error {
 			vals[k] = v
 		}
 	}
-	for k, v := range vals {
-		s.secrets.Set(secretOwner(name, k), v)
+	for _, v := range vals {
+		s.secrets.Add(v)
 	}
 	return nil
 }
 
 // dropSecrets deletes the keychain entries of drop (missing ones are fine)
 // and records listed minus the deleted ones as the plugin's secret_keys; a key
-// whose delete failed stays listed and redacted, for the next try.
+// whose delete failed stays listed, for the next try. Values stay redacted
+// until the Service closes (secretSet only grows).
 func (s *Service) dropSecrets(ctx context.Context, name string, listed, drop []string) error {
 	var errs error
 	keep := []string{}
@@ -628,7 +626,6 @@ func (s *Service) dropSecrets(ctx context.Context, name string, listed, drop []s
 			keep = append(keep, k)
 			continue
 		}
-		s.secrets.RemoveOwner(secretOwner(name, k))
 	}
 	if len(drop) == 0 {
 		return nil
@@ -859,7 +856,7 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 		}
 		done = append(done, k)
 		if v, set := secretSet[k]; set {
-			s.secrets.Add(secretOwner(name, k), v) // redacted before it is stored
+			s.secrets.Add(v) // redacted before it is stored
 			err = keychainSet(s.pluginSecretUser(name, k), v)
 		} else if err = keychainDelete(s.pluginSecretUser(name, k)); errors.Is(err, keyring.ErrNotFound) {
 			err = nil
@@ -880,19 +877,13 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 		_, err = s.db.Transaction(ctx, stmts)
 	}
 	if err == nil {
-		for k := range olds {
-			if v, set := secretSet[k]; set {
-				s.secrets.Set(secretOwner(name, k), v)
-			} else {
-				s.secrets.RemoveOwner(secretOwner(name, k))
-			}
-		}
+		// The old values stay redacted: the running instance may hold them.
 		if rp := s.running[name]; rp != nil {
 			rp.host.refreshConfig(ctx) // the next call sees the saved config
 		}
 		return nil
 	}
-	// Put the old secrets back; one that cannot be restored keeps both values redacted.
+	// Put the old secrets back; both values stay redacted either way.
 	for _, k := range done {
 		p, user := olds[k], s.pluginSecretUser(name, k)
 		var rerr error
@@ -903,10 +894,6 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 		}
 		if rerr != nil {
 			err = errors.Join(err, fmt.Errorf("restore plugin secret %s: %w", k, rerr))
-		} else if p.ok {
-			s.secrets.Set(secretOwner(name, k), p.v)
-		} else {
-			s.secrets.RemoveOwner(secretOwner(name, k))
 		}
 	}
 	return err

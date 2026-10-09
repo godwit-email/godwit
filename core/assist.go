@@ -614,7 +614,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if name == "translate-draft" { // never "the original's language": the skill does not see it
 		system += "\n\nTarget language: " + cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx)) + "."
 	}
-	if err := gateway.New(s.db).Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
+	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
 
@@ -649,7 +649,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			return spliceSelection(old, *sel, out)
 		})
 		if err == nil {
-			err = gateway.New(s.db).Record(ctx, gateway.Entry{Source: gateway.SourceWit, Tool: "update_draft", TargetKind: "draft", TargetID: d.ID, Decision: "approve"})
+			err = s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceWit, Tool: "update_draft", TargetKind: "draft", TargetID: d.ID, Decision: "approve"})
 		}
 		if err != nil {
 			return ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}

@@ -242,7 +242,7 @@ func (s *Service) mcpHTTP(srv MCPServer, headers map[string]string) (mcp.Transpo
 	}
 	audit := func(ctx context.Context, dest, decision, reason string) error {
 		callID, _ := ctx.Value(mcpCallKey{}).(string)
-		return gateway.New(s.db).Record(context.WithoutCancel(ctx), gateway.Entry{Source: gateway.SourceMCP,
+		return s.gateway().Record(context.WithoutCancel(ctx), gateway.Entry{Source: gateway.SourceMCP,
 			Extension: strconv.FormatInt(srv.ID, 10), Tool: "mcp:" + srv.Name + ":http", CallID: callID,
 			Destinations: []string{dest}, Decision: decision, Reason: reason})
 	}

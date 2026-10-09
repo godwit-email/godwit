@@ -146,7 +146,7 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 	inv := plugins.Invocation{ID: "action:" + rand.Text(), Kind: plugins.KindAction,
 		Write: slices.Contains(m.Permissions.Mail, "write"), EgressHosts: hosts}
 	if needsApproval {
-		if err := gateway.New(s.db).Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: name, Tool: "plugin:" + id,
+		if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: name, Tool: "plugin:" + id,
 			CallID: inv.ID, TargetKind: t.Kind, TargetID: t.ID, Destinations: hosts, Decision: "approve"}); err != nil {
 			return ActionResult{}, err
 		}

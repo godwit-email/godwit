@@ -203,9 +203,8 @@ func TestMCPSecretsInKeychain(t *testing.T) {
 	require.NoError(t, s.RemoveMCPServer(t.Context(), srv.ID))
 	_, err = keychainGet(fmt.Sprintf("%s/mcp:%d:env:API_TOKEN", s.installID, srv.ID))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
-	assert.NotContains(t, s.SecretsForTest(), "env-secret-123")
-	assert.NotContains(t, s.SecretsForTest(), "other-secret-789")
-	assert.Contains(t, s.SecretsForTest(), "Bearer hdr-secret-456")
+	// Removed values stay redacted until the Service closes.
+	assert.Subset(t, s.SecretsForTest(), []string{"env-secret-123", "other-secret-789", "Bearer hdr-secret-456"})
 }
 
 // stdioServer adds the test binary as a stdio MCP server in mode, with env.
@@ -583,7 +582,7 @@ func TestMCPRedactBeforeCut(t *testing.T) {
 	f := newFakeMCP(t)
 	srv := fakeServer(t, e.s)
 	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "lookup", true))
-	e.s.secrets.Add("test", "straddle-secret-77")
+	e.s.secrets.Add("straddle-secret-77")
 	f.setReply(&mcp.TextContent{Text: strings.Repeat("y", maxMCPResult-5) + "straddle-secret-77 tail"})
 	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, mcpServer(t, e.s, srv.ID), "lookup"), `{}`), finished)
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
@@ -624,7 +623,7 @@ func TestMCPKeychainFailuresKeepTracking(t *testing.T) {
 		Env: map[string]string{"KEEP": ""}})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"KEEP"}, mcpServer(t, s, srv.ID).EnvKeys)
-	assert.NotContains(t, s.SecretsForTest(), "old-secret-123")
+	assert.Contains(t, s.SecretsForTest(), "old-secret-123", "redacted until the Service closes")
 	_, err = keychainGet(fmt.Sprintf("%s/mcp:%d:env:OLD", s.installID, srv.ID))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
 

@@ -7,44 +7,32 @@ import (
 )
 
 // secretSet holds the secret values of extensions (plugin secret config, MCP
-// env and header values) by owner, for value-based redaction (spec 5.5). Its
+// env and header values) for value-based redaction (spec 5.5). It only grows:
+// a value replaced or removed may still be held by a running instance or work
+// in flight, so it stays redacted for the rest of the Service's lifetime. Its
 // zero value is ready; it is safe for concurrent use.
 type secretSet struct {
 	mu sync.RWMutex
-	m  map[string][]string
+	m  map[string]struct{}
 }
 
-func (s *secretSet) Add(owner string, values ...string) {
+func (s *secretSet) Add(values ...string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.m == nil {
-		s.m = map[string][]string{}
+		s.m = map[string]struct{}{}
 	}
-	s.m[owner] = append(s.m[owner], values...)
-}
-
-// Set replaces owner's values in one step.
-func (s *secretSet) Set(owner string, values ...string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.m == nil {
-		s.m = map[string][]string{}
+	for _, v := range values {
+		s.m[v] = struct{}{}
 	}
-	s.m[owner] = values
-}
-
-func (s *secretSet) RemoveOwner(owner string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.m, owner)
 }
 
 func (s *secretSet) Values() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []string
-	for _, vs := range s.m {
-		out = append(out, vs...)
+	out := make([]string, 0, len(s.m))
+	for v := range s.m {
+		out = append(out, v)
 	}
 	return out
 }

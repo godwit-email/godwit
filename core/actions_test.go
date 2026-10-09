@@ -366,7 +366,7 @@ func TestPluginAccountingErrorsReturned(t *testing.T) {
 func TestPluginTextCleaned(t *testing.T) {
 	s := newMailContextService(t)
 	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
-	s.secrets.Add("test", "hunter2-secret")
+	s.secrets.Add("hunter2-secret")
 	startTestPlugin(t, s, "talker", `{"mail":["read"]}`, `export default function (ctx: any) {
   const t = "a\n\r\tb hunter2-secret"
   ctx.actions.register({ id: "say", label: "Say", on: ["message"], run: () => ({ text: t }) })

@@ -589,7 +589,7 @@ func markConvReadMail(id int64) sqlite.Statement {
 // Prepare fixes the final arguments the approval records; a call it rejects
 // goes back to the model as an error, without an approval.
 func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
-	g := gateway.New(s.db)
+	g := s.gateway()
 	out := make([]ai.ToolSpec, 0, len(tools))
 	for _, t := range tools {
 		t.Source = cmp.Or(t.Source, gateway.SourceWit)

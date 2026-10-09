@@ -18,30 +18,25 @@ import (
 func TestSecretSet(t *testing.T) {
 	var set secretSet
 	assert.Empty(t, set.Values())
-	set.Add("plugin:a", "alpha-secret-1", "alpha-secret-2")
-	set.Add("mcp:1", "mcp-header-val")
-	set.Add("plugin:a", "alpha-secret-3")
+	set.Add("alpha-secret-1", "alpha-secret-2")
+	set.Add("mcp-header-val")
+	set.Add("alpha-secret-3", "alpha-secret-1")
 	got := set.Values()
 	slices.Sort(got)
-	assert.Equal(t, []string{"alpha-secret-1", "alpha-secret-2", "alpha-secret-3", "mcp-header-val"}, got)
+	assert.Equal(t, []string{"alpha-secret-1", "alpha-secret-2", "alpha-secret-3", "mcp-header-val"}, got, "once each")
 	assert.Equal(t, "key [redacted] and [redacted], short", set.Redact("key alpha-secret-2 and mcp-header-val, short"))
-	set.RemoveOwner("plugin:a")
-	assert.Equal(t, []string{"mcp-header-val"}, set.Values())
 
 	var wg sync.WaitGroup
 	for i := range 8 {
 		wg.Go(func() {
-			owner := fmt.Sprint("plugin:", i)
 			for j := range 100 {
-				set.Add(owner, fmt.Sprint("value-", i, "-", j))
+				set.Add(fmt.Sprint("value-", i, "-", j))
 				_ = set.Values()
-				if j%10 == 0 {
-					set.RemoveOwner(owner)
-				}
 			}
 		})
 	}
 	wg.Wait()
+	assert.Len(t, set.Values(), 4+800)
 }
 
 // TestPluginSecretRedactedByEngine: a value added to the Service's secret set
@@ -50,7 +45,7 @@ func TestPluginSecretRedactedByEngine(t *testing.T) {
 	e := newSkillEnv(t)
 	_, err := e.s.aiEngine()
 	require.NoError(t, err)
-	e.s.secrets.Add("plugin:demo", "plugin-sekret-42")
+	e.s.secrets.Add("plugin-sekret-42")
 	e.s.registerTool(toolDesc{Spec: ai.ToolSpec{Name: "leaky", Description: "Leaks.", Schema: object(map[string]any{}),
 		Run: func(context.Context, json.RawMessage) (any, error) {
 			return nil, errors.New("upstream rejected plugin-sekret-42 and sekret-key-7")

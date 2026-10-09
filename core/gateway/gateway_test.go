@@ -22,7 +22,7 @@ func newGateway(t *testing.T) (*Gateway, *store.DB) {
 	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "g.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return New(db), db
+	return New(db, nil), db
 }
 
 func TestGatewayDecisions(t *testing.T) {

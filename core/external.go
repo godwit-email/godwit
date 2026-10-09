@@ -86,7 +86,7 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	db := context.WithoutCancel(ctx) // claimed: always try to record the outcome
 	record := func(state, result, decision string) error {
 		_, err := s.db.Transaction(db, []sqlite.Statement{{SQL: "UPDATE approvals SET state = ?, result = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, result, time.Now().Unix(), a.ID}}, a.audit(decision)})
+			Args: []any{state, result, time.Now().Unix(), a.ID}}, s.auditRow(a, decision)})
 		if err != nil {
 			slog.Default().Warn("could not record an external approval's outcome", "approval", a.ID, "state", state, "err", err)
 		}
@@ -113,9 +113,18 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 		}
 		return errors.Join(err, record("failed", result, "failed"))
 	}
-	// Cleaned as decoded data, then encoded: the encoding escapes characters
-	// a secret may hold, so the encoded text would hide it from Redact.
-	out, err := json.Marshal(res)
+	out, err := s.cleanJSON(res)
+	if err != nil {
+		return errors.Join(err, record("failed", s.clean(err.Error()), "failed"))
+	}
+	return record("done", out, "executed")
+}
+
+// cleanJSON is v as JSON, cleaned as decoded data and then encoded: the
+// encoding escapes characters a secret may hold (<, >, &), so the encoded
+// text would hide it from Redact.
+func (s *Service) cleanJSON(v any) (string, error) {
+	out, err := json.Marshal(v)
 	var plain any
 	if err == nil {
 		dec := json.NewDecoder(bytes.NewReader(out))
@@ -125,10 +134,7 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	if err == nil {
 		out, err = json.Marshal(s.cleanValue(plain))
 	}
-	if err != nil {
-		return errors.Join(err, record("failed", s.clean(err.Error()), "failed"))
-	}
-	return record("done", string(out), "executed")
+	return string(out), err
 }
 
 // cleanValue cleans every string, map keys included, of decoded JSON.

@@ -51,9 +51,14 @@ const (
 	Deny    = ai.Deny
 )
 
-type Gateway struct{ db *store.DB }
+type Gateway struct {
+	db     *store.DB
+	redact func(string) string
+}
 
-func New(db *store.DB) *Gateway { return &Gateway{db} }
+// New is a gateway writing to db; redact (nil: none) cleans every string an
+// audit row stores, such as secret values in a destination.
+func New(db *store.DB, redact func(string) string) *Gateway { return &Gateway{db, redact} }
 
 func decide(c Call, readMail bool) Decision {
 	switch {
@@ -142,7 +147,7 @@ type Entry struct {
 // Record writes one audit_log row, such as for a host-initiated event that is
 // not a tool call, like a skill run (decision "run").
 func (g *Gateway) Record(ctx context.Context, e Entry) error {
-	st := Audit(e)
+	st := Audit(e, g.redact)
 	if _, err := g.db.Execute(ctx, st.SQL, st.Args...); err != nil {
 		return fmt.Errorf("gateway: audit: %w", err)
 	}
@@ -150,8 +155,12 @@ func (g *Gateway) Record(ctx context.Context, e Entry) error {
 }
 
 // Audit is Record's audit_log row as a statement, for a caller that writes it
-// in the same transaction as the event, such as an approval executing.
-func Audit(e Entry) sqlite.Statement {
+// in the same transaction as the event, such as an approval executing. Every
+// string it stores goes through redact (nil: none).
+func Audit(e Entry, redact func(string) string) sqlite.Statement {
+	if redact == nil {
+		redact = func(s string) string { return s }
+	}
 	var target any
 	if e.TargetID != 0 {
 		target = e.TargetID
@@ -162,8 +171,8 @@ func Audit(e Entry) sqlite.Statement {
 	}
 	return sqlite.Statement{SQL: `INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision, extension, call_id,
 		destination, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{time.Now().Unix(), e.Source, e.Tool, e.TargetKind, target, e.Decision, null(e.Extension), null(e.CallID),
-			null(strings.Join(hosts, ",")), null(e.Reason)}}
+		Args: []any{time.Now().Unix(), redact(e.Source), redact(e.Tool), redact(e.TargetKind), target, redact(e.Decision),
+			null(redact(e.Extension)), null(redact(e.CallID)), null(redact(strings.Join(hosts, ","))), null(redact(e.Reason))}}
 }
 
 func null(s string) any {

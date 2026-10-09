@@ -146,7 +146,7 @@ func TestSecretKeepClearAndMinLength(t *testing.T) {
 	_, err = s.PluginSecretForTest("cfg", "token")
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
 	assert.False(t, cfgValues(t, s)["token"].Set)
-	assert.Empty(t, s.SecretsForTest())
+	assert.Equal(t, []string{"12345678"}, s.SecretsForTest(), "redacted until the Service closes")
 }
 
 func TestSecretNeverInErrors(t *testing.T) {
@@ -210,7 +210,7 @@ func TestUninstallRemovesSecrets(t *testing.T) {
 	require.NoError(t, s.UninstallPlugin(ctx, "cfg"))
 	_, err := s.PluginSecretForTest("cfg", "token")
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
-	assert.Empty(t, s.SecretsForTest())
+	assert.Equal(t, []string{"tok-abcdefgh"}, s.SecretsForTest(), "redacted until the Service closes")
 	// Reinstalled, it starts unconfigured.
 	configPlugin(t, s)
 	assert.False(t, cfgValues(t, s)["token"].Set)
@@ -227,7 +227,7 @@ func TestUpdateDropsUndeclaredSecrets(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.PluginSecretForTest("cfg", "token")
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
-	assert.Empty(t, s.SecretsForTest())
+	assert.Equal(t, []string{"tok-abcdefgh"}, s.SecretsForTest(), "redacted until the Service closes")
 }
 
 var errLocked = errors.New("locked")
@@ -301,7 +301,7 @@ func TestSecretKeysListedForRetry(t *testing.T) {
 	require.NoError(t, s.UninstallPlugin(ctx, "cfg"))
 	_, err = s.PluginSecretForTest("cfg", "token")
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
-	assert.Empty(t, s.SecretsForTest())
+	assert.Equal(t, []string{"tok-abcdefgh"}, s.SecretsForTest(), "redacted until the Service closes")
 }
 
 func TestPartialSecretWriteBumpsVersion(t *testing.T) {
