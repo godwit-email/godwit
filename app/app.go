@@ -102,7 +102,13 @@ type App struct {
 	loadErr     error // the newest load's error; nil once a load succeeds
 	loadFailing bool  // loads have failed since the last success: toast once per streak
 	accounts    []core.Account
-	settings    core.Settings
+	settings    core.Settings // what the interface shows: the newest edit while one saves
+
+	settingsOK    core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
+	settingsGen   uint64                                                             // bumped per settings save; only the newest one's result counts
+	settingsEpoch uint64                                                             // bumped per settings save; a load begun before it keeps its settings out
+	saveSettings  func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	sysLang       string                                                             // the system's language, once detected; "" before
 
 	foreground bool
 
@@ -144,9 +150,10 @@ func New(d Deps) *App {
 		st, err := a.svc.GetSettings(ctx)
 		return st, accs, err
 	}
+	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
 	a.mail = newMailPage(a)
-	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: placeholder{}}
+	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
@@ -185,7 +192,7 @@ func (a *App) load() {
 	var accs []core.Account
 	var st core.Settings
 	var unread map[int64]int
-	fetch := a.fetch
+	fetch, epoch := a.fetch, a.settingsEpoch
 	a.do(func(ctx context.Context) error {
 		var err error
 		if st, accs, err = fetch(ctx); err != nil {
@@ -217,7 +224,10 @@ func (a *App) load() {
 		}
 		a.loadFailing = false
 		first := !a.loaded
-		a.accounts, a.settings, a.unread, a.loaded = accs, st, unread, true
+		a.accounts, a.unread, a.loaded = accs, unread, true
+		if epoch == a.settingsEpoch && a.writes.keys["settings"] == nil { // else a save is newer than st
+			a.settings, a.settingsOK = st, st
+		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)
 		maps.DeleteFunc(a.syncErr, func(id int64, _ string) bool { return gone(id, false) })

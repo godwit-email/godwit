@@ -119,6 +119,35 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 	})
 }
 
+// SwitchRow is a full-width switch named label: label and help on the left,
+// the track on the right; a click anywhere on the row toggles it.
+func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
+	t := theme.Of(c)
+	track := t.Border
+	if *on {
+		track = t.Primary
+	}
+	thumb := t.Background
+	if t.Dark && !*on {
+		thumb = t.Foreground
+	}
+	return ui.SwitchBase(c, on).FillWidth().Gap(px(t, 16)).Label(label).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(px(t, 2)).Children(func() {
+			ui.Text(c, label)
+			if help != "" {
+				ui.Text(c, help).FontSize(small(t)).TextColor(t.Muted)
+			}
+		})
+		tr := ui.Row(c).Size(32, 18).Padding(2).Radius(9).Background(track).Justify(ui.Start)
+		if *on {
+			tr.Justify(ui.End)
+		}
+		tr.Children(func() {
+			ui.Box(c).Size(14, 14).Radius(7).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
+		})
+	})
+}
+
 // Checkbox is a 16×16 check box before its label.
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t := theme.Of(c)

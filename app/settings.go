@@ -1,0 +1,262 @@
+package app
+
+import (
+	"context"
+	"strconv"
+	"strings"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/assets"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
+	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/syslang"
+	"github.com/godwit-email/godwit/internal/theme"
+)
+
+// Version is the app's version; cmd/godwit sets it with -ldflags.
+var Version = "dev"
+
+const repoURL = "https://github.com/godwit-email/godwit"
+
+var logo = ui.MustParseSVG(assets.Logo)
+
+// settingsPage is the Settings section: the accounts and the app's pages,
+// chosen by Route.Settings ("account:<id>", "general", "models",
+// "extensions", "privacy", "about").
+type settingsPage struct {
+	a *App
+
+	// accounts
+	forms   map[int64]*accountForm
+	usage   map[int64]int64                                                                // attachment cache bytes per account; absent until read
+	dialog  string                                                                         // the open dialog: "password", "servers", "remove", "cache"; "" none
+	dlgAcc  int64                                                                          // the account the dialog is about
+	open    bool                                                                           // the dialog shows; Escape or a click outside clears it
+	busy    bool                                                                           // the dialog's action runs
+	dlgErr  error                                                                          // the dialog action's failure
+	secret  string                                                                         // the password dialog's field
+	servers serverForm                                                                     // the servers dialog's fields
+	reauth  map[int64]bool                                                                 // a browser sign-in runs for the account
+	update  func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
+
+	// general
+	st, shown core.Settings // what the controls are bound to, and what they showed last frame
+	noTrans   bool          // the no-translate language list is open
+
+	keychain    error // the keychain probe's result
+	keychainSet bool  // the probe finished
+}
+
+func newSettingsPage(a *App) *settingsPage {
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, reauth: map[int64]bool{},
+		update: a.svc.UpdateAccount}
+}
+
+// section is the page shown: an unknown or missing account falls back to
+// the first account, then to General.
+func (p *settingsPage) section() (sec string, acc *core.Account) {
+	a := p.a
+	sec = a.route.Settings
+	if rest, ok := strings.CutPrefix(sec, "account:"); ok || sec == "" {
+		id, _ := strconv.ParseInt(rest, 10, 64)
+		for i := range a.accounts {
+			if a.accounts[i].ID == id {
+				return sec, &a.accounts[i]
+			}
+		}
+		if len(a.accounts) == 0 {
+			return "general", nil
+		}
+		return accountRoute(a.accounts[0].ID), &a.accounts[0]
+	}
+	return sec, nil
+}
+
+func accountRoute(id int64) string { return "account:" + strconv.FormatInt(id, 10) }
+
+func (p *settingsPage) refresh(hints []events.Event) {
+	a := p.a
+	if hints == nil {
+		p.closeDialog()
+	}
+	if a.sysLang == "" {
+		var tag string
+		a.do(func(context.Context) error { tag = syslang.Detect(); return nil }, func(error) { a.sysLang = tag })
+	}
+	switch sec, acc := p.section(); {
+	case acc != nil:
+		p.readUsage(acc.ID)
+	case sec == "privacy" && hints == nil:
+		var err error
+		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
+			func(error) { p.keychain, p.keychainSet = err, true })
+	}
+}
+
+func (p *settingsPage) Title() (string, string) {
+	sec, acc := p.section()
+	if acc != nil {
+		return i18n.T("settings.accounts"), acc.Email
+	}
+	return i18n.T("settings." + sec), ""
+}
+
+var appSections = []string{"general", "models", "extensions", "privacy", "about"}
+
+// Sidebar: the accounts, each with its provider's mark and a status dot,
+// then Add account; then the app's pages.
+func (p *settingsPage) Sidebar(c *ui.Context) {
+	a := p.a
+	t := theme.Of(c)
+	s := t.Scale
+	cur, _ := p.section()
+	group := func(label string) {
+		ui.Text(c, label).FontSize(t.FontSize-1).TextColor(t.Muted).Padding(10*s, 8*s, 4*s, 8*s)
+	}
+	item := func(sec string, children func()) {
+		b := ui.ButtonBase(c).Height(32 * s).PaddingX(8 * s).Gap(8 * s).Radius(8)
+		on := sec == cur
+		switch {
+		case on:
+			b.Background(t.SidebarSelected).FontWeight(500)
+		case b.Hovered():
+			b.Background(t.Hover)
+		}
+		b.Children(children)
+		if !on {
+			b.OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: sec}) })
+		}
+	}
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).Gap(2 * s).Children(func() {
+			ui.Text(c, i18n.T("settings.heading")).FontSize(t.FontSize+5).FontWeight(600).Padding(4*s, 6*s, 6*s, 6*s)
+			group(i18n.T("settings.accounts"))
+			for _, acc := range a.accounts {
+				item(accountRoute(acc.ID), func() {
+					mark(c, providerMark(accountProvider(a, acc)), 20)
+					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
+					if acc.Status == "ok" {
+						kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
+					} else {
+						kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.attention"))
+					}
+				})
+			}
+			ui.ButtonBase(c).Height(32 * s).PaddingX(8 * s).Gap(8 * s).Radius(8).TextColor(t.Muted).Children(func() {
+				ui.Icon(c, icons.Get("plus")).Size(14, 14)
+				ui.Text(c, i18n.T("settings.add_account"))
+			}).OnClick(a.openAddAccount)
+			group(i18n.T("settings.app"))
+			for _, sec := range appSections {
+				item(sec, func() { ui.Text(c, i18n.T("settings."+sec)) })
+			}
+		})
+	})
+}
+
+func (p *settingsPage) Content(c *ui.Context) {
+	t := theme.Of(c)
+	sec, acc := p.section()
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).MaxWidth(1040).Padding(24 * t.Scale).Gap(20 * t.Scale).Children(func() {
+			switch {
+			case acc != nil:
+				p.accountView(c, *acc)
+			case sec == "general":
+				p.generalView(c)
+			case sec == "privacy":
+				p.privacyView(c)
+			case sec == "about":
+				p.aboutView(c)
+			default: // models and extensions come with their own task
+				pageHeading(c, i18n.T("settings."+sec), "")
+			}
+		})
+	})
+	p.dialogView(c)
+}
+
+func pageHeading(c *ui.Context, title, sub string) {
+	t := theme.Of(c)
+	ui.Column(c).Gap(4 * t.Scale).Children(func() {
+		ui.Text(c, title).FontSize(t.FontSize + 7).FontWeight(600)
+		if sub != "" {
+			ui.Text(c, sub).TextColor(t.Muted)
+		}
+	})
+}
+
+// settingsSection is a titled block: the title (and help) in a 200-wide
+// column, body beside it.
+func settingsSection(c *ui.Context, title, help string, body func()) {
+	t := theme.Of(c)
+	s := t.Scale
+	ui.Row(c).AlignItems(ui.Start).Gap(24*s).Padding(20*s, 0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Column(c).Width(200 * s).Shrink(0).Gap(4 * s).Children(func() {
+			ui.Text(c, title).FontWeight(600)
+			if help != "" {
+				ui.Text(c, help).TextColor(t.Muted)
+			}
+		})
+		ui.Column(c).Grow(1).Shrink(1).Gap(12 * s).Children(body)
+	})
+}
+
+// settingRow is a labelled control: label and help on the left, the
+// control on the right.
+func settingRow(c *ui.Context, label, help string, control func()) {
+	t := theme.Of(c)
+	ui.Row(c).Gap(16 * t.Scale).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(2 * t.Scale).Children(func() {
+			ui.Text(c, label)
+			if help != "" {
+				ui.Text(c, help).FontSize(t.FontSize - 1).TextColor(t.Muted)
+			}
+		})
+		control()
+	})
+}
+
+func (p *settingsPage) privacyView(c *ui.Context) {
+	t := theme.Of(c)
+	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"))
+	for _, k := range []string{"keychain", "local", "ai"} {
+		ui.Column(c).Gap(4 * t.Scale).Children(func() {
+			ui.Text(c, i18n.T("onboarding.promise."+k)).FontWeight(500)
+			ui.Text(c, i18n.T("onboarding.promise."+k+".sub")).TextColor(t.Muted)
+		})
+	}
+	settingsSection(c, i18n.T("settings.keychain"), "", func() {
+		ui.Row(c).Gap(8 * t.Scale).Children(func() {
+			switch {
+			case !p.keychainSet:
+				kit.Spinner(c)
+				ui.Text(c, i18n.T("settings.keychain.checking")).TextColor(t.Muted)
+			case p.keychain != nil:
+				kit.StatusDot(c, kit.Error)
+				ui.Text(c, humanize(p.keychain))
+			default:
+				kit.StatusDot(c, kit.OK)
+				ui.Text(c, i18n.T("settings.keychain.ok"))
+			}
+		})
+	})
+}
+
+func (p *settingsPage) aboutView(c *ui.Context) {
+	t := theme.Of(c)
+	a := p.a
+	ui.Column(c).Gap(10 * t.Scale).AlignItems(ui.Start).Children(func() {
+		ui.Icon(c, logo).Size(64, 64).TextColor(t.Foreground)
+		ui.Text(c, "Godwit").FontSize(t.FontSize + 7).FontWeight(600)
+		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
+		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)
+		label := strings.TrimPrefix(repoURL, "https://")
+		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Small: true, Icon: "external-link"}).OnClick(func() {
+			a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
+		})
+	})
+}
