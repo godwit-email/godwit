@@ -99,7 +99,7 @@ func TestKeyNotSentToNewAddress(t *testing.T) {
 	saved, err := s.UpdateModelService(bg, ms.ID, toB)
 	require.NoError(t, err)
 	assert.False(t, saved.HasKey)
-	_, err = keyring.Get(keyringService, s.modelKeyUser(ms.ID))
+	_, err = keyring.Get(keyringService, s.modelKeyUser(ms.ID, 1))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
 	_, err = s.FetchModels(bg, ms.ID)
 	require.NoError(t, err)
@@ -126,8 +126,7 @@ func TestKeepKeySameAddress(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, saved.HasKey)
 	assert.Equal(t, a.URL, saved.BaseURL)
-	k, _ := keyring.Get(keyringService, s.modelKeyUser(ms.ID))
-	assert.Equal(t, "key-A-123456", k)
+	assert.Equal(t, "key-A-123456", storedKey(t, s, ms.ID))
 }
 
 func TestAddServiceNormalizes(t *testing.T) {

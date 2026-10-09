@@ -28,6 +28,16 @@ func modelSvc(t *testing.T) *Service {
 	return s
 }
 
+// storedKey is the key in the keychain entry service id's row names.
+func storedKey(t *testing.T, s *Service, id int64) string {
+	t.Helper()
+	m, err := s.modelServiceBy(t.Context(), "id = ?", id)
+	require.NoError(t, err)
+	k, err := s.modelKey(m)
+	require.NoError(t, err)
+	return k
+}
+
 func TestModelServiceCRUD(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "or", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k1", Models: []string{"m"}})
@@ -41,9 +51,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	ms2, err := s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "or", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k2", Models: []string{"m", "n"}})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, ms2.Version)
-	k, err = keyring.Get(keyringService, s.installID+"/model:"+itoa(ms.ID))
-	require.NoError(t, err)
-	assert.Equal(t, "k2", k)
+	assert.Equal(t, "k2", storedKey(t, s, ms.ID))
 
 	list, err := s.ListModelServices(bg)
 	require.NoError(t, err)
@@ -51,7 +59,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	assert.Equal(t, []string{"m", "n"}, list[0].Models)
 
 	require.NoError(t, s.RemoveModelService(bg, ms.ID))
-	_, err = keyring.Get(keyringService, s.installID+"/model:"+itoa(ms.ID))
+	_, err = keyring.Get(keyringService, s.modelKeyUser(ms.ID, 2))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
 	list, err = s.ListModelServices(bg)
 	require.NoError(t, err)
@@ -190,7 +198,7 @@ func TestUpdateFailureKeepsCredentials(t *testing.T) {
 	dup := ModelServiceInput{Name: "b", Kind: "openai", BaseURL: "https://a.com", APIKey: "new"}
 	_, err = s.UpdateModelService(bg, a.ID, dup)
 	require.Error(t, err)
-	k, _ := keyring.Get(keyringService, s.modelKeyUser(a.ID))
+	k, _ := keyring.Get(keyringService, s.modelKeyUser(a.ID, 1))
 	assert.Equal(t, "old", k)
 	got, err := s.modelServiceBy(bg, "id = ?", a.ID)
 	require.NoError(t, err)
@@ -203,8 +211,8 @@ func TestUpdateFailureKeepsCredentials(t *testing.T) {
 	require.Error(t, err)
 	got, err = s.modelServiceBy(bg, "id = ?", a.ID)
 	require.NoError(t, err)
-	assert.Equal(t, ModelService{ID: a.ID, Name: "a", Kind: "openai", BaseURL: "https://a.com", Slug: "a", Models: []string{"m"}, HasKey: true, Version: 1}, got)
-	k, _ = keyring.Get(keyringService, s.modelKeyUser(a.ID))
+	assert.Equal(t, ModelService{ID: a.ID, Name: "a", Kind: "openai", BaseURL: "https://a.com", Slug: "a", Models: []string{"m"}, HasKey: true, Version: 1, keyVersion: 1}, got)
+	k, _ = keyring.Get(keyringService, s.modelKeyUser(a.ID, 1))
 	assert.Equal(t, "old", k)
 }
 
@@ -262,9 +270,7 @@ func TestUpdateSurvivesCancelDuringKeyWrite(t *testing.T) {
 	got, err := s.UpdateModelService(cctx, a.ID, ModelServiceInput{Name: "a", Kind: "openai", BaseURL: "https://a.com", APIKey: "new", Models: []string{"m"}})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, got.Version)
-	k, err := keyring.Get(keyringService, s.modelKeyUser(a.ID))
-	require.NoError(t, err)
-	assert.Equal(t, "new", k)
+	assert.Equal(t, "new", storedKey(t, s, a.ID))
 }
 
 func TestModelServiceTestGenerates(t *testing.T) {
@@ -367,4 +373,106 @@ func TestStaleModelSnapshotRejected(t *testing.T) {
 	require.NotNil(t, rerr, "a removed service's snapshot")
 	assert.Equal(t, ai.CodeStale, rerr.Code)
 	assert.Len(t, srv.Requests(), 1, "no request after removal")
+}
+
+// Final whole-branch review #1: a crash anywhere in an update that replaces
+// or clears the key never pairs the old key with the new address after a
+// restart, and the restart deletes every key entry but the current one.
+func TestKeyBindingSurvivesCrash(t *testing.T) {
+	crash := func(op string, after bool) func() {
+		return func() {
+			if op == "set" {
+				keyringSet = func(svc, user, pw string) error {
+					if after {
+						keyring.Set(svc, user, pw)
+					}
+					panic("crash")
+				}
+			} else {
+				keyringDelete = func(svc, user string) error { panic("crash") }
+			}
+		}
+	}
+	for name, c := range map[string]struct {
+		action string
+		crash  func()
+	}{
+		"replace before the key is written": {KeyReplace, crash("set", false)},
+		"replace after the key is written":  {KeyReplace, crash("set", true)},
+		"replace before the old key goes":   {KeyReplace, crash("delete", false)},
+		"clear before the old key goes":     {KeyClear, crash("delete", false)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			keyring.MockInit()
+			dir, bg := t.TempDir(), context.Background()
+			s, err := New(bg, Options{DataDir: dir})
+			require.NoError(t, err)
+			ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: "https://a.example", APIKey: "key-A-123456", Models: []string{"m"}})
+			require.NoError(t, err)
+
+			get, set, del := keyringGet, keyringSet, keyringDelete
+			c.crash()
+			func() {
+				defer func() { recover() }()
+				s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: "https://b.example", APIKey: "key-B-654321", KeyAction: c.action, Models: []string{"m"}})
+			}()
+			keyringGet, keyringSet, keyringDelete = get, set, del
+			s.Close()
+
+			s, err = New(bg, Options{DataDir: dir}) // the restart
+			require.NoError(t, err)
+			t.Cleanup(func() { s.Close() })
+			m, err := s.resolveModel(bg, "x/m")
+			require.NoError(t, err)
+			newKey := map[string]string{KeyReplace: "key-B-654321", KeyClear: ""}[c.action]
+			assert.Contains(t, [][2]string{{"https://a.example", "key-A-123456"}, {"https://b.example", newKey}}, [2]string{m.BaseURL, m.APIKey})
+			user := s.installID + "/model:" + itoa(ms.ID)
+			for _, u := range []string{user, user + ":v2"} {
+				if k, err := keyring.Get(keyringService, u); err == nil {
+					assert.Equal(t, m.APIKey, k, "only the current key is left: %s", u)
+				}
+			}
+		})
+	}
+}
+
+// Final whole-branch review #1: a service from before key versions keeps its
+// key (the unversioned entry) and can keep it across an update.
+func TestLegacyKeyEntryKept(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	legacyService(t, s, 1, "old", "m")
+	require.NoError(t, s.backfillSlugs(bg))
+	require.NoError(t, keyring.Set(keyringService, s.installID+"/model:1", "legacy-key-1"))
+	m, err := s.resolveModel(bg, "old/m")
+	require.NoError(t, err)
+	assert.Equal(t, "legacy-key-1", m.APIKey)
+	_, err = s.UpdateModelService(bg, 1, ModelServiceInput{Name: "old", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m", "n"}})
+	require.NoError(t, err)
+	m, err = s.resolveModel(bg, "old/n")
+	require.NoError(t, err)
+	assert.Equal(t, "legacy-key-1", m.APIKey)
+}
+
+// A removed service's key entry the keychain failed to delete goes at the
+// next start.
+func TestRemovedKeySwept(t *testing.T) {
+	keyring.MockInit()
+	dir, bg := t.TempDir(), context.Background()
+	s, err := New(bg, Options{DataDir: dir})
+	require.NoError(t, err)
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: "https://a.example", APIKey: "key-A-123456", Models: []string{"m"}})
+	require.NoError(t, err)
+	del := keyringDelete
+	keyringDelete = func(svc, user string) error { return errors.New("locked") }
+	require.NoError(t, s.RemoveModelService(bg, ms.ID))
+	keyringDelete = del
+	user := s.modelKeyUser(ms.ID, 1)
+	_, err = keyring.Get(keyringService, user)
+	require.NoError(t, err, "left behind")
+	s.Close()
+	s, err = New(bg, Options{DataDir: dir})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	_, err = keyring.Get(keyringService, user)
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
 }

@@ -208,4 +208,12 @@ var Migrations = [][]string{{
 	// The names services had when slugs came (Service.backfillSlugs): skill references
 	// in the "name/model" form keep resolving to that service, and only to it.
 	`CREATE TABLE model_service_aliases (name TEXT PRIMARY KEY, service_id INTEGER NOT NULL REFERENCES model_services(id) ON DELETE CASCADE)`,
+	// The keychain entry holding the service's key: 0 none, 1 the unversioned entry
+	// older Godwits wrote, n the entry "…:v<n>". A new key goes to a new entry first,
+	// then one UPDATE switches address and entry together (UpdateModelService).
+	`ALTER TABLE model_services ADD COLUMN key_version INTEGER NOT NULL DEFAULT 1`,
+	// Key entries that may exist but no row uses (any more): deleted at once, and again
+	// at startup when that failed or the process stopped first. No foreign key: a
+	// removed service's entry stays listed until it is gone.
+	`CREATE TABLE model_key_trash (service_id INTEGER NOT NULL, key_version INTEGER NOT NULL, PRIMARY KEY(service_id, key_version))`,
 }}

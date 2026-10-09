@@ -135,6 +135,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, fmt.Errorf("model service slugs: %w", err)
 	}
+	if err := s.sweepModelKeys(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("model service keys: %w", err)
+	}
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err
