@@ -185,23 +185,25 @@ func (p *Plugin) RunAction(ctx context.Context, inv Invocation, id string, targe
 }
 
 // Card runs the card's match(m) and, if its result is truthy, render(m), both
-// under inv; nil without a match. ctx bounds both calls together.
-func (p *Plugin) Card(ctx context.Context, inv Invocation, m MailMessage) (any, error) {
+// under inv, and returns render's result; matched is false when match was not
+// truthy. ctx bounds both calls together.
+func (p *Plugin) Card(ctx context.Context, inv Invocation, m MailMessage) (res any, matched bool, err error) {
 	if p.card == nil {
-		return nil, fmt.Errorf("plugin %s has no card", p.Name)
+		return nil, false, fmt.Errorf("plugin %s has no card", p.Name)
 	}
 	msg, err := jsonData(pluginMail(m))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	ok, err := p.call(ctx, inv, p.card.match, false, msg)
 	if err != nil || !truthy(ok) {
-		return nil, err
+		return nil, false, err
 	}
 	if msg, err = jsonData(pluginMail(m)); err != nil { // a fresh copy: match never changes what render gets
-		return nil, err
+		return nil, true, err
 	}
-	return p.call(ctx, inv, p.card.render, false, msg)
+	res, err = p.call(ctx, inv, p.card.render, false, msg)
+	return res, true, err
 }
 
 // truthy is JavaScript truthiness of exported JSON data.

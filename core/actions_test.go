@@ -299,3 +299,111 @@ func TestCardTimeout(t *testing.T) {
 	}
 	assert.Equal(t, int64(1), pluginFailures(t, s, "slow"), "a timeout counts")
 }
+
+// Fix round 1.
+
+// A matched card whose render is not a valid card fails and counts; a card
+// that does not match is neutral (no failure, no reset); a valid one resets.
+func TestCardMatchedInvalidRenderFails(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Invoice", "Shop <shop@x>", "pay", "", 1_700_000_000)
+	other := addMessage(t, s, "Lunch", "Bob <bob@x>", "noon", "", 1_700_000_000)
+	startTestPlugin(t, s, "strict", `{"mail":["read"]}`, `export default function (ctx: any) {
+  let n = 0
+  const renders: any[] = [null, undefined, {}, { title: "" }, { title: 7 }, { title: "t", fields: [{ label: "x" }] },
+    { title: "t", fields: [{ label: "x", value: 1 }] }, { title: "t", buttons: [{ label: "b", value: "v" }] },
+    { title: "t", buttons: [{ label: "b", kind: "copy" }] }, { title: "t", fields: {} }, "title"]
+  ctx.cards.register({ match: (m: any) => m.subject === "Invoice", render: () => n < renders.length ? renders[n++] : { title: "fine" } })
+}`)
+	// Keep the plugin enabled across more than three failures.
+	_, err := s.db.Execute(t.Context(), `CREATE TRIGGER keep_enabled BEFORE UPDATE OF enabled ON plugins BEGIN SELECT RAISE(IGNORE); END`)
+	require.NoError(t, err)
+	for i := range 11 {
+		cards, err := s.PluginCards(t.Context(), id)
+		require.NoError(t, err)
+		assert.Empty(t, cards, "render %d", i)
+		assert.Equal(t, int64(i+1), pluginFailures(t, s, "strict"), "render %d counts", i)
+	}
+	cards, err := s.PluginCards(t.Context(), other)
+	require.NoError(t, err)
+	assert.Empty(t, cards)
+	assert.Equal(t, int64(11), pluginFailures(t, s, "strict"), "no match is neutral")
+	cards, err = s.PluginCards(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, []Card{{Plugin: "strict", Title: "fine"}}, cards)
+	assert.Zero(t, pluginFailures(t, s, "strict"), "a valid card ends the run of failures")
+}
+
+// A failure-accounting write that fails is reported, not swallowed.
+func TestPluginAccountingErrorsReturned(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
+	startTestPlugin(t, s, "acct", `{"mail":["read"]}`, `export default function (ctx: any) {
+  ctx.actions.register({ id: "ok", label: "OK", on: ["message"], run: () => "ok" })
+  ctx.actions.register({ id: "boom", label: "Boom", on: ["message"], run: () => { throw new Error("boom") } })
+  ctx.cards.register({ match: () => true, render: () => ({ title: "" }) })
+}`)
+	_, err := s.db.Execute(t.Context(), "UPDATE plugins SET failures = 1 WHERE name = 'acct'")
+	require.NoError(t, err)
+	_, err = s.db.Execute(t.Context(), `CREATE TRIGGER broken BEFORE UPDATE OF failures ON plugins BEGIN SELECT RAISE(ABORT, 'accounting broken'); END`)
+	require.NoError(t, err)
+
+	_, err = s.RunAction(t.Context(), "acct/ok", Target{Kind: "message", ID: id}, RunActionOptions{})
+	require.ErrorContains(t, err, "accounting broken", "success accounting")
+	_, err = s.RunAction(t.Context(), "acct/boom", Target{Kind: "message", ID: id}, RunActionOptions{})
+	require.ErrorContains(t, err, "boom")
+	require.ErrorContains(t, err, "accounting broken", "failure accounting")
+	cards, err := s.PluginCards(t.Context(), id)
+	require.ErrorContains(t, err, "accounting broken")
+	assert.Empty(t, cards)
+}
+
+// Card and action text shown to the user has secrets redacted and each run
+// of control characters as one space.
+func TestPluginTextCleaned(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
+	s.secrets.Add("test", "hunter2-secret")
+	startTestPlugin(t, s, "talker", `{"mail":["read"]}`, `export default function (ctx: any) {
+  const t = "a\n\r\tb hunter2-secret"
+  ctx.actions.register({ id: "say", label: "Say", on: ["message"], run: () => ({ text: t }) })
+  ctx.actions.register({ id: "plain", label: "Plain", on: ["message"], run: () => t })
+  ctx.cards.register({ match: () => true, render: () => ({ title: t, fields: [{ label: t, value: t }], buttons: [{ label: t, kind: "copy", value: "v" }] }) })
+}`)
+	want := "a b [redacted]"
+	for _, a := range []string{"talker/say", "talker/plain"} {
+		res, err := s.RunAction(t.Context(), a, Target{Kind: "message", ID: id}, RunActionOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, want, res.Text)
+	}
+	cards, err := s.PluginCards(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, []Card{{Plugin: "talker", Title: want, Fields: []CardField{{Label: want, Value: want}},
+		Buttons: []CardButton{{Label: want, Kind: "copy", Value: "v"}}}}, cards)
+}
+
+func TestCardLimits(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
+	startTestPlugin(t, s, "big", `{"mail":["read"]}`, `export default function (ctx: any) {
+  const f = (n: number) => Array.from({ length: n }, () => ({ label: "l", value: "v" }))
+  const b = (n: number) => Array.from({ length: n }, () => ({ label: "l", kind: "copy", value: "v" }))
+  const renders = [{ title: "x".repeat(1000), fields: f(20), buttons: b(5) }, { title: "é".repeat(1000) },
+    { title: "x", fields: f(21) }, { title: "x", buttons: b(6) }, { title: "x".repeat(1001) },
+    { title: "x", fields: [{ label: "l", value: "x".repeat(1001) }] }, { title: "x", buttons: [{ label: "x".repeat(1001), kind: "copy", value: "v" }] }]
+  let n = 0
+  ctx.cards.register({ match: () => true, render: () => renders[n++] })
+}`)
+	_, err := s.db.Execute(t.Context(), `CREATE TRIGGER keep_enabled BEFORE UPDATE OF enabled ON plugins BEGIN SELECT RAISE(IGNORE); END`)
+	require.NoError(t, err)
+	for i, ok := range []bool{true, true, false, false, false, false, false} {
+		cards, err := s.PluginCards(t.Context(), id)
+		require.NoError(t, err)
+		if ok {
+			require.Len(t, cards, 1, "render %d accepted", i)
+		} else {
+			assert.Empty(t, cards, "render %d rejected", i)
+		}
+	}
+	assert.Equal(t, int64(5), pluginFailures(t, s, "big"))
+}

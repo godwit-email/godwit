@@ -408,6 +408,16 @@ func sendResult(res any) (kind, text string, err error) {
 // sendText is a plugin's message as the user sees it: secrets redacted,
 // each run of control characters one space, at most maxSendText runes.
 func (s *Service) sendText(t string) string {
+	t = s.pluginText(t)
+	if r := []rune(t); len(r) > maxSendText {
+		t = string(r[:maxSendText])
+	}
+	return t
+}
+
+// pluginText is plugin text as the user sees it: secrets redacted, each run
+// of control characters one space.
+func (s *Service) pluginText(t string) string {
 	var b strings.Builder
 	ctl := false
 	for _, r := range s.secrets.Redact(strings.ToValidUTF8(t, "")) {
@@ -421,11 +431,7 @@ func (s *Service) sendText(t string) string {
 		ctl = false
 		b.WriteRune(r)
 	}
-	t = b.String()
-	if r := []rune(t); len(r) > maxSendText {
-		t = string(r[:maxSendText])
-	}
-	return t
+	return b.String()
 }
 
 // clone copies the slices, so a caller's changes never reach a stored check.

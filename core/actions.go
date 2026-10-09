@@ -55,18 +55,11 @@ type Card struct {
 	Buttons       []CardButton
 }
 
-type CardField struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
-}
+type CardField struct{ Label, Value string }
 
 // CardButton: Kind copy (Value is the text), open-url (an http or https URL)
 // or run-action (Value is the action's full ID, <plugin>/<id>).
-type CardButton struct {
-	Label string `json:"label"`
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
-}
+type CardButton struct{ Label, Kind, Value string }
 
 const (
 	cardBudget     = 5 * time.Second // match and render together
@@ -164,10 +157,12 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		out, err = actionResult(res)
 	}
 	if err != nil {
-		s.pluginFailed(ctx, name, pc.gen)
-		return ActionResult{}, s.cleanError(err)
+		return ActionResult{}, errors.Join(s.cleanError(err), s.pluginFailed(ctx, name, pc.gen))
 	}
-	s.pluginSucceeded(ctx, name, pc.gen)
+	if err := s.pluginSucceeded(ctx, name, pc.gen); err != nil {
+		return ActionResult{}, err
+	}
+	out.Text = s.pluginText(out.Text)
 	return out, nil
 }
 
@@ -220,26 +215,26 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 		return nil, err
 	}
 	var out []Card
+	var acct error // failures to record the plugins' failures: the host's, returned
 	for _, pc := range s.runningPlugins((*plugins.Plugin).HasCard) {
-		c, ok, err := s.pluginCard(ctx, pc, msg)
+		c, matched, err := s.pluginCard(ctx, pc, msg)
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if errors.Is(err, plugins.ErrClosed) {
-			continue // stopped meanwhile
-		}
-		if err != nil {
-			s.pluginFailed(ctx, pc.name, pc.gen)
-			continue
-		}
-		s.pluginSucceeded(ctx, pc.name, pc.gen)
-		if ok {
+		switch {
+		case errors.Is(err, plugins.ErrClosed): // stopped meanwhile
+		case err != nil:
+			acct = errors.Join(acct, s.pluginFailed(ctx, pc.name, pc.gen))
+		case matched:
+			acct = errors.Join(acct, s.pluginSucceeded(ctx, pc.name, pc.gen))
 			out = append(out, c)
 		}
 	}
-	return out, nil
+	return out, acct
 }
 
+// pluginCard is the plugin's valid card, if it matched; a matched card whose
+// render is not a valid card is an error.
 func (s *Service) pluginCard(ctx context.Context, pc pluginCall, msg plugins.MailMessage) (Card, bool, error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -250,48 +245,63 @@ func (s *Service) pluginCard(ctx context.Context, pc pluginCall, msg plugins.Mai
 	defer clock.AfterFunc(cardBudget, func() { cancel(plugins.ErrTimeout) })()
 	egress, _ := plugins.EgressFor(plugins.KindCard, pc.row.m, false, false) // none, whatever the plugin holds
 	inv := plugins.Invocation{ID: fmt.Sprintf("card:%s:%d", pc.name, msg.ID), Kind: plugins.KindCard, EgressHosts: egress}
-	res, err := pc.p.Card(ctx, inv, msg)
-	if err != nil || res == nil {
+	res, matched, err := pc.p.Card(ctx, inv, msg)
+	if err != nil || !matched {
 		return Card{}, false, err
 	}
-	c, err := cardOf(pc, res)
-	return c, err == nil, err
+	c, err := s.cardOf(pc, res)
+	return c, true, err
 }
 
-// cardOf validates a render result {title, fields?, buttons?}.
-func cardOf(pc pluginCall, res any) (Card, error) {
+// cardOf validates a render result {title, fields?: [{label, value}],
+// buttons?: [{label, kind, value}]}: every listed key present, every text a
+// string. Shown text is cleaned (pluginText).
+func (s *Service) cardOf(pc pluginCall, res any) (Card, error) {
+	bad := errors.New("a card must be {title, fields?: [{label, value}], buttons?: [{label, kind, value}]} with non-empty title and string texts")
 	b, err := json.Marshal(res)
 	if err != nil {
 		return Card{}, err
 	}
+	type text = *string // nil: missing (or null)
 	var raw struct {
-		Title   string       `json:"title"`
-		Fields  []CardField  `json:"fields"`
-		Buttons []CardButton `json:"buttons"`
+		Title  text `json:"title"`
+		Fields []struct {
+			Label text `json:"label"`
+			Value text `json:"value"`
+		} `json:"fields"`
+		Buttons []struct {
+			Label text `json:"label"`
+			Kind  text `json:"kind"`
+			Value text `json:"value"`
+		} `json:"buttons"`
 	}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return Card{}, errors.New("a card must be {title, fields?, buttons?}")
+	if _, ok := res.(map[string]any); !ok || json.Unmarshal(b, &raw) != nil || raw.Title == nil || *raw.Title == "" {
+		return Card{}, bad
 	}
 	if len(raw.Fields) > maxCardFields || len(raw.Buttons) > maxCardButtons {
 		return Card{}, fmt.Errorf("a card has at most %d fields and %d buttons", maxCardFields, maxCardButtons)
 	}
-	texts := []string{raw.Title}
+	texts := []text{raw.Title}
 	for _, f := range raw.Fields {
 		texts = append(texts, f.Label, f.Value)
 	}
 	for _, b := range raw.Buttons {
-		texts = append(texts, b.Label, b.Value)
+		texts = append(texts, b.Label, b.Kind, b.Value)
 	}
 	for _, t := range texts {
-		if utf8.RuneCountInString(t) > maxCardText {
+		if t == nil {
+			return Card{}, bad
+		}
+		if utf8.RuneCountInString(*t) > maxCardText {
 			return Card{}, fmt.Errorf("card text is limited to %d characters", maxCardText)
 		}
 	}
-	c := Card{Plugin: pc.name, Title: raw.Title}
-	if len(raw.Fields) > 0 {
-		c.Fields = raw.Fields
+	c := Card{Plugin: pc.name, Title: s.pluginText(*raw.Title)}
+	for _, f := range raw.Fields {
+		c.Fields = append(c.Fields, CardField{Label: s.pluginText(*f.Label), Value: s.pluginText(*f.Value)})
 	}
-	for _, b := range raw.Buttons {
+	for _, rb := range raw.Buttons {
+		b := CardButton{Label: s.pluginText(*rb.Label), Kind: *rb.Kind, Value: *rb.Value}
 		switch b.Kind {
 		case "copy":
 		case "open-url":
