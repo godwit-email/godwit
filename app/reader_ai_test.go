@@ -556,3 +556,24 @@ func TestOnDemandSummaryCancelled(t *testing.T) {
 		t.Fatalf("%d requests, want 2", n)
 	}
 }
+
+// The label is the model the run reports, here the small-task model, not
+// the default one.
+func TestSummaryLabelFromRun(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, func(st *core.Settings) { st.QuickReplies = false; st.SmallModel = "test/m2" }, func(e *coretest.Env) {
+		ctx := context.Background()
+		svcs, err := e.Svc.ListModelServices(ctx)
+		if err != nil || len(svcs) != 1 {
+			t.Fatalf("services %+v, %v", svcs, err)
+		}
+		s := svcs[0]
+		if _, err := e.Svc.UpdateModelService(ctx, s.ID, core.ModelServiceInput{Name: s.Name, Kind: s.Kind, BaseURL: s.BaseURL, KeyAction: core.KeyKeep, Models: []string{"m1", "m2"}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	r := h.app.mail.reader
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m2")
+}

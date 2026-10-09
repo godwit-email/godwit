@@ -2,12 +2,16 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -42,18 +46,19 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.see("test · OpenAI 兼容")
 	h.see("默认")
 	h.click("添加服务")
+	h.click("自定义")
 	h.fill("名称", "local")
 	h.fill("Base URL", test.BaseURL)
 	h.fill("API Key", "test-key")
 
 	// a new service lists its models before its first save: it needs one
 	m := h.app.pages[PageSettings].(*settingsPage).models
-	fetch := m.fetchModels
-	m.fetchModels = func(ctx context.Context, id int64, in core.ModelServiceInput) ([]string, error) {
+	check := m.checkService
+	m.checkService = func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
 		time.Sleep(50 * time.Millisecond) // "test / m1" shows already: the click must wait for the box itself
-		return fetch(ctx, id, in)
+		return check(ctx, id, in)
 	}
-	h.click("从 /models 拉取")
+	h.click("探测")
 	h.click("m1")
 	h.click("保存")
 	h.until("added", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
@@ -190,22 +195,246 @@ func TestModelServiceBusyAcrossNavigation(t *testing.T) {
 	h.see("编辑：test")
 	m := p.models
 	release := make(chan struct{})
-	m.fetchModels = func(context.Context, int64, core.ModelServiceInput) ([]string, error) {
+	m.checkService = func(context.Context, int64, core.ModelServiceInput) (core.ServiceCheck, error) {
 		<-release
-		return []string{"stale-model"}, nil
+		return core.ServiceCheck{Models: []string{"stale-model"}, ListSupported: true}, nil
 	}
 	m.testService = func(context.Context, int64) error { <-release; return nil }
-	h.click("从 /models 拉取")
+	h.click("探测")
 	h.click("测试连接")
 	f := m.form
 	h.openSettings("general")
 	h.openSettings("models")
 	close(release)
-	h.until("fetch and test settle", func() bool { return !f.fetching && !f.testing })
+	h.until("probe and test settle", func() bool { return !f.probing && !f.testing })
 	if m.form != f {
 		t.Fatal("the form was replaced")
 	}
 	if slices.Contains(f.offered, "stale-model") || f.testMsg != "" || h.tt.HasText("stale-model") {
 		t.Fatalf("a result from before the navigation shows: offered %q, test %q", f.offered, f.testMsg)
 	}
+}
+
+// modelsServer is a model service listing models (nil: no /models, 404) that
+// answers with status when it is not 0, and records the keys it got.
+func modelsServer(t *testing.T, status int, models ...string) (url string, keys func() []string) {
+	t.Helper()
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, r.Header.Get("Authorization"))
+		mu.Unlock()
+		switch {
+		case status != 0:
+			http.Error(w, "no", status)
+		case models == nil || r.URL.Path != "/v1/models":
+			http.NotFound(w, r)
+		default:
+			fmt.Fprint(w, `{"data":[`)
+			for i, m := range models {
+				if i > 0 {
+					fmt.Fprint(w, ",")
+				}
+				fmt.Fprintf(w, `{"id":%q}`, m)
+			}
+			fmt.Fprint(w, `]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/v1", func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(got) }
+}
+
+// newService opens the form for a new service from the "自定义" preset.
+func (h *harness) newService() *modelsView {
+	h.t.Helper()
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	h.click("添加服务")
+	h.click("自定义")
+	return p.models
+}
+
+func (h *harness) typeModel(id string) {
+	h.t.Helper()
+	h.fill("手动添加模型 ID", id)
+	h.click("添加模型")
+}
+
+func TestAddFromPreset(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	h.click("添加服务")
+	h.click("Ollama")
+	f := p.models.form
+	if f.kind != ai.KindOpenAI || f.name != "Ollama" || f.baseURL != "http://localhost:11434/v1" {
+		t.Fatalf("form %+v", f)
+	}
+	h.see("API Key（可选）")
+	h.see("将请求 http://localhost:11434/v1/chat/completions")
+	if h.tt.HasText("获取 API Key ↗") {
+		t.Fatal("a local preset links to a key page")
+	}
+	h.click("添加服务")
+	h.click("OpenAI")
+	if f := p.models.form; f.kind != ai.KindResponses || f.baseURL != "https://api.openai.com/v1" {
+		t.Fatalf("form %+v", f)
+	}
+	h.click("获取 API Key ↗")
+	h.until("the key page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://platform.openai.com/api-keys")
+	})
+	if h.tt.HasText("API Key（可选）") {
+		t.Fatal("a key the service needs is marked optional")
+	}
+}
+
+func TestBaseURLNormalizedOnBlur(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	h.fill("Base URL", "https://api.example.com/v1/chat/completions/")
+	h.click("名称")
+	h.until("normalized", func() bool { return m.form.baseURL == "https://api.example.com/v1" })
+	h.see("将请求 https://api.example.com/v1/chat/completions")
+	h.fill("Base URL", "http://example.com/v1")
+	h.click("名称")
+	h.see("地址必须使用 https（只有本机地址可以用 http）")
+}
+
+func TestManualModelAlwaysAvailable(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "listed")
+	m := h.newService()
+	h.fill("名称", "local")
+	h.fill("Base URL", url)
+	h.click("探测")
+	h.until("listed", func() bool { return slices.Contains(m.form.offered, "listed") })
+	h.typeModel("unlisted")
+	h.click("保存")
+	h.until("saved", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"unlisted"}) })
+}
+
+func TestSaveWithTypedModels(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0) // no /models
+	h.newService()
+	h.fill("名称", "plain")
+	h.fill("Base URL", url)
+	h.click("探测")
+	h.see("这个服务没有提供模型列表，请手动填写模型 ID")
+	h.typeModel("m1")
+	h.click("保存")
+	h.until("saved", func() bool { s, _ := h.modelService("plain"); return slices.Equal(s.Models, []string{"m1"}) })
+}
+
+func TestSaveRejectsBadKey(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, http.StatusUnauthorized)
+	m := h.newService()
+	h.fill("名称", "bad")
+	h.fill("Base URL", url)
+	h.fill("API Key", "wrong-key")
+	h.typeModel("m1")
+	h.click("保存")
+	h.see("API Key 被拒绝（401/403）")
+	h.until("the save settles", func() bool { return !m.form.probing && !m.form.busy })
+	if _, ok := h.modelService("bad"); ok {
+		t.Fatal("a service with a rejected key was saved")
+	}
+}
+
+func TestAddressChangeRequiresKeyDecision(t *testing.T) {
+	h := withLLM(t)
+	url, keys := modelsServer(t, 0, "m1")
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	h.fill("Base URL", url)
+	h.see("地址已改变：请重新输入 API Key，或选择不使用 Key")
+	h.click("保存")
+	h.click("探测")
+	h.drain()
+	if s, _ := h.modelService("test"); s.BaseURL == url || len(keys()) != 0 {
+		t.Fatalf("saved %q or probed (%q) without a key decision", s.BaseURL, keys())
+	}
+	h.click("不使用 Key")
+	h.click("保存")
+	h.until("saved without a key", func() bool { s, _ := h.modelService("test"); return s.BaseURL == url && !s.HasKey })
+	h.until("the form shows no key", func() bool { f := p.models.form; return !f.busy && f.savedURL == url && !f.hasKey })
+	if slices.Contains(keys(), "Bearer test-key") {
+		t.Fatal("the stored key went to the new address")
+	}
+}
+
+func TestStaleProbeIgnored(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	m := p.models
+	release := make(chan struct{})
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		<-release
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"stale-model"}, ListSupported: true}, nil
+	}
+	h.click("探测")
+	h.fill("Base URL", "https://other.example.com/v1")
+	close(release)
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	if slices.Contains(f.offered, "stale-model") || f.checked != "" {
+		t.Fatalf("a probe of the old address was adopted: offered %q", f.offered)
+	}
+}
+
+func TestResponsesKindSelectable(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "r1")
+	h.newService()
+	h.click("OpenAI 兼容（Responses）")
+	h.fill("名称", "resp")
+	h.fill("Base URL", url)
+	h.see("将请求 " + url + "/responses")
+	h.typeModel("r1")
+	h.click("保存")
+	h.until("saved", func() bool { s, _ := h.modelService("resp"); return s.Kind == ai.KindResponses })
+}
+
+func TestSmallModelSetting(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick, func(e *coretest.Env) {
+		ctx := context.Background()
+		svcs, err := e.Svc.ListModelServices(ctx)
+		if err != nil || len(svcs) != 1 {
+			t.Fatalf("services %+v, %v", svcs, err)
+		}
+		s := svcs[0]
+		if _, err := e.Svc.UpdateModelService(ctx, s.ID, core.ModelServiceInput{Name: s.Name, Kind: s.Kind, BaseURL: s.BaseURL, KeyAction: core.KeyKeep, Models: []string{"m1", "m2"}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	small := func() string {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.SmallModel
+	}
+	h.openSettings("models")
+	h.see("编辑：test")
+	h.see("小任务模型（总结、翻译、即时回复）")
+	h.click("与默认模型相同")
+	h.click("test / m2")
+	h.until("small model saved", func() bool { return small() == "test/m2" })
+
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	r := h.app.mail.reader
+	h.app.navigate(Route{Page: PageMail})
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m2")
+
+	h.openSettings("models")
+	h.see("编辑：test")
+	h.click("m2") // untick the small model
+	h.click("保存")
+	h.until("small model cleared", func() bool { return small() == "" })
 }

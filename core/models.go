@@ -42,6 +42,8 @@ const (
 
 var (
 	ErrModelAuth       = ai.ErrModelAuth
+	ErrBaseURLInvalid  = ai.ErrBaseURLInvalid
+	ErrBaseURLScheme   = ai.ErrBaseURLScheme
 	ErrKeyNeedsConfirm = errors.New("the address or protocol changed: enter the key again or choose no key")
 )
 

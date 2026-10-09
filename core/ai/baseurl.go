@@ -13,6 +13,12 @@ const (
 	KindAnthropic = "anthropic"
 )
 
+// Why NormalizeBaseURL refused an address.
+var (
+	ErrBaseURLInvalid = errors.New("enter a valid service address without credentials")
+	ErrBaseURLScheme  = errors.New("the address must use https (http only for localhost)")
+)
+
 func ValidKind(k string) bool { return k == KindOpenAI || k == KindResponses || k == KindAnthropic }
 
 // NormalizeBaseURL trims a pasted URL down to the service root the SDKs expect.
@@ -22,12 +28,12 @@ func NormalizeBaseURL(kind, raw string) (string, error) {
 	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" || u.User != nil {
-		return "", errors.New("enter a valid service address without credentials")
+		return "", ErrBaseURLInvalid
 	}
 	host := u.Hostname()
 	loopback := host == "localhost" || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback())
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return "", errors.New("the address must use https (http only for localhost)")
+		return "", ErrBaseURLScheme
 	}
 	suffixes := []string{"/chat/completions", "/completions", "/responses", "/models", "/embeddings"}
 	if kind == KindAnthropic {

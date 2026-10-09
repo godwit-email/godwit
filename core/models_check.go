@@ -39,3 +39,13 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	}
 	return c, nil
 }
+
+// ModelPresets are the services "Add service" offers to prefill.
+func (s *Service) ModelPresets() []ai.Preset { return ai.Presets() }
+
+// NormalizeModelBaseURL is the address a service of kind is saved with:
+// ErrBaseURLInvalid or ErrBaseURLScheme says why raw is refused.
+func NormalizeModelBaseURL(kind, raw string) (string, error) { return ai.NormalizeBaseURL(kind, raw) }
+
+// ModelEndpoint is the URL requests to a service at base will hit.
+func ModelEndpoint(kind, base string) string { return ai.Endpoint(kind, base) }

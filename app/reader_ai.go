@@ -104,9 +104,6 @@ func (r *reader) state(id int64) *msgAI {
 // aiReady reports whether a default model is set.
 func (r *reader) aiReady() bool { return r.p.a.settings.DefaultModel != "" }
 
-// modelName is the default model without its service.
-func (r *reader) modelName() string { return modelOf(r.p.a.settings.DefaultModel) }
-
 // modelOf is a model reference (service/model) without its service.
 func modelOf(ref string) string {
 	if _, m, ok := strings.Cut(ref, "/"); ok {
@@ -114,6 +111,10 @@ func modelOf(ref string) string {
 	}
 	return ref
 }
+
+// modelLabel drops the empty model slot that ends a label until the run
+// reports its model.
+func modelLabel(s string) string { return strings.TrimSuffix(s, " · ") }
 
 // readingLang is the language mail is translated into.
 func (r *reader) readingLang() string {
@@ -215,20 +216,12 @@ func (r *reader) startAI() {
 }
 
 // stream runs skill on a message; its text streams into the run returned,
-// labelled with the skill's own model, else the default one.
+// labelled with the model the run reports in its context event.
 func (r *reader) stream(id int64, skill string) *aiRun {
-	a, ctx, start, list := r.p.a, r.aiContext(), r.runSkill, r.skillsFn
-	run := &aiRun{running: true, model: r.modelName(), lang: r.readingLang()}
+	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
+	run := &aiRun{running: true, lang: r.readingLang()}
 	var doc richtext.Doc
 	a.do(func(context.Context) error {
-		sks, err := list(ctx)
-		if err != nil {
-			return err
-		}
-		if i := slices.IndexFunc(sks, func(s core.SkillInfo) bool { return s.Name == skill }); i >= 0 && sks[i].Model != "" {
-			model := modelOf(sks[i].Model)
-			a.onUI(func() { run.model = model })
-		}
 		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id})
 		if err != nil {
 			return err
@@ -236,6 +229,9 @@ func (r *reader) stream(id int64, skill string) *aiRun {
 		var all strings.Builder
 		for ev := range ch {
 			switch ev.Kind {
+			case "context":
+				model := modelOf(ev.Model)
+				a.onUI(func() { run.model = model })
 			case "text":
 				all.WriteString(ev.Text)
 				s := ev.Text
@@ -400,7 +396,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	if sum := st.summary; sum != nil && r.summaryShown(st) {
-		r.panel(c, i18n.Tf("reader.ai.summary", sum.model), nil, func() {
+		r.panel(c, modelLabel(i18n.Tf("reader.ai.summary", sum.model)), nil, func() {
 			ui.Column(c).Gap(th.Space(1)).Children(func() {
 				for _, line := range points(sum.text) {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
@@ -420,7 +416,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			ui.Text(c, i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model))).FontSize(t.Text.Sm).TextColor(t.Muted)
 			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}

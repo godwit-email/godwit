@@ -138,10 +138,15 @@ func (h *harness) see(text string) {
 }
 
 // click waits for an element whose text or label is exactly label (see
-// matches a part of a text, as "m1" in "test / m1"), then clicks it.
+// matches a part of a text, as "m1" in "test / m1"), scrolls it into the
+// window, then clicks it.
 func (h *harness) click(label string) {
 	h.t.Helper()
 	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
+	if r, _ := h.tt.Find(label); r.Y < 0 || r.Y+r.H > 820 { // out of the window: scroll it to the middle
+		h.tt.Scroll(900, 400, 0, r.Y-400)
+		h.tt.Frame()
+	}
 	if err := h.tt.Click(label); err != nil {
 		h.t.Fatal(err)
 	}
