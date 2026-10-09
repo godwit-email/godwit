@@ -473,7 +473,9 @@ func (p *mailPage) Content(c *ui.Context) {
 	if p.draft != nil {
 		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 			p.draft.view(c)
-			// Task 16: the Wit panel goes here, beside the compose column.
+			if p.draft.loaded && p.a.settings.DefaultModel != "" {
+				p.draft.wit.view(c)
+			}
 		})
 		return
 	}

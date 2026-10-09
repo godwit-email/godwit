@@ -31,13 +31,20 @@ type witMsg struct {
 // witOptions are what the panel's owner decides. Start begins a run on
 // input off the UI thread, creating the conversation first when the panel
 // has none, and returns that conversation (with the error too, once it
-// exists). Changed, if set, hears on the UI thread that the panel took a
-// conversation or a run ended, so lists of conversations read again.
+// exists) and, for a subscription, what ends it. Changed, if set, hears on
+// the UI thread that the panel took a conversation or a run ended, so lists
+// of conversations read again. Gate, if set, comes before every run: it
+// calls run to start it. Card, if set, draws an approval in place of the
+// panel's card, reporting whether it did; Tools draws above the input,
+// After below the conversation.
 type witOptions struct {
-	Placeholder string
-	MaxWidth    float32 // 0 fills the width
-	Start       func(ctx context.Context, input string) (conv int64, ch <-chan core.WitEvent, err error)
-	Changed     func()
+	Placeholder, Label string  // Label "" names the input wit.input
+	MaxWidth           float32 // 0 fills the width
+	Start              func(ctx context.Context, input string) (conv int64, ch <-chan core.WitEvent, stop func(), err error)
+	Changed            func()
+	Gate               func(run func())
+	Card               func(c *ui.Context, ap core.Approval) bool
+	Tools, After       func(c *ui.Context)
 }
 
 // witPanel shows a Wit conversation and follows its runs: the Ask page and
@@ -174,7 +181,7 @@ func (p *witPanel) follow(key string, start func(ctx context.Context) (<-chan co
 						p.apply(ev)
 					}
 				})
-				if ev.Kind == "done" || ev.Kind == "error" || ev.Kind == "interrupted" {
+				if ends(ev) {
 					break
 				}
 			}
@@ -193,6 +200,18 @@ func (p *witPanel) follow(key string, start func(ctx context.Context) (<-chan co
 	} else {
 		a.writes.Chain(key, run, started)
 	}
+}
+
+// ends reports whether ev ends the run followed: an interrupt whose
+// approvals were all decided at once (a first generation) resumes it.
+func ends(ev core.WitEvent) bool {
+	switch ev.Kind {
+	case "done", "error":
+		return true
+	case "interrupted":
+		return len(ev.Approvals) == 0 || slices.ContainsFunc(ev.Approvals, func(a core.Approval) bool { return a.State == "pending" })
+	}
+	return false
 }
 
 // ended closes the current follow and reads what the run saved.
@@ -233,7 +252,7 @@ func (p *witPanel) apply(ev core.WitEvent) {
 			p.err = ev.Err
 		}
 	case "done", "interrupted":
-		p.running = false
+		p.running = !ends(ev)
 	}
 }
 
@@ -383,16 +402,25 @@ func (p *witPanel) send(o witOptions) {
 	p.ask(o, in)
 }
 
-// ask starts a run on in and follows its stream.
+// ask starts a run on in, past the owner's gate.
 func (p *witPanel) ask(o witOptions, in string) {
+	if o.Gate != nil {
+		o.Gate(func() { p.run(o, in) })
+		return
+	}
+	p.run(o, in)
+}
+
+// run starts a run on in and follows its stream.
+func (p *witPanel) run(o witOptions, in string) {
 	start, a := o.Start, p.a
 	// Not under a.ctx: only Stop cancels the call, and the run outlives the
 	// panel showing it. The Service's close ends it.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(a.ctx))
 	var conv int64
-	p.follow(convKey(p.conv), func(context.Context) (ch <-chan core.WitEvent, _ func(), err error) {
-		conv, ch, err = start(ctx, in)
-		return ch, nil, err
+	p.follow(convKey(p.conv), func(context.Context) (ch <-chan core.WitEvent, stop func(), err error) {
+		conv, ch, stop, err = start(ctx, in)
+		return ch, stop, err
 	}, func(err error) {
 		if conv != 0 && conv != p.conv {
 			p.conv = conv
@@ -428,7 +456,6 @@ func (p *witPanel) stopRun() {
 // its run. It subscribes first: the run resumes once nothing of it is left
 // open and may end before the decision returns.
 func (p *witPanel) decide(ap core.Approval, accept, all bool) {
-	svc, conv := p.a.svc, p.conv
 	resolve, resolveAll := p.resolve, p.resolveAll
 	ids := []int64{ap.ID}
 	if all {
@@ -439,18 +466,25 @@ func (p *witPanel) decide(ap core.Approval, accept, all bool) {
 			}
 		}
 	}
+	p.settle(ap, ids, func(ctx context.Context) error {
+		if all {
+			return resolveAll(ctx, ap.RunID, accept)
+		}
+		return resolve(ctx, ap.ID, accept)
+	})
+}
+
+// settle decides approvals ids of ap's run with decide, following the run
+// it resumes.
+func (p *witPanel) settle(ap core.Approval, ids []int64, decide func(ctx context.Context) error) {
+	svc, conv := p.a.svc, p.conv
 	for _, id := range ids {
 		p.deciding[id] = true
 	}
 	p.err, p.fresh, p.live = nil, false, nil
 	p.follow(convKey(conv), func(ctx context.Context) (<-chan core.WitEvent, func(), error) {
 		ch, stop := svc.SubscribeConversation(conv)
-		var err error
-		if all {
-			err = resolveAll(ctx, ap.RunID, accept)
-		} else {
-			err = resolve(ctx, ap.ID, accept)
-		}
+		err := decide(ctx)
 		as, lerr := svc.ListApprovals(ctx, conv)
 		if lerr != nil || slices.ContainsFunc(as, func(x core.Approval) bool { return x.RunID == ap.RunID && x.State == "pending" }) {
 			stop() // the run waits for the rest: nothing resumes

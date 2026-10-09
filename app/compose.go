@@ -43,6 +43,8 @@ type composer struct {
 	link                  string
 	linkOpen, discardOpen bool
 
+	src      int64 // the message the draft replies to or forwards
+	wit      *composeWit
 	s        *draftSaver
 	sending  bool
 	warn     *core.SendCheck                           // beforeSend's warnings, until sent anyway or edited
@@ -89,6 +91,8 @@ func (a *App) composerFor(id int64) *composer {
 		p.fill(pd)
 		p.s = newDraftSaver(a, pd.d)
 		p.s.snapshot, p.s.commit, p.s.composing = p.snapshot, p.commitAll, p.ed.Composing
+		p.wit = newComposeWit(p)
+		p.wit.openConversation()
 		p.loaded = true
 	})
 	return p
@@ -105,7 +109,7 @@ func (p *composer) fill(pd prepared) {
 		p.replyTo = []string{d.ReplyTo}
 	}
 	p.pending = [4]string{}
-	p.subject, p.atts = d.Subject, d.Attachments
+	p.subject, p.atts, p.src = d.Subject, d.Attachments, d.SourceMessageID
 	p.showCc = p.showCc || len(d.Cc)+len(d.Bcc) > 0 || d.ReplyTo != ""
 	p.quote, p.sig = pd.quote, pd.sig
 	if p.ed == nil {
@@ -445,9 +449,11 @@ func (p *composer) view(c *ui.Context) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Grow(1).Children(func() {
+	p.wit.sync()
+	ui.Column(c).Grow(1).Shrink(1).Children(func() {
 		p.fields(c)
 		p.toolbar(c)
+		p.wit.banner(c)
 		if p.s.conflict {
 			ui.Box(c).Padding(th.Space(3), th.Space(5), 0, th.Space(5)).Children(func() { p.conflictNotice(c) })
 		}
@@ -470,6 +476,7 @@ func (p *composer) view(c *ui.Context) {
 	})
 	if p.ed.Version() != p.edVer {
 		p.edVer = p.ed.Version()
+		p.wit.applied = false // Undo would no longer find Wit's edit
 		p.edited()
 	}
 }
@@ -576,7 +583,9 @@ func (p *composer) toolbar(c *ui.Context) {
 // body is the editor, then the read-only signature and quote.
 func (p *composer) body(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	p.ed.View(c, editor.Options{Label: i18n.T("compose.body"), PasteHTML: p.a.plat.ClipboardHTML}).FillWidth()
+	if !p.wit.body(c) {
+		p.wit.editor(c)
+	}
 	if p.sig != "" {
 		ui.Text(c, mail.HTMLToText(p.sig)).FontSize(t.BodyFontSize).TextColor(t.Muted)
 	}

@@ -62,7 +62,13 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 		}
 		p.answer(c, true, live, p.liveTurn())
 	}
+	if o.After != nil {
+		o.After(c)
+	}
 	for _, ap := range p.approvals {
+		if o.Card != nil && o.Card(c, ap) {
+			continue
+		}
 		n := 0
 		for _, x := range p.approvals {
 			if x.RunID == ap.RunID {
@@ -264,8 +270,15 @@ func strList(v any) []string {
 // which opens the model settings.
 func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	t, th := theme.Of(c), c.Theme()
+	if o.Tools != nil {
+		o.Tools(c)
+	}
+	label := o.Label
+	if label == "" {
+		label = i18n.T("wit.input")
+	}
 	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
-		area := ui.TextAreaBase(c, &p.input).Lines(2, 8).Placeholder(o.Placeholder).Label(i18n.T("wit.input")).
+		area := ui.TextAreaBase(c, &p.input).Lines(2, 8).Placeholder(o.Placeholder).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
 				if ev.Kind != ui.InputKeyDown || ev.Key != ui.KeyEnter || ev.Mods != 0 || p.composing {
 					return false

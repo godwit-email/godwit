@@ -147,17 +147,17 @@ func (p *askPage) Content(c *ui.Context) {
 	o := witOptions{
 		Placeholder: i18n.T("wit.placeholder"),
 		MaxWidth:    theme.WitMaxWidth,
-		Start: func(ctx context.Context, input string) (int64, <-chan core.WitEvent, error) {
+		Start: func(ctx context.Context, input string) (int64, <-chan core.WitEvent, func(), error) {
 			id := conv
 			if id == 0 {
 				c, err := svc.NewConversation(ctx, "ask", 0)
 				if err != nil {
-					return 0, nil, err
+					return 0, nil, nil, err
 				}
 				id = c.ID
 			}
 			ch, err := start(ctx, id, input)
-			return id, ch, err
+			return id, ch, nil, err
 		},
 		Changed: func() {
 			if r := &a.route; r.Page == PageWit && r.ConversationID == 0 {
