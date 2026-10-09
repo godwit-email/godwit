@@ -454,9 +454,17 @@ func TestSmallModelFallback(t *testing.T) {
 func TestSmallModelOtherErrorsSurface(t *testing.T) {
 	e := newSkillEnv(t)
 	e.withSmall(t, "x/m2")
+	// No default: a swallowed keychain error would show as ErrAINotConfigured.
+	st, _ := e.s.GetSettings(t.Context())
+	st.DefaultModel = ""
+	_, err := e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
 	keyring.MockInitWithError(errors.New("locked"))
 	t.Cleanup(keyring.MockInit)
-	_, err := e.s.RunSkill(t.Context(), "summarize", Target{Kind: "message", ID: e.msg})
+	_, err = e.s.RunSkill(t.Context(), "summarize", Target{Kind: "message", ID: e.msg})
+	assert.ErrorIs(t, err, ErrKeychainUnavailable)
+	assert.ErrorContains(t, err, "locked")
+	_, err = e.s.QuickReplies(t.Context(), e.msg)
 	assert.ErrorIs(t, err, ErrKeychainUnavailable)
 	assert.Empty(t, e.srv.Requests())
 }

@@ -123,5 +123,4 @@ type Result struct {
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error
-	Model      string // context only: the "slug/model" the run uses
 }
