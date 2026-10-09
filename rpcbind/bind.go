@@ -1,0 +1,96 @@
+// Package rpcbind composes core with rpc: core's error codes, redaction and
+// the methods exposed over the Local API. core does not depend on rpc.
+package rpcbind
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/rpc"
+)
+
+// sentinels are core's exported errors (and the context ones) by stable
+// wire code. Their messages are fixed English text.
+var sentinels = []struct {
+	code string
+	err  error
+}{
+	{"use_assist", core.ErrUseAssist},
+	{"stale_approval", core.ErrStaleApproval},
+	{"too_large", core.ErrTooLarge},
+	{"not_on_server_yet", core.ErrNotOnServerYet},
+	{"stale_draft", core.ErrStaleDraft},
+	{"run_active", core.ErrRunActive},
+	{"keychain_unavailable", core.ErrKeychainUnavailable},
+	{"wrong_account", core.ErrWrongAccount},
+	{"provider_mismatch", core.ErrProviderMismatch},
+	{"needs_grant", core.ErrNeedsGrant},
+	{"plugin_not_found", core.ErrPluginNotFound},
+	{"mcp_not_found", core.ErrMCPNotFound},
+	{"ai_not_configured", core.ErrAINotConfigured},
+	{"model_service_not_found", core.ErrModelServiceNotFound},
+	{"model_not_found", core.ErrModelNotFound},
+	{"model_auth", core.ErrModelAuth},
+	{"base_url_invalid", core.ErrBaseURLInvalid},
+	{"base_url_scheme", core.ErrBaseURLScheme},
+	{"no_model_list", ai.ErrNoModelList},
+	{"key_needs_confirm", core.ErrKeyNeedsConfirm},
+	{"unknown_flow", core.ErrUnknownFlow},
+	{"invalid_state", core.ErrInvalidState},
+	{"skill_disabled", core.ErrSkillDisabled},
+	{"skill_not_found", core.ErrSkillNotFound},
+	{"closed", core.ErrClosed},
+	{"canceled", context.Canceled},
+	{"deadline", context.DeadlineExceeded},
+}
+
+// NewCodec registers core's error types (tried first, so *ai.Error with Code
+// canceled stays an *ai.Error) and sentinels.
+func NewCodec() *rpc.Codec {
+	c := &rpc.Codec{}
+	// The first failing step's error (Unwrap) stays on the server.
+	rpc.RegisterType(c, "check_failed",
+		func(e *core.CheckError) any { return e.Report },
+		func(raw json.RawMessage) *core.CheckError {
+			e := &core.CheckError{}
+			_ = json.Unmarshal(raw, &e.Report)
+			return e
+		})
+	rpc.RegisterType(c, "send_warnings",
+		func(e *core.SendWarningsError) any { return e.Check },
+		func(raw json.RawMessage) *core.SendWarningsError {
+			e := &core.SendWarningsError{}
+			_ = json.Unmarshal(raw, &e.Check)
+			return e
+		})
+	rpc.RegisterType(c, "send_blocked",
+		func(e *core.SendBlockedError) any { return core.SendBlockedError{Plugin: e.Plugin, Message: e.Message} },
+		decodeInto[core.SendBlockedError])
+	rpc.RegisterType(c, "egress_approval_required",
+		func(e *core.EgressApprovalRequired) any {
+			return core.EgressApprovalRequired{Plugin: e.Plugin, Hosts: e.Hosts}
+		},
+		decodeInto[core.EgressApprovalRequired])
+	rpc.RegisterType(c, "ai_error",
+		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg} },
+		decodeInto[ai.Error])
+	for _, s := range sentinels {
+		c.RegisterSentinel(s.code, s.err, s.err.Error())
+	}
+	return c
+}
+
+func decodeInto[T any](raw json.RawMessage) *T {
+	v := new(T)
+	_ = json.Unmarshal(raw, v)
+	return v
+}
+
+// Expose picks the *core.Service methods callable over RPC: every exported
+// one but Close, Redact and the test hooks.
+func Expose(method string) bool {
+	return method != "Close" && method != "Redact" && !strings.HasSuffix(method, "ForTest")
+}

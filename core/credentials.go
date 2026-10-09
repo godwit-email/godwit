@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/zalando/go-keyring"
 )
@@ -34,13 +35,29 @@ func keychainErr(err error) error {
 	return fmt.Errorf("%w: %w", ErrKeychainUnavailable, err)
 }
 
+// keychainValues holds every value read from or written to the keychain
+// (passwords, refresh tokens, model keys, extension secrets) and every access
+// token, for Redact. ponytail: process-wide, so one Service also redacts
+// another's credentials; per-Service if several ever share a process for real.
+var keychainValues secretSet
+
 func keychainGet(user string) (string, error) {
 	v, err := keyringGet(keyringService, user)
+	if err == nil {
+		keychainValues.Add(v)
+	}
 	return v, keychainErr(err)
 }
 
 func keychainSet(user, secret string) error {
+	keychainValues.Add(secret)
 	return keychainErr(keyringSet(keyringService, user, secret))
+}
+
+// Redact replaces every credential and extension secret this Service knows of
+// (8 characters or longer) in text. Not for RPC.
+func (s *Service) Redact(text string) string {
+	return ai.Redact(text, append(s.secrets.Values(), keychainValues.Values()...))
 }
 
 func keychainDelete(user string) error {
@@ -114,6 +131,7 @@ func (s *Service) newCredentials(id int64, g *auth.Grant) uint64 {
 			s.tokens = map[int64]oauthToken{}
 		}
 		s.tokens[id] = oauthToken{g.AccessToken, g.Expiry, s.credVer[id]}
+		keychainValues.Add(g.AccessToken)
 	}
 	return s.credVer[id]
 }
