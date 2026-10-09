@@ -28,6 +28,8 @@ type mcpConn struct {
 	session *mcp.ClientSession
 	proc    *mcpProc
 	tools   []mcpDef
+	life    context.Context // ends at close: calls in flight end with it
+	stop    context.CancelFunc
 }
 
 func (c *mcpConn) def(tool string) *mcpDef { return findDef(c.tools, tool) }
@@ -41,9 +43,11 @@ func findDef(tools []mcpDef, name string) *mcpDef {
 	return nil
 }
 
-// close ends the session; a stdio process gets mcpGrace after stdin closes,
-// then its process group is killed and reaped.
+// close ends the calls in flight (the session's Close waits for them) and
+// the session; a stdio process gets mcpGrace after stdin closes, then its
+// process group is killed and reaped.
 func (c *mcpConn) close() {
+	c.stop()
 	c.session.Close()
 	if c.proc != nil {
 		c.proc.Close()
@@ -131,6 +135,7 @@ func (s *Service) dialMCP(ctx context.Context, srv MCPServer) (*mcpConn, error) 
 		return nil, err
 	}
 	c := &mcpConn{version: srv.Version}
+	c.life, c.stop = context.WithCancel(context.Background())
 	var t mcp.Transport
 	switch {
 	case mcpTestTransport != nil:
@@ -146,6 +151,7 @@ func (s *Service) dialMCP(ctx context.Context, srv MCPServer) (*mcpConn, error) 
 	cctx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
 	defer cancel()
 	fail := func(err error) (*mcpConn, error) {
+		c.stop()
 		if c.session != nil {
 			c.session.Close()
 		}

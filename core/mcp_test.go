@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -708,4 +710,57 @@ func TestMCPRemoveDeleteFailure(t *testing.T) {
 	assert.Contains(t, e.s.SecretsForTest(), "k-secret-123")
 	require.Eventually(t, func() bool { return f.open.Load() == 0 }, 10*time.Second, 5*time.Millisecond)
 	require.NoError(t, e.s.RemoveMCPServer(t.Context(), srv.ID))
+}
+
+// The server ran a call's side effect but the session ended before its
+// answer (the server was disabled or updated): the approval ends uncertain
+// ("may have run"), never as a plain failure, and is not run again.
+func TestMCPCallCutByStopIsUncertain(t *testing.T) {
+	for _, stop := range []string{"disable", "update"} {
+		t.Run(stop, func(t *testing.T) {
+			defer func(d time.Duration) { mcpCallTimeout = d }(mcpCallTimeout)
+			mcpCallTimeout = 3 * time.Second // bounds a stop that waits for the call
+			e := newApprovalEnv(t)
+			f := newFakeMCP(t)
+			started := make(chan struct{}, 1)
+			f.srv.AddTool(&mcp.Tool{Name: "slow", InputSchema: map[string]any{"type": "object"}},
+				func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					f.calls.Add(1) // the side effect
+					started <- struct{}{}
+					<-ctx.Done()
+					return nil, ctx.Err()
+				})
+			srv := fakeServer(t, e.s)
+			evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "slow"), `{}`), finished)
+			in := evs[len(evs)-1]
+			require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
+			resolved := make(chan error, 1)
+			go func() { resolved <- e.s.ResolveApproval(bg, in.Approvals[0].ID, true) }()
+			<-started
+			begun := time.Now()
+			if stop == "disable" {
+				require.NoError(t, e.s.SetMCPServerEnabled(t.Context(), srv.ID, false))
+			} else {
+				_, err := e.s.UpdateMCPServer(t.Context(), srv.ID, MCPServerInput{Name: "fake", Transport: "stdio", Command: "other-mcp"})
+				require.NoError(t, err)
+			}
+			assert.Less(t, time.Since(begun), 2*time.Second, "stopping does not wait for the call's timeout")
+			<-resolved
+			e.waitRun(t, in.RunID, "done")
+			assert.Equal(t, "failed", e.approval(t, in.Approvals[0].ID).State)
+			rows, err := e.s.db.Query(t.Context(), "SELECT result FROM approvals WHERE id = ?", in.Approvals[0].ID)
+			require.NoError(t, err)
+			assert.Equal(t, msgUncertain, rows.Values[0][0])
+			assert.Equal(t, int32(1), f.calls.Load(), "not run again")
+		})
+	}
+}
+
+// Only the server's own JSON-RPC error is a definite failure.
+func TestMCPAnswered(t *testing.T) {
+	assert.True(t, mcpAnswered(fmt.Errorf("calling: %w", &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams})))
+	assert.False(t, mcpAnswered(fmt.Errorf("%w: closed", &jsonrpc.Error{Code: -32004})), "server closing")
+	assert.False(t, mcpAnswered(&jsonrpc.Error{Code: -32003}), "client closing")
+	assert.False(t, mcpAnswered(context.Canceled))
+	assert.False(t, mcpAnswered(io.ErrUnexpectedEOF))
 }

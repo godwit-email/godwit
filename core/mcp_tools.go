@@ -15,6 +15,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -238,18 +239,37 @@ func (s *Service) callMCP(ctx context.Context, call mcpCall, args json.RawMessag
 	}
 	rctx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
 	defer cancel()
+	defer context.AfterFunc(c.life, cancel)() // the connection closed: the call ends
 	res, err := c.session.CallTool(rctx, &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		if errors.Is(rctx.Err(), context.DeadlineExceeded) {
 			s.dropMCP(id, c, "stopped after a call timed out; refresh to start it again")
 		}
-		return "", s.mcpError(c.withStderr(err))
+		err = s.mcpError(c.withStderr(err))
+		if !mcpAnswered(err) {
+			err = fmt.Errorf("%w: %w", errMCPMaybeRan, err)
+		}
+		return "", err
 	}
 	text := capMCP(s.clean(mcpText(res))) // cleaned whole: a cut cannot split a secret
 	if res.IsError {
 		return "", errors.New(text)
 	}
 	return text, nil
+}
+
+// errMCPMaybeRan: the call may have reached the server, but no answer came
+// back (the connection closed or failed, the session was stopped, the call
+// was cut off): it may have run, and is never run again.
+var errMCPMaybeRan = errors.New("the MCP call may have run, but its answer was lost")
+
+// mcpAnswered reports whether err is the server's own JSON-RPC error answer,
+// a definite failure; anything else after CallTool started may have run.
+// The SDK's local closing errors (-32003 client, -32004 server closing) are
+// not answers.
+func mcpAnswered(err error) bool {
+	var we *jsonrpc.Error
+	return errors.As(err, &we) && we.Code != -32003 && we.Code != -32004
 }
 
 // mcpText joins a result's text content; other content shows as [<type>].
