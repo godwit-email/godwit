@@ -66,8 +66,13 @@ func (m *modelsView) edit(s core.ModelService) {
 
 func (m *modelsView) add() { m.form = &modelForm{kind: "openai"} }
 
+// save writes the form as it is now. On success an unedited form shows the
+// saved service; one edited meanwhile keeps the edits and takes only the
+// service's ID, name and key state. Default model references follow.
 func (m *modelsView) save(f *modelForm) {
 	a := m.a
+	snap := *f
+	snap.models = slices.Clone(f.models)
 	in := core.ModelServiceInput{Name: strings.TrimSpace(f.name), Kind: f.kind, BaseURL: strings.TrimSpace(f.baseURL),
 		APIKey: f.key, Models: slices.Clone(f.models)}
 	id := f.id
@@ -84,24 +89,59 @@ func (m *modelsView) save(f *modelForm) {
 		f.busy = false
 		if err != nil {
 			a.toastErr(err)
-		} else {
-			if m.form == f {
-				m.edit(saved)
-			}
-			a.toast(i18n.T("settings.saved"))
+			m.load()
+			return
 		}
+		switch {
+		case m.form != f:
+		case f.unchanged(snap):
+			m.edit(saved)
+			m.form.offered = append(m.form.offered, slices.DeleteFunc(slices.Clone(f.offered), func(s string) bool { return slices.Contains(saved.Models, s) })...)
+		default:
+			f.id, f.title, f.hasKey = saved.ID, saved.Name, saved.HasKey
+			if f.key == snap.key {
+				f.key = ""
+			}
+		}
+		if id != 0 {
+			m.followDefault(snap.title, &saved)
+		}
+		a.toast(i18n.T("settings.saved"))
 		m.load()
 	})
 }
 
+func (f *modelForm) unchanged(snap modelForm) bool {
+	return f.kind == snap.kind && f.name == snap.name && f.baseURL == snap.baseURL && f.key == snap.key && slices.Equal(f.models, snap.models)
+}
+
+// followDefault keeps Settings.DefaultModel pointing at service old after it
+// was saved as s (renamed, or the model unticked) or removed (s nil).
+func (m *modelsView) followDefault(old string, s *core.ModelService) {
+	model, ok := strings.CutPrefix(m.a.settings.DefaultModel, old+"/")
+	if !ok {
+		return
+	}
+	next := ""
+	if s != nil && slices.Contains(s.Models, model) {
+		next = s.Name + "/" + model
+	}
+	if next != m.a.settings.DefaultModel {
+		m.setDefault(next)
+	}
+}
+
 func (m *modelsView) remove(f *modelForm) {
-	a, id := m.a, f.id
+	a, id, name := m.a, f.id, f.title
 	f.busy = true
 	a.writes.Chain("models", func(ctx context.Context) error { return a.svc.RemoveModelService(ctx, id) }, func(err error) {
 		f.busy = false
 		a.toastErr(err)
-		if err == nil && m.form == f {
-			m.form = nil
+		if err == nil {
+			m.followDefault(name, nil)
+			if m.form == f {
+				m.form = nil
+			}
 		}
 		m.load()
 	})
@@ -269,15 +309,15 @@ func (m *modelsView) defaultSelect(c *ui.Context) {
 			opts = append(opts, kit.Option[string]{Value: s.Name + "/" + mod, Label: s.Name + " / " + mod})
 		}
 	}
-	if !slices.ContainsFunc(opts, func(o kit.Option[string]) bool { return o.Value == *cur }) {
-		opts = append(opts, kit.Option[string]{Value: *cur, Label: *cur})
-	}
 	label := i18n.T("settings.models.default")
 	ui.Field(c, label, func() {
 		if kit.Select(c, cur, opts).Label(label).Changed() {
 			m.setDefault(*cur)
 		}
 	})
+	if dm := a.settings.DefaultModel; !slices.ContainsFunc(opts, func(o kit.Option[string]) bool { return o.Value == dm }) {
+		kit.Alert(c, kit.Warning, i18n.Tf("settings.models.default.missing", dm), nil)
+	}
 }
 
 // listCard is a bordered list of rows.

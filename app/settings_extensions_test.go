@@ -8,6 +8,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/plugins"
 )
 
 func TestMain(m *testing.M) {
@@ -166,4 +167,67 @@ func TestMCPAddAndTrust(t *testing.T) {
 			t.Fatalf("env field %q", p.ext.mform.env)
 		}
 	}
+}
+
+func TestPluginConfigEditDuringSave(t *testing.T) {
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		e.InstallPlugin(t, "config-demo")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	p := h.openSettings("extensions")
+	h.click("插件 · 1")
+	h.click("Free")
+	h.click("Pro")
+	h.fill("自定义地址", "a.example")
+	release := h.block("plugins")
+	h.click("保存")
+	h.fill("自定义地址", " b.example ")
+	release()
+	stored := func() string {
+		var s string
+		_ = json.Unmarshal(h.pluginConfig("config-demo")["endpoint"].Value, &s)
+		return s
+	}
+	h.until("saved", func() bool { return stored() == "a.example" })
+	h.until("the later edit stays", func() bool {
+		f := p.ext.cfg
+		return f != nil && !f.busy && f.vals["endpoint"].s == " b.example " && f.vals["endpoint"].orig == "a.example"
+	})
+	h.click("保存")
+	h.until("saved verbatim", func() bool { return stored() == " b.example " })
+}
+
+func TestValuesVerbatim(t *testing.T) {
+	fields := []plugins.ConfigField{{Key: "t", Type: "text"}, {Key: "s", Type: "secret"}, {Key: "n", Type: "number"}}
+	f := &pluginForm{vals: map[string]*cfgVal{"t": {s: " a "}, "s": {s: " secret12 "}, "n": {s: " 3 "}}}
+	got := f.values(fields)
+	if string(got["t"]) != `" a "` || string(got["s"]) != `" secret12 "` || string(got["n"]) != "3" {
+		t.Fatalf("values %q", got)
+	}
+	if kv := keyValues(" K = v \nX=y"); kv["K"] != " v " || kv["X"] != "y" {
+		t.Fatalf("key values %q", kv)
+	}
+}
+
+func TestMCPEditDuringSave(t *testing.T) {
+	h, _ := withAccount(t)
+	cmd, _, _ := coretest.MCPCommand(t)
+	p := h.openSettings("extensions")
+	h.click("MCP · 0")
+	h.click("添加服务器")
+	h.fill("名称", "one")
+	h.fill("命令", cmd)
+	release := h.block("mcp")
+	h.click("保存")
+	h.fill("名称", "two")
+	release()
+	h.until("added", func() bool {
+		list, err := h.env.Svc.ListMCPServers(context.Background())
+		return err == nil && len(list) == 1 && list[0].Name == "one"
+	})
+	h.until("the form stays with the edit", func() bool {
+		f := p.ext.mform
+		return f != nil && !f.busy && f.id != 0 && f.name == "two"
+	})
 }

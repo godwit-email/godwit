@@ -2,15 +2,12 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -311,23 +308,6 @@ func statusPill(c *ui.Context, text string, attention bool) {
 	b.Children(func() { ui.Text(c, text).FontSize(t.Text.Sm) })
 }
 
-// pluginForm is a plugin's settings form, generated from its config fields.
-type pluginForm struct {
-	name string
-	vals map[string]*cfgVal
-	err  string // a failure that belongs to no one field
-	busy bool
-}
-
-// cfgVal is one field: s for text, number, select and secret (typed only,
-// never the stored one), on for boolean; orig* as loaded.
-type cfgVal struct {
-	s, orig   string
-	on, origO bool
-	set       bool // stored (a secret: configured)
-	err       string
-}
-
 func (e *extView) showPlugin(name string) {
 	a := e.a
 	e.plugin = name
@@ -348,184 +328,6 @@ func (e *extView) showPlugin(name string) {
 			e.cfg = newPluginForm(name, vals)
 		}
 	})
-}
-
-func newPluginForm(name string, vals []core.ConfigValue) *pluginForm {
-	f := &pluginForm{name: name, vals: map[string]*cfgVal{}}
-	for _, v := range vals {
-		cv := &cfgVal{set: v.Set}
-		var s string
-		switch {
-		case json.Unmarshal(v.Value, &cv.on) == nil:
-		case json.Unmarshal(v.Value, &s) == nil:
-		case len(v.Value) > 0 && string(v.Value) != "null":
-			s = string(v.Value) // a number
-		}
-		cv.s, cv.orig, cv.origO = s, s, cv.on
-		f.vals[v.Key] = cv
-	}
-	return f
-}
-
-// raw is the field's value as the form holds it now; nil when empty.
-func (f *pluginForm) raw(fd plugins.ConfigField) json.RawMessage {
-	v := f.vals[fd.Key]
-	if v == nil {
-		return nil
-	}
-	if fd.Type == "boolean" {
-		return json.RawMessage(strconv.FormatBool(v.on))
-	}
-	s := strings.TrimSpace(v.s)
-	if s == "" {
-		return nil
-	}
-	if _, err := strconv.ParseFloat(s, 64); fd.Type == "number" && err == nil {
-		return json.RawMessage(s)
-	}
-	b, _ := json.Marshal(s)
-	return b
-}
-
-// shown says which fields their when shows for the form's values now, as
-// the Service decides it: an empty field counts as its default, a hidden
-// one as unset.
-func (f *pluginForm) shown(fields []plugins.ConfigField) map[string]bool {
-	shown := map[string]bool{}
-	byKey := map[string]plugins.ConfigField{}
-	for _, fd := range fields {
-		var ref json.RawMessage
-		if w := fd.When; w != nil && shown[w.Key] {
-			if ref = f.raw(byKey[w.Key]); ref == nil {
-				ref = byKey[w.Key].Default
-			}
-		}
-		shown[fd.Key] = fd.When == nil || fd.When.Match(ref)
-		byKey[fd.Key] = fd
-	}
-	return shown
-}
-
-// values are what Save sends: the shown fields that changed or are stored
-// (an absent one would be unset), and only the secrets typed in. ponytail:
-// a stored field is resent unchanged because SetPluginConfig replaces them all.
-func (f *pluginForm) values(fields []plugins.ConfigField) map[string]json.RawMessage {
-	shown := f.shown(fields)
-	out := map[string]json.RawMessage{}
-	for _, fd := range fields {
-		v := f.vals[fd.Key]
-		if v == nil || !shown[fd.Key] {
-			continue
-		}
-		changed := v.s != v.orig || v.on != v.origO
-		switch {
-		case fd.Type == "secret":
-			if v.s != "" {
-				out[fd.Key] = f.raw(fd)
-			}
-		case changed || v.set:
-			out[fd.Key] = f.raw(fd)
-		}
-	}
-	return out
-}
-
-func (e *extView) saveConfig(f *pluginForm, fields []plugins.ConfigField) {
-	a, name := e.a, f.name
-	vals := f.values(fields)
-	f.busy, f.err = true, ""
-	for _, v := range f.vals {
-		v.err = ""
-	}
-	var got []core.ConfigValue
-	a.writes.Chain("plugins", func(ctx context.Context) error {
-		if err := a.svc.SetPluginConfig(ctx, name, vals); err != nil {
-			return err
-		}
-		var err error
-		got, err = a.svc.GetPluginConfig(ctx, name)
-		return err
-	}, func(err error) {
-		f.busy = false
-		if e.cfg != f {
-			a.toastErr(err)
-			return
-		}
-		if err != nil {
-			f.fieldError(err, fields)
-			return
-		}
-		e.cfg = newPluginForm(name, got)
-		a.toast(i18n.T("settings.saved"))
-	})
-}
-
-// fieldError shows err under the field it names ("config <key>…"), or
-// above the buttons.
-func (f *pluginForm) fieldError(err error, fields []plugins.ConfigField) {
-	msg := err.Error()
-	for _, fd := range fields {
-		rest, ok := strings.CutPrefix(msg, "config "+fd.Key)
-		if v := f.vals[fd.Key]; ok && v != nil && (strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, ":")) {
-			if strings.TrimSpace(rest) == "is required" {
-				v.err = i18n.T("settings.ext.config.required")
-			} else {
-				v.err = humanize(err)
-			}
-			return
-		}
-	}
-	f.err = humanize(err)
-}
-
-func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.ConfigField) {
-	t, th := theme.Of(c), c.Theme()
-	lang := i18n.Language()
-	ui.Row(c).Gap(th.Space(2)).Children(func() {
-		ui.Text(c, i18n.T("settings.ext.config")).FontWeight(600)
-		ui.Text(c, i18n.T("settings.ext.config.sub")).TextColor(t.Muted)
-	})
-	shown := f.shown(fields)
-	for _, fd := range fields {
-		v := f.vals[fd.Key]
-		if v == nil || !shown[fd.Key] {
-			continue
-		}
-		label := fd.Label.For(lang)
-		cc := c.Key(fd.Key)
-		if fd.Type == "boolean" {
-			kit.SwitchRow(cc, &v.on, label, v.err)
-			continue
-		}
-		ui.Field(cc, label, func() {
-			switch {
-			case fd.Type == "secret":
-				ph := ""
-				if v.set {
-					ph = i18n.T("settings.secret_kept")
-				}
-				kit.Input(c, &v.s, kit.InputOpts{Password: true, Placeholder: ph, Invalid: v.err != ""})
-			case fd.Type == "select" && fd.AllowCustom:
-				var sugg []string
-				for _, o := range fd.Options {
-					sugg = append(sugg, o.Value)
-				}
-				ui.Autocomplete(c, &v.s, sugg).Label(label).Height(th.Space(8))
-			case fd.Type == "select":
-				opts := make([]kit.Option[string], len(fd.Options))
-				for i, o := range fd.Options {
-					opts[i] = kit.Option[string]{Value: o.Value, Label: o.Label.For(lang)}
-				}
-				kit.Select(c, &v.s, opts).Label(label)
-			default:
-				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""})
-			}
-		}).Error(v.err)
-	}
-	if f.err != "" {
-		kit.Alert(c, kit.Danger, f.err, nil)
-	}
-	kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).AlignSelf(ui.Start).OnClick(func() { e.saveConfig(f, fields) })
 }
 
 // --- MCP
@@ -550,21 +352,23 @@ func keyLines(keys []string) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+// lines are s's lines verbatim, without the blank ones.
 func lines(s string) []string {
 	var out []string
 	for l := range strings.Lines(s) {
-		if l = strings.TrimSpace(l); l != "" {
+		if l = strings.TrimRight(l, "\r\n"); strings.TrimSpace(l) != "" {
 			out = append(out, l)
 		}
 	}
 	return out
 }
 
+// keyValues reads KEY=VALUE lines; values stay verbatim.
 func keyValues(s string) map[string]string {
 	m := map[string]string{}
 	for _, l := range lines(s) {
 		k, v, _ := strings.Cut(l, "=")
-		m[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		m[strings.TrimSpace(k)] = v
 	}
 	return m
 }
@@ -579,6 +383,11 @@ func (f *mcpForm) input() core.MCPServerInput {
 	return in
 }
 
+// fields are what the user edits.
+func (f *mcpForm) fields() [7]string {
+	return [...]string{f.name, f.transport, f.command, f.args, f.env, f.url, f.headers}
+}
+
 func (e *extView) editServer(s core.MCPServer) {
 	e.mform = &mcpForm{id: s.ID, title: s.Name, name: s.Name, transport: s.Transport, command: s.Command,
 		args: strings.Join(s.Args, "\n"), env: keyLines(s.EnvKeys), url: s.URL, headers: keyLines(s.HeaderKeys)}
@@ -587,6 +396,7 @@ func (e *extView) editServer(s core.MCPServer) {
 func (e *extView) saveServer(f *mcpForm) {
 	a, in, id := e.a, f.input(), f.id
 	f.busy, f.err = true, ""
+	snap := f.fields()
 	var saved core.MCPServer
 	a.writes.Chain("mcp", func(ctx context.Context) (err error) {
 		if id == 0 {
@@ -602,6 +412,8 @@ func (e *extView) saveServer(f *mcpForm) {
 			a.toastErr(err)
 		case err != nil:
 			f.err = humanize(err)
+		case f.fields() != snap: // edited while it saved: the form stays, now for the saved server
+			f.id, f.title, e.mcp = saved.ID, saved.Name, saved.ID
 		default:
 			e.mform, e.mcp = nil, saved.ID
 		}

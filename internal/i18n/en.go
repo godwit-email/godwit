@@ -356,6 +356,7 @@ var en = map[string]string{
 	"settings.models.fetch":                        "Fetch from /models",
 	"settings.models.none":                         "No models yet. Save, then fetch them from /models.",
 	"settings.models.default":                      "Default model (used by every skill and Wit; a skill can override it)",
+	"settings.models.default.missing":              "Model not found: %s",
 	"settings.models.default.none":                 "Not set",
 	"settings.models.test":                         "Test connection",
 	"settings.models.test.ok":                      "Connected · %d ms",

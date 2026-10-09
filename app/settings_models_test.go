@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -86,5 +87,70 @@ func TestModelServiceKeyKept(t *testing.T) {
 	}
 	if err := h.env.Svc.TestModelService(context.Background(), s.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// block holds the writes chained on key until release is called.
+func (h *harness) block(key string) (release func()) {
+	ch := make(chan struct{})
+	h.app.writes.Chain(key, func(ctx context.Context) error {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+		}
+		return nil
+	}, nil)
+	var once sync.Once
+	release = func() { once.Do(func() { close(ch) }) }
+	h.t.Cleanup(release)
+	return release
+}
+
+func (h *harness) savedDefault() string {
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return st.DefaultModel
+}
+
+func TestModelServiceEditDuringSave(t *testing.T) {
+	h := withLLM(t)
+	test, _ := h.modelService("test")
+	p := h.openSettings("models")
+	h.see("编辑：test")
+	release := h.block("models")
+	h.fill("名称", "renamed")
+	h.click("保存")
+	h.fill("名称", "renamed again")
+	release()
+	h.until("saved", func() bool { _, ok := h.modelService("renamed"); return ok })
+	h.until("the save settles", func() bool { return !p.models.form.busy })
+	if f := p.models.form; f.name != "renamed again" || f.id != test.ID || f.title != "renamed" {
+		t.Fatalf("form %+v lost the later edit", f)
+	}
+}
+
+func TestModelServiceDefaultFollows(t *testing.T) {
+	h := withLLM(t)
+	h.openSettings("models")
+	h.see("编辑：test")
+	h.fill("名称", "renamed")
+	h.click("保存")
+	h.until("default renamed", func() bool { return h.savedDefault() == "renamed/m1" })
+	h.see("编辑：renamed")
+	h.click("删除此服务")
+	h.until("default cleared", func() bool { return h.savedDefault() == "" })
+}
+
+func TestModelServiceMissingDefault(t *testing.T) {
+	h := withLLM(t)
+	st := h.app.settings
+	st.DefaultModel = "ghost/x"
+	h.app.changeSettings(st)
+	h.openSettings("models")
+	h.see("未找到的模型：ghost/x")
+	if slices.Contains(h.tt.Texts(), "ghost/x") {
+		t.Fatal("the missing model is offered")
 	}
 }

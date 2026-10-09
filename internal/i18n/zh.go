@@ -356,6 +356,7 @@ var zh = map[string]string{
 	"settings.models.fetch":                        "从 /models 拉取",
 	"settings.models.none":                         "还没有模型。保存后可以从 /models 拉取。",
 	"settings.models.default":                      "默认模型（所有 skill 和Wit使用，单个 skill 可以覆盖）",
+	"settings.models.default.missing":              "未找到的模型：%s",
 	"settings.models.default.none":                 "未设置",
 	"settings.models.test":                         "测试连接",
 	"settings.models.test.ok":                      "连接正常 · %d ms",
