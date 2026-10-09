@@ -289,7 +289,7 @@ func (p *fakePlatform) NotificationsSupported() bool {
 	return p.supported
 }
 func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin", on); return nil }
-func (p *fakePlatform) SetLocalAPI(on bool) (string, error) {
+func (p *fakePlatform) SetLocalAPI(_ uint64, on bool) (string, error) {
 	p.record("SetLocalAPI", on)
 	p.mu.Lock()
 	defer p.mu.Unlock()

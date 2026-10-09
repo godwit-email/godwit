@@ -160,7 +160,7 @@ func gui(ctx context.Context, dataDir string) int {
 		log.Fatal(err)
 	}
 	if plat != nil {
-		plat.SetLocalAPI(false) // after BeforeClose, before the Service closes
+		plat.SetLocalAPI(0, false) // after BeforeClose, before the Service closes
 	}
 	if svc != nil {
 		svc.Close()

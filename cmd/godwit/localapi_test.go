@@ -26,18 +26,18 @@ func TestLocalAPIStartsServer(t *testing.T) {
 	}
 	t.Cleanup(func() { svc.Close() })
 	p := &platform{dataDir: dir, svc: svc}
-	path, err := p.SetLocalAPI(true)
+	path, err := p.SetLocalAPI(1, true)
 	if err != nil || path != filepath.Join(dir, rpc.SocketName) {
 		t.Fatalf("SetLocalAPI(true) = %q, %v", path, err)
 	}
-	if again, err := p.SetLocalAPI(true); err != nil || again != path { // already on: the same server
+	if again, err := p.SetLocalAPI(1, true); err != nil || again != path { // already on: the same server
 		t.Fatalf("SetLocalAPI(true) again = %q, %v", again, err)
 	}
 	var accs []core.Account
 	if err := dialWait(t, dir).Call(context.Background(), "ListAccounts", &accs); err != nil {
 		t.Fatal(err)
 	}
-	if path, err := p.SetLocalAPI(false); err != nil || path != "" {
+	if path, err := p.SetLocalAPI(2, false); err != nil || path != "" {
 		t.Fatalf("SetLocalAPI(false) = %q, %v", path, err)
 	}
 	for _, name := range []string{rpc.SocketName, rpc.TokenName} {
@@ -45,7 +45,7 @@ func TestLocalAPIStartsServer(t *testing.T) {
 			t.Errorf("%s after off: %v", name, err)
 		}
 	}
-	if _, err := p.SetLocalAPI(false); err != nil { // already off
+	if _, err := p.SetLocalAPI(2, false); err != nil { // already off
 		t.Fatal(err)
 	}
 }
@@ -60,10 +60,15 @@ func TestLocalAPIServeFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { svc.Close() })
 	stopped := make(chan error, 1)
-	p := &platform{dataDir: dir, svc: svc, onAPIStop: func(err error) { stopped <- err }}
+	p := &platform{dataDir: dir, svc: svc, onAPIStop: func(gen uint64, err error) {
+		if gen != 1 {
+			t.Errorf("stopped for request %d, want 1", gen)
+		}
+		stopped <- err
+	}}
 	fail := errors.New("accept: too many open files")
 	p.serve = func(context.Context, *rpc.Server) error { return fail }
-	if _, err := p.SetLocalAPI(true); err != nil {
+	if _, err := p.SetLocalAPI(1, true); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -84,11 +89,11 @@ func TestLocalAPIServeFailure(t *testing.T) {
 		t.Fatalf("socket after the failure: %v", err)
 	}
 	p.serve = nil
-	if _, err := p.SetLocalAPI(true); err != nil {
+	if _, err := p.SetLocalAPI(1, true); err != nil {
 		t.Fatal(err)
 	}
 	dialWait(t, dir)
-	if _, err := p.SetLocalAPI(false); err != nil {
+	if _, err := p.SetLocalAPI(2, false); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -127,4 +132,54 @@ func TestOpenFailure(t *testing.T) {
 			t.Fatalf("%q carries the error's text", m)
 		}
 	}
+}
+
+// The dead server's cleanup cannot remove a newer server's socket and token:
+// a SetLocalAPI(true) during it waits for it.
+func TestLocalAPICleanupRace(t *testing.T) {
+	dir := shortDir(t)
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	closing, release := make(chan struct{}), make(chan struct{})
+	var dead *rpc.Server
+	cleaned := make(chan struct{})
+	p := &platform{dataDir: dir, svc: svc, onAPIStop: func(uint64, error) { close(cleaned) }}
+	p.serve = func(_ context.Context, s *rpc.Server) error { dead = s; return errors.New("accept failed") }
+	p.closeAPI = func(s *rpc.Server) error {
+		if s == dead {
+			close(closing)
+			<-release
+		}
+		return s.Close()
+	}
+	if _, err := p.SetLocalAPI(1, true); err != nil {
+		t.Fatal(err)
+	}
+	<-closing // the dead server's cleanup has begun
+	p.serve = nil
+	started := make(chan error, 1)
+	go func() { _, err := p.SetLocalAPI(3, true); started <- err }()
+	select {
+	case err := <-started: // it did not wait: the cleanup now runs after it
+		close(release)
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		close(release)
+		if err := <-started; err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-cleaned
+	for _, name := range []string{rpc.SocketName, rpc.TokenName} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("the new server's %s: %v", name, err)
+		}
+	}
+	dialWait(t, dir)
+	p.SetLocalAPI(4, false)
 }

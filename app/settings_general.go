@@ -82,7 +82,7 @@ func (a *App) syncLocalAPI() {
 	plat := a.plat
 	var path string
 	a.writes.Chain("local-api", func(context.Context) (err error) {
-		path, err = plat.SetLocalAPI(on)
+		path, err = plat.SetLocalAPI(gen, on)
 		return err
 	}, func(err error) {
 		if gen != a.localAPIGen { // a newer request runs after this one and decides
@@ -96,10 +96,13 @@ func (a *App) syncLocalAPI() {
 	})
 }
 
-// LocalAPIStopped tells the App that the Local API server ended by itself
-// with err. Safe from any goroutine.
-func (a *App) LocalAPIStopped(err error) {
+// LocalAPIStopped tells the App that the Local API server that request gen
+// asked for ended by itself with err. Safe from any goroutine.
+func (a *App) LocalAPIStopped(gen uint64, err error) {
 	a.onUI(func() {
+		if gen != a.localAPIGen { // a newer request replaced or stopped that server
+			return
+		}
 		a.localAPIPath = ""
 		a.localAPIFailed(err)
 	})

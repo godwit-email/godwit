@@ -34,9 +34,10 @@ type Platform interface {
 	SetThemeSource(theme string)
 	ClipboardHTML() string
 	TempDir() string
-	// SetLocalAPI starts (on) or stops the Local API server, returning its
-	// socket's path while on. Off when it fails. Blocks: call off the UI thread.
-	SetLocalAPI(on bool) (path string, err error)
+	// SetLocalAPI starts (on) or stops the Local API server for request
+	// gen, returning its socket's path while on. Off when it fails. Blocks:
+	// call off the UI thread.
+	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
 }
