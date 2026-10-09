@@ -437,6 +437,7 @@ var zh = map[string]string{
 	"reader.open_in_browser":                       "在浏览器中查看",
 	"reader.save_as":                               "另存为…",
 	"reader.ai.translate":                          "翻译",
+	"reader.ai.summarize":                          "总结",
 	"reader.ai.more_skills":                        "更多 skill ▾",
 	"reader.ai.summary":                            "总结 · summarize · %s",
 	"reader.ai.translated":                         "已翻译为%s · translate · %s",

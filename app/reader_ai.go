@@ -15,30 +15,67 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// The AI of the reader acts on the newest message shown (the one replies
-// answer): its summary, translation, skill and action results, plugin cards
-// and quick replies. ponytail: r.ai keeps every message read this session;
-// evict the oldest if memory ever matters.
+// The AI of the reader, per message: every expanded message gets its
+// summary and plugin cards and can be translated; the toolbar's Summary,
+// Translate and skill menu act on the newest one, which alone gets quick
+// replies. ponytail: r.ai keeps every message read this session; evict the
+// oldest if memory ever matters.
 
-// aiRun is a skill's or action's output, streamed in on the UI thread.
+// aiRun is a skill's or action's output, streamed in on the UI thread, with
+// the model and target language it ran with.
 type aiRun struct {
-	text          string
-	doc           richtext.Doc // the output converted, once done
+	text, model, lang string
+	doc               richtext.Doc // the output converted, once done
+	err               error
+	running, done     bool
+}
+
+// fetch is a read for the reader: done once it succeeded; a failure keeps
+// err for a retry. gen is the reader gen of the last attempt.
+type fetch[T any] struct {
+	v             T
+	done, loading bool
 	err           error
-	running, done bool
+	gen           uint64
+}
+
+// fetchInto reads into f unless it is read, being read, or (without force)
+// was tried during this visit. failed, if set, hears a failure.
+func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
+	if f.done || f.loading && f.gen == r.gen || !force && f.gen == r.gen {
+		return
+	}
+	a, gen, ctx := r.p.a, r.gen, r.aiContext()
+	f.gen, f.loading, f.err = gen, true, nil
+	var v T
+	a.do(func(context.Context) (err error) {
+		v, err = get(ctx)
+		return err
+	}, func(err error) {
+		if gen != r.gen {
+			return
+		}
+		f.loading = false
+		if err != nil {
+			f.err = err
+			if failed != nil {
+				failed(err)
+			}
+			return
+		}
+		f.v, f.done = v, true
+	})
 }
 
 // msgAI is the AI state of one message.
 type msgAI struct {
-	summary, translation *aiRun
-	showTr               bool // the body shows the translation
-	result               *aiResult
-	cards                []core.Card
-	cardsDone            bool
-	cardsGen             uint64 // the reader gen that asked for the cards
-	quick                []core.QuickReply
-	quickDone            bool
-	quickGen             uint64
+	summary     *aiRun
+	sumShown    *bool // the Summary action's choice; nil follows Settings.Summary
+	translation *aiRun
+	showTr      bool // the translation was asked to show
+	result      *aiResult
+	cards       fetch[[]core.Card]
+	quick       fetch[[]core.QuickReply]
 }
 
 // aiResult is the closable card of a skill or action run from the menu.
@@ -77,6 +114,30 @@ func (r *reader) modelName() string {
 	return m
 }
 
+// readingLang is the language mail is translated into.
+func (r *reader) readingLang() string {
+	st := r.p.a.settings
+	return cmp.Or(st.ReadingLanguage, st.UILanguage, r.p.a.sysLang, "en")
+}
+
+// summaryShown reports whether a message's summary shows: with a model,
+// as the Summary action chose, else as Settings.Summary says.
+func (r *reader) summaryShown(st *msgAI) bool {
+	if !r.aiReady() {
+		return false
+	}
+	if st.sumShown != nil {
+		return *st.sumShown
+	}
+	return r.p.a.settings.Summary
+}
+
+// trShown reports whether a message shows its translation: asked for, and
+// into the current reading language.
+func (r *reader) trShown(st *msgAI) bool {
+	return st.showTr && st.translation != nil && st.translation.lang == r.readingLang()
+}
+
 // aiContext is the context of the AI work for the key shown.
 func (r *reader) aiContext() context.Context {
 	if r.aiCtx == nil {
@@ -86,7 +147,7 @@ func (r *reader) aiContext() context.Context {
 }
 
 // stopAI cancels the AI work of the key shown and forgets unfinished runs,
-// so coming back starts them again.
+// so coming back starts them again; the menu is read again then too.
 func (r *reader) stopAI() {
 	if r.aiStop != nil {
 		r.aiStop()
@@ -103,71 +164,59 @@ func (r *reader) stopAI() {
 			s.result = nil
 		}
 	}
+	r.skills.done, r.actions.done = false, false
 	r.egressDlg = false
 }
 
-// startAI starts what the newest message shows by itself: its summary,
-// cards and quick replies, and loads the skill menu. Each runs once.
+// startFor starts what an expanded message shows by itself: its summary
+// (Settings.Summary with a model) and its plugin cards. Each runs once.
+func (r *reader) startFor(id int64) {
+	st := r.state(id)
+	if r.aiReady() && r.p.a.settings.Summary && st.summary == nil {
+		st.summary = r.stream(id, "summarize")
+	}
+	r.loadCards(id, false)
+}
+
+func (r *reader) loadCards(id int64, force bool) {
+	get := r.cardsFn
+	fetchInto(r, &r.state(id).cards, force, func(ctx context.Context) ([]core.Card, error) { return get(ctx, id) }, nil)
+}
+
+func (r *reader) loadQuick(id int64, force bool) {
+	get := r.quickFn
+	fetchInto(r, &r.state(id).quick, force, func(ctx context.Context) ([]core.QuickReply, error) { return get(ctx, id) }, nil)
+}
+
+// startAI, once the thread is read, starts the AI of the expanded messages,
+// the newest one's quick replies, and reads the skill menu's two sources.
 func (r *reader) startAI() {
 	m, ok := r.last()
 	if !ok {
 		return
 	}
-	a, gen, ctx := r.p.a, r.gen, r.aiContext()
-	st := r.state(m.ID)
-	if r.aiReady() && a.settings.Summary && st.summary == nil {
-		st.summary = r.stream(m.ID, "summarize")
+	for id := range r.open {
+		r.startFor(id)
 	}
-	if !st.cardsDone && st.cardsGen != gen {
-		st.cardsGen = gen
-		var cards []core.Card
-		a.do(func(context.Context) (err error) {
-			cards, err = a.svc.PluginCards(ctx, m.ID)
-			return err
-		}, func(err error) {
-			if gen == r.gen {
-				st.cards, st.cardsDone = cards, true // a failure shows no cards
-			}
-		})
+	if r.aiReady() && r.p.a.settings.QuickReplies {
+		r.loadQuick(m.ID, false)
 	}
-	if r.aiReady() && a.settings.QuickReplies && !st.quickDone && st.quickGen != gen {
-		st.quickGen = gen
-		var qs []core.QuickReply
-		a.do(func(context.Context) (err error) {
-			qs, err = a.svc.QuickReplies(ctx, m.ID)
-			return err
-		}, func(err error) {
-			if gen == r.gen {
-				st.quick, st.quickDone = qs, true // a failure shows none: they are a convenience
-			}
-		})
-	}
-	if r.menuGen != gen {
-		r.menuGen = gen
-		var sks []core.SkillInfo
-		var acts []core.ActionInfo
-		a.do(func(context.Context) (err error) {
-			if sks, err = a.svc.ListSkills(ctx); err != nil {
-				return err
-			}
-			acts, err = a.svc.ListActions(ctx, "message")
-			return err
-		}, func(err error) {
-			if gen != r.gen || err != nil {
-				return
-			}
-			r.skills = slices.DeleteFunc(sks, func(s core.SkillInfo) bool {
-				return !s.Enabled || !slices.Contains(s.On, "message") || s.Name == "summarize" || s.Name == "translate"
-			})
-			r.actions = acts
-		})
-	}
+	a, skills, actions := r.p.a, r.skillsFn, r.actionsFn
+	fetchInto(r, &r.skills, false, func(ctx context.Context) ([]core.SkillInfo, error) {
+		sks, err := skills(ctx)
+		return slices.DeleteFunc(sks, func(s core.SkillInfo) bool {
+			return !s.Enabled || !slices.Contains(s.On, "message") || s.Name == "summarize" || s.Name == "translate"
+		}), err
+	}, a.toastErr) // read again on the next visit
+	fetchInto(r, &r.actions, false, func(ctx context.Context) ([]core.ActionInfo, error) {
+		return actions(ctx, "message")
+	}, a.toastErr)
 }
 
 // stream runs skill on a message; its text streams into the run returned.
 func (r *reader) stream(id int64, skill string) *aiRun {
 	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
-	run := &aiRun{running: true}
+	run := &aiRun{running: true, model: r.modelName(), lang: r.readingLang()}
 	var doc richtext.Doc
 	a.do(func(context.Context) error {
 		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id})
@@ -196,15 +245,32 @@ func (r *reader) stream(id int64, skill string) *aiRun {
 	return run
 }
 
-// translate shows the newest message translated, or its original again.
-func (r *reader) translate() {
+// toggleSummary shows or hides the newest message's summary, running it
+// when it has none.
+func (r *reader) toggleSummary() {
 	m, ok := r.last()
 	if !ok {
 		return
 	}
 	st := r.state(m.ID)
-	if st.showTr = !st.showTr; st.showTr && (st.translation == nil || st.translation.err != nil) {
-		st.translation = r.stream(m.ID, "translate")
+	on := !r.summaryShown(st)
+	st.sumShown = &on
+	if on && (st.summary == nil || st.summary.err != nil) {
+		st.summary = r.stream(m.ID, "summarize")
+	}
+}
+
+// toggleTranslate shows a message translated into the reading language
+// (translating it again when that changed), or its original again.
+func (r *reader) toggleTranslate(id int64) {
+	st := r.state(id)
+	if r.trShown(st) {
+		st.showTr = false
+		return
+	}
+	st.showTr = true
+	if tr := st.translation; tr == nil || tr.err != nil || tr.lang != r.readingLang() {
+		st.translation = r.stream(id, "translate")
 	}
 }
 
@@ -273,34 +339,40 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 	})
 }
 
-// aiTools are the toolbar's Translate and skill menu.
+// aiTools are the toolbar's Summary, Translate and skill menu, for the
+// newest message.
 func (r *reader) aiTools(c *ui.Context) {
 	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	m, _ := r.last()
 	if r.aiReady() {
-		o := out
-		if m, ok := r.last(); ok && r.state(m.ID).showTr {
-			o.Variant = kit.Primary
+		st := r.state(m.ID)
+		on := func(b bool) kit.ButtonOpts {
+			if b {
+				return kit.ButtonOpts{Variant: kit.Primary, Small: true}
+			}
+			return out
 		}
-		kit.Button(c, i18n.T("reader.ai.translate"), o).OnClick(r.translate)
+		kit.Button(c, i18n.T("reader.ai.summarize"), on(r.summaryShown(st) && st.summary != nil)).OnClick(r.toggleSummary)
+		kit.Button(c, i18n.T("reader.ai.translate"), on(r.trShown(st))).OnClick(func() { r.toggleTranslate(m.ID) })
 	}
-	skills := r.skills
-	if !r.aiReady() {
-		skills = nil
+	var skills []core.SkillInfo
+	if r.aiReady() {
+		skills = r.skills.v
 	}
-	if len(skills) == 0 && len(r.actions) == 0 {
+	actions := r.actions.v
+	if len(skills) == 0 && len(actions) == 0 {
 		return
 	}
-	m, _ := r.last()
 	kit.Button(c, i18n.T("reader.ai.more_skills"), out).Menu(func(menu *ui.Menu) {
 		for _, sk := range skills {
 			if menu.Item(sk.Name).Chosen() {
 				r.runSkillCard(sk.Name)
 			}
 		}
-		if len(skills) > 0 && len(r.actions) > 0 {
+		if len(skills) > 0 && len(actions) > 0 {
 			menu.Separator()
 		}
-		for _, act := range r.actions {
+		for _, act := range actions {
 			label := cmp.Or(act.Label.For(i18n.Language()), act.ID)
 			if menu.Item(label).Chosen() {
 				r.runAction(act.ID, label, m.ID, false)
@@ -309,26 +381,25 @@ func (r *reader) aiTools(c *ui.Context) {
 	})
 }
 
-// aiArea shows above the newest message's body: its summary, the menu's
-// result and the translation's notice.
+// aiArea shows above a message's body: its summary, the menu's result and
+// the translation's notice.
 func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
-	last, _ := r.last()
 	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil {
+	if st == nil {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	if st.summary != nil {
-		r.panel(c, i18n.Tf("reader.ai.summary", r.modelName()), nil, func() {
+	if sum := st.summary; sum != nil && r.summaryShown(st) {
+		r.panel(c, i18n.Tf("reader.ai.summary", sum.model), nil, func() {
 			ui.Column(c).Gap(th.Space(1)).Children(func() {
-				for _, line := range points(st.summary.text) {
+				for _, line := range points(sum.text) {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
 						ui.Text(c, "•").TextColor(t.Muted)
 						ui.Text(c, line).Grow(1).Shrink(1)
 					})
 				}
 			})
-			r.runState(c, st.summary, func() { st.summary = r.stream(m.ID, "summarize") })
+			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
 		})
 	}
 	if res := st.result; res != nil {
@@ -337,11 +408,10 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 			r.runState(c, res.run, nil)
 		})
 	}
-	if st.showTr {
+	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			lang := cmp.Or(r.p.a.settings.ReadingLanguage, r.p.a.settings.UILanguage, r.p.a.sysLang, "en")
-			ui.Text(c, i18n.Tf("reader.ai.translated", langName(lang), r.modelName())).FontSize(t.Text.Sm).TextColor(t.Muted)
-			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(r.translate)
+			ui.Text(c, i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }
@@ -350,13 +420,12 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 // original shows.
 func (r *reader) translated(c *ui.Context, m core.MessageSummary) bool {
 	st := r.ai[m.ID]
-	if st == nil || !st.showTr || st.translation == nil {
+	if st == nil || !r.trShown(st) {
 		return false
 	}
 	tr := st.translation
 	if tr.done && strings.TrimSpace(tr.text) == "" { // it is in the reading language already
-		lang := cmp.Or(r.p.a.settings.ReadingLanguage, r.p.a.settings.UILanguage, r.p.a.sysLang, "en")
-		ui.Text(c, i18n.Tf("reader.ai.no_translation", langName(lang))).FontSize(theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
+		ui.Text(c, i18n.Tf("reader.ai.no_translation", langName(tr.lang))).FontSize(theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
 		return false
 	}
 	r.output(c, tr)
@@ -383,6 +452,15 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 			if retry != nil {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(retry)
 			}
+		})
+	}
+}
+
+// fetchErr shows a failed read with Retry.
+func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) {
+	if msg := humanize(err); msg != "" && !loading {
+		kit.Alert(c, kit.Danger, msg, func() {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(retry)
 		})
 	}
 }
@@ -416,15 +494,16 @@ func points(text string) []string {
 	return out
 }
 
-// cards are the plugins' cards on the newest message.
+// cards are the plugins' cards on a message; a failure to read them shows
+// with Retry.
 func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
-	last, _ := r.last()
 	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil {
+	if st == nil {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	for _, card := range st.cards {
+	r.fetchErr(c, st.cards.err, st.cards.loading, func() { r.loadCards(m.ID, true) })
+	for _, card := range st.cards.v {
 		ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
 			ui.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)).FontSize(t.Text.Sm).TextColor(t.Muted)
 			for _, f := range card.Fields {
@@ -465,13 +544,17 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	last, _ := r.last()
 	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil || len(st.quick) == 0 || !r.aiReady() || !r.p.a.settings.QuickReplies {
+	if m.ID != last.ID || st == nil || !r.aiReady() || !r.p.a.settings.QuickReplies {
+		return
+	}
+	r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(m.ID, true) })
+	if len(st.quick.v) == 0 {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Text(c, i18n.T("reader.ai.quick")).FontSize(t.Text.Sm).TextColor(t.Muted)
-		for i, q := range st.quick {
+		for i, q := range st.quick.v {
 			ui.ButtonBase(c).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Justify(ui.Start).Children(func() {
 				ui.Text(c, q.Preview).SingleLine().Grow(1).Shrink(1)
 				if i == 0 {

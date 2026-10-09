@@ -437,6 +437,7 @@ var en = map[string]string{
 	"reader.open_in_browser":                       "View in browser",
 	"reader.save_as":                               "Save as…",
 	"reader.ai.translate":                          "Translate",
+	"reader.ai.summarize":                          "Summary",
 	"reader.ai.more_skills":                        "More skills ▾",
 	"reader.ai.summary":                            "Summary · summarize · %s",
 	"reader.ai.translated":                         "Translated into %s · translate · %s",

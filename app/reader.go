@@ -43,18 +43,21 @@ type reader struct {
 
 	allowLoopback bool // tests: images from httptest servers
 
-	ai        map[int64]*msgAI   // by message; kept across switches so a summary runs once
-	aiCtx     context.Context    // the AI work of the key shown; nil until some starts
-	aiStop    context.CancelFunc // cancels aiCtx
-	menuGen   uint64             // the gen the skill menu was loaded for
-	skills    []core.SkillInfo   // the skill menu: skills on messages but summarize and translate
-	actions   []core.ActionInfo  // and plugin actions on messages
-	egress    egressAsk          // the action waiting for egress approval
-	egressDlg bool               // its dialog shows
+	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx     context.Context          // the AI work of the key shown; nil until some starts
+	aiStop    context.CancelFunc       // cancels aiCtx
+	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress    egressAsk                // the action waiting for egress approval
+	egressDlg bool                     // its dialog shows
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
 	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
+	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
+	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error)          // tests wrap it
+	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                            // tests wrap it
+	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)              // tests wrap it
 }
 
 // msgBody is a message read in full and its body converted.
@@ -71,7 +74,8 @@ type msgBody struct {
 
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
-		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, runSkill: p.a.svc.RunSkill}
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, runSkill: p.a.svc.RunSkill,
+		cardsFn: p.a.svc.PluginCards, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -172,9 +176,11 @@ func (r *reader) markRead(msgs []core.MessageSummary) {
 	}
 }
 
-// expand shows a message in full, reading it unless it was read already.
+// expand shows a message in full, reading it unless it was read already,
+// and starts its AI.
 func (r *reader) expand(id int64) {
 	r.open[id] = true
+	r.startFor(id)
 	if b := r.bodies[id]; b == nil || b.err != nil {
 		r.loadBody(id, b != nil && b.remote)
 	}
