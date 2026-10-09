@@ -194,13 +194,32 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// notify queues a control message best-effort; it never blocks.
+// notify queues a control message best-effort; it never blocks. Only
+// $/cancel uses it; stream cancels go through sendStreamCancel.
 func (c *Client) notify(method string, params ...any) {
 	p, _ := json.Marshal(params)
 	b, _ := json.Marshal(message{JSONRPC: "2.0", Method: method, Params: p})
 	select {
 	case c.wq <- append(b, '\n'):
 	default:
+	}
+}
+
+// sendStreamCancel never drops the message: if the queue is full it waits in
+// the background until there is room or the connection closes.
+func (c *Client) sendStreamCancel(sid uint64) {
+	p, _ := json.Marshal([]uint64{sid})
+	b, _ := json.Marshal(message{JSONRPC: "2.0", Method: "$/stream.cancel", Params: p})
+	b = append(b, '\n')
+	select {
+	case c.wq <- b:
+	default:
+		go func() {
+			select {
+			case c.wq <- b:
+			case <-c.done:
+			}
+		}()
 	}
 }
 
@@ -215,7 +234,7 @@ func (c *Client) cancelStream(s *clientStream) {
 	delete(c.errs, s.ch)
 	c.mu.Unlock()
 	if live {
-		c.notify("$/stream.cancel", s.id)
+		c.sendStreamCancel(s.id)
 	}
 }
 
@@ -282,7 +301,7 @@ func (c *Client) handleResponse(id uint64, m message) {
 	}
 	if p.abandoned {
 		if sid > 0 {
-			c.notify("$/stream.cancel", sid)
+			c.sendStreamCancel(sid)
 		}
 		return
 	}
@@ -326,6 +345,6 @@ func (c *Client) handleNotification(m message) {
 	}
 	c.mu.Unlock()
 	if overflow {
-		c.notify("$/stream.cancel", sid)
+		c.sendStreamCancel(sid)
 	}
 }

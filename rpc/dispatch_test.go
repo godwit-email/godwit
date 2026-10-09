@@ -52,6 +52,12 @@ func (t *target) Gated(ctx context.Context) (<-chan int, func()) {
 	return ch, func() { close(ch); t.gatedStopped <- struct{}{} }
 }
 
+// Stopper returns at once a channel that closes only when stop is called.
+func (t *target) Stopper() (<-chan int, func()) {
+	ch := make(chan int)
+	return ch, func() { close(ch); t.gatedStopped <- struct{}{} }
+}
+
 func (t *target) Hidden() int { return 1 }
 
 func (t *target) Fail(fail bool) error {

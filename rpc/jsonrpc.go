@@ -64,6 +64,15 @@ type ConnOptions struct {
 	// EncodeError turns a target's error into a wire error; the default
 	// reveals nothing ("internal error").
 	EncodeError func(error) *WireError
+
+	hooks testHooks // test seams; zero outside tests
+}
+
+// testHooks lets tests stop a request at the edges of stream registration.
+type testHooks struct {
+	afterCall     func(ctx context.Context) // a stream method returned, not yet registered
+	afterRegister func()                    // the registration lock was released
+	beforeCancel  func()                    // $/cancel found its request, not yet cancelled
 }
 
 func (o ConnOptions) withDefaults() ConnOptions {
@@ -317,13 +326,16 @@ func (c *conn) control(m message) {
 		return
 	}
 	c.mu.Lock()
-	cancel := c.requests[n]
 	s := c.streams[n]
-	c.mu.Unlock()
-	switch {
-	case m.Method == "$/cancel" && cancel != nil:
+	if cancel := c.requests[n]; cancel != nil && m.Method == "$/cancel" {
+		// Under the lock, so it can't slip in after run checks ctx.
+		if h := c.opts.hooks.beforeCancel; h != nil {
+			h()
+		}
 		cancel()
-	case m.Method == "$/stream.cancel" && s != nil && c.endStream(n):
+	}
+	c.mu.Unlock()
+	if m.Method == "$/stream.cancel" && s != nil && c.endStream(n) {
 		s.stop()
 	}
 }
@@ -358,11 +370,15 @@ func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.C
 			stop()
 		}
 	}}
-	// Unregistering the request and registering the stream under one lock:
-	// a $/cancel either lands before (ctx.Err below) or finds nothing.
+	if h := c.opts.hooks.afterCall; h != nil {
+		h(ctx)
+	}
+	// Register, then check ctx: a $/cancel (which cancels under c.mu) either
+	// landed before the request was unregistered, and ctx shows it, or finds
+	// nothing.
 	c.mu.Lock()
 	delete(c.requests, id)
-	live := c.streams != nil && ctx.Err() == nil
+	live := c.streams != nil
 	var sid uint64
 	if live {
 		c.nextStream++
@@ -370,12 +386,19 @@ func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.C
 		c.streams[sid] = s
 	}
 	c.mu.Unlock()
+	if h := c.opts.hooks.afterRegister; h != nil {
+		h()
+	}
+	if live && ctx.Err() != nil {
+		c.endStream(sid)
+		live = false
+	}
 	if live {
 		defer c.release()
 		// Queued before the pump starts, so the response precedes every event.
 		c.replyResult(rawID, map[string]uint64{"stream": sid})
 	} else {
-		// Cancelled before the stream existed: stop it, free the slot, answer,
+		// Cancelled before the stream was answered: stop it, free the slot, answer,
 		// then drain below so the target's pump can exit.
 		s.stop()
 		c.release()

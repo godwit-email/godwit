@@ -438,3 +438,106 @@ func TestHelloGate(t *testing.T) {
 		}
 	})
 }
+
+func TestCancelRacesRegistration(t *testing.T) {
+	check := func(t *testing.T, tg *target, r *raw) {
+		t.Helper()
+		r.until("1")
+		wait(t, tg.gatedStopped, "stop to be called")
+		r.send(`{"jsonrpc":"2.0","id":2,"method":"Echo","params":["a",1]}`)
+		if m := r.until("2"); string(m.Result) != `"a1"` {
+			t.Fatalf("slot not released: %+v", m)
+		}
+	}
+	t.Run("cancel after the method returned", func(t *testing.T) {
+		tg := newTarget()
+		reached := make(chan struct{})
+		opts := rpc.WithHooks(rpc.ConnOptions{MaxActive: 1}, func(ctx context.Context) {
+			close(reached)
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+			}
+		}, nil, nil)
+		conn, _ := serve(t, newDispatcher(t, tg), opts)
+		r := newRaw(t, conn)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"Stopper","params":[]}`)
+		wait(t, reached, "the method to return")
+		r.send(`{"jsonrpc":"2.0","method":"$/cancel","params":[1]}`)
+		check(t, tg, r)
+	})
+	t.Run("cancel lands as the stream registers", func(t *testing.T) {
+		tg := newTarget()
+		reached, proceed, inCancel := make(chan struct{}), make(chan struct{}), make(chan struct{})
+		registered := make(chan struct{}, 1)
+		opts := rpc.WithHooks(rpc.ConnOptions{MaxActive: 1},
+			func(context.Context) { close(reached); <-proceed },
+			func() { registered <- struct{}{} },
+			func() {
+				close(inCancel)
+				// Let registration run now if it can; under a correct lock it can't.
+				select {
+				case <-registered:
+				case <-time.After(300 * time.Millisecond):
+				}
+			})
+		conn, _ := serve(t, newDispatcher(t, tg), opts)
+		r := newRaw(t, conn)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"Stopper","params":[]}`)
+		wait(t, reached, "the method to return")
+		r.send(`{"jsonrpc":"2.0","method":"$/cancel","params":[1]}`)
+		wait(t, inCancel, "$/cancel to find the request")
+		close(proceed)
+		check(t, tg, r)
+	})
+}
+
+func TestClientNeverDropsStreamCancel(t *testing.T) {
+	srv, cli := net.Pipe()
+	defer srv.Close()
+	c := rpc.NewClient(cli)
+	defer c.Close()
+	r := bufio.NewReader(srv)
+
+	type res struct {
+		cancel func()
+		err    error
+	}
+	got := make(chan res, 1)
+	go func() {
+		_, cancel, err := c.Stream(context.Background(), "Sub")
+		got <- res{cancel, err}
+	}()
+	if _, err := r.ReadBytes('\n'); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(srv, `{"jsonrpc":"2.0","id":1,"result":{"stream":7}}`+"\n")
+	st := <-got
+	if st.err != nil {
+		t.Fatal(st.err)
+	}
+
+	// The peer stops reading; fill the client's write queue.
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	errc := make(chan error, 100)
+	for range 100 {
+		go func() { errc <- c.Call(ctx, "Echo", nil) }()
+	}
+	for range 100 {
+		<-errc
+	}
+	st.cancel()
+
+	// The peer reads again: the stream cancel must arrive.
+	srv.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		line, err := r.ReadBytes('\n')
+		if err != nil {
+			t.Fatalf("no $/stream.cancel received: %v", err)
+		}
+		if bytes.Contains(line, []byte(`"$/stream.cancel","params":[7]`)) {
+			return
+		}
+	}
+}
