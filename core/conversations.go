@@ -21,7 +21,8 @@ import (
 // Conversation is a Wit chat: kind "ask" (the mailbox panel) or "assist" (one
 // draft's compose panel, DraftID set). Messages is decoded from the saved
 // model state, for display; Citations are the mail its runs showed the
-// model, in the order they came, once each; ActiveRunID is its run that is
+// model, in the order they came, each with the run and tool call that showed
+// it (a message shown twice is there twice); ActiveRunID is its run that is
 // running, resuming or waiting for approvals (0: none). ListConversations
 // leaves those three empty.
 type Conversation struct {
@@ -44,12 +45,15 @@ type WitEvent struct {
 	Approvals []Approval
 }
 
-// Citation is a message a run's tools showed the model.
+// Citation is a message a run's tools showed the model: RunID's call CallID
+// (its tool_result), or its context when CallID is "".
 type Citation struct {
 	MessageID     int64
 	Subject, From string
 	Date          time.Time
 	Suspect       bool
+	RunID         int64
+	CallID        string
 }
 
 // ErrRunActive: the conversation has a run that is running, waiting for
@@ -136,22 +140,17 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if len(rows.Values) > 0 {
 		c.ActiveRunID = store.Int(rows.Values[0][0])
 	}
-	rows, err = s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect FROM run_citations rc
-		JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
+	rows, err = s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
+		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
 		return Conversation{}, err
 	}
-	seen := map[int64]int{} // message → index; a later citation of it that is suspect marks it
 	for _, r := range rows.Values {
-		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0}
+		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
+			RunID: store.Int(r[5]), CallID: store.Str(r[6])}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
-		if i, ok := seen[ct.MessageID]; ok {
-			c.Citations[i].Suspect = c.Citations[i].Suspect || ct.Suspect
-			continue
-		}
-		seen[ct.MessageID] = len(c.Citations)
 		c.Citations = append(c.Citations, ct)
 	}
 	return c, nil
@@ -169,8 +168,8 @@ func (s *Service) saveCitations(ctx context.Context, runID int64, cs []Citation)
 		if c.Suspect {
 			suspect = 1
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO run_citations(run_id, message_id, subject, from_addr, date, suspect) VALUES (?, ?, ?, ?, ?, ?)",
-			Args: []any{runID, c.MessageID, c.Subject, c.From, date, suspect}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect}})
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		slog.Default().Warn("could not save a run's citations", "run", runID, "err", err)
@@ -710,6 +709,12 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	}()
 	emit := func(ev WitEvent) {
 		ev.RunID = job.id
+		for i := range ev.Citations { // the run and call that showed each
+			ev.Citations[i].RunID = job.id
+			if ev.Kind == "tool_result" && ev.Result != nil {
+				ev.Citations[i].CallID = ev.Result.CallID
+			}
+		}
 		if len(ev.Citations) > 0 { // saved first: a reader that re-reads after the event finds them
 			s.saveCitations(context.WithoutCancel(job.ctx), job.id, ev.Citations)
 		}
