@@ -165,7 +165,7 @@ func (s *Service) mcpToolDesc(srv MCPServer, def mcpDef, trusted bool) toolDesc 
 		Prepare: func(_ context.Context, _ Conversation, args json.RawMessage) (prepared, error) {
 			return prepared{Args: args, Summary: "Run " + s.pluginText(tool) + " of MCP server " + srv.Name}, nil
 		},
-		Run: func(ctx context.Context, a Approval) (any, error) {
+		Run: func(ctx context.Context, a approvalRow) (any, error) {
 			if beforeMCPApprovedRun != nil {
 				beforeMCPApprovedRun()
 			}

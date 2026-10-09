@@ -125,7 +125,7 @@ func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plu
 		for _, ev := range evs {
 			for {
 				inv := base
-				inv.ID = name + ":" + strconv.FormatInt(ev.seq, 10)
+				inv.ID, inv.Config = name+":"+strconv.FormatInt(ev.seq, 10), rp.host.snapshot()
 				err := rp.p.Emit(ctx, inv, plugins.EventReceived, map[string]any{
 					"id": ev.messageID, "accountId": ev.accountID, "subject": ev.subject, "from": ev.from,
 					"date": time.Unix(ev.date, 0).UTC().Format(time.RFC3339), "deleted": ev.deleted,
@@ -265,8 +265,9 @@ func (s *Service) startJanitor() {
 // revision and the plugin list are still the checked ones.
 
 const (
-	maxSendText  = 500 // runes of a warning or block message
-	sendCheckTTL = 10 * time.Minute
+	maxSendText     = 500 // runes of a warning or block message
+	sendCheckTTL    = 10 * time.Minute
+	sendCheckBudget = 5 * time.Second // each checker's call, waiting for its VM included
 )
 
 // SendWarning is a plugin's warning about a draft; the user may still send.
@@ -280,7 +281,7 @@ const (
 )
 
 // SendCheck is a draft revision's beforeSend outcome with warnings. Plugins
-// are the checking plugins as name@source_hash, sorted by name. Digest binds
+// are the checking plugins as name@source_hash@config_version, sorted by name. Digest binds
 // all of it: SendAcknowledged(DraftID, Digest) queues that revision without
 // checking again while the draft and the plugins are unchanged.
 type SendCheck struct {
@@ -313,9 +314,10 @@ var testPluginClock plugins.Clock
 var duringSendCheck func()
 
 type sendChecker struct {
-	id, name string // id is name@source_hash
+	id, name string // id is name@source_hash@config_version
 	gen      uint64
 	p        *plugins.Plugin
+	cfg      *plugins.ConfigSnapshot // the config it checks with
 }
 
 // sendCheckers are the running plugins with a beforeSend handler, by name.
@@ -330,7 +332,9 @@ func (s *Service) sendCheckersLocked() []sendChecker {
 	var out []sendChecker
 	for name, rp := range s.running {
 		if rp.p.Handles(plugins.EventBeforeSend) {
-			out = append(out, sendChecker{id: name + "@" + rp.hash, name: name, gen: rp.gen, p: rp.p})
+			cfg := rp.host.snapshot()
+			id := name + "@" + rp.hash + "@" + strconv.FormatInt(cfg.Version, 10)
+			out = append(out, sendChecker{id: id, name: name, gen: rp.gen, p: rp.p, cfg: cfg})
 		}
 	}
 	slices.SortFunc(out, func(a, b sendChecker) int { return strings.Compare(a.name, b.name) })
@@ -345,9 +349,10 @@ func checkerIDs(cs []sendChecker) []string {
 	return out
 }
 
-// runSendChecks calls each checker in order; the caller holds no lock. A
-// block ends the checks with *SendBlockedError; an error or timeout is a
-// warning and a failure of that plugin.
+// runSendChecks calls each checker in order, each within sendCheckBudget
+// (its VM busy with other work counts); the caller holds no lock. A block
+// ends the checks with *SendBlockedError; an error or timeout is a warning
+// and a failure of that plugin.
 func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) ([]SendWarning, error) {
 	html := d.HTML
 	if len(html) > plugins.MaxBodyBytes {
@@ -359,7 +364,8 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 		if duringSendCheck != nil {
 			duringSendCheck()
 		}
-		inv := plugins.Invocation{ID: fmt.Sprintf("beforeSend:%d:%d", d.ID, d.Revision), Kind: plugins.KindBeforeSend, EgressHosts: egress}
+		inv := plugins.Invocation{ID: fmt.Sprintf("beforeSend:%d:%d", d.ID, d.Revision), Kind: plugins.KindBeforeSend,
+			EgressHosts: egress, Config: c.cfg}
 		// A fresh argument each: what one plugin does to it, the next never sees.
 		arg := map[string]any{"id": d.ID, "accountId": d.AccountID, "to": slices.Clone(d.To), "cc": slices.Clone(d.Cc),
 			"subject": d.Subject, "html": html}
@@ -367,7 +373,9 @@ func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) 
 			warns = append(warns, SendWarning{Plugin: c.name, Code: WarningNoResponse, Message: "plugin " + c.name + " did not respond"})
 			continue
 		}
-		res, err := c.p.EmitResult(ctx, inv, plugins.EventBeforeSend, arg)
+		cctx, end := s.budget(ctx, sendCheckBudget)
+		res, err := c.p.EmitResult(cctx, inv, plugins.EventBeforeSend, arg)
+		end()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}

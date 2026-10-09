@@ -486,7 +486,7 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		return err
 	}
 	vm := plugins.NewVM(name, prog, plugins.VMOptions{Clock: s.pluginClock, Redact: s.secrets.Redact})
-	p, err := plugins.Load(ctx, vm, r.m, h)
+	p, err := plugins.Load(ctx, vm, r.m, h, h.snapshot())
 	if err != nil {
 		vm.Close()
 		return err

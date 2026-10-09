@@ -88,6 +88,17 @@ type Invocation struct {
 	// Unapproved: the call needed an egress approval it did not get, so it
 	// has no hosts; a fetch to a declared host is denied as approval_required.
 	Unapproved bool
+	// Config is the call's ctx.config, taken when the host admitted the call
+	// (before it waits for the VM); nil makes ctx.config throw.
+	Config *ConfigSnapshot
+}
+
+// ConfigSnapshot is a plugin's configuration at one config version; Err is
+// why it could not be read (ctx.config then throws). Never changed once made.
+type ConfigSnapshot struct {
+	Values  map[string]any
+	Version int64
+	Err     error
 }
 
 // EgressFor is the egress rule for one call of kind into plugin m (plan 4

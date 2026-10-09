@@ -318,9 +318,9 @@ func TestFailureCountsBoundToInstance(t *testing.T) {
 	assert.Equal(t, int64(0), failures())
 }
 
-// ctx.config comes from the running instance's snapshot: reading it never
+// ctx.config is the snapshot a call was admitted with: reading it never
 // waits for pluginsMu, a call sees one snapshot, and a saved config is seen
-// by the next call.
+// by the next call admitted.
 func TestConfigSnapshot(t *testing.T) {
 	s := newMailContextService(t)
 	dir := filepath.Join(t.TempDir(), "cfg")
@@ -333,8 +333,10 @@ func TestConfigSnapshot(t *testing.T) {
 	require.NoError(t, s.GrantPermission(t.Context(), "cfg"))
 	require.NoError(t, s.SetPluginEnabled(t.Context(), "cfg", true))
 	s.pluginsMu.RLock()
-	vm := s.running["cfg"].p.VM()
+	rp := s.running["cfg"]
 	s.pluginsMu.RUnlock()
+	vm := rp.p.VM()
+	admit := func() plugins.Invocation { inv := toolRead; inv.Config = rp.host.snapshot(); return inv }
 	// No require inside a call: FailNow there would end the VM's goroutine.
 	read := func(c *plugins.CallScope) string {
 		v, err := c.Runtime().RunString(`ctx.config.plan`)
@@ -347,13 +349,13 @@ func TestConfigSnapshot(t *testing.T) {
 	// A writer holds the lock (as one waiting for this call to end would).
 	s.pluginsMu.Lock()
 	cctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	got, err := vm.Call(cctx, toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err := vm.Call(cctx, admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
 	cancel()
 	s.pluginsMu.Unlock()
 	require.NoError(t, err)
 	assert.Equal(t, "free", got)
 
-	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) {
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) {
 		before := read(c)
 		done := make(chan error, 1)
 		go func() {
@@ -371,14 +373,14 @@ func TestConfigSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "free,free", got, "one snapshot per call")
-	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
 	require.NoError(t, err)
 	assert.Equal(t, "pro", got)
-	_, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) {
+	_, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) {
 		return c.Runtime().RunString(`ctx.config.plan = "hacked"`)
 	})
 	require.NoError(t, err)
-	got, err = vm.Call(t.Context(), toolRead, func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
 	require.NoError(t, err)
 	assert.Equal(t, "pro", got, "a plugin cannot change the snapshot")
 }

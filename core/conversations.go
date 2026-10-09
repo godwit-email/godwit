@@ -326,7 +326,7 @@ type toolDesc struct {
 	Mode      string
 	Exec      *executor
 	Prepare   func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error)
-	Run       func(ctx context.Context, a Approval) (result any, err error)
+	Run       func(ctx context.Context, a approvalRow) (result any, err error)
 	Binding   func(ctx context.Context) (string, error)
 	Timeout   time.Duration
 }

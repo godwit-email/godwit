@@ -74,6 +74,7 @@ type pluginCall struct {
 	gen  uint64
 	p    *plugins.Plugin
 	row  pluginRow
+	host *pluginHost
 }
 
 func (s *Service) runningPlugins(keep func(*plugins.Plugin) bool) []pluginCall {
@@ -82,7 +83,7 @@ func (s *Service) runningPlugins(keep func(*plugins.Plugin) bool) []pluginCall {
 	var out []pluginCall
 	for name, rp := range s.running {
 		if keep(rp.p) {
-			out = append(out, pluginCall{name, rp.gen, rp.p, rp.row})
+			out = append(out, pluginCall{name, rp.gen, rp.p, rp.row, rp.host})
 		}
 	}
 	slices.SortFunc(out, func(a, b pluginCall) int { return strings.Compare(a.name, b.name) })
@@ -144,7 +145,7 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		return ActionResult{}, &EgressApprovalRequired{Plugin: name, Hosts: hosts}
 	}
 	inv := plugins.Invocation{ID: "action:" + rand.Text(), Kind: plugins.KindAction,
-		Write: slices.Contains(m.Permissions.Mail, "write"), EgressHosts: hosts}
+		Write: slices.Contains(m.Permissions.Mail, "write"), EgressHosts: hosts, Config: pc.host.snapshot()}
 	if needsApproval {
 		if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: name, Tool: "plugin:" + id,
 			CallID: inv.ID, TargetKind: t.Kind, TargetID: t.ID, Destinations: hosts, Decision: "approve"}); err != nil {
@@ -246,18 +247,26 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 	return out, acct
 }
 
-// pluginCard is the plugin's valid card, if it matched; a matched card whose
-// render is not a valid card is an error.
-func (s *Service) pluginCard(ctx context.Context, pc pluginCall, msg plugins.MailMessage) (Card, bool, error) {
+// budget is ctx ending after d on the plugin clock, with cause
+// plugins.ErrTimeout: a caller's limit on plugin calls, waiting for the VM
+// included. end releases it.
+func (s *Service) budget(ctx context.Context, d time.Duration) (_ context.Context, end func()) {
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
 	clock := s.pluginClock
 	if clock == nil {
 		clock = realClock{}
 	}
-	defer clock.AfterFunc(cardBudget, func() { cancel(plugins.ErrTimeout) })()
+	stop := clock.AfterFunc(d, func() { cancel(plugins.ErrTimeout) })
+	return ctx, func() { stop(); cancel(nil) }
+}
+
+// pluginCard is the plugin's valid card, if it matched; a matched card whose
+// render is not a valid card is an error.
+func (s *Service) pluginCard(ctx context.Context, pc pluginCall, msg plugins.MailMessage) (Card, bool, error) {
+	ctx, end := s.budget(ctx, cardBudget)
+	defer end()
 	egress, _ := plugins.EgressFor(plugins.KindCard, pc.row.m, false, true, false) // none, whatever the plugin holds
-	inv := plugins.Invocation{ID: fmt.Sprintf("card:%s:%d", pc.name, msg.ID), Kind: plugins.KindCard, EgressHosts: egress}
+	inv := plugins.Invocation{ID: fmt.Sprintf("card:%s:%d", pc.name, msg.ID), Kind: plugins.KindCard, EgressHosts: egress, Config: pc.host.snapshot()}
 	res, matched, err := pc.p.Card(ctx, inv, msg)
 	if err != nil || !matched {
 		return Card{}, false, err

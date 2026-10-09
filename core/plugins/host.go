@@ -19,7 +19,6 @@ import (
 // Host is what the core gives a plugin's ctx. Permissions are checked before
 // any of it is called. It has no way to send mail, and must never get one.
 type Host interface {
-	Config(ctx context.Context) (map[string]any, error)
 	StorageGet(ctx context.Context, key string) (string, bool, error)
 	StorageSet(ctx context.Context, key, value string) error
 	StorageDelete(ctx context.Context, key string) error
@@ -246,11 +245,11 @@ func pluginMail(m MailMessage) MailMessage {
 }
 
 // Load builds the ctx object and runs the plugin's initialization in an init
-// invocation (no writes, no egress), recording what it registers.
-func Load(ctx context.Context, vm *VM, m Manifest, h Host) (*Plugin, error) {
+// invocation (no writes, no egress, cfg as ctx.config), recording what it registers.
+func Load(ctx context.Context, vm *VM, m Manifest, h Host, cfg *ConfigSnapshot) (*Plugin, error) {
 	p := &Plugin{Name: m.Name, m: m, h: h, vm: vm, events: map[string]goja.Callable{}}
 	egress, _ := EgressFor(KindInit, m, true, false, false) // none: init never fetches
-	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit, EgressHosts: egress}, p.newCtx); err != nil {
+	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit, EgressHosts: egress, Config: cfg}, p.newCtx); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -534,12 +533,19 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		"mail", mail, "llm", llm, "net", netObj, "storage", storage,
 	)
 	_ = o.DefineAccessorProperty("config", fn("config", func(c *CallScope, _ goja.FunctionCall) goja.Value {
-		if p.cfgCall != c {
-			cfg, err := p.h.Config(c.Context())
+		if p.cfgCall != c { // the invocation's snapshot, copied: what the plugin does to it stays in its call
+			cfg := c.Invocation().Config
+			if cfg == nil || cfg.Err != nil {
+				panic(errors.New("the plugin's configuration could not be read"))
+			}
+			vals, err := jsonData(cfg.Values)
 			if err != nil {
 				panic(err)
 			}
-			p.cfgCall, p.cfgVal = c, c.Runtime().ToValue(cfg)
+			if vals == nil {
+				vals = map[string]any{}
+			}
+			p.cfgCall, p.cfgVal = c, c.Runtime().ToValue(vals)
 		}
 		return p.cfgVal
 	}), nil, goja.FLAG_FALSE, goja.FLAG_TRUE)

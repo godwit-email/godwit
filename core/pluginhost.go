@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	netmail "net/mail"
 	"slices"
 	"strings"
@@ -25,31 +24,20 @@ type pluginHost struct {
 	s      *Service
 	name   string
 	net    *plugins.Client
-	config atomic.Pointer[configSnapshot] // ctx.config of this instance
-}
-
-type configSnapshot struct {
-	vals map[string]any
-	err  error
+	config atomic.Pointer[plugins.ConfigSnapshot] // the current config; each call takes it when admitted
 }
 
 // refreshConfig replaces the snapshot with the stored config. The caller
 // holds pluginsMu. A read failure is kept, so ctx.config throws rather than
 // serving values that are no longer saved.
 func (h *pluginHost) refreshConfig(ctx context.Context) error {
-	vals, _, err := h.s.pluginConfigLocked(ctx, h.name)
-	h.config.Store(&configSnapshot{vals, err})
+	vals, ver, err := h.s.pluginConfigLocked(ctx, h.name)
+	h.config.Store(&plugins.ConfigSnapshot{Values: vals, Version: ver, Err: err})
 	return err
 }
 
-// Config is a copy of the snapshot: what a plugin does to it stays in its call.
-func (h *pluginHost) Config(context.Context) (map[string]any, error) {
-	c := h.config.Load()
-	if c == nil || c.err != nil {
-		return nil, errors.New("the plugin's configuration could not be read")
-	}
-	return maps.Clone(c.vals), nil
-}
+// snapshot is the config a call admitted now runs with (Invocation.Config).
+func (h *pluginHost) snapshot() *plugins.ConfigSnapshot { return h.config.Load() }
 
 func (h *pluginHost) do(ctx context.Context, f func(ctx context.Context) error) error {
 	ctx, end, err := h.s.begin(ctx, 0)
@@ -349,7 +337,7 @@ func (s *Service) unregisterPluginTools(name string) {
 // plugin's code, permissions and config. The Invocation, not the tool's own
 // write flag alone, decides what the call may do.
 func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo) toolDesc {
-	pc := pluginCall{name, rp.gen, rp.p, rp.row}
+	pc := pluginCall{name, rp.gen, rp.p, rp.row, rp.host}
 	m, granted := rp.row.m, rp.row.granted == rp.row.permHash
 	readsMail := slices.Contains(m.Permissions.Mail, "read")
 	spec := ai.ToolSpec{Name: pluginToolName(name, ti.Name), Description: ti.Description, Schema: ti.Schema,
@@ -384,7 +372,7 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 				beforePluginToolRun(ctx)
 			}
 			scope := runOf(ctx).scope
-			inv := plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool}
+			inv := plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool, Config: rp.host.snapshot()}
 			// Decided again now: a scope that read mail since the gate allowed
 			// the call leaves it without hosts (fail closed).
 			readMail := scope.ReadMail()
@@ -418,10 +406,16 @@ func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo
 			}
 			return prepared{Args: args, Summary: "Run " + ti.Name + " of plugin " + name}, nil
 		},
-		Run: func(ctx context.Context, a Approval) (any, error) {
+		Run: func(ctx context.Context, a approvalRow) (any, error) {
+			// The config it runs with is the one the approval was bound to, or
+			// it does not run: taken now, it is the call's whatever is saved later.
+			cfg := rp.host.snapshot()
+			if cfg.Err != nil || a.binding != pluginBindingOf(rp.row.sourceHash, rp.row.permHash, cfg.Version) {
+				return nil, ErrStaleApproval
+			}
 			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, true, true) // the approval listed them
 			return s.runPluginTool(ctx, pc, ti.Name, a.Args, plugins.Invocation{ID: fmt.Sprintf("approval:%d", a.ID),
-				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts})
+				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts, Config: cfg})
 		},
 		Binding: func(ctx context.Context) (string, error) { return s.pluginBinding(ctx, name, rp.hash) },
 	}
@@ -440,7 +434,11 @@ func (s *Service) pluginBinding(ctx context.Context, name, hash string) (string,
 		return "", fmt.Errorf("plugin %s changed or is not running", name)
 	}
 	r := rows.Values[0]
-	return fmt.Sprintf("%s:%s:%d", store.Str(r[0]), store.Str(r[1]), store.Int(r[2])), nil
+	return pluginBindingOf(store.Str(r[0]), store.Str(r[1]), store.Int(r[2])), nil
+}
+
+func pluginBindingOf(sourceHash, permHash string, configVersion int64) string {
+	return fmt.Sprintf("%s:%s:%d", sourceHash, permHash, configVersion)
 }
 
 // runPluginTool runs the tool under inv and accounts for the call. Its

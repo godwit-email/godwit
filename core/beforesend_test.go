@@ -72,7 +72,9 @@ func pluginID(t *testing.T, s *Service, name string) string {
 	t.Helper()
 	hash, ok := s.RunningPluginForTest(name)
 	require.True(t, ok)
-	return name + "@" + hash
+	_, ver, err := s.PluginConfigForTest(name)
+	require.NoError(t, err)
+	return fmt.Sprintf("%s@%s@%d", name, hash, ver)
 }
 
 func TestBeforeSendWarnThenAcknowledge(t *testing.T) {

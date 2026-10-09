@@ -33,12 +33,12 @@ func extDescsForTest(e *extEnv, prepare func(context.Context, Conversation, json
 			Run: func(context.Context, json.RawMessage) (any, error) { e.inRun.Add(1); return "read in run", nil }},
 			Source: gateway.SourceMCP, Extension: "srv1", Mode: modeExternal, Prepare: prepare,
 			Egress: func(*gateway.Scope) []string { return []string{leakyDest} },
-			Run:    func(context.Context, Approval) (any, error) { e.runs.Add(1); return "read approved", nil }},
+			Run:    func(context.Context, approvalRow) (any, error) { e.runs.Add(1); return "read approved", nil }},
 		{Spec: ai.ToolSpec{Name: "ext_write", Description: "Writes remotely.", Schema: empty},
 			Source: gateway.SourcePlugin, Extension: "demo", Write: true, Mode: modeExternal, Prepare: prepare,
 			Binding: func(context.Context) (string, error) { return e.binding.Load().(string), nil },
 			Timeout: 10 * time.Second,
-			Run: func(ctx context.Context, _ Approval) (any, error) {
+			Run: func(ctx context.Context, _ approvalRow) (any, error) {
 				e.runs.Add(1)
 				if e.started != nil {
 					e.started <- struct{}{}

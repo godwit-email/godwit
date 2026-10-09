@@ -46,10 +46,6 @@ func (h *fakeHost) got() []string {
 	return slices.Clone(h.calls)
 }
 
-func (h *fakeHost) Config(context.Context) (map[string]any, error) {
-	h.rec("Config")
-	return map[string]any{"plan": "free", "n": 3.0}, nil
-}
 func (h *fakeHost) StorageGet(_ context.Context, k string) (string, bool, error) {
 	h.rec("StorageGet")
 	h.mu.Lock()
@@ -109,7 +105,7 @@ const stash = `var plugin = {default(ctx){ globalThis.ctx = ctx }}`
 
 func loadTest(t *testing.T, perms Permissions, h Host, src string) (*Plugin, error) {
 	t.Helper()
-	return Load(context.Background(), newTestVM(t, src, nil), Manifest{Name: "test", Permissions: perms}, h)
+	return Load(context.Background(), newTestVM(t, src, nil), Manifest{Name: "test", Permissions: perms}, h, testConfig)
 }
 
 func mustLoad(t *testing.T, perms Permissions, h Host, src string) *Plugin {
@@ -131,8 +127,9 @@ func try(t *testing.T, p *Plugin, inv Invocation, expr string) any {
 }
 
 var (
-	readOnly = Invocation{ID: "r", Kind: KindTool}
-	writable = Invocation{ID: "w", Kind: KindTool, Write: true}
+	testConfig = &ConfigSnapshot{Values: map[string]any{"plan": "free", "n": 3.0, "tags": []any{"a"}}, Version: 1}
+	readOnly   = Invocation{ID: "r", Kind: KindTool, Config: testConfig}
+	writable   = Invocation{ID: "w", Kind: KindTool, Write: true, Config: testConfig}
 )
 
 func TestCtxManifestPermissions(t *testing.T) {
@@ -301,7 +298,15 @@ func TestCtxConfigAndStorage(t *testing.T) {
 	p := mustLoad(t, Permissions{}, h, `var plugin = {default(ctx){ globalThis.ctx = ctx; globalThis.atInit = ctx.config.plan }}`)
 	assert.Equal(t, "free", try(t, p, readOnly, `atInit`))
 	assert.Equal(t, 3.0, try(t, p, readOnly, `ctx.config.n + 0 * ctx.config.n`))
-	assert.Equal(t, []string{"Config", "Config"}, h.got(), "read once per call")
+	assert.Equal(t, true, try(t, p, readOnly, `ctx.config === ctx.config`), "one value per call")
+	assert.Equal(t, 9.0, try(t, p, readOnly, `(ctx.config.n = 9, ctx.config.tags.push("b"), ctx.config.n)`))
+	assert.Equal(t, "3 a", try(t, p, readOnly, `ctx.config.n + " " + ctx.config.tags.join()`), "a change stays in its call")
+	assert.Equal(t, []any{"a"}, testConfig.Values["tags"])
+	other := &ConfigSnapshot{Values: map[string]any{"plan": "pro"}, Version: 2}
+	assert.Equal(t, "pro", try(t, p, Invocation{Kind: KindTool, Config: other}, `ctx.config.plan`), "the invocation's snapshot")
+	assert.Contains(t, try(t, p, Invocation{Kind: KindTool}, `ctx.config.plan`), "configuration could not be read")
+	assert.Contains(t, try(t, p, Invocation{Kind: KindTool, Config: &ConfigSnapshot{Err: errors.New("x")}}, `ctx.config`), "could not be read")
+	assert.Empty(t, h.got())
 	assert.Equal(t, "v", try(t, p, readOnly, `ctx.storage.set("k", "v").then(() => ctx.storage.get("k"))`))
 	assert.Equal(t, nil, try(t, p, readOnly, `ctx.storage.get("missing")`))
 	assert.Contains(t, try(t, p, readOnly, `ctx.storage.set("k", 5)`), "string")
@@ -330,7 +335,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	for i := range ht.NumMethod() {
 		methods = append(methods, ht.Method(i).Name)
 	}
-	assert.Equal(t, []string{"AuditEgress", "Config", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
+	assert.Equal(t, []string{"AuditEgress", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
 		"MailSetFlags", "MailUpdateDraft", "StorageDelete", "StorageGet", "StorageSet"}, methods)
 }
 
