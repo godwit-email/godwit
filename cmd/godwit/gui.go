@@ -59,15 +59,13 @@ func gui(ctx context.Context, dataDir string) int {
 		lang := mygo.App.Locale()
 		var err error
 		release, err = ownerlock.Acquire(dataDir)
-		if errors.Is(err, ownerlock.ErrAnotherOwner) {
+		if err != nil {
 			i18n.SetLanguage(lang)
-			mygo.Dialog.Error("Godwit", i18n.T("app.another_owner"))
-			code = 2
+			var msg string
+			msg, code = lockFailure(err)
+			mygo.Dialog.Error("Godwit", msg)
 			mygo.App.Quit()
 			return
-		}
-		if err != nil {
-			log.Fatal(err)
 		}
 		svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, SystemLanguage: lang})
 		if err != nil {
@@ -161,4 +159,13 @@ func gui(ctx context.Context, dataDir string) int {
 		release()
 	}
 	return code
+}
+
+// lockFailure is what the GUI tells the user when it cannot own the data
+// directory, and its exit code. The message never carries err's text.
+func lockFailure(err error) (msg string, code int) {
+	if errors.Is(err, ownerlock.ErrAnotherOwner) {
+		return i18n.T("app.another_owner"), 2
+	}
+	return i18n.T("app.lock_failed"), 1
 }

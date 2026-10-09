@@ -532,6 +532,7 @@ var en = map[string]string{
 	"tray.sync_all":     "Sync all accounts now",
 	"tray.quit":         "Quit",
 	"app.another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
+	"app.lock_failed":   "Godwit could not open its data directory.",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",

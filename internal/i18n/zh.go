@@ -532,6 +532,7 @@ var zh = map[string]string{
 	"tray.sync_all":     "立即同步全部账户",
 	"tray.quit":         "退出",
 	"app.another_owner": "Godwit 已在运行（GUI 或 headless）。",
+	"app.lock_failed":   "Godwit 无法打开数据目录。",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",

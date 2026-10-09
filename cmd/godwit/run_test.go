@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -17,6 +20,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
@@ -126,11 +131,30 @@ func TestHeadlessServes(t *testing.T) {
 func TestHeadlessSecondInstance(t *testing.T) {
 	dir := shortDir(t)
 	startHeadless(t, dir)
-	db := filepath.Join(dir, "godwit.db")
-	before, err := os.Stat(db)
-	if err != nil {
-		t.Fatal(err)
+	// Rows a crash left mid-send: opening the database would recover them.
+	// No worker runs for an account added after startup, so only a second
+	// core.New could change them.
+	outbox := func(seed bool) [][]any {
+		db, err := store.Open(context.Background(), filepath.Join(dir, "godwit.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if seed {
+			for _, q := range []string{"INSERT INTO accounts(id, email) VALUES (1, 'me@x')",
+				"INSERT INTO outbox(account_id, state) VALUES (1, 'sending'), (1, 'archiving')"} {
+				if _, err := db.Execute(context.Background(), q); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		r, err := db.Query(context.Background(), "SELECT state FROM outbox ORDER BY id")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Values
 	}
+	before := outbox(true)
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), []string{"--headless", "--data-dir", dir}, nil, &stdout, &stderr); code != 2 {
 		t.Fatalf("second instance: code %d, stderr %q", code, stderr.String())
@@ -138,9 +162,8 @@ func TestHeadlessSecondInstance(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Godwit 已在运行（GUI 或 headless）") {
 		t.Fatalf("stderr %q", stderr.String())
 	}
-	after, err := os.Stat(db)
-	if err != nil || !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
-		t.Fatalf("the second instance touched the database: %v -> %v, %v", before.ModTime(), after.ModTime(), err)
+	if after := outbox(false); len(before) != 2 || !reflect.DeepEqual(after, before) {
+		t.Fatalf("the second instance ran outbox recovery: %v -> %v", before, after)
 	}
 }
 
@@ -237,15 +260,20 @@ func TestCallError(t *testing.T) {
 }
 
 func TestUsageAndVersion(t *testing.T) {
-	for _, args := range [][]string{{"call"}, {"call", "M", "not json"}, {"--nope"}, {"frobnicate"}} {
+	for _, args := range [][]string{{"call"}, {"call", "M", "not json"}, {"call", "--data-dir", shortDir(t), "M", "null"}, {"--nope"}, {"frobnicate"}} {
 		var stdout, stderr bytes.Buffer
-		if code := run(context.Background(), args, nil, &stdout, &stderr); code != 2 {
-			t.Errorf("%v: code %d", args, code)
+		if code := run(context.Background(), args, nil, &stdout, &stderr); code != 2 || stderr.Len() == 0 {
+			t.Errorf("%v: code %d, stderr %q", args, code, stderr.String())
 		}
 	}
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), []string{"--version"}, nil, &stdout, &stderr); code != 0 || !strings.HasPrefix(stdout.String(), "godwit ") {
 		t.Fatalf("--version: %d %q", code, stdout.String())
+	}
+	stdout.Reset()
+	// macOS LaunchServices may pass -psn_<serial> to an app it launches.
+	if code := run(context.Background(), []string{"-psn_0_12345", "--version"}, nil, &stdout, &stderr); code != 0 || !strings.HasPrefix(stdout.String(), "godwit ") {
+		t.Fatalf("-psn_ not ignored: %d %q %q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -299,5 +327,77 @@ func TestSigintShutdown(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, rpc.SocketName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("socket left behind: %v", err)
+	}
+}
+
+// failWriter fails every write.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+func TestCallWriteError(t *testing.T) {
+	dir := shortDir(t)
+	c, _, _ := startHeadless(t, dir)
+	var stderr bytes.Buffer
+	if code := run(context.Background(), []string{"call", "--data-dir", dir, "GetSettings"}, nil, failWriter{}, &stderr); code != 1 || stderr.Len() == 0 {
+		t.Fatalf("result: code %d, stderr %q", code, stderr.String())
+	}
+	// A stream whose output fails ends by itself: no ctx cancel here.
+	errOut := &syncBuf{}
+	done := make(chan int, 1)
+	go func() {
+		done <- run(context.Background(), []string{"call", "--data-dir", dir, "Subscribe"}, nil, failWriter{}, errOut)
+	}()
+	var st core.Settings
+	if err := c.Call(context.Background(), "GetSettings", &st); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(20 * time.Second)
+	for {
+		select {
+		case code := <-done:
+			if code != 1 || errOut.String() == "" {
+				t.Fatalf("stream: code %d, stderr %q", code, errOut.String())
+			}
+			return
+		case <-deadline:
+			t.Fatal("the stream kept going after stdout failed")
+		case <-time.After(20 * time.Millisecond):
+			c.Call(context.Background(), "SetSettings", nil, st)
+		}
+	}
+}
+
+// A secret is redacted before slog formats (and escapes) it.
+func TestLogRedactsBeforeFormatting(t *testing.T) {
+	secret := "pa\"ss\\wo\nrd-1234567"
+	redact := func(s string) string { return strings.ReplaceAll(s, secret, "[redacted]") }
+	var buf bytes.Buffer
+	log := slog.New(newLogHandler(&buf, redact))
+	log.With("with", secret).WithGroup("g").Error("msg "+secret, "attr", secret, "err", errors.New("e: "+secret),
+		slog.Group("inner", "deep", secret), slog.Any(secret, 1))
+	out := buf.String()
+	for _, form := range []string{secret, fmt.Sprintf("%q", secret)[1 : len(fmt.Sprintf("%q", secret))-1], "1234567"} {
+		if strings.Contains(out, form) {
+			t.Fatalf("%q in log output %q", form, out)
+		}
+	}
+	if strings.Count(out, "[redacted]") != 6 {
+		t.Fatalf("log output %q", out)
+	}
+}
+
+func TestGUILockFailure(t *testing.T) {
+	defer i18n.SetLanguage(i18n.Language())
+	for _, lang := range []string{"en", "zh-CN"} {
+		i18n.SetLanguage(lang)
+		msg, code := lockFailure(ownerlock.ErrAnotherOwner)
+		if code != 2 || msg != i18n.T("app.another_owner") || msg == "app.another_owner" {
+			t.Errorf("%s: another owner: %q %d", lang, msg, code)
+		}
+		msg, code = lockFailure(fmt.Errorf("open /secret/path: %w", os.ErrPermission))
+		if code != 1 || msg != i18n.T("app.lock_failed") || msg == "app.lock_failed" || strings.Contains(msg, "/secret") {
+			t.Errorf("%s: other failure: %q %d", lang, msg, code)
+		}
 	}
 }

@@ -29,8 +29,8 @@ func call(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	method := fs.Arg(0)
 	var params []json.RawMessage
 	if fs.NArg() == 2 {
-		if err := json.Unmarshal([]byte(fs.Arg(1)), &params); err != nil {
-			fmt.Fprintln(stderr, "godwit call: the arguments must be a JSON array:", err)
+		if err := json.Unmarshal([]byte(fs.Arg(1)), &params); err != nil || params == nil {
+			fmt.Fprintln(stderr, "godwit call: the arguments must be a JSON array, such as [] or [1, \"text\"]")
 			return 2
 		}
 	}
@@ -54,7 +54,9 @@ func call(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		if err := c.Call(ctx, method, &res, argv...); err != nil {
 			return printErr(stderr, err)
 		}
-		fmt.Fprintf(stdout, "%s\n", res)
+		if _, err := fmt.Fprintf(stdout, "%s\n", res); err != nil {
+			return printErr(stderr, err)
+		}
 		return 0
 	}
 	events, cancel, err := c.Stream(ctx, method, argv...)
@@ -63,7 +65,10 @@ func call(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	defer cancel()
 	for ev := range events {
-		fmt.Fprintf(stdout, "%s\n", ev)
+		if _, err := fmt.Fprintf(stdout, "%s\n", ev); err != nil {
+			cancel()
+			return printErr(stderr, err)
+		}
 	}
 	if err := c.StreamErr(events); err != nil {
 		return printErr(stderr, err)
@@ -78,7 +83,8 @@ func isStream(method string) bool {
 }
 
 // printErr prints "code: message" (a registered error's stable code, else
-// the JSON-RPC code) and returns 1.
+// the JSON-RPC code; "error" for a local failure, such as stdout's) to stderr,
+// best effort, and returns 1.
 func printErr(stderr io.Writer, err error) int {
 	code := "error"
 	var we *rpc.WireError

@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
+	"strings"
 
 	"github.com/godwit-email/godwit/app"
 )
@@ -23,6 +25,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if len(args) > 0 && args[0] == "call" {
 		return call(ctx, args[1:], stdout, stderr)
 	}
+	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return strings.HasPrefix(a, "-psn_") }) // from macOS LaunchServices
 	fs := newFlagSet("godwit", stderr)
 	isHeadless := fs.Bool("headless", false, "")
 	version := fs.Bool("version", false, "")
