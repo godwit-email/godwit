@@ -267,13 +267,26 @@ func (c *conv) image(n *html.Node, x ctx) {
 	c.emit(Block{Kind: ImageBlock, Image: &Image{Src: src, Alt: alt, Width: max(w, 0), Height: max(h, 0)}})
 }
 
-// table keeps a data table (header cells, no nested table or image) as a
-// table and lays any other out as the flow of its cells.
+// maxColumns is the widest table kept as a table.
+const maxColumns = 8
+
+// table keeps a data table (header cells, at most maxColumns columns, no
+// nested table or image) as a table and lays any other out as the flow of
+// its cells.
 func (c *conv) table(n *html.Node, x ctx) {
 	c.flush()
 	var rows []*html.Node
 	header, layout := false, c.compose
-	walkTable(n, func(tr *html.Node) { rows = append(rows, tr) })
+	walkTable(n, func(tr *html.Node) {
+		rows = append(rows, tr)
+		cols := 0
+		for td := tr.FirstChild; td != nil; td = td.NextSibling {
+			if td.DataAtom == atom.Td || td.DataAtom == atom.Th {
+				cols++
+			}
+		}
+		layout = layout || cols > maxColumns
+	})
 	for k := range descendants(n) {
 		switch k.DataAtom {
 		case atom.Th:

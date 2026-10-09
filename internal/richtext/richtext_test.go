@@ -354,3 +354,23 @@ func TestToHTMLOffsets(t *testing.T) {
 	assert.True(t, strings.HasPrefix(at(1, 0), "x</li>"))
 	assert.Equal(t, len(h), off(Pos{9, 0}), "past the end")
 }
+
+func TestWideTableFlattens(t *testing.T) {
+	row := func(tag string, n int) string {
+		var sb strings.Builder
+		sb.WriteString("<tr>")
+		for i := range n {
+			fmt.Fprintf(&sb, "<%s>%s%d</%s>", tag, tag, i, tag)
+		}
+		return sb.String() + "</tr>"
+	}
+	d, _ := FromMailHTML(sanitized(t, "<table>"+row("th", 8)+row("td", 8)+"</table>"), DefaultLimits)
+	require.Len(t, d.Blocks, 1)
+	assert.Equal(t, Table, d.Blocks[0].Kind, "8 columns stay a table")
+
+	d, _ = FromMailHTML(sanitized(t, "<table>"+row("th", 2)+row("td", 9)+"</table>"), DefaultLimits)
+	for _, b := range d.Blocks {
+		assert.NotEqual(t, Table, b.Kind, "9 columns become paragraphs")
+	}
+	assert.Contains(t, d.PlainText(), "td8")
+}
