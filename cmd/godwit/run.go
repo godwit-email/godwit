@@ -16,6 +16,7 @@ const usage = `usage:
   godwit [--data-dir DIR]                                the desktop app
   godwit --headless [--data-dir DIR]                     serve the Local API without a window
   godwit call [--data-dir DIR] METHOD [JSON_ARGS_ARRAY]  call the running Godwit once
+  godwit mcp [--data-dir DIR]                            an MCP server on stdio for agents: read mail, write drafts
   godwit --version
 `
 
@@ -24,6 +25,9 @@ const usage = `usage:
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "call" {
 		return call(ctx, args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "mcp" {
+		return mcpCmd(ctx, args[1:], stdin, stdout, stderr)
 	}
 	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return strings.HasPrefix(a, "-psn_") }) // from macOS LaunchServices
 	fs := newFlagSet("godwit", stderr)
