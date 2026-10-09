@@ -61,7 +61,9 @@ func listFolders(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 	var a struct {
 		AccountID int64 `json:"account_id"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	var fs []core.Folder
 	if err := c.Call(ctx, "ListFolders", &fs, a.AccountID); err != nil {
 		return "", err
@@ -84,7 +86,9 @@ func listThreads(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		Cursor   string `json:"cursor"`
 		Limit    int    `json:"limit"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	if (a.FolderID == 0) == (a.Unified == "") {
 		return "", errors.New("give exactly one of folder_id and unified")
 	}
@@ -118,7 +122,9 @@ func getThread(ctx context.Context, c *rpc.Client, args json.RawMessage) (string
 	var a struct {
 		ThreadID int64 `json:"thread_id"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	var t core.Thread
 	if err := c.Call(ctx, "GetThread", &t, a.ThreadID); err != nil {
 		return "", err
@@ -137,7 +143,9 @@ func getMessage(ctx context.Context, c *rpc.Client, args json.RawMessage) (strin
 	var a struct {
 		MessageID int64 `json:"message_id"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	var m core.MessageText
 	if err := c.Call(ctx, "GetMessageText", &m, a.MessageID); err != nil {
 		return "", err
@@ -170,7 +178,9 @@ func search(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, e
 		AccountID int64  `json:"account_id"`
 		Limit     int    `json:"limit"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	if a.Limit == 0 {
 		a.Limit = 50
 	}
@@ -190,7 +200,9 @@ func listDrafts(ctx context.Context, c *rpc.Client, args json.RawMessage) (strin
 	var a struct {
 		AccountID int64 `json:"account_id"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	var ds []core.Draft
 	if err := c.Call(ctx, "ListDrafts", &ds, a.AccountID); err != nil {
 		return "", err
@@ -207,7 +219,9 @@ func getDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (string,
 	var a struct {
 		DraftID int64 `json:"draft_id"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	var d core.Draft
 	if err := c.Call(ctx, "GetDraft", &d, a.DraftID); err != nil {
 		return "", err
@@ -251,7 +265,9 @@ func createDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		ReplyTo   int64 `json:"reply_to_message_id"`
 		ReplyAll  bool  `json:"reply_all"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
 	mode, account := "new", a.AccountID
 	switch {
 	case a.ReplyTo != 0:
@@ -298,7 +314,12 @@ func updateDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		DraftID  int64 `json:"draft_id"`
 		Revision int64 `json:"revision"`
 	}
-	json.Unmarshal(args, &a)
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if a.Revision <= 0 { // save treats 0 as "no check"
+		return "", errors.New("invalid argument: revision (expected integer ≥ 1)")
+	}
 	return save(ctx, c, a.DraftID, a.Revision, a.edit)
 }
 
@@ -320,6 +341,15 @@ func save(ctx context.Context, c *rpc.Client, id, revision int64, e edit) (strin
 	b.WriteString("saved; it is not sent\n")
 	draft(&b, d, true)
 	return b.String(), nil
+}
+
+// decode decodes checked arguments into v; it fails only if they do not fit
+// v, and then says so without repeating them.
+func decode(args json.RawMessage, v any) error {
+	if json.Unmarshal(args, v) != nil {
+		return errors.New("invalid arguments")
+	}
+	return nil
 }
 
 // summary writes a message as listed.

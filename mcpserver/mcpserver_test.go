@@ -356,14 +356,26 @@ func TestMCPUpdateDraftStale(t *testing.T) {
 	assert.Equal(t, d.Revision, now.Revision)
 }
 
-// Reading a message with an inline image and an attachment fetches neither.
+// inlineAndAttached has an HTML body showing a cid: image (its own MIME part)
+// and a PDF.
+const inlineAndAttached = "Message-ID: <ia@x>\r\nFrom: Bob <bob@example.com>\r\nTo: alice@example.com\r\n" +
+	"Subject: Chart\r\nDate: Mon, 05 Oct 2026 10:00:00 +0000\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=MX\r\n\r\n" +
+	"--MX\r\nContent-Type: multipart/related; boundary=RX\r\n\r\n" +
+	"--RX\r\nContent-Type: multipart/alternative; boundary=AX\r\n\r\n" +
+	"--AX\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nsee the chart\r\n" +
+	"--AX\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>see <img src=\"cid:c1\"></p>\r\n--AX--\r\n" +
+	"--RX\r\nContent-Type: image/png\r\nContent-ID: <c1>\r\nContent-Disposition: inline; filename=\"c.png\"\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n--RX--\r\n" +
+	"--MX\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"r.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--MX--\r\n"
+
+// Reading a message with an inline image and an attachment fetches neither:
+// no IMAP traffic at all (so no FETCH of either part), nothing cached.
 func TestMCPReadDownloadsNothing(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")
-	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Chart", "see the chart",
-		coretest.HTML(`<p>see <img src="cid:c1"></p>`), coretest.Attachment("r.pdf", "application/pdf", []byte("%PDF-1.4"))))
+	e.Deliver(t, acc.ID, "INBOX", []byte(inlineAndAttached))
 	page, err := e.Svc.ListMessages(t.Context(), core.View{Unified: "inbox"}, "", 0)
 	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
 	cs, _ := bridge(t, e)
 
 	before := e.IMAP(acc.ID).BytesSent()
@@ -371,6 +383,53 @@ func TestMCPReadDownloadsNothing(t *testing.T) {
 	ok(t, cs, "get_thread", map[string]any{"thread_id": page.Items[0].ThreadID})
 	assert.Equal(t, before, e.IMAP(acc.ID).BytesSent(), "no IMAP traffic")
 	assert.Zero(t, cacheFiles(e.DataDir))
-	assert.Contains(t, out, `field="attachment_name">r.pdf</untrusted_email>`)
-	assert.Regexp(t, `attachment \d+ · \d+ bytes\n`, out)
+	assert.Regexp(t, `attachment \d+ · \d+ bytes · inline\n<untrusted_email id="message-\d+" field="attachment_name">c.png</untrusted_email>`, out)
+	assert.Regexp(t, `attachment \d+ · \d+ bytes\n<untrusted_email id="message-\d+" field="attachment_name">r.pdf</untrusted_email>`, out)
+	assert.Contains(t, out, `field="body">see the chart</untrusted_email>`)
+}
+
+// Numbers JSON Schema accepts as integers but Go does not decode (1.0, 1e0,
+// out of int64 range) are refused; they never reach SaveDraft as revision 0,
+// which would skip the revision check.
+func TestMCPUpdateDraftRevisionNotInteger(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	cs, _ := bridge(t, e)
+	for _, rev := range []string{"1.0", "1e0", "99999999999999999999999"} {
+		text, isErr := call(t, cs, "update_draft", map[string]any{"draft_id": d.ID, "revision": json.RawMessage(rev), "subject": "changed"})
+		assert.True(t, isErr, "%s: %s", rev, text)
+		assert.Equal(t, "invalid argument: revision (expected integer ≥ 1)", text, rev)
+	}
+	now, err := e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, d.Revision, now.Revision)
+	assert.Empty(t, now.Subject)
+}
+
+// Invalid arguments are named, never echoed: a secret pasted in the wrong
+// place does not come back in the error.
+func TestMCPValidationErrorsEchoNothing(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	cs, _ := bridge(t, e)
+	const secret = "sk-ant-api03-SECRETSECRETSECRET"
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"get_draft", map[string]any{"draft_id": secret}, "invalid argument: draft_id (expected integer ≥ 1)"},
+		{"get_draft", map[string]any{}, "missing argument: draft_id"},
+		{"get_draft", map[string]any{"draft_id": 1, secret: 1}, "unknown argument"},
+		{"list_threads", map[string]any{"unified": secret}, "invalid argument: unified (expected one of inbox, starred)"},
+		{"list_threads", map[string]any{"unified": "inbox", "limit": 51}, "invalid argument: limit (expected integer from 1 to 50)"},
+		{"create_draft", map[string]any{"body": "b", "to": []any{secret, 1}}, "invalid argument: to (expected array of strings)"},
+	} {
+		text, isErr := call(t, cs, c.tool, c.args)
+		assert.True(t, isErr, text)
+		assert.Equal(t, c.want, text)
+		assert.NotContains(t, text, "SECRET")
+	}
 }

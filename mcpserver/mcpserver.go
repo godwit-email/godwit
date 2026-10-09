@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/rpc"
@@ -38,10 +41,7 @@ func New(c *rpc.Client, version string) *mcp.Server {
 		if err := json.Unmarshal([]byte(t.schema), &schema); err != nil {
 			panic(fmt.Sprintf("mcpserver: %s schema: %v", t.name, err))
 		}
-		resolved, err := schema.Resolve(nil)
-		if err != nil {
-			panic(fmt.Sprintf("mcpserver: %s schema: %v", t.name, err))
-		}
+		check := checker(t.name, &schema)
 		s.AddTool(&mcp.Tool{Name: t.name, Description: t.desc, InputSchema: &schema,
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: t.readOnly, DestructiveHint: new(false), OpenWorldHint: new(false)}},
 			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -49,12 +49,8 @@ func New(c *rpc.Client, version string) *mcp.Server {
 				if len(args) == 0 || string(args) == "null" {
 					args = json.RawMessage("{}")
 				}
-				var v any
-				if err := json.Unmarshal(args, &v); err != nil {
-					return result("invalid arguments: "+err.Error(), true), nil
-				}
-				if err := resolved.Validate(v); err != nil {
-					return result("invalid arguments: "+err.Error(), true), nil
+				if err := check(args); err != nil {
+					return result(err.Error(), true), nil
 				}
 				text, err := t.run(ctx, c, args)
 				if err != nil {
@@ -77,4 +73,67 @@ func message(err error) string {
 		return "draft changed, read it again"
 	}
 	return err.Error()
+}
+
+// checker validates a tool's arguments against its schema (an object of
+// top-level properties) one property at a time, so an error names the
+// argument and what it expects but never repeats a value or an unknown name:
+// an agent may have pasted a secret there. An integer must also fit an
+// int64 as Go decodes it (1.0, 1e0 and huge numbers pass JSON Schema).
+func checker(tool string, schema *jsonschema.Schema) func(json.RawMessage) error {
+	props := map[string]*jsonschema.Resolved{}
+	for name, p := range schema.Properties {
+		r, err := p.Resolve(nil)
+		if err != nil {
+			panic(fmt.Sprintf("mcpserver: %s schema: %s: %v", tool, name, err))
+		}
+		props[name] = r
+	}
+	return func(args json.RawMessage) error {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(args, &m); err != nil || m == nil {
+			return errors.New("invalid arguments: expected a JSON object")
+		}
+		for _, name := range slices.Sorted(maps.Keys(m)) {
+			r := props[name]
+			if r == nil {
+				return errors.New("unknown argument")
+			}
+			var v any
+			bad := json.Unmarshal(m[name], &v) != nil || r.Validate(v) != nil
+			if p := schema.Properties[name]; !bad && p.Type == "integer" {
+				bad = json.Unmarshal(m[name], new(int64)) != nil
+			}
+			if bad {
+				return fmt.Errorf("invalid argument: %s (expected %s)", name, expect(schema.Properties[name]))
+			}
+		}
+		for _, name := range schema.Required {
+			if _, ok := m[name]; !ok {
+				return fmt.Errorf("missing argument: %s", name)
+			}
+		}
+		return nil
+	}
+}
+
+// expect describes what a property schema accepts.
+func expect(s *jsonschema.Schema) string {
+	switch {
+	case len(s.Enum) > 0:
+		var vs []string
+		for _, v := range s.Enum {
+			vs = append(vs, fmt.Sprint(v))
+		}
+		return "one of " + strings.Join(vs, ", ")
+	case s.Type == "integer" && s.Minimum != nil && s.Maximum != nil:
+		return fmt.Sprintf("integer from %g to %g", *s.Minimum, *s.Maximum)
+	case s.Type == "integer" && s.Minimum != nil:
+		return fmt.Sprintf("integer ≥ %g", *s.Minimum)
+	case s.Type == "array" && s.Items != nil:
+		return "array of " + s.Items.Type + "s"
+	case s.Type == "string" && s.MinLength != nil:
+		return "non-empty string"
+	}
+	return s.Type
 }
