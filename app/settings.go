@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/assets"
@@ -250,7 +253,39 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 			}
 		})
 	})
+	p.syncSettings()
+	defer p.syncSettings() // what the switch changed while building
+	a := p.a
+	settingsSection(c, i18n.T("settings.local_api"), "", func() {
+		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
+		if err := a.localAPIErr; err != nil {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				kit.StatusDot(c, kit.Error)
+				ui.Text(c, humanize(err)).Selectable()
+			})
+		}
+		if !a.settings.LocalAPI || a.localAPIPath == "" {
+			return
+		}
+		ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
+		ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		config := mcpConfig()
+		ui.Text(c, config).Font("Geist Mono").FontSize(t.Text.Sm).Selectable()
+		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).Clicked() {
+			c.WriteClipboard(config)
+		}
+	})
 }
+
+// mcpConfig is the MCP client entry that runs this executable's godwit mcp.
+var mcpConfig = sync.OnceValue(func() string {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "godwit" // found on PATH, if at all
+	}
+	q, _ := json.Marshal(exe)
+	return `{"command": ` + string(q) + `, "args": ["mcp"]}`
+})
 
 func (p *settingsPage) aboutView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()

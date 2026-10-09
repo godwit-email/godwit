@@ -34,6 +34,9 @@ type Platform interface {
 	SetThemeSource(theme string)
 	ClipboardHTML() string
 	TempDir() string
+	// SetLocalAPI starts (on) or stops the Local API server, returning its
+	// socket's path while on. Off when it fails. Blocks: call off the UI thread.
+	SetLocalAPI(on bool) (path string, err error)
 }
 
 // Notification is a system notification about a message.
@@ -131,6 +134,10 @@ type App struct {
 	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
 	sysLang          string                                                             // Deps.SystemLanguage
 	accountsGen      uint64                                                             // the load gen that read a.accounts
+
+	localAPIWant bool   // what the last SetLocalAPI asked for
+	localAPIPath string // the Local API's socket while it serves
+	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
 	foreground bool
 	vibrancy   bool                // Deps.Vibrancy
@@ -280,6 +287,7 @@ func (a *App) load() {
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st
 		}
+		a.syncLocalAPI()
 		a.refreshTasks() // skills or services may have changed too
 		a.showTrayUnread(inbox)
 		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {

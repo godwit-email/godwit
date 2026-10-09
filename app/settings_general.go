@@ -62,6 +62,41 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	if tag := cmp.Or(st.UILanguage, a.sysLang); st.UILanguage != old.UILanguage && tag != "" {
 		i18n.SetLanguage(tag)
 	}
+	a.syncLocalAPI()
+}
+
+// syncLocalAPI asks the platform to serve the Local API as a.settings say.
+// When the newest request fails, the reason shows on the privacy page and
+// the setting turns off.
+func (a *App) syncLocalAPI() {
+	on := a.settings.LocalAPI
+	if on == a.localAPIWant {
+		return
+	}
+	a.localAPIWant = on
+	if on {
+		a.localAPIErr = nil
+	}
+	plat := a.plat
+	var path string
+	a.writes.Chain("local-api", func(context.Context) (err error) {
+		path, err = plat.SetLocalAPI(on)
+		return err
+	}, func(err error) {
+		a.localAPIPath = path
+		if err == nil {
+			return
+		}
+		a.localAPIErr = err
+		if on == a.localAPIWant { // no newer request
+			a.localAPIWant = false
+			if a.settings.LocalAPI {
+				st := a.settings
+				st.LocalAPI = false
+				a.changeSettings(st)
+			}
+		}
+	})
 }
 
 func sameSettings(x, y core.Settings) bool {

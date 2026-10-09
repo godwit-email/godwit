@@ -21,6 +21,7 @@ type Settings struct {
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
+	LocalAPI                                         bool // the GUI serves the Local API; off by default
 }
 
 func defaultSettings() Settings {

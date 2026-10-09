@@ -46,6 +46,7 @@ func gui(ctx context.Context, dataDir string) int {
 	code := 0
 	var release func() error
 	var svc *core.Service
+	var plat *platform
 	var a *app.App
 	var clicked []string                           // notification clicks before the App exists, as the one that launched it
 	mygo.App.OnNotificationClick(func(id string) { // before Run, to get that one
@@ -68,8 +69,12 @@ func gui(ctx context.Context, dataDir string) int {
 			return
 		}
 		svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, SystemLanguage: lang})
-		if err != nil {
-			log.Fatal(err)
+		if err != nil { // the message never carries err's text
+			i18n.SetLanguage(lang)
+			code = 1
+			mygo.Dialog.Error("Godwit", i18n.T("app.lock_failed"))
+			mygo.App.Quit()
+			return
 		}
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
@@ -80,7 +85,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat := &platform{}
+		plat = &platform{dataDir: dataDir, svc: svc}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone})
@@ -151,6 +156,9 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
+	}
+	if plat != nil {
+		plat.SetLocalAPI(false) // after BeforeClose, before the Service closes
 	}
 	if svc != nil {
 		svc.Close()
