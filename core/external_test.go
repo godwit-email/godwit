@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,9 +24,19 @@ import (
 type extEnv struct {
 	*approvalEnv
 	runs, inRun atomic.Int32
-	binding     atomic.Value  // string
-	block       chan struct{} // ext_write's Run waits for it when set
-	started     chan struct{} // ext_write's Run signals here when set
+	binding     atomic.Value                           // string
+	block       chan struct{}                          // ext_write's Run waits for it when set
+	started     chan struct{}                          // ext_write's Run signals here when set
+	outcome     func(ctx context.Context) (any, error) // ext_write's Run result when set
+}
+
+// setTimeout changes ext_write's timeout.
+func (e *extEnv) setTimeout(d time.Duration) {
+	e.s.toolsMu.Lock()
+	defer e.s.toolsMu.Unlock()
+	t := e.s.tools["ext_write"]
+	t.Timeout = d
+	e.s.tools["ext_write"] = t
 }
 
 const leakyDest = "https://user:hunter2-secret@api.example.com:8443/v1/x?token=tok-secret-9"
@@ -317,4 +329,75 @@ func TestCancelWaitsForExternal(t *testing.T) {
 	calls, results := toolPairs(t, reqs[len(reqs)-1])
 	assert.Equal(t, calls, results)
 	assert.Contains(t, string(reqs[len(reqs)-1].Messages), "wrote")
+}
+
+func TestExternalRunErrorNotUncertain(t *testing.T) {
+	e := newExtEnv(t)
+	e.outcome = func(context.Context) (any, error) { return nil, errors.New("quota exceeded") }
+	in := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.ErrorContains(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), "quota exceeded")
+	got := e.approval(t, in.Approvals[0].ID)
+	assert.Equal(t, "failed", got.State)
+	assert.Equal(t, "quota exceeded", got.Error, "an ordinary error is not uncertain")
+	e.waitRun(t, in.RunID, "done")
+
+	// A result that cannot be encoded is an ordinary failure too.
+	e.outcome = func(context.Context) (any, error) { return func() {}, nil }
+	in = e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.Error(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	got = e.approval(t, in.Approvals[0].ID)
+	assert.Equal(t, "failed", got.State)
+	assert.NotEqual(t, msgUncertain, got.Error)
+}
+
+func TestExternalTimeoutUncertain(t *testing.T) {
+	e := newExtEnv(t)
+	e.setTimeout(20 * time.Millisecond)
+	e.outcome = func(ctx context.Context) (any, error) { <-ctx.Done(); return nil, ctx.Err() }
+	in := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.Error(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	got := e.approval(t, in.Approvals[0].ID)
+	assert.Equal(t, "failed", got.State)
+	assert.Equal(t, msgUncertain, got.Error)
+}
+
+func TestExternalOutcomeSanitized(t *testing.T) {
+	e := newExtEnv(t)
+	e.s.secrets.Add("plugin:demo", "sekret-value-123")
+	e.outcome = func(context.Context) (any, error) {
+		return nil, errors.New("upstream said sekret-value-123 while reading /Users/someone/plugins/demo/main.js")
+	}
+	in := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	a := in.Approvals[0]
+	err := e.s.ResolveApproval(t.Context(), a.ID, true)
+	require.Error(t, err)
+	got := e.approval(t, a.ID)
+	assert.Contains(t, got.Error, "[redacted]")
+	assert.Contains(t, got.Error, "<path>")
+	e.waitRun(t, in.RunID, "done")
+
+	e.outcome = func(context.Context) (any, error) {
+		return map[string]string{"token": "sekret-value-123", "file": "/home/u/x"}, nil
+	}
+	in2 := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in2.Approvals[0].ID, true))
+	errAll := e.s.ResolveAll(t.Context(), in2.RunID, true)
+
+	rows, qerr := e.s.db.Query(t.Context(), "SELECT result FROM approvals")
+	require.NoError(t, qerr)
+	texts := []string{err.Error(), fmt.Sprint(errAll)}
+	for _, r := range rows.Values {
+		texts = append(texts, store.Str(r[0]))
+	}
+	audit, qerr := e.s.db.Query(t.Context(), "SELECT * FROM audit_log")
+	require.NoError(t, qerr)
+	for _, r := range audit.Values {
+		texts = append(texts, fmt.Sprint(r...))
+	}
+	for _, s := range texts {
+		assert.NotContains(t, s, "sekret-value-123")
+		assert.NotContains(t, s, "/Users/someone")
+		assert.NotContains(t, s, "/home/u")
+	}
+	assert.True(t, json.Valid([]byte(e.approval(t, in2.Approvals[0].ID).Args)))
 }

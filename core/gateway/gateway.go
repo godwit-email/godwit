@@ -70,15 +70,27 @@ func decide(c Call, readMail bool) Decision {
 // Check decides c under scope and writes one structured audit_log row. If the
 // row cannot be written the call is denied. A nil scope has read no mail.
 func (g *Gateway) Check(ctx context.Context, scope *Scope, c Call) (Decision, error) {
-	return g.record(ctx, c, decide(c, scope.ReadMail()))
+	d := decide(c, scope.ReadMail())
+	return g.record(ctx, c, d, denied(d, reasonSource))
 }
 
-func (g *Gateway) record(ctx context.Context, c Call, d Decision) (Decision, error) {
-	e := Entry{Source: c.Source, Extension: c.Extension, Tool: c.Tool, CallID: c.CallID, TargetKind: c.TargetKind,
-		TargetID: c.TargetID, Destinations: c.Egress, Decision: string(d)}
+// Reason codes of a denied call.
+const (
+	reasonSource = "source_denied" // the gateway denies the source
+	reasonPolicy = "policy_denied" // the tool's own Gate denied it
+	reasonGate   = "gate_error"    // the tool's own Gate failed
+)
+
+func denied(d Decision, reason string) string {
 	if d == Deny {
-		e.Reason = "source_denied" // the only reason decide denies
+		return reason
 	}
+	return ""
+}
+
+func (g *Gateway) record(ctx context.Context, c Call, d Decision, reason string) (Decision, error) {
+	e := Entry{Source: c.Source, Extension: c.Extension, Tool: c.Tool, CallID: c.CallID, TargetKind: c.TargetKind,
+		TargetID: c.TargetID, Destinations: c.Egress, Decision: string(d), Reason: reason}
 	if err := g.Record(ctx, e); err != nil {
 		return Deny, err
 	}
@@ -101,18 +113,18 @@ func (g *Gateway) Wrap(scope *Scope, c Call, t ai.ToolSpec, egress func(*Scope) 
 		if egress != nil {
 			c.Egress = egress(scope)
 		}
-		d := decide(c, scope.ReadMail())
+		d, reason := decide(c, scope.ReadMail()), reasonSource
 		if d != Deny && own != nil {
 			od, err := own(ctx, args)
 			if err != nil {
-				_, rerr := g.record(ctx, c, Deny)
+				_, rerr := g.record(ctx, c, Deny, reasonGate)
 				return Deny, errors.Join(err, rerr)
 			}
 			if od == Deny || od == Approve {
-				d = od
+				d, reason = od, reasonPolicy
 			}
 		}
-		return g.record(ctx, c, d)
+		return g.record(ctx, c, d, denied(d, reason))
 	}
 	return t
 }

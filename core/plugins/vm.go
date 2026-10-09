@@ -420,9 +420,10 @@ var absPath = regexp.MustCompile(`(^|[^\w./\\])(?:/[^/\s"'()\[\],;:|][^\s"'()\[\
 
 // clean is what any error text crossing into JS or back to the host goes
 // through: secrets redacted, absolute paths replaced with "<path>".
-func (v *VM) clean(s string) string {
-	return absPath.ReplaceAllString(v.redact(s), "${1}<path>")
-}
+func (v *VM) clean(s string) string { return ScrubPaths(v.redact(s)) }
+
+// ScrubPaths replaces absolute paths in s with "<path>".
+func ScrubPaths(s string) string { return absPath.ReplaceAllString(s, "${1}<path>") }
 
 // jsError is a plain JS Error carrying only msg (no Go value behind it).
 func (v *VM) jsError(msg string) goja.Value {

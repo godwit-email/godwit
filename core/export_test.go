@@ -50,6 +50,9 @@ func extDescsForTest(e *extEnv, prepare func(context.Context, Conversation, json
 						return nil, ctx.Err()
 					}
 				}
+				if e.outcome != nil {
+					return e.outcome(ctx)
+				}
 				return map[string]bool{"wrote": true}, nil
 			}},
 	}

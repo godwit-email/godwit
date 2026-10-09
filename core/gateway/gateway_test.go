@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -213,9 +214,15 @@ func TestWrapComposesOwnGate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, c.want, d, "%+v", c)
 	}
-	rows, err := db.Query(t.Context(), "SELECT decision FROM audit_log WHERE tool = 'z' ORDER BY id")
+	w := g.Wrap(nil, Call{Source: "wit"}, ai.ToolSpec{Name: "z", Run: run,
+		Gate: func(context.Context, json.RawMessage) (Decision, error) { return Allow, errors.New("boom") }}, nil)
+	d, err := w.Gate(t.Context(), nil)
+	require.Error(t, err)
+	require.Equal(t, Deny, d)
+	rows, err := db.Query(t.Context(), "SELECT decision, reason FROM audit_log WHERE tool = 'z' ORDER BY id")
 	require.NoError(t, err)
-	require.Equal(t, [][]any{{"allow"}, {"approve"}, {"deny"}, {"deny"}, {"deny"}}, rows.Values, "the final decision is audited")
+	require.Equal(t, [][]any{{"allow", nil}, {"approve", nil}, {"deny", "policy_denied"}, {"deny", "source_denied"},
+		{"deny", "source_denied"}, {"deny", "gate_error"}}, rows.Values, "the final decision is audited with its reason")
 }
 
 func TestHost(t *testing.T) {

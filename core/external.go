@@ -10,6 +10,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/plugins"
 )
 
 // externalTimeout bounds an external Run whose tool sets no Timeout.
@@ -97,17 +98,46 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	}
 	rc, cancel := context.WithTimeout(ctx, cmp.Or(d.Timeout, externalTimeout))
 	res, err := d.Run(rc, a.Approval)
+	cut := rc.Err() != nil // before cancel: only the timeout or Close ended it
 	cancel()
-	var out []byte
-	if err == nil {
-		out, err = json.Marshal(res)
-	}
 	if err != nil {
-		result := err.Error()
-		if rc.Err() != nil { // cut off by the timeout or Close: it may have done part of its work
+		result := s.clean(err.Error())
+		if cut { // it may have done part of its work
 			result = msgUncertain
 		}
 		return errors.Join(err, record("failed", result, "failed"))
 	}
-	return record("done", string(out), "executed")
+	out, err := json.Marshal(res)
+	if err != nil {
+		return errors.Join(err, record("failed", s.clean(err.Error()), "failed"))
+	}
+	text := s.clean(string(out))
+	if !json.Valid([]byte(text)) { // a scrubbed path ate an escaped quote
+		b, _ := json.Marshal(text)
+		text = string(b)
+	}
+	return record("done", text, "executed")
+}
+
+// clean makes text from or about an extension safe to keep or return:
+// secrets of the Service's secret set redacted, absolute paths scrubbed.
+func (s *Service) clean(text string) string { return plugins.ScrubPaths(s.secrets.Redact(text)) }
+
+// cleanErr is an error whose text was cleaned; errors.Is still matches the
+// original, but nothing hands out its text.
+type cleanErr struct {
+	msg string
+	err error
+}
+
+func (e cleanErr) Error() string        { return e.msg }
+func (e cleanErr) Is(target error) bool { return errors.Is(e.err, target) }
+
+// cleanError is err with its text cleaned, for errors leaving the Service
+// from approvals, which may carry an extension's words.
+func (s *Service) cleanError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return cleanErr{s.clean(err.Error()), err}
 }
