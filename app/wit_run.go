@@ -16,15 +16,16 @@ import (
 
 // witMsg is a message of a Wit conversation as the panel shows it: a
 // question, or the answer to it with the tools the model called. The live
-// answer also notes the messages its events cited; a saved one finds them
-// by its calls' IDs (citedBy).
+// answer notes the messages its events cited; a saved one is
+// Conversation.Messages[from:to] and finds them by the runs there (citedBy).
 type witMsg struct {
-	user  bool
-	text  string
-	doc   richtext.Doc // the answer converted from docOf
-	docOf string
-	calls []ai.ToolCall
-	cited []int64 // the live answer's
+	user     bool
+	text     string
+	doc      richtext.Doc // the answer converted from docOf
+	docOf    string
+	calls    []ai.ToolCall
+	cited    []int64 // the live answer's
+	from, to int
 }
 
 // witOptions are what the panel's owner decides. Start begins a run on
@@ -55,6 +56,7 @@ type witPanel struct {
 	msgs      []witMsg        // as saved
 	approvals []core.Approval // pending, in order
 	cites     []core.Citation // every citation, saved then streamed, in the order they came
+	runs      []core.RunSpan  // the saved messages each run added
 
 	live     *witMsg // the answer streaming in; nil before any
 	liveUser string  // the question just asked, until it is saved
@@ -258,19 +260,18 @@ func (p *witPanel) cited() []core.Citation {
 	return out
 }
 
-// citedBy is the messages a saved answer's calls cited, and the context
-// citations of the runs those calls belong to.
+// citedBy is the messages that the runs which added a saved answer cited,
+// by their calls or their context.
 func (p *witPanel) citedBy(m *witMsg) []int64 {
 	var ids []int64
-	runs := map[int64]bool{}
-	for _, c := range p.cites {
-		if c.CallID != "" && slices.ContainsFunc(m.calls, func(x ai.ToolCall) bool { return x.ID == c.CallID }) {
-			ids, runs[c.RunID] = append(ids, c.MessageID), true
+	for _, r := range p.runs {
+		if r.From >= m.to || r.To <= m.from {
+			continue
 		}
-	}
-	for _, c := range p.cites {
-		if c.CallID == "" && runs[c.RunID] {
-			ids = append(ids, c.MessageID)
+		for _, c := range p.cites {
+			if c.RunID == r.ID {
+				ids = append(ids, c.MessageID)
+			}
 		}
 	}
 	return ids
@@ -321,7 +322,7 @@ func (p *witPanel) reconcile() {
 			a.toastErr(err)
 			return
 		}
-		p.msgs = msgs
+		p.msgs, p.runs = msgs, c.Runs
 		p.approvals = slices.DeleteFunc(as, func(x core.Approval) bool { return x.State != "pending" })
 		live := p.cites
 		p.cites = slices.Clone(c.Citations)
@@ -346,15 +347,16 @@ func (p *witPanel) reconcile() {
 // everything the model said and called up to the next question.
 func witMsgs(ms []ai.Message) []witMsg {
 	var out []witMsg
-	for _, m := range ms {
+	for i, m := range ms {
 		if m.Role == "user" {
-			out = append(out, witMsg{user: true, text: m.Text})
+			out = append(out, witMsg{user: true, text: m.Text, from: i, to: i + 1})
 			continue
 		}
 		if n := len(out); n == 0 || out[n-1].user {
-			out = append(out, witMsg{})
+			out = append(out, witMsg{from: i})
 		}
 		ans := &out[len(out)-1]
+		ans.to = i + 1
 		if m.Role != "tool" && strings.TrimSpace(m.Text) != "" {
 			if ans.text != "" {
 				ans.text += "\n\n"
