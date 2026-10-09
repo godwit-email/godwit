@@ -288,22 +288,24 @@ func (c *conv) table(n *html.Node, x ctx) {
 		return
 	}
 	b := Block{Kind: Table}
-	total := 0
+	total, inlines := 0, 0 // the table's cells and inlines, against MaxCells and MaxInlines
 	for i, tr := range rows {
 		var row []Cell
-		allTh := true
+		allTh, n := true, 0
 		for td := tr.FirstChild; td != nil; td = td.NextSibling {
 			if td.DataAtom != atom.Td && td.DataAtom != atom.Th {
 				continue
 			}
 			allTh = allTh && td.DataAtom == atom.Th
-			row = append(row, c.cell(td, x))
+			cell := c.cell(td, x)
+			n += len(cell.Inlines)
+			row = append(row, cell)
 		}
-		if total+len(row) > c.lim.MaxCells {
+		if total+len(row) > c.lim.MaxCells || inlines+n > c.lim.MaxInlines {
 			c.truncated = true
 			break
 		}
-		total += len(row)
+		total, inlines = total+len(row), inlines+n
 		if i == 0 {
 			b.Header = allTh && len(row) > 0
 		}
@@ -429,14 +431,15 @@ func (c *conv) trimSpace() {
 	}
 }
 
-// flush ends the open block. A block that had only line breaks stays as an
-// empty block (a blank line).
+// flush ends the open block. Outside <pre> a block's last line break only
+// holds its line open, as in HTML, so it is not text (ToHTML writes it
+// back); a block of only that break stays as an empty block (a blank line).
 func (c *conv) flush() {
 	if !c.open {
 		return
 	}
 	c.trimSpace()
-	if s := c.buf.String(); strings.HasSuffix(s, "\n") {
+	if s := c.buf.String(); strings.HasSuffix(s, "\n") && c.block.Kind != Pre {
 		c.buf.Reset()
 		c.buf.WriteString(s[:len(s)-1])
 	}

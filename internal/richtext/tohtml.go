@@ -48,6 +48,9 @@ func ToHTMLOffsets(d Doc) (string, func(Pos) int) {
 				w.WriteString("<br>")
 			} else {
 				offs[i] = w.inlines(b.Inlines)
+				if t := b.Inlines[len(b.Inlines)-1].Text; b.Kind != Pre && strings.HasSuffix(t, "\n") {
+					w.WriteString("<br>") // holds the last line open, as FromComposeHTML reads it
+				}
 			}
 			if b.Kind != ListItem { // the item stays open for a nested list
 				w.WriteString("</" + tag + ">")

@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
@@ -36,10 +37,10 @@ func Render(c *ui.Context, d Doc, o RenderOptions) ui.Element {
 	}
 	r := &renderer{c: c, o: o, t: t}
 	return ui.Column(c).Gap(c.Theme().Space(3)).Children(func() {
-		var numbers []int // the next number of each list level
+		var levels []counter // the open lists, outermost first
 		for _, b := range d.Blocks {
 			if b.Kind != ListItem {
-				numbers = numbers[:0]
+				levels = levels[:0]
 			}
 			switch b.Kind {
 			case Heading:
@@ -49,12 +50,15 @@ func Render(c *ui.Context, d Doc, o RenderOptions) ui.Element {
 				r.quote(max(b.Level, 1), b.Inlines)
 			case ListItem:
 				lv := max(b.Level, 1)
-				for len(numbers) < lv {
-					numbers = append(numbers, 1)
+				levels = levels[:min(len(levels), lv)]
+				for len(levels) < lv {
+					levels = append(levels, counter{ordered: b.Ordered})
 				}
-				numbers = numbers[:lv]
-				r.item(b, numbers[lv-1])
-				numbers[lv-1]++
+				if l := &levels[lv-1]; l.ordered != b.Ordered {
+					*l = counter{ordered: b.Ordered} // ul and ol switched: a new list
+				}
+				levels[lv-1].n++
+				r.item(b, levels[lv-1].n)
 			case Pre:
 				ui.Box(c).Background(t.Hover).Radius(t.Radius.Md).Padding(c.Theme().Space(3)).Children(func() {
 					r.text(b.Inlines, o.FontSize, mono)
@@ -72,6 +76,12 @@ func Render(c *ui.Context, d Doc, o RenderOptions) ui.Element {
 	})
 }
 
+// counter numbers the items of a list level.
+type counter struct {
+	ordered bool
+	n       int
+}
+
 type renderer struct {
 	c *ui.Context
 	o RenderOptions
@@ -83,41 +93,57 @@ func (r *renderer) text(ins []Inline, size float32, font string) ui.Element {
 	if font != "" {
 		e = e.Font(font)
 	}
+	runs := r.runs(ins, size, font == mono)
 	return e.Children(func() {
-		for _, in := range ins {
-			r.inline(in)
+		for i, in := range ins {
+			if in.Link == "" || !safeLink(in.Link) {
+				ui.RichText(r.c, runs[i]...)
+				continue
+			}
+			l := ui.Link(r.c, "", "").Children(func() { ui.RichText(r.c, runs[i]...) })
+			if l.Clicked() && r.o.OnLink != nil {
+				r.o.OnLink(in.Link)
+			}
 		}
 	})
 }
 
-func (r *renderer) inline(in Inline) {
-	spans := Autospace(in.Text)
-	var col *ui.Color
-	if in.Link == "" {
-		col = textColor(in.Color, r.o.Background)
-	}
-	for i := range spans {
-		s := &spans[i]
-		s.Italic, s.Strikethrough = in.Italic, in.Strike
-		s.Underline = in.Underline || in.Link != ""
-		if in.Bold {
-			s.Weight = 600
+// runs are the styled spans of each inline of a block drawn at size; pre
+// is a code block's text.
+func (r *renderer) runs(ins []Inline, size float32, pre bool) [][]ui.Span {
+	out := make([][]ui.Span, len(ins))
+	next := rune(-1) // the first rune after inline k
+	for k := len(ins) - 1; k >= 0; k-- {
+		in := ins[k]
+		spans := autospace(in.Text, next, size)
+		if first, _ := utf8.DecodeRuneInString(in.Text); in.Text != "" {
+			next = first
 		}
-		if in.Code {
-			s.Font, s.Background = mono, r.t.Hover
+		bg := r.o.Background
+		if pre || in.Code {
+			bg = r.t.Hover // what code is drawn on
 		}
-		if col != nil {
-			s.Color = *col
+		var col *ui.Color
+		if in.Link == "" {
+			col = textColor(in.Color, bg)
 		}
+		for i := range spans {
+			s := &spans[i]
+			s.Italic, s.Strikethrough = in.Italic, in.Strike
+			s.Underline = in.Underline || in.Link != ""
+			if in.Bold {
+				s.Weight = 600
+			}
+			if in.Code {
+				s.Font, s.Background = mono, r.t.Hover
+			}
+			if col != nil {
+				s.Color = *col
+			}
+		}
+		out[k] = spans
 	}
-	if in.Link == "" || !safeLink(in.Link) {
-		ui.RichText(r.c, spans...)
-		return
-	}
-	l := ui.Link(r.c, "", "").Children(func() { ui.RichText(r.c, spans...) })
-	if l.Clicked() && r.o.OnLink != nil {
-		r.o.OnLink(in.Link)
-	}
+	return out
 }
 
 // quote nests level bars around the text.

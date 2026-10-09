@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -137,6 +138,7 @@ func TestHostileHTML(t *testing.T) {
 		for _, b := range d.Blocks {
 			assert.LessOrEqual(t, len(b.Inlines), DefaultLimits.MaxInlines, name)
 			assert.LessOrEqual(t, cells(b), DefaultLimits.MaxCells, name)
+			assert.LessOrEqual(t, tableInlines(b), DefaultLimits.MaxInlines, name)
 			for _, in := range b.Inlines {
 				assert.NotContains(t, in.Link, "javascript", name)
 			}
@@ -216,18 +218,113 @@ func TestLowContrastColorIgnored(t *testing.T) {
 	assert.Nil(t, textColor("navy", ui.RGB(0, 0, 0)), "navy on black")
 }
 
-func TestAutospace(t *testing.T) {
-	texts := func(s string) (out []string) {
-		for _, sp := range Autospace(s) {
-			out = append(out, sp.Text)
-		}
-		return out
+type sp struct {
+	text   string
+	spaced bool
+}
+
+func simple(spans []ui.Span) (out []sp) {
+	for _, s := range spans {
+		out = append(out, sp{s.Text, s.LetterSpacing != 0})
 	}
-	assert.Equal(t, []string{"用", autospace, "Go", autospace, "写"}, texts("用Go写"))
-	assert.Equal(t, []string{"用 Go 写"}, texts("用 Go 写"))
-	assert.Equal(t, []string{"第", autospace, "3", autospace, "章，Hello"}, texts("第3章，Hello"))
-	assert.Equal(t, []string{"plain"}, texts("plain"))
-	assert.Nil(t, Autospace(""))
+	return out
+}
+
+func TestAutospace(t *testing.T) {
+	assert.Equal(t, []sp{{"用", true}, {"G", false}, {"o", true}, {"写", false}}, simple(Autospace("用Go写", 16)))
+	assert.Equal(t, float32(4), Autospace("用Go写", 16)[0].LetterSpacing, "a quarter em")
+	assert.Equal(t, []sp{{"用 Go 写", false}}, simple(Autospace("用 Go 写", 16)))
+	assert.Equal(t, []sp{{"第", true}, {"3", true}, {"章，Hello", false}}, simple(Autospace("第3章，Hello", 16)))
+	assert.Equal(t, []sp{{"plain", false}}, simple(Autospace("plain", 16)))
+	assert.Nil(t, Autospace("", 16))
+	var text strings.Builder
+	for _, s := range Autospace("中文English混排", 16) {
+		text.WriteString(s.Text)
+	}
+	assert.Equal(t, "中文English混排", text.String(), "no characters are inserted")
+}
+
+func TestAutospaceAcrossInlines(t *testing.T) {
+	d, _ := FromMailHTML(`<p>用<b>Go</b>写<a data-href="https://x.example/">链接link</a></p>`, DefaultLimits)
+	r := &renderer{o: RenderOptions{Background: ui.RGB(255, 255, 255)}, t: theme.Light()}
+	var got [][]sp
+	for _, spans := range r.runs(d.Blocks[0].Inlines, 16, false) {
+		got = append(got, simple(spans))
+	}
+	assert.Equal(t, [][]sp{{{"用", true}}, {{"G", false}, {"o", true}}, {{"写", false}}, {{"链", false}, {"接", true}, {"link", false}}}, got)
+}
+
+func TestCodeContrastUsesCodeBackground(t *testing.T) {
+	r := &renderer{o: RenderOptions{Background: ui.RGB(255, 255, 255)}, t: theme.Light()}
+	grey := Inline{Text: "x", Color: "#939393"} // 3.07:1 on white, 2.8:1 on neutral-100
+	assert.NotEqual(t, ui.Color{}, r.runs([]Inline{grey}, 16, false)[0][0].Color)
+	code := grey
+	code.Code = true
+	assert.Equal(t, ui.Color{}, r.runs([]Inline{code}, 16, false)[0][0].Color, "inline code")
+	assert.Equal(t, ui.Color{}, r.runs([]Inline{grey}, 16, true)[0][0].Color, "pre")
+}
+
+func TestListNumbering(t *testing.T) {
+	d, _ := FromMailHTML(`<ol><li>A</li><li>A2</li></ol><ul><li>B</li></ul><ol><li>C</li><ul><li>D</li></ul><li>E</li></ol>`, DefaultLimits)
+	tt := ui.NewTester(func(c *ui.Context) { Render(c, d, RenderOptions{}) }, 600, 600)
+	var markers []string
+	for _, s := range tt.Texts() {
+		if strings.HasSuffix(s, ".") || s == "•" {
+			markers = append(markers, s)
+		}
+	}
+	assert.Equal(t, []string{"1.", "2.", "•", "1.", "•", "2."}, markers)
+
+	d, _ = FromMailHTML(`<ul><li>A</li></ul><ol><li>B</li></ol>`, DefaultLimits)
+	tt = ui.NewTester(func(c *ui.Context) { Render(c, d, RenderOptions{}) }, 600, 400)
+	assert.True(t, tt.HasText("1."), "%q", tt.Texts())
+	assert.False(t, tt.HasText("2."))
+}
+
+func TestTrailingBreaks(t *testing.T) {
+	d, _ := FromMailHTML("<pre>a\n</pre>", DefaultLimits)
+	assert.Equal(t, []Inline{{Text: "a\n"}}, d.Blocks[0].Inlines)
+	d = FromComposeHTML(`<p>a<br><br></p><p><br></p><p>b<br></p>`)
+	assert.Equal(t, []Block{
+		{Kind: Paragraph, Inlines: []Inline{{Text: "a\n"}}},
+		{Kind: Paragraph},
+		{Kind: Paragraph, Inlines: []Inline{{Text: "b"}}},
+	}, d.Blocks)
+	for range 2 {
+		next := FromComposeHTML(ToHTML(d))
+		assert.Equal(t, d, next, ToHTML(d))
+		d = next
+	}
+	pre := Doc{Blocks: []Block{{Kind: Pre, Inlines: []Inline{{Text: "x\n\n"}}}}}
+	back, _ := FromMailHTML(ToHTML(pre), DefaultLimits)
+	assert.Equal(t, pre, back, ToHTML(pre))
+}
+
+func TestTableInlineBudget(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("<table><tr><th>h</th><th>h</th></tr>")
+	for range 300 {
+		sb.WriteString("<tr>")
+		for range 2 {
+			sb.WriteString("<td>" + strings.Repeat("a<b>b</b>", 25) + "<p>x</p></td>")
+		}
+		sb.WriteString("</tr>")
+	}
+	sb.WriteString("</table>")
+	d, trunc := FromMailHTML(sb.String(), DefaultLimits)
+	assert.True(t, trunc)
+	require.Len(t, d.Blocks, 1)
+	assert.LessOrEqual(t, tableInlines(d.Blocks[0]), DefaultLimits.MaxInlines)
+	assert.Greater(t, tableInlines(d.Blocks[0]), DefaultLimits.MaxInlines-200)
+}
+
+func tableInlines(b Block) (n int) {
+	for _, r := range b.Rows {
+		for _, c := range r {
+			n += len(c.Inlines)
+		}
+	}
+	return n
 }
 
 func TestToHTMLRoundTrip(t *testing.T) {
