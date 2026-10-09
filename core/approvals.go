@@ -336,6 +336,10 @@ func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) erro
 		return err
 	}
 	defer end()
+	return s.cleanError(s.resolveAll(ctx, runID, accept))
+}
+
+func (s *Service) resolveAll(ctx context.Context, runID int64, accept bool) error {
 	as, err := s.approvalRows(ctx, "a.run_id = ? AND a.state = 'pending'", runID)
 	if err != nil {
 		return err
@@ -346,7 +350,7 @@ func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) erro
 			errs = append(errs, err)
 		}
 	}
-	return s.cleanError(errors.Join(errs...))
+	return errors.Join(errs...)
 }
 
 // CancelRun ends a run when its panel closes. A run in flight is cancelled;

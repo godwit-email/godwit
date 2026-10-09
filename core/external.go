@@ -107,16 +107,39 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 		}
 		return errors.Join(err, record("failed", result, "failed"))
 	}
+	// Cleaned as decoded data, then encoded: the encoding escapes characters
+	// a secret may hold, so the encoded text would hide it from Redact.
 	out, err := json.Marshal(res)
+	var plain any
+	if err == nil {
+		err = json.Unmarshal(out, &plain)
+	}
+	if err == nil {
+		out, err = json.Marshal(s.cleanValue(plain))
+	}
 	if err != nil {
 		return errors.Join(err, record("failed", s.clean(err.Error()), "failed"))
 	}
-	text := s.clean(string(out))
-	if !json.Valid([]byte(text)) { // a scrubbed path ate an escaped quote
-		b, _ := json.Marshal(text)
-		text = string(b)
+	return record("done", string(out), "executed")
+}
+
+// cleanValue cleans every string, map keys included, of decoded JSON.
+func (s *Service) cleanValue(v any) any {
+	switch v := v.(type) {
+	case string:
+		return s.clean(v)
+	case []any:
+		for i := range v {
+			v[i] = s.cleanValue(v[i])
+		}
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, x := range v {
+			out[s.clean(k)] = s.cleanValue(x)
+		}
+		return out
 	}
-	return record("done", text, "executed")
+	return v
 }
 
 // clean makes text from or about an extension safe to keep or return:

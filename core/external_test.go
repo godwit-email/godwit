@@ -401,3 +401,36 @@ func TestExternalOutcomeSanitized(t *testing.T) {
 	}
 	assert.True(t, json.Valid([]byte(e.approval(t, in2.Approvals[0].ID).Args)))
 }
+
+func TestExternalOutcomeEscapedSecret(t *testing.T) {
+	e := newExtEnv(t)
+	const secret = "<sekret-123>&" // characters JSON escapes
+	e.s.secrets.Add("plugin:demo", secret)
+	e.outcome = func(context.Context) (any, error) {
+		return map[string]any{"note": "x " + secret + " y", secret: []any{secret}}, nil
+	}
+	in := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	e.waitRun(t, in.RunID, "done")
+
+	e.outcome = func(context.Context) (any, error) { return nil, errors.New("bad " + secret) }
+	in2 := e.interruptExt(t, e.newConv(t, "ask", 0), callTurn("ext_write"))
+	errAll := e.s.ResolveAll(t.Context(), in2.RunID, true)
+	require.Error(t, errAll, "ResolveAll fails with the Run's error")
+
+	texts := []string{errAll.Error()}
+	rows, err := e.s.db.Query(t.Context(), "SELECT result FROM approvals")
+	require.NoError(t, err)
+	for _, r := range rows.Values {
+		texts = append(texts, store.Str(r[0]))
+	}
+	audit, err := e.s.db.Query(t.Context(), "SELECT * FROM audit_log")
+	require.NoError(t, err)
+	for _, r := range audit.Values {
+		texts = append(texts, fmt.Sprint(r...))
+	}
+	for _, s := range texts {
+		assert.NotContains(t, s, "sekret-123", "raw or escaped")
+	}
+	assert.True(t, json.Valid([]byte(store.Str(rows.Values[0][0]))))
+}
