@@ -105,7 +105,7 @@ app/reader_ai.go            （修改）结果标注用运行返回的实际模�
 
 **Files:**
 - Create: `core/models_slug.go`
-- Modify: `core/store/schema.go`（迁移 12）、`core/models.go`、`core/service.go`（`New` 里调用回填）、`core/conversations.go`（新运行保存规范化的 slug 引用）、`app/settings_models.go`（删除改名时改写 `DefaultModel` 的代码，保留「取消勾选 / 删除服务时清理引用」并按 slug 处理 `DefaultModel` 与 `SmallModel`；显示「引用名」）
+- Modify: `core/store/schema.go`（迁移 12）、`core/models.go`、`core/service.go`（`New` 里调用回填）、`core/conversations.go`（新运行在 `runs.model` 保存规范化的 slug 引用；`conversations.model` 目前不使用，不改）、`app/settings_models.go`（删除改名时改写 `DefaultModel` 的代码，保留「取消勾选 / 删除服务时清理引用」并按 slug 处理 `DefaultModel`（`SmallModel` 的同类清理在 Task 7）；显示「引用名」）
 - Test: `core/models_slug_test.go`, `core/store/schema_test.go`, `core/conversations_test.go`, `app/settings_models_test.go`
 
 **Interfaces:**
