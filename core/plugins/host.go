@@ -134,7 +134,8 @@ func (p *Plugin) Events() []string {
 // invocation (no writes, no egress), recording what it registers.
 func Load(ctx context.Context, vm *VM, m Manifest, h Host) (*Plugin, error) {
 	p := &Plugin{Name: m.Name, m: m, h: h, vm: vm, events: map[string]goja.Callable{}}
-	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit}, p.newCtx); err != nil {
+	egress, _ := EgressFor(KindInit, m, true, false) // none: init never fetches
+	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit, EgressHosts: egress}, p.newCtx); err != nil {
 		return nil, err
 	}
 	return p, nil

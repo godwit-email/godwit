@@ -5,6 +5,7 @@ package plugins
 
 import (
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -84,6 +85,33 @@ type Invocation struct {
 	Kind        InvocationKind
 	Write       bool
 	EgressHosts []string
+}
+
+// EgressFor is the egress rule for one call of kind into plugin m (plan 4
+// 规格解释): the hosts its Invocation may fetch from, and whether the call
+// needs an egress approval listing them first. granted: the plugin's current
+// permissions are granted; scopeReadMail: the Wit run calling a tool has read
+// mail. Init, card and beforeSend never fetch; a hook gets every declared host;
+// an action needs approval when the plugin holds mail:read and net; a tool when
+// it holds net and either mail:read or the scope read mail (its arguments may
+// carry mail). Since ctx.storage outlives a call, "this call read no mail" is
+// never trusted for plugins with mail:read.
+func EgressFor(kind InvocationKind, m Manifest, granted, scopeReadMail bool) (hosts []string, needsApproval bool) {
+	net := m.Permissions.Net
+	if !granted || len(net) == 0 {
+		return nil, false
+	}
+	readMail := slices.Contains(m.Permissions.Mail, "read")
+	switch kind {
+	case KindHook:
+	case KindAction:
+		needsApproval = readMail
+	case KindTool:
+		needsApproval = readMail || scopeReadMail
+	default: // init, card, beforeSend, and anything unknown
+		return nil, false
+	}
+	return slices.Clone(net), needsApproval
 }
 
 var (
