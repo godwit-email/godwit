@@ -484,7 +484,7 @@ var en = map[string]string{
 	"compose.list_ordered":     "Numbered list",
 	"compose.quote":            "Quote",
 	"compose.attach":           "Attach files",
-	"compose.attach.remove":    "Remove %s",
+	"compose.remove":           "Remove %s",
 	"compose.attach.too_large": "Attachments can be at most %s",
 	"compose.quote.show":       "Show the quoted message (read-only for the assistant)",
 	"compose.conflict":         "This draft was changed elsewhere",
@@ -500,4 +500,7 @@ var en = map[string]string{
 	"compose.discard.title":    "Discard this draft?",
 	"compose.discard.body":     "The draft and its attachments will be deleted. This can't be undone.",
 	"compose.discard.confirm":  "Discard",
+	"close.unsaved.title":      "A draft wasn't saved",
+	"close.unsaved.quit":       "Quit anyway",
+	"close.unsaved.back":       "Go back",
 }

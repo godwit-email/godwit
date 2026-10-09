@@ -182,6 +182,7 @@ func (a *App) View(c *ui.Context) {
 		a.addAccount.sheetView(c)
 	}
 	a.linkDialog(c)
+	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 }
@@ -307,5 +308,20 @@ func (a *App) panel(c *ui.Context) {
 				BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
 		}
 		ui.Column(c).Grow(1).Children(func() { p.Content(c) })
+	})
+}
+
+// closeDialog asks, when a draft could not be saved before closing, whether
+// to close anyway and lose its last edits.
+func (a *App) closeDialog(c *ui.Context) {
+	t := theme.Of(c)
+	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), func() {
+		ui.Text(c, humanize(a.closeErr)).TextColor(t.Muted)
+	}, func() {
+		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { a.closeAsk = false })
+		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			a.closeAsk = false
+			a.closeAnyway()
+		})
 	})
 }

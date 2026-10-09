@@ -484,7 +484,7 @@ var zh = map[string]string{
 	"compose.list_ordered":     "编号列表",
 	"compose.quote":            "引用",
 	"compose.attach":           "添加附件",
-	"compose.attach.remove":    "移除 %s",
+	"compose.remove":           "移除 %s",
 	"compose.attach.too_large": "附件超过了 %s 的上限",
 	"compose.quote.show":       "显示引用的原邮件（助手只读）",
 	"compose.conflict":         "草稿在别处被修改",
@@ -500,4 +500,7 @@ var zh = map[string]string{
 	"compose.discard.title":    "丢弃这封草稿？",
 	"compose.discard.body":     "草稿和它的附件会被删除，无法恢复。",
 	"compose.discard.confirm":  "丢弃",
+	"close.unsaved.title":      "草稿没有保存",
+	"close.unsaved.quit":       "仍然退出",
+	"close.unsaved.back":       "返回",
 }

@@ -152,7 +152,7 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 
 func (p *mailPage) refresh([]events.Event) {
 	if r := p.a.route; r.Page == PageCompose && p.draft == nil {
-		p.draft = openComposer(p.a, r.DraftID)
+		p.draft = p.a.composerFor(r.DraftID)
 	}
 	p.reload()
 	p.reader.sync(true)
@@ -246,7 +246,7 @@ func (p *mailPage) reload() {
 func (p *mailPage) closeDraft() {
 	if d := p.draft; d != nil {
 		p.draft = nil
-		d.leave(func() {})
+		d.leave()
 	}
 }
 

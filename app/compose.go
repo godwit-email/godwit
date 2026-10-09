@@ -12,6 +12,7 @@ import (
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/editor"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/richtext"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -19,15 +20,19 @@ import (
 
 // composer is the compose page of one draft: its fields, the editor of the
 // body's editable part, the read-only quote and signature, attachments and
-// sending. Its draftSaver saves it.
+// sending. Its draftSaver saves it. The App keeps it (a.drafts) from the
+// draft's opening until its saves are done after leaving, so reopening the
+// draft meanwhile shows it again.
 type composer struct {
 	a      *App
 	id     int64
 	loaded bool
+	loads  uint64 // bumped per load of the editor; older conversions are dropped
 
 	acc, accSel           int64 // the sending account; the Select's choice
-	to, cc, bcc           []string
-	replyTo, subject      string
+	to, cc, bcc, replyTo  []string
+	pending               [4]string // what is typed in the address fields, not yet an address
+	subject               string
 	showCc                bool
 	ed                    *editor.Editor
 	edVer                 uint64 // the editor's Version last seen
@@ -38,52 +43,86 @@ type composer struct {
 	link                  string
 	linkOpen, discardOpen bool
 
-	s       *draftSaver
-	sending bool
-	warn    *core.SendCheck // beforeSend's warnings, until sent anyway or edited
-	blocked string          // a plugin's refusal
+	s        *draftSaver
+	sending  bool
+	warn     *core.SendCheck                           // beforeSend's warnings, until sent anyway or edited
+	blocked  string                                    // a plugin's refusal
+	deleteFn func(ctx context.Context, id int64) error // tests swap it
 }
 
-// openComposer reads draft id and shows it once read.
-func openComposer(a *App, id int64) *composer {
-	p := &composer{a: a, id: id}
-	var d core.Draft
-	a.query(func(ctx context.Context) (err error) {
-		d, err = a.svc.GetDraft(ctx, id)
+// prepared is a draft with its body taken apart and converted for the
+// editor, off the UI thread.
+type prepared struct {
+	d          core.Draft
+	doc        richtext.Doc
+	quote, sig string
+}
+
+func prepare(d core.Draft) prepared {
+	editable, quote, sig := mail.SplitDraft(d.HTML)
+	return prepared{d, richtext.FromComposeHTML(editable), quote, sig}
+}
+
+// composerFor is draft id's composer: the one kept, else a new one that
+// reads the draft.
+func (a *App) composerFor(id int64) *composer {
+	if p := a.drafts[id]; p != nil {
+		return p
+	}
+	p := &composer{a: a, id: id, deleteFn: a.svc.DeleteDraft}
+	a.drafts[id] = p
+	var pd prepared
+	a.query(func(ctx context.Context) error {
+		d, err := a.svc.GetDraft(ctx, id)
+		pd = prepare(d)
 		return err
 	}, func(err error) {
+		if !p.here() {
+			return
+		}
 		if err != nil {
+			delete(a.drafts, id)
 			a.toastErr(err)
 			return
 		}
-		p.fill(d)
-		p.s = newDraftSaver(a, d, p.snapshot, p.ed.Composing)
+		p.fill(pd)
+		p.s = newDraftSaver(a, pd.d)
+		p.s.snapshot, p.s.commit, p.s.composing = p.snapshot, p.commitAll, p.ed.Composing
 		p.loaded = true
 	})
 	return p
 }
 
-// fill shows d, replacing what the page shows.
-func (p *composer) fill(d core.Draft) {
+// fill shows pd, replacing what the page shows.
+func (p *composer) fill(pd prepared) {
+	d := pd.d
+	p.loads++
 	p.acc, p.accSel = d.AccountID, d.AccountID
 	p.to, p.cc, p.bcc = slices.Clone(d.To), slices.Clone(d.Cc), slices.Clone(d.Bcc)
-	p.replyTo, p.subject, p.atts = d.ReplyTo, d.Subject, d.Attachments
+	p.replyTo = nil
+	if d.ReplyTo != "" {
+		p.replyTo = []string{d.ReplyTo}
+	}
+	p.pending = [4]string{}
+	p.subject, p.atts = d.Subject, d.Attachments
 	p.showCc = p.showCc || len(d.Cc)+len(d.Bcc) > 0 || d.ReplyTo != ""
-	editable, quote, sig := mail.SplitDraft(d.HTML)
-	p.quote, p.sig = quote, sig
-	doc := richtext.FromComposeHTML(editable)
+	p.quote, p.sig = pd.quote, pd.sig
 	if p.ed == nil {
-		p.ed = editor.New(doc, p.a.clock.Now)
+		p.ed = editor.New(pd.doc, p.a.clock.Now)
 	} else {
-		p.ed.Replace(doc)
+		p.ed.Replace(pd.doc)
 	}
 	p.edVer = p.ed.Version() // what was loaded is no edit
 }
 
 // snapshot is the draft as the page shows it, for the saver.
 func (p *composer) snapshot() core.Draft {
-	return core.Draft{AccountID: p.acc, To: slices.Clone(p.to), Cc: slices.Clone(p.cc), Bcc: slices.Clone(p.bcc),
-		ReplyTo: p.replyTo, Subject: p.subject, HTML: mail.JoinDraft(p.ed.HTML(), p.quote, p.sig)}
+	d := core.Draft{AccountID: p.acc, To: slices.Clone(p.to), Cc: slices.Clone(p.cc), Bcc: slices.Clone(p.bcc),
+		Subject: p.subject, HTML: mail.JoinDraft(p.ed.HTML(), p.quote, p.sig)}
+	if len(p.replyTo) > 0 {
+		d.ReplyTo = p.replyTo[0]
+	}
+	return d
 }
 
 func (p *composer) edited() {
@@ -91,16 +130,77 @@ func (p *composer) edited() {
 	p.s.Edited()
 }
 
-// leave saves what is left when the page goes away.
-func (p *composer) leave(done func()) {
+func (p *composer) lists() [4]*[]string { return [4]*[]string{&p.to, &p.cc, &p.bcc, &p.replyTo} }
+
+// commit makes what is typed in address field i addresses: a comma
+// separates them; Reply-To keeps one, the last.
+func (p *composer) commit(i int) {
+	list, changed := p.lists()[i], false
+	for _, s := range strings.Split(p.pending[i], ",") {
+		if s = strings.TrimSpace(s); s == "" || slices.Contains(*list, s) {
+			continue
+		}
+		if i == 3 {
+			*list = nil
+		}
+		*list, changed = append(*list, s), true
+	}
+	p.pending[i] = ""
+	if changed {
+		p.edited()
+	}
+}
+
+// commitAll commits every address field: before a flush, nothing typed is lost.
+func (p *composer) commitAll() {
+	for i := range p.pending {
+		if p.pending[i] != "" {
+			p.commit(i)
+		}
+	}
+}
+
+// flush saves what is left; done gets the error that kept it from saving.
+// A composer whose draft is saved and not shown is let go.
+func (p *composer) flush(done func(err error)) {
 	if p.s == nil {
-		done()
+		if !p.here() {
+			delete(p.a.drafts, p.id)
+		}
+		done(nil)
 		return
 	}
 	p.s.Flush(func(err error) {
-		p.a.toastErr(err)
-		done()
+		if err == nil && !p.here() && p.a.drafts[p.id] == p {
+			delete(p.a.drafts, p.id)
+		}
+		done(err)
 	})
+}
+
+// leave saves what is left as the page goes away, telling a failure.
+func (p *composer) leave() { p.flush(p.a.toastErr) }
+
+// flushDrafts flushes every kept draft; done gets their errors once all are done.
+func (a *App) flushDrafts(done func(err error)) {
+	ps := make([]*composer, 0, len(a.drafts))
+	for _, p := range a.drafts {
+		ps = append(ps, p)
+	}
+	left := len(ps)
+	if left == 0 {
+		done(nil)
+		return
+	}
+	var errs []error
+	for _, p := range ps {
+		p.flush(func(err error) {
+			errs = append(errs, err)
+			if left--; left == 0 {
+				done(errors.Join(errs...))
+			}
+		})
+	}
 }
 
 func (p *composer) title() (string, string) {
@@ -114,7 +214,7 @@ func (p *composer) title() (string, string) {
 	return title, p.s.status()
 }
 
-// here reports whether the route still shows this draft.
+// here reports whether the route shows this draft.
 func (p *composer) here() bool {
 	return p.a.route.Page == PageCompose && p.a.route.DraftID == p.id
 }
@@ -124,10 +224,12 @@ func (p *composer) here() bool {
 func (p *composer) switchAccount(acc int64) {
 	svc, id := p.a.svc, p.id
 	var d core.Draft
+	var sig string
 	p.s.Run(func(ctx context.Context, rev int64) (core.Draft, error) {
 		var err error
 		d, err = svc.SetDraftAccount(ctx, id, acc, rev)
-		return d, staleLatest(ctx, svc, id, &d, err)
+		_, _, sig = mail.SplitDraft(d.HTML)
+		return d, err
 	}, func(err error) {
 		if err != nil {
 			p.accSel = p.acc
@@ -136,14 +238,13 @@ func (p *composer) switchAccount(acc int64) {
 			}
 			return
 		}
-		p.acc, p.accSel = d.AccountID, d.AccountID
-		_, _, p.sig = mail.SplitDraft(d.HTML)
+		p.acc, p.accSel, p.sig = d.AccountID, d.AccountID, sig
 	})
 }
 
-// attachRun runs change, an attachment change that bumps the revision by
-// n, then reads the draft back: a revision beyond that is a change from
-// elsewhere, a conflict.
+// attachRun runs change, an attachment change that bumps the revision once
+// per attachment changed (n), then reads the draft back: a revision beyond
+// that is a change from elsewhere, a conflict.
 func (p *composer) attachRun(n func() int64, change func(ctx context.Context) error, done func(err error)) {
 	svc, id := p.a.svc, p.id
 	var d core.Draft
@@ -154,9 +255,9 @@ func (p *composer) attachRun(n func() int64, change func(ctx context.Context) er
 			return core.Draft{}, errors.Join(cerr, err)
 		}
 		if d.Revision != rev+n() {
-			return d, core.ErrStaleDraft
+			return core.Draft{}, core.ErrStaleDraft
 		}
-		return d, cerr
+		return d, cerr // the revision moved for what did change
 	}, func(err error) {
 		if d.ID != 0 {
 			p.atts = d.Attachments
@@ -230,11 +331,8 @@ func (p *composer) send(digest string) {
 		var blocked *core.SendBlockedError
 		switch {
 		case err == nil:
-			p.s.Stop() // the draft is in the outbox now
+			p.gone()
 			p.a.toast(i18n.T("compose.sent"))
-			if p.here() {
-				p.a.back()
-			}
 		case errors.As(err, &warned):
 			p.warn = &warned.Check
 		case errors.As(err, &blocked):
@@ -246,29 +344,54 @@ func (p *composer) send(digest string) {
 	})
 }
 
+// gone ends the composer of a draft sent or deleted: it never saves again.
+func (p *composer) gone() {
+	p.s.Stop()
+	if p.a.drafts[p.id] == p {
+		delete(p.a.drafts, p.id)
+	}
+	if p.here() {
+		p.a.back()
+	}
+}
+
+// discard deletes the draft; saving pauses meanwhile and resumes if that fails.
 func (p *composer) discard() {
 	p.discardOpen = false
-	p.s.Stop()
-	svc, id := p.a.svc, p.id
+	p.s.Hold()
+	del, id := p.deleteFn, p.id
 	p.s.Run(func(ctx context.Context, _ int64) (core.Draft, error) {
-		return core.Draft{}, svc.DeleteDraft(ctx, id)
+		return core.Draft{}, del(ctx, id)
 	}, func(err error) {
 		if err != nil {
+			p.s.Release()
 			p.a.toastErr(err)
 			return
 		}
-		if p.here() {
-			p.a.back()
-		}
+		p.gone()
 	})
 }
 
 func (p *composer) keepMine() {
-	p.atts = p.s.conflict.Attachments
+	p.atts = p.s.latest.Attachments
 	p.s.KeepMine()
 }
 
-func (p *composer) useLatest() { p.fill(p.s.UseLatest()) }
+// useLatest loads the latest draft into the page, converted off the UI
+// thread, dropping the local snapshot.
+func (p *composer) useLatest() {
+	d := *p.s.latest
+	p.loads++
+	loads := p.loads
+	var pd prepared
+	p.a.do(func(context.Context) error { pd = prepare(d); return nil }, func(error) {
+		if loads != p.loads || !p.s.conflict || p.s.latest == nil || p.s.latest.Revision != d.Revision {
+			return // something newer happened meanwhile
+		}
+		p.fill(pd)
+		p.s.UseLatest(d)
+	})
+}
 
 // invalid is the addresses in list that do not parse.
 func invalid(list ...[]string) []string {
@@ -283,7 +406,35 @@ func invalid(list ...[]string) []string {
 	return out
 }
 
-// view is the compose column. The Wit panel (Task 16) goes beside it.
+// addresses is address field i: its addresses as chips (red when invalid),
+// each with a button taking it out, before an input where Enter, a comma
+// or leaving it makes what was typed addresses.
+func (p *composer) addresses(c *ui.Context, i int, label string) {
+	t, th := theme.Of(c), c.Theme()
+	list := p.lists()[i]
+	ui.Row(c).Wrap().Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
+		for _, addr := range *list {
+			bg, fg := t.Hover, t.Foreground
+			if len(invalid([]string{addr})) > 0 {
+				bg, fg = t.DangerBg, t.Danger
+			}
+			ui.Row(c).Key(addr).Gap(th.Space(1)).Padding(th.Space(0.5), th.Space(1), th.Space(0.5), th.Space(2)).Radius(t.Radius.Full).Background(bg).TextColor(fg).Children(func() {
+				ui.Text(c, addr).SingleLine()
+				ui.ButtonBase(c).Size(th.Space(4), th.Space(4)).Radius(t.Radius.Full).Center().Label(i18n.Tf("compose.remove", addr)).Children(func() {
+					ui.Icon(c, icons.Get("x")).Size(theme.IconXs, theme.IconXs)
+				}).OnClick(func() {
+					*list = slices.DeleteFunc(*list, func(s string) bool { return s == addr })
+					p.edited()
+				})
+			})
+		}
+		in := ui.TextInputBase(c, &p.pending[i]).Grow(1).MinWidth(th.Space(30)).Label(label)
+		if p.pending[i] != "" && (in.Submitted() || strings.Contains(p.pending[i], ",") || !in.Focused()) {
+			p.commit(i)
+		}
+	})
+}
+
 func (p *composer) view(c *ui.Context) {
 	if !p.loaded {
 		return
@@ -292,13 +443,8 @@ func (p *composer) view(c *ui.Context) {
 	ui.Column(c).Grow(1).Children(func() {
 		p.fields(c)
 		p.toolbar(c)
-		if p.s.conflict != nil {
-			ui.Box(c).Padding(th.Space(3), th.Space(5), 0, th.Space(5)).Children(func() {
-				kit.Alert(c, kit.Warning, i18n.T("compose.conflict"), func() {
-					kit.Button(c, i18n.T("compose.conflict.keep"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(p.keepMine)
-					kit.Button(c, i18n.T("compose.conflict.latest"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(p.useLatest)
-				})
-			})
+		if p.s.conflict {
+			ui.Box(c).Padding(th.Space(3), th.Space(5), 0, th.Space(5)).Children(func() { p.conflictNotice(c) })
 		}
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Padding(th.Space(4), th.Space(5)).Gap(th.Space(3)).Children(func() { p.body(c) })
@@ -323,6 +469,25 @@ func (p *composer) view(c *ui.Context) {
 	}
 }
 
+// conflictNotice offers the choice a stale write left: keep the local
+// version or load the latest; reading the latest may need retrying first.
+func (p *composer) conflictNotice(c *ui.Context) {
+	small := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	text := i18n.T("compose.conflict")
+	if p.s.latestErr != nil {
+		text += " · " + humanize(p.s.latestErr)
+	}
+	kit.Alert(c, kit.Warning, text, func() {
+		switch {
+		case p.s.latest != nil:
+			kit.Button(c, i18n.T("compose.conflict.keep"), small).OnClick(p.keepMine)
+			kit.Button(c, i18n.T("compose.conflict.latest"), small).OnClick(p.useLatest)
+		case p.s.latestErr != nil:
+			kit.Button(c, i18n.T("common.retry"), small).OnClick(p.s.Refetch)
+		}
+	})
+}
+
 // row is a field's row: its name, then the control.
 func (p *composer) row(c *ui.Context, name string, control func()) {
 	t, th := theme.Of(c), c.Theme()
@@ -344,13 +509,8 @@ func (p *composer) fields(c *ui.Context) {
 			p.switchAccount(p.accSel)
 		}
 	})
-	tokens := func(list *[]string, label string) {
-		if ui.TokenField(c, list, nil).Grow(1).Label(label).Changed() {
-			p.edited()
-		}
-	}
 	p.row(c, i18n.T("compose.to"), func() {
-		tokens(&p.to, i18n.T("compose.to.input"))
+		p.addresses(c, 0, i18n.T("compose.to.input"))
 		if !p.showCc {
 			ui.ButtonBase(c).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
 				ui.Text(c, i18n.T("compose.cc_bcc"))
@@ -358,19 +518,11 @@ func (p *composer) fields(c *ui.Context) {
 		}
 	})
 	if p.showCc {
-		p.row(c, i18n.T("compose.cc"), func() { tokens(&p.cc, i18n.T("compose.cc.input")) })
-		p.row(c, i18n.T("compose.bcc"), func() { tokens(&p.bcc, i18n.T("compose.bcc.input")) })
-		p.row(c, i18n.T("compose.reply_to"), func() {
-			if ui.TextInputBase(c, &p.replyTo).Grow(1).Label(i18n.T("compose.reply_to.input")).Changed() {
-				p.edited()
-			}
-		})
+		p.row(c, i18n.T("compose.cc"), func() { p.addresses(c, 1, i18n.T("compose.cc.input")) })
+		p.row(c, i18n.T("compose.bcc"), func() { p.addresses(c, 2, i18n.T("compose.bcc.input")) })
+		p.row(c, i18n.T("compose.reply_to"), func() { p.addresses(c, 3, i18n.T("compose.reply_to.input")) })
 	}
-	reply := []string{}
-	if strings.TrimSpace(p.replyTo) != "" {
-		reply = []string{p.replyTo}
-	}
-	if bad := invalid(p.to, p.cc, p.bcc, reply); len(bad) > 0 {
+	if bad := invalid(p.to, p.cc, p.bcc, p.replyTo); len(bad) > 0 {
 		ui.Text(c, i18n.Tf("compose.invalid", strings.Join(bad, ", "))).FontSize(t.Text.Sm).TextColor(t.Danger).Padding(th.Space(1.5), th.Space(5))
 	}
 	p.row(c, i18n.T("compose.subject"), func() {
@@ -407,7 +559,7 @@ func (p *composer) toolbar(c *ui.Context) {
 			ui.Row(c).Key(att.ID).Gap(th.Space(1.5)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(2.5)).Radius(t.Radius.Md).Background(t.Hover).Children(func() {
 				ui.Text(c, att.Filename).SingleLine()
 				ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
-				kit.IconButton(c, "x", i18n.Tf("compose.attach.remove", att.Filename), ghost).OnClick(func() { p.removeAttachment(att.ID) })
+				kit.IconButton(c, "x", i18n.Tf("compose.remove", att.Filename), ghost).OnClick(func() { p.removeAttachment(att.ID) })
 			})
 		}
 		if p.attachErr != "" {

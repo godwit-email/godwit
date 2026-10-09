@@ -133,9 +133,14 @@ type App struct {
 	syncedAt time.Time        // the last successful sync; zero before one
 	ticking  bool             // a minute tick redraws the sync age
 
-	addAccount *onboarding // the add-account sheet; nil when closed
-	mail       *mailPage   // the Mail section
-	writes     *writeQueue // writes to the Service, ordered per resource
+	addAccount *onboarding         // the add-account sheet; nil when closed
+	mail       *mailPage           // the Mail section
+	writes     *writeQueue         // writes to the Service, ordered per resource
+	drafts     map[int64]*composer // open drafts, and left ones until their saves are done
+
+	closeAsk    bool   // a draft could not be saved as the window closes: ask
+	closeErr    error  // why
+	closeAnyway func() // closes after all
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
@@ -163,6 +168,7 @@ func New(d Deps) *App {
 	}
 	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
+	a.drafts = map[int64]*composer{}
 	a.mail = newMailPage(a)
 	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
@@ -261,14 +267,17 @@ func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 }
 
-// FlushDrafts saves the open draft's last edits, then calls done: before
-// the window closes.
-func (a *App) FlushDrafts(done func()) {
-	if d := a.mail.draft; d != nil {
-		d.leave(done)
-		return
-	}
-	done()
+// BeforeClose saves every draft's last edits, then calls proceed: before
+// the window closes or the App quits. When a draft cannot be saved the
+// window stays and asks whether to close anyway.
+func (a *App) BeforeClose(proceed func()) {
+	a.flushDrafts(func(err error) {
+		if err == nil {
+			proceed()
+			return
+		}
+		a.closeErr, a.closeAnyway, a.closeAsk = err, proceed, true
+	})
 }
 
 // SetForeground records whether the window is in front.

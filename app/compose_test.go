@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,16 +122,7 @@ func TestSendFlushesLatest(t *testing.T) {
 func TestSendWhileSaveBlocked(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@example.com")
 	p := h.fillNew("Plans")
-	release, started := make(chan struct{}), make(chan struct{})
-	var saves atomic.Int32
-	save := p.s.save
-	p.s.save = func(ctx context.Context, d core.Draft) (core.Draft, error) {
-		if saves.Add(1) == 1 {
-			close(started)
-			<-release
-		}
-		return save(ctx, d)
-	}
+	started, release := blockSaves(p)
 	h.writeBody("alpha")
 	h.advance(time.Second)
 	<-started
@@ -241,6 +233,22 @@ func TestComposeAttachments(t *testing.T) {
 	h.plat.files = []string{big}
 	h.click("添加附件")
 	h.see("附件超过了 25.0 MB 的上限")
+
+	// One added, one too large: the added one moved the revision.
+	other := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(other, []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.files = []string{other, big}
+	h.click("添加附件")
+	h.see("other.txt")
+	h.writeBody(" after both")
+	h.advance(time.Second)
+	h.until("saved without a conflict", func() bool { return strings.Contains(h.draft(p.id).HTML, "after both") })
+	if h.tt.HasText("草稿在别处被修改") {
+		t.Fatal("a partly failed attachment made a false conflict")
+	}
+	h.click("移除 other.txt")
 
 	h.click("移除 notes.txt")
 	h.until("removed", func() bool { return len(h.draft(p.id).Attachments) == 0 && !h.tt.HasText("notes.txt") })
@@ -372,15 +380,163 @@ func TestLeavingComposeSaves(t *testing.T) {
 	h.writeBody("left behind")
 	h.click("后退")
 	h.until("saved on leaving", func() bool { return strings.Contains(h.draft(p.id).HTML, "left behind") })
+	h.until("let go once saved", func() bool { return len(h.app.drafts) == 0 })
 
 	h.click("前进")
 	p = h.composerLoaded()
 	h.writeBody(" and closed")
 	done := false
-	h.app.FlushDrafts(func() { done = true })
+	h.app.BeforeClose(func() { done = true })
 	h.until("flushed for closing", func() bool { return done })
 	if !strings.Contains(h.draft(p.id).HTML, "left behind and closed") {
 		t.Fatalf("draft %q", h.draft(p.id).HTML)
+	}
+}
+
+// blockSaves makes the composer's next save wait for release.
+func blockSaves(p *composer) (started, release chan struct{}) {
+	started, release = make(chan struct{}), make(chan struct{})
+	var saves atomic.Int32
+	save := p.s.save
+	p.s.save = func(ctx context.Context, d core.Draft) (core.Draft, error) {
+		if saves.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return save(ctx, d)
+	}
+	return started, release
+}
+
+func TestLeftDraftKeepsSaving(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	started, release := blockSaves(p)
+	h.writeBody("still saving")
+	h.click("后退")
+	<-started
+	h.click("前进")
+	if q := h.composerLoaded(); q != p {
+		t.Fatal("reopening the draft made a second composer while the first still saves")
+	}
+	h.click("后退")
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.drain()
+	if closed {
+		t.Fatal("closed while a left draft's save was in flight")
+	}
+	close(release)
+	h.until("closed after the save", func() bool { return closed })
+	if !strings.Contains(h.draft(p.id).HTML, "still saving") || len(h.app.drafts) != 0 {
+		t.Fatalf("draft %q, kept %d", h.draft(p.id).HTML, len(h.app.drafts))
+	}
+}
+
+func TestCloseWithUnsavedDraft(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	p.s.save = func(context.Context, core.Draft) (core.Draft, error) { return core.Draft{}, errors.New("disk full") }
+	h.writeBody("precious")
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.see("草稿没有保存")
+	if closed {
+		t.Fatal("closed although the draft failed to save")
+	}
+	h.click("返回")
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("草稿没有保存") })
+	if closed || h.app.route.Page != PageCompose {
+		t.Fatal("going back closed or left the draft")
+	}
+	h.app.BeforeClose(func() { closed = true })
+	h.click("仍然退出")
+	if !closed {
+		t.Fatal("quitting anyway did not close")
+	}
+}
+
+func TestEditsDuringSendFlushAreSent(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@example.com")
+	p := h.fillNew("Plans")
+	started, release := blockSaves(p)
+	h.writeBody("A")
+	h.advance(time.Second)
+	<-started
+	h.click("发送")
+	h.writeBody(" B")
+	close(release)
+	out := h.sent(accs[0], 1)
+	if !strings.Contains(out[0], "A B") {
+		t.Fatalf("sent %s, want the edit made while sending waited", out[0])
+	}
+}
+
+func TestDiscardFailureKeepsSaving(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	p.deleteFn = func(context.Context, int64) error { return errors.New("disk busy") }
+	h.click("丢弃草稿")
+	h.click("丢弃")
+	h.see("disk busy")
+	if h.app.route.Page != PageCompose {
+		t.Fatal("left the draft although deleting failed")
+	}
+	h.writeBody("kept going")
+	h.advance(time.Second)
+	h.until("saving resumed", func() bool { return strings.Contains(h.draft(p.id).HTML, "kept going") })
+}
+
+func TestConflictReadFailure(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	h.writeBody("mine")
+	h.advance(time.Second)
+	h.until("saved", func() bool { return strings.Contains(h.draft(p.id).HTML, "mine") && !p.s.busy })
+	d := h.draft(p.id)
+	d.HTML = "<p>theirs</p>"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	get := p.s.getLatest
+	p.s.getLatest = func(context.Context, int64) (core.Draft, error) { return core.Draft{}, errors.New("db locked") }
+	h.writeBody(" more")
+	h.advance(time.Second)
+	h.see("草稿在别处被修改")
+	h.see("db locked")
+	rev := h.draft(p.id).Revision
+	h.writeBody(" still")
+	h.advance(2 * time.Second)
+	if h.draft(p.id).Revision != rev || h.tt.HasText("保留我的版本") {
+		t.Fatal("saved again, or offered a choice without the latest draft")
+	}
+	p.s.getLatest = get
+	h.click("重试")
+	h.click("保留我的版本")
+	h.until("mine kept", func() bool { return strings.Contains(h.draft(p.id).HTML, "mine more still") })
+}
+
+func TestReplyToAddress(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	h.click("抄送 · 密送")
+	h.addAddress("填写回复地址", "not an address")
+	h.see("地址无效：not an address")
+	h.addAddress("填写回复地址", "reply@example.com")
+	h.until("one Reply-To", func() bool { return !h.tt.HasText("地址无效") })
+	h.advance(time.Second)
+	h.until("saved", func() bool { return h.draft(p.id).ReplyTo == "reply@example.com" })
+}
+
+func TestTypedRecipientNotDropped(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@example.com")
+	h.openCompose()
+	h.click("添加收件人")
+	h.typeText("lena@example.com") // no Enter
+	h.click("发送")
+	h.sent(accs[0], 1)
+	if to := h.env.SMTP(accs[0].ID).Messages()[0].To; len(to) != 1 || to[0] != "lena@example.com" {
+		t.Fatalf("sent to %q", to)
 	}
 }
 
