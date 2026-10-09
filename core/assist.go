@@ -80,11 +80,11 @@ var selectionSpec = ai.ToolSpec{Name: "update_selection",
 // registerAssistTools offers the draft tools to Wit runs. update_selection
 // is prepared only by the run RewriteSelection starts, which knows the selection.
 func (s *Service) registerAssistTools() {
-	s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: "update_draft",
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "update_draft",
 		Description: "Replace the editable part of the draft (everything but the quoted email and the signature) with html.",
 		Schema:      object(map[string]any{"html": stringProp}, "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareUpdate, Apply: s.applyUpdate}})
-	s.registerTool(registeredTool{Spec: selectionSpec, Write: true, Exec: &executor{
+	s.mustRegister(toolDesc{Spec: selectionSpec, Write: true, Exec: &executor{
 		Prepare: func(context.Context, Conversation, json.RawMessage) (prepared, error) {
 			return prepared{}, errors.New("there is no selection to replace any more")
 		}, Apply: s.applyUpdate}})
@@ -160,13 +160,13 @@ func (s *Service) newAssistConversation(ctx context.Context, draftID int64, titl
 // assistSystemPrompt is an assist conversation's system prompt, built for
 // every request of a run, started or resumed, from the draft as it is then.
 // A selection run gets no draft context: its prompt carries the selection.
-func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []registeredTool) (string, error) {
+func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []toolDesc) (string, error) {
 	d, err := s.GetDraft(ctx, job.conv.DraftID)
 	if err != nil {
 		return "", err
 	}
 	answer := "Answer the user in " + s.readingLanguage(ctx) + ". "
-	if slices.ContainsFunc(tools, func(t registeredTool) bool { return t.Spec.Name == "update_selection" }) {
+	if slices.ContainsFunc(tools, func(t toolDesc) bool { return t.Spec.Name == "update_selection" }) {
 		return selectionSystem + "\n\n" + answer, nil
 	}
 	target, err := s.draftLanguage(ctx, d)
@@ -507,7 +507,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 	if err != nil {
 		return nil, err
 	}
-	tool := registeredTool{Spec: selectionSpec, Write: true, Exec: &executor{Apply: s.applyUpdate,
+	tool := toolDesc{Spec: selectionSpec, Write: true, Exec: &executor{Apply: s.applyUpdate,
 		Prepare: func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error) {
 			h, err := htmlArg(args)
 			if err != nil {
@@ -526,7 +526,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []registeredTool{tool}, nil)
+	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil)
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
@@ -613,7 +613,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if name == "translate-draft" { // never "the original's language": the skill does not see it
 		system += "\n\nTarget language: " + cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx)) + "."
 	}
-	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "skill:"+name, "draft", d.ID, "run"); err != nil {
+	if err := gateway.New(s.db).Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
 
@@ -648,7 +648,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			return spliceSelection(old, *sel, out)
 		})
 		if err == nil {
-			err = gateway.New(s.db).Record(ctx, gateway.SourceWit, "update_draft", "draft", d.ID, "approve")
+			err = gateway.New(s.db).Record(ctx, gateway.Entry{Source: gateway.SourceWit, Tool: "update_draft", TargetKind: "draft", TargetID: d.ID, Decision: "approve"})
 		}
 		if err != nil {
 			return ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}

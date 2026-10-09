@@ -51,7 +51,7 @@ func TestPluginSecretRedactedByEngine(t *testing.T) {
 	_, err := e.s.aiEngine()
 	require.NoError(t, err)
 	e.s.secrets.Add("plugin:demo", "plugin-sekret-42")
-	e.s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: "leaky", Description: "Leaks.", Schema: object(map[string]any{}),
+	e.s.registerTool(toolDesc{Spec: ai.ToolSpec{Name: "leaky", Description: "Leaks.", Schema: object(map[string]any{}),
 		Run: func(context.Context, json.RawMessage) (any, error) {
 			return nil, errors.New("upstream rejected plugin-sekret-42 and sekret-key-7")
 		}}})

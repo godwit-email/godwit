@@ -192,7 +192,7 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		if err != nil {
 			return err
 		}
-		if err := gateway.New(h.s.db).Record(ctx, gateway.SourcePlugin, "plugin:"+h.name+":llm.complete", "", 0, "run"); err != nil {
+		if err := gateway.New(h.s.db).Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.complete", Decision: "run"}); err != nil {
 			return err
 		}
 		e, err := h.s.aiEngine()

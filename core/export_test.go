@@ -2,14 +2,57 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/gateway"
 )
 
 // registerExecutorForTest offers a write tool named name whose calls become
 // approvals executed by ex. A restarted Service needs it registered again.
 func (s *Service) registerExecutorForTest(name string, ex executor) {
-	s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: name, Description: "Test write tool."}, Write: true, Exec: &ex})
+	if err := s.registerTool(toolDesc{Spec: ai.ToolSpec{Name: name, Description: "Test write tool."}, Write: true, Exec: &ex}); err != nil {
+		panic(err)
+	}
+}
+
+// extDescsForTest are the test descriptors of extEnv: taint (a Wit read tool
+// that marks the run as having read mail), ext_read (an MCP read tool with
+// egress, run externally once approved) and ext_write (a plugin write tool run
+// externally, bound to e.binding).
+func extDescsForTest(e *extEnv, prepare func(context.Context, Conversation, json.RawMessage) (prepared, error)) []toolDesc {
+	empty := map[string]any{"type": "object"}
+	return []toolDesc{
+		{Spec: ai.ToolSpec{Name: "taint", Description: "Reads mail.", Schema: empty,
+			Run: func(ctx context.Context, _ json.RawMessage) (any, error) {
+				runOf(ctx).scope.MarkReadMail()
+				return "mail", nil
+			}}},
+		{Spec: ai.ToolSpec{Name: "ext_read", Description: "Reads remotely.", Schema: empty,
+			Run: func(context.Context, json.RawMessage) (any, error) { e.inRun.Add(1); return "read in run", nil }},
+			Source: gateway.SourceMCP, Extension: "srv1", Mode: modeExternal, Prepare: prepare,
+			Egress: func(*gateway.Scope) []string { return []string{leakyDest} },
+			Run:    func(context.Context, Approval) (any, error) { e.runs.Add(1); return "read approved", nil }},
+		{Spec: ai.ToolSpec{Name: "ext_write", Description: "Writes remotely.", Schema: empty},
+			Source: gateway.SourcePlugin, Extension: "demo", Write: true, Mode: modeExternal, Prepare: prepare,
+			Binding: func(context.Context) (string, error) { return e.binding.Load().(string), nil },
+			Timeout: 10 * time.Second,
+			Run: func(ctx context.Context, _ Approval) (any, error) {
+				e.runs.Add(1)
+				if e.started != nil {
+					e.started <- struct{}{}
+				}
+				if e.block != nil {
+					select {
+					case <-e.block:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				}
+				return map[string]bool{"wrote": true}, nil
+			}},
+	}
 }
 
 // RunningPluginForTest reports whether the plugin runs, and the source hash of its code.

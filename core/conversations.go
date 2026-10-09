@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -306,45 +307,75 @@ func (s *Service) publishWit(convID int64, ev WitEvent) {
 	}
 }
 
-// registeredTool is a tool Wit runs can offer. A write tool has an executor
-// and no Run: its calls become approvals.
-type registeredTool struct {
-	Spec   ai.ToolSpec
-	Write  bool
-	Egress string
-	Exec   *executor
+// toolDesc is a tool Wit runs can offer. Every call goes through the gateway
+// as Source (empty: wit) and Extension, with Egress(scope) as its
+// destinations. A call that needs no approval runs in the run (Spec.Run). A
+// call that does (Write, Spec.NeedsApproval or egress after mail was read)
+// becomes an approval, prepared and, once accepted, executed by Mode:
+//   - tx (empty): Exec, whose statements commit with the approval (plan 3);
+//   - external: Prepare, then Run outside the approval lock within Timeout
+//     (default externalTimeout), its outcome recorded afterwards. Binding,
+//     if set, is recorded when proposed and checked before Run: a change
+//     makes the approval stale.
+type toolDesc struct {
+	Spec      ai.ToolSpec
+	Source    string
+	Extension string
+	Write     bool
+	Egress    func(scope *gateway.Scope) []string
+	Mode      string
+	Exec      *executor
+	Prepare   func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error)
+	Run       func(ctx context.Context, a Approval) (result any, err error)
+	Binding   func(ctx context.Context) (string, error)
+	Timeout   time.Duration
 }
 
-func (s *Service) registerTool(t registeredTool) {
+const modeExternal = "external"
+
+// registerTool offers t to Wit runs; a name already registered is an error.
+func (s *Service) registerTool(t toolDesc) error {
 	s.toolsMu.Lock()
 	defer s.toolsMu.Unlock()
+	if _, ok := s.tools[t.Spec.Name]; ok {
+		return fmt.Errorf("tool %s is already registered", t.Spec.Name)
+	}
 	if s.tools == nil {
-		s.tools = map[string]registeredTool{}
+		s.tools = map[string]toolDesc{}
 	}
 	s.tools[t.Spec.Name] = t
+	return nil
+}
+
+// mustRegister registers a built-in tool, whose name cannot collide.
+func (s *Service) mustRegister(t toolDesc) {
+	if err := s.registerTool(t); err != nil {
+		panic(err)
+	}
 }
 
 // registered returns the named tools. A name no longer registered becomes a
 // write tool without an executor, whose calls are denied, so a resumed run
 // can still answer the calls made to it.
-func (s *Service) registered(names ...string) []registeredTool {
+func (s *Service) registered(names ...string) []toolDesc {
 	s.toolsMu.Lock()
 	defer s.toolsMu.Unlock()
-	out := make([]registeredTool, 0, len(names))
+	out := make([]toolDesc, 0, len(names))
 	for _, n := range names {
 		t, ok := s.tools[n]
 		if !ok {
-			t = registeredTool{Spec: ai.ToolSpec{Name: n, Description: "No longer available."}, Write: true}
+			t = toolDesc{Spec: ai.ToolSpec{Name: n, Description: "No longer available."}, Write: true}
 		}
 		out = append(out, t)
 	}
 	return out
 }
 
-func (s *Service) executor(name string) *executor {
+func (s *Service) desc(name string) (toolDesc, bool) {
 	s.toolsMu.Lock()
 	defer s.toolsMu.Unlock()
-	return s.tools[name].Exec
+	t, ok := s.tools[name]
+	return t, ok
 }
 
 // runJob is a run in flight, started or resumed.
@@ -384,7 +415,7 @@ const historyBudget = 60000
 
 // request builds the run's request on state, trimmed to historyBudget; the
 // job keeps what drive needs to save the whole history.
-func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []registeredTool) (ai.Request, error) {
+func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []toolDesc) (ai.Request, error) {
 	system, err := s.witSystem(ctx, job, tools)
 	if err != nil {
 		return ai.Request{}, err
@@ -420,7 +451,7 @@ func (s *Service) untrack(job *runJob) {
 // startRun runs prompt in conv with tools. Its events also go to the
 // conversation's subscribers; the channel ends with done, error or interrupted
 // (then the run waits for its approvals and resumes in the background).
-func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string, tools []registeredTool) (<-chan WitEvent, error) {
+func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string, tools []toolDesc) (<-chan WitEvent, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return nil, err
@@ -435,7 +466,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 
 // launch claims a run and hands end to it. claimed, if set, runs once the run
 // is claimed and before the hand-off; its error fails the run and launch.
-func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []registeredTool,
+func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
 	claimed func(context.Context) error) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
@@ -511,32 +542,53 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 	return s.track(ctx, r.LastInsertID, conv, &gateway.Scope{}, 0), state, nil
 }
 
-// specs wraps the tools for one run: every call goes through the gateway, and
-// a write call it sends for approval is prepared first. Prepare fixes the
-// final arguments the approval records; a call it rejects goes back to the
-// model as an error, without an approval.
-func (s *Service) specs(job *runJob, tools []registeredTool) []ai.ToolSpec {
+// specs wraps the tools for one run: every call goes through the gateway as
+// its tool's source, and a call it sends for approval is prepared first.
+// Prepare fixes the final arguments the approval records; a call it rejects
+// goes back to the model as an error, without an approval.
+func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 	g := gateway.New(s.db)
 	out := make([]ai.ToolSpec, 0, len(tools))
 	for _, t := range tools {
-		spec := g.Wrap(job.scope, gateway.SourceWit, t.Spec, t.Write, t.Egress)
+		t.Source = cmp.Or(t.Source, gateway.SourceWit)
+		spec := g.Wrap(job.scope, gateway.Call{Source: t.Source, Extension: t.Extension, Write: t.Write}, t.Spec, t.Egress)
 		if run := spec.Run; run != nil {
 			spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
 				return run(context.WithValue(ctx, runKey{}, job), args)
 			}
 		}
-		gate, ex := spec.Gate, t.Exec
+		prepare := t.Prepare
+		if t.Mode != modeExternal {
+			prepare = nil
+			if t.Exec != nil {
+				prepare = t.Exec.Prepare
+			}
+		}
+		gate := spec.Gate
 		spec.Gate = func(ctx context.Context, args json.RawMessage) (ai.Decision, error) {
 			d, err := gate(ctx, args)
 			if err != nil || d != ai.Approve {
 				return d, err
 			}
-			if ex == nil {
+			if prepare == nil {
 				return ai.Deny, errors.New("this call needs an approval that this tool cannot take")
 			}
-			p, err := ex.Prepare(context.WithValue(ctx, runKey{}, job), job.conv, args)
+			ctx = context.WithValue(ctx, runKey{}, job)
+			var binding string
+			if t.Binding != nil { // before Prepare: a change in between makes the approval stale, never fresher
+				if binding, err = t.Binding(ctx); err != nil {
+					return ai.Deny, err
+				}
+			}
+			p, err := prepare(ctx, job.conv, args)
 			if err != nil {
 				return ai.Deny, err
+			}
+			p.Binding, p.source, p.extension, p.Destinations = binding, t.Source, t.Extension, nil
+			if t.Egress != nil {
+				for _, h := range t.Egress(job.scope) {
+					p.Destinations = append(p.Destinations, gateway.Host(h))
+				}
 			}
 			job.prepared.Store(ai.CallID(ctx), p)
 			return ai.Approve, nil
@@ -662,9 +714,15 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 			return WitEvent{}, fmt.Errorf("tool call %s was not prepared", c.Name)
 		}
 		p := v.(prepared)
+		dests := []byte("[]")
+		if len(p.Destinations) > 0 {
+			dests, _ = json.Marshal(p.Destinations)
+		}
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO approvals(run_id, seq, call_id, tool, args, summary, target_kind,
-			target_id, target_version, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-			Args: []any{job.id, job.round + i, c.ID, c.Name, string(p.Args), p.Summary, p.TargetKind, nullID(p.TargetID), p.TargetVersion, now, now}})
+			target_id, target_version, state, destinations, binding, source, extension, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+			Args: []any{job.id, job.round + i, c.ID, c.Name, string(p.Args), p.Summary, p.TargetKind, nullID(p.TargetID), p.TargetVersion,
+				string(dests), p.Binding, cmp.Or(p.source, gateway.SourceWit), p.extension, now, now}})
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return WitEvent{}, err

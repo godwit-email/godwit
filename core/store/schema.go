@@ -171,4 +171,11 @@ var Migrations = [][]string{{
 	`ALTER TABLE plugins ADD COLUMN install_dir TEXT NOT NULL DEFAULT ''`,
 	// JSON list of the config keys that may have a keychain entry (deleted by uninstall).
 	`ALTER TABLE plugins ADD COLUMN secret_keys TEXT NOT NULL DEFAULT '[]'`,
+	// An approval's egress destinations (JSON list of host[:port]), shown on its card.
+	`ALTER TABLE approvals ADD COLUMN destinations TEXT NOT NULL DEFAULT '[]'`,
+	// What an external approval was bound to when proposed (plugin or MCP versions); a change makes it stale.
+	`ALTER TABLE approvals ADD COLUMN binding TEXT NOT NULL DEFAULT ''`,
+	// The proposing tool's source and extension, for the audit rows of its decision.
+	`ALTER TABLE approvals ADD COLUMN source TEXT NOT NULL DEFAULT 'wit'`,
+	`ALTER TABLE approvals ADD COLUMN extension TEXT NOT NULL DEFAULT ''`,
 }}

@@ -70,6 +70,7 @@ type Service struct {
 
 	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
 	active map[int64]*runJob // runs in flight, guarded by runMu
+	extRun map[int64]extExec // approvals executing outside runMu (external mode) by ID, guarded by runMu
 
 	subsMu     sync.Mutex
 	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
@@ -80,7 +81,7 @@ type Service struct {
 	assistMu sync.Mutex // finding or creating a draft's assist conversation
 
 	toolsMu sync.Mutex
-	tools   map[string]registeredTool // tools Wit runs can offer, by name
+	tools   map[string]toolDesc // tools Wit runs can offer, by name
 
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
