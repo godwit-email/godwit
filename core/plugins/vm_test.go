@@ -165,11 +165,15 @@ func TestCallInterruptLoopVMReusable(t *testing.T) {
 }
 
 // asyncFn installs a host function `wait(x)` whose result comes from another
-// goroutine once release is closed.
-func asyncFn(c *CallScope, release <-chan struct{}, ran *atomic.Int64) {
+// goroutine once release is closed. If entered is not nil, each wait sends on
+// it once its host goroutine is running.
+func asyncFn(c *CallScope, release <-chan struct{}, ran *atomic.Int64, entered chan<- struct{}) {
 	c.Runtime().Set("wait", c.VM().HostFunc("wait", func(c *CallScope, call goja.FunctionCall) goja.Value {
 		x := call.Argument(0).String()
 		return c.Async(func(ctx context.Context) (any, error) {
+			if entered != nil {
+				entered <- struct{}{}
+			}
 			<-release
 			if ran != nil {
 				ran.Add(1)
@@ -187,7 +191,7 @@ func TestAsyncHostFunc(t *testing.T) {
 	release := make(chan struct{})
 	go func() { time.Sleep(10 * time.Millisecond); close(release) }()
 	got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		asyncFn(c, release, nil)
+		asyncFn(c, release, nil, nil)
 		return c.Runtime().RunString(`(async () => {
 			const [a, b] = await Promise.all([wait("a"), wait("b")])
 			let e
@@ -206,22 +210,26 @@ func TestLateCallbackDropped(t *testing.T) {
 	clock := &fakeClock{}
 	v := newTestVM(t, "", clock)
 	late := make(chan struct{})
+	lateEntered := make(chan struct{}, 1)
 	var ran atomic.Int64
 	errc := make(chan error, 1)
 	go func() {
 		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, late, &ran)
+			asyncFn(c, late, &ran, lateEntered)
 			return c.Runtime().RunString(`globalThis.n = 0; wait("x").then(() => { globalThis.n++ })`)
 		})
 		errc <- err
 	}()
-	require.Eventually(t, func() bool { return clock.pending() > 0 }, 5*time.Second, time.Millisecond)
+	// Time out only once the call's async work is in flight: wait("x") ran
+	// (so n = 0 ran before it), and its host goroutine is blocked on late.
+	<-lateEntered
 	clock.Advance(30 * time.Second)
 	require.ErrorIs(t, <-errc, ErrTimeout)
 
-	// The second call is pumping its own completions when the first call's
-	// completion arrives.
+	// The late completion is released only while the second call is running,
+	// so the only place it can be received is the second call's pump.
 	second := make(chan struct{})
+	secondEntered := make(chan struct{}, 1)
 	type res struct {
 		v   any
 		err error
@@ -229,12 +237,12 @@ func TestLateCallbackDropped(t *testing.T) {
 	resc := make(chan res, 1)
 	go func() {
 		got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, second, nil)
+			asyncFn(c, second, nil, secondEntered)
 			return c.Runtime().RunString(`(async () => { const r = await wait("y"); return [r, globalThis.n] })()`)
 		})
 		resc <- res{got, err}
 	}()
-	require.Eventually(t, func() bool { return clock.pending() > 0 }, 5*time.Second, time.Millisecond)
+	<-secondEntered
 	close(late)
 	require.Eventually(t, func() bool { return v.dropped.Load() == 1 }, 5*time.Second, time.Millisecond)
 	close(second)
@@ -263,7 +271,7 @@ func TestCallsSerialized(t *testing.T) {
 			defer wg.Done()
 			_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
 				note(name + ":start")
-				asyncFn(c, release, nil)
+				asyncFn(c, release, nil, nil)
 				c.Runtime().Set("note", func(s string) { note(name + ":" + s) })
 				return c.Runtime().RunString(`(async () => { for (let i = 0; i < 20; i++) await wait("x"); note("end") })()`)
 			})
@@ -438,7 +446,7 @@ func TestWatchdogPolicy(t *testing.T) {
 	resc := make(chan error, 1)
 	go func() {
 		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, gate, nil)
+			asyncFn(c, gate, nil, nil)
 			return c.Runtime().RunString(`wait("x")`)
 		})
 		resc <- err
