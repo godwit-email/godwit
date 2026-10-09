@@ -196,4 +196,7 @@ var Migrations = [][]string{{
 	`CREATE TABLE run_citations (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 		call_id TEXT NOT NULL DEFAULT '', message_id INTEGER NOT NULL, subject TEXT NOT NULL, from_addr TEXT NOT NULL, date INTEGER, suspect INTEGER NOT NULL DEFAULT 0)`,
 	`CREATE INDEX run_citations_run ON run_citations(run_id)`,
+	// The part of the conversation's history the run added: messages [hist_from, hist_to) (Conversation.Runs).
+	`ALTER TABLE runs ADD COLUMN hist_from INTEGER`,
+	`ALTER TABLE runs ADD COLUMN hist_to INTEGER`,
 }}

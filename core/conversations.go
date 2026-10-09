@@ -22,15 +22,17 @@ import (
 // draft's compose panel, DraftID set). Messages is decoded from the saved
 // model state, for display; Citations are the mail its runs showed the
 // model, in the order they came, each with the run and tool call that showed
-// it (a message shown twice is there twice); ActiveRunID is its run that is
+// it (a message shown twice is there twice); Runs are the parts of Messages
+// each run added, in run order; ActiveRunID is its run that is
 // running, resuming or waiting for approvals (0: none). ListConversations
-// leaves those three empty.
+// leaves those four empty.
 type Conversation struct {
 	ID                 int64
 	Kind, Title, Model string
 	DraftID            int64
 	Messages           []ai.Message
 	Citations          []Citation
+	Runs               []RunSpan
 	ActiveRunID        int64
 	UpdatedAt          time.Time
 }
@@ -43,6 +45,14 @@ type WitEvent struct {
 	RunID     int64
 	Citations []Citation
 	Approvals []Approval
+}
+
+// RunSpan is the part of a conversation's Messages that run ID added, its
+// question included: Messages[From:To]. A resume extends its run's span; a
+// run that saved nothing (failed, cancelled while running) has none.
+type RunSpan struct {
+	ID       int64
+	From, To int
 }
 
 // Citation is a message a run's tools showed the model: RunID's call CallID
@@ -139,6 +149,13 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	}
 	if len(rows.Values) > 0 {
 		c.ActiveRunID = store.Int(rows.Values[0][0])
+	}
+	rows, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	for _, r := range rows.Values {
+		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
 	}
 	rows, err = s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
 		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
@@ -785,6 +802,18 @@ func (s *Service) exec(ctx context.Context, st sqlite.Statement) error {
 	return err
 }
 
+// runSpan records that runID's history runs from before (its first save
+// keeps its start) to after.
+func runSpan(runID int64, before, after []byte) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE runs SET hist_from = COALESCE(hist_from, ?), hist_to = ? WHERE id = ?",
+		Args: []any{countMessages(before), countMessages(after), runID}}
+}
+
+func countMessages(state []byte) int {
+	ms, _ := ai.Messages(state) // the state was just decoded or encoded
+	return len(ms)
+}
+
 func runState(runID int64, state string) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE runs SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), runID}}
 }
@@ -813,12 +842,13 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		}
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
-		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done")})
+		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done"),
+			runSpan(job.id, job.full, res.State)})
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
-	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State),
+	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State),
 		{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}}}
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)

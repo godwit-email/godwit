@@ -473,7 +473,8 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 		if err != nil {
 			return convID, err
 		}
-		stmts = append(stmts, saveState(convID, closed))
+		stmts = append(stmts, saveState(convID, closed),
+			sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{countMessages(closed), runID}})
 	}
 	stmts = append(stmts, runState(runID, final))
 	_, err = s.db.Transaction(ctx, stmts)

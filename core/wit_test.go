@@ -610,3 +610,41 @@ func TestConversationActiveRunAndCitations(t *testing.T) {
 	require.NoError(t, e.s.DeleteConversation(t.Context(), conv.ID))
 	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM run_citations"), "deleted with the conversation")
 }
+
+// TestConversationRunSpans: each run's span is the part of the history it
+// added, its question included; a resume extends its run's span.
+func TestConversationRunSpans(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"a1"}},
+		testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"zzznothing"}`}}},
+		testllm.Turn{Text: []string{"a2"}})
+	r1 := e.ask(t, conv.ID, "q1")
+	r2 := e.ask(t, conv.ID, "q2")
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 6, "q1 a1 | q2 call result a2")
+	assert.Equal(t, []RunSpan{{ID: r1[0].RunID, From: 0, To: 2}, {ID: r2[0].RunID, From: 2, To: 6}}, c.Runs)
+
+	// Interrupted, then resumed: one run, one span.
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}},
+		testllm.Turn{Text: []string{"a3"}})
+	r3 := e.ask(t, conv.ID, "q3")
+	require.Equal(t, "interrupted", r3[len(r3)-1].Kind)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: 8}, c.Runs[2], "the question and the call")
+	sub, stop := e.s.SubscribeConversation(conv.ID)
+	defer stop()
+	require.NoError(t, e.s.ResolveApproval(t.Context(), r3[len(r3)-1].Approvals[0].ID, true))
+	for ev := range sub {
+		if ev.Kind == "done" {
+			break
+		}
+	}
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Len(t, c.Runs, 3)
+	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: len(c.Messages)}, c.Runs[2], "the resume extends it")
+	assert.Equal(t, "a3", c.Messages[len(c.Messages)-1].Text)
+}
