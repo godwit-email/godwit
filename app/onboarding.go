@@ -422,7 +422,7 @@ func (o *onboarding) Content(c *ui.Context) {
 		Border(theme.Hairline, t.Border).Children(func() {
 		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Background(t.Sidebar).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
 			ui.Row(c).Gap(th.Space(2.5)).Children(func() {
-				ui.Icon(c, icons.Get("mail")).Size(theme.IconXl, theme.IconXl)
+				ui.Icon(c, logo).Size(theme.BrandLogo, theme.BrandLogo)
 				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.Text.Brand).FontWeight(600)
 			})
 			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
