@@ -1,9 +1,6 @@
 package app
 
-import (
-	"context"
-	"errors"
-)
+import "context"
 
 // writeQueue orders writes to one resource: a key's writes run one at a time,
 // and while one runs only the newest submitted snapshot waits. All its state
@@ -12,9 +9,20 @@ type writeQueue struct {
 	a      *App
 	keys   map[string]*writeKey
 	chains map[string][]chainJob // Chain's writes per key, the running one first
-	idle   []func(error)         // Settle's waiters
-	errs   []error               // what failed while they wait
+	idle   []func()              // Idle's waiters
+	failed uint64                // writes failed so far
+	errs   []markedErr           // the latest failures, oldest first
 }
+
+type markedErr struct {
+	n   uint64 // its number in failed
+	err error
+}
+
+// maxErrs is how many failures the queue remembers for ErrorsSince.
+// ponytail: a close that sees more than this many writes fail meanwhile
+// misses the oldest; all it needs is to know that some failed.
+const maxErrs = 64
 
 type writeKey struct {
 	next    *writeJob // newest snapshot waiting behind the running one
@@ -104,26 +112,43 @@ func (q *writeQueue) runChain(key string) {
 	})
 }
 
-// Settle calls done once no write of any key runs or waits, with the
-// errors of the writes that finished meanwhile; at once with nil when idle.
-func (q *writeQueue) Settle(done func(err error)) {
-	q.idle = append(q.idle, done)
+// Mark is the point ErrorsSince counts from.
+func (q *writeQueue) Mark() uint64 { return q.failed }
+
+// ErrorsSince is the errors of the writes finished after mark.
+func (q *writeQueue) ErrorsSince(mark uint64) []error {
+	var out []error
+	for _, e := range q.errs {
+		if e.n > mark {
+			out = append(out, e.err)
+		}
+	}
+	return out
+}
+
+// Idle calls cb once no write of any key runs or waits: at once when none
+// does; writes that start meanwhile are waited for too.
+func (q *writeQueue) Idle(cb func()) {
+	q.idle = append(q.idle, cb)
 	q.settled(nil)
 }
 
+// settled counts a finished write (err nil for none) and calls the Idle
+// waiters once the queue is empty.
 func (q *writeQueue) settled(err error) {
-	if len(q.idle) == 0 {
-		return
-	}
 	if err != nil {
-		q.errs = append(q.errs, err)
+		q.failed++
+		q.errs = append(q.errs, markedErr{q.failed, err})
+		if len(q.errs) > maxErrs {
+			q.errs = q.errs[1:]
+		}
 	}
-	if len(q.keys) > 0 || len(q.chains) > 0 {
+	if len(q.idle) == 0 || len(q.keys) > 0 || len(q.chains) > 0 {
 		return
 	}
-	ws, err := q.idle, errors.Join(q.errs...)
-	q.idle, q.errs = nil, nil
+	ws := q.idle
+	q.idle = nil
 	for _, w := range ws {
-		w(err)
+		w()
 	}
 }

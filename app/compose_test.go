@@ -660,3 +660,56 @@ func TestCloseAsksAfterEarlierWriteFailed(t *testing.T) {
 	}
 	h.see("有修改没有保存")
 }
+
+func TestCloseAsksWhenWriteStartedDuringFlushFails(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	started, releaseDraft := blockSaves(p)
+	h.writeBody("slow") // waits for typing to pause: no write queued yet
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		return core.Settings{}, errors.New("disk full")
+	}
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	<-started
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	h.until("the settings write failed", func() bool { return h.app.settings.Theme != "dark" })
+	close(releaseDraft)
+	h.until("the draft saved", func() bool { return strings.Contains(h.draft(p.id).HTML, "slow") && !p.s.busy })
+	h.drain()
+	if closed {
+		t.Fatal("closed although a write started during the flush failed")
+	}
+	h.see("有修改没有保存")
+}
+
+func TestCloseWaitsForWriteRunningPastDrafts(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	p := h.openCompose()
+	started, releaseDraft := blockSaves(p)
+	h.writeBody("slow")
+	releaseSettings, saving := make(chan struct{}), make(chan struct{})
+	save := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		close(saving)
+		<-releaseSettings
+		return save(ctx, st)
+	}
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	<-started
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	<-saving
+	close(releaseDraft)
+	h.until("the draft saved", func() bool { return strings.Contains(h.draft(p.id).HTML, "slow") && !p.s.busy })
+	h.drain()
+	if closed {
+		t.Fatal("closed while a settings write still ran")
+	}
+	close(releaseSettings)
+	h.until("closed once the write is done", func() bool { return closed })
+}

@@ -359,17 +359,11 @@ func (a *App) BeforeClose(proceed func()) {
 			ask(err)
 		}
 	}
-	// Settle collects every write's error from here on, the ones finishing
-	// while drafts still flush too.
-	var errs []error
-	both := func(err error) { // the writes' and the drafts'
-		if errs = append(errs, err); len(errs) == 2 {
-			settle(errors.Join(errs...))
-		}
-	}
+	mark := a.writes.Mark() // every write failing from here on counts
 	a.pages[PageSettings].(*settingsPage).commitEdits()
-	a.writes.Settle(both)
-	a.flushDrafts(both)
+	a.flushDrafts(func(draftErr error) {
+		a.writes.Idle(func() { settle(errors.Join(append([]error{draftErr}, a.writes.ErrorsSince(mark)...)...)) })
+	})
 }
 
 // SetForeground records whether the window is in front.
