@@ -493,7 +493,12 @@ func TestDraftChangesRefusedWhileSending(t *testing.T) {
 		{"removeAtt", func() { p.removeAttachment(att) }},
 		{"setAccount", func() { p.switchAccount(p.acc) }},
 		{"apply", func() { w.decideOne(0, true); w.decideOne(1, false) }},
-		{"resolve", func() { w.decideAll(true); w.panel.decide(ap, true, false) }},
+		{"resolve", func() {
+			if w.review != nil { // decided by "apply" once the send is over
+				w.decideAll(true)
+			}
+			w.panel.decide(ap, true, false)
+		}},
 		{"resolveAll", func() { w.panel.decide(ap, true, true) }},
 		{"undo", w.undo},
 		{"assist", func() { w.panel.input = "再改一下"; w.panel.send(w.options(nil)) }},
