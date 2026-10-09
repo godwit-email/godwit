@@ -17,13 +17,20 @@ import (
 	"github.com/godwit-email/godwit/ownerlock"
 )
 
+// trafficLightSize is the height of macOS's window buttons; trafficLightInset
+// is how far the close button sits from the window's left edge.
+const trafficLightSize, trafficLightInset = 14, 16
+
 // windowOptions is the main window on goos.
 func windowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{Title: "Godwit", Width: 1280, Height: 820, MinWidth: 960, MinHeight: 600, StateKey: "main",
 		TitleBarStyle: mygo.TitleBarHiddenInset}
 	switch goos {
 	case "darwin":
-		o.Vibrancy = mygo.VibrancySidebar
+		// Not hiddenInset: its toolbar makes the title bar as tall as AppKit's
+		// (66 on macOS 26). Center the traffic lights in our own top bar.
+		o.Vibrancy, o.TitleBarStyle = mygo.VibrancySidebar, mygo.TitleBarHidden
+		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
 	case "windows":
 		o.Vibrancy, o.TitleBarHeight = mygo.VibrancyMica, 40
 	}
