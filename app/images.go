@@ -22,20 +22,22 @@ import (
 
 // The budget of one message's images (global constraints).
 const (
-	maxImages      = 50       // remote images
+	maxImages      = 50       // images, remote and inline
 	maxImageBytes  = 5 << 20  // one image
 	maxImagesBytes = 20 << 20 // all remote images together
-	imageWorkers   = 4        // downloads at once
+	imageWorkers   = 4        // downloads and decodes at once
 	maxPixels      = 40_000_000
+	maxViewPixels  = 100_000_000 // all images together, decoded
 	imageTimeout   = 15 * time.Second
 	maxRedirects   = 5
 )
 
 var (
-	errTooManyImages  = errors.New("too many remote images")
+	errTooManyImages  = errors.New("too many images")
 	errImageTooLarge  = errors.New("image too large")
 	errImagesTooLarge = errors.New("images too large together")
 	errImagePixels    = errors.New("image has too many pixels")
+	errImagesPixels   = errors.New("images have too many pixels together")
 	errImageFormat    = errors.New("not a PNG, JPEG, GIF or WebP image")
 	errImageScheme    = errors.New("image address is not http or https")
 	errImageHost      = errors.New("image host is not public")
@@ -53,10 +55,12 @@ type imageLoader struct {
 	client        *http.Client
 	sem           chan struct{}
 	left          atomic.Int64 // bytes the budget has left
-	remote        int          // remote images asked for
+	pixels        atomic.Int64 // decoded pixels the budget has left
+	count         int          // images asked for
 	closed        bool
 	imgs          map[string]*loadedImage
-	allowLoopback bool // tests: dial the httptest server
+	allowLoopback bool                             // tests: dial the httptest server
+	decode        func([]byte) (*ui.Bitmap, error) // the pixels, once the size is checked; tests swap it
 }
 
 type loadedImage struct {
@@ -70,13 +74,14 @@ type loadedImage struct {
 func newImageLoader(parent context.Context, post func(func()), allowLoopback bool) *imageLoader {
 	ctx, stop := context.WithCancel(parent)
 	l := &imageLoader{ctx: ctx, stop: stop, post: post, sem: make(chan struct{}, imageWorkers),
-		imgs: map[string]*loadedImage{}, allowLoopback: allowLoopback}
+		imgs: map[string]*loadedImage{}, allowLoopback: allowLoopback, decode: ui.DecodeBitmap}
 	l.left.Store(maxImagesBytes)
+	l.pixels.Store(maxViewPixels)
 	l.client = l.newClient()
 	return l
 }
 
-// cancel stops the downloads; what they bring is dropped.
+// cancel stops the downloads and decodes; what they bring is dropped.
 func (l *imageLoader) cancel() {
 	l.closed = true
 	l.stop()
@@ -125,7 +130,8 @@ func isHTTP(u *url.URL) bool { return u.Scheme == "http" || u.Scheme == "https" 
 
 // Load returns src's image once it has loaded; until then, and when it
 // fails, nil (the renderer shows a placeholder). The first call starts the
-// load: data: URLs decode on a goroutine, http(s) ones download.
+// load on a goroutine, at most imageWorkers at once: data: URLs decode,
+// http(s) ones download first.
 func (l *imageLoader) Load(src string) *ui.Bitmap {
 	if l == nil || l.closed {
 		return nil
@@ -141,22 +147,18 @@ func (l *imageLoader) Load(src string) *ui.Bitmap {
 	case err == nil && strings.EqualFold(u.Scheme, "data"):
 		fetch = func() ([]byte, error) { return dataURL(src) }
 	case err == nil && isHTTP(u):
-		if l.remote >= maxImages {
-			e.err, e.done = errTooManyImages, true
-			return nil
-		}
-		l.remote++
 		fetch = func() ([]byte, error) { return l.download(src) }
 	default:
 		e.err, e.done = errImageScheme, true
 		return nil
 	}
+	if l.count >= maxImages {
+		e.err, e.done = errTooManyImages, true
+		return nil
+	}
+	l.count++
 	go func() {
-		data, err := fetch()
-		var bm *ui.Bitmap
-		if err == nil {
-			bm, err = decodeImage(data)
-		}
+		bm, err := l.load(fetch)
 		l.post(func() {
 			if l.closed {
 				bm, err = nil, context.Canceled
@@ -167,13 +169,26 @@ func (l *imageLoader) Load(src string) *ui.Bitmap {
 	return nil
 }
 
-func (l *imageLoader) download(src string) ([]byte, error) {
+// load fetches and decodes an image once a worker is free, unless the
+// loader was cancelled by then.
+func (l *imageLoader) load(fetch func() ([]byte, error)) (*ui.Bitmap, error) {
 	select {
 	case l.sem <- struct{}{}:
 		defer func() { <-l.sem }()
 	case <-l.ctx.Done():
 		return nil, l.ctx.Err()
 	}
+	if err := l.ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := fetch()
+	if err != nil {
+		return nil, err
+	}
+	return l.decodeImage(data)
+}
+
+func (l *imageLoader) download(src string) ([]byte, error) {
 	held := reserve(&l.left, readChunk) // the first read's share: none left, no request
 	if held == 0 {
 		return nil, errImagesTooLarge
@@ -277,14 +292,29 @@ func dataURL(src string) ([]byte, error) {
 }
 
 // decodeImage decodes a PNG, JPEG, GIF or WebP image, known by its content,
-// of at most maxPixels; the size is read before the pixels.
-func decodeImage(data []byte) (*ui.Bitmap, error) {
+// of at most maxPixels and within what is left of maxViewPixels; the size is
+// read before the pixels.
+func (l *imageLoader) decodeImage(data []byte) (*ui.Bitmap, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || !imageFormats[format] {
 		return nil, errImageFormat
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > maxPixels {
+	px := int64(cfg.Width) * int64(cfg.Height)
+	if px > maxPixels {
 		return nil, errImagePixels
 	}
-	return ui.DecodeBitmap(data)
+	for {
+		left := l.pixels.Load()
+		if px > left {
+			return nil, errImagesPixels
+		}
+		if l.pixels.CompareAndSwap(left, left-px) {
+			break
+		}
+	}
+	bm, err := l.decode(data)
+	if err != nil {
+		l.pixels.Add(px)
+	}
+	return bm, err
 }

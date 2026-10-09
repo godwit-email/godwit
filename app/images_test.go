@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 )
 
 // testLoader is an imageLoader whose posted callbacks run in wait.
@@ -233,4 +235,94 @@ func TestImageTotalBudget(t *testing.T) {
 	if !slices.ContainsFunc(srcs, func(s string) bool { return errors.Is(l.imgs[s].err, errImagesTooLarge) }) {
 		t.Error("no image refused for the total budget")
 	}
+}
+
+func dataPNG(b []byte) string { return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b) }
+
+// TestInlineImageBudgets: data: images share the remote images' count,
+// workers and a total pixel budget, and a cancelled view decodes no more.
+func TestInlineImageBudgets(t *testing.T) {
+	// decoding counts how many decodes run at once and waits for gate.
+	decoding := func(l *imageLoader, gate chan struct{}) (calls, most *atomic.Int64) {
+		calls, most = new(atomic.Int64), new(atomic.Int64)
+		var now atomic.Int64
+		l.decode = func([]byte) (*ui.Bitmap, error) {
+			calls.Add(1)
+			n := now.Add(1)
+			defer now.Add(-1)
+			for m := most.Load(); n > m && !most.CompareAndSwap(m, n); m = most.Load() {
+			}
+			<-gate
+			return &ui.Bitmap{}, nil
+		}
+		return calls, most
+	}
+	all := func(l *imageLoader, srcs []string) func() bool {
+		return func() bool {
+			return !slices.ContainsFunc(srcs, func(s string) bool { return !l.settled(s) })
+		}
+	}
+
+	t.Run("count and workers", func(t *testing.T) {
+		l, wait := testLoader(t, false)
+		gate := make(chan struct{})
+		calls, most := decoding(l, gate)
+		var srcs []string
+		for i := range 60 {
+			srcs = append(srcs, dataPNG(pngHeader(uint32(i+1), 1)))
+			l.Load(srcs[i])
+		}
+		time.Sleep(20 * time.Millisecond) // let the decodes pile up behind the gate
+		close(gate)
+		wait("all settled", all(l, srcs))
+		if n := calls.Load(); n > maxImages {
+			t.Errorf("%d inline images decoded, at most %d", n, maxImages)
+		}
+		if m := most.Load(); m > imageWorkers {
+			t.Errorf("%d decodes at once, at most %d", m, imageWorkers)
+		}
+		if !errors.Is(l.imgs[srcs[59]].err, errTooManyImages) {
+			t.Errorf("the 60th image: %v", l.imgs[srcs[59]].err)
+		}
+	})
+	t.Run("total pixels", func(t *testing.T) {
+		l, wait := testLoader(t, false)
+		gate := make(chan struct{})
+		close(gate)
+		calls, _ := decoding(l, gate)
+		var srcs []string
+		for i := range 10 { // 16 MP each: six fit in 100 MP
+			srcs = append(srcs, dataPNG(pngHeader(4000+uint32(i), 4000)))
+			l.Load(srcs[i])
+		}
+		wait("all settled", all(l, srcs))
+		refused := 0
+		for _, s := range srcs {
+			if errors.Is(l.imgs[s].err, errImagesPixels) {
+				refused++
+			}
+		}
+		if n := calls.Load(); n != 6 || refused != 4 {
+			t.Errorf("%d decoded, %d refused for the total; want 6 and 4", n, refused)
+		}
+	})
+	t.Run("cancel stops queued decodes", func(t *testing.T) {
+		l, wait := testLoader(t, false)
+		gate := make(chan struct{})
+		calls, _ := decoding(l, gate)
+		var srcs []string
+		for i := range 20 {
+			srcs = append(srcs, dataPNG(pngHeader(uint32(i+1), 1)))
+			l.Load(srcs[i])
+		}
+		for calls.Load() < imageWorkers { // decodes post nothing until the gate opens
+			time.Sleep(time.Millisecond)
+		}
+		l.cancel()
+		close(gate)
+		wait("all settled", all(l, srcs))
+		if n := calls.Load(); n != imageWorkers {
+			t.Errorf("%d decodes after cancel, want only the %d running", n, imageWorkers)
+		}
+	})
 }
