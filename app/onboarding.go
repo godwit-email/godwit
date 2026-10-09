@@ -55,23 +55,32 @@ type onboarding struct {
 	detectedFor     string // the address detected is for
 	detectStop      func()
 
-	prov               auth.Provider
-	askEmail           bool // the provider was picked before an address was typed
-	secret, username   string
-	manual             bool
-	imapHost, imapPort string
-	smtpHost, smtpPort string
-	imapSec, smtpSec   core.Security
-	flowID, authURL    string
-	oauthErr           error
-	report             core.CheckReport
-	checking, adding   bool
-	name               string
-	syncLimit          int
+	prov                 auth.Provider
+	askEmail             bool // the provider was picked before an address was typed
+	secret, username     string
+	manual               bool
+	imapHost, imapPort   string
+	smtpHost, smtpPort   string
+	imapSec, smtpSec     core.Security
+	flowID, authURL      string
+	oauthErr             error
+	report               core.CheckReport
+	checking, adding     bool
+	invalid, invalidNext string // the form's own settings-step failure, in words
+	name                 string
+	syncLimit            int
+	again                bool  // finish starts over for another account
+	addedID              int64 // the account added; a failed sync-range update retries only that
+	saveErr              error
+
+	// add and update save the account: the Service's, swapped by tests.
+	add    func(context.Context, core.AccountInput) (core.Account, error)
+	update func(context.Context, int64, core.AccountPatch) (core.Account, error)
 }
 
 func newOnboarding(a *App, sheet bool) *onboarding {
-	return &onboarding{a: a, sheet: sheet, open: sheet, providers: append(a.svc.ListProviders(), otherProvider), syncLimit: defaultSyncLimit}
+	return &onboarding{a: a, sheet: sheet, open: sheet, providers: append(a.svc.ListProviders(), otherProvider), syncLimit: defaultSyncLimit,
+		add: a.svc.AddAccount, update: a.svc.UpdateAccount}
 }
 
 // openAddAccount shows the add-account sheet over the current page.
@@ -120,7 +129,8 @@ func (o *onboarding) toPick() {
 // reset starts over at the pick step, dropping what is in flight.
 func (o *onboarding) reset() {
 	o.leave()
-	*o = onboarding{a: o.a, sheet: o.sheet, open: o.sheet, providers: o.providers, gen: o.gen, syncLimit: defaultSyncLimit}
+	*o = onboarding{a: o.a, sheet: o.sheet, open: o.sheet, providers: o.providers, gen: o.gen, syncLimit: defaultSyncLimit,
+		add: o.add, update: o.update}
 }
 
 func validEmail(s string) bool {
@@ -170,11 +180,15 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 		p, _, err = svc.DetectProvider(ctx, strings.TrimSpace(email))
 		return err
 	}, func(err error) {
-		if err != nil || email != o.email {
+		if gen != o.gen || email != o.email {
+			return
+		}
+		if err != nil {
+			o.emailErr = humanize(err)
 			return
 		}
 		o.detected, o.detectedFor = p, email
-		if then != nil && gen == o.gen {
+		if then != nil {
 			then(p)
 		}
 	})
@@ -287,6 +301,11 @@ func (o *onboarding) connect() {
 	from := o.step
 	o.goTo(stepChecking)
 	o.checking, o.report = true, core.CheckReport{}
+	if o.invalid, o.invalidNext = o.validate(); o.invalid != "" {
+		o.checking = false
+		o.report.Steps = []core.CheckStep{{Name: "settings", Kind: core.KindInvalid}, {Name: "imap", Skipped: true}, {Name: "smtp", Skipped: true}}
+		return
+	}
 	gen, svc, in := o.gen, o.a.svc, o.input()
 	var r core.CheckReport
 	o.a.do(func(ctx context.Context) error {
@@ -310,6 +329,29 @@ func (o *onboarding) connect() {
 	})
 }
 
+// validate checks the form as core's settings step does, saying what is
+// wrong and what to do in the user's words: what core says is English.
+func (o *onboarding) validate() (reason, next string) {
+	if !validEmail(o.email) {
+		return i18n.T("onboarding.invalid.email"), i18n.T("onboarding.next.email")
+	}
+	if o.prov.Login == "oauth" {
+		return "", ""
+	}
+	for _, sv := range []struct{ proto, host, port string }{{"IMAP", o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}} {
+		if strings.TrimSpace(sv.host) == "" {
+			return i18n.Tf("onboarding.invalid.host", sv.proto), i18n.T("onboarding.next.host")
+		}
+		if p, err := strconv.Atoi(strings.TrimSpace(sv.port)); err != nil || p < 1 || p > 65535 {
+			return i18n.Tf("onboarding.invalid.port", sv.proto, strings.TrimSpace(sv.port)), i18n.T("onboarding.next.port")
+		}
+	}
+	if o.secret == "" {
+		return i18n.Tf("onboarding.invalid.secret", o.secretName()), i18n.T("onboarding.next.secret")
+	}
+	return "", ""
+}
+
 // retry goes back to the sign-in after a failed check, keeping what was typed.
 func (o *onboarding) retry(manual bool) {
 	if o.prov.Login == "oauth" {
@@ -320,41 +362,50 @@ func (o *onboarding) retry(manual bool) {
 	o.goTo(stepPassword)
 }
 
-// finish adds the account, with the default sync range and then the one
-// chosen. again starts over for another account; else the window goes to
-// the mail and the sheet closes onto the account's settings.
+// finish adds the account, with the default sync range, then sets the
+// range chosen; after a failed range update it retries only that. again
+// starts over for another account; else the window goes to the mail and
+// the sheet closes onto the account's settings. The form is disabled while
+// it saves, so what is saved is what shows.
 func (o *onboarding) finish(again bool) {
 	if o.adding {
 		return
 	}
-	o.adding = true
-	a, svc, in, limit := o.a, o.a.svc, o.input(), o.syncLimit
-	var acc core.Account
+	o.adding, o.again, o.saveErr = true, again, nil
+	a, add, update, in, limit, id := o.a, o.add, o.update, o.input(), o.syncLimit, o.addedID
+	gen := o.gen
 	a.do(func(ctx context.Context) error {
-		var err error
-		if acc, err = svc.AddAccount(ctx, in); err != nil {
+		if id == 0 {
+			acc, err := add(ctx, in)
+			if err != nil {
+				return err
+			}
+			id = acc.ID
+		}
+		if limit != defaultSyncLimit {
+			_, err := update(ctx, id, core.AccountPatch{SyncLimit: &limit})
 			return err
 		}
-		if limit != acc.SyncLimit {
-			_, err = svc.UpdateAccount(ctx, acc.ID, core.AccountPatch{SyncLimit: &limit})
-		}
-		return err
+		return nil
 	}, func(err error) {
 		o.adding = false
-		a.toastErr(err)
-		if acc.ID == 0 {
+		if id != 0 && o.addedID == 0 {
+			o.addedID, o.flowID = id, "" // the account took the sign-in
+			a.load()
+		}
+		if gen != o.gen { // the sheet closed meanwhile
 			return
 		}
-		o.flowID = "" // the account took the sign-in
-		a.load()
+		if err != nil {
+			o.saveErr = err
+			return
+		}
 		switch {
 		case again:
 			o.reset()
 		case o.sheet:
-			if a.addAccount == o {
-				a.addAccount = nil
-				a.navigate(Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)})
-			}
+			a.addAccount = nil
+			a.navigate(Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(id, 10)})
 		default:
 			o.reset()
 			a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
@@ -367,23 +418,22 @@ func (o *onboarding) finish(again bool) {
 // steps on the right.
 func (o *onboarding) Content(c *ui.Context) {
 	t := theme.Of(c)
-	s := t.Scale
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, 8, 8, 8).Radius(12).Clip().Background(t.Background).
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, 8*t.Scale, 8*t.Scale, 8*t.Scale).Radius(12).Clip().Background(t.Background).
 		Border(1, t.Border).Children(func() {
-		ui.Column(c).Width(440).Padding(48*s, 44*s).Gap(28*s).Background(t.Sidebar).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-			ui.Row(c).Gap(10).Children(func() {
+		ui.Column(c).Width(440).Padding(48*t.Scale, 44*t.Scale).Gap(28*t.Scale).Background(t.Sidebar).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+			ui.Row(c).Gap(10 * t.Scale).Children(func() {
 				ui.Icon(c, icons.Get("mail")).Size(28, 28)
-				ui.Text(c, i18n.T("onboarding.brand")).FontSize(18).FontWeight(600)
+				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.FontSize + 4).FontWeight(600)
 			})
-			ui.Column(c).Gap(10).Children(func() {
-				ui.Text(c, i18n.T("onboarding.headline")).FontSize(30).FontWeight(600)
+			ui.Column(c).Gap(10 * t.Scale).Children(func() {
+				ui.Text(c, i18n.T("onboarding.headline")).FontSize(t.FontSize + 16).FontWeight(600)
 				ui.Text(c, i18n.T("onboarding.lede")).TextColor(t.Muted).LineHeight(1.7)
 			})
-			ui.Column(c).Gap(18 * s).Children(func() {
+			ui.Column(c).Gap(18 * t.Scale).Children(func() {
 				for _, p := range []struct{ icon, key string }{{"shield", "keychain"}, {"server", "local"}, {"sparkles", "ai"}} {
-					ui.Row(c).Gap(12).AlignItems(ui.Start).Children(func() {
-						ui.Icon(c, icons.Get(p.icon)).Size(18, 18).Margin(2, 0, 0, 0).TextColor(t.Foreground.Mix(t.Background, 0.25))
-						ui.Column(c).Gap(2).Shrink(1).Children(func() {
+					ui.Row(c).Gap(12 * t.Scale).AlignItems(ui.Start).Children(func() {
+						ui.Icon(c, icons.Get(p.icon)).Size(18, 18).Margin(2*t.Scale, 0, 0, 0).TextColor(t.Foreground.Mix(t.Background, 0.25))
+						ui.Column(c).Gap(2 * t.Scale).Shrink(1).Children(func() {
 							ui.Text(c, i18n.T("onboarding.promise."+p.key)).FontWeight(500)
 							ui.Text(c, i18n.T("onboarding.promise."+p.key+".sub")).FontSize(t.FontSize - 1).TextColor(t.Muted).LineHeight(1.6)
 						})
@@ -395,7 +445,7 @@ func (o *onboarding) Content(c *ui.Context) {
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(520).Padding(56*s, 32*s).Gap(22 * s).Children(func() { o.body(c) })
+				ui.Column(c).FillWidth().MaxWidth(520).Padding(56*t.Scale, 32*t.Scale).Gap(22 * t.Scale).Children(func() { o.body(c) })
 			})
 		})
 	})
@@ -404,22 +454,21 @@ func (o *onboarding) Content(c *ui.Context) {
 // sheetView is the 560-wide add-account sheet; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
 	t := theme.Of(c)
-	s := t.Scale
 	ink := t.Foreground
 	if t.Dark {
 		ink = t.Background
 	}
 	ui.DialogBase(c, &o.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink.Alpha(0.28)).Justify(ui.Start).Padding(64, 0, 0, 0)
+		backdrop.Background(ink.Alpha(0.28)).Justify(ui.Start).Padding(64*t.Scale, 0, 0, 0)
 		panel.Width(560).MaxHeight(760).Radius(14).Clip().Background(t.Background).Border(1, t.Border).
 			Shadow(0, 24, 64, 0, ink.Alpha(0.18))
-		ui.Row(c).Padding(20*s, 24*s, 0, 24*s).Children(func() {
-			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(16).FontWeight(600)
+		ui.Row(c).Padding(20*t.Scale, 24*t.Scale, 0, 24*t.Scale).Children(func() {
+			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(t.FontSize + 2).FontWeight(600)
 			ui.Spacer(c)
 			kit.IconButton(c, "x", i18n.T("common.close"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { o.open = false })
 		})
 		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(16*s, 24*s, 24*s, 24*s).Gap(22 * s).Children(func() { o.body(c) })
+			ui.Column(c).Padding(16*t.Scale, 24*t.Scale, 24*t.Scale, 24*t.Scale).Gap(22 * t.Scale).Children(func() { o.body(c) })
 		})
 	})
 	if !o.open {
@@ -444,8 +493,8 @@ func (o *onboarding) body(c *ui.Context) {
 
 func heading(c *ui.Context, title, sub string) {
 	t := theme.Of(c)
-	ui.Column(c).Gap(6).Children(func() {
-		ui.Text(c, title).FontSize(20).FontWeight(600)
+	ui.Column(c).Gap(6 * t.Scale).Children(func() {
+		ui.Text(c, title).FontSize(t.FontSize + 6).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
@@ -469,10 +518,9 @@ func primary(c *ui.Context, label string, disabled bool) ui.Element {
 
 func (o *onboarding) pickView(c *ui.Context) {
 	t := theme.Of(c)
-	s := t.Scale
 	heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
-	ui.Column(c).Gap(6).Children(func() {
-		ui.Row(c).Gap(8).Children(func() {
+	ui.Column(c).Gap(6 * t.Scale).Children(func() {
+		ui.Row(c).Gap(8 * t.Scale).Children(func() {
 			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Invalid: o.emailErr != ""}).Label(i18n.T("onboarding.email")).Grow(1)
 			if in.Changed() {
 				o.emailErr = ""
@@ -490,20 +538,20 @@ func (o *onboarding) pickView(c *ui.Context) {
 		}
 	})
 	primary(c, i18n.T("common.continue"), strings.TrimSpace(o.email) == "").OnClick(o.next)
-	ui.Row(c).Gap(12).FontSize(t.FontSize - 2).TextColor(t.Muted).Children(func() {
+	ui.Row(c).Gap(12 * t.Scale).FontSize(t.FontSize - 2).TextColor(t.Muted).Children(func() {
 		ui.Box(c).Height(1).Grow(1).Background(t.Border)
 		ui.Text(c, i18n.T("onboarding.or_pick"))
 		ui.Box(c).Height(1).Grow(1).Background(t.Border)
 	})
-	ui.Column(c).Gap(8).Children(func() {
+	ui.Column(c).Gap(8 * t.Scale).Children(func() {
 		for i := 0; i < len(o.providers); i += 2 {
-			ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
+			ui.Row(c).Gap(8 * t.Scale).AlignItems(ui.Stretch).Children(func() {
 				for _, p := range o.providers[i:min(i+2, len(o.providers))] {
 					how := i18n.T("onboarding.login." + p.Login)
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")
 					}
-					b := ui.ButtonBase(c).Grow(1).Basis(0).Justify(ui.Start).Height(48*s).PaddingX(12).Gap(10).Radius(8).Border(1, t.Border).Background(t.Background)
+					b := ui.ButtonBase(c).Grow(1).Basis(0).Justify(ui.Start).Height(48*t.Scale).PaddingX(12*t.Scale).Gap(10*t.Scale).Radius(8).Border(1, t.Border).Background(t.Background)
 					if b.Hovered() {
 						b.Background(t.Hover)
 					}
@@ -530,12 +578,13 @@ func (o *onboarding) backLink(c *ui.Context) {
 }
 
 func (o *onboarding) providerHeader(c *ui.Context, sub string) {
-	ui.Row(c).Gap(12).Children(func() {
+	t := theme.Of(c)
+	ui.Row(c).Gap(12 * t.Scale).Children(func() {
 		mark(c, providerMark(o.prov), 40)
 		ui.Column(c).Children(func() {
-			ui.Text(c, providerName(o.prov)).FontSize(20).FontWeight(600)
+			ui.Text(c, providerName(o.prov)).FontSize(t.FontSize + 6).FontWeight(600)
 			if sub != "" {
-				ui.Text(c, sub).TextColor(theme.Of(c).Muted)
+				ui.Text(c, sub).TextColor(t.Muted)
 			}
 		})
 	})
@@ -568,13 +617,13 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		hint = i18n.Tf("onboarding.hint."+login, name)
 	}
 	if hint != "" {
-		ui.Column(c).Gap(10).Padding(14, 16).Radius(10).Background(t.Sidebar).Border(1, t.Border).Children(func() {
+		ui.Column(c).Gap(10*t.Scale).Padding(14*t.Scale, 16*t.Scale).Radius(10).Background(t.Sidebar).Border(1, t.Border).Children(func() {
 			ui.Text(c, hint).FontWeight(500)
 			steps := tr("onboarding.steps." + o.prov.ID)
 			if steps == "" {
 				steps = tr("onboarding.steps." + login)
 			}
-			ui.Column(c).Gap(4).Children(func() {
+			ui.Column(c).Gap(4 * t.Scale).Children(func() {
 				for i, line := range strings.Split(steps, "\n") {
 					ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(1.6)
 				}
@@ -616,13 +665,13 @@ func (o *onboarding) manualView(c *ui.Context) {
 		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
 	}
 	server := func(proto string, host, port *string, sec *core.Security) {
-		ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+		ui.Row(c).Gap(8 * t.Scale).AlignItems(ui.Start).Children(func() {
 			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1)
 			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(90)
 			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) })
 		})
 	}
-	ui.Column(c).Gap(12).Children(func() {
+	ui.Column(c).Gap(12 * t.Scale).Children(func() {
 		server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
 		server("smtp", &o.smtpHost, &o.smtpPort, &o.smtpSec)
 		ui.Field(c, i18n.T("onboarding.username"), func() {
@@ -635,7 +684,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	t := theme.Of(c)
 	o.backLink(c)
 	o.providerHeader(c, i18n.T("onboarding.oauth.sub"))
-	ui.Column(c).Gap(12).Padding(20).Radius(10).Border(1, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Gap(12*t.Scale).Padding(20*t.Scale).Radius(10).Border(1, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(o.startOAuth)
@@ -675,6 +724,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		return i18n.T(k + ".waiting"), i18n.T("onboarding.check.waiting"), 0
 	}
 	reason, next := st.Detail, ""
+	if st.Name == "settings" {
+		return i18n.Tf(k+".failed", o.settingsReason(st)), o.settingsNext(), 2
+	}
 	switch kind := string(st.Kind); kind {
 	case "auth":
 		switch login := o.prov.Login; login {
@@ -689,6 +741,34 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
 	}
 	return i18n.Tf(k+".failed", reason), next, 2
+}
+
+// settingsReason words a failed settings step: the form's own check, or one
+// of the sign-in errors core finds; never core's English.
+func (o *onboarding) settingsReason(st core.CheckStep) string {
+	switch st.Detail {
+	case "":
+		if o.invalid != "" {
+			return o.invalid
+		}
+	case core.ErrUnknownFlow.Error():
+		return i18n.T("onboarding.invalid.flow")
+	case core.ErrWrongAccount.Error():
+		return i18n.T("onboarding.invalid.wrong_account")
+	case core.ErrProviderMismatch.Error():
+		return i18n.T("onboarding.invalid.provider")
+	}
+	return i18n.T("onboarding.invalid.other")
+}
+
+func (o *onboarding) settingsNext() string {
+	switch {
+	case o.invalid != "":
+		return o.invalidNext
+	case o.prov.Login == "oauth":
+		return i18n.T("onboarding.next.oauth")
+	}
+	return i18n.T("onboarding.next.server")
 }
 
 func (o *onboarding) checkView(c *ui.Context) {
@@ -706,12 +786,12 @@ func (o *onboarding) checkView(c *ui.Context) {
 	ui.Column(c).Radius(10).Border(1, t.Border).Clip().Children(func() {
 		for i, st := range steps {
 			text, detail, status := o.checkRow(st)
-			row := ui.Row(c).Gap(12).AlignItems(ui.Start).Padding(12, 14)
+			row := ui.Row(c).Gap(12*t.Scale).AlignItems(ui.Start).Padding(12*t.Scale, 14*t.Scale)
 			if i > 0 {
 				row.BorderWidth(1, 0, 0, 0).BorderColor(t.Hover)
 			}
 			row.Children(func() {
-				dot := ui.Box(c).Size(20, 20).Radius(10).Center().FontSize(12)
+				dot := ui.Box(c).Size(20, 20).Radius(10).Center().FontSize(t.FontSize - 2)
 				switch status {
 				case 1:
 					dot.Background(t.Success.Alpha(0.12)).TextColor(t.Success).Children(func() { ui.Icon(c, icons.Get("check")).Size(12, 12) })
@@ -720,7 +800,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 				default:
 					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Text(c, "…") })
 				}
-				ui.Column(c).Gap(2).Grow(1).Shrink(1).Children(func() {
+				ui.Column(c).Gap(2 * t.Scale).Grow(1).Shrink(1).Children(func() {
 					ui.Text(c, text)
 					if detail != "" {
 						ui.Text(c, detail).FontSize(t.FontSize - 2).TextColor(t.Muted)
@@ -730,7 +810,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 		}
 	})
 	if failed {
-		ui.Row(c).Gap(8).Children(func() {
+		ui.Row(c).Gap(8 * t.Scale).Children(func() {
 			if o.prov.Login == "oauth" {
 				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{}).OnClick(func() { o.retry(false) })
 				return
@@ -745,22 +825,27 @@ var syncLimits = []int{2000, 10000, 100000}
 
 func (o *onboarding) doneView(c *ui.Context) {
 	t := theme.Of(c)
-	ui.Column(c).Gap(6).Children(func() {
+	ui.Column(c).Gap(6 * t.Scale).Children(func() {
 		ui.Box(c).Size(36, 36).Radius(18).Background(t.Success.Alpha(0.12)).TextColor(t.Success).Center().Children(func() {
 			ui.Icon(c, icons.Get("check")).Size(18, 18)
 		})
-		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(20).FontWeight(600).Margin(8, 0, 0, 0)
+		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(t.FontSize+6).FontWeight(600).Margin(8*t.Scale, 0, 0, 0)
 		ui.Text(c, strings.TrimSpace(o.email)).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
-		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")})
+		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help"))
 	opts := make([]kit.Option[int], len(syncLimits))
 	for i, n := range syncLimits {
 		opts[i] = kit.Option[int]{Value: n, Label: i18n.T("onboarding.sync." + strconv.Itoa(n))}
 	}
-	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.syncLimit, opts) }).Description(i18n.T("onboarding.sync.help"))
-	ui.Column(c).Gap(8).Children(func() {
+	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.syncLimit, opts).Disabled(o.adding) }).Description(i18n.T("onboarding.sync.help"))
+	if o.saveErr != nil {
+		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(func() { o.finish(o.again) })
+		})
+	}
+	ui.Column(c).Gap(8 * t.Scale).Children(func() {
 		label := i18n.T("onboarding.start")
 		if o.sheet {
 			label = i18n.T("common.done")

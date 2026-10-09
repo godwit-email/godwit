@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -238,5 +240,96 @@ func TestAddAccountSheet(t *testing.T) {
 	}
 	if want := "account:" + strconv.FormatInt(added.ID, 10); added.ID == 0 || h.app.route.Settings != want || added.Name != "Second" || added.SyncLimit != 2000 {
 		t.Fatalf("route %+v, added %+v", h.app.route, added)
+	}
+}
+
+// toDone takes the first-run onboarding through the check of a new account
+// on fake servers, to the done page.
+func (h *harness) toDone(email string) *onboarding {
+	h.t.Helper()
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	h.fill("邮箱地址", email)
+	h.manualServers()
+	h.fill("密码", "secret")
+	h.click("连接")
+	h.see("连接成功")
+	h.fill("发件人名称", "Saved Name")
+	return o
+}
+
+func TestOnboardingSaveDisablesEdits(t *testing.T) {
+	plaintext(t)
+	h := newHarness(t)
+	o := h.toDone("new@example.com")
+	release := make(chan struct{})
+	add := o.add
+	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) {
+		<-release
+		return add(ctx, in)
+	}
+	h.click("开始使用")
+	h.until("saving", func() bool { return o.adding })
+	h.click("发件人名称")
+	h.typeText("Changed")
+	if o.name != "Saved Name" {
+		t.Fatalf("name edited while saving: %q", o.name)
+	}
+	close(release)
+	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
+	accs, err := h.env.Svc.ListAccounts(context.Background())
+	if err != nil || len(accs) != 1 || accs[0].Name != "Saved Name" {
+		t.Fatalf("accounts %+v, %v", accs, err)
+	}
+}
+
+func TestOnboardingSyncLimitRetry(t *testing.T) {
+	plaintext(t)
+	h := newHarness(t)
+	o := h.toDone("new@example.com")
+	o.syncLimit = 10000
+	adds, fails := 0, 1
+	add, update := o.add, o.update
+	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) { adds++; return add(ctx, in) }
+	o.update = func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
+		if fails > 0 {
+			fails--
+			return core.Account{}, errors.New("boom")
+		}
+		return update(ctx, id, p)
+	}
+	h.click("开始使用")
+	h.see("出错了：boom")
+	if h.app.route.Page != PageOnboarding || o.step != stepDone {
+		t.Fatalf("finished after a failed update: route %+v, step %d", h.app.route, o.step)
+	}
+	h.click("重试")
+	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
+	accs, err := h.env.Svc.ListAccounts(context.Background())
+	if err != nil || len(accs) != 1 || accs[0].SyncLimit != 10000 || adds != 1 {
+		t.Fatalf("accounts %+v, %v, %d adds", accs, err, adds)
+	}
+}
+
+func TestOnboardingSettingsErrors(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	h.fill("邮箱地址", "new@example.com")
+	h.fill("密码", "secret")
+	h.click("连接")
+	h.see("服务器设置有误：没有填写 IMAP 服务器")
+	h.see("在「手动设置服务器」里填写服务器地址")
+	h.click("手动设置服务器")
+	h.fill("IMAP 服务器", "127.0.0.1")
+	h.fill("SMTP 服务器", "127.0.0.1")
+	h.fill("IMAP 端口", "99999")
+	h.click("连接")
+	h.see("服务器设置有误：IMAP 端口「99999」无效")
+	h.see("端口是 1 到 65535 之间的数字，例如 993 或 465")
+	for _, s := range h.tt.Texts() {
+		if strings.Contains(s, "required") || strings.Contains(s, "range") {
+			t.Fatalf("raw core error shown: %q", s)
+		}
 	}
 }
