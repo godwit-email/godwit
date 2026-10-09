@@ -56,7 +56,31 @@ const (
 	ToastMaxWidth     = 420
 	TitleButtonHeight = 24 // buttons in the top bar
 	PopupOffset       = 4  // room between a popup and its anchor
+	SelectedBorder    = 2  // the border of a chosen tile
 )
+
+// Sizes of glyphs and small parts; they do not follow the density.
+const (
+	IconXs, IconSm, Icon, IconMd, IconLg, IconXl = 12, 14, 16, 18, 20, 28
+	Logo                                         = 64         // the About page's logo
+	MarkSm, MarkMd, MarkLg                       = 20, 28, 40 // provider marks
+	RailButton                                   = 40         // the icon rail's buttons
+	CloseButton                                  = 20         // a toast's close button
+	Control                                      = 16         // check boxes and radio buttons
+	RadioDot, StatusDot                          = 8, 6       // a chosen radio's dot; status dots
+	SwitchWidth, SwitchHeight, SwitchThumb       = 32, 18, 14 // a switch's track and thumb
+	SwitchInset                                  = (SwitchHeight - SwitchThumb) / 2
+	StepDot, PendingDot, DoneBadge               = 20, 10, 36   // onboarding's check steps, OAuth wait, done mark
+	ThemeTileWidth, ThemeTileHeight              = 132, 84      // settings' theme pictures
+	TileRail, TileInset, TileGap, TileLine       = 14, 10, 6, 5 // the parts of a theme picture
+)
+
+// Shadow is a drop shadow's offset down and its blur.
+type Shadow struct{ Y, Blur float32 }
+
+// Shadows: Sm under thumbs and tabs, Md under popups and toasts, Lg under
+// dialogs, Xl under the add-account sheet.
+var ShadowSm, ShadowMd, ShadowLg, ShadowXl = Shadow{1, 2}, Shadow{4, 16}, Shadow{16, 48}, Shadow{24, 64}
 
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {

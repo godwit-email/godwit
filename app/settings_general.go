@@ -194,34 +194,32 @@ func (p *settingsPage) generalView(c *ui.Context) {
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
-	// The picture has a fixed size: its parts do not follow the density.
-	const rail, inset, gap, line = 14, 10, 6, 5
 	preview := func(tok theme.Tokens, w float32) {
 		side, long, short := w/4, w/3, w/5
-		ui.Row(c).Size(w, 84).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
-			ui.Box(c).Width(min(rail, side))
-			ui.Box(c).Width(side).Margin(inset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Sm, 0, 0, 0)
-			ui.Column(c).Grow(1).Margin(inset, 0, 0, 0).Padding(inset).Gap(gap).Background(tok.Background).Children(func() {
-				ui.Box(c).Height(line).Width(long).Radius(t.Radius.Full).Background(tok.Border)
-				ui.Box(c).Height(line).Width(short).Radius(t.Radius.Full).Background(tok.Border)
+		ui.Row(c).Size(w, theme.ThemeTileHeight).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
+			ui.Box(c).Width(min(theme.TileRail, side))
+			ui.Box(c).Width(side).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Sm, 0, 0, 0)
+			ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
+				ui.Box(c).Height(theme.TileLine).Width(long).Radius(t.Radius.Full).Background(tok.Border)
+				ui.Box(c).Height(theme.TileLine).Width(short).Radius(t.Radius.Full).Background(tok.Border)
 			})
 		})
 	}
 	b := ui.ButtonBase(c).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start)
 	b.Children(func() {
-		frame := ui.Row(c).Size(132, 84).Radius(t.Radius.Md).Clip().Border(1, t.Border)
+		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
 		if on {
-			frame.Border(2, t.Primary)
+			frame.Border(theme.SelectedBorder, t.Primary)
 		}
 		frame.Children(func() {
 			switch th {
 			case "system":
-				preview(theme.Light(), 66)
-				preview(theme.Dark(), 66)
+				preview(theme.Light(), theme.ThemeTileWidth/2)
+				preview(theme.Dark(), theme.ThemeTileWidth/2)
 			case "dark":
-				preview(theme.Dark(), 132)
+				preview(theme.Dark(), theme.ThemeTileWidth)
 			default:
-				preview(theme.Light(), 132)
+				preview(theme.Light(), theme.ThemeTileWidth)
 			}
 		})
 		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.Text.Sm)

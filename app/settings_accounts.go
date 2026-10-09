@@ -278,7 +278,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	prov := accountProvider(a, acc)
 
 	ui.Row(c).Gap(th.Space(3.5)).Children(func() {
-		mark(c, providerMark(prov), 40)
+		mark(c, providerMark(prov), theme.MarkLg)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Text(c, acc.Email).FontSize(t.Text.X2l).FontWeight(600).SingleLine().Shrink(1)

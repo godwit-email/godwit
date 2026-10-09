@@ -131,7 +131,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 			group(i18n.T("settings.accounts"))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID), func() {
-					mark(c, providerMark(accountProvider(a, acc)), 20)
+					mark(c, providerMark(accountProvider(a, acc)), theme.MarkSm)
 					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
 					if acc.Status == "ok" {
 						kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
@@ -141,7 +141,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 				})
 			}
 			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Muted).Children(func() {
-				ui.Icon(c, icons.Get("plus")).Size(14, 14)
+				ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
 				ui.Text(c, i18n.T("settings.add_account"))
 			}).OnClick(a.openAddAccount)
 			group(i18n.T("settings.app"))
@@ -188,7 +188,7 @@ func pageHeading(c *ui.Context, title, sub string) {
 // column, body beside it.
 func settingsSection(c *ui.Context, title, help string, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(6)).Padding(th.Space(5), 0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(6)).Padding(th.Space(5), 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Column(c).Width(th.Space(50)).Shrink(0).Gap(th.Space(1)).Children(func() {
 			ui.Text(c, title).FontWeight(600)
 			if help != "" {
@@ -244,7 +244,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	a := p.a
 	ui.Column(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Children(func() {
-		ui.Icon(c, logo).Size(64, 64).TextColor(t.Foreground)
+		ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
 		ui.Text(c, "Godwit").FontSize(t.Text.X2l).FontWeight(600)
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
 		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)

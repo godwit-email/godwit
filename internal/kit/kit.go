@@ -54,7 +54,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.Primary.Mix(t.Background, 0.1))
 		}
 	case Outline:
-		b.Background(t.Background).Border(1, t.Border).TextColor(t.Foreground)
+		b.Background(t.Background).Border(theme.Hairline, t.Border).TextColor(t.Foreground)
 		if hover {
 			b.Background(t.Hover)
 		}
@@ -82,7 +82,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 	return button(c, o, false).Children(func() {
 		if o.Icon != "" {
-			ui.Icon(c, icons.Get(o.Icon)).Size(16, 16)
+			ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
 		}
 		ui.Text(c, label)
 	})
@@ -92,17 +92,14 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 // assistive technology and tests.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	return button(c, o, true).Label(label).Tooltip(label).Children(func() {
-		ui.Icon(c, icons.Get(icon)).Size(16, 16)
+		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon)
 	})
 }
-
-// switchInset is the room around the thumb inside the 18-high track.
-const switchInset = 2
 
 // switchTrack draws a switch: a 32×18 track and its thumb.
 func switchTrack(c *ui.Context, on bool) ui.Element {
 	t := theme.Of(c)
-	tr := ui.Row(c).Size(32, 18).Shrink(0).Padding(switchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start)
+	tr := ui.Row(c).Size(theme.SwitchWidth, theme.SwitchHeight).Shrink(0).Padding(theme.SwitchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start)
 	thumb := t.Background
 	switch {
 	case on:
@@ -111,7 +108,7 @@ func switchTrack(c *ui.Context, on bool) ui.Element {
 		thumb = t.Foreground // a dark thumb would vanish into the dark track
 	}
 	return tr.Children(func() {
-		ui.Box(c).Size(14, 14).Radius(t.Radius.Full).Background(thumb).Shadow(0, 1, 2, 0, ink(t).Alpha(0.2))
+		ui.Box(c).Size(theme.SwitchThumb, theme.SwitchThumb).Radius(t.Radius.Full).Background(thumb).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.2))
 	})
 }
 
@@ -139,10 +136,10 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
-		box := ui.Box(c).Size(16, 16).Radius(t.Radius.Xs).Border(1, t.Border).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Xs).Border(theme.Hairline, t.Border).Background(t.Background).Center()
 		if *on {
-			box.Background(t.Primary).Border(1, t.Primary).TextColor(t.PrimaryText).Children(func() {
-				ui.Icon(c, icons.Get("check")).Size(12, 12)
+			box.Background(t.Primary).Border(theme.Hairline, t.Primary).TextColor(t.PrimaryText).Children(func() {
+				ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
 			})
 		}
 		ui.Text(c, label)
@@ -153,9 +150,9 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
-		dot := ui.Box(c).Size(16, 16).Radius(t.Radius.Full).Border(1, t.Border).Background(t.Background).Center()
+		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Hairline, t.Border).Background(t.Background).Center()
 		if *sel == v {
-			dot.Border(1, t.Primary).Children(func() { ui.Box(c).Size(8, 8).Radius(t.Radius.Full).Background(t.Primary) })
+			dot.Border(theme.Hairline, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
 		}
 		ui.Text(c, label)
 	})
@@ -177,13 +174,13 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(1, t.Border).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
 		ui.Text(c, current).Grow(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(16, 16).TextColor(t.Muted)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(1, t.Border).
-			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(theme.Hairline, t.Border).
+			Shadow(0, theme.ShadowMd.Y, theme.ShadowMd.Blur, 0, ink(t).Alpha(0.12))
 		for _, o := range opts {
 			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Sm)
 			if item.Highlighted() {
@@ -191,7 +188,7 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			}
 			item.Children(func() {
 				ui.Text(c, o.Label).Grow(1)
-				check := ui.Icon(c, icons.Get("check")).Size(16, 16)
+				check := ui.Icon(c, icons.Get("check")).Size(theme.Icon, theme.Icon)
 				if o.Value != *sel {
 					check.Opacity(0)
 				}
@@ -209,7 +206,7 @@ type InputOpts struct {
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(1, t.Border).Background(t.Background).Placeholder(o.Placeholder)
+	e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Background).Placeholder(o.Placeholder)
 	if o.Mono {
 		e.Font("Geist Mono").FontSize(t.Text.Base)
 	}
@@ -217,7 +214,7 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		e.Password()
 	}
 	if o.Invalid {
-		e.Border(1, t.Danger)
+		e.Border(theme.Hairline, t.Danger)
 	}
 	return e
 }
@@ -255,7 +252,7 @@ func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 		for i, l := range labels {
 			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).FontWeight(500).TextColor(t.Muted)
 			if i == *sel {
-				tab.Background(t.Background).TextColor(t.Foreground).Shadow(0, 1, 2, 0, ink(t).Alpha(0.1))
+				tab.Background(t.Background).TextColor(t.Foreground).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.1))
 			}
 			tab.Children(func() { ui.Text(c, l) })
 		}
@@ -267,8 +264,8 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4))
-		panel.Width(theme.SheetWidth).Radius(t.Radius.Xl).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(1, t.Border).
-			Shadow(0, 16, 48, 0, ink(t).Alpha(0.25))
+		panel.Width(theme.SheetWidth).Radius(t.Radius.Xl).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border).
+			Shadow(0, theme.ShadowLg.Y, theme.ShadowLg.Blur, 0, ink(t).Alpha(0.25))
 		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
 		body()
 		if footer != nil {
@@ -281,8 +278,8 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Md).Gap(th.Space(2)).Background(t.Background).Border(1, t.Border).
-			Shadow(0, 4, 16, 0, ink(t).Alpha(0.12))
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Md).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border).
+			Shadow(0, theme.ShadowMd.Y, theme.ShadowMd.Blur, 0, ink(t).Alpha(0.12))
 		body()
 	})
 }
@@ -314,7 +311,7 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	case Danger:
 		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
 	}
-	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(bg).Border(1, border).TextColor(fg).
+	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(bg).Border(theme.Hairline, border).TextColor(fg).
 		FontSize(t.Text.Base).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
@@ -342,13 +339,13 @@ func StatusDot(c *ui.Context, s Status) ui.Element {
 	case Error:
 		color = t.Danger
 	}
-	return ui.Box(c).Size(6, 6).Radius(t.Radius.Full).Background(color)
+	return ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Radius(t.Radius.Full).Background(color)
 }
 
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(1, t.Border).Children(body)
+	return ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(theme.Hairline, t.Border).Children(body)
 }
 
 // Spinner shows that something is under way.
@@ -359,7 +356,7 @@ func Spinner(c *ui.Context) ui.Element {
 // Kbd shows a key or shortcut.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Xs).Border(1, t.Border).Background(t.Sidebar).Center().Children(func() {
+	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Xs).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
 		ui.Text(c, text).Font("Geist Mono").FontSize(t.Text.Xs).TextColor(t.Muted)
 	})
 }
@@ -373,12 +370,12 @@ func ToastHost(c *ui.Context, closeLabel string) {
 		viewport.Padding(th.Space(4)).AlignItems(ui.End).Justify(ui.End).Gap(th.Space(2))
 		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
-			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Md).Background(t.Background).Border(1, t.Border).
-				Shadow(0, 4, 16, 0, ink(t).Alpha(0.12)).MaxWidth(theme.ToastMaxWidth).
+			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Md).Background(t.Background).Border(theme.Hairline, t.Border).
+				Shadow(0, theme.ShadowMd.Y, theme.ShadowMd.Blur, 0, ink(t).Alpha(0.12)).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: 8}, Exit: &ui.Motion{}})
 			toast.Root.Children(func() {
 				if tst.Type == "error" {
-					ui.Icon(c, icons.Get("circle-x")).Size(16, 16).TextColor(t.Danger)
+					ui.Icon(c, icons.Get("circle-x")).Size(theme.Icon, theme.Icon).TextColor(t.Danger)
 				}
 				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, tst.Title).FontWeight(500)
@@ -387,12 +384,12 @@ func ToastHost(c *ui.Context, closeLabel string) {
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(1, t.Border).Children(func() {
+					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
 						ui.Text(c, tst.Action)
 					})
 				}
-				toast.CloseButton().Label(closeLabel).Size(20, 20).Radius(t.Radius.Xs).Center().TextColor(t.Muted).Children(func() {
-					ui.Icon(c, icons.Get("x")).Size(14, 14)
+				toast.CloseButton().Label(closeLabel).Size(theme.CloseButton, theme.CloseButton).Radius(t.Radius.Xs).Center().TextColor(t.Muted).Children(func() {
+					ui.Icon(c, icons.Get("x")).Size(theme.IconSm, theme.IconSm)
 				})
 			})
 		}

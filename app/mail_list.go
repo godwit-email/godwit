@@ -453,7 +453,7 @@ func (p *mailPage) Content(c *ui.Context) {
 	}
 	t := theme.Of(c)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
 			_, isDrafts := draftsOf(p.folders, p.view)
 			switch {
 			case p.view.Unified == "outbox":
@@ -561,7 +561,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
 			if it.Attach {
-				ui.Icon(c, icons.Get("paperclip")).Size(12, 12).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
 			if it.Unread > 0 {
 				ui.Text(c, i18n.Tf("mail.row.unread", it.Unread)).FontSize(small).TextColor(t.Muted)

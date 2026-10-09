@@ -206,7 +206,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		})
 		if title, sub := a.page().Title(); title != "" {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Box(c).Size(1, 24).Margin(0, th.Space(2), 0, 0).Background(t.Border)
+				ui.Box(c).Size(theme.Hairline, theme.TitleButtonHeight).Margin(0, th.Space(2), 0, 0).Background(t.Border)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
@@ -277,14 +277,14 @@ func (a *App) rail(c *ui.Context) {
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 	t := theme.Of(c)
 	on := a.route.section() == r.Page
-	b := ui.ButtonBase(c).Size(40, 40).Radius(t.Radius.Md).Center().Label(label).Tooltip(label).TextColor(t.Muted)
+	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Md).Center().Label(label).Tooltip(label).TextColor(t.Muted)
 	switch {
 	case on:
 		b.Background(t.RailSelected).TextColor(t.Foreground)
 	case b.Hovered():
 		b.Background(t.Hover).TextColor(t.Foreground)
 	}
-	b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(20, 20) })
+	b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(theme.IconLg, theme.IconLg) })
 	if !on {
 		b.OnClick(func() { a.navigate(r) })
 	}
@@ -296,10 +296,10 @@ func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Radius(t.Radius.Xl, 0, 0, 0).Clip().Background(t.Background).
-		BorderWidth(1, 0, 0, 1).BorderColor(t.Border).Children(func() {
+		BorderWidth(theme.Hairline, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
 		if !a.sidebarHidden {
 			ui.Column(c).Width(theme.SidebarWidth).Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).
-				BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
+				BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
 		}
 		ui.Column(c).Grow(1).Children(func() { p.Content(c) })
 	})

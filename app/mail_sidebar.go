@@ -46,7 +46,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Children(func() {
-				ui.Icon(c, icons.Get("square-pen")).Size(16, 16)
+				ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
 				ui.Text(c, i18n.T("mail.compose"))
 			}).OnClick(p.compose)
 			ui.Box(c).Height(th.Space(2))
@@ -79,7 +79,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
 			}
 			ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
-				ui.Icon(c, icons.Get("plus")).Size(12, 12)
+				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
 				ui.Text(c, i18n.T("mail.add_account"))
 			}).OnClick(func() {
 				a.navigate(Route{Page: PageSettings})
@@ -120,7 +120,7 @@ func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
 		chevron = "chevron-right"
 	}
 	ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
-		ui.Icon(c, icons.Get(chevron)).Size(12, 12)
+		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
 		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
 		if n := p.a.unread[acc.ID]; !open && n > 0 {
 			ui.Text(c, strconv.Itoa(n))
