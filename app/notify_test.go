@@ -234,10 +234,18 @@ func TestNotificationClickLatestWins(t *testing.T) {
 func TestNotificationClickNowhere(t *testing.T) {
 	h, _ := notifyHarness(t, nil)
 	h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+	h.settle()
 	before := h.app.route
+	looked := make(chan struct{}, 1)
+	look := h.app.noteRoute
+	h.app.noteRoute = func(ctx context.Context, id string) (Route, bool, error) {
+		defer func() { looked <- struct{}{} }()
+		return look(ctx, id)
+	}
 	for _, id := range []string{"bogus", "message:x", "other:1", "account:999"} { // account 999 has no inbox
 		h.app.NotificationClicked(id)
-		time.Sleep(20 * time.Millisecond)
+		<-looked
+		h.queued("the lookup's result", 1) // nothing else posts: no sync runs
 		h.drain()
 		if h.app.route != before {
 			t.Fatalf("click %q went to %+v", id, h.app.route)
