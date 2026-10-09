@@ -33,7 +33,7 @@ func NormalizeBaseURL(kind, raw string) (string, error) {
 	if kind == KindAnthropic {
 		suffixes = []string{"/v1/messages", "/v1/models", "/messages", "/v1"}
 	}
-	p := strings.TrimRight(u.Path, "/")
+	p := strings.TrimRight(u.EscapedPath(), "/")
 	for _, s := range suffixes {
 		if strings.HasSuffix(p, s) {
 			p = strings.TrimSuffix(p, s)

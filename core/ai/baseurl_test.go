@@ -12,6 +12,8 @@ func TestNormalizeBaseURL(t *testing.T) {
 		{KindAnthropic, "https://api.anthropic.com/v1", "https://api.anthropic.com"},
 		{KindOpenAI, "http://localhost:11434/v1", "http://localhost:11434/v1"},
 		{KindOpenAI, "http://127.0.0.2:1/v1", "http://127.0.0.2:1/v1"},
+		{KindOpenAI, "https://example.com/proxy%23tenant/v1", "https://example.com/proxy%23tenant/v1"},
+		{KindOpenAI, "https://example.com/a%3Fb%2Fc/v1/models", "https://example.com/a%3Fb%2Fc/v1"},
 		{KindOpenAI, "http://[::1]:8080/v1", "http://[::1]:8080/v1"},
 	}
 	for _, c := range ok {
@@ -63,4 +65,11 @@ func base(kind string) string {
 		return "https://x"
 	}
 	return "https://x/v1"
+}
+
+func TestEndpointKeepsEscapes(t *testing.T) {
+	b, _ := NormalizeBaseURL(KindOpenAI, "https://example.com/a%3Fb%2Fc/v1")
+	if got := Endpoint(KindOpenAI, b); got != "https://example.com/a%3Fb%2Fc/v1/chat/completions" {
+		t.Error(got)
+	}
 }

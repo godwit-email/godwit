@@ -45,3 +45,23 @@ func TestListModelsReturnsAll(t *testing.T) {
 		t.Errorf("%v %v", ids, err)
 	}
 }
+
+func TestListModelsRequestShape(t *testing.T) {
+	for _, c := range []struct{ kind, path, hdr, val string }{
+		{KindOpenAI, "/models", "Authorization", "Bearer k"},
+		{KindResponses, "/models", "Authorization", "Bearer k"},
+		{KindAnthropic, "/v1/models", "x-api-key", "k"},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != c.path || r.Header.Get(c.hdr) != c.val {
+				t.Errorf("%s: %s %s=%q", c.kind, r.URL.Path, c.hdr, r.Header.Get(c.hdr))
+			}
+			w.Write([]byte(`{"data":[{"id":"m"}]}`))
+		}))
+		ids, err := ListModels(context.Background(), nil, c.kind, srv.URL, "k")
+		srv.Close()
+		if err != nil || len(ids) != 1 {
+			t.Errorf("%s: %v %v", c.kind, ids, err)
+		}
+	}
+}
