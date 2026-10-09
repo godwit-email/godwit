@@ -26,7 +26,7 @@ type Server struct {
 	requests   []Request
 	release    chan struct{}
 	stuck      bool        // the head turn is a Status that keeps answering
-	emitted    []reasoning // every reasoning item sent, in order
+	emitted    [][]outItem // the output of every finished turn with reasoning
 	Mux        *http.ServeMux
 }
 
@@ -215,14 +215,16 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 			turn.Calls[i].Args = "{}"
 		}
 	}
-	if turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" {
-		rs := reasoning{id: fmt.Sprintf("rs_%d", n), enc: turn.Reasoning}
+	if kind == "openai-responses" && turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" &&
+		turn.Fail == "" && !turn.Incomplete && !turn.Truncate {
+		out := []outItem{{"reasoning", fmt.Sprintf("rs_%d", n), turn.Reasoning}}
 		if len(turn.Text) > 0 {
-			rs.before = "message"
-		} else if len(turn.Calls) > 0 {
-			rs.before = turn.Calls[0].ID
+			out = append(out, outItem{typ: "message"})
 		}
-		s.emitted = append(s.emitted, rs)
+		for _, c := range turn.Calls {
+			out = append(out, outItem{typ: "function_call", key: c.ID})
+		}
+		s.emitted = append(s.emitted, out)
 	}
 	s.mu.Unlock()
 

@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-// reasoning is an emitted reasoning item; before is what followed it in that
-// output: "message", a function call's call_id, or "".
-type reasoning struct{ id, enc, before string }
+// outItem is one output item a turn sent: a reasoning item (key = id), the
+// assistant message, or a function_call (key = call_id).
+type outItem struct{ typ, key, enc string }
 
 // validate returns why a real service would reject body, or "". Called with
 // s.mu held.
@@ -62,21 +62,24 @@ func (s *Server) validate(kind string, body []byte) string {
 		}
 		var items []item
 		json.Unmarshal(b.Input, &items) // a plain string input has no items
-		// Every reasoning item sent must come back, in order, before what followed it.
-		last := -1
-		for _, rs := range s.emitted {
-			at := slices.IndexFunc(items, func(it item) bool { return it.Type == "reasoning" && it.ID == rs.id })
-			if at < 0 || items[at].EncryptedContent != rs.enc {
-				return fmt.Sprintf("reasoning %s is not carried back with its encrypted_content", rs.id)
-			}
-			if at < last {
-				return fmt.Sprintf("reasoning %s is out of order", rs.id)
-			}
-			last = at
-			if rs.before != "" && !slices.ContainsFunc(items[at+1:], func(it item) bool {
-				return rs.before == "message" && it.Role == "assistant" || it.Type == "function_call" && it.CallID == rs.before
-			}) {
-				return fmt.Sprintf("reasoning %s does not come before the item that followed it", rs.id)
+		// The output of every turn with reasoning comes back as it was sent:
+		// each turn's items in their order, the turns in turn order.
+		at := 0
+		for _, out := range s.emitted {
+			for _, want := range out {
+				i := slices.IndexFunc(items[at:], func(it item) bool {
+					switch want.typ {
+					case "reasoning":
+						return it.Type == "reasoning" && it.ID == want.key && it.EncryptedContent == want.enc
+					case "message":
+						return (it.Type == "" || it.Type == "message") && it.Role == "assistant"
+					}
+					return it.Type == "function_call" && it.CallID == want.key
+				})
+				if i < 0 {
+					return fmt.Sprintf("earlier output item %s %s is missing or out of order", want.typ, want.key)
+				}
+				at += i + 1
 			}
 		}
 		calls := map[string]bool{}

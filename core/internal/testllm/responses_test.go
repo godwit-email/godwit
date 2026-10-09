@@ -245,6 +245,30 @@ func TestResponsesFakeValidates(t *testing.T) {
 	assert.Equal(t, 400, post(t, tx, "/responses", wrap(user, answer, rsT, user)), "reasoning after its answer")
 	assert.Equal(t, 200, post(t, tx, "/responses", wrap(user, rsT, answer, user)))
 
+	// A turn's whole output comes back in its order.
+	ta := Start(t, "openai-responses")
+	ta.Script(Turn{Text: []string{"t"}, Calls: []Call{{ID: "call_a", Name: "f"}}, Reasoning: "enc-a"})
+	require.Equal(t, 200, post(t, ta, "/responses", wrap(user)))
+	rsA := `{"type":"reasoning","id":"rs_0","summary":[],"encrypted_content":"enc-a"}`
+	callA := `{"type":"function_call","call_id":"call_a","name":"f","arguments":"{}"}`
+	outA := `{"type":"function_call_output","call_id":"call_a","output":"r"}`
+	assert.Equal(t, 400, post(t, ta, "/responses", wrap(user, callA, rsA, answer, outA)), "call moved before its reasoning")
+	assert.Equal(t, 400, post(t, ta, "/responses", wrap(user, rsA, callA, answer, outA)), "call moved before its message")
+	assert.Equal(t, 200, post(t, ta, "/responses", wrap(user, rsA, answer, callA, outA)))
+
+	// Turns come back in turn order.
+	tt := Start(t, "openai-responses")
+	tt.Script(Turn{Text: []string{"a"}, Reasoning: "enc-1"}, Turn{Text: []string{"b"}, Reasoning: "enc-2"})
+	rs0 := `{"type":"reasoning","id":"rs_0","summary":[],"encrypted_content":"enc-1"}`
+	rs1 := `{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"enc-2"}`
+	msgA := `{"type":"message","role":"assistant","content":"a"}`
+	msgB := `{"type":"message","role":"assistant","content":"b"}`
+	require.Equal(t, 200, post(t, tt, "/responses", wrap(user)))
+	require.Equal(t, 200, post(t, tt, "/responses", wrap(user, rs0, msgA, user)))
+	assert.Equal(t, 400, post(t, tt, "/responses", wrap(user, msgA, user, rs1, msgB, rs0, user)), "first reasoning after the second answer")
+	assert.Equal(t, 400, post(t, tt, "/responses", wrap(user, rs1, msgB, user, rs0, msgA, user)), "turns swapped")
+	assert.Equal(t, 200, post(t, tt, "/responses", wrap(user, rs0, msgA, user, rs1, msgB, user)))
+
 	c := Start(t, "openai")
 	assert.Equal(t, 400, post(t, c, "/chat/completions",
 		`{"model":"m","messages":[{"role":"user","content":"hi"},{"role":"tool","tool_call_id":"call_x","content":"r"}]}`))
