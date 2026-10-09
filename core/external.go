@@ -99,7 +99,9 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	}
 	rc, cancel := context.WithTimeout(ctx, cmp.Or(d.Timeout, externalTimeout))
 	res, err := d.Run(rc, a.Approval)
-	cut := rc.Err() != nil // before cancel: only the timeout or Close ended it
+	// Before cancel: only the timeout or Close ended it, or the plugin's
+	// own limits or stop interrupted it mid-call.
+	cut := rc.Err() != nil || errors.Is(err, plugins.ErrTimeout) || errors.Is(err, plugins.ErrMemoryLimit) || errors.Is(err, plugins.ErrClosed)
 	cancel()
 	if err != nil {
 		result := s.clean(err.Error())

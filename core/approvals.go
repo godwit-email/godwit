@@ -201,6 +201,8 @@ func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.R
 			return s.decideExternal(ctx, a, d, resume)
 		case ok && d.Mode != modeExternal && d.Exec != nil:
 			ex = d.Exec
+		case !ok && a.binding != "": // its extension is gone: what it was bound to changed
+			return s.decideExternal(ctx, a, toolDesc{Binding: func(context.Context) (string, error) { return "", ErrStaleApproval }}, resume)
 		default:
 			return fmt.Errorf("tool %s is not available", a.Tool)
 		}

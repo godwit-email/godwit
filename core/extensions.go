@@ -498,6 +498,10 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	s.pluginGen++
 	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r}
 	s.running[name] = rp
+	if err := s.registerPluginTools(name, rp); err != nil {
+		s.stopPlugin(name)
+		return err
+	}
 	if err := s.startHooks(ctx, rp, r); err != nil {
 		s.stopPlugin(name)
 		return err
@@ -512,6 +516,7 @@ func (s *Service) stopPlugin(name string) {
 		}
 		rp.p.VM().Close()
 		delete(s.running, name)
+		s.unregisterPluginTools(name)
 	}
 }
 

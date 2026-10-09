@@ -22,7 +22,8 @@ import (
 )
 
 // assistTools are the tools of an Assist run: read mail, and propose a new
-// editable part for this draft. None of them sends mail.
+// editable part for this draft, plus the running plugins' read tools (spec
+// 7.4: the compose panel changes only its draft). None of them sends mail.
 var assistTools = []string{"search_mail", "get_message", "update_draft"}
 
 const (
@@ -107,7 +108,7 @@ func (s *Service) Assist(ctx context.Context, draftID int64, input string) (<-ch
 	conv, err := s.assistConversation(ctx, draftID)
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, s.registered(assistTools...), nil)
+		w, err = s.launch(ctx, end, conv, input, s.registered(append(slices.Clone(assistTools), s.pluginToolNames(false)...)...), nil)
 	}
 	if err != nil {
 		end()

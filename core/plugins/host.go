@@ -184,6 +184,17 @@ func (p *Plugin) RunAction(ctx context.Context, inv Invocation, id string, targe
 	return nil, fmt.Errorf("plugin %s has no action %s", p.Name, id)
 }
 
+// RunTool runs the registered tool name with args under inv and returns its
+// (awaited) result as plain JSON data.
+func (p *Plugin) RunTool(ctx context.Context, inv Invocation, name string, args any) (any, error) {
+	for _, t := range p.tools {
+		if t.info.Name == name {
+			return p.call(ctx, inv, t.run, false, args)
+		}
+	}
+	return nil, fmt.Errorf("plugin %s has no tool %s", p.Name, name)
+}
+
 // Card runs the card's match(m) and, if its result is truthy, render(m), both
 // under inv, and returns render's result; matched is false when match was not
 // truthy. ctx bounds both calls together.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // pluginHost is a running plugin's Host. Every method is an explicit call
@@ -257,4 +259,137 @@ func (h *pluginHost) audit(ctx context.Context, inv plugins.Invocation, dest, de
 		e.Destinations = []string{dest}
 	}
 	return h.s.cleanError(gateway.New(h.s.db).Record(context.WithoutCancel(ctx), e))
+}
+
+// pluginToolName is a plugin tool's name in Wit: plugin_<plugin>_<tool>, "-" as "_".
+func pluginToolName(plugin, tool string) string {
+	return strings.ReplaceAll("plugin_"+plugin+"_"+tool, "-", "_")
+}
+
+// pluginToolNames lists the running plugins' tools for a Wit run, write
+// tools only with writes (Assist offers read tools only), sorted.
+func (s *Service) pluginToolNames(writes bool) []string {
+	var out []string
+	for _, pc := range s.runningPlugins(func(*plugins.Plugin) bool { return true }) {
+		for _, ti := range pc.p.Tools() {
+			if writes || !ti.Write {
+				out = append(out, pluginToolName(pc.name, ti.Name))
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// registerPluginTools offers rp's tools to Wit runs; a name taken is an
+// error. The caller holds pluginsMu and stops rp on error (unregistering
+// what was registered).
+func (s *Service) registerPluginTools(name string, rp *runningPlugin) error {
+	for _, ti := range rp.p.Tools() {
+		if err := s.registerTool(s.pluginTool(name, rp, ti)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// unregisterPluginTools takes the plugin's tools out of the registry.
+func (s *Service) unregisterPluginTools(name string) {
+	s.toolsMu.Lock()
+	defer s.toolsMu.Unlock()
+	for n, t := range s.tools {
+		if t.Source == gateway.SourcePlugin && t.Extension == name {
+			delete(s.tools, n)
+		}
+	}
+}
+
+// pluginTool is the Wit tool for a tool of running instance rp. A call that
+// needs no approval runs in the run; one that does (a write tool, or egress
+// per plugins.EgressFor) runs once approved, outside the run, bound to the
+// plugin's code, permissions and config. The Invocation, not the tool's own
+// write flag alone, decides what the call may do.
+func (s *Service) pluginTool(name string, rp *runningPlugin, ti plugins.ToolInfo) toolDesc {
+	pc := pluginCall{name, rp.gen, rp.p, rp.row}
+	m, granted := rp.row.m, rp.row.granted == rp.row.permHash
+	readsMail := slices.Contains(m.Permissions.Mail, "read")
+	_, always := plugins.EgressFor(plugins.KindTool, m, granted, false) // mail:read and net: every call
+	spec := ai.ToolSpec{Name: pluginToolName(name, ti.Name), Description: ti.Description, Schema: ti.Schema, NeedsApproval: always}
+	if !ti.Write {
+		spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) {
+			scope := runOf(ctx).scope
+			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			if readsMail {
+				defer scope.MarkReadMail() // what it returns may be mail
+			}
+			return s.runPluginTool(ctx, pc, ti.Name, args, plugins.Invocation{ID: "tool:" + ai.CallID(ctx), Kind: plugins.KindTool, EgressHosts: hosts})
+		}
+	}
+	return toolDesc{Spec: spec, Source: gateway.SourcePlugin, Extension: name, Write: ti.Write, Mode: modeExternal,
+		Egress: func(scope *gateway.Scope) []string {
+			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, scope.ReadMail())
+			return hosts
+		},
+		Prepare: func(ctx context.Context, _ Conversation, args json.RawMessage) (prepared, error) {
+			if readsMail {
+				runOf(ctx).scope.MarkReadMail() // its result, once approved, may be mail
+			}
+			return prepared{Args: args, Summary: "Run " + ti.Name + " of plugin " + name}, nil
+		},
+		Run: func(ctx context.Context, a Approval) (any, error) {
+			hosts, _ := plugins.EgressFor(plugins.KindTool, m, granted, true) // the approval listed them
+			return s.runPluginTool(ctx, pc, ti.Name, a.Args, plugins.Invocation{ID: fmt.Sprintf("approval:%d", a.ID),
+				Kind: plugins.KindTool, Write: ti.Write, EgressHosts: hosts})
+		},
+		Binding: func(ctx context.Context) (string, error) { return s.pluginBinding(ctx, name, rp.hash) },
+	}
+}
+
+// pluginBinding is what a plugin tool's approval is bound to: the enabled,
+// granted plugin's code, permissions and config version. Code other than
+// hash (the instance the tool belongs to) is an error.
+func (s *Service) pluginBinding(ctx context.Context, name, hash string) (string, error) {
+	rows, err := s.db.Query(ctx, `SELECT source_hash, permission_hash, config_version FROM plugins
+		WHERE name = ? AND enabled = 1 AND granted_hash = permission_hash`, name)
+	if err != nil {
+		return "", err
+	}
+	if len(rows.Values) == 0 || store.Str(rows.Values[0][0]) != hash {
+		return "", fmt.Errorf("plugin %s changed or is not running", name)
+	}
+	r := rows.Values[0]
+	return fmt.Sprintf("%s:%s:%d", store.Str(r[0]), store.Str(r[1]), store.Int(r[2])), nil
+}
+
+// runPluginTool runs the tool under inv and accounts for the call. Its
+// result or error text, cleaned, reaches the model as an untrusted block.
+func (s *Service) runPluginTool(ctx context.Context, pc pluginCall, tool string, args json.RawMessage, inv plugins.Invocation) (any, error) {
+	var in any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &in); err != nil {
+			return nil, err
+		}
+	}
+	res, err := pc.p.RunTool(ctx, inv, tool, in)
+	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
+		return nil, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
+	}
+	src := "plugin:" + pc.name
+	if err != nil {
+		text := s.clean(err.Error())
+		return nil, errors.Join(cleanErr{ai.Untrusted(src, text, ai.SuspectInjection(text)), err}, s.pluginFailed(ctx, pc.name, pc.gen))
+	}
+	if err := s.pluginSucceeded(ctx, pc.name, pc.gen); err != nil {
+		return nil, err
+	}
+	text, ok := res.(string)
+	if !ok {
+		b, err := json.Marshal(res)
+		if err != nil {
+			return nil, err
+		}
+		text = string(b)
+	}
+	text = s.clean(text)
+	return ai.Untrusted(src, text, ai.SuspectInjection(text)), nil
 }
