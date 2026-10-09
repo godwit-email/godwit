@@ -34,6 +34,9 @@ func (h *history) push(s snapshot, typing bool, now time.Time, caret int) {
 	h.typing, h.at = typing, now
 }
 
+// endTyping makes the next typing a step of its own.
+func (h *history) endTyping() { h.typing = false }
+
 // typed records where typing left the caret.
 func (h *history) typed(caret int) { h.caret = caret }
 

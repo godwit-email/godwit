@@ -22,8 +22,8 @@ type fixture struct {
 // setup shows an editor of html, focused with the caret at the end.
 func setup(t *testing.T, html string, o Options) *fixture {
 	t.Helper()
-	f := &fixture{t: t, e: New(richtext.FromComposeHTML(html)), now: time.Unix(1e9, 0)}
-	f.e.Now = func() time.Time { return f.now }
+	f := &fixture{t: t, now: time.Unix(1e9, 0)}
+	f.e = New(richtext.FromComposeHTML(html), func() time.Time { return f.now })
 	o.Label = label
 	f.o = o
 	f.tt = ui.NewTester(func(c *ui.Context) {
@@ -328,4 +328,80 @@ func TestReplaceOps(t *testing.T) {
 	if p := posAt(d, 4); p != (richtext.Pos{Block: 1, Rune: 0}) || offset(d, p) != 4 {
 		t.Fatalf("posAt %v", p)
 	}
+}
+
+func TestPasteKeepsBlockKinds(t *testing.T) {
+	list := func() string { return "<ul><li>one</li><li>two</li></ul>" }
+	f := setup(t, "", Options{PasteHTML: list})
+	f.tt.Command("paste")
+	f.html("<ul><li>one</li><li>two</li></ul>")
+
+	f = setup(t, "", Options{PasteHTML: func() string { return "<blockquote><p>q</p></blockquote>" }})
+	f.tt.Command("paste")
+	f.html("<blockquote><p>q</p></blockquote>")
+
+	// Replacing whole blocks takes the pasted kinds too.
+	f = setup(t, "<p>ab</p><p>cd</p>", Options{PasteHTML: list})
+	f.tt.Command("selectAll")
+	f.tt.Command("paste")
+	f.html("<ul><li>one</li><li>two</li></ul>")
+
+	// Mid-paragraph, the first block's text joins the paragraph.
+	f = setup(t, "<p>abcd</p>", Options{PasteHTML: list})
+	f.keys(0, ui.KeyLeft, 2)
+	f.tt.Command("paste")
+	f.html("<p>abone</p><ul><li>twocd</li></ul>")
+}
+
+func TestIMEOverSelection(t *testing.T) {
+	f := setup(t, "<p>abc</p>", Options{})
+	v := f.e.Version()
+	f.tt.Command("selectAll")
+	sel := f.e.Selection()
+	f.tt.Compose("ni", 2)
+	f.html("<p>abc</p>")
+	f.tt.Key(0, ui.KeyEscape)
+	f.html("<p>abc</p>")
+	if f.e.Selection() != sel || f.e.Version() != v {
+		t.Fatalf("selection %+v (want %+v), version %d (was %d)", f.e.Selection(), sel, f.e.Version(), v)
+	}
+	f.tt.Compose("ni", 2)
+	f.tt.Compose("", 0)
+	f.html("<p>abc</p>")
+	if f.e.Selection() != sel {
+		t.Fatalf("selection %+v", f.e.Selection())
+	}
+
+	f.tt.Compose("ni", 2)
+	f.tt.Type("你")
+	f.html("<p>你</p>")
+	f.tt.Command("undo")
+	f.html("<p>abc</p>")
+	if f.e.Selection() != sel {
+		t.Fatalf("selection after undo %+v", f.e.Selection())
+	}
+}
+
+func TestUndoBreaksOnCaretMoves(t *testing.T) {
+	f := setup(t, "", Options{})
+	f.tt.Type("a")
+	f.tt.Key(0, ui.KeyLeft)
+	f.tt.Key(0, ui.KeyRight)
+	f.tt.Type("b")
+	f.tt.Command("undo")
+	f.html("<p>a</p>")
+
+	f.tt.Type("c")
+	f.tt.Key(ui.Cmd, ui.KeyB) // a style for the next text ends the step too
+	f.tt.Type("d")
+	f.tt.Command("undo")
+	f.html("<p>ac</p>")
+
+	f.tt.Type("e")
+	box, _ := f.tt.Find(label)
+	b, _, _ := f.e.BoundsForRange(ui.TextInputRange{Start: 3, End: 3})
+	f.tt.ClickAt(box.X+b.X, box.Y+b.Y+b.H/2)
+	f.tt.Type("f")
+	f.tt.Command("undo")
+	f.html("<p>ace</p>")
 }
