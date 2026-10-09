@@ -55,6 +55,7 @@ type Service struct {
 	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	aiMu        sync.Mutex
 	ai          *ai.Engine         // created on first use; see aiEngine
+	secrets     secretSet          // extension secrets, redacted by the engine and extension output
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting

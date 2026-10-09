@@ -252,7 +252,7 @@ func (r *runner) finish(ev Event) {
 }
 
 // redact replaces every known key in s.
-func (r *runner) redact(s string) string { return redact(s, append(r.e.allSecrets(), r.key)) }
+func (r *runner) redact(s string) string { return Redact(s, append(r.e.allSecrets(), r.key)) }
 
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {

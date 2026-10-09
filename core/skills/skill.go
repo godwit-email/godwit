@@ -44,10 +44,14 @@ var (
 	errRead = errors.New("skill file not readable")
 )
 
+// ValidName reports whether name is a valid skill (or plugin) name: lowercase
+// letters, digits and single hyphens between them.
+func ValidName(name string) bool { return nameRE.MatchString(name) }
+
 // Parse reads SKILL.md from fsys, the skill directory named name. The warnings
 // are non-fatal (a scripts/ directory, which is never run).
 func Parse(name string, fsys fs.FS) (Skill, []string, error) {
-	if !nameRE.MatchString(name) {
+	if !ValidName(name) {
 		return Skill{}, nil, fmt.Errorf("skill name %q: lowercase letters, digits and hyphens only", name)
 	}
 	raw, err := fs.ReadFile(fsys, "SKILL.md")

@@ -9,6 +9,7 @@ require (
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.25.0
+	github.com/evanw/esbuild v0.28.2
 	github.com/firebase/genkit/go v1.13.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/microcosm-cc/bluemonday v1.0.27
