@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 type skillEnv struct {
@@ -385,4 +386,99 @@ func TestIncompleteReplyNotUsed(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, rows.Values, "no proposal")
 	})
+}
+
+// withSmall adds m2 to the fake service and sets SmallModel to small.
+func (e skillEnv) withSmall(t *testing.T, small string) {
+	t.Helper()
+	_, err := e.s.UpdateModelService(t.Context(), e.ms.ID, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: e.srv.URL, Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.SmallModel = small
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+}
+
+func (e skillEnv) lastModel(t *testing.T) string {
+	t.Helper()
+	reqs := e.srv.Requests()
+	require.NotEmpty(t, reqs)
+	return reqs[len(reqs)-1].Model
+}
+
+func TestSmallModelUsedForSummarize(t *testing.T) {
+	e := newApprovalEnv(t)
+	e.withSmall(t, "x/m2")
+	e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "m2", e.lastModel(t))
+	e.run(t, "translate", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "m2", e.lastModel(t))
+
+	// Ask stays on the default model.
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
+	e.start(t, conv, "hello")
+	assert.Equal(t, "m1", e.lastModel(t))
+}
+
+func TestQuickRepliesUseSmallModel(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/m2")
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"html":"<p>OK</p>"}]}`}})
+	_, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	assert.Equal(t, "m2", e.lastModel(t))
+}
+
+func TestSmallModelFallback(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/gone")
+	e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "m1", e.lastModel(t))
+
+	e.withSmall(t, "nosuch/m2")
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"html":"<p>OK</p>"}]}`}})
+	_, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	assert.Equal(t, "m1", e.lastModel(t))
+
+	st, _ := e.s.GetSettings(t.Context())
+	st.DefaultModel = ""
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	_, err = e.s.RunSkill(t.Context(), "summarize", Target{Kind: "message", ID: e.msg})
+	assert.ErrorIs(t, err, ErrAINotConfigured)
+}
+
+func TestSmallModelOtherErrorsSurface(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/m2")
+	keyring.MockInitWithError(errors.New("locked"))
+	t.Cleanup(keyring.MockInit)
+	_, err := e.s.RunSkill(t.Context(), "summarize", Target{Kind: "message", ID: e.msg})
+	assert.ErrorIs(t, err, ErrKeychainUnavailable)
+	assert.Empty(t, e.srv.Requests())
+}
+
+func TestSkillOverrideBeatsTier(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/m2")
+	dir := filepath.Join(e.s.dataDir, "skills", "brief")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: brief\ndescription: brief it\nmetadata:\n  godwit-action-on: \"message\"\n  godwit-action-output: \"panel\"\n  godwit-model-tier: small\n  godwit-model: \"x/m1\"\n---\nx"), 0o644))
+	e.run(t, "brief", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "m1", e.lastModel(t))
+}
+
+func TestRunSkillReportsModel(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/m2")
+	evs := e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "context", evs[0].Kind)
+	assert.Equal(t, "x/m2", evs[0].Model)
+	// a cache hit reports it too
+	evs = e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "x/m2", evs[0].Model)
+	assert.Len(t, e.srv.Requests(), 1)
 }

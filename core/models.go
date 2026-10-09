@@ -399,6 +399,25 @@ func (s *Service) resolveModel(ctx context.Context, override string) (ai.Resolve
 	return m, err
 }
 
+// resolveTask resolves a skill's or quick replies' model: override, else
+// SmallModel when small, else DefaultModel. A SmallModel that is unset or names
+// a removed service or model falls back to DefaultModel; other errors return.
+func (s *Service) resolveTask(ctx context.Context, override string, small bool) (ai.ResolvedModel, string, error) {
+	if override == "" && small {
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return ai.ResolvedModel{}, "", err
+		}
+		if st.SmallModel != "" {
+			m, ref, err := s.resolveRef(ctx, st.SmallModel)
+			if !errors.Is(err, ErrModelServiceNotFound) && !errors.Is(err, ErrModelNotFound) {
+				return m, ref, err
+			}
+		}
+	}
+	return s.resolveRef(ctx, override)
+}
+
 // resolveRef is resolveModel plus the reference in its "slug/model" form. The
 // service part matches a slug, else a name (references from before slugs).
 func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedModel, string, error) {

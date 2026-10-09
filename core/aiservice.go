@@ -44,7 +44,9 @@ const (
 
 // RunSkill runs an enabled skill on t with no tools. The first event is
 // "context": Text is a JSON list of {message_id, suspect} for the mail the
-// model sees, so the UI can flag suspected prompt injection. message and
+// model sees, so the UI can flag suspected prompt injection, and Model is the
+// "slug/model" the run uses (skill godwit-model, else SmallModel for the small
+// tier, else DefaultModel). message and
 // thread runs are cached by everything that changes their output; a hit
 // replays context, one text event and done without asking the model. The
 // channel ends with exactly one of done or error and is closed after it;
@@ -72,7 +74,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if !slices.Contains(sk.On, t.Kind) {
 		return nil, fmt.Errorf("skill %s does not run on a %s", name, t.Kind)
 	}
-	model, err := s.resolveModel(ctx, sk.Model)
+	model, ref, err := s.resolveTask(ctx, sk.Model, sk.Tier == "small")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +108,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		srcs = append(srcs, mailSource{it.MessageID, it.Suspect})
 	}
 	b, _ := json.Marshal(srcs)
-	ctxEvent := ai.Event{Kind: "context", Text: string(b)}
+	ctxEvent := ai.Event{Kind: "context", Text: string(b), Model: ref}
 
 	st, err := s.loadSettings(ctx)
 	if err != nil {
@@ -303,7 +305,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if len(rows.Values) > 0 && mail.AddrKey(store.Str(rows.Values[0][0])) == mail.AddrKey(acc.Email) {
 		return nil, nil
 	}
-	model, err := s.resolveModel(ctx, "")
+	model, _, err := s.resolveTask(ctx, "", true)
 	if err != nil {
 		return nil, err
 	}

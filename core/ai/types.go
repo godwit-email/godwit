@@ -103,6 +103,7 @@ type Event struct {
 	Result     *ToolResult
 	Interrupts []ToolCall
 	Err        *Error
+	Model      string // context only: the "slug/model" the run uses
 }
 
 // Request is one run. State is the previous run's opaque state (empty = new
@@ -122,4 +123,5 @@ type Result struct {
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error
+	Model      string // context only: the "slug/model" the run uses
 }
