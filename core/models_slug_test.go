@@ -8,6 +8,7 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func TestSlugify(t *testing.T) {
@@ -25,6 +26,15 @@ func legacyService(t *testing.T, s *Service, id int64, name string, models ...st
 	_, err := s.db.Execute(t.Context(), "INSERT INTO model_services(id, name, kind, base_url, models) VALUES (?, ?, 'openai', 'https://a.com', ?)",
 		id, name, modelsJSON(models))
 	require.NoError(t, err)
+}
+
+// upgrade runs the startup steps an older Godwit's services go through.
+func upgrade(t *testing.T, s *Service) {
+	t.Helper()
+	require.NoError(t, s.backfillSlugs(t.Context()))
+	_, err := s.db.Execute(t.Context(), "DELETE FROM settings WHERE key = 'model_aliases_v1'")
+	require.NoError(t, err)
+	require.NoError(t, s.captureAliases(t.Context()))
 }
 
 func setRawSettings(t *testing.T, s *Service, v string) {
@@ -60,7 +70,7 @@ func TestBackfillSlugCollisions(t *testing.T) {
 	legacyService(t, s, 3, "我的 服务")
 	legacyService(t, s, 4, "他的 服务")
 	setRawSettings(t, s, `{"DefaultModel":"openai/m1"}`)
-	require.NoError(t, s.backfillSlugs(t.Context()))
+	upgrade(t, s)
 	assert.Equal(t, map[int64]any{1: "openai-2", 2: "openai", 3: "service", 4: "service-2"}, slugs(t, s))
 	r, err := s.resolveModel(t.Context(), "")
 	require.NoError(t, err)
@@ -212,7 +222,7 @@ func TestRenameRejectsOtherSlug(t *testing.T) {
 func TestResolveLegacyName(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	legacyService(t, s, 1, "My GW", "m")
-	require.NoError(t, s.backfillSlugs(bg))
+	upgrade(t, s)
 	r, err := s.resolveModel(bg, "My GW/m")
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, r.ServiceID)
@@ -240,7 +250,7 @@ func TestResolveLegacyName(t *testing.T) {
 func TestLegacyAliasNeverRetargets(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	legacyService(t, s, 1, "OpenAI", "m1")
-	require.NoError(t, s.backfillSlugs(bg))
+	upgrade(t, s)
 	in := ModelServiceInput{Name: "Work", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m1"}}
 	_, err := s.UpdateModelService(bg, 1, in)
 	require.NoError(t, err)
@@ -258,5 +268,39 @@ func TestLegacyAliasNeverRetargets(t *testing.T) {
 
 	require.NoError(t, s.RemoveModelService(bg, 1))
 	_, err = s.resolveModel(bg, "OpenAI/m1")
+	assert.ErrorIs(t, err, ErrModelServiceNotFound)
+}
+
+// Final re-review R4: a database whose services already had slugs (migration
+// 12) keeps their names as aliases on upgrade, once: a later start records
+// nothing more.
+func TestAliasesCapturedOnUpgradeOnce(t *testing.T) {
+	keyring.MockInit()
+	dir, bg := t.TempDir(), context.Background()
+	s, err := New(bg, Options{DataDir: dir})
+	require.NoError(t, err)
+	_, err = s.db.Execute(bg, `INSERT INTO model_services(id, name, kind, base_url, models, slug) VALUES (1, 'OpenAI', 'openai', 'https://a.com', '["m1"]', 'openai')`)
+	require.NoError(t, err)
+	_, err = s.db.Execute(bg, "DELETE FROM settings WHERE key = 'model_aliases_v1'") // as before migration 13
+	require.NoError(t, err)
+	s.Close()
+	restart := func() {
+		s, err = New(bg, Options{DataDir: dir})
+		require.NoError(t, err)
+		t.Cleanup(func() { s.Close() })
+	}
+	restart()
+	r, err := s.resolveModel(bg, "OpenAI/m1")
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, r.ServiceID)
+
+	_, err = s.UpdateModelService(bg, 1, ModelServiceInput{Name: "Work", Kind: "openai", BaseURL: "https://a.com", Models: []string{"m1"}})
+	require.NoError(t, err)
+	s.Close()
+	restart()
+	rows, err := s.db.Query(bg, "SELECT name FROM model_service_aliases")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{"OpenAI"}}, rows.Values, "the second start records nothing")
+	_, err = s.resolveModel(bg, "Work/m1")
 	assert.ErrorIs(t, err, ErrModelServiceNotFound)
 }
