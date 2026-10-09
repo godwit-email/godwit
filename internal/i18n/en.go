@@ -526,11 +526,12 @@ var en = map[string]string{
 	"error.flush_slow":         "A draft is still saving after 3 seconds",
 
 	// notifications and tray
-	"notify.new_mail":  "New mail",
-	"notify.new_mails": "%d new messages",
-	"tray.open":        "Open Godwit",
-	"tray.sync_all":    "Sync all accounts now",
-	"tray.quit":        "Quit",
+	"notify.new_mail":   "New mail",
+	"notify.new_mails":  "%d new messages",
+	"tray.open":         "Open Godwit",
+	"tray.sync_all":     "Sync all accounts now",
+	"tray.quit":         "Quit",
+	"app.another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
 
 	// ask and the Wit panel
 	"ask.heading":                      "Wit",
