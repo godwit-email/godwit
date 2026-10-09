@@ -51,7 +51,7 @@ func (h *harness) arriveIn(acc core.Account, folder string, subjects ...string) 
 	for _, s := range subjects {
 		h.env.Deliver(h.t, acc.ID, folder, coretest.Msg("Bob Stone <bob@example.com>", acc.Email, s, "body of "+s))
 	}
-	h.until("the arrivals", func() bool { return len(h.app.newMail[acc.ID].msgs) == len(subjects) })
+	h.until("the arrivals", func() bool { got := h.app.newMail[acc.ID]; return got != nil && len(got.msgs) == len(subjects) })
 }
 
 // notesAfter lets the coalescing window pass and returns the notifications
@@ -191,7 +191,7 @@ func gateClicks(a *App) (release func(id string)) {
 		return gates[id]
 	}
 	look := a.noteRoute
-	a.noteRoute = func(ctx context.Context, id string) (Route, error) {
+	a.noteRoute = func(ctx context.Context, id string) (Route, bool, error) {
 		<-gate(id)
 		return look(ctx, id)
 	}
@@ -228,6 +228,20 @@ func TestNotificationClickLatestWins(t *testing.T) {
 	h.drain()
 	if h.app.route.Page != PageSettings {
 		t.Fatalf("route %+v: a click's late result overrode the user's navigation", h.app.route)
+	}
+}
+
+func TestNotificationClickNowhere(t *testing.T) {
+	h, _ := notifyHarness(t, nil)
+	h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+	before := h.app.route
+	for _, id := range []string{"bogus", "message:x", "other:1", "account:999"} { // account 999 has no inbox
+		h.app.NotificationClicked(id)
+		time.Sleep(20 * time.Millisecond)
+		h.drain()
+		if h.app.route != before {
+			t.Fatalf("click %q went to %+v", id, h.app.route)
+		}
 	}
 }
 

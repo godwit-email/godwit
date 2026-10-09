@@ -135,15 +135,16 @@ func (a *App) NotificationClicked(id string) {
 	a.noteGen++
 	gen, look := a.noteGen, a.noteRoute
 	var r Route
+	var ok bool
 	a.query(func(ctx context.Context) (err error) {
-		r, err = look(ctx, id)
+		r, ok, err = look(ctx, id)
 		return err
 	}, func(err error) {
 		switch {
 		case gen != a.noteGen:
 		case err != nil:
 			a.toastErr(err)
-		case r.Page == PageMail:
+		case ok:
 			if a.settings.ThreadView {
 				r.MessageID = 0 // the whole thread, as the list opens it
 			}
@@ -153,30 +154,30 @@ func (a *App) NotificationClicked(id string) {
 }
 
 // notificationRoute is where the notification id leads (MessageID set for a
-// message); a zero Route for an id of no known kind.
-func (a *App) notificationRoute(ctx context.Context, id string) (Route, error) {
+// message); false for an id of no known kind or an account without an inbox.
+func (a *App) notificationRoute(ctx context.Context, id string) (Route, bool, error) {
 	kind, num, _ := strings.Cut(id, ":")
 	n, err := strconv.ParseInt(num, 10, 64)
 	if err != nil {
-		return Route{}, nil
+		return Route{}, false, nil
 	}
 	switch kind {
 	case "message":
 		m, err := a.svc.GetMessage(ctx, n, false)
 		if err != nil {
-			return Route{}, err
+			return Route{}, false, err
 		}
-		return Route{Page: PageMail, View: core.View{FolderID: m.FolderID}, ThreadID: m.ThreadID, MessageID: m.ID}, nil
+		return Route{Page: PageMail, View: core.View{FolderID: m.FolderID}, ThreadID: m.ThreadID, MessageID: m.ID}, true, nil
 	case "account":
 		fs, err := a.svc.ListFolders(ctx, n)
 		if err != nil {
-			return Route{}, err
+			return Route{}, false, err
 		}
 		if i := slices.IndexFunc(fs, func(f core.Folder) bool { return f.Role == "inbox" }); i >= 0 {
-			return Route{Page: PageMail, View: core.View{FolderID: fs[i].ID}}, nil
+			return Route{Page: PageMail, View: core.View{FolderID: fs[i].ID}}, true, nil
 		}
 	}
-	return Route{}, nil
+	return Route{}, false, nil
 }
 
 // showTrayUnread puts the inboxes' unread total on the tray when the
