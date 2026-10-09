@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -103,6 +104,22 @@ type App struct {
 	settings core.Settings
 
 	foreground bool
+
+	history, ahead []Route           // navigation: routes behind and, after back, ahead
+	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
+	sidebarHidden  bool
+
+	dirty             []events.Event // events since the last refresh
+	refreshStop       func()         // the pending throttled refresh; nil when none
+	events, refreshes int            // counted for tests: refreshes stay far fewer than events
+
+	syncing  map[int64]bool   // accounts syncing now
+	syncErr  map[int64]string // each account's last sync failure, until it syncs
+	syncedAt time.Time        // the last successful sync; zero before one
+	ticking  bool             // a minute tick redraws the sync age
+
+	unread map[int64]int // per account, summed over its folders
+	toasts []ui.Toast    // shown on the next frame
 }
 
 // New builds an App; Start brings it up.
@@ -122,6 +139,8 @@ func New(d Deps) *App {
 		st, err := a.svc.GetSettings(ctx)
 		return st, accs, err
 	}
+	a.pages = map[Page]pageView{PageMail: placeholder{}, PageWit: placeholder{}, PageSettings: placeholder{}, PageOnboarding: placeholder{}}
+	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
@@ -150,32 +169,53 @@ func (a *App) Start(ctx context.Context) {
 	a.load()
 }
 
-// load re-reads accounts and settings; only the newest load's result applies.
+// load re-reads accounts, settings and unread counts; only the newest
+// load's result applies. The first load picks the start route.
 func (a *App) load() {
 	a.loadGen++
 	gen := a.loadGen
 	var accs []core.Account
 	var st core.Settings
+	var unread map[int64]int
 	fetch := a.fetch
 	a.do(func(ctx context.Context) error {
 		var err error
-		st, accs, err = fetch(ctx)
-		return err
+		if st, accs, err = fetch(ctx); err != nil {
+			return err
+		}
+		unread = map[int64]int{}
+		for _, acc := range accs {
+			fs, err := a.svc.ListFolders(ctx, acc.ID)
+			if err != nil {
+				return err
+			}
+			unread[acc.ID] = 0 // every account has a key, folders or not
+			for _, f := range fs {
+				unread[acc.ID] += f.Unread
+			}
+		}
+		return nil
 	}, func(err error) {
 		if gen != a.loadGen {
 			return
 		}
 		a.loadErr = err
-		if err == nil {
-			a.accounts, a.settings, a.loaded = accs, st, true
+		if err != nil {
+			return
+		}
+		first := !a.loaded
+		a.accounts, a.settings, a.unread, a.loaded = accs, st, unread, true
+		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
+		maps.DeleteFunc(a.syncing, gone)
+		maps.DeleteFunc(a.syncErr, func(id int64, _ string) bool { return gone(id, false) })
+		switch {
+		case len(accs) == 0 && a.route.Page != PageOnboarding:
+			a.history, a.ahead = nil, nil
+			a.setRoute(Route{Page: PageOnboarding})
+		case len(accs) > 0 && first:
+			a.setRoute(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 		}
 	})
-}
-
-func (a *App) onEvent(ev events.Event) {
-	if ev.Type == events.SettingsChanged {
-		a.load()
-	}
 }
 
 // Close cancels all work in flight; their done callbacks never run.
@@ -189,13 +229,6 @@ func (a *App) SetForeground(on bool) { a.foreground = on }
 // NotificationClicked handles a click on a notification the App showed.
 func (a *App) NotificationClicked(id string) {
 	_ = id // ponytail: no notifications yet; the new-mail task routes the click to its message
-}
-
-// View builds the window's content.
-func (a *App) View(c *ui.Context) {
-	ui.Column(c).Fill().Center().Children(func() {
-		ui.Text(c, "Godwit")
-	})
 }
 
 // onUI posts f to the UI thread unless the App has closed by then.

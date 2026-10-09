@@ -12,7 +12,6 @@ import (
 
 func TestAppStartsAndRenders(t *testing.T) {
 	h := newHarness(t)
-	h.see("Godwit")
 	h.until("accounts and settings loaded", func() bool { return h.app.loaded })
 	if len(h.app.accounts) != 0 || h.app.settings.Theme != "system" {
 		t.Fatalf("accounts %v settings %+v", h.app.accounts, h.app.settings)

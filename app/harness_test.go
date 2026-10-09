@@ -31,7 +31,14 @@ type harness struct {
 
 func newHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
-	h := &harness{t: t, env: coretest.New(t), plat: &fakePlatform{}, clock: newFakeClock()}
+	return newHarnessWith(t, nil, setup...)
+}
+
+// newHarnessWith is newHarness on an Env started with opts, as
+// coretest.WithoutAutoSync for tests that need every sync to be their own.
+func newHarnessWith(t *testing.T, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
+	t.Helper()
+	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock()}
 	for _, s := range setup {
 		s(h.env)
 	}
