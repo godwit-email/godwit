@@ -172,7 +172,7 @@ func New(d Deps) *App {
 	a.drafts = map[int64]*composer{}
 	a.getDraft = a.svc.GetDraft
 	a.mail = newMailPage(a)
-	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: placeholder{}, PageSettings: newSettingsPage(a)}
+	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())

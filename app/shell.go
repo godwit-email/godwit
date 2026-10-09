@@ -25,14 +25,6 @@ type pageView interface {
 	refresh(hints []events.Event)
 }
 
-// placeholder is an empty page; later tasks replace each with the real one.
-type placeholder struct{}
-
-func (placeholder) Sidebar(*ui.Context)          {}
-func (placeholder) Content(*ui.Context)          {}
-func (placeholder) Title() (string, string)      { return "", "" }
-func (placeholder) refresh(hints []events.Event) {}
-
 const (
 	refreshEvery = 250 * time.Millisecond
 )

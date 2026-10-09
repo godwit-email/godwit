@@ -61,6 +61,8 @@ const (
 	ImagePlaceholder  = 64  // an image not loaded, when its size is unknown
 	ReaderMaxWidth    = 720 // the reading pane's text column
 	AttachmentWidth   = 260 // an attachment in the reading pane
+	WitMaxWidth       = 760 // the Ask page's conversation column
+	CitationsWidth    = 320 // the Ask page's cited mail column
 )
 
 // BoldWeight is the font weight of bold text in mail bodies and the editor.
