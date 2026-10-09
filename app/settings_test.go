@@ -515,3 +515,36 @@ func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
 		t.Fatalf("stored %+v, %v; want both edits", st, err)
 	}
 }
+
+func TestCloseSavesSettings(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.fill("签名内容", "Bye")
+	closed := false
+	h.app.BeforeClose(func() {
+		closed = true
+		if got := h.account(acc.ID).Signature; got != "Bye" {
+			t.Errorf("closed before the signature saved: %q", got)
+		}
+	})
+	h.until("closed", func() bool { return closed })
+
+	// A settings snapshot still saving holds the close until it is done.
+	release := make(chan struct{})
+	save := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		<-release
+		return save(ctx, st)
+	}
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	closed = false
+	h.app.BeforeClose(func() { closed = true })
+	h.drain()
+	if closed {
+		t.Fatal("closed while the settings were saving")
+	}
+	close(release)
+	h.until("closed after the settings saved", func() bool { return closed })
+}

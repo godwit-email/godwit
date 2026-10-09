@@ -299,16 +299,17 @@ func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 }
 
-// flushWait is how long BeforeClose waits for the drafts to save before it asks.
+// flushWait is how long BeforeClose waits for the writes before it asks.
 const flushWait = 3 * time.Second
 
-// errFlushSlow is why BeforeClose asks when the drafts take longer than flushWait.
-var errFlushSlow = errors.New("drafts still saving")
+// errFlushSlow is why BeforeClose asks when the writes take longer than flushWait.
+var errFlushSlow = errors.New("still saving")
 
-// BeforeClose saves every draft's last edits, then calls proceed: before
-// the window closes or the App quits. When a draft cannot be saved, or has
-// not saved within flushWait, the window shows and asks whether to close
-// anyway; a save that finishes while it asks closes after all.
+// BeforeClose saves every draft's last edits and account fields, waits for
+// every write in flight, then calls proceed: before the window closes or
+// the App quits. When a write fails, or they have not finished within
+// flushWait, the window shows and asks whether to close anyway; writes that
+// finish while it asks close after all.
 func (a *App) BeforeClose(proceed func()) {
 	settled := false
 	ask := func(err error) {
@@ -321,7 +322,7 @@ func (a *App) BeforeClose(proceed func()) {
 			ask(errFlushSlow)
 		}
 	})
-	a.flushDrafts(func(err error) {
+	settle := func(err error) {
 		stop()
 		switch {
 		case err == nil && (!settled || a.closeAsk && errors.Is(a.closeErr, errFlushSlow)):
@@ -330,6 +331,10 @@ func (a *App) BeforeClose(proceed func()) {
 		case !settled:
 			ask(err)
 		}
+	}
+	a.pages[PageSettings].(*settingsPage).commitEdits()
+	a.flushDrafts(func(draftErr error) {
+		a.writes.Settle(func(err error) { settle(errors.Join(draftErr, err)) })
 	})
 }
 

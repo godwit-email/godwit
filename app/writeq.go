@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // writeQueue orders writes to one resource: a key's writes run one at a time,
 // and while one runs only the newest submitted snapshot waits. All its state
@@ -9,6 +12,8 @@ type writeQueue struct {
 	a      *App
 	keys   map[string]*writeKey
 	chains map[string][]chainJob // Chain's writes per key, the running one first
+	idle   []func(error)         // Settle's waiters
+	errs   []error               // what failed while they wait
 }
 
 type writeKey struct {
@@ -41,6 +46,7 @@ func (q *writeQueue) Submit(key string, gen uint64, fn func(ctx context.Context)
 
 func (q *writeQueue) run(key string, k *writeKey, j *writeJob) {
 	q.a.do(j.fn, func(err error) {
+		defer q.settled(err)
 		if j.done != nil {
 			j.done(j.gen, err) // the key is still busy: a Submit from done waits as next
 		}
@@ -85,6 +91,7 @@ type chainJob struct {
 func (q *writeQueue) runChain(key string) {
 	j := q.chains[key][0]
 	q.a.do(j.fn, func(err error) {
+		defer q.settled(err)
 		if j.done != nil {
 			j.done(err)
 		}
@@ -95,4 +102,28 @@ func (q *writeQueue) runChain(key string) {
 		}
 		delete(q.chains, key)
 	})
+}
+
+// Settle calls done once no write of any key runs or waits, with the
+// errors of the writes that finished meanwhile; at once with nil when idle.
+func (q *writeQueue) Settle(done func(err error)) {
+	q.idle = append(q.idle, done)
+	q.settled(nil)
+}
+
+func (q *writeQueue) settled(err error) {
+	if len(q.idle) == 0 {
+		return
+	}
+	if err != nil {
+		q.errs = append(q.errs, err)
+	}
+	if len(q.keys) > 0 || len(q.chains) > 0 {
+		return
+	}
+	ws, err := q.idle, errors.Join(q.errs...)
+	q.idle, q.errs = nil, nil
+	for _, w := range ws {
+		w(err)
+	}
 }

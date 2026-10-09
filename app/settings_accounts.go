@@ -104,6 +104,19 @@ func (f *accountForm) cancelEdits() {
 	}
 }
 
+// commitEdits saves at once every field still waiting for typing to pause.
+func (p *settingsPage) commitEdits() {
+	for id, f := range p.forms {
+		for i := range f.edits {
+			if e := &f.edits[i]; e.stop != nil {
+				e.stop()
+				e.stop = nil
+				p.saveField(id, f, i)
+			}
+		}
+	}
+}
+
 // saveField writes field i as it is now, after the account's earlier
 // writes; a failure of its newest edit restores the last confirmed value.
 func (p *settingsPage) saveField(id int64, f *accountForm, i int) {
