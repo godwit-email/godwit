@@ -119,12 +119,13 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 	})
 }
 
-// audit records full's Send and SendAcknowledged (by draft) and mcp's
-// NewDraft (by source message) and SaveDraft (by draft); nothing else.
+// audit records full's Send and SendAcknowledged (by draft) and
+// ResolveOutbox "resend" (by outbox item), and mcp's NewDraft (by source
+// message) and SaveDraft (by draft); nothing else.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	source := ""
 	switch {
-	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged"):
+	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "ResolveOutbox" && isResend(params)):
 		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
 		source = core.AuditMCP
@@ -143,4 +144,10 @@ func audit(svc *core.Service, role, method string, params []json.RawMessage) err
 		json.Unmarshal(params[0], &target)
 	}
 	return svc.AuditExternal(context.Background(), source, method, target)
+}
+
+// isResend: ResolveOutbox's params ask to send the item again.
+func isResend(params []json.RawMessage) bool {
+	var action string
+	return len(params) == 2 && json.Unmarshal(params[1], &action) == nil && action == "resend"
 }

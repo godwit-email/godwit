@@ -335,3 +335,59 @@ func TestAuditFailureStopsCall(t *testing.T) {
 	assert.Empty(t, outbox)
 	assert.Empty(t, e.Sent(acc.ID))
 }
+
+// failedOutbox adds an outbox item of acc that failed to send; its id.
+func failedOutbox(t *testing.T, dataDir string, acc int64) int64 {
+	t.Helper()
+	db, err := store.Open(context.Background(), filepath.Join(dataDir, "godwit.db"))
+	require.NoError(t, err)
+	defer db.Close()
+	r, err := db.Execute(context.Background(), "INSERT INTO outbox(account_id, state) VALUES (?, 'failed')", acc)
+	require.NoError(t, err)
+	return r.LastInsertID
+}
+
+func outboxState(t *testing.T, svc *core.Service, acc, id int64) string {
+	t.Helper()
+	items, err := svc.ListOutbox(t.Context(), acc)
+	require.NoError(t, err)
+	for _, it := range items {
+		if it.ID == id {
+			return it.State
+		}
+	}
+	return ""
+}
+
+// full's ResolveOutbox "resend" sends again, so it is audited like Send;
+// confirm_sent and discard send nothing and are not.
+func TestAuditResend(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	resend, confirm := failedOutbox(t, e.DataDir, acc.ID), failedOutbox(t, e.DataDir, acc.ID)
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	require.NoError(t, full.Call(ctx, "ResolveOutbox", nil, confirm, "confirm_sent"))
+	require.NoError(t, full.Call(ctx, "ResolveOutbox", nil, resend, "resend"))
+	assert.Equal(t, [][]any{{"local_api", "ResolveOutbox", resend, ""}}, auditRows(t, e.DataDir))
+}
+
+// A resend whose audit cannot be written re-queues nothing.
+func TestAuditResendFailureStopsCall(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	id := failedOutbox(t, e.DataDir, acc.ID)
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	err = dial(t, listen(t, e.Svc), rpc.RoleFull).Call(ctx, "ResolveOutbox", nil, id, "resend")
+	var we *rpc.WireError
+	require.ErrorAs(t, err, &we)
+	assert.Equal(t, rpc.CodeInternal, we.Code)
+	assert.Equal(t, "failed", outboxState(t, e.Svc, acc.ID, id), "not re-queued")
+}
