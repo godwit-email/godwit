@@ -87,13 +87,17 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running   map[string]*runningPlugin  // started plugins by name
-	pluginGen uint64                     // last runningPlugin.gen handed out
-	hooksMu   sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
-	hookWakes map[chan struct{}]struct{} // each running dispatcher's wake-up
-	hookClock plugins.Clock              // hook backoff and polling; nil is the real clock
-	pluginNet plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running     map[string]*runningPlugin  // started plugins by name
+	pluginGen   uint64                     // last runningPlugin.gen handed out
+	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
+	hookClock   plugins.Clock              // hook backoff and polling; nil is the real clock
+	pluginNet   plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock plugins.Clock              // plugin VM call limits; nil is the real clock
+
+	checksMu   sync.Mutex
+	sendChecks map[string]keptCheck // beforeSend checks with warnings, by digest, until they expire
 
 	closeOnce sync.Once
 	closeErr  error
@@ -118,7 +122,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		hookClock: testHookClock}
+		hookClock: testHookClock, pluginClock: testPluginClock}
 	s.registerAskTools()
 	s.registerAssistTools()
 	if err := s.cleanOrphans(ctx); err != nil {

@@ -136,11 +136,22 @@ func (p *Plugin) Handles(event string) bool { return p.events[event] != nil }
 // Emit runs the plugin's handler for event with args (plain JSON-like Go
 // data) as one top-level call under inv, awaiting it if it is async.
 func (p *Plugin) Emit(ctx context.Context, inv Invocation, event string, args ...any) error {
+	_, err := p.emit(ctx, inv, event, true, args)
+	return err
+}
+
+// EmitResult is Emit that returns the handler's (awaited) result as plain
+// JSON data.
+func (p *Plugin) EmitResult(ctx context.Context, inv Invocation, event string, args ...any) (any, error) {
+	return p.emit(ctx, inv, event, false, args)
+}
+
+func (p *Plugin) emit(ctx context.Context, inv Invocation, event string, discard bool, args []any) (any, error) {
 	h := p.events[event]
 	if h == nil {
-		return fmt.Errorf("plugin %s has no %s handler", p.Name, event)
+		return nil, fmt.Errorf("plugin %s has no %s handler", p.Name, event)
 	}
-	_, err := p.vm.Call(ctx, inv, func(c *CallScope) (any, error) {
+	return p.vm.Call(ctx, inv, func(c *CallScope) (any, error) {
 		vals := make([]goja.Value, len(args))
 		for i, a := range args {
 			vals[i] = c.Runtime().ToValue(a)
@@ -149,9 +160,11 @@ func (p *Plugin) Emit(ctx context.Context, inv Invocation, event string, args ..
 		if err != nil {
 			return nil, err
 		}
-		return p.vm.discard(res), nil
+		if discard {
+			return p.vm.discard(res), nil
+		}
+		return res, nil
 	})
-	return err
 }
 
 // Load builds the ctx object and runs the plugin's initialization in an init

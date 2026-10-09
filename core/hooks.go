@@ -2,10 +2,16 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
@@ -243,4 +249,211 @@ func (s *Service) startJanitor() {
 			s.cleanEvents(ctx) // best effort; the next tick tries again
 		}
 	}()
+}
+
+// message.beforeSend: Send reads the draft and the checking plugins under
+// editMu, runs the checks outside it (a check cannot write mail, so it never
+// waits for the lock), and queues the draft only if, under editMu again, its
+// revision and the plugin list are still the checked ones.
+
+const (
+	maxSendText  = 500 // runes of a warning or block message
+	sendCheckTTL = 10 * time.Minute
+)
+
+// SendWarning is a plugin's warning about a draft; the user may still send.
+type SendWarning struct{ Plugin, Message string }
+
+// SendCheck is a draft revision's beforeSend outcome with warnings. Plugins
+// are the checking plugins as name@source_hash, sorted by name. Digest binds
+// all of it: SendAcknowledged(DraftID, Digest) queues that revision without
+// checking again while the draft and the plugins are unchanged.
+type SendCheck struct {
+	DraftID, Revision int64
+	Plugins           []string
+	Warnings          []SendWarning
+	Digest            string
+}
+
+// SendBlockedError: a plugin refused the draft. It cannot be acknowledged;
+// the user edits the draft or disables the plugin.
+type SendBlockedError struct{ Plugin, Message string }
+
+func (e *SendBlockedError) Error() string {
+	return "plugin " + e.Plugin + " blocked sending: " + e.Message
+}
+
+// SendWarningsError: nothing was queued; show the warnings and call
+// SendAcknowledged with Check.Digest to send anyway.
+type SendWarningsError struct{ Check SendCheck }
+
+func (e *SendWarningsError) Error() string {
+	return fmt.Sprintf("%d plugin warning(s) to acknowledge before sending", len(e.Check.Warnings))
+}
+
+// testPluginClock, if set, is the plugin VM clock of Services created afterwards (tests).
+var testPluginClock plugins.Clock
+
+// duringSendCheck, if set, runs before each beforeSend call, outside editMu (tests).
+var duringSendCheck func()
+
+type sendChecker struct {
+	id, name string // id is name@source_hash
+	gen      uint64
+	p        *plugins.Plugin
+}
+
+// sendCheckers are the running plugins with a beforeSend handler, by name.
+func (s *Service) sendCheckers() []sendChecker {
+	s.pluginsMu.RLock()
+	defer s.pluginsMu.RUnlock()
+	var out []sendChecker
+	for name, rp := range s.running {
+		if rp.p.Handles(plugins.EventBeforeSend) {
+			out = append(out, sendChecker{id: name + "@" + rp.hash, name: name, gen: rp.gen, p: rp.p})
+		}
+	}
+	slices.SortFunc(out, func(a, b sendChecker) int { return strings.Compare(a.name, b.name) })
+	return out
+}
+
+func checkerIDs(cs []sendChecker) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.id
+	}
+	return out
+}
+
+// runSendChecks calls each checker in order; the caller holds no lock. A
+// block ends the checks with *SendBlockedError; an error or timeout is a
+// warning and a failure of that plugin.
+func (s *Service) runSendChecks(ctx context.Context, d Draft, cs []sendChecker) ([]SendWarning, error) {
+	html := d.HTML
+	if len(html) > plugins.MaxBodyBytes {
+		html = strings.ToValidUTF8(html[:plugins.MaxBodyBytes], "")
+	}
+	arg := map[string]any{"id": d.ID, "accountId": d.AccountID, "to": append([]string{}, d.To...), "cc": append([]string{}, d.Cc...),
+		"subject": d.Subject, "html": html}
+	egress, _ := plugins.EgressFor(plugins.KindBeforeSend, plugins.Manifest{}, false, false) // none, whatever the plugin holds
+	var warns []SendWarning
+	for _, c := range cs {
+		if duringSendCheck != nil {
+			duringSendCheck()
+		}
+		inv := plugins.Invocation{ID: fmt.Sprintf("beforeSend:%d:%d", d.ID, d.Revision), Kind: plugins.KindBeforeSend, EgressHosts: egress}
+		res, err := c.p.EmitResult(ctx, inv, plugins.EventBeforeSend, arg)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var warn, block string
+		if err == nil {
+			warn, block, err = sendResult(res)
+		}
+		if err != nil {
+			s.pluginFailed(ctx, c.name, c.gen)
+			warns = append(warns, SendWarning{Plugin: c.name, Message: "plugin " + c.name + " did not respond"})
+			continue
+		}
+		s.pluginSucceeded(ctx, c.name, c.gen)
+		if block != "" {
+			return nil, &SendBlockedError{Plugin: c.name, Message: s.sendText(block)}
+		}
+		if warn != "" {
+			warns = append(warns, SendWarning{Plugin: c.name, Message: s.sendText(warn)})
+		}
+	}
+	return warns, nil
+}
+
+// sendResult reads a handler's result: nothing, {warn: string} or {block: string}.
+func sendResult(res any) (warn, block string, err error) {
+	if res == nil {
+		return "", "", nil
+	}
+	m, ok := res.(map[string]any)
+	if ok {
+		if b, has := m["block"]; has {
+			block, ok = b.(string)
+		} else if w, has := m["warn"]; has {
+			warn, ok = w.(string)
+		}
+	}
+	if !ok {
+		return "", "", errors.New("beforeSend must return nothing, {warn: string} or {block: string}")
+	}
+	return warn, block, nil
+}
+
+// sendText is a plugin's message as the user sees it: secrets redacted,
+// control characters removed, at most maxSendText runes.
+func (s *Service) sendText(t string) string {
+	t = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s.secrets.Redact(strings.ToValidUTF8(t, "")))
+	if r := []rune(t); len(r) > maxSendText {
+		t = string(r[:maxSendText])
+	}
+	return t
+}
+
+func sendDigest(c SendCheck) string {
+	b, _ := json.Marshal([]any{c.DraftID, c.Revision, c.Plugins, c.Warnings})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+type keptCheck struct {
+	c       SendCheck
+	expires time.Time
+}
+
+// keepSendCheck remembers c for sendCheckTTL, dropping expired ones.
+func (s *Service) keepSendCheck(c SendCheck) {
+	s.checksMu.Lock()
+	defer s.checksMu.Unlock()
+	now := time.Now()
+	for k, e := range s.sendChecks {
+		if now.After(e.expires) {
+			delete(s.sendChecks, k)
+		}
+	}
+	if s.sendChecks == nil {
+		s.sendChecks = map[string]keptCheck{}
+	}
+	s.sendChecks[c.Digest] = keptCheck{c, now.Add(sendCheckTTL)}
+}
+
+func (s *Service) sendCheck(digest string) (SendCheck, bool) {
+	s.checksMu.Lock()
+	defer s.checksMu.Unlock()
+	e, ok := s.sendChecks[digest]
+	return e.c, ok && time.Now().Before(e.expires)
+}
+
+func (s *Service) dropSendCheck(digest string) {
+	s.checksMu.Lock()
+	defer s.checksMu.Unlock()
+	delete(s.sendChecks, digest)
+}
+
+// SendAcknowledged sends the draft despite the warnings of the check with
+// digest: if the draft's revision and the checking plugins are still the
+// checked ones it is queued without checking again; otherwise (or with no
+// such check, e.g. expired) it is a plain Send, which may warn again. A block
+// has no check, so it can never be acknowledged.
+func (s *Service) SendAcknowledged(ctx context.Context, draftID int64, digest string) error {
+	if c, ok := s.sendCheck(digest); ok && c.DraftID == draftID {
+		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins)
+		if !errors.Is(err, errSendChanged) {
+			if err == nil {
+				s.dropSendCheck(digest)
+			}
+			return err
+		}
+	}
+	return s.Send(ctx, draftID)
 }
