@@ -90,6 +90,8 @@ type Service struct {
 	pluginsMu sync.RWMutex              // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running   map[string]*runningPlugin // started plugins by name
 	pluginGen uint64                    // last runningPlugin.gen handed out
+	hooksMu   sync.Mutex                // plugin_cursors writes and events_log cleanup
+	hookClock plugins.Clock             // message.received backoff; nil is the real clock
 	pluginNet plugins.NetOptions        // ctx.net.fetch's network; tests inject a resolver and dialer
 
 	closeOnce sync.Once

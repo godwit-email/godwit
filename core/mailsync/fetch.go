@@ -214,7 +214,9 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 	}
 	slices.SortFunc(todo, byUID)
-	if err := importAll(ctx, db, c, a, f, todo, r); err != nil {
+	// Only a folder synced before has new arrivals; a first sync (or the
+	// reimport after a UIDVALIDITY reset, which zeroes last_uid) does not.
+	if err := importAll(ctx, db, c, a, f, todo, f.lastUID > 0, r); err != nil {
 		return err
 	}
 	if last == f.lastUID {
@@ -233,8 +235,9 @@ func importItems() *imap.FetchOptions {
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}
 }
 
-// importAll imports msgs in the order given, fetching their text parts in batches.
-func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, r *result) error {
+// importAll imports msgs in the order given, fetching their text parts in
+// batches; with arrivals set each inserted message logs a message.received event.
+func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, arrivals bool, r *result) error {
 	twins := map[string]int{} // arrivals per Message-ID and size, for claims
 	for _, m := range msgs {
 		twins[twinKey(m)]++
@@ -245,7 +248,7 @@ func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *accou
 			return err
 		}
 		for _, m := range batch {
-			if err := importMessage(ctx, db, a, f, m, texts[m.UID], twins[twinKey(m)], r); err != nil {
+			if err := importMessage(ctx, db, a, f, m, texts[m.UID], twins[twinKey(m)], arrivals, r); err != nil {
 				return err
 			}
 		}
@@ -291,7 +294,7 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	// Newest first: if this stops partway, the oldest stored UID still bounds
 	// what is missing and the next round resumes below it.
 	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
-	return importAll(ctx, db, c, a, f, msgs, r)
+	return importAll(ctx, db, c, a, f, msgs, false, r) // older mail, not new arrivals
 }
 
 func byUID(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) }

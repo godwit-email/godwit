@@ -130,6 +130,30 @@ func (p *Plugin) Events() []string {
 	return out
 }
 
+// Handles reports whether the plugin registered a handler for event.
+func (p *Plugin) Handles(event string) bool { return p.events[event] != nil }
+
+// Emit runs the plugin's handler for event with args (plain JSON-like Go
+// data) as one top-level call under inv, awaiting it if it is async.
+func (p *Plugin) Emit(ctx context.Context, inv Invocation, event string, args ...any) error {
+	h := p.events[event]
+	if h == nil {
+		return fmt.Errorf("plugin %s has no %s handler", p.Name, event)
+	}
+	_, err := p.vm.Call(ctx, inv, func(c *CallScope) (any, error) {
+		vals := make([]goja.Value, len(args))
+		for i, a := range args {
+			vals[i] = c.Runtime().ToValue(a)
+		}
+		res, err := h(goja.Undefined(), vals...)
+		if err != nil {
+			return nil, err
+		}
+		return p.vm.discard(res), nil
+	})
+	return err
+}
+
 // Load builds the ctx object and runs the plugin's initialization in an init
 // invocation (no writes, no egress), recording what it registers.
 func Load(ctx context.Context, vm *VM, m Manifest, h Host) (*Plugin, error) {

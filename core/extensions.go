@@ -432,6 +432,7 @@ func (s *Service) startPlugins(ctx context.Context) error {
 			return err
 		}
 	}
+	s.cleanEvents(ctx) // best effort; dispatchers clean after each batch too
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	for n, r := range rows {
@@ -451,6 +452,8 @@ type runningPlugin struct {
 	gen  uint64 // this instance, among every instance started by the Service
 	host *pluginHost
 	p    *plugins.Plugin
+
+	stopHooks func() // cancels its message.received dispatcher, if any
 }
 
 // loadPlugin (re)starts an enabled plugin on its installed code: it builds the
@@ -492,12 +495,20 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	s.running[name] = &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h}
+	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h}
+	s.running[name] = rp
+	if err := s.startHooks(ctx, rp, r); err != nil {
+		s.stopPlugin(name)
+		return err
+	}
 	return nil
 }
 
 func (s *Service) stopPlugin(name string) {
 	if rp := s.running[name]; rp != nil {
+		if rp.stopHooks != nil {
+			rp.stopHooks() // it ends on its own; Close waits for it (s.begin)
+		}
 		rp.p.VM().Close()
 		delete(s.running, name)
 	}
