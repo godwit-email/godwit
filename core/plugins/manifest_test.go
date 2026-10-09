@@ -44,6 +44,11 @@ func TestTextLanguages(t *testing.T) {
 	require.NoError(t, json.Unmarshal(b, &y))
 	assert.Equal(t, x, y, "round trips")
 	assert.Error(t, json.Unmarshal([]byte(`{"zh-CN":"套餐"}`), &y), "an object needs a default")
+	for _, bad := range []string{`null`, `{"default":null}`, `{"default":"Plan","zh-CN":null}`} {
+		assert.Error(t, json.Unmarshal([]byte(bad), &y), bad)
+	}
+	_, err = ParseManifest(manifest(`"demo"`, `"index.ts"`, okPerms, `[{"key":"x","type":"text","label":null}]`), "demo")
+	assert.Error(t, err, "a null label")
 }
 
 // manifest builds a plugin.json named demo with the given parts replaced.
@@ -66,6 +71,9 @@ func TestParseManifestRejects(t *testing.T) {
 		{"net bad port", string(manifest(`"demo"`, `"index.ts"`, `{"net":["x.com:99999"]}`, `[]`))},
 		{"main parent", string(manifest(`"demo"`, `"../x.ts"`, okPerms, `[]`))},
 		{"main absolute", string(manifest(`"demo"`, `"/x.ts"`, okPerms, `[]`))},
+		{"main drive letter slash", string(manifest(`"demo"`, `"C:/outside.ts"`, okPerms, `[]`))},
+		{"main drive letter relative", string(manifest(`"demo"`, `"C:outside.ts"`, okPerms, `[]`))},
+		{"main backslash", string(manifest(`"demo"`, `"a\\b.ts"`, okPerms, `[]`))},
 		{"main not ts or js", string(manifest(`"demo"`, `"x.py"`, okPerms, `[]`))},
 		{"unknown field", `{"name":"demo","version":"1","main":"index.ts","exec":"rm"}`},
 		{"duplicate key", string(manifest(`"demo"`, `"index.ts"`, okPerms,
@@ -142,6 +150,9 @@ func TestPermissionHashStable(t *testing.T) {
 	assert.Equal(t, h, base.PermissionHash())
 	assert.Equal(t, h, parse(`{"llm":true,"net":["B.com","a.com"],"mail":["write","read"]}`, `[{"key":"x","type":"text","label":"X"}]`).PermissionHash(),
 		"order, case and config do not matter")
+	assert.Equal(t, h, parse(`{"mail":["read","write"],"net":["a.com:443","b.com"],"llm":true}`, `[]`).PermissionHash(),
+		"443 is the default port")
+	assert.Equal(t, []string{"a.com", "b.com:8443"}, parse(`{"net":["A.com:443","b.com:8443"]}`, `[]`).Permissions.Net)
 	for _, p := range []string{
 		`{"mail":["read"],"net":["a.com","b.com"],"llm":true}`,
 		`{"mail":["read","write"],"net":["a.com"],"llm":true}`,

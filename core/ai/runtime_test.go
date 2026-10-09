@@ -400,6 +400,26 @@ func TestRedactingLogger(t *testing.T) {
 	assert.Equal(t, 3, strings.Count(out, "[redacted]"), out)
 }
 
+// TestRedactsSecretAddedLater: a secret that joins the set after the engine is
+// created (a plugin installed later) is redacted from Genkit's logs, in the
+// message and in plain, error and grouped attributes.
+func TestRedactsSecretAddedLater(t *testing.T) {
+	var buf bytes.Buffer
+	var secrets atomic.Pointer[[]string]
+	secrets.Store(&[]string{})
+	e, err := NewEngine(slog.New(slog.NewJSONHandler(&buf, nil)), func() []string { return *secrets.Load() })
+	require.NoError(t, err)
+	defer e.Close()
+	secrets.Store(&[]string{"plugin-sekret-42"})
+
+	ctx := e.logCtx(context.Background())
+	logger.Error(ctx, "call failed: plugin-sekret-42", "url", "https://x/?k=plugin-sekret-42",
+		"err", fmt.Errorf("denied %s", "plugin-sekret-42"), slog.Group("req", "auth", "Bearer plugin-sekret-42"))
+	out := buf.String()
+	assert.NotContains(t, out, "plugin-sekret-42")
+	assert.Equal(t, 4, strings.Count(out, "[redacted]"), out)
+}
+
 func TestCloseState(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)

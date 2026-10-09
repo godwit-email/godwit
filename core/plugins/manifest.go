@@ -27,7 +27,8 @@ type Manifest struct {
 }
 
 // Permissions: Mail holds "read" and/or "write" (there is no send); Net the
-// hosts, each "host" or "host:port", lowercased by ParseManifest.
+// hosts, each "host" or "host:port", lowercased and without ":443" after
+// ParseManifest.
 type Permissions struct {
 	Mail []string `json:"mail"`
 	Net  []string `json:"net"`
@@ -55,13 +56,25 @@ func (t Text) For(lang string) string {
 }
 
 func (t *Text) UnmarshalJSON(b []byte) error {
-	if err := json.Unmarshal(b, &t.Default); err == nil {
-		t.ByLang = nil
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	if s, ok := v.(string); ok {
+		*t = Text{Default: s}
 		return nil
 	}
-	var m map[string]string
-	if err := json.Unmarshal(b, &m); err != nil {
+	obj, ok := v.(map[string]any)
+	if !ok {
 		return errors.New("text must be a string or an object of strings")
+	}
+	m := map[string]string{}
+	for k, x := range obj {
+		s, ok := x.(string)
+		if !ok {
+			return fmt.Errorf("text %q must be a string", k)
+		}
+		m[k] = s
 	}
 	def, ok := m["default"]
 	if !ok {
@@ -159,7 +172,8 @@ func ParseManifest(data []byte, dirName string) (Manifest, error) {
 	if m.Version == "" {
 		return Manifest{}, fmt.Errorf("plugin %s: version is required", m.Name)
 	}
-	if !fs.ValidPath(m.Main) || m.Main == "." || strings.Contains(m.Main, `\`) ||
+	// No ":" or backslash: "C:/x.ts" and "C:x.ts" leave the plugin on Windows.
+	if !fs.ValidPath(m.Main) || m.Main == "." || strings.ContainsAny(m.Main, `:\`) ||
 		!(strings.HasSuffix(m.Main, ".ts") || strings.HasSuffix(m.Main, ".js")) {
 		return Manifest{}, fmt.Errorf("plugin %s: main %q must be a relative .ts or .js path inside the plugin", m.Name, m.Main)
 	}
@@ -172,7 +186,7 @@ func ParseManifest(data []byte, dirName string) (Manifest, error) {
 		if !validHost(h) {
 			return Manifest{}, fmt.Errorf("plugin %s: net %q must be a host name or host:port", m.Name, h)
 		}
-		m.Permissions.Net[i] = strings.ToLower(h)
+		m.Permissions.Net[i] = strings.TrimSuffix(strings.ToLower(h), ":443") // 443 is the default
 	}
 	if err := checkConfig(m.Config); err != nil {
 		return Manifest{}, fmt.Errorf("plugin %s: config: %w", m.Name, err)
@@ -282,7 +296,7 @@ func either(a, b json.RawMessage) json.RawMessage {
 }
 
 // PermissionHash identifies what the user granted: it changes when the mail,
-// net or llm permissions change, and not with their order, case or the config.
+// net or llm permissions change, and not with their order, case, a ":443" or the config.
 func (m Manifest) PermissionHash() string {
 	norm := func(xs []string) []string { return slices.Compact(slices.Sorted(slices.Values(xs))) }
 	b, _ := json.Marshal(Permissions{norm(m.Permissions.Mail), norm(m.Permissions.Net), m.Permissions.LLM})
