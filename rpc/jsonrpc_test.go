@@ -290,3 +290,151 @@ func TestClientStreamBackpressure(t *testing.T) {
 		t.Errorf("StreamErr = %v, want ErrStreamOverflow", err)
 	}
 }
+
+func TestTargetErrorsAlwaysEncoded(t *testing.T) {
+	c, _ := client(t, newDispatcher(t, newTarget()))
+	err := c.Call(context.Background(), "Leak", nil)
+	var we *rpc.WireError
+	if !errors.As(err, &we) || we.Message != "internal error" || we.Code != -32603 {
+		t.Fatalf("Leak = %#v, want the encoder's internal error", err)
+	}
+	if b, _ := json.Marshal(we); bytes.Contains(b, []byte("secret")) || bytes.Contains(b, []byte("password")) {
+		t.Fatalf("target's WireError leaked: %s", b)
+	}
+}
+
+func TestCancelBeforeStreamReturns(t *testing.T) {
+	tg := newTarget()
+	conn, _ := serve(t, newDispatcher(t, tg), rpc.ConnOptions{MaxActive: 1})
+	r := newRaw(t, conn)
+	r.send(`{"jsonrpc":"2.0","id":1,"method":"Gated","params":[]}`)
+	wait(t, tg.blockStarted, "Gated to start")
+	r.send(`{"jsonrpc":"2.0","method":"$/cancel","params":[1]}`)
+	if m := r.until("1"); m.Error == nil {
+		t.Fatalf("cancelled stream call = %+v, want an error", m)
+	}
+	wait(t, tg.gatedStopped, "stop to be called")
+	r.send(`{"jsonrpc":"2.0","id":2,"method":"Echo","params":["a",1]}`)
+	if m := r.until("2"); string(m.Result) != `"a1"` {
+		t.Fatalf("slot not released: %+v", m)
+	}
+}
+
+func TestClientWriteHonoursCtx(t *testing.T) {
+	t.Run("peer not reading", func(t *testing.T) {
+		srv, cli := net.Pipe()
+		defer srv.Close()
+		c := rpc.NewClient(cli)
+		defer c.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		errc := make(chan error, 200)
+		for range 200 {
+			go func() { errc <- c.Call(ctx, "Echo", nil, "a", 1) }()
+		}
+		go func() {
+			_, _, err := c.Stream(ctx, "Ints")
+			errc <- err
+		}()
+		deadline := time.After(3 * time.Second)
+		for range 201 {
+			select {
+			case err := <-errc:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("err = %v, want DeadlineExceeded", err)
+				}
+			case <-deadline:
+				t.Fatal("a call blocked on a peer that does not read")
+			}
+		}
+	})
+	t.Run("pre-cancelled ctx sends nothing", func(t *testing.T) {
+		srv, cli := net.Pipe()
+		defer srv.Close()
+		c := rpc.NewClient(cli)
+		defer c.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		got := make(chan []byte, 1)
+		go func() {
+			srv.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+			b := make([]byte, 1)
+			n, _ := srv.Read(b)
+			got <- b[:n]
+		}()
+		if err := c.Call(ctx, "Echo", nil, "a", 1); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Call = %v", err)
+		}
+		if _, _, err := c.Stream(ctx, "Ints"); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Stream = %v", err)
+		}
+		if b := <-got; len(b) != 0 {
+			t.Fatalf("wrote %q for a cancelled call", b)
+		}
+	})
+}
+
+type badDeadline struct{ net.Conn }
+
+func (badDeadline) SetWriteDeadline(time.Time) error { return errors.New("no deadlines") }
+
+func TestWriteDeadlineErrorCloses(t *testing.T) {
+	conn, done := serveWrapped(t, newDispatcher(t, newTarget()), rpc.ConnOptions{}, func(c net.Conn) net.Conn { return badDeadline{c} })
+	fmt.Fprintf(conn, `{"jsonrpc":"2.0","id":1,"method":"Echo","params":["a",1]}`+"\n")
+	waitDone(t, done)
+}
+
+func TestHelloGate(t *testing.T) {
+	d := newDispatcher(t, newTarget())
+	opts := rpc.ConnOptions{AuthTimeout: time.Minute, Hello: func(params []json.RawMessage) (func(string, []json.RawMessage) bool, any, error) {
+		if len(params) != 1 || string(params[0]) != `"tok"` {
+			return nil, nil, &rpc.WireError{Code: 1, Message: "bad token tok=secret"}
+		}
+		return func(m string, _ []json.RawMessage) bool { return m != "Pair" }, "hi", nil
+	}}
+	t.Run("control before hello closes", func(t *testing.T) {
+		conn, done := serve(t, d, opts)
+		newRaw(t, conn).send(`{"jsonrpc":"2.0","method":"$/cancel","params":[1]}`)
+		waitDone(t, done)
+	})
+	t.Run("call before hello closes", func(t *testing.T) {
+		conn, done := serve(t, d, opts)
+		r := newRaw(t, conn)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"Echo","params":["a",1]}`)
+		if m := r.recv(); m.Error == nil || m.Error.Code != -32002 {
+			t.Fatalf("= %+v, want unauthenticated", m)
+		}
+		r.closed()
+		waitDone(t, done)
+	})
+	t.Run("bad token is encoded and closes", func(t *testing.T) {
+		conn, done := serve(t, d, opts)
+		r := newRaw(t, conn)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["nope"]}`)
+		if m := r.recv(); m.Error == nil || m.Error.Message != "internal error" {
+			t.Fatalf("= %+v, want the encoded error", m)
+		}
+		r.closed()
+		waitDone(t, done)
+	})
+	t.Run("authenticated", func(t *testing.T) {
+		conn, _ := serve(t, d, opts)
+		r := newRaw(t, conn)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["tok"]}`)
+		if m := r.recv(); string(m.Result) != `"hi"` {
+			t.Fatalf("hello = %+v", m)
+		}
+		r.send(`{"jsonrpc":"2.0","id":2,"method":"Echo","params":["a",1]}`)
+		if m := r.recv(); string(m.Result) != `"a1"` {
+			t.Fatalf("Echo = %+v", m)
+		}
+		r.send(`{"jsonrpc":"2.0","id":3,"method":"Pair","params":[1]}`)
+		if m := r.recv(); m.Error == nil || m.Error.Message != "forbidden" {
+			t.Fatalf("Pair = %+v, want forbidden", m)
+		}
+		r.send(`{"jsonrpc":"2.0","id":4,"method":"hello","params":["tok"]}`)
+		if m := r.recv(); m.Error == nil {
+			t.Fatalf("second hello = %+v, want an error", m)
+		}
+	})
+}

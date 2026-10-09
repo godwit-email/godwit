@@ -16,7 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
+	"net"
 	"reflect"
 	"strconv"
 	"sync"
@@ -123,7 +123,7 @@ func (s *serverStream) stop() { s.once.Do(s.cancel) }
 type conn struct {
 	opts ConnOptions
 	d    *Dispatcher
-	rwc  io.ReadWriteCloser
+	rwc  net.Conn
 	ctx  context.Context
 	kill context.CancelCauseFunc // closes rwc via AfterFunc
 	wg   sync.WaitGroup
@@ -144,7 +144,7 @@ type conn struct {
 
 // ServeConn serves one connection until it closes, breaks a budget, or ctx
 // ends. On return every stream has been cancelled and drained.
-func ServeConn(ctx context.Context, rwc io.ReadWriteCloser, d *Dispatcher, opts ConnOptions) error {
+func ServeConn(ctx context.Context, rwc net.Conn, d *Dispatcher, opts ConnOptions) error {
 	c := &conn{
 		opts:     opts.withDefaults(),
 		d:        d,
@@ -202,45 +202,52 @@ func (c *conn) handle(line []byte) bool {
 	if len(line) == 0 {
 		return true
 	}
-	if line[0] == '[' {
-		c.replyError(nullID, &WireError{Code: CodeInvalidRequest, Message: "batch requests are not supported"})
-		return true
-	}
-	var m message
-	if err := json.Unmarshal(line, &m); err != nil {
-		c.replyError(nullID, &WireError{Code: CodeParse, Message: "parse error"})
-		return true
-	}
-	if len(m.ID) == 0 {
-		if m.JSONRPC == "2.0" && len(m.Method) > 2 && m.Method[:2] == "$/" {
-			c.control(m)
-		} else {
-			c.replyError(nullID, &WireError{Code: CodeInvalidRequest, Message: "notifications are only for $/ control messages"})
-		}
-		return true
-	}
-	id, ok := parseID(m.ID)
-	if !ok {
-		c.replyError(nullID, &WireError{Code: CodeInvalidRequest, Message: "id must be a positive integer"})
-		return true
-	}
-	if m.JSONRPC != "2.0" || m.Method == "" {
-		c.replyError(m.ID, &WireError{Code: CodeInvalidRequest, Message: "invalid request"})
-		return true
-	}
-	var params []json.RawMessage
-	if len(m.Params) > 0 && (m.Params[0] != '[' || json.Unmarshal(m.Params, &params) != nil) {
-		c.replyError(m.ID, &WireError{Code: CodeInvalidParams, Message: "params must be an array"})
-		return true
-	}
-
 	c.mu.Lock()
 	allow := c.allow
 	c.mu.Unlock()
-	if c.opts.Hello != nil {
-		if allow == nil {
-			return c.hello(m, params)
+	authed := c.opts.Hello == nil || allow != nil
+	// Before authentication a rejected line also ends the connection.
+	reject := func(id json.RawMessage, we *WireError) bool {
+		c.replyError(id, we)
+		if !authed {
+			c.closeAfterFlush()
 		}
+		return authed
+	}
+	if line[0] == '[' {
+		return reject(nullID, &WireError{Code: CodeInvalidRequest, Message: "batch requests are not supported"})
+	}
+	var m message
+	if err := json.Unmarshal(line, &m); err != nil {
+		return reject(nullID, &WireError{Code: CodeParse, Message: "parse error"})
+	}
+	if len(m.ID) == 0 {
+		if !authed {
+			c.kill(errAuth)
+			return false
+		}
+		if m.JSONRPC == "2.0" && len(m.Method) > 2 && m.Method[:2] == "$/" {
+			c.control(m)
+			return true
+		}
+		return reject(nullID, &WireError{Code: CodeInvalidRequest, Message: "notifications are only for $/ control messages"})
+	}
+	id, ok := parseID(m.ID)
+	if !ok {
+		return reject(nullID, &WireError{Code: CodeInvalidRequest, Message: "id must be a positive integer"})
+	}
+	if m.JSONRPC != "2.0" || m.Method == "" {
+		return reject(m.ID, &WireError{Code: CodeInvalidRequest, Message: "invalid request"})
+	}
+	var params []json.RawMessage
+	if len(m.Params) > 0 && (m.Params[0] != '[' || json.Unmarshal(m.Params, &params) != nil) {
+		return reject(m.ID, &WireError{Code: CodeInvalidParams, Message: "params must be an array"})
+	}
+
+	if !authed {
+		return c.hello(m, params)
+	}
+	if c.opts.Hello != nil {
 		if m.Method == "hello" {
 			c.replyError(m.ID, &WireError{Code: CodeInvalidRequest, Message: "already authenticated"})
 			return true
@@ -289,7 +296,7 @@ func (c *conn) hello(m message, params []json.RawMessage) bool {
 	}
 	allow, result, err := c.opts.Hello(params)
 	if err != nil {
-		c.replyError(m.ID, c.encodeError(err))
+		c.replyError(m.ID, c.opts.EncodeError(err))
 		c.closeAfterFlush()
 		return false
 	}
@@ -330,28 +337,32 @@ func (c *conn) release() {
 func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.Context, cancel context.CancelFunc, args []reflect.Value) {
 	defer c.wg.Done()
 	result, ch, stop, err := meth.call(ctx, args)
-	c.mu.Lock()
-	delete(c.requests, id)
-	c.mu.Unlock()
+	if !ch.IsValid() {
+		c.mu.Lock()
+		delete(c.requests, id)
+		c.mu.Unlock()
+	}
 	if err != nil || !ch.IsValid() {
 		cancel()
 		c.release() // before replying, so the client may reuse the slot at once
 		if err != nil {
-			c.replyError(rawID, c.encodeError(err))
+			c.replyError(rawID, c.opts.EncodeError(err))
 		} else {
 			c.replyResult(rawID, result)
 		}
 		return
 	}
-	defer c.release()
 	s := &serverStream{cancel: func() {
 		cancel()
 		if stop != nil {
 			stop()
 		}
 	}}
+	// Unregistering the request and registering the stream under one lock:
+	// a $/cancel either lands before (ctx.Err below) or finds nothing.
 	c.mu.Lock()
-	live := c.streams != nil
+	delete(c.requests, id)
+	live := c.streams != nil && ctx.Err() == nil
 	var sid uint64
 	if live {
 		c.nextStream++
@@ -360,10 +371,15 @@ func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.C
 	}
 	c.mu.Unlock()
 	if live {
+		defer c.release()
 		// Queued before the pump starts, so the response precedes every event.
 		c.replyResult(rawID, map[string]uint64{"stream": sid})
 	} else {
+		// Cancelled before the stream existed: stop it, free the slot, answer,
+		// then drain below so the target's pump can exit.
 		s.stop()
+		c.release()
+		c.replyError(rawID, c.opts.EncodeError(context.Cause(ctx)))
 	}
 	for {
 		v, ok := ch.Recv()
@@ -379,7 +395,7 @@ func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.C
 			continue
 		}
 		if c.endStream(sid) {
-			c.notify("$/stream.end", sid, c.encodeError(err))
+			c.notify("$/stream.end", sid, c.opts.EncodeError(err))
 		}
 		s.stop()
 	}
@@ -398,17 +414,10 @@ func (c *conn) endStream(sid uint64) bool {
 	return ok
 }
 
-func (c *conn) encodeError(err error) *WireError {
-	if we, ok := err.(*WireError); ok {
-		return we
-	}
-	return c.opts.EncodeError(err)
-}
-
 func (c *conn) replyResult(id json.RawMessage, result any) {
 	b, err := json.Marshal(result)
 	if err != nil {
-		c.replyError(id, c.encodeError(err))
+		c.replyError(id, c.opts.EncodeError(err))
 		return
 	}
 	c.send(message{JSONRPC: "2.0", ID: id, Result: b})
@@ -467,7 +476,6 @@ func (c *conn) signal() {
 
 func (c *conn) writeLoop() {
 	defer c.wg.Done()
-	dl, _ := c.rwc.(interface{ SetWriteDeadline(time.Time) error })
 	for {
 		c.qmu.Lock()
 		if len(c.queue) == 0 {
@@ -487,8 +495,9 @@ func (c *conn) writeLoop() {
 			c.kill(errAuth)
 			return
 		}
-		if dl != nil {
-			dl.SetWriteDeadline(time.Now().Add(c.opts.WriteTimeout))
+		if err := c.rwc.SetWriteDeadline(time.Now().Add(c.opts.WriteTimeout)); err != nil {
+			c.kill(err)
+			return
 		}
 		if _, err := c.rwc.Write(b); err != nil {
 			c.kill(err)

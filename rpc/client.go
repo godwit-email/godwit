@@ -29,7 +29,8 @@ type Client struct {
 	DecodeError func(*WireError) error
 
 	conn io.ReadWriteCloser
-	wmu  sync.Mutex
+	wq   chan []byte   // one writer, so a blocked peer never blocks a caller past its ctx
+	done chan struct{} // closed when the read loop ends
 
 	mu      sync.Mutex
 	closed  bool
@@ -58,8 +59,11 @@ func NewClient(conn io.ReadWriteCloser) *Client {
 		pending: map[uint64]*pending{},
 		streams: map[uint64]*clientStream{},
 		errs:    map[<-chan json.RawMessage]error{},
+		wq:      make(chan []byte, 64),
+		done:    make(chan struct{}),
 	}
 	go c.readLoop()
+	go c.writeLoop()
 	return c
 }
 
@@ -102,6 +106,9 @@ func (c *Client) StreamErr(events <-chan json.RawMessage) error {
 }
 
 func (c *Client) request(ctx context.Context, method string, args []any, stream bool) (message, *clientStream, error) {
+	if err := ctx.Err(); err != nil {
+		return message{}, nil, err // nothing sent
+	}
 	if args == nil {
 		args = []any{}
 	}
@@ -119,7 +126,15 @@ func (c *Client) request(ctx context.Context, method string, args []any, stream 
 	p := &pending{ch: make(chan message, 1), stream: stream}
 	c.pending[id] = p
 	c.mu.Unlock()
-	if err := c.write(message{JSONRPC: "2.0", ID: json.RawMessage(strconv.FormatUint(id, 10)), Method: method, Params: params}); err != nil {
+	b, _ := json.Marshal(message{JSONRPC: "2.0", ID: json.RawMessage(strconv.FormatUint(id, 10)), Method: method, Params: params})
+	select {
+	case c.wq <- append(b, '\n'):
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-c.done:
+		err = ErrClosed
+	}
+	if err != nil {
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
@@ -165,20 +180,28 @@ func (c *Client) decode(we *WireError) error {
 	return we
 }
 
-func (c *Client) write(m message) error {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err
+func (c *Client) writeLoop() {
+	for {
+		select {
+		case b := <-c.wq:
+			if _, err := c.conn.Write(b); err != nil {
+				c.conn.Close()
+				return
+			}
+		case <-c.done:
+			return
+		}
 	}
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	_, err = c.conn.Write(append(b, '\n'))
-	return err
 }
 
+// notify queues a control message best-effort; it never blocks.
 func (c *Client) notify(method string, params ...any) {
-	b, _ := json.Marshal(params)
-	c.write(message{JSONRPC: "2.0", Method: method, Params: b})
+	p, _ := json.Marshal(params)
+	b, _ := json.Marshal(message{JSONRPC: "2.0", Method: method, Params: p})
+	select {
+	case c.wq <- append(b, '\n'):
+	default:
+	}
 }
 
 // cancelStream ends s locally and tells the server, once.
@@ -223,6 +246,7 @@ func (c *Client) readLoop() {
 		}
 	}
 	c.conn.Close()
+	close(c.done)
 	c.mu.Lock()
 	c.closed = true
 	for id, p := range c.pending {
@@ -258,7 +282,7 @@ func (c *Client) handleResponse(id uint64, m message) {
 	}
 	if p.abandoned {
 		if sid > 0 {
-			go c.notify("$/stream.cancel", sid)
+			c.notify("$/stream.cancel", sid)
 		}
 		return
 	}
@@ -302,6 +326,6 @@ func (c *Client) handleNotification(m message) {
 	}
 	c.mu.Unlock()
 	if overflow {
-		go c.notify("$/stream.cancel", sid) // never block the read loop on a write
+		c.notify("$/stream.cancel", sid)
 	}
 }

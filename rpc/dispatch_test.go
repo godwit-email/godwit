@@ -19,6 +19,7 @@ type target struct {
 	blockCancelled chan struct{}
 	backlogExit    chan struct{}
 	floodDone      chan struct{}
+	gatedStopped   chan struct{}
 }
 
 func newTarget() *target {
@@ -27,6 +28,7 @@ func newTarget() *target {
 		blockCancelled: make(chan struct{}, 64),
 		backlogExit:    make(chan struct{}),
 		floodDone:      make(chan struct{}, 64),
+		gatedStopped:   make(chan struct{}, 64),
 	}
 }
 
@@ -37,7 +39,20 @@ func (t *target) VoidCtx(ctx context.Context)    {}
 func (t *target) Echo(s string, n int) string    { return fmt.Sprintf("%s%d", s, n) }
 func (t *target) Pair(x int) (int, error)        { return x * 2, nil }
 func (t *target) Struct(p point) (*point, error) { return &p, nil }
-func (t *target) Hidden() int                    { return 1 }
+func (t *target) Leak() error {
+	return &rpc.WireError{Code: -32001, Message: "password=x", Data: &rpc.WireErrorData{Code: "x", Detail: json.RawMessage(`"secret"`)}}
+}
+
+// Gated returns, only once its ctx is cancelled, a channel that closes only
+// when the returned stop func is called.
+func (t *target) Gated(ctx context.Context) (<-chan int, func()) {
+	t.blockStarted <- struct{}{}
+	<-ctx.Done()
+	ch := make(chan int)
+	return ch, func() { close(ch); t.gatedStopped <- struct{}{} }
+}
+
+func (t *target) Hidden() int { return 1 }
 
 func (t *target) Fail(fail bool) error {
 	if fail {
@@ -115,7 +130,14 @@ func newDispatcher(t *testing.T, tg any) *rpc.Dispatcher {
 // serve runs ServeConn on one end of a pipe and returns the other end.
 func serve(t *testing.T, d *rpc.Dispatcher, opts rpc.ConnOptions) (net.Conn, <-chan error) {
 	t.Helper()
-	srv, cli := net.Pipe()
+	return serveWrapped(t, d, opts, func(c net.Conn) net.Conn { return c })
+}
+
+// serveWrapped is serve with the server's end of the pipe wrapped.
+func serveWrapped(t *testing.T, d *rpc.Dispatcher, opts rpc.ConnOptions, wrap func(net.Conn) net.Conn) (net.Conn, <-chan error) {
+	t.Helper()
+	pipe, cli := net.Pipe()
+	srv := wrap(pipe)
 	done := make(chan error, 1)
 	go func() {
 		done <- rpc.ServeConn(context.Background(), srv, d, opts)
