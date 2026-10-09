@@ -347,6 +347,8 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 			panic(ErrTooLarge)
 		}
 		inv, rt := c.Invocation(), c.Runtime()
+		// The host allows redirects only to hosts both declared and granted.
+		inv.EgressHosts = slices.DeleteFunc(slices.Clone(inv.EgressHosts), func(h string) bool { return !slices.Contains(p.m.Permissions.Net, h) })
 		return c.Async(func(ctx context.Context) (any, error) {
 			r, err := p.h.Fetch(ctx, inv, req)
 			if err != nil {

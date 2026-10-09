@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -89,6 +90,7 @@ type Service struct {
 	pluginsMu sync.RWMutex              // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running   map[string]*runningPlugin // started plugins by name
 	pluginGen uint64                    // last runningPlugin.gen handed out
+	pluginNet plugins.NetOptions        // ctx.net.fetch's network; tests inject a resolver and dialer
 
 	closeOnce sync.Once
 	closeErr  error

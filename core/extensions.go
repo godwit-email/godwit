@@ -475,7 +475,9 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	}
 	// ctx.config is a snapshot read here (under our lock) and replaced by
 	// SetPluginConfig, so reading it never waits for pluginsMu.
-	h := &pluginHost{s: s, name: name}
+	netOpts := s.pluginNet
+	netOpts.UserAgent = "Godwit-Plugin/" + r.m.Version
+	h := &pluginHost{s: s, name: name, net: plugins.NewClient(netOpts)}
 	if err := h.refreshConfig(ctx); err != nil {
 		return err
 	}
