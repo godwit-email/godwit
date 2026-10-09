@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -48,11 +49,14 @@ type settingsPage struct {
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
+
+	models *modelsView
+	ext    *extView
 }
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, reauth: map[int64]bool{},
-		update: a.svc.UpdateAccount}
+		update: a.svc.UpdateAccount, models: &modelsView{a: a}, ext: &extView{a: a}}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -85,6 +89,10 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	switch sec, acc := p.section(); {
 	case acc != nil:
 		p.readUsage(acc.ID)
+	case sec == "models" && hints == nil:
+		p.models.load()
+	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
+		p.ext.load()
 	case sec == "privacy" && hints == nil:
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
@@ -164,9 +172,13 @@ func (p *settingsPage) Content(c *ui.Context) {
 				p.generalView(c)
 			case sec == "privacy":
 				p.privacyView(c)
+			case sec == "models":
+				p.models.view(c)
+			case sec == "extensions":
+				p.ext.view(c)
 			case sec == "about":
 				p.aboutView(c)
-			default: // models and extensions come with their own task
+			default:
 				pageHeading(c, i18n.T("settings."+sec), "")
 			}
 		})
