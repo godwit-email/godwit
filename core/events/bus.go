@@ -13,6 +13,7 @@ const (
 	OutboxChanged    = "outbox.changed"
 	SettingsChanged  = "settings.changed"
 	ApprovalsChanged = "approvals.changed"
+	PluginsChanged   = "plugins.changed"
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

@@ -92,7 +92,7 @@ func TestForeignKeysCascade(t *testing.T) {
 	}
 }
 
-func TestTriggersMaintainFTSAndEventLog(t *testing.T) {
+func TestTriggersMaintainFTS(t *testing.T) {
 	db := open(t)
 	seedMessage(t, db)
 	match := func(q string) int {
@@ -101,13 +101,9 @@ func TestTriggersMaintainFTSAndEventLog(t *testing.T) {
 		return len(rows.Values)
 	}
 	assert.Equal(t, 1, match("alpha"))
-	rows, err := db.Query(ctx, "SELECT type, account_id, message_id FROM events_log")
-	require.NoError(t, err)
-	require.Len(t, rows.Values, 1)
-	assert.Equal(t, "message.received", store.Str(rows.Values[0][0]))
-	assert.Equal(t, int64(1), store.Int(rows.Values[0][2]))
+	assert.Zero(t, count(t, db, "events_log"), "sync writes message.received itself (migration 7)")
 
-	_, err = db.Execute(ctx, "UPDATE messages SET body_text = 'bravo content' WHERE id = 1")
+	_, err := db.Execute(ctx, "UPDATE messages SET body_text = 'bravo content' WHERE id = 1")
 	require.NoError(t, err)
 	assert.Equal(t, 1, match("bravo"))
 	assert.Equal(t, 0, match("alpha"))
@@ -168,7 +164,7 @@ func TestMigration6(t *testing.T) {
 	defer db.Close()
 	rows, err := db.Query(ctx, "PRAGMA user_version")
 	require.NoError(t, err)
-	assert.Equal(t, int64(6), store.Int(rows.Values[0][0]))
+	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
 	rows, err = db.Query(ctx, "SELECT revision, ai_approval_id FROM drafts WHERE id = 1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), store.Int(rows.Values[0][0]))
@@ -179,4 +175,54 @@ func TestMigration6(t *testing.T) {
 	rows, err = db.Query(ctx, "SELECT name FROM sqlite_master WHERE name = 'runs_one_active'")
 	require.NoError(t, err)
 	assert.Len(t, rows.Values, 1)
+}
+
+func TestMigration7(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:6]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	rows, err := db.Query(ctx, "SELECT name FROM sqlite_master WHERE name = 'messages_ai_event'")
+	require.NoError(t, err)
+	require.Len(t, rows.Values, 1)
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err = db.Query(ctx, "PRAGMA user_version")
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), store.Int(rows.Values[0][0]))
+	rows, err = db.Query(ctx, "SELECT name FROM sqlite_master WHERE name = 'messages_ai_event'")
+	require.NoError(t, err)
+	assert.Empty(t, rows.Values, "the message.received trigger is gone")
+	seedMessage(t, db)
+	assert.Zero(t, count(t, db, "events_log"))
+
+	for _, q := range []string{
+		"SELECT subject, from_addr, msg_date FROM events_log",
+		"SELECT name, version, manifest, source_hash, permission_hash, config_version, enabled, granted_hash, failures, disabled_reason, installed_at FROM plugins",
+		"SELECT plugin, key, value FROM plugin_config",
+		"SELECT plugin, key, value FROM plugin_kv",
+		"SELECT plugin, seq FROM plugin_cursors",
+		"SELECT id, name, transport, command, args, env_keys, url, header_keys, version, enabled, granted_version, created_at FROM mcp_servers",
+		"SELECT server_id, tool, definition_hash FROM mcp_tool_trust",
+		"SELECT extension, call_id, destination, reason FROM audit_log",
+		"SELECT exec_mode FROM approvals",
+	} {
+		_, err := db.Query(ctx, q)
+		assert.NoError(t, err, q)
+	}
+	_, err = db.Execute(ctx, "INSERT INTO plugins(name, version, manifest, source_hash, permission_hash) VALUES ('p', '1', '{}', 'h', 'ph')")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO plugin_kv(plugin, key, value) VALUES ('p', 'k', 'v')")
+	require.NoError(t, err)
+	rows, err = db.Query(ctx, "SELECT enabled, config_version, failures, disabled_reason, granted_hash FROM plugins")
+	require.NoError(t, err)
+	assert.Equal(t, []any{int64(0), int64(1), int64(0), "", nil}, rows.Values[0])
+	_, err = db.Execute(ctx, "DELETE FROM plugins WHERE name = 'p'")
+	require.NoError(t, err)
+	assert.Zero(t, count(t, db, "plugin_kv"), "plugin rows cascade")
 }

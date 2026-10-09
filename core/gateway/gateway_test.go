@@ -142,7 +142,9 @@ func TestAuditLogStructured(t *testing.T) {
 	for _, r := range cols.Values {
 		names = append(names, store.Str(r[0]))
 	}
-	require.Equal(t, []string{"id", "at", "source", "tool", "target_kind", "target_id", "decision"}, names)
+	// Structured fields only: no arguments, request bodies, URLs or secrets (migration 7 adds the extension ones).
+	require.Equal(t, []string{"id", "at", "source", "tool", "target_kind", "target_id", "decision",
+		"extension", "call_id", "destination", "reason"}, names)
 
 	rows, err := db.Query(t.Context(), "SELECT at, source, tool, target_kind, target_id, decision FROM audit_log ORDER BY id")
 	require.NoError(t, err)
