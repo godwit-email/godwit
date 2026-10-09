@@ -113,3 +113,15 @@ func TestUnreadableSkillsDirIsAnError(t *testing.T) {
 	_, err := s.ListSkills(ctx)
 	require.Error(t, err)
 }
+
+func TestSkillInfoModel(t *testing.T) {
+	s, root := skillService(t)
+	writeSkill(t, root, "brief", "---\nname: brief\ndescription: brief it\nmetadata:\n  godwit-action-on: \"message\"\n  godwit-action-output: \"panel\"\n  godwit-model: \"test/m2\"\n---\nx")
+	infos, err := s.ListSkills(ctx)
+	require.NoError(t, err)
+	b, ok := find(infos, "brief")
+	require.True(t, ok)
+	assert.Equal(t, "test/m2", b.Model)
+	sum, _ := find(infos, "summarize")
+	assert.Empty(t, sum.Model)
+}

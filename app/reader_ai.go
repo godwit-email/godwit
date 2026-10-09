@@ -105,13 +105,14 @@ func (r *reader) state(id int64) *msgAI {
 func (r *reader) aiReady() bool { return r.p.a.settings.DefaultModel != "" }
 
 // modelName is the default model without its service.
-func (r *reader) modelName() string {
-	dm := r.p.a.settings.DefaultModel
-	_, m, ok := strings.Cut(dm, "/")
-	if !ok {
-		return dm
+func (r *reader) modelName() string { return modelOf(r.p.a.settings.DefaultModel) }
+
+// modelOf is a model reference (service/model) without its service.
+func modelOf(ref string) string {
+	if _, m, ok := strings.Cut(ref, "/"); ok {
+		return m
 	}
-	return m
+	return ref
 }
 
 // readingLang is the language mail is translated into.
@@ -155,7 +156,7 @@ func (r *reader) stopAI() {
 	r.aiCtx, r.aiStop = nil, nil
 	for _, s := range r.ai {
 		if s.summary != nil && s.summary.running {
-			s.summary = nil
+			s.summary, s.sumShown = nil, nil // the next Summary click runs it again
 		}
 		if s.translation != nil && s.translation.running {
 			s.translation, s.showTr = nil, false
@@ -213,12 +214,21 @@ func (r *reader) startAI() {
 	}, a.toastErr)
 }
 
-// stream runs skill on a message; its text streams into the run returned.
+// stream runs skill on a message; its text streams into the run returned,
+// labelled with the skill's own model, else the default one.
 func (r *reader) stream(id int64, skill string) *aiRun {
-	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
+	a, ctx, start, list := r.p.a, r.aiContext(), r.runSkill, r.skillsFn
 	run := &aiRun{running: true, model: r.modelName(), lang: r.readingLang()}
 	var doc richtext.Doc
 	a.do(func(context.Context) error {
+		sks, err := list(ctx)
+		if err != nil {
+			return err
+		}
+		if i := slices.IndexFunc(sks, func(s core.SkillInfo) bool { return s.Name == skill }); i >= 0 && sks[i].Model != "" {
+			model := modelOf(sks[i].Model)
+			a.onUI(func() { run.model = model })
+		}
 		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id})
 		if err != nil {
 			return err

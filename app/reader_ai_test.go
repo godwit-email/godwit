@@ -502,3 +502,57 @@ func TestSwitchingCancelsRun(t *testing.T) {
 		t.Fatalf("%d requests, want 3", n)
 	}
 }
+
+func TestSkillModelLabel(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick, func(e *coretest.Env) {
+		ctx := context.Background()
+		svcs, err := e.Svc.ListModelServices(ctx)
+		if err != nil || len(svcs) != 1 {
+			t.Fatalf("services %+v, %v", svcs, err)
+		}
+		s := svcs[0]
+		if _, err := e.Svc.UpdateModelService(ctx, s.ID, core.ModelServiceInput{Name: s.Name, Kind: s.Kind, BaseURL: s.BaseURL, Models: []string{"m1", "m2"}}); err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.Join(e.DataDir, "skills", "summarize")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		md := "---\nname: summarize\ndescription: mine\nmetadata:\n  godwit-action-on: \"message\"\n  godwit-action-output: \"panel\"\n  godwit-model: \"test/m2\"\n---\n\nSummarize.\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	r := h.app.mail.reader
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m2")
+	if h.tt.HasText("summarize · m1") {
+		t.Fatal("labelled with the default model")
+	}
+}
+
+func TestOnDemandSummaryCancelled(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, noAuto)
+	llm.Script(coretest.Turn{Hang: true})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Slow", "slow body"))
+	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
+	r := h.app.mail.reader
+	h.openThread(m.ThreadID)
+	h.click("总结")
+	h.until("the summary asked", func() bool { return llm.Requests() == 1 })
+	h.openThread(other.ThreadID)
+	h.see("other body")
+	h.openThread(m.ThreadID)
+	h.see("slow body")
+	if h.tt.HasText("summarize") {
+		t.Fatal("a cancelled summary shown")
+	}
+	h.click("总结") // one click starts it again
+	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.see("总结 · summarize · m1")
+	if n := llm.Requests(); n != 2 {
+		t.Fatalf("%d requests, want 2", n)
+	}
+}
