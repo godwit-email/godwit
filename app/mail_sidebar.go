@@ -95,7 +95,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, indent float32) {
 	t, th := theme.Of(c), c.Theme()
 	on := p.a.route.Page == PageMail && p.a.route.View == v
-	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+indent/4)).Radius(t.Radius.Md).Gap(th.Space(2))
+	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+indent/4)).Radius(t.Radius.Md).Gap(th.Space(2)).Justify(ui.Start)
 	switch {
 	case on:
 		b.Background(t.SidebarSelected).FontWeight(500)
@@ -121,7 +121,7 @@ func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
 	if !open {
 		chevron = "chevron-right"
 	}
-	ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
+	ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Justify(ui.Start).Children(func() {
 		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
 		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
 		if n := p.a.unread[acc.ID]; !open && n > 0 {
