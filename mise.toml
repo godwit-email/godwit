@@ -14,6 +14,10 @@ run = "go tool mygo dev"
 depends = ["web:install"]
 run = "go tool mygo build -skip-dmg -skip-notarize"
 
+[tasks.generate]
+depends = ["web:install"]
+run = "go tool mygo generate"
+
 [tasks."web:test"]
 dir = "web"
 depends = ["web:install"]

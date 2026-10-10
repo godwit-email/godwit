@@ -40,6 +40,10 @@ type Platform interface {
 	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
+	// OpenCompose shows draftID in a compose window of its own.
+	OpenCompose(draftID int64)
+	// SettingsChanged is told the settings after every change.
+	SettingsChanged(st core.Settings)
 }
 
 // Notification is a system notification about a message.
