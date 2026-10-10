@@ -28,7 +28,8 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 
 | 决定 | 选择 | 理由 |
 |---|---|---|
-| 前端栈 | React 19、TypeScript、Vite、shadcn/ui（Tailwind v4）、TanStack Query | 我们的 token 本来就照 shadcn 定义 |
+| 前端栈 | React 19、TypeScript、Vite、shadcn/ui（Base UI 版本，Tailwind v4）、TanStack Query | 我们的 token 本来就照 shadcn 定义 |
+| 组件来源 | shadcn 组件与 AI Elements 都由 Bun 脚本调用 shadcn CLI 生成，**生成的文件不手改**；外观只靠主题变量，行为差异在我们自己的目录里包一层 | 与上游保持一致，升级只需重新生成 |
 | 前端结构 | Vite 多入口，每种页面一个入口：`compose.html`、`wit.html`、`reader.html`；共享代码在 `src/shared/`、`src/wit/` | 每个页面只加载自己的代码；不同入口有不同的信任级别与 CSP（§A5） |
 | 撰写编辑器 | Plate（Slate） | 组件即 shadcn 风格；自带「建议」（修订）与 AI 菜单，对应 Wit 的修订与 ⌘K；Safari 内核下中文输入已实测正常 |
 | 聊天界面 | AI Elements 组件（拷入 `src/wit/`）+ `useChat` + 自定义 `ChatTransport`（`WitTransport`）；Markdown 用 Streamdown | 组件即 shadcn 风格且覆盖工具调用、确认、引用；`useChat` 现成管理流式状态、停止、出错；智能体循环留在 Go（不写 AI SDK provider） |
@@ -48,7 +49,7 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 
 - Go 端从 `internal/theme` 生成 shadcn 的 CSS 变量（`--background`、`--foreground`、`--muted-foreground`、`--border`、`--input`、`--ring`、`--primary`、圆角与阴影档位等），浅色与深色各一套，加上字号与密度。
 - 页面加载时取一套，`theme` 事件推送变化。外观跟随应用设置（不是只跟随系统），与原生界面始终一致。
-- 字体与原生一致：Geist + 系统中文字体。
+- **字体用系统字体**，不自己定义：网页用 `system-ui`（macOS 为 SF 与苹方，Windows 为 Segoe UI 与微软雅黑），等宽用 `ui-monospace`。原生界面同步去掉内嵌的 Geist（主题不再指定字体、不再注册字体文件，`Geist Mono` 的几处换成系统等宽字体），两边一致。
 
 ### A5. 安全
 
@@ -72,10 +73,12 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 
 ### A6. 工程与构建
 
-- **目录**：`web/`（Vite 多入口）：`src/shared/`（shadcn 组件、主题变量、`Backend` 接口与两种通道、工具函数）、`src/wit/`（Wit 组件与 `WitTransport`）、`src/compose/`、`src/wit-page/`、`src/reader/`，各对应一个 HTML 入口。`web/src/mygo.ts` 为生成的客户端（提交入库）。
+- **目录**：`web/`（Vite 多入口）：
+  - 生成的（不手改）：`src/components/ui/`（shadcn，Base UI 版本）、`src/components/ai-elements/`（AI Elements）；生成脚本 `scripts/components.ts` 列出要生成的组件，可重复执行；
+  - 我们自己的：`src/shared/`（主题变量、`Backend` 接口与两种通道、工具函数、对生成组件的包装）、`src/wit/`（Wit 组件与 `WitTransport`）、`src/compose/`、`src/wit-page/`、`src/reader/`，后三者各对应一个 HTML 入口。`web/src/mygo.ts` 为生成的客户端（提交入库）。
 - **产物**：`web/dist` 不入库，保留占位文件让 `go build` 在未构建前端时也能编译；此时这些页面显示「前端未构建」。
 - **命令**：`mise` 任务 `web:dev`、`web:build`、`web:test`、`generate`；本地开发让窗口指向 Vite 开发服务器以便热更新。
-- **CI**：三个平台的 Go 任务前先 `bun install && bun run build`；新增网页任务（类型检查、lint、Vitest）；检查生成的客户端与 Go 代码一致。
+- **CI**：三个平台的 Go 任务前先 `bun install && bun run build`；新增网页任务（类型检查、lint、Vitest）；检查生成的客户端与 Go 代码一致；重新执行组件生成脚本，检查生成目录与仓库一致（防止手改）。
 - **体积**：React、Plate、shadcn、AI Elements 打包后约 1～2 MB，嵌入二进制可以接受。
 
 ### A7. 测试
@@ -134,7 +137,7 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 
 ### B4. 撰写里的 Wit
 
-右侧是 Wit 的**精简版**面板（有模型服务时显示），组件见 §A2 与 §D2，`variant="mini"`。
+右侧是 Wit 面板（有模型服务时显示），用 §D1 的组件，在窄容器里自动收紧；撰写特有的部分通过插槽传入。
 
 - 面板内容：上下文标签（原邮件、附件、往来邮件数）、调整 ▾（正式、友好、更短、更长、校对）、翻译 ▾、自由输入、流式回答、审批卡片。
 - **正文里的修订**在编辑器里显示：
@@ -181,10 +184,12 @@ Go 端一个通用的分发器：按入口持有一张「方法名 → 服务方
 
 ### D1. 组件（撰写与 Wit 页共用）
 
-放在 `src/wit/`，`variant="mini" | "full"`：
+放在 `src/wit/`，**只有一种组件，不分形态**：
 
-- **AI Elements**（拷入后归我们）：Conversation（滚动）、Message、Response（Streamdown）、Tool（工具调用）、Confirmation（审批卡片）、Sources / Inline Citation（引用的邮件）、Prompt Input、Suggestion、Shimmer。
-- **我们自己的**：上下文标签、调整 ▾ / 翻译 ▾（撰写）、权限说明、疑似注入提示、模型选择按钮。
+- **按容器宽度自适应**（CSS 容器查询）：例如「引用的邮件」在够宽时显示为右侧栏（Wit 页），窄时收成回答下方的引用卡片（撰写窗口的侧面板）。
+- **场景差异用插槽**：撰写传入上下文标签、调整 ▾、翻译 ▾；Wit 页传入模型选择。组件本身不知道自己在哪里。
+- **用到的生成组件**（AI Elements）：Conversation（滚动）、Message、Response（Streamdown）、Tool（工具调用）、Confirmation（审批卡片）、Sources / Inline Citation、Prompt Input、Suggestion、Shimmer。
+- **我们自己的**：权限说明、疑似注入提示等，以及对生成组件的包装。
 
 ### D2. `WitTransport`
 
@@ -210,8 +215,8 @@ Go 端一个通用的分发器：按入口持有一张「方法名 → 服务方
 
 ### D3. Wit 页（完整版）
 
-- **原生部分**：左侧对话列表侧栏（Wit 标题、新对话、最近对话），与其他页面一致；顶栏的对话标题与权限说明。
-- **网页部分**（`wit.html`，嵌入）：右侧整个内容区：对话（`variant="full"`）、审批卡片、右边「引用的邮件」栏、底部悬浮输入框（`float` 阴影、`2xl` 圆角，与现在一致）、模型选择。
+- **原生部分**：左侧对话列表侧栏（Wit 标题、新对话、最近对话）与顶栏的对话标题、权限说明。侧栏就是现有的原生侧栏，宽度与其他页面共用同一个可拖动的宽度，自然同步。
+- **网页部分**（`wit.html`，嵌入）：右侧整个内容区：对话（§D1 的组件，在宽容器里展开）、审批卡片、右边「引用的邮件」栏、底部悬浮输入框（`float` 阴影、`2xl` 圆角，与现在一致）、模型选择。
 - **方法白名单**：发送问题、订阅与取消回复、对话历史、审批、新建对话（返回 ID，由原生侧栏刷新）、打开引用的邮件、打开链接、设置相关只读信息（模型、语言）。
 - **打开引用的邮件**：页面发出动作，由原生端导航到阅读区打开那封邮件（与现在一致）。
 - **没有模型服务时**：显示现在的空状态（「Wit 需要模型服务才能回答」与「添加模型服务」），按钮由原生端导航到设置。
@@ -255,7 +260,7 @@ Go 端一个通用的分发器：按入口持有一张「方法名 → 服务方
 
 | 计划 | 内容 | 依赖 |
 |---|---|---|
-| 1 | 前端工程（多入口、主题变量、`Backend`、构建与 CI）+ 撰写窗口骨架（`Compose` 的 `load` / `save`、窗口打开关闭、纯文本正文；主窗口入口改为开窗口） | 无 |
+| 1 | 前端工程（多入口、组件生成脚本、主题变量、`Backend`、构建与 CI）+ 原生去掉 Geist 改用系统字体 + 撰写窗口骨架（`Compose` 的 `load` / `save`、窗口打开关闭、纯文本正文；主窗口入口改为开窗口） | 无 |
 | 2 | 完整撰写（Plate、字段、附件、引用与签名、发送与插件警告、丢弃、冲突、关闭与退出）；删除旧撰写页与 `internal/editor` | 1 |
 | 3 | 撰写里的 Wit（`src/wit/` 组件、`WitTransport`、修订、⌘K） | 2 |
 | 4 | 嵌入网页基础（fork 依赖、放置与截图、#200 问题的绕法、`postMessage` 协议与分发器） | fork |
