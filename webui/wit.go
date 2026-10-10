@@ -430,7 +430,9 @@ func (p *ComposePage) Stop(ctx context.Context, run int64) error {
 // Follow makes the calling window follow its draft's conversation (an edit
 // waiting, else the Assist one) and returns its history as read after
 // subscribing. Events that come during the reads are held back and sent
-// after: a run seen ending meanwhile shows as ended, read again.
+// after: a run seen ending meanwhile shows as ended, read again. A run that
+// ends later shows as Running: its end reaches the window after the reply,
+// on the subscription, which goes on.
 func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
@@ -452,9 +454,11 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	if followHook != nil {
 		followHook()
 	}
-	if err == nil && h.Running != 0 && f.endedWhileHeld(h.Running) {
+	if ended := h.Running; err == nil && ended != 0 && f.endedWhileHeld(ended) {
 		h, err = history(ctx, svc, conv)
-		h.Running = 0 // its end is in what is held back
+		if h.Running == ended { // its end is in what is held back; a run started since stays
+			h.Running = 0
+		}
 	}
 	if err != nil {
 		return WitHistory{}, keyed(err)

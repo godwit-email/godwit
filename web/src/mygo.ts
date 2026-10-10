@@ -305,7 +305,9 @@ export const ComposePage = {
    * Follow makes the calling window follow its draft's conversation (an edit
    * waiting, else the Assist one) and returns its history as read after
    * subscribing. Events that come during the reads are held back and sent
-   * after: a run seen ending meanwhile shows as ended, read again.
+   * after: a run seen ending meanwhile shows as ended, read again. A run that
+   * ends later shows as Running: its end reaches the window after the reply,
+   * on the subscription, which goes on.
    */
   follow(): Promise<WitHistory> {
     return call("ComposePage.Follow");

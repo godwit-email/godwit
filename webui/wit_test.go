@@ -238,6 +238,53 @@ func TestComposeFollowRaceEnded(t *testing.T) {
 	assert.Contains(t, kinds(f.events(1)), "done", "sent once Follow returns")
 }
 
+func TestComposeFollowRunningThenEnds(t *testing.T) {
+	f, _, llm := witFixture(t, "<p>Hello</p>")
+	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+	run, err := f.page.Ask(f.ctx(1), "hi")
+	require.NoError(t, err)
+	f.waitKind(t, 1, "text")
+	h, err := f.page.Follow(f.ctx(1))
+	require.NoError(t, err)
+	assert.Equal(t, run, h.Running)
+	llm.Release()
+	assert.Equal(t, run, f.waitKind(t, 1, "done").Run, "the end comes after Follow's reply")
+}
+
+func TestComposeFollowKeepsRunStartedDuringReads(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>Hello</p>")
+	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true}, coretest.Turn{Status: 503}) // the second run retries: still running
+	run, err := f.page.Ask(f.ctx(1), "hi")
+	require.NoError(t, err)
+	f.waitKind(t, 1, "text")
+	var next int64
+	followHook = func() { // the run ends, and another starts, after Follow read it
+		llm.Release()
+		require.Eventually(t, func() bool {
+			f.c.mu.Lock()
+			fl := f.c.follows[1]
+			f.c.mu.Unlock()
+			return fl.endedWhileHeld(run)
+		}, 10*time.Second, 5*time.Millisecond)
+		ch, err := f.e.Svc.Assist(t.Context(), d.ID, "again")
+		require.NoError(t, err)
+		go func() {
+			for range ch {
+			}
+		}()
+		c, err := f.e.Svc.GetConversation(t.Context(), f.events(1)[0].Conversation)
+		require.NoError(t, err)
+		next = c.ActiveRunID
+		require.NotZero(t, next)
+		require.NotEqual(t, run, next)
+	}
+	t.Cleanup(func() { followHook = nil })
+	h, err := f.page.Follow(f.ctx(1))
+	require.NoError(t, err)
+	assert.Equal(t, next, h.Running, "the new run is not wiped")
+	require.NoError(t, f.page.Stop(f.ctx(1), next))
+}
+
 func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
 	f, d, llm := witFixture(t, "<p>Hello</p>")
 	startHook = func() { // the window closes while Ask is inside
