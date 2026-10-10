@@ -340,6 +340,20 @@ describe("autosave", () => {
     expect(el).toHaveValue("正文你");
   });
 
+  test("an address composition still open after 1 s: answered unsaved, its text kept pending", async () => {
+    await composeAddress(); // never ended
+    let done!: Promise<void>;
+    act(() => {
+      done = h.closing?.(6) as unknown as Promise<void>;
+    });
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    await act(() => done);
+    expect(api.save).not.toHaveBeenCalled();
+    expect(api.closed).toHaveBeenCalledWith(6, false);
+    expect(screen.getByRole("textbox", { name: "收件人" })).toHaveValue("ni@example.com");
+    expect(screen.queryByRole("button", { name: "移除 ni@example.com" })).not.toBeInTheDocument();
+  });
+
   test("IME: no save until compositionend", async () => {
     const u = setup();
     render(<ComposePage />);

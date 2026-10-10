@@ -204,7 +204,7 @@ function Compose({
     // The composition's final input lands first: committing before it would keep the half-composed text.
     n.setSettle(async () => {
       const ok = await settle(gate);
-      fieldsRef.current?.commitPending();
+      if (ok) fieldsRef.current?.commitPending(); // a composition still open keeps its text pending
       return ok;
     });
     n.onRefused(() => toast(t("compose.sending.locked"), { id: "locked" }));
