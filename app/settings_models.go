@@ -233,8 +233,12 @@ func (m *modelsView) submit(f *modelForm) {
 				f.key = ""
 			}
 		}
+		noDefault := a.settings.DefaultModel == ""
 		if id != 0 {
 			m.dropRefs(saved.Slug, saved.Models)
+		}
+		if noDefault { // this service's first model becomes it: Wit needs one
+			m.setModel(func(st *core.Settings) { st.DefaultModel = saved.Slug + "/" + saved.Models[0] })
 		}
 		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 		m.load()
