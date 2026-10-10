@@ -17,17 +17,21 @@ type fakeWin struct {
 	ws                         *Windows
 	async                      bool
 	focused, emitted, destroys atomic.Int32
+	gen                        atomic.Int32 // the last Closing's
 }
 
-func (w *fakeWin) ID() int      { return w.id }
-func (w *fakeWin) Focus()       { w.focused.Add(1) }
-func (w *fakeWin) EmitClosing() { w.emitted.Add(1) }
+func (w *fakeWin) ID() int             { return w.id }
+func (w *fakeWin) Focus()              { w.focused.Add(1) }
+func (w *fakeWin) EmitClosing(gen int) { w.emitted.Add(1); w.gen.Store(int32(gen)) }
 func (w *fakeWin) Destroy() {
 	w.destroys.Add(1)
 	if !w.async {
 		w.ws.Closed(w.id)
 	}
 }
+
+// closing is the attempt the page answers: the last Closing's.
+func (w *fakeWin) closing() int    { return int(w.gen.Load()) }
 func (w *fakeWin) destroyed() bool { return w.destroys.Load() > 0 }
 
 // winFixture is Windows on a real Compose, with fake windows, a scripted
@@ -100,7 +104,7 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	// The page flushes, then reports.
 	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "最后一句", Revision: st.Revision})
 	require.NoError(t, err)
-	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.True(t, w.destroyed())
 	assert.Zero(t, f.asked.Load())
 	assert.Zero(t, f.ws.Count())
@@ -118,7 +122,7 @@ func TestWindowsCloseFailedSaveAsks(t *testing.T) {
 	f.ws.Open(f.draft(t, "new", 0).ID)
 	w := f.made[0]
 	f.ws.RequestClose(w.id)
-	require.NoError(t, f.page.Closed(f.ctx(w.id), false))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), false))
 	assert.EqualValues(t, 1, f.asked.Load())
 	assert.False(t, w.destroyed(), "返回 keeps the window")
 	assert.Equal(t, 1, f.ws.Count())
@@ -126,7 +130,7 @@ func TestWindowsCloseFailedSaveAsks(t *testing.T) {
 	f.answer.Store(true)
 	f.ws.RequestClose(w.id)
 	assert.EqualValues(t, 2, w.emitted.Load())
-	require.NoError(t, f.page.Closed(f.ctx(w.id), false))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), false))
 	assert.EqualValues(t, 2, f.asked.Load())
 	assert.True(t, w.destroyed(), "关闭 closes it")
 }
@@ -141,7 +145,7 @@ func TestWindowsSlowPageAsksNotCloses(t *testing.T) {
 	f.elapse()
 	assert.EqualValues(t, 1, f.asked.Load())
 	assert.False(t, w.destroyed())
-	require.NoError(t, f.page.Closed(f.ctx(w.id), true)) // too late: the user chose 返回
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true)) // too late: the user chose 返回
 	assert.False(t, w.destroyed())
 
 	f.answer.Store(true)
@@ -176,9 +180,9 @@ func TestWindowsCloseAllForQuit(t *testing.T) {
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
 	assert.EqualValues(t, 1, w1.emitted.Load())
 	assert.EqualValues(t, 1, w2.emitted.Load())
-	require.NoError(t, f.page.Closed(f.ctx(w1.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w1.id), w1.closing(), true))
 	assert.Empty(t, results, "w2 has not answered")
-	require.NoError(t, f.page.Closed(f.ctx(w2.id), false)) // the user keeps it
+	require.NoError(t, f.page.Closed(f.ctx(w2.id), w2.closing(), false)) // the user keeps it
 	assert.Equal(t, []bool{false}, results)
 	assert.True(t, w1.destroyed())
 	assert.False(t, w2.destroyed())
@@ -188,8 +192,8 @@ func TestWindowsCloseAllForQuit(t *testing.T) {
 	w3 := f.made[2]
 	results = nil
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
-	require.NoError(t, f.page.Closed(f.ctx(w2.id), true))
-	require.NoError(t, f.page.Closed(f.ctx(w3.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w2.id), w2.closing(), true))
+	require.NoError(t, f.page.Closed(f.ctx(w3.id), w3.closing(), true))
 	assert.Equal(t, []bool{true}, results)
 	assert.Zero(t, f.ws.Count())
 
@@ -205,14 +209,14 @@ func TestWindowsCloseWhileAskingJoins(t *testing.T) {
 	w := f.made[0]
 	f.ws.RequestClose(w.id)
 	answered := make(chan error)
-	go func() { answered <- f.page.Closed(f.ctx(w.id), false) }()
+	go func() { answered <- f.page.Closed(f.ctx(w.id), w.closing(), false) }()
 	require.Eventually(t, func() bool { return f.asked.Load() == 1 }, 5*time.Second, time.Millisecond)
 	// While the question shows: another close click, a quit, a late answer.
 	f.ws.RequestClose(w.id)
 	var results []bool
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
 	f.elapse()
-	assert.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	assert.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.EqualValues(t, 1, w.emitted.Load(), "one flush")
 	assert.False(t, w.destroyed())
 	f.asking <- false // 返回
@@ -228,15 +232,15 @@ func TestWindowsStaleTimerIgnored(t *testing.T) {
 	f.ws.Open(f.draft(t, "new", 0).ID)
 	w := f.made[0]
 	f.ws.RequestClose(w.id)
-	require.NoError(t, f.page.Closed(f.ctx(w.id), false)) // 返回
-	f.ws.RequestClose(w.id)                               // a second attempt; the page has not answered yet
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), false)) // 返回
+	f.ws.RequestClose(w.id)                                            // a second attempt; the page has not answered yet
 	f.mu.Lock()
 	first := f.timers[0]
 	f.mu.Unlock()
 	first() // the first attempt's timer, which a real clock could still fire
 	assert.EqualValues(t, 1, f.asked.Load())
 	f.answer.Store(true)
-	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.True(t, w.destroyed())
 }
 
@@ -248,7 +252,7 @@ func TestWindowsCloseAllTwiceOneDone(t *testing.T) {
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
 	assert.EqualValues(t, 1, w.emitted.Load())
-	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.Equal(t, []bool{true}, results)
 }
 
@@ -259,7 +263,7 @@ func TestWindowsCloseAllWaitsForClosed(t *testing.T) {
 	w.async = true
 	var results []bool
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
-	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.True(t, w.destroyed())
 	assert.Empty(t, results, "the window has not gone yet")
 	assert.Equal(t, 1, f.ws.Count())
@@ -268,4 +272,25 @@ func TestWindowsCloseAllWaitsForClosed(t *testing.T) {
 	f.ws.Closed(w.id)
 	assert.Equal(t, []bool{true}, results)
 	assert.Zero(t, f.ws.Count())
+}
+
+// A page's late answer to a close attempt the user turned back from must not
+// close the window in the middle of the next attempt, before that one's flush.
+func TestWindowsLateReplyOfEarlierAttemptIgnored(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	f.ws.RequestClose(w.id)
+	round1 := w.closing()
+	f.elapse() // the page is slow: ask, and the user picks 返回
+	assert.EqualValues(t, 1, f.asked.Load())
+	// The user types on, then closes again.
+	f.ws.RequestClose(w.id)
+	round2 := w.closing()
+	require.NotEqual(t, round1, round2)
+	require.NoError(t, f.page.Closed(f.ctx(w.id), round1, true)) // round 1's flush finally answers
+	assert.False(t, w.destroyed(), "closed before round 2's flush saved the newer input")
+	require.NoError(t, f.page.Closed(f.ctx(w.id), round2, true))
+	assert.True(t, w.destroyed())
+	assert.EqualValues(t, 1, f.asked.Load())
 }

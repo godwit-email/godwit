@@ -9,8 +9,9 @@ import (
 
 var (
 	// Closing tells a compose page its window is closing: it flushes its
-	// input and calls ComposePage.Closed.
-	Closing = mygo.NewEvent[struct{}]("closing")
+	// input and calls ComposePage.Closed with the payload, the close
+	// attempt, so an answer to an earlier attempt counts for nothing.
+	Closing = mygo.NewEvent[int]("closing")
 	// ThemeChanged carries the theme to every page when the settings change.
 	ThemeChanged = mygo.NewEvent[Theme]("theme")
 )
@@ -24,8 +25,8 @@ type Window interface {
 	Focus()
 	// Destroy closes the window without asking again.
 	Destroy()
-	// EmitClosing tells the page to flush and call Closed.
-	EmitClosing()
+	// EmitClosing tells the page to flush and call Closed with gen.
+	EmitClosing(gen int)
 }
 
 // winState is where a window is in closing.
@@ -77,7 +78,7 @@ type Windows struct {
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
 	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{},
 		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }}
-	c.OnClosed(func(winID int, saved bool) { ws.answer(winID, -1, saved) })
+	c.OnClosed(ws.answer)
 	return ws
 }
 
@@ -114,16 +115,17 @@ func (ws *Windows) RequestClose(winID int) {
 	gen := x.gen
 	x.stop = ws.after(closeWait, func() { ws.answer(winID, gen, false) })
 	ws.mu.Unlock()
-	x.w.EmitClosing()
+	x.w.EmitClosing(gen)
 }
 
-// answer settles a waiting window: saved closes it; otherwise the user
-// chooses. gen is the timer's attempt, -1 for the page. An answer for a
-// window not waiting, or a timer of an earlier attempt, does nothing.
+// answer settles a waiting window, from its page or its timer: saved
+// closes it; otherwise the user chooses. gen is the close attempt answered:
+// an answer for a window not waiting, or for an earlier attempt, does
+// nothing.
 func (ws *Windows) answer(winID, gen int, saved bool) {
 	ws.mu.Lock()
 	x := ws.byID[winID]
-	if x == nil || x.state != waiting || gen >= 0 && gen != x.gen {
+	if x == nil || x.state != waiting || gen != x.gen {
 		ws.mu.Unlock()
 		return
 	}

@@ -162,7 +162,7 @@ func TestComposeCallerWithoutDraftRefused(t *testing.T) {
 		assert.ErrorIs(t, err, ErrNoDraft)
 		_, err = f.page.Save(f.ctx(win), ComposeEdit{Revision: d.Revision})
 		assert.ErrorIs(t, err, ErrNoDraft)
-		assert.ErrorIs(t, f.page.Closed(f.ctx(win), true), ErrNoDraft)
+		assert.ErrorIs(t, f.page.Closed(f.ctx(win), 1, true), ErrNoDraft)
 	}
 	check(2)
 	f.c.Detach(1)
@@ -174,11 +174,12 @@ func TestComposeCallerWithoutDraftRefused(t *testing.T) {
 func TestComposeClosedHook(t *testing.T) {
 	f := newFixture(t)
 	f.c.Attach(1, f.draft(t, "new", 0).ID)
-	var win int
+	var win, gen int
 	var saved bool
-	f.c.OnClosed(func(w int, s bool) { win, saved = w, s })
-	require.NoError(t, f.page.Closed(f.ctx(1), true))
+	f.c.OnClosed(func(w, g int, s bool) { win, gen, saved = w, g, s })
+	require.NoError(t, f.page.Closed(f.ctx(1), 3, true))
 	assert.Equal(t, 1, win)
+	assert.Equal(t, 3, gen)
 	assert.True(t, saved)
 }
 

@@ -208,8 +208,8 @@ func (c composeWindow) Focus() {
 	c.w.Focus()
 }
 func (c composeWindow) Destroy() { c.w.Destroy() }
-func (c composeWindow) EmitClosing() {
-	if err := webui.Closing.Emit(c.w, struct{}{}); err != nil {
+func (c composeWindow) EmitClosing(gen int) {
+	if err := webui.Closing.Emit(c.w, gen); err != nil {
 		log.Printf("closing compose window %d: %v", c.w.ID(), err)
 	}
 }

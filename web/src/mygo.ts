@@ -82,9 +82,12 @@ export interface Theme {
  * the calling window's draft only.
  */
 export const ComposePage = {
-  /** Closed is the page's final flush: saved reports whether it succeeded. */
-  closed(saved: boolean): Promise<void> {
-    return call("ComposePage.Closed", saved);
+  /**
+   * Closed is the page's final flush for the close attempt gen, the payload
+   * of the Closing event it answers: saved reports whether it succeeded.
+   */
+  closed(gen: number, saved: boolean): Promise<void> {
+    return call("ComposePage.Closed", gen, saved);
   },
   /** Load is the calling window's draft, with the accounts and the theme. */
   load(): Promise<ComposeState> {
@@ -105,9 +108,10 @@ export const ComposePage = {
 export const events = {
   /**
    * Closing tells a compose page its window is closing: it flushes its
-   * input and calls ComposePage.Closed.
+   * input and calls ComposePage.Closed with the payload, the close
+   * attempt, so an answer to an earlier attempt counts for nothing.
    */
-  closing: event<{}>("closing"),
+  closing: event<number>("closing"),
   /** ThemeChanged carries the theme to every page when the settings change. */
   theme: event<Theme>("theme"),
 } as const;

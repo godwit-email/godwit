@@ -86,7 +86,7 @@ type Compose struct {
 	mu       sync.Mutex
 	svc      *core.Service
 	sessions map[int]*session
-	closed   func(winID int, saved bool)
+	closed   func(winID, gen int, saved bool)
 }
 
 // NewCompose is a Compose with no windows; SetService opens it up.
@@ -114,9 +114,10 @@ func (c *Compose) Detach(winID int) {
 	c.mu.Unlock()
 }
 
-// OnClosed sets the hook that hears the page's final flush: saved reports
-// whether it succeeded.
-func (c *Compose) OnClosed(fn func(winID int, saved bool)) {
+// OnClosed sets the hook that hears the page's final flush: gen is the
+// close attempt it answers (the Closing event's payload), saved whether it
+// succeeded.
+func (c *Compose) OnClosed(fn func(winID, gen int, saved bool)) {
 	c.mu.Lock()
 	c.closed = fn
 	c.mu.Unlock()
@@ -229,8 +230,9 @@ func (p *ComposePage) Save(ctx context.Context, e ComposeEdit) (SaveResult, erro
 	return SaveResult{Revision: d.Revision}, nil
 }
 
-// Closed is the page's final flush: saved reports whether it succeeded.
-func (p *ComposePage) Closed(ctx context.Context, saved bool) error {
+// Closed is the page's final flush for the close attempt gen, the payload
+// of the Closing event it answers: saved reports whether it succeeded.
+func (p *ComposePage) Closed(ctx context.Context, gen int, saved bool) error {
 	id, err := p.win(ctx)
 	if err != nil {
 		return err
@@ -243,7 +245,7 @@ func (p *ComposePage) Closed(ctx context.Context, saved bool) error {
 		return ErrNoDraft
 	}
 	if fn != nil {
-		fn(id, saved)
+		fn(id, gen, saved)
 	}
 	return nil
 }
