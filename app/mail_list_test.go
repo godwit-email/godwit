@@ -183,9 +183,7 @@ func TestThreadListShowsThreads(t *testing.T) {
 	})
 	h.see("3")
 	h.see("08:00") // today: HH:mm
-	if h.tt.HasText("alice@example.com") {
-		t.Fatalf("a lone account is grouped: %q", h.tt.Texts())
-	}
+	h.see("alice@example.com") // a lone account is grouped too, as in the design
 	h.see("收件箱")
 	h.click("three")
 	if h.app.route.ThreadID != h.items()[0].ID {

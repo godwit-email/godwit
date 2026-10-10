@@ -39,8 +39,8 @@ func folderName(f core.Folder) string {
 	return f.Name
 }
 
-// Sidebar: Compose; the unified views; each account's folders, grouped
-// when there are several accounts; the outbox while it holds mail; Add account.
+// Sidebar: Compose; the unified views; each account's folders under its
+// foldable header; the outbox while it holds mail; Add account.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -60,15 +60,10 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			p.navItem(c, i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
 			p.navItem(c, i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
 			ui.Box(c).Height(th.Space(2.5))
-			grouped := len(a.accounts) > 1
 			for _, acc := range a.accounts {
-				indent := float32(0)
-				if grouped {
-					p.accountHeader(c, acc)
-					if p.collapsed[acc.ID] {
-						continue
-					}
-					indent = 18
+				p.accountHeader(c, acc)
+				if p.collapsed[acc.ID] {
+					continue
 				}
 				fs := p.folders[acc.ID]
 				if !slices.ContainsFunc(fs, func(f core.Folder) bool { return f.Role == "drafts" }) {
@@ -79,7 +74,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 					if f.ID == 0 {
 						v = localDrafts(acc.ID)
 					}
-					p.navItem(c, folderName(f), v, f.Unread, indent)
+					p.navItem(c, folderName(f), v, f.Unread, 18)
 				}
 			}
 			if n := len(p.outbox); n > 0 {
