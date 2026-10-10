@@ -1,0 +1,44 @@
+package kit
+
+import (
+	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/theme"
+)
+
+// SidebarItemOpts says how a sidebar row looks and what clicking it does.
+type SidebarItemOpts struct {
+	Selected bool    // the page shown: highlighted, and it does not click
+	Muted    bool    // a secondary action, as Add account
+	Small    bool    // 30 high in the small text, as an account's header
+	Indent   float32 // more left padding, in spacing steps, as a folder under its account
+	OnClick  func()
+}
+
+// SidebarItem is a row of a page's sidebar, its children left-aligned: 32
+// high, highlighted while selected or hovered. Give it its Children.
+func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Md).Justify(ui.Start)
+	if o.Small {
+		b.Height(th.Space(7.5)).Gap(th.Space(1.5)).FontSize(t.Text.Sm)
+	}
+	if o.Muted {
+		b.TextColor(t.Muted)
+	}
+	switch {
+	case o.Selected:
+		b.Background(t.SidebarSelected).FontWeight(500)
+	case b.Hovered():
+		b.Background(t.Hover)
+	}
+	if o.OnClick != nil && !o.Selected {
+		b.OnClick(o.OnClick)
+	}
+	return b
+}
+
+// Card is a bordered panel.
+func Card(c *ui.Context, body func()) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(theme.Hairline, t.Border).Children(body)
+}

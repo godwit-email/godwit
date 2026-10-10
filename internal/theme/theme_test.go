@@ -2,6 +2,7 @@ package theme
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -125,5 +126,11 @@ func TestRadiusAndTextScale(t *testing.T) {
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
 	if th.Radius != 8 || th.FontSize != 15 {
 		t.Errorf("theme radius %v, font size %v; want 8, 15", th.Radius, th.FontSize)
+	}
+}
+
+func TestMotionTokens(t *testing.T) {
+	if MotionFast != 120*time.Millisecond || MotionBase != 200*time.Millisecond {
+		t.Fatal("motion tokens")
 	}
 }

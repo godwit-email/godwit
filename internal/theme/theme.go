@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -230,3 +231,9 @@ var registerFonts = sync.OnceValue(func() error {
 	}
 	return nil
 })
+
+// Component transitions: MotionFast for hover and selection, MotionBase for moves.
+const (
+	MotionFast = 120 * time.Millisecond
+	MotionBase = 200 * time.Millisecond
+)
