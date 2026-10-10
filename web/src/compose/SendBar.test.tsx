@@ -19,7 +19,16 @@ const t = makeT({
 function setup(status: "saving" | "saved" | "unsaved" = "saved") {
   const onSend = vi.fn();
   const onDiscard = vi.fn();
-  render(<SendBar sending={false} status={status} savedAt="21:58" onSend={onSend} onDiscard={onDiscard} t={t} />);
+  render(
+    <SendBar
+      sending={false}
+      status={status}
+      savedAt="21:58"
+      onSend={onSend}
+      onDiscard={onDiscard}
+      t={t}
+    />,
+  );
   return { onSend, onDiscard };
 }
 

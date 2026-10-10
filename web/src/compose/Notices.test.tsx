@@ -15,7 +15,17 @@ const t = makeT({
 
 function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
   const f = { onSendAnyway: vi.fn(), onKeepMine: vi.fn(), onUseLatest: vi.fn(), onRetry: vi.fn() };
-  render(<Notices warnings={[]} blocked={null} conflict={false} latestFailed={false} {...f} t={t} {...p} />);
+  render(
+    <Notices
+      warnings={[]}
+      blocked={null}
+      conflict={false}
+      latestFailed={false}
+      {...f}
+      t={t}
+      {...p}
+    />,
+  );
   return f;
 }
 

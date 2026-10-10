@@ -3,11 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Attachments } from "./Attachments";
 
-const t = makeT({ "compose.remove": "移除 %s", "compose.attach.too_large": "附件超过了 %s 的上限" });
+const t = makeT({
+  "compose.remove": "移除 %s",
+  "compose.attach.too_large": "附件超过了 %s 的上限",
+});
 
 test("lists, removes and reports oversize", async () => {
   const onRemove = vi.fn();
-  render(<Attachments items={[{ id: 7, filename: "a.pdf", size: 1536 }]} tooLarge={["big.zip"]} onRemove={onRemove} t={t} />);
+  render(
+    <Attachments
+      items={[{ id: 7, filename: "a.pdf", size: 1536 }]}
+      tooLarge={["big.zip"]}
+      onRemove={onRemove}
+      t={t}
+    />,
+  );
   expect(screen.getByText("a.pdf")).toBeTruthy();
   expect(screen.getByText("2 KB")).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("附件超过了 25.0 MB 的上限");

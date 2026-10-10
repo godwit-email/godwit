@@ -51,7 +51,9 @@ export function SendBar({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={onDiscard}>{t("compose.discard.confirm")}</AlertDialogAction>
+            <AlertDialogAction onClick={onDiscard}>
+              {t("compose.discard.confirm")}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
