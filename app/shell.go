@@ -300,7 +300,8 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background)
+	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
+		Border(theme.Hairline, t.Outline)
 	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
 		if a.sidebarHidden {
@@ -309,9 +310,9 @@ func (a *App) panel(c *ui.Context) {
 		}
 		a.sidebarW = a.sidebarWidth()
 		split := kit.Split(c, &a.sidebarW, func() {
-			// Rounded itself: the GPU renderer does not round the panel's clip, and
-			// the material shows past a square corner.
-			r := t.Radius.Panel
+			// Rounded itself, inside the panel's outline: the GPU renderer does not
+			// round the panel's clip, and the material shows past a square corner.
+			r := t.Radius.Panel - theme.Hairline
 			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(r, 0, 0, r).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
 		}, content).Grow(1)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)

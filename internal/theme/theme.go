@@ -31,6 +31,9 @@ type Tokens struct {
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
 	Attention, Unread, Input, Ring                                  ui.Color
+	// Outline is the faint edge of a panel over the window material: the
+	// foreground at 6%, lighter than Border, which divides inside it.
+	Outline ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -147,7 +150,7 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral950.Color().Alpha(0.06), HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover: p.Neutral100.Color(),
@@ -160,7 +163,7 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.15), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),

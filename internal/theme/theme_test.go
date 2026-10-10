@@ -34,6 +34,9 @@ func TestThemeTokens(t *testing.T) {
 			t.Errorf("Light().%s = %v, want %v", name, c.got, c.want.Color())
 		}
 	}
+	if l.Outline != p.Neutral950.Color().Alpha(0.05) || Dark().Outline != p.White.Color().Alpha(0.05) {
+		t.Errorf("Outline %v / %v", l.Outline, Dark().Outline)
+	}
 	if l.RailSelected != p.Neutral950.Color().Alpha(0.06) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
 		t.Errorf("Light() rail tints %v %v", l.RailSelected, l.HoverTint)
 	}
