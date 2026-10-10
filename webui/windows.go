@@ -75,13 +75,16 @@ type Windows struct {
 	// releasing holds the drafts whose closed window is being released:
 	// true when an Open waits for that to finish.
 	releasing map[int64]bool
+	// opening holds the drafts whose window is being made: true when an
+	// Open joined it, to focus the window once it exists.
+	opening map[int64]bool
 }
 
 // NewWindows opens windows with newWindow. ask shows 「有修改没有保存」 for
 // a window whose last input could not be saved: true closes it anyway.
 // Windows hears the pages' final flush through c.OnClosed.
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
-	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{}, releasing: map[int64]bool{},
+	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{}, releasing: map[int64]bool{}, opening: map[int64]bool{},
 		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop },
 		spawn: func(f func()) { go f() }}
 	c.OnClosed(ws.answer)
@@ -91,26 +94,44 @@ func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Win
 
 // Open shows draftID's window, opening it unless it is open already. While
 // the draft's closed window is still being released, the Open waits for
-// that: it opens then, unless the release deleted the draft as empty.
+// that: it opens then, unless the release deleted the draft as empty. While
+// the window is being made, the Open joins that: it is focused once made.
 func (ws *Windows) Open(draftID int64) {
 	ws.mu.Lock()
-	x := ws.byDraft[draftID]
-	if _, ok := ws.releasing[draftID]; ok && x == nil {
+	if x := ws.byDraft[draftID]; x != nil {
+		ws.mu.Unlock()
+		x.w.Focus()
+		return
+	}
+	if _, ok := ws.releasing[draftID]; ok {
 		ws.releasing[draftID] = true
 		ws.mu.Unlock()
 		return
 	}
-	ws.mu.Unlock()
-	if x != nil {
-		x.w.Focus()
+	if _, ok := ws.opening[draftID]; ok {
+		ws.opening[draftID] = true
+		ws.mu.Unlock()
 		return
 	}
+	ws.opening[draftID] = false
+	ws.mu.Unlock()
+	ws.make(draftID)
+}
+
+// make makes and registers draftID's window, reserved in opening, and
+// focuses it if an Open joined meanwhile.
+func (ws *Windows) make(draftID int64) {
 	w := ws.newWindow(draftID)
 	ws.c.Attach(w.ID(), draftID)
-	x = &win{w: w, draft: draftID}
+	x := &win{w: w, draft: draftID}
 	ws.mu.Lock()
+	focus := ws.opening[draftID]
+	delete(ws.opening, draftID)
 	ws.byDraft[draftID], ws.byID[w.ID()] = x, x
 	ws.mu.Unlock()
+	if focus {
+		w.Focus()
+	}
 }
 
 // RequestClose starts closing window winID, from its OnClose (always
@@ -214,14 +235,22 @@ func (ws *Windows) Closed(winID int) {
 	ws.spawn(func() {
 		ws.c.Release(winID)
 		if x != nil {
+			// The reopen is reserved in opening under the same lock that ends
+			// the release, so no Open slips in between to make a second window.
 			ws.mu.Lock()
-			reopen, ok := ws.releasing[x.draft]
+			reopen := ws.releasing[x.draft]
 			delete(ws.releasing, x.draft)
+			if reopen {
+				ws.opening[x.draft] = false
+			}
 			ws.mu.Unlock()
-			if ok && reopen {
+			if reopen {
 				if ws.c.exists(x.draft) {
-					ws.Open(x.draft)
+					ws.make(x.draft)
 				} else {
+					ws.mu.Lock()
+					delete(ws.opening, x.draft)
+					ws.mu.Unlock()
 					log.Printf("not opening draft %d: deleted as empty when its window closed", x.draft)
 				}
 			}

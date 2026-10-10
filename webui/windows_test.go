@@ -42,8 +42,10 @@ type winFixture struct {
 	made   []*fakeWin
 	answer atomic.Bool // what ask says: true = close anyway
 	asked  atomic.Int32
-	asking chan bool // when set, ask waits on it for its answer instead
+	asking chan bool   // when set, ask waits on it for its answer instead
+	block  func(n int) // when set, runs before window n (from 1) is made
 	mu     sync.Mutex
+	inNew  int // windows being made
 	timers []func()
 }
 
@@ -52,6 +54,15 @@ func newWinFixture(t *testing.T) *winFixture {
 	f := &winFixture{fixture: newFixture(t)}
 	f.ws = NewWindows(f.c, func(int64) Window {
 		f.mu.Lock()
+		n := len(f.made) + 1 + f.inNew
+		f.inNew++
+		block := f.block
+		f.mu.Unlock()
+		if block != nil {
+			block(n)
+		}
+		f.mu.Lock()
+		f.inNew--
 		defer f.mu.Unlock()
 		w := &fakeWin{id: len(f.made) + 1, ws: f.ws}
 		f.made = append(f.made, w)
@@ -440,4 +451,57 @@ func TestWindowsLateReplyOfEarlierAttemptIgnored(t *testing.T) {
 	require.NoError(t, f.page.Closed(f.ctx(w.id), round2, true))
 	assert.True(t, w.destroyed())
 	assert.EqualValues(t, 1, f.asked.Load())
+}
+
+// gate blocks the making of window n until the returned release: entered
+// receives once it is being made.
+func (f *winFixture) gate(n int) (entered chan struct{}, release func()) {
+	entered, rel := make(chan struct{}, 1), make(chan struct{})
+	f.block = func(i int) {
+		if i == n {
+			entered <- struct{}{}
+			<-rel
+		}
+	}
+	return entered, func() { close(rel) }
+}
+
+// An Open while the draft's window is being made joins it: one window,
+// focused once it exists.
+func TestWindowsConcurrentOpensMakeOne(t *testing.T) {
+	f := newWinFixture(t)
+	entered, release := f.gate(1)
+	opened := make(chan struct{})
+	go func() { f.ws.Open(7); close(opened) }()
+	<-entered
+	f.ws.Open(7)
+	release()
+	<-opened
+	require.Equal(t, 1, f.windows())
+	assert.EqualValues(t, 1, f.made[0].focused.Load())
+	assert.Equal(t, 1, f.ws.Count())
+}
+
+// The reopen after a release and a fresh Open racing it make one window.
+func TestWindowsReopenAfterReleaseRacesOpen(t *testing.T) {
+	f := newWinFixture(t)
+	var rel func()
+	f.ws.spawn = func(fn func()) { rel = fn }
+	d := f.draft(t, "new", 0)
+	f.ws.Open(d.ID)
+	w := f.made[0]
+	_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p>kept</p>", Revision: d.Revision})
+	require.NoError(t, err)
+	f.ws.Closed(w.id)
+	f.ws.Open(d.ID) // waits for the release
+	entered, release := f.gate(2)
+	released := make(chan struct{})
+	go func() { rel(); close(released) }()
+	<-entered // the release reopens it
+	f.ws.Open(d.ID)
+	release()
+	<-released
+	require.Equal(t, 2, f.windows())
+	assert.Equal(t, 1, f.ws.Count())
+	assert.EqualValues(t, 1, f.made[1].focused.Load())
 }
