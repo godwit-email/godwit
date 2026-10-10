@@ -201,9 +201,11 @@ function Compose({
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
   useEffect(() => {
     const n = createSaver(api.save, { revision: state.revision, snapshot: editOf(state) });
+    // The composition's final input lands first: committing before it would keep the half-composed text.
     n.setSettle(async () => {
+      const ok = await settle(gate);
       fieldsRef.current?.commitPending();
-      return settle(gate);
+      return ok;
     });
     n.onRefused(() => toast(t("compose.sending.locked"), { id: "locked" }));
     let last = n.status;

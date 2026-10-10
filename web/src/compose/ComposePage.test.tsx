@@ -231,6 +231,52 @@ test("a compositionend fired synchronously by the blur still flushes and answers
   expect(api.closed).toHaveBeenCalledWith(7, true);
 });
 
+// An address being composed when the settling starts: its final input lands, then it is committed.
+const composeAddress = async () => {
+  render(<ComposePage />);
+  await body();
+  const to = screen.getByRole("textbox", { name: "收件人" });
+  to.focus();
+  act(() => {
+    to.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  });
+  fireEvent.change(to, { target: { value: "ni@example.com" } });
+  return () =>
+    act(() => {
+      // WebKit's order: compositionend, then the committed text's input
+      to.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+      fireEvent.change(to, { target: { value: "你@example.com" } });
+    });
+};
+
+test("an address composition in progress at closing saves the final address", async () => {
+  const end = await composeAddress();
+  let done!: Promise<void>;
+  act(() => {
+    done = h.closing?.(5) as unknown as Promise<void>;
+  });
+  await act(async () => {});
+  expect(api.closed).not.toHaveBeenCalled();
+  end();
+  await act(() => done);
+  expect(api.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ to: ["a@x.com", "你@example.com"] }),
+  );
+  expect(api.closed).toHaveBeenCalledWith(5, true);
+});
+
+test("an address composition in progress at send sends the final address", async () => {
+  const end = await composeAddress();
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await act(async () => {});
+  expect(api.send).not.toHaveBeenCalled();
+  end();
+  await waitFor(() => expect(api.send).toHaveBeenCalled());
+  expect(api.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ to: ["a@x.com", "你@example.com"] }),
+  );
+});
+
 describe("autosave", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
   afterEach(() => vi.useRealTimers());

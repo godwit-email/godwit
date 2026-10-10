@@ -152,3 +152,16 @@ test("frozen: read-only, nothing committed, removed or switched", async () => {
   expect(onFrom).not.toHaveBeenCalled();
   expect(chips()).toEqual(["移除 a@b.c"]);
 });
+
+test("while an IME composes, neither a comma nor leaving commits", () => {
+  setup();
+  const to = screen.getByRole("textbox", { name: "收件人" });
+  fireEvent.compositionStart(to);
+  fireEvent.change(to, { target: { value: "ni," } });
+  fireEvent.blur(to);
+  expect(chips()).toEqual([]);
+  expect(to).toHaveValue("ni,");
+  fireEvent.compositionEnd(to);
+  fireEvent.change(to, { target: { value: "你@x.io," } });
+  expect(chips()).toEqual(["移除 你@x.io"]);
+});
