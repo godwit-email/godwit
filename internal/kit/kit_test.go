@@ -351,7 +351,9 @@ func TestKitSelectedDoesNotClick(t *testing.T) {
 			})
 		}), 300, 300)
 		for _, l := range []string{"p-", "s-", "r-"} {
-			_ = tt.Click(l + tag)
+			if err := tt.Click(l + tag); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if len(got) != 3 || got[0] != "p-off" || got[1] != "s-off" || got[2] != "r-off" {
@@ -382,7 +384,9 @@ func TestKitTooltipOnFocus(t *testing.T) {
 }
 
 func TestKitPressableLeftAligned(t *testing.T) {
+	var gap float32
 	tt := ui.NewTester(themed(func(c *ui.Context) {
+		gap = c.Theme().Space(4)
 		Pressable(c, PressableOpts{}).Label("pl-row").Width(240).Children(func() { ui.Text(c, "Row") })
 	}), 400, 200)
 	box, ok1 := tt.Find("pl-row")
@@ -390,7 +394,7 @@ func TestKitPressableLeftAligned(t *testing.T) {
 	if !ok1 || !ok2 {
 		t.Fatal("not found")
 	}
-	if d := txt.X - box.X; d < 0 || d > 16 {
+	if d := txt.X - box.X; d < 0 || d > gap {
 		t.Errorf("text %v from the left edge, want near 0", d)
 	}
 }

@@ -126,7 +126,7 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 // assistive technology and tests.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	b := button(c, o, true).Label(label)
-	Tooltip(c, b, label)
+	tooltip(c, b, label, false)
 	return b.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon)
 	})

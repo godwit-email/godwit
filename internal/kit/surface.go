@@ -77,7 +77,7 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()) ui.Element {
 	t := theme.Of(c)
 	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Md).Center().Label(label).Transition(colors(theme.MotionFast))
-	Tooltip(c, b, label)
+	tooltip(c, b, label, false)
 	b.TextColor(t.Muted)
 	switch {
 	case selected:
