@@ -1,6 +1,6 @@
 // Package icons embeds the Remix Icon icons Godwit uses (remixicon v4.8.0,
 // the last Apache-2.0 release; license in svg/LICENSE-remixicon.txt), the line
-// style, and the fill style of those a selected rail button shows. Each file is
+// style, and the fill style of those a selected rail button or sidebar row shows. Each file is
 // named for its use, as "trash-2"; its first line names the Remix icon. ui.Icon
 // tints them with the text color.
 package icons

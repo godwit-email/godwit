@@ -698,7 +698,7 @@ func TestKitSidebarIconMuted(t *testing.T) {
 		th = theme.Of(c)
 		ui.Column(c).Width(240).Children(func() {
 			item := SidebarItem(c, SidebarItemOpts{OnClick: func() {}}).Label("new")
-			item.Children(func() { SidebarIcon(c, item, "square-pen") })
+			item.Children(func() { SidebarIcon(c, item, "square-pen", false) })
 		})
 	}), 300, 100)
 	r, ok := tt.Find("new")
@@ -760,6 +760,34 @@ func TestKitRailButtonFillsSelected(t *testing.T) {
 		n, img := 0, tt.Image()
 		for y := int(r.Y); y < int(r.Y+r.H); y++ {
 			for x := int(r.X); x < int(r.X+r.W); x++ {
+				if img.RGBAAt(x, y).R < 220 { // any ink, muted or not
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if off, on := ink(false), ink(true); on < off*3/2 {
+		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
+	}
+}
+
+// TestKitSidebarIconFillsSelected: a selected row's icon is the fill style.
+func TestKitSidebarIconFillsSelected(t *testing.T) {
+	ink := func(sel bool) int {
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Width(240).Children(func() {
+				item := SidebarItem(c, SidebarItemOpts{Selected: sel}).Label("row")
+				item.Children(func() { SidebarIcon(c, item, "folder", sel) })
+			})
+		}), 300, 100)
+		r, ok := tt.Find("row")
+		if !ok {
+			t.Fatal("no row")
+		}
+		n, img := 0, tt.Image()
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			for x := int(r.X); x < int(r.X)+40; x++ {
 				if img.RGBAAt(x, y).R < 220 { // any ink, muted or not
 					n++
 				}

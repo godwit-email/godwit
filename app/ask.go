@@ -83,7 +83,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
 	newChat.Children(func() {
-		kit.SidebarIcon(c, newChat, "square-pen")
+		kit.SidebarIcon(c, newChat, "square-pen", false)
 		ui.Text(c, i18n.T("ask.new"))
 	})
 	if len(p.convs) == 0 {

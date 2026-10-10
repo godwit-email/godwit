@@ -32,6 +32,9 @@ func sortFolders(fs []core.Folder) []core.Folder {
 	return out
 }
 
+// folderIcons are the icons of folder roles; another folder shows "folder".
+var folderIcons = map[string]string{"inbox": "inbox", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
+
 func folderName(f core.Folder) string {
 	if f.Role != "" {
 		return i18n.T("mail.folder." + f.Role)
@@ -54,18 +57,18 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			})
 			compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))
 			compose.Children(func() {
-				kit.SidebarIcon(c, compose, "square-pen")
+				kit.SidebarIcon(c, compose, "square-pen", false)
 				ui.Text(c, i18n.T("mail.compose"))
 			})
 			ui.Box(c).Height(th.Space(2))
-			p.navItem(c, i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
-			p.navItem(c, i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
+			p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
+			p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
 			ui.Box(c).Height(th.Space(2.5))
 			for _, acc := range a.accounts {
 				p.account(c, acc)
 			}
 			if n := len(p.outbox); n > 0 {
-				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
+				p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
 			}
 			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
 				a.navigate(Route{Page: PageSettings})
@@ -78,11 +81,13 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 	})
 }
 
-// navItem is a view in the sidebar, with its count; indent is in spacing steps.
-func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, indent float32) {
+// navItem is a view in the sidebar, with its icon and count; indent is in spacing steps.
+func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int, indent float32) {
 	t := theme.Of(c)
 	on := p.a.route.Page == PageMail && p.a.route.View == v
-	kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }}).Children(func() {
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+	item.Children(func() {
+		kit.SidebarIcon(c, item, icon, on)
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
 		if count > 0 {
 			ui.Text(c, strconv.Itoa(count)).FontSize(t.Text.Sm).TextColor(t.Muted)
@@ -110,7 +115,7 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 				if f.ID == 0 {
 					v = localDrafts(acc.ID)
 				}
-				p.navItem(c, folderName(f), v, f.Unread, 4.5)
+				p.navItem(c, cmp.Or(folderIcons[f.Role], "folder"), folderName(f), v, f.Unread, 4.5)
 			}
 		})
 	})

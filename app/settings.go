@@ -113,6 +113,9 @@ func (p *settingsPage) Title() (string, string) {
 
 var appSections = []string{"general", "models", "extensions", "privacy", "about"}
 
+// sectionIcons are the app sections' sidebar icons.
+var sectionIcons = map[string]string{"general": "settings", "models": "cpu", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
 func (p *settingsPage) Sidebar(c *ui.Context) {
@@ -122,15 +125,15 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	group := func(label string, top float32) {
 		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), th.Space(1.5), th.Space(2))
 	}
-	item := func(sec string, children func()) {
-		kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }}).Children(children)
+	item := func(sec string) ui.Element {
+		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 			group(i18n.T("settings.accounts"), th.Space(1))
 			for _, acc := range a.accounts {
-				item(accountRoute(acc.ID), func() {
+				item(accountRoute(acc.ID)).Children(func() {
 					mark(c, providerMark(accountProvider(a, acc)), theme.MarkSm)
 					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
 					if acc.Status == "ok" {
@@ -148,7 +151,11 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 			})
 			group(i18n.T("settings.app"), th.Space(3.5))
 			for _, sec := range appSections {
-				item(sec, func() { ui.Text(c, i18n.T("settings."+sec)) })
+				b := item(sec)
+				b.Children(func() {
+					kit.SidebarIcon(c, b, sectionIcons[sec], sec == cur)
+					ui.Text(c, i18n.T("settings."+sec))
+				})
 			}
 		})
 	})
