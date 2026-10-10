@@ -21,6 +21,8 @@ func TestThemeTokens(t *testing.T) {
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},
 		"SidebarSelected": {l.SidebarSelected, p.Mid(p.Neutral100, p.Neutral200)}, "RailSelected": {l.RailSelected, p.Neutral200},
 		"Hover": {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
+		"SuccessBg": {l.SuccessBg, p.Green50}, "SuccessBorder": {l.SuccessBorder, p.Green200}, "SuccessText": {l.SuccessText, p.Green700},
+		"DangerBorder": {l.DangerBorder, p.Red200}, "DangerText": {l.DangerText, p.Red700},
 		"WarningBg": {l.WarningBg, p.Amber50}, "WarningBorder": {l.WarningBorder, p.Amber300},
 		"WarningText": {l.WarningText, p.Amber800}, "Danger": {l.Danger, p.Red600},
 		"DangerBg": {l.DangerBg, p.Red50}, "InsBg": {l.InsBg, p.Green100}, "InsText": {l.InsText, p.Green800},

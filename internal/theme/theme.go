@@ -21,6 +21,7 @@ type Tokens struct {
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
 	PrimaryText, SidebarSelected, RailSelected, Hover, Success      ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
+	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
 	Attention, Unread                                               ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
@@ -113,6 +114,8 @@ func status(t Tokens) Tokens {
 	t.Success = p.Green600.Color()
 	t.WarningBg, t.WarningBorder, t.WarningText = p.Amber50.Color(), p.Amber300.Color(), p.Amber800.Color()
 	t.Danger, t.DangerBg, t.Attention, t.Unread = p.Red600.Color(), p.Red50.Color(), p.Amber500.Color(), p.Blue500.Color()
+	t.SuccessBg, t.SuccessBorder, t.SuccessText = p.Green50.Color(), p.Green200.Color(), p.Green700.Color()
+	t.DangerBorder, t.DangerText = p.Red200.Color(), p.Red700.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
 	t.FontSize, t.BodyFontSize, t.Scale = 13, 14, 1
 	return sized(t)

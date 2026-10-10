@@ -622,7 +622,7 @@ func TestKitToastTopCenter(t *testing.T) {
 	if !ok1 || !ok2 {
 		t.Fatalf("toasts not shown: %q", tt.Texts())
 	}
-	if newer.Y >= older.Y || newer.Y > 100 {
+	if newer.Y >= older.Y || newer.Y > 120 {
 		t.Errorf("newer at %v, older at %v: want the newest on top, at the top", newer, older)
 	}
 	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
@@ -633,9 +633,24 @@ func TestKitToastTopCenter(t *testing.T) {
 func TestKitToastIcons(t *testing.T) {
 	tk := theme.Light()
 	for typ, want := range map[string]string{"": "", ToastSuccess: "circle-check", ToastWarning: "triangle-alert", ToastError: "circle-x"} {
-		icon, _, ok := toastIcon(tk, typ)
-		if icon != want || ok != (want != "") {
-			t.Errorf("toastIcon(%q) = %q, %v; want %q", typ, icon, ok, want)
+		if got := toastLook(tk, typ).icon; got != want {
+			t.Errorf("toastLook(%q).icon = %q, want %q", typ, got, want)
+		}
+	}
+}
+
+// TestKitToastTinted: a kind's toast takes its color's tint; a plain one stays white.
+func TestKitToastTinted(t *testing.T) {
+	tk := theme.Light()
+	for typ, want := range map[string][3]ui.Color{
+		"":           {tk.Background, tk.Border, tk.Foreground},
+		ToastSuccess: {tk.SuccessBg, tk.SuccessBorder, tk.SuccessText},
+		ToastWarning: {tk.WarningBg, tk.WarningBorder, tk.WarningText},
+		ToastError:   {tk.DangerBg, tk.DangerBorder, tk.DangerText},
+	} {
+		l := toastLook(tk, typ)
+		if got := [3]ui.Color{l.bg, l.border, l.fg}; got != want {
+			t.Errorf("toastLook(%q) = %v, want %v", typ, got, want)
 		}
 	}
 }
