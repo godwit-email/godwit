@@ -9,7 +9,7 @@ import (
 // switchTrack draws a switch: a 32×18 track and its thumb.
 func switchTrack(c *ui.Context, on bool) ui.Element {
 	t := theme.Of(c)
-	tr := ui.Row(c).Size(theme.SwitchWidth, theme.SwitchHeight).Shrink(0).Padding(theme.SwitchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start)
+	tr := ui.Row(c).Size(theme.SwitchWidth, theme.SwitchHeight).Shrink(0).Padding(theme.SwitchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	thumb := t.Background
 	switch {
 	case on:
@@ -18,7 +18,7 @@ func switchTrack(c *ui.Context, on bool) ui.Element {
 		thumb = t.Foreground // a dark thumb would vanish into the dark track
 	}
 	return tr.Children(func() {
-		ui.Box(c).Size(theme.SwitchThumb, theme.SwitchThumb).Radius(t.Radius.Full).Background(thumb).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.2))
+		ui.Box(c).Size(theme.SwitchThumb, theme.SwitchThumb).Radius(t.Radius.Full).Background(thumb).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.2)).Transition(ui.ElementTransition{Position: true, Duration: theme.MotionFast})
 	})
 }
 

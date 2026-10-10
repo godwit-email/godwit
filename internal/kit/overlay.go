@@ -20,6 +20,25 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 	})
 }
 
+// Sheet is a top-anchored panel, the add-account sheet's look: a title and a
+// close button over a scrolling body.
+func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
+		backdrop.Background(ink(t).Alpha(0.28)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		panel.Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.Xl).Clip().Background(t.Background).Border(theme.Hairline, t.Border).
+			Shadow(0, theme.ShadowXl.Y, theme.ShadowXl.Blur, 0, ink(t).Alpha(0.18))
+		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
+			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
+			ui.Spacer(c)
+			IconButton(c, "x", closeLabel, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
+		})
+		ui.Scroll(c).Shrink(1).Children(func() {
+			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(body)
+		})
+	})
+}
+
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()

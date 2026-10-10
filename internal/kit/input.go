@@ -9,18 +9,22 @@ import (
 type InputOpts struct {
 	Placeholder             string
 	Password, Mono, Invalid bool
+	Bare                    bool // raw Base geometry: the row around it draws the box
 }
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Background).Placeholder(o.Placeholder)
+	e.Placeholder(o.Placeholder)
+	if !o.Bare {
+		e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Background)
+	}
 	if o.Mono {
 		e.Font("Geist Mono").FontSize(t.Text.Base)
 	}
 	if o.Password {
 		e.Password()
 	}
-	if o.Invalid {
+	if o.Invalid && !o.Bare {
 		e.Border(theme.Hairline, t.Danger)
 	}
 	return e
@@ -28,12 +32,20 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 
 // Input is a 32-high single-line text input.
 func Input(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextInputBase(c, s).Height(c.Theme().Space(8)), o)
+	e := ui.TextInputBase(c, s)
+	if !o.Bare {
+		e.Height(c.Theme().Space(8))
+	}
+	return input(c, e, o)
 }
 
 // TextArea is a multi-line text input.
 func TextArea(c *ui.Context, s *string, o InputOpts) ui.Element {
-	return input(c, ui.TextAreaBase(c, s).PaddingY(c.Theme().Space(2)), o)
+	e := ui.TextAreaBase(c, s)
+	if !o.Bare {
+		e.PaddingY(c.Theme().Space(2))
+	}
+	return input(c, e, o)
 }
 
 // Field is a labelled form control with help text, or an error in its place.

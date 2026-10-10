@@ -466,3 +466,75 @@ func TestKitSkeletonStillUnderReduceMotion(t *testing.T) {
 		}
 	}
 }
+
+func TestKitCollapsibleToggles(t *testing.T) {
+	st := &struct{ open bool }{}
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Collapsible(c, &st.open, func() { ui.Text(c, "More") }, func() { ui.Text(c, "inside") })
+	}), 400, 300)
+	if tt.HasText("inside") {
+		t.Fatal("panel shown while closed")
+	}
+	if err := tt.Click("More"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("inside") {
+		t.Fatalf("panel not shown after click: %q", tt.Texts())
+	}
+	_ = tt.Click("More")
+	for start := time.Now(); tt.HasText("inside") && time.Since(start) < 2*time.Second; time.Sleep(10 * time.Millisecond) {
+		tt.Frame()
+	}
+	if tt.HasText("inside") {
+		t.Error("panel still shown after closing")
+	}
+}
+
+func TestKitSheetCloses(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Sheet(c, &open, "Add", "Close", func() { ui.Text(c, "inside") })
+	}), 800, 600)
+	if !tt.HasText("inside") || !tt.HasText("Add") {
+		t.Fatalf("open sheet shows %q", tt.Texts())
+	}
+	if err := tt.Click("Close"); err != nil {
+		t.Fatal(err)
+	}
+	if open || tt.HasText("inside") {
+		t.Errorf("after Close open=%v, texts %q", open, tt.Texts())
+	}
+}
+
+func TestKitBareInputMatchesBase(t *testing.T) {
+	a, b, d := "", "", ""
+	var th theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = theme.Of(c)
+		ui.Column(c).FillWidth().Background(th.Sidebar).Gap(8).Padding(8).Children(func() {
+			Input(c, &a, InputOpts{Bare: true}).Label("bare")
+			ui.TextInputBase(c, &b).Label("base")
+			Input(c, &d, InputOpts{}).Label("normal")
+		})
+	}), 400, 300)
+	rb, ok1 := tt.Find("bare")
+	rr, ok2 := tt.Find("base")
+	rn, ok3 := tt.Find("normal")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing inputs in %q", tt.Texts())
+	}
+	if rb.H != rr.H {
+		t.Errorf("bare height %v, base %v", rb.H, rr.H)
+	}
+	px := func(r ui.Rect) [3]uint8 {
+		c := tt.Image().RGBAAt(int(r.X), int(r.Y+r.H/2))
+		return [3]uint8{c.R, c.G, c.B}
+	}
+	rgb := func(c ui.Color) [3]uint8 { return [3]uint8{c.R, c.G, c.B} }
+	if px(rb) != rgb(th.Sidebar) {
+		t.Errorf("bare edge pixel %v, want sidebar %v", px(rb), rgb(th.Sidebar))
+	}
+	if px(rn) != rgb(th.Border) {
+		t.Errorf("normal edge pixel %v, want border %v", px(rn), rgb(th.Border))
+	}
+}
