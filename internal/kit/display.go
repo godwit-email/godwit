@@ -11,7 +11,7 @@ import (
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover).Children(func() {
+	return ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 		ui.Text(c, text).FontSize(t.Text.Sm).TextColor(t.Foreground)
 	})
 }
@@ -35,7 +35,7 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	case Danger:
 		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
 	}
-	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(bg).Border(theme.Hairline, border).TextColor(fg).
+	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(bg).Border(theme.Hairline, border).TextColor(fg).
 		FontSize(t.Text.Base).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
@@ -74,7 +74,7 @@ func Spinner(c *ui.Context) ui.Element {
 // Kbd shows a key or shortcut.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Xs).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
+	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
 		ui.Text(c, text).Font("Geist Mono").FontSize(t.Text.Xs).TextColor(t.Muted)
 	})
 }
@@ -110,7 +110,7 @@ func Separator(c *ui.Context, vertical bool) ui.Element {
 // stays still under ReduceMotion, which Loop does not honor itself.
 func Skeleton(c *ui.Context, w, h float32) ui.Element {
 	t := theme.Of(c)
-	b := ui.Box(c).Height(h).Radius(t.Radius.Sm).Background(t.Hover)
+	b := ui.Box(c).Height(h).Radius(t.Radius.Md).Background(t.Hover)
 	if w == 0 {
 		b.FillWidth()
 	} else {

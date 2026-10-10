@@ -373,7 +373,7 @@ func (m *modelsView) view(c *ui.Context) {
 			for i, s := range m.services {
 				on := m.form != nil && m.form.id == s.ID
 				listRow(c.Key(s.ID), i, on, func() { m.edit(s) }, func() {
-					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Md).Background(t.Hover).Center().Children(func() {
+					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
 						ui.Text(c, badge(s.Name)).Font("Geist Mono").FontSize(t.Text.Sm)
 					})
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
@@ -474,7 +474,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 			for _, name := range f.offered {
 				on := slices.Contains(f.models, name)
-				ui.Box(c.Key(name)).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
+				ui.Box(c.Key(name)).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
 					if kit.Checkbox(c, &on, name).Changed() {
 						if !slices.Contains(f.models, name) { // the box may have written an older frame's copy
 							f.models = append(f.models, name)
@@ -573,7 +573,7 @@ func (m *modelsView) modelSelects(c *ui.Context) {
 // listCard is a bordered list of rows.
 func listCard(c *ui.Context, rows func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
 }
 
 // listRow is a clickable row of a listCard; i > 0 draws a divider above it.

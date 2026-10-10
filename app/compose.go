@@ -642,7 +642,7 @@ func (p *composer) toolbar(c *ui.Context) {
 	}
 	ui.Row(c).Wrap().Gap(th.Space(2)).Padding(th.Space(2), th.Space(5)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		for _, att := range p.atts {
-			ui.Row(c).Key(att.ID).Gap(th.Space(1.5)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(2.5)).Radius(t.Radius.Md).Background(t.Hover).Children(func() {
+			ui.Row(c).Key(att.ID).Gap(th.Space(1.5)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
 				ui.Text(c, att.Filename).SingleLine()
 				ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
 				kit.IconButton(c, "x", i18n.Tf("compose.remove", att.Filename), ghost).OnClick(func() { p.removeAttachment(att.ID) })
@@ -677,7 +677,7 @@ func (p *composer) body(c *ui.Context) {
 func (p *composer) notices(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	if w := p.warn; w != nil {
-		ui.Column(c).Margin(0, th.Space(5), th.Space(4), th.Space(5)).Padding(th.Space(3), th.Space(3.5)).Gap(th.Space(2.5)).Radius(t.Radius.Md).
+		ui.Column(c).Margin(0, th.Space(5), th.Space(4), th.Space(5)).Padding(th.Space(3), th.Space(3.5)).Gap(th.Space(2.5)).Radius(t.Radius.Lg).
 			Background(t.WarningBg).TextColor(t.WarningText).Children(func() {
 			for _, x := range w.Warnings {
 				ui.Column(c).Gap(th.Space(1)).Children(func() {

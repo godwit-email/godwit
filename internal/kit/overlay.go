@@ -11,7 +11,7 @@ func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
 	k := enter(c, open, theme.MotionBase)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4 * k))
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).Radius(t.Radius.Xl).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
 		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
 		body()
@@ -28,7 +28,7 @@ func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
 	k := enter(c, open, theme.MotionBase)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.Xl).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.X2l).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
 		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
 			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
@@ -46,7 +46,7 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionFast)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Opacity(k).Margin(theme.PopupOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Md).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(theme.PopupOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowMd)
 		body()
 	})
@@ -63,7 +63,7 @@ func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 		anchor.Description(text)
 	}
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
-		tip.Padding(th.Space(1), th.Space(2)).Radius(t.Radius.Sm).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
+		tip.Padding(th.Space(1), th.Space(2)).Radius(t.Radius.Md).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
 		tip.Children(func() { ui.Text(c, text) })
 	})
 }

@@ -652,9 +652,9 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			if att.Inline {
 				continue
 			}
-			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Md).Children(func() {
+			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Xs).Background(t.Hover).Center().Shrink(0).Children(func() {
+					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 						ui.Text(c, fileKind(att)).FontSize(t.Text.Xs).TextColor(t.Muted)
 					})
 					ui.Column(c).Shrink(1).Children(func() {

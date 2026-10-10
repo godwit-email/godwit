@@ -108,7 +108,7 @@ func (w *composeWit) after(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
-		ui.Text(c, i18n.T("wit.compose.applied")).Padding(0, th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover)
+		ui.Text(c, i18n.T("wit.compose.applied")).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover)
 		kit.Button(c, i18n.T("wit.compose.undo"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).OnClick(w.undo)
 	})
 }
@@ -121,7 +121,7 @@ func (w *composeWit) card(c *ui.Context, ap core.Approval) bool {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r := w.review
-	ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.T("wit.compose.review")).FontWeight(600)
 			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
@@ -230,7 +230,7 @@ func (w *composeWit) body(c *ui.Context) bool {
 		ui.Column(c).Gap(th.Space(2.5)).Children(func() {
 			ui.Text(c, i18n.T("wit.compose.writing")).TextColor(t.Muted)
 			for _, pct := range []float32{90, 75, 50} {
-				ui.Box(c).Height(th.Space(3)).MaxWidthPercent(pct).Radius(t.Radius.Sm).Background(t.Hover)
+				ui.Box(c).Height(th.Space(3)).MaxWidthPercent(pct).Radius(t.Radius.Md).Background(t.Hover)
 			}
 		})
 	default:
@@ -260,7 +260,7 @@ func (w *composeWit) reviewView(c *ui.Context) {
 		if k := w.active; k >= 0 && r.decided[k] == 0 {
 			b := w.changeBounds(k)
 			pop := ui.Row(c).Absolute().Top(b.Y+b.H+th.Space(1)).Left(b.X).Gap(th.Space(1)).Padding(th.Space(1)).
-				Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+				Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 				if u := r.linkNote(k); u != "" {
 					ui.Text(c, i18n.Tf("wit.compose.link", u)).FontSize(t.Text.Sm).Padding(0, th.Space(1))
 				}
@@ -321,7 +321,7 @@ func (w *composeWit) editor(c *ui.Context) {
 		}
 		b, _, _ := p.ed.BoundsForRange(p.ed.Selection().Range)
 		box := ui.Column(c).Absolute().Top(b.Y+b.H+th.Space(1.5)).Left(0).Right(0).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-			Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+			Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm)
 				in := kit.Input(c, &w.cmdkInput, kit.InputOpts{Bare: true}).Grow(1).Label(i18n.T("wit.compose.cmdk.input")).AutoFocus()

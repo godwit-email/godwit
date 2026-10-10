@@ -127,7 +127,8 @@ func TestSpaceFollowsDensity(t *testing.T) {
 
 func TestRadiusAndTextScale(t *testing.T) {
 	tok := FromSettings(core.Settings{Theme: "light", Density: "comfortable", FontSize: 15, BodyFontSize: 16}, false)
-	if r := tok.Radius; [4]float32{r.Sm, r.Md, r.Lg, r.Xl} != [4]float32{6, 8, 10, 14} {
+	// Tailwind v4's rounded-xs … rounded-4xl, whatever the density
+	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
 	if x := tok.Text; [6]float32{x.Xs, x.Sm, x.Base, x.Lg, x.Xl, x.X2l} != [6]float32{13, 14, 15, 17, 20, 22} {

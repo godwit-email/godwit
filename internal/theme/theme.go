@@ -48,10 +48,10 @@ type Tokens struct {
 	Text                          TextScale
 }
 
-// RadiusScale are corner radii; they do not follow the density. Xs (4) and
-// Panel (12, cards) are the off-scale radii in use; Full rounds a box's
-// short sides into half circles (renderers fit radii as CSS does).
-type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, Panel, Full float32 }
+// RadiusScale are corner radii, Tailwind v4's rounded-* steps (xs 2 … 4xl 32);
+// they do not follow the density. Full rounds a box's short sides into half
+// circles (renderers fit radii as CSS does).
+type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, X2l, X3l, X4l, Full float32 }
 
 // TextScale are the interface's text sizes, steps from FontSize. Mail bodies
 // use BodyFontSize. Title (dialog titles), Brand, Heading (page headings)
@@ -140,7 +140,7 @@ var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {
 	f := t.FontSize
-	t.Radius = RadiusScale{Xs: 4, Sm: 6, Md: 8, Lg: 10, Xl: 14, Panel: 12, Full: 9999}
+	t.Radius = RadiusScale{Xs: 2, Sm: 4, Md: 6, Lg: 8, Xl: 12, X2l: 16, X3l: 24, X4l: 32, Full: 9999} // Tailwind v4's
 	t.Text = TextScale{Xs: f - 2, Sm: f - 1, Base: f, Lg: f + 2, Xl: f + 5, X2l: f + 7,
 		Title: f + 3, Brand: f + 4, Heading: f + 6, Display: f + 16}
 	return t
@@ -233,7 +233,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Danger, th.Warning, th.Success = t.Danger, t.Attention, t.Success
 	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Ring.Alpha(0.5), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
-	th.Radius, th.Spacing = t.Radius.Md, 4*t.Scale // Space(n) is n Tailwind units
+	th.Radius, th.Spacing = t.Radius.Lg, 4*t.Scale // Space(n) is n Tailwind units
 	th.Font, th.FontSize = "Geist", t.Text.Base
 	return &th
 }

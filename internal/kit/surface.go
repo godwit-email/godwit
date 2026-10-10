@@ -19,7 +19,7 @@ type SidebarItemOpts struct {
 // high, highlighted while selected or hovered. Give it its Children.
 func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Md).Justify(ui.Start).Transition(colors(theme.MotionFast))
+	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Lg).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if o.Small {
 		b.Height(th.Space(7.5)).Gap(th.Space(1.5)).FontSize(t.Text.Sm)
 	}
@@ -54,7 +54,7 @@ func SidebarIcon(c *ui.Context, item ui.Element, icon string, selected bool) {
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(theme.Hairline, t.Border)
+	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Xl).Background(t.Background).Border(theme.Hairline, t.Border)
 	return Elevate(c, card, theme.ShadowSm).Children(body)
 }
 
@@ -69,7 +69,7 @@ type PressableOpts struct {
 // Give it its Label, Padding, Gap and Children. A selected one does not click.
 func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	t := theme.Of(c)
-	b := ui.ButtonBase(c).Justify(ui.Start).Radius(t.Radius.Md).Transition(colors(theme.MotionFast))
+	b := ui.ButtonBase(c).Justify(ui.Start).Radius(t.Radius.Lg).Transition(colors(theme.MotionFast))
 	if o.Bordered {
 		b.Border(theme.Hairline, t.Border).Background(t.Background)
 	}
@@ -90,7 +90,7 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 // RailButton is a square icon button of the icon rail; selected, it does not click.
 func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()) ui.Element {
 	t := theme.Of(c)
-	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Md).Center().Label(label).Transition(colors(theme.MotionFast))
+	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Lg).Center().Label(label).Transition(colors(theme.MotionFast))
 	tooltip(c, b, label, false)
 	b.TextColor(t.Muted)
 	switch {

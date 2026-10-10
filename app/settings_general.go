@@ -253,7 +253,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 		side, long, short := w/4, w/3, w/5
 		ui.Row(c).Size(w, theme.ThemeTileHeight).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
 			ui.Box(c).Width(min(theme.TileRail, side))
-			ui.Box(c).Width(side).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Sm, 0, 0, 0)
+			ui.Box(c).Width(side).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
 			ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
 				ui.Box(c).Height(theme.TileLine).Width(long).Radius(t.Radius.Full).Background(tok.Border)
 				ui.Box(c).Height(theme.TileLine).Width(short).Radius(t.Radius.Full).Background(tok.Border)
@@ -261,7 +261,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 		})
 	}
 	kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start).Children(func() {
-		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
+		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Lg).Clip().Border(theme.Hairline, t.Border)
 		if on {
 			frame.Border(theme.SelectedBorder, t.Primary)
 		}

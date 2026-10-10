@@ -46,7 +46,7 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Xs).Border(theme.Hairline, t.Input).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background).Center()
 		Elevate(c, box, theme.ShadowXs)
 		if *on {
 			box.Background(t.Primary).Border(theme.Hairline, t.Primary).TextColor(t.PrimaryText).Children(func() {
@@ -87,15 +87,15 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 		}
 	}
 	Elevate(c, s.Trigger, theme.ShadowXs)
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowMd)
 		for _, o := range opts {
-			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Sm)
+			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
 			if item.Highlighted() {
 				item.Background(t.Hover)
 			}

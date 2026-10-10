@@ -243,7 +243,7 @@ func (e *extView) pluginsView(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			perm := func(tag, text string) {
 				ui.Row(c).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover).Children(func() {
+					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 						ui.Text(c, tag).Font("Geist Mono").FontSize(t.Text.Sm)
 					})
 					ui.Text(c, text).Shrink(1)
@@ -301,7 +301,7 @@ func (e *extView) setPluginEnabled(name string, on bool) {
 // statusPill is a small status label; attention shows it amber.
 func statusPill(c *ui.Context, text string, attention bool) {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Xs).Background(t.Hover).TextColor(t.Foreground)
+	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).TextColor(t.Foreground)
 	if attention {
 		b.Background(t.WarningBg).TextColor(t.WarningText)
 	}

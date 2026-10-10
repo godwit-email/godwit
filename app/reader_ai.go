@@ -480,7 +480,7 @@ func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) 
 // panel is the AI's box: a sparkle, a title, an optional close button, the body.
 func (r *reader) panel(c *ui.Context, title string, close func(), body func()) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Lg).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			ui.Text(c, title).FontWeight(600).Grow(1).Shrink(1)
 			if close != nil {
@@ -516,7 +516,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	r.fetchErr(c, st.cards.err, st.cards.loading, func() { r.loadCards(m.ID, true) })
 	for _, card := range st.cards.v {
-		ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
+		ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Children(func() {
 			ui.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)).FontSize(t.Text.Sm).TextColor(t.Muted)
 			for _, f := range card.Fields {
 				ui.Row(c).Gap(th.Space(2)).Children(func() {

@@ -305,7 +305,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 			ui.Text(c, meta).TextColor(t.Muted)
 		})
-		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Xs).Background(t.WarningBg).TextColor(t.WarningText)
+		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.WarningBg).TextColor(t.WarningText)
 		if acc.Status == "ok" {
 			pill.Background(t.Success.Alpha(0.1)).TextColor(t.Success)
 		}

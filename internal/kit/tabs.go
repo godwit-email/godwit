@@ -9,10 +9,10 @@ import (
 func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	tabs := ui.TabsBase(c, sel, len(labels))
-	return tabs.List.Padding(th.Space(0.75)).Radius(t.Radius.Md).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
+	return tabs.List.Padding(th.Space(0.75)).Radius(t.Radius.Lg).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
 		for i, l := range labels {
 			// ponytail: backgrounds fade; a sliding indicator needs the tabs' rects from the last frame
-			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).FontWeight(500).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).TextColor(t.Muted).Transition(colors(theme.MotionFast))
 			if i == *sel {
 				Elevate(c, tab.Background(t.Background).TextColor(t.Foreground), theme.ShadowSm)
 			}

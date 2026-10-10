@@ -95,7 +95,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 // bubble is a question: right-aligned on the primary color.
 func (p *witPanel) bubble(c *ui.Context, text string) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Box(c).AlignSelf(ui.End).MaxWidthPercent(80).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Panel).
+	ui.Box(c).AlignSelf(ui.End).MaxWidthPercent(80).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Xl).
 		Background(t.Primary).TextColor(t.PrimaryText).Children(func() { ui.Text(c, text).Selectable() })
 }
 
@@ -119,7 +119,7 @@ func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int) {
 				continue
 			}
 			n := i + 1
-			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).
 				Background(t.WarningBg).TextColor(t.WarningText).FontSize(t.Text.Sm).Role(ui.RoleStatus).Children(func() {
 				ui.Icon(c, icons.Get("triangle-alert")).Size(theme.Icon, theme.Icon)
 				ui.Text(c, i18n.Tf("wit.suspect", citeRef(n))).Grow(1).Shrink(1)
@@ -195,7 +195,7 @@ func (p *witPanel) card(c *ui.Context, ap core.Approval, many bool) {
 	if key := "wit.tool." + ap.Tool; i18n.T(key) != key {
 		action = i18n.T(key)
 	}
-	ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.Tf("wit.approval.wants", action)).FontWeight(600)
 			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
@@ -273,7 +273,7 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	if label == "" {
 		label = i18n.T("wit.input")
 	}
-	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Background(t.Background)
+	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.X3l).Background(t.Background)
 	kit.Float(c, box).Children(func() {
 		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line

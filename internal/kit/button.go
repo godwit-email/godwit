@@ -63,9 +63,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		}
 		return b
 	}
-	b.Height(h).Radius(t.Radius.Md)
+	b.Height(h).Radius(t.Radius.Lg)
 	if square {
-		b.Width(h).Radius(t.Radius.Sm)
+		b.Width(h).Radius(t.Radius.Md)
 		if o.Size == SizeXs {
 			b.Radius(t.Radius.Full)
 		}

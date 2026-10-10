@@ -26,7 +26,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 			tst := toasts[len(toasts)-1-i]
 			toast := ui.ToastBase(c, tst)
 			look := toastLook(t, tst.Type)
-			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(look.bg).Border(theme.Hairline, look.border).
+			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.X2l).Background(look.bg).Border(theme.Hairline, look.border).
 				TextColor(look.fg).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -2 * theme.MotionOffset}, Exit: &ui.Motion{Y: -2 * theme.MotionOffset}})
 			Elevate(c, toast.Root, theme.ShadowLg)
@@ -41,11 +41,11 @@ func ToastHost(c *ui.Context, closeLabel string) {
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, look.border).Children(func() {
+					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, look.border).Children(func() {
 						ui.Text(c, tst.Action)
 					})
 				}
-				toast.CloseButton().Label(closeLabel).Size(theme.CloseButton, theme.CloseButton).Radius(t.Radius.Xs).Center().TextColor(look.muted).Children(func() {
+				toast.CloseButton().Label(closeLabel).Size(theme.CloseButton, theme.CloseButton).Radius(t.Radius.Sm).Center().TextColor(look.muted).Children(func() {
 					ui.Icon(c, icons.Get("x")).Size(theme.IconSm, theme.IconSm)
 				})
 			})
