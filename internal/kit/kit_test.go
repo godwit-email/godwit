@@ -538,3 +538,33 @@ func TestKitBareInputMatchesBase(t *testing.T) {
 		t.Errorf("normal edge pixel %v, want border %v", px(rn), rgb(th.Border))
 	}
 }
+
+func TestGalleryRendersInBothAppearances(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		var g GalleryState
+		tt := ui.NewTester(themed(func(c *ui.Context) { Gallery(c, &g) }), 1200, 8000)
+		tt.SetDark(dark)
+		tt.Frame()
+		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
+			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
+			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast", "Show toast"} {
+			if !tt.HasText(s) {
+				t.Errorf("dark=%v: no %q", dark, s)
+			}
+		}
+		for _, o := range [][2]string{{"Open Dialog", "Dialog sample text"}, {"Open Sheet", "Sheet sample text"}, {"Open Popover", "Popover sample text"}} {
+			if err := tt.Click(o[0]); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			if !tt.HasText(o[1]) {
+				t.Errorf("dark=%v: %s shows no %q", dark, o[0], o[1])
+			}
+			tt.Key(0, ui.KeyEscape)
+			tt.Frame()
+			if tt.HasText(o[1]) {
+				t.Errorf("dark=%v: Escape left %q", dark, o[1])
+			}
+		}
+	}
+}

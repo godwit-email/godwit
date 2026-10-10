@@ -252,3 +252,23 @@ func TestCheckSettingsCopy(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+func TestKitRailOnlyInDev(t *testing.T) {
+	t.Run("production", func(t *testing.T) {
+		if withAccountHarness(t, newHarness).tt.HasText("Kit") {
+			t.Fatal("the Kit entry shows in a production build")
+		}
+	})
+	t.Run("dev", func(t *testing.T) {
+		d := withAccountHarness(t, newDevHarness)
+		d.click("Kit")
+		d.see("Button")
+	})
+}
+
+// withAccountHarness is mk's harness with one account, its initial load applied (past onboarding).
+func withAccountHarness(t *testing.T, mk func(*testing.T, ...func(*coretest.Env)) *harness) *harness {
+	h := mk(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h
+}

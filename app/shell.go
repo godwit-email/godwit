@@ -274,6 +274,9 @@ func (a *App) rail(c *ui.Context) {
 		a.railItem(c, "mail", i18n.T("shell.rail.mail"), Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 		a.railItem(c, "sparkles", i18n.T("shell.rail.wit"), Route{Page: PageWit})
 		ui.Spacer(c)
+		if a.dev {
+			a.railItem(c, "component", "Kit", Route{Page: PageKit})
+		}
 		a.railItem(c, "sliders-horizontal", i18n.T("shell.rail.settings"), Route{Page: PageSettings})
 	})
 }
