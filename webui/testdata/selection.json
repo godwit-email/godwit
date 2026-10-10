@@ -16,5 +16,9 @@
   {"name": "into bold", "html": "<p>Hello <b>Lena</b>, hi</p>", "text": "Hello Lena, hi", "selected": "Hello Lena", "start": 0, "end": 10, "range": "Hello <b>Lena</b>"},
   {"name": "out of bold", "html": "<p>Hello <b>Lena</b>, hi</p>", "text": "Hello Lena, hi", "selected": "Lena, hi", "start": 6, "end": 14, "range": "<b>Lena</b>, hi"},
   {"name": "italic block start", "html": "<p><i>Italic</i> text</p>", "text": "Italic text", "selected": "It", "start": 0, "end": 2, "range": "It"},
-  {"name": "inside link", "html": "<p>See <a href=\"https://x.org\">the doc</a> now</p>", "text": "See the doc now", "selected": "doc", "start": 8, "end": 11, "range": "doc"}
+  {"name": "inside link", "html": "<p>See <a href=\"https://x.org\">the doc</a> now</p>", "text": "See the doc now", "selected": "doc", "start": 8, "end": 11, "range": "doc"},
+  {"name": "format switch before", "html": "<p><i>X</i><b>AB</b>C</p>", "text": "XABC", "selected": "ABC", "start": 1, "end": 4, "range": "<b>AB</b>C"},
+  {"name": "format switch after", "html": "<p>A<b>BC</b><i>X</i></p>", "text": "ABCX", "selected": "ABC", "start": 0, "end": 3, "range": "A<b>BC</b>"},
+  {"name": "nested", "html": "<p>a <b><i>bold italic</i></b> z</p>", "text": "a bold italic z", "selected": "a bold italic", "start": 0, "end": 13, "range": "a <b><i>bold italic</i></b>"},
+  {"name": "next to link", "html": "<p><a href=\"https://x.org\">doc</a><b>s</b> here</p>", "text": "docs here", "selected": "docs", "start": 0, "end": 4, "range": "<a href=\"https://x.org\">doc</a><b>s</b>"}
 ]

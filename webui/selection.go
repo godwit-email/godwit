@@ -127,15 +127,34 @@ func plainText(editable string) (text string, lo, hi []int) {
 
 // selectionRange is the byte range of editable for [start, end) of its
 // plainText: tight (from right before the first character to right after
-// the last), else widened over the tags around it when that balances it, so
-// a whole formatted run is replaced with its tags.
+// the last), else the narrowest balanced range whose ends sit on any tag
+// boundary of the gaps around it, so a formatted run is replaced with its
+// tags; ties go to the earlier start, then the earlier end. With none
+// balanced (across blocks), it is the tight range.
 func selectionRange(editable string, lo, hi []int, start, end int) (int, int) {
-	for _, c := range [][2]int{{hi[start], lo[end]}, {lo[start], lo[end]}, {hi[start], hi[end]}, {lo[start], hi[end]}} {
-		if c[0] < c[1] && balanced(editable[c[0]:c[1]]) {
-			return c[0], c[1]
+	from, to := hi[start], lo[end]
+	best := -1
+	for _, s := range boundaries(editable, lo[start], hi[start]) {
+		for _, e := range boundaries(editable, lo[end], hi[end]) {
+			widen := hi[start] - s + e - lo[end] // bytes past the tight range: 0 for it
+			if s < e && (best < 0 || widen < best) && balanced(editable[s:e]) {
+				from, to, best = s, e, widen
+			}
 		}
 	}
-	return hi[start], lo[end]
+	return from, to
+}
+
+// boundaries are the offsets from a to b at which a tag starts or ends:
+// editable[a:b] holds only tags.
+func boundaries(editable string, a, b int) []int {
+	out := []int{a}
+	z := xhtml.NewTokenizer(strings.NewReader(editable[a:b]))
+	for p := a; z.Next() != xhtml.ErrorToken; {
+		p += len(z.Raw())
+		out = append(out, p)
+	}
+	return out
 }
 
 // balanced reports whether every tag in h that opens closes in it, and
