@@ -534,7 +534,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	ls.list.Key = func(i int) any { return rows[i].key() }
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := ui.List(c, &ls.list, len(rows), func(i int) {
+	l := kit.List(c, &ls.list, len(rows), func(i int) {
 		it := rows[i]
 		p.row(c, it).ContextMenu(func(m *ui.Menu) {
 			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {

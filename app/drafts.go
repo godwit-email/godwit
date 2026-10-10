@@ -20,7 +20,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
-	ui.List(c, &p.draftList, len(drafts), func(i int) {
+	kit.List(c, &p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
 		subject, to := d.Subject, strings.Join(d.To, ", ")
 		if subject == "" {

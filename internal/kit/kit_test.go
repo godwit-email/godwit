@@ -726,3 +726,24 @@ func TestKitSidebarIconMuted(t *testing.T) {
 		t.Errorf("hovered icon darkest %d, want darker than muted %d", got, th.Muted.R)
 	}
 }
+
+// TestKitListSelectedGray: a List's selected row is the sidebar's selected
+// gray, not mygo's accent (the near-black primary).
+func TestKitListSelectedGray(t *testing.T) {
+	var th theme.Tokens
+	var s ui.ListState
+	cur := 0
+	s.Selected = &cur
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = theme.Of(c)
+		List(c, &s, 2, func(i int) { ui.Text(c, []string{"one", "two"}[i]).Padding(8) }).Height(100)
+	}), 300, 120)
+	r, ok := tt.Find("one")
+	if !ok {
+		t.Fatal("no row")
+	}
+	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2)) // in the text's padding
+	if want := th.SidebarSelected; got.R != want.R || got.G != want.G || got.B != want.B {
+		t.Errorf("selected row %v, want %v", got, want)
+	}
+}
