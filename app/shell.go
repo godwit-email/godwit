@@ -314,7 +314,10 @@ func (a *App) panel(c *ui.Context) {
 		}
 		a.sidebarW = a.sidebarWidth()
 		split := kit.Split(c, &a.sidebarW, func() {
-			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
+			// Rounded itself, inside the panel's border: the GPU renderer does not
+			// round the panel's clip, and the material shows past a square corner.
+			in := t.Radius.Panel - theme.Hairline
+			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(in, 0, 0, in).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
 		}, content).Grow(1)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
 		if split.Changed() {
