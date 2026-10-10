@@ -62,7 +62,7 @@ func newComposeWit(p *composer) *composeWit {
 // openConversation shows the draft's conversation with an edit waiting, or
 // its Assist conversation.
 func (w *composeWit) openConversation() {
-	svc, id := w.p.a.svc, w.p.id
+	svc, id, tok := w.p.a.svc, w.p.id, w.panel.follows
 	var conv int64
 	w.p.a.do(func(ctx context.Context) error {
 		cs, err := draftConversations(ctx, svc, id)
@@ -86,6 +86,9 @@ func (w *composeWit) openConversation() {
 	}, func(err error) {
 		if err != nil {
 			w.p.a.toastErr(err)
+		}
+		if w.panel.follows != tok {
+			return // asked meanwhile: the panel shows that run, not a conversation read before it
 		}
 		w.panel.open(conv)
 	})

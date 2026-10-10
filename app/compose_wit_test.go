@@ -111,7 +111,7 @@ func TestEditorLockedDuringRun(t *testing.T) {
 	h.see("先接受或拒绝助手的修改")
 	h.click("停止")
 	h.until("stopped", func() bool {
-		return !p.wit.panel.running && !h.tt.HasText("助手正在写入正文，暂时不能编辑")
+		return !p.wit.locked() && !h.tt.HasText("助手正在写入正文，暂时不能编辑") // the draft read after the run included
 	})
 	h.writeBody(" there")
 	h.until("typed", func() bool { return strings.Contains(p.ed.HTML(), "Hello there") })
