@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -71,13 +72,16 @@ type Windows struct {
 	byDraft map[int64]*win
 	byID    map[int]*win
 	batch   *closeBatch // the CloseAll in progress
+	// releasing holds the drafts whose closed window is being released:
+	// true when an Open waits for that to finish.
+	releasing map[int64]bool
 }
 
 // NewWindows opens windows with newWindow. ask shows 「有修改没有保存」 for
 // a window whose last input could not be saved: true closes it anyway.
 // Windows hears the pages' final flush through c.OnClosed.
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
-	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{},
+	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{}, releasing: map[int64]bool{},
 		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop },
 		spawn: func(f func()) { go f() }}
 	c.OnClosed(ws.answer)
@@ -85,10 +89,17 @@ func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Win
 	return ws
 }
 
-// Open shows draftID's window, opening it unless it is open already.
+// Open shows draftID's window, opening it unless it is open already. While
+// the draft's closed window is still being released, the Open waits for
+// that: it opens then, unless the release deleted the draft as empty.
 func (ws *Windows) Open(draftID int64) {
 	ws.mu.Lock()
 	x := ws.byDraft[draftID]
+	if _, ok := ws.releasing[draftID]; ok && x == nil {
+		ws.releasing[draftID] = true
+		ws.mu.Unlock()
+		return
+	}
 	ws.mu.Unlock()
 	if x != nil {
 		x.w.Focus()
@@ -196,11 +207,25 @@ func (ws *Windows) Closed(winID int) {
 		x.state = destroying
 		if ws.byDraft[x.draft] == x {
 			delete(ws.byDraft, x.draft)
+			ws.releasing[x.draft] = false
 		}
 	}
 	ws.mu.Unlock()
 	ws.spawn(func() {
 		ws.c.Release(winID)
+		if x != nil {
+			ws.mu.Lock()
+			reopen, ok := ws.releasing[x.draft]
+			delete(ws.releasing, x.draft)
+			ws.mu.Unlock()
+			if ok && reopen {
+				if ws.c.exists(x.draft) {
+					ws.Open(x.draft)
+				} else {
+					log.Printf("not opening draft %d: deleted as empty when its window closed", x.draft)
+				}
+			}
+		}
 		ws.mu.Lock()
 		done := func() {}
 		if x != nil && ws.byID[winID] == x {

@@ -245,7 +245,11 @@ func (c *cascade) closed(w placed) {
 // that is gone gets an error, never a dialog of its own.
 func pickFiles(_ context.Context, winID int) ([]string, error) {
 	w := mygo.WindowByID(winID)
-	if w == nil {
+	// ponytail: the window can still go between this check and the panel
+	// showing, and then mygo shows it app-modal; harmless, since the files are
+	// dropped (ErrNoDraft) once the window is released. Needs a mygo
+	// Dialog.Open that fails when its parent is gone.
+	if w == nil || w.IsDestroyed() {
 		return nil, errors.New("no window to attach the file dialog to")
 	}
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})

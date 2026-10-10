@@ -107,6 +107,18 @@ func (c *Compose) Release(winID int) {
 	}
 }
 
+// exists reports whether draft id is still stored.
+func (c *Compose) exists(id int64) bool {
+	c.mu.Lock()
+	svc := c.svc
+	c.mu.Unlock()
+	if svc == nil {
+		return false
+	}
+	_, err := svc.GetDraft(context.Background(), id)
+	return err == nil
+}
+
 // OnClosed sets the hook that hears the page's final flush: gen is the
 // close attempt it answers (the Closing event's payload), saved whether it
 // succeeded.

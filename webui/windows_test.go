@@ -51,6 +51,8 @@ func newWinFixture(t *testing.T) *winFixture {
 	t.Helper()
 	f := &winFixture{fixture: newFixture(t)}
 	f.ws = NewWindows(f.c, func(int64) Window {
+		f.mu.Lock()
+		defer f.mu.Unlock()
 		w := &fakeWin{id: len(f.made) + 1, ws: f.ws}
 		f.made = append(f.made, w)
 		return w
@@ -203,6 +205,54 @@ func TestWindowsClosedReleasesOffCaller(t *testing.T) {
 	assert.True(t, <-results)
 	assert.True(t, f.gone(t, d.ID), "released before the quit went on")
 	assert.Zero(t, f.ws.Count())
+}
+
+// windows is how many windows were made so far.
+func (f *winFixture) windows() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.made)
+}
+
+// Opening a draft whose closed window is still being released waits for
+// the release: a draft kept opens then; one deleted as empty does not.
+func TestWindowsOpenWaitsForRelease(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		kept bool
+	}{{"<p>kept</p>", true}, {"<p></p>", false}} {
+		t.Run(tc.body, func(t *testing.T) {
+			f := newWinFixture(t)
+			f.ws.spawn = func(fn func()) { go fn() }
+			d := f.draft(t, "new", 0)
+			f.ws.Open(d.ID)
+			w := f.made[0]
+			inSave, resume := make(chan struct{}), make(chan struct{})
+			saveHook = func() { close(inSave); <-resume }
+			t.Cleanup(func() { saveHook = nil })
+			saved := make(chan error)
+			go func() {
+				_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: tc.body, Revision: d.Revision})
+				saved <- err
+			}()
+			<-inSave
+			f.ws.Closed(w.id) // the release waits for the save
+			f.ws.Open(d.ID)
+			assert.Equal(t, 1, f.windows(), "no second window while the first is released")
+			close(resume)
+			require.NoError(t, <-saved)
+			if tc.kept {
+				require.Eventually(t, func() bool { return f.windows() == 2 }, 5*time.Second, time.Millisecond)
+				require.Eventually(t, func() bool { return f.ws.Count() == 1 }, 5*time.Second, time.Millisecond)
+				_, err := f.page.Load(f.ctx(f.made[1].id))
+				assert.NoError(t, err)
+				return
+			}
+			require.Eventually(t, func() bool { return f.ws.Count() == 0 }, 5*time.Second, time.Millisecond)
+			assert.True(t, f.gone(t, d.ID))
+			assert.Equal(t, 1, f.windows(), "no window for a deleted draft")
+		})
+	}
 }
 
 func TestWindowsDoneDestroysWithoutAsking(t *testing.T) {
