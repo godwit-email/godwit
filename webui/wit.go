@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	netmail "net/mail"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -13,7 +14,9 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/richtext"
 )
 
 // WitStream carries the Wit events of a compose window's draft, emitted to
@@ -138,6 +141,7 @@ var startHook, followHook func()
 // nothing and shows nothing twice.
 type follow struct {
 	conv    int64
+	direct  bool // a ⌘K run's own events, no subscription: it ends with the run
 	stop    func()
 	mu      sync.Mutex // held while emitting, so nothing is emitted once ended
 	stopped bool
@@ -191,7 +195,7 @@ func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emi
 		return nil, ErrNoDraft
 	}
 	old := c.follows[win]
-	if old != nil && old.conv == conv {
+	if old != nil && old.conv == conv && !old.direct {
 		c.mu.Unlock()
 		return old, nil
 	}
@@ -202,24 +206,48 @@ func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emi
 	if old != nil {
 		old.end()
 	}
-	go func() {
-		for ev := range ch {
-			we := witEvent(conv, ev)
-			f.mu.Lock()
-			switch {
-			case f.stopped:
-			case f.held:
-				f.buf = append(f.buf, we)
-				if ends(ev) {
-					f.ended[ev.RunID] = true
-				}
-			case emit != nil:
-				emit(win, we)
-			}
-			f.mu.Unlock()
-		}
-	}()
+	go f.pump(win, ch, emit)
 	return f, nil
+}
+
+// followRun makes window win follow run's own events ch, of conversation
+// conv, in place of what it followed: RewriteSelection makes its
+// conversation, so nothing could subscribe to it before the run. A
+// decision or Follow later subscribes to the conversation.
+func (c *Compose) followRun(win int, s *session, conv int64, ch <-chan core.WitEvent, emit func(int, WitEvent)) error {
+	c.mu.Lock()
+	if c.sessions[win] != s {
+		c.mu.Unlock()
+		return ErrNoDraft
+	}
+	old := c.follows[win]
+	f := &follow{conv: conv, stop: func() {}, direct: true}
+	c.follows[win] = f
+	c.mu.Unlock()
+	if old != nil {
+		old.end()
+	}
+	go f.pump(win, ch, emit)
+	return nil
+}
+
+// pump sends ch's events to window win until ch closes.
+func (f *follow) pump(win int, ch <-chan core.WitEvent, emit func(int, WitEvent)) {
+	for ev := range ch {
+		we := witEvent(f.conv, ev)
+		f.mu.Lock()
+		switch {
+		case f.stopped:
+		case f.held:
+			f.buf = append(f.buf, we)
+			if ends(ev) {
+				f.ended[ev.RunID] = true
+			}
+		case emit != nil:
+			emit(win, we)
+		}
+		f.mu.Unlock()
+	}
 }
 
 // unfollow ends window win's subscription.
@@ -590,4 +618,244 @@ func keyed(err error) error {
 		log.Printf("wit: %v", err)
 	}
 	return &keyError{key: key, err: err}
+}
+
+// BodyChange is the draft after a Wit action, read again: Body is its
+// editable HTML as stored, which the page adopts with the Change at once.
+type BodyChange struct {
+	Change
+	// Body is the editable HTML as stored.
+	Body string `json:"body"`
+}
+
+// RunStart is a ⌘K run started, or Conflict: the draft is not at the
+// revision, or its text is not the text the page sent. Revision is the
+// draft's stored revision.
+type RunStart struct {
+	Run      int64 `json:"run"`
+	Revision int64 `json:"revision"`
+	Conflict bool  `json:"conflict"`
+}
+
+var (
+	// ErrBadDecisions is returned for decisions that are not one 1 (accept)
+	// or -1 (reject) per change of an inline review.
+	ErrBadDecisions = errors.New("one decision, 1 or -1, per change of an inline review")
+	// ErrBadSelection is returned for an empty selection or one outside the text.
+	ErrBadSelection = errors.New("the selection is empty or outside the text")
+	// ErrBadLink is returned for a link that is not http, https or mailto.
+	ErrBadLink = errors.New("only http, https and mailto links open")
+)
+
+// pendingApproval is approval id of the draft's conversations, waiting for
+// a decision; else core.ErrInvalidState.
+func pendingApproval(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
+	cs, err := draftConversations(ctx, svc, draftID)
+	if err != nil {
+		return core.Approval{}, err
+	}
+	for _, c := range cs {
+		as, err := svc.ListApprovals(ctx, c.ID)
+		if err != nil {
+			return core.Approval{}, err
+		}
+		for _, a := range as {
+			if a.ID == id && a.State == "pending" {
+				return a, nil
+			}
+		}
+	}
+	return core.Approval{}, core.ErrInvalidState
+}
+
+// pendingEdit is pendingApproval for a draft edit only.
+func pendingEdit(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
+	a, err := pendingApproval(ctx, svc, draftID, id)
+	if err == nil && !isDraftEdit(a.Tool) {
+		err = core.ErrInvalidState
+	}
+	return a, err
+}
+
+// Review is approval, a draft edit of the calling window's draft waiting
+// for a decision, as the page reviews it.
+func (p *ComposePage) Review(ctx context.Context, approval int64) (Review, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return Review{}, keyed(err)
+	}
+	defer s.mu.Unlock()
+	a, err := pendingEdit(ctx, svc, s.draftID, approval)
+	if err != nil {
+		return Review{}, keyed(err)
+	}
+	return newProposal(a).review(), nil
+}
+
+// Decide accepts or rejects approval, one of the calling window's draft.
+// The window follows its conversation first, so the run it resumes streams
+// on WitStream. A draft changed since the edit was proposed is Conflict.
+func (p *ComposePage) Decide(ctx context.Context, approval int64, accept bool) (BodyChange, error) {
+	return p.decide(ctx, approval, func(svc *core.Service, a core.Approval) error {
+		return svc.ResolveApproval(context.WithoutCancel(ctx), a.ID, accept)
+	})
+}
+
+// Finish settles approval, an inline draft edit, with a decision per change
+// (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
+// decides it; a mix applies the text the decisions make. As Decide.
+func (p *ComposePage) Finish(ctx context.Context, approval int64, decisions []int) (BodyChange, error) {
+	return p.decide(ctx, approval, func(svc *core.Service, a core.Approval) error {
+		r := newProposal(a)
+		if !r.inline() || len(decisions) != len(r.changes) || slices.ContainsFunc(decisions, func(d int) bool { return d != 1 && d != -1 }) {
+			return ErrBadDecisions
+		}
+		ctx := context.WithoutCancel(ctx)
+		if accept := !slices.Contains(decisions, -1); accept || !slices.Contains(decisions, 1) {
+			return svc.ResolveApproval(ctx, a.ID, accept)
+		}
+		return svc.ApplyEditedProposal(ctx, a.ID, richtext.ToHTML(r.result(decisions)))
+	})
+}
+
+// decide runs act on pending approval of the calling window's draft, the
+// window following its conversation first, and reads the draft after.
+func (p *ComposePage) decide(ctx context.Context, approval int64, act func(*core.Service, core.Approval) error) (BodyChange, error) {
+	win, svc, s, err := p.open(ctx)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	defer s.mu.Unlock()
+	a, err := pendingApproval(ctx, svc, s.draftID, approval)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	if _, err := p.c.follow(win, s, svc, a.ConversationID, p.d.Emit); err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	return bodyChange(ctx, svc, s, act(svc, a))
+}
+
+// bodyChange is the draft as stored after an action that ended in err:
+// ErrStaleDraft is a Conflict.
+func bodyChange(ctx context.Context, svc *core.Service, s *session, err error) (BodyChange, error) {
+	if errors.Is(err, core.ErrStaleDraft) {
+		return BodyChange{Change: conflict}, nil
+	}
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	d, err := svc.GetDraft(ctx, s.draftID)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	return BodyChange{Change: changeOf(d), Body: s.adopt(d)}, nil
+}
+
+// Undo takes back the latest edit Wit applied to the calling window's
+// draft (core UndoLastAssist).
+func (p *ComposePage) Undo(ctx context.Context) (BodyChange, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	defer s.mu.Unlock()
+	return bodyChange(ctx, svc, s, svc.UndoLastAssist(context.WithoutCancel(ctx), s.draftID))
+}
+
+// Rewrite rewrites [start, end) of the calling window's draft as
+// instruction says (⌘K, core RewriteSelection). The page saved revision
+// and sends its text and the selection in it in UTF-16 offsets (the
+// plainText contract); a draft not at revision, or with another text, is
+// Conflict. The run's events go to the window on WitStream.
+func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, start, end int, instruction string) (RunStart, error) {
+	win, svc, s, err := p.open(ctx)
+	if err != nil {
+		return RunStart{}, keyed(err)
+	}
+	defer s.mu.Unlock()
+	d, err := svc.GetDraft(ctx, s.draftID)
+	if err != nil {
+		return RunStart{}, keyed(err)
+	}
+	editable, _, _ := mail.SplitDraft(d.HTML)
+	stored, offs := plainText(editable)
+	if d.Revision != revision || stored != text {
+		return RunStart{Revision: d.Revision, Conflict: true}, nil
+	}
+	if start < 0 || start >= end || end >= len(offs) || offs[start] < 0 || offs[end] < 0 {
+		return RunStart{}, keyed(ErrBadSelection)
+	}
+	sel := core.Selection{Revision: revision, Start: offs[start], End: offs[end]}
+	ch, err := svc.RewriteSelection(context.WithoutCancel(ctx), s.draftID, sel, instruction)
+	if errors.Is(err, core.ErrStaleDraft) {
+		return RunStart{Revision: d.Revision, Conflict: true}, nil
+	}
+	if err != nil {
+		return RunStart{}, keyed(err)
+	}
+	cs, err := draftConversations(ctx, svc, s.draftID)
+	var c core.Conversation
+	if err == nil && len(cs) > 0 { // the newest: the run's, made before it returned
+		c, err = svc.GetConversation(ctx, cs[len(cs)-1].ID)
+	}
+	if err == nil {
+		err = p.c.followRun(win, s, c.ID, ch, p.d.Emit)
+	}
+	if err != nil {
+		go func() {
+			for range ch {
+			}
+		}()
+		return RunStart{}, keyed(err)
+	}
+	run := c.ActiveRunID
+	if run == 0 && len(c.Runs) > 0 { // over already
+		run = c.Runs[len(c.Runs)-1].ID
+	}
+	return RunStart{Run: run, Revision: d.Revision}, nil
+}
+
+// OpenLink opens a link from Wit's answer: an http or https one in the
+// browser; a mailto one as a new draft to its addresses, from the calling
+// window's account, in a compose window. Any other is ErrBadLink.
+func (p *ComposePage) OpenLink(ctx context.Context, link string) error {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	draftID := s.draftID
+	s.mu.Unlock()
+	u, err := url.Parse(link)
+	if err != nil {
+		return keyed(ErrBadLink)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return keyed(p.d.OpenURL(link))
+	case "mailto":
+	default:
+		return keyed(ErrBadLink)
+	}
+	addrs, _ := url.PathUnescape(u.Opaque)
+	var to []string
+	for _, a := range strings.Split(addrs, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			to = append(to, a)
+		}
+	}
+	from, err := svc.GetDraft(ctx, draftID)
+	if err != nil {
+		return keyed(err)
+	}
+	d, err := svc.NewDraft(ctx, from.AccountID, "new", 0)
+	if err == nil {
+		d.To = to
+		d, err = svc.SaveDraft(ctx, d)
+	}
+	if err != nil {
+		return keyed(err)
+	}
+	p.d.OpenCompose(d.ID)
+	return nil
 }

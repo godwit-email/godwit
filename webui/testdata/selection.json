@@ -1,0 +1,14 @@
+[
+  {"name": "plain", "html": "<p>Hello world</p>", "text": "Hello world", "selected": "world", "start": 6, "end": 11, "range": "world"},
+  {"name": "cjk", "html": "<p>你好世界</p>", "text": "你好世界", "selected": "世界", "start": 2, "end": 4, "range": "世界"},
+  {"name": "emoji", "html": "<p>Hi 😀 there</p>", "text": "Hi 😀 there", "selected": "😀 there", "start": 3, "end": 11, "range": "😀 there"},
+  {"name": "entity", "html": "<p>Tom &amp; Jerry &lt;3</p>", "text": "Tom & Jerry <3", "selected": "& Jerry <", "start": 4, "end": 13, "range": "&amp; Jerry &lt;"},
+  {"name": "bold", "html": "<p>Hello <b>Lena</b>, hi</p>", "text": "Hello Lena, hi", "selected": "Lena", "start": 6, "end": 10, "range": "<b>Lena</b>"},
+  {"name": "bold inside", "html": "<p>Hello <b>Lena</b>, hi</p>", "text": "Hello Lena, hi", "selected": "en", "start": 7, "end": 9, "range": "en"},
+  {"name": "link", "html": "<p>See <a href=\"https://x.org\">the doc</a> now</p>", "text": "See the doc now", "selected": "the doc now", "start": 4, "end": 15, "range": "<a href=\"https://x.org\">the doc</a> now"},
+  {"name": "soft break", "html": "<p>one<br>two</p>", "text": "one\ntwo", "selected": "e\nt", "start": 2, "end": 5, "range": "e<br/>t"},
+  {"name": "trailing soft break", "html": "<p>line<br><br></p><p>next</p>", "text": "line\n\nnext", "selected": "line\n", "start": 0, "end": 5, "range": "line<br/>"},
+  {"name": "empty paragraph", "html": "<p>a</p><p><br></p><p>b</p>", "text": "a\n\nb", "selected": "b", "start": 3, "end": 4, "range": "b"},
+  {"name": "two paragraphs", "html": "<p>First para.</p><p>Second para.</p>", "text": "First para.\nSecond para.", "selected": "para.\nSecond", "start": 6, "end": 18, "range": "para.</p><p>Second"},
+  {"name": "list item", "html": "<ul><li><p>one</p></li><li><p>two</p></li></ul>", "text": "one\ntwo", "selected": "two", "start": 4, "end": 7, "range": "two"}
+]

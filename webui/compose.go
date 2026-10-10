@@ -172,6 +172,10 @@ type PageDeps struct {
 	PickFiles func(ctx context.Context, winID int) ([]string, error)
 	// Emit sends a Wit event to window winID (WitStream.Emit in production).
 	Emit func(winID int, ev WitEvent)
+	// OpenURL opens an http(s) link in the browser; OpenCompose opens draft
+	// id in a compose window.
+	OpenURL     func(url string) error
+	OpenCompose func(draftID int64)
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on

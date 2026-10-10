@@ -52,6 +52,24 @@ export interface Attachment {
   size: number;
 }
 
+/**
+ * BodyChange is the draft after a Wit action, read again: Body is its
+ * editable HTML as stored, which the page adopts with the Change at once.
+ */
+export interface BodyChange {
+  /** Revision and Attachments are the draft's after the change. */
+  revision: number;
+  attachments: Attachment[];
+  /** Conflict means the draft changed elsewhere: nothing was done. */
+  conflict: boolean;
+  /** Signature is the draft's signature as plain text. */
+  signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
+  /** Body is the editable HTML as stored. */
+  body: string;
+}
+
 /** Change is the outcome of an account switch or an attachment change. */
 export interface Change {
   /** Revision and Attachments are the draft's after the change. */
@@ -130,6 +148,83 @@ export interface ComposeState {
 export interface Language {
   tag: string;
   name: string;
+}
+
+/** Review is a pending draft edit as the compose page reviews it. */
+export interface Review {
+  approval: number;
+  tool: string;
+  /**
+   * Inline means the changes are shown and decided word by word (Finish);
+   * else it is a rewrite, decided as a whole (Decide).
+   */
+  inline: boolean;
+  /**
+   * Ratio is the share of words changed; Exact means the diff completed
+   * within its budget with the block shapes kept (else wit.compose.rewrite_plain).
+   */
+  ratio: number;
+  exact: boolean;
+  /**
+   * Blocks are the new text with the changes marked, when Exact; Changes
+   * is how many changes they hold, the length Finish wants.
+   */
+  blocks: ReviewBlock[];
+  changes: number;
+  /** Old and New are the editable HTML before and after, for the compare. */
+  old: string;
+  new: string;
+}
+
+/** ReviewBlock is a block of the review. */
+export interface ReviewBlock {
+  /**
+   * Kind is paragraph, heading, quote, listItem or pre; Level and Ordered
+   * as in the editor (heading level, quote or list depth; an <ol> item).
+   */
+  kind: string;
+  level: number;
+  ordered: boolean;
+  /**
+   * Added and Removed mark a whole block added or removed: change Whole
+   * (else -1), even when it is empty.
+   */
+  added: boolean;
+  removed: boolean;
+  whole: number;
+  ops: ReviewOp[];
+}
+
+/** ReviewOp is a run of words kept, deleted or inserted. */
+export interface ReviewOp {
+  /** Kind is same, del or ins; Change the change it belongs to, -1 for same. */
+  kind: string;
+  change: number;
+  tokens: ReviewToken[];
+  /**
+   * Link, on the last op of a change of only a link's address, is the new
+   * address (wit.compose.link).
+   */
+  link: string;
+}
+
+/** ReviewToken is text in one style. */
+export interface ReviewToken {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  href: string;
+}
+
+/**
+ * RunStart is a ⌘K run started, or Conflict: the draft is not at the
+ * revision, or its text is not the text the page sent. Revision is the
+ * draft's stored revision.
+ */
+export interface RunStart {
+  run: number;
+  revision: number;
+  conflict: boolean;
 }
 
 /** SaveResult is the outcome of a save. */
@@ -297,9 +392,25 @@ export const ComposePage = {
   closed(gen: number, saved: boolean): Promise<void> {
     return call("ComposePage.Closed", gen, saved);
   },
+  /**
+   * Decide accepts or rejects approval, one of the calling window's draft.
+   * The window follows its conversation first, so the run it resumes streams
+   * on WitStream. A draft changed since the edit was proposed is Conflict.
+   */
+  decide(approval: number, accept: boolean): Promise<BodyChange> {
+    return call("ComposePage.Decide", approval, accept);
+  },
   /** Discard deletes the calling window's draft; the window closes (OnDone). */
   discard(): Promise<void> {
     return call("ComposePage.Discard");
+  },
+  /**
+   * Finish settles approval, an inline draft edit, with a decision per change
+   * (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
+   * decides it; a mix applies the text the decisions make. As Decide.
+   */
+  finish(approval: number, decisions: number[]): Promise<BodyChange> {
+    return call("ComposePage.Finish", approval, decisions);
   },
   /**
    * Follow makes the calling window follow its draft's conversation (an edit
@@ -327,11 +438,36 @@ export const ComposePage = {
     return call("ComposePage.Load");
   },
   /**
+   * OpenLink opens a link from Wit's answer: an http or https one in the
+   * browser; a mailto one as a new draft to its addresses, from the calling
+   * window's account, in a compose window. Any other is ErrBadLink.
+   */
+  openLink(link: string): Promise<void> {
+    return call("ComposePage.OpenLink", link);
+  },
+  /**
    * RemoveAttachment removes attachment id from the calling window's draft,
    * if the draft is at revision (else Conflict).
    */
   removeAttachment(id: number, revision: number): Promise<Change> {
     return call("ComposePage.RemoveAttachment", id, revision);
+  },
+  /**
+   * Review is approval, a draft edit of the calling window's draft waiting
+   * for a decision, as the page reviews it.
+   */
+  review(approval: number): Promise<Review> {
+    return call("ComposePage.Review", approval);
+  },
+  /**
+   * Rewrite rewrites [start, end) of the calling window's draft as
+   * instruction says (⌘K, core RewriteSelection). The page saved revision
+   * and sends its text and the selection in it in UTF-16 offsets (the
+   * plainText contract); a draft not at revision, or with another text, is
+   * Conflict. The run's events go to the window on WitStream.
+   */
+  rewrite(revision: number, text: string, start: number, end: number, instruction: string): Promise<RunStart> {
+    return call("ComposePage.Rewrite", revision, text, start, end, instruction);
   },
   /**
    * Save stores the edit in the calling window's draft, keeping its quote and
@@ -367,6 +503,13 @@ export const ComposePage = {
   /** Stop cancels run, which must be one of the calling window's draft. */
   stop(run: number): Promise<void> {
     return call("ComposePage.Stop", run);
+  },
+  /**
+   * Undo takes back the latest edit Wit applied to the calling window's
+   * draft (core UndoLastAssist).
+   */
+  undo(): Promise<BodyChange> {
+    return call("ComposePage.Undo");
   },
   /** WitInfo is what the Wit panel offers for the calling window's draft. */
   witInfo(): Promise<WitInfo> {
