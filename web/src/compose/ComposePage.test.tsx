@@ -42,8 +42,10 @@ const state = {
   body: "正文",
   quote: "> 原文",
   signature: "",
+  attachments: [],
   revision: 7,
   theme,
+  text: {},
 };
 
 beforeEach(() => {

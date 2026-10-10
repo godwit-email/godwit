@@ -102,7 +102,7 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	assert.EqualValues(t, 1, w.emitted.Load())
 	assert.False(t, w.destroyed())
 	// The page flushes, then reports.
-	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "最后一句", Revision: st.Revision})
+	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p>最后一句</p>", Revision: st.Revision})
 	require.NoError(t, err)
 	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.True(t, w.destroyed())
@@ -111,7 +111,7 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	stored, err := f.e.Svc.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
 	ed, _, _ := splitOf(stored.HTML)
-	assert.Equal(t, "最后一句", bodyText(ed))
+	assert.Equal(t, "<p>最后一句</p>", ed)
 	f.elapse() // the stopped timer, if a clock ran it anyway
 	assert.EqualValues(t, 1, w.destroys.Load())
 	assert.Zero(t, f.asked.Load())

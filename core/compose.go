@@ -376,20 +376,24 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 		return err
 	}
 	defer end()
-	return s.send(ctx, draftID)
+	return s.send(ctx, draftID, -1)
 }
 
-// send is Send inside a begun call.
-func (s *Service) send(ctx context.Context, draftID int64) error {
+// send is Send inside a begun call. A want >= 0 sends only that revision:
+// any other is ErrStaleDraft.
+func (s *Service) send(ctx context.Context, draftID, want int64) error {
 	for changes := 0; ; {
 		cs := s.sendCheckers()
-		rev := int64(-1) // no checks: the draft as it is when queued
+		rev := want // no checks: the draft as it is when queued (want < 0), or that revision
 		if len(cs) > 0 {
 			s.editMu.Lock()
 			d, err := s.GetDraft(ctx, draftID)
 			s.editMu.Unlock()
 			if err != nil {
 				return err
+			}
+			if want >= 0 && d.Revision != want {
+				return ErrStaleDraft
 			}
 			if _, err := recipients(d); err != nil {
 				return err // not sendable: nothing to check

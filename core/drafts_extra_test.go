@@ -89,3 +89,45 @@ func TestSetDraftAccount(t *testing.T) {
 	assert.Contains(t, string(msgs[0].Data), "notes.txt")
 	assert.Empty(t, e.Sent(a.ID))
 }
+
+func TestSendRevisionStale(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	d, err := e.Svc.SaveDraft(ctx, core.Draft{AccountID: acc.ID, Mode: "new", To: []string{"bob@example.com"}, HTML: "<p>one</p>"})
+	require.NoError(t, err)
+	old := d.Revision
+	d.HTML = "<p>two</p>"
+	d, err = e.Svc.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.Svc.SendRevision(ctx, d.ID, old), core.ErrStaleDraft)
+	assert.ErrorIs(t, e.Svc.SendAcknowledgedRevision(ctx, d.ID, old, ""), core.ErrStaleDraft)
+	_, err = e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err, "nothing sent")
+	require.NoError(t, e.Svc.SendRevision(ctx, d.ID, d.Revision))
+	_, err = e.Svc.GetDraft(ctx, d.ID)
+	assert.Error(t, err, "queued")
+}
+
+func TestDeleteDraftIfEmptyRevision(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	checked := d.Revision
+	d.HTML = "<p>typed after the check</p>"
+	_, err = e.Svc.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	deleted, err := e.Svc.DeleteDraftIfEmpty(ctx, d.ID, checked)
+	require.NoError(t, err)
+	assert.False(t, deleted)
+	_, err = e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err, "a save after the check keeps the draft")
+
+	empty, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	deleted, err = e.Svc.DeleteDraftIfEmpty(ctx, empty.ID, empty.Revision)
+	require.NoError(t, err)
+	assert.True(t, deleted)
+	_, err = e.Svc.GetDraft(ctx, empty.ID)
+	assert.Error(t, err)
+}

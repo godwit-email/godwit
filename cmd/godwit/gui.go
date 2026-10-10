@@ -65,11 +65,15 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	// Compose pages reach only their own window's draft; bound before Run.
 	pages := webui.NewCompose()
-	mygo.Bind(webui.NewComposePage(pages, func(ctx context.Context) (int, bool) {
-		if w := mygo.CallerWindow(ctx); w != nil {
-			return w.ID(), true
-		}
-		return 0, false
+	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
+		WinOf: func(ctx context.Context) (int, bool) {
+			if w := mygo.CallerWindow(ctx); w != nil {
+				return w.ID(), true
+			}
+			return 0, false
+		},
+		// ponytail: no file dialog until Task 2 wires mygo's, parented to winID.
+		PickFiles: func(context.Context, int) ([]string, error) { return nil, webui.ErrNoPicker },
 	}))
 	var windows *webui.Windows
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows) }, askUnsaved)
