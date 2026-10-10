@@ -32,6 +32,8 @@ export function Editor(props: {
     >
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <Toolbar t={t} linkOpen={linkOpen} onLinkOpenChange={setLinkOpen} attach={attach} />
+        {/* No overflow on the editable itself: WebKit (WKWebView) stops repainting a contenteditable
+            that is also a scroll container — typed text appeared only after a relayout. */}
         <PlateContent
           aria-label={t("compose.body")}
           placeholder={placeholder}
@@ -44,7 +46,7 @@ export function Editor(props: {
             e.preventDefault();
             if (!readOnly && editor.api.isExpanded()) setLinkOpen(true);
           }}
-          className="min-h-40 flex-1 overflow-auto rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+          className="min-h-40 flex-1 rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
         />
       </div>
     </Plate>
