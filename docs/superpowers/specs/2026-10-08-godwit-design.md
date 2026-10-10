@@ -312,7 +312,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 
   深色主题对应 shadcn neutral 的深色取值，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成色板值。
 - **图标**：Remix Icon v4.8.0（最后一个 Apache-2.0 版本，之后改用自有协议）的 SVG，用 `ui.Icon` 显示，随文字颜色变化。平时用 line 款；图标栏和侧栏选中的项换成同一图标的 fill 款。侧栏：邮件的统一视图和文件夹按角色配图标（收件箱、草稿、已发送、归档、垃圾邮件、废纸篓，其他文件夹用文件夹图标），设置的应用分组各有图标；未选中是 `Muted` 的 line 款，悬停变前景色。
-- **服务商标识**：Gmail、Outlook、QQ、163、126、iCloud 暂用 macOS「互联网账户」里的方块图标（取自系统资源，见 `internal/icons/brands/README.md`），其他服务商用文字方块。这些是苹果的美术资源、其他公司的商标，发布前换成各家官方品牌素材。
+- **服务商标识**：Gmail、Outlook、QQ、163、126、iCloud 用重绘的透明底 logo（`internal/icons/brands/`，256px），由 app 画在白色圆角方块上（`MarkTile` 白色，深色模式也是白，描边 `Outline`、`shadow-xs`，圆角取 `lg` 与边长四分之一中较小的），仿 macOS「互联网账户」的样子；其他服务商用文字方块。
 - **字体**：用 `ui.RegisterFont` 内嵌 Geist / Geist Mono；中文使用系统字体（苹方、微软雅黑、Noto Sans CJK），不内嵌，以免安装包过大。
 - **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用上面那套组件。
 - **组件库（`internal/kit`）**：上面那套组件集中在 `internal/kit`，按组件分文件，命名和变体对齐 shadcn/ui：

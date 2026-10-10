@@ -1,10 +1,9 @@
 # Provider marks
 
-The account providers' marks, taken from macOS's own Internet Accounts
-artwork (`AccountsUISettings.framework` `Assets.car`, the `modern_*_square`
-icons; iCloud's from `AOSUI.framework` `iCloud.icns`), scaled to 128 px
-(Outlook's is 64 px, the largest macOS has).
+The account providers' logos, 256 px on transparent, redrawn for Godwit
+after the icons macOS's Internet Accounts shows. The app draws the white
+rounded tile they sit on (see `mark` in app/onboarding.go). File names are
+provider IDs.
 
-They are Apple's artwork of other companies' trademarks, used for now to
-show which provider an account is. Replace them with each provider's own
-brand assets before a release.
+The logos are the providers' trademarks, used to show which provider an
+account is.

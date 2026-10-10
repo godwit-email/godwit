@@ -484,20 +484,21 @@ func heading(c *ui.Context, title, sub string) {
 	})
 }
 
-// mark is a provider's mark: its tile (icons.Brand), else its letters on a
-// rounded square.
+// mark is a provider's mark: its logo (icons.Brand) on a white tile, else
+// its letters on a rounded square.
 func mark(c *ui.Context, p auth.Provider, size float32) {
+	t := theme.Of(c)
+	r := min(t.Radius.Lg, size/4) // a quarter of small marks
 	if b := icons.Brand(p.ID); b != nil {
-		ui.Image(c, b).Size(size, size)
+		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile).Border(theme.Hairline, t.Outline)
+		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(size, size) })
 		return
 	}
 	text := providerMark(p)
-	t := theme.Of(c)
 	fs := t.Text.Xs
 	if size >= theme.MarkLg {
 		fs = t.Text.Base
 	}
-	r := min(t.Radius.Lg, size/4) // a quarter of small marks
 	ui.Box(c).Size(size, size).Radius(r).Background(t.Hover).Center().Children(func() {
 		ui.Text(c, text).FontSize(fs).FontWeight(600).TextColor(t.Foreground.Mix(t.Background, 0.25))
 	})
