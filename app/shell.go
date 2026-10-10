@@ -294,13 +294,13 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 	}
 }
 
-// panel is the page's sidebar and content as one block, its top-left corner
-// rounded.
+// panel is the page's sidebar and content as one rounded block, inset from
+// the window's right and bottom edges as onboarding's panel is.
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Radius(t.Radius.Xl, 0, 0, 0).Clip().Background(t.Background).
-		BorderWidth(theme.Hairline, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
+		Border(theme.Hairline, t.Border).Children(func() {
 		if !a.sidebarHidden {
 			ui.Column(c).Width(theme.SidebarWidth).Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).
 				BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
