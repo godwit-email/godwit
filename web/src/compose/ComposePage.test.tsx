@@ -502,6 +502,7 @@ test("account switch keeps body", async () => {
     attachments: [],
     conflict: false,
     signature: "-- work",
+    updatedAt: new Date(2026, 9, 10, 11, 42).getTime(),
   });
   render(<ComposePage />);
   const el = await body();
@@ -513,6 +514,7 @@ test("account switch keeps body", async () => {
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
   expect(await screen.findByText("-- work")).toBeInTheDocument();
   expect(el).toHaveValue("正文!");
+  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:42")).toBeInTheDocument();
 });
 
 test("an account switch that conflicts reverts the select", async () => {
@@ -521,6 +523,7 @@ test("an account switch that conflicts reverts the select", async () => {
     attachments: [],
     conflict: true,
     signature: "",
+    updatedAt: 0,
   });
   render(<ComposePage />);
   await body();
@@ -542,12 +545,14 @@ test("attachments: add reports oversize, × removes", async () => {
     signature: "-- me",
     tooLarge: ["big.zip"],
     failed: ["bad.bin"],
+    updatedAt: new Date(2026, 9, 10, 11, 43).getTime(),
   });
   vi.mocked(api.removeAttachment).mockResolvedValue({
     revision: 10,
     attachments: [],
     conflict: false,
     signature: "-- me",
+    updatedAt: 0,
   });
   render(<ComposePage />);
   await body();
@@ -556,6 +561,7 @@ test("attachments: add reports oversize, × removes", async () => {
   expect(screen.getByText("a.pdf")).toBeInTheDocument();
   expect(screen.getByText("big.zip")).toBeInTheDocument();
   expect(screen.getByText("未能添加：bad.bin")).toBeInTheDocument();
+  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:43")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(api.removeAttachment).toHaveBeenCalledWith(3, 9);
   expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
@@ -660,6 +666,7 @@ test("a conflict stopping the adding part way still lists the files added", asyn
     attachments: [a],
     conflict: true,
     signature: "-- me",
+    updatedAt: 0,
     tooLarge: [],
     failed: [],
   });

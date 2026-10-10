@@ -20,6 +20,8 @@ export interface AttachResult {
   conflict: boolean;
   /** Signature is the draft's signature as plain text. */
   signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
   /**
    * TooLarge are the files over the size limit; Failed those that failed
    * for another reason (logged).
@@ -45,6 +47,8 @@ export interface Change {
   conflict: boolean;
   /** Signature is the draft's signature as plain text. */
   signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
 }
 
 /**

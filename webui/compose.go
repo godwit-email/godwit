@@ -455,7 +455,7 @@ var conflict = Change{Conflict: true, Attachments: []Attachment{}}
 // changeOf is d's state after a change.
 func changeOf(d core.Draft) Change {
 	_, _, sig := mail.SplitDraft(d.HTML)
-	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig)}
+	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), UpdatedAt: d.UpdatedAt.UnixMilli()}
 }
 
 // attachments is d's attachments for the page, never nil.

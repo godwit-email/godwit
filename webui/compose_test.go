@@ -329,6 +329,7 @@ func TestComposeSetAccountKeepsBody(t *testing.T) {
 	assert.NotContains(t, ch.Signature, "Godwit")
 	assert.Equal(t, st.Revision+2, ch.Revision)
 	stored := f.stored(t, d.ID)
+	assert.Equal(t, stored.UpdatedAt.UnixMilli(), ch.UpdatedAt)
 	assert.Equal(t, acc2.ID, stored.AccountID)
 	ed, _, _ := splitOf(stored.HTML)
 	assert.Equal(t, "<p>B</p>", ed)
@@ -371,12 +372,14 @@ func TestComposeAttachments(t *testing.T) {
 	assert.Equal(t, []string{"big.bin"}, res.TooLarge)
 	assert.Empty(t, res.Failed)
 	assert.Equal(t, d.Revision+1, res.Revision)
+	assert.Equal(t, f.stored(t, d.ID).UpdatedAt.UnixMilli(), res.UpdatedAt)
 
 	ch, err := f.page.RemoveAttachment(f.ctx(1), res.Attachments[0].ID, res.Revision)
 	require.NoError(t, err)
 	assert.Empty(t, ch.Attachments)
 	assert.Equal(t, res.Revision+1, ch.Revision)
 	assert.Empty(t, f.stored(t, d.ID).Attachments)
+	assert.Equal(t, f.stored(t, d.ID).UpdatedAt.UnixMilli(), ch.UpdatedAt)
 
 	f.pick = func() ([]string, error) { return nil, nil } // cancelled
 	res, err = f.page.AddAttachments(f.ctx(1), ch.Revision)

@@ -267,7 +267,10 @@ function Compose({
     try {
       const r = await sv.run((rev) => api.setAccount(id, rev));
       if (!r || r.conflict) setFrom(prev);
-      else setSignature(r.signature);
+      else {
+        setSignature(r.signature);
+        setSavedAt(fmt(new Date(r.updatedAt)));
+      }
     } catch (e) {
       setFrom(prev);
       failure(e);
@@ -279,7 +282,10 @@ function Compose({
       const r = await sv.run(op);
       if (!r) return;
       // A conflict that stopped the adding part way still lists the files added (with a revision).
-      if (!r.conflict || r.revision) setAttachments(r.attachments);
+      if (!r.conflict || r.revision) {
+        setAttachments(r.attachments);
+        setSavedAt(fmt(new Date(r.updatedAt)));
+      }
       setTooLarge(r.tooLarge ?? []);
       setFailed(r.failed ?? []);
     } catch (e) {

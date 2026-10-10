@@ -75,6 +75,8 @@ type Change struct {
 	Conflict bool `json:"conflict"`
 	// Signature is the draft's signature as plain text.
 	Signature string `json:"signature"`
+	// UpdatedAt is when the draft was last stored, in Unix milliseconds.
+	UpdatedAt int64 `json:"updatedAt"`
 }
 
 // AttachResult is the outcome of adding files: a partial success is no error.
