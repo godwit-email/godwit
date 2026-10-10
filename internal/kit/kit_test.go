@@ -398,3 +398,59 @@ func TestKitPressableLeftAligned(t *testing.T) {
 		t.Errorf("text %v from the left edge, want near 0", d)
 	}
 }
+
+func TestKitAvatarInitial(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Children(func() {
+			Avatar(c, "lena fischer")
+			Avatar(c, "")
+		})
+	}), 200, 200)
+	tt.Frame()
+	if !tt.HasText("L") || !tt.HasText("?") {
+		t.Errorf("texts %q", tt.Texts())
+	}
+	if _, ok := tt.Find("lena fischer"); !ok {
+		t.Error("avatar not found by its label")
+	}
+}
+
+func TestKitSeparatorSizes(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Width(200).Children(func() {
+			Separator(c, false).Label("sep-h")
+			Separator(c, true).Label("sep-v")
+		})
+	}), 300, 200)
+	tt.Frame()
+	h, _ := tt.Find("sep-h")
+	v, _ := tt.Find("sep-v")
+	if h.W != 200 || h.H != theme.Hairline {
+		t.Errorf("horizontal %vx%v", h.W, h.H)
+	}
+	if v.W != theme.Hairline {
+		t.Errorf("vertical width %v", v.W)
+	}
+}
+
+func TestKitSkeletonStillUnderReduceMotion(t *testing.T) {
+	for _, reduce := range []bool{true, false} {
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Padding(20).Children(func() { Skeleton(c, 100, 40).Label("skel") })
+		}), 200, 100)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		r, ok := tt.Find("skel")
+		if !ok {
+			t.Fatal("skeleton not found")
+		}
+		x, y := int(r.X+r.W/2), int(r.Y+r.H/2)
+		px := func() [4]uint8 { c := tt.Image().RGBAAt(x, y); return [4]uint8{c.R, c.G, c.B, c.A} }
+		before := px()
+		time.Sleep(300 * time.Millisecond)
+		tt.Frame()
+		if same := before == px(); same != reduce {
+			t.Errorf("reduce=%v: pixel unchanged=%v", reduce, same)
+		}
+	}
+}

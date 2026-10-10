@@ -1,6 +1,9 @@
 package kit
 
 import (
+	"unicode"
+	"unicode/utf8"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -74,4 +77,46 @@ func Kbd(c *ui.Context, text string) ui.Element {
 	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Xs).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
 		ui.Text(c, text).Font("Geist Mono").FontSize(t.Text.Xs).TextColor(t.Muted)
 	})
+}
+
+// initial is name's first rune upper-cased, "?" when name is empty.
+func initial(name string) string {
+	r, _ := utf8.DecodeRuneInString(name)
+	if r == utf8.RuneError {
+		return "?"
+	}
+	return string(unicode.ToUpper(r))
+}
+
+// Avatar is a circle with the initial of name, labelled name.
+func Avatar(c *ui.Context, name string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm).TextColor(t.Foreground)
+	})
+}
+
+// Separator is a hairline: horizontal across its parent, or a short vertical one.
+func Separator(c *ui.Context, vertical bool) ui.Element {
+	b := ui.Box(c).Background(theme.Of(c).Border)
+	if vertical {
+		return b.Size(theme.Hairline, theme.TitleButtonHeight)
+	}
+	return b.FillWidth().Height(theme.Hairline)
+}
+
+// Skeleton is a pulsing placeholder w wide (0: the full width) and h high. It
+// stays still under ReduceMotion, which Loop does not honor itself.
+func Skeleton(c *ui.Context, w, h float32) ui.Element {
+	t := theme.Of(c)
+	b := ui.Box(c).Height(h).Radius(t.Radius.Sm).Background(t.Hover)
+	if w == 0 {
+		b.FillWidth()
+	} else {
+		b.Width(w)
+	}
+	if !c.Preferences().ReduceMotion {
+		b.Opacity(0.5 + 0.5*b.Loop("pulse", theme.SkeletonPulse, ui.Bounce(ui.EaseInOut)))
+	}
+	return b
 }

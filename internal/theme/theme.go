@@ -236,4 +236,6 @@ var registerFonts = sync.OnceValue(func() error {
 const (
 	MotionFast = 120 * time.Millisecond
 	MotionBase = 200 * time.Millisecond
+
+	SkeletonPulse = 1500 * time.Millisecond // one dim-and-return of a Skeleton
 )

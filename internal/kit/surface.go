@@ -90,3 +90,19 @@ func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()
 	}
 	return b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(theme.IconLg, theme.IconLg) })
 }
+
+// CardHeader is a Card's title with an optional description under it.
+func CardHeader(c *ui.Context, title, description string) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
+		if description != "" {
+			ui.Text(c, description).FontSize(t.Text.Sm).TextColor(t.Muted)
+		}
+	})
+}
+
+// CardFooter is a right-aligned row for a Card's actions.
+func CardFooter(c *ui.Context, children func()) {
+	ui.Row(c).Justify(ui.End).Gap(c.Theme().Space(2)).Children(children)
+}
