@@ -35,7 +35,7 @@ type WitMessage struct {
 // app/wit_run.go's witMsgs. An answer cites the mail the runs that added
 // it read, numbered in the conversation (cited).
 func witMessages(c core.Conversation) []WitMessage {
-	var out []WitMessage
+	out := []WitMessage{}
 	var spans [][2]int // out[i] is c.Messages[from:to]
 	for i, m := range c.Messages {
 		if m.Role == "user" {

@@ -17,8 +17,8 @@ import (
 )
 
 // WitStream carries the Wit events of a compose window's draft, emitted to
-// that window only. A window follows one conversation at a time: a new run
-// or Follow replaces what it followed.
+// that window only. A window follows one conversation at a time: a run or
+// Follow in another conversation replaces what it followed.
 var WitStream = mygo.NewEvent[WitEvent]("wit")
 
 // WitEvent is one event of a Wit run, as core.WitEvent.
@@ -128,14 +128,22 @@ func langName(tag string) string {
 	return "English"
 }
 
-// followHook, when set, runs in Follow between subscribing and reading (tests).
-var followHook func()
+// startHook, when set, runs in a run's start before the window subscribes;
+// followHook in Follow after its reads (tests).
+var startHook, followHook func()
 
-// follow is a window's subscription to a conversation.
+// follow is a window's subscription to a conversation. It lasts until the
+// window follows another conversation, or is detached or released: a run
+// ending does not end it, so a new run in the same conversation loses
+// nothing and shows nothing twice.
 type follow struct {
+	conv    int64
+	stop    func()
 	mu      sync.Mutex // held while emitting, so nothing is emitted once ended
 	stopped bool
-	stop    func()
+	held    bool           // events wait in buf (Follow reading)
+	buf     []WitEvent     // while held
+	ended   map[int64]bool // runs seen ending while held
 }
 
 func (f *follow) end() {
@@ -145,13 +153,50 @@ func (f *follow) end() {
 	f.stop()
 }
 
-// follow subscribes window win to conversation conv, in place of what it
-// followed: each event goes to emit until one ends the run (ends).
-func (c *Compose) follow(win int, svc *core.Service, conv int64, emit func(int, WitEvent)) *follow {
-	ch, stop := svc.SubscribeConversation(conv)
-	f := &follow{stop: stop}
+// hold keeps events back until release, noting the runs that end meanwhile.
+func (f *follow) hold() {
+	f.mu.Lock()
+	f.held, f.ended = true, map[int64]bool{}
+	f.mu.Unlock()
+}
+
+// endedWhileHeld reports whether run ended since hold.
+func (f *follow) endedWhileHeld(run int64) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ended[run]
+}
+
+// release sends what was held back, then lets events through again.
+func (f *follow) release(win int, emit func(int, WitEvent)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, ev := range f.buf {
+		if !f.stopped && emit != nil {
+			emit(win, ev)
+		}
+	}
+	f.buf, f.held, f.ended = nil, false, nil
+}
+
+// follow makes window win, whose session is s, follow conversation conv:
+// its subscription to conv if it has one, else a new one in place of what
+// it followed. Every event goes to emit. A session gone (Release, Detach)
+// gets ErrNoDraft: those end the subscription after removing the session,
+// both under c.mu, so none is left behind.
+func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emit func(int, WitEvent)) (*follow, error) {
 	c.mu.Lock()
+	if c.sessions[win] != s {
+		c.mu.Unlock()
+		return nil, ErrNoDraft
+	}
 	old := c.follows[win]
+	if old != nil && old.conv == conv {
+		c.mu.Unlock()
+		return old, nil
+	}
+	ch, stop := svc.SubscribeConversation(conv)
+	f := &follow{conv: conv, stop: stop}
 	c.follows[win] = f
 	c.mu.Unlock()
 	if old != nil {
@@ -159,33 +204,33 @@ func (c *Compose) follow(win int, svc *core.Service, conv int64, emit func(int, 
 	}
 	go func() {
 		for ev := range ch {
+			we := witEvent(conv, ev)
 			f.mu.Lock()
-			if !f.stopped && emit != nil {
-				emit(win, witEvent(conv, ev))
+			switch {
+			case f.stopped:
+			case f.held:
+				f.buf = append(f.buf, we)
+				if ends(ev) {
+					f.ended[ev.RunID] = true
+				}
+			case emit != nil:
+				emit(win, we)
 			}
 			f.mu.Unlock()
-			if ends(ev) {
-				c.unfollow(win, f)
-			}
 		}
 	}()
-	return f
+	return f, nil
 }
 
-// unfollow ends window win's subscription if it is f (nil: any).
-func (c *Compose) unfollow(win int, f *follow) {
+// unfollow ends window win's subscription.
+func (c *Compose) unfollow(win int) {
 	c.mu.Lock()
-	cur := c.follows[win]
-	if cur == nil || (f != nil && cur != f) {
-		c.mu.Unlock()
-		if f != nil {
-			f.end()
-		}
-		return
-	}
+	f := c.follows[win]
 	delete(c.follows, win)
 	c.mu.Unlock()
-	cur.end()
+	if f != nil {
+		f.end()
+	}
 }
 
 // ends reports whether ev ends the run followed: an interrupt whose
@@ -336,12 +381,14 @@ func (p *ComposePage) start(ctx context.Context, run func(context.Context, *core
 		}
 		conv = c.ID
 	}
-	f := p.c.follow(win, svc, conv, p.d.Emit)
+	if startHook != nil {
+		startHook()
+	}
+	if _, err := p.c.follow(win, s, svc, conv, p.d.Emit); err != nil {
+		return 0, keyed(err)
+	}
 	ch, err := run(context.WithoutCancel(ctx), svc, s.draftID)
-	if err != nil {
-		if !errors.Is(err, core.ErrRunActive) { // the active run goes on being followed
-			p.c.unfollow(win, f)
-		}
+	if err != nil { // ErrRunActive: the active run goes on being followed
 		return 0, keyed(err)
 	}
 	c, err := svc.GetConversation(ctx, conv)
@@ -382,42 +429,56 @@ func (p *ComposePage) Stop(ctx context.Context, run int64) error {
 
 // Follow makes the calling window follow its draft's conversation (an edit
 // waiting, else the Assist one) and returns its history as read after
-// subscribing: a run that ended in between shows as ended, its events
-// already sent. With no run going the window follows nothing.
+// subscribing. Events that come during the reads are held back and sent
+// after: a run seen ending meanwhile shows as ended, read again.
 func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
 	defer s.mu.Unlock()
-	h := WitHistory{Messages: []WitMessage{}, Approvals: []Approval{}}
 	conv, err := openConversation(ctx, svc, s.draftID)
 	if err != nil || conv == 0 {
-		p.c.unfollow(win, nil)
-		return h, keyed(err)
+		p.c.unfollow(win)
+		return WitHistory{Messages: []WitMessage{}, Approvals: []Approval{}}, keyed(err)
 	}
-	f := p.c.follow(win, svc, conv, p.d.Emit)
+	f, err := p.c.follow(win, s, svc, conv, p.d.Emit)
+	if err != nil {
+		return WitHistory{}, keyed(err)
+	}
+	f.hold()
+	defer f.release(win, p.d.Emit)
+	h, err := history(ctx, svc, conv)
 	if followHook != nil {
 		followHook()
 	}
+	if err == nil && h.Running != 0 && f.endedWhileHeld(h.Running) {
+		h, err = history(ctx, svc, conv)
+		h.Running = 0 // its end is in what is held back
+	}
+	if err != nil {
+		return WitHistory{}, keyed(err)
+	}
+	return h, nil
+}
+
+// history is conversation conv as read now.
+func history(ctx context.Context, svc *core.Service, conv int64) (WitHistory, error) {
 	c, err := svc.GetConversation(ctx, conv)
 	var as []core.Approval
 	if err == nil {
 		as, err = svc.ListApprovals(ctx, conv)
 	}
 	if err != nil {
-		p.c.unfollow(win, f)
-		return WitHistory{}, keyed(err)
+		return WitHistory{}, err
 	}
-	h.Conversation, h.Messages = conv, witMessages(c)
+	h := WitHistory{Conversation: conv, Messages: witMessages(c), Approvals: []Approval{}}
 	for _, a := range as {
 		h.Approvals = append(h.Approvals, approvalOf(a))
 	}
 	waits := slices.ContainsFunc(as, func(a core.Approval) bool { return a.RunID == c.ActiveRunID && a.State == "pending" })
 	if c.ActiveRunID != 0 && !waits {
 		h.Running = c.ActiveRunID
-	} else {
-		p.c.unfollow(win, f) // a decision follows the resume itself
 	}
 	return h, nil
 }
@@ -514,12 +575,13 @@ type keyError struct {
 func (e *keyError) Error() string { return e.key }
 func (e *keyError) Unwrap() error { return e.err }
 
-// keyed is err with its i18n key as its text; an unknown one is logged.
+// keyed is err with its i18n key as its text ("" for a cancellation:
+// nothing to show); an unknown one is logged.
 func keyed(err error) error {
 	if err == nil {
 		return nil
 	}
-	key := cmp.Or(errorKey(err), "error.unknown")
+	key := errorKey(err)
 	if key == "error.unknown" {
 		log.Printf("wit: %v", err)
 	}

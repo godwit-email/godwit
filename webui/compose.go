@@ -78,7 +78,7 @@ func (c *Compose) Detach(winID int) {
 	c.mu.Lock()
 	delete(c.sessions, winID)
 	c.mu.Unlock()
-	c.unfollow(winID, nil)
+	c.unfollow(winID)
 }
 
 // Release lets go of closed window winID: new calls from it get ErrNoDraft,
@@ -91,7 +91,7 @@ func (c *Compose) Release(winID int) {
 	delete(c.sessions, winID)
 	svc := c.svc
 	c.mu.Unlock()
-	c.unfollow(winID, nil)
+	c.unfollow(winID)
 	if s == nil {
 		return
 	}

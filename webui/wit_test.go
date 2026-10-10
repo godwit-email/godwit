@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -215,19 +216,91 @@ func TestComposeHistoryPendingEdit(t *testing.T) {
 func TestComposeFollowRaceEnded(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	_, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi")
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
-	followHook = func() {
+	followHook = func() { // the run ends after Follow read it running
 		llm.Release()
-		f.waitKind(t, 1, "done")
+		require.Eventually(t, func() bool {
+			f.c.mu.Lock()
+			fl := f.c.follows[1]
+			f.c.mu.Unlock()
+			return fl.endedWhileHeld(run)
+		}, 10*time.Second, 5*time.Millisecond)
+		assert.NotContains(t, kinds(f.events(1)), "done", "held back during the reads")
 	}
 	t.Cleanup(func() { followHook = nil })
 	h, err := f.page.Follow(f.ctx(1))
 	require.NoError(t, err)
 	assert.Zero(t, h.Running, "the run ended")
 	require.Len(t, h.Messages, 2)
-	assert.Equal(t, "thinking", h.Messages[1].Text)
+	assert.Equal(t, "thinking", h.Messages[1].Text, "read again")
+	assert.Contains(t, kinds(f.events(1)), "done", "sent once Follow returns")
+}
+
+func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>Hello</p>")
+	startHook = func() { // the window closes while Ask is inside
+		go f.c.Release(1)
+		require.Eventually(t, func() bool {
+			f.c.mu.Lock()
+			defer f.c.mu.Unlock()
+			return f.c.sessions[1] == nil
+		}, 10*time.Second, 5*time.Millisecond)
+	}
+	t.Cleanup(func() { startHook = nil })
+	_, err := f.page.Ask(f.ctx(1), "hi")
+	require.ErrorIs(t, err, ErrNoDraft)
+	f.c.mu.Lock()
+	assert.Empty(t, f.c.follows)
+	f.c.mu.Unlock()
+	assert.Zero(t, llm.Requests(), "no run")
+	assert.False(t, f.gone(t, d.ID))
+}
+
+func TestComposeSameConversationNoDuplicates(t *testing.T) {
+	f, _, llm := witFixture(t, "<p>Hello</p>")
+	llm.Script(coretest.Turn{Text: []string{"one"}, Hang: true}, coretest.Turn{Text: []string{"two"}})
+	r1, err := f.page.Ask(f.ctx(1), "hi")
+	require.NoError(t, err)
+	f.waitKind(t, 1, "text")
+	_, err = f.page.Ask(f.ctx(1), "again")
+	require.ErrorIs(t, err, core.ErrRunActive)
+	llm.Release()
+	f.waitKind(t, 1, "done")
+	r2, err := f.page.Ask(f.ctx(1), "and again") // right after: the first run's subscription stays
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return slices.ContainsFunc(f.events(1), func(ev WitEvent) bool { return ev.Kind == "done" && ev.Run == r2 })
+	}, 10*time.Second, 5*time.Millisecond)
+	var got []string
+	for _, ev := range f.events(1) {
+		if ev.Kind == "text" || ev.Kind == "done" {
+			got = append(got, ev.Kind+":"+ev.Text)
+			assert.Contains(t, []int64{r1, r2}, ev.Run)
+		}
+	}
+	assert.Equal(t, []string{"text:one", "done:", "text:two", "done:"}, got)
+}
+
+func TestComposeWitJSONLists(t *testing.T) {
+	f, d, _ := witFixture(t, "<p>Hello</p>")
+	_, err := f.e.Svc.NewConversation(t.Context(), "assist", d.ID)
+	require.NoError(t, err)
+	h, err := f.page.Follow(f.ctx(1))
+	require.NoError(t, err)
+	assert.NotZero(t, h.Conversation)
+	b, err := json.Marshal(h)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"messages":[]`)
+	assert.Contains(t, string(b), `"approvals":[]`)
+	assert.NotContains(t, string(b), "null")
+	b, err = json.Marshal(witMessages(core.Conversation{Messages: []ai.Message{{Role: "user", Text: "q"}, {Role: "model", Text: "a"}}}))
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "null")
+	b, err = json.Marshal(witEvent(1, core.WitEvent{Event: ai.Event{Kind: "done"}}))
+	require.NoError(t, err)
+	assert.NotContains(t, strings.ReplaceAll(strings.ReplaceAll(string(b), `"call":null`, ""), `"result":null`, ""), "null")
 }
 
 func TestComposeFirstGenerationFollows(t *testing.T) {
@@ -308,4 +381,6 @@ func TestComposeWitErrorKeys(t *testing.T) {
 		assert.Contains(t, composeKeys, "error.ai."+string(code))
 	}
 	assert.True(t, strings.HasPrefix(errorKey(ErrNoDraft), "error."))
+	assert.Equal(t, "", keyed(context.Canceled).Error(), "a cancellation shows nothing")
+	assert.ErrorIs(t, keyed(context.Canceled), context.Canceled)
 }

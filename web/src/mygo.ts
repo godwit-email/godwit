@@ -304,8 +304,8 @@ export const ComposePage = {
   /**
    * Follow makes the calling window follow its draft's conversation (an edit
    * waiting, else the Assist one) and returns its history as read after
-   * subscribing: a run that ended in between shows as ended, its events
-   * already sent. With no run going the window follows nothing.
+   * subscribing. Events that come during the reads are held back and sent
+   * after: a run seen ending meanwhile shows as ended, read again.
    */
   follow(): Promise<WitHistory> {
     return call("ComposePage.Follow");
@@ -386,8 +386,8 @@ export const events = {
   theme: event<Theme>("theme"),
   /**
    * WitStream carries the Wit events of a compose window's draft, emitted to
-   * that window only. A window follows one conversation at a time: a new run
-   * or Follow replaces what it followed.
+   * that window only. A window follows one conversation at a time: a run or
+   * Follow in another conversation replaces what it followed.
    */
   wit: event<WitEvent>("wit"),
 } as const;
