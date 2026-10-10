@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { RiAlertLine, RiArrowDownSLine, RiLoaderLine } from "@remixicon/react";
+import { RiAlertLine, RiArrowDownLine, RiArrowDownSLine, RiLoaderLine } from "@remixicon/react";
 import type { DynamicToolUIPart } from "ai";
 import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -43,10 +43,10 @@ import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
 
 // ponytail: shadcn's spinner.tsx fails the typecheck (children on a Remix icon); its markup here.
-const Busy = () => (
+const Busy = ({ t }: { t: T }) => (
   <RiLoaderLine
     role="status"
-    aria-label="Loading"
+    aria-label={t("wit.loading")}
     className="size-4 animate-spin text-muted-foreground"
   />
 );
@@ -143,7 +143,7 @@ function Answer({
           }
         />
       ) : (
-        live && <Busy />
+        live && <Busy t={t} />
       )}
       {cites.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -233,7 +233,7 @@ export function Panel({
     ask(text);
   };
   const stop = () =>
-    void api.stop(transport.run).catch((e) => toast.error(witError(String(e?.message ?? e), t)));
+    void transport.stop().catch((e) => toast.error(witError(String(e?.message ?? e), t)));
 
   // Citations numbered through the conversation: the history's as given, live ones (N=0) after;
   // a message is suspect once any citation of it is.
@@ -328,10 +328,13 @@ export function Panel({
                   )}
                 </MessageScrollerItem>
               ))}
-              {running && last?.role !== "assistant" && <Busy />}
+              {running && last?.role !== "assistant" && <Busy t={t} />}
             </MessageScrollerContent>
           </MessageScrollerViewport>
-          <MessageScrollerButton />
+          <MessageScrollerButton>
+            <RiArrowDownLine />
+            <span className="sr-only">{t("wit.scroll_end")}</span>
+          </MessageScrollerButton>
         </MessageScroller>
       </MessageScrollerProvider>
       {chat.error && !running && (

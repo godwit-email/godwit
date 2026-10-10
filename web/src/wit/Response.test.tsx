@@ -28,10 +28,10 @@ describe("answer hardening", () => {
     expect(container.querySelector("[onerror]")).toBeNull();
     expect(container.textContent).toContain("<b>bold</b>"); // shown as text
     expect(container.textContent).toContain("<script>alert(1)</script>");
-    const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["https://ok.org/p", "mailto:x@y.z"]);
-    expect(screen.getByText("a").closest("a")).toBeNull();
-    expect(screen.getByText("f").closest("a")).toBeNull();
+    expect(container.querySelector("a, [href]")).toBeNull(); // nothing navigates by itself
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["b", "m"]);
+    expect(screen.getByText("a").closest("[role=link]")).toBeNull();
+    expect(screen.getByText("f").closest("[role=link]")).toBeNull();
   });
 
   it.each([
@@ -57,5 +57,13 @@ describe("answer hardening", () => {
     render(<Response text="[b](https://ok.org/p)" onLink={() => {}} t={t} />);
     await user.click(await screen.findByText("b"));
     expect((await screen.findByText("ok.org")).tagName).toBe("STRONG");
+  });
+
+  it("opens the confirmation from the keyboard", async () => {
+    const user = userEvent.setup();
+    render(<Response text="[b](https://ok.org/p)" onLink={() => {}} t={t} />);
+    (await screen.findByRole("link", { name: "b" })).focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("打开这个链接？")).toBeInTheDocument();
   });
 });

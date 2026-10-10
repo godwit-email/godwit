@@ -170,7 +170,7 @@ describe("historyToMessages", () => {
       conversation: 1,
       running: 0,
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [] },
+        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
         {
           id: "a1",
           role: "assistant",
@@ -182,14 +182,23 @@ describe("historyToMessages", () => {
           ],
           results: [{ callId: "c1", name: "search", output: '"ok"', error: "" }],
           citations: [cite],
+          runs: [1],
         },
-        { id: "q2", role: "user", text: "更正式", calls: [], results: [], citations: [] },
+        {
+          id: "q2",
+          role: "user",
+          text: "更正式",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [2],
+        },
       ],
       approvals: [
-        approval({ id: 1, callId: "c2", state: "rejected" }),
-        approval({ id: 2, callId: "c3", state: "failed", error: "nope" }),
-        approval({ id: 4, callId: "skill", state: "pending" }),
-        approval({ id: 5, callId: "skill", state: "done" }), // an older skill's: no call to show
+        approval({ id: 1, run: 1, callId: "c2", state: "rejected" }),
+        approval({ id: 2, run: 1, callId: "c3", state: "failed", error: "nope" }),
+        approval({ id: 4, run: 2, callId: "skill", state: "pending" }), // its run has no answer yet
+        approval({ id: 5, run: 1, callId: "skill", state: "done" }), // an older skill's, decided
       ],
     };
     const m = historyToMessages(h);
@@ -205,6 +214,7 @@ describe("historyToMessages", () => {
       ["c1", "output-available"],
       ["c2", "output-denied"],
       ["c3", "output-error"],
+      ["skill", "output-available"],
     ]);
     expect(m[1].parts).toContainEqual({ type: "text", text: "A", state: "done" });
     expect(m[1].parts).toContainEqual({ type: "data-citations", data: [cite] });
@@ -215,6 +225,10 @@ describe("historyToMessages", () => {
       approval: { id: "4" },
     });
     expect(m[3].parts).toContainEqual({ type: "data-approvals", data: [h.approvals[2]] });
+    expect(m[1].parts).toContainEqual({
+      type: "data-approvals",
+      data: [h.approvals[0], h.approvals[1], h.approvals[3]],
+    });
   });
 });
 
@@ -238,7 +252,8 @@ describe("WitTransport", () => {
     const { api, tr, emit } = fake();
     api.skill.mockResolvedValue(8);
     const s = await send(tr, userMsg("翻译为English", { skill: "translate-draft", lang: "en" }));
-    emit({ kind: "done" });
+    await vi.waitFor(() => expect(tr.run).toBe(8));
+    emit({ kind: "done", run: 8 });
     await readAll(s);
     expect(api.skill).toHaveBeenCalledWith("translate-draft", "en");
     expect(api.ask).not.toHaveBeenCalled();
@@ -263,12 +278,20 @@ describe("WitTransport", () => {
       running: 7,
       approvals: [],
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [] },
-        { id: "a1", role: "assistant", text: "Hello", calls: [], results: [], citations: [] },
+        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
+        {
+          id: "a1",
+          role: "assistant",
+          text: "Hel",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
       ],
     };
     api.follow.mockImplementation(async () => {
-      emit({ kind: "text", text: "early" }); // emitted before follow resolves
+      emit({ kind: "text", text: "lo" }); // emitted before follow resolves
       return h;
     });
     const got = await tr.follow();
@@ -278,12 +301,63 @@ describe("WitTransport", () => {
     tr.resume(open, got.running);
     const done = chat.resumeStream();
     await vi.waitFor(() => expect(chat.status).toBe("streaming"));
-    emit({ kind: "text", text: " late" });
+    emit({ kind: "text", text: " world" });
     emit({ kind: "done" });
     await done;
     expect(chat.messages.map((m) => m.id)).toEqual(["q0", "a1"]);
     const texts = chat.messages[1].parts.flatMap((p) => (p.type === "text" ? [p.text] : []));
-    expect(texts).toEqual(["Hello", "early late"]);
+    expect(texts).toEqual(["Hello world"]); // one part: no paragraph break across the reconnect
     expect(tr.run).toBe(7);
+  });
+
+  it("keeps only the conversation followed", async () => {
+    const { api, tr, emit } = fake();
+    api.follow.mockImplementation(async () => {
+      emit({ conversation: 2, kind: "text", text: "old" }); // in flight from a switch
+      emit({ conversation: 1, kind: "text", text: "a" });
+      return { conversation: 1, running: 7, approvals: [], messages: [] };
+    });
+    await tr.follow();
+    emit({ conversation: 2, kind: "text", text: "old2" });
+    emit({ conversation: 1, kind: "text", text: "b" });
+    emit({ conversation: 1, kind: "done" });
+    tr.resume(undefined, 7);
+    const out = await readAll(
+      (await tr.reconnectToStream({ chatId: "c" })) as ReadableStream<UIMessageChunk>,
+    );
+    const deltas = out.flatMap((c) => (c.type === "text-delta" ? [c.delta] : []));
+    expect(deltas).toEqual(["a", "b"]);
+  });
+
+  it("a started run names the conversation: its first event; earlier ones of others are dropped", async () => {
+    const { api, tr, emit } = fake();
+    let resolve!: (n: number) => void;
+    api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
+    const s = await send(tr, userMsg("hi"));
+    emit({ conversation: 3, run: 2, kind: "text", text: "stale" }); // a ⌘K run's, in flight
+    emit({ conversation: 5, run: 9, kind: "text", text: "mine" });
+    resolve(9);
+    await vi.waitFor(() => expect(tr.run).toBe(9));
+    emit({ conversation: 3, run: 2, kind: "done" });
+    emit({ conversation: 5, run: 9, kind: "text", text: "!" });
+    emit({ conversation: 5, run: 9, kind: "done" });
+    const deltas = (await readAll(s)).flatMap((c) => (c.type === "text-delta" ? [c.delta] : []));
+    expect(deltas).toEqual(["mine", "!"]);
+  });
+
+  it("Stop while the run is starting stops it once its ID is known", async () => {
+    const { api, tr } = fake();
+    tr.run = 4; // an older run's
+    let resolve!: (n: number) => void;
+    api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
+    api.stop.mockResolvedValue(undefined);
+    await send(tr, userMsg("hi"));
+    await tr.stop();
+    expect(api.stop).not.toHaveBeenCalled();
+    resolve(9);
+    await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
+    expect(api.stop).toHaveBeenCalledTimes(1);
+    await tr.stop(); // started now: at once
+    expect(api.stop).toHaveBeenLastCalledWith(9);
   });
 });

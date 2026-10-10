@@ -406,11 +406,12 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 	}
 	got := witMessages(c)
 	require.Len(t, got, 2)
-	assert.Equal(t, WitMessage{ID: "q0", Role: "user", Text: "q", Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}}, got[0])
+	assert.Equal(t, WitMessage{ID: "q0", Role: "user", Text: "q", Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}, Runs: []int64{1}}, got[0])
 	a := got[1]
 	assert.Equal(t, "a1", a.ID)
 	assert.Equal(t, "assistant", a.Role)
 	assert.Equal(t, "a\n\nb", a.Text)
+	assert.Equal(t, []int64{1}, a.Runs)
 	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
 	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)
 	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true}, {N: 2, MessageID: 5}}, a.Citations)

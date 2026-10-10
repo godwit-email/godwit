@@ -1,10 +1,11 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   type Components,
   defaultRehypePlugins,
   defaultRemarkPlugins,
   Streamdown,
+  type StreamdownProps,
 } from "streamdown";
 import "streamdown/styles.css";
 import {
@@ -34,7 +35,23 @@ const htmlAsText = () => (tree: Node) => {
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
 const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText];
-const rehypePlugins = [defaultRehypePlugins.sanitize];
+type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];
+type Schema = { protocols?: Record<string, string[]>; tagNames?: string[] };
+type Plugin = Extract<Pluggable, (...args: never[]) => unknown>;
+const [sanitize, schema] = defaultRehypePlugins.sanitize as unknown as [Plugin, Schema];
+// Two layers: the sanitizer keeps only http/https/mailto hrefs and no media element; the
+// renderers below show no image and confirm every link.
+const media = ["img", "picture", "source", "video", "audio", "track", "iframe", "embed", "object"];
+const rehypePlugins: Pluggable[] = [
+  [
+    sanitize,
+    {
+      ...schema,
+      protocols: { href: ["http", "https", "mailto"], cite: [], longDesc: [], src: [] },
+      tagNames: schema.tagNames?.filter((n) => !media.includes(n)),
+    },
+  ],
+];
 const protocols = ["http:", "https:", "mailto:"];
 
 /** href if it is an http, https or mailto URL, else undefined. */
@@ -80,17 +97,22 @@ export function Response({
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const url = safeLink(href);
         if (!url) return <span>{children}</span>;
+        // No href: nothing opens the address but the confirmation (no middle-click, no "open link").
         return (
-          <a
-            href={url}
-            className="text-primary underline underline-offset-3"
-            onClick={(e) => {
+          // biome-ignore lint/a11y/useSemanticElements: an <a> needs an href, which would open without the confirmation
+          <span
+            role="link"
+            tabIndex={0}
+            className="cursor-pointer text-primary underline underline-offset-3"
+            onClick={() => setLink(url)}
+            onKeyDown={(e: KeyboardEvent) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
               setLink(url);
             }}
           >
             {children}
-          </a>
+          </span>
         );
       },
     }),

@@ -347,6 +347,8 @@ export interface WitMessage {
   calls: WitCall[];
   results: WitResult[];
   citations: Citation[];
+  /** Runs are the runs that added it (a question: the run it started). */
+  runs: number[];
 }
 
 /** WitResult is a tool call's result: Output JSON text, or Error. */

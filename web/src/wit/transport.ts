@@ -145,22 +145,52 @@ function toolPart(c: WitCall, r: WitResult | undefined, a: Approval | undefined)
 
 /**
  * The history as messages: each answer's calls with their results, or their approval's state by
- * CallID. A pending approval with no call in the history (a skill's) goes on the last answer.
+ * CallID. An approval with no call in the history (a skill's) gets a tool part of its own, in any
+ * state, on its run's answer (a new one after its run's question if the run has no answer yet).
  */
 export function historyToMessages(h: WitHistory): WitUIMessage[] {
   const byCall = new Map(h.approvals.map((a) => [a.callId, a]));
-  const shown = new Set<number>();
-  const out: WitUIMessage[] = h.messages.map((m) => {
-    if (m.role === "user")
-      return { id: m.id, role: "user", parts: [{ type: "text", text: m.text }] };
+  const calls = new Set(h.messages.flatMap((m) => m.calls.map((c) => c.id)));
+  const ms = h.messages;
+  // Where each approval with no call goes: on answer i (on), or after question i (after).
+  const on = new Map<number, Approval[]>();
+  const after = new Map<number, Approval[]>();
+  const put = (m: Map<number, Approval[]>, i: number, a: Approval) =>
+    m.set(i, [...(m.get(i) ?? []), a]);
+  for (const a of h.approvals) {
+    if (calls.has(a.callId)) continue;
+    const runs = (i: number) => ms[i].runs.includes(a.run);
+    const i = ms.findIndex((m, k) => m.role === "assistant" && runs(k));
+    const q = ms.findLastIndex((_, k) => runs(k));
+    if (i >= 0) put(on, i, a);
+    else if (q >= 0) put(after, q, a);
+    else if (ms.at(-1)?.role === "assistant") put(on, ms.length - 1, a);
+    else put(after, ms.length - 1, a);
+  }
+  const synth = (as: Approval[]) =>
+    as.map((a) => toolPart({ id: a.callId, name: a.tool, args: "" }, undefined, a));
+  const out: WitUIMessage[] = [];
+  const extra = (i: number) => {
+    const as = after.get(i);
+    if (as)
+      out.push({
+        id: `w${as[0].run}`,
+        role: "assistant",
+        parts: [...synth(as), { type: "data-approvals", data: as }],
+      });
+  };
+  extra(-1);
+  ms.forEach((m, i) => {
+    if (m.role === "user") {
+      out.push({ id: m.id, role: "user", parts: [{ type: "text", text: m.text }] });
+      extra(i);
+      return;
+    }
     const parts: Part[] = [];
     const as: Approval[] = [];
     for (const c of m.calls) {
       const a = byCall.get(c.id);
-      if (a) {
-        shown.add(a.id);
-        as.push(a);
-      }
+      if (a) as.push(a);
       parts.push(
         toolPart(
           c,
@@ -169,29 +199,33 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
         ),
       );
     }
+    const own = on.get(i) ?? [];
+    parts.push(...synth(own));
+    as.push(...own);
     if (as.length > 0) parts.push({ type: "data-approvals", data: as });
     if (m.text) parts.push({ type: "text", text: m.text, state: "done" });
     if (m.citations.length > 0) parts.push({ type: "data-citations", data: m.citations });
-    return { id: m.id, role: "assistant", parts };
+    out.push({ id: m.id, role: "assistant", parts });
+    extra(i);
   });
-  const waiting = h.approvals.filter((a) => a.state === "pending" && !shown.has(a.id));
-  if (waiting.length > 0) {
-    let last = out.at(-1);
-    if (last?.role !== "assistant") {
-      last = { id: `w${h.conversation}`, role: "assistant", parts: [] };
-      out.push(last);
-    }
-    for (const a of waiting)
-      last.parts.push(toolPart({ id: a.callId, name: a.tool, args: "" }, undefined, a));
-    last.parts.push({ type: "data-approvals", data: waiting });
-  }
   return out;
 }
 
-/** The chunks that rebuild message m (the answer a resumed run goes on with); its calls go in seen. */
+/**
+ * The chunks that rebuild message m (the answer a resumed run goes on with); its calls go in seen.
+ * Its last text part stays open: the run's deltas go on in it.
+ */
 function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
+  const lastText = m.parts.findLastIndex((p) => p.type === "text");
   return m.parts.flatMap((p, i): Chunk[] => {
     if (p.type === "text") {
+      if (i === lastText) {
+        seen.add(TEXT);
+        return [
+          { type: "text-start", id: TEXT },
+          { type: "text-delta", id: TEXT, delta: p.text },
+        ];
+      }
       const id = `r${i}`;
       return [
         { type: "text-start", id },
@@ -224,17 +258,25 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
   });
 }
 
-type Api = Pick<typeof ComposePage, "ask" | "skill" | "follow">;
+type Api = Pick<typeof ComposePage, "ask" | "skill" | "follow" | "stop">;
 type On = (f: (ev: WitEvent) => void) => () => void;
 
 /**
  * The window's Wit runs as chat streams. It listens to WitStream from construction, before any run
- * starts or follow is called, and never filters by run: the window has one subscription. Events
- * with no stream open wait in a log until the next resume (cleared by a send or a follow).
+ * starts or follow is called, and never filters by run: the window has one subscription. It keeps
+ * only the conversation followed: from follow's history, or a started run's (its first event);
+ * events wait while that is unknown, and other conversations' (in flight from a switch) are
+ * dropped. Events with no stream open wait in a log until the next resume (cleared by a send or a
+ * follow).
  */
 export class WitTransport implements ChatTransport<WitUIMessage> {
   /** The run followed: the last started, resumed, or seen in an event; Stop cancels it. */
   run = 0;
+  private conv?: number; // the conversation followed; undefined while unknown
+  private want = 0; // a started run, whose first event names the conversation
+  private early: WitEvent[] = []; // while conv is unknown
+  private starting = false; // a run start is in flight: its ID is not known yet
+  private stopping = false; // Stop was asked for while starting
   private log: WitEvent[] = [];
   private sink?: (ev: WitEvent) => void;
   private resuming?: { open?: WitUIMessage; id: string };
@@ -244,23 +286,58 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     private api: Api = ComposePage,
     on: On = (f) => events.wit.on(f),
   ) {
-    this.off = on((ev) => {
-      if (ev.run) this.run = ev.run;
-      this.log.push(ev);
-      this.sink?.(ev);
-    });
+    this.off = on((ev) => this.receive(ev));
+  }
+
+  private receive(ev: WitEvent) {
+    if (this.conv === undefined) {
+      this.early.push(ev);
+      if (this.want && ev.run === this.want) this.adopt(ev.conversation);
+      return;
+    }
+    if (ev.conversation !== this.conv) return;
+    if (ev.run) this.run = ev.run;
+    this.log.push(ev);
+    this.sink?.(ev);
+  }
+
+  // Follows conversation conv: the events that waited go through, if of it.
+  private adopt(conv: number) {
+    this.conv = conv;
+    const early = this.early;
+    this.early = [];
+    for (const ev of early) this.receive(ev);
+  }
+
+  // Forgets the conversation followed: a follow or a run start names the next.
+  private reset() {
+    this.conv = undefined;
+    this.want = 0;
+    this.early = [];
+    this.log = [];
   }
 
   /** Follows the draft's conversation (api.follow); events from now on are kept for resume. */
-  follow(): Promise<WitHistory> {
-    this.log = [];
-    return this.api.follow();
+  async follow(): Promise<WitHistory> {
+    this.reset();
+    const h = await this.api.follow();
+    this.adopt(h.conversation);
+    return h;
   }
 
   /** The next reconnect streams the live run, going on with open (the history's last answer, taken out of the chat's messages). */
   resume(open: WitUIMessage | undefined, run: number) {
     this.run = run;
     this.resuming = { open, id: open?.id ?? `live${run}` };
+  }
+
+  /** Stops the run: one still starting is stopped as soon as its ID is known. */
+  stop(): Promise<void> {
+    if (this.starting) {
+      this.stopping = true;
+      return Promise.resolve();
+    }
+    return this.api.stop(this.run);
   }
 
   close() {
@@ -314,16 +391,27 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   }: Parameters<ChatTransport<WitUIMessage>["sendMessages"]>[0]) {
     const m = messages.findLast((x) => x.role === "user");
     const text = m?.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("") ?? "";
-    this.log = [];
+    this.reset();
     this.resuming = undefined;
+    this.run = 0;
+    this.starting = true;
+    this.stopping = false;
     const { s, fail } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
-    (skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text)).then(
-      (run) => {
-        this.run = run;
-      },
-      (e: unknown) => fail(e instanceof Error ? e.message : String(e)),
-    );
+    (skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
+      .then(
+        (run) => {
+          this.run = this.want = run;
+          const ev = this.early.find((e) => e.run === run);
+          if (ev) this.adopt(ev.conversation);
+          if (this.stopping) return this.api.stop(run);
+        },
+        (e: unknown) => fail(e instanceof Error ? e.message : String(e)),
+      )
+      .catch(() => {}) // ponytail: a failed deferred stop is dropped; Stop stays to try again
+      .finally(() => {
+        this.starting = this.stopping = false;
+      });
     return s;
   }
 

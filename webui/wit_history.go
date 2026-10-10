@@ -29,6 +29,8 @@ type WitMessage struct {
 	Calls     []WitCall   `json:"calls"`
 	Results   []WitResult `json:"results"`
 	Citations []Citation  `json:"citations"`
+	// Runs are the runs that added it (a question: the run it started).
+	Runs []int64 `json:"runs"`
 }
 
 // witMessages groups c's messages into questions and answers, as
@@ -65,6 +67,14 @@ func witMessages(c core.Conversation) []WitMessage {
 		}
 	}
 	all := cited(c.Citations)
+	for i := range out {
+		out[i].Runs = []int64{}
+		for _, r := range c.Runs {
+			if r.From < spans[i][1] && r.To > spans[i][0] {
+				out[i].Runs = append(out[i].Runs, r.ID)
+			}
+		}
+	}
 	for i := range out {
 		if out[i].Role == "user" {
 			continue

@@ -6,11 +6,9 @@ import { Panel } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({
-  ComposePage: { stop: vi.fn(async () => {}), openLink: vi.fn(async () => {}) },
+  ComposePage: { openLink: vi.fn(async () => {}) },
   events: { wit: { on: () => () => {} } },
 }));
-
-import { ComposePage } from "@/mygo";
 
 const t = makeT({
   "wit.compose.placeholder": "告诉 Wit 你想怎么回",
@@ -60,17 +58,20 @@ const ev = (e: Partial<WitEvent>): WitEvent => ({
   ...e,
 });
 
-function setup(o: { history?: WitHistory; locked?: boolean } = {}) {
+async function setup(o: { history?: WitHistory; locked?: boolean } = {}) {
   let listener: ((e: WitEvent) => void) | undefined;
   const api = {
     ask: vi.fn().mockResolvedValue(7),
     skill: vi.fn().mockResolvedValue(7),
     follow: vi.fn(),
+    stop: vi.fn().mockResolvedValue(undefined),
   };
   const tr = new WitTransport(api, (f) => {
     listener = f;
     return () => {};
   });
+  api.follow.mockResolvedValue(o.history ?? empty);
+  await tr.follow(); // as the page does: the history read through this transport
   const onReview = vi.fn();
   const r = render(
     <Panel
@@ -91,8 +92,8 @@ const input = () => screen.getByRole("textbox", { name: "Wit 输入" });
 beforeEach(() => vi.clearAllMocks());
 
 describe("Panel", () => {
-  it("shows the chips", () => {
-    setup();
+  it("shows the chips", async () => {
+    await setup();
     expect(screen.getByText("原邮件")).toBeInTheDocument();
     expect(screen.getByText("a.pdf")).toBeInTheDocument();
     expect(input()).toHaveAttribute("placeholder", "告诉 Wit 你想怎么回");
@@ -100,7 +101,7 @@ describe("Panel", () => {
 
   it("sends with Enter, not with Shift+Enter or during composition", async () => {
     const user = userEvent.setup();
-    const { api } = setup();
+    const { api } = await setup();
     await user.type(input(), "hello");
     await user.keyboard("{Shift>}{Enter}{/Shift}");
     expect(api.ask).not.toHaveBeenCalled();
@@ -114,14 +115,14 @@ describe("Panel", () => {
 
   it("streams an answer; Stop calls api.stop(run) while running", async () => {
     const user = userEvent.setup();
-    const { api, emit } = setup();
+    const { api, emit } = await setup();
     await user.type(input(), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
     emit({ kind: "text", text: "Hel" });
     emit({ kind: "text", text: "lo" });
     expect(await screen.findByText("Hello")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "停止" }));
-    expect(ComposePage.stop).toHaveBeenCalledWith(7);
+    expect(api.stop).toHaveBeenCalledWith(7);
     emit({ kind: "error", error: "" }); // the stop: no failure
     expect(await screen.findByRole("button", { name: "发送" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
@@ -129,7 +130,7 @@ describe("Panel", () => {
 
   it("an error shows 重试, which repeats the last skill", async () => {
     const user = userEvent.setup();
-    const { api, emit } = setup();
+    const { api, emit } = await setup();
     await user.click(screen.getByRole("button", { name: "调整 ▾" }));
     await user.click(await screen.findByRole("menuitem", { name: "更正式" }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledWith("tone-formal", ""));
@@ -143,7 +144,7 @@ describe("Panel", () => {
 
   it("retry repeats the last text; a refused start shows its error", async () => {
     const user = userEvent.setup();
-    const { api } = setup();
+    const { api } = await setup();
     api.ask.mockRejectedValueOnce(new Error("error.ai.unavailable"));
     await user.type(input(), "hi{Enter}");
     await user.click(await screen.findByRole("button", { name: "重试" }));
@@ -153,15 +154,15 @@ describe("Panel", () => {
 
   it("translates to a language from the 翻译 menu", async () => {
     const user = userEvent.setup();
-    const { api } = setup();
+    const { api } = await setup();
     await user.click(screen.getByRole("button", { name: "翻译 ▾" }));
     await user.click(await screen.findByRole("menuitem", { name: "English" }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledWith("translate-draft", "en"));
     expect(screen.getByText("翻译为English")).toBeInTheDocument();
   });
 
-  it("locked: the menus and Send are disabled", () => {
-    setup({ locked: true });
+  it("locked: the menus and Send are disabled", async () => {
+    await setup({ locked: true });
     expect(screen.getByRole("button", { name: "调整 ▾" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "翻译 ▾" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
@@ -177,11 +178,11 @@ describe("Panel", () => {
       date: 0,
       suspect,
     });
-    const { emit } = setup({
+    const { emit } = await setup({
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [] },
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
           {
             id: "a1",
             role: "assistant",
@@ -193,6 +194,7 @@ describe("Panel", () => {
             ],
             results: [],
             citations: [cite(1, 50), cite(2, 51, true)],
+            runs: [7],
           },
         ],
       },
@@ -218,10 +220,20 @@ describe("Panel", () => {
       error: "",
       destinations: [],
     };
-    const { onReview } = setup({
+    const { onReview } = await setup({
       history: {
         ...empty,
-        messages: [{ id: "q0", role: "user", text: "更短", calls: [], results: [], citations: [] }],
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "更短",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
         approvals: [a],
       },
     });
@@ -232,22 +244,29 @@ describe("Panel", () => {
   });
 
   it("reconnects to a live run: deltas append to the open answer", async () => {
-    const { emit } = setup({
+    const { api, emit } = await setup({
       history: {
         ...empty,
         running: 7,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [] },
-          { id: "a1", role: "assistant", text: "Hello", calls: [], results: [], citations: [] },
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Hello",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
         ],
       },
     });
     expect(await screen.findByRole("button", { name: "停止" })).toBeInTheDocument();
-    emit({ kind: "text", text: "world" });
-    expect(await screen.findByText("world")).toBeInTheDocument();
-    expect(screen.getByText("Hello")).toBeInTheDocument();
+    emit({ kind: "text", text: " world" });
+    expect(await screen.findByText("Hello world")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(1);
     await userEvent.setup().click(screen.getByRole("button", { name: "停止" }));
-    expect(ComposePage.stop).toHaveBeenCalledWith(7);
+    expect(api.stop).toHaveBeenCalledWith(7);
   });
 });
