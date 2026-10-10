@@ -15,6 +15,7 @@ import type { T } from "@/shared/i18n";
 /** The send button, discard (behind a confirm), the note and the save status. */
 export function SendBar({
   sending,
+  frozen,
   status,
   savedAt,
   onSend,
@@ -22,6 +23,8 @@ export function SendBar({
   t,
 }: {
   sending: boolean;
+  /** True while any operation runs: every control is inert. */
+  frozen: boolean;
   status: "saving" | "saved" | "unsaved";
   savedAt: string;
   onSend(): void;
@@ -29,13 +32,14 @@ export function SendBar({
   t: T;
 }) {
   const [asking, setAsking] = useState(false);
+  const off = sending || frozen;
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Button disabled={sending} onClick={onSend}>
+        <Button disabled={off} onClick={onSend}>
           {t("compose.send")}
         </Button>
-        <Button variant="ghost" disabled={sending} onClick={() => setAsking(true)}>
+        <Button variant="ghost" disabled={off} onClick={() => setAsking(true)}>
           {t("compose.discard")}
         </Button>
         <span className="ml-auto text-muted-foreground text-xs">
@@ -51,7 +55,14 @@ export function SendBar({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={onDiscard}>
+            <AlertDialogAction
+              disabled={off}
+              onClick={() => {
+                if (off) return;
+                setAsking(false);
+                onDiscard();
+              }}
+            >
               {t("compose.discard.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>

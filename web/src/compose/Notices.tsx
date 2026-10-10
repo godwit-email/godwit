@@ -13,6 +13,7 @@ export function Notices({
   blocked,
   conflict,
   latestFailed,
+  frozen,
   onSendAnyway,
   onKeepMine,
   onUseLatest,
@@ -23,6 +24,7 @@ export function Notices({
   blocked: SendWarning | null;
   conflict: boolean;
   latestFailed: boolean;
+  frozen: boolean;
   onSendAnyway(): void;
   onKeepMine(): void;
   onUseLatest(): void;
@@ -45,7 +47,7 @@ export function Notices({
       ))}
       {warnings.length > 0 && !blocked && (
         <div>
-          <Button variant="outline" onClick={onSendAnyway}>
+          <Button variant="outline" disabled={frozen} onClick={() => !frozen && onSendAnyway()}>
             {t("compose.send_anyway")}
           </Button>
         </div>
@@ -55,15 +57,30 @@ export function Notices({
           <AlertTitle>{t("compose.conflict")}</AlertTitle>
           <div className="mt-1 flex gap-2">
             {latestFailed ? (
-              <Button variant="outline" size="sm" onClick={onRetry}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={frozen}
+                onClick={() => !frozen && onRetry()}
+              >
                 {t("common.retry")}
               </Button>
             ) : (
               <>
-                <Button variant="outline" size="sm" onClick={onKeepMine}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={frozen}
+                  onClick={() => !frozen && onKeepMine()}
+                >
                   {t("compose.conflict.keep")}
                 </Button>
-                <Button variant="outline" size="sm" onClick={onUseLatest}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={frozen}
+                  onClick={() => !frozen && onUseLatest()}
+                >
                   {t("compose.conflict.latest")}
                 </Button>
               </>

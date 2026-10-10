@@ -8,11 +8,13 @@ import { byteSize } from "./size";
 export function Attachments({
   items,
   tooLarge,
+  frozen,
   onRemove,
   t,
 }: {
   items: Attachment[];
   tooLarge: string[];
+  frozen: boolean;
   onRemove(id: number): void;
   t: T;
 }) {
@@ -26,7 +28,8 @@ export function Attachments({
             variant="ghost"
             size="icon-xs"
             aria-label={t("compose.remove", a.filename)}
-            onClick={() => onRemove(a.id)}
+            disabled={frozen}
+            onClick={() => !frozen && onRemove(a.id)}
           >
             <RiCloseLine />
           </Button>
@@ -34,7 +37,12 @@ export function Attachments({
       ))}
       {tooLarge.length > 0 && (
         <p role="alert" className="text-destructive text-sm">
-          {tooLarge.join("、")}：{t("compose.attach.too_large", byteSize(25 << 20))}
+          {tooLarge.map((n) => (
+            <span key={n} className="mr-2 font-medium">
+              {n}
+            </span>
+          ))}
+          {t("compose.attach.too_large", byteSize(25 << 20))}
         </p>
       )}
     </div>
