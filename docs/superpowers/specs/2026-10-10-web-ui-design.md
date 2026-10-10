@@ -29,10 +29,10 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 | 决定 | 选择 | 理由 |
 |---|---|---|
 | 前端栈 | React 19、TypeScript、Vite、shadcn/ui（Base UI 版本，Tailwind v4）、TanStack Query | 我们的 token 本来就照 shadcn 定义 |
-| 组件来源 | shadcn 组件与 AI Elements 都由 Bun 脚本调用 shadcn CLI 生成，**生成的文件不手改**；外观只靠主题变量，行为差异在我们自己的目录里包一层 | 与上游保持一致，升级只需重新生成 |
+| 组件来源 | shadcn 组件（含聊天类：`message`、`message-scroller`、`bubble`、`attachment`、`input-group`、`marker`）都由 Bun 脚本调用 shadcn CLI 生成，**生成的文件不手改**；外观只靠主题变量，行为差异在我们自己的目录里包一层 | 与上游保持一致，升级只需重新生成 |
 | 前端结构 | Vite 多入口，每种页面一个入口：`compose.html`、`wit.html`、`reader.html`；共享代码在 `src/shared/`、`src/wit/` | 每个页面只加载自己的代码；不同入口有不同的信任级别与 CSP（§A5） |
 | 撰写编辑器 | Plate（Slate） | 组件即 shadcn 风格；自带「建议」（修订）与 AI 菜单，对应 Wit 的修订与 ⌘K；Safari 内核下中文输入已实测正常 |
-| 聊天界面 | AI Elements 组件（拷入 `src/wit/`）+ `useChat` + 自定义 `ChatTransport`（`WitTransport`）；Markdown 用 Streamdown | 组件即 shadcn 风格且覆盖工具调用、确认、引用；`useChat` 现成管理流式状态、停止、出错；智能体循环留在 Go（不写 AI SDK provider） |
+| 聊天界面 | shadcn 的聊天类组件 + `src/wit/` 里自己组合的工具调用、审批、引用卡片 + `useChat` + 自定义 `ChatTransport`（`WitTransport`）；Markdown 用 Streamdown | 不引入 AI Elements：shadcn 已有消息、滚动、输入、附件组件，且同为 Base UI、同一套主题变量和图标（AI Elements 基于 Radix 与 lucide）；只有一个生成来源；`useChat` 现成管理流式状态、停止、出错；智能体循环留在 Go（不写 AI SDK provider） |
 | 包管理与构建 | Bun；`web/` 目录；用 mygo CLI（`go tool mygo dev` / `build` / `generate`，版本由 `go.mod` 的 tool 依赖固定）构建：先构建前端、嵌入 `web/dist`、生成 TS 客户端 | mygo 现成的流程，不自己拼；以后发版的打包、签名也用它 |
 | 内容的权威 | Go 端。网页只是视图 | 沿用现有的保存、版本、冲突、审批、对话存储 |
 
@@ -73,13 +73,13 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 ### A6. 工程与构建
 
 - **目录**：`web/`（Vite 多入口）：
-  - 生成的（不手改）：`src/components/ui/`（shadcn，Base UI 版本）、`src/components/ai-elements/`（AI Elements）；生成脚本 `scripts/components.ts` 列出要生成的组件，可重复执行；
+  - 生成的（不手改）：`src/components/ui/`（shadcn，Base UI 版本）；生成脚本 `scripts/components.ts` 列出要生成的组件，可重复执行；
   - 我们自己的：`src/shared/`（主题变量、工具函数、对生成组件的包装）、`src/wit/`（Wit 组件与 `WitTransport`）、`src/compose/`、`src/wit-page/`、`src/reader/`，后三者各对应一个 HTML 入口。`web/src/mygo.ts` 为生成的客户端（提交入库）。
 - **构建**：根目录的 `mygo.json` 配置 mygo CLI：`main` 为 `./cmd/godwit`，`devCommand` 起 Vite，`devUrl` 指向它，`buildCommand` 安装依赖并构建前端，`frontendDist` 为 `web/dist`，`bindings` 为 `web/src/mygo.ts`。`go tool mygo dev` 开发（热更新、Go 改动后重新生成客户端并重启），`go tool mygo build` 出正式包。
 - **前端依赖是编译前提**：原生界面的图标直接从 `web/node_modules/remixicon` 嵌入（用到的逐个列出），所以任何 Go 的编译、`go test`、`go vet` 之前都要先 `bun install`；`mise` 任务与 CI 都先安装。不再有「前端未构建」的状态。
 - **命令**：`mise` 任务 `web:install`、`dev`、`build`、`web:test`、`web:check`，分别包装上面的命令。
 - **CI**：三个平台先 `bun install`，再跑 Go 的检查与测试，并 `go tool mygo build` 确认能出包；新增网页任务（类型检查、lint、Vitest）；检查生成的客户端与 Go 代码一致、组件生成目录无手改。
-- **体积**：React、Plate、shadcn、AI Elements 打包后约 1～2 MB，嵌入二进制可以接受。
+- **体积**：React、Plate、shadcn、Streamdown 打包后约 1～2 MB，嵌入二进制可以接受。
 
 ### A7. 测试
 
@@ -178,7 +178,8 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 
 - **按容器宽度自适应**（CSS 容器查询）：例如「引用的邮件」在够宽时显示为右侧栏（Wit 页），窄时收成回答下方的引用卡片（撰写窗口的侧面板）。
 - **场景差异用插槽**：撰写传入上下文标签、调整 ▾、翻译 ▾；Wit 页传入模型选择。组件本身不知道自己在哪里。
-- **用到的生成组件**（AI Elements）：Conversation（滚动）、Message、Response（Streamdown）、Tool（工具调用）、Confirmation（审批卡片）、Sources / Inline Citation、Prompt Input、Suggestion、Shimmer。
+- **用到的生成组件**（shadcn）：`message-scroller`（对话滚动、回到底部）、`message` / `bubble`（消息）、`input-group` + `attachment`（输入框与附件）、`button` / `badge`（建议）、`spinner` + `marker`（思考中、状态行）、`collapsible`、`card`、`hover-card`。
+- **自己组合的**（`src/wit/`，只组合生成组件，不改它们）：Response（Streamdown 按 §A5 收紧）、ToolCall（`collapsible` + `card`，显示工具名、参数、结果）、Approval（`card` + `button`，审批卡片）、Citation（`hover-card` + 我们的邮件卡片）。
 - **我们自己的**：权限说明、疑似注入提示等，以及对生成组件的包装。
 
 ### D2. `WitTransport`
