@@ -33,7 +33,7 @@ func aiHarness(t *testing.T, llm bool, set func(*core.Settings), setup ...func(*
 		if err != nil {
 			t.Fatal(err)
 		}
-		st.Summary = true // off by default; these tests read summaries unless set turns them off
+		st.Summary, st.QuickReplies = true, true // off by default; these tests read them unless set turns them off
 		if set != nil {
 			set(&st)
 		}

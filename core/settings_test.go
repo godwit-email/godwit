@@ -24,7 +24,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, QuickReplies: true, ThreadView: true}, got)
+		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {

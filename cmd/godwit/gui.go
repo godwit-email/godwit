@@ -120,7 +120,7 @@ func gui(ctx context.Context, dataDir string) int {
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
-		if icon, err := trayIcon(); err != nil {
+		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
 			log.Print(err)
 		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
 			Menu: mygo.NewMenu([]*mygo.MenuItem{

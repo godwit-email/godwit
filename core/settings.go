@@ -29,7 +29,7 @@ type Settings struct {
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, QuickReplies: true, ThreadView: true}
+		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
