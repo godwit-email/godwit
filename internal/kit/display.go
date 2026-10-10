@@ -82,7 +82,7 @@ func Kbd(c *ui.Context, text string) ui.Element {
 // initial is name's first rune upper-cased, "?" when name is empty.
 func initial(name string) string {
 	r, _ := utf8.DecodeRuneInString(name)
-	if r == utf8.RuneError {
+	if name == "" {
 		return "?"
 	}
 	return string(unicode.ToUpper(r))
@@ -96,13 +96,14 @@ func Avatar(c *ui.Context, name string) ui.Element {
 	})
 }
 
-// Separator is a hairline: horizontal across its parent, or a short vertical one.
+// Separator is a hairline: horizontal across its parent, or a short vertical
+// one. In a row, give it Grow(1).
 func Separator(c *ui.Context, vertical bool) ui.Element {
 	b := ui.Box(c).Background(theme.Of(c).Border)
 	if vertical {
 		return b.Size(theme.Hairline, theme.TitleButtonHeight)
 	}
-	return b.FillWidth().Height(theme.Hairline)
+	return b.Height(theme.Hairline).AlignSelf(ui.Stretch)
 }
 
 // Skeleton is a pulsing placeholder w wide (0: the full width) and h high. It

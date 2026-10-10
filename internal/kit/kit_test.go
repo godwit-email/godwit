@@ -404,10 +404,11 @@ func TestKitAvatarInitial(t *testing.T) {
 		ui.Column(c).Children(func() {
 			Avatar(c, "lena fischer")
 			Avatar(c, "")
+			Avatar(c, "\ufffdname")
 		})
 	}), 200, 200)
 	tt.Frame()
-	if !tt.HasText("L") || !tt.HasText("?") {
+	if !tt.HasText("L") || !tt.HasText("?") || !tt.HasText("\ufffd") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	if _, ok := tt.Find("lena fischer"); !ok {
@@ -421,6 +422,11 @@ func TestKitSeparatorSizes(t *testing.T) {
 			Separator(c, false).Label("sep-h")
 			Separator(c, true).Label("sep-v")
 		})
+		ui.Row(c).Width(200).Children(func() {
+			Separator(c, false).Grow(1).Label("row-a")
+			ui.Text(c, "or").Label("row-or")
+			Separator(c, false).Grow(1).Label("row-b")
+		})
 	}), 300, 200)
 	tt.Frame()
 	h, _ := tt.Find("sep-h")
@@ -430,6 +436,12 @@ func TestKitSeparatorSizes(t *testing.T) {
 	}
 	if v.W != theme.Hairline {
 		t.Errorf("vertical width %v", v.W)
+	}
+	a, _ := tt.Find("row-a")
+	b, _ := tt.Find("row-b")
+	or, _ := tt.Find("row-or")
+	if a.W <= 0 || a.W != b.W || or.W <= 0 || a.W+b.W+or.W != 200 {
+		t.Errorf("row widths %v %v %v", a.W, or.W, b.W)
 	}
 }
 
