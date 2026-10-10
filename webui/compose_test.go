@@ -27,6 +27,9 @@ type fixture struct {
 	page *ComposePage
 	pick func() ([]string, error) // what the file dialog returns
 	done []int                    // windows OnDone fired for
+
+	evMu sync.Mutex
+	evs  map[int][]WitEvent // WitStream events emitted, by window
 }
 
 // newFixture is a ready Compose with one account; calls come from f.win.
@@ -41,6 +44,14 @@ func newFixture(t *testing.T, opts ...coretest.Option) *fixture {
 			return w, ok
 		},
 		PickFiles: func(context.Context, int) ([]string, error) { return f.pick() },
+		Emit: func(win int, ev WitEvent) {
+			f.evMu.Lock()
+			defer f.evMu.Unlock()
+			if f.evs == nil {
+				f.evs = map[int][]WitEvent{}
+			}
+			f.evs[win] = append(f.evs[win], ev)
+		},
 	})
 	f.c.OnDone(func(w int) { f.done = append(f.done, w) })
 	return f
@@ -241,7 +252,8 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Closed", "Discard", "Latest", "Load", "RemoveAttachment", "Save", "Send", "SetAccount"}, names)
+	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Discard", "Follow", "Latest", "Load", "RemoveAttachment",
+		"Save", "Send", "SetAccount", "Skill", "Stop", "WitInfo"}, names)
 }
 
 func ptr[T any](v T) *T { return &v }

@@ -42,11 +42,12 @@ type executor struct {
 // Approval is a call waiting for the user or decided. State goes
 // pending → executing → done or failed, or pending → rejected or stale. Error
 // is what the model was told for any end state but done. Destinations are
-// the hosts (host[:port]) the call sends data to, if any.
+// the hosts (host[:port]) the call sends data to, if any. CallID is the
+// tool call it answers ("skill" for a skill's proposal).
 type Approval struct {
 	ID, RunID, ConversationID int64
 	Seq                       int
-	Tool                      string
+	CallID, Tool              string
 	Args                      json.RawMessage
 	Summary, State, Error     string
 	Destinations              []string
@@ -82,7 +83,7 @@ var (
 // approvalRow is an approval with the columns only the Service uses.
 type approvalRow struct {
 	Approval
-	callID, result, targetKind string
+	result, targetKind         string
 	targetID, targetVersion    int64
 	binding, source, extension string
 	label                      string // the extension's name, for an MCP server too (else extension)
@@ -90,7 +91,7 @@ type approvalRow struct {
 
 // auditRow is the audit_log row of the approval's decision.
 func (s *Service) auditRow(a approvalRow, decision string) sqlite.Statement {
-	return gateway.Audit(gateway.Entry{Source: a.source, Extension: a.extension, Tool: a.Tool, CallID: a.callID,
+	return gateway.Audit(gateway.Entry{Source: a.source, Extension: a.extension, Tool: a.Tool, CallID: a.CallID,
 		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision}, s.secrets.Redact)
 }
 
@@ -101,7 +102,7 @@ func (s *Service) gateway() *gateway.Gateway { return gateway.New(s.db, s.secret
 // MCP tool's outcome of any kind is wrapped (as "<source>:<name>"); a done
 // result that is a JSON string is wrapped as its text.
 func (a approvalRow) toolResult() ai.ToolResult {
-	r := ai.ToolResult{CallID: a.callID, Name: a.Tool}
+	r := ai.ToolResult{CallID: a.CallID, Name: a.Tool}
 	if a.source == gateway.SourcePlugin || a.source == gateway.SourceMCP {
 		wrap := func(text string) string {
 			return ai.Untrusted(a.source+":"+cmp.Or(a.label, a.extension), text, ai.SuspectInjection(text))
@@ -138,8 +139,8 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 	out := make([]approvalRow, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		a := approvalRow{Approval: Approval{ID: store.Int(r[0]), RunID: store.Int(r[1]), ConversationID: store.Int(r[2]),
-			Seq: int(store.Int(r[3])), Tool: store.Str(r[4]), Args: json.RawMessage(store.Str(r[5])), Summary: store.Str(r[6]),
-			State: store.Str(r[7])}, result: store.Str(r[8]), callID: store.Str(r[9]), targetKind: store.Str(r[10]),
+			Seq: int(store.Int(r[3])), CallID: store.Str(r[9]), Tool: store.Str(r[4]), Args: json.RawMessage(store.Str(r[5])), Summary: store.Str(r[6]),
+			State: store.Str(r[7])}, result: store.Str(r[8]), targetKind: store.Str(r[10]),
 			targetID: store.Int(r[11]), targetVersion: store.Int(r[12]), binding: store.Str(r[14]), source: store.Str(r[15]),
 			extension: store.Str(r[16]), label: store.Str(r[17])}
 		if err := json.Unmarshal([]byte(store.Str(r[13])), &a.Destinations); err != nil {

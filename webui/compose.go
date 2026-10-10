@@ -50,12 +50,13 @@ type Compose struct {
 	mu       sync.Mutex
 	svc      *core.Service
 	sessions map[int]*session
+	follows  map[int]*follow // each window's Wit subscription
 	closed   func(winID, gen int, saved bool)
 	done     func(winID int)
 }
 
 // NewCompose is a Compose with no windows; SetService opens it up.
-func NewCompose() *Compose { return &Compose{sessions: map[int]*session{}} }
+func NewCompose() *Compose { return &Compose{sessions: map[int]*session{}, follows: map[int]*follow{}} }
 
 // SetService gives Compose the service, once the data is open.
 func (c *Compose) SetService(svc *core.Service) {
@@ -72,22 +73,25 @@ func (c *Compose) Attach(winID int, draftID int64) {
 }
 
 // Detach forgets window winID's draft: new calls from it get ErrNoDraft; one
-// already in progress finishes.
+// already in progress finishes. Its Wit events stop.
 func (c *Compose) Detach(winID int) {
 	c.mu.Lock()
 	delete(c.sessions, winID)
 	c.mu.Unlock()
+	c.unfollow(winID, nil)
 }
 
 // Release lets go of closed window winID: new calls from it get ErrNoDraft,
 // the call in progress finishes first, then its draft is deleted if it is
-// empty (core DeleteDraftIfEmpty, on the revision checked).
+// empty (core DeleteDraftIfEmpty, on the revision checked). Its Wit events
+// stop; a run goes on.
 func (c *Compose) Release(winID int) {
 	c.mu.Lock()
 	s := c.sessions[winID]
 	delete(c.sessions, winID)
 	svc := c.svc
 	c.mu.Unlock()
+	c.unfollow(winID, nil)
 	if s == nil {
 		return
 	}
@@ -166,6 +170,8 @@ type PageDeps struct {
 	// PickFiles asks for files to attach, in a dialog on window winID; none
 	// picked is no error.
 	PickFiles func(ctx context.Context, winID int) ([]string, error)
+	// Emit sends a Wit event to window winID (WitStream.Emit in production).
+	Emit func(winID int, ev WitEvent)
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on
@@ -218,8 +224,12 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	if err != nil {
 		return ComposeState{}, err
 	}
+	wit, err := witInfo(ctx, svc, d)
+	if err != nil {
+		return ComposeState{}, err
+	}
 	editable := s.adopt(d)
-	out := ComposeState{DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
+	out := ComposeState{Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Signature: mail.HTMLToText(s.signature), Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Text: composeText()}

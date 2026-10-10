@@ -73,6 +73,13 @@ func gui(ctx context.Context, dataDir string) int {
 			return 0, false
 		},
 		PickFiles: pickFiles,
+		Emit: func(winID int, ev webui.WitEvent) {
+			if w := mygo.WindowByID(winID); w != nil {
+				if err := webui.WitStream.Emit(w, ev); err != nil {
+					log.Printf("wit event to compose window %d: %v", winID, err)
+				}
+			}
+		},
 	}))
 	var windows *webui.Windows
 	var cas cascade

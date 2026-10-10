@@ -132,6 +132,52 @@ func TestDeleteDraftIfEmptyRevision(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestDeleteDraftIfEmptyKeepsActiveRun(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	llm := e.LLM(t)
+	t.Cleanup(llm.Release)
+	emptyIfDeleted := func(d core.Draft) bool {
+		d, err := e.Svc.GetDraft(ctx, d.ID)
+		require.NoError(t, err)
+		deleted, err := e.Svc.DeleteDraftIfEmpty(ctx, d.ID, d.Revision)
+		require.NoError(t, err)
+		return deleted
+	}
+	untilEnd := func(ch <-chan core.WitEvent) (last core.WitEvent) {
+		for ev := range ch {
+			last = ev
+		}
+		return last
+	}
+
+	running, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+	ch, err := e.Svc.Assist(ctx, running.ID, "hi")
+	require.NoError(t, err)
+	<-ch // the run has started
+	assert.False(t, emptyIfDeleted(running), "a running run keeps the draft")
+	llm.Release()
+	require.Equal(t, "done", untilEnd(ch).Kind)
+	assert.True(t, emptyIfDeleted(running), "once the run is over it is empty again")
+
+	pending, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	_, q, sig := mail.SplitDraft(pending.HTML)
+	pending.HTML = mail.JoinDraft("<p>Hello</p>", q, sig)
+	pending, err = e.Svc.SaveDraft(ctx, pending)
+	require.NoError(t, err)
+	llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "update_draft", Args: `{"html":"<p>Hi</p>"}`}}})
+	ch, err = e.Svc.Assist(ctx, pending.ID, "edit")
+	require.NoError(t, err)
+	require.Equal(t, "interrupted", untilEnd(ch).Kind)
+	pending.HTML = mail.JoinDraft("", q, sig) // emptied while the edit waits
+	_, err = e.Svc.SaveDraft(ctx, pending)
+	require.NoError(t, err)
+	assert.False(t, emptyIfDeleted(pending), "a pending approval keeps the draft")
+}
+
 func TestAttachmentAtRevision(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")

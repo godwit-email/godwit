@@ -113,6 +113,10 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	return st, nil
 }
 
+// ReadingLanguage is the language Wit reads and writes in: the setting,
+// else the UI language, else the system language, else "en".
+func (s *Service) ReadingLanguage(ctx context.Context) string { return s.readingLanguage(ctx) }
+
 // readingLanguage is ReadingLanguage, else UILanguage, else the system language, else "en".
 func (s *Service) readingLanguage(ctx context.Context) string {
 	st, _ := s.loadSettings(ctx)

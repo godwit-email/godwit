@@ -42,6 +42,8 @@ type ComposeState struct {
 	UpdatedAt int64 `json:"updatedAt"`
 	// Text is the page's copy: i18n key → text in the UI language.
 	Text map[string]string `json:"text"`
+	// Wit is what the Wit panel offers, as WitInfo.
+	Wit WitInfo `json:"wit"`
 }
 
 // ComposeEdit is what the page saves: the fields it edits, and the revision
