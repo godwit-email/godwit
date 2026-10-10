@@ -102,8 +102,6 @@ var en = map[string]string{
 	"provider.dingtalk.mark":              "D",
 	"provider.icloud":                     "iCloud",
 	"provider.icloud.mark":                "i",
-	"provider.fastmail":                   "Fastmail",
-	"provider.fastmail.mark":              "F",
 	"provider.other":                      "Other IMAP mailbox",
 	"provider.other.mark":                 "@",
 	"onboarding.change":                   "← Use another address",

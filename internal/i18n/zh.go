@@ -102,8 +102,6 @@ var zh = map[string]string{
 	"provider.dingtalk.mark":              "钉",
 	"provider.icloud":                     "iCloud",
 	"provider.icloud.mark":                "i",
-	"provider.fastmail":                   "Fastmail",
-	"provider.fastmail.mark":              "F",
 	"provider.other":                      "其他 IMAP 邮箱",
 	"provider.other.mark":                 "@",
 	"onboarding.change":                   "← 换一个邮箱",

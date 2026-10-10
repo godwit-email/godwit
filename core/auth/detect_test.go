@@ -87,7 +87,7 @@ func TestDetectRejectsBadAddress(t *testing.T) {
 }
 
 func TestProvidersComplete(t *testing.T) {
-	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "dingtalk", "icloud", "fastmail"}
+	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "dingtalk", "icloud"}
 	ps := auth.ListProviders()
 	if len(ps) != len(want) {
 		t.Fatalf("got %d providers", len(ps))
@@ -116,10 +116,10 @@ func TestProvidersComplete(t *testing.T) {
 func TestDetectMXBoundaryPriorityAndSRVFallback(t *testing.T) {
 	r := fakeResolver{
 		mx: map[string][]*net.MX{
-			"prio.example":  {{Host: "mxbiz1.qq.com.", Pref: 20}, {Host: "in.messagingengine.com.", Pref: 1}},
+			"prio.example":  {{Host: "mxbiz1.qq.com.", Pref: 20}, {Host: "mx1.feishu.cn.", Pref: 1}},
 			"evil1.example": {{Host: "mx.evilgoogle.com.", Pref: 1}},
 			"evil2.example": {{Host: "mxbiz1.evilqq.com.", Pref: 1}},
-			"evil3.example": {{Host: "in.notmessagingengine.com.", Pref: 1}},
+			"evil3.example": {{Host: "mx1.notfeishu.cn.", Pref: 1}},
 			"evil4.example": {{Host: "x.googlemail.com.evil.example.", Pref: 1}},
 		},
 		srv: map[string][]*net.SRV{
@@ -139,7 +139,7 @@ func TestDetectMXBoundaryPriorityAndSRVFallback(t *testing.T) {
 		}
 		return p, s
 	}
-	if p, s := get("a@prio.example"); p.ID != "fastmail" || s != "mx" {
+	if p, s := get("a@prio.example"); p.ID != "feishu" || s != "mx" {
 		t.Errorf("lowest preference must win: got %s/%s", p.ID, s)
 	}
 	for _, d := range []string{"evil1", "evil2", "evil3", "evil4"} {

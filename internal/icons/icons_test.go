@@ -42,7 +42,7 @@ func TestBrands(t *testing.T) {
 			t.Errorf("no mark for %s", id)
 		}
 	}
-	if Brand("fastmail") != nil {
-		t.Error("fastmail has a mark")
+	if Brand("other") != nil {
+		t.Error("other has a mark")
 	}
 }

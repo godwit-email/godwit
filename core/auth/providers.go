@@ -72,9 +72,6 @@ func table() []Provider {
 		{ID: "icloud", Name: "iCloud Mail", Domains: []string{"icloud.com", "me.com", "mac.com"},
 			IMAP: tls("imap.mail.me.com"), SMTP: Server{"smtp.mail.me.com", 587, conn.StartTLS}, Login: "app_password",
 			HelpURL: "https://support.apple.com/102654"},
-		{ID: "fastmail", Name: "Fastmail", Domains: []string{"fastmail.com", "fastmail.fm"},
-			IMAP: tls("imap.fastmail.com"), SMTP: smtps("smtp.fastmail.com"), Login: "app_password",
-			HelpURL: "https://www.fastmail.help/hc/en-us/articles/360058752854-App-passwords"},
 	}
 }
 
