@@ -298,7 +298,12 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
+	ink := t.Foreground // a shadow is dark in either appearance
+	if t.Dark {
+		ink = t.Background
+	}
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
+		Shadow(0, theme.ShadowPanel.Y, theme.ShadowPanel.Blur, 0, ink.Alpha(theme.PanelShadowAlpha)).
 		Border(theme.Hairline, t.Border).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
 		if a.sidebarHidden {

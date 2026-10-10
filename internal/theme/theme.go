@@ -105,6 +105,12 @@ type Shadow struct{ Y, Blur float32 }
 // dialogs, Xl under the add-account sheet.
 var ShadowSm, ShadowMd, ShadowLg, ShadowXl = Shadow{1, 2}, Shadow{4, 16}, Shadow{16, 48}, Shadow{24, 64}
 
+// ShadowPanel lifts the page panel off the window, all round, at
+// PanelShadowAlpha of the ink.
+var ShadowPanel = Shadow{0, 4}
+
+const PanelShadowAlpha = 0.055
+
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {
 	f := t.FontSize
