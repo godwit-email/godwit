@@ -136,6 +136,20 @@ test("a composition in progress at closing is committed, then flushed", async ()
   expect(api.closed).toHaveBeenCalledWith(5, true);
 });
 
+test("a compositionend fired synchronously by the blur still flushes and answers", async () => {
+  render(<ComposePage />);
+  const el = await body();
+  el.focus();
+  act(() => {
+    el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  });
+  fireEvent.change(el, { target: { value: "正文你" } });
+  el.blur = () => el.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+  await act(async () => h.closing?.(7));
+  expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ body: "正文你" }));
+  expect(api.closed).toHaveBeenCalledWith(7, true);
+});
+
 describe("autosave", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
   afterEach(() => vi.useRealTimers());
@@ -175,6 +189,28 @@ describe("autosave", () => {
     expect(api.save).toHaveBeenCalledTimes(1);
     await u.type(el, "?");
     expect(el).toHaveValue("正文!?");
+  });
+
+  test("a composition still open after 1 s: flushed, answered unsaved, editable and focused again", async () => {
+    const u = setup();
+    render(<ComposePage />);
+    const el = await body();
+    await u.click(el);
+    act(() => {
+      el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    fireEvent.change(el, { target: { value: "正文ni" } });
+    let done!: Promise<void>;
+    act(() => {
+      done = h.closing?.(6) as unknown as Promise<void>;
+    });
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    await act(() => done);
+    expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ body: "正文ni" }));
+    expect(api.closed).toHaveBeenCalledWith(6, false);
+    expect(el).toHaveFocus();
+    fireEvent.change(el, { target: { value: "正文你" } });
+    expect(el).toHaveValue("正文你");
   });
 
   test("IME: no save until compositionend", async () => {

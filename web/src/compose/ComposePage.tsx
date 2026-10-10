@@ -29,7 +29,7 @@ interface CloseGate {
  *
  * A closing freezes input until its answer, so nothing typed after the flush is lost to the
  * window's Destroy. A composition in progress commits first (blur, up to 1 s) so its text is
- * flushed. The page cannot see whether the user kept the window, so: saved=false (the user is
+ * flushed; one still open after that is flushed as is but answered saved=false. The page cannot see whether the user kept the window, so: saved=false (the user is
  * asked and may keep it) thaws at once; saved=true thaws only if the window is still alive 2 s
  * later (the answer came too late to count). A newer closing keeps an older one from thawing.
  */
@@ -48,17 +48,26 @@ export function ComposePage() {
     // Closing before the draft loaded has nothing to flush.
     return events.closing.on(async (gen) => {
       const n = ++g.closings;
-      if (g.ime) {
-        (document.activeElement as HTMLElement | null)?.blur(); // commits the composition
-        await Promise.race([g.ime.ended, wait(1000)]);
+      const ime = g.ime; // blur may end the composition, clearing g.ime, synchronously
+      let committed = true;
+      let focused: HTMLElement | null = null;
+      if (ime) {
+        focused = document.activeElement as HTMLElement | null;
+        focused?.blur(); // commits the composition
+        committed = await Promise.race([ime.ended.then(() => true), wait(1000).then(() => false)]);
         await wait(0); // WebKit sends the committed text's input after compositionend
       }
       freeze(true);
       const sv = saver.current; // cleanup may clear the ref while the flush runs
       await sv?.flush();
-      const saved = !sv || sv.status === "saved";
+      // An uncommitted composition is not the final text: answer unsaved so the user is asked.
+      const saved = committed && (!sv || sv.status === "saved");
       await api.closed(gen, saved);
-      const thaw = () => n === g.closings && freeze(false);
+      const thaw = () => {
+        if (n !== g.closings) return;
+        freeze(false);
+        focused?.focus(); // back where the blur took it
+      };
       if (saved) setTimeout(thaw, 2000);
       else thaw();
     });
