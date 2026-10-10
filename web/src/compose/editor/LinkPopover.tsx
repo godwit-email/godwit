@@ -26,7 +26,7 @@ export function LinkPopover(props: {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger render={trigger} />
-      <PopoverContent>
+      <PopoverContent className="w-80 border ring-0">
         <form
           className="flex flex-col gap-2"
           onSubmit={(e) => {
@@ -35,7 +35,9 @@ export function LinkPopover(props: {
             else setBad(true);
           }}
         >
-          <Label htmlFor={id}>{t("compose.link.url")}</Label>
+          <Label htmlFor={id} className="font-normal text-muted-foreground">
+            {t("compose.link.url")}
+          </Label>
           <div className="flex gap-2">
             <Input
               id={id}

@@ -83,8 +83,11 @@ export function Fields({
   }));
 
   const row = (k: string, label: string, control: ReactNode) => (
-    <div key={k} className="flex items-center gap-3 border-b px-5 py-2">
-      <Label htmlFor={`${id}${k}`} className="w-16 shrink-0 font-normal text-muted-foreground">
+    <div key={k} className="flex items-center gap-3 border-b px-5 py-1.5 text-md">
+      <Label
+        htmlFor={`${id}${k}`}
+        className="w-14 shrink-0 font-normal text-md text-muted-foreground leading-normal"
+      >
         {label}
       </Label>
       {control}
@@ -128,7 +131,12 @@ export function Fields({
           onValueChange={(v) => v !== null && onFrom(v)}
           items={accounts.map((a) => ({ value: a.id, label: a.email }))}
         >
-          <SelectTrigger id={`${id}from`} aria-label={t("compose.from.select")} size="sm">
+          <SelectTrigger
+            id={`${id}from`}
+            aria-label={t("compose.from.select")}
+            size="sm"
+            className="-ml-2.5 border-transparent text-md hover:bg-muted dark:bg-transparent"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -145,7 +153,13 @@ export function Fields({
         "compose.to",
         "compose.to.input",
         !showCc && (
-          <Button variant="link" size="sm" disabled={frozen} onClick={() => setCcOpen(true)}>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto shrink-0 px-0 font-normal text-base text-muted-foreground hover:text-foreground"
+            disabled={frozen}
+            onClick={() => setCcOpen(true)}
+          >
             {t("compose.cc_bcc")}
           </Button>
         ),
@@ -158,7 +172,7 @@ export function Fields({
         </>
       )}
       {bad.length > 0 && (
-        <p className="px-5 py-1.5 text-sm text-destructive">
+        <p className="border-b px-5 py-2 text-base text-destructive">
           {t("compose.invalid", bad.join(", "))}
         </p>
       )}
@@ -167,7 +181,7 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-7 flex-1 border-0 px-0 shadow-none focus-visible:ring-0"
+          className="h-7 flex-1 rounded-none border-0 bg-transparent px-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}

@@ -42,13 +42,13 @@ export function AddressInput({
         <Badge
           key={addr}
           variant={invalid([addr]).length ? "destructive" : "secondary"}
-          className="h-6 pr-0.5"
+          className="h-6 rounded-full pr-0.5 pl-2 font-normal text-base"
         >
           {addr}
           <Button
             variant="ghost"
             size="icon-xs"
-            className="size-5"
+            className="size-5 rounded-full"
             aria-label={t("compose.remove", addr)}
             disabled={frozen}
             onClick={() => !frozen && onRemove(addr)}
@@ -59,7 +59,7 @@ export function AddressInput({
       ))}
       <input
         id={id}
-        className="min-w-30 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="h-7 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
         placeholder={placeholder}
         value={pending}
         readOnly={frozen}

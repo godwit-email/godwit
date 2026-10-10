@@ -376,109 +376,113 @@ function Compose({
         void send();
       }}
     >
-      <header className="compose-titlebar flex shrink-0 items-center border-b pr-5">
-        <div className="flex min-w-0 flex-col">
-          <h1 className="truncate font-medium text-sm">{title}</h1>
-          <p className="text-muted-foreground text-xs">
+      <header className="compose-titlebar flex shrink-0 items-center border-b pr-4">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h1 className="truncate font-semibold text-md">{title}</h1>
+          <p className="shrink-0 text-muted-foreground text-sm">
             {status === "saved"
               ? t("compose.status.saved", savedAt)
               : t(`compose.status.${status}`)}
           </p>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        <Fields
-          key={initial.n}
-          ref={fieldsRef}
-          frozen={locked}
-          accounts={state.accounts}
-          from={from}
-          onFrom={onFrom}
-          to={f.to}
-          cc={f.cc}
-          bcc={f.bcc}
-          replyTo={f.replyTo}
-          subject={f.subject}
-          onChange={(e: FieldsEdit) => edit(e)}
-          t={t}
-        />
-        <div className="flex min-h-64 flex-1 flex-col gap-3 px-5 py-3">
-          <Editor
-            key={`${state.draftId}:${initial.n}`}
-            initial={initial.body}
-            readOnly={locked}
-            placeholder=""
-            onChange={(body) => edit({ body })}
-            onComposing={() => {}} // <main> tracks compositions, the fields' too
-            t={t}
-            attach={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("compose.attach")}
-                disabled={locked}
-                onClick={() => change((rev) => api.addAttachments(rev))}
-              >
-                <RiAttachment2 />
-              </Button>
-            }
-          />
-          {signature && (
-            <pre className="whitespace-pre-wrap font-sans text-muted-foreground text-sm">
-              {signature}
-            </pre>
-          )}
-          {quote && (
-            <div>
-              <Button
-                variant="link"
-                size="sm"
-                className="px-0"
-                onClick={() => setShowQuote(!showQuote)}
-              >
-                {t("compose.quote.show")}
-              </Button>
-              {showQuote && (
-                <pre className="whitespace-pre-wrap font-sans text-muted-foreground text-sm">
-                  {quote}
-                </pre>
+      {/* A row: the compose column now, a side panel (Wit, plan 3) beside it later. */}
+      <div className="flex min-h-0 flex-1">
+        <section className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <Fields
+              key={initial.n}
+              ref={fieldsRef}
+              frozen={locked}
+              accounts={state.accounts}
+              from={from}
+              onFrom={onFrom}
+              to={f.to}
+              cc={f.cc}
+              bcc={f.bcc}
+              replyTo={f.replyTo}
+              subject={f.subject}
+              onChange={(e: FieldsEdit) => edit(e)}
+              t={t}
+            />
+            <Editor
+              key={`${state.draftId}:${initial.n}`}
+              initial={initial.body}
+              readOnly={locked}
+              placeholder=""
+              onChange={(body) => edit({ body })}
+              onComposing={() => {}} // <main> tracks compositions, the fields' too
+              t={t}
+              attach={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-7.5 rounded-md text-foreground/80"
+                  aria-label={t("compose.attach")}
+                  disabled={locked}
+                  onClick={() => change((rev) => api.addAttachments(rev))}
+                >
+                  <RiAttachment2 className="size-3.75" />
+                </Button>
+              }
+            />
+            <div className="flex flex-col gap-4 px-5 pb-4 *:empty:hidden">
+              {signature && (
+                <div className="whitespace-pre-wrap text-base text-muted-foreground">
+                  {signature}
+                </div>
               )}
+              {quote && (
+                <div className="text-base text-muted-foreground">
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0 font-normal text-base text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowQuote(!showQuote)}
+                  >
+                    {t("compose.quote.show")}
+                  </Button>
+                  {showQuote && (
+                    <div className="mt-2 whitespace-pre-wrap border-l-2 pl-3">{quote}</div>
+                  )}
+                </div>
+              )}
+              <Attachments
+                items={attachments}
+                tooLarge={tooLarge}
+                failed={failed}
+                frozen={locked}
+                onRemove={(id) =>
+                  change((rev) =>
+                    api.removeAttachment(id, rev).then((c) => ({ ...c, tooLarge: [], failed: [] })),
+                  )
+                }
+                t={t}
+              />
+              <Notices
+                warnings={warnings.list}
+                blocked={blocked}
+                conflict={sv?.status === "conflict"}
+                latestFailed={latestFailed}
+                frozen={locked}
+                onSendAnyway={() => send(warnings.digest)}
+                onKeepMine={() => resolve(true)}
+                onUseLatest={() => resolve(false)}
+                onRetry={() => retry.current()}
+                t={t}
+              />
             </div>
-          )}
-          <Attachments
-            items={attachments}
-            tooLarge={tooLarge}
-            failed={failed}
-            frozen={locked}
-            onRemove={(id) =>
-              change((rev) =>
-                api.removeAttachment(id, rev).then((c) => ({ ...c, tooLarge: [], failed: [] })),
-              )
-            }
-            t={t}
-          />
-          <Notices
-            warnings={warnings.list}
-            blocked={blocked}
-            conflict={sv?.status === "conflict"}
-            latestFailed={latestFailed}
-            frozen={locked}
-            onSendAnyway={() => send(warnings.digest)}
-            onKeepMine={() => resolve(true)}
-            onUseLatest={() => resolve(false)}
-            onRetry={() => retry.current()}
-            t={t}
-          />
-        </div>
-      </div>
-      <div className="shrink-0 border-t px-5 py-3">
-        <SendBar
-          sending={sending}
-          frozen={locked}
-          onSend={() => send()}
-          onDiscard={discard}
-          t={t}
-        />
+          </div>
+          <div className="shrink-0 border-t px-5 py-3">
+            <SendBar
+              sending={sending}
+              frozen={locked}
+              onSend={() => send()}
+              onDiscard={discard}
+              t={t}
+            />
+          </div>
+        </section>
       </div>
     </main>
   );

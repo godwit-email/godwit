@@ -30,16 +30,19 @@ export function SendBar({
   const [asking, setAsking] = useState(false);
   const off = sending || frozen;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <Button disabled={off} onClick={onSend}>
-          {t("compose.send")}
-        </Button>
-        <Button variant="ghost" disabled={off} onClick={() => setAsking(true)}>
-          {t("compose.discard")}
-        </Button>
-      </div>
-      <p className="text-muted-foreground text-xs">{t("compose.note")}</p>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button className="px-5 font-semibold text-md" disabled={off} onClick={onSend}>
+        {t("compose.send")}
+      </Button>
+      <Button
+        variant="outline"
+        className="px-3 font-normal text-md"
+        disabled={off}
+        onClick={() => setAsking(true)}
+      >
+        {t("compose.discard")}
+      </Button>
+      <p className="ml-auto text-base text-muted-foreground">{t("compose.note")}</p>
       <AlertDialog open={asking} onOpenChange={setAsking}>
         <AlertDialogContent>
           <AlertDialogHeader>

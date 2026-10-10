@@ -104,6 +104,7 @@ export function Toolbar(props: {
     <ToggleGroupItem
       value={it.key}
       aria-label={t(it.label)}
+      className="size-7.5 min-w-7.5 rounded-md px-0 text-foreground/80"
       disabled={readOnly}
       onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
       onClick={() => {
@@ -112,13 +113,13 @@ export function Toolbar(props: {
         editor.tf.focus();
       }}
     >
-      <it.Icon />
+      <it.Icon className="size-3.75" />
     </ToggleGroupItem>
   );
 
   return (
-    <div className="flex items-center gap-1">
-      <ToggleGroup multiple value={value} size="sm" spacing={0}>
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b bg-background px-3.5 py-1.5">
+      <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {items.map((it) => {
           const trigger = <TooltipTrigger render={button(it)} />;
           return (
@@ -141,7 +142,7 @@ export function Toolbar(props: {
       </ToggleGroup>
       {attach && (
         <>
-          <Separator orientation="vertical" className="mx-1 h-5" />
+          <Separator orientation="vertical" className="mx-1.5 h-4.5 data-vertical:self-center" />
           {attach}
         </>
       )}
