@@ -162,4 +162,11 @@ func TestShadowsAsTailwind(t *testing.T) {
 			t.Errorf("shadow-%s = %v, want %v", name, tc.got, tc.want)
 		}
 	}
+	// 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 80px 8px #00000006
+	if want := (Elevation{{0, 0, 1, 10.0 / 255}, {2, 8, 0, 10.0 / 255}, {4, 80, 8, 6.0 / 255}}); !slices.Equal(ShadowFloat, want) {
+		t.Errorf("ShadowFloat = %v, want %v", ShadowFloat, want)
+	}
+	if d := Dark(); d.FloatEdge != p.White.Color().Alpha(0.12) {
+		t.Errorf("dark FloatEdge %v", d.FloatEdge)
+	}
 }

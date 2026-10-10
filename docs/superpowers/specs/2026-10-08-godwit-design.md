@@ -318,7 +318,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   - Button 变体 `Default` / `Secondary` / `Outline` / `Ghost` / `Destructive` / `Link`，尺寸 `Sm`（28）/ `Default`（32）/ `Lg`（36），图标按钮另有 `Xs`（16，标签上的移除按钮）。
   - 组件清单：Button、IconButton、Input、TextArea、Field、Select、Checkbox、Radio、Switch、Tabs、ToggleGroup、Dialog、Popover、Tooltip、Collapsible、Card（Header / Content / Footer）、Badge、Alert、Avatar、Separator、Skeleton、Spinner、Kbd、StatusDot、SidebarItem、RailButton、Pressable（自定义内容的可点击区域）、Toast。
   - Toast 显示在顶栏下方居中，最新的在最上面，最多三条；分普通、成功（`circle-check`，绿）、警告（`triangle-alert`，琥珀）、失败（`circle-x`，红）四种。有色的三种用同色系浅色底（50）、边框（200，警告沿用 `amber-300`）、深色字和图标（700，警告 `amber-800`），圆角 14；普通的白底灰边、不带图标。
-  - 阴影照搬 Tailwind v4（shadcn 用的那套）：xs 输入框、Select、复选框、单选、Outline 按钮、页面面板；sm 卡片、Tabs 选中项；md Popover、Select 下拉；lg 对话框、Sheet、Toast；开关滑块无阴影。
+  - 阴影照搬 Tailwind v4（shadcn 用的那套）：xs 输入框、Select、复选框、单选、Outline 按钮、页面面板；sm 卡片、Tabs 选中项；md Popover、Select 下拉；lg 对话框、Sheet、Toast；开关滑块无阴影。另有一档 `float`，给悬浮在内容上的输入框（Wit 输入框）：浅色是 `0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006`，那圈 1px 就是它的描边；深色是 20% 白的 1px 模糊内阴影，mygo 画不了内阴影，暂用 12% 白的细线代替。
   - 菜单（下拉菜单、右键菜单）用系统原生菜单（`Element.Menu` / `ContextMenu`），不自绘。
   - app 里不直接用 mygo 的无样式基础组件（`ButtonBase`、`TextInputBase`、`TextAreaBase`、`DialogBase`、`PopoverBase`、`TooltipBase`）和 `Element.Tooltip`，一律经 kit；有测试守着。
 - **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的背景色、边框色渐变，开关滑块的移动，Collapsible 展开收起和箭头转动，Skeleton 的呼吸闪烁。Dialog / Sheet / Popover 打开时淡入并上移几像素（只做进场；mygo 不给随父层一起出现的元素播进场动画，由 kit 记下打开时刻自己算进度），关闭和 Tooltip 直接出现消失。文字颜色直接切换。系统开启「减少动态效果」时不播放：过渡由 mygo 处理，Skeleton 自己检查。

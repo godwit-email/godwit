@@ -263,7 +263,7 @@ func strList(v any) []string {
 
 // inputBox is the question's text area: Enter sends, Shift+Enter starts a
 // new line; while a run goes on Send is Stop. Below it the default model,
-// which opens the model settings. The box floats on shadow-md.
+// which opens the model settings. The box floats (kit.Float).
 func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	t, th := theme.Of(c), c.Theme()
 	if o.Tools != nil {
@@ -273,8 +273,8 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	if label == "" {
 		label = i18n.T("wit.input")
 	}
-	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background)
-	kit.Elevate(c, box, theme.ShadowMd).Children(func() {
+	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Background(t.Background)
+	kit.Float(c, box).Children(func() {
 		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
 				if ev.Kind != ui.InputKeyDown || ev.Key != ui.KeyEnter || ev.Mods != 0 || p.composing {
