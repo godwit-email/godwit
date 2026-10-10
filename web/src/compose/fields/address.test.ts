@@ -24,3 +24,15 @@ test("invalid", () => {
     ]),
   ).toEqual(["a@", "@x.io", "a b@x.io", "a..b@x.io", "Name <bad>", "a@b.c>"]);
 });
+
+test("commas inside a quoted name do not split", () => {
+  expect(commit('"Doe, J." <j@example.com>, a@b.c', [], false)).toEqual([
+    '"Doe, J." <j@example.com>',
+    "a@b.c",
+  ]);
+  expect(commit('"a\\", b" <x@y.z>', [], false)).toEqual(['"a\\", b" <x@y.z>']);
+});
+
+test("quoted local parts are addresses", () => {
+  expect(invalid(['"john doe"@x.io', 'Name <"a,b"@x.io>', '"open@x.io'])).toEqual(['"open@x.io']);
+});

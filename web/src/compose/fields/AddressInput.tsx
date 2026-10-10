@@ -55,7 +55,8 @@ export function AddressInput({
         value={pending}
         onChange={(e) => {
           const v = e.target.value;
-          if (v.includes(",")) onCommit(v);
+          // a comma outside quotes ends an address
+          if (v.replace(/"(?:[^"\\]|\\.)*("|$)/g, "").includes(",")) onCommit(v);
           else onPending(v);
         }}
         onKeyDown={(e) => {

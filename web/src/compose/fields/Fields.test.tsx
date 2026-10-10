@@ -126,3 +126,9 @@ test("pasting several addresses at once makes chips of all", () => {
   });
   expect(chips()).toEqual(["移除 a@b.c", "移除 c@d.e"]);
 });
+
+test("a comma inside a quoted name does not commit", async () => {
+  setup();
+  await userEvent.type(screen.getByRole("textbox", { name: "收件人" }), '"Doe, J." <j@x.io>,');
+  expect(chips()).toEqual(['移除 "Doe, J." <j@x.io>']);
+});

@@ -193,7 +193,7 @@ describe("autosave", () => {
     expect(el).toHaveValue("正文!?");
   });
 
-  test("a composition still open after 1 s: flushed, answered unsaved, editable and focused again", async () => {
+  test("a composition still open after 1 s: not saved, answered unsaved, editable and focused again", async () => {
     const u = setup();
     render(<ComposePage />);
     const el = await body();
@@ -208,7 +208,7 @@ describe("autosave", () => {
     });
     await act(() => vi.advanceTimersByTimeAsync(1000));
     await act(() => done);
-    expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ body: "正文ni" }));
+    expect(api.save).not.toHaveBeenCalled();
     expect(api.closed).toHaveBeenCalledWith(6, false);
     expect(el).toHaveFocus();
     fireEvent.change(el, { target: { value: "正文你" } });
@@ -271,4 +271,15 @@ test("unmount during a failing flush still answers closed(gen, false)", async ()
   unmount();
   await act(async () => fail(new Error("x")));
   expect(api.closed).toHaveBeenCalledWith(9, false);
+});
+
+test("a failing closed answer thaws the page", async () => {
+  vi.mocked(api.closed).mockRejectedValueOnce(new Error("x"));
+  render(<ComposePage />);
+  const el = await body();
+  await userEvent.type(el, "!");
+  await act(async () => h.closing?.(3));
+  expect(api.closed).toHaveBeenCalledWith(3, true);
+  await userEvent.type(el, "?");
+  expect(el).toHaveValue("正文!?");
 });

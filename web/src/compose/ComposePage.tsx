@@ -42,7 +42,7 @@ async function settle(g: CloseGate): Promise<boolean> {
  *
  * A closing freezes input until its answer, so nothing typed after the flush is lost to the
  * window's Destroy. A composition in progress commits first (blur, up to 1 s) so its text is
- * flushed; one still open after that is flushed as is but answered saved=false. The page cannot see whether the user kept the window, so: saved=false (the user is
+ * flushed; one still open after that is not saved and is answered saved=false. The page cannot see whether the user kept the window, so: saved=false (the user is
  * asked and may keep it) thaws at once; saved=true thaws only if the window is still alive 2 s
  * later (the answer came too late to count). A newer closing keeps an older one from thawing.
  */
@@ -68,10 +68,17 @@ export function ComposePage() {
         freeze(true);
         await api.closed(gen, saved);
       };
-      // An uncommitted composition is saved as is but answered unsaved, so the user is asked.
-      let saved = true; // closing before the draft loaded has nothing to flush
-      if (sv) saved = await sv.flush(answer);
-      else await answer(true);
+      // An uncommitted composition is not saved and is answered unsaved, so the user is asked.
+      let saved = false;
+      try {
+        if (sv) saved = await sv.flush(answer);
+        else {
+          await answer(true); // closing before the draft loaded has nothing to flush
+          saved = true;
+        }
+      } catch {
+        // the answer did not go out: the window stays, so the page must not stay frozen
+      }
       const thaw = () => {
         if (n !== g.closings) return;
         freeze(false);
@@ -131,7 +138,18 @@ function Editor({
 
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
   useEffect(() => {
-    const n = createSaver(api.save, { revision: state.revision });
+    const n = createSaver(api.save, {
+      revision: state.revision,
+      snapshot: {
+        to: state.to,
+        cc: state.cc,
+        bcc: state.bcc,
+        replyTo: state.replyTo,
+        subject: state.subject,
+        body: state.body,
+        revision: state.revision,
+      },
+    });
     n.setSettle(() => settle(gate));
     const off = n.onChange(() => {
       if (n.status === "saved") setSavedAt(new Date());
@@ -143,7 +161,7 @@ function Editor({
       n.dispose();
       if (saver.current === n) saver.current = undefined;
     };
-  }, [state.revision, saver, gate]);
+  }, [state, saver, gate]);
   useEffect(() => {
     currentWindow.setTitle(f.subject.trim() || "新邮件");
   }, [f.subject]);

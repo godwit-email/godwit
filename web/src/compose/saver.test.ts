@@ -170,7 +170,7 @@ test("run waits for the save then chains the revision", async () => {
   });
   const r = await s.run(op);
   expect(save.mock.calls[0][0]).toMatchObject({ body: "a", revision: 1 });
-  expect(op).toHaveBeenCalledWith(2);
+  expect(op.mock.calls[0][0]).toBe(2);
   expect(r).toEqual({ revision: 3, conflict: false });
   s.edit(ed("b"));
   await vi.advanceTimersByTimeAsync(1000);
@@ -265,7 +265,7 @@ test("use latest drops old content", async () => {
   s.edit(ed("older")); // typed during the conflict
   const kept = s.keepMine(5); // its response comes too late
   await vi.advanceTimersByTimeAsync(0);
-  s.useLatest(9);
+  s.useLatest(9, ed("latest"));
   expect(s.status).toBe("saved");
   late.resolve({ revision: 6, conflict: false });
   await kept;
@@ -284,7 +284,7 @@ test("use latest drops a pending edit", async () => {
   s.edit(ed("a"));
   await vi.advanceTimersByTimeAsync(1000);
   s.edit(ed("b"));
-  s.useLatest(9);
+  s.useLatest(9, ed("latest"));
   await vi.advanceTimersByTimeAsync(5000);
   expect(await s.flush()).toBe(true);
   expect(save).toHaveBeenCalledTimes(1);
@@ -305,4 +305,101 @@ test("run conflict stops saves", async () => {
   s.edit(ed("more"));
   await vi.advanceTimersByTimeAsync(1000);
   expect(save.mock.calls[1][0]).toMatchObject({ body: "more", revision: 6 });
+});
+
+test("a settling that does not finish saves nothing; the close answer still goes out", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  s.setComposing(true);
+  s.edit(ed("ni"));
+  s.setSettle(async () => false);
+  const after = vi.fn();
+  expect(await s.flush(after)).toBe(false);
+  expect(after).toHaveBeenCalledWith(false);
+  expect(save).not.toHaveBeenCalled();
+  expect(await s.keepMine(3)).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+});
+
+test("never saves while composing, even when flushed", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  s.edit(ed("a"));
+  s.setComposing(true);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(await s.flush()).toBe(false); // the settle hook claims done, the composition is still open
+  expect(save).not.toHaveBeenCalled();
+  s.setComposing(false);
+  expect(await s.flush()).toBe(true);
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+test("an autosave due during an op waits for it", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  s.edit(ed("a")); // due at 1000
+  const d = deferred<{ revision: number; conflict: boolean }>();
+  let started = false;
+  const op = s.run(async () => {
+    started = true;
+    return d.promise;
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(started).toBe(true);
+  expect(save).toHaveBeenCalledTimes(1); // the flush took it
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(save).toHaveBeenCalledTimes(1);
+  d.resolve(ok);
+  await op;
+});
+
+test("keep mine settles, freezes and saves the full snapshot", async () => {
+  let frozenDuringSave = false;
+  const save = vi
+    .fn()
+    .mockResolvedValueOnce({ revision: 1, conflict: true })
+    .mockImplementation(async () => {
+      frozenDuringSave = s.frozen;
+      return ok;
+    });
+  const s = createSaver(save, { revision: 1, snapshot: ed("loaded") });
+  s.edit(ed("a"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(s.status).toBe("conflict");
+  s.setSettle(async () => {
+    s.edit(ed("a, committed"));
+    return true;
+  });
+  expect(await s.keepMine(5)).toBe(true);
+  expect(save.mock.calls[1][0]).toMatchObject({ body: "a, committed", revision: 5 });
+  expect(frozenDuringSave).toBe(true);
+  expect(s.frozen).toBe(false);
+});
+
+test("keep mine after use latest saves the latest content, not the abandoned edit", async () => {
+  const save = vi.fn().mockResolvedValueOnce({ revision: 1, conflict: true }).mockResolvedValue(ok);
+  const s = createSaver(save, { revision: 1 });
+  s.edit(ed("abandoned"));
+  await vi.advanceTimersByTimeAsync(1000);
+  s.useLatest(9, ed("latest"));
+  expect(await s.keepMine(9)).toBe(true);
+  expect(save.mock.calls[1][0]).toMatchObject({ body: "latest", revision: 9 });
+});
+
+test("keep mine with no edit saves the loaded snapshot", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save, { revision: 1, snapshot: ed("loaded") });
+  await s.run(async () => ({ revision: 1, conflict: true }));
+  expect(await s.keepMine(4)).toBe(true);
+  expect(save.mock.calls[0][0]).toMatchObject({ body: "loaded", revision: 4 });
+});
+
+test("an op flushing through its own flush does not deadlock", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  const r = await s.run(async (rev, flush) => {
+    expect(await flush()).toBe(true);
+    return { revision: rev, conflict: false };
+  });
+  expect(r).toEqual({ revision: 0, conflict: false });
 });

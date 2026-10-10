@@ -9,24 +9,27 @@ export interface Saver {
   edit(e: ComposeEdit): boolean;
   setComposing(on: boolean): void;
   /**
-   * Queued: settles input (the settle hook), then saves what is pending, even while composing.
-   * Input is frozen from the settling's end until `after` (the close answer) is done. Resolves
-   * false if the save failed or conflicted, or the settling did not finish (it is saved anyway).
+   * Queued: settles input (the settle hook), then saves what is pending. Input is frozen from the
+   * settling's end until `after` (the close answer) is done. Resolves false, and `after` gets
+   * false, if the settling did not finish (nothing is saved then) or the save failed or conflicted.
    */
   flush(after?: (saved: boolean) => Promise<void> | void): Promise<boolean>;
   /**
    * Queued: flushes (false → null, op not run), then runs op frozen with the current revision and
-   * adopts its result's; a conflict stops saving. Unfreezes whatever op does.
+   * adopts its result's; a conflict stops saving. Unfreezes whatever op does. Inside op, use the
+   * `flush` it is given: the saver's own queued methods would wait for op itself.
    */
-  run<R extends Outcome>(op: (revision: number) => Promise<R>): Promise<R | null>;
+  run<R extends Outcome>(
+    op: (revision: number, flush: () => Promise<boolean>) => Promise<R>,
+  ): Promise<R | null>;
   /** The page's input-settling hook: commit pending addresses, finish the IME composition. */
   setSettle(fn: () => Promise<boolean>): void;
   /** Called when an edit arrives while frozen. */
   onRefused(fn: () => void): void;
-  /** After a conflict: saves the latest local edit at latestRevision; responses to older saves are ignored. */
+  /** Queued, settled and frozen as run: after a conflict, saves the local snapshot at latestRevision. */
   keepMine(latestRevision: number): Promise<boolean>;
-  /** After a conflict: drops pending edits and in-flight responses, adopts revision, reads as saved. */
-  useLatest(revision: number): void;
+  /** After a conflict: drops pending edits and in-flight responses, adopts revision and snapshot (the latest draft), reads as saved. */
+  useLatest(revision: number, snapshot: ComposeEdit): void;
   readonly status: SaveStatus;
   readonly frozen: boolean;
   onChange(fn: () => void): () => void;
@@ -35,25 +38,25 @@ export interface Saver {
 }
 
 /**
- * Saves the latest edit `delay` ms after the last one: never while composing, one save in flight,
- * none after a conflict. Flushes and operations run one at a time, in order.
+ * Saves the latest edit `delay` ms after the last one: never while composing, none after a
+ * conflict. Autosaves, flushes and operations all run one at a time through one queue; autosaves
+ * neither settle nor freeze. `snapshot` is the draft as loaded.
  */
 export function createSaver(
   save: (e: ComposeEdit) => Promise<SaveResult>,
-  opts: { delay?: number; revision?: number } = {},
+  opts: { delay?: number; revision?: number; snapshot?: ComposeEdit } = {},
 ): Saver {
   const delay = opts.delay ?? 1000;
   let revision = opts.revision ?? 0;
+  let snapshot = opts.snapshot; // the full local content, for keepMine
   let status: SaveStatus = "saved";
   let pending: ComposeEdit | undefined;
-  let last: ComposeEdit | undefined; // the newest edit taken, for keepMine
   let composing = false;
   let frozen = false;
   let lastInput = 0;
   let disposed = false;
-  let epoch = 0; // bumped by keepMine / useLatest: older saves' responses no longer count
+  let epoch = 0; // bumped by useLatest: saves already in flight no longer count
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<boolean> | undefined;
   let queue: Promise<unknown> = Promise.resolve();
   let settle = async () => true;
   const listeners = new Set<() => void>();
@@ -70,65 +73,58 @@ export function createSaver(
     frozen = on;
     notify();
   };
-  const schedule = () => {
-    clearTimeout(timer);
-    if (disposed || composing || status === "conflict") return;
-    // Only what is left of the delay since the last input.
-    timer = setTimeout(() => void saveNow(), Math.max(0, delay - (Date.now() - lastInput)));
-  };
-  // saveNow saves the pending edit; it resolves true unless the save failed.
-  const saveNow = async (): Promise<boolean> => {
-    clearTimeout(timer);
-    if (inflight) return inflight;
-    const e = pending;
-    if (!e || status === "conflict") return true;
-    pending = undefined;
-    set("saving");
-    const mine = epoch;
-    const p = save({ ...e, revision })
-      .then((r) => {
-        if (mine !== epoch) return true;
-        if (r.conflict) {
-          pending = undefined;
-          set("conflict");
-        } else {
-          revision = r.revision;
-          set(pending ? "unsaved" : "saved");
-        }
-        return true;
-      })
-      .catch(() => {
-        if (mine !== epoch) return true;
-        pending ??= e; // a newer edit supersedes the failed one
-        set("unsaved");
-        return false;
-      })
-      .finally(() => {
-        if (inflight === p) inflight = undefined;
-      });
-    inflight = p;
-    const ok = await p;
-    if (ok && pending) schedule(); // edits arrived while saving
-    return ok;
-  };
-  const saveAll = async () => {
-    clearTimeout(timer);
-    while (inflight || (pending && status !== "conflict")) if (!(await saveNow())) return false;
-    return status !== "conflict";
-  };
   const enqueue = <R>(fn: () => Promise<R>): Promise<R> => {
     const p = queue.then(fn);
     queue = p.catch(() => {});
     return p;
   };
-  // exclusive settles, freezes, saves, and runs then with the outcome; it unfreezes in any case.
-  const exclusive = <R>(then: (saved: boolean) => Promise<R>) =>
+  const schedule = () => {
+    clearTimeout(timer);
+    if (disposed || composing || status === "conflict") return;
+    // Only what is left of the delay since the last input; the queue re-checks everything when its turn comes.
+    timer = setTimeout(
+      () => void enqueue(async () => !disposed && saveNow()),
+      Math.max(0, delay - (Date.now() - lastInput)),
+    );
+  };
+  // saveNow saves the pending edit, from inside the queue; false if it failed or a composition is open.
+  const saveNow = async (): Promise<boolean> => {
+    const e = pending;
+    if (!e || status === "conflict") return true;
+    if (composing) return false;
+    pending = undefined;
+    set("saving");
+    const mine = epoch;
+    try {
+      const r = await save({ ...e, revision });
+      if (mine !== epoch) return true;
+      if (r.conflict) {
+        pending = undefined;
+        set("conflict");
+      } else {
+        revision = r.revision;
+        set(pending ? "unsaved" : "saved");
+      }
+      return true;
+    } catch {
+      if (mine !== epoch) return true;
+      pending ??= e; // a newer edit supersedes the failed one
+      set("unsaved");
+      return false;
+    }
+  };
+  const saveAll = async () => {
+    clearTimeout(timer);
+    while (pending && status !== "conflict") if (!(await saveNow())) return false;
+    return status !== "conflict";
+  };
+  // exclusive settles input, freezes, runs body with whether the settling finished, and unfreezes in any case.
+  const exclusive = <R>(body: (settled: boolean) => Promise<R>) =>
     enqueue(async () => {
       const settled = await settle().catch(() => false);
       freeze(true);
       try {
-        const saved = (await saveAll()) && settled;
-        return await then(saved);
+        return await body(settled);
       } finally {
         freeze(false);
       }
@@ -140,7 +136,7 @@ export function createSaver(
         for (const f of refused) f();
         return false;
       }
-      last = e;
+      snapshot = e;
       if (status === "conflict") return true;
       pending = e;
       lastInput = Date.now();
@@ -157,15 +153,16 @@ export function createSaver(
       }
     },
     flush(after) {
-      return exclusive(async (saved) => {
+      return exclusive(async (settled) => {
+        const saved = settled && (await saveAll());
         await after?.(saved);
         return saved;
       });
     },
     run(op) {
-      return exclusive(async (saved) => {
-        if (!saved) return null;
-        const r = await op(revision);
+      return exclusive(async (settled) => {
+        if (!settled || !(await saveAll())) return null;
+        const r = await op(revision, saveAll);
         if (r.conflict) set("conflict");
         else revision = r.revision;
         return r;
@@ -178,21 +175,20 @@ export function createSaver(
       refused.add(fn);
     },
     keepMine(latestRevision) {
-      return enqueue(async () => {
-        epoch++;
-        inflight = undefined;
+      return exclusive(async (settled) => {
+        if (!settled) return false;
         revision = latestRevision;
-        pending = last;
+        pending = snapshot;
         set(pending ? "unsaved" : "saved");
         return saveAll();
       });
     },
-    useLatest(r) {
+    useLatest(r, latest) {
       epoch++;
-      inflight = undefined;
       clearTimeout(timer);
       pending = undefined;
       revision = r;
+      snapshot = latest;
       set("saved");
     },
     get status() {
