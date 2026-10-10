@@ -182,7 +182,7 @@ func TestThreadListShowsThreads(t *testing.T) {
 		return len(h.items()) == 1 && h.items()[0].Count == 3
 	})
 	h.see("3")
-	h.see("08:00") // today: HH:mm
+	h.see("08:00")             // today: HH:mm
 	h.see("alice@example.com") // a lone account is grouped too, as in the design
 	h.see("收件箱")
 	h.click("three")
