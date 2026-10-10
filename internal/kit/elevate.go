@@ -16,10 +16,11 @@ func Elevate(c *ui.Context, e ui.Element, s theme.Elevation) ui.Element {
 }
 
 // Float makes e a floating input box: light, the ShadowFloat ring and lift
-// (no border: the ring is its outline); dark, a FloatEdge hairline.
+// (no border: the ring is its outline); dark, a FloatInset inner edge (an inset
+// shadow, no border).
 func Float(c *ui.Context, e ui.Element) ui.Element {
 	if t := theme.Of(c); t.Dark {
-		return e.Border(theme.Hairline, t.FloatEdge)
+		return e.InsetShadow(0, 0, theme.FloatInsetBlur, 0, t.FloatInset)
 	}
 	return Elevate(c, e, theme.ShadowFloat)
 }
