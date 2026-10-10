@@ -3,7 +3,18 @@
 export {};
 
 const SHADCN = "4.21.4";
-const components = ["button", "input", "textarea", "label", "alert"];
+const components = [
+  "button",
+  "input",
+  "textarea",
+  "label",
+  "alert",
+  "toggle",
+  "toggle-group",
+  "popover",
+  "tooltip",
+  "separator",
+];
 
 const p = Bun.spawn(["bunx", `shadcn@${SHADCN}`, "add", "--yes", "--overwrite", ...components], {
   stdio: ["inherit", "inherit", "inherit"],
