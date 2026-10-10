@@ -29,3 +29,14 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 		body()
 	})
 }
+
+// Tooltip shows text by anchor on keyboard focus at once and on hover after a
+// pause, and describes anchor to assistive technology.
+func Tooltip(c *ui.Context, anchor ui.Element, text string) {
+	t, th := theme.Of(c), c.Theme()
+	anchor.Description(text)
+	ui.TooltipBase(c, anchor, func(tip ui.Element) {
+		tip.Padding(th.Space(1), th.Space(2)).Radius(t.Radius.Sm).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
+		tip.Children(func() { ui.Text(c, text) })
+	})
+}

@@ -334,3 +334,63 @@ func TestKitButtonDisabledInert(t *testing.T) {
 		t.Errorf("clicks = %d %d %d, want 0 0 1", nb, ni, ne)
 	}
 }
+
+func TestKitSelectedDoesNotClick(t *testing.T) {
+	var got []string
+	for _, sel := range []bool{false, true} {
+		sel := sel
+		tag := "off"
+		if sel {
+			tag = "on"
+		}
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Children(func() {
+				Pressable(c, PressableOpts{Selected: sel, OnClick: func() { got = append(got, "p-"+tag) }}).Label("p-" + tag).Height(30).Children(func() { ui.Text(c, "pp") })
+				SidebarItem(c, SidebarItemOpts{Selected: sel, OnClick: func() { got = append(got, "s-"+tag) }}).Label("s-" + tag).Height(30).Children(func() { ui.Text(c, "ss") })
+				RailButton(c, "check", "r-"+tag, sel, func() { got = append(got, "r-"+tag) })
+			})
+		}), 300, 300)
+		for _, l := range []string{"p-", "s-", "r-"} {
+			_ = tt.Click(l + tag)
+		}
+	}
+	if len(got) != 3 || got[0] != "p-off" || got[1] != "s-off" || got[2] != "r-off" {
+		t.Errorf("clicks = %v, want only the three unselected", got)
+	}
+}
+
+func TestKitTooltipOnFocus(t *testing.T) {
+	n := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		b := Button(c, "Save", ButtonOpts{})
+		if b.Clicked() {
+			n++
+		}
+		Tooltip(c, b, "Saves the draft")
+	}), 300, 200)
+	if tt.HasText("Saves the draft") {
+		t.Fatal("tip shows before focus")
+	}
+	tt.Key(0, ui.KeyTab)
+	tt.Frame()
+	if !tt.HasText("Saves the draft") {
+		t.Error("tip does not show on keyboard focus")
+	}
+	if err := tt.Click("Save"); err != nil || n != 1 {
+		t.Errorf("click err=%v n=%d, want the button to fire", err, n)
+	}
+}
+
+func TestKitPressableLeftAligned(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Pressable(c, PressableOpts{}).Label("pl-row").Width(240).Children(func() { ui.Text(c, "Row") })
+	}), 400, 200)
+	box, ok1 := tt.Find("pl-row")
+	txt, ok2 := tt.Find("Row")
+	if !ok1 || !ok2 {
+		t.Fatal("not found")
+	}
+	if d := txt.X - box.X; d < 0 || d > 16 {
+		t.Errorf("text %v from the left edge, want near 0", d)
+	}
+}
