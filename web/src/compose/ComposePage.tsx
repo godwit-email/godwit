@@ -23,8 +23,9 @@ export function ComposePage() {
   useEffect(() => {
     // Closing before the draft loaded has nothing to flush.
     return events.closing.on(async (gen) => {
-      await saver.current?.flush();
-      await api.closed(gen, !saver.current || saver.current.status === "saved");
+      const sv = saver.current; // cleanup may clear the ref while the flush runs
+      await sv?.flush();
+      await api.closed(gen, !sv || sv.status === "saved");
     });
   }, []);
 

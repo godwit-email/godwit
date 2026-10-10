@@ -170,3 +170,16 @@ test("an untouched draft reads as saved; unmount disposes the saver", async () =
   vi.useRealTimers();
   expect(api.save).not.toHaveBeenCalled();
 });
+
+test("unmount during a failing flush still answers closed(gen, false)", async () => {
+  let fail!: (e: Error) => void;
+  vi.mocked(api.save).mockImplementationOnce(() => new Promise((_, rej) => (fail = rej)));
+  const { unmount } = render(<ComposePage />);
+  await userEvent.type(await body(), "!");
+  act(() => {
+    h.closing?.(9);
+  });
+  unmount();
+  await act(async () => fail(new Error("x")));
+  expect(api.closed).toHaveBeenCalledWith(9, false);
+});
