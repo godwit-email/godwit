@@ -606,3 +606,36 @@ func TestKitOverlayEnters(t *testing.T) {
 		}
 	}
 }
+
+// TestKitToastTopCenter: toasts show at the top center, the newest first.
+func TestKitToastTopCenter(t *testing.T) {
+	n := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		for ; n < 2; n++ {
+			c.AddToast(ui.Toast{Title: []string{"older", "newer"}[n], Type: ToastSuccess, Timeout: -1})
+		}
+		ToastHost(c, "Close")
+	}), 800, 600)
+	tt.Frame()
+	older, ok1 := tt.Find("older")
+	newer, ok2 := tt.Find("newer")
+	if !ok1 || !ok2 {
+		t.Fatalf("toasts not shown: %q", tt.Texts())
+	}
+	if newer.Y >= older.Y || newer.Y > 100 {
+		t.Errorf("newer at %v, older at %v: want the newest on top, at the top", newer, older)
+	}
+	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
+		t.Errorf("newer centered at x=%v, want near 400", mid)
+	}
+}
+
+func TestKitToastIcons(t *testing.T) {
+	tk := theme.Light()
+	for typ, want := range map[string]string{"": "", ToastSuccess: "circle-check", ToastWarning: "triangle-alert", ToastError: "circle-x"} {
+		icon, _, ok := toastIcon(tk, typ)
+		if icon != want || ok != (want != "") {
+			t.Errorf("toastIcon(%q) = %q, %v; want %q", typ, icon, ok, want)
+		}
+	}
+}

@@ -196,9 +196,13 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				})
 			})
 			section("Toast", func() {
-				if Button(c, "Show toast", ButtonOpts{Variant: Outline}).Clicked() {
-					c.Toast("Toast sample text")
-				}
+				ui.Row(c).Gap(th.Space(2)).Children(func() {
+					for _, k := range []struct{ label, typ string }{{"Plain", ""}, {"Success", ToastSuccess}, {"Warning", ToastWarning}, {"Error", ToastError}} {
+						if Button(c, k.label+" toast", ButtonOpts{Variant: Outline}).Clicked() {
+							c.AddToast(ui.Toast{Title: k.label + " toast sample text", Type: k.typ})
+						}
+					}
+				})
 			})
 		})
 	})

@@ -125,12 +125,18 @@ func (a *App) tick() {
 	})
 }
 
-func (a *App) toast(msg string) { a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg}) }
+func (a *App) toast(msg string) { a.toastAs("", msg) }
+
+// toastAs shows msg as a toast of a kind: kit.ToastSuccess, ToastWarning,
+// ToastError, or "" for a plain one.
+func (a *App) toastAs(kind, msg string) {
+	a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kind})
+}
 
 // toastErr shows err in words; a cancellation shows nothing.
 func (a *App) toastErr(err error) {
 	if msg := humanize(err); msg != "" {
-		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: "error"})
+		a.toastAs(kit.ToastError, msg)
 	}
 }
 

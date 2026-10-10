@@ -247,7 +247,7 @@ func (p *settingsPage) startReauth(acc core.Account) {
 			if err != nil {
 				a.toastErr(err)
 			} else {
-				a.toast(i18n.T("settings.account.reauth.done"))
+				a.toastAs(kit.ToastSuccess, i18n.T("settings.account.reauth.done"))
 			}
 			a.load()
 		})
@@ -526,7 +526,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		secret := p.secret
 		confirm = func() {
 			p.act(id, func(ctx context.Context) error { return a.svc.UpdatePassword(ctx, id, secret) },
-				func(bool) { a.toast(i18n.Tf("settings.account.password.updated", secretName(prov))) })
+				func(bool) {
+					a.toastAs(kit.ToastSuccess, i18n.Tf("settings.account.password.updated", secretName(prov)))
+				})
 		}
 	case "servers":
 		title = i18n.T("settings.account.servers")

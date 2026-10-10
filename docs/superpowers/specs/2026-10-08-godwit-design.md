@@ -314,6 +314,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 - **组件库（`internal/kit`）**：上面那套组件集中在 `internal/kit`，按组件分文件，命名和变体对齐 shadcn/ui：
   - Button 变体 `Default` / `Secondary` / `Outline` / `Ghost` / `Destructive` / `Link`，尺寸 `Sm`（28）/ `Default`（32）/ `Lg`（36），图标按钮另有 `Xs`（16，标签上的移除按钮）。
   - 组件清单：Button、IconButton、Input、TextArea、Field、Select、Checkbox、Radio、Switch、Tabs、ToggleGroup、Dialog、Popover、Tooltip、Collapsible、Card（Header / Content / Footer）、Badge、Alert、Avatar、Separator、Skeleton、Spinner、Kbd、StatusDot、SidebarItem、RailButton、Pressable（自定义内容的可点击区域）、Toast。
+  - Toast 显示在窗口顶部居中，最新的在最上面，最多三条；分普通、成功（`circle-check`，绿）、警告（`triangle-alert`，琥珀）、失败（`circle-x`，红）四种，普通的不带图标。
   - 菜单（下拉菜单、右键菜单）用系统原生菜单（`Element.Menu` / `ContextMenu`），不自绘。
   - app 里不直接用 mygo 的无样式基础组件（`ButtonBase`、`TextInputBase`、`TextAreaBase`、`DialogBase`、`PopoverBase`、`TooltipBase`）和 `Element.Tooltip`，一律经 kit；有测试守着。
 - **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的背景色、边框色渐变，开关滑块的移动，Collapsible 展开收起和箭头转动，Skeleton 的呼吸闪烁。Dialog / Sheet / Popover 打开时淡入并上移几像素（只做进场；mygo 不给随父层一起出现的元素播进场动画，由 kit 记下打开时刻自己算进度），关闭和 Tooltip 直接出现消失。文字颜色直接切换。系统开启「减少动态效果」时不播放：过渡由 mygo 处理，Skeleton 自己检查。

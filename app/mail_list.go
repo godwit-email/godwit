@@ -748,10 +748,10 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		pending := 0
 		finish := func() {
 			if failed > 0 {
-				a.toast(i18n.Tf("mail.failed", failed))
+				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
 			}
 			if len(skipped) > 0 {
-				a.toast(i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
+				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
 			if op == "archive" || op == "delete" {
 				l.sel.Clear()

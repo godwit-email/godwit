@@ -354,7 +354,7 @@ func (p *composer) send(digest string) {
 		switch {
 		case err == nil:
 			p.gone()
-			p.a.toast(i18n.T("compose.sent"))
+			p.a.toastAs(kit.ToastSuccess, i18n.T("compose.sent"))
 		case errors.As(err, &warned):
 			p.warn = &warned.Check
 		case errors.As(err, &blocked):

@@ -185,7 +185,7 @@ func (m *modelsView) save(f *modelForm) {
 	case f.mustProbe():
 		m.probe(f, func() {
 			if len(f.models) == 0 {
-				m.a.toast(i18n.T("settings.models.pick"))
+				m.a.toastAs(kit.ToastWarning, i18n.T("settings.models.pick"))
 				return
 			}
 			m.submit(f)
@@ -236,7 +236,7 @@ func (m *modelsView) submit(f *modelForm) {
 		if id != 0 {
 			m.dropRefs(saved.Slug, saved.Models)
 		}
-		a.toast(i18n.T("settings.saved"))
+		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 		m.load()
 	})
 }

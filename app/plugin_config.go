@@ -147,7 +147,7 @@ func (e *extView) saveConfig(f *pluginForm, fields []plugins.ConfigField) {
 				nv.s, nv.on = v.s, v.on
 			}
 		}
-		a.toast(i18n.T("settings.saved"))
+		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 	})
 }
 
