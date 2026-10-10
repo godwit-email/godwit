@@ -18,6 +18,15 @@ const components = [
   "badge",
   "alert-dialog",
   "sonner",
+  "message",
+  "message-scroller",
+  "bubble",
+  "input-group",
+  "marker",
+  "collapsible",
+  "card",
+  "hover-card",
+  "dropdown-menu",
 ];
 
 const p = Bun.spawn(["bunx", `shadcn@${SHADCN}`, "add", "--yes", "--overwrite", ...components], {

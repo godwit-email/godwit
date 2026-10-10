@@ -16,7 +16,7 @@ var composeKeys = []string{
 	"compose.note", "compose.discard", "compose.discard.title", "compose.discard.body",
 	"compose.discard.confirm",
 	"common.cancel", "common.close", "common.retry", "close.unsaved.title",
-	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject",
+	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject", "mail.list_sep",
 	// Wit
 	"error.invalid_state", "error.run_active", "error.stale_approval", "error.needs_grant", "error.ai_not_configured",
 	"error.model_not_found", "error.model_auth", "error.keychain", "error.ai.unauthorized", "error.ai.rate_limited",

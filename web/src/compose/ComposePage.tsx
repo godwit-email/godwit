@@ -11,9 +11,12 @@ import {
   type ComposeState,
   events,
   type SendWarning,
+  type WitHistory,
 } from "@/mygo";
 import { makeT, type T } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
+import { Panel as WitPanel, witError } from "@/wit/Panel";
+import { WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
 import { Editor } from "./editor/Editor";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
@@ -225,6 +228,22 @@ function Compose({
     currentWindow.setTitle(f.subject.trim() || t("compose.new"));
   }, [f.subject, t]);
 
+  // The Wit panel, when a model is configured: the transport listens before follow reads.
+  const [wit, setWit] = useState<{ tr: WitTransport; history: WitHistory }>();
+  useEffect(() => {
+    if (!state.wit.enabled) return;
+    const tr = new WitTransport();
+    let live = true;
+    tr.follow().then(
+      (history) => live && setWit({ tr, history }),
+      (e) => live && toast.error(witError(e instanceof Error ? e.message : String(e), t)),
+    );
+    return () => {
+      live = false;
+      tr.close();
+    };
+  }, [state, t]);
+
   const sv = saver.current;
   const locked = frozen || done || resolving || !!sv?.frozen;
   const finish = () => {
@@ -386,7 +405,7 @@ function Compose({
           </p>
         </div>
       </header>
-      {/* A row: the compose column now, a side panel (Wit, plan 3) beside it later. */}
+      {/* A row: the compose column, the Wit panel beside it. */}
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -483,6 +502,16 @@ function Compose({
             />
           </div>
         </section>
+        {wit && (
+          <WitPanel
+            info={state.wit}
+            history={wit.history}
+            locked={locked}
+            onReview={() => {}} // the review is plan 3 Task 4's
+            transport={wit.tr}
+            t={t}
+          />
+        )}
       </div>
     </main>
   );
