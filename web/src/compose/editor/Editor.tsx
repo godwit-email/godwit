@@ -61,8 +61,9 @@ export function Editor(props: {
             if (e.nativeEvent.isComposing || !isHotkey("mod+k", { byKey: true }, e.nativeEvent))
               return;
             e.preventDefault();
-            if (readOnly || !editor.selection || !editor.api.isExpanded()) return;
-            if (!onCmdK) return setLinkOpen(true);
+            if (readOnly) return;
+            // Wit only for a non-empty selection; anything else is the link popover.
+            if (!onCmdK || !editor.selection || !editor.api.isExpanded()) return setLinkOpen(true);
             const [a, b] = RangeApi.edges(editor.selection);
             const v = editor.children;
             onCmdK({ text: toText(v), start: offsetOf(v, a), end: offsetOf(v, b), at: below() });

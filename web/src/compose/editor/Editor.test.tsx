@@ -161,6 +161,29 @@ describe("Editor", () => {
     expect(screen.queryByPlaceholderText("https://")).toBeNull();
   });
 
+  it.each([
+    ["without a model", false],
+    ["with a model", true],
+  ])("⌘K on a collapsed cursor opens the link popover %s", async (_, wit) => {
+    const onCmdK = vi.fn();
+    render(
+      <Editor
+        initial="<p>hello world</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={() => {}}
+        onComposing={() => {}}
+        onCmdK={wit ? onCmdK : undefined}
+        t={t}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    await select(box, 3, 0);
+    fireEvent.keyDown(box, { key: "k", code: "KeyK", ...mod });
+    expect(await screen.findByPlaceholderText("https://")).toBeInTheDocument();
+    expect(onCmdK).not.toHaveBeenCalled();
+  });
+
   it("the link popover closes and applies nothing when the editor turns read-only", async () => {
     const { box, onChange, setReadOnly } = setup();
     await select(box, 0, 5);

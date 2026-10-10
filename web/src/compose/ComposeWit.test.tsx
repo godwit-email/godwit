@@ -20,6 +20,7 @@ vi.mock("@/mygo", () => ({
     undo: vi.fn(),
     rewrite: vi.fn(),
     openLink: vi.fn(),
+    send: vi.fn(),
   },
   events: {
     closing: { on: () => () => {} },
@@ -83,6 +84,7 @@ import { ComposePage as api } from "@/mygo";
 
 const text: Record<string, string> = {
   "compose.body": "正文",
+  "compose.subject": "主题",
   "compose.sending.locked": "正在发送，暂时不能修改草稿",
   "error.unknown": "出错了：%s",
   "common.retry": "重试",
@@ -260,6 +262,8 @@ test("inline review: accept one, reject one → finish([1,-1]); the body takes t
   await waitFor(() => expect(api.finish).toHaveBeenCalledWith(4, [1, -1]));
   expect(await body()).toHaveValue("<p>Hi Ann and</p>");
   expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull();
+  // a mixed decision changed the body: undo offers it back
+  expect(await screen.findByRole("button", { name: "撤销" })).toBeInTheDocument();
 });
 
 test("accept all → decide(id, true)", async () => {
@@ -278,6 +282,57 @@ test("accept all → decide(id, true)", async () => {
   emit({ kind: "done" });
   expect(await screen.findByText("已改好。")).toBeInTheDocument();
   expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
+});
+
+test("reject all: the body is kept, and there is nothing to undo", async () => {
+  vi.mocked(api.decide).mockResolvedValue(change("正文", 9));
+  vi.mocked(api.latest).mockResolvedValue(latest("正文", 9));
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  fireEvent.click(screen.getAllByRole("button", { name: "全部拒绝" })[0]);
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(4, false));
+  expect(await body()).toHaveValue("正文");
+  await act(async () => {});
+  expect(screen.queryByText("已应用到正文")).toBeNull();
+});
+
+test("a subject edited and saved during a run does not keep Wit's body from reloading", async () => {
+  vi.mocked(api.ask).mockResolvedValue(7);
+  await setup();
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
+  await waitFor(async () => expect(await body()).toHaveAttribute("readonly"));
+  await userEvent.type(screen.getByRole("textbox", { name: "主题" }), "！");
+  await waitFor(() => expect(api.save).toHaveBeenCalled(), { timeout: 2000 });
+  vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 10));
+  emit({ kind: "done" });
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+  expect(await body()).toHaveValue("Wit 写的");
+});
+
+test("typing while sending toasts once", async () => {
+  vi.mocked(api.send).mockReturnValue(new Promise(() => {}));
+  await setup();
+  const b = await body();
+  fireEvent.keyDown(b, { key: "Enter", metaKey: true });
+  await waitFor(() => expect(api.send).toHaveBeenCalled());
+  for (const key of ["a", "b", "c"]) fireEvent.keyDown(b, { key });
+  expect(
+    vi.mocked(toast).mock.calls.filter(([m]) => m === "正在发送，暂时不能修改草稿"),
+  ).toHaveLength(1);
+});
+
+test("opening ⌘K clears the applied note", async () => {
+  vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 9));
+  await setup();
+  emit({ kind: "done" });
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+  const b = (await body()) as HTMLTextAreaElement;
+  b.setSelectionRange(0, 3);
+  fireEvent.keyDown(b, { key: "k", metaKey: true });
+  expect(screen.getByText("⌘K · 只修改选中的这一段")).toBeInTheDocument();
+  expect(screen.queryByText("已应用到正文")).toBeNull();
 });
 
 test("rewrite: the new version, compare toggles to 原文 | 新版本", async () => {

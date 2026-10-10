@@ -224,7 +224,7 @@ function Compose({
       if (ok) fieldsRef.current?.commitPending(); // a composition still open keeps its text pending
       return ok;
     });
-    n.onRefused(() => toast(t("compose.sending.locked"), { id: "locked" }));
+    n.onRefused(() => lockToast.current("compose.sending.locked"));
     let last = n.status;
     const off = n.onChange(() => {
       if (n.status === "saved" && last === "saving") setSavedAt(fmt(new Date()));
@@ -237,7 +237,7 @@ function Compose({
       n.dispose();
       if (saver.current === n) saver.current = undefined;
     };
-  }, [state, saver, gate, t]);
+  }, [state, saver, gate]);
   useEffect(() => {
     currentWindow.setTitle(f.subject.trim() || t("compose.new"));
   }, [f.subject, t]);
@@ -255,14 +255,22 @@ function Compose({
   const [applied, setApplied] = useState(false);
   const [resume, setResume] = useState<{ run: number }>();
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
-  const edits = useRef(0); // local edits taken
-  const runEdits = useRef(0); // edits when the last run or decision started
+  const edits = useRef(0); // local body edits taken
+  const runEdits = useRef(0); // body edits when the last run or decision started
   const reloads = useRef(0);
   const decidedRun = useRef(0); // a decision's run: its next event resumes the panel's stream
   const cmdkRef = useRef(0);
   const ended = useRef(new Set<number>()); // runs seen ending
   const trRef = useRef<WitTransport>(undefined);
   const toasted = useRef(false); // the lock's toast, once per lock
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // The one way a locked page says so: once until it unlocks.
+  const lockToast = useRef<(key: string) => void>(() => {});
+  lockToast.current = (key) => {
+    if (toasted.current) return;
+    toasted.current = true;
+    toast(t(key), { id: "locked" });
+  };
 
   // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
   const adopt = (revision: number, body: string) => {
@@ -385,9 +393,10 @@ function Compose({
   const locked = frozen || done || resolving || !!sv?.frozen;
   const running = panelRunning || cmdkRun !== 0;
   const witLocked = running || !!current || reloading || sending;
+  const anyLocked = witLocked || resolving || !!sv?.frozen;
   useEffect(() => {
-    if (!witLocked) toasted.current = false;
-  }, [witLocked]);
+    if (!anyLocked) toasted.current = false;
+  }, [anyLocked]);
   const finish = () => {
     doneRef.current = true;
     setDone(true);
@@ -401,8 +410,11 @@ function Compose({
     if (sv?.edit(n) === false) return; // refused while an operation runs
     cur.current = n;
     setF(n);
-    edits.current++;
-    setApplied(false);
+    // Only the body counts for Wit: a reload skips a body edited since the run; fields don't block it.
+    if (e.body !== undefined) {
+      edits.current++;
+      setApplied(false);
+    }
     setWarnings({ list: [], digest: "" });
     setBlocked(null);
   };
@@ -476,13 +488,14 @@ function Compose({
     }
   };
   // Decides the edit reviewed; the run it resumes streams in the panel, and the draft is read again.
-  const decide = async (op: (id: number) => Promise<BodyChange>) => {
+  const decide = async (op: (id: number) => Promise<BodyChange>, accepts: boolean) => {
     const a = current;
     if (!a || deciding) return;
     runEdits.current = edits.current;
     decidedRun.current = a.run;
     const r = await bodyOp(() => op(a.id));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
+    if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
     void reload();
   };
   const undo = async () => {
@@ -490,6 +503,10 @@ function Compose({
     await bodyOp(() => api.undo());
   };
   const closeCmdK = useCallback(() => setCmdk(null), []);
+  const openCmdK = (sel: CmdKSelection) => {
+    setApplied(false); // ⌘K clears it, as a run or an edit does
+    setCmdk(sel);
+  };
   const stop = () => {
     const p = cmdkRun > 0 ? api.stop(cmdkRun) : wit?.tr.stop();
     p?.catch((e) => toast.error(witError(message(e), t)));
@@ -589,16 +606,14 @@ function Compose({
         sv?.setComposing(false);
       }}
       onKeyDown={(e) => {
-        // The editor is read-only while an operation runs, so typing there never reaches the saver.
-        if (
-          (sv?.frozen || resolving) &&
-          !gate.frozen &&
-          !done &&
-          e.key.length === 1 &&
-          !e.metaKey &&
-          !e.ctrlKey
-        )
-          toast(t("compose.sending.locked"), { id: "locked" });
+        // Typing into a locked page says why, once: an operation (sending) anywhere; Wit's lock in
+        // the body (not on the review's own buttons). Read-only inputs never reach the saver.
+        const target = e.target as HTMLElement;
+        if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !gate.frozen && !done) {
+          if (sv?.frozen || resolving || sending) lockToast.current("compose.sending.locked");
+          else if (witLocked && bodyRef.current?.contains(target) && !target.closest("button"))
+            lockToast.current("wit.compose.locked");
+        }
         if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return;
         e.preventDefault();
         void send();
@@ -633,20 +648,8 @@ function Compose({
               onChange={(e: FieldsEdit) => edit(e)}
               t={t}
             />
-            {/* The body: locked while Wit writes or an edit waits; typing there toasts why, once. */}
-            {/* biome-ignore lint/a11y/noStaticElementInteractions: listens to the body's keys only */}
-            <div
-              className="flex flex-1 flex-col"
-              onKeyDown={(e) => {
-                const typed = e.key.length === 1 && !e.metaKey && !e.ctrlKey;
-                if (!witLocked || toasted.current || !typed) return;
-                if ((e.target as HTMLElement).closest("button")) return; // the review's own
-                toasted.current = true;
-                toast(t(sending ? "compose.sending.locked" : "wit.compose.locked"), {
-                  id: "locked",
-                });
-              }}
-            >
+            {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}
+            <div ref={bodyRef} className="flex flex-1 flex-col">
               {reloadErr && (
                 <Alert
                   variant="destructive"
@@ -681,8 +684,8 @@ function Compose({
                   key={reviewing.approval}
                   review={reviewing}
                   busy={deciding}
-                  onDecide={(accept) => decide((id) => api.decide(id, accept))}
-                  onFinish={(ds) => decide((id) => api.finish(id, ds))}
+                  onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
+                  onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
                   t={t}
                 />
               ) : running && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim() ? (
@@ -705,7 +708,7 @@ function Compose({
                   onChange={(body) => edit({ body })}
                   onComposing={() => {}} // <main> tracks compositions, the fields' too
                   t={t}
-                  onCmdK={wit && !locked && !witLocked ? setCmdk : undefined}
+                  onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
                   attach={
                     <Button
                       variant="ghost"
@@ -806,14 +809,14 @@ function Compose({
                             size="sm"
                             variant="outline"
                             disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, false))}
+                            onClick={() => decide((id) => api.decide(id, false), false)}
                           >
                             {t("wit.compose.reject_all")}
                           </Button>
                           <Button
                             size="sm"
                             disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, true))}
+                            onClick={() => decide((id) => api.decide(id, true), true)}
                           >
                             {t("wit.compose.accept_all")}
                           </Button>
