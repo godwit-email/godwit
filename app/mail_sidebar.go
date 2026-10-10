@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -45,7 +46,13 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Children(func() {
+			ui.Row(c).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5)).Gap(th.Space(1)).Children(func() {
+				ui.Text(c, i18n.T("shell.rail.mail")).FontSize(t.Text.Xl).FontWeight(600)
+				ui.Spacer(c)
+				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+					OnClick(func() { p.searchOpen = true })
+			})
+			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Justify(ui.Start).Children(func() {
 				ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
 				ui.Text(c, i18n.T("mail.compose"))
 			}).OnClick(p.compose)
@@ -78,7 +85,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			if n := len(p.outbox); n > 0 {
 				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
 			}
-			ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Children(func() {
+			ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Justify(ui.Start).Children(func() {
 				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
 				ui.Text(c, i18n.T("mail.add_account"))
 			}).OnClick(func() {
