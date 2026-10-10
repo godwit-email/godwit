@@ -1,6 +1,7 @@
 package theme
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -139,5 +140,20 @@ func TestRadiusAndTextScale(t *testing.T) {
 func TestMotionTokens(t *testing.T) {
 	if MotionFast != 120*time.Millisecond || MotionBase != 200*time.Millisecond {
 		t.Fatal("motion tokens")
+	}
+}
+
+// TestShadowsAsTailwind: the shadows are Tailwind v4's, as shadcn uses them.
+func TestShadowsAsTailwind(t *testing.T) {
+	for name, tc := range map[string]struct{ got, want Elevation }{
+		"xs": {ShadowXs, Elevation{{1, 2, 0, 0.05}}},
+		"sm": {ShadowSm, Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}},
+		"md": {ShadowMd, Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}},
+		"lg": {ShadowLg, Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}},
+		"xl": {ShadowXl, Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}},
+	} {
+		if !slices.Equal(tc.got, tc.want) {
+			t.Errorf("shadow-%s = %v, want %v", name, tc.got, tc.want)
+		}
 	}
 }

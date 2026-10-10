@@ -14,7 +14,7 @@ func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 			// ponytail: backgrounds fade; a sliding indicator needs the tabs' rects from the last frame
 			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).FontWeight(500).TextColor(t.Muted).Transition(colors(theme.MotionFast))
 			if i == *sel {
-				tab.Background(t.Background).TextColor(t.Foreground).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.1))
+				Elevate(c, tab.Background(t.Background).TextColor(t.Foreground), theme.ShadowSm)
 			}
 			tab.Children(func() { ui.Text(c, l) })
 		}

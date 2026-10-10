@@ -27,8 +27,9 @@ func ToastHost(c *ui.Context, closeLabel string) {
 			toast := ui.ToastBase(c, tst)
 			look := toastLook(t, tst.Type)
 			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(look.bg).Border(theme.Hairline, look.border).
-				TextColor(look.fg).Shadow(0, theme.ShadowMd.Y, theme.ShadowMd.Blur, 0, ink(t).Alpha(0.08)).MaxWidth(theme.ToastMaxWidth).
+				TextColor(look.fg).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -2 * theme.MotionOffset}, Exit: &ui.Motion{Y: -2 * theme.MotionOffset}})
+			Elevate(c, toast.Root, theme.ShadowLg)
 			toast.Root.Children(func() {
 				if look.icon != "" {
 					ui.Icon(c, icons.Get(look.icon)).Size(theme.Icon, theme.Icon)

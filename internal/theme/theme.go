@@ -102,18 +102,28 @@ const (
 	SkeletonShort                                = 160          // a placeholder row's shorter line
 )
 
-// Shadow is a drop shadow's offset down and its blur.
-type Shadow struct{ Y, Blur float32 }
+// ShadowLayer is one layer of a drop shadow: its offset down, blur and
+// spread (negative tucks it under the box), and its opacity of the ink.
+type ShadowLayer struct{ Y, Blur, Spread, Alpha float32 }
 
-// Shadows: Sm under thumbs and tabs, Md under popups and toasts, Lg under
-// dialogs, Xl under the add-account sheet.
-var ShadowSm, ShadowMd, ShadowLg, ShadowXl = Shadow{1, 2}, Shadow{4, 16}, Shadow{16, 48}, Shadow{24, 64}
+// Elevation is a drop shadow of one or more layers, drawn in order.
+type Elevation []ShadowLayer
 
-// ShadowPanel lifts the page panel off the window, all round, at
-// PanelShadowAlpha of the ink.
-var ShadowPanel = Shadow{0, 4}
+// Shadows, Tailwind v4's as shadcn uses them: Xs under inputs, selects,
+// checkboxes and outline buttons; Sm under cards and the selected tab; Md
+// under popovers and select lists; Lg under dialogs, sheets and toasts; Xl
+// for anything above those.
+var (
+	ShadowXs = Elevation{{1, 2, 0, 0.05}}
+	ShadowSm = Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}
+	ShadowMd = Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}
+	ShadowLg = Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}
+	ShadowXl = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
+)
 
-const PanelShadowAlpha = 0.055
+// ShadowPanel lifts the page panel off the window material, all round.
+// It is Godwit's own: shadcn has no window.
+var ShadowPanel = Elevation{{0, 4, 0, 0.055}}
 
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {

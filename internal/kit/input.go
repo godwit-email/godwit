@@ -17,6 +17,7 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	e.Placeholder(o.Placeholder)
 	if !o.Bare {
 		e.PaddingX(th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background)
+		Elevate(c, e, theme.ShadowXs)
 	}
 	if o.Mono {
 		e.Font("Geist Mono").FontSize(t.Text.Base)

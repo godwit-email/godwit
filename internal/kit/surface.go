@@ -41,7 +41,8 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(theme.Hairline, t.Border).Children(body)
+	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Panel).Background(t.Background).Border(theme.Hairline, t.Border)
+	return Elevate(c, card, theme.ShadowSm).Children(body)
 }
 
 // PressableOpts say how a Pressable looks and what clicking it does.

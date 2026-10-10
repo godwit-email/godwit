@@ -18,7 +18,7 @@ func switchTrack(c *ui.Context, on bool) ui.Element {
 		thumb = t.Foreground // a dark thumb would vanish into the dark track
 	}
 	return tr.Children(func() {
-		ui.Box(c).Size(theme.SwitchThumb, theme.SwitchThumb).Radius(t.Radius.Full).Background(thumb).Shadow(0, theme.ShadowSm.Y, theme.ShadowSm.Blur, 0, ink(t).Alpha(0.2)).Transition(ui.ElementTransition{Position: true, Duration: theme.MotionFast})
+		ui.Box(c).Size(theme.SwitchThumb, theme.SwitchThumb).Radius(t.Radius.Full).Background(thumb).Transition(ui.ElementTransition{Position: true, Duration: theme.MotionFast})
 	})
 }
 
@@ -47,6 +47,7 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
 		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Xs).Border(theme.Hairline, t.Input).Background(t.Background).Center()
+		Elevate(c, box, theme.ShadowXs)
 		if *on {
 			box.Background(t.Primary).Border(theme.Hairline, t.Primary).TextColor(t.PrimaryText).Children(func() {
 				ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
@@ -61,6 +62,7 @@ func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
 		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Hairline, t.Input).Background(t.Background).Center()
+		Elevate(c, dot, theme.ShadowXs)
 		if *sel == v {
 			dot.Border(theme.Hairline, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
 		}
@@ -84,13 +86,14 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
+	Elevate(c, s.Trigger, theme.ShadowXs)
 	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(theme.Hairline, t.Border).
-			Shadow(0, theme.ShadowMd.Y, theme.ShadowMd.Blur, 0, ink(t).Alpha(0.12))
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Md).Background(t.Background).Border(theme.Hairline, t.Border)
+		Elevate(c, panel, theme.ShadowMd)
 		for _, o := range opts {
 			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Sm)
 			if item.Highlighted() {
