@@ -303,7 +303,8 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   | `Background` | `white` | 内容区 |
   | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、面板和卡片的描边（深色：白 10%） |
   | `Input` | `neutral-200`（深色：白 15%） | 输入框、下拉框、复选框、开关轨道、Outline 按钮的描边 |
-  | `Ring` | `neutral-400`（深色：`neutral-500`） | 键盘焦点环和悬停中的分隔线（都是 50% 透明度） |
+  | `Ring` | `neutral-400`（深色：`neutral-500`） | 键盘焦点环（50% 透明度） |
+  | `DividerHover` | `neutral-300`（深色：`neutral-700`） | 悬停或拖动中的分隔线，比描边深一级 |
   | `Primary` | `neutral-900` | 主按钮、开关打开、选中强调 |
   | 选中项 | 侧栏 `neutral-100`，常规字重；图标栏前景色 4%（深色：白 10%） | 侧栏项的图标和计数用 `Muted`，悬停时图标变前景色 |
   | `Unread` | `blue-500` | 邮件列表未读圆点 |

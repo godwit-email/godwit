@@ -37,6 +37,9 @@ func TestThemeTokens(t *testing.T) {
 	if l.Outline != p.Neutral950.Color().Alpha(0.05) || Dark().Outline != p.White.Color().Alpha(0.05) {
 		t.Errorf("Outline %v / %v", l.Outline, Dark().Outline)
 	}
+	if l.DividerHover != p.Neutral300.Color() || Dark().DividerHover != p.Neutral700.Color() {
+		t.Errorf("DividerHover %v / %v", l.DividerHover, Dark().DividerHover)
+	}
 	if l.RailSelected != p.Neutral950.Color().Alpha(0.04) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
 		t.Errorf("Light() rail tints %v %v", l.RailSelected, l.HoverTint)
 	}
