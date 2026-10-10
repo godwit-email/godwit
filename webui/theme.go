@@ -31,8 +31,8 @@ func ThemeOf(st core.Settings) Theme {
 	return Theme{Mode: st.Theme, Light: ThemeVars(l), Dark: ThemeVars(d), FontSize: l.FontSize}
 }
 
-// ThemeVars maps tokens to shadcn's CSS variables. --radius is Radius.Lg, so
-// shadcn's derived sm/md/lg/xl land on the native 4/6/8/12.
+// ThemeVars maps tokens to shadcn's CSS variables. --radius is Radius.Lg; styles.css
+// derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
 func ThemeVars(t theme.Tokens) map[string]string {
 	return map[string]string{
 		"--background": css(t.Background), "--foreground": css(t.Foreground),
