@@ -56,6 +56,19 @@ func table() []Provider {
 		{ID: "exmail", Name: "Tencent Exmail",
 			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
 			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
+		// Feishu and DingTalk Mail are on company domains, found by MX.
+		// Feishu's servers and its 专用密码 are from its help article; an admin
+		// enables third-party clients first.
+		{ID: "feishu", Name: "Feishu Mail",
+			IMAP: tls("imap.feishu.cn"), SMTP: smtps("smtp.feishu.cn"), Login: "app_password",
+			HelpURL: "https://www.feishu.cn/hc/zh-CN/articles/902478147400"},
+		// DingTalk Mail runs on Alibaba Mail; its client hosts are the em.dingtalk.com
+		// names its certificate carries (no official page lists them). A client
+		// takes the password, or the 三方客户端安全密码 when one is set; the help
+		// is Alibaba Mail's.
+		{ID: "dingtalk", Name: "DingTalk Mail",
+			IMAP: tls("imap.em.dingtalk.com"), SMTP: smtps("smtp.em.dingtalk.com"), Login: "client_password",
+			HelpURL: "https://help.aliyun.com/zh/document_detail/36576.html"}, // Alibaba Mail's client settings and 安全密码
 		{ID: "icloud", Name: "iCloud Mail", Domains: []string{"icloud.com", "me.com", "mac.com"},
 			IMAP: tls("imap.mail.me.com"), SMTP: Server{"smtp.mail.me.com", 587, conn.StartTLS}, Login: "app_password",
 			HelpURL: "https://support.apple.com/102654"},
