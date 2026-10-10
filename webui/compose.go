@@ -21,16 +21,19 @@ var (
 
 // Account is a sender the page can pick.
 type Account struct {
+	// ID and Email identify the account.
 	ID    int64  `json:"id"`
 	Email string `json:"email"`
 }
 
 // ComposeState is what a compose page shows when it opens.
 type ComposeState struct {
+	// DraftID is the window's draft; Accounts are the senders to pick from.
 	DraftID  int64     `json:"draftId"`
 	Accounts []Account `json:"accounts"`
 	// From is the sending account's ID.
-	From    int64    `json:"from"`
+	From int64 `json:"from"`
+	// To, Cc, Bcc, ReplyTo and Subject are the header fields as stored.
 	To      []string `json:"to"`
 	Cc      []string `json:"cc"`
 	Bcc     []string `json:"bcc"`
@@ -41,13 +44,16 @@ type ComposeState struct {
 	// Quote and Signature are read-only plain text.
 	Quote     string `json:"quote"`
 	Signature string `json:"signature"`
-	Revision  int64  `json:"revision"`
-	Theme     Theme  `json:"theme"`
+	// Revision is what the next save must pass; Theme styles the page.
+	Revision int64 `json:"revision"`
+	Theme    Theme `json:"theme"`
 }
 
 // ComposeEdit is what the page saves: the fields it edits, and the revision
 // they were made against.
 type ComposeEdit struct {
+	// To, Cc, Bcc, ReplyTo, Subject and Body are the edited fields, as in
+	// ComposeState; Revision is the one they were made against.
 	To       []string `json:"to"`
 	Cc       []string `json:"cc"`
 	Bcc      []string `json:"bcc"`
@@ -59,6 +65,7 @@ type ComposeEdit struct {
 
 // SaveResult is the outcome of a save.
 type SaveResult struct {
+	// Revision is the draft's new revision, to pass to the next save.
 	Revision int64 `json:"revision"`
 	// Conflict means the draft changed elsewhere: nothing was saved.
 	Conflict bool `json:"conflict"`
@@ -99,7 +106,8 @@ func (c *Compose) Attach(winID int, draftID int64) {
 	c.mu.Unlock()
 }
 
-// Detach forgets window winID's draft.
+// Detach forgets window winID's draft: new calls from it get ErrNoDraft; one
+// already in progress finishes.
 func (c *Compose) Detach(winID int) {
 	c.mu.Lock()
 	delete(c.sessions, winID)

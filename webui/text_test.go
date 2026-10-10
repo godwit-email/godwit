@@ -7,7 +7,7 @@ import (
 )
 
 func TestBodyRoundTrip(t *testing.T) {
-	for _, s := range []string{"一行", "a\n\nb", "\n首行空\n", "  缩进两格\n\t制表", "<b>x</b> & y", "末尾空行\n\n"} {
+	for _, s := range []string{"一行", "a\n\nb", "\n首行空\n", "  缩进两格\n\t制表", "<b>x</b> & y", "末尾空行\n\n", "a b", "  ", "    x", " a\u00a0 b\u00a0"} {
 		assert.Equal(t, s, bodyText(bodyHTML(s)), "%q", s)
 	}
 }
