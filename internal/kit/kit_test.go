@@ -680,8 +680,10 @@ func TestKitSplitQuietDivider(t *testing.T) {
 		tt.Frame()
 	}
 	px := tt.Image().RGBAAt(int(x), int(y))
-	if want := tk.Ring; px.R != want.R || px.G != want.G || px.B != want.B {
-		t.Errorf("hovered divider %v, want the ring's %v", px, want)
+	// the ring at 50% over the panel's background, within rounding
+	want := (int(tk.Ring.R) + int(tk.Background.R)) / 2
+	if d := int(px.R) - want; d < -2 || d > 2 || px.R != px.G || px.G != px.B {
+		t.Errorf("hovered divider %v, want gray %d (the ring at 50%%)", px, want)
 	}
 	b, _ := tt.Find("Left")
 	px = tt.Image().RGBAAt(int(b.X)+2, int(b.Y+b.H/2))
