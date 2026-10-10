@@ -40,24 +40,38 @@ func TestComposeRewriteSelection(t *testing.T) {
 			require.NoError(t, err)
 			st, err := f.page.Load(f.ctx(1))
 			require.NoError(t, err)
-			text, offs := plainText(st.Body)
+			text, lo, hi := plainText(st.Body)
 			require.Equal(t, c.Text, text)
-			assert.Equal(t, c.Range, st.Body[offs[c.Start]:offs[c.End]])
+			from, to := selectionRange(st.Body, lo, hi, c.Start, c.End)
+			assert.Equal(t, c.Range, st.Body[from:to])
 
-			llm.Script(coretest.Turn{Text: []string{"ok"}})
+			if !balanced(c.Range) { // across blocks: no replacement fits, the run still starts
+				llm.Script(coretest.Turn{Text: []string{"ok"}})
+			} else {
+				llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "c1", Name: "update_selection", Args: `{"html":"Zed"}`}}},
+					coretest.Turn{Text: []string{"ok"}})
+			}
 			n := len(f.events(1))
 			rs, err := f.page.Rewrite(f.ctx(1), res.Revision, c.Text, c.Start, c.End, "更具体一点")
 			require.NoError(t, err, "core's checkSelection")
 			require.False(t, rs.Conflict)
 			require.NotZero(t, rs.Run)
-			require.Eventually(t, func() bool {
-				for _, ev := range f.events(1)[n:] {
-					if ev.Kind == "done" && ev.Run == rs.Run {
-						return true
+			if balanced(c.Range) {
+				var ap int64
+				require.Eventually(t, func() bool {
+					for _, ev := range f.events(1)[n:] {
+						if ev.Kind == "interrupted" && len(ev.Approvals) == 1 {
+							ap = ev.Approvals[0].ID
+							return true
+						}
 					}
-				}
-				return false
-			}, 10*time.Second, 5*time.Millisecond)
+					return false
+				}, 10*time.Second, 5*time.Millisecond, "events %v", kinds(f.events(1)[n:]))
+				bc, err := f.page.Decide(f.ctx(1), ap, true)
+				require.NoError(t, err)
+				assert.Equal(t, st.Body[:from]+"Zed"+st.Body[to:], bc.Body)
+			}
+			f.doneAfter(t, n, rs.Run)
 		})
 	}
 }
@@ -82,9 +96,14 @@ func TestComposeRewriteSelectionStale(t *testing.T) {
 }
 
 func TestPlainTextOffsets(t *testing.T) {
-	text, offs := plainText(`<p>a😀</p>`)
+	text, lo, hi := plainText(`<p>a😀</p>`)
 	assert.Equal(t, "a😀", text)
-	assert.Equal(t, []int{3, 4, -1, 8}, offs, "inside the pair: no offset")
+	assert.Equal(t, []int{3, 4, -1, 8}, lo, "inside the pair: no offset")
+	assert.Equal(t, []int{3, 4, -1, 8}, hi)
+	text, lo, hi = plainText(`<p>a<b>b</b>c</p>`)
+	assert.Equal(t, "abc", text)
+	assert.Equal(t, []int{3, 4, 8, 13}, lo, "after a character, before the tags closing it")
+	assert.Equal(t, []int{3, 7, 12, 13}, hi, "before a character, after the tags opening it")
 }
 
 func TestComposeRewriteSelectionReviewed(t *testing.T) {

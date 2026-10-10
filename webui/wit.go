@@ -779,14 +779,15 @@ func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, 
 		return RunStart{}, keyed(err)
 	}
 	editable, _, _ := mail.SplitDraft(d.HTML)
-	stored, offs := plainText(editable)
+	stored, lo, hi := plainText(editable)
 	if d.Revision != revision || stored != text {
 		return RunStart{Revision: d.Revision, Conflict: true}, nil
 	}
-	if start < 0 || start >= end || end >= len(offs) || offs[start] < 0 || offs[end] < 0 {
+	if start < 0 || start >= end || end >= len(lo) || lo[start] < 0 || lo[end] < 0 {
 		return RunStart{}, keyed(ErrBadSelection)
 	}
-	sel := core.Selection{Revision: revision, Start: offs[start], End: offs[end]}
+	sel := core.Selection{Revision: revision}
+	sel.Start, sel.End = selectionRange(editable, lo, hi, start, end)
 	ch, err := svc.RewriteSelection(context.WithoutCancel(ctx), s.draftID, sel, instruction)
 	if errors.Is(err, core.ErrStaleDraft) {
 		return RunStart{Revision: d.Revision, Conflict: true}, nil

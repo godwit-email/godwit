@@ -20,42 +20,44 @@ var containers = map[atom.Atom]bool{atom.Blockquote: true, atom.Ul: true, atom.O
 // plainText is editable HTML's text as the page's editor has it, the ⌘K
 // contract both sides keep: blocks joined by "\n", a soft break "\n" (the
 // <br> that holds a block's last line open counts not), entities decoded.
-// offs[i] is the byte offset in editable of UTF-16 offset i of the text,
-// for i up to its length: between two characters, after the inline tags
-// that close and before those that open; -1 inside a surrogate pair.
-func plainText(editable string) (text string, offs []int) {
+// For UTF-16 offset i of the text, up to its length, lo[i] is the byte
+// offset in editable right after character i-1 (before the tags that
+// close it) and hi[i] right before character i (after the tags that open
+// it); both are -1 inside a surrogate pair. Inside a character reference
+// both snap to its start.
+func plainText(editable string) (text string, lo, hi []int) {
 	var sb strings.Builder
 	z := xhtml.NewTokenizer(strings.NewReader(editable))
-	pos := 0              // byte offset of the token read
-	gap := 0              // where an offset between characters goes
-	opened := false       // an inline tag opened since the last character
-	inBlock := false      // a block is open
-	content := false      // it has a character or a soft break
-	blocks := 0           // blocks begun
-	br, brGap := false, 0 // a <br> not yet counted, and the gap before it
-	put := func(r rune, at int) {
-		offs = append(offs, at)
+	pos := 0             // byte offset of the token read
+	curLo, curHi := 0, 0 // the place after the last character, as lo and hi
+	inBlock := false     // a block is open
+	content := false     // it has a character or a soft break
+	blocks := 0          // blocks begun
+	br := false          // a <br> not yet counted
+	brLo, brHi := 0, 0   // the place before it
+	put := func(r rune, l, h int) {
+		lo, hi = append(lo, l), append(hi, h)
 		if r >= 0x10000 {
-			offs = append(offs, -1)
+			lo, hi = append(lo, -1), append(hi, -1)
 		}
 		sb.WriteRune(r)
 	}
 	begin := func(at int) { // a new line, its text from at
 		if blocks > 0 {
-			put('\n', gap)
+			put('\n', curLo, curHi)
 		}
 		blocks++
-		inBlock, content, br, gap, opened = true, false, false, at, false
+		inBlock, content, br, curLo, curHi = true, false, false, at, at
 	}
 	end := func() {
 		if inBlock && br {
-			gap = brGap // the <br> holding the line open
+			curLo, curHi = brLo, brHi // the <br> holding the line open
 		}
 		inBlock, br = false, false
 	}
 	char := func() { // before a character or a soft break of the open block
 		if br {
-			put('\n', brGap)
+			put('\n', brLo, brHi)
 			br = false
 		}
 		content = true
@@ -68,7 +70,7 @@ func plainText(editable string) (text string, offs []int) {
 		switch tt {
 		case xhtml.ErrorToken:
 			end()
-			return sb.String(), append(offs, gap)
+			return sb.String(), append(lo, curLo), append(hi, curHi)
 		case xhtml.TextToken:
 			s := string(raw)
 			if !inBlock {
@@ -79,23 +81,24 @@ func plainText(editable string) (text string, offs []int) {
 			}
 			for i := 0; i < len(s); {
 				r, n := utf8.DecodeRuneInString(s[i:])
+				dec := string(r)
 				if r == '&' {
 					if j := strings.IndexByte(s[i:], ';'); j > 0 && j < 40 {
-						if dec := html.UnescapeString(s[i : i+j+1]); dec != s[i:i+j+1] {
-							char()
-							for _, d := range dec {
-								put(d, gap) // inside the reference: snapped to its start
-							}
-							i += j + 1
-							gap, opened = at+i, false
-							continue
+						if d := html.UnescapeString(s[i : i+j+1]); d != s[i:i+j+1] {
+							dec, n = d, j+1
 						}
 					}
 				}
 				char()
-				put(r, gap)
+				for k, d := range []rune(dec) {
+					if k == 0 {
+						put(d, curLo, at+i)
+					} else {
+						put(d, at+i, at+i) // inside the reference: snapped to its start
+					}
+				}
 				i += n
-				gap, opened = at+i, false
+				curLo, curHi = at+i, at+i
 			}
 		case xhtml.StartTagToken, xhtml.SelfClosingTagToken, xhtml.EndTagToken:
 			name, _ := z.TagName()
@@ -106,22 +109,56 @@ func plainText(editable string) (text string, offs []int) {
 					begin(at)
 				}
 				char()
-				br, brGap = true, gap
-				gap, opened = pos, false
+				br, brLo, brHi = true, curLo, at
+				curLo, curHi = pos, pos
 			case blockTags[a] && tt == xhtml.StartTagToken && !containers[a] && inBlock && !content:
-				gap = pos // <li><p>: one line
+				curLo, curHi = pos, pos // <li><p>: one line
 			case blockTags[a]:
 				end()
 				if tt == xhtml.StartTagToken && !containers[a] {
 					begin(pos)
 				}
-			case tt == xhtml.EndTagToken:
-				if !opened {
-					gap = pos
-				}
 			default:
-				opened = true
+				curHi = pos
 			}
 		}
 	}
 }
+
+// selectionRange is the byte range of editable for [start, end) of its
+// plainText: tight (from right before the first character to right after
+// the last), else widened over the tags around it when that balances it, so
+// a whole formatted run is replaced with its tags.
+func selectionRange(editable string, lo, hi []int, start, end int) (int, int) {
+	for _, c := range [][2]int{{hi[start], lo[end]}, {lo[start], lo[end]}, {hi[start], hi[end]}, {lo[start], hi[end]}} {
+		if c[0] < c[1] && balanced(editable[c[0]:c[1]]) {
+			return c[0], c[1]
+		}
+	}
+	return hi[start], lo[end]
+}
+
+// balanced reports whether every tag in h that opens closes in it, and
+// every one that closes opened in it.
+func balanced(h string) bool {
+	z := xhtml.NewTokenizer(strings.NewReader(h))
+	var open []string
+	for {
+		switch z.Next() {
+		case xhtml.ErrorToken:
+			return len(open) == 0
+		case xhtml.StartTagToken:
+			if name, _ := z.TagName(); !voids[atom.Lookup(name)] {
+				open = append(open, string(name))
+			}
+		case xhtml.EndTagToken:
+			name, _ := z.TagName()
+			if len(open) == 0 || open[len(open)-1] != string(name) {
+				return false
+			}
+			open = open[:len(open)-1]
+		}
+	}
+}
+
+var voids = map[atom.Atom]bool{atom.Br: true, atom.Img: true, atom.Hr: true}
