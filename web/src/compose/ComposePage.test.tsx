@@ -101,6 +101,41 @@ test("a second closing answers with its own gen", async () => {
   expect(api.closed).toHaveBeenCalledWith(2, true);
 });
 
+test("after a saved=false answer the fields take input again", async () => {
+  vi.mocked(api.save).mockRejectedValueOnce(new Error("x"));
+  render(<ComposePage />);
+  const el = await body();
+  await userEvent.type(el, "!");
+  await act(async () => h.closing?.(4));
+  expect(api.closed).toHaveBeenLastCalledWith(4, false);
+  await userEvent.type(el, "?");
+  expect(el).toHaveValue("正文!?");
+});
+
+test("a composition in progress at closing is committed, then flushed", async () => {
+  render(<ComposePage />);
+  const el = await body();
+  el.focus();
+  act(() => {
+    el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  });
+  fireEvent.change(el, { target: { value: "正文ni" } });
+  let done!: Promise<void>;
+  act(() => {
+    done = h.closing?.(5) as unknown as Promise<void>;
+  });
+  await act(async () => {}); // closing waits for the composition
+  expect(api.closed).not.toHaveBeenCalled();
+  act(() => {
+    // WebKit's order: compositionend, then the committed text's input
+    el.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    fireEvent.change(el, { target: { value: "正文你" } });
+  });
+  await act(() => done);
+  expect(api.save).toHaveBeenLastCalledWith(expect.objectContaining({ body: "正文你" }));
+  expect(api.closed).toHaveBeenCalledWith(5, true);
+});
+
 describe("autosave", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
   afterEach(() => vi.useRealTimers());
@@ -124,6 +159,22 @@ describe("autosave", () => {
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(vi.mocked(api.save).mock.calls.map((c) => c[0].revision)).toEqual([7, 8]);
     expect(screen.getByText(/草稿已保存 · \d\d:\d\d/)).toBeInTheDocument();
+  });
+
+  test("input after a saved closing answer is rejected until the window outlives it 2 s", async () => {
+    const u = setup();
+    render(<ComposePage />);
+    const el = await body();
+    await u.type(el, "!");
+    await act(async () => h.closing?.(3));
+    expect(api.closed).toHaveBeenCalledWith(3, true);
+    await u.type(el, "?");
+    fireEvent.change(el, { target: { value: "x" } });
+    expect(el).toHaveValue("正文!");
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(api.save).toHaveBeenCalledTimes(1);
+    await u.type(el, "?");
+    expect(el).toHaveValue("正文!?");
   });
 
   test("IME: no save until compositionend", async () => {
