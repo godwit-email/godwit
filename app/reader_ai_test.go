@@ -29,15 +29,16 @@ func aiHarness(t *testing.T, llm bool, set func(*core.Settings), setup ...func(*
 			l = e.LLM(t)
 			t.Cleanup(l.Release)
 		}
+		st, err := e.Svc.GetSettings(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.Summary = true // off by default; these tests read summaries unless set turns them off
 		if set != nil {
-			st, err := e.Svc.GetSettings(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
 			set(&st)
-			if _, err := e.Svc.SetSettings(context.Background(), st); err != nil {
-				t.Fatal(err)
-			}
+		}
+		if _, err := e.Svc.SetSettings(context.Background(), st); err != nil {
+			t.Fatal(err)
 		}
 	}}, setup...)...)
 	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail })
