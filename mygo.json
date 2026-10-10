@@ -1,0 +1,9 @@
+{
+  "name": "Godwit",
+  "main": "./cmd/godwit",
+  "devUrl": "http://localhost:5173",
+  "devCommand": "cd web && bun run dev",
+  "buildCommand": "cd web && bun install --frozen-lockfile && bun run build",
+  "frontendDist": "web/dist",
+  "bindings": "web/src/mygo.ts"
+}

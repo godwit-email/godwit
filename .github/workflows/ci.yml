@@ -18,9 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - run: mise run web:install
       - name: gofmt
         if: runner.os != 'Windows'
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - name: vet
         run: go vet ./...
       - name: build (no cgo)
@@ -34,3 +35,12 @@ jobs:
       - name: test (race)
         if: runner.os != 'Windows'
         run: go test -race -count=1 ./...
+      - name: build (every platform must package)
+        run: mise run build
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - run: mise run web:check

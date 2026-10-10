@@ -1,2 +1,35 @@
 [tools]
 go = "1.27.1"
+bun = "1.4.2"
+
+[tasks."web:install"]
+dir = "web"
+run = "bun install --frozen-lockfile"
+
+[tasks.dev]
+depends = ["web:install"]
+run = "go tool mygo dev"
+
+[tasks.build]
+depends = ["web:install"]
+run = "go tool mygo build -skip-dmg -skip-notarize"
+
+[tasks."web:test"]
+dir = "web"
+depends = ["web:install"]
+run = "bun run test"
+
+[tasks."web:lint"]
+dir = "web"
+depends = ["web:install"]
+run = "bun run lint"
+
+[tasks."web:components"]
+dir = "web"
+depends = ["web:install"]
+run = "bun run components"
+
+[tasks."web:check"]
+dir = "web"
+depends = ["web:install"]
+run = 'bun run typecheck && bun run lint && bun run test && bun run components && test -z "$(git status --porcelain -- .)"'

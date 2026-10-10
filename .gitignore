@@ -1,3 +1,6 @@
 .superpowers/
 /godwit
 *.test
+/dist/
+web/node_modules/
+web/dist/
