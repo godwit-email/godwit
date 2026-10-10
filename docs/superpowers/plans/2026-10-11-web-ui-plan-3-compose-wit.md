@@ -24,6 +24,9 @@
   - Inline vs. rewrite uses `rewriteRatio = 0.5` on `worddiff.Ratio` with shapes kept.
 - **Copy.** All copy comes from the native i18n tables: add every `wit.*`, `link.*`, `error.ai.*`, `error.run_active`, `error.invalid_state`, `error.stale_approval`, `error.ai_not_configured` key the page uses to `webui/strings.go`.
 - **Generated code.** Generated components and `web/src/mygo.ts` are never hand-edited. npm versions are pinned exactly.
+- **Streams.** mygo 0.4.0 bound methods cannot return a `Channel`; Wit events go on the `WitStream` event emitted to the calling window (`Event.Emit(window, …)`). The page registers its listener and buffers BEFORE calling any run-starting method, and never filters by run ID (one subscription per window).
+- **Subscribe first.** Every subscription is taken BEFORE the action that may produce events (run start, decision, follow), as `app/wit_run.go` does; a resumed run's events attach to the same assistant message.
+- **Drafts in use are never empty.** A draft with an active run or a pending approval is never deleted as empty (core, atomically).
 - **The switch-over is the last task, and a ruling:** it lands only when Tasks 1–5 pass review and manual testing (spec §F as revised).
 - **Commits.** End with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Go doc comments on exported names.
 
@@ -53,6 +56,15 @@
 
 ---
 
+### Task 0: Pin and verify the web dependencies
+
+**Files:** `web/package.json`, `web/bun.lock`; findings in the ledger.
+
+- [ ] Install `ai`, `@ai-sdk/react`, `streamdown` at exact current versions. From the installed packages record: the `ChatTransport` signature; the UIMessageChunk names used below (`text-start/-delta/-end`, `tool-input-available`, `tool-output-available`, `tool-output-error` (field `errorText`), `tool-approval-request`, data parts `data-<name>`, `finish`, `error` with `errorText`); how `useChat` is kept from auto-sending after approvals; Streamdown's options for raw HTML off, custom `a` / `img` renderers, allowed link protocols, image handling. Adjust names in Tasks 3–4 to the installed APIs.
+- [ ] Commit `build(web): pin the AI SDK and Streamdown`.
+
+---
+
 ### Task 1: Go — Wit runs, stream and history for the calling window
 
 **Files:** Create `webui/wit.go`, `webui/wit_history.go`, tests `webui/wit_test.go`; modify `webui/strings.go`, `webui/compose.go` (`ComposeState.Wit`).
@@ -65,13 +77,14 @@ type WitEvent struct {
 	Kind string                 // "context" | "text" | "tool_call" | "tool_result" | "interrupted" | "done" | "error"
 	Text string                 // text delta
 	Call *WitCall; Result *WitResult
+	Interrupts []WitCall        // the calls an interrupt waits on (a skill's has ID "skill" and no earlier tool_call)
 	Citations []Citation; Approvals []Approval
 	Error string                // i18n key (error.ai.<code> / error.*), "" for cancel
 }
 type WitCall struct{ ID, Name, Args string }   // Args JSON text
 type WitResult struct{ CallID, Name, Output, Error string }
 type Citation struct{ N int; MessageID int64; Subject, From string; Date int64; Suspect bool }
-type Approval struct{ ID, Run int64; Tool, Summary, State string; Destinations []string }
+type Approval struct{ ID, Run int64; CallID, Tool, Summary, State, Error string; Destinations []string } // CallID ties it to its tool call; State: pending/executing/done/failed/rejected/stale
 type WitInfo struct {
 	Enabled bool                // a model is configured
 	Skills []Skill              // 调整: tone-formal, tone-friendly, shorter, longer, proofread (label from wit.skill.<id>)
@@ -80,21 +93,21 @@ type WitInfo struct {
 }
 type Skill struct{ ID, Label string }
 type Language struct{ Tag, Name string }
-type WitHistory struct{ Conversation int64; Messages []WitMessage; Running int64; Pending []Approval }
-type WitMessage struct{ ID, Role, Text string; Calls []WitCall; Citations []Citation }
+type WitHistory struct{ Conversation int64; Messages []WitMessage; Running int64; Approvals []Approval } // every approval of the conversation, any state
+type WitMessage struct{ ID, Role, Text string; Calls []WitCall; Results []WitResult; Citations []Citation }
 ```
 Bound methods (append to `ComposePage`):
 ```go
 func (p *ComposePage) WitInfo(ctx) (WitInfo, error)
-func (p *ComposePage) WitHistory(ctx) (WitHistory, error) // openConversation's rule: newest with a pending draft edit, else the untitled assist one, else empty
 func (p *ComposePage) Ask(ctx, input string) (int64, error)            // run ID; events flow on WitStream
 func (p *ComposePage) Skill(ctx, id, language string) (int64, error)   // AssistSkill; translate-draft takes language
 func (p *ComposePage) Stop(ctx, run int64) error                       // CancelRun, only a run of this draft's conversations
-func (p *ComposePage) Follow(ctx, conversation int64) error            // reconnect: subscribe this window to a conversation of its draft
+func (p *ComposePage) Follow(ctx) (WitHistory, error)                   // subscribe FIRST (buffering), then read and return the history as of after subscribing (openConversation's rule picks the conversation); a run that ended in between shows as ended
 ```
 
 Behaviour:
 - **Starting a run** is the native `start` (`app/compose_wit_run.go:141-192`): pick or create the untitled assist conversation, subscribe **before** running, and drain the direct channel. Events are translated to `WitEvent` and emitted to the window. The subscription ends on a terminal event (`ends()` as `app/wit_run.go:212`), on `Detach`, or on `Release`.
+- **First generation:** an `interrupted` whose approvals are all already done (auto-applied `initial`) is not terminal (`ends()`); keep following the resume.
 - **One subscription per window.** A new run or `Follow` replaces the previous one.
 - **Run context.** `context.WithoutCancel` of the service context; only `Stop` cancels (as native).
 - **Errors map to keys** like `app/errors.go` `humanize`: canceled → `""`, ai codes → `error.ai.<code>`, known → `errorKeys`, else `error.unknown`.
@@ -105,11 +118,15 @@ Behaviour:
   - `TestComposeAskRunActive`: a second `Ask` during a run → error key `error.run_active`.
   - `TestComposeStop`: `Stop` mid-run → a terminal event, no error text.
   - `TestComposeStopOtherDraftRefused`: a run ID of another draft → `ErrNoDraft`-class error, nothing cancelled.
-  - `TestComposeHistoryPendingEdit` (Review Focus 3): a run that ended `interrupted` with a pending `update_draft`, window closed and reopened → `WitHistory` returns that conversation, its messages, and the pending approval.
+  - `TestComposeHistoryPendingEdit` (Review Focus 3): a run that ended `interrupted` with a pending `update_draft`, window closed and reopened → `Follow` returns that conversation, its messages (with tool results), and the pending approval with its CallID.
+  - `TestComposeFollowRaceEnded`: a run ends between subscribing and reading → `Follow`'s state shows it ended.
+  - `TestComposeFirstGenerationFollows`: an initial edit is auto-applied → events continue through the resume to `done`.
+  - `TestComposeSkillInterruptCall`: a skill run's interrupt has `ID == "skill"` and the approval's `CallID == "skill"`.
+  - core `TestDeleteDraftIfEmptyKeepsActiveRun` + webui `TestComposeCloseEmptyReplyMidRun`: an empty reply with a running Wit run or a pending approval is kept on release.
   - `TestComposeWitHistoryGrouping`: user, model, tool, model → one question and one answer, text joined with "\n\n", calls listed, citations numbered from 1 by first appearance.
   - `TestComposeStringsExist` still passes with the added keys.
-- [ ] **Step 2:** Run `CGO_ENABLED=0 go test ./webui -run 'TestComposeWit|TestComposeAsk|TestComposeStop|TestComposeHistory'` → FAIL.
-- [ ] **Step 3: Implement.** mygo 0.4.0 may let a bound method return a `Channel`; if it does and it fits better than an event, use it and say why in the report. The event shape above stays the wire contract. Run `mise run generate`.
+- [ ] **Step 2:** Run `CGO_ENABLED=0 go test ./webui ./core -run 'TestComposeWit|TestComposeAsk|TestComposeStop|TestComposeHistory|TestComposeFollow|TestComposeFirst|TestComposeSkill|TestComposeCloseEmpty|TestDeleteDraftIfEmpty'` → FAIL.
+- [ ] **Step 3: Implement.** `core.DeleteDraftIfEmpty` also keeps the draft when any of its assist conversations has an active run or a pending approval, checked under the same locks as the delete. Run `mise run generate`.
 - [ ] **Step 4:** Run `go test -race ./webui` → PASS; `go vet ./...`.
 - [ ] **Step 5: Commit** `feat(webui): Wit runs, stream and history for compose windows`
 
@@ -127,24 +144,25 @@ type Review struct {
 	Blocks []ReviewBlock                     // for rendering marks
 	Old, New string                          // editable HTML before / after, for the rewrite compare
 }
-type ReviewBlock struct{ Kind string; Level int; Ordered bool; Ops []ReviewOp } // Kind: p, quote, li, …, as richtext kinds
+type ReviewBlock struct{ Kind string; Level int; Ordered bool; Added, Removed bool; Whole int; Ops []ReviewOp } // Added/Removed from BlockDiff.Old/New == -1; Whole = change index of a whole added/removed block (empty ones too), else -1
+// Review also has Changes int; Finish validates len(decisions) == Changes and each ∈ {1,-1}.
 type ReviewOp struct{ Kind string; Change int; Tokens []ReviewToken; Link string } // Kind same|del|ins; Change = index of the change it belongs to, -1 for same; Link = linkNote
 type ReviewToken struct{ Text string; Bold, Italic bool; Href string }
 func (p *ComposePage) Review(ctx, approval int64) (Review, error)            // only a pending draft edit of this draft
-func (p *ComposePage) Decide(ctx, approval int64, accept bool) (Change, error) // whole: ResolveApproval
-func (p *ComposePage) Finish(ctx, approval int64, decisions []int) (Change, error) // per change: 1 accept, -1 reject; all 1 → accept, all -1 → reject, mixed → ApplyEditedProposal(result HTML)
-func (p *ComposePage) Undo(ctx) (Change, error)                              // UndoLastAssist
-func (p *ComposePage) Rewrite(ctx, marked string, instruction string, revision int64) (int64, error) // ⌘K
+type BodyChange struct{ Change; Body string } // re-read after the action + the stored editable HTML; the page adopts it atomically
+func (p *ComposePage) Decide(ctx, approval int64, accept bool) (BodyChange, error)    // subscribe this window FIRST, then ResolveApproval; the resumed run streams on WitStream
+func (p *ComposePage) Finish(ctx, approval int64, decisions []int) (BodyChange, error) // same; all 1 → accept, all -1 → reject, mixed → ApplyEditedProposal(result HTML)
+func (p *ComposePage) Undo(ctx) (BodyChange, error)                                  // UndoLastAssist
+type RunStart struct{ Run, Revision int64; Conflict bool }
+func (p *ComposePage) Rewrite(ctx, revision int64, text string, start, end int, instruction string) (RunStart, error) // ⌘K by plain-text offsets
 func (p *ComposePage) OpenLink(ctx, url string) error                         // http/https → plat OpenURL; mailto → new draft + OpenCompose
 ```
 `Change` is plan 2's type: Revision, Conflict, Signature, Attachments, UpdatedAt, re-read after the decision.
 
-**⌘K offsets** (`selection.go`):
-- The page inserts U+E000 at the selection start and U+E001 at its end into its own serialized body, after saving at `revision`.
-- Go finds the two characters in `mail.SanitizeCompose(StripMarkers(marked))`, removes them, and compares the result with the stored editable at `revision`.
-- If they are equal, the byte offsets of the two marks give `core.Selection{Revision, Start, End}`. Otherwise the result is `ErrStaleDraft` → `Conflict`.
-- Either mark missing → `"the selection is empty"`.
-- Then `RewriteSelection`; events flow on `WitStream`, as for `Ask`.
+**⌘K offsets** (`selection.go`) — Ruling (Codex v1): plain-text offsets, not sentinels (a mark changes `toHTML`'s `<br>` decisions, so a serialized comparison can't hold).
+- Contract shared by both sides, tested on both: blocks joined by `"\n"`; a soft break is `"\n"`; a trailing soft break (`<br><br>`) counts once; entities decoded; offsets in UTF-16 code units.
+- The page, after saving at `revision`, sends `text` and `[start, end)`.
+- Go walks the stored editable at `revision` with the html tokenizer, producing the same text plus a map to byte offsets at rune starts outside tags and entities (an offset inside an entity snaps outward). `text` differs → `Conflict`. `start >= end` → error. Then `core.Selection` and `RewriteSelection`; events on `WitStream`.
 
 - [ ] **Step 1: Failing tests:**
   - Port these tests of `app/compose_wit_test.go` to `webui` as `TestComposeReview*` against `Review` / `Finish`:
@@ -155,11 +173,14 @@ func (p *ComposePage) OpenLink(ctx, url string) error                         //
   - Also port the pure tests of `app/proposal.go`, if any exist.
   - `TestComposeFinishPartialStale` (Review Focus 5): a save after the proposal → `Finish` mixed → `Conflict`, approval stale.
   - `TestComposeUndo`: after an applied first generation → `Undo` restores the old body and the revision moves forward.
-  - `TestComposeRewriteSelection`: body `<p>hello world</p>`, marks around `world` → the run starts with `Start` / `End` covering `world`.
-  - `TestComposeRewriteSelectionStale` (Review Focus 2): marked HTML whose text differs from the stored editable → `Conflict`, no run.
+  - `TestComposeRewriteSelection`: table-driven — plain, CJK, emoji, `&amp;`, bold/link boundaries, a trailing soft break, a selection across two paragraphs, a list item — each selecting a known substring → `Start`/`End` slice exactly that HTML range and pass core's `checkSelection`.
+  - `TestComposeRewriteSelectionStale` (Review Focus 2): `text` differing from the stored editable's → `Conflict`, no run.
+  - `TestComposeDecideResumes`: accept and reject → the resumed run's events reach the window through to `done`; `BodyChange.Body` is the stored editable after the decision.
+  - `TestComposeFinishValidates`: wrong length or a 0 → error, nothing decided.
+  - `TestComposeReviewEmptyBlock`: an added empty paragraph is a whole change with its own index.
   - `TestComposeOpenLink`: `https://x.org` → fake `OpenURL` called; `javascript:x` → error; `mailto:a@b.c` → a new draft with To `a@b.c`, and `OpenCompose` called.
   - `TestComposeReviewOtherDraftRefused`.
-- [ ] **Step 2–4:** Run → FAIL; implement (`webui` depends on `internal/worddiff` and `internal/richtext`; `OpenLink` needs a `PageDeps.OpenURL` and `PageDeps.OpenCompose`, wired in `cmd/godwit`); run `go test -race ./webui ./cmd/godwit` → PASS; `mise run generate`.
+- [ ] **Step 2–4:** Run → FAIL; implement (`webui` depends on `internal/worddiff` and `internal/richtext`; `proposal.go`'s UTF-16 helpers need `mygo/ui` — leave them; `OpenLink` needs a `PageDeps.OpenURL` and `PageDeps.OpenCompose`, wired in `cmd/godwit`); run `go test -race ./webui ./cmd/godwit` → PASS; `mise run generate`.
 - [ ] **Step 5: Commit** `feat(webui): Wit edit review, decisions, undo, ⌘K and safe links for compose windows`
 
 ---
@@ -167,15 +188,16 @@ func (p *ComposePage) OpenLink(ctx, url string) error                         //
 ### Task 3: Web — the Wit panel (transport, answers, menus)
 
 **Files:**
-- `web/package.json`: add `ai`, `@ai-sdk/react` and `streamdown`, exact versions.
+- (dependencies: Task 0)
 - `web/scripts/components.ts`: add `message`, `message-scroller`, `bubble`, `input-group`, `marker`, `spinner`, `collapsible`, `card`, `hover-card`, `dropdown-menu` and `badge`, whichever are not already there.
 - Create the `web/src/wit/*` files with tests.
 
 **Interfaces (produced):**
 ```ts
 export class WitTransport implements ChatTransport<WitUIMessage> // sendMessages → api.ask(text) / api.skill(id, lang); streams WitStream events of the run as UIMessageChunks; reconnectToStream → api.follow(conversation) when WitHistory.running
-export function toChunks(ev: WitEvent): UIMessageChunk[]          // text → text-start/delta/end; tool_call → tool-input-available; tool_result → tool-output-available/-error; interrupted+approvals → tool-approval-request (draft edits) ; citations → data part "citations"; done → finish; error → error (text = t(key))
-export function historyToMessages(h: WitHistory): WitUIMessage[]
+export function toChunks(ev: WitEvent, seen: Set<string>): UIMessageChunk[] // text → text-start/delta/end; tool_call → tool-input-available; tool_result → tool-output-available / -error (errorText); interrupted: each unseen interrupt (a skill's "skill") first gets a synthetic tool-input-available, then tool-approval-request only for approvals still pending (auto-applied initial ones show as output); citations → data-citations; done → finish; error → error (errorText = t(key))
+export function historyToMessages(h: WitHistory): WitUIMessage[] // with tool results and every approval's state by CallID
+// Approvals are decided only through the review UI (Decide/Finish), never addToolApprovalResponse; useChat has no auto-send.
 export function Panel(props: { info: WitInfo; history: WitHistory; locked: boolean; onReview(a: Approval): void; t: T; slots?: { chips?: ReactNode; actions?: ReactNode } }): JSX.Element
 export function Response(props: { text: string; onLink(url: string): void }): JSX.Element // Streamdown hardened
 ```
@@ -186,9 +208,11 @@ export function Response(props: { text: string; onLink(url: string): void }): JS
 - [ ] **Step 1: Failing tests:**
   - `toChunks` for each kind.
   - `historyToMessages` grouping.
-  - `answer hardening` (Review Focus 4): `![x](https://t/x.png)`, `<script>`, `<img onerror>`, `[a](javascript:alert(1))`, and `[b](https://ok.org)` → no img and no script in the DOM; `a` is plain text; `b` opens the confirmation and only 打开 calls `onLink`.
+  - `answer hardening` (Review Focus 4): `![x](https://t/x.png)`, `![d](data:image/png;base64,AA)`, `<script>`, `<img onerror>`, benign `<b>x</b>` (shown as text), `[a](javascript:alert(1))`, `[f](file:///etc)`, `[b](https://ok.org)`, `[m](mailto:x@y.z)` → no img/script/raw element in the DOM; `a`/`f` plain text; `b` and `m` open the confirmation and only 打开 calls `onLink`. Streamdown configured explicitly (Task 0), not by defaults.
   - The panel sends with Enter and not during composition; Stop calls `api.stop(run)`; an error shows 重试, and retry repeats the last request (skill or text).
-  - `reconnects to a live run` (Review Focus 3): history with `running` → `follow` called and deltas appended.
+  - `reconnects to a live run` (Review Focus 3): `follow` returns `running` → deltas (even ones emitted before `follow` resolves) append to the open answer.
+  - `listener before start`: events emitted before `ask` resolves are not lost.
+  - `skill interrupt synthesizes a tool part`: interrupt "skill" + pending approval → a tool part exists before the approval request.
 - [ ] **Step 2–4:** Run `mise run web:test` → FAIL; implement; run → PASS.
 - [ ] **Step 5: Commit**, then run `mise run web:check`. Message: `feat(web): the Wit panel — transport, answers, menus`
 
@@ -201,6 +225,7 @@ export function Response(props: { text: string; onLink(url: string): void }): JS
 Behaviour (the native page's rules, from the survey in `.superpowers/sdd/2026-10-11-web-ui-plan-3-compose-wit/survey.md`):
 
 - **Panel placement.** The panel mounts to the right of the body when `info.enabled`.
+- **Saver accessors** (add to `saver.ts`, read-only): `revision`, `busy`, `dirty`. **Body operations** (`decide`, `finish`, `undo`) go through `saver.run` and the page adopts `BodyChange` atomically (`useLatest(revision, snapshot with body)`, editor remount). Run-starting calls are wrapped to `{revision, conflict}`.
 - **Lock.** `locked = running || pendingDraftEdit || reloading || sending`. While locked the editor is read-only and the toast rule applies.
 - **Inline review.** When a draft-edit approval is pending, the body is replaced by `Review`:
   - Same text renders as is. Del and Ins render with del/ins colours, which come from theme vars: add `--ins-bg`, `--ins-text`, `--del-bg`, `--del-text` to `ThemeVars` from the native tokens.
@@ -221,7 +246,7 @@ Behaviour (the native page's rules, from the survey in `.superpowers/sdd/2026-10
 - **Applied.** Shows 「已应用到正文」 with 撤销 → `saver.run(r => api.undo())`. Any local edit, run or ⌘K clears it.
 - **⌘K.** Only with a non-empty selection, `info.enabled` and not locked; otherwise ⌘K keeps plan 2's link popover.
   - A popover under the selection holds the input 「修改选中的内容」, the line 「⌘K · 只修改选中的这一段」, an Esc button and 生成 ↵.
-  - Submit runs `saver.run((r, flush) => …)`: the page serializes the body with U+E000/U+E001 at the selection (a `toHTML` variant), then calls `api.rewrite(marked, instruction, r)`.
+  - Submit runs `saver.run((r, flush) => …)`: the page computes `toText(value)` by Task 2's contract and the selection's `[start, end)` in it, then `api.rewrite(r, text, start, end, instruction)`.
 
 - [ ] **Step 1: Failing tests** (mocked client):
   - `inline review accept one reject one` → `finish([1,-1])`.
@@ -231,7 +256,8 @@ Behaviour (the native page's rules, from the survey in `.superpowers/sdd/2026-10
   - `reload skips a local edit` (Review Focus 1).
   - `reload newest wins`.
   - `applied then undo`.
-  - `cmd-k saves first` (Review Focus 2): typed text, ⌘K on a selection → `save` before `rewrite`, and the `marked` HTML has the marks around the selected text.
+  - `cmd-k saves first` (Review Focus 2): typed text, ⌘K on a selection → `save` before `rewrite`, `text.slice(start, end)` equals the selection; `toText` cases mirror Task 2's table.
+  - `undo adopts the body`: undo → the editor shows the returned body; no reload overwrites it.
   - `cmd-k without model keeps link popover`.
 - [ ] **Step 2–4:** Run → FAIL; implement; run → PASS; `mise run build`.
 - [ ] **Step 5: Commit**, then run `mise run web:check`. Message: `feat(web): Wit edits reviewed in the compose body; ⌘K rewrites a selection`
@@ -261,7 +287,10 @@ Record the results in the ledger. This task gates Task 6.
 - **Delete:** `app/compose.go`, `app/compose_wit.go`, `app/compose_wit_run.go`, `app/proposal.go`, `app/draftsaver.go`, `internal/editor/`, their tests, and the now-unused theme tokens (`WitPanelWidth`, `InsBg`, `DelBg`, `InsText`, `DelText`) and `richtext.ToHTMLOffsets` — but only if nothing else uses them.
 - **Keep:** `internal/worddiff` (now used by `webui/review.go`).
 
-- [ ] **Step 1: Failing tests:** retarget the tests listed in survey section 6 to expect `OpenCompose <id>` on the fake platform:
+- [ ] **Step 1: Failing tests** — map every test of the deleted files in the report (deleted / ported / retargeted):
+  - `TestE2EOnboardToReply` keeps its real send: reader 回复 → `OpenCompose <id>` → the test drives `webui.ComposePage` for that draft (test window ID) with `Save` then `Send` → the message is in the outbox.
+  - `app/compose_window_test.go` `TestDeleteDraftNotifiesPlatform`: rewritten without the deleted helpers.
+  - Retarget to expect `OpenCompose <id>` on the fake platform:
   - `TestE2EOnboardToReply`, `TestE2EQuickReplyAndDraftsList`
   - `TestDraftsListRoute`, `TestLocalDraftsEntry`
   - `TestReaderReplyCreatesDraft`, `TestQuickReplies`
