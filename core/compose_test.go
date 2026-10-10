@@ -149,7 +149,7 @@ func TestSendHTMLWithBcc(t *testing.T) {
 	assert.ElementsMatch(t, []string{"bob@example.com", "dave@example.com"}, got[0].To)
 	assert.Equal(t, "alice@example.com", got[0].From)
 	head, _, _ := strings.Cut(string(got[0].Data), "\r\n\r\n")
-	assert.NotContains(t, strings.ToLower(head), "bcc")
+	assert.NotRegexp(t, `(?im)^bcc:`, head) // a header line, not any "bcc" (the random boundary may hold one)
 	assert.NotContains(t, string(got[0].Data), "dave@example.com")
 	assert.Contains(t, string(got[0].Data), "multipart/alternative")
 	p, err := mail.Parse(got[0].Data)
