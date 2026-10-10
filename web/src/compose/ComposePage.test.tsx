@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { ComposePage } from "./ComposePage";
@@ -8,7 +8,17 @@ const h = vi.hoisted(() => ({
   theme: undefined as undefined | ((t: unknown) => void),
 }));
 vi.mock("@/mygo", () => ({
-  ComposePage: { load: vi.fn(), save: vi.fn(), closed: vi.fn() },
+  ComposePage: {
+    load: vi.fn(),
+    save: vi.fn(),
+    closed: vi.fn(),
+    latest: vi.fn(),
+    setAccount: vi.fn(),
+    addAttachments: vi.fn(),
+    removeAttachment: vi.fn(),
+    send: vi.fn(),
+    discard: vi.fn(),
+  },
   events: {
     closing: {
       on: (f: (gen: number) => void) => {
@@ -25,14 +35,75 @@ vi.mock("@/mygo", () => ({
   },
 }));
 vi.mock("mygo-runtime", () => ({ currentWindow: { setTitle: vi.fn() } }));
+// Plate has its own tests; here the body is a textarea that, like Plate, reads `initial` at mount
+// and takes no input while read-only.
+vi.mock("./editor/Editor", async () => {
+  const { useState } = await import("react");
+  return {
+    Editor(p: {
+      initial: string;
+      readOnly: boolean;
+      onChange(html: string): void;
+      t(k: string): string;
+      attach?: React.ReactNode;
+    }) {
+      const [v, setV] = useState(p.initial);
+      return (
+        <div>
+          {p.attach}
+          <textarea
+            aria-label={p.t("compose.body")}
+            value={v}
+            readOnly={p.readOnly}
+            onChange={(e) => {
+              if (p.readOnly) return;
+              setV(e.target.value);
+              p.onChange(e.target.value);
+            }}
+          />
+        </div>
+      );
+    },
+  };
+});
 
 import { currentWindow } from "mygo-runtime";
 import { ComposePage as api } from "@/mygo";
 
+const text = {
+  "compose.new": "新邮件",
+  "compose.status.saving": "正在保存…",
+  "compose.status.saved": "草稿已保存 · %s",
+  "compose.status.unsaved": "未保存",
+  "compose.from": "发件人",
+  "compose.from.select": "发件账户",
+  "compose.to": "收件人",
+  "compose.subject": "主题",
+  "compose.body": "正文",
+  "compose.attach": "添加附件",
+  "compose.remove": "移除 %s",
+  "compose.quote.show": "显示引用的原邮件（助手只读）",
+  "compose.conflict": "草稿在别处被修改",
+  "compose.conflict.keep": "保留我的版本",
+  "compose.conflict.latest": "使用最新版本",
+  "compose.warn": "发送前检查：%s",
+  "compose.warn.from": "来自插件 %s（message.beforeSend）",
+  "compose.send_anyway": "仍然发送",
+  "compose.send": "发送",
+  "compose.sending.locked": "正在发送，暂时不能修改草稿",
+  "compose.discard": "丢弃草稿",
+  "compose.discard.title": "丢弃这封草稿？",
+  "compose.discard.confirm": "丢弃",
+  "common.cancel": "取消",
+  "common.retry": "重试",
+};
 const theme = { mode: "light", light: {}, dark: {}, fontSize: 14 };
 const state = {
   draftId: 1,
-  accounts: [{ id: 1, email: "me@x.com" }],
+  accounts: [
+    { id: 1, email: "me@x.com" },
+    { id: 2, email: "work@x.com" },
+  ],
   from: 1,
   to: ["a@x.com"],
   cc: [],
@@ -41,18 +112,21 @@ const state = {
   subject: "你好",
   body: "正文",
   quote: "> 原文",
-  signature: "",
+  signature: "-- me",
   attachments: [],
   revision: 7,
   theme,
-  text: {},
+  text,
 };
+const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.load).mockResolvedValue(state);
   vi.mocked(api.save).mockResolvedValue({ revision: 8, conflict: false });
   vi.mocked(api.closed).mockResolvedValue();
+  vi.mocked(api.send).mockResolvedValue({ ...noWarnings, sent: true });
+  vi.mocked(api.discard).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
@@ -61,9 +135,10 @@ test("loads the draft", async () => {
   render(<ComposePage />);
   expect(await body()).toHaveValue("正文");
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveValue("你好");
-  expect(screen.getByRole("textbox", { name: "收件人" })).toHaveValue("a@x.com");
+  expect(screen.getByRole("button", { name: "移除 a@x.com" })).toBeInTheDocument();
+  expect(screen.getByText("-- me")).toBeInTheDocument();
   expect(screen.queryByText("> 原文")).not.toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "显示引用的原邮件" }));
+  await userEvent.click(screen.getByRole("button", { name: "显示引用的原邮件（助手只读）" }));
   expect(screen.getByText("> 原文")).toBeInTheDocument();
   expect(currentWindow.setTitle).toHaveBeenLastCalledWith("你好");
 });
@@ -163,7 +238,7 @@ describe("autosave", () => {
     render(<ComposePage />);
     await u.type(await body(), "!");
     await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(screen.getByRole("alert")).toHaveTextContent("草稿已在别处修改，本窗口不再保存");
+    expect(screen.getByRole("alert")).toHaveTextContent("草稿在别处被修改");
   });
 
   test("first save carries the loaded revision, later ones the previous result's", async () => {
@@ -251,7 +326,7 @@ test("only the latest load applies", async () => {
 test("an untouched draft reads as saved; unmount disposes the saver", async () => {
   const { unmount } = render(<ComposePage />);
   await body();
-  expect(screen.getByText("草稿已保存")).toBeInTheDocument();
+  expect(screen.getByText(/^草稿已保存 · \d\d:\d\d$/)).toBeInTheDocument();
   vi.useFakeTimers();
   fireEvent.change(screen.getByRole("textbox", { name: "正文" }), { target: { value: "x" } });
   unmount();
@@ -282,4 +357,244 @@ test("a failing closed answer thaws the page", async () => {
   expect(api.closed).toHaveBeenCalledWith(3, true);
   await userEvent.type(el, "?");
   expect(el).toHaveValue("正文!?");
+});
+
+const order = (f: ReturnType<typeof vi.fn>) => f.mock.invocationCallOrder[0];
+
+test("an empty subject titles the window 新邮件", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, subject: "" });
+  render(<ComposePage />);
+  await body();
+  expect(currentWindow.setTitle).toHaveBeenLastCalledWith("新邮件");
+  expect(screen.getByRole("heading", { name: "新邮件" })).toBeInTheDocument();
+});
+
+test("send flushes first and freezes", async () => {
+  let sent!: (r: typeof noWarnings) => void;
+  vi.mocked(api.send).mockImplementation(() => new Promise((r) => (sent = r)));
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!", revision: 7 }));
+  expect(api.send).toHaveBeenCalledWith(8, "");
+  expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.send)));
+  // typing while it sends is refused, and says so
+  await userEvent.type(el, "y");
+  expect(el).toHaveValue("正文!");
+  expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "主题" }), { target: { value: "x" } });
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveValue("你好");
+  expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
+  expect(el).toHaveAttribute("readonly");
+  await act(async () => sent({ ...noWarnings, sent: true }));
+  // sent: Go closes the window, the form stays frozen
+  expect(el).toHaveAttribute("readonly");
+  expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+});
+
+test("send aborts on failed save", async () => {
+  vi.mocked(api.save).mockRejectedValueOnce(new Error("x"));
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(api.save).toHaveBeenCalled();
+  expect(api.send).not.toHaveBeenCalled();
+  await userEvent.type(el, "?");
+  expect(el).toHaveValue("正文!?");
+  expect(screen.getByText("未保存")).toBeInTheDocument();
+});
+
+test("cmd-enter commits pending address", async () => {
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), {
+    target: { value: "x@y.z" },
+  });
+  await act(async () => {
+    fireEvent.keyDown(el, { key: "Enter", metaKey: true });
+  });
+  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, ""));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@x.com", "x@y.z"] }));
+});
+
+test("send warnings then send anyway", async () => {
+  const w = { plugin: "p", message: "没有附件" };
+  vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(api.send).toHaveBeenCalledWith(7, "");
+  expect(screen.getByText("发送前检查：没有附件")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "仍然发送" }));
+  expect(api.send).toHaveBeenLastCalledWith(7, "d");
+});
+
+test("an edit clears the warnings", async () => {
+  const w = { plugin: "p", message: "没有附件" };
+  vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
+  render(<ComposePage />);
+  const el = await body();
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(screen.getByText("发送前检查：没有附件")).toBeInTheDocument();
+  await userEvent.type(el, "!");
+  expect(screen.queryByText("发送前检查：没有附件")).not.toBeInTheDocument();
+});
+
+test("account switch keeps body", async () => {
+  vi.mocked(api.setAccount).mockResolvedValue({
+    revision: 9,
+    attachments: [],
+    conflict: false,
+    signature: "-- work",
+  });
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
+  await userEvent.click(await screen.findByRole("option", { name: "work@x.com" }));
+  await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
+  expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
+  expect(await screen.findByText("-- work")).toBeInTheDocument();
+  expect(el).toHaveValue("正文!");
+});
+
+test("an account switch that conflicts reverts the select", async () => {
+  vi.mocked(api.setAccount).mockResolvedValue({
+    revision: 0,
+    attachments: [],
+    conflict: true,
+    signature: "",
+  });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
+  await userEvent.click(await screen.findByRole("option", { name: "work@x.com" }));
+  await waitFor(() => expect(api.setAccount).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "发件账户" })).toHaveTextContent("me@x.com"),
+  );
+  expect(screen.getByText("-- me")).toBeInTheDocument();
+});
+
+test("attachments: add reports oversize, × removes", async () => {
+  const a = { id: 3, filename: "a.pdf", size: 1024 };
+  vi.mocked(api.addAttachments).mockResolvedValue({
+    revision: 9,
+    attachments: [a],
+    conflict: false,
+    signature: "-- me",
+    tooLarge: ["big.zip"],
+    failed: ["bad.bin"],
+  });
+  vi.mocked(api.removeAttachment).mockResolvedValue({
+    revision: 10,
+    attachments: [],
+    conflict: false,
+    signature: "-- me",
+  });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "添加附件" }));
+  expect(api.addAttachments).toHaveBeenCalledWith(7);
+  expect(screen.getByText("a.pdf")).toBeInTheDocument();
+  expect(screen.getByText("big.zip")).toBeInTheDocument();
+  expect(screen.getByText("bad.bin")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
+  expect(api.removeAttachment).toHaveBeenCalledWith(3, 9);
+  expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+});
+
+const conflictBySend = async () => {
+  vi.mocked(api.save).mockResolvedValueOnce({ revision: 0, conflict: true });
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(api.send).not.toHaveBeenCalled();
+  expect(screen.getByText("草稿在别处被修改")).toBeInTheDocument();
+  return el;
+};
+
+test("keep mine after conflict", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...state,
+    body: "别处",
+    signature: "-- new",
+    revision: 30,
+  });
+  vi.mocked(api.save).mockResolvedValue({ revision: 31, conflict: false });
+  const el = await conflictBySend();
+  await userEvent.click(screen.getByRole("button", { name: "保留我的版本" }));
+  expect(api.latest).toHaveBeenCalled();
+  expect(api.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ body: "正文!", revision: 30 }),
+  );
+  expect(el).toHaveValue("正文!");
+  expect(screen.getByText("-- new")).toBeInTheDocument();
+  expect(screen.queryByText("草稿在别处被修改")).not.toBeInTheDocument();
+});
+
+test("use latest after conflict", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...state,
+    to: ["z@x.com"],
+    subject: "新主题",
+    body: "最新",
+    revision: 30,
+  });
+  await conflictBySend();
+  await userEvent.click(screen.getByRole("button", { name: "使用最新版本" }));
+  expect(await body()).toHaveValue("最新");
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveValue("新主题");
+  expect(screen.getByRole("button", { name: "移除 z@x.com" })).toBeInTheDocument();
+  expect(screen.queryByText("草稿在别处被修改")).not.toBeInTheDocument();
+  await userEvent.type(await body(), "!");
+  await act(async () => h.closing?.(1));
+  expect(api.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ body: "最新!", revision: 30 }),
+  );
+});
+
+test("a failed read of the latest offers 重试", async () => {
+  vi.mocked(api.latest).mockRejectedValueOnce(new Error("x"));
+  vi.mocked(api.latest).mockResolvedValue({ ...state, body: "最新", revision: 30 });
+  await conflictBySend();
+  await userEvent.click(screen.getByRole("button", { name: "使用最新版本" }));
+  await userEvent.click(await screen.findByRole("button", { name: "重试" }));
+  expect(api.latest).toHaveBeenCalledTimes(2);
+  expect(await body()).toHaveValue("最新");
+});
+
+test("discard asks then discards", async () => {
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "丢弃草稿" }));
+  expect(api.discard).not.toHaveBeenCalled();
+  await userEvent.click(await screen.findByRole("button", { name: "丢弃" }));
+  expect(api.discard).toHaveBeenCalledTimes(1);
+});
+
+test("send during composition: a composition that never ends sends nothing", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<ComposePage />);
+    const el = await body();
+    await u.click(el);
+    act(() => {
+      el.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    fireEvent.change(el, { target: { value: "正文ni" } });
+    await u.click(screen.getByRole("button", { name: "发送" }));
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(api.send).not.toHaveBeenCalled();
+    expect(api.save).not.toHaveBeenCalled();
+    fireEvent.change(el, { target: { value: "正文你" } });
+    expect(el).toHaveValue("正文你");
+  } finally {
+    vi.useRealTimers();
+  }
 });

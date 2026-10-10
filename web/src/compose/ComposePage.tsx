@@ -1,19 +1,25 @@
+import { RiAttachment2 } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
-import { useEffect, useRef, useState } from "react";
-import { Alert } from "@/components/ui/alert";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { ComposePage as api, type ComposeState, events } from "@/mygo";
+import { Toaster } from "@/components/ui/sonner";
+import {
+  type Attachment,
+  ComposePage as api,
+  type ComposeEdit,
+  type ComposeState,
+  events,
+  type SendWarning,
+} from "@/mygo";
+import { makeT } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
+import { Attachments } from "./Attachments";
+import { Editor } from "./editor/Editor";
+import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
+import { Notices } from "./Notices";
+import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
-
-const list = (s: string) =>
-  s
-    .split(/[,，;；]/)
-    .map((x) => x.trim())
-    .filter(Boolean);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,7 +44,8 @@ async function settle(g: CloseGate): Promise<boolean> {
 }
 
 /**
- * The compose page: loads the window's draft, autosaves it, flushes when the window closes.
+ * The compose page: loads the window's draft, autosaves it, flushes when the window closes; the
+ * header fields, the body, attachments, send and discard, and the conflict's resolution.
  *
  * A closing freezes input until its answer, so nothing typed after the flush is lost to the
  * window's Destroy. A composition in progress commits first (blur, up to 1 s) so its text is
@@ -49,6 +56,7 @@ async function settle(g: CloseGate): Promise<boolean> {
 export function ComposePage() {
   const [state, setState] = useState<ComposeState>();
   const [frozen, setFrozen] = useState(false);
+  const [mode, setMode] = useState<Theme["mode"]>(); // a theme event's, once one came
   const saver = useRef<Saver>(undefined);
   const gate = useRef<CloseGate>({ frozen: false, closings: 0 });
 
@@ -99,10 +107,14 @@ export function ComposePage() {
 
   useEffect(() => {
     if (!state) return;
-    let stop = applyTheme(state.theme as Theme);
+    const apply = (t: Theme) => {
+      setMode(t.mode);
+      return applyTheme(t);
+    };
+    let stop = apply(state.theme as Theme);
     const off = events.theme.on((t) => {
       stop();
-      stop = applyTheme(t as Theme);
+      stop = apply(t as Theme);
     });
     return () => {
       off();
@@ -110,11 +122,30 @@ export function ComposePage() {
     };
   }, [state]);
 
-  if (!state) return <main aria-label="撰写" />;
-  return <Editor state={state} saver={saver} gate={gate.current} frozen={frozen} />;
+  if (!state) return <main />;
+  return (
+    <>
+      <Compose state={state} saver={saver} gate={gate.current} frozen={frozen} />
+      {/* sonner ignores the html dark class: the theme's mode is its own ("system" follows the OS as applyTheme does) */}
+      <Toaster theme={mode ?? (state.theme as Theme).mode} />
+    </>
+  );
 }
 
-function Editor({
+const fmt = (d: Date) =>
+  d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+const editOf = (s: ComposeState): ComposeEdit => ({
+  to: s.to,
+  cc: s.cc,
+  bcc: s.bcc,
+  replyTo: s.replyTo,
+  subject: s.subject,
+  body: s.body,
+  revision: s.revision,
+});
+
+function Compose({
   state,
   saver,
   gate,
@@ -125,34 +156,43 @@ function Editor({
   gate: CloseGate;
   frozen: boolean;
 }) {
-  const [f, setF] = useState({
-    to: state.to.join(", "),
-    cc: state.cc.join(", "),
-    bcc: state.bcc.join(", "),
-    subject: state.subject,
-    body: state.body,
-  });
+  const t = useMemo(() => makeT(state.text), [state.text]);
+  const fieldsRef = useRef<FieldsHandle>(null);
+  // The edit as it stands, read synchronously: commitPending's edits arrive within the settling.
+  const cur = useRef(editOf(state));
+  const [f, setF] = useState(cur.current);
+  const [initial, setInitial] = useState({ body: state.body, n: 0 }); // n remounts the editor
+  const [from, setFrom] = useState(state.from);
+  const [signature, setSignature] = useState(state.signature);
+  const [quote, setQuote] = useState(state.quote);
   const [showQuote, setShowQuote] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>(state.attachments);
+  const [tooLarge, setTooLarge] = useState<string[]>([]);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<{ list: SendWarning[]; digest: string }>({
+    list: [],
+    digest: "",
+  });
+  const [blocked, setBlocked] = useState<SendWarning | null>(null);
+  const [latestFailed, setLatestFailed] = useState(false);
+  const retry = useRef<() => void>(() => {});
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false); // sent or discarded: Go closes the window
+  const [savedAt, setSavedAt] = useState(() => fmt(new Date()));
   const [, rerender] = useState(0);
-  const [savedAt, setSavedAt] = useState<Date>();
 
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
   useEffect(() => {
-    const n = createSaver(api.save, {
-      revision: state.revision,
-      snapshot: {
-        to: state.to,
-        cc: state.cc,
-        bcc: state.bcc,
-        replyTo: state.replyTo,
-        subject: state.subject,
-        body: state.body,
-        revision: state.revision,
-      },
+    const n = createSaver(api.save, { revision: state.revision, snapshot: editOf(state) });
+    n.setSettle(async () => {
+      fieldsRef.current?.commitPending();
+      return settle(gate);
     });
-    n.setSettle(() => settle(gate));
+    n.onRefused(() => toast(t("compose.sending.locked"), { id: "locked" }));
+    let last = n.status;
     const off = n.onChange(() => {
-      if (n.status === "saved") setSavedAt(new Date());
+      if (n.status === "saved" && last === "saving") setSavedAt(fmt(new Date()));
+      last = n.status;
       rerender((i) => i + 1);
     });
     saver.current = n;
@@ -161,93 +201,229 @@ function Editor({
       n.dispose();
       if (saver.current === n) saver.current = undefined;
     };
-  }, [state, saver, gate]);
+  }, [state, saver, gate, t]);
   useEffect(() => {
-    currentWindow.setTitle(f.subject.trim() || "新邮件");
-  }, [f.subject]);
+    currentWindow.setTitle(f.subject.trim() || t("compose.new"));
+  }, [f.subject, t]);
 
-  const set = (k: keyof typeof f) => (ev: { target: { value: string } }) => {
-    if (gate.frozen) return;
-    const n = { ...f, [k]: ev.target.value };
-    const taken = saver.current?.edit({
-      to: list(n.to),
-      cc: list(n.cc),
-      bcc: list(n.bcc),
-      replyTo: state.replyTo,
-      subject: n.subject,
-      body: n.body,
-      revision: state.revision,
-    });
-    if (taken !== false) setF(n); // refused while an operation runs
+  const sv = saver.current;
+  const locked = frozen || done || !!sv?.frozen;
+
+  const edit = (e: Partial<ComposeEdit>) => {
+    if (gate.frozen) return; // a closing's answer is out: the window may be gone
+    const n = { ...cur.current, ...e };
+    if (sv?.edit(n) === false) return; // refused while an operation runs
+    cur.current = n;
+    setF(n);
+    setWarnings({ list: [], digest: "" });
+    setBlocked(null);
   };
-  const hhmm = savedAt?.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const st = saver.current?.status ?? "saved";
-  const status =
-    st === "saving"
-      ? "正在保存…"
-      : st === "saved"
-        ? `草稿已保存${hhmm ? ` · ${hhmm}` : ""}`
-        : "未保存";
+  const failure = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+
+  const send = async (digest = "") => {
+    if (!sv || locked || sending) return;
+    setSending(true);
+    try {
+      const r = await sv.run((rev) => api.send(rev, digest).then((s) => ({ ...s, revision: rev })));
+      if (!r) return; // not saved: the status says why
+      if (r.sent) setDone(true);
+      setWarnings({ list: r.warnings ?? [], digest: r.digest });
+      setBlocked(r.blocked);
+    } catch (e) {
+      failure(e);
+    } finally {
+      setSending(false);
+    }
+  };
+  const onFrom = async (id: number) => {
+    if (!sv || id === from) return;
+    const prev = from;
+    setFrom(id);
+    try {
+      const r = await sv.run((rev) => api.setAccount(id, rev));
+      if (!r || r.conflict) setFrom(prev);
+      else setSignature(r.signature);
+    } catch (e) {
+      setFrom(prev);
+      failure(e);
+    }
+  };
+  const change = async (op: (rev: number) => ReturnType<typeof api.addAttachments>) => {
+    if (!sv) return;
+    try {
+      const r = await sv.run(op);
+      if (!r) return;
+      if (!r.conflict) setAttachments(r.attachments);
+      setTooLarge(r.tooLarge ?? []);
+      setFailed(r.failed ?? []);
+    } catch (e) {
+      failure(e);
+    }
+  };
+  const discard = async () => {
+    if (!sv) return;
+    try {
+      const r = await sv.run(async (rev) => {
+        await api.discard();
+        return { revision: rev, conflict: false };
+      });
+      if (r) setDone(true);
+    } catch (e) {
+      failure(e);
+    }
+  };
+  // The conflict: read the draft as stored; keep mine saves the local edit over it, use latest
+  // takes it. Either way its account, signature, quote and attachments (not edited here) are adopted.
+  const resolve = async (mine: boolean) => {
+    if (!sv) return;
+    retry.current = () => resolve(mine);
+    let l: ComposeState;
+    try {
+      l = await api.latest();
+    } catch {
+      setLatestFailed(true);
+      return;
+    }
+    setLatestFailed(false);
+    setFrom(l.from);
+    setSignature(l.signature);
+    setQuote(l.quote);
+    setAttachments(l.attachments);
+    if (mine) {
+      await sv.keepMine(l.revision);
+      return;
+    }
+    cur.current = editOf(l);
+    setF(cur.current);
+    setInitial((i) => ({ body: l.body, n: i.n + 1 }));
+    // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
+    sv.useLatest(l.revision, cur.current);
+  };
+
+  const status = sv?.status === "saving" || sv?.status === "saved" ? sv.status : "unsaved";
+  const title = f.subject.trim() || t("compose.new");
 
   return (
     <main
-      aria-label="撰写"
-      className="flex min-h-screen flex-col gap-3 p-4"
+      aria-label={title}
+      className="flex h-screen flex-col"
       onCompositionStart={() => {
         let end = () => {};
         const ended = new Promise<void>((r) => (end = r));
         gate.ime = { ended, end };
-        saver.current?.setComposing(true);
+        sv?.setComposing(true);
       }}
       onCompositionEnd={() => {
         gate.ime?.end();
         gate.ime = undefined;
-        saver.current?.setComposing(false);
+        sv?.setComposing(false);
+      }}
+      onKeyDown={(e) => {
+        // The editor is read-only while an operation runs, so typing there never reaches the saver.
+        if (sv?.frozen && !gate.frozen && e.key.length === 1 && !e.metaKey && !e.ctrlKey)
+          toast(t("compose.sending.locked"), { id: "locked" });
+        if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return;
+        e.preventDefault();
+        void send();
       }}
     >
-      {saver.current?.status === "conflict" && (
-        <Alert variant="destructive">草稿已在别处修改，本窗口不再保存</Alert>
-      )}
-      {(
-        [
-          ["to", "收件人"],
-          ["cc", "抄送"],
-          ["bcc", "密送"],
-          ["subject", "主题"],
-        ] as const
-      ).map(([k, label]) => (
-        <div key={k} className="flex items-center gap-2">
-          <Label htmlFor={k} className="w-16 shrink-0">
-            {label}
-          </Label>
-          <Input id={k} value={f[k]} onChange={set(k)} readOnly={frozen || saver.current?.frozen} />
-        </div>
-      ))}
-      <Label htmlFor="body" className="sr-only">
-        正文
-      </Label>
-      <Textarea
-        id="body"
-        className="min-h-64 flex-1"
-        value={f.body}
-        onChange={set("body")}
-        readOnly={frozen || saver.current?.frozen}
-      />
-      {state.quote && (
-        <div>
-          <Button variant="ghost" size="sm" onClick={() => setShowQuote(!showQuote)}>
-            {showQuote ? "隐藏引用的原邮件" : "显示引用的原邮件"}
-          </Button>
-          {showQuote && (
-            <pre className="whitespace-pre-wrap text-sm text-muted-foreground">{state.quote}</pre>
+      <header className="compose-titlebar flex shrink-0 items-center border-b pr-5">
+        <h1 className="truncate font-medium text-sm">{title}</h1>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <Fields
+          ref={fieldsRef}
+          accounts={state.accounts}
+          from={from}
+          onFrom={onFrom}
+          to={f.to}
+          cc={f.cc}
+          bcc={f.bcc}
+          replyTo={f.replyTo}
+          subject={f.subject}
+          onChange={(e: FieldsEdit) => edit(e)}
+          t={t}
+        />
+        <div className="flex min-h-64 flex-1 flex-col gap-3 px-5 py-3">
+          <Editor
+            key={`${state.draftId}:${initial.n}`}
+            initial={initial.body}
+            readOnly={locked}
+            placeholder=""
+            onChange={(body) => edit({ body })}
+            onComposing={() => {}} // <main> tracks compositions, the fields' too
+            t={t}
+            attach={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("compose.attach")}
+                disabled={locked}
+                onClick={() => change((rev) => api.addAttachments(rev))}
+              >
+                <RiAttachment2 />
+              </Button>
+            }
+          />
+          {signature && (
+            <pre className="whitespace-pre-wrap font-sans text-muted-foreground text-sm">
+              {signature}
+            </pre>
           )}
+          {quote && (
+            <div>
+              <Button
+                variant="link"
+                size="sm"
+                className="px-0"
+                onClick={() => setShowQuote(!showQuote)}
+              >
+                {t("compose.quote.show")}
+              </Button>
+              {showQuote && (
+                <pre className="whitespace-pre-wrap font-sans text-muted-foreground text-sm">
+                  {quote}
+                </pre>
+              )}
+            </div>
+          )}
+          <Attachments
+            items={attachments}
+            tooLarge={tooLarge}
+            frozen={locked}
+            onRemove={(id) =>
+              change((rev) =>
+                api.removeAttachment(id, rev).then((c) => ({ ...c, tooLarge: [], failed: [] })),
+              )
+            }
+            t={t}
+          />
+          {failed.length > 0 && <p className="text-destructive text-sm">{failed.join(", ")}</p>}
+          <Notices
+            warnings={warnings.list}
+            blocked={blocked}
+            conflict={sv?.status === "conflict"}
+            latestFailed={latestFailed}
+            frozen={locked}
+            onSendAnyway={() => send(warnings.digest)}
+            onKeepMine={() => resolve(true)}
+            onUseLatest={() => resolve(false)}
+            onRetry={() => retry.current()}
+            t={t}
+          />
         </div>
-      )}
-      <p className="text-sm text-muted-foreground">{status}</p>
+      </div>
+      <div className="shrink-0 border-t px-5 py-3">
+        <SendBar
+          sending={sending}
+          frozen={locked}
+          status={status}
+          savedAt={savedAt}
+          onSend={() => send()}
+          onDiscard={discard}
+          t={t}
+        />
+      </div>
     </main>
   );
 }
