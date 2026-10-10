@@ -118,7 +118,7 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 | `assist(input)`、`skill(name, lang?)`、`rewriteSelection(html, instruction)` | Wit；返回 `Channel<WitEvent>` 流式事件 | `Assist`、`AssistSkill`、`RewriteSelection` |
 | `witHistory()` | 草稿的 Wit 对话历史（UI 消息形状）与是否有进行中的回复 | `ListConversations`、`ListApprovals`、对话消息 |
 | `decide(approvalID, accept)`、`applyEdited(approvalID, html)`、`undoAssist()`、`stop()` | 审批与撤销 | `ResolveApproval`、`ApplyEditedProposal`、`UndoLastAssist`、`CancelRun` |
-| `openLink(url)` | 用户确认后用系统浏览器打开 | 现有链接确认 |
+| `openLink(url)` | 用户确认后用系统浏览器打开（计划 3，随 Wit 回答里的链接一起做；编辑器里的链接只编辑、不跳转） | 现有链接确认 |
 
 **事件（Go → 网页）**：`draftChanged`（Wit 应用或别处保存后，网页按现有重载规则决定是否重载）、`theme`、`closing`（请网页立即提交输入）。
 
