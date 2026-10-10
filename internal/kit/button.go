@@ -123,11 +123,15 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 }
 
 // IconButton is a square button showing only an icon, named label for
-// assistive technology and tests.
+// assistive technology and tests. A SizeXs one, 16 round, holds a 12 icon.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	b := button(c, o, true).Label(label)
 	tooltip(c, b, label, false)
+	size := float32(theme.Icon)
+	if o.Size == SizeXs {
+		size = theme.IconXs
+	}
 	return b.Children(func() {
-		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon)
+		ui.Icon(c, icons.Get(icon)).Size(size, size)
 	})
 }

@@ -640,19 +640,24 @@ func TestLocalDraftsEntry(t *testing.T) {
 }
 
 func TestAccountFoldPersists(t *testing.T) {
-	h, _ := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	h.tt.SetPreferences(ui.Preferences{ReduceMotion: true}) // the fold opens and closes at once
 	count := func() int { return h.countTexts("已发送") }
-	h.until("both accounts' folders", func() bool { return count() == 2 })
+	h.waitMail("both accounts' folders", func() bool { return count() == 2 })
 	h.click("alice@example.com")
-	h.until("alice's folders hidden", func() bool { return count() == 1 })
+	if n := count(); n != 1 || *h.app.mail.accountOpen(accs[0].ID) {
+		t.Fatalf("%d 已发送 folders after folding alice, want 1", n)
+	}
 	h.app.navigate(Route{Page: PageSettings})
 	h.tt.Frame()
 	h.app.navigate(Route{Page: PageMail})
 	h.tt.Frame()
 	h.tt.Frame()
-	if n := count(); n != 1 {
+	if n := count(); n != 1 || *h.app.mail.accountOpen(accs[0].ID) {
 		t.Fatalf("%d 已发送 folders back on the mail page, want alice's still folded", n)
 	}
 	h.click("alice@example.com")
-	h.until("alice's folders shown", func() bool { return count() == 2 })
+	if n := count(); n != 2 {
+		t.Fatalf("%d 已发送 folders after unfolding alice, want 2", n)
+	}
 }

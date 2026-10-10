@@ -503,7 +503,7 @@ func (p *composer) addresses(c *ui.Context, i int, label string) {
 			}
 			ui.Row(c).Key(addr).Gap(th.Space(1)).Padding(th.Space(0.5), th.Space(1), th.Space(0.5), th.Space(2)).Radius(t.Radius.Full).Background(bg).TextColor(fg).Children(func() {
 				ui.Text(c, addr).SingleLine()
-				kit.IconButton(c, "x", i18n.Tf("compose.remove", addr), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
+				kit.IconButton(c, "x", i18n.Tf("compose.remove", addr), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).TextColor(fg).OnClick(func() {
 					*list = slices.DeleteFunc(*list, func(s string) bool { return s == addr })
 					p.edited()
 				})
