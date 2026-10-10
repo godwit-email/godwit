@@ -37,6 +37,9 @@ jobs:
         run: go test -race -count=1 ./...
       - name: build (every platform must package)
         run: mise run build
+      - name: generated client matches the Go code
+        shell: bash
+        run: git diff --exit-code -- web/src/mygo.ts
 
   web:
     runs-on: ubuntu-latest
