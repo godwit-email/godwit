@@ -49,13 +49,13 @@ func table() []Provider {
 		{ID: "qq", Name: "QQ Mail", Domains: []string{"qq.com", "foxmail.com", "vip.qq.com"},
 			IMAP: tls("imap.qq.com"), SMTP: smtps("smtp.qq.com"), Login: "authorization_code",
 			HelpURL: "https://service.mail.qq.com/detail/0/75"},
+		{ID: "exmail", Name: "Tencent Exmail",
+			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
+			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
 		{ID: "netease163", Name: "163 Mail", Domains: []string{"163.com"},
 			IMAP: tls("imap.163.com"), SMTP: smtps("smtp.163.com"), Login: "authorization_code", HelpURL: neteaseHelp},
 		{ID: "netease126", Name: "126 Mail", Domains: []string{"126.com", "yeah.net"},
 			IMAP: tls("imap.126.com"), SMTP: smtps("smtp.126.com"), Login: "authorization_code", HelpURL: neteaseHelp},
-		{ID: "exmail", Name: "Tencent Exmail",
-			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
-			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
 		// Feishu and DingTalk Mail are on company domains, found by MX.
 		// Feishu's servers and its 专用密码 are from its help article; an admin
 		// enables third-party clients first.

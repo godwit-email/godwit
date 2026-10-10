@@ -87,7 +87,7 @@ func TestDetectRejectsBadAddress(t *testing.T) {
 }
 
 func TestProvidersComplete(t *testing.T) {
-	want := []string{"gmail", "outlook", "qq", "netease163", "netease126", "exmail", "feishu", "dingtalk", "icloud", "fastmail"}
+	want := []string{"gmail", "outlook", "qq", "exmail", "netease163", "netease126", "feishu", "dingtalk", "icloud", "fastmail"}
 	ps := auth.ListProviders()
 	if len(ps) != len(want) {
 		t.Fatalf("got %d providers", len(ps))
