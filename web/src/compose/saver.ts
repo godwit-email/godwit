@@ -83,7 +83,13 @@ export function createSaver(
     if (disposed || composing || status === "conflict") return;
     // Only what is left of the delay since the last input; the queue re-checks everything when its turn comes.
     timer = setTimeout(
-      () => void enqueue(async () => !disposed && saveNow()),
+      () =>
+        void enqueue(async () => {
+          if (disposed) return;
+          // An edit made while this waited in the queue restarts its delay.
+          if (Date.now() - lastInput < delay) schedule();
+          else await saveNow();
+        }),
       Math.max(0, delay - (Date.now() - lastInput)),
     );
   };

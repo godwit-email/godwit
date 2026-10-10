@@ -403,3 +403,26 @@ test("an op flushing through its own flush does not deadlock", async () => {
   });
   expect(r).toEqual({ revision: 0, conflict: false });
 });
+
+test("a queued autosave rechecks the delay against the newest edit", async () => {
+  const slow = deferred<SaveResult>();
+  const save = vi
+    .fn()
+    .mockImplementationOnce(() => slow.promise)
+    .mockResolvedValue(ok);
+  const s = createSaver(save);
+  s.edit(ed("a"));
+  await vi.advanceTimersByTimeAsync(1000); // a in flight
+  await vi.advanceTimersByTimeAsync(100);
+  s.edit(ed("b")); // its timer fires at 2100 and queues behind a
+  await vi.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(50);
+  s.edit(ed("c")); // at 2150: due at 3150
+  await vi.advanceTimersByTimeAsync(50);
+  slow.resolve(ok); // the queued job runs at 2200
+  await vi.advanceTimersByTimeAsync(949);
+  expect(save).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1][0].body).toBe("c");
+});
