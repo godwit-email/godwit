@@ -39,7 +39,8 @@ export function Editor(props: {
           onCompositionEnd={() => onComposing(false)}
           onKeyDown={(e) => {
             // ⌘K: the link popover, for a selection (plan 3 routes it to Wit when a model is set).
-            if (!isHotkey("mod+k", { byKey: true }, e.nativeEvent)) return;
+            if (e.nativeEvent.isComposing || !isHotkey("mod+k", { byKey: true }, e.nativeEvent))
+              return;
             e.preventDefault();
             if (!readOnly && editor.api.isExpanded()) setLinkOpen(true);
           }}

@@ -98,6 +98,14 @@ describe("Editor", () => {
     expect(screen.getByRole("button", { name: "compose.bold" })).toBeDisabled();
   });
 
+  it("⌘K during an IME composition opens nothing", async () => {
+    const { box } = setup();
+    await select(box, 0, 5);
+    fireEvent.keyDown(box, { key: "k", code: "KeyK", isComposing: true, ...mod });
+    await act(async () => {});
+    expect(screen.queryByPlaceholderText("https://")).not.toBeInTheDocument();
+  });
+
   it("the link popover applies a link to the selection and rejects ftp://", async () => {
     const user = userEvent.setup();
     const { box, onChange } = setup();

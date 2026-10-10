@@ -24,7 +24,10 @@ const accounts = [
 ];
 
 // A stateful host, as the page is: edits flow back in as props.
-function setup(init: Partial<Record<"to" | "cc" | "bcc", string[]> & { replyTo: string }> = {}) {
+function setup(
+  init: Partial<Record<"to" | "cc" | "bcc", string[]> & { replyTo: string }> = {},
+  frozen = false,
+) {
   const onChange = vi.fn();
   const onFrom = vi.fn();
   const ref = createRef<FieldsHandle>();
@@ -36,6 +39,7 @@ function setup(init: Partial<Record<"to" | "cc" | "bcc", string[]> & { replyTo: 
         accounts={accounts}
         from={1}
         onFrom={onFrom}
+        frozen={frozen}
         {...v}
         onChange={(e: FieldsEdit) => {
           onChange(e);
@@ -131,4 +135,20 @@ test("a comma inside a quoted name does not commit", async () => {
   setup();
   await userEvent.type(screen.getByRole("textbox", { name: "收件人" }), '"Doe, J." <j@x.io>,');
   expect(chips()).toEqual(['移除 "Doe, J." <j@x.io>']);
+});
+
+test("frozen: read-only, nothing committed, removed or switched", async () => {
+  const { onChange, onFrom, ref } = setup({ to: ["a@b.c"] }, true);
+  const to = screen.getByRole("textbox", { name: "收件人" });
+  expect(to).toHaveAttribute("readonly");
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
+  fireEvent.change(to, { target: { value: "x@y.z," } });
+  fireEvent.change(screen.getByRole("textbox", { name: "主题" }), { target: { value: "s" } });
+  act(() => ref.current?.commitPending());
+  await userEvent.click(screen.getByRole("button", { name: "移除 a@b.c" }));
+  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
+  expect(screen.queryByRole("option", { name: "work@x.com" })).not.toBeInTheDocument();
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onFrom).not.toHaveBeenCalled();
+  expect(chips()).toEqual(["移除 a@b.c"]);
 });

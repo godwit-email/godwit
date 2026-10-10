@@ -10,13 +10,13 @@ var composeKeys = []string{
 	"compose.reply_to.input", "compose.subject", "compose.subject.input", "compose.invalid",
 	"compose.body", "compose.bold", "compose.format", "compose.italic", "compose.link",
 	"compose.link.url", "compose.link.apply", "compose.list", "compose.list_ordered", "compose.quote",
-	"compose.attach", "compose.remove", "compose.attach.too_large", "compose.quote.show",
+	"compose.attach", "compose.remove", "compose.attach.too_large", "compose.attach.failed", "compose.quote.show",
 	"compose.conflict", "compose.conflict.keep", "compose.conflict.latest", "compose.warn",
 	"compose.warn.from", "compose.send_anyway", "compose.send", "compose.sending.locked",
 	"compose.note", "compose.discard", "compose.discard.title", "compose.discard.body",
 	"compose.discard.confirm",
 	"common.cancel", "common.close", "common.retry", "close.unsaved.title",
-	"error.stale_draft", "error.too_large", "mail.no_subject",
+	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject",
 }
 
 // composeText is composeKeys in the UI language.

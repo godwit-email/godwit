@@ -82,6 +82,8 @@ func TestComposeLoadOwnDraft(t *testing.T) {
 	assert.Equal(t, []Account{{f.acc.ID, "alice@example.com"}}, st.Accounts)
 	assert.Equal(t, f.acc.ID, st.From)
 	assert.Equal(t, d.Revision, st.Revision)
+	assert.Equal(t, d.UpdatedAt.UnixMilli(), st.UpdatedAt)
+	assert.NotZero(t, st.UpdatedAt)
 	assert.Equal(t, "system", st.Theme.Mode)
 }
 

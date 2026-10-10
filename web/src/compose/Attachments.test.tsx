@@ -6,6 +6,7 @@ import { Attachments } from "./Attachments";
 const t = makeT({
   "compose.remove": "移除 %s",
   "compose.attach.too_large": "附件超过了 %s 的上限",
+  "compose.attach.failed": "未能添加：%s",
 });
 
 test("lists, removes and reports oversize", async () => {
@@ -40,4 +41,18 @@ test("frozen: remove is inert", async () => {
   );
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(onRemove).not.toHaveBeenCalled();
+});
+
+test("names the files that failed", () => {
+  render(
+    <Attachments
+      items={[]}
+      tooLarge={[]}
+      failed={["a.bin", "b.bin"]}
+      frozen={false}
+      onRemove={() => {}}
+      t={t}
+    />,
+  );
+  expect(screen.getByRole("alert").textContent).toBe("未能添加：a.bin, b.bin");
 });

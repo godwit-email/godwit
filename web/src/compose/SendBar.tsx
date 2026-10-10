@@ -12,12 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
 
-/** The send button, discard (behind a confirm), the note and the save status. */
+/** The send button, discard (behind a confirm) and the note. */
 export function SendBar({
   sending,
   frozen,
-  status,
-  savedAt,
   onSend,
   onDiscard,
   t,
@@ -25,8 +23,6 @@ export function SendBar({
   sending: boolean;
   /** True while any operation runs: every control is inert. */
   frozen: boolean;
-  status: "saving" | "saved" | "unsaved";
-  savedAt: string;
   onSend(): void;
   onDiscard(): void;
   t: T;
@@ -42,9 +38,6 @@ export function SendBar({
         <Button variant="ghost" disabled={off} onClick={() => setAsking(true)}>
           {t("compose.discard")}
         </Button>
-        <span className="ml-auto text-muted-foreground text-xs">
-          {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
-        </span>
       </div>
       <p className="text-muted-foreground text-xs">{t("compose.note")}</p>
       <AlertDialog open={asking} onOpenChange={setAsking}>

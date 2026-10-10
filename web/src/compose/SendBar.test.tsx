@@ -11,25 +11,12 @@ const t = makeT({
   "compose.discard.confirm": "丢弃",
   "common.cancel": "取消",
   "compose.note": "发送永远需要你亲自点击，插件和 agent 只能写草稿",
-  "compose.status.saving": "正在保存…",
-  "compose.status.saved": "草稿已保存 · %s",
-  "compose.status.unsaved": "未保存",
 });
 
-function setup(status: "saving" | "saved" | "unsaved" = "saved", frozen = false) {
+function setup(frozen = false) {
   const onSend = vi.fn();
   const onDiscard = vi.fn();
-  render(
-    <SendBar
-      sending={false}
-      frozen={frozen}
-      status={status}
-      savedAt="21:58"
-      onSend={onSend}
-      onDiscard={onDiscard}
-      t={t}
-    />,
-  );
+  render(<SendBar sending={false} frozen={frozen} onSend={onSend} onDiscard={onDiscard} t={t} />);
   return { onSend, onDiscard };
 }
 
@@ -51,15 +38,6 @@ test("discard asks; cancel does nothing, confirm discards", async () => {
   expect(onDiscard).toHaveBeenCalledTimes(1);
 });
 
-test.each([
-  ["saving", "正在保存…"],
-  ["saved", "草稿已保存 · 21:58"],
-  ["unsaved", "未保存"],
-] as const)("status %s", (s, text) => {
-  setup(s);
-  expect(screen.getByText(text)).toBeTruthy();
-});
-
 test("double-clicking confirm discards once", async () => {
   const { onDiscard } = setup();
   await userEvent.click(screen.getByRole("button", { name: "丢弃草稿" }));
@@ -68,7 +46,7 @@ test("double-clicking confirm discards once", async () => {
 });
 
 test("frozen: send and discard are disabled", () => {
-  setup("saved", true);
+  setup(true);
   expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "丢弃草稿" }) as HTMLButtonElement).disabled).toBe(
     true,

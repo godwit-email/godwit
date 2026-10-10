@@ -518,6 +518,7 @@ var en = map[string]string{
 	"compose.attach":           "Attach files",
 	"compose.remove":           "Remove %s",
 	"compose.attach.too_large": "Attachments can be at most %s",
+	"compose.attach.failed":    "Couldn't attach: %s",
 	"compose.quote.show":       "Show the quoted message (read-only for the assistant)",
 	"compose.conflict":         "This draft was changed elsewhere",
 	"compose.conflict.keep":    "Keep my version",

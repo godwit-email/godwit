@@ -34,7 +34,7 @@ const none: Record<AddressKey, string> = { to: "", cc: "", bcc: "", replyTo: "" 
 
 /**
  * The header fields: From, To; Cc, Bcc and Reply-To behind 抄送 · 密送 unless one has a value;
- * the invalid addresses; Subject.
+ * the invalid addresses; Subject. `frozen` (an operation running) makes them all read-only.
  */
 export function Fields({
   ref,
@@ -47,6 +47,7 @@ export function Fields({
   replyTo,
   subject,
   onChange,
+  frozen = false,
   t,
 }: {
   ref?: Ref<FieldsHandle>;
@@ -59,6 +60,7 @@ export function Fields({
   replyTo: string;
   subject: string;
   onChange(e: FieldsEdit): void;
+  frozen?: boolean;
   t: T;
 }) {
   const id = useId();
@@ -75,6 +77,7 @@ export function Fields({
   };
   useImperativeHandle(ref, () => ({
     commitPending() {
+      if (frozen) return;
       for (const k of Object.keys(none) as AddressKey[]) if (pending[k]) commitOne(k, pending[k]);
     },
   }));
@@ -105,6 +108,7 @@ export function Fields({
             )
           }
           placeholder={t(placeholder)}
+          frozen={frozen}
           t={t}
         />
         {extra}
@@ -120,6 +124,7 @@ export function Fields({
         t("compose.from"),
         <Select
           value={from}
+          disabled={frozen}
           onValueChange={(v) => v !== null && onFrom(v)}
           items={accounts.map((a) => ({ value: a.id, label: a.email }))}
         >
@@ -140,7 +145,7 @@ export function Fields({
         "compose.to",
         "compose.to.input",
         !showCc && (
-          <Button variant="link" size="sm" onClick={() => setCcOpen(true)}>
+          <Button variant="link" size="sm" disabled={frozen} onClick={() => setCcOpen(true)}>
             {t("compose.cc_bcc")}
           </Button>
         ),
@@ -165,7 +170,8 @@ export function Fields({
           className="h-7 flex-1 border-0 px-0 shadow-none focus-visible:ring-0"
           placeholder={t("compose.subject.input")}
           value={subject}
-          onChange={(e) => onChange({ subject: e.target.value })}
+          readOnly={frozen}
+          onChange={(e) => !frozen && onChange({ subject: e.target.value })}
         />,
       )}
     </div>

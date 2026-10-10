@@ -12,7 +12,7 @@ import {
   events,
   type SendWarning,
 } from "@/mygo";
-import { makeT } from "@/shared/i18n";
+import { makeT, type T } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { Attachments } from "./Attachments";
 import { Editor } from "./editor/Editor";
@@ -132,6 +132,20 @@ export function ComposePage() {
   );
 }
 
+// ponytail: matches core's error texts (the bridge passes only err.Error()); typed error codes
+// over the bridge would make this exact.
+const errorKeys: [string, string][] = [
+  ["draft changed since it was loaded", "error.stale_draft"],
+  ["attachment exceeds the size limit", "error.too_large"],
+];
+
+/** What a rejected call means to the user, in the page's copy. */
+export function errorText(e: unknown, t: T): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const k = errorKeys.find(([text]) => msg.includes(text));
+  return k ? t(k[1]) : t("error.unknown", msg);
+}
+
 const fmt = (d: Date) =>
   d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -178,7 +192,10 @@ function Compose({
   const retry = useRef<() => void>(() => {});
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false); // sent or discarded: Go closes the window
-  const [savedAt, setSavedAt] = useState(() => fmt(new Date()));
+  const doneRef = useRef(false);
+  const [resolving, setResolving] = useState(false); // a conflict resolution runs
+  const busy = useRef(false);
+  const [savedAt, setSavedAt] = useState(() => fmt(new Date(state.updatedAt)));
   const [, rerender] = useState(0);
 
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
@@ -207,10 +224,16 @@ function Compose({
   }, [f.subject, t]);
 
   const sv = saver.current;
-  const locked = frozen || done || !!sv?.frozen;
+  const locked = frozen || done || resolving || !!sv?.frozen;
+  const finish = () => {
+    doneRef.current = true;
+    setDone(true);
+  };
 
   const edit = (e: Partial<ComposeEdit>) => {
-    if (gate.frozen) return; // a closing's answer is out: the window may be gone
+    // A closing's answer is out (the window may be gone), the draft is sent or discarded, or a
+    // conflict resolution is replacing it.
+    if (gate.frozen || doneRef.current || busy.current) return;
     const n = { ...cur.current, ...e };
     if (sv?.edit(n) === false) return; // refused while an operation runs
     cur.current = n;
@@ -218,7 +241,7 @@ function Compose({
     setWarnings({ list: [], digest: "" });
     setBlocked(null);
   };
-  const failure = (e: unknown) => toast.error(e instanceof Error ? e.message : String(e));
+  const failure = (e: unknown) => toast.error(errorText(e, t));
 
   const send = async (digest = "") => {
     if (!sv || locked || sending) return;
@@ -226,7 +249,7 @@ function Compose({
     try {
       const r = await sv.run((rev) => api.send(rev, digest).then((s) => ({ ...s, revision: rev })));
       if (!r) return; // not saved: the status says why
-      if (r.sent) setDone(true);
+      if (r.sent) finish();
       setWarnings({ list: r.warnings ?? [], digest: r.digest });
       setBlocked(r.blocked);
     } catch (e) {
@@ -253,7 +276,8 @@ function Compose({
     try {
       const r = await sv.run(op);
       if (!r) return;
-      if (!r.conflict) setAttachments(r.attachments);
+      // A conflict that stopped the adding part way still lists the files added (with a revision).
+      if (!r.conflict || r.revision) setAttachments(r.attachments);
       setTooLarge(r.tooLarge ?? []);
       setFailed(r.failed ?? []);
     } catch (e) {
@@ -267,37 +291,47 @@ function Compose({
         await api.discard();
         return { revision: rev, conflict: false };
       });
-      if (r) setDone(true);
+      if (r) finish();
     } catch (e) {
       failure(e);
     }
   };
   // The conflict: read the draft as stored; keep mine saves the local edit over it, use latest
   // takes it. Either way its account, signature, quote and attachments (not edited here) are adopted.
+  // One at a time, the form frozen throughout; a reply for a saver since replaced is dropped.
   const resolve = async (mine: boolean) => {
-    if (!sv) return;
+    if (!sv || busy.current) return;
+    busy.current = true;
+    setResolving(true);
     retry.current = () => resolve(mine);
-    let l: ComposeState;
     try {
-      l = await api.latest();
-    } catch {
-      setLatestFailed(true);
-      return;
+      let l: ComposeState;
+      try {
+        l = await api.latest();
+      } catch {
+        setLatestFailed(true);
+        return;
+      }
+      if (saver.current !== sv) return;
+      setLatestFailed(false);
+      setFrom(l.from);
+      setSignature(l.signature);
+      setQuote(l.quote);
+      setAttachments(l.attachments);
+      if (mine) {
+        await sv.keepMine(l.revision);
+        return;
+      }
+      cur.current = editOf(l);
+      setF(cur.current);
+      setInitial((i) => ({ body: l.body, n: i.n + 1 })); // remounts the editor and the fields
+      setSavedAt(fmt(new Date(l.updatedAt)));
+      // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
+      sv.useLatest(l.revision, cur.current);
+    } finally {
+      busy.current = false;
+      setResolving(false);
     }
-    setLatestFailed(false);
-    setFrom(l.from);
-    setSignature(l.signature);
-    setQuote(l.quote);
-    setAttachments(l.attachments);
-    if (mine) {
-      await sv.keepMine(l.revision);
-      return;
-    }
-    cur.current = editOf(l);
-    setF(cur.current);
-    setInitial((i) => ({ body: l.body, n: i.n + 1 }));
-    // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
-    sv.useLatest(l.revision, cur.current);
   };
 
   const status = sv?.status === "saving" || sv?.status === "saved" ? sv.status : "unsaved";
@@ -320,7 +354,14 @@ function Compose({
       }}
       onKeyDown={(e) => {
         // The editor is read-only while an operation runs, so typing there never reaches the saver.
-        if (sv?.frozen && !gate.frozen && e.key.length === 1 && !e.metaKey && !e.ctrlKey)
+        if (
+          (sv?.frozen || resolving) &&
+          !gate.frozen &&
+          !done &&
+          e.key.length === 1 &&
+          !e.metaKey &&
+          !e.ctrlKey
+        )
           toast(t("compose.sending.locked"), { id: "locked" });
         if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return;
         e.preventDefault();
@@ -328,11 +369,20 @@ function Compose({
       }}
     >
       <header className="compose-titlebar flex shrink-0 items-center border-b pr-5">
-        <h1 className="truncate font-medium text-sm">{title}</h1>
+        <div className="flex min-w-0 flex-col">
+          <h1 className="truncate font-medium text-sm">{title}</h1>
+          <p className="text-muted-foreground text-xs">
+            {status === "saved"
+              ? t("compose.status.saved", savedAt)
+              : t(`compose.status.${status}`)}
+          </p>
+        </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         <Fields
+          key={initial.n}
           ref={fieldsRef}
+          frozen={locked}
           accounts={state.accounts}
           from={from}
           onFrom={onFrom}
@@ -390,6 +440,7 @@ function Compose({
           <Attachments
             items={attachments}
             tooLarge={tooLarge}
+            failed={failed}
             frozen={locked}
             onRemove={(id) =>
               change((rev) =>
@@ -398,7 +449,6 @@ function Compose({
             }
             t={t}
           />
-          {failed.length > 0 && <p className="text-destructive text-sm">{failed.join(", ")}</p>}
           <Notices
             warnings={warnings.list}
             blocked={blocked}
@@ -417,8 +467,6 @@ function Compose({
         <SendBar
           sending={sending}
           frozen={locked}
-          status={status}
-          savedAt={savedAt}
           onSend={() => send()}
           onDiscard={discard}
           t={t}

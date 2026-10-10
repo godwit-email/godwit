@@ -88,6 +88,8 @@ export interface ComposeState {
   /** Revision is what the next save must pass; Theme styles the page. */
   revision: number;
   theme: Theme;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
   /** Text is the page's copy: i18n key → text in the UI language. */
   text: Record<string, string>;
 }

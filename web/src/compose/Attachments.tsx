@@ -4,16 +4,18 @@ import type { Attachment } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { byteSize } from "./size";
 
-/** The draft's attachments, each removable, and the names refused for size. */
+/** The draft's attachments, each removable, the names refused for size and those that failed. */
 export function Attachments({
   items,
   tooLarge,
+  failed = [],
   frozen,
   onRemove,
   t,
 }: {
   items: Attachment[];
   tooLarge: string[];
+  failed?: string[];
   frozen: boolean;
   onRemove(id: number): void;
   t: T;
@@ -43,6 +45,11 @@ export function Attachments({
             </span>
           ))}
           {t("compose.attach.too_large", byteSize(25 << 20))}
+        </p>
+      )}
+      {failed.length > 0 && (
+        <p role="alert" className="text-destructive text-sm">
+          {t("compose.attach.failed", failed.join(", "))}
         </p>
       )}
     </div>

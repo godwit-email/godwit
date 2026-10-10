@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { ComposePage } from "./ComposePage";
@@ -68,7 +68,7 @@ vi.mock("./editor/Editor", async () => {
 });
 
 import { currentWindow } from "mygo-runtime";
-import { ComposePage as api } from "@/mygo";
+import { ComposePage as api, type ComposeState as ComposeStateT } from "@/mygo";
 
 const text = {
   "compose.new": "新邮件",
@@ -94,6 +94,9 @@ const text = {
   "compose.discard": "丢弃草稿",
   "compose.discard.title": "丢弃这封草稿？",
   "compose.discard.confirm": "丢弃",
+  "compose.attach.failed": "未能添加：%s",
+  "error.stale_draft": "草稿在别处被修改。",
+  "error.unknown": "出错了：%s",
   "common.cancel": "取消",
   "common.retry": "重试",
 };
@@ -115,6 +118,7 @@ const state = {
   signature: "-- me",
   attachments: [],
   revision: 7,
+  updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
   text,
 };
@@ -326,7 +330,8 @@ test("only the latest load applies", async () => {
 test("an untouched draft reads as saved; unmount disposes the saver", async () => {
   const { unmount } = render(<ComposePage />);
   await body();
-  expect(screen.getByText(/^草稿已保存 · \d\d:\d\d$/)).toBeInTheDocument();
+  // the stored draft's time, in the top bar
+  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 09:05")).toBeInTheDocument();
   vi.useFakeTimers();
   fireEvent.change(screen.getByRole("textbox", { name: "正文" }), { target: { value: "x" } });
   unmount();
@@ -387,7 +392,10 @@ test("send flushes first and freezes", async () => {
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveValue("你好");
   expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
   expect(el).toHaveAttribute("readonly");
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
+  expect(screen.getByRole("combobox", { name: "发件账户" })).toBeDisabled();
   await act(async () => sent({ ...noWarnings, sent: true }));
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
   // sent: Go closes the window, the form stays frozen
   expect(el).toHaveAttribute("readonly");
   expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
@@ -501,7 +509,7 @@ test("attachments: add reports oversize, × removes", async () => {
   expect(api.addAttachments).toHaveBeenCalledWith(7);
   expect(screen.getByText("a.pdf")).toBeInTheDocument();
   expect(screen.getByText("big.zip")).toBeInTheDocument();
-  expect(screen.getByText("bad.bin")).toBeInTheDocument();
+  expect(screen.getByText("未能添加：bad.bin")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(api.removeAttachment).toHaveBeenCalledWith(3, 9);
   expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
@@ -597,4 +605,49 @@ test("send during composition: a composition that never ends sends nothing", asy
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("a conflict stopping the adding part way still lists the files added", async () => {
+  const a = { id: 3, filename: "a.pdf", size: 1024 };
+  vi.mocked(api.addAttachments).mockResolvedValue({
+    revision: 12,
+    attachments: [a],
+    conflict: true,
+    signature: "-- me",
+    tooLarge: [],
+    failed: [],
+  });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "添加附件" }));
+  expect(screen.getByText("a.pdf")).toBeInTheDocument();
+  expect(screen.getByText("草稿在别处被修改")).toBeInTheDocument();
+});
+
+test("conflict resolution runs once at a time, frozen, and use-latest drops pending input", async () => {
+  let give!: (s: ComposeStateT) => void;
+  vi.mocked(api.latest).mockImplementation(() => new Promise((r) => (give = r)));
+  const el = await conflictBySend();
+  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), { target: { value: "p@q.r" } });
+  fireEvent.click(screen.getByRole("button", { name: "使用最新版本" }));
+  expect(el).toHaveAttribute("readonly");
+  expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
+  fireEvent.click(screen.getByRole("button", { name: "保留我的版本" }));
+  fireEvent.click(screen.getByRole("button", { name: "使用最新版本" }));
+  expect(api.latest).toHaveBeenCalledTimes(1);
+  await act(async () => give({ ...state, body: "最新", revision: 30 }));
+  expect(await body()).toHaveValue("最新");
+  expect(await body()).not.toHaveAttribute("readonly");
+  expect(screen.getByRole("textbox", { name: "收件人" })).toHaveValue("");
+});
+
+test.each([
+  ["send: draft changed since it was loaded", "草稿在别处被修改。"],
+  ["boom", "出错了：boom"],
+])("a rejected call reads in the page's copy: %s", async (msg, text) => {
+  vi.mocked(api.send).mockRejectedValueOnce(new Error(msg));
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  expect(await screen.findByText(text)).toBeInTheDocument();
 });

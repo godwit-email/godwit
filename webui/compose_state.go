@@ -38,6 +38,8 @@ type ComposeState struct {
 	// Revision is what the next save must pass; Theme styles the page.
 	Revision int64 `json:"revision"`
 	Theme    Theme `json:"theme"`
+	// UpdatedAt is when the draft was last stored, in Unix milliseconds.
+	UpdatedAt int64 `json:"updatedAt"`
 	// Text is the page's copy: i18n key → text in the UI language.
 	Text map[string]string `json:"text"`
 }
