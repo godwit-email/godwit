@@ -263,7 +263,7 @@ func strList(v any) []string {
 
 // inputBox is the question's text area: Enter sends, Shift+Enter starts a
 // new line; while a run goes on Send is Stop. Below it the default model,
-// which opens the model settings.
+// which opens the model settings. The box floats on shadow-md.
 func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	t, th := theme.Of(c), c.Theme()
 	if o.Tools != nil {
@@ -273,7 +273,8 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	if label == "" {
 		label = i18n.T("wit.input")
 	}
-	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background)
+	kit.Elevate(c, box, theme.ShadowMd).Children(func() {
 		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
 				if ev.Kind != ui.InputKeyDown || ev.Key != ui.KeyEnter || ev.Mods != 0 || p.composing {
@@ -285,9 +286,13 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 		p.composing = area.Composing()
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if m := modelOf(p.a.settings.DefaultModel); m != "" {
-				b := kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
+				b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(m).
 					OnClick(func() { p.a.navigate(Route{Page: PageSettings, Settings: "models"}) })
 				kit.Tooltip(c, b, i18n.T("wit.model"))
+				b.Children(func() {
+					ui.Text(c, m)
+					ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
+				})
 			}
 			ui.Spacer(c)
 			if p.running {
