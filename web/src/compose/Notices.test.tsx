@@ -21,6 +21,7 @@ function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
       blocked={null}
       conflict={false}
       latestFailed={false}
+      frozen={false}
       {...f}
       t={t}
       {...p}
@@ -58,4 +59,14 @@ test("retry on latestFailed", async () => {
   expect(screen.queryByRole("button", { name: "使用最新版本" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "重试" }));
   expect(f.onRetry).toHaveBeenCalled();
+});
+
+test("frozen: every button is inert", async () => {
+  const f = setup({ frozen: true, conflict: true, warnings: [{ plugin: "p", message: "m" }] });
+  for (const n of ["仍然发送", "保留我的版本", "使用最新版本"]) {
+    await userEvent.click(screen.getByRole("button", { name: n }));
+  }
+  expect(f.onSendAnyway).not.toHaveBeenCalled();
+  expect(f.onKeepMine).not.toHaveBeenCalled();
+  expect(f.onUseLatest).not.toHaveBeenCalled();
 });

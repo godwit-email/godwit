@@ -14,6 +14,7 @@ test("lists, removes and reports oversize", async () => {
     <Attachments
       items={[{ id: 7, filename: "a.pdf", size: 1536 }]}
       tooLarge={["big.zip"]}
+      frozen={false}
       onRemove={onRemove}
       t={t}
     />,
@@ -23,4 +24,20 @@ test("lists, removes and reports oversize", async () => {
   expect(screen.getByRole("alert").textContent).toContain("附件超过了 25.0 MB 的上限");
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(onRemove).toHaveBeenCalledWith(7);
+  expect(screen.getByText("big.zip")).toBeTruthy();
+});
+
+test("frozen: remove is inert", async () => {
+  const onRemove = vi.fn();
+  render(
+    <Attachments
+      items={[{ id: 7, filename: "a.pdf", size: 9 }]}
+      tooLarge={[]}
+      frozen
+      onRemove={onRemove}
+      t={t}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
+  expect(onRemove).not.toHaveBeenCalled();
 });

@@ -16,12 +16,13 @@ const t = makeT({
   "compose.status.unsaved": "未保存",
 });
 
-function setup(status: "saving" | "saved" | "unsaved" = "saved") {
+function setup(status: "saving" | "saved" | "unsaved" = "saved", frozen = false) {
   const onSend = vi.fn();
   const onDiscard = vi.fn();
   render(
     <SendBar
       sending={false}
+      frozen={frozen}
       status={status}
       savedAt="21:58"
       onSend={onSend}
@@ -57,4 +58,19 @@ test.each([
 ] as const)("status %s", (s, text) => {
   setup(s);
   expect(screen.getByText(text)).toBeTruthy();
+});
+
+test("double-clicking confirm discards once", async () => {
+  const { onDiscard } = setup();
+  await userEvent.click(screen.getByRole("button", { name: "丢弃草稿" }));
+  await userEvent.dblClick(screen.getByRole("button", { name: "丢弃" }));
+  expect(onDiscard).toHaveBeenCalledTimes(1);
+});
+
+test("frozen: send and discard are disabled", () => {
+  setup("saved", true);
+  expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "丢弃草稿" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
 });
