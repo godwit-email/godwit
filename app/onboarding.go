@@ -491,7 +491,8 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	r := min(t.Radius.Lg, size/4) // a quarter of small marks
 	if b := icons.Brand(p.ID); b != nil {
 		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile).Border(theme.Hairline, t.Outline)
-		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(size, size) })
+		in := size - 2*theme.Hairline // inside the outline: a full-size logo would sit off centre, clipped
+		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(in, in) })
 		return
 	}
 	text := providerMark(p)
