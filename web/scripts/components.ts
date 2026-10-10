@@ -14,6 +14,8 @@ const components = [
   "popover",
   "tooltip",
   "separator",
+  "select",
+  "badge",
 ];
 
 const p = Bun.spawn(["bunx", `shadcn@${SHADCN}`, "add", "--yes", "--overwrite", ...components], {

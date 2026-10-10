@@ -146,3 +146,163 @@ test("dispose cancels the timer and the post-save reschedule", async () => {
   await vi.advanceTimersByTimeAsync(5000);
   expect(slow).toHaveBeenCalledTimes(1);
 });
+
+const deferred = <T>() => {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
+test("run waits for the save then chains the revision", async () => {
+  const save = vi
+    .fn()
+    .mockResolvedValueOnce({ revision: 2, conflict: false })
+    .mockResolvedValue({ revision: 4, conflict: false });
+  const s = createSaver(save, { revision: 1 });
+  s.edit(ed("a"));
+  const op = vi.fn(async (r: number) => {
+    expect(save).toHaveBeenCalledTimes(1);
+    return { revision: r + 1, conflict: false };
+  });
+  const r = await s.run(op);
+  expect(save.mock.calls[0][0]).toMatchObject({ body: "a", revision: 1 });
+  expect(op).toHaveBeenCalledWith(2);
+  expect(r).toEqual({ revision: 3, conflict: false });
+  s.edit(ed("b"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(save.mock.calls[1][0]).toMatchObject({ body: "b", revision: 3 });
+});
+
+test("frozen refuses edits", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  const refused = vi.fn();
+  s.onRefused(refused);
+  for (const fail of [false, true]) {
+    const d = deferred<{ revision: number; conflict: boolean }>();
+    const done = s.run(() => d.promise).catch(() => null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.frozen).toBe(true);
+    expect(s.edit(ed("x"))).toBe(false);
+    expect(refused).toHaveBeenCalledTimes(fail ? 2 : 1);
+    if (fail) d.reject(new Error("x"));
+    else d.resolve(ok);
+    await done;
+    expect(s.frozen).toBe(false);
+    s.edit(ed("y"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(fail ? 2 : 1);
+  }
+});
+
+test("flush false stops run", async () => {
+  const save = vi.fn().mockRejectedValue(new Error("x"));
+  const s = createSaver(save);
+  s.edit(ed("a"));
+  const op = vi.fn();
+  expect(await s.run(op)).toBeNull();
+  expect(op).not.toHaveBeenCalled();
+  expect(s.frozen).toBe(false);
+
+  const t = createSaver(vi.fn().mockResolvedValue(ok));
+  t.setSettle(async () => false); // the composition never ended
+  t.edit(ed("a"));
+  expect(await t.flush()).toBe(false);
+  expect(await t.run(op)).toBeNull();
+  expect(op).not.toHaveBeenCalled();
+});
+
+test("flush settles first: input made while settling is saved", async () => {
+  const save = vi.fn().mockResolvedValue(ok);
+  const s = createSaver(save);
+  s.setSettle(async () => {
+    s.edit(ed("committed"));
+    return true;
+  });
+  expect(await s.flush()).toBe(true);
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0].body).toBe("committed");
+});
+
+test("one op at a time", async () => {
+  const s = createSaver(vi.fn().mockResolvedValue(ok));
+  const log: string[] = [];
+  const op = (name: string) => async (r: number) => {
+    log.push(`${name} start`);
+    await new Promise((res) => setTimeout(res, 100));
+    log.push(`${name} end`);
+    return { revision: r, conflict: false };
+  };
+  const all = Promise.all([
+    s.run(op("a")),
+    s.flush(async () => {
+      log.push("close start");
+      await new Promise((res) => setTimeout(res, 100));
+      log.push("close end");
+    }),
+    s.run(op("b")),
+  ]);
+  await vi.advanceTimersByTimeAsync(1000);
+  await all;
+  expect(log).toEqual(["a start", "a end", "close start", "close end", "b start", "b end"]);
+});
+
+test("use latest drops old content", async () => {
+  const late = deferred<SaveResult>();
+  const save = vi
+    .fn()
+    .mockResolvedValueOnce({ revision: 1, conflict: true })
+    .mockImplementationOnce(() => late.promise)
+    .mockResolvedValue(ok);
+  const s = createSaver(save, { revision: 1 });
+  s.edit(ed("old"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(s.status).toBe("conflict");
+  s.edit(ed("older")); // typed during the conflict
+  const kept = s.keepMine(5); // its response comes too late
+  await vi.advanceTimersByTimeAsync(0);
+  s.useLatest(9);
+  expect(s.status).toBe("saved");
+  late.resolve({ revision: 6, conflict: false });
+  await kept;
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(s.status).toBe("saved");
+  s.edit(ed("new"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(save).toHaveBeenCalledTimes(3);
+  expect(save.mock.calls[2][0]).toMatchObject({ body: "new", revision: 9 });
+});
+
+test("use latest drops a pending edit", async () => {
+  const save = vi.fn().mockResolvedValue({ revision: 1, conflict: true });
+  const s = createSaver(save, { revision: 1 });
+  s.edit(ed("a"));
+  await vi.advanceTimersByTimeAsync(1000);
+  s.edit(ed("b"));
+  s.useLatest(9);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(await s.flush()).toBe(true);
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+test("run conflict stops saves", async () => {
+  const save = vi.fn().mockResolvedValue({ revision: 6, conflict: false });
+  const s = createSaver(save, { revision: 1 });
+  const r = await s.run(async () => ({ revision: 1, conflict: true }));
+  expect(r?.conflict).toBe(true);
+  expect(s.status).toBe("conflict");
+  s.edit(ed("mine"));
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(save).not.toHaveBeenCalled();
+  expect(await s.keepMine(5)).toBe(true);
+  expect(save.mock.calls[0][0]).toMatchObject({ body: "mine", revision: 5 });
+  expect(s.status).toBe("saved");
+  s.edit(ed("more"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(save.mock.calls[1][0]).toMatchObject({ body: "more", revision: 6 });
+});

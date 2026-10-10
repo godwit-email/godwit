@@ -17,11 +17,24 @@ const list = (s: string) =>
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** What a closing needs of the editor: whether input is frozen, and the IME composition in progress. */
+/** What a closing needs of the editor: whether input is frozen, the IME composition in progress, and where the settling's blur took focus from. */
 interface CloseGate {
   frozen: boolean;
   closings: number;
   ime?: { ended: Promise<void>; end: () => void };
+  blurred?: HTMLElement | null;
+}
+
+/** The settle hook: a composition in progress commits (blur, up to 1 s); false if it did not. */
+async function settle(g: CloseGate): Promise<boolean> {
+  const ime = g.ime; // blur may end the composition, clearing g.ime, synchronously
+  g.blurred = null;
+  if (!ime) return true;
+  g.blurred = document.activeElement as HTMLElement | null;
+  g.blurred?.blur(); // commits the composition
+  const ok = await Promise.race([ime.ended.then(() => true), wait(1000).then(() => false)]);
+  await wait(0); // WebKit sends the committed text's input after compositionend
+  return ok;
 }
 
 /**
@@ -45,24 +58,20 @@ export function ComposePage() {
       g.frozen = on;
       setFrozen(on);
     };
-    // Closing before the draft loaded has nothing to flush.
     return events.closing.on(async (gen) => {
       const n = ++g.closings;
-      const ime = g.ime; // blur may end the composition, clearing g.ime, synchronously
-      let committed = true;
-      let focused: HTMLElement | null = null;
-      if (ime) {
-        focused = document.activeElement as HTMLElement | null;
-        focused?.blur(); // commits the composition
-        committed = await Promise.race([ime.ended.then(() => true), wait(1000).then(() => false)]);
-        await wait(0); // WebKit sends the committed text's input after compositionend
-      }
-      freeze(true);
       const sv = saver.current; // cleanup may clear the ref while the flush runs
-      await sv?.flush();
-      // An uncommitted composition is not the final text: answer unsaved so the user is asked.
-      const saved = committed && (!sv || sv.status === "saved");
-      await api.closed(gen, saved);
+      let focused: HTMLElement | null | undefined;
+      // The answer runs in the saver's queue, after the flush: no operation overlaps it.
+      const answer = async (saved: boolean) => {
+        focused = g.blurred;
+        freeze(true);
+        await api.closed(gen, saved);
+      };
+      // An uncommitted composition is saved as is but answered unsaved, so the user is asked.
+      let saved = true; // closing before the draft loaded has nothing to flush
+      if (sv) saved = await sv.flush(answer);
+      else await answer(true);
       const thaw = () => {
         if (n !== g.closings) return;
         freeze(false);
@@ -122,12 +131,8 @@ function Editor({
 
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
   useEffect(() => {
-    let revision = state.revision;
-    const n = createSaver(async (e) => {
-      const r = await api.save({ ...e, revision });
-      if (!r.conflict) revision = r.revision;
-      return r;
-    });
+    const n = createSaver(api.save, { revision: state.revision });
+    n.setSettle(() => settle(gate));
     const off = n.onChange(() => {
       if (n.status === "saved") setSavedAt(new Date());
       rerender((i) => i + 1);
@@ -138,7 +143,7 @@ function Editor({
       n.dispose();
       if (saver.current === n) saver.current = undefined;
     };
-  }, [state.revision, saver]);
+  }, [state.revision, saver, gate]);
   useEffect(() => {
     currentWindow.setTitle(f.subject.trim() || "新邮件");
   }, [f.subject]);
@@ -146,8 +151,7 @@ function Editor({
   const set = (k: keyof typeof f) => (ev: { target: { value: string } }) => {
     if (gate.frozen) return;
     const n = { ...f, [k]: ev.target.value };
-    setF(n);
-    saver.current?.edit({
+    const taken = saver.current?.edit({
       to: list(n.to),
       cc: list(n.cc),
       bcc: list(n.bcc),
@@ -156,6 +160,7 @@ function Editor({
       body: n.body,
       revision: state.revision,
     });
+    if (taken !== false) setF(n); // refused while an operation runs
   };
   const hhmm = savedAt?.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
@@ -201,7 +206,7 @@ function Editor({
           <Label htmlFor={k} className="w-16 shrink-0">
             {label}
           </Label>
-          <Input id={k} value={f[k]} onChange={set(k)} readOnly={frozen} />
+          <Input id={k} value={f[k]} onChange={set(k)} readOnly={frozen || saver.current?.frozen} />
         </div>
       ))}
       <Label htmlFor="body" className="sr-only">
@@ -212,7 +217,7 @@ function Editor({
         className="min-h-64 flex-1"
         value={f.body}
         onChange={set("body")}
-        readOnly={frozen}
+        readOnly={frozen || saver.current?.frozen}
       />
       {state.quote && (
         <div>

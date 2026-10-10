@@ -94,7 +94,7 @@ test("a second closing answers with its own gen", async () => {
   vi.mocked(api.save).mockImplementationOnce(() => new Promise((r) => (release = r)));
   render(<ComposePage />);
   await userEvent.type(await body(), "!");
-  act(() => {
+  await act(async () => {
     h.closing?.(1);
     h.closing?.(2);
   });
@@ -265,7 +265,7 @@ test("unmount during a failing flush still answers closed(gen, false)", async ()
   vi.mocked(api.save).mockImplementationOnce(() => new Promise((_, rej) => (fail = rej)));
   const { unmount } = render(<ComposePage />);
   await userEvent.type(await body(), "!");
-  act(() => {
+  await act(async () => {
     h.closing?.(9);
   });
   unmount();

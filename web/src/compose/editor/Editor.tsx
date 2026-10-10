@@ -1,9 +1,10 @@
 import { isHotkey } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { type ReactNode, useState } from "react";
+import type { T } from "@/shared/i18n";
 import { fromHTML, toHTML } from "./html";
 import { plugins } from "./plugins";
-import { type T, Toolbar } from "./Toolbar";
+import { Toolbar } from "./Toolbar";
 
 /**
  * The compose body: a Plate editor over the native page's formats, loaded from `initial` (read at

@@ -15,11 +15,9 @@ import { type ReactElement, type ReactNode, useEffect, useRef } from "react";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { T } from "@/shared/i18n";
 import { safeHref } from "./html";
 import { LinkPopover } from "./LinkPopover";
-
-/** Looks up a native i18n key (Task 4's shared T replaces this). */
-export type T = (key: string, ...args: unknown[]) => string;
 
 type Key = "bold" | "italic" | "link" | "ul" | "ol" | "blockquote";
 
