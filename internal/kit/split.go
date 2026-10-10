@@ -15,7 +15,8 @@ var quiet sync.Map // *ui.Theme → *ui.Theme
 // divider turns the ring's gray, as shadcn's sidebar rail does, not the
 // accent's near-black. mygo's Split draws its divider from the theme it
 // starts with, so it starts with that copy and gives first and second back
-// the frame's own.
+// the frame's own. c.SetTheme also resets the root's background to the
+// theme's: a view that sets the root's background sets it after.
 func Split(c *ui.Context, size *float32, first, second func()) ui.Element {
 	base := c.Theme()
 	q, ok := quiet.Load(base)

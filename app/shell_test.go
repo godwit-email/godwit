@@ -320,3 +320,20 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 		t.Errorf("dragged far left: %v, want %v", h.app.sidebarW, float32(theme.SidebarMinWidth))
 	}
 }
+
+// TestVibrancyShowsThroughTopBar: with the window's material on, the top
+// bar is drawn transparent, the sidebar's divider (kit.Split, which sets
+// the theme mid-frame) notwithstanding.
+func TestVibrancyShowsThroughTopBar(t *testing.T) {
+	h, _ := withAccount(t)
+	h.app.vibrancy = true
+	h.see("全部收件箱")
+	if _, ok := h.tt.Find("Divider"); !ok {
+		t.Fatal("no sidebar divider: the mail page should split")
+	}
+	h.tt.Frame()
+	img := h.tt.Image()
+	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 { // the top bar's middle, above its text
+		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
+	}
+}

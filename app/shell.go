@@ -151,7 +151,6 @@ func (a *App) View(c *ui.Context) {
 	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
 		root = ui.Transparent // the material shows where the window's own color would
 	}
-	c.Root().Background(root)
 	for _, ts := range a.toasts {
 		c.AddToast(ts)
 	}
@@ -190,6 +189,9 @@ func (a *App) View(c *ui.Context) {
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
+	// Last: c.SetTheme, which kit.Split calls mid-frame, resets the root's
+	// background to the theme's, which would cover the window's material.
+	c.Root().Background(root)
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
