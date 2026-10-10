@@ -65,6 +65,7 @@ type Windows struct {
 	newWindow func(draftID int64) Window
 	ask       func(w Window) bool
 	after     func(d time.Duration, f func()) (stop func() bool) // the clock; tests swap it
+	spawn     func(f func())                                     // runs a release; tests swap it
 
 	mu      sync.Mutex // never held while calling a Window, ask or a done
 	byDraft map[int64]*win
@@ -77,8 +78,10 @@ type Windows struct {
 // Windows hears the pages' final flush through c.OnClosed.
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
 	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{},
-		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }}
+		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop },
+		spawn: func(f func()) { go f() }}
 	c.OnClosed(ws.answer)
+	c.OnDone(ws.Done)
 	return ws
 }
 
@@ -135,7 +138,7 @@ func (ws *Windows) answer(winID, gen int, saved bool) {
 		ws.mu.Unlock()
 		closeAnyway := ws.ask(x.w)
 		ws.mu.Lock()
-		if ws.byID[winID] != x { // it went meanwhile
+		if ws.byID[winID] != x || x.state != asking { // it went meanwhile (Done)
 			ws.mu.Unlock()
 			return
 		}
@@ -152,21 +155,61 @@ func (ws *Windows) answer(winID, gen int, saved bool) {
 	x.w.Destroy()
 }
 
-// Closed is told when window winID went: its page loses the draft, and a
-// CloseAll counts it closed.
-func (ws *Windows) Closed(winID int) {
-	ws.c.Detach(winID)
+// Done destroys window winID now, without a flush or a question: its draft
+// was sent or discarded. A close or quit waiting for it settles once it has
+// gone.
+func (ws *Windows) Done(winID int) {
 	ws.mu.Lock()
-	done := func() {}
-	if x := ws.byID[winID]; x != nil {
-		delete(ws.byID, winID)
+	x := ws.byID[winID]
+	if x == nil || x.state == destroying {
+		ws.mu.Unlock()
+		return
+	}
+	if x.state == waiting {
+		x.stop()
+	}
+	x.state = destroying
+	ws.mu.Unlock()
+	x.w.Destroy()
+}
+
+// CloseDraft destroys draftID's window, if one is open, as Done: the draft
+// was deleted elsewhere.
+func (ws *Windows) CloseDraft(draftID int64) {
+	ws.mu.Lock()
+	x := ws.byDraft[draftID]
+	ws.mu.Unlock()
+	if x != nil {
+		ws.Done(x.w.ID())
+	}
+}
+
+// Closed is told when window winID went, on mygo's main thread: it returns
+// at once, and its page's session is released (Compose.Release, which
+// waits for a call in progress and deletes an empty draft) on another
+// goroutine. The window counts as open, and a CloseAll waits for it, until
+// that release is done, so a quit never exits in the middle of it.
+func (ws *Windows) Closed(winID int) {
+	ws.mu.Lock()
+	x := ws.byID[winID]
+	if x != nil {
+		x.state = destroying
 		if ws.byDraft[x.draft] == x {
 			delete(ws.byDraft, x.draft)
 		}
-		done = ws.settle(winID, false)
 	}
 	ws.mu.Unlock()
-	done()
+	ws.spawn(func() {
+		ws.c.Release(winID)
+		ws.mu.Lock()
+		done := func() {}
+		if x != nil && ws.byID[winID] == x {
+			delete(ws.byID, winID)
+			done = ws.settle(winID, false)
+		}
+		ws.mu.Unlock()
+		done()
+	})
 }
 
 // Count is the number of open windows.

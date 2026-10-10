@@ -68,6 +68,7 @@ func newWinFixture(t *testing.T) *winFixture {
 		f.timers = append(f.timers, fn)
 		return func() bool { return true }
 	}
+	f.ws.spawn = func(fn func()) { fn() } // the release in line: these tests do not race a call
 	return f
 }
 
@@ -155,7 +156,7 @@ func TestWindowsSlowPageAsksNotCloses(t *testing.T) {
 	assert.True(t, w.destroyed())
 }
 
-func TestWindowsClosedDetaches(t *testing.T) {
+func TestWindowsClosedReleases(t *testing.T) {
 	f := newWinFixture(t)
 	d := f.draft(t, "new", 0)
 	f.ws.Open(d.ID)
@@ -163,12 +164,108 @@ func TestWindowsClosedDetaches(t *testing.T) {
 	f.ws.Closed(w.id)
 	_, err := f.page.Load(f.ctx(w.id))
 	assert.ErrorIs(t, err, ErrNoDraft)
+	assert.True(t, f.gone(t, d.ID), "the empty draft is deleted")
 	assert.Zero(t, f.ws.Count())
+}
+
+// Closed runs on mygo's main thread: it never waits for the release, which
+// waits for the window's call in progress. A quit still waits for it, so
+// the empty draft is deleted before the process exits.
+func TestWindowsClosedReleasesOffCaller(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.spawn = func(fn func()) { go fn() }
+	d := f.draft(t, "new", 0)
 	f.ws.Open(d.ID)
-	require.Len(t, f.made, 2)
-	assert.Zero(t, w.focused.Load())
-	_, err = f.page.Load(f.ctx(f.made[1].id))
-	assert.NoError(t, err)
+	w := f.made[0]
+	w.async = true
+	inSave, resume := make(chan struct{}), make(chan struct{})
+	saveHook = func() { close(inSave); <-resume }
+	t.Cleanup(func() { saveHook = nil })
+	saved := make(chan error)
+	go func() {
+		_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p></p>", Revision: d.Revision})
+		saved <- err
+	}()
+	<-inSave
+	results := make(chan bool, 1)
+	f.ws.CloseAll(func(ok bool) { results <- ok })
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
+	require.True(t, w.destroyed())
+	f.ws.Closed(w.id) // returns at once: the release waits for the save
+	assert.Equal(t, 1, f.ws.Count(), "counted until released")
+	select {
+	case <-results:
+		t.Fatal("the quit went on before the release")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(resume)
+	require.NoError(t, <-saved)
+	assert.True(t, <-results)
+	assert.True(t, f.gone(t, d.ID), "released before the quit went on")
+	assert.Zero(t, f.ws.Count())
+}
+
+func TestWindowsDoneDestroysWithoutAsking(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w1, w2 := f.made[0], f.made[1]
+	f.ws.Done(w1.id)
+	assert.True(t, w1.destroyed())
+	assert.Zero(t, w1.emitted.Load())
+	assert.Zero(t, f.asked.Load())
+	assert.Equal(t, 1, f.ws.Count())
+
+	// A close in progress, then the page sends: the close settles.
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	f.ws.Done(w2.id)
+	f.elapse() // its timer, had it not stopped, finds nothing to ask
+	assert.True(t, w2.destroyed())
+	assert.Zero(t, f.asked.Load())
+	assert.Equal(t, []bool{true}, results)
+	f.ws.Done(w2.id) // gone: nothing
+	assert.EqualValues(t, 1, w2.destroys.Load())
+}
+
+// The page sends while the close question shows: the window goes, and the
+// answer to the question does nothing.
+func TestWindowsDoneWhileAsking(t *testing.T) {
+	f := newWinFixture(t)
+	f.asking = make(chan bool)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	w.async = true
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	answered := make(chan error)
+	go func() { answered <- f.page.Closed(f.ctx(w.id), w.closing(), false) }()
+	require.Eventually(t, func() bool { return f.asked.Load() == 1 }, 5*time.Second, time.Millisecond)
+	f.ws.Done(w.id)
+	assert.True(t, w.destroyed())
+	f.asking <- false // 返回, too late
+	require.NoError(t, <-answered)
+	assert.Empty(t, results, "not kept: it is going")
+	f.ws.Closed(w.id)
+	assert.Equal(t, []bool{true}, results)
+	assert.EqualValues(t, 1, w.destroys.Load())
+}
+
+func TestWindowsDraftDeletedCloses(t *testing.T) {
+	f := newWinFixture(t)
+	d7 := f.draft(t, "new", 0)
+	f.ws.Open(d7.ID)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w1, w2 := f.made[0], f.made[1]
+	require.NoError(t, f.e.Svc.DeleteDraft(t.Context(), d7.ID))
+	f.ws.CloseDraft(d7.ID)
+	assert.True(t, w1.destroyed())
+	assert.Zero(t, w1.emitted.Load())
+	assert.Zero(t, f.asked.Load())
+	assert.False(t, w2.destroyed())
+	f.ws.CloseDraft(d7.ID + 100) // no window
+	assert.False(t, w2.destroyed())
+	assert.Equal(t, 1, f.ws.Count())
 }
 
 func TestWindowsCloseAllForQuit(t *testing.T) {

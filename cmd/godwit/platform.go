@@ -7,6 +7,8 @@ import (
 	"image/png"
 	"log"
 	"net/url"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,6 +119,7 @@ func (p *platform) ShowWindow() {
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (*platform) ClipboardHTML() string       { return mygo.Clipboard.ReadHTML() }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
+func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 func (*platform) SettingsChanged(st core.Settings) {
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
@@ -189,11 +192,63 @@ func trayIcon(box trayBox) ([]byte, error) {
 	return b.Bytes(), err
 }
 
-// composeWindowOptions is a compose window: the compose page of the
-// frontend, the dev server's under `go tool mygo dev`, else web/dist's.
-func composeWindowOptions() mygo.WindowOptions {
-	return mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
+// composeWindowOptions is a compose window on goos: the compose page of the
+// frontend, the dev server's under `go tool mygo dev`, else web/dist's. On
+// macOS its title bar is transparent, the traffic lights over the page's
+// top bar; Title still names it in the Window menu.
+func composeWindowOptions(goos string) mygo.WindowOptions {
+	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
 		StateKey: "compose", Title: "新邮件"}
+	if goos == "darwin" {
+		o.TitleBarStyle = mygo.TitleBarHiddenInset
+	}
+	return o
+}
+
+// placed is a window with a position on the screen.
+type placed interface {
+	Position() (x, y int)
+	SetPosition(x, y int)
+}
+
+// cascade places each new compose window (24, 24) past the last one still
+// open, so it does not hide it; the first goes where its saved state says.
+type cascade struct {
+	mu   sync.Mutex
+	open []placed
+}
+
+// place moves w past the last open window and counts it open.
+func (c *cascade) place(w placed) {
+	// ponytail: no check that the offset stays on the screen; clamp to the display if windows pile off it.
+	c.mu.Lock()
+	var last placed
+	if n := len(c.open); n > 0 {
+		last = c.open[n-1]
+	}
+	c.open = append(c.open, w)
+	c.mu.Unlock()
+	if last != nil {
+		x, y := last.Position()
+		w.SetPosition(x+24, y+24)
+	}
+}
+
+// closed forgets w.
+func (c *cascade) closed(w placed) {
+	c.mu.Lock()
+	c.open = slices.DeleteFunc(c.open, func(o placed) bool { return o == w })
+	c.mu.Unlock()
+}
+
+// pickFiles asks for files to attach in a dialog on window winID; a window
+// that is gone gets an error, never a dialog of its own.
+func pickFiles(_ context.Context, winID int) ([]string, error) {
+	w := mygo.WindowByID(winID)
+	if w == nil {
+		return nil, errors.New("no window to attach the file dialog to")
+	}
+	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})
 }
 
 // composeWindow is webui.Window on mygo.
@@ -214,11 +269,12 @@ func (c composeWindow) EmitClosing(gen int) {
 	}
 }
 
-// newComposeWindow opens a compose window whose closing goes through ws:
+// newComposeWindow opens a compose window, placed by cas, whose closing goes through ws:
 // closing is always prevented and asked of ws, and the page never leaves
 // its entry nor opens windows.
-func newComposeWindow(ws *webui.Windows) webui.Window {
-	w := mygo.NewWindow(composeWindowOptions())
+func newComposeWindow(ws *webui.Windows, cas *cascade) webui.Window {
+	w := mygo.NewWindow(composeWindowOptions(runtime.GOOS))
+	cas.place(w)
 	entry := "" // the first page the window committed: its own entry
 	w.Page().OnDidNavigate(func(u string) {
 		if entry == "" {
@@ -235,7 +291,10 @@ func newComposeWindow(ws *webui.Windows) webui.Window {
 		e.PreventDefault()
 		ws.RequestClose(w.ID())
 	})
-	w.OnClosed(func() { ws.Closed(w.ID()) })
+	w.OnClosed(func() {
+		cas.closed(w)
+		ws.Closed(w.ID())
+	})
 	return composeWindow{w}
 }
 

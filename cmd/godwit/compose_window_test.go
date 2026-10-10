@@ -131,8 +131,50 @@ func TestComposeWindowNavigation(t *testing.T) {
 }
 
 func TestComposeWindowOptions(t *testing.T) {
-	o := composeWindowOptions()
-	if o.URL != "/compose.html" || o.Width != 860 || o.Height != 720 || o.MinWidth != 640 || o.MinHeight != 480 || o.StateKey != "compose" || o.Title != "新邮件" {
-		t.Fatalf("options %+v", o)
+	for _, goos := range []string{"darwin", "windows", "linux"} {
+		o := composeWindowOptions(goos)
+		if o.URL != "/compose.html" || o.Width != 860 || o.Height != 720 || o.MinWidth != 640 || o.MinHeight != 480 || o.StateKey != "compose" || o.Title != "新邮件" {
+			t.Fatalf("%s: options %+v", goos, o)
+		}
+		want := mygo.TitleBarStyle("") // the page draws no window controls of Windows or Linux
+		if goos == "darwin" {
+			want = mygo.TitleBarHiddenInset // transparent, the traffic lights over the page's top bar
+		}
+		if o.TitleBarStyle != want {
+			t.Errorf("%s: title bar %q, want %q", goos, o.TitleBarStyle, want)
+		}
+	}
+}
+
+// fakePlaced is a window with a position.
+type fakePlaced struct{ x, y int }
+
+func (w *fakePlaced) Position() (int, int) { return w.x, w.y }
+func (w *fakePlaced) SetPosition(x, y int) { w.x, w.y = x, y }
+
+func TestComposeWindowCascade(t *testing.T) {
+	var c cascade
+	first := &fakePlaced{100, 80} // where the saved state put it
+	c.place(first)
+	if *first != (fakePlaced{100, 80}) {
+		t.Fatalf("the first window moved to %+v", *first)
+	}
+	second := &fakePlaced{100, 80}
+	c.place(second)
+	if *second != (fakePlaced{124, 104}) {
+		t.Fatalf("second at %+v", *second)
+	}
+	second.SetPosition(300, 200) // the user moves it
+	third := &fakePlaced{100, 80}
+	c.place(third)
+	if *third != (fakePlaced{324, 224}) {
+		t.Fatalf("third at %+v, want past the last open one", *third)
+	}
+	c.closed(third)
+	c.closed(second)
+	fourth := &fakePlaced{100, 80}
+	c.place(fourth)
+	if *fourth != (fakePlaced{124, 104}) {
+		t.Fatalf("fourth at %+v, want past the first, the last still open", *fourth)
 	}
 }

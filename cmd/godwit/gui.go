@@ -72,11 +72,11 @@ func gui(ctx context.Context, dataDir string) int {
 			}
 			return 0, false
 		},
-		// ponytail: no file dialog until Task 2 wires mygo's, parented to winID.
-		PickFiles: func(context.Context, int) ([]string, error) { return nil, webui.ErrNoPicker },
+		PickFiles: pickFiles,
 	}))
 	var windows *webui.Windows
-	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows) }, askUnsaved)
+	var cas cascade
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := mygo.App.Locale()
 		var err error
