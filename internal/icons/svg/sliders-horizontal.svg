@@ -1,23 +1,2 @@
-<!-- @license lucide-static v1.53.0 - ISC -->
-<svg
-  class="lucide lucide-sliders-horizontal"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M10 5H3" />
-  <path d="M12 19H3" />
-  <path d="M14 3v4" />
-  <path d="M16 17v4" />
-  <path d="M21 12h-9" />
-  <path d="M21 19h-5" />
-  <path d="M21 5h-7" />
-  <path d="M8 10v4" />
-  <path d="M8 12H3" />
-</svg>
+<!-- Remix Icon v4.8.0 ri-equalizer-3-line, Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 3V6H3V8H7V11H9V3H7ZM11 8H21V6H11V8ZM17 13V16H21V18H17V21H15V13H17ZM13 18H3V16H13V18Z"></path></svg>

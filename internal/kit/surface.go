@@ -98,7 +98,11 @@ func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()
 	if onClick != nil && !selected {
 		b.OnClick(onClick)
 	}
-	return b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(theme.IconLg, theme.IconLg) })
+	svg := icons.Get(icon)
+	if selected {
+		svg = icons.Fill(icon)
+	}
+	return b.Children(func() { ui.Icon(c, svg).Size(theme.IconLg, theme.IconLg) })
 }
 
 // CardHeader is a Card's title with an optional description under it.

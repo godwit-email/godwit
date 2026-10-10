@@ -9,6 +9,9 @@ var names = []string{"mail", "sparkles", "sliders-horizontal", "panel-left", "ar
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "puzzle", "server",
 	"globe", "languages", "wand-sparkles", "download", "ellipsis", "component"}
 
+// filled are the names with a fill style too: the rail's.
+var filled = []string{"mail", "sparkles", "sliders-horizontal", "component"}
+
 func TestIconsParse(t *testing.T) {
 	for _, n := range names {
 		s := Get(n)
@@ -16,8 +19,13 @@ func TestIconsParse(t *testing.T) {
 			t.Errorf("%s is %vx%v, want 24x24", n, w, h)
 		}
 	}
-	if len(all) != len(names) {
-		t.Errorf("%d icons embedded, want %d", len(all), len(names))
+	for _, n := range filled {
+		if w, h := Fill(n).Size(); w != 24 || h != 24 {
+			t.Errorf("%s fill is %vx%v, want 24x24", n, w, h)
+		}
+	}
+	if len(all) != len(names)+len(filled) {
+		t.Errorf("%d icons embedded, want %d", len(all), len(names)+len(filled))
 	}
 	defer func() {
 		if recover() == nil {

@@ -311,7 +311,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   | 状态 | 成功 `green-600`；提醒 `amber-50` 底 / `amber-300` 边 / `amber-800` 字；危险 `red-600` | |
 
   深色主题对应 shadcn neutral 的深色取值，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成色板值。
-- **图标**：Lucide 的 SVG，用 `ui.Icon` 显示，随文字颜色变化。
+- **图标**：Remix Icon v4.8.0（最后一个 Apache-2.0 版本，之后改用自有协议）的 SVG，用 `ui.Icon` 显示，随文字颜色变化。平时用 line 款；图标栏选中的按钮换成同一图标的 fill 款。
 - **字体**：用 `ui.RegisterFont` 内嵌 Geist / Geist Mono；中文使用系统字体（苹方、微软雅黑、Noto Sans CJK），不内嵌，以免安装包过大。
 - **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用上面那套组件。
 - **组件库（`internal/kit`）**：上面那套组件集中在 `internal/kit`，按组件分文件，命名和变体对齐 shadcn/ui：

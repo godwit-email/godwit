@@ -28,7 +28,7 @@ const (
 	SizeLg
 )
 
-// ButtonOpts style a button. Icon is a Lucide name shown before the label.
+// ButtonOpts style a button. Icon is an icons name shown before the label.
 type ButtonOpts struct {
 	Variant  Variant
 	Size     ButtonSize

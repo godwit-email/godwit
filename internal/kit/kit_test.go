@@ -347,7 +347,7 @@ func TestKitSelectedDoesNotClick(t *testing.T) {
 			ui.Column(c).Children(func() {
 				Pressable(c, PressableOpts{Selected: sel, OnClick: func() { got = append(got, "p-"+tag) }}).Label("p-" + tag).Height(30).Children(func() { ui.Text(c, "pp") })
 				SidebarItem(c, SidebarItemOpts{Selected: sel, OnClick: func() { got = append(got, "s-"+tag) }}).Label("s-" + tag).Height(30).Children(func() { ui.Text(c, "ss") })
-				RailButton(c, "check", "r-"+tag, sel, func() { got = append(got, "r-"+tag) })
+				RailButton(c, "mail", "r-"+tag, sel, func() { got = append(got, "r-"+tag) })
 			})
 		}), 300, 300)
 		for _, l := range []string{"p-", "s-", "r-"} {
@@ -745,5 +745,29 @@ func TestKitListSelectedGray(t *testing.T) {
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2)) // in the text's padding
 	if want := th.SidebarSelected; got.R != want.R || got.G != want.G || got.B != want.B {
 		t.Errorf("selected row %v, want %v", got, want)
+	}
+}
+
+// TestKitRailButtonFillsSelected: a selected rail button shows its icon's
+// fill style, which inks much more of the button than the line style.
+func TestKitRailButtonFillsSelected(t *testing.T) {
+	ink := func(sel bool) int {
+		tt := ui.NewTester(themed(func(c *ui.Context) { RailButton(c, "mail", "r", sel, nil) }), 100, 100)
+		r, ok := tt.Find("r")
+		if !ok {
+			t.Fatal("no button")
+		}
+		n, img := 0, tt.Image()
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			for x := int(r.X); x < int(r.X+r.W); x++ {
+				if img.RGBAAt(x, y).R < 220 { // any ink, muted or not
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if off, on := ink(false), ink(true); on < off*3/2 {
+		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
