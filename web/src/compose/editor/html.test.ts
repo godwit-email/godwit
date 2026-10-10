@@ -81,4 +81,84 @@ describe("html", () => {
     expect(safeHref("mailto:a@b.c")).toBe("mailto:a@b.c");
     expect(safeHref("https://x.com/a")).toBe("https://x.com/a");
   });
+
+  it("safeHref returns the normalised URL, only in the forms Go's SetLink accepts", () => {
+    for (const bad of [
+      "https:example.com",
+      "https:/example.com",
+      "mailto:",
+      "mailto:  ",
+      "java\tscript:alert(1)",
+      "//x.com",
+      "x.com",
+      "",
+    ]) {
+      expect(safeHref(bad), bad).toBeNull();
+    }
+    expect(safeHref("  https://x.com  ")).toBe("https://x.com/");
+    expect(safeHref("HTTPS://X.com/A")).toBe("https://x.com/A");
+    expect(safeHref("MAILTO:a@b.c")).toBe("mailto:a@b.c");
+    expect(round('<p><a href="https:example.com">x</a></p>')).toBe("<p>x</p>");
+  });
+
+  it("the serializer degrades nodes outside the format set to paragraphs", () => {
+    const li = { type: "li", children: [{ type: "lic", children: [{ text: "t" }] }] };
+    expect(toHTML([{ type: "taskList", children: [li] }])).toBe("<p>t</p>");
+    expect(toHTML([li])).toBe("<p>t</p>");
+    expect(toHTML([{ type: "h1", children: [{ text: "H", bold: true }] }])).toBe("<p>H</p>");
+    expect(toHTML([{ type: "ul", children: [{ type: "p", children: [{ text: "x" }] }] }])).toBe(
+      "<ul><li><p>x</p></li></ul>",
+    );
+  });
+
+  it("list-classic's task list is not registered", () => {
+    expect(editor().plugins.taskList).toBeUndefined();
+  });
+});
+
+function data(d: { html?: string; text?: string; fragment?: unknown }): DataTransfer {
+  const m: Record<string, string> = {
+    "text/html": d.html ?? "",
+    "text/plain": d.text ?? "",
+    "application/x-slate-fragment": d.fragment
+      ? btoa(encodeURIComponent(JSON.stringify(d.fragment)))
+      : "",
+  };
+  return {
+    getData: (t: string) => m[t] ?? "",
+    files: [],
+    types: Object.keys(m).filter((k) => m[k]),
+  } as unknown as DataTransfer;
+}
+
+describe("paste", () => {
+  const paste = (d: Parameters<typeof data>[0]) => {
+    const e = editor();
+    fromHTML(e, "<p>x</p>");
+    e.tf.select(e.api.end([]));
+    // slate-react's onPaste/onDrop call the editor's legacy insertData, which Plate binds to tf.
+    (e as unknown as { insertData(d: DataTransfer): void }).insertData(data(d));
+    return toHTML(e.children);
+  };
+
+  it("HTML that sanitises to nothing inserts nothing, or the plain text", () => {
+    expect(paste({ html: '<img src="https://t/x.png">' })).toBe("<p>x</p>");
+    expect(paste({ html: "<script>1</script>", text: "a\nb" })).toBe("<p>xa</p><p>b</p>");
+  });
+
+  it("plain text becomes paragraphs", () => {
+    expect(paste({ text: "a\r\nb" })).toBe("<p>xa</p><p>b</p>");
+  });
+
+  it("a Slate fragment is held to the format set", () => {
+    const fragment = [
+      { type: "h1", children: [{ text: "H" }] },
+      {
+        type: "taskList",
+        children: [{ type: "li", children: [{ type: "lic", children: [{ text: "t" }] }] }],
+      },
+      { type: "img", url: "https://t/x.png", children: [{ text: "" }] },
+    ];
+    expect(paste({ fragment, html: "<p>ignored</p>" })).toBe("<p>xH</p><p>t</p>");
+  });
 });

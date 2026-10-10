@@ -71,16 +71,16 @@ export function fromHTML(editor: SlateEditor, html: string): Value {
   return editor.children;
 }
 
-/** The URL if it is http(s) with a host, or mailto; else null (as the native editor.SetLink). */
+/**
+ * The normalised URL if it is http(s)://host… or mailto:target, else null — the forms the native
+ * editor.SetLink accepts.
+ */
 export function safeHref(url: string): string | null {
+  const s = url.trim();
+  if (!/^(https?:\/\/|mailto:)/i.test(s)) return null;
   try {
-    const u = new URL(url.trim());
-    if (
-      u.protocol === "mailto:" ||
-      ((u.protocol === "http:" || u.protocol === "https:") && u.host)
-    ) {
-      return url.trim();
-    }
+    const u = new URL(s);
+    if (u.protocol === "mailto:" ? u.pathname.trim() !== "" : u.hostname !== "") return u.href;
   } catch {}
   return null;
 }
@@ -88,14 +88,8 @@ export function safeHref(url: string): string | null {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const TAGS: Record<string, string> = {
-  p: "p",
-  lic: "p",
-  ul: "ul",
-  ol: "ol",
-  li: "li",
-  blockquote: "blockquote",
-};
+const isInline = (n: Descendant) => isText(n) || n.type === "a";
+const textOf = (n: Descendant): string => (isText(n) ? n.text : n.children.map(textOf).join(""));
 
 function inline(n: Descendant): string {
   if (isText(n)) {
@@ -109,21 +103,42 @@ function inline(n: Descendant): string {
   return href ? `<a href="${esc(href)}">${kids}</a>` : kids;
 }
 
-function block(n: TElement): string {
-  const tag = TAGS[n.type] ?? "p";
-  const blocks = n.children.some((c) => !isText(c) && c.type !== "a");
-  let body: string;
-  if (blocks) {
-    body = (n.children as TElement[]).map(block).join("");
-  } else {
-    body = n.children.map(inline).join("");
-    // As richtext.ToHTML: an empty block holds a <br>, and a trailing break needs a second one.
-    if (body === "" || lastText(n)?.text.endsWith("\n")) body += "<br>";
+// A paragraph of inline nodes. As richtext.ToHTML: an empty one holds a <br>, and a trailing
+// break needs a second one.
+function para(children: Descendant[]): string {
+  let body = children.map(inline).join("");
+  if (body === "" || lastText({ type: "p", children })?.text.endsWith("\n")) body += "<br>";
+  return `<p>${body}</p>`;
+}
+
+const blocks = (children: Descendant[]) => children.map(block).join("");
+
+function item(n: Descendant): string {
+  if (isText(n) || n.type !== "li") return `<li>${block(n)}</li>`;
+  return `<li>${n.children.every(isInline) ? para(n.children) : blocks(n.children)}</li>`;
+}
+
+// Writes only the format set; any other node (or one out of place) becomes a paragraph of its
+// text, or nothing when it has none (an image, a rule).
+function block(n: Descendant): string {
+  if (isText(n)) return para([n]);
+  const inlineOnly = n.children.every(isInline);
+  switch (n.type) {
+    case "p":
+    case "lic":
+      if (inlineOnly) return para(n.children);
+      break;
+    case "blockquote":
+      return `<blockquote>${inlineOnly ? para(n.children) : blocks(n.children)}</blockquote>`;
+    case "ul":
+    case "ol":
+      return `<${n.type}>${n.children.map(item).join("")}</${n.type}>`;
   }
-  return `<${tag}>${body}</${tag}>`;
+  const text = textOf(n);
+  return text ? para([{ text }]) : "";
 }
 
 /** Serializes the editor's value to the format set's HTML; text escaped, soft breaks as <br>. */
 export function toHTML(value: Value): string {
-  return value.map((n) => block(n as TElement)).join("");
+  return blocks(value);
 }

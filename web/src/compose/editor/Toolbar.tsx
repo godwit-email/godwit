@@ -48,7 +48,7 @@ const items: {
     key: "blockquote",
     label: "compose.quote",
     Icon: RiDoubleQuotesL,
-    run: (e) => e.tf.toggleBlock("blockquote"),
+    run: (e) => e.tf.toggleBlock("blockquote", { wrap: true }), // BlockquotePlugin's own toggle
   },
 ];
 
@@ -87,8 +87,13 @@ export function Toolbar(props: {
   useEffect(() => {
     if (linkOpen) saved.current = editor.selection;
   }, [linkOpen, editor]);
+  // A frozen editor (an operation running) closes the dialog; upsertLink would ignore readOnly.
+  useEffect(() => {
+    if (readOnly && linkOpen) onLinkOpenChange(false);
+  }, [readOnly, linkOpen, onLinkOpenChange]);
 
   const applyLink = (url: string) => {
+    if (readOnly) return true; // closes, applies nothing
     const href = safeHref(url);
     if (!href) return false;
     if (saved.current) editor.tf.select(saved.current);

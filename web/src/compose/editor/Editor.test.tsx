@@ -17,18 +17,19 @@ const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? { metaKey: true } : { 
 function setup(initial = "<p>hello world</p>", readOnly = false) {
   const onChange = vi.fn();
   const onComposing = vi.fn();
-  render(
+  const ui = (ro: boolean) => (
     <Editor
       initial={initial}
-      readOnly={readOnly}
+      readOnly={ro}
       placeholder="p"
       onChange={onChange}
       onComposing={onComposing}
       t={t}
-    />,
+    />
   );
+  const { rerender } = render(ui(readOnly));
   const box = screen.getByLabelText("body");
-  return { box, onChange, onComposing };
+  return { box, onChange, onComposing, setReadOnly: (ro: boolean) => rerender(ui(ro)) };
 }
 
 // Selects the first `len` characters after `from` in the first text node, as a user drag would.
@@ -116,5 +117,36 @@ describe("Editor", () => {
     await waitFor(() =>
       expect(last(onChange)).toBe('<p><a href="https://x.com/">hello</a> world</p>'),
     );
+  });
+
+  it("the link popover closes and applies nothing when the editor turns read-only", async () => {
+    const { box, onChange, setReadOnly } = setup();
+    await select(box, 0, 5);
+    fireEvent.keyDown(box, { key: "k", code: "KeyK", ...mod });
+    await screen.findByPlaceholderText("https://");
+    setReadOnly(true);
+    await waitFor(() => expect(screen.queryByPlaceholderText("https://")).toBeNull());
+    expect(onChange.mock.calls.some(([h]) => h.includes("<a"))).toBe(false);
+  });
+
+  it("the quote toggle wraps and unwraps blocks", async () => {
+    const user = userEvent.setup();
+    const quote = () => user.click(screen.getByRole("button", { name: "compose.quote" }));
+    const { box, onChange } = setup("<p>a</p>");
+    await select(box, 0, 0);
+    await quote();
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+    await quote();
+    await waitFor(() => expect(last(onChange)).toBe("<p>a</p>"));
+    await quote();
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+  });
+
+  it("the quote toggle unwraps a list inside a quote, keeping the list", async () => {
+    const user = userEvent.setup();
+    const { box, onChange } = setup("<blockquote><ul><li><p>1</p></li></ul></blockquote>");
+    await select(box, 0, 0);
+    await user.click(screen.getByRole("button", { name: "compose.quote" }));
+    await waitFor(() => expect(last(onChange)).toBe("<ul><li><p>1</p></li></ul>"));
   });
 });
