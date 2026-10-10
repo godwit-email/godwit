@@ -642,15 +642,17 @@ func TestKitToastIcons(t *testing.T) {
 // TestKitToastTinted: a kind's toast takes its color's tint; a plain one stays white.
 func TestKitToastTinted(t *testing.T) {
 	tk := theme.Light()
-	for typ, want := range map[string][3]ui.Color{
-		"":           {tk.Background, tk.Border, tk.Foreground},
-		ToastSuccess: {tk.SuccessBg, tk.SuccessBorder, tk.SuccessText},
-		ToastWarning: {tk.WarningBg, tk.WarningBorder, tk.WarningText},
-		ToastError:   {tk.DangerBg, tk.DangerBorder, tk.DangerText},
+	for _, tc := range []struct {
+		typ            string
+		bg, border, fg ui.Color
+	}{
+		{"", tk.Background, tk.Border, tk.Foreground},
+		{ToastSuccess, tk.SuccessBg, tk.SuccessBorder, tk.SuccessText},
+		{ToastWarning, tk.WarningBg, tk.WarningBorder, tk.WarningText},
+		{ToastError, tk.DangerBg, tk.DangerBorder, tk.DangerText},
 	} {
-		l := toastLook(tk, typ)
-		if got := [3]ui.Color{l.bg, l.border, l.fg}; got != want {
-			t.Errorf("toastLook(%q) = %v, want %v", typ, got, want)
+		if l := toastLook(tk, tc.typ); l.bg != tc.bg || l.border != tc.border || l.fg != tc.fg {
+			t.Errorf("toastLook(%q) = %v %v %v, want %v %v %v", tc.typ, l.bg, l.border, l.fg, tc.bg, tc.border, tc.fg)
 		}
 	}
 }
