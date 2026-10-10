@@ -1,5 +1,5 @@
 import { currentWindow } from "mygo-runtime";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,12 +21,19 @@ export function ComposePage() {
   const saver = useRef<Saver>(undefined);
 
   useEffect(() => {
-    api.load().then(setState);
     // Closing before the draft loaded has nothing to flush.
     return events.closing.on(async (gen) => {
       await saver.current?.flush();
       await api.closed(gen, !saver.current || saver.current.status === "saved");
     });
+  }, []);
+
+  useEffect(() => {
+    let current = true; // only the latest load applies (StrictMode loads twice)
+    api.load().then((st) => current && setState(st));
+    return () => {
+      current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -58,23 +65,25 @@ function Editor({ state, saver }: { state: ComposeState; saver: { current: Saver
   const [, rerender] = useState(0);
   const [savedAt, setSavedAt] = useState<Date>();
 
-  const s = useMemo(() => {
+  // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
+  useEffect(() => {
     let revision = state.revision;
-    return createSaver(async (e) => {
+    const n = createSaver(async (e) => {
       const r = await api.save({ ...e, revision });
       if (!r.conflict) revision = r.revision;
       return r;
     });
-  }, [state.revision]);
-  saver.current = s;
-  useEffect(
-    () =>
-      s.onChange(() => {
-        if (s.status === "saved") setSavedAt(new Date());
-        rerender((n) => n + 1);
-      }),
-    [s],
-  );
+    const off = n.onChange(() => {
+      if (n.status === "saved") setSavedAt(new Date());
+      rerender((i) => i + 1);
+    });
+    saver.current = n;
+    return () => {
+      off();
+      n.dispose();
+      if (saver.current === n) saver.current = undefined;
+    };
+  }, [state.revision, saver]);
   useEffect(() => {
     currentWindow.setTitle(f.subject.trim() || "新邮件");
   }, [f.subject]);
@@ -82,7 +91,7 @@ function Editor({ state, saver }: { state: ComposeState; saver: { current: Saver
   const set = (k: keyof typeof f) => (ev: { target: { value: string } }) => {
     const n = { ...f, [k]: ev.target.value };
     setF(n);
-    s.edit({
+    saver.current?.edit({
       to: list(n.to),
       cc: list(n.cc),
       bcc: list(n.bcc),
@@ -97,21 +106,22 @@ function Editor({ state, saver }: { state: ComposeState; saver: { current: Saver
     minute: "2-digit",
     hour12: false,
   });
+  const st = saver.current?.status ?? "saved";
   const status =
-    s.status === "saving"
+    st === "saving"
       ? "正在保存…"
-      : s.status === "saved" && hhmm
-        ? `草稿已保存 · ${hhmm}`
+      : st === "saved"
+        ? `草稿已保存${hhmm ? ` · ${hhmm}` : ""}`
         : "未保存";
 
   return (
     <main
       aria-label="撰写"
       className="flex min-h-screen flex-col gap-3 p-4"
-      onCompositionStart={() => s.setComposing(true)}
-      onCompositionEnd={() => s.setComposing(false)}
+      onCompositionStart={() => saver.current?.setComposing(true)}
+      onCompositionEnd={() => saver.current?.setComposing(false)}
     >
-      {s.status === "conflict" && (
+      {saver.current?.status === "conflict" && (
         <Alert variant="destructive">草稿已在别处修改，本窗口不再保存</Alert>
       )}
       {(

@@ -9,6 +9,8 @@ export interface Saver {
   flush(): Promise<void>;
   readonly status: SaveStatus;
   onChange(fn: () => void): () => void;
+  /** Cancels the timer and blocks any further scheduling. */
+  dispose(): void;
 }
 
 /** Saves the latest edit `delay` ms after the last one: never while composing, one save in flight, none after a conflict. */
@@ -20,6 +22,8 @@ export function createSaver(
   let status: SaveStatus = "saved";
   let pending: ComposeEdit | undefined;
   let composing = false;
+  let lastInput = 0;
+  let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<boolean> | undefined;
   const listeners = new Set<() => void>();
@@ -30,7 +34,9 @@ export function createSaver(
   };
   const schedule = () => {
     clearTimeout(timer);
-    if (!composing && status !== "conflict") timer = setTimeout(() => void run(), delay);
+    if (disposed || composing || status === "conflict") return;
+    // Only what is left of the delay since the last input.
+    timer = setTimeout(() => void run(), Math.max(0, delay - (Date.now() - lastInput)));
   };
   // run saves the pending edit; it resolves true unless the save failed.
   const run = async (): Promise<boolean> => {
@@ -65,13 +71,17 @@ export function createSaver(
     edit(e) {
       if (status === "conflict") return;
       pending = e;
+      lastInput = Date.now();
       if (status !== "saving") set("unsaved");
       schedule();
     },
     setComposing(on) {
       composing = on;
       if (on) clearTimeout(timer);
-      else if (pending) schedule();
+      else if (pending) {
+        lastInput = Date.now(); // the composition's end is input too
+        schedule();
+      }
     },
     async flush() {
       clearTimeout(timer);
@@ -79,6 +89,10 @@ export function createSaver(
     },
     get status() {
       return status;
+    },
+    dispose() {
+      disposed = true;
+      clearTimeout(timer);
     },
     onChange(fn) {
       listeners.add(fn);

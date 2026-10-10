@@ -1,5 +1,6 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { ComposePage } from "./ComposePage";
 
 const h = vi.hoisted(() => ({
@@ -138,4 +139,34 @@ describe("autosave", () => {
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(api.save).toHaveBeenCalledTimes(1);
   });
+});
+
+test("only the latest load applies", async () => {
+  const rs: Array<(s: typeof state) => void> = [];
+  vi.mocked(api.load).mockImplementation(() => new Promise((r) => rs.push(r)));
+  render(
+    <StrictMode>
+      <ComposePage />
+    </StrictMode>,
+  );
+  expect(rs).toHaveLength(2);
+  await act(async () => rs[1]({ ...state, body: "新", revision: 20 }));
+  await act(async () => rs[0]({ ...state, body: "旧", revision: 10 }));
+  const el = await body();
+  expect(el).toHaveValue("新");
+  await userEvent.type(el, "!");
+  await act(async () => h.closing?.(1));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "新!", revision: 20 }));
+});
+
+test("an untouched draft reads as saved; unmount disposes the saver", async () => {
+  const { unmount } = render(<ComposePage />);
+  await body();
+  expect(screen.getByText("草稿已保存")).toBeInTheDocument();
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByRole("textbox", { name: "正文" }), { target: { value: "x" } });
+  unmount();
+  await vi.advanceTimersByTimeAsync(5000);
+  vi.useRealTimers();
+  expect(api.save).not.toHaveBeenCalled();
 });
