@@ -244,7 +244,7 @@ func (e *extView) pluginsView(c *ui.Context) {
 			perm := func(tag, text string) {
 				ui.Row(c).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-						ui.Text(c, tag).Font("Geist Mono").FontSize(t.Text.Sm)
+						ui.Text(c, tag).Font(theme.Mono).FontSize(t.Text.Sm)
 					})
 					ui.Text(c, text).Shrink(1)
 				})
@@ -445,7 +445,7 @@ func (e *extView) mcpView(c *ui.Context) {
 			for i, s := range e.servers {
 				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() { e.mcp, e.mform = s.ID, nil }, func() {
 					ui.Text(c, s.Name).FontWeight(500).Grow(1).Shrink(1)
-					ui.Text(c, s.Transport).Font("Geist Mono").FontSize(t.Text.Sm).TextColor(t.Muted)
+					ui.Text(c, s.Transport).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted)
 					ui.Text(c, i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).TextColor(t.Muted)
 					st, attention := mcpStatus(s)
 					statusPill(c, st, attention)
@@ -539,7 +539,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		for _, tool := range s.Tools {
 			ui.Column(c.Key(tool.Name)).Gap(th.Space(1.5)).Padding(th.Space(3), 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 				ui.Row(c).Gap(th.Space(2)).Children(func() {
-					ui.Text(c, tool.Name).Font("Geist Mono").FontWeight(500)
+					ui.Text(c, tool.Name).Font(theme.Mono).FontWeight(500)
 					if tool.ReadOnlyHint {
 						kit.Badge(c, i18n.T("settings.ext.mcp.read_only"))
 					}

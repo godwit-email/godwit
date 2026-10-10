@@ -46,9 +46,6 @@ func gui(ctx context.Context, dataDir string) int {
 	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}
-	if err := theme.RegisterFonts(); err != nil {
-		log.Print(err) // the system's fonts stand in
-	}
 	defer context.AfterFunc(ctx, mygo.App.Quit)() // SIGINT / SIGTERM quit as the menu does
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

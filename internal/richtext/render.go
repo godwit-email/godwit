@@ -24,7 +24,7 @@ type RenderOptions struct {
 	OnLink     func(url string)
 }
 
-const mono = "Geist Mono"
+const mono = theme.Mono
 
 // Render draws d read-only.
 func Render(c *ui.Context, d Doc, o RenderOptions) ui.Element {

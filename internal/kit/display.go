@@ -75,7 +75,7 @@ func Spinner(c *ui.Context) ui.Element {
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font("Geist Mono").FontSize(t.Text.Xs).TextColor(t.Muted)
+		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).TextColor(t.Muted)
 	})
 }
 
