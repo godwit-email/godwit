@@ -89,8 +89,14 @@ describe("toChunks", () => {
     ]);
   });
 
-  it("maps results to output or error", () => {
-    const seen = new Set<string>();
+  it("maps results to output or error; drops a result for a call not shown", () => {
+    const seen = new Set<string>(["c1", "c2"]);
+    expect(
+      toChunks(
+        ev({ kind: "tool_result", result: { callId: "cx", name: "s", output: "", error: "" } }),
+        seen,
+      ),
+    ).toEqual([]);
     expect(
       toChunks(
         ev({ kind: "tool_result", result: { callId: "c1", name: "s", output: "[1]", error: "" } }),
@@ -122,7 +128,7 @@ describe("toChunks", () => {
     expect(out).toContainEqual({
       type: "tool-approval-request",
       approvalId: "9",
-      toolCallId: "skill",
+      toolCallId: "skill-9", // every skill's call is "skill": its part has an ID of its own
     });
     expect(types.at(-1)).toBe("finish"); // pending: the run waits
   });
@@ -214,13 +220,13 @@ describe("historyToMessages", () => {
       ["c1", "output-available"],
       ["c2", "output-denied"],
       ["c3", "output-error"],
-      ["skill", "output-available"],
+      ["skill-5", "output-available"],
     ]);
     expect(m[1].parts).toContainEqual({ type: "text", text: "A", state: "done" });
     expect(m[1].parts).toContainEqual({ type: "data-citations", data: [cite] });
     const pending = m[3].parts.find((p) => p.type === "dynamic-tool");
     expect(pending).toMatchObject({
-      toolCallId: "skill",
+      toolCallId: "skill-4",
       state: "approval-requested",
       approval: { id: "4" },
     });
@@ -359,5 +365,91 @@ describe("WitTransport", () => {
     expect(api.stop).toHaveBeenCalledTimes(1);
     await tr.stop(); // started now: at once
     expect(api.stop).toHaveBeenLastCalledWith(9);
+  });
+
+  it("decided skill runs with no message each get their own answer, in run order, kept across a reconnect", async () => {
+    const msg = (id: string, role: string, runs: number[], text = id) => ({
+      id,
+      role,
+      text,
+      calls: [],
+      results: [],
+      citations: [],
+      runs,
+    });
+    const h: WitHistory = {
+      conversation: 1,
+      running: 5,
+      messages: [
+        msg("q0", "user", [1]),
+        msg("a1", "assistant", [1]),
+        msg("q5", "user", [5]),
+        msg("a6", "assistant", [5], "Go"),
+      ],
+      approvals: [
+        approval({ id: 11, run: 3, callId: "skill", state: "rejected" }),
+        approval({ id: 10, run: 2, callId: "skill", state: "done" }),
+      ],
+    };
+    const all = historyToMessages(h);
+    expect(all.map((m) => m.id)).toEqual(["q0", "a1", "w2", "w3", "q5", "a6"]);
+    const tool = (m: WitUIMessage) => m.parts.filter((p) => p.type === "dynamic-tool");
+    expect(tool(all[2]).map((p) => [p.toolCallId, p.state])).toEqual([
+      ["skill-10", "output-available"],
+    ]);
+    expect(tool(all[3]).map((p) => [p.toolCallId, p.state])).toEqual([
+      ["skill-11", "output-denied"],
+    ]);
+
+    const { api, tr, emit } = fake();
+    api.follow.mockResolvedValue(h);
+    await tr.follow();
+    const open = all.pop();
+    const chat = new Chat<WitUIMessage>({ transport: tr, messages: all });
+    tr.resume(open, 5);
+    const done = chat.resumeStream();
+    await vi.waitFor(() => expect(chat.status).toBe("streaming"));
+    emit({ run: 5, kind: "text", text: "!" });
+    emit({ run: 5, kind: "done" });
+    await done;
+    expect(chat.messages.map((m) => m.id)).toEqual(["q0", "a1", "w2", "w3", "q5", "a6"]);
+    expect(tool(chat.messages[2]).map((p) => p.state)).toEqual(["output-available"]);
+    expect(tool(chat.messages[3]).map((p) => p.state)).toEqual(["output-denied"]);
+  });
+
+  it("a live skill's part has the history's ID: a resumed run updates it", async () => {
+    const pending = approval({ id: 12, run: 2, callId: "skill", state: "pending" });
+    const h: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [pending] };
+    const all = historyToMessages(h);
+    expect(all.map((m) => m.id)).toEqual(["w2"]);
+    const { api, tr, emit } = fake();
+    api.follow.mockResolvedValue(h);
+    await tr.follow();
+    const open = all.pop();
+    const chat = new Chat<WitUIMessage>({ transport: tr, messages: all });
+    tr.resume(open, 2); // as after a decision
+    const done = chat.resumeStream();
+    await vi.waitFor(() => expect(chat.status).toBe("streaming"));
+    emit({
+      run: 2,
+      kind: "interrupted",
+      interrupts: [{ id: "skill", name: "update_draft", args: "" }],
+      approvals: [{ ...pending, state: "done" }],
+    });
+    emit({ run: 2, kind: "done" });
+    await done;
+    const tools = chat.messages[0].parts.filter((p) => p.type === "dynamic-tool");
+    expect(tools.map((p) => [p.toolCallId, p.state])).toEqual([["skill-12", "output-available"]]);
+  });
+
+  it("a refused start drops what waited", async () => {
+    const { api, tr, emit } = fake();
+    let reject!: (e: Error) => void;
+    api.ask.mockReturnValue(new Promise((_, r) => (reject = r)));
+    const s = await send(tr, userMsg("hi"));
+    emit({ conversation: 3, run: 2, kind: "text", text: "other" });
+    reject(new Error("error.run_active"));
+    await readAll(s);
+    expect((tr as unknown as { early: unknown[] }).early).toEqual([]);
   });
 });

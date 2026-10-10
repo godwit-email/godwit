@@ -44,9 +44,15 @@ const result = (r: WitResult): Chunk =>
     ? { type: "tool-output-error", toolCallId: r.callId, errorText: r.error }
     : { type: "tool-output-available", toolCallId: r.callId, output: json(r.output) };
 
-/** What a decided or waiting approval makes of its call (executing: nothing yet). */
-function decided(a: Approval): Chunk[] {
-  const id = a.callId;
+/**
+ * The tool part ID of approval a's call: the call's own when it was shown, else one of its own
+ * (a skill's call ID is always "skill": the parts of different skills must not collide).
+ */
+const partId = (a: Approval, seen?: Set<string>) =>
+  seen?.has(a.callId) ? a.callId : `${a.callId}-${a.id}`;
+
+/** What a decided or waiting approval makes of its call's part id (executing: nothing yet). */
+function decided(a: Approval, id: string): Chunk[] {
   switch (a.state) {
     case "pending":
       return [{ type: "tool-approval-request", approvalId: String(a.id), toolCallId: id }];
@@ -96,16 +102,23 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
       }
       break;
     case "tool_result":
-      if (ev.result) out.push(result(ev.result));
+      // only a shown call's: the SDK fails on a part it does not have
+      if (ev.result && seen.has(ev.result.callId)) out.push(result(ev.result));
       break;
     case "interrupted":
       for (const c of ev.interrupts) {
-        if (seen.has(c.id)) continue;
-        seen.add(c.id);
-        out.push(input(c)); // a skill's ("skill") has no tool_call before it
+        // a skill's ("skill") has no tool_call before it: its part gets an ID of its own
+        const a = ev.approvals.find((x) => x.callId === c.id);
+        const id = seen.has(c.id) || !a ? c.id : partId(a);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(input({ ...c, id }));
       }
       if (ev.approvals.length > 0) out.push({ type: "data-approvals", data: ev.approvals });
-      for (const a of ev.approvals) out.push(...decided(a));
+      for (const a of ev.approvals) {
+        const id = partId(a, seen);
+        if (seen.has(id)) out.push(...decided(a, id));
+      }
       if (ends(ev)) out.push({ type: "finish" });
       break;
     case "done":
@@ -145,70 +158,71 @@ function toolPart(c: WitCall, r: WitResult | undefined, a: Approval | undefined)
 
 /**
  * The history as messages: each answer's calls with their results, or their approval's state by
- * CallID. An approval with no call in the history (a skill's) gets a tool part of its own, in any
- * state, on its run's answer (a new one after its run's question if the run has no answer yet).
+ * CallID. An approval with no call in the history (a skill's: core writes no message for it) gets
+ * a tool part of its own (partId), in any state: on its run's answer, else a new answer after its
+ * run's question, else a message of its own (one per run) placed in run order among the others.
  */
 export function historyToMessages(h: WitHistory): WitUIMessage[] {
   const byCall = new Map(h.approvals.map((a) => [a.callId, a]));
   const calls = new Set(h.messages.flatMap((m) => m.calls.map((c) => c.id)));
   const ms = h.messages;
-  // Where each approval with no call goes: on answer i (on), or after question i (after).
-  const on = new Map<number, Approval[]>();
-  const after = new Map<number, Approval[]>();
+  const on = new Map<number, Approval[]>(); // on answer i
+  const after = new Map<number, Approval[]>(); // after question i
+  const alone = new Map<number, Approval[]>(); // by run: a run with no message
   const put = (m: Map<number, Approval[]>, i: number, a: Approval) =>
     m.set(i, [...(m.get(i) ?? []), a]);
   for (const a of h.approvals) {
     if (calls.has(a.callId)) continue;
-    const runs = (i: number) => ms[i].runs.includes(a.run);
-    const i = ms.findIndex((m, k) => m.role === "assistant" && runs(k));
-    const q = ms.findLastIndex((_, k) => runs(k));
+    const i = ms.findIndex((m) => m.role === "assistant" && m.runs.includes(a.run));
+    const q = ms.findLastIndex((m) => m.runs.includes(a.run));
     if (i >= 0) put(on, i, a);
     else if (q >= 0) put(after, q, a);
-    else if (ms.at(-1)?.role === "assistant") put(on, ms.length - 1, a);
-    else put(after, ms.length - 1, a);
+    else put(alone, a.run, a);
   }
   const synth = (as: Approval[]) =>
-    as.map((a) => toolPart({ id: a.callId, name: a.tool, args: "" }, undefined, a));
-  const out: WitUIMessage[] = [];
-  const extra = (i: number) => {
-    const as = after.get(i);
-    if (as)
-      out.push({
-        id: `w${as[0].run}`,
-        role: "assistant",
-        parts: [...synth(as), { type: "data-approvals", data: as }],
-      });
-  };
-  extra(-1);
+    as.map((a) => toolPart({ id: partId(a), name: a.tool, args: "" }, undefined, a));
+  const answer = (as: Approval[]): WitUIMessage => ({
+    id: `w${as[0].run}`,
+    role: "assistant",
+    parts: [...synth(as), { type: "data-approvals", data: as }],
+  });
+  const out: { m: WitUIMessage; runs: number[] }[] = [];
   ms.forEach((m, i) => {
     if (m.role === "user") {
-      out.push({ id: m.id, role: "user", parts: [{ type: "text", text: m.text }] });
-      extra(i);
-      return;
+      out.push({
+        m: { id: m.id, role: "user", parts: [{ type: "text", text: m.text }] },
+        runs: m.runs,
+      });
+    } else {
+      const parts: Part[] = [];
+      const as: Approval[] = [];
+      for (const c of m.calls) {
+        const a = byCall.get(c.id);
+        if (a) as.push(a);
+        parts.push(
+          toolPart(
+            c,
+            m.results.find((r) => r.callId === c.id),
+            a,
+          ),
+        );
+      }
+      const own = on.get(i) ?? [];
+      parts.push(...synth(own));
+      as.push(...own);
+      if (as.length > 0) parts.push({ type: "data-approvals", data: as });
+      if (m.text) parts.push({ type: "text", text: m.text, state: "done" });
+      if (m.citations.length > 0) parts.push({ type: "data-citations", data: m.citations });
+      out.push({ m: { id: m.id, role: "assistant", parts }, runs: m.runs });
     }
-    const parts: Part[] = [];
-    const as: Approval[] = [];
-    for (const c of m.calls) {
-      const a = byCall.get(c.id);
-      if (a) as.push(a);
-      parts.push(
-        toolPart(
-          c,
-          m.results.find((r) => r.callId === c.id),
-          a,
-        ),
-      );
-    }
-    const own = on.get(i) ?? [];
-    parts.push(...synth(own));
-    as.push(...own);
-    if (as.length > 0) parts.push({ type: "data-approvals", data: as });
-    if (m.text) parts.push({ type: "text", text: m.text, state: "done" });
-    if (m.citations.length > 0) parts.push({ type: "data-citations", data: m.citations });
-    out.push({ id: m.id, role: "assistant", parts });
-    extra(i);
+    const as = after.get(i);
+    if (as) out.push({ m: answer(as), runs: [as[0].run] });
   });
-  return out;
+  for (const [run, as] of [...alone].sort((x, y) => x[0] - y[0])) {
+    const k = out.findIndex((o) => o.runs.length > 0 && Math.min(...o.runs) > run);
+    out.splice(k < 0 ? out.length : k, 0, { m: answer(as), runs: [run] });
+  }
+  return out.map((o) => o.m);
 }
 
 /**
@@ -406,7 +420,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
           if (ev) this.adopt(ev.conversation);
           if (this.stopping) return this.api.stop(run);
         },
-        (e: unknown) => fail(e instanceof Error ? e.message : String(e)),
+        (e: unknown) => {
+          this.early = []; // nothing started: what waited is another run's
+          fail(e instanceof Error ? e.message : String(e));
+        },
       )
       .catch(() => {}) // ponytail: a failed deferred stop is dropped; Stop stays to try again
       .finally(() => {
