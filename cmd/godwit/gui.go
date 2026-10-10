@@ -126,6 +126,8 @@ func gui(ctx context.Context, dataDir string) int {
 			mailMenu = append(mailMenu, &mygo.MenuItem{Label: "写邮件（网页窗口）",
 				Click: func(*mygo.MenuItem, *mygo.Window) { a.ComposeInWindow() }})
 		}
+		// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+		mailMenu = append(mailMenu, mygo.Separator(), &mygo.MenuItem{Role: mygo.RoleClose})
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
 			{Label: i18n.T("shell.rail.mail"), Submenu: mailMenu},
