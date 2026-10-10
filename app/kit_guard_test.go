@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -21,7 +22,24 @@ func rawCalls(name, src string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The names the file gives mygo's ui and internal/kit, aliases included.
+	uiName, kitName := "", ""
+	for _, im := range file.Imports {
+		name := ""
+		if im.Name != nil {
+			name = im.Name.Name
+		}
+		switch strings.Trim(im.Path.Value, `"`) {
+		case "github.com/egoist/mygo/ui":
+			uiName = cmp.Or(name, "ui")
+		case "github.com/godwit-email/godwit/internal/kit":
+			kitName = cmp.Or(name, "kit")
+		}
+	}
 	var found []string
+	if uiName == "." {
+		found = append(found, fset.Position(file.Package).String()+": dot import of ui")
+	}
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -36,7 +54,7 @@ func rawCalls(name, src string) ([]string, error) {
 		if id != nil {
 			pkg = id.Name
 		}
-		if pkg == "ui" && rawPrimitives[sel.Sel.Name] || sel.Sel.Name == "Tooltip" && pkg != "kit" {
+		if pkg != "" && pkg == uiName && rawPrimitives[sel.Sel.Name] || sel.Sel.Name == "Tooltip" && (kitName == "" || pkg != kitName) {
 			found = append(found, fset.Position(sel.Sel.Pos()).String()+": "+sel.Sel.Name)
 		}
 		return true
@@ -72,12 +90,17 @@ func TestRawPrimitiveScanner(t *testing.T) {
 	for _, tc := range []struct {
 		code    string
 		flagged bool
+		imports string
 	}{
-		{`b.Tooltip("x")`, true},
-		{`kit.Tooltip(c, b, "x")`, false},
-		{"ui.ButtonBase(c).\n\tLabel(\"x\")", true},
+		{`b.Tooltip("x")`, true, ""},
+		{`kit.Tooltip(c, b, "x")`, false, ""},
+		{"ui.ButtonBase(c).\n\tLabel(\"x\")", true, ""},
+		{`raw.ButtonBase(c)`, true, `raw "github.com/egoist/mygo/ui"`},
+		{`k.Tooltip(c, b, "x")`, false, `k "github.com/godwit-email/godwit/internal/kit"`},
+		{`ButtonBase(c)`, true, `. "github.com/egoist/mygo/ui"`},
 	} {
-		found, err := rawCalls("snippet.go", "package p\nfunc f() {\n"+tc.code+"\n}\n")
+		imports := cmp.Or(tc.imports, "\"github.com/egoist/mygo/ui\"\n\"github.com/godwit-email/godwit/internal/kit\"")
+		found, err := rawCalls("snippet.go", "package p\nimport (\n"+imports+"\n)\nfunc f() {\n"+tc.code+"\n}\n")
 		if err != nil {
 			t.Fatal(err)
 		}

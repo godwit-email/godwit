@@ -11,7 +11,7 @@ import (
 func Collapsible(c *ui.Context, open *bool, trigger, panel func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	parts := ui.CollapsibleBase(c, open)
-	tr := parts.Trigger.Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).FontSize(t.Text.Sm).TextColor(t.Muted).
+	tr := parts.Trigger.MinHeight(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).FontSize(t.Text.Sm).TextColor(t.Muted).
 		Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if tr.Hovered() {
 		tr.Background(t.Hover)
