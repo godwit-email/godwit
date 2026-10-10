@@ -213,3 +213,27 @@ func TestKitToastCloseLabel(t *testing.T) {
 		t.Error("the close button did not close the toast")
 	}
 }
+
+func TestKitSidebarItem(t *testing.T) {
+	var clicked []string
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Width(240).Children(func() {
+			for _, name := range []string{"Inbox", "Sent"} {
+				SidebarItem(c, SidebarItemOpts{Selected: name == "Inbox", OnClick: func() { clicked = append(clicked, name) }}).
+					Children(func() { ui.Text(c, name) })
+			}
+		})
+	}), 300, 200)
+	for _, name := range []string{"Inbox", "Sent"} {
+		r, ok := tt.Find(name)
+		if !ok || r.X > 24 {
+			t.Errorf("%s at %+v, want left-aligned", name, r)
+		}
+		if err := tt.Click(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(clicked) != 1 || clicked[0] != "Sent" {
+		t.Errorf("clicked %v, want [Sent] (the selected row does not click)", clicked)
+	}
+}

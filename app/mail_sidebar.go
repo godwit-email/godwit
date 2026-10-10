@@ -52,10 +52,10 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
 					OnClick(func() { p.searchOpen = true })
 			})
-			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Justify(ui.Start).Children(func() {
+			kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {
 				ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
 				ui.Text(c, i18n.T("mail.compose"))
-			}).OnClick(p.compose)
+			})
 			ui.Box(c).Height(th.Space(2))
 			p.navItem(c, i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
 			p.navItem(c, i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
@@ -74,60 +74,49 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 					if f.ID == 0 {
 						v = localDrafts(acc.ID)
 					}
-					p.navItem(c, folderName(f), v, f.Unread, 18)
+					p.navItem(c, folderName(f), v, f.Unread, 4.5)
 				}
 			}
 			if n := len(p.outbox); n > 0 {
 				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
 			}
-			ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Justify(ui.Start).Children(func() {
-				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
-				ui.Text(c, i18n.T("mail.add_account"))
-			}).OnClick(func() {
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
 				a.navigate(Route{Page: PageSettings})
 				a.openAddAccount()
+			}}).Children(func() {
+				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
+				ui.Text(c, i18n.T("mail.add_account"))
 			})
 		})
 	})
 }
 
-// navItem is a view in the sidebar, with its count.
+// navItem is a view in the sidebar, with its count; indent is in spacing steps.
 func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, indent float32) {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	on := p.a.route.Page == PageMail && p.a.route.View == v
-	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+indent/4)).Radius(t.Radius.Md).Gap(th.Space(2)).Justify(ui.Start)
-	switch {
-	case on:
-		b.Background(t.SidebarSelected).FontWeight(500)
-	case b.Hovered():
-		b.Background(t.Hover)
-	}
-	b.Children(func() {
+	kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }}).Children(func() {
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
 		if count > 0 {
 			ui.Text(c, strconv.Itoa(count)).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
 	})
-	if !on {
-		b.OnClick(func() { p.a.navigate(Route{Page: PageMail, View: v}) })
-	}
 }
 
 // accountHeader folds an account's folders; folded, it shows the unread count.
 func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
-	t, th := theme.Of(c), c.Theme()
 	open := !p.collapsed[acc.ID]
 	chevron := "chevron-down"
 	if !open {
 		chevron = "chevron-right"
 	}
-	ui.ButtonBase(c).Height(th.Space(7.5)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Muted).FontSize(t.Text.Sm).Justify(ui.Start).Children(func() {
+	kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() { p.collapsed[acc.ID] = open }}).Children(func() {
 		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
 		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
 		if n := p.a.unread[acc.ID]; !open && n > 0 {
 			ui.Text(c, strconv.Itoa(n))
 		}
-	}).OnClick(func() { p.collapsed[acc.ID] = open })
+	})
 }
 
 // compose starts a new draft from the view's account, else the default
