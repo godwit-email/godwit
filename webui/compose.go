@@ -278,7 +278,13 @@ func (p *ComposePage) SetAccount(ctx context.Context, id, revision int64) (Chang
 
 // AddAttachments asks for files in a dialog on the calling window and adds
 // each to its draft, if the draft is at revision (else Conflict, without the
-// dialog). A file over the limit or failing is reported, not an error.
+// dialog). A file over the limit or failing is reported, not an error; a
+// write from elsewhere stops the adding with Conflict, the files added so
+// far in Attachments.
+//
+// The dialog runs without the session lock: Release does not wait for it
+// (AppKit gives no promise a sheet on a closed window ever ends), and once
+// the window is released the files are dropped (ErrNoDraft).
 func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (AttachResult, error) {
 	res := AttachResult{TooLarge: []string{}, Failed: []string{}}
 	win, svc, s, err := p.open(ctx)
@@ -286,7 +292,7 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 		return AttachResult{}, err
 	}
 	d, err := svc.GetDraft(ctx, s.draftID)
-	s.mu.Unlock() // not held over the dialog, which the UI thread runs, and Release may be on it
+	s.mu.Unlock()
 	if err != nil {
 		return AttachResult{}, err
 	}
@@ -306,27 +312,30 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 		return AttachResult{}, err
 	}
 	defer s.mu.Unlock()
-	if d, err = svc.GetDraft(ctx, s.draftID); err != nil {
-		return AttachResult{}, err
-	}
-	if d.Revision != revision { // changed while the dialog was open
-		res.Change = conflict
-		return res, nil
-	}
+	rev, stale := revision, false
 	for _, path := range paths {
-		_, err := svc.AddAttachment(ctx, d.ID, path)
+		_, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path)
+		if now != 0 {
+			rev = now
+		}
 		switch {
+		case errors.Is(err, core.ErrStaleDraft):
+			stale = true
 		case errors.Is(err, core.ErrTooLarge):
 			res.TooLarge = append(res.TooLarge, filepath.Base(path))
 		case err != nil:
-			log.Printf("attaching %s to draft %d: %v", path, d.ID, err)
+			log.Printf("attaching %s to draft %d: %v", path, s.draftID, err)
 			res.Failed = append(res.Failed, filepath.Base(path))
 		}
+		if stale {
+			break
+		}
 	}
-	if d, err = svc.GetDraft(ctx, d.ID); err != nil {
+	if d, err = svc.GetDraft(ctx, s.draftID); err != nil {
 		return AttachResult{}, err
 	}
 	res.Change = changeOf(d)
+	res.Conflict = stale || d.Revision != rev // a write from elsewhere, even with no file picked
 	return res, nil
 }
 
@@ -338,20 +347,20 @@ func (p *ComposePage) RemoveAttachment(ctx context.Context, id, revision int64) 
 		return Change{}, err
 	}
 	defer s.mu.Unlock()
+	rev, err := svc.RemoveAttachmentAt(ctx, s.draftID, id, revision)
+	if errors.Is(err, core.ErrStaleDraft) {
+		return conflict, nil
+	}
+	if err != nil {
+		return Change{}, err
+	}
 	d, err := svc.GetDraft(ctx, s.draftID)
 	if err != nil {
 		return Change{}, err
 	}
-	if d.Revision != revision {
-		return conflict, nil
-	}
-	if err := svc.RemoveAttachment(ctx, d.ID, id); err != nil {
-		return Change{}, err
-	}
-	if d, err = svc.GetDraft(ctx, d.ID); err != nil {
-		return Change{}, err
-	}
-	return changeOf(d), nil
+	ch := changeOf(d)
+	ch.Conflict = d.Revision != rev // a write from elsewhere since
+	return ch, nil
 }
 
 // Send sends exactly revision of the calling window's draft, else Conflict.

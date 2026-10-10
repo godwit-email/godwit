@@ -145,7 +145,13 @@ export const ComposePage = {
   /**
    * AddAttachments asks for files in a dialog on the calling window and adds
    * each to its draft, if the draft is at revision (else Conflict, without the
-   * dialog). A file over the limit or failing is reported, not an error.
+   * dialog). A file over the limit or failing is reported, not an error; a
+   * write from elsewhere stops the adding with Conflict, the files added so
+   * far in Attachments.
+   *
+   * The dialog runs without the session lock: Release does not wait for it
+   * (AppKit gives no promise a sheet on a closed window ever ends), and once
+   * the window is released the files are dropped (ErrNoDraft).
    */
   addAttachments(revision: number): Promise<AttachResult> {
     return call("ComposePage.AddAttachments", revision);

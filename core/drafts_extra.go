@@ -93,3 +93,15 @@ func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (d
 	err = s.deleteDraft(ctx, id)
 	return err == nil, err
 }
+
+// AddAttachmentAt is AddAttachment for exactly that revision of the draft
+// (else ErrStaleDraft, nothing added); it returns the new revision.
+func (s *Service) AddAttachmentAt(ctx context.Context, draftID, revision int64, srcPath string) (DraftAttachment, int64, error) {
+	return s.addAttachmentFile(ctx, draftID, max(revision, 0), srcPath)
+}
+
+// RemoveAttachmentAt is RemoveAttachment for exactly that revision of the
+// draft (else ErrStaleDraft, nothing removed); it returns the new revision.
+func (s *Service) RemoveAttachmentAt(ctx context.Context, draftID, attachmentID, revision int64) (int64, error) {
+	return s.removeAttachment(ctx, draftID, attachmentID, max(revision, 0))
+}

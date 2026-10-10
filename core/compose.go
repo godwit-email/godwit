@@ -153,7 +153,7 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 		if err != nil {
 			return err
 		}
-		if _, err := s.addAttachment(ctx, draftID, info.Filename, info.ContentType, data); err != nil {
+		if _, _, err := s.addAttachment(ctx, draftID, -1, info.Filename, info.ContentType, data); err != nil {
 			return err
 		}
 	}
@@ -256,34 +256,46 @@ func (s *Service) draftDir(id int64) string {
 
 // AddAttachment copies the file at srcPath into the draft.
 func (s *Service) AddAttachment(ctx context.Context, draftID int64, srcPath string) (DraftAttachment, error) {
+	a, _, err := s.addAttachmentFile(ctx, draftID, -1, srcPath)
+	return a, err
+}
+
+// addAttachmentFile is AddAttachment; a rev >= 0 adds only to that revision
+// (else ErrStaleDraft). It returns the draft's revision after it.
+func (s *Service) addAttachmentFile(ctx context.Context, draftID, rev int64, srcPath string) (DraftAttachment, int64, error) {
 	st, err := os.Stat(srcPath)
 	if err != nil {
-		return DraftAttachment{}, err
+		return DraftAttachment{}, 0, err
 	}
 	if st.Size() > attachLimit {
-		return DraftAttachment{}, ErrTooLarge
+		return DraftAttachment{}, 0, ErrTooLarge
 	}
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
-		return DraftAttachment{}, err
+		return DraftAttachment{}, 0, err
 	}
 	ct := mime.TypeByExtension(filepath.Ext(srcPath))
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
-	return s.addAttachment(ctx, draftID, filepath.Base(srcPath), ct, data)
+	return s.addAttachment(ctx, draftID, rev, filepath.Base(srcPath), ct, data)
 }
 
-func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, contentType string, data []byte) (DraftAttachment, error) {
+// addAttachment adds the file, to revision rev only if rev >= 0 (else
+// ErrStaleDraft), and returns the draft's revision after it (0 if unchanged).
+func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filename, contentType string, data []byte) (DraftAttachment, int64, error) {
 	if int64(len(data)) > attachLimit {
-		return DraftAttachment{}, ErrTooLarge
+		return DraftAttachment{}, 0, ErrTooLarge
 	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	if err := s.checkRevision(ctx, draftID, rev); err != nil {
+		return DraftAttachment{}, 0, err
+	}
 	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
 		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(draftID)})
 	if err != nil {
-		return DraftAttachment{}, err
+		return DraftAttachment{}, 0, err
 	}
 	id := rs[0].LastInsertID
 	path := filepath.Join(s.draftDir(draftID), strconv.FormatInt(id, 10))
@@ -295,9 +307,39 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 		os.Remove(path)
 		_, derr := s.db.Transaction(context.WithoutCancel(ctx), []sqlite.Statement{
 			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(draftID)})
-		return DraftAttachment{}, errors.Join(err, derr)
+		now, _ := s.draftRevision(context.WithoutCancel(ctx), draftID)
+		return DraftAttachment{}, now, errors.Join(err, derr)
 	}
-	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, nil
+	now, err := s.draftRevision(ctx, draftID)
+	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, now, err
+}
+
+// draftRevision is the draft's stored revision.
+func (s *Service) draftRevision(ctx context.Context, draftID int64) (int64, error) {
+	rows, err := s.db.Query(ctx, "SELECT revision FROM drafts WHERE id = ?", draftID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, fmt.Errorf("draft %d not found", draftID)
+	}
+	return store.Int(rows.Values[0][0]), nil
+}
+
+// checkRevision is ErrStaleDraft unless rev < 0 or the draft is at rev. The
+// caller holds editMu, so the draft stays there until it releases it.
+func (s *Service) checkRevision(ctx context.Context, draftID, rev int64) error {
+	if rev < 0 {
+		return nil
+	}
+	now, err := s.draftRevision(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	if now != rev {
+		return ErrStaleDraft
+	}
+	return nil
 }
 
 // bumpRevision marks the draft changed: an attachment change makes the
@@ -308,23 +350,33 @@ func bumpRevision(draftID int64) sqlite.Statement {
 
 // RemoveAttachment deletes the attachment from the draft and its file.
 func (s *Service) RemoveAttachment(ctx context.Context, draftID, attachmentID int64) error {
+	_, err := s.removeAttachment(ctx, draftID, attachmentID, -1)
+	return err
+}
+
+// removeAttachment is RemoveAttachment; a rev >= 0 removes only from that
+// revision (else ErrStaleDraft). It returns the draft's revision after it.
+func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, rev int64) (int64, error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	if err := s.checkRevision(ctx, draftID, rev); err != nil {
+		return 0, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT path FROM draft_attachments WHERE id = ? AND draft_id = ?", attachmentID, draftID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(rows.Values) == 0 {
-		return fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
+		return 0, fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
 		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
-		return err
+		return 0, err
 	}
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {
-		return err
+		return 0, err
 	}
-	return nil
+	return s.draftRevision(ctx, draftID)
 }
 
 func (s *Service) deleteDraft(ctx context.Context, id int64) error {

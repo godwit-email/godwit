@@ -131,3 +131,62 @@ func TestDeleteDraftIfEmptyRevision(t *testing.T) {
 	_, err = e.Svc.GetDraft(ctx, empty.ID)
 	assert.Error(t, err)
 }
+
+func TestAttachmentAtRevision(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	src := filepath.Join(t.TempDir(), "a.txt")
+	require.NoError(t, os.WriteFile(src, []byte("a"), 0o600))
+
+	_, _, err = e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision-1, src)
+	assert.ErrorIs(t, err, core.ErrStaleDraft)
+	a, rev, err := e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision, src)
+	require.NoError(t, err)
+	assert.Equal(t, d.Revision+1, rev)
+
+	_, err = e.Svc.RemoveAttachmentAt(ctx, d.ID, a.ID, d.Revision)
+	assert.ErrorIs(t, err, core.ErrStaleDraft)
+	rev, err = e.Svc.RemoveAttachmentAt(ctx, d.ID, a.ID, rev)
+	require.NoError(t, err)
+	assert.Equal(t, d.Revision+2, rev)
+	stored, err := e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err)
+	assert.Empty(t, stored.Attachments)
+	assert.Equal(t, rev, stored.Revision)
+}
+
+func TestDeleteDraftIfEmptyForwardAndOrphanReply(t *testing.T) {
+	e := coretest.New(t)
+	acc := e.AddAccount(t, "alice@example.com")
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "plan", "the plan",
+		coretest.Attachment("plan.txt", "text/plain", []byte("p"))))
+	page, err := e.Svc.ListMessages(ctx, core.View{Unified: "inbox"}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	src := page.Items[0].ID
+
+	withFiles, err := e.Svc.NewDraft(ctx, acc.ID, "forward", src)
+	require.NoError(t, err)
+	require.Len(t, withFiles.Attachments, 1)
+	deleted, err := e.Svc.DeleteDraftIfEmpty(ctx, withFiles.ID, withFiles.Revision)
+	require.NoError(t, err)
+	assert.False(t, deleted, "a forward keeps the attachments it carries")
+
+	bare, err := e.Svc.NewDraft(ctx, acc.ID, "forward", src)
+	require.NoError(t, err)
+	rev, err := e.Svc.RemoveAttachmentAt(ctx, bare.ID, bare.Attachments[0].ID, bare.Revision)
+	require.NoError(t, err)
+	deleted, err = e.Svc.DeleteDraftIfEmpty(ctx, bare.ID, rev)
+	require.NoError(t, err)
+	assert.True(t, deleted, "a forward without its attachments holds nothing")
+
+	// A reply whose source was deleted: the row's source_message_id is set
+	// NULL (ON DELETE SET NULL), so it is a reply without a source.
+	orphan, err := e.Svc.SaveDraft(ctx, core.Draft{AccountID: acc.ID, Mode: "reply", HTML: "<p></p>"})
+	require.NoError(t, err)
+	deleted, err = e.Svc.DeleteDraftIfEmpty(ctx, orphan.ID, orphan.Revision)
+	require.NoError(t, err)
+	assert.False(t, deleted, "its fresh headers are unknown: kept")
+}

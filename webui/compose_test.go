@@ -581,3 +581,55 @@ func TestComposeSaveAfterDeleteRefused(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, f.gone(t, d.ID))
 }
+
+// A write from elsewhere while the dialog is open: nothing is added, and the
+// page hears Conflict, not the other writer's revision as its own.
+func TestComposeAttachExternalEditConflicts(t *testing.T) {
+	f := newFixture(t)
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	src := filepath.Join(t.TempDir(), "a.txt")
+	require.NoError(t, os.WriteFile(src, []byte("a"), 0o600))
+	for _, picked := range [][]string{{src}, nil} {
+		cur := f.stored(t, d.ID)
+		f.pick = func() ([]string, error) {
+			cur.Subject = "elsewhere"
+			_, err := f.e.Svc.SaveDraft(t.Context(), cur)
+			require.NoError(t, err)
+			return picked, nil
+		}
+		res, err := f.page.AddAttachments(f.ctx(1), cur.Revision)
+		require.NoError(t, err)
+		assert.True(t, res.Conflict, "%v", picked)
+		assert.Empty(t, f.stored(t, d.ID).Attachments)
+	}
+}
+
+// Closing while the dialog is open: Release does not wait for the dialog,
+// and the files picked afterwards are dropped.
+func TestComposeReleaseDuringDialog(t *testing.T) {
+	f := newFixture(t)
+	empty := f.draft(t, "new", 0)
+	kept := f.draft(t, "new", 0)
+	kept.Subject = "s"
+	kept, err := f.e.Svc.SaveDraft(t.Context(), kept)
+	require.NoError(t, err)
+	src := filepath.Join(t.TempDir(), "a.txt")
+	require.NoError(t, os.WriteFile(src, []byte("a"), 0o600))
+	for win, d := range map[int]core.Draft{1: empty, 2: kept} {
+		f.c.Attach(win, d.ID)
+		inDialog, picked := make(chan struct{}), make(chan struct{})
+		f.pick = func() ([]string, error) { close(inDialog); <-picked; return []string{src}, nil }
+		done := make(chan error)
+		go func() {
+			_, err := f.page.AddAttachments(f.ctx(win), d.Revision)
+			done <- err
+		}()
+		<-inDialog
+		f.c.Release(win) // returns while the dialog is still open
+		close(picked)
+		assert.ErrorIs(t, <-done, ErrNoDraft)
+	}
+	assert.True(t, f.gone(t, empty.ID))
+	assert.Empty(t, f.stored(t, kept.ID).Attachments)
+}
