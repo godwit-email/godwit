@@ -213,7 +213,7 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: true,
 			QuickReplies: false, Summary: false, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true}
+			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true, SidebarWidth: 320}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {

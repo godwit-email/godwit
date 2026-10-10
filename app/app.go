@@ -160,6 +160,8 @@ type App struct {
 	dev            bool
 	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
 	sidebarHidden  bool
+	sidebarW       float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
+	sidebarSave    func()  // stops the pending save of a dragged width
 
 	dirty             []events.Event // events since the last refresh
 	refreshStop       func()         // the pending throttled refresh; nil when none

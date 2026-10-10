@@ -43,9 +43,11 @@ type TextScale struct{ Xs, Sm, Base, Lg, Xl, X2l, Title, Brand, Heading, Display
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline          = 1    // dividers
-	RailWidth         = 56   // the icon rail
-	SidebarWidth      = 248  // the mail and settings sidebars
+	Hairline          = 1   // dividers
+	RailWidth         = 56  // the icon rail
+	SidebarWidth      = 248 // the page sidebars, until the user drags them
+	SidebarMinWidth   = 240 // the narrowest and widest a drag makes them
+	SidebarMaxWidth   = 480
 	ListWidth         = 360  // the mail list column
 	TopBarHeight      = 44   // the top bar's least height
 	SheetWidth        = 560  // dialogs and the add-account sheet

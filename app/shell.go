@@ -1,7 +1,9 @@
 package app
 
 import (
+	"cmp"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -199,7 +201,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+th.Space(4), 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
-			lead.MinWidth(max(0, theme.RailWidth+theme.SidebarWidth-padL))
+			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
 		}
 		lead.Children(func() {
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
@@ -298,11 +300,46 @@ func (a *App) panel(c *ui.Context) {
 	p := a.page()
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
 		Border(theme.Hairline, t.Border).Children(func() {
-		if !a.sidebarHidden {
-			ui.Column(c).Width(theme.SidebarWidth).Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).
-				BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
+		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
+		if a.sidebarHidden {
+			content()
+			return
 		}
-		ui.Column(c).Grow(1).Children(func() { p.Content(c) })
+		a.sidebarW = a.sidebarWidth()
+		split := ui.Split(c, &a.sidebarW, func() {
+			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
+		}, content).Grow(1)
+		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
+		if split.Changed() {
+			a.saveSidebarWidth()
+		}
+	})
+}
+
+// sidebarWidth is the page sidebars' width: as dragged, else as saved, else
+// the default. Every page's sidebar takes it, so a drag on one moves them all.
+func (a *App) sidebarWidth() float32 {
+	if a.sidebarW != 0 {
+		return a.sidebarW
+	}
+	return float32(cmp.Or(a.settings.SidebarWidth, theme.SidebarWidth))
+}
+
+// sidebarSaveDelay is how long a drag rests before its width is saved.
+const sidebarSaveDelay = 400 * time.Millisecond
+
+// saveSidebarWidth saves the dragged width once the drag rests, not every frame.
+func (a *App) saveSidebarWidth() {
+	if a.sidebarSave != nil {
+		a.sidebarSave()
+	}
+	a.sidebarSave = a.after(sidebarSaveDelay, func() {
+		a.sidebarSave = nil
+		if w := int(math.Round(float64(a.sidebarW))); w != a.settings.SidebarWidth {
+			st := a.settings
+			st.SidebarWidth = w
+			a.changeSettings(st)
+		}
 	})
 }
 
