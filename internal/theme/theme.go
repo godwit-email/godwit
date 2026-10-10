@@ -13,7 +13,10 @@ import (
 	p "github.com/godwit-email/godwit/internal/palette"
 )
 
-// Tokens are Godwit's semantic colors and sizes. Attention is the amber of
+// Tokens are Godwit's semantic colors and sizes, shadcn's neutral ones:
+// Border outlines panels and cards, Input the controls (a step stronger in
+// the dark), Ring the keyboard focus (at half opacity) and a hovered divider.
+// Attention is the amber of
 // status dots that ask for a look (amber-500); Unread, the blue of the dot
 // beside unread mail (blue-500).
 type Tokens struct {
@@ -23,7 +26,7 @@ type Tokens struct {
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
-	Attention, Unread                                               ui.Color
+	Attention, Unread, Input, Ring                                  ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -128,7 +131,8 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(),
+		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral200.Color(), Hover: p.Neutral100.Color(),
 	})
 }
@@ -139,7 +143,8 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.Neutral800.Color(), Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(),
+		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), RailSelected: p.Neutral700.Color(), Hover: p.Neutral800.Color(),
 	})
 }
@@ -192,7 +197,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Accent, th.AccentText = t.Primary, t.PrimaryText
 	th.AccentHover, th.AccentPressed = t.Primary.Mix(t.Background, 0.1), t.Primary.Mix(t.Background, 0.2)
 	th.Danger, th.Warning, th.Success = t.Danger, t.Attention, t.Success
-	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Muted.Alpha(0.6), t.Muted.Alpha(0.5)
+	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Ring.Alpha(0.5), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
 	th.Radius, th.Spacing = t.Radius.Md, 4*t.Scale // Space(n) is n Tailwind units
 	th.Font, th.FontSize = "Geist", t.Text.Base

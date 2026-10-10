@@ -301,7 +301,9 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   | `Window` | `neutral-100` 与 `neutral-200` 的 oklch 中点 | 顶栏和图标栏底色 |
   | `Sidebar` | `neutral-50` | 侧栏 |
   | `Background` | `white` | 内容区 |
-  | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、分隔线 |
+  | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、面板和卡片的描边（深色：白 10%） |
+  | `Input` | `neutral-200`（深色：白 15%） | 输入框、下拉框、复选框、开关轨道、Outline 按钮的描边 |
+  | `Ring` | `neutral-400`（深色：`neutral-500`） | 键盘焦点环（50% 透明度）、悬停中的分隔线 |
   | `Primary` | `neutral-900` | 主按钮、开关打开、选中强调 |
   | 选中项 | 侧栏 `neutral-100` 与 `neutral-200` 的 oklch 中点，图标栏 `neutral-200` | |
   | `Unread` | `blue-500` | 邮件列表未读圆点 |

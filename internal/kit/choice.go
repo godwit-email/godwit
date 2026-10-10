@@ -9,7 +9,7 @@ import (
 // switchTrack draws a switch: a 32×18 track and its thumb.
 func switchTrack(c *ui.Context, on bool) ui.Element {
 	t := theme.Of(c)
-	tr := ui.Row(c).Size(theme.SwitchWidth, theme.SwitchHeight).Shrink(0).Padding(theme.SwitchInset).Radius(t.Radius.Full).Background(t.Border).Justify(ui.Start).Transition(colors(theme.MotionFast))
+	tr := ui.Row(c).Size(theme.SwitchWidth, theme.SwitchHeight).Shrink(0).Padding(theme.SwitchInset).Radius(t.Radius.Full).Background(t.Input).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	thumb := t.Background
 	switch {
 	case on:
@@ -46,7 +46,7 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Xs).Border(theme.Hairline, t.Border).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Xs).Border(theme.Hairline, t.Input).Background(t.Background).Center()
 		if *on {
 			box.Background(t.Primary).Border(theme.Hairline, t.Primary).TextColor(t.PrimaryText).Children(func() {
 				ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
@@ -60,7 +60,7 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
-		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Hairline, t.Border).Background(t.Background).Center()
+		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Hairline, t.Input).Background(t.Background).Center()
 		if *sel == v {
 			dot.Border(theme.Hairline, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
 		}
@@ -84,7 +84,7 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})

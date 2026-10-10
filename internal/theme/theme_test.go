@@ -27,6 +27,7 @@ func TestThemeTokens(t *testing.T) {
 		"WarningText": {l.WarningText, p.Amber800}, "Danger": {l.Danger, p.Red600},
 		"DangerBg": {l.DangerBg, p.Red50}, "InsBg": {l.InsBg, p.Green100}, "InsText": {l.InsText, p.Green800},
 		"DelBg": {l.DelBg, p.Red50}, "DelText": {l.DelText, p.Red700}, "Unread": {l.Unread, p.Blue500},
+		"Input": {l.Input, p.Neutral200}, "Ring": {l.Ring, p.Neutral400},
 	} {
 		if c.got != c.want.Color() {
 			t.Errorf("Light().%s = %v, want %v", name, c.got, c.want.Color())
@@ -34,7 +35,8 @@ func TestThemeTokens(t *testing.T) {
 	}
 	d := Dark()
 	if !d.Dark || d.Background != p.Neutral950.Color() || d.Window != p.Mid(p.Neutral900, p.Neutral800).Color() ||
-		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.Neutral700.Color() {
+		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.Neutral700.Color() ||
+		d.Border != p.White.Color().Alpha(0.1) || d.Input != p.White.Color().Alpha(0.15) || d.Ring != p.Neutral500.Color() {
 		t.Errorf("Dark() = %+v", d)
 	}
 

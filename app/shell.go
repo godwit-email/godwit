@@ -306,7 +306,7 @@ func (a *App) panel(c *ui.Context) {
 			return
 		}
 		a.sidebarW = a.sidebarWidth()
-		split := ui.Split(c, &a.sidebarW, func() {
+		split := kit.Split(c, &a.sidebarW, func() {
 			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
 		}, content).Grow(1)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)

@@ -85,7 +85,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.SidebarSelected)
 		}
 	case Outline:
-		b.Background(t.Background).Border(theme.Hairline, t.Border).TextColor(t.Foreground)
+		b.Background(t.Background).Border(theme.Hairline, t.Input).TextColor(t.Foreground)
 		if hover {
 			b.Background(t.Hover)
 		}

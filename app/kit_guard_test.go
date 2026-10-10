@@ -12,7 +12,7 @@ import (
 )
 
 // rawPrimitives are the mygo Base controls the app builds only through internal/kit.
-var rawPrimitives = map[string]bool{"ButtonBase": true, "TextInputBase": true, "TextAreaBase": true, "DialogBase": true, "PopoverBase": true, "TooltipBase": true}
+var rawPrimitives = map[string]bool{"ButtonBase": true, "TextInputBase": true, "TextAreaBase": true, "DialogBase": true, "PopoverBase": true, "TooltipBase": true, "Split": true}
 
 // rawCalls returns, for the Go source src, each call to a raw mygo primitive
 // or to a Tooltip method not of the kit package, as "position: call".

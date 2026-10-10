@@ -656,3 +656,36 @@ func TestKitToastTinted(t *testing.T) {
 		}
 	}
 }
+
+// TestKitSplitQuietDivider: a hovered divider is the ring's gray, and the
+// panes keep the frame's theme (their default button is the primary color).
+func TestKitSplitQuietDivider(t *testing.T) {
+	size := float32(160)
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		Split(c, &size, func() {
+			Button(c, "Left", ButtonOpts{})
+		}, func() { ui.Text(c, "right") }).Fill()
+	}), 400, 200)
+	tt.Frame()
+	d, ok := tt.Find("Divider")
+	if !ok {
+		t.Fatal("no divider")
+	}
+	x, y := d.X+d.W/2, d.Y+d.H/2
+	tt.Move(x, y)
+	for i := 0; i < 20; i++ {
+		time.Sleep(10 * time.Millisecond)
+		tt.Frame()
+	}
+	px := tt.Image().RGBAAt(int(x), int(y))
+	if want := tk.Ring; px.R != want.R || px.G != want.G || px.B != want.B {
+		t.Errorf("hovered divider %v, want the ring's %v", px, want)
+	}
+	b, _ := tt.Find("Left")
+	px = tt.Image().RGBAAt(int(b.X)+2, int(b.Y+b.H/2))
+	if want := tk.Primary; px.R != want.R || px.G != want.G || px.B != want.B {
+		t.Errorf("left pane's button %v, want the primary %v", px, want)
+	}
+}
