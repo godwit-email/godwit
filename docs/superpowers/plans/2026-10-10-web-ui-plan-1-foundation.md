@@ -4,9 +4,9 @@
 
 **Goal:** A `web/` frontend that builds into the binary, a native UI on system fonts, and a compose window — one mygo web window per draft — that loads a draft and saves a plain-text body, reachable from a dev-only entry.
 
-**Architecture:** `web/` is a Vite multi-entry React project built with Bun; its output lands in `web/dist/app`, embedded by the Go package `web/dist` and served with `mygo.SetFrontend`. A new Go package `webui` owns the compose windows (draft ↔ window registry), the bound `Compose` service (every method scoped to the calling window's draft via `mygo.CallerWindow`) and the theme variables generated from `internal/theme`. `cmd/godwit` binds the service before `App.Run` and wires it to the `app` package through the existing `Platform` interface.
+**Architecture:** `web/` is a Vite multi-entry React project built with Bun. The mygo CLI (pinned as a Go tool, `go tool mygo …`, configured by a root `mygo.json`) runs the Vite dev server in development, builds `web/dist` and embeds it in builds, and generates the TypeScript client. Native icons embed straight from `web/node_modules/remixicon`, so `bun install` precedes every Go build and test. A new Go package `webui` owns the compose windows (draft ↔ window registry), the bound `Compose` service (every method scoped to the calling window's draft via `mygo.CallerWindow`) and the theme variables generated from `internal/theme`. `cmd/godwit` binds the service before `App.Run` and wires it to the `app` package through the existing `Platform` interface.
 
-**Tech Stack:** Go 1.27 (mise), mygo v0.3.7 (unchanged; this plan needs no web view embedding), Bun 1.4, Vite, React 19, TypeScript, Tailwind CSS v4, shadcn/ui (Base UI flavour, generated), Vitest + Testing Library.
+**Tech Stack:** Go 1.27 (mise), mygo v0.3.7 and its CLI as a Go tool (no web view embedding needed here), Bun 1.4, Vite, React 19, TypeScript, Tailwind CSS v4, shadcn/ui (Base UI flavour, generated), Vitest + Testing Library.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-web-ui-design.md` (§A1–A7, §B1–B2, §F row 1).
 
@@ -14,8 +14,8 @@
 
 - Generated shadcn components are never edited by hand; they are produced by `web/scripts/components.ts` and CI regenerates and diffs them (spec §A2, §A6).
 - Fonts: no font is defined. Web pages use `system-ui` (mono `ui-monospace`); the native UI uses the system font (`Theme.Font = ""`) and `"monospace"` for code (spec §A4).
-- `web/dist/app` is not committed except a placeholder; `go build` must succeed with the frontend unbuilt, and the compose window then shows 「前端未构建」 (spec §A6).
-- The generated client `web/src/mygo.ts` is committed; CI checks it matches the Go code (spec §A6).
+- Builds go through the mygo CLI (`go tool mygo dev` / `build` / `generate`, pinned by a `tool` directive in `go.mod`); `bun install` in `web/` precedes any `go build`, `go test` or `go vet` — locally through mise tasks, in CI as the first step (spec §A6).
+- The generated client `web/src/mygo.ts` is committed; CI checks it matches the Go code (spec §A6). `web/dist` is not committed.
 - Every bound method acts only on the draft bound to `mygo.CallerWindow(ctx)`; the page never sends a draft ID. Only `ComposePage` (`Load`, `Save`, `Closed`) is bound; window management lives on unbound types (spec §B2).
 - A compose window never closes with unsaved or unconfirmed input: no timeout closes it. A failed or conflicting final save asks 「有修改没有保存」 (关闭 / 返回), as the native app does; ⌘Q goes through the same flush (spec §B1).
 - Pages never navigate away and never open windows: `OnWillNavigate` denies anything but the page's own entry, `SetWindowOpenHandler` denies all, for built, dev-server and fallback pages alike (spec §A5 rule 3).
@@ -31,7 +31,7 @@
 2. **Opening the same draft twice** (menu twice, or a second path) → the existing window comes to the front; no second window, no second session (Task 5 `TestOpenFocusesExistingWindow`).
 3. **The draft changed elsewhere** (old compose page, Wit) after the window loaded → save reports a conflict and does not overwrite; the page says so (Task 4 `TestSaveStaleRevisionConflicts`, Task 6 `shows conflict`).
 4. **A page calls `Compose` from a window with no draft, or after its window closed** → refused with `ErrNoDraft`; no other draft is touched (Task 4 `TestCallerWithoutDraftRefused`).
-5. **Frontend not built** (fresh clone, `go build` only) → the window shows 「前端未构建，运行 mise run web:build」 instead of a blank page; under `mise run dev` it loads the Vite server instead (Task 5 `TestPageSource`).
+5. **Two compose windows of different drafts save at the same time** → each saves only its own draft (Task 4 `TestComposeTwoWindowsIsolated`).
 
 ---
 
@@ -50,14 +50,15 @@
 | `web/src/shared/styles.css` | Tailwind entry, shadcn variable wiring, system fonts |
 | `web/src/compose/` | the compose page: `main.tsx`, `ComposePage.tsx`, `saver.ts` |
 | `web/src/mygo.ts` | generated client (committed) |
-| `web/dist/dist.go`, `web/dist/app/.gitkeep` | Go package embedding the build output |
+| `mygo.json` | mygo CLI config: main package, dev server, build command, `frontendDist`, `bindings` |
+| `web/icons.go` | Go package `web`: embeds the used Remix icons from `node_modules` (Task 7) |
 | `webui/theme.go` | `ThemeVars` |
 | `webui/compose.go` | `Compose` (sessions, unbound) and `ComposePage` (the bound facade) |
 | `webui/windows.go` | compose window registry: open / focus / close / flush |
 | `cmd/godwit/gui.go`, `cmd/godwit/platform.go` | bind, set frontend, dev menu item, `Platform` methods |
 | `app/app.go`, `app/settings_general.go`, `app/mail_sidebar.go` | `Platform.OpenCompose`, `Platform.SettingsChanged`, `App.ComposeInWindow` |
 | `mise.toml`, `.github/workflows/ci.yml`, `.gitignore`, `web/biome.json` | tools, tasks, lint, CI |
-| `web/scripts/icons.ts`, `internal/icons/remix.json` | native icons generated from the `remixicon` npm package (Task 7) |
+| `internal/icons/` | reads its icons from package `web`; `svg/` and its licence copy are deleted (Task 7) |
 
 ---
 
@@ -113,49 +114,47 @@ Expected: PASS.
 
 ---
 
-### Task 2: The frontend project
+### Task 2: The frontend project and the mygo CLI
 
 **Files:**
-- Create: `web/package.json`, `web/bun.lock`, `web/tsconfig.json`, `web/tsconfig.node.json`, `web/vite.config.ts`, `web/vitest.config.ts`, `web/components.json`, `web/compose.html`, `web/scripts/components.ts`, `web/src/shared/styles.css`, `web/src/compose/main.tsx`, `web/src/compose/ComposePage.tsx` (placeholder), `web/src/vite-env.d.ts`
-- Create: `web/dist/dist.go`, `web/dist/app/.gitkeep`
-- Modify: `mise.toml`, `.gitignore`, `.github/workflows/ci.yml`
-- Test: `web/src/compose/ComposePage.test.tsx`, `web/dist/dist_test.go`
+- Create: `mygo.json`, `web/package.json`, `web/bun.lock`, `web/tsconfig.json`, `web/tsconfig.node.json`, `web/vite.config.ts`, `web/vitest.config.ts`, `web/components.json`, `web/biome.json`, `web/compose.html`, `web/scripts/components.ts`, `web/src/shared/styles.css`, `web/src/compose/main.tsx`, `web/src/compose/ComposePage.tsx` (placeholder), `web/src/vite-env.d.ts`
+- Modify: `go.mod` (`tool github.com/egoist/mygo/cmd/mygo`), `mise.toml`, `.gitignore`, `.github/workflows/ci.yml`
+- Test: `web/src/compose/ComposePage.test.tsx`
 
 **Interfaces:**
-- Produces: `dist.FS() (fs.FS, bool)` in package `github.com/godwit-email/godwit/web/dist` — the built files rooted at the output directory, and whether `compose.html` exists in it.
-- Produces: mise tasks `web:install`, `web:build`, `web:test`, `web:check`, `web:components`; generated components importable as `@/components/ui/<name>`.
+- Produces: mise tasks `web:install`, `dev`, `build`, `web:test`, `web:lint`, `web:components`, `web:check`; generated components importable as `@/components/ui/<name>`; `web/dist` (Vite's output, `mygo.json`'s `frontendDist`).
 
-- [ ] **Step 1: Write the failing Go test** `web/dist/dist_test.go`:
-```go
-func TestFSWithoutBuild(t *testing.T) {
-	fsys, built := FS()
-	if fsys == nil {
-		t.Fatal("no FS")
-	}
-	if _, err := fs.Stat(fsys, "compose.html"); built != (err == nil) {
-		t.Errorf("built = %v but compose.html stat err = %v", built, err)
-	}
+- [ ] **Step 1: The mygo CLI and its config**
+
+`go get -tool github.com/egoist/mygo/cmd/mygo@v0.3.7` (adds the `tool` directive at the version Godwit already uses). `mygo.json`:
+```json
+{
+  "name": "Godwit",
+  "main": "./cmd/godwit",
+  "devUrl": "http://localhost:5173",
+  "devCommand": "cd web && bun run dev",
+  "buildCommand": "cd web && bun install --frozen-lockfile && bun run build",
+  "frontendDist": "web/dist",
+  "bindings": "web/src/mygo.ts"
 }
 ```
-Run `CGO_ENABLED=0 go test ./web/dist` → FAIL (package missing).
+(Check the CLI runs `devCommand`/`buildCommand` through a shell on all three platforms — if not on Windows, use a `bun --cwd web run …` form instead.) `go tool mygo --help` runs.
 
-- [ ] **Step 2: Implement `web/dist/dist.go`**
+- [ ] **Step 2: Scaffold the web project**
 
-`//go:embed all:app` into `var files embed.FS`; `FS()` returns `fs.Sub(files, "app")` and whether `compose.html` exists. Add `web/dist/app/.gitkeep`; `.gitignore` gets `web/dist/app/*`, `!web/dist/app/.gitkeep`, `web/node_modules/`. Run the test → PASS.
-
-- [ ] **Step 3: Scaffold the web project**
-
-- `package.json`: `"type": "module"`, scripts `dev` (vite), `build` (`tsc -b && vite build`), `test` (`vitest run`), `typecheck` (`tsc -b --noEmit`), `components` (`bun scripts/components.ts`). Dependencies: `react`, `react-dom`, `@tanstack/react-query`; dev: `vite`, `@vitejs/plugin-react`, `typescript`, `tailwindcss`, `@tailwindcss/vite`, `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/user-event`, `@types/react`, `@types/react-dom`. Exact versions.
-- `vite.config.ts`: `root` = `web/`, `build.outDir` = `dist/app`, `emptyOutDir: true`, `rollupOptions.input = { compose: "compose.html" }`, alias `@` → `src`, plugins react + tailwind. A small plugin adds the CSP meta (Global Constraints) to built HTML only (`apply: "build"`, `transformIndexHtml`), so the dev server's HMR keeps working.
+- `package.json`: `"type": "module"`, scripts `dev` (vite), `build` (`tsc -b && vite build`), `test` (`vitest run`), `typecheck` (`tsc -b --noEmit`), `lint` (`biome check src scripts`), `components` (`bun scripts/components.ts`). Dependencies: `react`, `react-dom`, `@tanstack/react-query`, `mygo-runtime` (the version matching mygo v0.3.7), `remixicon` `4.8.0`; dev: `vite`, `@vitejs/plugin-react`, `typescript`, `tailwindcss`, `@tailwindcss/vite`, `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/user-event`, `@types/react`, `@types/react-dom`, `@biomejs/biome`. Exact versions.
+- `vite.config.ts`: root `web/`, `build.outDir` `dist`, `emptyOutDir: true`, `rollupOptions.input = { compose: "compose.html" }`, alias `@` → `src`, plugins react + tailwind; a small plugin adds the CSP meta (Global Constraints) to built HTML only (`apply: "build"`), so HMR keeps working in dev.
 - `compose.html`: `<div id="root">`, `<script type="module" src="/src/compose/main.tsx">`, `lang="zh-CN"`.
-- `styles.css`: `@import "tailwindcss";` plus shadcn's variable wiring as `shadcn init` writes it, `body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif }`, code `ui-monospace`.
+- `styles.css`: `@import "tailwindcss";` plus shadcn's variable wiring as `shadcn init` writes it; `body { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif }`, code `ui-monospace`.
 - `components.json`: shadcn config for the Base UI flavour, aliases `@/components/ui`, `@/lib/utils`.
+- `biome.json`: recommended rules; ignores `src/components/ui`, `src/mygo.ts`, `dist`.
+- `.gitignore`: `web/node_modules/`, `web/dist/`.
 
-- [ ] **Step 4: The component generator** `web/scripts/components.ts`
+- [ ] **Step 3: The component generator** `web/scripts/components.ts`
 
-Runs the shadcn CLI (exact version pinned in the script) non-interactively for the list `["button", "input", "textarea", "label", "alert", "sonner"]` with overwrite, so a rerun reproduces `src/components/ui/` byte for byte. Run `mise run web:components`; commit what it writes, untouched.
+Runs the shadcn CLI (exact version pinned in the script) non-interactively for `["button", "input", "textarea", "label", "alert"]` with overwrite, so a rerun reproduces `src/components/ui/` byte for byte. Run it; commit what it writes, untouched.
 
-- [ ] **Step 5: Failing then passing smoke test** `ComposePage.test.tsx`
+- [ ] **Step 4: Failing then passing smoke test** `ComposePage.test.tsx`
 
 ```tsx
 test("renders the compose page shell", () => {
@@ -165,26 +164,24 @@ test("renders the compose page shell", () => {
 ```
 Placeholder `ComposePage` returns `<main aria-label="撰写" />`. Run `mise run web:test` → PASS.
 
-- [ ] **Step 6: mise and CI**
+- [ ] **Step 5: mise and CI**
 
-`mise.toml`: `[tools] bun = "1.4.2"`; tasks, each with `dir = "web"` and `depends = ["web:install"]` except `web:install` itself:
+`mise.toml`: `[tools] bun = "1.4.2"`; tasks (`dir = "web"` for the `web:*` ones; all but `web:install` depend on it):
 - `web:install` = `bun install --frozen-lockfile`
-- `web:build` = `bun run build`
-- `web:test` = `bun run test`
-- `web:lint` = `bunx biome check src scripts` (Biome, pinned, config `web/biome.json` ignoring `src/components/ui` and `src/mygo.ts`)
-- `web:components` = `bun run components`
-- `web:check` = `bun run typecheck && bunx biome check src scripts && bun run test && bun run components && git diff --exit-code -- src/components/ui`
-- `dev` (repo root): runs `bun run dev` (Vite on `http://localhost:5173`) in the background and `MYGO_DEV=1 MYGO_DEV_URL=http://localhost:5173 go run ./cmd/godwit`
+- `dev` = `go tool mygo dev` (repo root)
+- `build` = `go tool mygo build -skip-dmg -skip-notarize` (repo root)
+- `web:test` = `bun run test`; `web:lint` = `bun run lint`; `web:components` = `bun run components`
+- `web:check` = `bun run typecheck && bun run lint && bun run test && bun run components && git diff --exit-code -- src/components/ui`
 
-CI: the `test` job runs `mise run web:build` after `mise-action`, before the Go steps; the gofmt step becomes `test -z "$(gofmt -l $(git ls-files '*.go'))"` so it never walks `web/node_modules`. New job `web` (ubuntu-latest, checkout + `mise-action`): `mise run web:check`. The generated-client diff (Task 5) runs as a step of the `test` job on `macos-latest` only.
+CI `test` job (three OS): after `mise-action`, `mise run web:install` first; gofmt becomes `test -z "$(gofmt -l $(git ls-files '*.go'))"`; the Go steps follow unchanged; on `macos-latest` also `mise run build`. New job `web` (ubuntu-latest): `mise run web:check`.
 
-- [ ] **Step 7: Verify**
+- [ ] **Step 6: Verify**
 
-Run: `mise run web:build && CGO_ENABLED=0 go test ./web/dist -v` → `TestFSWithoutBuild` passes with `built = true`; `rm -rf web/dist/app/* && git checkout web/dist/app/.gitkeep && CGO_ENABLED=0 go build ./...` → builds.
+`mise run web:install && CGO_ENABLED=0 go build ./... && go vet ./...` → pass; `mise run build` → a build in `dist/` (mygo's `out`; add `dist/` to `.gitignore` if the CLI writes there).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
-`feat(web): the frontend project — Vite multi-entry, Bun, generated shadcn (Base UI), embedded build`
+`feat(web): the frontend project, built and served by the mygo CLI`
 
 ---
 
@@ -325,6 +322,7 @@ func bodyText(editable string) string // inverse for bodyHTML's output exactly; 
 - `TestComposeZeroRevisionRefused`: `Save{Revision: 0}` → `ErrNoRevision`, nothing stored.
 - `TestComposeCallerWithoutDraftRefused` (Review Focus 4): from window 2 (not attached) `Load`, `Save`, `Closed` → `ErrNoDraft`; after `Detach(1)`, window 1 gets `ErrNoDraft` too.
 - `TestComposeNotReady`: before `SetService`, `Load` → `ErrNotReady`.
+- `TestComposeTwoWindowsIsolated` (Review Focus 5): two drafts attached to windows 1 and 2; concurrent `Save`s (goroutines) with different bodies → each draft holds its own body.
 - `TestComposeBoundSurface`: the exported methods of `*ComposePage` are exactly `Closed`, `Load`, `Save` (reflect), so binding it exposes nothing else.
 
 - [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui -run 'TestCompose|TestBody'` → FAIL.
@@ -343,12 +341,12 @@ func bodyText(editable string) string // inverse for bodyHTML's output exactly; 
 
 **Files:**
 - Create: `webui/windows.go`
-- Modify: `cmd/godwit/gui.go` (bind, `SetFrontend`, dev menu item, quit hook), `cmd/godwit/platform.go` (`OpenCompose`, `SettingsChanged`, the mygo window adapter), `app/app.go` (`Platform` gains two methods), `app/settings_general.go` (`settingsEffects` calls `SettingsChanged`), `app/mail_sidebar.go` (`ComposeInWindow`), the fake platforms in `app/*_test.go`
+- Modify: `cmd/godwit/gui.go` (bind, dev menu item, quit hook), `cmd/godwit/platform.go` (`OpenCompose`, `SettingsChanged`, the mygo window adapter), `app/app.go` (`Platform` gains two methods), `app/settings_general.go` (`settingsEffects` calls `SettingsChanged`), `app/mail_sidebar.go` (`ComposeInWindow`), the fake platforms in `app/*_test.go`
 - Create: `web/src/mygo.ts` (generated)
 - Test: `webui/windows_test.go`, `cmd/godwit/compose_window_test.go`, `app/compose_window_test.go`
 
 **Interfaces:**
-- Consumes: `Compose.Attach/Detach/OnClosed` (Task 4), `dist.FS` (Task 2), `ThemeOf` (Task 3).
+- Consumes: `Compose.Attach/Detach/OnClosed` (Task 4), `ThemeOf` (Task 3).
 - Produces:
 ```go
 // Windows opens one compose window per draft and lets none close or quit
@@ -370,8 +368,8 @@ func (w *Windows) CloseAll(done func(ok bool)) // for quit: flush every window a
 ```
 No timeout destroys a window. A page that never answers keeps its window open; the user can still choose 关闭 when `ask` runs after 5 s without an answer.
 
-mygo adapter (`cmd/godwit`): `mygo.NewWindow(WindowOptions{URL: <pageSource>, Width: 860, Height: 720, MinWidth: 640, MinHeight: 480, StateKey: "compose", Title: "新邮件"})`; `OnClose` → `PreventDefault` + `RequestClose`; `OnClosed` → `Closed`; `OnWillNavigate` denies every URL but the page's own entry; `SetWindowOpenHandler` denies all.
-`pageSource(devURL string, built bool) (url, html string)`: dev URL set → `/compose.html` (mygo resolves it against `MYGO_DEV_URL`); else built → `/compose.html`; else `LoadHTML(missingHTML, "about:blank")` with 「前端未构建，运行 mise run web:build」.
+mygo adapter (`cmd/godwit`): `mygo.NewWindow(WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480, StateKey: "compose", Title: "新邮件"})`; `OnClose` → `PreventDefault` + `RequestClose`; `OnClosed` → `Closed`; `OnWillNavigate` denies every URL but the page's own entry; `SetWindowOpenHandler` denies all.
+(mygo resolves `/compose.html` against the dev server under `go tool mygo dev`, else the embedded `web/dist`.)
 Quit: `mygo.App.OnBeforeQuit` — when `Windows.Count() > 0`, prevent, `CloseAll`, and quit again only if `ok`; this runs before the native app's own close flush.
 Events (package `webui`): `var Closing = mygo.NewEvent[struct{}]("closing")`, `var ThemeChanged = mygo.NewEvent[Theme]("theme")`.
 `app.Platform` gains `OpenCompose(draftID int64)` and `SettingsChanged(st core.Settings)`; `(*App).ComposeInWindow()` makes a draft as `mailPage.compose` does and calls `OpenCompose`.
@@ -383,17 +381,16 @@ Events (package `webui`): `var Closing = mygo.NewEvent[struct{}]("closing")`, `v
   - `TestWindowsSlowPageAsksNotCloses`: no answer for 5 s (injected clock) → `ask` called, window not destroyed unless `ask` is true.
   - `TestWindowsClosedDetaches`: after `Closed`, the page's `Load` → `ErrNoDraft`; `Open` of the same draft makes a new window.
   - `TestWindowsCloseAllForQuit`: two windows, one saves, one fails and the user keeps it → `done(false)`, one window left; both save → `done(true)`.
-  - `cmd/godwit` `TestPageSource` (Review Focus 5): dev URL set and unbuilt → compose URL; unset and built → compose URL; unset and unbuilt → HTML with 「前端未构建，运行 mise run web:build」 and base `about:blank`.
   - `cmd/godwit` `TestComposeWindowNavigation`: the adapter's navigation predicate allows the entry URL and denies `https://example.com/`, `file:///etc/passwd` and `mygo://localhost/other.html`.
   - `app` `TestComposeInWindowOpensWindow`, `TestSettingsChangedReachesPlatform`: the fake platform records `OpenCompose(newDraftID)` and `SettingsChanged`.
 
-- [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui ./cmd/godwit ./app -run 'TestWindows|TestPageSource|TestComposeWindowNavigation|TestComposeInWindow|TestSettingsChanged'` → FAIL.
+- [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui ./cmd/godwit ./app -run 'TestWindows|TestComposeWindowNavigation|TestComposeInWindow|TestSettingsChanged'` → FAIL.
 
-- [ ] **Step 3: Implement** `Windows`, the adapter, the `Platform` methods (`SettingsChanged` → `ThemeChanged.Broadcast(ThemeOf(st))`), `mygo.Bind(NewComposePage(compose, winOf))` in `gui()` **before** `App.Run`, `SetService` in `WhenReady`, `mygo.SetFrontend(dist.FS())`, the quit hook, and the dev-only Mail menu item 「写邮件（网页窗口）」 under `if mygo.IsDev()` calling `a.ComposeInWindow()`.
+- [ ] **Step 3: Implement** `Windows`, the adapter, the `Platform` methods (`SettingsChanged` → `ThemeChanged.Broadcast(ThemeOf(st))`), `mygo.Bind(NewComposePage(compose, winOf))` in `gui()` **before** `App.Run`, `SetService` in `WhenReady`, the quit hook, and the dev-only Mail menu item 「写邮件（网页窗口）」 under `if mygo.IsDev()` calling `a.ComposeInWindow()`.
 
 - [ ] **Step 4: Generate the client**
 
-mise task `generate` (repo root): `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-dir "$(mktemp -d)"` (a non-default data dir skips the single-instance lock; generation returns from `App.Run` before `WhenReady`). Run it; commit `web/src/mygo.ts`; check it contains `ComposePage.load`, `.save`, `.closed` and no `attach`/`detach`/`setService`. CI: on `macos-latest` in the `test` job, `mise run generate && git diff --exit-code -- web/src/mygo.ts`.
+mise task `generate` = `go tool mygo generate` (writes `bindings`, `web/src/mygo.ts`; `go tool mygo dev` regenerates it on Go changes too). If generation stops at the single-instance lock while a Godwit runs, make `gui()` skip `RequestSingleInstanceLock` when `MYGO_GENERATE` is set (generation returns from `App.Run` before `WhenReady`). Run it; commit `web/src/mygo.ts`; check it contains `ComposePage.load`, `.save`, `.closed` and no `attach`/`detach`/`setService`. CI: on `macos-latest` in the `test` job, `mise run generate && git diff --exit-code -- web/src/mygo.ts`.
 
 - [ ] **Step 5: Run** `CGO_ENABLED=0 go test ./... && go vet ./...` → PASS.
 
@@ -432,7 +429,7 @@ mise task `generate` (repo root): `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/go
 
 - [ ] **Step 4: End-to-end by hand (macOS)**
 
-`mise run dev`, Mail › 写邮件（网页窗口）: type Chinese, wait for 草稿已保存, close with ⌘W right after typing, quit with ⌘Q with the window open and text just typed, reopen the draft from the Drafts list in the old page → the text is there; switch Settings › 外观 to dark → the window follows; ⌘Z / ⌘C / ⌘V work in the body (spec §G: Edit menu in a full web window). Note results in the PR body.
+`mise run dev` (`go tool mygo dev`), Mail › 写邮件（网页窗口）: type Chinese, wait for 草稿已保存, close with ⌘W right after typing, quit with ⌘Q with the window open and text just typed, reopen the draft from the Drafts list in the old page → the text is there; switch Settings › 外观 to dark → the window follows; ⌘Z / ⌘C / ⌘V work in the body (spec §G: Edit menu in a full web window). Note results in the PR body.
 
 - [ ] **Step 5: Commit**
 
@@ -440,27 +437,47 @@ mise task `generate` (repo root): `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/go
 
 ---
 
-### Task 7: Native icons from the `remixicon` package
+### Task 7: Native icons embedded from the `remixicon` package
 
 **Files:**
-- Create: `web/scripts/icons.ts`, `internal/icons/remix.json`
-- Modify: `web/package.json` (dependency `remixicon` pinned at `4.8.0`, the last Apache-2.0 release), `internal/icons/svg/*.svg` (regenerated, same content), `mise.toml` (`web:icons`; `web:check` also reruns it and diffs `internal/icons/svg`)
-- Test: `internal/icons/icons_test.go` (unchanged, must stay green)
+- Create: `web/icons.go` (package `web`), `web/icons_test.go`
+- Modify: `internal/icons/icons.go` (reads from package `web`)
+- Delete: `internal/icons/svg/` (73 files and `LICENSE-remixicon.txt`; the package ships its licence)
+- Test: `internal/icons/icons_test.go` (unchanged names, must stay green)
 
 **Interfaces:**
-- `internal/icons/remix.json`: `{"<godwit name>": "<remix id>", ...}` for every current file, e.g. `"trash-2": "delete-bin-line"`, `"mail-fill": "mail-fill"` — the mapping now spread over the SVG files' first-line comments.
-- `bun scripts/icons.ts` reads each id's SVG from `node_modules/remixicon/icons/**/<id>.svg` and writes `internal/icons/svg/<name>.svg` as `<!-- Remix Icon v4.8.0 ri-<id>, Apache-2.0 -->` + the SVG with `width="24" height="24"` and `fill="currentColor"`, byte-identical to today's files; `LICENSE-remixicon.txt` copied from the package.
+- Produces (package `github.com/godwit-email/godwit/web`):
+```go
+// RemixIcons are the Remix Icon SVGs Godwit uses, from the remixicon
+// package (pinned at 4.8.0, its last Apache-2.0 release), by Godwit name.
+var RemixIcons map[string]string // name → path under the embedded FS, e.g. "trash-2" → "node_modules/remixicon/icons/System/delete-bin-line.svg"
+var remix embed.FS               // //go:embed lists exactly the paths in RemixIcons, plus node_modules/remixicon/License
+func RemixIcon(name string) ([]byte, bool)
+```
+The table carries today's mapping (each current `internal/icons/svg/*.svg` names its Remix id on its first line; find each id's category directory under `node_modules/remixicon/icons/`). `internal/icons` parses `web.RemixIcon(name)` where it read its own files; names, `Get`, `Fill` and the 24×24 size stay as they are.
 
-- [ ] **Step 1:** write `remix.json` from the current files' comments; run `mise run web:icons`; `git diff --exit-code internal/icons/svg` → no diff (if the package's markup differs only in whitespace, normalise in the script so the diff is empty).
-- [ ] **Step 2:** `CGO_ENABLED=0 go test ./internal/icons ./internal/kit ./app` → PASS.
-- [ ] **Step 3: Commit** `build(icons): native icons are generated from the remixicon package, pinned at 4.8.0`
-
-The Go build still needs no Bun: the SVGs stay committed; only changing an icon needs the script.
+- [ ] **Step 1: Failing test** `web/icons_test.go`:
+```go
+func TestRemixIconsEmbedded(t *testing.T) {
+	for name, path := range RemixIcons {
+		b, ok := RemixIcon(name)
+		if !ok || !bytes.Contains(b, []byte("<svg")) {
+			t.Errorf("%s (%s) not embedded", name, path)
+		}
+	}
+	if len(RemixIcons) != 73 {
+		t.Errorf("%d icons, want the 73 internal/icons has today", len(RemixIcons))
+	}
+}
+```
+Run `mise run web:install && CGO_ENABLED=0 go test ./web` → FAIL.
+- [ ] **Step 2: Implement** `web/icons.go`, point `internal/icons` at it, delete `internal/icons/svg/`. Run `CGO_ENABLED=0 go test ./web ./internal/icons ./internal/kit ./app` → PASS (the parsed icons draw as before: the kit pixel tests for rail and sidebar icons stay green).
+- [ ] **Step 3: Commit** `build(icons): native icons embed straight from the remixicon package, pinned at 4.8.0`
 
 ## Self-review notes
 
 - Spec coverage: §A2 stack/components (Task 2), §A4 theme and fonts (Tasks 1, 3), §A5 CSP and caller scoping (Tasks 2, 4), §A6 build/CI/generated client (Tasks 2, 5), §A7 tests (each task), §B1 window lifecycle (Task 5), §B2 load/save/saver (Tasks 4, 6). Not in plan 1, by §F: rich text, fields' full behaviour, attachments, send, Wit, embedded web views.
 - Deviation, ruled above: §F says the main-window entry points open the new window in plan 1; they stay on the old page until plan 2.
 - Codex review (plan v1) folded in: bound facade only (`ComposePage`), no close timeout and quit coordination, Geist tests migrated, navigation/popup denial, CI install/lint/dev task, whitespace-preserving body text, test filters and read-back, zero-revision refusal.
-- Added at the user's request: Task 7, native icons generated from the `remixicon` npm package.
+- Added at the user's request: Task 7, native icons embedded straight from the `remixicon` npm package; builds go through the mygo CLI (Task 2), which builds and embeds the frontend and generates the client — replacing the plan's own `web/dist` embed package, `SetFrontend` call, generate task and frontend-missing page.
 - Deferred to plan 2: §B1 「草稿被删除时关闭其窗口」 and the close prompt on a failed save — in plan 1 a failed or conflicting save shows in the page, and the old compose page remains the safe path.
