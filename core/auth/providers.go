@@ -72,6 +72,12 @@ func table() []Provider {
 		{ID: "icloud", Name: "iCloud Mail", Domains: []string{"icloud.com", "me.com", "mac.com"},
 			IMAP: tls("imap.mail.me.com"), SMTP: Server{"smtp.mail.me.com", 587, conn.StartTLS}, Login: "app_password",
 			HelpURL: "https://support.apple.com/102654"},
+		{ID: "yahoo", Name: "Yahoo Mail", Domains: []string{"yahoo.com", "ymail.com", "rocketmail.com"},
+			IMAP: tls("imap.mail.yahoo.com"), SMTP: smtps("smtp.mail.yahoo.com"), Login: "app_password",
+			HelpURL: "https://help.yahoo.com/kb/SLN4075.html"},
+		{ID: "aol", Name: "AOL Mail", Domains: []string{"aol.com", "aim.com"},
+			IMAP: tls("imap.aol.com"), SMTP: smtps("smtp.aol.com"), Login: "app_password",
+			HelpURL: "https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail"},
 	}
 }
 
