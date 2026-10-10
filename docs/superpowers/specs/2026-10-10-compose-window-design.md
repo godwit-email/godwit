@@ -21,6 +21,8 @@
 | 窗口形态 | 每封草稿一个窗口；同一草稿再次打开时聚焦已有窗口 | 可同时写多封、对照原邮件；和 Mail.app、Outlook 一致 |
 | 窗口实现 | mygo 现有的网页窗口（`WindowOptions{URL}`），整窗是网页 | 弹出层与正文同属一个网页，没有「网页压住原生弹出层」的问题；不依赖 mygo PR #200，继续用正式版 mygo |
 | 前端栈 | React 19、TypeScript、Vite、shadcn/ui（Tailwind v4）、TanStack Query | 和后续网页界面统一；我们的 token 本来就照 shadcn 定义 |
+| 前端结构 | Vite 多入口：每种窗口一个入口（本期 `compose.html`），共享代码在 `src/shared/`、`src/wit/` | 每个窗口只加载自己的代码；不同入口可以有不同的信任级别与 CSP（§8） |
+| 聊天界面 | AI Elements 组件（拷入 `src/wit/`）+ `useChat` + 自定义 `ChatTransport` 对接 Go；Markdown 用 Streamdown | 组件即 shadcn 风格且覆盖工具调用、确认、引用；`useChat` 现成管理流式状态、停止、出错；智能体循环留在 Go（不写 AI SDK provider） |
 | 编辑器 | Plate（Slate） | 组件即 shadcn 风格；自带「建议」（修订）与 AI 菜单，对应 Wit 的修订与 ⌘K；Safari 内核下中文输入已实测正常 |
 | 包管理与构建 | Bun；`web/` 目录；产物 `web/dist` 用 `mygo.SetFrontend` 嵌入 | 本机已有；mygo 文档推荐 |
 | 后台调用 | `mygo.Bind` 绑定一个窄的 `Compose` 服务；`mygo generate` 生成 TypeScript 客户端并提交 | 类型两端都检查 |
@@ -29,7 +31,7 @@
 ## 3. 窗口与生命周期
 
 - **打开**：现在所有导航到 `PageCompose` 的地方（新建、回复、全部回复、转发、快速回复、插件动作返回草稿、mailto、草稿列表、菜单与托盘的「写邮件」⌘N）改为调用 `App.OpenCompose(draftID)`：已有该草稿的窗口就聚焦，否则新建窗口。`PageCompose` 路由与主窗口里的撰写视图删除。
-- **窗口**：标题为主题（空时「新邮件」）；默认 860×720，最小 640×480，位置和大小按 `StateKey: "compose"` 记忆；新窗口相对上一个错开。macOS 用透明标题栏，网页自己画顶栏（`--app-region: drag`），与主窗口观感一致。
+- **窗口**：加载 `/compose.html`（草稿由 Go 端按窗口绑定，URL 不带草稿 ID）；标题为主题（空时「新邮件」）；默认 860×720，最小 640×480，位置和大小按 `StateKey: "compose"` 记忆；新窗口相对上一个错开。macOS 用透明标题栏，网页自己画顶栏（`--app-region: drag`），与主窗口观感一致。
 - **关闭**（⌘W 或红灯）：先让网页提交未保存的输入并等保存完成；保存失败时询问「有修改没有保存」（关闭 / 返回）。发送成功或丢弃后窗口自动关闭。
 - **退出应用**：沿用 `flushDrafts` 的语义，等所有撰写窗口保存完；有失败时询问。
 - **窗口与草稿的绑定**：Go 端维护 `window ID → draftID`。草稿被删除（别处丢弃）时关闭其窗口。
@@ -49,6 +51,7 @@
 | `send(digest?)` | 发送；带 digest 即「仍然发送」 | `Send` / `SendAcknowledged` |
 | `discard()` | 丢弃草稿 | `DeleteDraft` |
 | `assist(input)`、`skill(name, lang?)`、`rewriteSelection(sel, instruction)` | Wit；返回 `Channel<WitEvent>` 流式事件 | `Assist`、`AssistSkill`、`RewriteSelection` |
+| `witHistory()` | 草稿的 Wit 对话历史（UI 消息形状）与是否有进行中的回复 | `ListConversations`、`ListApprovals`、对话消息 |
 | `decide(approvalID, accept)`、`applyEdited(approvalID, html)`、`undoAssist()`、`stop()` | 审批与撤销 | `ResolveApproval`、`ApplyEditedProposal`、`UndoLastAssist`、`CancelRun` |
 | `openLink(url)` | 用户确认后用系统浏览器打开 | 现有链接确认 |
 
@@ -66,13 +69,39 @@
 
 ## 6. Wit
 
-- **面板**：网页里的侧栏（有模型服务时显示），对应现有面板：上下文标签、调整 ▾、翻译 ▾、自由输入、流式回答、审批卡片。
-- **修订展示**：用 Plate 的「建议」能力在正文里显示插入与删除。
-  - 是「逐词修订」还是「整体重写」**由 Go 端判定**，沿用现有 `newProposal` 的规则（`worddiff`，块类型不变且改动比例 ≤ 0.5 为逐词），结果随审批一起发给网页，保证和现在一致。
-  - 逐词修订：每处可单独接受或拒绝；全部接受 / 全部拒绝走 `decide`，部分接受时网页生成结果 HTML 走 `applyEdited`。
-  - 整体重写：正文只读显示新版本，可切换「对比原文」，整体接受或拒绝。
-- **⌘K 改写选区**：core 现在用「草稿 HTML 在某个 revision 下的字节偏移」定位选区。网页先保存，再把**带两个选区标记的正文 HTML** 发给 Go；Go 去掉标记、清洗后算出偏移，调用 `RewriteSelection`。标记用不会被清洗规则保留的私有元素，计算在 Go 端完成，网页不需要理解字节偏移。
-- **运行中锁定**、**已应用可撤销**、**重载规则**（新读覆盖旧读、本地有编辑时保留本地）都照搬现有逻辑。
+撰写窗口右侧是 Wit 的**精简版**面板；Wit 页（主窗口）的**完整版**以后也用同一套组件（迁移另立规格，见 §11）。所以 Wit 做成可复用的组件，放在 `src/wit/`，用 `variant="mini" | "full"` 区分形态。
+
+**组件**：用 shadcn CLI 把 AI Elements 的组件拷进 `src/wit/`：Conversation（滚动容器）、Message、Response（内置 Streamdown）、Tool（工具调用）、Confirmation（审批卡片）、Sources / Inline Citation（引用的邮件）、Prompt Input、Suggestion、Shimmer。拷入后是我们的代码，按需修改。面板里的上下文标签、调整 ▾、翻译 ▾ 是我们自己的组件。
+
+**状态与传输**：`useChat` 管理一段对话的消息与流式状态；它的 `ChatTransport` 由我们实现（`WitTransport`），不实现 AI SDK provider：智能体循环、工具、审批、存储都留在 Go core，headless 与 MCP 也用同一套。
+
+- `sendMessages`：把用户输入交给 Go（撰写窗口里是 `Compose.assist` / `skill`），返回由 Go 事件翻译成的 `UIMessageChunk` 流。
+- `reconnectToStream`：窗口重开或重新聚焦时，如果这段对话有进行中的回复，订阅它继续显示。
+- 打开对话时，用 Go 端的历史初始化 `useChat` 的 `messages`（Go 把存储的消息转成 UI 消息形状，带上工具调用与结果、引用、审批状态）。
+- 审批：用户在确认卡片上选择后，transport 把选择交给 Go（`decide`），Go 继续运行并推送后续事件。
+
+**事件映射**（Go 的 `WitEvent` → AI SDK 消息片段；片段的确切名称以当时 AI SDK 版本为准，在计划里核对）：
+
+| Go 事件 | 前端片段 |
+|---|---|
+| `text` | 文本片段的开始 / 增量 / 结束 |
+| `tool_call` | 工具片段，状态为「输入就绪」（工具名即 `search_mail` 等） |
+| `tool_result` | 同一工具片段，状态为「输出就绪」 |
+| `interrupted` + `Approvals` | 对应工具片段，状态为「等待批准」，附审批 ID、摘要、目的地 |
+| `Citations` | 引用片段（自定义数据片段：邮件 ID、主题、发件人、日期、是否疑似注入） |
+| `context`（使用的模型）、`draft`、`account` | 消息元数据 / 自定义数据片段 |
+| `done` | 结束 |
+| `error` | 出错（可重试） |
+
+**正文里的修订**不走聊天组件，而在编辑器里显示：
+- 是「逐词修订」还是「整体重写」**由 Go 端判定**，沿用现有 `newProposal` 的规则（`worddiff`，块类型不变且改动比例 ≤ 0.5 为逐词），随审批一起发给网页，保证和现在一致。
+- 逐词修订用 Plate 的「建议」能力在正文里标出插入与删除，每处可单独接受或拒绝；全部接受 / 全部拒绝走 `decide`，部分接受时网页生成结果 HTML 走 `applyEdited`。
+- 整体重写：正文只读显示新版本，可切换「对比原文」，整体接受或拒绝。
+- 对应的确认卡片在面板里也显示，两处操作同一个审批。
+
+**⌘K 改写选区**：用 Plate 的 AI 菜单形态，在正文里原地弹出。core 用「草稿 HTML 在某个 revision 下的字节偏移」定位选区：网页先保存，再把**带两个选区标记的正文 HTML** 发给 Go；Go 去掉标记、清洗后算出偏移，调用 `RewriteSelection`。标记用不会被清洗规则保留的私有元素，网页不需要理解字节偏移。
+
+**运行中锁定**、**已应用可撤销**、**重载规则**（新读覆盖旧读、本地有编辑时保留本地）都照搬现有逻辑。
 
 ## 7. 主题
 
@@ -87,20 +116,22 @@
 1. **CSP**：只允许加载打包进来的脚本和样式（`script-src 'self'`，不允许内联脚本）；`img-src` 只允许 `data:`、`blob:` 和本地附件协议；不允许任何远程请求。
 2. **不可信 HTML 不进 DOM**：引用的原邮件以纯文本显示；正文与粘贴内容只经过反序列化变成 Plate 的数据结构，渲染由 React 完成（自动转义），不使用 `dangerouslySetInnerHTML`。
 3. **不跳转**：页面内导航一律拦截；正文链接只能经 `openLink` 在确认后用系统浏览器打开；`window.open` 拒绝。
-4. **最小接口**：只绑定 `Compose`，且每个方法只作用于调用者窗口的草稿。主窗口是原生界面，没有页面。将来阅读区如果嵌入网页显示邮件，必须用不可信的嵌入网页视图（无绑定），不能复用这套可信页面。
-5. **发送仍需亲手点击**：Wit 不能发送，`send` 只由页面的发送按钮或 ⌘Enter 触发。
+4. **最小接口**：只绑定 `Compose`，且每个方法只作用于调用者窗口的草稿。主窗口是原生界面，没有页面。
+5. **入口分信任级别**：撰写入口是可信页面（带生成的后台客户端）。将来显示邮件内容的入口（如阅读区）必须是不可信页面：放在不带绑定的嵌入网页视图里，入口的包里不含后台客户端，CSP 更严；由多入口构建保证两者的代码不混。
+6. **模型输出按不可信内容渲染**：模型读过邮件，输出可能被提示注入。Streamdown 收紧为：链接只允许 http、https、mailto，点击一律走 `openLink`；不显示图片；保留 HTML 清洗插件、不允许原始 HTML。引用的邮件用我们自己的卡片显示，疑似注入的来源标出「已作为数据处理」（与现在一致）。
+7. **发送仍需亲手点击**：Wit 不能发送，`send` 只由页面的发送按钮或 ⌘Enter 触发。
 
 ## 9. 行为对照与测试
 
 **Go 端**（`app` 包，core 测试环境）：`Compose` 服务按窗口绑定草稿、越权调用被拒；保存与冲突（保留我的 / 使用最新 / 读取失败重试）；切换账户换签名；附件（过大报错、部分失败不误报冲突）；发送（成功、插件警告后仍然发送、拦截、发送中拒绝修改、发送时 flush 最新输入）；丢弃（失败后继续保存）；关闭与退出（flush、失败时询问、等待进行中的写入）；⌘K 选区标记换算偏移；Wit 审批（全部接受、部分接受、整体重写、撤销、重载规则）。现有 `app/compose_test.go`、`app/compose_wit_test.go` 里的每个测试名都要在新测试中有对应项，计划里列出映射表。
 
-**网页端**（Vitest + Testing Library，jsdom）：字段与收件人标签（逗号、回车、失焦提交，重复跳过，无效地址标红）、保存状态机（1 秒防抖、合成中不保存、flush）、工具栏、修订的接受与拒绝生成正确 HTML、⌘K 选区标记、主题变量应用。
+**网页端**（Vitest + Testing Library，jsdom）：字段与收件人标签（逗号、回车、失焦提交，重复跳过，无效地址标红）、保存状态机（1 秒防抖、合成中不保存、flush）、工具栏、修订的接受与拒绝生成正确 HTML、⌘K 选区标记、主题变量应用；`WitTransport` 的事件映射（每种 Go 事件都翻译成正确的片段、审批往返、重连续上进行中的回复、历史初始化），用假的 Go 事件流驱动；Streamdown 的收紧配置（`javascript:` 链接、图片、原始 HTML 都不渲染）。
 
 **端到端**（macOS，可选的 CI 任务）：用真实窗口和 `mygo.EvalAs` 驱动：打开、输入中文、粘贴、⌘Z、发送。你在 Safari 里试过的输入法边界情况写成可重复的检查清单，升级 Plate 时人工过一遍。
 
 ## 10. 工程与构建
 
-- **目录**：`web/`（Vite + React + TS），`web/src/mygo.ts` 为生成的客户端（提交入库），`web/dist` 为构建产物（不入库，保留占位文件让 `go build` 在未构建前端时也能编译，此时撰写窗口显示「前端未构建」）。
+- **目录**：`web/`（Vite + React + TS，多入口）：`src/shared/`（shadcn 组件、主题变量、工具函数）、`src/wit/`（Wit 组件与 `WitTransport`）、`src/compose/`（撰写入口，`compose.html`）；以后的入口（Wit 页、阅读区）各加一个目录与 HTML。`web/src/mygo.ts` 为生成的客户端（提交入库），`web/dist` 为构建产物（不入库，保留占位文件让 `go build` 在未构建前端时也能编译，此时撰写窗口显示「前端未构建」）。
 - **命令**：`mise` 任务 `web:dev`、`web:build`、`web:test`、`generate`（`mygo generate` 写客户端）；本地开发 `mygo dev` 或 `devUrl` 指向 Vite 开发服务器以便热更新。
 - **CI**：三个平台的 Go 任务前先 `bun install && bun run build`；新增网页任务（类型检查、lint、Vitest）；检查生成的客户端与 Go 代码一致。
 - **体积**：React、Plate、shadcn 打包后约 1 MB 级，嵌入二进制可以接受。
@@ -116,9 +147,12 @@
 
 旧撰写页在第 2 步删除；第 1 步结束时新旧暂时并存（旧页可用、新窗口只有纯文本），第 2 步一次切换。
 
+**之后的项目（另立规格）**：Wit 页迁移成嵌入主窗口的网页（`wit.html` 入口，完整版 Wit 组件）。主窗口是原生界面，需要嵌入网页视图，即 mygo PR #200（在其合并前用 `baranwang/mygo` 的 `webview-embed` 分支）；嵌入网页拿不到绑定的服务，`WitTransport` 的底层改走 `postMessage` 上的请求 / 事件协议，组件与映射不变。
+
 ## 12. 风险与待验证
 
 - **WebView2（Windows）与 WebKitGTK（Linux）上的 Plate 与输入法**：没有 Windows 机器实测，依赖 CI 的端到端检查和社区反馈；Plate 在 Chromium 上最成熟，风险较低。
 - **系统「编辑」菜单在整窗网页里是否可用**：探针里的问题出在嵌入网页视图；整窗网页走 mygo 的常规路径，第 1 步先实测。
 - **Plate 与 React 版本升级**：锁定版本，升级时过输入法检查清单。
+- **AI SDK 消息协议变化**：`UIMessageChunk` 一年内已经历多个大版本；锁定 `ai` / `@ai-sdk/react` 版本，`WitTransport` 的映射测试覆盖所有片段，升级时以测试为准。
 - **生成客户端需要能运行到 `App.Run`**：`main` 在 `App.Run` 之前不能做迁移数据库等副作用，第 1 步核对 `cmd/godwit`。
