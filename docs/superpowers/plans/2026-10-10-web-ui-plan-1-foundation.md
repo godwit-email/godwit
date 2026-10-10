@@ -16,7 +16,9 @@
 - Fonts: no font is defined. Web pages use `system-ui` (mono `ui-monospace`); the native UI uses the system font (`Theme.Font = ""`) and `"monospace"` for code (spec §A4).
 - `web/dist/app` is not committed except a placeholder; `go build` must succeed with the frontend unbuilt, and the compose window then shows 「前端未构建」 (spec §A6).
 - The generated client `web/src/mygo.ts` is committed; CI checks it matches the Go code (spec §A6).
-- Every `Compose` method acts only on the draft bound to `mygo.CallerWindow(ctx)`; the page never sends a draft ID (spec §B2).
+- Every bound method acts only on the draft bound to `mygo.CallerWindow(ctx)`; the page never sends a draft ID. Only `ComposePage` (`Load`, `Save`, `Closed`) is bound; window management lives on unbound types (spec §B2).
+- A compose window never closes with unsaved or unconfirmed input: no timeout closes it. A failed or conflicting final save asks 「有修改没有保存」 (关闭 / 返回), as the native app does; ⌘Q goes through the same flush (spec §B1).
+- Pages never navigate away and never open windows: `OnWillNavigate` denies anything but the page's own entry, `SetWindowOpenHandler` denies all, for built, dev-server and fallback pages alike (spec §A5 rule 3).
 - CSP of built pages: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'` — no remote request (spec §A5).
 - Saving: 1 s after the last input; never while an IME composition is active; flush before the window closes (spec §B2, from `draftsaver`).
 - **Ruling (no regression between PRs):** every existing entry point keeps opening the old compose page. The new window opens only from a dev-only Mail menu item 「写邮件（网页窗口）」 shown when `mygo.IsDev()`. Plan 2 switches the entry points over. *Why:* plan 1's body is plain text; users must not lose formatting or Wit in the meantime. *Cost if wrong:* one extra menu item to remove in plan 2.
@@ -29,7 +31,7 @@
 2. **Opening the same draft twice** (menu twice, or a second path) → the existing window comes to the front; no second window, no second session (Task 5 `TestOpenFocusesExistingWindow`).
 3. **The draft changed elsewhere** (old compose page, Wit) after the window loaded → save reports a conflict and does not overwrite; the page says so (Task 4 `TestSaveStaleRevisionConflicts`, Task 6 `shows conflict`).
 4. **A page calls `Compose` from a window with no draft, or after its window closed** → refused with `ErrNoDraft`; no other draft is touched (Task 4 `TestCallerWithoutDraftRefused`).
-5. **Frontend not built** (fresh clone, `go build` only) → the window shows 「前端未构建，运行 mise run web:build」 instead of a blank page (Task 5 `TestFrontendMissingPage`).
+5. **Frontend not built** (fresh clone, `go build` only) → the window shows 「前端未构建，运行 mise run web:build」 instead of a blank page; under `mise run dev` it loads the Vite server instead (Task 5 `TestPageSource`).
 
 ---
 
@@ -50,11 +52,12 @@
 | `web/src/mygo.ts` | generated client (committed) |
 | `web/dist/dist.go`, `web/dist/app/.gitkeep` | Go package embedding the build output |
 | `webui/theme.go` | `ThemeVars` |
-| `webui/compose.go` | the bound `Compose` service and its types |
+| `webui/compose.go` | `Compose` (sessions, unbound) and `ComposePage` (the bound facade) |
 | `webui/windows.go` | compose window registry: open / focus / close / flush |
 | `cmd/godwit/gui.go`, `cmd/godwit/platform.go` | bind, set frontend, dev menu item, `Platform` methods |
 | `app/app.go`, `app/settings_general.go`, `app/mail_sidebar.go` | `Platform.OpenCompose`, `Platform.SettingsChanged`, `App.ComposeInWindow` |
-| `mise.toml`, `.github/workflows/ci.yml`, `.gitignore` | tools, tasks, CI |
+| `mise.toml`, `.github/workflows/ci.yml`, `.gitignore`, `web/biome.json` | tools, tasks, lint, CI |
+| `web/scripts/icons.ts`, `internal/icons/remix.json` | native icons generated from the `remixicon` npm package (Task 7) |
 
 ---
 
@@ -88,9 +91,11 @@ func TestSystemFonts(t *testing.T) {
 ```
 In `app/kit_guard_test.go` add `TestNoGeist`: walk `*.go` in `app/` (skip `_test.go`) and fail on any file containing `"Geist`.
 
+Migrate the existing tests that pin Geist: `TestThemeApplyOf` (`internal/theme/theme_test.go:84`) now expects `Font == ""`; the tests calling `RegisterFonts` (`:98`, `:101`) are deleted with it.
+
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `CGO_ENABLED=0 go test ./internal/theme ./app -run 'TestSystemFonts|TestNoGeist'`
+Run: `CGO_ENABLED=0 go test ./internal/theme ./app -run 'TestSystemFonts|TestNoGeist|TestThemeApplyOf'`
 Expected: FAIL (`Mono` undefined / `Theme.Font = "Geist"`).
 
 - [ ] **Step 3: Implement**
@@ -162,14 +167,16 @@ Placeholder `ComposePage` returns `<main aria-label="撰写" />`. Run `mise run 
 
 - [ ] **Step 6: mise and CI**
 
-`mise.toml`: `[tools] bun = "1.4.2"`; tasks:
-- `web:install` = `bun install --frozen-lockfile` (dir `web`)
-- `web:build` = depends `web:install`, `bun run build`
+`mise.toml`: `[tools] bun = "1.4.2"`; tasks, each with `dir = "web"` and `depends = ["web:install"]` except `web:install` itself:
+- `web:install` = `bun install --frozen-lockfile`
+- `web:build` = `bun run build`
 - `web:test` = `bun run test`
+- `web:lint` = `bunx biome check src scripts` (Biome, pinned, config `web/biome.json` ignoring `src/components/ui` and `src/mygo.ts`)
 - `web:components` = `bun run components`
-- `web:check` = `bun run typecheck && bun run test && bun run components && git diff --exit-code -- src/components/ui`
+- `web:check` = `bun run typecheck && bunx biome check src scripts && bun run test && bun run components && git diff --exit-code -- src/components/ui`
+- `dev` (repo root): runs `bun run dev` (Vite on `http://localhost:5173`) in the background and `MYGO_DEV=1 MYGO_DEV_URL=http://localhost:5173 go run ./cmd/godwit`
 
-CI `test` job: after `mise-action`, run `mise run web:build` before the Go steps. New job `web` (ubuntu-latest): `mise run web:check`.
+CI: the `test` job runs `mise run web:build` after `mise-action`, before the Go steps; the gofmt step becomes `test -z "$(gofmt -l $(git ls-files '*.go'))"` so it never walks `web/node_modules`. New job `web` (ubuntu-latest, checkout + `mise-action`): `mise run web:check`. The generated-client diff (Task 5) runs as a step of the `test` job on `macos-latest` only.
 
 - [ ] **Step 7: Verify**
 
@@ -231,27 +238,35 @@ func TestThemeVars(t *testing.T) {
 
 ---
 
-### Task 4: The `Compose` service
+### Task 4: The compose service and its bound facade
 
 **Files:**
-- Create: `webui/compose.go`
-- Test: `webui/compose_test.go`
+- Create: `webui/compose.go`, `webui/text.go`
+- Test: `webui/compose_test.go`, `webui/text_test.go`
 
 **Interfaces:**
 - Consumes: `core.Service` (`GetDraft`, `SaveDraft`, `ListAccounts`, `GetSettings`), `mail.SplitDraft` / `mail.JoinDraft`, `ThemeOf` (Task 3).
 - Produces:
 ```go
-// Compose is bound for compose windows' pages; each method acts on the
-// draft of the calling window only.
-type Compose struct { /* svc, sessions, winOf */ }
+// Compose keeps each compose window's session: its draft and the parts of
+// the draft the page does not edit. It is not bound: pages reach it only
+// through ComposePage.
+type Compose struct{ /* svc, sessions, closed hook */ }
 
-func NewCompose(winOf func(context.Context) (int, bool)) *Compose // winOf: the calling window's ID (mygo.CallerWindow in production)
-func (c *Compose) SetService(svc *core.Service)                  // after the data opens, in WhenReady
-func (c *Compose) Attach(winID int, draftID int64)               // Task 5 calls it as it opens a window
+func NewCompose() *Compose
+func (c *Compose) SetService(svc *core.Service)   // in WhenReady, once the data is open
+func (c *Compose) Attach(winID int, draftID int64) // Windows calls it as it opens a window
 func (c *Compose) Detach(winID int)
-func (c *Compose) Load(ctx context.Context) (ComposeState, error)
-func (c *Compose) Save(ctx context.Context, e ComposeEdit) (SaveResult, error)
-func (c *Compose) Closed(ctx context.Context) error // the page flushed: Task 5 may close the window
+func (c *Compose) OnClosed(fn func(winID int, saved bool)) // the page's final flush: saved reports success
+
+// ComposePage is what compose pages call (mygo.Bind); every method acts on
+// the calling window's draft only.
+type ComposePage struct{ /* c *Compose; winOf func(context.Context) (int, bool) */ }
+
+func NewComposePage(c *Compose, winOf func(context.Context) (int, bool)) *ComposePage // winOf: mygo.CallerWindow(ctx).ID() in production
+func (p *ComposePage) Load(ctx context.Context) (ComposeState, error)
+func (p *ComposePage) Save(ctx context.Context, e ComposeEdit) (SaveResult, error)
+func (p *ComposePage) Closed(ctx context.Context, saved bool) error
 
 type Account struct {
 	ID    int64  `json:"id"`
@@ -285,75 +300,106 @@ type SaveResult struct {
 	Revision int64 `json:"revision"`
 	Conflict bool  `json:"conflict"` // the draft changed elsewhere: nothing was saved
 }
-var ErrNoDraft = errors.New("this window has no draft")
-var ErrNotReady = errors.New("the data is not open yet")
+var (
+	ErrNoDraft    = errors.New("this window has no draft")
+	ErrNotReady   = errors.New("the data is not open yet")
+	ErrNoRevision = errors.New("a save needs the revision it edits") // core skips the conflict check for revision 0 (core/compose.go:188)
+)
+
+// text.go
+func bodyHTML(text string) string // one <p> per line, escaped; spaces kept as written (runs of spaces become &nbsp; pairs so HTML keeps them); an empty line is <p></p>
+func bodyText(editable string) string // inverse for bodyHTML's output exactly; other markup (from the old compose page) falls back to mail.HTMLToText per top-level element
 ```
-`Save` keeps the quote and signature the session loaded (the stored HTML's parts at `Load`), joins them after the new editable part, and calls `SaveDraft` with `Revision`; `core.ErrStaleDraft` becomes `SaveResult{Conflict: true}`, not an error. Plain text ↔ HTML: `textToHTML` makes one `<p>` per line, HTML-escaped (`html.EscapeString`), an empty line `<p></p>`; the editable HTML, quote and signature become text with `mail.HTMLToText` (`core/mail/build.go`).
+`Save` refuses `Revision == 0` with `ErrNoRevision`; keeps the quote and signature HTML the session loaded and joins them after `bodyHTML(e.Body)`; `core.ErrStaleDraft` becomes `SaveResult{Conflict: true}`, not an error; on success the session's revision moves to the result. Quote and signature shown to the page use `mail.HTMLToText`.
 
-- [ ] **Step 1: Failing tests** (`coretest.New(t)`, an account, a `NewDraft(... "new", 0)`; `winOf` returns a window ID set per test):
-  - `TestLoadOwnDraft`: `Attach(1, d.ID)`; `Load` with window 1 returns `DraftID == d.ID`, the account list, `Revision == d.Revision`, `Theme.Mode == "system"`.
-  - `TestSaveRoundTrip`: `Save{Body: "第一行\n\n<b>x</b>", Subject: "Hi", To: ["a@example.com"], Revision: r}` → `GetDraft` has subject and recipients, and `mail.SplitDraft(html)` editable part is `<p>第一行</p><p></p><p>&lt;b&gt;x&lt;/b&gt;</p>`; the result's `Revision` is the stored one.
-  - `TestSaveKeepsQuoteAndSignature`: a reply draft (`"reply"` to a seeded message) keeps its quote and signature parts byte for byte after `Save`.
-  - `TestSaveStaleRevisionConflicts` (Review Focus 3): save once externally with `SaveDraft`, then `Save` with the old revision → `Conflict == true`, no error, stored body unchanged.
-  - `TestCallerWithoutDraftRefused` (Review Focus 4): `winOf` returns window 2 (not attached) → `Load`, `Save`, `Closed` return `ErrNoDraft`; after `Detach(1)`, window 1's calls return `ErrNoDraft` too.
-  - `TestNotReady`: before `SetService`, `Load` returns `ErrNotReady`.
+- [ ] **Step 1: Failing tests**
 
-- [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui -run Compose` → FAIL.
+`text_test.go`, `TestBodyRoundTrip`: for each of `"一行"`, `"a\n\nb"`, `"\n首行空\n"`, `"  缩进两格\n\t制表"`, `"<b>x</b> & y"`, `"末尾空行\n\n"`: `bodyText(bodyHTML(s)) == s`.
 
-- [ ] **Step 3: Implement**; sessions map guarded by a mutex; `Closed` only records that the page flushed (Task 5 consumes it through a hook `onClosed func(winID int)` set by `Windows`).
+`compose_test.go` (`coretest.New(t)`, an account, `NewDraft(ctx, acc.ID, "new", 0)`, `winOf` returning a per-test window ID); all names start with `TestCompose` so `-run TestCompose` selects them:
+- `TestComposeLoadOwnDraft`: `Attach(1, d.ID)`; `Load` from window 1 → `DraftID == d.ID`, the accounts, `Revision == d.Revision`, `Theme.Mode == "system"`.
+- `TestComposeSaveThenLoad`: `Save{Body: "第一行\n\n  第三行", Subject: "Hi", To: ["a@example.com"], Revision: r}`, then a fresh `Load` → the same body, subject and recipients; `GetDraft` agrees.
+- `TestComposeConsecutiveSaves`: two saves, the second with the first's returned revision → both stored, no conflict.
+- `TestComposeSaveKeepsQuoteAndSignature`: a `"reply"` draft to a seeded message keeps its quote and signature HTML byte for byte after `Save`.
+- `TestComposeStaleRevisionConflicts` (Review Focus 3): an external `SaveDraft`, then `Save` with the old revision → `Conflict`, no error, stored body unchanged.
+- `TestComposeZeroRevisionRefused`: `Save{Revision: 0}` → `ErrNoRevision`, nothing stored.
+- `TestComposeCallerWithoutDraftRefused` (Review Focus 4): from window 2 (not attached) `Load`, `Save`, `Closed` → `ErrNoDraft`; after `Detach(1)`, window 1 gets `ErrNoDraft` too.
+- `TestComposeNotReady`: before `SetService`, `Load` → `ErrNotReady`.
+- `TestComposeBoundSurface`: the exported methods of `*ComposePage` are exactly `Closed`, `Load`, `Save` (reflect), so binding it exposes nothing else.
+
+- [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui -run 'TestCompose|TestBody'` → FAIL.
+
+- [ ] **Step 3: Implement**; sessions map guarded by a mutex.
 
 - [ ] **Step 4: Run** → PASS; `go vet ./webui`.
 
 - [ ] **Step 5: Commit**
 
-`feat(webui): the Compose service, scoped to the calling window's draft`
+`feat(webui): compose sessions and the bound ComposePage, scoped to the calling window's draft`
 
 ---
 
-### Task 5: Compose windows and wiring
+### Task 5: Compose windows, closing, quitting and wiring
 
 **Files:**
 - Create: `webui/windows.go`
-- Modify: `cmd/godwit/gui.go` (bind, `SetFrontend`, dev menu item, `MYGO_GENERATE` path), `cmd/godwit/platform.go` (`OpenCompose`, `SettingsChanged`), `app/app.go` (`Platform` gains two methods), `app/settings_general.go` (`settingsEffects` calls `SettingsChanged`), `app/mail_sidebar.go` (`ComposeInWindow`), `app/*_test.go` fake platform
+- Modify: `cmd/godwit/gui.go` (bind, `SetFrontend`, dev menu item, quit hook), `cmd/godwit/platform.go` (`OpenCompose`, `SettingsChanged`, the mygo window adapter), `app/app.go` (`Platform` gains two methods), `app/settings_general.go` (`settingsEffects` calls `SettingsChanged`), `app/mail_sidebar.go` (`ComposeInWindow`), the fake platforms in `app/*_test.go`
 - Create: `web/src/mygo.ts` (generated)
-- Test: `webui/windows_test.go`, `app/compose_window_test.go`
+- Test: `webui/windows_test.go`, `cmd/godwit/compose_window_test.go`, `app/compose_window_test.go`
 
 **Interfaces:**
-- Consumes: `Compose.Attach/Detach/Closed` hook (Task 4), `dist.FS` (Task 2), `ThemeOf` (Task 3).
+- Consumes: `Compose.Attach/Detach/OnClosed` (Task 4), `dist.FS` (Task 2), `ThemeOf` (Task 3).
 - Produces:
 ```go
-// Windows opens one compose window per draft.
-type Windows struct { /* compose, open func(draftID) window, by draft */ }
-func NewWindows(c *Compose, newWindow func(draftID int64) Window) *Windows
-type Window interface { ID() int; Focus(); Close(); EmitClosing() }
-func (w *Windows) Open(draftID int64)     // focuses an open window of the draft, else makes one and Attaches it
-func (w *Windows) Closing(winID int) bool // the window asks to close: false the first time (the page is told to flush), true once the page called Closed or 3 s passed
+// Windows opens one compose window per draft and lets none close or quit
+// with input unsaved.
+type Windows struct{ /* compose, newWindow, ask, by draft, pending closes */ }
+
+type Window interface {
+	ID() int
+	Focus()
+	Destroy()     // closes without asking again
+	EmitClosing() // tells the page to flush and call Closed
+}
+func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows // ask: 「有修改没有保存」, true = close anyway
+func (w *Windows) Open(draftID int64)
+func (w *Windows) RequestClose(winID int) // from the window's OnClose (always prevented): EmitClosing, then Destroy once the page reports saved, or ask on a failed save
 func (w *Windows) Closed(winID int)       // the window went: Detach
+func (w *Windows) Count() int
+func (w *Windows) CloseAll(done func(ok bool)) // for quit: flush every window as RequestClose does; ok = all closed (none was kept by the user)
 ```
-mygo adapter (in `cmd/godwit`): `mygo.NewWindow(WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480, StateKey: "compose", Title: "新邮件"})`; `OnClose` prevents and calls `Closing` until it returns true; `OnClosed` → `Closed`. When `dist.FS` reports unbuilt, the window instead `Page().LoadHTML` the message 「前端未构建，运行 mise run web:build」.
-- Events: `var Closing = mygo.NewEvent[struct{}]("closing")`, `var ThemeChanged = mygo.NewEvent[Theme]("theme")` (package `webui`).
-- `app.Platform` gains `OpenCompose(draftID int64)` and `SettingsChanged(st core.Settings)`; `(*App).ComposeInWindow()` makes a draft as `mailPage.compose` does and calls `OpenCompose`.
+No timeout destroys a window. A page that never answers keeps its window open; the user can still choose 关闭 when `ask` runs after 5 s without an answer.
 
-- [ ] **Step 1: Failing tests**
-  - `TestOpenFocusesExistingWindow` (Review Focus 2): `Open(7)` twice with a fake `newWindow` → one window made, `Focus` called once on it.
-  - `TestCloseFlushesPendingInput` (Review Focus 1): `Closing(id)` first returns false and calls `EmitClosing`; after `Compose.Closed` from that window, `Closing` returns true; with no `Closed`, it returns true after 3 s (inject the clock or a `time.After` hook).
-  - `TestClosedDetaches`: after `Closed(id)`, `Compose.Load` from that window → `ErrNoDraft`; `Open` of the same draft makes a new window.
-  - `TestFrontendMissingPage` (Review Focus 5): the adapter's page-choice function `pageFor(built bool) (url, html string)` returns the compose URL when built, else the HTML containing 「前端未构建，运行 mise run web:build」.
-  - `app/compose_window_test.go` `TestComposeInWindowOpensWindow`: the fake platform records `OpenCompose` with the new draft's ID; `TestSettingsChangedReachesPlatform`: changing the theme setting records `SettingsChanged`.
+mygo adapter (`cmd/godwit`): `mygo.NewWindow(WindowOptions{URL: <pageSource>, Width: 860, Height: 720, MinWidth: 640, MinHeight: 480, StateKey: "compose", Title: "新邮件"})`; `OnClose` → `PreventDefault` + `RequestClose`; `OnClosed` → `Closed`; `OnWillNavigate` denies every URL but the page's own entry; `SetWindowOpenHandler` denies all.
+`pageSource(devURL string, built bool) (url, html string)`: dev URL set → `/compose.html` (mygo resolves it against `MYGO_DEV_URL`); else built → `/compose.html`; else `LoadHTML(missingHTML, "about:blank")` with 「前端未构建，运行 mise run web:build」.
+Quit: `mygo.App.OnBeforeQuit` — when `Windows.Count() > 0`, prevent, `CloseAll`, and quit again only if `ok`; this runs before the native app's own close flush.
+Events (package `webui`): `var Closing = mygo.NewEvent[struct{}]("closing")`, `var ThemeChanged = mygo.NewEvent[Theme]("theme")`.
+`app.Platform` gains `OpenCompose(draftID int64)` and `SettingsChanged(st core.Settings)`; `(*App).ComposeInWindow()` makes a draft as `mailPage.compose` does and calls `OpenCompose`.
 
-- [ ] **Step 2: Run** → FAIL.
+- [ ] **Step 1: Failing tests** (`webui/windows_test.go`, fake `Window`s and `ask`; names start with `TestWindows`):
+  - `TestWindowsOpenFocusesExisting` (Review Focus 2): `Open(7)` twice → one window made, focused once.
+  - `TestWindowsCloseWaitsForSave` (Review Focus 1): `RequestClose` → `EmitClosing`, not destroyed; the page's `Closed(saved=true)` → destroyed; reading the draft back (real `Compose` + `coretest`) shows the text saved just before.
+  - `TestWindowsCloseFailedSaveAsks`: `Closed(saved=false)` → `ask` called; `ask` false → window kept; `ask` true → destroyed.
+  - `TestWindowsSlowPageAsksNotCloses`: no answer for 5 s (injected clock) → `ask` called, window not destroyed unless `ask` is true.
+  - `TestWindowsClosedDetaches`: after `Closed`, the page's `Load` → `ErrNoDraft`; `Open` of the same draft makes a new window.
+  - `TestWindowsCloseAllForQuit`: two windows, one saves, one fails and the user keeps it → `done(false)`, one window left; both save → `done(true)`.
+  - `cmd/godwit` `TestPageSource` (Review Focus 5): dev URL set and unbuilt → compose URL; unset and built → compose URL; unset and unbuilt → HTML with 「前端未构建，运行 mise run web:build」 and base `about:blank`.
+  - `cmd/godwit` `TestComposeWindowNavigation`: the adapter's navigation predicate allows the entry URL and denies `https://example.com/`, `file:///etc/passwd` and `mygo://localhost/other.html`.
+  - `app` `TestComposeInWindowOpensWindow`, `TestSettingsChangedReachesPlatform`: the fake platform records `OpenCompose(newDraftID)` and `SettingsChanged`.
 
-- [ ] **Step 3: Implement** `Windows`, the adapter, the `Platform` methods (`SettingsChanged` → `ThemeChanged.Broadcast(ThemeOf(st))`), binding in `gui()` **before** `App.Run` (`mygo.Bind(compose)` with `winOf` from `mygo.CallerWindow`), `SetService` in `WhenReady`, `mygo.SetFrontend` from `dist.FS`, and the dev-only Mail menu item 「写邮件（网页窗口）」 under `if mygo.IsDev()` calling `a.ComposeInWindow()`.
+- [ ] **Step 2: Run** `CGO_ENABLED=0 go test ./webui ./cmd/godwit ./app -run 'TestWindows|TestPageSource|TestComposeWindowNavigation|TestComposeInWindow|TestSettingsChanged'` → FAIL.
+
+- [ ] **Step 3: Implement** `Windows`, the adapter, the `Platform` methods (`SettingsChanged` → `ThemeChanged.Broadcast(ThemeOf(st))`), `mygo.Bind(NewComposePage(compose, winOf))` in `gui()` **before** `App.Run`, `SetService` in `WhenReady`, `mygo.SetFrontend(dist.FS())`, the quit hook, and the dev-only Mail menu item 「写邮件（网页窗口）」 under `if mygo.IsDev()` calling `a.ComposeInWindow()`.
 
 - [ ] **Step 4: Generate the client**
 
-mise task `generate`: `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-dir "$(mktemp -d)"` (a non-default data dir skips the single-instance lock, so a running Godwit doesn't swallow it). Run it; commit `web/src/mygo.ts`. Add to `web:check` a step that reruns `generate` and `git diff --exit-code -- src/mygo.ts`, on the macOS CI runner only (it starts the app up to `App.Run`).
+mise task `generate` (repo root): `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-dir "$(mktemp -d)"` (a non-default data dir skips the single-instance lock; generation returns from `App.Run` before `WhenReady`). Run it; commit `web/src/mygo.ts`; check it contains `ComposePage.load`, `.save`, `.closed` and no `attach`/`detach`/`setService`. CI: on `macos-latest` in the `test` job, `mise run generate && git diff --exit-code -- web/src/mygo.ts`.
 
 - [ ] **Step 5: Run** `CGO_ENABLED=0 go test ./... && go vet ./...` → PASS.
 
 - [ ] **Step 6: Commit**
 
-`feat(webui): compose windows, one per draft, opened from a dev-only menu item`
+`feat(webui): compose windows that never close or quit with input unsaved, from a dev-only menu item`
 
 ---
 
@@ -365,7 +411,7 @@ mise task `generate`: `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-
 - Test: `web/src/compose/saver.test.ts`, `web/src/compose/ComposePage.test.tsx`
 
 **Interfaces:**
-- Consumes: the generated `Compose` client and events `closing`, `theme` (`web/src/mygo.ts`), `applyTheme` (Task 3), generated `Input`, `Textarea`, `Label`, `Alert`.
+- Consumes: the generated `ComposePage` client and events `closing`, `theme` (`web/src/mygo.ts`), `applyTheme` (Task 3), generated `Input`, `Textarea`, `Label`, `Alert`.
 - Produces: `createSaver(save: (e: ComposeEdit) => Promise<SaveResult>, opts?: {delay?: number}): Saver` with `edit(e: ComposeEdit)`, `setComposing(on: boolean)`, `flush(): Promise<void>`, `status: "saved" | "saving" | "unsaved" | "conflict"`, `onChange(fn)`. 1000 ms default delay; never saves while composing; saves serially (one in flight, the latest edit wins); a `conflict` result stops further saves.
 
 - [ ] **Step 1: Failing saver tests** (fake timers):
@@ -377,15 +423,16 @@ mise task `generate`: `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-
 
 - [ ] **Step 2: Failing page tests** (mocked client module):
   - `loads the draft` — subject and body from `Compose.load()` show in their fields; the quote shows as text below the body, collapsed behind 「显示引用的原邮件」.
-  - `flushes on closing` (Review Focus 1) — type, emit `closing` → `Compose.save` called with the typed body, then `Compose.closed()`.
+  - `flushes on closing` (Review Focus 1) — type, emit `closing` → `ComposePage.save` called with the typed body, then `ComposePage.closed(true)`; a rejected save → `closed(false)`; a conflict → `closed(false)`.
   - `shows conflict` (Review Focus 3) — save resolves conflict → an alert 「草稿已在别处修改，本窗口不再保存」.
+  - `first save carries the loaded revision` — the first save sends `state.revision`, each later one the previous result's.
   - `IME` — typing between `compositionstart` and `compositionend` doesn't save until after the end.
 
 - [ ] **Step 3: Run** `mise run web:test` → FAIL; **implement** the saver and the page (recipient fields are plain comma-separated inputs in plan 1; status line 正在保存… / 草稿已保存 · HH:mm / 未保存; `applyTheme(state.theme)` on load and on the `theme` event; the window title follows the subject via `currentWindow.setTitle`, 「新邮件」 when empty); **run** → PASS.
 
 - [ ] **Step 4: End-to-end by hand (macOS)**
 
-`mise run web:build && MYGO_DEV=1 go run ./cmd/godwit`, Mail › 写邮件（网页窗口）: type Chinese, wait for 草稿已保存, close with ⌘W right after typing, reopen the draft from the Drafts list in the old page → the text is there; switch Settings › 外观 to dark → the window follows; ⌘Z / ⌘C / ⌘V work in the body (spec §G: Edit menu in a full web window). Note results in the PR body.
+`mise run dev`, Mail › 写邮件（网页窗口）: type Chinese, wait for 草稿已保存, close with ⌘W right after typing, quit with ⌘Q with the window open and text just typed, reopen the draft from the Drafts list in the old page → the text is there; switch Settings › 外观 to dark → the window follows; ⌘Z / ⌘C / ⌘V work in the body (spec §G: Edit menu in a full web window). Note results in the PR body.
 
 - [ ] **Step 5: Commit**
 
@@ -393,8 +440,27 @@ mise task `generate`: `MYGO_GENERATE=web/src/mygo.ts go run ./cmd/godwit --data-
 
 ---
 
+### Task 7: Native icons from the `remixicon` package
+
+**Files:**
+- Create: `web/scripts/icons.ts`, `internal/icons/remix.json`
+- Modify: `web/package.json` (dependency `remixicon` pinned at `4.8.0`, the last Apache-2.0 release), `internal/icons/svg/*.svg` (regenerated, same content), `mise.toml` (`web:icons`; `web:check` also reruns it and diffs `internal/icons/svg`)
+- Test: `internal/icons/icons_test.go` (unchanged, must stay green)
+
+**Interfaces:**
+- `internal/icons/remix.json`: `{"<godwit name>": "<remix id>", ...}` for every current file, e.g. `"trash-2": "delete-bin-line"`, `"mail-fill": "mail-fill"` — the mapping now spread over the SVG files' first-line comments.
+- `bun scripts/icons.ts` reads each id's SVG from `node_modules/remixicon/icons/**/<id>.svg` and writes `internal/icons/svg/<name>.svg` as `<!-- Remix Icon v4.8.0 ri-<id>, Apache-2.0 -->` + the SVG with `width="24" height="24"` and `fill="currentColor"`, byte-identical to today's files; `LICENSE-remixicon.txt` copied from the package.
+
+- [ ] **Step 1:** write `remix.json` from the current files' comments; run `mise run web:icons`; `git diff --exit-code internal/icons/svg` → no diff (if the package's markup differs only in whitespace, normalise in the script so the diff is empty).
+- [ ] **Step 2:** `CGO_ENABLED=0 go test ./internal/icons ./internal/kit ./app` → PASS.
+- [ ] **Step 3: Commit** `build(icons): native icons are generated from the remixicon package, pinned at 4.8.0`
+
+The Go build still needs no Bun: the SVGs stay committed; only changing an icon needs the script.
+
 ## Self-review notes
 
 - Spec coverage: §A2 stack/components (Task 2), §A4 theme and fonts (Tasks 1, 3), §A5 CSP and caller scoping (Tasks 2, 4), §A6 build/CI/generated client (Tasks 2, 5), §A7 tests (each task), §B1 window lifecycle (Task 5), §B2 load/save/saver (Tasks 4, 6). Not in plan 1, by §F: rich text, fields' full behaviour, attachments, send, Wit, embedded web views.
 - Deviation, ruled above: §F says the main-window entry points open the new window in plan 1; they stay on the old page until plan 2.
+- Codex review (plan v1) folded in: bound facade only (`ComposePage`), no close timeout and quit coordination, Geist tests migrated, navigation/popup denial, CI install/lint/dev task, whitespace-preserving body text, test filters and read-back, zero-revision refusal.
+- Added at the user's request: Task 7, native icons generated from the `remixicon` npm package.
 - Deferred to plan 2: §B1 「草稿被删除时关闭其窗口」 and the close prompt on a failed save — in plan 1 a failed or conflicting save shows in the page, and the old compose page remains the safe path.
