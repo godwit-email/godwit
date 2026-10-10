@@ -316,7 +316,7 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   - 组件清单：Button、IconButton、Input、TextArea、Field、Select、Checkbox、Radio、Switch、Tabs、ToggleGroup、Dialog、Popover、Tooltip、Collapsible、Card（Header / Content / Footer）、Badge、Alert、Avatar、Separator、Skeleton、Spinner、Kbd、StatusDot、SidebarItem、RailButton、Pressable（自定义内容的可点击区域）、Toast。
   - 菜单（下拉菜单、右键菜单）用系统原生菜单（`Element.Menu` / `ContextMenu`），不自绘。
   - app 里不直接用 mygo 的无样式基础组件（`ButtonBase`、`TextInputBase`、`TextAreaBase`、`DialogBase`、`PopoverBase`、`TooltipBase`）和 `Element.Tooltip`，一律经 kit；有测试守着。
-- **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的颜色渐变、开关滑块的移动、Tabs 选中项的颜色渐变、Skeleton 的呼吸闪烁、Dialog / Popover / Tooltip 淡入并带几像素位移、Collapsible 展开收起。系统开启「减少动态效果」时不播放（mygo 负责）。
+- **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的背景色、边框色渐变，开关滑块的移动，Collapsible 展开收起和箭头转动，Skeleton 的呼吸闪烁。文字颜色直接切换；Dialog / Sheet / Popover / Tooltip 整层出现和消失，不做进出场（mygo 不给随父层一起出现的元素播进场动画，要做需先改 mygo）。系统开启「减少动态效果」时不播放：过渡由 mygo 处理，Skeleton 自己检查。
 - **组件预览页**：开发模式（`mygo.IsDev()`）下图标栏多一个「Kit」入口，列出 kit 每个组件的每种状态，供对照设计稿调整；正式构建里没有这个入口。
 
 ### 7.1 窗口与布局
