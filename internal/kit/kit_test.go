@@ -552,6 +552,11 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 				t.Errorf("dark=%v: no heading %q", dark, s)
 			}
 		}
+		for _, k := range []string{"Plain", "Success", "Warning", "Error"} {
+			if _, ok := tt.Find("toast:" + k + " toast"); !ok {
+				t.Errorf("dark=%v: no %s toast preview", dark, k)
+			}
+		}
 		for _, o := range [][2]string{{"Open Dialog", "Dialog sample text"}, {"Open Sheet", "Sheet sample text"}, {"Open Popover", "Popover sample text"}} {
 			if err := tt.Click(o[0]); err != nil {
 				t.Fatal(err)
