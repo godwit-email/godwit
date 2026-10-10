@@ -180,7 +180,7 @@ func (p *askPage) noModel(c *ui.Context) {
 // opens the message.
 func (p *askPage) citations(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).
+	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).Background(t.Sidebar).
 		BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
 		ui.Text(c, i18n.T("ask.citations")).FontWeight(600)
 		now := p.a.clock.Now()
