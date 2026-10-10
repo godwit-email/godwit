@@ -484,7 +484,14 @@ func heading(c *ui.Context, title, sub string) {
 	})
 }
 
-func mark(c *ui.Context, text string, size float32) {
+// mark is a provider's mark: its tile (icons.Brand), else its letters on a
+// rounded square.
+func mark(c *ui.Context, p auth.Provider, size float32) {
+	if b := icons.Brand(p.ID); b != nil {
+		ui.Image(c, b).Size(size, size)
+		return
+	}
+	text := providerMark(p)
 	t := theme.Of(c)
 	fs := t.Text.Xs
 	if size >= theme.MarkLg {
@@ -537,7 +544,7 @@ func (o *onboarding) pickView(c *ui.Context) {
 					}
 					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.choose(p) }}).Label(providerName(p)).
 						Grow(1).Basis(0).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
-						mark(c, providerMark(p), theme.MarkMd)
+						mark(c, p, theme.MarkMd)
 						ui.Column(c).Shrink(1).Children(func() {
 							ui.Text(c, providerName(p)).SingleLine()
 							ui.Text(c, how).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
@@ -556,7 +563,7 @@ func (o *onboarding) backLink(c *ui.Context) {
 func (o *onboarding) providerHeader(c *ui.Context, sub string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(3)).Children(func() {
-		mark(c, providerMark(o.prov), theme.MarkLg)
+		mark(c, o.prov, theme.MarkLg)
 		ui.Column(c).Children(func() {
 			ui.Text(c, providerName(o.prov)).FontSize(t.Text.Heading).FontWeight(600)
 			if sub != "" {

@@ -134,7 +134,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 			group(i18n.T("settings.accounts"), th.Space(1))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID)).Children(func() {
-					mark(c, providerMark(accountProvider(a, acc)), theme.MarkSm)
+					mark(c, accountProvider(a, acc), theme.MarkSm)
 					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
 					if acc.Status == "ok" {
 						kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))

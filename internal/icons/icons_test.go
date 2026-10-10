@@ -35,3 +35,14 @@ func TestIconsParse(t *testing.T) {
 	}()
 	Get("no-such-icon")
 }
+
+func TestBrands(t *testing.T) {
+	for _, id := range []string{"gmail", "outlook", "qq", "netease163", "netease126", "icloud"} {
+		if Brand(id) == nil {
+			t.Errorf("no mark for %s", id)
+		}
+	}
+	if Brand("fastmail") != nil {
+		t.Error("fastmail has a mark")
+	}
+}
