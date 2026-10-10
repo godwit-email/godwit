@@ -86,7 +86,7 @@ type witPanel struct {
 
 	input     string
 	composing bool
-	toolsOpen map[int]bool // tool records opened, by turn: they stay open as the saved answer replaces the live one
+	toolsOpen map[int]*bool // tool records opened, by turn: they stay open as the saved answer replaces the live one
 	scroll    ui.ScrollState
 	o         witOptions // as of the last frame
 
@@ -95,7 +95,7 @@ type witPanel struct {
 }
 
 func newWitPanel(a *App) *witPanel {
-	return &witPanel{a: a, resolve: a.svc.ResolveApproval, resolveAll: a.svc.ResolveAll, deciding: map[int64]bool{}, toolsOpen: map[int]bool{}}
+	return &witPanel{a: a, resolve: a.svc.ResolveApproval, resolveAll: a.svc.ResolveAll, deciding: map[int64]bool{}, toolsOpen: map[int]*bool{}}
 }
 
 // convKey is the write-queue key of a conversation's writes; "conv:new"
@@ -118,7 +118,7 @@ func (p *witPanel) open(conv int64) {
 	}
 	p.stopFollow()
 	*p = witPanel{a: p.a, resolve: p.resolve, resolveAll: p.resolveAll, gen: p.gen + 1, follows: p.follows,
-		conv: conv, opened: true, input: p.input, deciding: map[int64]bool{}, toolsOpen: map[int]bool{}, fresh: true}
+		conv: conv, opened: true, input: p.input, deciding: map[int64]bool{}, toolsOpen: map[int]*bool{}, fresh: true}
 	p.scroll.Y = math.MaxFloat32
 	if conv == 0 {
 		return

@@ -453,24 +453,7 @@ func (o *onboarding) Content(c *ui.Context) {
 
 // sheetView is the 560-wide add-account sheet; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	ink := t.Foreground
-	if t.Dark {
-		ink = t.Background
-	}
-	ui.DialogBase(c, &o.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink.Alpha(0.28)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.Xl).Clip().Background(t.Background).Border(theme.Hairline, t.Border).
-			Shadow(0, theme.ShadowXl.Y, theme.ShadowXl.Blur, 0, ink.Alpha(0.18))
-		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
-			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(t.Text.Lg).FontWeight(600)
-			ui.Spacer(c)
-			kit.IconButton(c, "x", i18n.T("common.close"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { o.open = false })
-		})
-		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
-		})
-	})
+	kit.Sheet(c, &o.open, i18n.T("onboarding.sheet.title"), i18n.T("common.close"), func() { o.body(c) })
 	if !o.open {
 		o.a.closeAddAccount()
 	}
@@ -540,9 +523,9 @@ func (o *onboarding) pickView(c *ui.Context) {
 	})
 	primary(c, i18n.T("common.continue"), strings.TrimSpace(o.email) == "").OnClick(o.next)
 	ui.Row(c).Gap(th.Space(3)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
-		ui.Box(c).Height(theme.Hairline).Grow(1).Background(t.Border)
+		kit.Separator(c, false).Grow(1)
 		ui.Text(c, i18n.T("onboarding.or_pick"))
-		ui.Box(c).Height(theme.Hairline).Grow(1).Background(t.Border)
+		kit.Separator(c, false).Grow(1)
 	})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		for i := 0; i < len(o.providers); i += 2 {
@@ -552,17 +535,14 @@ func (o *onboarding) pickView(c *ui.Context) {
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")
 					}
-					b := ui.ButtonBase(c).Grow(1).Basis(0).Justify(ui.Start).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Background(t.Background)
-					if b.Hovered() {
-						b.Background(t.Hover)
-					}
-					b.Label(providerName(p)).Children(func() {
+					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.choose(p) }}).Label(providerName(p)).
+						Grow(1).Basis(0).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
 						mark(c, providerMark(p), theme.MarkMd)
 						ui.Column(c).Shrink(1).Children(func() {
 							ui.Text(c, providerName(p)).SingleLine()
 							ui.Text(c, how).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
 						})
-					}).OnClick(func() { o.choose(p) })
+					})
 				}
 			})
 		}
@@ -570,12 +550,7 @@ func (o *onboarding) pickView(c *ui.Context) {
 }
 
 func (o *onboarding) backLink(c *ui.Context) {
-	t := theme.Of(c)
-	b := ui.ButtonBase(c).AlignSelf(ui.Start).TextColor(t.Muted)
-	if b.Hovered() {
-		b.TextColor(t.Foreground)
-	}
-	b.Children(func() { ui.Text(c, i18n.T("onboarding.change")) }).OnClick(o.toPick)
+	kit.Button(c, i18n.T("onboarding.change"), kit.ButtonOpts{Variant: kit.Link}).AlignSelf(ui.Start).OnClick(o.toPick)
 }
 
 func (o *onboarding) providerHeader(c *ui.Context, sub string) {

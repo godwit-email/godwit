@@ -89,6 +89,7 @@ const (
 	StepDot, PendingDot, DoneBadge               = 20, 10, 36   // onboarding's check steps, OAuth wait, done mark
 	ThemeTileWidth, ThemeTileHeight              = 132, 84      // settings' theme pictures
 	TileRail, TileInset, TileGap, TileLine       = 14, 10, 6, 5 // the parts of a theme picture
+	SkeletonShort                                = 160          // a placeholder row's shorter line
 )
 
 // Shadow is a drop shadow's offset down and its blur.

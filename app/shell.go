@@ -10,7 +10,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -210,7 +209,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		})
 		if title, sub := a.page().Title(); title != "" {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Box(c).Size(theme.Hairline, theme.TitleButtonHeight).Margin(0, th.Space(2), 0, 0).Background(t.Border)
+				kit.Separator(c, true).Margin(0, th.Space(2), 0, 0)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
@@ -231,7 +230,7 @@ func (a *App) syncStatus(c *ui.Context) {
 	for _, acc := range a.accounts {
 		if acc.Status == "reauth_required" {
 			r := Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)}
-			ui.ButtonBase(c).Gap(th.Space(1.5)).PaddingX(th.Space(1.5)).Height(theme.TitleButtonHeight).Radius(t.Radius.Sm).FontSize(small).TextColor(t.WarningText).Children(func() {
+			kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(small).TextColor(t.WarningText).Children(func() {
 				kit.StatusDot(c, kit.Attention)
 				ui.Text(c, i18n.T("shell.sync.reauth"))
 			}).OnClick(func() { a.navigate(r) })
@@ -244,7 +243,8 @@ func (a *App) syncStatus(c *ui.Context) {
 		row.Children(func() { ui.Text(c, i18n.T("shell.sync.syncing")) })
 	case len(a.syncErr) > 0:
 		id := slices.Min(slices.Collect(maps.Keys(a.syncErr)))
-		row.Tooltip(a.syncErr[id]).Children(func() {
+		kit.Tooltip(c, row, a.syncErr[id])
+		row.Children(func() {
 			kit.StatusDot(c, kit.Error)
 			ui.Text(c, i18n.T("shell.sync.failed"))
 		})
@@ -279,19 +279,7 @@ func (a *App) rail(c *ui.Context) {
 }
 
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
-	t := theme.Of(c)
-	on := a.route.section() == r.Page
-	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Md).Center().Label(label).Tooltip(label).TextColor(t.Muted)
-	switch {
-	case on:
-		b.Background(t.RailSelected).TextColor(t.Foreground)
-	case b.Hovered():
-		b.Background(t.Hover).TextColor(t.Foreground)
-	}
-	b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(theme.IconLg, theme.IconLg) })
-	if !on {
-		b.OnClick(func() { a.navigate(r) })
-	}
+	kit.RailButton(c, icon, label, a.route.section() == r.Page, func() { a.navigate(r) })
 }
 
 // panel is the page's sidebar and content as one rounded block, inset from

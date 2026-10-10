@@ -192,8 +192,8 @@ func (p *askPage) citations(c *ui.Context) {
 						border = t.WarningBorder
 					}
 					id := ct.MessageID
-					ui.ButtonBase(c).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).Background(t.Background).
-						Border(theme.Hairline, border).Justify(ui.Start).Children(func() {
+					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { p.openCited(id) }}).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).
+						Border(theme.Hairline, border).Children(func() {
 						ui.Column(c).Gap(th.Space(1)).Grow(1).Shrink(1).Children(func() {
 							ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
 								ui.Text(c, citeRef(i+1)+" "+ct.From).SingleLine().Grow(1).Shrink(1)
@@ -206,7 +206,7 @@ func (p *askPage) citations(c *ui.Context) {
 								ui.Text(c, i18n.T("ask.citation.suspect")).FontSize(t.Text.Sm).TextColor(t.WarningText)
 							}
 						})
-					}).OnClick(func() { p.openCited(id) })
+					})
 				}
 			})
 		})

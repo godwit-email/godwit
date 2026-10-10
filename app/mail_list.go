@@ -81,7 +81,7 @@ type mailPage struct {
 	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
-	collapsed map[int64]bool // account groups folded in the sidebar
+	accOpen   map[int64]*bool // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool
 	query                string
@@ -114,7 +114,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, collapsed: map[int64]bool{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -550,6 +550,14 @@ func (p *mailPage) listView(c *ui.Context) {
 		})
 	}).Grow(1).Padding(0, th.Space(2))
 	l.Children(func() {
+		if len(rows) == 0 && p.loading { // the first load: placeholder rows
+			for range 6 {
+				ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
+					kit.Skeleton(c, 0, t.Text.Base)
+					kit.Skeleton(c, theme.SkeletonShort, t.Text.Sm)
+				})
+			}
+		}
 		if len(rows) == 0 && !p.loading {
 			empty := i18n.T("mail.empty")
 			if p.searched {

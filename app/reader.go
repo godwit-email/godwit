@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -549,11 +548,11 @@ func (r *reader) toolbar(c *ui.Context) {
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	name, _ := sender(m.From)
-	ui.ButtonBase(c).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
+	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		ui.Text(c, listTime(r.p.a.clock.Now(), m.Date)).FontSize(t.Text.Sm).TextColor(t.Muted).Shrink(0)
-	}).OnClick(func() { r.toggle(m.ID) })
+	})
 }
 
 // sender splits a From into a name to show and the address.
@@ -562,15 +561,6 @@ func sender(from string) (name, addr string) {
 		return cmp.Or(a.Name, a.Address), a.Address
 	}
 	return from, ""
-}
-
-// initial is the first letter of a name, upper case.
-func initial(name string) string {
-	r, _ := utf8.DecodeRuneInString(name)
-	if r == utf8.RuneError {
-		return ""
-	}
-	return string(unicode.ToUpper(r))
 }
 
 // recipients names who a message went to: "me" for the user's accounts.
@@ -603,10 +593,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	b := r.bodies[m.ID]
 	ui.Column(c).Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
-		head := ui.ButtonBase(c).Gap(th.Space(2.5)).Justify(ui.Start).Children(func() {
-			ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Shrink(0).Children(func() {
-				ui.Text(c, initial(name)).FontWeight(600)
-			})
+		var fold func() // only a thread of more than one message folds
+		if len(r.msgs) > 1 {
+			fold = func() { r.toggle(m.ID) }
+		}
+		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
+			kit.Avatar(c, name)
 			ui.Column(c).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(1)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine()
@@ -618,9 +610,6 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				ui.Text(c, i18n.Tf("reader.to", r.recipients(m), when)).FontSize(t.Text.Sm).TextColor(t.Muted)
 			})
 		})
-		if len(r.msgs) > 1 {
-			head.OnClick(func() { r.toggle(m.ID) })
-		}
 		r.aiArea(c, m)
 		r.cards(c, m)
 		switch {
@@ -664,7 +653,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 				continue
 			}
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Md).Children(func() {
-				ui.ButtonBase(c).Grow(1).Shrink(1).Gap(th.Space(2.5)).Justify(ui.Start).Children(func() {
+				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Xs).Background(t.Hover).Center().Shrink(0).Children(func() {
 						ui.Text(c, fileKind(att)).FontSize(t.Text.Xs).TextColor(t.Muted)
 					})
@@ -672,7 +661,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 						ui.Text(c, att.Filename).SingleLine()
 						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
 					})
-				}).OnClick(func() { r.openAttachment(att) })
+				})
 				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.saveAttachment(att) })
 			})

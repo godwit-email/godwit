@@ -109,9 +109,7 @@ func (w *composeWit) after(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
 		ui.Text(c, i18n.T("wit.compose.applied")).Padding(0, th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover)
-		ui.ButtonBase(c).TextColor(t.Foreground).Children(func() {
-			ui.Text(c, i18n.T("wit.compose.undo")).Underline()
-		}).OnClick(w.undo)
+		kit.Button(c, i18n.T("wit.compose.undo"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).OnClick(w.undo)
 	})
 }
 
@@ -326,7 +324,7 @@ func (w *composeWit) editor(c *ui.Context) {
 			Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm)
-				in := ui.TextInputBase(c, &w.cmdkInput).Grow(1).Label(i18n.T("wit.compose.cmdk.input")).AutoFocus()
+				in := kit.Input(c, &w.cmdkInput, kit.InputOpts{Bare: true}).Grow(1).Label(i18n.T("wit.compose.cmdk.input")).AutoFocus()
 				if in.Submitted() {
 					w.rewriteSelection()
 				}

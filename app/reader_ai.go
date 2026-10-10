@@ -567,12 +567,12 @@ func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Text(c, i18n.T("reader.ai.quick")).FontSize(t.Text.Sm).TextColor(t.Muted)
 		for i, q := range st.quick.v {
-			ui.ButtonBase(c).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Justify(ui.Start).Children(func() {
+			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.quickReply(m.ID, q) }}).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
 				ui.Text(c, q.Preview).SingleLine().Grow(1).Shrink(1)
 				if i == 0 {
 					kit.Kbd(c, "Tab")
 				}
-			}).OnClick(func() { r.quickReply(m.ID, q) })
+			})
 		}
 	})
 }

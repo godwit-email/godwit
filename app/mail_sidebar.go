@@ -61,21 +61,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			p.navItem(c, i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
 			ui.Box(c).Height(th.Space(2.5))
 			for _, acc := range a.accounts {
-				p.accountHeader(c, acc)
-				if p.collapsed[acc.ID] {
-					continue
-				}
-				fs := p.folders[acc.ID]
-				if !slices.ContainsFunc(fs, func(f core.Folder) bool { return f.Role == "drafts" }) {
-					fs = append(slices.Clone(fs), core.Folder{AccountID: acc.ID, Role: "drafts"})
-				}
-				for _, f := range sortFolders(fs) {
-					v := core.View{FolderID: f.ID}
-					if f.ID == 0 {
-						v = localDrafts(acc.ID)
-					}
-					p.navItem(c, folderName(f), v, f.Unread, 4.5)
-				}
+				p.account(c, acc)
 			}
 			if n := len(p.outbox); n > 0 {
 				p.navItem(c, i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
@@ -103,20 +89,41 @@ func (p *mailPage) navItem(c *ui.Context, label string, v core.View, count int, 
 	})
 }
 
-// accountHeader folds an account's folders; folded, it shows the unread count.
-func (p *mailPage) accountHeader(c *ui.Context, acc core.Account) {
-	open := !p.collapsed[acc.ID]
-	chevron := "chevron-down"
-	if !open {
-		chevron = "chevron-right"
-	}
-	kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() { p.collapsed[acc.ID] = open }}).Children(func() {
-		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
+// account is an account's foldable header over its folders; folded, the
+// header shows the unread count.
+func (p *mailPage) account(c *ui.Context, acc core.Account) {
+	open := p.accountOpen(acc.ID)
+	kit.Collapsible(c, open, func() {
 		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
-		if n := p.a.unread[acc.ID]; !open && n > 0 {
+		if n := p.a.unread[acc.ID]; !*open && n > 0 {
 			ui.Text(c, strconv.Itoa(n))
 		}
+	}, func() {
+		fs := p.folders[acc.ID]
+		if !slices.ContainsFunc(fs, func(f core.Folder) bool { return f.Role == "drafts" }) {
+			fs = append(slices.Clone(fs), core.Folder{AccountID: acc.ID, Role: "drafts"})
+		}
+		ui.Column(c).Gap(c.Theme().Space(0.5)).Children(func() { // the sidebar's own gap
+			for _, f := range sortFolders(fs) {
+				v := core.View{FolderID: f.ID}
+				if f.ID == 0 {
+					v = localDrafts(acc.ID)
+				}
+				p.navItem(c, folderName(f), v, f.Unread, 4.5)
+			}
+		})
 	})
+}
+
+// accountOpen is whether an account's folders show in the sidebar; at first they do.
+func (p *mailPage) accountOpen(id int64) *bool { return boolAt(p.accOpen, id, true) }
+
+// boolAt is m[k], first set to def: a pointer that outlives the frame, as kit.Collapsible needs.
+func boolAt[K comparable](m map[K]*bool, k K, def bool) *bool {
+	if m[k] == nil {
+		m[k] = &def
+	}
+	return m[k]
 }
 
 // compose starts a new draft from the view's account, else the default

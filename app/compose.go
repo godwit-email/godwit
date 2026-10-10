@@ -13,7 +13,6 @@ import (
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/editor"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/richtext"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -504,15 +503,13 @@ func (p *composer) addresses(c *ui.Context, i int, label string) {
 			}
 			ui.Row(c).Key(addr).Gap(th.Space(1)).Padding(th.Space(0.5), th.Space(1), th.Space(0.5), th.Space(2)).Radius(t.Radius.Full).Background(bg).TextColor(fg).Children(func() {
 				ui.Text(c, addr).SingleLine()
-				ui.ButtonBase(c).Size(th.Space(4), th.Space(4)).Radius(t.Radius.Full).Center().Label(i18n.Tf("compose.remove", addr)).Children(func() {
-					ui.Icon(c, icons.Get("x")).Size(theme.IconXs, theme.IconXs)
-				}).OnClick(func() {
+				kit.IconButton(c, "x", i18n.Tf("compose.remove", addr), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
 					*list = slices.DeleteFunc(*list, func(s string) bool { return s == addr })
 					p.edited()
 				})
 			})
 		}
-		in := ui.TextInputBase(c, &p.pending[i]).Grow(1).MinWidth(th.Space(30)).Label(label)
+		in := kit.Input(c, &p.pending[i], kit.InputOpts{Bare: true}).Grow(1).MinWidth(th.Space(30)).Label(label)
 		if p.pending[i] != "" && (in.Submitted() || strings.Contains(p.pending[i], ",") || !in.Focused()) {
 			p.commit(i)
 		}
@@ -601,9 +598,7 @@ func (p *composer) fields(c *ui.Context) {
 	p.row(c, i18n.T("compose.to"), func() {
 		p.addresses(c, 0, i18n.T("compose.to.input"))
 		if !p.showCc {
-			ui.ButtonBase(c).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
-				ui.Text(c, i18n.T("compose.cc_bcc"))
-			}).OnClick(func() { p.showCc = true })
+			kit.Button(c, i18n.T("compose.cc_bcc"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).OnClick(func() { p.showCc = true })
 		}
 	})
 	if p.showCc {
@@ -615,7 +610,7 @@ func (p *composer) fields(c *ui.Context) {
 		ui.Text(c, i18n.Tf("compose.invalid", strings.Join(bad, ", "))).FontSize(t.Text.Sm).TextColor(t.Danger).Padding(th.Space(1.5), th.Space(5))
 	}
 	p.row(c, i18n.T("compose.subject"), func() {
-		if ui.TextInputBase(c, &p.subject).Grow(1).Label(i18n.T("compose.subject.input")).Changed() {
+		if kit.Input(c, &p.subject, kit.InputOpts{Bare: true}).Grow(1).Label(i18n.T("compose.subject.input")).Changed() {
 			p.edited()
 		}
 	})
@@ -625,19 +620,21 @@ func (p *composer) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	ui.Row(c).Wrap().Gap(th.Space(0.5)).Padding(th.Space(1.5), th.Space(3.5)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
-		kit.IconButton(c, "bold", i18n.T("compose.bold"), ghost).OnClick(p.ed.ToggleBold)
-		kit.IconButton(c, "italic", i18n.T("compose.italic"), ghost).OnClick(p.ed.ToggleItalic)
-		link := kit.IconButton(c, "link", i18n.T("compose.link"), ghost).OnClick(func() { p.linkOpen = true })
-		kit.Popover(c, link, &p.linkOpen, func() {
-			kit.Input(c, &p.link, kit.InputOpts{Placeholder: "https://"}).Label(i18n.T("compose.link.url")).Width(theme.ControlWidth)
-			kit.Button(c, i18n.T("compose.link.apply"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() {
-				p.ed.SetLink(p.link)
-				p.link, p.linkOpen = "", false
+		kit.ToggleGroup(c, i18n.T("compose.format"), func() {
+			kit.IconButton(c, "bold", i18n.T("compose.bold"), ghost).OnClick(p.ed.ToggleBold)
+			kit.IconButton(c, "italic", i18n.T("compose.italic"), ghost).OnClick(p.ed.ToggleItalic)
+			link := kit.IconButton(c, "link", i18n.T("compose.link"), ghost).OnClick(func() { p.linkOpen = true })
+			kit.Popover(c, link, &p.linkOpen, func() {
+				kit.Input(c, &p.link, kit.InputOpts{Placeholder: "https://"}).Label(i18n.T("compose.link.url")).Width(theme.ControlWidth)
+				kit.Button(c, i18n.T("compose.link.apply"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() {
+					p.ed.SetLink(p.link)
+					p.link, p.linkOpen = "", false
+				})
 			})
+			kit.IconButton(c, "list", i18n.T("compose.list"), ghost).OnClick(func() { p.ed.ToggleList(false) })
+			kit.IconButton(c, "list-ordered", i18n.T("compose.list_ordered"), ghost).OnClick(func() { p.ed.ToggleList(true) })
+			kit.IconButton(c, "quote", i18n.T("compose.quote"), ghost).OnClick(p.ed.ToggleQuote)
 		})
-		kit.IconButton(c, "list", i18n.T("compose.list"), ghost).OnClick(func() { p.ed.ToggleList(false) })
-		kit.IconButton(c, "list-ordered", i18n.T("compose.list_ordered"), ghost).OnClick(func() { p.ed.ToggleList(true) })
-		kit.IconButton(c, "quote", i18n.T("compose.quote"), ghost).OnClick(p.ed.ToggleQuote)
 		kit.IconButton(c, "paperclip", i18n.T("compose.attach"), ghost).OnClick(p.attach)
 	})
 	if len(p.atts) == 0 && p.attachErr == "" {
@@ -669,9 +666,7 @@ func (p *composer) body(c *ui.Context) {
 	if p.quote == "" {
 		return
 	}
-	ui.ButtonBase(c).AlignSelf(ui.Start).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
-		ui.Text(c, i18n.T("compose.quote.show"))
-	}).OnClick(func() { p.quoteOpen = !p.quoteOpen })
+	kit.Button(c, i18n.T("compose.quote.show"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).AlignSelf(ui.Start).OnClick(func() { p.quoteOpen = !p.quoteOpen })
 	if p.quoteOpen {
 		ui.Text(c, mail.HTMLToText(p.quote)).FontSize(t.Text.Sm).TextColor(t.Muted).Selectable().
 			Padding(0, 0, 0, th.Space(3)).BorderWidth(0, 0, 0, theme.QuoteBar).BorderColor(t.Border)

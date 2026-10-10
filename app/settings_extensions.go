@@ -126,7 +126,7 @@ func (e *extView) skillsView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	listCard(c, func() {
 		for i, s := range e.skills {
-			listRow(c.Key(s.Name), i, false, func() {
+			listRow(c.Key(s.Name), i, false, nil, func() {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).Children(func() {
 						ui.Text(c, s.Name).FontWeight(500)
@@ -218,11 +218,11 @@ func (e *extView) pluginsView(c *ui.Context) {
 	}
 	listCard(c, func() {
 		for i, p := range e.plugins {
-			listRow(c.Key(p.Name), i, p.Name == e.plugin, func() {
+			listRow(c.Key(p.Name), i, p.Name == e.plugin, func() { e.showPlugin(p.Name) }, func() {
 				ui.Text(c, p.Name).FontWeight(500).Grow(1).Shrink(1)
 				ui.Text(c, p.Version).TextColor(t.Muted)
 				statusPill(c, pluginStatus(p), p.NeedsGrant || p.Error != "")
-			}).OnClick(func() { e.showPlugin(p.Name) })
+			})
 		}
 	})
 	p, ok := e.pluginInfo()
@@ -443,13 +443,13 @@ func (e *extView) mcpView(c *ui.Context) {
 	if len(e.servers) > 0 {
 		listCard(c, func() {
 			for i, s := range e.servers {
-				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() {
+				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() { e.mcp, e.mform = s.ID, nil }, func() {
 					ui.Text(c, s.Name).FontWeight(500).Grow(1).Shrink(1)
 					ui.Text(c, s.Transport).Font("Geist Mono").FontSize(t.Text.Sm).TextColor(t.Muted)
 					ui.Text(c, i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).TextColor(t.Muted)
 					st, attention := mcpStatus(s)
 					statusPill(c, st, attention)
-				}).OnClick(func() { e.mcp, e.mform = s.ID, nil })
+				})
 			}
 		})
 	}

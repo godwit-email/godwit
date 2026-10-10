@@ -153,10 +153,8 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	if n := count("已发送"); n != 2 {
 		t.Fatalf("%d 已发送 folders, want one per account", n)
 	}
-	h.click("Work") // collapses the first account
-	if n := count("已发送"); n != 1 {
-		t.Fatalf("%d 已发送 folders after collapsing, want 1", n)
-	}
+	h.click("Work") // collapses the first account, animated: wait for its end
+	h.until("one 已发送 folder after collapsing", func() bool { return count("已发送") == 1 })
 	h.click("已标星")
 	if v := h.app.route.View; v.Unified != "starred" {
 		t.Fatalf("view %+v", v)
@@ -639,4 +637,22 @@ func TestLocalDraftsEntry(t *testing.T) {
 	if r := h.app.route; r.Page != PageCompose || r.DraftID != d.ID {
 		t.Fatalf("route %+v", r)
 	}
+}
+
+func TestAccountFoldPersists(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	count := func() int { return h.countTexts("已发送") }
+	h.until("both accounts' folders", func() bool { return count() == 2 })
+	h.click("alice@example.com")
+	h.until("alice's folders hidden", func() bool { return count() == 1 })
+	h.app.navigate(Route{Page: PageSettings})
+	h.tt.Frame()
+	h.app.navigate(Route{Page: PageMail})
+	h.tt.Frame()
+	h.tt.Frame()
+	if n := count(); n != 1 {
+		t.Fatalf("%d 已发送 folders back on the mail page, want alice's still folded", n)
+	}
+	h.click("alice@example.com")
+	h.until("alice's folders shown", func() bool { return count() == 2 })
 }

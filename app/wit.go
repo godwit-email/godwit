@@ -154,23 +154,13 @@ func (p *witPanel) tools(c *ui.Context, turn int, calls []ai.ToolCall) {
 		parts = append(parts, n)
 	}
 	label := i18n.Plural("wit.tools", len(names)) + " · " + strings.Join(parts, i18n.T("mail.list_sep"))
-	open := p.toolsOpen[turn]
-	chevron := "chevron-right"
-	if open {
-		chevron = "chevron-down"
-	}
-	ui.ButtonBase(c).Label(label).Justify(ui.Start).Gap(th.Space(1)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
-		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
-		ui.Text(c, label).Shrink(1)
-	}).OnClick(func() { p.toolsOpen[turn] = !open })
-	if !open {
-		return
-	}
-	ui.Column(c).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
-		for _, call := range calls {
-			ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font("Geist Mono").FontSize(t.Text.Xs).Selectable()
-		}
-	})
+	kit.Collapsible(c, boolAt(p.toolsOpen, turn, false), func() { ui.Text(c, label).Shrink(1) }, func() {
+		ui.Column(c).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
+			for _, call := range calls {
+				ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font("Geist Mono").FontSize(t.Text.Xs).Selectable()
+			}
+		})
+	}).Label(label)
 }
 
 const (
@@ -284,7 +274,7 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 		label = i18n.T("wit.input")
 	}
 	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
-		area := ui.TextAreaBase(c, &p.input).Lines(2, 8).Placeholder(o.Placeholder).Label(label).
+		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
 				if ev.Kind != ui.InputKeyDown || ev.Key != ui.KeyEnter || ev.Mods != 0 || p.composing {
 					return false
@@ -295,8 +285,9 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 		p.composing = area.Composing()
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if m := modelOf(p.a.settings.DefaultModel); m != "" {
-				kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Tooltip(i18n.T("wit.model")).
+				b := kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { p.a.navigate(Route{Page: PageSettings, Settings: "models"}) })
+				kit.Tooltip(c, b, i18n.T("wit.model"))
 			}
 			ui.Spacer(c)
 			if p.running {

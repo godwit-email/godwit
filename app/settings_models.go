@@ -368,7 +368,7 @@ func (m *modelsView) view(c *ui.Context) {
 		listCard(c, func() {
 			for i, s := range m.services {
 				on := m.form != nil && m.form.id == s.ID
-				listRow(c.Key(s.ID), i, on, func() {
+				listRow(c.Key(s.ID), i, on, func() { m.edit(s) }, func() {
 					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Md).Background(t.Hover).Center().Children(func() {
 						ui.Text(c, badge(s.Name)).Font("Geist Mono").FontSize(t.Text.Sm)
 					})
@@ -380,7 +380,7 @@ func (m *modelsView) view(c *ui.Context) {
 					if strings.HasPrefix(a.settings.DefaultModel, s.Slug+"/") {
 						kit.Badge(c, i18n.T("settings.models.default_badge"))
 					}
-				}).OnClick(func() { m.edit(s) })
+				})
 			}
 		})
 	}
@@ -569,21 +569,16 @@ func (m *modelsView) modelSelects(c *ui.Context) {
 // listCard is a bordered list of rows.
 func listCard(c *ui.Context, rows func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Clip().Children(rows)
+	ui.Column(c).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
 }
 
 // listRow is a clickable row of a listCard; i > 0 draws a divider above it.
-func listRow(c *ui.Context, i int, on bool, children func()) ui.Element {
+// Selected (on), it does not click.
+func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Background(t.Background)
+	b := kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
 	if i > 0 {
 		b.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
-	}
-	switch {
-	case on:
-		b.Background(t.SidebarSelected)
-	case b.Hovered():
-		b.Background(t.Hover)
 	}
 	return b.Children(children)
 }

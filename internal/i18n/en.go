@@ -501,6 +501,7 @@ var en = map[string]string{
 	"compose.invalid":          "Invalid address: %s",
 	"compose.body":             "Message body",
 	"compose.bold":             "Bold",
+	"compose.format":           "Formatting",
 	"compose.italic":           "Italic",
 	"compose.link":             "Link",
 	"compose.link.url":         "Link address",

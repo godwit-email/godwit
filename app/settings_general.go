@@ -260,8 +260,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 			})
 		})
 	}
-	b := ui.ButtonBase(c).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start)
-	b.Children(func() {
+	kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start).Children(func() {
 		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
 		if on {
 			frame.Border(theme.SelectedBorder, t.Primary)
@@ -278,7 +277,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 			}
 		})
 		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.Text.Sm)
-	}).OnClick(func() { p.st.Theme = th })
+	})
 }
 
 // noTranslate picks the languages that need no translation.

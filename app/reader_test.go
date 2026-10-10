@@ -479,3 +479,25 @@ func TestFileName(t *testing.T) {
 		}
 	}
 }
+
+func TestSingleMessageHeadDoesNotCollapse(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "only words"))
+	h.openThread(m.ThreadID)
+	h.see("only words")
+	var head string // the sender head's "发给 …" line, which only the reader shows
+	for _, s := range h.tt.Texts() {
+		if strings.HasPrefix(s, "发给") {
+			head = s
+		}
+	}
+	if head == "" {
+		t.Fatalf("no sender head: %q", h.tt.Texts())
+	}
+	h.click(head)
+	h.tt.Frame()
+	if !h.app.mail.reader.open[m.ID] || !h.tt.HasText("only words") {
+		t.Fatal("a click on the only message's head collapsed it")
+	}
+}

@@ -501,6 +501,7 @@ var zh = map[string]string{
 	"compose.invalid":          "地址无效：%s",
 	"compose.body":             "正文",
 	"compose.bold":             "加粗",
+	"compose.format":           "格式",
 	"compose.italic":           "斜体",
 	"compose.link":             "链接",
 	"compose.link.url":         "链接地址",
