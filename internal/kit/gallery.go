@@ -11,6 +11,7 @@ type GalleryState struct {
 	Radio, Select, Tabs                 int
 	Toggle                              int
 	Input, Password, Mono, Bare, Area   string
+	InvalidIn, HelpIn, ErrorIn          string
 	Dialog, Sheet, Popover, Collapsible bool
 }
 
@@ -24,8 +25,8 @@ func Gallery(c *ui.Context, g *GalleryState) {
 	t, th := theme.Of(c), c.Theme()
 	row := func(children func()) { ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(children) }
 	section := func(name string, body func()) {
-		ui.Column(c).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, name).FontSize(t.Text.Lg).FontWeight(600)
+		ui.Column(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
+			ui.Text(c, name).FontSize(t.Text.Lg).FontWeight(600).Label("section:" + name)
 			body()
 		})
 	}
@@ -57,7 +58,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			section("Input", func() {
 				ui.Column(c).Gap(th.Space(2)).Width(theme.SheetWidth).Children(func() {
 					Input(c, &g.Input, InputOpts{Placeholder: "Normal"})
-					Input(c, new(string), InputOpts{Placeholder: "Invalid", Invalid: true})
+					Input(c, &g.InvalidIn, InputOpts{Placeholder: "Invalid", Invalid: true})
 					Input(c, &g.Password, InputOpts{Placeholder: "Password", Password: true})
 					Input(c, &g.Mono, InputOpts{Placeholder: "Mono", Mono: true})
 					Input(c, &g.Bare, InputOpts{Placeholder: "Bare", Bare: true})
@@ -68,8 +69,8 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Field", func() {
 				ui.Column(c).Gap(th.Space(3)).Width(theme.SheetWidth).Children(func() {
-					Field(c, "With help", "Help text under the control", "", func() { Input(c, new(string), InputOpts{}) })
-					Field(c, "With error", "ignored", "Something is wrong", func() { Input(c, new(string), InputOpts{Invalid: true}) })
+					Field(c, "With help", "Help text under the control", "", func() { Input(c, &g.HelpIn, InputOpts{}) })
+					Field(c, "With error", "ignored", "Something is wrong", func() { Input(c, &g.ErrorIn, InputOpts{Invalid: true}) })
 				})
 			})
 			section("Select", func() {
@@ -134,9 +135,11 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Badge", func() { Badge(c, "Badge") })
 			section("Alert", func() {
-				Alert(c, Warning, "Warning alert", nil)
-				Alert(c, Danger, "Danger alert", nil)
-				Alert(c, Info, "Info alert", func() { Button(c, "Alert action", ButtonOpts{Variant: Outline, Size: SizeSm}) })
+				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
+					Alert(c, Warning, "Warning alert", nil)
+					Alert(c, Danger, "Danger alert", nil)
+					Alert(c, Info, "Info alert", func() { Button(c, "Alert action", ButtonOpts{Variant: Outline, Size: SizeSm}) })
+				})
 			})
 			section("Avatar", func() {
 				row(func() {

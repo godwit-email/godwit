@@ -547,9 +547,9 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt.Frame()
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
 			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
-			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast", "Show toast"} {
-			if !tt.HasText(s) {
-				t.Errorf("dark=%v: no %q", dark, s)
+			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast"} {
+			if _, ok := tt.Find("section:" + s); !ok {
+				t.Errorf("dark=%v: no heading %q", dark, s)
 			}
 		}
 		for _, o := range [][2]string{{"Open Dialog", "Dialog sample text"}, {"Open Sheet", "Sheet sample text"}, {"Open Popover", "Popover sample text"}} {
@@ -566,5 +566,21 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 				t.Errorf("dark=%v: Escape left %q", dark, o[1])
 			}
 		}
+	}
+}
+
+func TestGalleryKeepsTypedText(t *testing.T) {
+	var g GalleryState
+	tt := ui.NewTester(themed(func(c *ui.Context) { Gallery(c, &g) }), 1200, 8000)
+	tt.Frame()
+	r, ok := tt.Find("With help") // the control sits under its label
+	if !ok {
+		t.Fatal("no With help field")
+	}
+	tt.ClickAt(r.X+r.W/2, r.Y+r.H+20)
+	tt.Type("hello")
+	tt.Frame()
+	if g.HelpIn != "hello" {
+		t.Errorf("HelpIn = %q", g.HelpIn)
 	}
 }

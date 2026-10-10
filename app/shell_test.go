@@ -262,7 +262,7 @@ func TestKitRailOnlyInDev(t *testing.T) {
 	t.Run("dev", func(t *testing.T) {
 		d := withAccountHarness(t, newDevHarness)
 		d.click("Kit")
-		d.see("Button")
+		d.until("the gallery", func() bool { _, ok := d.tt.Find("section:Button"); return ok })
 	})
 }
 
