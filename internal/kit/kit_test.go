@@ -584,3 +584,25 @@ func TestGalleryKeepsTypedText(t *testing.T) {
 		t.Errorf("HelpIn = %q", g.HelpIn)
 	}
 }
+
+// TestKitOverlayEnters: a dialog's backdrop fades in over MotionBase, and is
+// there at once under reduced motion.
+func TestKitOverlayEnters(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		open := false
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "Title", func() { ui.Text(c, "inside") }, nil)
+		}), 400, 300)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		open = true
+		tt.Frame()
+		first := tt.Image().RGBAAt(2, 2)
+		time.Sleep(2 * theme.MotionBase)
+		tt.Frame()
+		last := tt.Image().RGBAAt(2, 2)
+		if moved := first != last; moved == reduce {
+			t.Errorf("reduce motion %v: backdrop corner %v then %v", reduce, first, last)
+		}
+	}
+}

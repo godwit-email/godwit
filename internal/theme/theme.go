@@ -237,6 +237,8 @@ var registerFonts = sync.OnceValue(func() error {
 const (
 	MotionFast = 120 * time.Millisecond
 	MotionBase = 200 * time.Millisecond
+	// MotionOffset is how far, in DIPs, an overlay rises as it comes in.
+	MotionOffset = 4
 
 	SkeletonPulse = 1500 * time.Millisecond // one dim-and-return of a Skeleton
 )
