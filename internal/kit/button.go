@@ -41,7 +41,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	h, padX := th.Space(8), th.Space(3.5)
 	switch o.Size {
 	case SizeXs:
-		h, padX = th.Space(4), th.Space(1.5)
+		if square { // icon buttons only; a labelled button keeps the default size
+			h, padX = th.Space(4), th.Space(1.5)
+		}
 	case SizeSm:
 		h, padX = th.Space(7), th.Space(2.5)
 	case SizeLg:
