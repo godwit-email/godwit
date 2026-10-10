@@ -52,4 +52,24 @@ describe("applyTheme", () => {
     expect(root.classList.contains("dark")).toBe(false);
     expect(m.listeners.size).toBe(0);
   });
+
+  it("leaves no variable of the other appearance behind", () => {
+    const m = stubMedia(false);
+    const root = document.createElement("div");
+    applyTheme({ mode: "system", light: { "--a": "1" }, dark: { "--b": "2" }, fontSize: 13 }, root);
+    expect([root.style.getPropertyValue("--a"), root.style.getPropertyValue("--b")]).toEqual([
+      "1",
+      "",
+    ]);
+    m.set(true);
+    expect([root.style.getPropertyValue("--a"), root.style.getPropertyValue("--b")]).toEqual([
+      "",
+      "2",
+    ]);
+    m.set(false);
+    expect([root.style.getPropertyValue("--a"), root.style.getPropertyValue("--b")]).toEqual([
+      "1",
+      "",
+    ]);
+  });
 });

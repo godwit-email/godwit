@@ -14,10 +14,13 @@ import (
 // variables of both appearances (the page picks by Mode, following the
 // system's for "system") and the interface font size.
 type Theme struct {
-	Mode     string            `json:"mode"` // "system", "light" or "dark"
-	Light    map[string]string `json:"light"`
-	Dark     map[string]string `json:"dark"`
-	FontSize float32           `json:"fontSize"`
+	// Mode is the user's choice: "system", "light" or "dark".
+	Mode string `json:"mode"`
+	// Light and Dark map CSS variable names to values for each appearance.
+	Light map[string]string `json:"light"`
+	Dark  map[string]string `json:"dark"`
+	// FontSize is the interface font size in CSS pixels.
+	FontSize float32 `json:"fontSize"`
 }
 
 // ThemeOf is the theme for the user's settings.
