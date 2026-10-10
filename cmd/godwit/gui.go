@@ -214,13 +214,15 @@ func quitHook(windows interface {
 
 // nativeQuit is the main window's part of a quit: it saves every draft's
 // last edits (beforeClose), then quits again; that pass closes the App.
-// flushed holds for the current quit attempt only: reset forgets it.
-// Used on the UI thread only.
+// flushed holds for the current quit attempt only: reset forgets it and
+// starts a new attempt (gen), so a flush still running from an earlier
+// attempt neither marks this one flushed nor quits. Used on the UI thread only.
 type nativeQuit struct {
 	beforeClose func(proceed func()) // App.BeforeClose
 	close       func()               // App.Close
 	quit        func()
 	flushed     bool
+	gen         int
 }
 
 // onQuit prevents a quit not flushed yet and flushes; a flushed one closes
@@ -231,11 +233,18 @@ func (n *nativeQuit) onQuit(e *mygo.QuitEvent) {
 		return
 	}
 	e.PreventDefault()
-	n.beforeClose(func() { n.flushed = true; n.quit() })
+	gen := n.gen
+	n.beforeClose(func() {
+		if gen != n.gen {
+			return // reset since: a later quit owns the outcome
+		}
+		n.flushed = true
+		n.quit()
+	})
 }
 
-// reset makes the next quit flush again.
-func (n *nativeQuit) reset() { n.flushed = false }
+// reset makes the next quit flush again and voids flushes still running.
+func (n *nativeQuit) reset() { n.flushed = false; n.gen++ }
 
 // openFailure is what the GUI tells the user when core.New fails: a class
 // of reason, never err's text.

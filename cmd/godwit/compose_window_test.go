@@ -93,6 +93,27 @@ func TestQuitCancelledThenNativeFlushesAgain(t *testing.T) {
 	}
 }
 
+// A native save still running when a later quit's reset ran (the user then
+// kept a compose window) must not quit the App when it completes.
+func TestStaleNativeFlushDoesNotQuit(t *testing.T) {
+	var proceed func()
+	quits := 0
+	nq := &nativeQuit{beforeClose: func(p func()) { proceed = p }, close: func() {}, quit: func() { quits++ }}
+	e := &mygo.QuitEvent{}
+	nq.onQuit(e) // native save starts
+	old := proceed
+	nq.reset() // a second quit found a compose window; the user kept it
+	old()      // the first native save completes
+	if quits != 0 || nq.flushed {
+		t.Fatalf("stale proceed: quits %d, flushed %v", quits, nq.flushed)
+	}
+	nq.onQuit(&mygo.QuitEvent{}) // the next quit flushes again and its own proceed quits
+	proceed()
+	if quits != 1 || !nq.flushed {
+		t.Fatalf("fresh proceed: quits %d, flushed %v", quits, nq.flushed)
+	}
+}
+
 func TestComposeWindowNavigation(t *testing.T) {
 	for _, entry := range []string{"mygo://localhost/compose.html", "http://localhost:5173/compose.html"} {
 		if !sameDocument(entry, entry) || !sameDocument(entry, entry+"#x") {
