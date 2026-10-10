@@ -49,7 +49,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			ui.Row(c).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5)).Gap(th.Space(1)).Children(func() {
 				ui.Text(c, i18n.T("shell.rail.mail")).FontSize(t.Text.Xl).FontWeight(600)
 				ui.Spacer(c)
-				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { p.searchOpen = true })
 			})
 			kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {

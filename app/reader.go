@@ -516,8 +516,8 @@ func (r *reader) view(c *ui.Context) {
 // and More at the end.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
-	ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
+	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	ui.Row(c).Wrap().Gap(th.Space(1)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.Button(c, i18n.T("reader.reply"), out).OnClick(func() { r.draft("reply") })
 		kit.IconButton(c, "reply-all", i18n.T("reader.reply_all"), ghost).OnClick(func() { r.draft("reply_all") })
@@ -626,7 +626,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		switch {
 		case b != nil && b.err != nil && !b.loading:
 			kit.Alert(c, kit.Danger, humanize(b.err), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.loadBody(m.ID, b.remote) })
 			})
 			return
@@ -636,7 +636,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		}
 		if b.msg.RemoteImagesBlocked > 0 && !b.remote {
 			kit.Alert(c, kit.Warning, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), func() {
-				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.loadBody(m.ID, true) })
 			})
 		}
@@ -646,7 +646,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		if b.cut {
 			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, i18n.T("reader.truncated")).FontSize(t.Text.Sm).TextColor(t.Muted)
-				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).
+				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { r.viewInBrowser(m.ID) })
 			})
 		}
@@ -673,7 +673,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
 					})
 				}).OnClick(func() { r.openAttachment(att) })
-				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.saveAttachment(att) })
 			})
 		}

@@ -262,7 +262,7 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
 		config := a.mcpConfig()
 		ui.Text(c, config).Font("Geist Mono").FontSize(t.Text.Sm).Selectable()
-		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).Clicked() {
+		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Clicked() {
 			c.WriteClipboard(config)
 		}
 	})
@@ -298,7 +298,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
 		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)
 		label := strings.TrimPrefix(repoURL, "https://")
-		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Small: true, Icon: "external-link"}).OnClick(func() {
+		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "external-link"}).OnClick(func() {
 			a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
 		})
 	})

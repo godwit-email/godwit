@@ -465,7 +465,7 @@ func (o *onboarding) sheetView(c *ui.Context) {
 		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
 			ui.Text(c, i18n.T("onboarding.sheet.title")).FontSize(t.Text.Lg).FontWeight(600)
 			ui.Spacer(c)
-			kit.IconButton(c, "x", i18n.T("common.close"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { o.open = false })
+			kit.IconButton(c, "x", i18n.T("common.close"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { o.open = false })
 		})
 		ui.Scroll(c).Shrink(1).Children(func() {
 			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
@@ -630,7 +630,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 				}
 			})
 			if u := o.prov.HelpURL; u != "" {
-				kit.Button(c, i18n.Tf("onboarding.open_help", name), kit.ButtonOpts{Variant: kit.Outline, Small: true}).AlignSelf(ui.Start).
+				kit.Button(c, i18n.Tf("onboarding.open_help", name), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).
 					OnClick(func() { o.openURL(u) })
 			}
 		})
@@ -656,7 +656,7 @@ func (o *onboarding) manualView(c *ui.Context) {
 	if o.manual {
 		icon = "chevron-down"
 	}
-	kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Ghost, Small: true, Icon: icon}).AlignSelf(ui.Start).
+	kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: icon}).AlignSelf(ui.Start).
 		TextColor(t.Muted).OnClick(func() { o.manual = !o.manual })
 	if !o.manual {
 		return
@@ -688,7 +688,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(o.startOAuth)
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(o.startOAuth)
 			})
 			return
 		}
@@ -700,7 +700,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 		ui.Text(c, title).FontWeight(500)
 		ui.Text(c, i18n.T("onboarding.oauth.body")).FontSize(t.Text.Sm).TextColor(t.Muted).TextAlign(ui.Center).LineHeight(1.6)
 		u := o.authURL
-		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: u == ""}).
+		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: u == ""}).
 			OnClick(func() { o.openURL(u) })
 	})
 }
@@ -843,7 +843,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.syncLimit, opts).Disabled(o.adding) }).Description(i18n.T("onboarding.sync.help"))
 	if o.saveErr != nil {
 		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(func() { o.finish(o.again) })
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { o.finish(o.again) })
 		})
 	}
 	ui.Column(c).Gap(th.Space(2)).Children(func() {

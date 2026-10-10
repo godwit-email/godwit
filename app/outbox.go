@@ -47,7 +47,7 @@ func (p *mailPage) outboxView(c *ui.Context) {
 								if act == "discard" {
 									v = kit.Destructive
 								}
-								kit.Button(c, i18n.T("outbox."+act), kit.ButtonOpts{Variant: v, Small: true}).
+								kit.Button(c, i18n.T("outbox."+act), kit.ButtonOpts{Variant: v, Size: kit.SizeSm}).
 									OnClick(func() { p.resolve(it.ID, act) })
 							}
 						})

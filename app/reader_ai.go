@@ -352,12 +352,12 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 // aiTools are the toolbar's Summary, Translate and skill menu, for the
 // newest message.
 func (r *reader) aiTools(c *ui.Context) {
-	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	m, _ := r.last()
 	st := r.state(m.ID)
 	on := func(b bool) kit.ButtonOpts {
 		if b {
-			return kit.ButtonOpts{Variant: kit.Primary, Small: true}
+			return kit.ButtonOpts{Variant: kit.Default, Size: kit.SizeSm}
 		}
 		return out
 	}
@@ -423,7 +423,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 			ui.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model))).FontSize(t.Text.Sm).TextColor(t.Muted)
-			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { r.toggleTranslate(m.ID) })
+			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }
@@ -462,7 +462,7 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 	case run.err != nil:
 		kit.Alert(c, kit.Danger, humanize(run.err), func() {
 			if retry != nil {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(retry)
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
 			}
 		})
 	}
@@ -472,7 +472,7 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) {
 	if msg := humanize(err); msg != "" && !loading {
 		kit.Alert(c, kit.Danger, msg, func() {
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(retry)
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
 		})
 	}
 }
@@ -484,7 +484,7 @@ func (r *reader) panel(c *ui.Context, title string, close func(), body func()) {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			ui.Text(c, title).FontWeight(600).Grow(1).Shrink(1)
 			if close != nil {
-				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(close)
+				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
 			}
 		})
 		body()
@@ -529,9 +529,9 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 			}
 			ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 				for i, b := range card.Buttons {
-					o := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+					o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 					if i == 0 {
-						o.Variant = kit.Primary
+						o.Variant = kit.Default
 					}
 					if !kit.Button(c, b.Label, o).Clicked() {
 						continue

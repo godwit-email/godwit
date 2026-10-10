@@ -349,7 +349,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 					ui.Text(c, i18n.Tf("mail.unread_count", a.unread[acc.ID])).TextColor(t.Muted)
 				}
 				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: a.syncing[acc.ID]}).
+				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: a.syncing[acc.ID]}).
 					OnClick(func() { p.syncNow(acc.ID) })
 			})
 			ui.Field(c, i18n.T("settings.account.sync.range"), func() {
@@ -364,7 +364,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				}
 				ui.Text(c, i18n.Tf("settings.account.usage", usage)).TextColor(t.Muted)
 				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).
+				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { p.openDialog("cache", acc) })
 			})
 		})
@@ -384,7 +384,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
 				server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
 			})
-			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).AlignSelf(ui.Start).
+			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).
 				OnClick(func() { p.openDialog("servers", acc) })
 		})
 		settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
@@ -440,7 +440,7 @@ func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 
 // authButton signs in again (OAuth) or updates the password.
 func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Provider, banner bool) {
-	o := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	if acc.AuthType != "oauth" {
 		kit.Button(c, i18n.Tf("settings.account.login.update", secretName(prov)), o).OnClick(func() { p.openDialog("password", acc) })
 		return
@@ -515,7 +515,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	prov := accountProvider(a, acc)
 	var title string
 	var body, confirm func()
-	label, variant := i18n.T("common.save"), kit.Primary
+	label, variant := i18n.T("common.save"), kit.Default
 	switch p.dialog {
 	case "password":
 		title = i18n.Tf("settings.account.login.update", secretName(prov))

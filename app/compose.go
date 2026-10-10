@@ -561,7 +561,7 @@ func (p *composer) view(c *ui.Context) {
 // conflictNotice offers the choice a stale write left: keep the local
 // version or load the latest; reading the latest may need retrying first.
 func (p *composer) conflictNotice(c *ui.Context) {
-	small := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	small := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	text := i18n.T("compose.conflict")
 	if p.s.latestErr != nil {
 		text += " · " + humanize(p.s.latestErr)
@@ -623,14 +623,14 @@ func (p *composer) fields(c *ui.Context) {
 
 func (p *composer) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
+	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	ui.Row(c).Wrap().Gap(th.Space(0.5)).Padding(th.Space(1.5), th.Space(3.5)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.IconButton(c, "bold", i18n.T("compose.bold"), ghost).OnClick(p.ed.ToggleBold)
 		kit.IconButton(c, "italic", i18n.T("compose.italic"), ghost).OnClick(p.ed.ToggleItalic)
 		link := kit.IconButton(c, "link", i18n.T("compose.link"), ghost).OnClick(func() { p.linkOpen = true })
 		kit.Popover(c, link, &p.linkOpen, func() {
 			kit.Input(c, &p.link, kit.InputOpts{Placeholder: "https://"}).Label(i18n.T("compose.link.url")).Width(theme.ControlWidth)
-			kit.Button(c, i18n.T("compose.link.apply"), kit.ButtonOpts{Small: true}).OnClick(func() {
+			kit.Button(c, i18n.T("compose.link.apply"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() {
 				p.ed.SetLink(p.link)
 				p.link, p.linkOpen = "", false
 			})

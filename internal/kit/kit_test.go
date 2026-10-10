@@ -2,6 +2,7 @@ package kit
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -9,9 +10,11 @@ import (
 )
 
 // themed runs body under the tokens the settings give, as the app does.
-func themed(body func(c *ui.Context)) func(c *ui.Context) {
+func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("compact", body) }
+
+func themedDensity(density string, body func(c *ui.Context)) func(c *ui.Context) {
 	return func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14}, c.Theme().Dark))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: density, FontSize: 13, BodyFontSize: 14}, c.Theme().Dark))
 		body(c)
 	}
 }
@@ -19,7 +22,7 @@ func themed(body func(c *ui.Context)) func(c *ui.Context) {
 func TestKitButtonClick(t *testing.T) {
 	n := 0
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		if Button(c, "Save", ButtonOpts{Variant: Primary, Icon: "check"}).Clicked() {
+		if Button(c, "Save", ButtonOpts{Variant: Default, Icon: "check"}).Clicked() {
 			n++
 		}
 		if Button(c, "Delete", ButtonOpts{Variant: Destructive, Disabled: true}).Clicked() {
@@ -235,5 +238,99 @@ func TestKitSidebarItem(t *testing.T) {
 	}
 	if len(clicked) != 1 || clicked[0] != "Sent" {
 		t.Errorf("clicked %v, want [Sent] (the selected row does not click)", clicked)
+	}
+}
+
+func TestKitButtonSizes(t *testing.T) {
+	for _, density := range []string{"compact", "comfortable"} {
+		var th *ui.Theme
+		tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
+			th = c.Theme()
+			ui.Column(c).Gap(4).Children(func() {
+				for _, k := range []struct {
+					l string
+					s ButtonSize
+				}{{"probe-sm", SizeSm}, {"probe-def", SizeDefault}, {"probe-lg", SizeLg}} {
+					ButtonFrame(c, ButtonOpts{Size: k.s}).Label(k.l).Children(func() { ui.Text(c, "x") })
+				}
+				IconButton(c, "check", "probe-xs", ButtonOpts{Size: SizeXs})
+			})
+		}), 300, 300)
+		for l, want := range map[string]float32{"probe-sm": th.Space(7), "probe-def": th.Space(8), "probe-lg": th.Space(9), "probe-xs": th.Space(4)} {
+			r, ok := tt.Find(l)
+			if !ok {
+				t.Fatalf("%s: %s not found", density, l)
+			}
+			if r.H != want {
+				t.Errorf("%s: %s height = %v, want %v", density, l, r.H, want)
+			}
+			if l == "probe-xs" && r.W != want {
+				t.Errorf("%s: xs width = %v, want %v", density, r.W, want)
+			}
+		}
+	}
+}
+
+func TestKitLinkHasNoBox(t *testing.T) {
+	var th *ui.Theme
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = c.Theme()
+		ui.Column(c).Gap(4).Children(func() {
+			ButtonFrame(c, ButtonOpts{Variant: Link}).Label("probe-link").Children(func() { ui.Text(c, "Learn more") })
+			ui.Text(c, "Learn more").Label("probe-plain")
+		})
+	}), 300, 200)
+	l, ok1 := tt.Find("probe-link")
+	p, ok2 := tt.Find("probe-plain")
+	if !ok1 || !ok2 {
+		t.Fatal("probes not found")
+	}
+	if l.H >= th.Space(7) || l.H != p.H {
+		t.Errorf("link height = %v, plain text = %v, want equal and < %v", l.H, p.H, th.Space(7))
+	}
+}
+
+func TestKitButtonDisabledInert(t *testing.T) {
+	var nb, ni, ne int
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Gap(8).Children(func() {
+			if Button(c, "Off", ButtonOpts{Variant: Outline, Disabled: true}).Clicked() {
+				nb++
+			}
+			if IconButton(c, "check", "probe-off-icon", ButtonOpts{Variant: Outline, Disabled: true}).Clicked() {
+				ni++
+			}
+			if Button(c, "On", ButtonOpts{Variant: Outline}).Clicked() {
+				ne++
+			}
+		})
+	}), 300, 300)
+	probe := func(label string) (before, after [4]uint8) {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("%s not found", label)
+		}
+		x, y := int(r.X)+2, int(r.Y+r.H/2)
+		px := func() [4]uint8 { c := tt.Image().RGBAAt(x, y); return [4]uint8{c.R, c.G, c.B, c.A} }
+		tt.Frame()
+		before = px()
+		tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		for start := time.Now(); time.Since(start) < 300*time.Millisecond; time.Sleep(10 * time.Millisecond) {
+			tt.Frame()
+		}
+		return before, px()
+	}
+	for _, l := range []string{"Off", "probe-off-icon"} {
+		if b, a := probe(l); b != a {
+			t.Errorf("%s: pixel changed on hover %v -> %v", l, b, a)
+		}
+		_ = tt.Click(l)
+	}
+	if b, a := probe("On"); b == a {
+		t.Error("enabled button pixel did not change on hover; probe is insensitive")
+	}
+	_ = tt.Click("On")
+	if nb != 0 || ni != 0 || ne != 1 {
+		t.Errorf("clicks = %d %d %d, want 0 0 1", nb, ni, ne)
 	}
 }

@@ -530,7 +530,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		}
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			ui.Text(c, i18n.T("settings.ext.mcp.tools.title")).FontWeight(600).Grow(1)
-			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: !s.Granted}).
+			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: !s.Granted}).
 				OnClick(func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RefreshMCPTools(ctx, id) }, nil) })
 		})
 		if len(s.Tools) == 0 {

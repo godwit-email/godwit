@@ -80,7 +80,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 	if msg := humanize(p.err); msg != "" {
 		kit.Alert(c, kit.Danger, msg, func() {
 			if p.retry != "" && !p.running {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() {
 					ro := o
 					if p.retryO.Start != nil {
 						ro = p.retryO
@@ -295,7 +295,7 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 		p.composing = area.Composing()
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if m := modelOf(p.a.settings.DefaultModel); m != "" {
-				kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Small: true}).Tooltip(i18n.T("wit.model")).
+				kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Tooltip(i18n.T("wit.model")).
 					OnClick(func() { p.a.navigate(Route{Page: PageSettings, Settings: "models"}) })
 			}
 			ui.Spacer(c)

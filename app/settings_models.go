@@ -421,7 +421,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600).Grow(1).Shrink(1)
 			if f.id != 0 { // up here, clear of the toasts
-				kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Destructive, Small: true, Disabled: f.busy}).
+				kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Destructive, Size: kit.SizeSm, Disabled: f.busy}).
 					OnClick(func() { m.remove(f) })
 			}
 		})
@@ -434,7 +434,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		if f.slug != "" {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, i18n.Tf("settings.models.slug", f.slug)).FontSize(t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).Clicked() {
+				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
 					c.WriteClipboard(f.slug)
 					a.toast(i18n.T("link.copied"))
 				}
@@ -458,7 +458,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			if f.probing {
 				kit.Spinner(c)
 			}
-			kit.Button(c, i18n.T("settings.models.probe"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: f.probing}).
+			kit.Button(c, i18n.T("settings.models.probe"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: f.probing}).
 				OnClick(func() { m.probe(f, nil) })
 		})
 		switch {
@@ -519,7 +519,7 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	ui.Field(c, label, func() { kit.Input(c, &f.key, kit.InputOpts{Password: true, Placeholder: ph}) }).
 		Description(i18n.T("settings.models.api_key.help")).Error(f.keyErr)
 	if u := f.helpURL; u != "" {
-		kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+		kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 			OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) })
 	}
 	if f.hasKey && f.key == "" && f.moved() {

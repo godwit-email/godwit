@@ -197,7 +197,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			lead.MinWidth(max(0, theme.RailWidth+theme.SidebarWidth-padL))
 		}
 		lead.Children(func() {
-			ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
+			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 			label := i18n.T("shell.sidebar.collapse")
 			if a.sidebarHidden {
 				label = i18n.T("shell.sidebar.expand")

@@ -520,7 +520,7 @@ func (p *mailPage) listHeader(c *ui.Context) {
 		ui.Spacer(c)
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
-			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(func() { p.searchOpen = true })
 		}
 	})
