@@ -273,7 +273,7 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	if label == "" {
 		label = i18n.T("wit.input")
 	}
-	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.X3l).Background(t.Background)
+	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.X2l).Background(t.Background)
 	kit.Float(c, box).Children(func() {
 		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
