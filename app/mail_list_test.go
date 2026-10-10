@@ -494,7 +494,7 @@ func TestRowUnreadCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.waitMail("two unread of three", func() bool { return h.items()[0].Unread == 2 })
-	h.see("2 未读")
+	h.until("the dot labeled 2 unread", func() bool { _, ok := h.tt.Find("2 未读"); return ok })
 	h.see("3")
 }
 

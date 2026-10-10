@@ -579,7 +579,8 @@ func (p *mailPage) listView(c *ui.Context) {
 }
 
 // row is one thread or message: who, when, the subject and the start of the
-// text; unread ones in bold, with a dot in the row's left gutter.
+// text; unread ones in bold, with a dot in the row's left gutter that says
+// how many are unread to assistive technology.
 func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Sm
@@ -589,15 +590,13 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	}
 	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
 		if it.Unread > 0 {
-			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread)
+			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
+				Label(i18n.Tf("mail.row.unread", it.Unread))
 		}
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
-			}
-			if it.Unread > 0 {
-				ui.Text(c, i18n.Tf("mail.row.unread", it.Unread)).FontSize(small).TextColor(t.Muted)
 			}
 			if it.Count > 1 {
 				ui.Text(c, strconv.Itoa(it.Count)).FontSize(small).TextColor(t.Muted)
