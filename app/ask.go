@@ -9,7 +9,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -82,8 +81,9 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-	kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {
-		ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
+	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
+	newChat.Children(func() {
+		kit.SidebarIcon(c, newChat, "square-pen")
 		ui.Text(c, i18n.T("ask.new"))
 	})
 	if len(p.convs) == 0 {
@@ -180,7 +180,7 @@ func (p *askPage) noModel(c *ui.Context) {
 // opens the message.
 func (p *askPage) citations(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).Background(t.Sidebar).
+	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).
 		BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
 		ui.Text(c, i18n.T("ask.citations")).FontWeight(600)
 		now := p.a.clock.Now()

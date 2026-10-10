@@ -52,8 +52,9 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { p.searchOpen = true })
 			})
-			kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {
-				ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
+			compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))
+			compose.Children(func() {
+				kit.SidebarIcon(c, compose, "square-pen")
 				ui.Text(c, i18n.T("mail.compose"))
 			})
 			ui.Box(c).Height(th.Space(2))

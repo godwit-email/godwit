@@ -28,7 +28,7 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	}
 	switch {
 	case o.Selected:
-		b.Background(t.SidebarSelected).FontWeight(500)
+		b.Background(t.SidebarSelected)
 	case b.Hovered():
 		b.Background(t.Hover)
 	}
@@ -36,6 +36,15 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 		b.OnClick(o.OnClick)
 	}
 	return b
+}
+
+// SidebarIcon is a SidebarItem's leading icon, muted until item is hovered.
+func SidebarIcon(c *ui.Context, item ui.Element, icon string) {
+	t := theme.Of(c)
+	i := ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+	if item.Hovered() {
+		i.TextColor(t.Foreground)
+	}
 }
 
 // Card is a bordered panel.

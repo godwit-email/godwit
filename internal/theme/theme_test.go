@@ -20,7 +20,7 @@ func TestThemeTokens(t *testing.T) {
 		"Background": {l.Background, p.White}, "Foreground": {l.Foreground, p.Neutral950},
 		"Muted": {l.Muted, p.Neutral500}, "Border": {l.Border, p.Neutral200},
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},
-		"SidebarSelected": {l.SidebarSelected, p.Mid(p.Neutral100, p.Neutral200)},
+		"SidebarSelected": {l.SidebarSelected, p.Neutral100},
 		"Hover":           {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
 		"SuccessBg": {l.SuccessBg, p.Green50}, "SuccessBorder": {l.SuccessBorder, p.Green200}, "SuccessText": {l.SuccessText, p.Green700},
 		"DangerBorder": {l.DangerBorder, p.Red200}, "DangerText": {l.DangerText, p.Red700},
@@ -37,12 +37,12 @@ func TestThemeTokens(t *testing.T) {
 	if l.Outline != p.Neutral950.Color().Alpha(0.05) || Dark().Outline != p.White.Color().Alpha(0.05) {
 		t.Errorf("Outline %v / %v", l.Outline, Dark().Outline)
 	}
-	if l.RailSelected != p.Neutral950.Color().Alpha(0.06) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
+	if l.RailSelected != p.Neutral950.Color().Alpha(0.04) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
 		t.Errorf("Light() rail tints %v %v", l.RailSelected, l.HoverTint)
 	}
 	d := Dark()
 	if !d.Dark || d.Background != p.Neutral950.Color() || d.Window != p.Mid(p.Neutral900, p.Neutral800).Color() ||
-		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.White.Color().Alpha(0.15) || d.HoverTint != p.White.Color().Alpha(0.08) ||
+		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.White.Color().Alpha(0.1) || d.HoverTint != p.White.Color().Alpha(0.08) ||
 		d.Border != p.White.Color().Alpha(0.1) || d.Input != p.White.Color().Alpha(0.15) || d.Ring != p.Neutral500.Color() {
 		t.Errorf("Dark() = %+v", d)
 	}

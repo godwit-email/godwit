@@ -689,3 +689,40 @@ func TestKitSplitQuietDivider(t *testing.T) {
 		t.Errorf("left pane's button %v, want the primary %v", px, want)
 	}
 }
+
+// TestKitSidebarIconMuted: a SidebarItem's icon is the muted gray, and turns
+// the foreground on hover.
+func TestKitSidebarIconMuted(t *testing.T) {
+	var th theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = theme.Of(c)
+		ui.Column(c).Width(240).Children(func() {
+			item := SidebarItem(c, SidebarItemOpts{OnClick: func() {}}).Label("new")
+			item.Children(func() { SidebarIcon(c, item, "square-pen") })
+		})
+	}), 300, 100)
+	r, ok := tt.Find("new")
+	if !ok {
+		t.Fatal("no item")
+	}
+	// darkest is the darkest pixel's red channel inside the icon's box
+	darkest := func() uint8 {
+		img, m := tt.Image(), uint8(255)
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			for x := int(r.X); x < int(r.X)+40; x++ {
+				m = min(m, img.RGBAAt(x, y).R)
+			}
+		}
+		return m
+	}
+	if got := darkest(); got < th.Muted.R {
+		t.Errorf("icon darkest %d, want no darker than muted %d", got, th.Muted.R)
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	tt.Frame()
+	time.Sleep(2 * theme.MotionFast)
+	tt.Frame()
+	if got := darkest(); got >= th.Muted.R {
+		t.Errorf("hovered icon darkest %d, want darker than muted %d", got, th.Muted.R)
+	}
+}
