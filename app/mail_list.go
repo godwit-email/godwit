@@ -548,7 +548,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2))
+	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart
 	l.Children(func() {
 		if len(rows) == 0 && p.loading { // the first load: placeholder rows
 			for range 6 {
