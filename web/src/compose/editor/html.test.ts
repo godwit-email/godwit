@@ -1,5 +1,8 @@
+import type { Descendant, Path, TText, Value } from "platejs";
 import { createPlateEditor } from "platejs/react";
-import { fromHTML, safeHref, sanitize, toHTML } from "./html";
+// The ⌘K contract's cases, shared with webui's plainText (Go).
+import shared from "../../../../webui/testdata/selection.json?raw";
+import { fromHTML, offsetOf, safeHref, sanitize, toHTML, toText } from "./html";
 import { plugins } from "./plugins";
 
 const editor = () => createPlateEditor({ plugins });
@@ -160,5 +163,33 @@ describe("paste", () => {
       { type: "img", url: "https://t/x.png", children: [{ text: "" }] },
     ];
     expect(paste({ fragment, html: "<p>ignored</p>" })).toBe("<p>xH</p><p>t</p>");
+  });
+});
+
+// Every text node of value with its path.
+function texts(nodes: Descendant[], path: Path = []): [TText, Path][] {
+  return nodes.flatMap((n, i) =>
+    "text" in n ? [[n, [...path, i]] as [TText, Path]] : texts(n.children, [...path, i]),
+  );
+}
+
+describe("⌘K plain text", () => {
+  const cases: { name: string; html: string; text: string; start: number; end: number }[] =
+    JSON.parse(shared);
+
+  it.each(cases.map((c) => [c.name, c]))("%s: toText and offsets agree with Go", (_, c) => {
+    const value: Value = fromHTML(editor(), c.html);
+    const text = toText(value);
+    expect(text).toBe(c.text);
+    const offs = new Set<number>();
+    for (const [n, path] of texts(value)) {
+      for (let i = 0; i <= n.text.length; i++) {
+        const o = offsetOf(value, { path, offset: i });
+        offs.add(o);
+        if (i < n.text.length) expect(text[o]).toBe(n.text[i]);
+      }
+    }
+    expect(offs.has(c.start)).toBe(true);
+    expect(offs.has(c.end)).toBe(true);
   });
 });

@@ -166,3 +166,11 @@ kbd {
 .compose-titlebar :is(button, input, a, select) {
   --app-region: no-drag;
 }
+
+/* Wit's review marks: the native InsBg/InsText/DelBg/DelText, set by applyTheme (webui.ThemeVars). */
+@theme inline {
+  --color-ins: var(--ins-bg);
+  --color-ins-foreground: var(--ins-text);
+  --color-del: var(--del-bg);
+  --color-del-foreground: var(--del-text);
+}

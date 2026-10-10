@@ -142,3 +142,39 @@ function block(n: Descendant): string {
 export function toHTML(value: Value): string {
   return blocks(value);
 }
+
+// A line of the plain text: a block of inline nodes (a paragraph, a list item's text).
+const isLine = (n: Descendant) => isText(n) || n.children.every(isInline);
+
+/**
+ * The value's plain text, the ⌘K contract webui's plainText keeps: blocks joined by "\n", a soft
+ * break "\n" (the trailing one fromHTML already dropped), entities decoded; UTF-16 like JS strings.
+ */
+export function toText(value: Value): string {
+  const lines = (ns: Descendant[]): string[] =>
+    ns.flatMap((n) => (isLine(n) ? [textOf(n)] : lines((n as TElement).children)));
+  return lines(value).join("\n");
+}
+
+/** Where point (a text node's path and offset) falls in toText(value), in UTF-16 code units. */
+export function offsetOf(value: Value, point: { path: number[]; offset: number }): number {
+  let pos = 0;
+  let lines = 0;
+  const same = (p: number[]) =>
+    p.length === point.path.length && p.every((x, i) => x === point.path[i]);
+  const walk = (ns: Descendant[], path: number[], line: boolean): number | undefined => {
+    for (const [i, n] of ns.entries()) {
+      const at = [...path, i];
+      if (!line && isLine(n) && lines++ > 0) pos++; // the "\n" before a line
+      if (isText(n)) {
+        if (same(at)) return pos + point.offset;
+        pos += n.text.length;
+        continue;
+      }
+      const r = walk(n.children, at, line || isLine(n));
+      if (r !== undefined) return r;
+    }
+    return undefined;
+  };
+  return walk(value, [], false) ?? pos;
+}

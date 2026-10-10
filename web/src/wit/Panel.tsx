@@ -7,7 +7,7 @@ import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -89,14 +89,14 @@ function Answer({
   live,
   nums,
   approvals,
-  onReview,
+  review,
   t,
 }: {
   m: WitUIMessage;
   live: boolean;
   nums: Map<number, { n: number; suspect: boolean }>;
   approvals: Map<string, Approval>;
-  onReview(a: Approval): void;
+  review?: PanelReview;
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
@@ -106,7 +106,7 @@ function Answer({
     .join("\n\n");
   const waiting = calls.flatMap((c) => {
     const a = c.state === "approval-requested" ? approvals.get(c.approval.id) : undefined;
-    return a ? [a] : [];
+    return a && a.id === review?.approval ? [a] : [];
   });
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
@@ -164,34 +164,37 @@ function Answer({
         </div>
       )}
       {waiting.map((a) => (
-        <button key={a.id} type="button" className="text-left" onClick={() => onReview(a)}>
-          <Card size="sm" className="ring-primary hover:bg-muted">
-            <CardHeader>
-              <CardTitle>{t("wit.compose.review")}</CardTitle>
-              <CardDescription className="font-mono">
-                {t(`wit.tool.${a.tool}`) !== `wit.tool.${a.tool}`
-                  ? t(`wit.tool.${a.tool}`)
-                  : a.tool}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </button>
+        <Card key={a.id} size="sm" className="ring-primary">
+          <CardHeader>
+            <CardTitle>{t("wit.compose.review")}</CardTitle>
+            <CardDescription className="font-mono">
+              {t(`wit.tool.${a.tool}`) !== `wit.tool.${a.tool}` ? t(`wit.tool.${a.tool}`) : a.tool}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>{review?.body}</CardContent>
+        </Card>
       ))}
     </div>
   );
 }
 
+/** The edit the page reviews: its card in the panel holds `body` (the summary and the decisions). */
+export type PanelReview = { approval: number; body: ReactNode };
+
 /**
  * The compose window's Wit panel: what Wit knows (chips), 调整 / 翻译, the conversation, and the
  * input. `transport` must be the one whose follow() read `history`; a live run in it resumes into
- * its open answer. Edits waiting show as cards that open the review (onReview); approvals are
- * decided only there.
+ * its open answer. The edit the page reviews (`review`) shows as a card on its answer. A new
+ * `resume` streams that run (resumed by a decision) onto the last answer. onRunning tells whether
+ * a run streams.
  */
 export function Panel({
   info,
   history,
   locked,
-  onReview,
+  review,
+  resume,
+  onRunning,
   transport,
   t,
   slots,
@@ -199,7 +202,9 @@ export function Panel({
   info: WitInfo;
   history: WitHistory;
   locked: boolean;
-  onReview(a: Approval): void;
+  review?: PanelReview;
+  resume?: { run: number };
+  onRunning?(on: boolean): void;
   transport: WitTransport;
   t: T;
   slots?: { chips?: ReactNode; actions?: ReactNode };
@@ -221,6 +226,17 @@ export function Panel({
     transport.resume(start.open, history.running);
     void resumeStream();
   }, [history.running, transport, start, resumeStream]);
+
+  useEffect(() => onRunning?.(running), [running, onRunning]);
+
+  // A decision resumed a run: its events (logged since) go on in the last answer.
+  const last = chat.messages.at(-1);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new resume streams
+  useEffect(() => {
+    if (!resume || running) return;
+    transport.resume(last?.role === "assistant" ? last : undefined, resume.run);
+    void resumeStream();
+  }, [resume]);
 
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
@@ -251,8 +267,6 @@ export function Panel({
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
   }
-  const last = chat.messages.at(-1);
-
   return (
     <aside className="flex w-90 shrink-0 flex-col border-l">
       {(info.chips.length > 0 || slots?.chips) && (
@@ -322,7 +336,7 @@ export function Panel({
                       live={running && m === last}
                       nums={nums}
                       approvals={approvals}
-                      onReview={onReview}
+                      review={review}
                       t={t}
                     />
                   )}

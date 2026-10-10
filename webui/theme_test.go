@@ -22,6 +22,8 @@ func TestThemeVars(t *testing.T) {
 		"--destructive": css(l.Danger), "--destructive-foreground": css(l.PrimaryText),
 		"--border": css(l.Border), "--input": css(l.Input), "--ring": css(l.Ring),
 		"--radius": "8px",
+		"--ins-bg": css(l.InsBg), "--ins-text": css(l.InsText),
+		"--del-bg": css(l.DelBg), "--del-text": css(l.DelText),
 	}
 	for k, w := range want {
 		if v[k] != w {

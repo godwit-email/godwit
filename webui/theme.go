@@ -31,7 +31,8 @@ func ThemeOf(st core.Settings) Theme {
 	return Theme{Mode: st.Theme, Light: ThemeVars(l), Dark: ThemeVars(d), FontSize: l.FontSize}
 }
 
-// ThemeVars maps tokens to shadcn's CSS variables. --radius is Radius.Lg; styles.css
+// ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
+// (--ins-* and --del-*). --radius is Radius.Lg; styles.css
 // derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
 func ThemeVars(t theme.Tokens) map[string]string {
 	return map[string]string{
@@ -45,6 +46,9 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--destructive": css(t.Danger), "--destructive-foreground": css(t.PrimaryText),
 		"--border": css(t.Border), "--input": css(t.Input), "--ring": css(t.Ring),
 		"--radius": fmt.Sprintf("%gpx", t.Radius.Lg),
+		// Wit's review marks: inserted and deleted words.
+		"--ins-bg": css(t.InsBg), "--ins-text": css(t.InsText),
+		"--del-bg": css(t.DelBg), "--del-text": css(t.DelText),
 	}
 }
 

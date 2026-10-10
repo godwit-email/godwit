@@ -127,6 +127,40 @@ describe("Editor", () => {
     );
   });
 
+  it("⌘K with Wit gives the selection in the plain text, not the link popover", async () => {
+    const onCmdK = vi.fn();
+    render(
+      <Editor
+        initial="<p>one</p><p>hello world</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={() => {}}
+        onComposing={() => {}}
+        onCmdK={onCmdK}
+        t={t}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node && node.textContent !== "hello world") node = walker.nextNode();
+    await act(async () => {
+      box.focus();
+      const r = document.createRange();
+      r.setStart(node as Node, 6);
+      r.setEnd(node as Node, 11);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(r);
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((res) => setTimeout(res, 150));
+    });
+    fireEvent.keyDown(box, { key: "k", code: "KeyK", ...mod });
+    expect(onCmdK).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "one\nhello world", start: 10, end: 15 }),
+    );
+    expect(screen.queryByPlaceholderText("https://")).toBeNull();
+  });
+
   it("the link popover closes and applies nothing when the editor turns read-only", async () => {
     const { box, onChange, setReadOnly } = setup();
     await select(box, 0, 5);

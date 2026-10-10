@@ -1,8 +1,8 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { WitEvent, WitHistory, WitInfo } from "@/mygo";
+import type { Approval, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
-import { Panel } from "./Panel";
+import { Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({
@@ -58,7 +58,14 @@ const ev = (e: Partial<WitEvent>): WitEvent => ({
   ...e,
 });
 
-async function setup(o: { history?: WitHistory; locked?: boolean } = {}) {
+async function setup(
+  o: {
+    history?: WitHistory;
+    locked?: boolean;
+    review?: PanelReview;
+    onRunning?(on: boolean): void;
+  } = {},
+) {
   let listener: ((e: WitEvent) => void) | undefined;
   const api = {
     ask: vi.fn().mockResolvedValue(7),
@@ -72,19 +79,21 @@ async function setup(o: { history?: WitHistory; locked?: boolean } = {}) {
   });
   api.follow.mockResolvedValue(o.history ?? empty);
   await tr.follow(); // as the page does: the history read through this transport
-  const onReview = vi.fn();
-  const r = render(
+  const ui = (resume?: { run: number }) => (
     <Panel
       info={info}
       history={o.history ?? empty}
       locked={o.locked ?? false}
-      onReview={onReview}
+      review={o.review}
+      resume={resume}
+      onRunning={o.onRunning}
       transport={tr}
       t={t}
-    />,
+    />
   );
+  const r = render(ui());
   const emit = (e: Partial<WitEvent>) => act(() => listener?.(ev(e)));
-  return { ...r, api, tr, emit, onReview };
+  return { ...r, api, tr, emit, resume: (run: number) => r.rerender(ui({ run })) };
 }
 
 const input = () => screen.getByRole("textbox", { name: "Wit 输入" });
@@ -208,8 +217,7 @@ describe("Panel", () => {
     expect(screen.getAllByText("来源 [2] 中包含疑似指令。")).toHaveLength(2);
   });
 
-  it("a pending edit shows a card that opens the review", async () => {
-    const user = userEvent.setup();
+  it("the reviewed edit shows a card with the page's summary and decisions", async () => {
     const a = {
       id: 4,
       run: 7,
@@ -220,27 +228,49 @@ describe("Panel", () => {
       error: "",
       destinations: [],
     };
-    const { onReview } = await setup({
-      history: {
-        ...empty,
-        messages: [
-          {
-            id: "q0",
-            role: "user",
-            text: "更短",
-            calls: [],
-            results: [],
-            citations: [],
-            runs: [7],
-          },
-        ],
-        approvals: [a],
-      },
+    const history = (approvals: Approval[]): WitHistory => ({
+      ...empty,
+      messages: [
+        {
+          id: "q0",
+          role: "user",
+          text: "更短",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
+      ],
+      approvals,
     });
-    const card = screen.getByRole("button", { name: /待确认/ });
-    expect(within(card).getByText("修改正文")).toBeInTheDocument();
-    await user.click(card);
-    expect(onReview).toHaveBeenCalledWith(a);
+    const { unmount } = await setup({
+      history: history([a]),
+      review: { approval: 4, body: <button type="button">全部接受</button> },
+    });
+    expect(screen.getByText("待确认")).toBeInTheDocument();
+    expect(screen.getByText("修改正文")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部接受" })).toBeInTheDocument();
+    unmount();
+    await setup({ history: history([a]) }); // not the one reviewed: no card
+    expect(screen.queryByText("待确认")).toBeNull();
+  });
+
+  it("a resume streams the decided run onto the last answer; onRunning follows", async () => {
+    const onRunning = vi.fn();
+    const { emit, resume } = await setup({ onRunning });
+    await userEvent.setup().type(input(), "改短{Enter}");
+    emit({ run: 7, kind: "text", text: "好的" });
+    emit({ run: 7, kind: "interrupted", approvals: [] });
+    await waitFor(() => expect(onRunning).toHaveBeenLastCalledWith(false));
+    expect(onRunning).toHaveBeenCalledWith(true);
+    emit({ run: 7, kind: "text", text: "，已改。" }); // logged: no stream yet
+    resume(7);
+    await waitFor(() => expect(onRunning).toHaveBeenLastCalledWith(true));
+    emit({ run: 7, kind: "done" });
+    await waitFor(() => expect(onRunning).toHaveBeenLastCalledWith(false));
+    expect(screen.getAllByText(/好的/)).toHaveLength(1);
+    expect(screen.getByText(/已改/)).toBeInTheDocument();
+    expect(screen.getAllByText("改短")).toHaveLength(1);
   });
 
   it("reconnects to a live run: deltas append to the open answer", async () => {

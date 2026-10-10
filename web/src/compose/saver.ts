@@ -32,6 +32,12 @@ export interface Saver {
   useLatest(revision: number, snapshot: ComposeEdit): void;
   readonly status: SaveStatus;
   readonly frozen: boolean;
+  /** The revision saves and operations use: the stored one as far as the page knows. */
+  readonly revision: number;
+  /** A save, flush or operation is queued or running. */
+  readonly busy: boolean;
+  /** An edit is not saved yet (none after a conflict, which keeps it in the snapshot). */
+  readonly dirty: boolean;
   onChange(fn: () => void): () => void;
   /** Cancels the timer and blocks any further scheduling. */
   dispose(): void;
@@ -58,6 +64,7 @@ export function createSaver(
   let epoch = 0; // bumped by useLatest: saves already in flight no longer count
   let timer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<unknown> = Promise.resolve();
+  let queued = 0; // queue items not finished
   let settle = async () => true;
   const listeners = new Set<() => void>();
   const refused = new Set<() => void>();
@@ -74,7 +81,8 @@ export function createSaver(
     notify();
   };
   const enqueue = <R>(fn: () => Promise<R>): Promise<R> => {
-    const p = queue.then(fn);
+    queued++;
+    const p = queue.then(fn).finally(() => queued--);
     queue = p.catch(() => {});
     return p;
   };
@@ -202,6 +210,15 @@ export function createSaver(
     },
     get frozen() {
       return frozen;
+    },
+    get revision() {
+      return revision;
+    },
+    get busy() {
+      return queued > 0;
+    },
+    get dirty() {
+      return pending !== undefined;
     },
     dispose() {
       disposed = true;

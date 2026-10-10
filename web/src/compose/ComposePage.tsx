@@ -1,26 +1,33 @@
 import { RiAttachment2 } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import {
+  type Approval,
   type Attachment,
   ComposePage as api,
+  type BodyChange,
   type ComposeEdit,
   type ComposeState,
   events,
+  type Review as ReviewT,
   type SendWarning,
+  type WitEvent,
   type WitHistory,
 } from "@/mygo";
 import { makeT, type T } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { Panel as WitPanel, witError } from "@/wit/Panel";
-import { WitTransport } from "@/wit/transport";
+import { ends, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
-import { Editor } from "./editor/Editor";
+import { type CmdKSelection, Editor } from "./editor/Editor";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
 import { Notices } from "./Notices";
+import { CmdK } from "./review/CmdK";
+import { Review, reviewSummary } from "./review/Review";
 import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
 
@@ -149,6 +156,12 @@ export function errorText(e: unknown, t: T): string {
   return k ? t(k[1]) : t("error.unknown", msg);
 }
 
+/** A draft edit waiting for a decision: the page reviews it in place of the body. */
+const pendingEdit = (a: Approval) =>
+  a.state === "pending" && (a.tool === "update_draft" || a.tool === "update_selection");
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 const fmt = (d: Date) =>
   d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -179,6 +192,7 @@ function Compose({
   const cur = useRef(editOf(state));
   const [f, setF] = useState(cur.current);
   const [initial, setInitial] = useState({ body: state.body, n: 0 }); // n remounts the editor
+  const [fieldsKey, setFieldsKey] = useState(0); // remounts the fields
   const [from, setFrom] = useState(state.from);
   const [signature, setSignature] = useState(state.signature);
   const [quote, setQuote] = useState(state.quote);
@@ -228,24 +242,152 @@ function Compose({
     currentWindow.setTitle(f.subject.trim() || t("compose.new"));
   }, [f.subject, t]);
 
-  // The Wit panel, when a model is configured: the transport listens before follow reads.
-  const [wit, setWit] = useState<{ tr: WitTransport; history: WitHistory }>();
+  // Wit, when a model is configured. The page tracks what locks the body: a run streaming in the
+  // panel or a ⌘K run, an edit waiting (reviewed in place of the body), a reload in flight.
+  const [wit, setWit] = useState<{ tr: WitTransport; history: WitHistory; n: number }>();
+  const [panelRunning, setPanelRunning] = useState(false);
+  const [cmdkRun, setCmdkRun] = useState(0); // -1 while it starts
+  const [pendings, setPendings] = useState<Approval[]>([]);
+  const [review, setReview] = useState<ReviewT>();
+  const [deciding, setDeciding] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
+  const [applied, setApplied] = useState(false);
+  const [resume, setResume] = useState<{ run: number }>();
+  const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
+  const edits = useRef(0); // local edits taken
+  const runEdits = useRef(0); // edits when the last run or decision started
+  const reloads = useRef(0);
+  const decidedRun = useRef(0); // a decision's run: its next event resumes the panel's stream
+  const cmdkRef = useRef(0);
+  const ended = useRef(new Set<number>()); // runs seen ending
+  const trRef = useRef<WitTransport>(undefined);
+  const toasted = useRef(false); // the lock's toast, once per lock
+
+  // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
+  const adopt = (revision: number, body: string) => {
+    cur.current = { ...cur.current, body, revision };
+    setF(cur.current);
+    setInitial((i) => ({ body, n: i.n + 1 }));
+    // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
+    saver.current?.useLatest(revision, cur.current);
+  };
+
+  // Reads the draft after a run or a decision; the newest read wins. Skipped while the saver is
+  // busy or in conflict, when the stored revision is not newer, or with a local edit since the run.
+  const reload = async () => {
+    const n = ++reloads.current;
+    setReloading(true);
+    setReloadErr("");
+    try {
+      const l = await api.latest();
+      const s = saver.current;
+      if (n !== reloads.current || !s) return;
+      if (s.busy || s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
+      if (edits.current !== runEdits.current) return;
+      adopt(l.revision, l.body);
+      setApplied(true);
+    } catch (e) {
+      if (n === reloads.current) setReloadErr(witError(message(e), t));
+    } finally {
+      if (n === reloads.current) setReloading(false);
+    }
+  };
+
+  // The panel follows the draft's conversation again (after ⌘K: the one its edit waits in).
+  const refollow = () => {
+    const tr = trRef.current;
+    if (!tr) return;
+    tr.follow().then(
+      (history) => {
+        setPendings(history.approvals.filter(pendingEdit));
+        setResume(undefined); // the remounted panel must not resume an old run
+        setWit((w) => w && { tr, history, n: w.n + 1 });
+      },
+      (e) => toast.error(witError(message(e), t)),
+    );
+  };
+
+  const onWit = useRef<(ev: WitEvent) => void>(() => {});
+  onWit.current = (ev) => {
+    if (ev.kind === "interrupted") setPendings(ev.approvals.filter(pendingEdit));
+    if (ev.run === decidedRun.current && ev.conversation === trRef.current?.conversation) {
+      decidedRun.current = 0;
+      setResume({ run: ev.run });
+    }
+    if (!ends(ev)) return;
+    ended.current.add(ev.run);
+    if (ev.run === cmdkRef.current) {
+      cmdkRef.current = 0;
+      setCmdkRun(0);
+      refollow();
+    }
+    void reload();
+  };
+
+  // A run starts only once the edit is saved (the saver's queue); nothing runs if that fails.
+  const startRun = useRef(async (start: () => Promise<number>) => {
+    const s = saver.current;
+    setApplied(false);
+    const r = await s?.run(async (rev) => {
+      runEdits.current = edits.current;
+      return { revision: rev, conflict: false, run: await start() };
+    });
+    if (!r) throw new Error(""); // not saved: the status says why; the panel shows no error
+    return r.run;
+  });
+
+  // The page listens, then the transport, before follow reads.
   useEffect(() => {
     if (!state.wit.enabled) return;
-    const tr = new WitTransport();
+    const off = events.wit.on((ev) => onWit.current(ev));
+    const tr = new WitTransport({
+      ask: (text) => startRun.current(() => api.ask(text)),
+      skill: (id, lang) => startRun.current(() => api.skill(id, lang)),
+      follow: () => api.follow(),
+      stop: (run) => api.stop(run),
+    });
+    trRef.current = tr;
     let live = true;
     tr.follow().then(
-      (history) => live && setWit({ tr, history }),
-      (e) => live && toast.error(witError(e instanceof Error ? e.message : String(e), t)),
+      (history) => {
+        if (!live) return;
+        setPendings(history.approvals.filter(pendingEdit));
+        setWit({ tr, history, n: 0 });
+      },
+      (e) => live && toast.error(witError(message(e), t)),
     );
     return () => {
       live = false;
+      off();
       tr.close();
     };
   }, [state, t]);
 
+  const current = pendings[0];
+  const currentId = current?.id;
+  useEffect(() => {
+    setReview(undefined);
+    if (!currentId) return;
+    let live = true;
+    api.review(currentId).then(
+      (r) => live && setReview(r),
+      (e) => live && toast.error(witError(message(e), t)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [currentId, t]);
+
+  const reviewing = review && review.approval === currentId ? review : undefined;
+
   const sv = saver.current;
   const locked = frozen || done || resolving || !!sv?.frozen;
+  const running = panelRunning || cmdkRun !== 0;
+  const witLocked = running || !!current || reloading || sending;
+  useEffect(() => {
+    if (!witLocked) toasted.current = false;
+  }, [witLocked]);
   const finish = () => {
     doneRef.current = true;
     setDone(true);
@@ -259,6 +401,8 @@ function Compose({
     if (sv?.edit(n) === false) return; // refused while an operation runs
     cur.current = n;
     setF(n);
+    edits.current++;
+    setApplied(false);
     setWarnings({ list: [], digest: "" });
     setBlocked(null);
   };
@@ -311,6 +455,70 @@ function Compose({
       failure(e);
     }
   };
+  // A body operation (a decision, undo) in the saver's queue; its BodyChange is adopted at once.
+  const bodyOp = async (op: () => Promise<BodyChange>) => {
+    if (!sv) return null;
+    setDeciding(true);
+    try {
+      const r = await sv.run(op);
+      if (r && !r.conflict) {
+        adopt(r.revision, r.body);
+        setSignature(r.signature);
+        setAttachments(r.attachments);
+        setSavedAt(fmt(new Date(r.updatedAt)));
+      }
+      return r;
+    } catch (e) {
+      toast.error(witError(message(e), t));
+      return null;
+    } finally {
+      setDeciding(false);
+    }
+  };
+  // Decides the edit reviewed; the run it resumes streams in the panel, and the draft is read again.
+  const decide = async (op: (id: number) => Promise<BodyChange>) => {
+    const a = current;
+    if (!a || deciding) return;
+    runEdits.current = edits.current;
+    decidedRun.current = a.run;
+    const r = await bodyOp(() => op(a.id));
+    if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
+    void reload();
+  };
+  const undo = async () => {
+    setApplied(false);
+    await bodyOp(() => api.undo());
+  };
+  const closeCmdK = useCallback(() => setCmdk(null), []);
+  const stop = () => {
+    const p = cmdkRun > 0 ? api.stop(cmdkRun) : wit?.tr.stop();
+    p?.catch((e) => toast.error(witError(message(e), t)));
+  };
+  // ⌘K: saved first, then the selection of the text as saved is rewritten (a run of its own).
+  const rewrite = async (sel: CmdKSelection, instruction: string) => {
+    setCmdk(null);
+    setApplied(false);
+    if (!sv) return;
+    cmdkRef.current = -1;
+    setCmdkRun(-1);
+    try {
+      const r = await sv.run((rev) => {
+        runEdits.current = edits.current;
+        return api.rewrite(rev, sel.text, sel.start, sel.end, instruction);
+      });
+      if (r && !r.conflict && !ended.current.has(r.run)) {
+        cmdkRef.current = r.run;
+        setCmdkRun(r.run);
+        return;
+      }
+      if (r && !r.conflict) refollow(); // over already
+    } catch (e) {
+      toast.error(witError(message(e), t));
+    }
+    cmdkRef.current = 0;
+    setCmdkRun(0);
+  };
+
   const discard = async () => {
     if (!sv) return;
     try {
@@ -351,7 +559,8 @@ function Compose({
       }
       cur.current = editOf(l);
       setF(cur.current);
-      setInitial((i) => ({ body: l.body, n: i.n + 1 })); // remounts the editor and the fields
+      setInitial((i) => ({ body: l.body, n: i.n + 1 })); // remounts the editor
+      setFieldsKey((k) => k + 1);
       setSavedAt(fmt(new Date(l.updatedAt)));
       // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
       sv.useLatest(l.revision, cur.current);
@@ -410,7 +619,7 @@ function Compose({
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <Fields
-              key={initial.n}
+              key={fieldsKey}
               ref={fieldsRef}
               frozen={locked}
               accounts={state.accounts}
@@ -424,27 +633,102 @@ function Compose({
               onChange={(e: FieldsEdit) => edit(e)}
               t={t}
             />
-            <Editor
-              key={`${state.draftId}:${initial.n}`}
-              initial={initial.body}
-              readOnly={locked}
-              placeholder=""
-              onChange={(body) => edit({ body })}
-              onComposing={() => {}} // <main> tracks compositions, the fields' too
-              t={t}
-              attach={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-7.5 rounded-md text-foreground/80"
-                  aria-label={t("compose.attach")}
-                  disabled={locked}
-                  onClick={() => change((rev) => api.addAttachments(rev))}
+            {/* The body: locked while Wit writes or an edit waits; typing there toasts why, once. */}
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: listens to the body's keys only */}
+            <div
+              className="flex flex-1 flex-col"
+              onKeyDown={(e) => {
+                const typed = e.key.length === 1 && !e.metaKey && !e.ctrlKey;
+                if (!witLocked || toasted.current || !typed) return;
+                if ((e.target as HTMLElement).closest("button")) return; // the review's own
+                toasted.current = true;
+                toast(t(sending ? "compose.sending.locked" : "wit.compose.locked"), {
+                  id: "locked",
+                });
+              }}
+            >
+              {reloadErr && (
+                <Alert
+                  variant="destructive"
+                  className="mx-5 mt-2 w-auto border-0 bg-destructive/10"
                 >
-                  <RiAttachment2 className="size-3.75" />
-                </Button>
-              }
-            />
+                  <AlertDescription>{reloadErr}</AlertDescription>
+                  <AlertAction>
+                    <Button variant="ghost" size="sm" onClick={() => void reload()}>
+                      {t("common.retry")}
+                    </Button>
+                  </AlertAction>
+                </Alert>
+              )}
+              {running && (
+                <div className="mx-5 mt-2 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                  <span className="flex-1">{t("wit.compose.writing_banner")}</span>
+                  <Button variant="ghost" size="sm" onClick={stop}>
+                    {t("wit.stop")}
+                  </Button>
+                </div>
+              )}
+              {applied && !witLocked && !locked && (
+                <div className="mx-5 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
+                  <span>{t("wit.compose.applied")}</span>
+                  <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
+                    {t("wit.compose.undo")}
+                  </Button>
+                </div>
+              )}
+              {reviewing ? (
+                <Review
+                  key={reviewing.approval}
+                  review={reviewing}
+                  busy={deciding}
+                  onDecide={(accept) => decide((id) => api.decide(id, accept))}
+                  onFinish={(ds) => decide((id) => api.finish(id, ds))}
+                  t={t}
+                />
+              ) : running && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim() ? (
+                <div className="flex min-h-70 flex-1 flex-col gap-3 p-5">
+                  <span className="text-muted-foreground">{t("wit.compose.writing")}</span>
+                  {["90%", "75%", "50%"].map((w) => (
+                    <div
+                      key={w}
+                      style={{ width: w }}
+                      className="h-3 animate-pulse rounded bg-muted"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Editor
+                  key={`${state.draftId}:${initial.n}`}
+                  initial={initial.body}
+                  readOnly={locked || witLocked}
+                  placeholder=""
+                  onChange={(body) => edit({ body })}
+                  onComposing={() => {}} // <main> tracks compositions, the fields' too
+                  t={t}
+                  onCmdK={wit && !locked && !witLocked ? setCmdk : undefined}
+                  attach={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-7.5 rounded-md text-foreground/80"
+                      aria-label={t("compose.attach")}
+                      disabled={locked}
+                      onClick={() => change((rev) => api.addAttachments(rev))}
+                    >
+                      <RiAttachment2 className="size-3.75" />
+                    </Button>
+                  }
+                />
+              )}
+              {cmdk && !locked && !witLocked && (
+                <CmdK
+                  at={cmdk.at}
+                  onSubmit={(instruction) => void rewrite(cmdk, instruction)}
+                  onClose={closeCmdK}
+                  t={t}
+                />
+              )}
+            </div>
             <div className="flex flex-col gap-4 px-5 pb-4 *:empty:hidden">
               {signature && (
                 <div className="whitespace-pre-wrap text-base text-muted-foreground">
@@ -506,8 +790,41 @@ function Compose({
           <WitPanel
             info={state.wit}
             history={wit.history}
-            locked={locked}
-            onReview={() => {}} // the review is plan 3 Task 4's
+            key={wit.n}
+            locked={locked || witLocked}
+            review={
+              reviewing
+                ? {
+                    approval: reviewing.approval,
+                    body: (
+                      <div className="flex flex-col gap-2">
+                        <span className="text-muted-foreground text-sm">
+                          {reviewSummary(reviewing, t)}
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={deciding}
+                            onClick={() => decide((id) => api.decide(id, false))}
+                          >
+                            {t("wit.compose.reject_all")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={deciding}
+                            onClick={() => decide((id) => api.decide(id, true))}
+                          >
+                            {t("wit.compose.accept_all")}
+                          </Button>
+                        </div>
+                      </div>
+                    ),
+                  }
+                : undefined
+            }
+            resume={resume}
+            onRunning={setPanelRunning}
             transport={wit.tr}
             t={t}
           />

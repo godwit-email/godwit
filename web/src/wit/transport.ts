@@ -331,6 +331,11 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.log = [];
   }
 
+  /** The conversation followed; undefined while unknown. */
+  get conversation(): number | undefined {
+    return this.conv;
+  }
+
   /** Follows the draft's conversation (api.follow); events from now on are kept for resume. */
   async follow(): Promise<WitHistory> {
     this.reset();
