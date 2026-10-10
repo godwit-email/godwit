@@ -9,8 +9,18 @@ const h = vi.hoisted(() => ({
 vi.mock("@/mygo", () => ({
   ComposePage: { load: vi.fn(), save: vi.fn(), closed: vi.fn() },
   events: {
-    closing: { on: (f: (gen: number) => void) => ((h.closing = f), () => {}) },
-    theme: { on: (f: (t: unknown) => void) => ((h.theme = f), () => {}) },
+    closing: {
+      on: (f: (gen: number) => void) => {
+        h.closing = f;
+        return () => {};
+      },
+    },
+    theme: {
+      on: (f: (t: unknown) => void) => {
+        h.theme = f;
+        return () => {};
+      },
+    },
   },
 }));
 vi.mock("mygo-runtime", () => ({ currentWindow: { setTitle: vi.fn() } }));

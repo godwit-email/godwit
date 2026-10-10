@@ -36,7 +36,10 @@ export function ComposePage() {
       stop();
       stop = applyTheme(t as Theme);
     });
-    return () => (off(), stop());
+    return () => {
+      off();
+      stop();
+    };
   }, [state]);
 
   if (!state) return <main aria-label="撰写" />;
