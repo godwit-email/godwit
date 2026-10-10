@@ -303,13 +303,21 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   | `Background` | `white` | 内容区 |
   | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、分隔线 |
   | `Primary` | `neutral-900` | 主按钮、开关打开、选中强调 |
-  | 选中项 | 侧栏 `neutral-100`，图标栏 `neutral-200` | |
+  | 选中项 | 侧栏 `neutral-100` 与 `neutral-200` 的 oklch 中点，图标栏 `neutral-200` | |
+  | `Unread` | `blue-500` | 邮件列表未读圆点 |
   | 状态 | 成功 `green-600`；提醒 `amber-50` 底 / `amber-300` 边 / `amber-800` 字；危险 `red-600` | |
 
   深色主题对应 shadcn neutral 的深色取值，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成色板值。
 - **图标**：Lucide 的 SVG，用 `ui.Icon` 显示，随文字颜色变化。
 - **字体**：用 `ui.RegisterFont` 内嵌 Geist / Geist Mono；中文使用系统字体（苹方、微软雅黑、Noto Sans CJK），不内嵌，以免安装包过大。
 - **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用上面那套组件。
+- **组件库（`internal/kit`）**：上面那套组件集中在 `internal/kit`，按组件分文件，命名和变体对齐 shadcn/ui：
+  - Button 变体 `Default` / `Secondary` / `Outline` / `Ghost` / `Destructive` / `Link`，尺寸 `Sm`（28）/ `Default`（32）/ `Lg`（36），图标按钮另有 `Xs`（16，标签上的移除按钮）。
+  - 组件清单：Button、IconButton、Input、TextArea、Field、Select、Checkbox、Radio、Switch、Tabs、ToggleGroup、Dialog、Popover、Tooltip、Collapsible、Card（Header / Content / Footer）、Badge、Alert、Avatar、Separator、Skeleton、Spinner、Kbd、StatusDot、SidebarItem、RailButton、Pressable（自定义内容的可点击区域）、Toast。
+  - 菜单（下拉菜单、右键菜单）用系统原生菜单（`Element.Menu` / `ContextMenu`），不自绘。
+  - app 里不直接用 mygo 的无样式基础组件（`ButtonBase`、`TextInputBase`、`TextAreaBase`、`DialogBase`、`PopoverBase`、`TooltipBase`）和 `Element.Tooltip`，一律经 kit；有测试守着。
+- **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的颜色渐变、开关滑块的移动、Tabs 选中项的颜色渐变、Skeleton 的呼吸闪烁、Dialog / Popover / Tooltip 淡入并带几像素位移、Collapsible 展开收起。系统开启「减少动态效果」时不播放（mygo 负责）。
+- **组件预览页**：开发模式（`mygo.IsDev()`）下图标栏多一个「Kit」入口，列出 kit 每个组件的每种状态，供对照设计稿调整；正式构建里没有这个入口。
 
 ### 7.1 窗口与布局
 
