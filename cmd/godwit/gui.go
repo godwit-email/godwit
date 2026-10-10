@@ -146,30 +146,23 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 
 		// Closing the window hides it while the App keeps running in the
-		// background; otherwise closing quits. Quitting first closes the
-		// compose windows (quitHook), then saves every draft's last edits
-		// (a failed or slow save asks first), then quits again. Hiding
-		// needs no save: the drafts stay open.
-		flushed := false
-		saveThen := func(prevent, then func()) {
-			if !flushed {
-				prevent()
-				a.BeforeClose(func() { flushed = true; go then() }) // mygo's calls are goroutine-safe
-			}
-		}
+		// background; otherwise closing quits. Every quit goes through
+		// quitHook: first the compose windows close, each flushing its page,
+		// then nq saves every draft's last edits (a failed or slow save asks
+		// first) and quits again. Hiding needs no save: the drafts stay open.
+		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go mygo.App.Quit() }} // mygo's calls are goroutine-safe
 		win.OnClose(func(e *mygo.CloseEvent) {
-			if !flushed && a.KeepInBackground() {
-				e.PreventDefault()
+			if nq.flushed {
+				return // the quit's last step closes it
+			}
+			e.PreventDefault()
+			if a.KeepInBackground() {
 				win.Hide()
 				return
 			}
-			saveThen(e.PreventDefault, mygo.App.Quit)
+			mygo.App.Quit()
 		})
-		mygo.App.OnBeforeQuit(quitHook(windows, func(e *mygo.QuitEvent) {
-			if saveThen(e.PreventDefault, mygo.App.Quit); flushed {
-				a.Close()
-			}
-		}))
+		mygo.App.OnBeforeQuit(quitHook(windows, nq.onQuit, nq.reset))
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
 		for _, id := range clicked { // the App takes them once it has loaded; the last one wins
@@ -197,19 +190,20 @@ var quitApp = func() { mygo.App.Quit() }
 
 // quitHook is the one OnBeforeQuit listener: mygo runs every listener even
 // after one prevented the quit. With compose windows open it prevents the
-// quit and closes them, each flushing its page, then quits again, or stops
-// when the user kept one: native, the main window's flush, has not run, so
-// background work goes on. With none it runs native.
+// quit, calls reset (the native flush must run after them, again if it ran)
+// and closes them, each flushing its page; once all have gone it quits
+// again, or stops when the user kept one. With none it runs native.
 func quitHook(windows interface {
 	Count() int
 	CloseAll(func(bool))
-}, native func(e *mygo.QuitEvent)) func(*mygo.QuitEvent) {
+}, native func(e *mygo.QuitEvent), reset func()) func(*mygo.QuitEvent) {
 	return func(e *mygo.QuitEvent) {
 		if windows.Count() == 0 {
 			native(e)
 			return
 		}
 		e.PreventDefault()
+		reset()
 		windows.CloseAll(func(ok bool) {
 			if ok {
 				quitApp()
@@ -217,6 +211,31 @@ func quitHook(windows interface {
 		})
 	}
 }
+
+// nativeQuit is the main window's part of a quit: it saves every draft's
+// last edits (beforeClose), then quits again; that pass closes the App.
+// flushed holds for the current quit attempt only: reset forgets it.
+// Used on the UI thread only.
+type nativeQuit struct {
+	beforeClose func(proceed func()) // App.BeforeClose
+	close       func()               // App.Close
+	quit        func()
+	flushed     bool
+}
+
+// onQuit prevents a quit not flushed yet and flushes; a flushed one closes
+// the App and goes on.
+func (n *nativeQuit) onQuit(e *mygo.QuitEvent) {
+	if n.flushed {
+		n.close()
+		return
+	}
+	e.PreventDefault()
+	n.beforeClose(func() { n.flushed = true; n.quit() })
+}
+
+// reset makes the next quit flush again.
+func (n *nativeQuit) reset() { n.flushed = false }
 
 // openFailure is what the GUI tells the user when core.New fails: a class
 // of reason, never err's text.

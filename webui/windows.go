@@ -28,15 +28,28 @@ type Window interface {
 	EmitClosing()
 }
 
-// win is an open window; stop is set while it waits for its page.
+// winState is where a window is in closing.
+type winState int
+
+const (
+	idle       winState = iota
+	waiting             // for its page's answer, or the timeout
+	asking              // the user whether to close it anyway
+	destroying          // until it reports Closed
+)
+
+// win is an open window. gen counts its close attempts, so a timer of an
+// earlier one does nothing.
 type win struct {
 	w     Window
 	draft int64
+	state winState
+	gen   int
 	stop  func() bool
 }
 
 // closeBatch is a CloseAll waiting for its windows: left are the ones not
-// settled yet, kept whether the user kept any.
+// gone or kept yet, kept whether the user kept any.
 type closeBatch struct {
 	left map[int]bool
 	kept bool
@@ -55,7 +68,7 @@ type Windows struct {
 	mu      sync.Mutex // never held while calling a Window, ask or a done
 	byDraft map[int64]*win
 	byID    map[int]*win
-	batches []*closeBatch
+	batch   *closeBatch // the CloseAll in progress
 }
 
 // NewWindows opens windows with newWindow. ask shows 「有修改没有保存」 for
@@ -64,7 +77,7 @@ type Windows struct {
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
 	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{},
 		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }}
-	c.OnClosed(ws.answer)
+	c.OnClosed(func(winID int, saved bool) { ws.answer(winID, -1, saved) })
 	return ws
 }
 
@@ -88,54 +101,70 @@ func (ws *Windows) Open(draftID int64) {
 // RequestClose starts closing window winID, from its OnClose (always
 // prevented): the page flushes, then the window closes once the page
 // reports saved, or asks on a failed save or after 5 s without an answer.
+// A window already closing goes on as it was: one flush, one question.
 func (ws *Windows) RequestClose(winID int) {
 	ws.mu.Lock()
 	x := ws.byID[winID]
-	if x == nil || x.stop != nil { // gone, or already waiting for its page
+	if x == nil || x.state != idle {
 		ws.mu.Unlock()
 		return
 	}
-	x.stop = ws.after(closeWait, func() { ws.answer(winID, false) })
+	x.state = waiting
+	x.gen++
+	gen := x.gen
+	x.stop = ws.after(closeWait, func() { ws.answer(winID, gen, false) })
 	ws.mu.Unlock()
 	x.w.EmitClosing()
 }
 
-// answer settles a closing window: saved closes it; otherwise the user
-// chooses. An answer for a window not waiting, as a late one, is ignored.
-func (ws *Windows) answer(winID int, saved bool) {
+// answer settles a waiting window: saved closes it; otherwise the user
+// chooses. gen is the timer's attempt, -1 for the page. An answer for a
+// window not waiting, or a timer of an earlier attempt, does nothing.
+func (ws *Windows) answer(winID, gen int, saved bool) {
 	ws.mu.Lock()
 	x := ws.byID[winID]
-	if x == nil || x.stop == nil {
+	if x == nil || x.state != waiting || gen >= 0 && gen != x.gen {
 		ws.mu.Unlock()
 		return
 	}
 	x.stop()
-	x.stop = nil
-	ws.mu.Unlock()
-	if saved || ws.ask(x.w) {
-		ws.mu.Lock()
-		dones := ws.forget(x)
+	if !saved {
+		x.state = asking
 		ws.mu.Unlock()
-		run(dones)
-		x.w.Destroy()
-		return
+		closeAnyway := ws.ask(x.w)
+		ws.mu.Lock()
+		if ws.byID[winID] != x { // it went meanwhile
+			ws.mu.Unlock()
+			return
+		}
+		if !closeAnyway {
+			x.state = idle
+			done := ws.settle(winID, true)
+			ws.mu.Unlock()
+			done()
+			return
+		}
 	}
-	ws.mu.Lock()
-	dones := ws.settle(winID, true)
+	x.state = destroying
 	ws.mu.Unlock()
-	run(dones)
+	x.w.Destroy()
 }
 
-// Closed is told when window winID went: its page loses the draft.
+// Closed is told when window winID went: its page loses the draft, and a
+// CloseAll counts it closed.
 func (ws *Windows) Closed(winID int) {
 	ws.c.Detach(winID)
 	ws.mu.Lock()
-	var dones []func()
+	done := func() {}
 	if x := ws.byID[winID]; x != nil {
-		dones = ws.forget(x)
+		delete(ws.byID, winID)
+		if ws.byDraft[x.draft] == x {
+			delete(ws.byDraft, x.draft)
+		}
+		done = ws.settle(winID, false)
 	}
 	ws.mu.Unlock()
-	run(dones)
+	done()
 }
 
 // Count is the number of open windows.
@@ -146,9 +175,14 @@ func (ws *Windows) Count() int {
 }
 
 // CloseAll closes every window as RequestClose does, for quitting; done
-// reports whether all closed, false when the user kept one.
+// reports, once every one has gone or been kept, whether all went. A
+// CloseAll while one is in progress joins it: only the first done runs.
 func (ws *Windows) CloseAll(done func(ok bool)) {
 	ws.mu.Lock()
+	if ws.batch != nil {
+		ws.mu.Unlock()
+		return
+	}
 	if len(ws.byID) == 0 {
 		ws.mu.Unlock()
 		done(true)
@@ -160,47 +194,26 @@ func (ws *Windows) CloseAll(done func(ok bool)) {
 		b.left[id] = true
 		ids = append(ids, id)
 	}
-	ws.batches = append(ws.batches, b)
+	ws.batch = b
 	ws.mu.Unlock()
 	for _, id := range ids {
 		ws.RequestClose(id)
 	}
 }
 
-// forget drops x as closed; ws.mu is held.
-func (ws *Windows) forget(x *win) []func() {
-	id := x.w.ID()
-	delete(ws.byID, id)
-	if ws.byDraft[x.draft] == x {
-		delete(ws.byDraft, x.draft)
+// settle marks window id gone or kept in the CloseAll in progress and
+// returns what to run once ws.mu is released: its done, when id was the
+// last it waited for. ws.mu is held.
+func (ws *Windows) settle(id int, kept bool) func() {
+	b := ws.batch
+	if b == nil || !b.left[id] {
+		return func() {}
 	}
-	return ws.settle(id, false)
-}
-
-// settle marks window id closed or kept in every batch waiting for it and
-// returns the dones of the batches it completes; ws.mu is held.
-func (ws *Windows) settle(id int, kept bool) []func() {
-	var dones []func()
-	rest := ws.batches[:0]
-	for _, b := range ws.batches {
-		if b.left[id] {
-			delete(b.left, id)
-			b.kept = b.kept || kept
-		}
-		if len(b.left) == 0 {
-			ok := !b.kept
-			done := b.done
-			dones = append(dones, func() { done(ok) })
-			continue
-		}
-		rest = append(rest, b)
+	delete(b.left, id)
+	b.kept = b.kept || kept
+	if len(b.left) > 0 {
+		return func() {}
 	}
-	ws.batches = rest
-	return dones
-}
-
-func run(dones []func()) {
-	for _, d := range dones {
-		d()
-	}
+	ws.batch = nil
+	return func() { b.done(!b.kept) }
 }

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -9,18 +10,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeWin is a Window that counts what was done to it.
+// fakeWin is a Window that counts what was done to it. Its Destroy reports
+// Closed synchronously, as mygo does, unless async: then the test does.
 type fakeWin struct {
 	id                         int
 	ws                         *Windows
-	focused, emitted, destroys int
+	async                      bool
+	focused, emitted, destroys atomic.Int32
 }
 
-func (w *fakeWin) ID() int         { return w.id }
-func (w *fakeWin) Focus()          { w.focused++ }
-func (w *fakeWin) EmitClosing()    { w.emitted++ }
-func (w *fakeWin) Destroy()        { w.destroys++; w.ws.Closed(w.id) } // mygo reports Closed synchronously
-func (w *fakeWin) destroyed() bool { return w.destroys > 0 }
+func (w *fakeWin) ID() int      { return w.id }
+func (w *fakeWin) Focus()       { w.focused.Add(1) }
+func (w *fakeWin) EmitClosing() { w.emitted.Add(1) }
+func (w *fakeWin) Destroy() {
+	w.destroys.Add(1)
+	if !w.async {
+		w.ws.Closed(w.id)
+	}
+}
+func (w *fakeWin) destroyed() bool { return w.destroys.Load() > 0 }
 
 // winFixture is Windows on a real Compose, with fake windows, a scripted
 // ask and a clock that fires only when told.
@@ -28,8 +36,9 @@ type winFixture struct {
 	*fixture
 	ws     *Windows
 	made   []*fakeWin
-	answer bool // what ask says: true = close anyway
-	asked  int
+	answer atomic.Bool // what ask says: true = close anyway
+	asked  atomic.Int32
+	asking chan bool // when set, ask waits on it for its answer instead
 	mu     sync.Mutex
 	timers []func()
 }
@@ -41,7 +50,13 @@ func newWinFixture(t *testing.T) *winFixture {
 		w := &fakeWin{id: len(f.made) + 1, ws: f.ws}
 		f.made = append(f.made, w)
 		return w
-	}, func(Window) bool { f.asked++; return f.answer })
+	}, func(Window) bool {
+		f.asked.Add(1)
+		if f.asking != nil {
+			return <-f.asking
+		}
+		return f.answer.Load()
+	})
 	f.ws.after = func(d time.Duration, fn func()) func() bool {
 		assert.Equal(t, 5*time.Second, d)
 		f.mu.Lock()
@@ -68,7 +83,7 @@ func TestWindowsOpenFocusesExisting(t *testing.T) {
 	f.ws.Open(7)
 	f.ws.Open(7)
 	require.Len(t, f.made, 1)
-	assert.Equal(t, 1, f.made[0].focused)
+	assert.EqualValues(t, 1, f.made[0].focused.Load())
 	assert.Equal(t, 1, f.ws.Count())
 }
 
@@ -80,22 +95,22 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	st, err := f.page.Load(f.ctx(w.id))
 	require.NoError(t, err)
 	f.ws.RequestClose(w.id)
-	assert.Equal(t, 1, w.emitted)
+	assert.EqualValues(t, 1, w.emitted.Load())
 	assert.False(t, w.destroyed())
 	// The page flushes, then reports.
 	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "最后一句", Revision: st.Revision})
 	require.NoError(t, err)
 	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
 	assert.True(t, w.destroyed())
-	assert.Zero(t, f.asked)
+	assert.Zero(t, f.asked.Load())
 	assert.Zero(t, f.ws.Count())
 	stored, err := f.e.Svc.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
 	ed, _, _ := splitOf(stored.HTML)
 	assert.Equal(t, "最后一句", bodyText(ed))
 	f.elapse() // the stopped timer, if a clock ran it anyway
-	assert.Equal(t, 1, w.destroys)
-	assert.Zero(t, f.asked)
+	assert.EqualValues(t, 1, w.destroys.Load())
+	assert.Zero(t, f.asked.Load())
 }
 
 func TestWindowsCloseFailedSaveAsks(t *testing.T) {
@@ -104,15 +119,15 @@ func TestWindowsCloseFailedSaveAsks(t *testing.T) {
 	w := f.made[0]
 	f.ws.RequestClose(w.id)
 	require.NoError(t, f.page.Closed(f.ctx(w.id), false))
-	assert.Equal(t, 1, f.asked)
+	assert.EqualValues(t, 1, f.asked.Load())
 	assert.False(t, w.destroyed(), "返回 keeps the window")
 	assert.Equal(t, 1, f.ws.Count())
 
-	f.answer = true
+	f.answer.Store(true)
 	f.ws.RequestClose(w.id)
-	assert.Equal(t, 2, w.emitted)
+	assert.EqualValues(t, 2, w.emitted.Load())
 	require.NoError(t, f.page.Closed(f.ctx(w.id), false))
-	assert.Equal(t, 2, f.asked)
+	assert.EqualValues(t, 2, f.asked.Load())
 	assert.True(t, w.destroyed(), "关闭 closes it")
 }
 
@@ -122,17 +137,17 @@ func TestWindowsSlowPageAsksNotCloses(t *testing.T) {
 	w := f.made[0]
 	f.ws.RequestClose(w.id)
 	f.ws.RequestClose(w.id) // a second click while waiting asks the page nothing new
-	assert.Equal(t, 1, w.emitted)
+	assert.EqualValues(t, 1, w.emitted.Load())
 	f.elapse()
-	assert.Equal(t, 1, f.asked)
+	assert.EqualValues(t, 1, f.asked.Load())
 	assert.False(t, w.destroyed())
 	require.NoError(t, f.page.Closed(f.ctx(w.id), true)) // too late: the user chose 返回
 	assert.False(t, w.destroyed())
 
-	f.answer = true
+	f.answer.Store(true)
 	f.ws.RequestClose(w.id)
 	f.elapse()
-	assert.Equal(t, 2, f.asked)
+	assert.EqualValues(t, 2, f.asked.Load())
 	assert.True(t, w.destroyed())
 }
 
@@ -147,7 +162,7 @@ func TestWindowsClosedDetaches(t *testing.T) {
 	assert.Zero(t, f.ws.Count())
 	f.ws.Open(d.ID)
 	require.Len(t, f.made, 2)
-	assert.Zero(t, w.focused)
+	assert.Zero(t, w.focused.Load())
 	_, err = f.page.Load(f.ctx(f.made[1].id))
 	assert.NoError(t, err)
 }
@@ -159,8 +174,8 @@ func TestWindowsCloseAllForQuit(t *testing.T) {
 	w1, w2 := f.made[0], f.made[1]
 	var results []bool
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
-	assert.Equal(t, 1, w1.emitted)
-	assert.Equal(t, 1, w2.emitted)
+	assert.EqualValues(t, 1, w1.emitted.Load())
+	assert.EqualValues(t, 1, w2.emitted.Load())
 	require.NoError(t, f.page.Closed(f.ctx(w1.id), true))
 	assert.Empty(t, results, "w2 has not answered")
 	require.NoError(t, f.page.Closed(f.ctx(w2.id), false)) // the user keeps it
@@ -181,4 +196,76 @@ func TestWindowsCloseAllForQuit(t *testing.T) {
 	results = nil
 	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
 	assert.Equal(t, []bool{true}, results, "nothing to close")
+}
+
+func TestWindowsCloseWhileAskingJoins(t *testing.T) {
+	f := newWinFixture(t)
+	f.asking = make(chan bool)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	f.ws.RequestClose(w.id)
+	answered := make(chan error)
+	go func() { answered <- f.page.Closed(f.ctx(w.id), false) }()
+	require.Eventually(t, func() bool { return f.asked.Load() == 1 }, 5*time.Second, time.Millisecond)
+	// While the question shows: another close click, a quit, a late answer.
+	f.ws.RequestClose(w.id)
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	f.elapse()
+	assert.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	assert.EqualValues(t, 1, w.emitted.Load(), "one flush")
+	assert.False(t, w.destroyed())
+	f.asking <- false // 返回
+	require.NoError(t, <-answered)
+	assert.EqualValues(t, 1, f.asked.Load(), "one question")
+	assert.False(t, w.destroyed())
+	assert.Equal(t, []bool{false}, results)
+	assert.Equal(t, 1, f.ws.Count())
+}
+
+func TestWindowsStaleTimerIgnored(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	f.ws.RequestClose(w.id)
+	require.NoError(t, f.page.Closed(f.ctx(w.id), false)) // 返回
+	f.ws.RequestClose(w.id)                               // a second attempt; the page has not answered yet
+	f.mu.Lock()
+	first := f.timers[0]
+	f.mu.Unlock()
+	first() // the first attempt's timer, which a real clock could still fire
+	assert.EqualValues(t, 1, f.asked.Load())
+	f.answer.Store(true)
+	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	assert.True(t, w.destroyed())
+}
+
+func TestWindowsCloseAllTwiceOneDone(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	assert.EqualValues(t, 1, w.emitted.Load())
+	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	assert.Equal(t, []bool{true}, results)
+}
+
+func TestWindowsCloseAllWaitsForClosed(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	w.async = true
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	require.NoError(t, f.page.Closed(f.ctx(w.id), true))
+	assert.True(t, w.destroyed())
+	assert.Empty(t, results, "the window has not gone yet")
+	assert.Equal(t, 1, f.ws.Count())
+	f.ws.RequestClose(w.id) // a close click while it goes does nothing
+	assert.EqualValues(t, 1, w.emitted.Load())
+	f.ws.Closed(w.id)
+	assert.Equal(t, []bool{true}, results)
+	assert.Zero(t, f.ws.Count())
 }

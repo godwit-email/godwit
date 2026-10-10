@@ -27,7 +27,8 @@ func TestQuitHookWebThenNative(t *testing.T) {
 	t.Cleanup(func() { quitApp = old })
 	natives := 0
 	ws := &fakeWindows{n: 2}
-	hook := quitHook(ws, func(*mygo.QuitEvent) { natives++ })
+	resets := 0
+	hook := quitHook(ws, func(*mygo.QuitEvent) { natives++ }, func() { resets++ })
 
 	e := &mygo.QuitEvent{}
 	hook(e)
@@ -44,8 +45,51 @@ func TestQuitHookWebThenNative(t *testing.T) {
 
 	e = &mygo.QuitEvent{} // the quit again, with no compose window
 	hook(e)
-	if natives != 1 || quits != 1 {
-		t.Fatalf("no windows: native %d, quit %d", natives, quits)
+	if natives != 1 || quits != 1 || resets != 2 {
+		t.Fatalf("no windows: native %d, quit %d, reset %d", natives, quits, resets)
+	}
+}
+
+// A quit the native flush ran for, then cancelled by a compose window the
+// user kept, flushes again on the next quit instead of closing the App.
+func TestQuitCancelledThenNativeFlushesAgain(t *testing.T) {
+	old := quitApp
+	quitApp = func() {}
+	t.Cleanup(func() { quitApp = old })
+	var proceed func()
+	flushes, closes, quits := 0, 0, 0
+	nq := &nativeQuit{beforeClose: func(p func()) { flushes++; proceed = p }, close: func() { closes++ }, quit: func() { quits++ }}
+	ws := &fakeWindows{}
+	hook := quitHook(ws, nq.onQuit, nq.reset)
+
+	e := &mygo.QuitEvent{} // e.g. the main window's close: no compose window yet
+	hook(e)
+	if !e.DefaultPrevented() || flushes != 1 {
+		t.Fatalf("first quit: prevented %v, flushes %d", e.DefaultPrevented(), flushes)
+	}
+	proceed() // saved; it quits again
+	if quits != 1 || !nq.flushed {
+		t.Fatalf("after the flush: quits %d, flushed %v", quits, nq.flushed)
+	}
+
+	ws.n = 1 // a compose window opened meanwhile; the user keeps it
+	e = &mygo.QuitEvent{}
+	hook(e)
+	if !e.DefaultPrevented() || closes != 0 {
+		t.Fatalf("kept window: prevented %v, closes %d", e.DefaultPrevented(), closes)
+	}
+
+	ws.n = 0 // the user edits in the main window, closes the compose window, quits
+	e = &mygo.QuitEvent{}
+	hook(e)
+	if !e.DefaultPrevented() || flushes != 2 || closes != 0 {
+		t.Fatalf("next quit: prevented %v, flushes %d, closes %d", e.DefaultPrevented(), flushes, closes)
+	}
+	proceed()
+	e = &mygo.QuitEvent{}
+	hook(e)
+	if e.DefaultPrevented() || closes != 1 {
+		t.Fatalf("flushed quit: prevented %v, closes %d", e.DefaultPrevented(), closes)
 	}
 }
 
