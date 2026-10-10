@@ -83,7 +83,7 @@ func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()
 	case selected:
 		b.Background(t.RailSelected).TextColor(t.Foreground)
 	case b.Hovered():
-		b.Background(t.Hover).TextColor(t.Foreground)
+		b.Background(t.HoverTint).TextColor(t.Foreground)
 	}
 	if onClick != nil && !selected {
 		b.OnClick(onClick)

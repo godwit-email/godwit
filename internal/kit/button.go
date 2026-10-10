@@ -95,7 +95,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.TextColor(t.Muted)
 		}
 		if hover {
-			b.Background(t.Hover).TextColor(t.Foreground)
+			b.Background(t.HoverTint).TextColor(t.Foreground)
 		}
 	case Destructive:
 		b.TextColor(t.Danger)

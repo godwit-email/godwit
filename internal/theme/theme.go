@@ -23,6 +23,10 @@ type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
 	PrimaryText, SidebarSelected, RailSelected, Hover, Success      ui.Color
+	// HoverTint, like RailSelected, is a tint of the foreground for what
+	// sits on the window's material (the rail, the top bar's ghost buttons),
+	// which a solid gray would cover; over white it is Hover's gray.
+	HoverTint                                                       ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
@@ -139,7 +143,8 @@ func Light() Tokens {
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
-		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral200.Color(), Hover: p.Neutral100.Color(),
+		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral950.Color().Alpha(0.06), HoverTint: p.Neutral950.Color().Alpha(0.04),
+		Hover: p.Neutral100.Color(),
 	})
 }
 
@@ -151,7 +156,8 @@ func Dark() Tokens {
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
 		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
-		SidebarSelected: p.Neutral800.Color(), RailSelected: p.Neutral700.Color(), Hover: p.Neutral800.Color(),
+		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.15), HoverTint: p.White.Color().Alpha(0.08),
+		Hover: p.Neutral800.Color(),
 	})
 }
 
