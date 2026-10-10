@@ -110,7 +110,7 @@ type ShadowLayer struct{ Y, Blur, Spread, Alpha float32 }
 type Elevation []ShadowLayer
 
 // Shadows, Tailwind v4's as shadcn uses them: Xs under inputs, selects,
-// checkboxes and outline buttons; Sm under cards and the selected tab; Md
+// checkboxes, outline buttons and the page panel; Sm under cards and the selected tab; Md
 // under popovers and select lists; Lg under dialogs, sheets and toasts; Xl
 // for anything above those.
 var (
@@ -120,10 +120,6 @@ var (
 	ShadowLg = Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}
 	ShadowXl = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
 )
-
-// ShadowPanel lifts the page panel off the window material, all round.
-// It is Godwit's own: shadcn has no window.
-var ShadowPanel = Elevation{{0, 4, 0, 0.055}}
 
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {

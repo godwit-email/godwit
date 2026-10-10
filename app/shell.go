@@ -302,7 +302,7 @@ func (a *App) panel(c *ui.Context) {
 	p := a.page()
 	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
 		Border(theme.Hairline, t.Border)
-	kit.Elevate(c, panel, theme.ShadowPanel).Children(func() {
+	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
 		if a.sidebarHidden {
 			content()
