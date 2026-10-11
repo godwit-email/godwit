@@ -185,8 +185,9 @@ type App struct {
 	closeErr    error  // why
 	closeAnyway func() // closes after all
 
-	witView ui.NativeWebView                 // the Wit page; nil before SetWitPage
-	witOpen func(conv int64) (version int64) // tells the Wit page the route's conversation
+	witView    ui.NativeWebView                 // the Wit page; nil before SetWitPage
+	witOpen    func(conv int64) (version int64) // tells the Wit page the route's conversation
+	witCreated func(conv int64) (version int64) // the same, for the conversation its Ask made
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows

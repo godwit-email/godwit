@@ -25,7 +25,7 @@ func askHarness(t *testing.T, llm bool) (*harness, *fakeWitView, *witOpens) {
 	t.Helper()
 	h, _, _ := aiHarness(t, llm, noAuto)
 	view, opens := &fakeWitView{}, &witOpens{}
-	h.app.SetWitPage(view, opens.open)
+	h.app.SetWitPage(view, opens.open, opens.open)
 	h.app.navigate(Route{Page: PageWit})
 	h.tt.Frame()
 	return h, view, opens

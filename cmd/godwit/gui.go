@@ -173,7 +173,7 @@ func gui(ctx context.Context, dataDir string) int {
 			witView = v
 			lockPage(v.Page())
 			roles.Register(v.Page(), "wit")
-			a.SetWitPage(v, wit.SetConversation)
+			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 		}
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })

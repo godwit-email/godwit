@@ -357,8 +357,9 @@ export interface WitMessage {
 
 /**
  * WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
- * snapshot at Version. Created marks the conversation the page's Ask made
- * (the route took it): the page's first question goes on in it, no switch.
+ * snapshot at Version. Created marks native taking the conversation the
+ * page's Ask made (SetCreated): the page's first question goes on in it,
+ * no switch.
  */
 export interface WitOpenMsg {
   conversation: number;
@@ -616,7 +617,10 @@ export const WitPage = {
   openModels(): Promise<void> {
     return call("WitPage.OpenModels");
   },
-  /** Stop cancels run, one of the conversation the page follows. */
+  /**
+   * Stop cancels run: one the page's Ask started (a Stop pressed before Ask
+   * returned may come after a switch), or one of the conversation it follows.
+   */
   stop(run: number): Promise<void> {
     return call("WitPage.Stop", run);
   },

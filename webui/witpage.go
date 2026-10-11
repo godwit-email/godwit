@@ -33,8 +33,9 @@ type WitPageState struct {
 }
 
 // WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
-// snapshot at Version. Created marks the conversation the page's Ask made
-// (the route took it): the page's first question goes on in it, no switch.
+// snapshot at Version. Created marks native taking the conversation the
+// page's Ask made (SetCreated): the page's first question goes on in it,
+// no switch.
 type WitOpenMsg struct {
 	Conversation int64 `json:"conversation"`
 	Version      int64 `json:"version"`
@@ -82,11 +83,11 @@ type Wit struct {
 
 	mu      sync.Mutex
 	svc     *core.Service
-	conv    int64   // the snapshot: the route's conversation
-	made    int64   // the conversation Ask made last
-	version int64   // bumped per SetConversation
-	sel     uint64  // bumped per selection (Follow, Ask): only the newest subscribes
-	f       *follow // the page's subscription; nil for none
+	conv    int64          // the snapshot: the route's conversation
+	own     map[int64]bool // the runs the page's Ask started: Stop takes them wherever it is
+	version int64          // bumped per SetConversation
+	sel     uint64         // bumped per selection (Follow, Ask): only the newest subscribes
+	f       *follow        // the page's subscription; nil for none
 }
 
 // NewWit is the Wit page's state for the pages of role "wit"; SetService
@@ -123,10 +124,17 @@ func (w *Wit) caller(ctx context.Context) (Target, *core.Service, error) {
 
 // SetConversation is the route's conversation (0: a new one), as native
 // navigates: a new snapshot version, sent to the page (WitOpen) and returned.
-func (w *Wit) SetConversation(id int64) int64 {
+func (w *Wit) SetConversation(id int64) int64 { return w.open(id, false) }
+
+// SetCreated is SetConversation for native taking the conversation the
+// page's Ask made (ConversationCreated): WitOpen says Created, so the
+// page's first question goes on in it.
+func (w *Wit) SetCreated(id int64) int64 { return w.open(id, true) }
+
+func (w *Wit) open(id int64, created bool) int64 {
 	w.mu.Lock()
 	w.version++
-	m := WitOpenMsg{Conversation: id, Version: w.version, Created: id != 0 && id == w.made}
+	m := WitOpenMsg{Conversation: id, Version: w.version, Created: created}
 	w.conv = id
 	w.mu.Unlock()
 	w.d.Open(m)
@@ -288,6 +296,12 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string) (RunStart, 
 		for range ch {
 		}
 	}()
+	p.w.mu.Lock()
+	if p.w.own == nil {
+		p.w.own = map[int64]bool{}
+	}
+	p.w.own[id] = true // ponytail: kept for the session; a few IDs per question
+	p.w.mu.Unlock()
 	return RunStart{Run: id, Conversation: conv}, nil
 }
 
@@ -295,7 +309,6 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string) (RunStart, 
 // takes it while it is still that version's new conversation.
 func (w *Wit) created(conv, version int64) {
 	w.mu.Lock()
-	w.made = conv
 	if w.version == version && w.conv == 0 {
 		w.conv = conv
 	}
@@ -303,11 +316,18 @@ func (w *Wit) created(conv, version int64) {
 	w.d.ConversationCreated(conv, version)
 }
 
-// Stop cancels run, one of the conversation the page follows.
+// Stop cancels run: one the page's Ask started (a Stop pressed before Ask
+// returned may come after a switch), or one of the conversation it follows.
 func (p *WitPage) Stop(ctx context.Context, run int64) error {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return keyed(err)
+	}
+	p.w.mu.Lock()
+	own := p.w.own[run]
+	p.w.mu.Unlock()
+	if own {
+		return keyed(svc.CancelRun(context.WithoutCancel(ctx), run))
 	}
 	conv := p.w.followed()
 	if conv == 0 {

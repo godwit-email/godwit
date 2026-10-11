@@ -338,3 +338,21 @@ test("a stale Load does not overwrite a newer witState", async () => {
   expect(await screen.findByRole("button", { name: /m2/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /m1/ })).toBeNull();
 });
+
+test("Stop before the first ask returns, then navigation: the run is still stopped", async () => {
+  const user = userEvent.setup();
+  type RS = { run: number; conversation: number; revision: number; conflict: boolean };
+  let resolve!: (x: RS) => void;
+  vi.mocked(api.ask).mockReturnValueOnce(new Promise<RS>((r) => (resolve = r)));
+  vi.mocked(api.stop).mockResolvedValue(undefined);
+  await start(0);
+  await user.type(input(), "first{Enter}");
+  await user.click(await screen.findByRole("button", { name: "停止" }));
+  expect(api.stop).not.toHaveBeenCalled();
+  vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
+  open(4, 2);
+  expect(await screen.findByText("four")).toBeInTheDocument();
+  await act(async () => resolve({ run: 9, conversation: 7, revision: 0, conflict: false }));
+  await waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
+  expect(screen.getByText("four")).toBeInTheDocument();
+});

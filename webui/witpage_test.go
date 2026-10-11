@@ -811,7 +811,7 @@ func TestWitPageReloadDuringCreation(t *testing.T) {
 	native := f.w.SetConversation(0)                // the route: a new conversation
 	f.w.d.ConversationCreated = func(id, v int64) { // as App.ConversationCreated
 		if v == native {
-			native = f.w.SetConversation(id)
+			native = f.w.SetCreated(id)
 		}
 	}
 	ctx, cancel := context.WithCancel(f.ctx())
@@ -840,4 +840,54 @@ func TestWitPageReloadDuringCreation(t *testing.T) {
 	assert.False(t, f.opens[len(f.opens)-1].Created)
 	f.mu.Unlock()
 	f.idle(t, rs.Conversation)
+}
+
+// Stop takes a run the page started even after it switched away (Stop
+// pressed before Ask returned), never a run it did not start.
+func TestWitPageStopOwnRunAfterSwitch(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Text: []string{"第一段"}, Hang: true})
+	rs, err := f.p.Ask(f.ctx(), 0, "慢慢回答")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "text")
+	_, err = f.p.Follow(f.ctx(), f.newAsk(t)) // the user switched to B
+	require.NoError(t, err)
+	require.NoError(t, f.p.Stop(f.ctx(), rs.Run))
+	f.idle(t, rs.Conversation)
+
+	// A run of an ask conversation the page did not start, nor follows: refused.
+	f.llm.Script(coretest.Turn{Text: []string{"别人的"}, Hang: true})
+	other := f.newAsk(t)
+	ch, err := f.e.Svc.Ask(t.Context(), other, "hi")
+	require.NoError(t, err)
+	run := (<-ch).RunID
+	assert.ErrorIs(t, f.p.Stop(f.ctx(), run), ErrNotAsk)
+	c, err := f.e.Svc.GetConversation(t.Context(), other)
+	require.NoError(t, err)
+	assert.Equal(t, run, c.ActiveRunID, "not cancelled")
+	require.NoError(t, f.e.Svc.CancelRun(t.Context(), run))
+	go func() {
+		for range ch {
+		}
+	}()
+	f.idle(t, other)
+}
+
+// Created marks only native's taking of the conversation Ask made, never a
+// navigation, even to that conversation (made A, new B, A clicked).
+func TestWitPageCreatedOnlyOnAdoption(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Text: []string{"好"}})
+	rs, err := f.p.Ask(f.ctx(), 0, "hi")
+	require.NoError(t, err)
+	f.idle(t, rs.Conversation)
+	f.w.SetCreated(rs.Conversation)
+	f.w.SetConversation(0)               // a new conversation B
+	f.w.SetConversation(rs.Conversation) // A clicked before B's Ask makes it
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := len(f.opens)
+	assert.True(t, f.opens[n-3].Created)
+	assert.False(t, f.opens[n-2].Created)
+	assert.False(t, f.opens[n-1].Created, "navigation to A is no creation")
 }

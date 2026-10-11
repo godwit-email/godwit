@@ -179,16 +179,17 @@ func (a *App) ConversationCreated(id, version int64) {
 	p := a.pages[PageWit].(*askPage)
 	if r := &a.route; r.Page == PageWit && r.ConversationID == 0 && version == p.version {
 		r.ConversationID = id
-		if a.witOpen != nil {
-			p.version = a.witOpen(id)
+		if a.witCreated != nil {
+			p.version = a.witCreated(id)
 		}
 	}
 	p.load()
 }
 
 // SetWitPage gives the App the Wit page's web view and open, which tells
-// the page the route's conversation and returns its snapshot version.
+// the page the route's conversation and returns its snapshot version;
+// created does the same for a conversation the page's first question made.
 // Call it before Start.
-func (a *App) SetWitPage(view ui.NativeWebView, open func(conv int64) (version int64)) {
-	a.witView, a.witOpen = view, open
+func (a *App) SetWitPage(view ui.NativeWebView, open, created func(conv int64) (version int64)) {
+	a.witView, a.witOpen, a.witCreated = view, open, created
 }
