@@ -535,3 +535,32 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来"));
 });
+
+test("Stop while ⌘K starts stops its run once Rewrite returns it, never another run", async () => {
+  let started!: (r: { run: number; revision: number; conflict: boolean }) => void;
+  vi.mocked(api.rewrite).mockReturnValue(new Promise((r) => (started = r)));
+  await setup();
+  const b = (await body()) as HTMLTextAreaElement;
+  b.setSelectionRange(0, 2);
+  fireEvent.keyDown(b, { key: "k", metaKey: true });
+  await userEvent.type(screen.getByRole("textbox", { name: "修改选中的内容" }), "更正式{Enter}");
+  await waitFor(() => expect(api.rewrite).toHaveBeenCalled());
+  fireEvent.click(await screen.findByRole("button", { name: "停止" }));
+  await act(async () => {});
+  expect(api.stop).not.toHaveBeenCalled();
+  await act(async () => started({ run: 9, revision: 7, conflict: false }));
+  await waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
+  expect(api.stop).toHaveBeenCalledTimes(1);
+  vi.mocked(api.latest).mockResolvedValue(latest("正文", 7));
+  emit({ run: 9, conversation: 3, kind: "error", error: "" });
+  await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
+  // the intent is spent: the next ⌘K run is not stopped
+  vi.mocked(api.rewrite).mockResolvedValue({ run: 10, revision: 7, conflict: false });
+  const b2 = (await body()) as HTMLTextAreaElement;
+  b2.setSelectionRange(0, 2);
+  fireEvent.keyDown(b2, { key: "k", metaKey: true });
+  await userEvent.type(screen.getByRole("textbox", { name: "修改选中的内容" }), "再改{Enter}");
+  await waitFor(() => expect(api.rewrite).toHaveBeenCalledTimes(2));
+  await act(async () => {});
+  expect(api.stop).toHaveBeenCalledTimes(1);
+});

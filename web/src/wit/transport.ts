@@ -363,13 +363,13 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.resuming = { open, id: open?.id ?? `live${run}` };
   }
 
-  /** Stops the run: one still starting is stopped as soon as its ID is known. */
+  /** Stops the run: one still starting is stopped as soon as its ID is known; none, nothing. */
   stop(): Promise<void> {
     if (this.starting) {
       this.stopping = true;
       return Promise.resolve();
     }
-    return this.api.stop(this.run);
+    return this.run ? this.api.stop(this.run) : Promise.resolve();
   }
 
   close() {

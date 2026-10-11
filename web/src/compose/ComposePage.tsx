@@ -260,6 +260,7 @@ function Compose({
   const reloads = useRef(0);
   const decidedRun = useRef(0); // a decision's run: its next event resumes the panel's stream
   const cmdkRef = useRef(0);
+  const cmdkStop = useRef(false); // Stop asked for while the ⌘K run starts
   const ended = useRef(new Set<number>()); // runs seen ending
   const trRef = useRef<WitTransport>(undefined);
   const toasted = useRef(false); // the lock's toast, once per lock
@@ -516,9 +517,13 @@ function Compose({
     setApplied(false); // ⌘K clears it, as a run or an edit does
     setCmdk(sel);
   };
+  // A ⌘K run still starting is stopped as soon as Rewrite returns its ID.
+  const stopRun = (run: number) =>
+    void api.stop(run).catch((e) => toast.error(witError(message(e), t)));
   const stop = () => {
-    const p = cmdkRun > 0 ? api.stop(cmdkRun) : wit?.tr.stop();
-    p?.catch((e) => toast.error(witError(message(e), t)));
+    if (cmdkRun === -1) cmdkStop.current = true;
+    else if (cmdkRun > 0) stopRun(cmdkRun);
+    else wit?.tr.stop().catch((e) => toast.error(witError(message(e), t)));
   };
   // ⌘K: saved first, then the selection of the text as saved is rewritten (a run of its own).
   const rewrite = async (sel: CmdKSelection, instruction: string) => {
@@ -526,6 +531,7 @@ function Compose({
     setApplied(false);
     if (!sv) return;
     cmdkRef.current = -1;
+    cmdkStop.current = false;
     setCmdkRun(-1);
     try {
       const r = await sv.run((rev) => {
@@ -535,11 +541,14 @@ function Compose({
       if (r && !r.conflict && !ended.current.has(r.run)) {
         cmdkRef.current = r.run;
         setCmdkRun(r.run);
+        if (cmdkStop.current) stopRun(r.run);
         return;
       }
       if (r && !r.conflict) refollow(); // over already
     } catch (e) {
       toast.error(witError(message(e), t));
+    } finally {
+      cmdkStop.current = false;
     }
     cmdkRef.current = 0;
     setCmdkRun(0);

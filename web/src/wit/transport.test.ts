@@ -368,6 +368,12 @@ describe("WitTransport", () => {
     expect(api.stop).toHaveBeenLastCalledWith(9);
   });
 
+  it("Stop with no run known stops nothing (never run 0)", async () => {
+    const { api, tr } = fake();
+    await tr.stop();
+    expect(api.stop).not.toHaveBeenCalled();
+  });
+
   it("decided skill runs with no message each get their own answer, in run order, kept across a reconnect", async () => {
     const msg = (id: string, role: string, runs: number[], text = id) => ({
       id,
