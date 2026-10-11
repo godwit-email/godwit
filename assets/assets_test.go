@@ -14,14 +14,14 @@ func TestLogoParses(t *testing.T) {
 	}
 }
 
-// The app icon's layer is the logo: actool cannot compile it through a link, so
-// AppIcon.icon keeps a copy, which must not drift.
+// AppIcon.icon keeps a copy of the logo (actool follows no link), which
+// scripts/icons.sh refreshes.
 func TestAppIconLogo(t *testing.T) {
 	b, err := os.ReadFile("AppIcon.icon/Assets/logo.svg")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(Logo)) {
-		t.Error("AppIcon.icon/Assets/logo.svg differs from logo.svg; copy logo.svg over it and run scripts/appicon.sh")
+		t.Error("AppIcon.icon/Assets/logo.svg differs from logo.svg; run scripts/icons.sh")
 	}
 }

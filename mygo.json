@@ -1,5 +1,6 @@
 {
   "name": "Godwit",
+  "icon": "assets/icon.png",
   "main": "./cmd/godwit",
   "devUrl": "http://localhost:5173",
   "devCommand": "cd web && bun run dev",
