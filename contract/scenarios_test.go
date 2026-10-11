@@ -213,7 +213,7 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: true,
 			QuickReplies: true, Summary: true, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true, SidebarWidth: 320}
+			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", LocalAPI: true, SidebarWidth: 320}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
@@ -252,6 +252,9 @@ func TestModelService(t *testing.T) {
 		out["scheme"] = res(api.CheckModelService(ctx, 0, in))
 		in.BaseURL = srv.URL
 		out["missing"] = res(api.CheckModelService(ctx, 999, in))
+		judge := core.ModelServiceInput{Name: "ts", Provider: core.ProviderTypeSafe, JudgeFormat: "systemone", BaseURL: srv.URL,
+			KeyAction: core.KeyReplace, APIKey: "good-key"}
+		out["judgeOnly"] = res(api.CheckModelService(ctx, 0, judge))
 		return out
 	})
 }

@@ -169,7 +169,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 		if key == "" { // a local gateway: no auth at all
 			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
 		}
-		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: base, Opts: opts}
+		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: AnthropicBase(m.BaseURL) + "/", Opts: opts}
 	case KindResponses:
 		plugin = newResponsesPlugin(base, m.APIKey, e.client)
 	default:

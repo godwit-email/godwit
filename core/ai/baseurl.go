@@ -21,11 +21,10 @@ var (
 
 func ValidKind(k string) bool { return k == KindOpenAI || k == KindResponses || k == KindAnthropic }
 
-// NormalizeBaseURL trims a pasted URL down to the service root the SDKs expect.
-func NormalizeBaseURL(kind, raw string) (string, error) {
-	if !ValidKind(kind) {
-		return "", errors.New("unknown service kind")
-	}
+// NormalizeBaseURL trims a pasted URL down to the service's base, the same
+// for every format: a pasted endpoint loses its path, a "/v1" stays. Each
+// format derives its endpoint from it (Endpoint, JudgeFormat.Path).
+func NormalizeBaseURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" || u.User != nil {
 		return "", ErrBaseURLInvalid
@@ -35,12 +34,8 @@ func NormalizeBaseURL(kind, raw string) (string, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
 		return "", ErrBaseURLScheme
 	}
-	suffixes := []string{"/chat/completions", "/completions", "/responses", "/models", "/embeddings"}
-	if kind == KindAnthropic {
-		suffixes = []string{"/v1/messages", "/v1/models", "/messages", "/v1"}
-	}
 	p := strings.TrimRight(u.EscapedPath(), "/")
-	for _, s := range suffixes {
+	for _, s := range []string{"/chat/completions", "/completions", "/responses", "/models", "/embeddings", "/messages", "/decisions", "/systemone"} {
 		if strings.HasSuffix(p, s) {
 			p = strings.TrimSuffix(p, s)
 			break
@@ -55,10 +50,14 @@ func Endpoint(kind, base string) string {
 	case KindResponses:
 		return base + "/responses"
 	case KindAnthropic:
-		return base + "/v1/messages"
+		return AnthropicBase(base) + "/v1/messages"
 	}
 	return base + "/chat/completions"
 }
+
+// AnthropicBase is the root the Anthropic SDK and its /v1 paths expect: the
+// base without a trailing "/v1" (older Godwits stored it so).
+func AnthropicBase(base string) string { return strings.TrimSuffix(base, "/v1") }
 
 type Preset struct {
 	ID, Name, Kind, BaseURL, HelpURL string

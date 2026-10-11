@@ -219,4 +219,19 @@ var Migrations = [][]string{{
 }, {
 	// Citation.Quote: a suspect message's text from where the suspicion starts.
 	`ALTER TABLE run_citations ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Model capabilities: kind stays the generate format ('' = generate off). provider is
+	// the add dialog's tile, inferred for older rows from the address; judge starts off.
+	`ALTER TABLE model_services ADD COLUMN provider TEXT NOT NULL DEFAULT 'other'`,
+	`UPDATE model_services SET provider = 'openai' WHERE kind IN ('openai', 'openai-responses')
+		AND (base_url = 'https://api.openai.com' OR base_url LIKE 'https://api.openai.com/%')`,
+	`UPDATE model_services SET provider = 'anthropic' WHERE kind = 'anthropic'
+		AND (base_url = 'https://api.anthropic.com' OR base_url LIKE 'https://api.anthropic.com/%')`,
+	`ALTER TABLE model_services ADD COLUMN judge_format TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN judge_model TEXT NOT NULL DEFAULT ''`,
+	// The last test of each capability ('gen', 'judge') as codes, never error text. Kept
+	// apart from model_services so writing it never bumps a service's version.
+	`CREATE TABLE model_service_status (service_id INTEGER NOT NULL REFERENCES model_services(id) ON DELETE CASCADE,
+		cap TEXT NOT NULL, state TEXT NOT NULL, latency_ms INTEGER NOT NULL DEFAULT 0, http_status INTEGER NOT NULL DEFAULT 0,
+		code TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, PRIMARY KEY(service_id, cap))`,
 }}

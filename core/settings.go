@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
@@ -21,7 +22,10 @@ type Settings struct {
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
-	LocalAPI                                         bool // the GUI serves the Local API; off by default
+	// JudgeService is the slug of the service whose judge answers typed
+	// questions; "" (or one gone or with judge off): the DefaultModel does.
+	JudgeService string
+	LocalAPI     bool // the GUI serves the Local API; off by default
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
@@ -60,6 +64,9 @@ func (st Settings) validate() error {
 		return fmt.Errorf("font size must be between 10 and 32")
 	case st.SidebarWidth != 0 && (st.SidebarWidth < 240 || st.SidebarWidth > 480):
 		return fmt.Errorf("sidebar width must be between 240 and 480")
+	}
+	if strings.Contains(st.JudgeService, "/") {
+		return fmt.Errorf("invalid judge service %q", st.JudgeService)
 	}
 	for _, r := range []string{st.DefaultModel, st.SmallModel} {
 		if _, err := ai.ParseModelRef(r); r != "" && err != nil {

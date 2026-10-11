@@ -786,3 +786,19 @@ func TestEscapedBasePathKept(t *testing.T) {
 		assert.Equal(t, strings.TrimPrefix(Endpoint(kind, base), srv.URL), <-uris)
 	})
 }
+
+// An Anthropic base entered with "/v1" reaches the same /v1/messages as one without.
+func TestAnthropicBaseWithV1(t *testing.T) {
+	e, err := NewEngine(nil, nil)
+	require.NoError(t, err)
+	defer e.Close()
+	srv := testllm.Start(t, "anthropic")
+	m := modelFor(srv, "anthropic", "k")
+	m.BaseURL += "/v1"
+	_, res := run(e, Request{Model: m, Prompt: "x"})
+	require.Nil(t, res.Err)
+	require.Len(t, srv.Requests(), 1)
+	ids, err := ListModels(context.Background(), nil, KindAnthropic, m.BaseURL, "k")
+	require.NoError(t, err)
+	assert.NotNil(t, ids)
+}

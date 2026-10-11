@@ -117,7 +117,7 @@ func TestModelServiceKeyKept(t *testing.T) {
 	if !s.HasKey {
 		t.Fatal("saving with an empty key field dropped the key")
 	}
-	if err := h.env.Svc.TestModelService(context.Background(), s.ID); err != nil {
+	if _, err := h.env.Svc.TestCapability(context.Background(), s.ID, s.Input(), core.CapGen); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -218,7 +218,10 @@ func TestModelServiceBusyAcrossNavigation(t *testing.T) {
 		<-release
 		return core.ServiceCheck{Models: []string{"stale-model"}, ListSupported: true}, nil
 	}
-	m.testService = func(context.Context, int64) error { <-release; return nil }
+	m.testService = func(context.Context, int64, core.ModelServiceInput, string) (core.CapStatus, error) {
+		<-release
+		return core.CapStatus{}, nil
+	}
 	h.click("test · OpenAI 兼容（Chat Completions）") // opening lists the models: that fetch waits on release
 	h.see("编辑：test")
 	h.click("测试连接")
@@ -733,7 +736,9 @@ func TestModelStatusFromTest(t *testing.T) {
 	if m.status[m.form.id] == statusBad {
 		t.Fatal("starts invalid")
 	}
-	m.testService = func(context.Context, int64) error { return core.ErrModelAuth }
+	m.testService = func(context.Context, int64, core.ModelServiceInput, string) (core.CapStatus, error) {
+		return core.CapStatus{}, core.ErrModelAuth
+	}
 	h.click("测试连接")
 	h.until("key invalid", func() bool { return m.status[m.form.id] == statusBad })
 	h.click("取消")
@@ -800,5 +805,26 @@ func TestModelsFetchAgainAfterStaleDrop(t *testing.T) {
 	h.until("fetched for the new key", func() bool { return slices.Contains(f.offered, "for-two") && !f.probing })
 	if slices.Contains(f.offered, "for-one") {
 		t.Fatalf("offered %q: the old key's result was adopted", f.offered)
+	}
+}
+
+// Turning generate off moves the default to the first other service that
+// generates and clears the small model; turning judge off clears its default.
+func TestDropRefsGenOff(t *testing.T) {
+	gw := core.ModelService{ID: 1, Slug: "gw", Models: []string{"m"}, JudgeFormat: "decisions"}
+	others := []core.ModelService{gw, {ID: 2, Slug: "ts", JudgeFormat: "systemone"}, {ID: 3, Slug: "or", Kind: "openai", Models: []string{"a", "b"}}}
+	st := core.Settings{DefaultModel: "gw/m", SmallModel: "gw/m", JudgeService: "gw"}
+	got, changed := dropRefs(st, gw, others)
+	if !changed || got.DefaultModel != "or/a" || got.SmallModel != "" || got.JudgeService != "gw" {
+		t.Fatalf("%v %+v", changed, got)
+	}
+	gw.Kind, gw.JudgeFormat = "openai", ""
+	got, changed = dropRefs(st, gw, others)
+	if !changed || got.DefaultModel != "gw/m" || got.SmallModel != "gw/m" || got.JudgeService != "" {
+		t.Fatalf("judge off: %v %+v", changed, got)
+	}
+	got, _ = dropRefs(st, core.ModelService{ID: 1, Slug: "gw"}, others[:2]) // removed, no alt
+	if got.DefaultModel != "" || got.SmallModel != "" || got.JudgeService != "" {
+		t.Fatalf("removed: %+v", got)
 	}
 }

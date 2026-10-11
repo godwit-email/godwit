@@ -25,7 +25,7 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 			hdr.Set("Authorization", "Bearer "+apiKey)
 		}
 	case KindAnthropic:
-		url = base + "/v1/models"
+		url = AnthropicBase(base) + "/v1/models"
 		hdr.Set("anthropic-version", "2023-06-01")
 		if apiKey != "" {
 			hdr.Set("x-api-key", apiKey)

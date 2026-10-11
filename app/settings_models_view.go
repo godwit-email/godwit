@@ -211,7 +211,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			}
 			if urlErr != "" {
 				kit.Text(c, urlErr, t.Text.Sm).TextColor(t.Danger)
-			} else if u, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
+			} else if u, err := core.NormalizeModelBaseURL(strings.TrimSpace(f.baseURL)); err == nil {
 				kit.Text(c, i18n.Tf("settings.models.endpoint", core.ModelEndpoint(f.kind, u)), t.Text.Sm).TextColor(t.Muted)
 			}
 		})

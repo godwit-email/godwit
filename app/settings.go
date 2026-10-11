@@ -69,7 +69,7 @@ type settingsPage struct {
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, reauth: map[int64]bool{},
-		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestModelService}, ext: &extView{a: a, tab: 1}}
+		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability}, ext: &extView{a: a, tab: 1}}
 }
 
 // section is the page shown: an unknown or missing account falls back to

@@ -133,7 +133,7 @@ func TestAddServiceNormalizes(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "anthropic", BaseURL: " https://api.example.com/v1/messages ", Models: []string{"m"}})
 	require.NoError(t, err)
-	assert.Equal(t, "https://api.example.com", ms.BaseURL)
+	assert.Equal(t, "https://api.example.com/v1", ms.BaseURL, "stored as entered, one base for every format")
 	ms, err = s.UpdateModelService(bg, ms.ID, ModelServiceInput{Name: "x", Kind: "openai-responses", BaseURL: "https://api.example.com/v1/responses", KeyAction: KeyClear, Models: []string{"m"}})
 	require.NoError(t, err)
 	assert.Equal(t, "openai-responses", ms.Kind)

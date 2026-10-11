@@ -29,7 +29,7 @@ type modelsView struct {
 	status               map[int64]svcStatus // what a probe or test this session found, per service
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
-	testService  func(ctx context.Context, id int64) error
+	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
 }
 
 // modelForm edits one service (id 0: a new one). A result for a form that
@@ -49,6 +49,8 @@ type modelForm struct {
 	helpURL                  string // the preset's API key page
 	keyOptional              bool   // the preset needs no key
 	kind, name, baseURL, key string
+	provider                 string // as saved; "" for a new service: core infers it
+	judgeFormat, judgeModel  string // as saved: kept until the dialog edits judge
 	hasKey, noKey            bool   // noKey: the user chose no key for a changed address
 	manual                   string // a model ID being typed
 	models, offered          []string
@@ -68,7 +70,7 @@ type modelForm struct {
 // url is the address as it will be saved, or as typed when it is not valid.
 func (f *modelForm) url() string {
 	raw := strings.TrimSpace(f.baseURL)
-	if u, err := core.NormalizeModelBaseURL(f.kind, raw); err == nil {
+	if u, err := core.NormalizeModelBaseURL(raw); err == nil {
 		return u
 	}
 	return raw
@@ -119,7 +121,7 @@ func (f *modelForm) edited() uint64 {
 // input is the form as a service input, with an explicit key action.
 func (f *modelForm) input() core.ModelServiceInput {
 	return core.ModelServiceInput{Name: strings.TrimSpace(f.name), Kind: f.kind, BaseURL: strings.TrimSpace(f.baseURL),
-		APIKey: f.key, KeyAction: f.keyAction(), Models: slices.Clone(f.models)}
+		APIKey: f.key, KeyAction: f.keyAction(), Models: slices.Clone(f.models), Provider: f.provider, JudgeFormat: f.judgeFormat, JudgeModel: f.judgeModel}
 }
 
 // normalize rewrites the address as it will be saved, or says why it can't be.
@@ -129,7 +131,7 @@ func (f *modelForm) normalize() {
 		f.urlErr = ""
 		return
 	}
-	u, err := core.NormalizeModelBaseURL(f.kind, raw)
+	u, err := core.NormalizeModelBaseURL(raw)
 	if err != nil {
 		f.urlErr, f.urlBad = humanize(err), f.baseURL
 		return
@@ -175,7 +177,8 @@ func (m *modelsView) load() {
 
 func (m *modelsView) edit(s core.ModelService) {
 	m.form = &modelForm{id: s.ID, title: s.Name, slug: s.Slug, savedKind: s.Kind, savedURL: s.BaseURL, kind: s.Kind, name: s.Name,
-		baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models)}
+		baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models),
+		provider: s.Provider, judgeFormat: s.JudgeFormat, judgeModel: s.JudgeModel}
 }
 
 // openEdit shows the service in the dialog and lists its models.
@@ -266,9 +269,9 @@ func (m *modelsView) submit(f *modelForm) {
 		}
 		noDefault := a.settings.DefaultModel == ""
 		if id != 0 {
-			m.dropRefs(saved.Slug, saved.Models)
+			m.dropRefs(saved)
 		}
-		if noDefault { // this service's first model becomes it: Wit needs one
+		if noDefault && saved.Kind != "" && len(saved.Models) > 0 { // this service's first model becomes it: Wit needs one
 			m.setModel(func(st *core.Settings) { st.DefaultModel = saved.Slug + "/" + saved.Models[0] })
 		}
 		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
@@ -281,21 +284,42 @@ func (f *modelForm) unchanged(snap modelForm) bool {
 		f.manual == snap.manual && slices.Equal(f.models, snap.models)
 }
 
-// dropRefs clears the model settings that point at service slug's models
-// other than keep (all of them after a removal, keep nil). A rename keeps the
-// slug, so references need no rewrite.
-func (m *modelsView) dropRefs(slug string, keep []string) {
-	st := m.a.settings
-	changed := false
-	for _, ref := range []*string{&st.DefaultModel, &st.SmallModel} {
-		if model, ok := strings.CutPrefix(*ref, slug+"/"); ok && !slices.Contains(keep, model) {
-			*ref, changed = "", true
-		}
-	}
-	if changed {
+// dropRefs clears the model settings that point at what service svc no
+// longer offers (a removed service: its ID and slug only). A rename keeps
+// the slug, so references need no rewrite.
+func (m *modelsView) dropRefs(svc core.ModelService) {
+	if st, changed := dropRefs(m.a.settings, svc, m.services); changed {
 		st.NoTranslate = slices.Clone(st.NoTranslate)
 		m.a.changeSettings(st)
 	}
+}
+
+// dropRefs clears st's references to models svc doesn't generate with (all
+// of them with generate off) and to its judge when that is off. A
+// DefaultModel cleared moves to alt: the first other service that
+// generates, its first model, as the dialog's warning promises.
+func dropRefs(st core.Settings, svc core.ModelService, services []core.ModelService) (core.Settings, bool) {
+	keep, changed := svc.Models, false
+	if svc.Kind == "" {
+		keep = nil
+	}
+	for _, ref := range []*string{&st.DefaultModel, &st.SmallModel} {
+		if model, ok := strings.CutPrefix(*ref, svc.Slug+"/"); ok && !slices.Contains(keep, model) {
+			*ref, changed = "", true
+		}
+	}
+	if st.JudgeService == svc.Slug && svc.JudgeFormat == "" {
+		st.JudgeService, changed = "", true
+	}
+	if changed && st.DefaultModel == "" {
+		for _, o := range services {
+			if o.ID != svc.ID && o.Kind != "" && len(o.Models) > 0 {
+				st.DefaultModel = o.Slug + "/" + o.Models[0]
+				break
+			}
+		}
+	}
+	return st, changed
 }
 
 func (m *modelsView) remove(f *modelForm) {
@@ -306,7 +330,7 @@ func (m *modelsView) remove(f *modelForm) {
 		a.refreshTasks()
 		a.toastErr(err)
 		if err == nil {
-			m.dropRefs(slug, nil)
+			m.dropRefs(core.ModelService{ID: id, Slug: slug})
 			if m.form == f {
 				m.form, m.open = nil, false
 			}
@@ -329,7 +353,7 @@ func (m *modelsView) fetch(f *modelForm) {
 		f.refetch = f.conn() != f.probeConn
 		return
 	}
-	if _, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
+	if _, err := core.NormalizeModelBaseURL(strings.TrimSpace(f.baseURL)); err == nil {
 		m.probeWith(f, nil, true)
 	}
 }
@@ -390,10 +414,10 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 
 // test runs the saved service and shows how long it took, as probe does.
 func (m *modelsView) test(f *modelForm) {
-	a, id, test, gen := m.a, f.id, m.testService, m.a.gen
+	a, id, in, test, gen := m.a, f.id, f.input(), m.testService, m.a.gen
 	f.testing, f.testMsg = true, ""
 	start := a.clock.Now()
-	a.do(func(ctx context.Context) error { return test(ctx, id) }, func(err error) {
+	a.do(func(ctx context.Context) error { _, err := test(ctx, id, in, core.CapGen); return err }, func(err error) {
 		f.testing = false
 		if m.form != f || gen != a.gen {
 			return
