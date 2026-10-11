@@ -90,7 +90,7 @@ var ErrWrongPage = errors.New("this page may not call that")
 
 **Interfaces (produced, bound as `WitPage`):**
 ```go
-type WitPageState struct{ Conversation int64; Model string; Text map[string]string; Theme Theme } // Model: label of Settings.DefaultModel
+type WitPageState struct{ Conversation, Version int64; Model string; Text map[string]string; Theme Theme } // Model: label of Settings.DefaultModel; Version: of the conversation snapshot
 func (p *WitPage) Load(ctx) (WitPageState, error)
 func (p *WitPage) Follow(ctx, conversation int64) (WitHistory, error)   // conversation 0 → empty history; subscribe first (Task 1 plumbing)
 func (p *WitPage) Ask(ctx, conversation int64, input string) (RunStart, error) // 0 → NewConversation("ask",0) first, then svc.Ask; returns Run, and the conversation via a new field RunStart.Conversation
@@ -101,16 +101,22 @@ func (p *WitPage) OpenCited(ctx, message int64) error   // → native navigate t
 func (p *WitPage) OpenLink(ctx, url string) error       // http/https → OpenURL; mailto → default-account draft + OpenCompose
 func (p *WitPage) OpenModels(ctx) error                 // → native Settings › models
 func (p *WitPage) Navigate(ctx, dir int) error          // -1 back, +1 forward (⌘[ / ⌘])
-var WitOpen = mygo.NewEvent[int64]("witOpen")           // Go → page: show this conversation (0 = new)
+type WitOpenMsg struct{ Conversation, Version int64 }
+var WitOpen = mygo.NewEvent[WitOpenMsg]("witOpen")      // Go → page: show this conversation (0 = new), versioned
+var WitState = mygo.NewEvent[WitPageState]("witState") // Go → page: model label / copy changed (settings), without touching the stream
+func (p *WitPage) SetConversation(id int64)            // native → service: the route's conversation; bumps Version and emits WitOpen
+// Ask's creation of a conversation carries the Version it was asked under; ConversationCreated(id, version) updates the route only if the native route still shows that version's empty conversation (else it only reloads the sidebar list).
 ```
-`WitPageDeps{ OpenMessage func(id int64); OpenModels func(); Navigate func(dir int); ConversationCreated func(id int64); OpenURL func(string) error; OpenCompose func(int64) }` — set in `cmd/godwit`, where each App call is posted to the UI thread.
+`WitPageDeps{ OpenMessage func(id int64); OpenModels func(); Navigate func(dir int); ConversationCreated func(id, version int64); OpenURL func(string) error; OpenCompose func(int64) }` — set in `cmd/godwit`, where each App call is posted to the UI thread.
 
 **Native side:**
 - `cmd/godwit` creates the web view right after `mygo.NewWindow` with `WebViewOptions{URL: "/wit.html"}`, locks it like compose windows (entry-only navigation, no window opens), registers it as `wit`, and hands it to the App (a setter: `a.SetWitView(ui.NativeWebView)`).
 - `askPage.Content`:
   - No model → the existing native no-model state.
   - Otherwise `ui.WebView(c, view).Grow(1)` inside the content column, with no extra padding (the page pads itself).
-- **Route → page.** On `refresh(nil)` (navigation), Go emits `WitOpen(route.ConversationID)` to the page.
+- **Route → page.** On `refresh(nil)` (navigation), native calls `SetConversation(route.ConversationID)` (version bump + `WitOpen`).
+- **Settings → page.** `SettingsChanged` also emits `WitState` (model label) to the Wit page.
+- **Kept in `ask.go`:** `convKey` (sidebar delete still chains on it); `Title` and sidebar selection read the route's conversation instead of `p.wit.conv`.
 - **Page → route.** `ConversationCreated(id)` sets the route's ID in place (as native `Changed` did) and reloads the sidebar list.
 - **ApprovalsChanged** needs nothing extra for the open conversation: the page's subscription carries it. The sidebar list still reloads on events.
 - `askPage.Title()` is unchanged (title plus `ask.permissions`).
@@ -123,7 +129,11 @@ var WitOpen = mygo.NewEvent[int64]("witOpen")           // Go → page: show thi
   - `TestWitPageOpenCited` (Review Focus 5): `OpenCited(id)` → the `OpenMessage(id)` callback fires.
   - `TestWitPageRoleRefused`: every method from a non-`wit` caller → `ErrWrongPage`.
   - **Ported from `app/ask_test.go`** to `webui/witpage_test.go` (the panel logic now lives here): `TestAskStreamsAnswer`, `TestAskCitationsAndSuspect`, `TestAskApproveDraft`, `TestApproveFastResume`, `TestDroppedStreamEventsReconciled`, `TestReopenConversationFollowsRun`, `TestAskStop`, `TestApprovalsChainedInOrder`, `TestContextCitationsMapToRunAnswer`, `TestToolDisclosurePersists`, `TestLanguageClueSuspectNoteStays`. Each keeps its intent as a Go-side assertion on events and history. Those that test rendering move to Task 3's web tests.
-  - **Kept native and retargeted:** `TestAskConversationsList` (sidebar), `TestAskNoModel`. **Dropped:** `TestReopenRunningConversationStops`, if it only tested native panel state, with the reason recorded.
+  - **Ported, not dropped:** `TestReopenRunningConversationStops` (it asserts the core run is cancelled by Stop after reopening). **Kept native and retargeted:** `TestAskConversationsList` (sidebar), `TestAskNoModel`.
+  - `TestWitPageReloadKeepsRun`: the page's call context is cancelled (reload) mid-run → the run continues; a new Follow sees it, and Stop cancels it.
+  - `TestWitPageSwitchGeneration`: Follow(A), then Follow(B) where A's history read is slow → B wins, and A's events never reach the page.
+  - `TestWitPageCreatedVersion`: Ask(0) under version 3, then the route moves on (version 4) before creation finishes → `ConversationCreated(id, 3)` is reported and native leaves the route alone (sidebar reloads only).
+  - `TestDroppedStreamEventsReconciled` (ported): the history after the run equals the saved text in full.
   - `app` `TestAskPageHostsWebView` (Review Focus 4): with a model, the content builds the web view element (fake `NativeWebView`); navigating to a conversation emits `WitOpen(id)`.
   - `app` `TestShellNavigation` keeps passing; `Navigate(-1)` from the page triggers back.
 - [ ] **Step 2–4:** Run → FAIL; implement; run `go test ./...`, `go vet ./...`, `go test -race ./webui ./app ./cmd/godwit` → PASS; `mise run generate`.
@@ -133,11 +143,20 @@ var WitOpen = mygo.NewEvent[int64]("witOpen")           // Go → page: show thi
 
 ### Task 3: Web — `wit.html`
 
-**Files:** Create `web/wit.html`, `web/src/wit-page/main.tsx`, `WitPage.tsx`, `Citations.tsx`, `shortcuts.ts` (in `web/src/shared/`), tests; modify `web/vite.config.ts` (input `wit`), `web/src/wit/Panel.tsx` and `transport.ts` (generalise: `info` optional, slots, an injectable API with `ask(conversation, input)`).
+**Files:** Create `web/wit.html`, `web/src/wit-page/main.tsx`, `WitPage.tsx`, `web/src/wit/Citations.tsx` (shared: one component, container query — right column when wide, cards under the answer when narrow), `web/src/shared/shortcuts.ts`, tests; modify `web/vite.config.ts` (input `wit`), `web/src/wit/Panel.tsx`, `Answer`/`Response` and `transport.ts`, `web/src/compose/ComposePage.tsx` (follows the generalisation), `webui/theme.go` (+ `--sidebar`, `--warning-bg/-border/-text`, `--shadow-float`, `--float-inset`).
+
+**Generalisation (both hosts):**
+- `onLink` is injected into `Panel`/`Answer` (compose → `ComposePage.openLink`, Wit page → `WitPage.openLink`); nothing in `web/src/wit` imports a host's service.
+- The decide → resume protocol (record the run before deciding, keep early events, resume the run's message after; handle "answer already done before decide returns" and "other approvals still pending") moves from `ComposePage.tsx` into a shared hook in `web/src/wit/`.
+- The end-of-run reconcile (re-read history and replace) lives in the transport/Panel for both hosts.
+- Slots: `layout` (citations placement) and `input` (the floating box).
+- `follow` / `ask` results carry the selection generation; stale ones are ignored.
 
 **Behaviour** (native page per survey §1):
 - **Load:** `WitPage.load()` → theme, copy (`makeT`), conversation. A `WitTransport` with the `WitPage` API (`ask(conv, input)` → `RunStart`, `follow(conv)`, `stop`), created before `follow`.
-- **`witOpen` event:** switch conversation. The transport drops the old one, then `follow(id)` and replace the messages. Conversation 0 → empty.
+- **Startup order:** register `witOpen` / `witState` / `wit` listeners, THEN `load()`; apply only versions newer than the one held.
+- **`witOpen` event:** switch conversation (newer version only). End the old SDK stream, reinitialise messages, then `follow(id)` under a new generation. The core run is not cancelled. Conversation 0 → empty.
+- **`witState`:** update the model label and copy without resetting the stream or scroll.
 - **Layout:**
   - The conversation is centred with max width 760 (`theme.WitMaxWidth`) and scrolls itself; it sticks to the bottom while near it.
   - Below it, the floating input box: radius 2xl; shadow: add `--shadow-float` to `ThemeVars` from `theme.ShadowFloat`, and for dark the inset edge (`FloatInset`, blur 1). The box holds a textarea (2–8 lines; Enter sends, Shift+Enter makes a newline, IME respected; placeholder `wit.placeholder`, label `wit.input`), the model chip (`state.model` + chevron, tooltip `wit.model`, click → `openModels`), and 发送 / 停止.
@@ -148,16 +167,20 @@ var WitOpen = mygo.NewEvent[int64]("witOpen")           // Go → page: show thi
 - **Shortcuts:** `shortcuts.ts` forwards ⌘[ / ⌘] (not while composing) to `navigate(-1 / 1)`.
 
 - [ ] **Step 1: Failing tests:**
-  - `switching conversations drops the old stream` (Review Focus 1).
+  - `switching conversations drops the old stream` (Review Focus 1); `out-of-order follow results` (A's late result is ignored after B); `ask returning after a switch` is ignored.
+  - `witOpen before load resolves` and `load during navigation` (versions decide).
+  - `reconcile after done replaces streamed text with the saved history`.
+  - `decide then resume` (shared hook): resume after decide; the answer was already finished before decide returned; other approvals still pending.
+  - `links go through the host's openLink` for both hosts.
   - `first ask creates and keeps the conversation` (Review Focus 2): `ask(0, …)` returns conversation 7, so later sends use 7.
-  - `citations column wide vs narrow` (container width mocked).
+  - `citations: both layouts render` (jsdom can't evaluate container queries — the query itself is checked in the manual step and in a real-browser probe page).
   - `cited click opens`.
   - `model chip opens settings`.
   - `cmd-[ forwards`.
   - `answer hardening` still holds through this page (reuse plan 3's cases).
 - [ ] **Step 2–4:** Run → FAIL; implement; run `mise run web:test` → PASS; `mise run build`.
 - [ ] **Step 5: Commit**, then `mise run web:check`: `feat(web): the Wit page`.
-- [ ] **Step 6: Manual (macOS), `mise run dev`:**
+- [ ] **Step 6: Manual (macOS), `mise run dev`** — also: resize the content area across the citations breakpoint; reload the page (⌘R in the inspector) mid-run and see the run continue:
   - First question creates a conversation; the sidebar lists and selects it.
   - Switch conversations mid-run.
   - Stop.
@@ -178,4 +201,5 @@ var WitOpen = mygo.NewEvent[int64]("witOpen")           // Go → page: show thi
   - §D3 → Tasks 2–3: native sidebar and title, web content, no-model state native.
   - §A3/§A5 → Tasks 1–2.
 - **Ruling: merge old plans 4 and 5.** *Why:* the embedded-page base has no other user, so it can't be tested end to end alone. *Cost if wrong:* one larger PR. Update spec §F and §C1 (mygo 0.4.0 includes #205, no fork).
+- **Codex review (plan v1) folded in:** shared components get `onLink` injected; the decide→resume protocol and the end-of-run reconcile become shared; versioned snapshot + listener-first startup; latest-selection generations on both sides; creation callbacks carry their version; `convKey`/title/selection kept off the deleted panel; runs detached from page calls (reload-safe); `TestReopenRunningConversationStops` ported, not dropped; a model-label push; shared citations component; extra theme vars; container queries checked in a real browser.
 - **Ruling: keep the no-model state native.** *Why:* it is one sentence and a button that navigates natively. *Cost if wrong:* a small native view to replace later.
