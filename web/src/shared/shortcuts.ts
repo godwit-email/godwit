@@ -1,15 +1,25 @@
 /**
- * Forwards ⌘[ / ⌘] to navigate(-1 / 1): native shortcuts miss keys while an embedded page has the
- * keyboard. Not while an IME composes. Returns the remover.
+ * Forwards ⌘[ / ⌘] to navigate(-1 / 1) (and ⌘F to search, when given): native shortcuts miss keys while an embedded page has the
+ * keyboard. Not while an IME composes. Listens on win (default this window; the reader also
+ * passes its body's iframe window). Returns the remover.
  */
-export function forwardShortcuts(navigate: (dir: number) => Promise<unknown>): () => void {
+export function forwardShortcuts(
+  navigate: (dir: number) => Promise<unknown>,
+  win: Window = window,
+  search?: () => Promise<unknown>,
+): () => void {
   const on = (e: KeyboardEvent) => {
     if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return;
+    if (search && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      search().catch(() => {});
+      return;
+    }
     const dir = e.key === "[" ? -1 : e.key === "]" ? 1 : 0;
     if (!dir) return;
     e.preventDefault();
     navigate(dir).catch(() => {}); // a refused navigation leaves the page as it is
   };
-  window.addEventListener("keydown", on);
-  return () => window.removeEventListener("keydown", on);
+  win.addEventListener("keydown", on);
+  return () => win.removeEventListener("keydown", on);
 }

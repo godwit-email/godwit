@@ -4,20 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"image"
-	"image/png"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
@@ -97,10 +91,13 @@ func TestReaderThreadCollapse(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.openThread(thread)
-	h.see("third words")
+	h.seeBody(msgs[2].ID)
 	r := h.app.mail.reader
 	if !r.open[msgs[2].ID] || r.open[msgs[0].ID] || r.open[msgs[1].ID] {
 		t.Fatalf("open %v; want only the newest", r.open)
+	}
+	if n := h.plat.openViews(); n != 1 {
+		t.Fatalf("%d body pages, want the newest's", n)
 	}
 	h.see("bob@example.com") // the collapsed rows: sender, snippet
 	h.see("second words")
@@ -109,8 +106,11 @@ func TestReaderThreadCollapse(t *testing.T) {
 	}
 	h.click("bob@example.com")
 	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && h.countTexts("发给") == 2 })
+	h.seeBody(msgs[0].ID)
 	h.click("bob@example.com")
-	h.until("the oldest collapsed", func() bool { return !r.open[msgs[0].ID] && h.countTexts("发给") == 1 })
+	h.until("the oldest collapsed", func() bool {
+		return !r.open[msgs[0].ID] && h.countTexts("发给") == 1 && h.plat.view(msgs[0].ID) == nil
+	})
 }
 
 func TestReaderMarksRead(t *testing.T) {
@@ -126,67 +126,6 @@ func TestReaderMarksRead(t *testing.T) {
 	h.until("all read", func() bool {
 		return !slices.ContainsFunc(h.messages(thread), func(m core.MessageSummary) bool { return !seen(m) })
 	})
-}
-
-// pngBytes is a w×h PNG.
-func pngBytes(t *testing.T, w, h int) []byte {
-	t.Helper()
-	var b bytes.Buffer
-	if err := png.Encode(&b, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
-		t.Fatal(err)
-	}
-	return b.Bytes()
-}
-
-func TestReaderRemoteImages(t *testing.T) {
-	var mu sync.Mutex
-	var hdrs []http.Header
-	pic := pngBytes(t, 2, 2)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		hdrs = append(hdrs, r.Header.Clone())
-		mu.Unlock()
-		w.Header().Set("Set-Cookie", "track=1")
-		w.Write(pic)
-	}))
-	defer srv.Close()
-	hits := func() int { mu.Lock(); defer mu.Unlock(); return len(hdrs) }
-
-	h, accs := mailHarness(t, nil, "alice@example.com")
-	src := srv.URL + "/pixel.png"
-	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "News", "text",
-		coretest.HTML(`<p>Hello reader</p><img src="`+src+`" width="2" height="2">`)))
-	r := h.app.mail.reader
-	r.allowLoopback = true
-	h.openThread(m.ThreadID)
-	h.see("Hello reader")
-	h.see("已阻止 1 张远程图片，防止发件人追踪你是否打开了邮件")
-	if n := hits(); n != 0 {
-		t.Fatalf("%d requests before loading", n)
-	}
-	h.click("加载图片")
-	h.until("the image loaded", func() bool {
-		b := r.bodies[m.ID]
-		if b == nil || b.images == nil {
-			return false
-		}
-		e := b.images.imgs[src]
-		return e != nil && e.bm != nil
-	})
-	h.until("the notice gone", func() bool { return !h.tt.HasText("已阻止") })
-	if n := hits(); n != 1 {
-		t.Fatalf("%d requests, want 1", n)
-	}
-	h.tt.Frame()
-	h.tt.Frame()
-	if n := hits(); n != 1 {
-		t.Fatalf("%d requests after more frames, want 1", n)
-	}
-	for _, k := range []string{"Cookie", "Referer"} {
-		if v := hdrs[0].Get(k); v != "" {
-			t.Errorf("request sent %s: %q", k, v)
-		}
-	}
 }
 
 func TestReaderAttachments(t *testing.T) {
@@ -261,7 +200,7 @@ func TestViewInBrowserHasCSP(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Page", "text",
 		coretest.HTML(`<p>Shown in a browser</p><script>alert(1)</script><img src="https://tracker.example/p.gif">`)))
 	h.openThread(m.ThreadID)
-	h.see("Shown in a browser")
+	h.seeBody(m.ID)
 	h.more("在浏览器中查看原文")
 	u, err := url.Parse(h.callArg("OpenURL"))
 	if err != nil || u.Scheme != "file" {
@@ -290,7 +229,7 @@ func TestExportEML(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Keep: this/that", "raw body"))
 	h.plat.savePath = filepath.Join(t.TempDir(), "out.eml")
 	h.openThread(m.ThreadID)
-	h.see("raw body")
+	h.seeBody(m.ID)
 	h.more("导出原始邮件 (.eml)")
 	if name := h.callArg("SaveFile"); name != "Keep_ this_that.eml" {
 		t.Errorf("default name %q", name)
@@ -312,7 +251,7 @@ func TestReaderReplyCreatesDraft(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Question", "can you?"))
 	h.openThread(m.ThreadID)
-	h.see("can you?")
+	h.seeBody(m.ID)
 	h.click("回复")
 	d, err := h.env.Svc.GetDraft(context.Background(), h.composeOpened(0))
 	if err != nil {
@@ -329,7 +268,7 @@ func TestReaderArchive(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Done", "file it"))
 	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 }) // batch finds archives by them
 	h.openThread(m.ThreadID)
-	h.see("file it")
+	h.seeBody(m.ID)
 	h.click("归档")
 	h.until("archived", func() bool { return h.countIn(h.folderOf(accs[0], "archive")) == 1 })
 	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
@@ -337,13 +276,17 @@ func TestReaderArchive(t *testing.T) {
 	}
 }
 
+// A body's link (ReaderPage.OpenLink → BodyLink) asks first, showing the
+// whole address; 打开 opens it, 复制链接 copies it.
 func TestLinkConfirm(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	link := "https://shop.example.com/deal?id=7"
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Deal", "text",
 		coretest.HTML(`<p>Go to <a href="`+link+`">the deal</a> now</p>`)))
 	h.openThread(m.ThreadID)
-	h.click("the deal")
+	v := h.seeBody(m.ID)
+	h.app.BodyLink(v, link)
+	h.tt.Frame()
 	h.see("shop.example.com")
 	h.see("/deal?id=7")
 	if h.hasCall("OpenURL") {
@@ -355,16 +298,7 @@ func TestLinkConfirm(t *testing.T) {
 	}
 	h.until("the dialog closed", func() bool { return !h.tt.HasText("复制链接") })
 
-	for range 200 {
-		if h.tt.Focused("the deal") {
-			break
-		}
-		h.tt.Key(0, ui.KeyTab)
-	}
-	if !h.tt.Focused("the deal") {
-		t.Fatal("Tab never reached the link")
-	}
-	h.tt.Key(0, ui.KeyEnter)
+	h.app.BodyLink(v, link)
 	h.tt.Frame()
 	h.see("复制链接")
 	h.click("复制链接")
@@ -373,25 +307,11 @@ func TestLinkConfirm(t *testing.T) {
 	}
 }
 
-func TestReaderTruncatedNotice(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.plat.tempDir = t.TempDir()
-	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Long", "text",
-		coretest.HTML(strings.Repeat("<p>line</p>", 5100))))
-	h.openThread(m.ThreadID)
-	h.see("正文过长，只显示了开头")
-	h.scrollTo("在浏览器中查看")
-	h.click("在浏览器中查看")
-	if u := h.callArg("OpenURL"); !strings.HasPrefix(u, "file://") {
-		t.Fatalf("opened %q", u)
-	}
-}
-
 func TestReaderRefreshKeepsNewest(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Star me", "body"))
 	h.openThread(m.ThreadID)
-	h.see("body")
+	h.seeBody(m.ID)
 	r := h.app.mail.reader
 	fetched, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
@@ -427,7 +347,7 @@ func TestReaderNewReplyExpandsAndReads(t *testing.T) {
 	acc := accs[0]
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "first", coretest.MessageID("p1@x"), at(h.clock.Now(), 2)))
 	h.openThread(m.ThreadID)
-	h.see("first")
+	h.seeBody(m.ID)
 	r := h.app.mail.reader
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "reply words",
 		coretest.MessageID("p2@x"), coretest.InReplyTo("p1@x"), at(h.clock.Now(), 1)))
@@ -436,7 +356,7 @@ func TestReaderNewReplyExpandsAndReads(t *testing.T) {
 		t.Fatalf("%d messages", len(msgs))
 	}
 	reply := msgs[1].ID
-	h.waitMail("the reply expanded", func() bool { return r.open[reply] && h.tt.HasText("reply words") })
+	h.waitMail("the reply expanded", func() bool { return r.open[reply] && h.plat.view(reply) != nil })
 	h.until("the reply read", func() bool { return seen(h.messages(m.ThreadID)[1]) })
 }
 
@@ -455,7 +375,7 @@ func TestReaderBodyRetry(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.see("server went away")
 	h.click("重试")
-	h.see("eventually shown")
+	h.seeBody(m.ID)
 }
 
 func TestFileName(t *testing.T) {
@@ -484,7 +404,7 @@ func TestSingleMessageHeadDoesNotCollapse(t *testing.T) {
 	acc := accs[0]
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "only words"))
 	h.openThread(m.ThreadID)
-	h.see("only words")
+	v := h.seeBody(m.ID)
 	var head string // the sender head's "发给 …" line, which only the reader shows
 	for _, s := range h.tt.Texts() {
 		if strings.HasPrefix(s, "发给") {
@@ -496,7 +416,7 @@ func TestSingleMessageHeadDoesNotCollapse(t *testing.T) {
 	}
 	h.click(head)
 	h.tt.Frame()
-	if !h.app.mail.reader.open[m.ID] || !h.tt.HasText("only words") {
+	if _, shown := h.viewBox(v); !h.app.mail.reader.open[m.ID] || !shown || v.closed {
 		t.Fatal("a click on the only message's head collapsed it")
 	}
 }
@@ -508,7 +428,7 @@ func TestReplyAfterSwitchingMailOpensWindow(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Question", "can you?"))
 	other := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Other", "other body"))
 	h.openThread(m.ThreadID)
-	h.see("can you?")
+	h.seeBody(m.ID)
 	if err := h.tt.Click("回复"); err != nil { // no drain: the draft's callback waits
 		t.Fatal(err)
 	}

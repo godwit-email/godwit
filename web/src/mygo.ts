@@ -152,6 +152,37 @@ export interface Language {
   name: string;
 }
 
+/** ReaderBody is a message's body as the reader page shows it. */
+export interface ReaderBody {
+  message: number;
+  /**
+   * Version orders the bodies of a page: it applies only a newer one, so
+   * a Load that resolves after a ReaderReload is dropped.
+   */
+  version: number;
+  /**
+   * HTML is the sanitized body (remote images kept when Remote), its
+   * inline images within the message's budget and its structure within
+   * the limits; "" when the mail has no HTML, which Plain then holds.
+   */
+  html: string;
+  plain: string;
+  /**
+   * Remote is that the user allowed the remote images (加载图片): the page
+   * gets each http(s) src of HTML through Image.
+   */
+  remote: boolean;
+  /** Blocked is the remote images left out while not Remote. */
+  blocked: number;
+  /**
+   * Cut is that the body is only its start: the Service kept only that,
+   * or the limits cut it.
+   */
+  cut: boolean;
+  theme: Theme;
+  text: Record<string, string>;
+}
+
 /** Review is a pending draft edit as the compose page reviews it. */
 export interface Review {
   approval: number;
@@ -268,7 +299,7 @@ export interface Skill {
 /**
  * Theme is what a web page needs to look like the native UI: the CSS
  * variables of both appearances (the page picks by Mode, following the
- * system's for "system") and the interface font size.
+ * system's for "system"), the interface font size and the mail body's.
  */
 export interface Theme {
   /** Mode is the user's choice: "system", "light" or "dark". */
@@ -278,6 +309,8 @@ export interface Theme {
   dark: Record<string, string>;
   /** FontSize is the interface font size in CSS pixels. */
   fontSize: number;
+  /** BodyFontSize is the mail body font size in CSS pixels (the reader's). */
+  bodyFontSize: number;
 }
 
 /** WitCall is a tool call; Args is its JSON text. */
@@ -626,6 +659,57 @@ export const WitPage = {
   },
 } as const;
 
+/**
+ * ReaderPage is what a reader page (role "reader", one per expanded
+ * message) calls (mygo.Bind). Each acts on the caller's own message.
+ */
+export const ReaderPage = {
+  /** Height is the body's height in CSS pixels, for the native layout. */
+  height(px: number): Promise<void> {
+    return call("ReaderPage.Height", px);
+  },
+  /**
+   * Image is the remote image at url as a data: URL. It is refused
+   * (ErrImageRefused) unless the user allowed the caller's message's images
+   * and url is an image of its body as last built. The message's images
+   * share its budget (with its inline ones), at most imagefetch.Workers at
+   * once, and its deadline; each url is fetched once.
+   */
+  image(src: string): Promise<string> {
+    return call("ReaderPage.Image", src);
+  },
+  /** Load is the caller's message's body, as of its version. */
+  load(): Promise<ReaderBody> {
+    return call("ReaderPage.Load");
+  },
+  /** Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively. */
+  navigate(dir: number): Promise<void> {
+    return call("ReaderPage.Navigate", dir);
+  },
+  /**
+   * OpenLink opens a link of the body (its data-href) natively: an http or
+   * https one after the confirmation, a mailto one in a compose window. Any
+   * other is ErrBadLink.
+   */
+  openLink(link: string): Promise<void> {
+    return call("ReaderPage.OpenLink", link);
+  },
+  /**
+   * Search opens the mail list's search, as ⌘F does natively: a page that
+   * has the keyboard misses the native shortcut.
+   */
+  search(): Promise<void> {
+    return call("ReaderPage.Search");
+  },
+  /**
+   * Wheel is a vertical wheel delta the body did not use: the reader
+   * scrolls by it.
+   */
+  wheel(dy: number): Promise<void> {
+    return call("ReaderPage.Wheel", dy);
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -636,6 +720,8 @@ export const events = {
    * another conversation replaces what it followed.
    */
   wit: event<WitEvent>("wit"),
+  /** ReaderReload tells a reader page its body changed (加载图片, a retry). */
+  readerBody: event<ReaderBody>("readerBody"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close

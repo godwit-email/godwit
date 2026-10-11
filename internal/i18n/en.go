@@ -453,6 +453,7 @@ var en = map[string]string{
 	"settings.ext.mcp.read_only":                   "Declares read-only (for reference only)",
 	"settings.ext.mcp.trust":                       "Trust as a read-only tool",
 	"settings.ext.mcp.trust.help":                  "Once trusted, it needs approval only after Wit has read mail",
+	"reader.body":                                  "Message body",
 	"reader.reply":                                 "Reply",
 	"reader.reply_all":                             "Reply all",
 	"reader.forward":                               "Forward",

@@ -4,6 +4,7 @@ export type Theme = {
   light: Record<string, string>;
   dark: Record<string, string>;
   fontSize: number;
+  bodyFontSize: number;
 };
 
 /** Sets the theme's variables on root and returns a cleanup that stops following the system. */

@@ -46,6 +46,16 @@ type Platform interface {
 	DraftDeleted(id int64)
 	// SettingsChanged is told the settings after every change.
 	SettingsChanged(st core.Settings)
+	// NewBodyView makes a reader page in the main window showing message's
+	// body (bound to it before it loads); close unbinds and destroys it.
+	// The page reports to BodyHeight, BodyWheel, BodyLink, BodyNavigate,
+	// BodyBuilt and BodyFailed with the view. UI thread only; it may run
+	// the event loop.
+	NewBodyView(message int64) (view ui.NativeWebView, close func(), err error)
+	// AllowImages lets the pages showing message load its remote images
+	// (加载图片). Call it after NewBodyView: it forgets once the last page
+	// of the message closes.
+	AllowImages(message int64)
 }
 
 // Notification is a system notification about a message.
@@ -328,10 +338,12 @@ func (a *App) load() {
 	})
 }
 
-// Close cancels all work in flight, whose done callbacks never run, and
-// removes the temporary copies of opened attachments.
+// Close cancels all work in flight, whose done callbacks never run, closes
+// the reader's body pages and removes the temporary copies of opened
+// attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	a.mail.reader.closeViews()
 	a.tempMu.Lock()
 	defer a.tempMu.Unlock()
 	for _, d := range a.tempDirs {

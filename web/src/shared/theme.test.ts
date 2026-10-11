@@ -24,6 +24,7 @@ const theme = (mode: Theme["mode"]): Theme => ({
   light: { "--background": "rgb(255 255 255 / 1)" },
   dark: { "--background": "rgb(10 10 10 / 1)" },
   fontSize: 13,
+  bodyFontSize: 14,
 });
 const bg = (el: HTMLElement) => el.style.getPropertyValue("--background");
 
@@ -56,7 +57,16 @@ describe("applyTheme", () => {
   it("leaves no variable of the other appearance behind", () => {
     const m = stubMedia(false);
     const root = document.createElement("div");
-    applyTheme({ mode: "system", light: { "--a": "1" }, dark: { "--b": "2" }, fontSize: 13 }, root);
+    applyTheme(
+      {
+        mode: "system",
+        light: { "--a": "1" },
+        dark: { "--b": "2" },
+        fontSize: 13,
+        bodyFontSize: 14,
+      },
+      root,
+    );
     expect([root.style.getPropertyValue("--a"), root.style.getPropertyValue("--b")]).toEqual([
       "1",
       "",

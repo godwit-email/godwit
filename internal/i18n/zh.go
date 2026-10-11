@@ -453,6 +453,7 @@ var zh = map[string]string{
 	"settings.ext.mcp.read_only":                   "声明只读（仅供参考）",
 	"settings.ext.mcp.trust":                       "信任为只读工具",
 	"settings.ext.mcp.trust.help":                  "信任后只在 Wit 读过邮件时才需要审批",
+	"reader.body":                                  "邮件正文",
 	"reader.reply":                                 "回复",
 	"reader.reply_all":                             "全部回复",
 	"reader.forward":                               "转发",

@@ -25,6 +25,7 @@ type harness struct {
 	plat  *fakePlatform
 	clock *fakeClock
 	stop  context.CancelFunc // cancels the ctx the App was started with
+	size  [2]int             // the window's, once resize set it; else 1280×820
 
 	mu    sync.Mutex
 	queue []func()
@@ -144,6 +145,13 @@ func (h *harness) advance(d time.Duration) {
 	h.tt.Frame()
 }
 
+// resize makes the window w×ht DIPs.
+func (h *harness) resize(w, ht int) {
+	h.size = [2]int{w, ht}
+	h.tt.SetSize(w, ht)
+	h.tt.Frame()
+}
+
 func (h *harness) see(text string) {
 	h.t.Helper()
 	h.until(fmt.Sprintf("text %q", text), func() bool { return h.tt.HasText(text) })
@@ -246,6 +254,66 @@ type fakePlatform struct {
 	localAPIFn   func(on bool) (string, error) // answers SetLocalAPI in their place when set
 	dataDir      string                        // DataDir
 	customDir    bool
+
+	views     map[int64]*fakeBodyView // the body pages open, by message
+	onNewView func(message int64)     // runs inside NewBodyView, as the event loop may run there
+	viewErr   error                   // NewBodyView's error
+}
+
+// fakeBodyView stands for a reader page's *mygo.WebView, bound to message.
+type fakeBodyView struct {
+	ui.NativeWebView
+	message int64
+	closed  bool
+}
+
+// NewBodyView records "NewBodyView <message>" and makes a fake page;
+// closing it records "CloseBodyView <message>". A second close fails the
+// test, as would a second page for one message.
+func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
+	p.record("NewBodyView", message)
+	if f := p.onNewView; f != nil {
+		f(message)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.viewErr != nil {
+		return nil, nil, p.viewErr
+	}
+	if p.views == nil {
+		p.views = map[int64]*fakeBodyView{}
+	}
+	if p.views[message] != nil {
+		panic(fmt.Sprintf("a second body page for message %d", message))
+	}
+	v := &fakeBodyView{message: message}
+	p.views[message] = v
+	return v, func() {
+		p.record("CloseBodyView", message)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if v.closed {
+			panic(fmt.Sprintf("message %d's body page closed twice", message))
+		}
+		v.closed = true
+		delete(p.views, message)
+	}, nil
+}
+
+func (p *fakePlatform) AllowImages(message int64) { p.record("AllowImages", message) }
+
+// view is message's open body page, or nil.
+func (p *fakePlatform) view(message int64) *fakeBodyView {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.views[message]
+}
+
+// openViews is how many body pages are open.
+func (p *fakePlatform) openViews() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.views)
 }
 
 func (p *fakePlatform) record(name string, args ...any) {

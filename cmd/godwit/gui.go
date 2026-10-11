@@ -126,6 +126,46 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenCompose:         openCompose,
 	})
 	mygo.Bind(webui.NewWitPage(wit))
+	// The reader pages, one per expanded message in the main window, each
+	// bound to its message (platform.NewBodyView). Their callbacks run on
+	// the App's UI thread (onBody), and only if the page is still open
+	// there as one bound to the message (when one is named): a callback
+	// queued before its page closed or rebound is dropped.
+	onBody := func(k any, message int64, f func(*app.App, ui.NativeWebView)) {
+		page, _ := k.(*mygo.Page)
+		onApp(func(a *app.App) {
+			if plat == nil {
+				return
+			}
+			v, m, ok := plat.bodyView(page)
+			if ok && (message == 0 || m == message) {
+				f(a, v)
+			}
+		})
+	}
+	reader := webui.NewReader(roles, webui.ReaderDeps{
+		Emit: func(k any, b webui.ReaderBody) {
+			if err := webui.ReaderReload.EmitPage(k.(*mygo.Page), b); err != nil {
+				log.Printf("a body to its reader page: %v", err)
+			}
+		},
+		OnHeight: func(k any, m int64, px int) {
+			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyHeight(v, m, px) })
+		},
+		OnWheel: func(k any, dy float64) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyWheel(v, dy) }) },
+		OnLink:  func(k any, u string) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyLink(v, u) }) },
+		OnNavigate: func(k any, dir int) {
+			onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
+		},
+		OnSearch: func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySearch(v) }) },
+		OnBuilt: func(k any, b webui.ReaderBody) {
+			onBody(k, b.Message, func(a *app.App, v ui.NativeWebView) { a.BodyBuilt(v, b.Message, b.Cut, b.Remote) })
+		},
+		OnFailed: func(k any, m int64, err error) {
+			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyFailed(v, m, err) })
+		},
+	})
+	mygo.Bind(webui.NewReaderPage(reader))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -150,6 +190,7 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		pages.SetService(svc)
 		wit.SetService(svc)
+		reader.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -159,7 +200,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
@@ -167,12 +208,20 @@ func gui(ctx context.Context, dataDir string) int {
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win
-		if v, err := win.NewWebView(mygo.WebViewOptions{URL: "/wit.html"}); err != nil {
+		// The Wit page is registered before it loads (loadAfterSetup):
+		// its first call finds its role.
+		if v, err := win.NewWebView(mygo.WebViewOptions{}); err != nil {
 			log.Printf("the Wit page: %v", err) // the Ask page shows no content
-		} else {
-			witView = v
+		} else if err := loadAfterSetup(func() {
 			lockPage(v.Page())
 			roles.Register(v.Page(), "wit")
+		}, func() error { return v.Page().LoadURL("/wit.html") }, func() {
+			roles.Unregister(v.Page())
+			v.Destroy()
+		}); err != nil {
+			log.Printf("the Wit page: %v", err)
+		} else {
+			witView = v
 			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 		}
 		win.OnFocus(func() { a.SetForeground(true) })

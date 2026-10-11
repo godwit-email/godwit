@@ -78,6 +78,14 @@ func (p *Pages) Caller(ctx context.Context, role string) (int, error) {
 	return e.id, nil
 }
 
+// Role is the role the page with key is registered as, while it is.
+func (p *Pages) Role(key any) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e, ok := p.byKey[key]
+	return e.role, ok
+}
+
 // Key is the key page id was registered with, while it is.
 func (p *Pages) Key(id int) (any, bool) {
 	p.mu.Lock()
