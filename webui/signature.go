@@ -2,11 +2,13 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -18,6 +20,20 @@ var (
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
 )
+
+// maxSignatureBytes caps a saved signature at a mail body's limit.
+const maxSignatureBytes = mail.MaxBodyBytes
+
+// ErrSignatureTooLarge is returned for a signature over maxSignatureBytes.
+var ErrSignatureTooLarge = errors.New("the signature is too large")
+
+// Close forgets the page (its view closing): the flushes waiting get no
+// answer, and later ones answer at once until a page runs again.
+func (s *Signature) Close() {
+	s.mu.Lock()
+	s.live, s.waiting = false, map[int64]func(bool){}
+	s.mu.Unlock()
+}
 
 // signatureKeys are the i18n keys the signature page shows.
 var signatureKeys = []string{"compose.bold", "compose.italic", "compose.underline", "compose.link",
@@ -40,6 +56,7 @@ type Signature struct {
 
 	mu      sync.Mutex
 	svc     *core.Service
+	live    bool // the page called State: it ran, and may hold edits
 	account int64
 	next    int64
 	waiting map[int64]func(ok bool)
@@ -66,9 +83,15 @@ func (s *Signature) Show(account int64) {
 }
 
 // Flush asks the page to save now through emit (SignatureFlush); done
-// hears its answer, once, on the page's goroutine.
+// hears its answer, once, on the page's goroutine. A page that never ran
+// holds no edit: done(true) at once.
 func (s *Signature) Flush(emit func(token int64), done func(ok bool)) {
 	s.mu.Lock()
+	if !s.live {
+		s.mu.Unlock()
+		done(true)
+		return
+	}
 	s.next++
 	tok := s.next
 	s.waiting[tok] = done
@@ -110,6 +133,7 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	}
 	p.s.mu.Lock()
 	defer p.s.mu.Unlock()
+	p.s.live = true
 	return SignatureState{Account: p.s.account, Text: text, Theme: ThemeOf(st)}, nil
 }
 
@@ -138,6 +162,9 @@ func (p *SignaturePage) Save(ctx context.Context, account int64, html string) er
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return err
+	}
+	if len(html) > maxSignatureBytes {
+		return ErrSignatureTooLarge
 	}
 	if html != "" {
 		html = core.SignatureHTMLPrefix + html

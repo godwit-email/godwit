@@ -73,5 +73,36 @@ describe("signatureSaver", () => {
     expect(api.saved).toHaveBeenLastCalledWith(8, false);
     await vi.advanceTimersByTimeAsync(600);
     expect(api.save).toHaveBeenCalledTimes(2);
+    s.flush(9); // the failed edit is saved again
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save).toHaveBeenLastCalledWith(1, "<p>b</p>");
+    expect(api.saved).toHaveBeenLastCalledWith(9, true);
+  });
+
+  it("a failed debounced save is retried by the next flush, unless a newer edit replaced it", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(new Error("disk"));
+    s.edit(1, "<p>a</p>");
+    await vi.advanceTimersByTimeAsync(600);
+    s.flush(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save.mock.calls).toEqual([
+      [1, "<p>a</p>"],
+      [1, "<p>a</p>"],
+    ]);
+    expect(api.saved).toHaveBeenLastCalledWith(1, true);
+
+    let fail: (e: Error) => void = () => {};
+    api.save.mockImplementationOnce(() => new Promise((_, rej) => (fail = rej)));
+    s.edit(1, "<p>b</p>");
+    await vi.advanceTimersByTimeAsync(600);
+    s.edit(1, "<p>c</p>"); // newer, while b's save is in flight
+    fail(new Error("disk"));
+    s.flush(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save).toHaveBeenLastCalledWith(1, "<p>c</p>");
+    expect(api.save).toHaveBeenCalledTimes(4);
   });
 });

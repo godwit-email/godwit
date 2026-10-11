@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -58,6 +59,8 @@ func TestSignatureSaveRole(t *testing.T) {
 	got, err := f.p.Load(pageCtx(f.page), f.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "<p><u>Bob</u></p>", got)
+	assert.ErrorIs(t, f.p.Save(pageCtx(f.page), f.acc.ID, strings.Repeat("x", maxSignatureBytes+1)), ErrSignatureTooLarge)
+	assert.Equal(t, core.SignatureHTMLPrefix+"<p><u>Bob</u></p>", f.stored(t))
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID, ""))
 	assert.Equal(t, "", f.stored(t), "an empty editor clears the signature")
 }
@@ -76,11 +79,24 @@ func TestSignatureFlushAck(t *testing.T) {
 	f := newSigFixture(t)
 	var tokens []int64
 	var acks []bool
-	f.s.Flush(func(tok int64) { tokens = append(tokens, tok) }, func(ok bool) { acks = append(acks, ok) })
+	flush := func() {
+		f.s.Flush(func(tok int64) { tokens = append(tokens, tok) }, func(ok bool) { acks = append(acks, ok) })
+	}
+	flush()
+	assert.Empty(t, tokens, "a page that never ran is not asked")
+	assert.Equal(t, []bool{true}, acks)
+	acks = nil
+	_, err := f.p.State(pageCtx(f.page))
+	require.NoError(t, err)
+	flush()
 	require.Len(t, tokens, 1)
 	assert.ErrorIs(t, f.p.Saved(pageCtx(new(int)), tokens[0], true), ErrWrongPage)
 	assert.Empty(t, acks)
 	require.NoError(t, f.p.Saved(pageCtx(f.page), tokens[0], false))
 	require.NoError(t, f.p.Saved(pageCtx(f.page), tokens[0], true), "a second ack is a no-op")
 	assert.Equal(t, []bool{false}, acks)
+	f.s.Close()
+	flush()
+	assert.Len(t, tokens, 1, "a closed page is not asked")
+	assert.Equal(t, []bool{false, true}, acks)
 }

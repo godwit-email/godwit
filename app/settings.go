@@ -58,6 +58,7 @@ type settingsPage struct {
 	sigView   ui.NativeWebView
 	sigShow   func(account int64)
 	sigFlush  func(done func(ok bool))
+	sigClose  func()
 	sigErr    error
 	sigAcc    int64
 	sigPosted bool

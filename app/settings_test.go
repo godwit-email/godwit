@@ -904,6 +904,35 @@ func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
 	if closed {
 		t.Fatal("closed with the signature unsaved")
 	}
+	h.see("签名没有保存成功")
+	// A save that lands late settles the close it held.
+	h.plat.sigAnswer(true)
+	h.until("closed after the late save", func() bool { return closed })
+}
+
+// A signature page that never ran holds no edit: closing neither waits
+// nor asks.
+func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigMute()
+	h.plat.sigDead()
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.until("closed", func() bool { return closed })
+	if h.app.closeAsk {
+		t.Fatal("asked")
+	}
+}
+
+// Closing the App closes the signature page.
+func TestAppCloseClosesSignatureView(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.app.Close()
+	h.called("CloseSignatureView")
 }
 
 // The signature page saves an account's edit as that account when native

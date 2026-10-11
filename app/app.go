@@ -60,11 +60,12 @@ type Platform interface {
 	// of the message closes.
 	AllowImages(message int64)
 	// NewSignatureView makes the signature page (the account settings'
-	// rich-text editor) in the main window; the App makes one. show
+	// rich-text editor) in the main window; the App makes one and closes
+	// it (unregistered and destroyed) as it closes. show
 	// switches it to account: the page saves the shown account's edit as
 	// that account first. flush asks the page to save now; done hears
 	// whether it did, on the UI thread, at most once. UI thread only.
-	NewSignatureView() (view ui.NativeWebView, show func(account int64), flush func(done func(ok bool)), err error)
+	NewSignatureView() (view ui.NativeWebView, show func(account int64), flush func(done func(ok bool)), close func(), err error)
 }
 
 // Notification is a system notification about a message.
@@ -355,6 +356,7 @@ func (a *App) load() {
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 	a.mail.reader.closeViews()
+	a.pages[PageSettings].(*settingsPage).closeSignature()
 	a.tempMu.Lock()
 	defer a.tempMu.Unlock()
 	for _, d := range a.tempDirs {
@@ -406,7 +408,7 @@ func (a *App) BeforeClose(proceed func()) {
 	settle := func(err error) {
 		stop()
 		switch {
-		case err == nil && (!settled || a.closeAsk && errors.Is(a.closeErr, errFlushSlow)):
+		case err == nil && (!settled || a.closeAsk && (errors.Is(a.closeErr, errFlushSlow) || a.closeErr == errSignatureUnsaved)):
 			settled, a.closeAsk = true, false
 			proceed()
 		case !settled:
@@ -417,7 +419,15 @@ func (a *App) BeforeClose(proceed func()) {
 	p := a.pages[PageSettings].(*settingsPage)
 	p.flushSignature(func(sigErr error) {
 		p.commitEdits()
-		a.writes.Idle(func() { settle(errors.Join(append(a.writes.ErrorsSince(mark), sigErr)...)) })
+		a.writes.Idle(func() {
+			err := errors.Join(a.writes.ErrorsSince(mark)...)
+			if err == nil {
+				err = sigErr // alone, so a late save can settle it
+			} else if sigErr != nil {
+				err = errors.Join(err, sigErr)
+			}
+			settle(err)
+		})
 	})
 }
 

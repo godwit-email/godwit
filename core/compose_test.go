@@ -572,7 +572,7 @@ func TestSignatureHTMLPlainEscapes(t *testing.T) {
 func TestSignatureHTMLMarked(t *testing.T) {
 	got := signatureHTML(SignatureHTMLPrefix + `<p><b>Bob</b> <a href="https://x.com">site</a><script>alert(1)</script>` +
 		`<img src="https://x.com/t.png" onerror="alert(2)"></p><div data-godwit="quote">q</div>`)
-	assert.True(t, strings.HasPrefix(got, `<div data-godwit="signature">`), got)
+	assert.True(t, strings.HasPrefix(got, `<div data-godwit="signature"><p>-- </p><p><b>Bob</b>`), got)
 	assert.Equal(t, 1, strings.Count(got, "data-godwit"), got)
 	assert.Contains(t, got, "<b>Bob</b>")
 	assert.Contains(t, got, `href="https://x.com"`)

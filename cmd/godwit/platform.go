@@ -160,22 +160,25 @@ func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) 
 // NewSignatureView makes the signature page in the main window, kept on
 // its entry and registered as "signature" before it loads. show tells it
 // the account (also kept for a page that loads later); flush's done runs
-// on the window's UI thread once the page answers.
-func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), error) {
+// on the window's UI thread once the page answers (at once while the page
+// never ran); close undoes it all.
+func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), func(), error) {
 	v, err := p.win.NewWebView(mygo.WebViewOptions{})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	page := v.Page()
+	closeView := func() {
+		p.sig.Close()
+		p.roles.Unregister(page)
+		v.Destroy()
+	}
 	err = loadAfterSetup(func() {
 		lockPage(page)
 		p.roles.Register(page, "signature")
-	}, func() error { return page.LoadURL("/signature.html") }, func() {
-		p.roles.Unregister(page)
-		v.Destroy()
-	})
+	}, func() error { return page.LoadURL("/signature.html") }, closeView)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	show := func(account int64) {
 		p.sig.Show(account)
@@ -190,7 +193,7 @@ func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(
 			}
 		}, func(ok bool) { p.win.Update(func() { done(ok) }) })
 	}
-	return v, show, flush, nil
+	return v, show, flush, closeView, nil
 }
 
 // bodyView is the web view of the reader page page, while it is open as

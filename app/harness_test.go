@@ -272,13 +272,16 @@ type fakeSigView struct {
 	ui.NativeWebView
 	shown int64
 	dirty *string
-	mute  bool // flushes get no answer
+	mute  bool       // flushes get no answer yet: held keeps the last one's
+	held  func(bool) // the flush waiting while mute
+	dead  bool       // the page never ran: flushes answer ok at once, as webui.Signature does
 }
 
 // NewSignatureView records "NewSignatureView" and makes the fake page;
 // show records "ShowSignature <id>" and, as the page does, saves the
-// shown account's edit first; flush saves it and answers.
-func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), error) {
+// shown account's edit first; flush saves it and answers; close records
+// "CloseSignatureView".
+func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), func(), error) {
 	p.record("NewSignatureView")
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -308,12 +311,33 @@ func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(f
 		}, func(done func(bool)) {
 			p.record("FlushSignature")
 			p.mu.Lock()
-			mute := v.mute
+			mute, dead := v.mute, v.dead
+			if mute && !dead {
+				v.held = done
+			}
 			p.mu.Unlock()
-			if !mute {
+			switch {
+			case dead:
+				done(true)
+			case !mute:
 				done(save())
 			}
-		}, nil
+		}, func() { p.record("CloseSignatureView") }, nil
+}
+
+// sigAnswer answers the flush held while muted.
+func (p *fakePlatform) sigAnswer(ok bool) {
+	p.mu.Lock()
+	done := p.sig.held
+	p.mu.Unlock()
+	done(ok)
+}
+
+// sigDead makes the signature page one that never ran.
+func (p *fakePlatform) sigDead() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sig.dead = true
 }
 
 // sigType is the user typing html into the signature page.

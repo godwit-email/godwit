@@ -587,6 +587,7 @@ var zh = map[string]string{
 	"close.unsaved.quit":       "仍然退出",
 	"close.unsaved.back":       "返回",
 	"error.flush_slow":         "草稿 3 秒内还没保存完",
+	"error.signature_unsaved":  "签名没有保存成功",
 
 	// notifications and tray
 	"notify.new_mail":            "新邮件",

@@ -119,9 +119,9 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 // any other signature (the CLI's, the Local API's, an older one) is plain text.
 const SignatureHTMLPrefix = "<!--godwit:html-->"
 
-// SignatureEditorHTML is sig as safe compose HTML, without the draft marker:
-// a marked one sanitized (user markers stripped), a plain one escaped into a
-// paragraph; "" for none.
+// SignatureEditorHTML is sig as safe compose HTML, without the draft marker
+// or the "-- " delimiter: a marked one sanitized (user markers stripped), a
+// plain one escaped into a paragraph; "" for none.
 func SignatureEditorHTML(sig string) string {
 	if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
 		return mail.SanitizeCompose(mail.StripMarkers(rest))
@@ -143,7 +143,7 @@ func signatureHTML(sig string) string {
 		return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
 	}
 	if body := SignatureEditorHTML(sig); body != "" {
-		return `<div data-godwit="signature">` + body + "</div>"
+		return `<div data-godwit="signature"><p>-- </p>` + body + "</div>" // the delimiter a plain one has; the body is blocks
 	}
 	return ""
 }

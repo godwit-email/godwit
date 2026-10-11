@@ -130,7 +130,7 @@ func (p *settingsPage) signature(id int64) {
 	p.a.onUI(func() {
 		p.sigPosted = false
 		if p.sigView == nil {
-			if p.sigView, p.sigShow, p.sigFlush, p.sigErr = p.a.plat.NewSignatureView(); p.sigErr != nil {
+			if p.sigView, p.sigShow, p.sigFlush, p.sigClose, p.sigErr = p.a.plat.NewSignatureView(); p.sigErr != nil {
 				p.a.logf("the signature page: %v", p.sigErr)
 				return
 			}
@@ -142,28 +142,43 @@ func (p *settingsPage) signature(id int64) {
 
 // flushSignature has the signature page save its edit, then calls then
 // with errSignatureUnsaved if it failed or did not answer within
-// signatureFlushWait.
+// signatureFlushWait. A save that succeeds after that calls then(nil)
+// again: a close that asked only for it goes on.
 func (p *settingsPage) flushSignature(then func(error)) {
 	if p.sigFlush == nil {
 		then(nil)
 		return
 	}
-	done := false
-	var stop func() // set before the page can answer
-	finish := func(ok bool) {
-		if done {
+	timedOut, answered := false, false
+	stop := p.a.after(signatureFlushWait, func() {
+		timedOut = true
+		then(errSignatureUnsaved)
+	})
+	p.sigFlush(func(ok bool) {
+		if answered {
 			return
 		}
-		done = true
-		stop()
-		var err error
-		if !ok {
-			err = errSignatureUnsaved
+		answered = true
+		switch {
+		case !timedOut:
+			stop()
+			if !ok {
+				then(errSignatureUnsaved)
+			} else {
+				then(nil)
+			}
+		case ok:
+			then(nil)
 		}
-		then(err)
+	})
+}
+
+// closeSignature closes the signature page, if made (the App closing).
+func (p *settingsPage) closeSignature() {
+	if p.sigClose != nil {
+		p.sigClose()
 	}
-	stop = p.a.after(signatureFlushWait, func() { finish(false) })
-	p.sigFlush(finish)
+	p.sigView, p.sigShow, p.sigFlush, p.sigClose = nil, nil, nil, nil
 }
 
 // saveField writes field i as it is now, after the account's earlier

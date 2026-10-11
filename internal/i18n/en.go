@@ -587,6 +587,7 @@ var en = map[string]string{
 	"close.unsaved.quit":       "Quit anyway",
 	"close.unsaved.back":       "Go back",
 	"error.flush_slow":         "A draft is still saving after 3 seconds",
+	"error.signature_unsaved":  "The signature was not saved",
 
 	// notifications and tray
 	"notify.new_mail":            "New mail",
