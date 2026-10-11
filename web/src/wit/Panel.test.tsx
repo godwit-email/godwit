@@ -278,6 +278,49 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
+  it("lists only finished calls: a pending approval or a running edit has its own card or row", async () => {
+    const { emit } = await setup({
+      history: {
+        ...empty,
+        messages: [
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "",
+            calls: [{ id: "c1", name: "create_draft", args: "{}" }],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [
+          {
+            id: 3,
+            run: 7,
+            callId: "c1",
+            tool: "create_draft",
+            summary: "",
+            state: "pending",
+            error: "",
+            destinations: [],
+            args: "{}",
+          },
+        ],
+      },
+    });
+    expect(screen.queryByText(/调用了/)).toBeNull();
+    await userEvent.setup().type(input(), "go{Enter}");
+    emit({ kind: "tool_call", call: { id: "r1", name: "read_message", args: "{}" } });
+    emit({
+      kind: "tool_result",
+      result: { callId: "r1", name: "read_message", output: "1", error: "" },
+    });
+    emit({ kind: "tool_call", call: { id: "u1", name: "update_draft", args: "{}" } });
+    expect(await screen.findByText("调用了 read_message")).toBeInTheDocument();
+    expect(screen.getByText("正在写入正文…")).toBeInTheDocument();
+  });
+
   it("folds tool calls, shows core's citation numbers, notes suspect ones", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, suspect = false) => ({
@@ -302,7 +345,12 @@ describe("Panel", () => {
               { id: "c2", name: "search", args: "{}" },
               { id: "c3", name: "read", args: "{}" },
             ],
-            results: [],
+            results: ["c1", "c2", "c3"].map((callId) => ({
+              callId,
+              name: "",
+              output: "1",
+              error: "",
+            })),
             citations: [cite(1, 50), cite(2, 51, true)],
             runs: [7],
           },

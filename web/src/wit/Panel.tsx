@@ -227,6 +227,11 @@ function Answer({
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
+  // The tools line lists finished calls; a pending one shows as its card or the working row.
+  const done = calls.filter(
+    (c) =>
+      c.state === "output-available" || c.state === "output-error" || c.state === "output-denied",
+  );
   const cites = citesOf(m);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
@@ -243,7 +248,7 @@ function Answer({
   };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
-      {calls.length > 0 && (
+      {done.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger
             className={cn(
@@ -252,10 +257,10 @@ function Answer({
             )}
           >
             <RiPlayFill className="mt-0.5 size-3 shrink-0 transition-transform group-data-panel-open:rotate-90" />
-            {toolsLabel(calls, page, t)}
+            {toolsLabel(done, page, t)}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-1 flex flex-col gap-1 text-muted-foreground">
-            {calls.map((c) => (
+            {done.map((c) => (
               <code key={c.toolCallId} className="break-all text-xs">
                 {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
               </code>
