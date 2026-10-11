@@ -65,6 +65,44 @@ type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, X2l, X3l, X4l, Full float32 }
 // headings, X2l brand text and Display the onboarding headline.
 type TextScale struct{ Xs, Sm, Base, Body, Lg, Title, Xl, X2l, Display float32 }
 
+// Line heights, multipliers of a text's own size, one per TextScale step:
+// tokens.json's, but Base and Body are 1.3, the font's normal line height,
+// which the design's screens render (its 1.5 and 1.6 make list rows 13 px
+// taller than the design's). Reading is mail bodies, translations and the
+// drafts pane; Summary a summary's points; Prose onboarding's and empty
+// states' paragraphs; Lede onboarding's lede; Tight text in a box of fixed
+// height.
+const (
+	LineXs, LineSm, LineBase, LineBody, LineLg = 1.4, 1.45, 1.3, 1.3, 1.5
+	LineTitle, LineXl, LineX2l, LineDisplay    = 1.4, 1.35, 1.3, 1.25
+	LineReading, LineSummary, LineProse        = 1.75, 1.65, 1.6
+	LineLede, LineTight                        = 1.7, 1
+)
+
+// Line returns the line height of the step whose size is size, Body's for
+// a size between steps.
+func (s TextScale) Line(size float32) float32 {
+	switch size {
+	case s.Xs:
+		return LineXs
+	case s.Sm:
+		return LineSm
+	case s.Base:
+		return LineBase
+	case s.Lg:
+		return LineLg
+	case s.Title:
+		return LineTitle
+	case s.Xl:
+		return LineXl
+	case s.X2l:
+		return LineX2l
+	case s.Display:
+		return LineDisplay
+	}
+	return LineBody
+}
+
 // Layout sizes that do not follow the density.
 const (
 	Hairline           = 1   // dividers

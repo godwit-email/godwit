@@ -188,3 +188,17 @@ func TestHighlightToken(t *testing.T) {
 		}
 	}
 }
+
+// TestLine: each text step has its line height at any font size, and a
+// size between steps has Body's.
+func TestLine(t *testing.T) {
+	for _, font := range []int{13, 14, 16} {
+		s := FromSettings(core.Settings{FontSize: font}, false).Text
+		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm, s.Base: LineBase, s.Body: LineBody, s.Lg: LineLg,
+			s.Title: LineTitle, s.Xl: LineXl, s.X2l: LineX2l, s.Display: LineDisplay, s.Body + 0.5: LineBody} {
+			if got := s.Line(size); got != want {
+				t.Errorf("font %d: Line(%v) = %v, want %v", font, size, got, want)
+			}
+		}
+	}
+}

@@ -195,7 +195,8 @@ func (a *App) View(c *ui.Context) {
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last: c.SetTheme, which kit.Split calls mid-frame, resets the root's
 	// background to the theme's, which would cover the window's material.
-	c.Root().Background(root)
+	// On the root, which overlays (menus, dialogs, Select lists, toasts) attach to.
+	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Body))
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
@@ -226,7 +227,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 				kit.Separator(c, true).Margin(0, th.Space(2), 0, 0)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
-					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
 				}
 			})
 		}

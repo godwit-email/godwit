@@ -36,7 +36,7 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label).FontWeight(500)
 			if help != "" {
-				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
+				Text(c, help, t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		switchTrack(c, *on)

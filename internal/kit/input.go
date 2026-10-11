@@ -57,9 +57,9 @@ func Field(c *ui.Context, label, help, errText string, control func()) {
 		control()
 		switch {
 		case errText != "":
-			ui.Text(c, errText).FontSize(t.Text.Sm).TextColor(t.Danger)
+			Text(c, errText, t.Text.Sm).TextColor(t.Danger)
 		case help != "":
-			ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
+			Text(c, help, t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }

@@ -50,14 +50,14 @@ func (m *modelsView) list(c *ui.Context) {
 		rows = append(rows, func() {
 			listRow(c.Key(s.ID), 0, false, func() { m.openEdit(s) }, func() {
 				ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-					ui.Text(c, badge(s.Name)).Font(theme.Mono).FontSize(t.Text.Sm)
+					kit.Text(c, badge(s.Name), t.Text.Sm).Font(theme.Mono)
 				})
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, s.Name+" · "+kindLabel(s.Kind)).FontWeight(500).SingleLine().Shrink(1)
 						statusChip(c, m.status[s.ID])
 					})
-					ui.Text(c, s.BaseURL).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, s.BaseURL, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).SingleLine()
 				})
 				capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), false)
 				if strings.HasPrefix(m.a.settings.DefaultModel, s.Slug+"/") {
@@ -75,7 +75,7 @@ func statusChip(c *ui.Context, s svcStatus) {
 	bg, fg, dot, label := statusLook(t, s)
 	ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Full).Background(bg).Shrink(0).Children(func() {
 		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Radius(t.Radius.Full).Background(dot)
-		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(fg)
+		kit.Text(c, label, t.Text.Sm).TextColor(fg)
 	})
 }
 
@@ -86,7 +86,7 @@ func capChip(c *ui.Context, text string, check bool) {
 		if check {
 			ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
 		}
-		ui.Text(c, text).FontSize(t.Text.Sm)
+		kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineTight)
 	})
 }
 
@@ -129,10 +129,10 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 			kit.Spinner(c)
 		case f.testMsg != "" && f.testOK:
 			kit.StatusDot(c, kit.OK)
-			ui.Text(c, f.testMsg).FontSize(t.Text.Sm).TextColor(t.Success)
+			kit.Text(c, f.testMsg, t.Text.Sm).TextColor(t.Success)
 		case f.testMsg != "":
 			kit.StatusDot(c, kit.Error)
-			ui.Text(c, f.testMsg).FontSize(t.Text.Sm).TextColor(t.Danger).Shrink(1)
+			kit.Text(c, f.testMsg, t.Text.Sm).TextColor(t.Danger).Shrink(1)
 		}
 	})
 	kit.Button(c, i18n.T("settings.models.test"), kit.ButtonOpts{Variant: kit.Outline, Disabled: f.id == 0 || f.testing}).OnClick(func() { m.test(f) })
@@ -182,7 +182,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 				return
 			}
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.Tf("settings.models.slug", f.slug)).FontSize(t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+				kit.Text(c, i18n.Tf("settings.models.slug", f.slug), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
 				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
 					c.WriteClipboard(f.slug)
 					a.toast(i18n.T("link.copied"))
@@ -212,9 +212,9 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 				m.commonChips(c, f)
 			}
 			if urlErr != "" {
-				ui.Text(c, urlErr).FontSize(t.Text.Sm).TextColor(t.Danger)
+				kit.Text(c, urlErr, t.Text.Sm).TextColor(t.Danger)
 			} else if u, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
-				ui.Text(c, i18n.Tf("settings.models.endpoint", core.ModelEndpoint(f.kind, u))).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("settings.models.endpoint", core.ModelEndpoint(f.kind, u)), t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		m.keyField(c, f)
@@ -247,7 +247,7 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 					b.Children(func() {
 						ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 							ui.Text(c, tl.name).FontWeight(500).SingleLine()
-							ui.Text(c, tl.cap).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+							kit.Text(c, tl.cap, t.Text.Sm).TextColor(t.Muted).SingleLine()
 						})
 					})
 				}
@@ -263,7 +263,7 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 func (m *modelsView) commonChips(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, i18n.T("settings.models.common")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.models.common"), t.Text.Sm).TextColor(t.Muted)
 		for _, p := range m.a.svc.ModelPresets() {
 			if p.Kind != ai.KindOpenAI {
 				continue
@@ -279,7 +279,7 @@ func (m *modelsView) commonChips(c *ui.Context, f *modelForm) {
 			} else {
 				b.Border(theme.Hairline, t.Border).Background(t.Background)
 			}
-			b.Children(func() { ui.Text(c, p.Name).FontSize(t.Text.Sm).TextColor(fg) })
+			b.Children(func() { kit.Text(c, p.Name, t.Text.Sm).TextColor(fg) })
 		}
 	})
 }
@@ -296,7 +296,7 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) ui.Element {
 			} else {
 				b.Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed)
 			}
-			b.Children(func() { ui.Text(c, name).Font(theme.Mono).FontSize(t.Text.Sm) })
+			b.Children(func() { kit.Text(c, name, t.Text.Sm).Font(theme.Mono) })
 			if b.Clicked() {
 				if !on {
 					f.models = append(f.models, name)
@@ -318,7 +318,7 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	retry := func(msg string) {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, msg).FontSize(t.Text.Sm).TextColor(t.WarningText).Shrink(1)
+			kit.Text(c, msg, t.Text.Sm).TextColor(t.WarningText).Shrink(1)
 			kit.Button(c, i18n.T("settings.models.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: f.probing}).OnClick(func() { m.fetch(f) })
 		})
 	}
@@ -326,7 +326,7 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 	case f.probing:
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Spinner(c)
-			ui.Text(c, i18n.T("settings.models.fetching")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.models.fetching"), t.Text.Sm).TextColor(t.Muted)
 		})
 	case f.fetchErr != "":
 		retry(i18n.Tf("settings.models.fetch_failed", f.fetchErr))
@@ -337,9 +337,9 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 			retry(i18n.T("settings.models.no_list"))
 		}
 	case f.checked == f.conn() && f.fetched > 0:
-		ui.Text(c, i18n.Tf("settings.models.fetched", f.fetched)).FontSize(t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
 	default:
-		ui.Text(c, i18n.T("settings.models.hint")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.models.hint"), t.Text.Sm).TextColor(t.Muted)
 	}
 }
 
@@ -378,9 +378,9 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 		return in
 	}, func() {
 		if f.keyErr != "" {
-			ui.Text(c, f.keyErr).FontSize(t.Text.Sm).TextColor(t.Danger)
+			kit.Text(c, f.keyErr, t.Text.Sm).TextColor(t.Danger)
 		} else {
-			ui.Text(c, i18n.T("settings.models.api_key.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.models.api_key.help"), t.Text.Sm).TextColor(t.Muted)
 		}
 		if u := f.helpURL; u != "" {
 			kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).

@@ -55,3 +55,27 @@ func TestSettingsNoClip(t *testing.T) {
 		}
 	}
 }
+
+// TestFixedHeightTextFits: text in a box of fixed height (a capability
+// chip, a key cap) fits it at font 16 under the app's root line height.
+func TestFixedHeightTextFits(t *testing.T) {
+	var box float32
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "compact", FontSize: 16, BodyFontSize: 16}, false))
+		box = c.Theme().Space(5)
+		ui.Column(c).Children(func() {
+			capChip(c, "chip", true)
+			kit.Kbd(c, "Tab")
+		})
+		c.Root().LineHeight(theme.Of(c).Text.Line(theme.Of(c).Text.Body))
+	}, 400, 200)
+	for _, s := range []string{"chip", "Tab"} {
+		r, ok := tt.Find(s)
+		if !ok {
+			t.Fatalf("no %q", s)
+		}
+		if r.H > box {
+			t.Errorf("%q is %v high in a box of %v", s, r.H, box)
+		}
+	}
+}

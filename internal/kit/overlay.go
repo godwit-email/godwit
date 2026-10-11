@@ -22,7 +22,7 @@ func dialog(c *ui.Context, open *bool, width float32, title string, body, footer
 		backdrop.Background(ink(t).Alpha(0.4 * k))
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
-		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
+		Text(c, title, t.Text.Title).FontWeight(600)
 		body()
 		if footer != nil {
 			ui.Row(c).Gap(th.Space(2)).Justify(ui.End).Children(footer)
@@ -40,7 +40,7 @@ func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.X2l).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
 		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
-			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
+			Text(c, title, t.Text.Lg).FontWeight(600)
 			ui.Spacer(c)
 			IconButton(c, "x", closeLabel, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
 		})

@@ -8,11 +8,18 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// Text is text at a step of the text scale with that step's line height.
+// Leaves only: a line height passes down as a multiplier, so on a container
+// it would reach texts of other sizes.
+func Text(c *ui.Context, s string, size float32) ui.Element {
+	return ui.Text(c, s).FontSize(size).LineHeight(theme.Of(c).Text.Line(size))
+}
+
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-		ui.Text(c, text).FontSize(t.Text.Sm).TextColor(t.Foreground)
+		Text(c, text, t.Text.Sm).TextColor(t.Foreground)
 	})
 }
 
@@ -98,7 +105,7 @@ func Spinner(c *ui.Context) ui.Element {
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).TextColor(t.Muted)
+		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
 	})
 }
 
@@ -115,7 +122,7 @@ func initial(name string) string {
 func Avatar(c *ui.Context, name string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).TextColor(t.Foreground)
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(t.Foreground)
 	})
 }
 

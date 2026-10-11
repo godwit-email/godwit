@@ -133,14 +133,14 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
 	group := func(label string, top, bottom float32) {
-		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
+		kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
 	}
 	item := func(sec string) ui.Element {
 		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+			kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID)).Children(func() {
@@ -200,7 +200,7 @@ func (p *settingsPage) Content(c *ui.Context) {
 func pageHeading(c *ui.Context, title, sub string) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		ui.Text(c, title).FontSize(t.Text.Display).FontWeight(600)
+		kit.Text(c, title, t.Text.Display).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
@@ -213,7 +213,7 @@ func pageHeading(c *ui.Context, title, sub string) {
 func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		ui.Text(c, title).FontSize(t.Text.Base).FontWeight(600)
+		kit.Text(c, title, t.Text.Base).FontWeight(600)
 		ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
 			for i, row := range rows {
 				if i > 0 {
@@ -223,7 +223,7 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 			}
 		})
 		if footnote != "" {
-			ui.Text(c, footnote).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, footnote, t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }
@@ -236,7 +236,7 @@ func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label).FontWeight(500)
 			if desc != "" {
-				ui.Text(c, desc).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		control()
@@ -305,9 +305,9 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		rows = append(rows, func() {
 			settingBlock(c, func() {
 				ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
-				ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.local_api.mcp"), t.Text.Sm).TextColor(t.Muted)
 				config := a.mcpConfig()
-				ui.Text(c, config).Font(theme.Mono).FontSize(t.Text.Sm).Selectable()
+				kit.Text(c, config, t.Text.Sm).Font(theme.Mono).Selectable()
 				if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).AlignSelf(ui.Start).Clicked() {
 					c.WriteClipboard(config)
 				}
@@ -343,7 +343,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 	a := p.a
 	ui.Column(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Children(func() {
 		ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
-		ui.Text(c, "Godwit").FontSize(t.Text.X2l).FontWeight(600)
+		kit.Text(c, "Godwit", t.Text.X2l).FontWeight(600)
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
 		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)
 		label := strings.TrimPrefix(repoURL, "https://")

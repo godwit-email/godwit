@@ -558,7 +558,7 @@ func (r *reader) view(c *ui.Context) {
 		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).Children(func() {
 			ui.Column(c).MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(5), th.Space(7)).Gap(th.Space(3.5)).Children(func() {
 				subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-				ui.Text(c, subject).FontSize(t.Text.X2l).FontWeight(600)
+				kit.Text(c, subject, t.Text.X2l).FontWeight(600)
 				for _, m := range r.msgs {
 					if r.open[m.ID] {
 						r.message(c, m)
@@ -619,7 +619,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
-		ui.Text(c, listTime(r.p.a.clock.Now(), m.Date)).FontSize(t.Text.Sm).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 	})
 }
 
@@ -675,7 +675,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					}
 				})
 				when := senderDate(r.p.a.clock.Now(), m.Date)
-				ui.Text(c, i18n.Tf("reader.to", r.recipients(m), when)).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 			})
 		})
 		r.aiArea(c, m)
@@ -714,7 +714,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		}
 		if b.cut {
 			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
-				ui.Text(c, i18n.T("reader.truncated")).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("reader.truncated"), t.Text.Sm).TextColor(t.Muted)
 				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { r.viewInBrowser(m.ID) })
 			})
@@ -735,11 +735,11 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-						ui.Text(c, fileKind(att)).FontSize(t.Text.Xs).TextColor(t.Muted)
+						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 					})
 					ui.Column(c).Shrink(1).Children(func() {
 						ui.Text(c, att.Filename).SingleLine()
-						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 					})
 				})
 				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).

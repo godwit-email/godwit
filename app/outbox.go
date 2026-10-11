@@ -35,10 +35,10 @@ func (p *mailPage) outboxView(c *ui.Context) {
 						subject = i18n.T("mail.no_subject")
 					}
 					ui.Text(c, subject).FontWeight(500).SingleLine()
-					ui.Text(c, it.Account).FontSize(small).TextColor(t.Muted).SingleLine()
-					ui.Text(c, i18n.T("outbox.state."+it.State)).FontSize(small).TextColor(t.Muted)
+					kit.Text(c, it.Account, small).TextColor(t.Muted).SingleLine()
+					kit.Text(c, i18n.T("outbox.state."+it.State), small).TextColor(t.Muted)
 					if it.LastError != "" {
-						ui.Text(c, it.LastError).FontSize(small).TextColor(t.Danger)
+						kit.Text(c, it.LastError, small).TextColor(t.Danger)
 					}
 					if decidable(it.OutboxItem) {
 						ui.Row(c).Wrap().Gap(th.Space(1.5)).Margin(th.Space(1), 0, 0, 0).Children(func() {

@@ -11,7 +11,7 @@ import (
 )
 
 // sizeCall names the methods whose arguments are sizes.
-var sizeCall = regexp.MustCompile(`^(Padding.*|Gap.*|Margin.*|Height|Width|MinWidth|MaxWidth|MinHeight|MaxHeight|Radius|FontSize|Size|BorderWidth)$`)
+var sizeCall = regexp.MustCompile(`^(Padding.*|Gap.*|Margin.*|Height|Width|MinWidth|MaxWidth|MinHeight|MaxHeight|Radius|FontSize|Size|BorderWidth|LineHeight|FixedLineHeight)$`)
 
 // sizeArgs returns the arguments of call that are sizes, nil if none.
 func sizeArgs(call *ast.CallExpr) (string, []ast.Expr) {

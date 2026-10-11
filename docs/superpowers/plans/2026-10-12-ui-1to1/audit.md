@@ -117,3 +117,23 @@ The native items are written as tasks in the plan (`2026-10-12-ui-1to1.md`, Task
 2. **Max widths.** The max width includes the padding, so reader content is 664 instead of 720 and settings content is 696 instead of 760.
 3. **Dates.** Dates are not zero-padded.
 4. **Settings title bar.** It shows only the page, where the design has a breadcrumb.
+
+## Line heights
+
+Calibrated on 2026-10-11 (Task 1a) against the design renders, measuring line boxes in headless Chrome and text rects in the app's tester.
+
+- **The design renders `line-height: normal` almost everywhere.** It sets explicit values only for the reading body (1.75), the summary (1.65), the subject (1.35), the page heading (1.25), and onboarding/empty-state paragraphs (1.6, lede 1.7). With Geist this gives 1.3 (14 → 18, 13 → 17, 12 → 16). CJK lines fall back to PingFang and come out at ≈ 1.4 (14 → 20, 12 → 18).
+- **Root at the token Body 1.6** (14 → 22.4):
+  - list rows are 92.2 apart, against the design's 79–81;
+  - the in-row line pitch is 24.4, against 20–22.
+  - That is 13 px too tall per row, so the token loses.
+- **Choice: Base and Body are 1.3** (Geist's normal) instead of tokens.json's 1.5 / 1.6. The other steps keep their tokens (xs 1.4, sm 1.45, lg 1.5, title 1.4, xl 1.35, 2xl 1.3, display 1.25), which sit within 2 px of the rendered boxes.
+- **Measured after the change:**
+  - list row pitch: 79.6 (design 79 Latin / 81 CJK);
+  - list line pitch: 20.2 (design 20 / 22);
+  - settings label → description: 20.2 (design 22);
+  - settings row with a description: 66.7 (design 69). The remaining 2.3 px is row padding, not line height.
+- **Explicit values:**
+  - Reading 1.75 with a paragraph gap of 10 for rich text (translations, AI output, the drafts pane);
+  - Summary 1.65, Prose 1.6 and Lede 1.7, as the design sets them;
+  - Tight 1 for text in fixed-height boxes (Kbd, capability chip, avatar initial).

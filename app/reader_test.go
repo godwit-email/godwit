@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -476,24 +477,30 @@ func TestRelativeSenderDate(t *testing.T) {
 	}
 }
 
+// TestReaderToolbarAt16: the toolbar's buttons fit the window, unclipped and
+// apart, at font 13 and 16.
 func TestReaderToolbarAt16(t *testing.T) {
-	h, acc, _ := aiHarness(t, true, noQuick)
-	h.setSettings(func(s *core.Settings) { s.FontSize = 16 })
-	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "body"))
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	var prev ui.Rect
-	for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "更多"} {
-		r, ok := h.tt.Find(label)
-		if !ok {
-			t.Fatalf("no %q", label)
-		}
-		if r.X < 0 || r.X+r.W > 1280 || r.Y < 0 {
-			t.Errorf("%q clipped: %+v", label, r)
-		}
-		if i > 0 && r.Y == prev.Y && r.X < prev.X+prev.W {
-			t.Errorf("%q overlaps the one before: %+v over %+v", label, r, prev)
-		}
-		prev = r
+	for _, font := range []int{13, 16} {
+		t.Run(strconv.Itoa(font), func(t *testing.T) {
+			h, acc, _ := aiHarness(t, true, noQuick)
+			h.setSettings(func(s *core.Settings) { s.FontSize = font })
+			m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "body"))
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			var prev ui.Rect
+			for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "更多"} {
+				r, ok := h.tt.Find(label)
+				if !ok {
+					t.Fatalf("no %q", label)
+				}
+				if r.X < 0 || r.X+r.W > 1280 || r.Y < 0 {
+					t.Errorf("font %d: %q clipped: %+v", font, label, r)
+				}
+				if i > 0 && r.Y == prev.Y && r.X < prev.X+prev.W {
+					t.Errorf("font %d: %q overlaps the one before: %+v over %+v", font, label, r, prev)
+				}
+				prev = r
+			}
+		})
 	}
 }

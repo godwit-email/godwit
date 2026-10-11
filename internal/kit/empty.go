@@ -27,9 +27,9 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 				ui.Icon(c, icons.Get(o.Icon)).Size(theme.IconMd, theme.IconMd).TextColor(t.Muted)
 			})
 		}
-		ui.Text(c, o.Title).FontSize(t.Text.Title).FontWeight(600)
+		Text(c, o.Title, t.Text.Title).FontWeight(600)
 		if o.Desc != "" {
-			ui.Text(c, o.Desc).FontSize(t.Text.Body).TextColor(t.Muted).MaxWidth(theme.EmptyDescMax).TextAlign(ui.Center)
+			Text(c, o.Desc, t.Text.Body).LineHeight(theme.LineProse).TextColor(t.Muted).MaxWidth(theme.EmptyDescMax).TextAlign(ui.Center)
 		}
 		if o.Actions != nil {
 			ui.Row(c).Gap(th.Space(2)).Justify(ui.Center).Children(o.Actions)

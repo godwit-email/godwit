@@ -94,13 +94,13 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))).SingleLine().Grow(1).Shrink(1)
-			ui.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Sm).TextColor(t.Muted)
 		})
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine().Grow(1).Shrink(1)
 			if p.draftView[d.ID].editing {
 				ui.Box(c).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
-					ui.Text(c, i18n.T("mail.draft.chip")).FontSize(t.Text.Sm)
+					kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
 				})
 			}
 		})
@@ -137,14 +137,14 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			if editing {
 				status = i18n.Tf("mail.draft.saved_editing", saved)
 			}
-			ui.Text(c, status).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(5), th.Space(7)).Gap(th.Space(3.5)).Children(func() {
 				if editing {
-					ui.Text(c, i18n.T("mail.draft.notice")).FontSize(t.Text.Sm).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
+					kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
 				}
-				ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).FontSize(t.Text.X2l).FontWeight(600)
+				kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600)
 				ui.Column(c).Gap(th.Space(1)).Children(func() {
 					for _, f := range [][2]string{
 						{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
@@ -171,11 +171,11 @@ func (p *mailPage) draftAttachments(c *ui.Context, atts []core.DraftAttachment) 
 		for _, att := range atts {
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-					ui.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType})).FontSize(t.Text.Xs).TextColor(t.Muted)
+					kit.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType}), t.Text.Xs).TextColor(t.Muted)
 				})
 				ui.Column(c).Shrink(1).Children(func() {
 					ui.Text(c, att.Filename).SingleLine()
-					ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 				})
 			})
 		}

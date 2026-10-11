@@ -36,7 +36,7 @@ func Render(c *ui.Context, d Doc, o RenderOptions) ui.Element {
 		o.Background = t.Background
 	}
 	r := &renderer{c: c, o: o, t: t}
-	return ui.Column(c).Gap(c.Theme().Space(3)).Children(func() {
+	return ui.Column(c).Gap(c.Theme().Space(2.5)).Children(func() {
 		var levels []counter // the open lists, outermost first
 		for _, b := range d.Blocks {
 			if b.Kind != ListItem {
@@ -89,7 +89,7 @@ type renderer struct {
 }
 
 func (r *renderer) text(ins []Inline, size float32, font string) ui.Element {
-	e := ui.RichText(r.c).FontSize(size).TextColor(r.t.Foreground)
+	e := ui.RichText(r.c).FontSize(size).LineHeight(theme.LineReading).TextColor(r.t.Foreground)
 	if font != "" {
 		e = e.Font(font)
 	}
@@ -164,7 +164,7 @@ func (r *renderer) item(b Block, n int) {
 	}
 	indent := r.c.Theme().Space(5) * float32(max(b.Level, 1)-1)
 	ui.Row(r.c).AlignItems(ui.Start).Padding(0, 0, 0, indent).Children(func() {
-		ui.Text(r.c, marker).FontSize(r.o.FontSize).TextColor(r.t.Muted).Width(r.c.Theme().Space(5)).Shrink(0)
+		ui.Text(r.c, marker).FontSize(r.o.FontSize).LineHeight(theme.LineReading).TextColor(r.t.Muted).Width(r.c.Theme().Space(5)).Shrink(0)
 		r.text(b.Inlines, r.o.FontSize, "").Grow(1)
 	})
 }

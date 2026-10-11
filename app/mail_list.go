@@ -498,14 +498,14 @@ func (p *mailPage) listHeader(c *ui.Context) {
 					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.clearSearch)
 				}
 			})
-			ui.Text(c, p.searchHint()).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted)
 		})
 		if p.searched && len(p.results) > 0 {
 			q := p.hlQuery
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
 				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-				ui.Text(c, i18n.Tf("mail.search.ask_wit_row", q)).FontSize(t.Text.Sm).SingleLine().Grow(1).Shrink(1)
+				kit.Text(c, i18n.Tf("mail.search.ask_wit_row", q), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
 			})
 		}
 		if c.Shortcut(0, ui.KeyEscape) {
@@ -648,7 +648,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	act, target := "", []mailItem(nil)
 	l := kit.List(c, &ls.list, len(es), func(i int) {
 		if es[i].head != "" { // a date heading: no row, never chosen
-			ui.Text(c, es[i].head).FontSize(t.Text.Base).FontWeight(500).TextColor(t.Muted).Background(t.Background).
+			kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).TextColor(t.Muted).Background(t.Background).
 				Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
 			return
 		}
@@ -773,7 +773,7 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
-			ui.Text(c, listTime(p.a.clock.Now(), it.Date)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Sm).TextColor(t.Muted)
 		})
 		subject := it.Subject
 		if subject == "" {
@@ -781,10 +781,10 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 		}
 		marked(c, subject, q).SingleLine()
 		if it.Snippet != "" {
-			marked(c, it.Snippet, q).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+			marked(c, it.Snippet, q).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm)).TextColor(t.Muted).SingleLine()
 		}
 		if line := p.folderLine(it); line != "" {
-			ui.Text(c, line).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+			kit.Text(c, line, t.Text.Sm).TextColor(t.Muted).SingleLine()
 		}
 	})
 }
@@ -835,9 +835,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
 			if it.Count > 1 {
-				ui.Text(c, strconv.Itoa(it.Count)).FontSize(small).TextColor(t.Muted)
+				kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted)
 			}
-			ui.Text(c, listTime(p.a.clock.Now(), it.Date)).FontSize(small).TextColor(t.Muted)
+			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
 		})
 		subject := it.Subject
 		if subject == "" {

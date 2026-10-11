@@ -441,7 +441,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			ui.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model))).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model)), t.Text.Sm).TextColor(t.Muted)
 			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
@@ -456,7 +456,7 @@ func (r *reader) translated(c *ui.Context, m core.MessageSummary) bool {
 	}
 	tr := st.translation
 	if tr.done && strings.TrimSpace(tr.text) == "" { // it is in the reading language already
-		ui.Text(c, i18n.Tf("reader.ai.no_translation", langName(tr.lang))).FontSize(theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
+		kit.Text(c, i18n.Tf("reader.ai.no_translation", langName(tr.lang)), theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
 		return false
 	}
 	r.output(c, tr)
@@ -503,7 +503,7 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
 			ui.Text(c, title).FontWeight(600).Shrink(1)
-			ui.Text(c, meta).FontSize(t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+			kit.Text(c, meta, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
 			}
@@ -541,17 +541,17 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-				ui.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Sm).TextColor(t.Muted)
 				for i, f := range card.Fields {
 					if i == 0 { // the prominent field: its label over its value, mono only for a short code
-						ui.Text(c, f.Label).FontSize(t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, f.Label, t.Text.Sm).TextColor(t.Muted)
 						v := ui.Text(c, f.Value).Shrink(1)
 						if cardCode(f.Value) {
-							v.Font(theme.Mono).FontSize(t.Text.X2l).LetterSpacing(theme.CardTracking)
+							v.Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
 						}
 						continue
 					}
-					ui.Text(c, f.Label+": "+f.Value).FontSize(t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, f.Label+": "+f.Value, t.Text.Sm).TextColor(t.Muted)
 				}
 			})
 			if len(card.Buttons) == 0 {
@@ -597,13 +597,13 @@ func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover).Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			ui.Text(c, i18n.T("reader.ai.quick")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("reader.ai.quick"), t.Text.Sm).TextColor(t.Muted)
 		})
 		for i, q := range st.quick.v {
 			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.quickReply(m.ID, q) }}).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
 				ui.Text(c, q.Preview).SingleLine().Grow(1).Shrink(1)
 				if i == 0 {
-					ui.Text(c, "Tab").Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, "Tab", t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 				}
 			})
 		}
@@ -622,7 +622,7 @@ func (r *reader) egressDialog(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			ui.Text(c, i18n.Tf("reader.egress.body", ask.plugin))
 			for _, h := range ask.hosts {
-				ui.Text(c, h).Font(theme.Mono).FontSize(t.Text.Sm)
+				kit.Text(c, h, t.Text.Sm).Font(theme.Mono)
 			}
 		})
 	}, func() {

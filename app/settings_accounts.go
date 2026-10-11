@@ -357,7 +357,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	ui.Row(c).Gap(th.Space(4)).Children(func() {
 		mark(c, prov, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			ui.Text(c, acc.Email).FontSize(t.Text.Display).FontWeight(600).SingleLine()
+			kit.Text(c, acc.Email, t.Text.Display).FontWeight(600).SingleLine()
 			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				meta := providerName(prov)
 				if acc.StatusDetail != "" {
@@ -375,7 +375,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 					}
 				}
 				ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(bg).TextColor(fg).Children(func() {
-					ui.Text(c, text).FontSize(t.Text.Sm)
+					kit.Text(c, text, t.Text.Sm)
 				})
 			})
 		})
@@ -444,7 +444,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		}))
 	server := func(proto, host string, port int, sec core.Security) func() {
 		return row(proto, "", func() {
-			ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 		})
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "",

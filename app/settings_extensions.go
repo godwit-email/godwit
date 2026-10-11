@@ -271,7 +271,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 			}}).Grow(1).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, p.Name).FontWeight(500)
-					ui.Text(c, p.Version).FontSize(t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, p.Version, t.Text.Sm).TextColor(t.Muted)
 				})
 			})
 			if p.NeedsGrant {
@@ -303,7 +303,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			perm := func(tag, text string) {
 				ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
 					ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-						ui.Text(c, tag).Font(theme.Mono).FontSize(t.Text.Sm)
+						kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
 					})
 					ui.Text(c, text).Shrink(1)
 				})
@@ -324,7 +324,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
 				ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
 			}
-			ui.Text(c, pluginExcluded(pm)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, pluginExcluded(pm), t.Text.Sm).TextColor(t.Muted)
 		})
 		if f := e.cfgs[name]; f != nil && len(p.Config) > 0 {
 			e.configView(c, f, p.Config)
@@ -366,7 +366,7 @@ func statusPill(c *ui.Context, text string, attention bool) {
 	if attention {
 		b.Background(t.WarningBg).TextColor(t.WarningText)
 	}
-	b.Children(func() { ui.Text(c, text).FontSize(t.Text.Sm) })
+	b.Children(func() { kit.Text(c, text, t.Text.Sm) })
 }
 
 // loadCfg reads a plugin's settings form once; a form already read or being read stays.
@@ -518,7 +518,7 @@ func (e *extView) mcpView(c *ui.Context) {
 						Grow(1).Shrink(1).Children(func() {
 						ui.Column(cc).Gap(th.Space(0.5)).Children(func() {
 							ui.Text(cc, s.Name).FontWeight(500)
-							ui.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).FontSize(t.Text.Sm).TextColor(t.Muted)
+							kit.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools)), t.Text.Sm).TextColor(t.Muted)
 						})
 					})
 					st, attention := mcpStatus(s)

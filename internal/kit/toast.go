@@ -41,7 +41,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, tst.Title).FontWeight(500)
 					if tst.Description != "" {
-						ui.Text(c, tst.Description).FontSize(t.Text.Sm).TextColor(look.muted)
+						Text(c, tst.Description, t.Text.Sm).TextColor(look.muted)
 					}
 				})
 				if tst.Action != "" {

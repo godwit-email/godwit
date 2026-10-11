@@ -76,7 +76,7 @@ func (p *askPage) Title() (string, string) {
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+	kit.Text(c, i18n.T("ask.heading"), t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
@@ -85,7 +85,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	if len(p.convs) == 0 {
 		return
 	}
-	ui.Text(c, i18n.T("ask.recent")).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2), th.Space(1.5), th.Space(2))
+	kit.Text(c, i18n.T("ask.recent"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2), th.Space(1.5), th.Space(2))
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			for _, conv := range p.convs {
