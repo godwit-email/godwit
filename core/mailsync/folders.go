@@ -105,24 +105,31 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		return nil, err
 	}
 	r.gone(ids, tids)
-	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid, synced, filled_since FROM folders WHERE account_id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
 	}
 	byName := map[string]*folder{}
 	for _, r := range rows.Values {
-		byName[store.Str(r[1])] = &folder{id: store.Int(r[0]), name: store.Str(r[1]),
-			uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
-		if r[5] != nil {
-			v := store.Int(r[5])
-			byName[store.Str(r[1])].filled = &v
-		}
+		byName[store.Str(r[1])] = scanFolder(r)
 	}
 	out := make([]*folder, 0, len(names))
 	for _, n := range names {
 		out = append(out, byName[n])
 	}
 	return out, nil
+}
+
+const folderCols = "id, name, uidvalidity, last_uid, synced, filled_since"
+
+func scanFolder(r []any) *folder {
+	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]),
+		uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
+	if r[5] != nil {
+		v := store.Int(r[5])
+		f.filled = &v
+	}
+	return f
 }
 
 // tidyThreads deletes conversations left without messages (their thread_refs

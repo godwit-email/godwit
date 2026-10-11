@@ -190,6 +190,7 @@ const (
 	ThemeTileWidth, ThemeTileHeight, ThemeTileGap    = 76, 48, 10     // settings' theme pictures and the space between them
 	TileRail, TileSide, TileInset, TileGap, TileLine = 8, 18, 6, 4, 3 // the parts of a theme picture
 	SkeletonShort                                    = 160            // a placeholder row's shorter line
+	OlderRowHeight                                   = 36             // the list's row while older mail loads from the server
 	EmptyIcon, EmptyDescMax                          = 40, 400        // an empty state's icon tile; its text's widest
 	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
 	TabUnderline                                     = 2              // the selected underline tab's bottom border

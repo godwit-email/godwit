@@ -733,3 +733,42 @@ func TestAccountFoldPersists(t *testing.T) {
 		t.Fatalf("%d 已发送 folders after unfolding alice, want 2", n)
 	}
 }
+
+// A folder list at its local end fetches older mail past the sync range, with
+// an inline error and 重试, and stops once the server has nothing older.
+func TestLoadOlderInFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	r := core.SyncRange{Limit: 1}
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), acc.ID, core.AccountPatch{Sync: &r}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		h.put(acc, "Archive", coretest.Msg("bob@example.com", "alice@example.com", fmt.Sprintf("Old %d", i), "x"))
+	}
+	h.syncNow(acc)
+	f := h.folderOf(acc, "archive")
+	h.env.IMAP(acc.ID).SetPassword("x")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.waitMail("the inline error", func() bool {
+		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载更早的邮件") })
+	})
+	if len(h.items()) != 1 {
+		t.Fatalf("items %d", len(h.items()))
+	}
+	h.env.IMAP(acc.ID).SetPassword("secret")
+	h.click("重试")
+	h.waitMail("the older mail", func() bool { return len(h.items()) == 3 })
+	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] && !h.app.mail.older.busy })
+	h.advance(refreshEvery)
+	if h.tt.HasText("正在加载更早的邮件…") || slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载") }) {
+		t.Fatalf("a row after the end: %q", h.tt.Texts())
+	}
+
+	// Another view drops a fetch under way; the unified inbox never fetches.
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
+	h.advance(refreshEvery)
+	if h.app.mail.older.busy || h.app.mail.olderFolder() != 0 {
+		t.Fatalf("unified inbox fetches: %+v", h.app.mail.older)
+	}
+}

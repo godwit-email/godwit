@@ -78,6 +78,7 @@ type mailPage struct {
 	loading bool   // a page or a refresh is in flight: one at a time
 	stalled bool   // the last page failed: no more pages until a refresh
 	gen     uint64 // bumped per reload; older list results are dropped
+	older   olderLoad
 
 	main   listSel // the list's choice and place
 	found  listSel // the search results', apart: they are other rows
@@ -181,6 +182,7 @@ func (p *mailPage) reload() {
 	want, toEnd := len(p.items), p.cursor == "" && len(p.items) > 0
 	if reset {
 		p.view, p.items, p.cursor, p.stalled = v, nil, "", false
+		p.stopOlder()
 		p.main.reset()
 		p.closeSearch()
 		p.draftList, p.draftSel = ui.ListState{}, 0
@@ -727,9 +729,97 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
+	if p.older.busy || p.older.err != nil {
+		p.olderRow(c)
+	}
 	if _, last := ls.list.Visible(); last >= len(es)-5 {
 		p.loadMore()
+		p.loadOlder()
 	}
+}
+
+// olderLoad is a folder list's fetch of the older mail past the sync range,
+// once the list shows all it stores: one at a time, stopped when the view
+// changes. The unified views and search don't fetch: their rows mix folders.
+type olderLoad struct {
+	gen    uint64 // bumped per fetch and on leaving; older answers are dropped
+	folder int64
+	busy   bool
+	err    error
+	cancel context.CancelFunc
+	done   map[int64]bool // folders whose server has nothing older, this session
+}
+
+// olderFolder is the folder whose older mail the list may fetch, or 0.
+func (p *mailPage) olderFolder() int64 {
+	if _, drafts := draftsOf(p.folders, p.view); drafts || p.view.FolderID == 0 {
+		return 0
+	}
+	return p.view.FolderID
+}
+
+// loadOlder fetches the next page of older mail from the server when the
+// list reached its end locally, unless one is under way, failed (重试 asks
+// again) or the server has nothing older.
+func (p *mailPage) loadOlder() {
+	f, o := p.olderFolder(), &p.older
+	if f == 0 || p.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.busy || o.err != nil || o.done[f] {
+		return
+	}
+	a := p.a
+	ctx, cancel := context.WithCancel(a.ctx)
+	o.gen++
+	gen := o.gen
+	o.folder, o.busy, o.cancel = f, true, cancel
+	var more bool
+	a.do(func(context.Context) (err error) {
+		more, err = a.svc.LoadOlder(ctx, f)
+		return err
+	}, func(err error) {
+		cancel()
+		if gen != o.gen {
+			return
+		}
+		o.busy, o.cancel = false, nil
+		switch {
+		case err != nil:
+			o.err = err
+		case !more:
+			if o.done == nil {
+				o.done = map[int64]bool{}
+			}
+			o.done[f] = true
+		}
+		p.reload() // the list shows what came in
+	})
+}
+
+// stopOlder cancels the fetch of older mail; leaving the folder drops its error.
+func (p *mailPage) stopOlder() {
+	o := &p.older
+	if o.cancel != nil {
+		o.cancel()
+	}
+	o.gen++
+	o.busy, o.err, o.cancel = false, nil, nil
+}
+
+// olderRow is the row under the list while older mail loads, or the error
+// with 重试.
+func (p *mailPage) olderRow(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Height(theme.OlderRowHeight).Padding(0, th.Space(4)).Gap(th.Space(2)).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+		if p.older.busy {
+			kit.Spinner(c)
+			kit.Text(c, i18n.T("mail.older.loading"), t.Text.Sm).TextColor(t.Muted)
+			return
+		}
+		kit.Text(c, i18n.Tf("mail.older.failed", humanize(p.older.err)), t.Text.Sm).TextColor(t.Muted).Shrink(1).SingleLine()
+		kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() {
+			p.older.err = nil
+			p.loadOlder()
+		})
+	})
 }
 
 // listEntry is a line of the list: a date heading (head), or the row

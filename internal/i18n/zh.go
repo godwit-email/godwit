@@ -215,6 +215,8 @@ var zh = map[string]string{
 	"mail.search.empty_title":        "没有找到「%s」",
 	"mail.search.empty_desc":         "只搜索了已同步到本机的邮件。换个关键词，或者让 Wit 帮你找。",
 	"mail.search.empty_desc_range":   "只搜索了已同步到本机的邮件（%s）。换个关键词，或者让 Wit 帮你找。",
+	"mail.older.loading":             "正在加载更早的邮件…",
+	"mail.older.failed":              "没能加载更早的邮件：%s",
 	"mail.search.ask_wit":            "让 Wit 帮你找",
 	"mail.search.ask_wit_row":        "让 Wit 帮你找：「%s」",
 	"mail.search.expand":             "扩大同步范围",

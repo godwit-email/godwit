@@ -85,27 +85,11 @@ func (r *result) merged(target int64, others []int64) {
 // changes and expunges. Rows committed before an error are still announced.
 func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) error {
 	var r result
-	defer func() {
-		if len(r.received) > 0 {
-			bus.Publish(events.Event{Type: events.MessageReceived, AccountID: accountID, MessageIDs: r.received, ThreadIDs: r.threads})
-		}
-		if len(r.changed) > 0 {
-			bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: r.changed,
-				ThreadIDs: slices.Compact(slices.Sorted(slices.Values(r.changedThreads)))})
-		}
-		if len(r.conflicts) > 0 {
-			bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: strings.Join(r.conflicts, "; ")})
-		}
-	}()
-	rows, err := db.Query(ctx, "SELECT email, sync_limit, sync_since_months FROM accounts WHERE id = ?", accountID)
+	defer r.publish(bus, accountID)
+	a, err := loadAccount(ctx, db, accountID)
 	if err != nil {
 		return err
 	}
-	if len(rows.Values) == 0 {
-		return fmt.Errorf("account %d not found", accountID)
-	}
-	a := &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1])),
-		months: int(store.Int(rows.Values[0][2]))}
 	folders, err := syncFolders(ctx, db, c, accountID, &r)
 	if err != nil {
 		return err
@@ -116,6 +100,32 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 		}
 	}
 	return unclaimable(ctx, db, accountID, &r)
+}
+
+// publish announces what r collected.
+func (r *result) publish(bus *events.Bus, accountID int64) {
+	if len(r.received) > 0 {
+		bus.Publish(events.Event{Type: events.MessageReceived, AccountID: accountID, MessageIDs: r.received, ThreadIDs: r.threads})
+	}
+	if len(r.changed) > 0 {
+		bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: r.changed,
+			ThreadIDs: slices.Compact(slices.Sorted(slices.Values(r.changedThreads)))})
+	}
+	if len(r.conflicts) > 0 {
+		bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: strings.Join(r.conflicts, "; ")})
+	}
+}
+
+func loadAccount(ctx context.Context, db *store.DB, accountID int64) (*account, error) {
+	rows, err := db.Query(ctx, "SELECT email, sync_limit, sync_since_months FROM accounts WHERE id = ?", accountID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("account %d not found", accountID)
+	}
+	return &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1])),
+		months: int(store.Int(rows.Values[0][2]))}, nil
 }
 
 func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, r *result) error {

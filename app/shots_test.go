@@ -237,6 +237,14 @@ func TestShots(t *testing.T) {
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
+	t.Run("MainOlder", func(t *testing.T) { // the row while older mail loads (no artboard: compared by eye)
+		s := shotMail(t, noAuto)
+		f := s.folderOf(s.you, "inbox")
+		s.post(func() { s.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+		s.until("the folder", func() bool { return s.app.mail.view.FolderID == f.ID && !s.app.mail.loading })
+		s.post(func() { s.app.mail.stopOlder(); s.app.mail.older.busy = true })
+		shot(s.harness, "MainOlder")
+	})
 	t.Run("MainSearch", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		search := func(q string) {

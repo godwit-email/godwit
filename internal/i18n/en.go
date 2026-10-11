@@ -215,6 +215,8 @@ var en = map[string]string{
 	"mail.search.empty_title":        "No results for \"%s\"",
 	"mail.search.empty_desc":         "Only mail synced to this device was searched. Try another keyword, or let Wit look for it.",
 	"mail.search.empty_desc_range":   "Only mail synced to this device was searched (%s). Try another keyword, or let Wit look for it.",
+	"mail.older.loading":             "Loading older mail…",
+	"mail.older.failed":              "Couldn't load older mail: %s",
 	"mail.search.ask_wit":            "Ask Wit to find it",
 	"mail.search.ask_wit_row":        "Ask Wit to find: \"%s\"",
 	"mail.search.expand":             "Widen sync range",
