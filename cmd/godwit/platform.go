@@ -34,6 +34,7 @@ type platform struct {
 	wit     *webui.Wit
 	roles   *webui.Pages                 // the embedded pages' roles
 	reader  *webui.Reader                // the reader pages' messages
+	sig     *webui.Signature             // the signature page's account and flushes
 	bodies  map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
 
 	dataDir string
@@ -154,6 +155,42 @@ func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) 
 		return nil, nil, err
 	}
 	return v, closeView, nil
+}
+
+// NewSignatureView makes the signature page in the main window, kept on
+// its entry and registered as "signature" before it loads. show tells it
+// the account (also kept for a page that loads later); flush's done runs
+// on the window's UI thread once the page answers.
+func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), error) {
+	v, err := p.win.NewWebView(mygo.WebViewOptions{})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	page := v.Page()
+	err = loadAfterSetup(func() {
+		lockPage(page)
+		p.roles.Register(page, "signature")
+	}, func() error { return page.LoadURL("/signature.html") }, func() {
+		p.roles.Unregister(page)
+		v.Destroy()
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	show := func(account int64) {
+		p.sig.Show(account)
+		if err := webui.SignatureAccount.EmitPage(page, account); err != nil {
+			log.Printf("the account to the signature page: %v", err)
+		}
+	}
+	flush := func(done func(bool)) {
+		p.sig.Flush(func(tok int64) {
+			if err := webui.SignatureFlush.EmitPage(page, tok); err != nil {
+				log.Printf("a flush to the signature page: %v", err)
+			}
+		}, func(ok bool) { p.win.Update(func() { done(ok) }) })
+	}
+	return v, show, flush, nil
 }
 
 // bodyView is the web view of the reader page page, while it is open as

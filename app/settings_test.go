@@ -54,7 +54,6 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.see("登录与服务器")
 	h.fillRow("发件人名称", "Alice Liddell")
 	h.fillRow("侧栏显示名称", "个人")
-	h.fill("签名内容", "Alice")
 	h.advance(599 * time.Millisecond)
 	h.drain()
 	if got := h.account(acc.ID); got.Name != "alice" {
@@ -63,12 +62,13 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.advance(time.Millisecond)
 	h.until("fields saved", func() bool {
 		got := h.account(acc.ID)
-		return got.Name == "Alice Liddell" && got.Alias == "个人" && got.Signature == "Alice"
+		return got.Name == "Alice Liddell" && got.Alias == "个人"
 	})
 	h.until("the form settles", func() bool {
 		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
-		return !f.edits[0].pending && !f.edits[1].pending && !f.edits[2].pending
+		return !f.edits[0].pending && !f.edits[1].pending
 	})
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封")
@@ -522,11 +522,12 @@ func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
 func TestCloseSavesSettings(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.fill("签名内容", "Bye")
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigType("<p>Bye</p>")
 	closed := false
 	h.app.BeforeClose(func() {
 		closed = true
-		if got := h.account(acc.ID).Signature; got != "Bye" {
+		if got := h.account(acc.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Bye</p>" {
 			t.Errorf("closed before the signature saved: %q", got)
 		}
 	})
@@ -871,4 +872,49 @@ func TestSyncRangeLabels(t *testing.T) {
 		}
 	}
 	i18n.SetLanguage("zh-CN")
+}
+
+// A signature page that never answers the flush holds the close for
+// signatureFlushWait, then the window asks.
+func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigMute()
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.drain()
+	if closed || h.app.closeAsk {
+		t.Fatalf("settled before the flush: closed %v, ask %v", closed, h.app.closeAsk)
+	}
+	h.advance(signatureFlushWait)
+	h.until("asks", func() bool { return h.app.closeAsk })
+	if closed {
+		t.Fatal("closed with the signature unsaved")
+	}
+}
+
+// The signature page saves an account's edit as that account when native
+// switches it to another; the other is untouched.
+func TestSignatureSwitchKeepsAccounts(t *testing.T) {
+	var a, b core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		a = e.AddAccount(t, "alice@example.com")
+		b = e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings(accountRoute(a.ID))
+	h.until("shows a", func() bool { return h.plat.sigShown() == a.ID })
+	h.plat.sigType("<p>Alice</p>")
+	h.openSettings(accountRoute(b.ID))
+	h.until("shows b", func() bool { return h.plat.sigShown() == b.ID })
+	if got := h.account(a.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
+		t.Fatalf("a's signature %q", got)
+	}
+	if got := h.account(b.ID).Signature; got != "" {
+		t.Fatalf("b's signature %q", got)
+	}
+	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
+		t.Fatalf("%d signature views, want one", n)
+	}
 }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,12 +24,12 @@ const accountSaveDelay = 600 * time.Millisecond
 // edit keeps what the user typed; otherwise it follows the account, though
 // not to a snapshot read before its last confirmed save.
 type accountForm struct {
-	name, alias, sig string
-	limit, okLimit   int          // the sync range shown, and the account's
-	ok               core.Account // the values last confirmed
-	okAt             uint64       // a.loadGen when ok was confirmed; older loads are stale
-	edits            [3]fieldEdit // name, alias, signature
-	limitBusy        int          // sync-range writes in flight
+	name, alias    string
+	limit, okLimit int          // the sync range shown, and the account's
+	ok             core.Account // the values last confirmed
+	okAt           uint64       // a.loadGen when ok was confirmed; older loads are stale
+	edits          [2]fieldEdit // name, alias
+	limitBusy      int          // sync-range writes in flight
 }
 
 // fieldEdit is one text field's debounce: typing restarts it, and only the
@@ -39,20 +40,15 @@ type fieldEdit struct {
 	stop    func()
 }
 
-func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias, &f.sig}[i] }
+func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias}[i] }
 
-func accountField(acc core.Account, i int) string {
-	return [...]string{acc.Name, acc.Alias, acc.Signature}[i]
-}
+func accountField(acc core.Account, i int) string { return [...]string{acc.Name, acc.Alias}[i] }
 
 func fieldPatch(i int, v string) core.AccountPatch {
-	switch i {
-	case 0:
+	if i == 0 {
 		return core.AccountPatch{Name: &v}
-	case 1:
-		return core.AccountPatch{Alias: &v}
 	}
-	return core.AccountPatch{Signature: &v}
+	return core.AccountPatch{Alias: &v}
 }
 
 type serverForm struct {
@@ -63,7 +59,7 @@ type serverForm struct {
 func (p *settingsPage) form(acc core.Account) *accountForm {
 	f := p.forms[acc.ID]
 	if f == nil {
-		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sig: acc.Signature, limit: acc.SyncLimit, okLimit: acc.SyncLimit}
+		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, limit: acc.SyncLimit, okLimit: acc.SyncLimit}
 		p.forms[acc.ID] = f
 	}
 	if p.a.accountsGen > f.okAt {
@@ -115,6 +111,59 @@ func (p *settingsPage) commitEdits() {
 			}
 		}
 	}
+}
+
+// signatureFlushWait is how long closing waits for the signature page's save.
+const signatureFlushWait = 2 * time.Second
+
+// errSignatureUnsaved is why closing asks when the signature page did not save.
+var errSignatureUnsaved = errors.New("the signature was not saved")
+
+// signature has the signature page show account id: made at the first
+// account shown, switched outside the frame (making a web view may run
+// the event loop).
+func (p *settingsPage) signature(id int64) {
+	if p.sigAcc == id || p.sigPosted || p.sigErr != nil {
+		return
+	}
+	p.sigPosted = true
+	p.a.onUI(func() {
+		p.sigPosted = false
+		if p.sigView == nil {
+			if p.sigView, p.sigShow, p.sigFlush, p.sigErr = p.a.plat.NewSignatureView(); p.sigErr != nil {
+				p.a.logf("the signature page: %v", p.sigErr)
+				return
+			}
+		}
+		p.sigShow(id)
+		p.sigAcc = id
+	})
+}
+
+// flushSignature has the signature page save its edit, then calls then
+// with errSignatureUnsaved if it failed or did not answer within
+// signatureFlushWait.
+func (p *settingsPage) flushSignature(then func(error)) {
+	if p.sigFlush == nil {
+		then(nil)
+		return
+	}
+	done := false
+	var stop func() // set before the page can answer
+	finish := func(ok bool) {
+		if done {
+			return
+		}
+		done = true
+		stop()
+		var err error
+		if !ok {
+			err = errSignatureUnsaved
+		}
+		then(err)
+	}
+	stop = p.a.after(signatureFlushWait, func() { finish(false) })
+	p.sigFlush(finish)
 }
 
 // saveField writes field i as it is now, after the account's earlier
@@ -345,11 +394,15 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 	settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
-		settingBlock(c, func() {
-			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(th.Space(21)).Label(i18n.T("settings.account.signature.label")).Changed() {
-				p.edited(acc.ID, f, 2)
-			}
-		})
+		p.signature(acc.ID)
+		switch {
+		case p.sigErr != nil:
+			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
+		case p.sigView != nil:
+			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
+		default:
+			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
+		}
 	})
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {

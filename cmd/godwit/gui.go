@@ -169,6 +169,10 @@ func gui(ctx context.Context, dataDir string) int {
 		},
 	})
 	mygo.Bind(webui.NewReaderPage(reader))
+	// The signature page, embedded in the account settings
+	// (platform.NewSignatureView).
+	sig := webui.NewSignature(roles)
+	mygo.Bind(webui.NewSignaturePage(sig))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -194,6 +198,7 @@ func gui(ctx context.Context, dataDir string) int {
 		pages.SetService(svc)
 		wit.SetService(svc)
 		reader.SetService(svc)
+		sig.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -203,7 +208,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})

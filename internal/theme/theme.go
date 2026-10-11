@@ -85,21 +85,24 @@ const (
 	SettingsSelectMin  = 200  // a select in a settings row
 	SettingsSelectMax  = 280
 	SettingsInputWidth = 260 // an input in a settings row
-	HeadingGap         = 6   // a page heading to its subtitle
-	SectionGap         = 10  // a section's title to its card
-	PortWidth          = 90  // port fields
-	SelectMinWidth     = 120
-	ToastMaxWidth      = 420
-	ToastMax           = 3   // toasts shown at once
-	TitleButtonHeight  = 24  // buttons in the top bar
-	PopupOffset        = 4   // room between a popup and its anchor
-	SelectedBorder     = 2   // the border of a chosen tile
-	QuoteBar           = 2   // the bar left of a quote in a mail body
-	ImagePlaceholder   = 64  // an image not loaded, when its size is unknown
-	ReaderMaxWidth     = 720 // the reading pane's text column
-	AttachmentWidth    = 260 // an attachment in the reading pane
-	WitMaxWidth        = 760 // the Ask page's conversation column
-	CitationsWidth     = 320 // the Ask page's cited mail column
+	// SignatureEditorHeight is the signature page: its toolbar (4+28+4 and a
+	// hairline) over the editor's least 96; the editor scrolls inside.
+	SignatureEditorHeight = 133
+	HeadingGap            = 6  // a page heading to its subtitle
+	SectionGap            = 10 // a section's title to its card
+	PortWidth             = 90 // port fields
+	SelectMinWidth        = 120
+	ToastMaxWidth         = 420
+	ToastMax              = 3   // toasts shown at once
+	TitleButtonHeight     = 24  // buttons in the top bar
+	PopupOffset           = 4   // room between a popup and its anchor
+	SelectedBorder        = 2   // the border of a chosen tile
+	QuoteBar              = 2   // the bar left of a quote in a mail body
+	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
+	ReaderMaxWidth        = 720 // the reading pane's text column
+	AttachmentWidth       = 260 // an attachment in the reading pane
+	WitMaxWidth           = 760 // the Ask page's conversation column
+	CitationsWidth        = 320 // the Ask page's cited mail column
 )
 
 // BoldWeight is the font weight of bold text in mail bodies and the editor.

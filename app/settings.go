@@ -53,6 +53,15 @@ type settingsPage struct {
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
 
+	// The signature page, made once (NewSignatureView), and the account it
+	// shows; sigPosted is a switch queued.
+	sigView   ui.NativeWebView
+	sigShow   func(account int64)
+	sigFlush  func(done func(ok bool))
+	sigErr    error
+	sigAcc    int64
+	sigPosted bool
+
 	models *modelsView
 	ext    *extView
 }

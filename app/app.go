@@ -59,6 +59,12 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
+	// NewSignatureView makes the signature page (the account settings'
+	// rich-text editor) in the main window; the App makes one. show
+	// switches it to account: the page saves the shown account's edit as
+	// that account first. flush asks the page to save now; done hears
+	// whether it did, on the UI thread, at most once. UI thread only.
+	NewSignatureView() (view ui.NativeWebView, show func(account int64), flush func(done func(ok bool)), err error)
 }
 
 // Notification is a system notification about a message.
@@ -378,7 +384,8 @@ const flushWait = 3 * time.Second
 // errFlushSlow is why BeforeClose asks when the writes take longer than flushWait.
 var errFlushSlow = errors.New("still saving")
 
-// BeforeClose saves the settings' account fields, waits for every write in
+// BeforeClose saves the signature page's edit and the settings' account
+// fields, waits for every write in
 // flight, then calls proceed: before the window closes or the App quits
 // (compose windows have flushed their drafts by then, on their own). When
 // a write fails, or they have not finished within flushWait, the window
@@ -407,8 +414,11 @@ func (a *App) BeforeClose(proceed func()) {
 		}
 	}
 	mark := a.writes.Mark() // every write failing from here on counts
-	a.pages[PageSettings].(*settingsPage).commitEdits()
-	a.writes.Idle(func() { settle(errors.Join(a.writes.ErrorsSince(mark)...)) })
+	p := a.pages[PageSettings].(*settingsPage)
+	p.flushSignature(func(sigErr error) {
+		p.commitEdits()
+		a.writes.Idle(func() { settle(errors.Join(append(a.writes.ErrorsSince(mark), sigErr)...)) })
+	})
 }
 
 // SetForeground records whether the window is in front.

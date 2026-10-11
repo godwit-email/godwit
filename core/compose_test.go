@@ -562,3 +562,27 @@ func TestDraftReadSanitizedAndStable(t *testing.T) {
 		assert.Equal(t, first, d.HTML, "save of a loaded draft is stable")
 	}
 }
+
+func TestSignatureHTMLPlainEscapes(t *testing.T) {
+	assert.Equal(t, `<div data-godwit="signature"><p>-- <br>Bob &lt;bob@x.com&gt;<br>line2</p></div>`,
+		signatureHTML("Bob <bob@x.com>\nline2"))
+	assert.Equal(t, "", signatureHTML(""))
+}
+
+func TestSignatureHTMLMarked(t *testing.T) {
+	got := signatureHTML(SignatureHTMLPrefix + `<p><b>Bob</b> <a href="https://x.com">site</a><script>alert(1)</script>` +
+		`<img src="https://x.com/t.png" onerror="alert(2)"></p><div data-godwit="quote">q</div>`)
+	assert.True(t, strings.HasPrefix(got, `<div data-godwit="signature">`), got)
+	assert.Equal(t, 1, strings.Count(got, "data-godwit"), got)
+	assert.Contains(t, got, "<b>Bob</b>")
+	assert.Contains(t, got, `href="https://x.com"`)
+	for _, bad := range []string{"<script", "alert", "onerror", "t.png"} {
+		assert.NotContains(t, got, bad)
+	}
+	assert.Equal(t, "", signatureHTML(SignatureHTMLPrefix))
+}
+
+func TestSignatureEditorHTMLLegacy(t *testing.T) {
+	assert.Equal(t, "<p>a &amp; b<br>c</p>", SignatureEditorHTML("a & b\nc"))
+	assert.Equal(t, "", SignatureEditorHTML(""))
+}

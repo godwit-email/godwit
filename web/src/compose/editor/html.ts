@@ -94,6 +94,7 @@ const textOf = (n: Descendant): string => (isText(n) ? n.text : n.children.map(t
 function inline(n: Descendant): string {
   if (isText(n)) {
     let s = esc(n.text).replace(/\n/g, "<br>");
+    if (n.underline) s = `<u>${s}</u>`; // the signature editor's; compose has no underline
     if (n.italic) s = `<em>${s}</em>`;
     if (n.bold) s = `<strong>${s}</strong>`;
     return s;

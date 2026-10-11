@@ -53,6 +53,7 @@ func newDevHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
 	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock()}
+	h.plat.svc = h.env.Svc
 	for _, s := range setup {
 		s(h.env)
 	}
@@ -260,6 +261,83 @@ type fakePlatform struct {
 	viewErr   error                   // NewBodyView's error
 
 	composing map[int64]bool // the drafts whose compose window is open (ComposeOpen)
+
+	svc *core.Service // what the fake signature page saves to
+	sig *fakeSigView  // the signature page, once made
+}
+
+// fakeSigView stands for the signature page: the account it shows and
+// its edit not saved yet (the page's debounce is the page's own test).
+type fakeSigView struct {
+	ui.NativeWebView
+	shown int64
+	dirty *string
+	mute  bool // flushes get no answer
+}
+
+// NewSignatureView records "NewSignatureView" and makes the fake page;
+// show records "ShowSignature <id>" and, as the page does, saves the
+// shown account's edit first; flush saves it and answers.
+func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), error) {
+	p.record("NewSignatureView")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sig != nil {
+		panic("a second signature page")
+	}
+	v := &fakeSigView{}
+	p.sig = v
+	save := func() bool {
+		p.mu.Lock()
+		id, d := v.shown, v.dirty
+		v.dirty = nil
+		p.mu.Unlock()
+		if d == nil {
+			return true
+		}
+		html := core.SignatureHTMLPrefix + *d
+		_, err := p.svc.UpdateAccount(context.Background(), id, core.AccountPatch{Signature: &html})
+		return err == nil
+	}
+	return v, func(id int64) {
+			p.record("ShowSignature", id)
+			save()
+			p.mu.Lock()
+			v.shown = id
+			p.mu.Unlock()
+		}, func(done func(bool)) {
+			p.record("FlushSignature")
+			p.mu.Lock()
+			mute := v.mute
+			p.mu.Unlock()
+			if !mute {
+				done(save())
+			}
+		}, nil
+}
+
+// sigType is the user typing html into the signature page.
+func (p *fakePlatform) sigType(html string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sig.dirty = &html
+}
+
+// sigMute makes the signature page stop answering flushes.
+func (p *fakePlatform) sigMute() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sig.mute = true
+}
+
+// sigShown is the account the signature page shows; 0 for none.
+func (p *fakePlatform) sigShown() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sig == nil {
+		return 0
+	}
+	return p.sig.shown
 }
 
 // fakeBodyView stands for a reader page's *mygo.WebView, bound to message.

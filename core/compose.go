@@ -115,12 +115,37 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 	return d, nil
 }
 
-// signatureHTML is the marked signature block that ends a draft body, "" for none.
-func signatureHTML(sig string) string {
+// SignatureHTMLPrefix marks a stored signature as the settings editor's HTML;
+// any other signature (the CLI's, the Local API's, an older one) is plain text.
+const SignatureHTMLPrefix = "<!--godwit:html-->"
+
+// SignatureEditorHTML is sig as safe compose HTML, without the draft marker:
+// a marked one sanitized (user markers stripped), a plain one escaped into a
+// paragraph; "" for none.
+func SignatureEditorHTML(sig string) string {
+	if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
+		return mail.SanitizeCompose(mail.StripMarkers(rest))
+	}
 	if sig == "" {
 		return ""
 	}
-	return `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(sig), "\n", "<br>") + "</p></div>"
+	return "<p>" + escapeLines(sig) + "</p>"
+}
+
+func escapeLines(s string) string { return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") }
+
+// signatureHTML is the marked signature block that ends a draft body, "" for none.
+func signatureHTML(sig string) string {
+	if !strings.HasPrefix(sig, SignatureHTMLPrefix) {
+		if sig == "" {
+			return ""
+		}
+		return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+	}
+	if body := SignatureEditorHTML(sig); body != "" {
+		return `<div data-godwit="signature">` + body + "</div>"
+	}
+	return ""
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.

@@ -290,6 +290,16 @@ export interface SendWarning {
   message: string;
 }
 
+/**
+ * SignatureState is what the signature page needs besides a signature:
+ * the account shown (0 before native showed one), its copy and theme.
+ */
+export interface SignatureState {
+  account: number;
+  text: Record<string, string>;
+  theme: Theme;
+}
+
 /** Skill is a 调整 menu item. */
 export interface Skill {
   id: string;
@@ -710,6 +720,32 @@ export const ReaderPage = {
   },
 } as const;
 
+/** SignaturePage is what the signature page calls (mygo.Bind). */
+export const SignaturePage = {
+  /**
+   * Load is account's signature as the editor's HTML: sanitized, a plain
+   * one escaped into a paragraph.
+   */
+  load(account: number): Promise<string> {
+    return call("SignaturePage.Load", account);
+  },
+  /**
+   * Save stores html as account's signature, marked as editor HTML ("" for
+   * none); drafts sanitize it as they take it.
+   */
+  save(account: number, html: string): Promise<void> {
+    return call("SignaturePage.Save", account, html);
+  },
+  /** Saved answers the flush token: ok is whether the page's save succeeded. */
+  saved(token: number, ok: boolean): Promise<void> {
+    return call("SignaturePage.Saved", token, ok);
+  },
+  /** State is the account shown, the page's copy and the theme. */
+  state(): Promise<SignatureState> {
+    return call("SignaturePage.State");
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -722,6 +758,16 @@ export const events = {
   wit: event<WitEvent>("wit"),
   /** ReaderReload tells a reader page its body changed (加载图片, a retry). */
   readerBody: event<ReaderBody>("readerBody"),
+  /**
+   * SignatureAccount tells the signature page which account to show: it
+   * saves the shown one's pending edit first.
+   */
+  signatureAccount: event<number>("signatureAccount"),
+  /**
+   * SignatureFlush asks the signature page to save now; it answers with
+   * SignaturePage.Saved and the same token.
+   */
+  signatureFlush: event<number>("signatureFlush"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close
