@@ -345,7 +345,6 @@ var zh = map[string]string{
 	"settings.px_default":                          "%d px（默认）",
 	"settings.language":                            "语言",
 	"settings.ui_language":                         "界面语言",
-	"settings.ui_language.help":                    "重启后生效",
 	"settings.ui_language.system":                  "跟随系统（%s）",
 	"settings.reading_language":                    "阅读语言",
 	"settings.reading_language.help":               "总结、翻译和 Wit 的回答用这种语言",

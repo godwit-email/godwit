@@ -26,12 +26,15 @@ type Settings struct {
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
-	// stored FontSize was raised by one to keep its sizes.
+	// stored FontSize was raised by one to keep its sizes; 3 once a stored
+	// BodyFontSize of 14, the old default, became 0 (follow FontSize).
 	SettingsVersion int
 }
 
+const settingsVersion = 3
+
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
+	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
@@ -96,12 +99,13 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	if err := json.Unmarshal(raw, &st); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
 	}
-	if stored.SettingsVersion < 2 {
-		if stored.FontSize > 0 { // an absent size keeps the new default
-			st.FontSize = min(stored.FontSize+1, 32)
-		}
-		st.SettingsVersion = 2
+	if stored.SettingsVersion < 2 && stored.FontSize > 0 { // an absent size keeps the new default
+		st.FontSize = min(stored.FontSize+1, 32)
 	}
+	if stored.SettingsVersion < 3 && st.BodyFontSize == 14 {
+		st.BodyFontSize = 0
+	}
+	st.SettingsVersion = settingsVersion
 	return st, nil
 }
 
@@ -115,7 +119,7 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err := st.validate(); err != nil {
 		return Settings{}, err
 	}
-	st.SettingsVersion = 2 // a client's 0 must not make the next load raise FontSize again
+	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
 	if err != nil {
 		return Settings{}, err

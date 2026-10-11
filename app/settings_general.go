@@ -211,7 +211,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			return settingSelect(c, i18n.T("settings.body_font_size"), &st.BodyFontSize, opts)
 		}))
 	settingsSection(c, i18n.T("settings.language"), "",
-		sel(i18n.T("settings.ui_language"), i18n.T("settings.ui_language.help"), func() ui.Element {
+		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
 				{Value: "zh-CN", Label: "简体中文"},

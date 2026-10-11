@@ -23,7 +23,7 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 3, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}, got)
 }
 
@@ -126,6 +126,9 @@ func TestSettingsFontMigration(t *testing.T) {
 		`{"FontSize":32}`:                   {32, 0},
 		`{"FontSize":16}`:                   {17, 0},
 		`{"FontSize":13,"BodyFontSize":15,"SettingsVersion":2}`: {13, 15},
+		`{"FontSize":14,"BodyFontSize":14,"SettingsVersion":2}`: {14, 0},
+		`{"FontSize":13,"BodyFontSize":14}`:                     {14, 0},
+		`{"FontSize":16,"BodyFontSize":14,"SettingsVersion":3}`: {16, 14},
 	} {
 		s := settingsService(t, t.TempDir(), "")
 		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
@@ -133,7 +136,7 @@ func TestSettingsFontMigration(t *testing.T) {
 		got, err := s.GetSettings(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, want, [2]int{got.FontSize, got.BodyFontSize}, stored)
-		assert.Equal(t, 2, got.SettingsVersion, stored)
+		assert.Equal(t, 3, got.SettingsVersion, stored)
 	}
 }
 

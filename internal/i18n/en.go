@@ -345,7 +345,6 @@ var en = map[string]string{
 	"settings.px_default":                          "%d px (default)",
 	"settings.language":                            "Language",
 	"settings.ui_language":                         "Interface language",
-	"settings.ui_language.help":                    "Takes effect after a restart",
 	"settings.ui_language.system":                  "System (%s)",
 	"settings.reading_language":                    "Reading language",
 	"settings.reading_language.help":               "Summaries, translations and Wit's answers use this language",
