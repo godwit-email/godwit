@@ -76,6 +76,7 @@ var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl = 12, 14, 16, 18, 20, 28
 	Logo                                         = 64         // the About page's logo
+	BrandLogo                                    = 40         // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg                       = 20, 28, 40 // provider marks
 	RailButton                                   = 40         // the icon rail's buttons
 	CloseButton                                  = 20         // a toast's close button
