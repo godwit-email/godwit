@@ -321,7 +321,7 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 			run.err = err
 		case out.DraftID != 0:
 			st.result = nil
-			a.navigate(Route{Page: PageCompose, DraftID: out.DraftID})
+			a.plat.OpenCompose(out.DraftID)
 		case out.Text == "" && out.HTML == "":
 			st.result = nil
 		default:
@@ -330,7 +330,7 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 	})
 }
 
-// quickReply opens a reply draft starting with r in the composer.
+// quickReply opens a reply draft starting with r in a compose window.
 func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 	a, gen := r.p.a, r.gen
 	var id int64
@@ -344,7 +344,7 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 			return
 		}
 		if gen == r.gen {
-			a.navigate(Route{Page: PageCompose, DraftID: id})
+			a.plat.OpenCompose(id)
 		}
 	})
 }
@@ -552,7 +552,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 }
 
 // quickReplies are up to three one-line replies under the newest message;
-// Tab moves between them, a click or Enter opens one in the composer.
+// Tab moves between them, a click or Enter opens one in a compose window.
 func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	last, _ := r.last()
 	st := r.ai[m.ID]

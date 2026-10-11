@@ -314,8 +314,7 @@ func TestReaderReplyCreatesDraft(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.see("can you?")
 	h.click("回复")
-	h.until("the composer", func() bool { return h.app.route.Page == PageCompose && h.app.route.DraftID != 0 })
-	d, err := h.env.Svc.GetDraft(context.Background(), h.app.route.DraftID)
+	d, err := h.env.Svc.GetDraft(context.Background(), h.composeOpened(0))
 	if err != nil {
 		t.Fatal(err)
 	}

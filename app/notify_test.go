@@ -285,15 +285,32 @@ func TestTrayUnread(t *testing.T) {
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 }
 
+// slowSettings makes the next settings save wait for release, then fail
+// with fail (nil saves), and starts one.
+func slowSettings(h *harness, fail error) (started, release chan struct{}) {
+	started, release = make(chan struct{}), make(chan struct{})
+	save := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		close(started)
+		<-release
+		if fail != nil {
+			return core.Settings{}, fail
+		}
+		return save(ctx, st)
+	}
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	return started, release
+}
+
 func TestBeforeCloseWaitsAtMostFlushWait(t *testing.T) {
 	h, _ := mailHarness(t, nil, "me@example.com")
-	p := h.openCompose()
-	started, release := blockSaves(p)
+	started, release := slowSettings(h, nil)
 	defer close(release)
-	h.writeBody("slow disk")
+	<-started
 	closed := false
 	h.app.BeforeClose(func() { closed = true })
-	<-started
 	h.advance(flushWait)
 	h.see("有修改没有保存")
 	if closed || !h.hasCall("ShowWindow") {
@@ -304,12 +321,10 @@ func TestBeforeCloseWaitsAtMostFlushWait(t *testing.T) {
 func TestBeforeCloseSlowSaveFinishes(t *testing.T) {
 	t.Run("while asking", func(t *testing.T) {
 		h, _ := mailHarness(t, nil, "me@example.com")
-		p := h.openCompose()
-		started, release := blockSaves(p)
-		h.writeBody("slow disk")
+		started, release := slowSettings(h, nil)
+		<-started
 		closed := false
 		h.app.BeforeClose(func() { closed = true })
-		<-started
 		h.advance(flushWait)
 		h.see("有修改没有保存")
 		close(release)
@@ -320,19 +335,65 @@ func TestBeforeCloseSlowSaveFinishes(t *testing.T) {
 	})
 	t.Run("after going back", func(t *testing.T) {
 		h, _ := mailHarness(t, nil, "me@example.com")
-		p := h.openCompose()
-		started, release := blockSaves(p)
-		h.writeBody("slow disk")
+		started, release := slowSettings(h, nil)
+		<-started
 		closed := false
 		h.app.BeforeClose(func() { closed = true })
-		<-started
 		h.advance(flushWait)
 		h.click("返回")
 		close(release)
-		h.until("saved", func() bool { return !p.s.busy })
+		h.until("saved", func() bool { return h.app.settings.Theme == "dark" })
 		h.advance(time.Second)
 		if closed {
 			t.Fatal("closed although the user went back")
 		}
 	})
+}
+
+// A write in flight that fails holds the close and asks; going back keeps
+// the window, quitting anyway closes.
+func TestCloseAsksWhenWriteFails(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	started, release := slowSettings(h, errors.New("disk full"))
+	<-started
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	close(release)
+	h.see("有修改没有保存")
+	if closed {
+		t.Fatal("closed although a settings write failed")
+	}
+	h.click("返回")
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("有修改没有保存") })
+	if closed {
+		t.Fatal("going back closed")
+	}
+	started, release = slowSettings(h, errors.New("disk full"))
+	<-started
+	h.app.BeforeClose(func() { closed = true })
+	close(release)
+	h.click("仍然退出")
+	if !closed {
+		t.Fatal("quitting anyway did not close")
+	}
+}
+
+// A write that starts while the close waits counts too: its failure asks.
+func TestCloseAsksWhenWriteStartedWhileWaitingFails(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@example.com")
+	started, release := slowSettings(h, nil)
+	<-started
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		return core.Settings{}, errors.New("disk full")
+	}
+	st := h.app.settings
+	st.Theme = "light"
+	h.app.changeSettings(st) // waits behind the running save
+	close(release)
+	h.see("有修改没有保存")
+	if closed {
+		t.Fatal("closed although a write started while waiting failed")
+	}
 }

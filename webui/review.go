@@ -69,7 +69,7 @@ type ReviewToken struct {
 }
 
 // proposal is a draft edit's old and new editable part, their word diff and
-// the changes in it (app/proposal.go, without the native view).
+// the changes in it.
 type proposal struct {
 	ap       core.Approval
 	oldHTML  string

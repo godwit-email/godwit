@@ -30,15 +30,7 @@ const (
 	refreshEvery = 250 * time.Millisecond
 )
 
-// section is the page that shows the route: a draft belongs to Mail.
-func (r Route) section() Page {
-	if r.Page == PageCompose {
-		return PageMail
-	}
-	return r.Page
-}
-
-func (a *App) page() pageView { return a.pages[a.route.section()] }
+func (a *App) page() pageView { return a.pages[a.route.Page] }
 
 // navigate goes to r, after the current route in the history; the routes
 // ahead are dropped.
@@ -71,9 +63,6 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
-	if a.route.Page == PageCompose {
-		a.mail.closeDraft()
-	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
@@ -292,7 +281,7 @@ func (a *App) rail(c *ui.Context) {
 }
 
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
-	kit.RailButton(c, icon, label, a.route.section() == r.Page, func() { a.navigate(r) })
+	kit.RailButton(c, icon, label, a.route.Page == r.Page, func() { a.navigate(r) })
 }
 
 // panel is the page's sidebar and content as one rounded block, inset from

@@ -322,7 +322,7 @@ func (r *reader) act(op string) {
 }
 
 // draft starts a reply, reply-all or forward of the newest message and
-// opens it in the composer.
+// opens it in a compose window.
 func (r *reader) draft(mode string) {
 	m, ok := r.last()
 	if !ok {
@@ -345,7 +345,7 @@ func (r *reader) draft(mode string) {
 			return
 		}
 		if gen == r.gen {
-			a.navigate(Route{Page: PageCompose, DraftID: id})
+			a.plat.OpenCompose(id)
 		}
 	})
 }

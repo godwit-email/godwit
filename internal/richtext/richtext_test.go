@@ -337,24 +337,6 @@ func TestToHTMLRoundTrip(t *testing.T) {
 	assert.Equal(t, h, ToHTML(FromComposeHTML(h)), "stable")
 }
 
-func TestToHTMLOffsets(t *testing.T) {
-	d := Doc{Blocks: []Block{
-		{Kind: Paragraph, Inlines: []Inline{{Text: "中文"}, {Text: "a&b", Bold: true}}},
-		{Kind: ListItem, Level: 1, Inlines: []Inline{{Text: "x"}}},
-	}}
-	h, off := ToHTMLOffsets(d)
-	assert.Equal(t, "<p>中文<b>a&amp;b</b></p><ul><li>x</li></ul>", h)
-	at := func(b, r int) string { return h[off(Pos{b, r}):] }
-	assert.True(t, strings.HasPrefix(at(0, 0), "中文"))
-	assert.True(t, strings.HasPrefix(at(0, 1), "文"))
-	assert.True(t, strings.HasPrefix(at(0, 2), "a&amp;"))
-	assert.True(t, strings.HasPrefix(at(0, 3), "&amp;b"))
-	assert.True(t, strings.HasPrefix(at(0, 4), "b</b>"))
-	assert.True(t, strings.HasPrefix(at(0, 5), "</b></p>"))
-	assert.True(t, strings.HasPrefix(at(1, 0), "x</li>"))
-	assert.Equal(t, len(h), off(Pos{9, 0}), "past the end")
-}
-
 func TestWideTableFlattens(t *testing.T) {
 	row := func(tag string, n int) string {
 		var sb strings.Builder

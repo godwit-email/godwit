@@ -468,12 +468,13 @@ func TestDraftsListRoute(t *testing.T) {
 	h.tt.Frame()
 	h.until("the draft deleted", func() bool { return !h.tt.HasText("Draft bye") })
 	h.click("Draft hello")
-	if r := h.app.route; r.Page != PageCompose || r.DraftID != keep.ID {
-		t.Fatalf("route %+v", r)
+	if id := h.composeOpened(0); id != keep.ID {
+		t.Fatalf("opened draft %d, want %d", id, keep.ID)
 	}
-	h.app.back()
 	h.click("写邮件")
-	h.until("a new draft", func() bool { return h.app.route.Page == PageCompose && h.app.route.DraftID > keep.ID })
+	if id := h.composeOpened(keep.ID); id <= keep.ID {
+		t.Fatalf("写邮件 opened draft %d", id)
+	}
 }
 
 func TestRowUnreadCount(t *testing.T) {
@@ -634,8 +635,8 @@ func TestLocalDraftsEntry(t *testing.T) {
 	h.click("草稿")
 	h.see("local only")
 	h.click("local only")
-	if r := h.app.route; r.Page != PageCompose || r.DraftID != d.ID {
-		t.Fatalf("route %+v", r)
+	if id := h.composeOpened(0); id != d.ID {
+		t.Fatalf("opened draft %d, want %d", id, d.ID)
 	}
 }
 

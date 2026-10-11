@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/webui"
 )
 
 // TestE2EOnboardToReply runs a first start through to a sent reply: add the
@@ -30,9 +33,30 @@ func TestE2EOnboardToReply(t *testing.T) {
 	h.click("Question")
 	h.see("can you come on Friday?")
 	h.click("回复")
-	p := h.composerLoaded()
-	h.writeBody("Yes, see you then.")
-	h.click("发送")
+	id := h.composeOpened(0)
+	if h.app.route.Page != PageMail {
+		t.Fatalf("the main window left the mail page: %+v", h.app.route)
+	}
+
+	// The compose window's page, as the platform would bind it for id.
+	const win = 7
+	c := webui.NewCompose()
+	c.SetService(h.env.Svc)
+	c.Attach(win, id)
+	page := webui.NewComposePage(c, webui.PageDeps{WinOf: func(context.Context) (int, bool) { return win, true }})
+	ctx := context.Background()
+	st, err := page.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := page.Save(ctx, webui.ComposeEdit{To: st.To, Cc: st.Cc, Bcc: st.Bcc, ReplyTo: st.ReplyTo, Subject: st.Subject,
+		Body: "<p>Yes, see you then.</p>", Revision: st.Revision})
+	if err != nil || saved.Conflict {
+		t.Fatalf("save %+v, %v", saved, err)
+	}
+	if res, err := page.Send(ctx, saved.Revision, ""); err != nil || !res.Sent {
+		t.Fatalf("send %+v, %v", res, err)
+	}
 	out := h.sent(acc, 1)
 	if !strings.Contains(out[0], "Yes, see you then.") || !strings.Contains(out[0], "Subject: Re: Question") || !strings.Contains(out[0], "bob@example.com") {
 		t.Fatalf("sent %s", out[0])
@@ -40,18 +64,14 @@ func TestE2EOnboardToReply(t *testing.T) {
 	if n := len(h.env.Sent(acc.ID)); n != 1 {
 		t.Fatalf("%d messages sent, want 1", n)
 	}
-	h.until("back on the mail page", func() bool { return h.app.route.Page == PageMail })
 	h.syncNow(acc) // files the sent reply
 	h.waitMail("the outbox empty", func() bool {
 		items, err := h.env.Svc.ListOutbox(context.Background(), acc.ID)
 		return err == nil && len(items) == 0 && len(h.app.mail.outbox) == 0
 	})
-	if !p.s.stopped {
-		t.Fatal("the reply's saver still runs after sending")
-	}
 }
 
-// TestE2EQuickReplyAndDraftsList takes a quick reply into the composer, then
+// TestE2EQuickReplyAndDraftsList takes a quick reply into a compose window, then
 // finds the same draft again in the drafts list.
 func TestE2EQuickReplyAndDraftsList(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noSummary)
@@ -61,23 +81,17 @@ func TestE2EQuickReplyAndDraftsList(t *testing.T) {
 	h.click("Lunch")
 	h.see("lunch on Friday?")
 	h.click("Not this week")
-	p := h.composerLoaded()
-	id := p.id
+	id := h.composeOpened(0)
 	if d := h.draft(id); !strings.Contains(d.HTML, "Not this week") || strings.Contains(d.HTML, "Sounds good") || d.Subject != "Re: Lunch" {
 		t.Fatalf("draft %+v", d)
 	}
 
-	h.click("后退")
-	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
 	h.advance(time.Second)
 	h.click("草稿")
 	h.see("Re: Lunch")
 	h.click("Re: Lunch")
-	h.until("the same draft", func() bool {
-		q := h.app.mail.draft
-		return h.app.route.Page == PageCompose && h.app.route.DraftID == id && q != nil && q.loaded
+	call := fmt.Sprint("OpenCompose ", id)
+	h.until("the same draft opened again", func() bool {
+		return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != call })) == 2
 	})
-	if body := h.app.mail.draft.snapshot().HTML; !strings.Contains(body, "Not this week") {
-		t.Fatalf("reopened body %q", body)
-	}
 }

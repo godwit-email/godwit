@@ -457,8 +457,7 @@ func TestQuickReplies(t *testing.T) {
 	}
 	h.tt.Key(0, ui.KeyEnter)
 	h.tt.Frame()
-	h.until("the composer", func() bool { return h.app.route.Page == PageCompose && h.app.route.DraftID != 0 })
-	d, err := h.env.Svc.GetDraft(context.Background(), h.app.route.DraftID)
+	d, err := h.env.Svc.GetDraft(context.Background(), h.composeOpened(0))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -192,7 +192,7 @@ func (a *App) showTrayUnread(inbox int) {
 	}
 }
 
-// Compose starts a new draft, as the sidebar's button does.
+// Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
 // SyncAll syncs every account now.
