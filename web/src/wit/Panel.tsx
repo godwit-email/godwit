@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { RiAlertLine, RiArrowDownLine, RiArrowDownSLine, RiLoaderLine } from "@remixicon/react";
 import type { DynamicToolUIPart } from "ai";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -38,14 +38,9 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import {
-  type Approval,
-  ComposePage as api,
-  type Citation,
-  type WitHistory,
-  type WitInfo,
-} from "@/mygo";
+import type { Approval, Citation, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
+import { Citations, type Nums } from "./Citations";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
 
@@ -67,10 +62,10 @@ export function witError(m: string, t: T): string {
   return t(m) !== m ? t(m) : t("error.unknown", m);
 }
 
-/** Each message a part of m cites, once; suspect if any citation of it is. */
-function citesOf(m: WitUIMessage): Citation[] {
+/** Each message the parts of ms cite, once; suspect if any citation of it is. */
+function citesOf(...ms: WitUIMessage[]): Citation[] {
   const out: Citation[] = [];
-  for (const p of m.parts) {
+  for (const p of ms.flatMap((m) => m.parts)) {
     if (p.type !== "data-citations") continue;
     for (const c of p.data) {
       const i = out.findIndex((x) => x.messageId === c.messageId);
@@ -194,14 +189,18 @@ function Answer({
   approvals,
   review,
   tools,
+  onLink,
+  onCite,
   t,
 }: {
   m: WitUIMessage;
   live: boolean;
-  nums: Map<number, { n: number; suspect: boolean }>;
+  nums: Nums;
   approvals: Map<string, Approval>;
   review?: PanelReview;
   tools: (a: Approval) => ReactNode;
+  onLink(url: string): void;
+  onCite?(id: number): void;
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
@@ -240,18 +239,15 @@ function Answer({
           </Alert>
         ))}
       {text ? (
-        <Response
-          text={text}
-          streaming={live}
-          t={t}
-          onLink={(url) =>
-            void api.openLink(url).catch((e) => toast.error(witError(String(e?.message ?? e), t)))
-          }
-        />
+        <Response text={text} streaming={live} t={t} onLink={onLink} />
       ) : (
         live && <Busy t={t} />
       )}
-      {cites.length > 0 && (
+      {cites.length > 0 && onCite && (
+        // narrow: the cards under the answer; wide, the page's column shows them (Panel)
+        <Citations items={cites} nums={nums} onOpen={onCite} t={t} className="@4xl:hidden" />
+      )}
+      {cites.length > 0 && !onCite && (
         <div className="flex flex-wrap gap-1">
           {cites.map((c) => (
             <HoverCard key={c.messageId}>
@@ -287,8 +283,13 @@ function Answer({
 export type PanelReview = { approval: number; body: ReactNode };
 
 /**
- * The compose window's Wit panel: what Wit knows (chips), 调整 / 翻译, the conversation, and the
- * input. `transport` must be the one whose follow() read `history`; a live run in it resumes into
+ * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
+ * what Wit knows (chips), 调整 / 翻译 (`info`), the conversation, and the input. As the Wit page
+ * (layout "page"): the conversation centred, the input floating under it with `slots.input` (the
+ * model chip), the cited mail opening by onCite in a column when the page is wide, else under each
+ * answer. Links open through the host's onLink (after the confirmation); its failure toasts.
+ * A run's end reconciles: the history read again replaces what streamed, once it has the run.
+ * `transport` must be the one whose follow() read `history`; a live run in it resumes into
  * its own answer, if the history's last. The edit the page reviews (`review`) shows as a card on
  * its answer; a tool's call waiting shows its own, decided by onDecide. A new `resume` streams that
  * run (resumed by a decision) onto the last answer if that is the run's, else into an answer of
@@ -302,20 +303,26 @@ export function Panel({
   resume,
   onRunning,
   onDecide,
+  onLink,
+  onCite,
   transport,
   t,
+  layout = "panel",
   slots,
 }: {
-  info: WitInfo;
+  info?: WitInfo;
   history: WitHistory;
   locked: boolean;
   review?: PanelReview;
   resume?: { run: number };
   onRunning?(on: boolean): void;
   onDecide?: Decide;
+  onLink(url: string): Promise<void>;
+  onCite?(id: number): void;
   transport: WitTransport;
   t: T;
-  slots?: { chips?: ReactNode; actions?: ReactNode };
+  layout?: "panel" | "page";
+  slots?: { chips?: ReactNode; actions?: ReactNode; input?: ReactNode };
 }) {
   // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
   // rebuilds it, then appends.
@@ -342,6 +349,33 @@ export function Panel({
 
   useEffect(() => onRunning?.(running), [running, onRunning]);
 
+  // A run over (its stream ended): the saved history replaces what streamed (core may drop text
+  // for a slow subscriber), unless another stream started meanwhile or the read lacks the run.
+  const wasRunning = useRef(false);
+  const { setMessages } = chat;
+  useEffect(() => {
+    const ended = wasRunning.current && !running;
+    wasRunning.current = running;
+    const run = transport.run;
+    if (!ended || !run) return;
+    let live = true;
+    transport.history().then(
+      (h) => {
+        if (!live || !h) return;
+        if (
+          !h.messages.some((m) => m.runs.includes(run)) &&
+          !h.approvals.some((a) => a.run === run)
+        )
+          return;
+        setMessages(historyToMessages(h));
+      },
+      () => {}, // the stream stays as it is
+    );
+    return () => {
+      live = false;
+    };
+  }, [running, transport, setMessages]);
+
   // A decision resumed a run: its events (logged since) go on in the last answer, if the run's.
   const last = chat.messages.at(-1);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new resume streams
@@ -361,12 +395,14 @@ export function Panel({
     setDraft("");
     ask(text);
   };
-  const stop = () =>
-    void transport.stop().catch((e) => toast.error(witError(String(e?.message ?? e), t)));
+  const fail = (e: unknown) =>
+    toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
+  const stop = () => void transport.stop().catch(fail);
+  const link = (url: string) => void onLink(url).catch(fail);
 
   // Citations numbered through the conversation: the history's as given, live ones (N=0) after;
   // a message is suspect once any citation of it is.
-  const nums = new Map<number, { n: number; suspect: boolean }>();
+  const nums: Nums = new Map();
   const approvals = new Map<string, Approval>();
   for (const m of chat.messages) {
     for (const c of citesOf(m)) {
@@ -404,9 +440,122 @@ export function Panel({
         t={t}
       />
     );
+  const page = layout === "page";
+  const conversation = (
+    <MessageScrollerProvider autoScroll>
+      <MessageScroller className="min-h-0 flex-1">
+        <MessageScrollerViewport>
+          <MessageScrollerContent
+            className={page ? "mx-auto w-full max-w-190 gap-5 p-6" : "gap-4 px-3 py-2"}
+          >
+            {chat.messages.map((m) => (
+              <MessageScrollerItem key={m.id} messageId={m.id}>
+                {m.role === "user" ? (
+                  <Message align="end">
+                    <MessageContent>
+                      <Bubble align="end">
+                        <BubbleContent className="whitespace-pre-wrap text-base">
+                          {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
+                        </BubbleContent>
+                      </Bubble>
+                    </MessageContent>
+                  </Message>
+                ) : (
+                  <Answer
+                    m={m}
+                    live={running && m === last}
+                    nums={nums}
+                    approvals={approvals}
+                    review={review}
+                    tools={tools}
+                    onLink={link}
+                    onCite={onCite}
+                    t={t}
+                  />
+                )}
+              </MessageScrollerItem>
+            ))}
+            {running && last?.role !== "assistant" && <Busy t={t} />}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton>
+          <RiArrowDownLine />
+          <span className="sr-only">{t("wit.scroll_end")}</span>
+        </MessageScrollerButton>
+      </MessageScroller>
+    </MessageScrollerProvider>
+  );
+  const error = chat.error && !running && (
+    <Alert variant="destructive" className="border-0 bg-destructive/10">
+      <AlertDescription>{witError(chat.error.message, t)}</AlertDescription>
+      <AlertAction>
+        <Button variant="ghost" size="sm" onClick={() => void chat.regenerate()}>
+          {t("common.retry")}
+        </Button>
+      </AlertAction>
+    </Alert>
+  );
+  const input = (
+    <InputGroup
+      className={page ? "rounded-2xl border-0 bg-background shadow-(--shadow-float)" : undefined}
+    >
+      <InputGroupTextarea
+        aria-label={t(page ? "wit.input" : "wit.compose.input")}
+        placeholder={t(page ? "wit.placeholder" : "wit.compose.placeholder")}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
+            return;
+          e.preventDefault();
+          submit();
+        }}
+        className={page ? "max-h-44 min-h-14 text-base" : "max-h-40 min-h-16 text-base"}
+      />
+      <InputGroupAddon align="block-end" className={slots?.input ? undefined : "justify-end"}>
+        {slots?.input}
+        {slots?.input && <span className="flex-1" />}
+        {running ? (
+          <InputGroupButton variant="outline" size="sm" onClick={stop}>
+            {t("wit.stop")}
+          </InputGroupButton>
+        ) : (
+          <InputGroupButton
+            variant="default"
+            size="sm"
+            disabled={locked || !draft.trim()}
+            onClick={submit}
+          >
+            {t("wit.send")}
+          </InputGroupButton>
+        )}
+      </InputGroupAddon>
+    </InputGroup>
+  );
+
+  if (page) {
+    const cites = citesOf(...chat.messages);
+    return (
+      <div className="@container flex h-full min-h-0">
+        <div className="flex min-w-0 flex-1 flex-col">
+          {conversation}
+          <div className="mx-auto flex w-full max-w-190 flex-col gap-2 px-6 pb-4">
+            {error}
+            {input}
+          </div>
+        </div>
+        {cites.length > 0 && onCite && (
+          // wide: the column (narrow: under each answer, Answer)
+          <aside className="hidden w-80 shrink-0 flex-col overflow-auto border-l bg-sidebar p-3 @4xl:flex">
+            <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
+          </aside>
+        )}
+      </div>
+    );
+  }
   return (
     <aside className="flex w-90 shrink-0 flex-col border-l">
-      {(info.chips.length > 0 || slots?.chips) && (
+      {info && (info.chips.length > 0 || slots?.chips) && (
         <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
           {info.chips.map((c) => (
             <Badge key={c} variant="secondary" className="max-w-full truncate">
@@ -416,124 +565,49 @@ export function Panel({
           {slots?.chips}
         </div>
       )}
-      <div className="flex items-center gap-1 px-3 py-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-            {t("wit.compose.adjust")}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {info.skills.map((s) => (
-              <DropdownMenuItem key={s.id} onClick={() => ask(s.label, { skill: s.id, lang: "" })}>
-                {s.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-            {t("wit.compose.translate")}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {info.languages.map((l) => (
-              <DropdownMenuItem
-                key={l.tag}
-                onClick={() =>
-                  ask(t("wit.compose.translate_to", l.name), {
-                    skill: "translate-draft",
-                    lang: l.tag,
-                  })
-                }
-              >
-                {l.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {slots?.actions}
-      </div>
-      <MessageScrollerProvider autoScroll>
-        <MessageScroller className="min-h-0 flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent className="gap-4 px-3 py-2">
-              {chat.messages.map((m) => (
-                <MessageScrollerItem key={m.id} messageId={m.id}>
-                  {m.role === "user" ? (
-                    <Message align="end">
-                      <MessageContent>
-                        <Bubble align="end">
-                          <BubbleContent className="whitespace-pre-wrap text-base">
-                            {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
-                          </BubbleContent>
-                        </Bubble>
-                      </MessageContent>
-                    </Message>
-                  ) : (
-                    <Answer
-                      m={m}
-                      live={running && m === last}
-                      nums={nums}
-                      approvals={approvals}
-                      review={review}
-                      tools={tools}
-                      t={t}
-                    />
-                  )}
-                </MessageScrollerItem>
+      {info && (
+        <div className="flex items-center gap-1 px-3 py-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
+              {t("wit.compose.adjust")}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {info.skills.map((s) => (
+                <DropdownMenuItem
+                  key={s.id}
+                  onClick={() => ask(s.label, { skill: s.id, lang: "" })}
+                >
+                  {s.label}
+                </DropdownMenuItem>
               ))}
-              {running && last?.role !== "assistant" && <Busy t={t} />}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton>
-            <RiArrowDownLine />
-            <span className="sr-only">{t("wit.scroll_end")}</span>
-          </MessageScrollerButton>
-        </MessageScroller>
-      </MessageScrollerProvider>
-      {chat.error && !running && (
-        <div className="px-3 pb-2">
-          <Alert variant="destructive" className="border-0 bg-destructive/10">
-            <AlertDescription>{witError(chat.error.message, t)}</AlertDescription>
-            <AlertAction>
-              <Button variant="ghost" size="sm" onClick={() => void chat.regenerate()}>
-                {t("common.retry")}
-              </Button>
-            </AlertAction>
-          </Alert>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
+              {t("wit.compose.translate")}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {info.languages.map((l) => (
+                <DropdownMenuItem
+                  key={l.tag}
+                  onClick={() =>
+                    ask(t("wit.compose.translate_to", l.name), {
+                      skill: "translate-draft",
+                      lang: l.tag,
+                    })
+                  }
+                >
+                  {l.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {slots?.actions}
         </div>
       )}
-      <div className="px-3 pb-3">
-        <InputGroup>
-          <InputGroupTextarea
-            aria-label={t("wit.compose.input")}
-            placeholder={t("wit.compose.placeholder")}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
-                return;
-              e.preventDefault();
-              submit();
-            }}
-            className="max-h-40 min-h-16 text-base"
-          />
-          <InputGroupAddon align="block-end" className="justify-end">
-            {running ? (
-              <InputGroupButton variant="outline" size="sm" onClick={stop}>
-                {t("wit.stop")}
-              </InputGroupButton>
-            ) : (
-              <InputGroupButton
-                variant="default"
-                size="sm"
-                disabled={locked || !draft.trim()}
-                onClick={submit}
-              >
-                {t("wit.send")}
-              </InputGroupButton>
-            )}
-          </InputGroupAddon>
-        </InputGroup>
-      </div>
+      {conversation}
+      {error && <div className="px-3 pb-2">{error}</div>}
+      <div className="px-3 pb-3">{input}</div>
     </aside>
   );
 }

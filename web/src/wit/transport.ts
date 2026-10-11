@@ -2,7 +2,6 @@ import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import {
   type Approval,
   type Citation,
-  ComposePage,
   events,
   type WitCall,
   type WitEvent,
@@ -272,7 +271,16 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
   });
 }
 
-type Api = Pick<typeof ComposePage, "ask" | "skill" | "follow" | "stop">;
+/**
+ * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID;
+ * follow reads the conversation the host shows (subscribing to it); stop cancels a run.
+ */
+export type WitApi = {
+  ask(text: string): Promise<number>;
+  skill?(id: string, lang: string): Promise<number>;
+  follow(): Promise<WitHistory>;
+  stop(run: number): Promise<void>;
+};
 type On = (f: (ev: WitEvent) => void) => () => void;
 
 /**
@@ -281,7 +289,8 @@ type On = (f: (ev: WitEvent) => void) => () => void;
  * only the conversation followed: from follow's history, or a started run's (its first event);
  * events wait while that is unknown, and other conversations' (in flight from a switch) are
  * dropped. Events with no stream open wait in a log until the next resume (cleared by a send or a
- * follow).
+ * follow). Each follow or send is a selection: the newest wins, an older one's result is ignored,
+ * and a follow ends the stream open (a switch drops the old conversation's stream).
  */
 export class WitTransport implements ChatTransport<WitUIMessage> {
   /** The run followed: the last started, resumed, or seen in an event; Stop cancels it. */
@@ -295,10 +304,13 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private sink?: (ev: WitEvent) => void;
   private resuming?: { open?: WitUIMessage; id: string };
   private runsOf = new Map<string, number[]>(); // the history's answers' runs, by message ID
+  private gen = 0; // the selection: bumped by each follow and send
+  private endOpen?: () => void; // ends the stream open
+  private watchers = new Set<(ev: WitEvent) => void>();
   private off: () => void;
 
   constructor(
-    private api: Api = ComposePage,
+    private api: WitApi,
     on: On = (f) => events.wit.on(f),
   ) {
     this.off = on((ev) => this.receive(ev));
@@ -314,6 +326,13 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     if (ev.run) this.run = ev.run;
     this.log.push(ev);
     this.sink?.(ev);
+    for (const f of this.watchers) f(ev);
+  }
+
+  /** f hears each event of the conversation followed, after the stream does; returns the remover. */
+  watch(f: (ev: WitEvent) => void): () => void {
+    this.watchers.add(f);
+    return () => this.watchers.delete(f);
   }
 
   // Follows conversation conv: the events that waited go through, if of it.
@@ -324,8 +343,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     for (const ev of early) this.receive(ev);
   }
 
-  // Forgets the conversation followed: a follow or a run start names the next.
+  // Forgets the conversation followed (its stream ends): a follow or a run start names the next.
   private reset() {
+    this.endOpen?.();
+    this.starting = this.stopping = false;
     this.conv = undefined;
     this.want = 0;
     this.early = [];
@@ -337,12 +358,31 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     return this.conv;
   }
 
-  /** Follows the draft's conversation (api.follow); events from now on are kept for resume. */
-  async follow(): Promise<WitHistory> {
+  /**
+   * Follows the host's conversation (api.follow); events from now on are kept for resume. Undefined
+   * when a newer follow or send came meanwhile.
+   */
+  async follow(): Promise<WitHistory | undefined> {
+    const g = ++this.gen;
     this.reset();
     const h = await this.api.follow();
+    if (g !== this.gen) return undefined;
     this.runsOf = new Map(h.messages.map((m) => [m.id, m.runs]));
     this.adopt(h.conversation);
+    return h;
+  }
+
+  /**
+   * The conversation followed, read again (a run's end reconciles with it) without forgetting it.
+   * Undefined when a selection came meanwhile or the host now shows another conversation.
+   */
+  async history(): Promise<WitHistory | undefined> {
+    const g = this.gen;
+    const conv = this.conv;
+    if (conv === undefined) return undefined; // a switch under way: no read to race its follow
+    const h = await this.api.follow();
+    if (g !== this.gen || h.conversation !== conv) return undefined;
+    this.runsOf = new Map(h.messages.map((m) => [m.id, m.runs]));
     return h;
   }
 
@@ -384,6 +424,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
       if (!open) return;
       open = false;
       if (this.sink === push) this.sink = undefined;
+      if (this.endOpen === end) this.endOpen = undefined;
       try {
         ctl.close();
       } catch {
@@ -418,6 +459,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     });
     abortSignal?.addEventListener("abort", end);
     this.sink = push;
+    this.endOpen = end;
     return { s, push, fail, named };
   }
 
@@ -427,6 +469,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   }: Parameters<ChatTransport<WitUIMessage>["sendMessages"]>[0]) {
     const m = messages.findLast((x) => x.role === "user");
     const text = m?.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("") ?? "";
+    const g = ++this.gen;
     this.reset();
     this.resuming = undefined;
     this.run = 0;
@@ -434,9 +477,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.stopping = false;
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
-    (skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
+    (skill && this.api.skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
       .then(
         (run) => {
+          if (g !== this.gen) return; // a switch came meanwhile: its stream ended
           named(`live${run}`); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;
           const ev = this.early.find((e) => e.run === run);
@@ -444,13 +488,14 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
           if (this.stopping) return this.api.stop(run);
         },
         (e: unknown) => {
+          if (g !== this.gen) return;
           this.early = []; // nothing started: what waited is another run's
           fail(e instanceof Error ? e.message : String(e));
         },
       )
       .catch(() => {}) // ponytail: a failed deferred stop is dropped; Stop stays to try again
       .finally(() => {
-        this.starting = this.stopping = false;
+        if (g === this.gen) this.starting = this.stopping = false;
       });
     return s;
   }

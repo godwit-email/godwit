@@ -131,6 +131,8 @@ const text: Record<string, string> = {
   "wit.approval.allow": "允许",
   "wit.approval.allow_all": "全部允许",
   "wit.approval.reject": "拒绝",
+  "link.title": "打开这个链接？",
+  "link.open": "打开",
 };
 const state: ComposeState = {
   draftId: 1,
@@ -645,4 +647,27 @@ test("a run's end drops its body edits no longer waiting", async () => {
   emit({ kind: "error", error: "" }); // decided elsewhere, or cancelled: the run is over
   await waitFor(() => expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull());
   await waitFor(async () => expect(await body()).not.toHaveAttribute("readonly"));
+});
+
+test("links go through the host's openLink (ComposePage.openLink)", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.openLink).mockResolvedValue();
+  await setup({
+    ...empty,
+    messages: [
+      { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "[b](mailto:x@y.z)",
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [7],
+      },
+    ],
+  });
+  await user.click(await screen.findByText("b"));
+  await user.click(await screen.findByRole("button", { name: "打开" }));
+  expect(api.openLink).toHaveBeenCalledWith("mailto:x@y.z");
 });

@@ -21,6 +21,7 @@ import {
 import { makeT, type T } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { Panel as WitPanel, witError } from "@/wit/Panel";
+import { useResume } from "@/wit/resume";
 import { ends, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
 import { type CmdKSelection, Editor } from "./editor/Editor";
@@ -259,16 +260,15 @@ function Compose({
   const [reloading, setReloading] = useState(false);
   const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
   const [applied, setApplied] = useState(false);
-  const [resume, setResume] = useState<{ run: number }>();
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
   const edits = useRef(0); // local body edits taken
   const runEdits = useRef(0); // body edits when the last run or decision started
   const reloads = useRef(0);
-  const decidedRun = useRef(0); // a decision's run: its next event resumes the panel's stream
   const cmdkRef = useRef(0);
   const cmdkStop = useRef(false); // Stop asked for while the ⌘K run starts
   const ended = useRef(new Set<number>()); // runs seen ending
   const trRef = useRef<WitTransport>(undefined);
+  const witResume = useResume(wit?.tr);
   const toasted = useRef(false); // the lock's toast, once per lock
   const bodyRef = useRef<HTMLDivElement>(null);
   // The one way a locked page says so: once until it unlocks.
@@ -322,8 +322,9 @@ function Compose({
     if (!tr) return;
     tr.follow().then(
       (history) => {
+        if (!history) return; // a newer follow's
         setPendings(history.approvals.filter(pendingEdit));
-        setResume(undefined); // the remounted panel must not resume an old run
+        witResume.reset(); // the remounted panel must not resume an old run
         setWit((w) => w && { tr, history, n: w.n + 1 });
       },
       (e) => toast.error(witError(message(e), t)),
@@ -333,10 +334,6 @@ function Compose({
   const onWit = useRef<(ev: WitEvent) => void>(() => {});
   onWit.current = (ev) => {
     if (ev.kind === "interrupted") setPendings(ev.approvals.filter(pendingEdit));
-    if (ev.run === decidedRun.current && ev.conversation === trRef.current?.conversation) {
-      decidedRun.current = 0;
-      setResume({ run: ev.run });
-    }
     if (!ends(ev)) return;
     // Over: none of its body edits waits any more (an interrupt's are set above).
     if (ev.kind !== "interrupted") setPendings((p) => p.filter((x) => x.run !== ev.run));
@@ -375,7 +372,7 @@ function Compose({
     let live = true;
     tr.follow().then(
       (history) => {
-        if (!live) return;
+        if (!live || !history) return;
         setPendings(history.approvals.filter(pendingEdit));
         setWit({ tr, history, n: 0 });
       },
@@ -508,8 +505,7 @@ function Compose({
     const a = current;
     if (!a || deciding) return;
     runEdits.current = edits.current;
-    decidedRun.current = a.run;
-    const r = await bodyOp(() => op(a.id));
+    const r = await bodyOp(() => witResume.decide(a.run, () => op(a.id)));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
     void reload();
@@ -519,8 +515,11 @@ function Compose({
   const decideTool = async (a: Approval, accept: boolean, all: boolean) => {
     if (deciding) return false;
     runEdits.current = edits.current;
-    decidedRun.current = a.run;
-    const r = await bodyOp(() => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
+    const r = await bodyOp(() =>
+      witResume.decide(a.run, () =>
+        all ? api.decideAll(a.run, accept) : api.decide(a.id, accept),
+      ),
+    );
     if (r && all) {
       // The run's body edits were decided with it: no longer reviewed; an accepted one applied.
       const edited = pendings.some((x) => x.run === a.run);
@@ -865,7 +864,8 @@ function Compose({
                   }
                 : undefined
             }
-            resume={resume}
+            resume={witResume.resume}
+            onLink={(url) => api.openLink(url)}
             onRunning={setPanelRunning}
             onDecide={decideTool}
             transport={wit.tr}
