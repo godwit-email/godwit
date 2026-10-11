@@ -18,12 +18,12 @@ func TestThemeTokens(t *testing.T) {
 		"Background": {l.Background, p.White}, "Foreground": {l.Foreground, p.Neutral950},
 		"Muted": {l.Muted, p.Neutral500}, "Border": {l.Border, p.Neutral200},
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},
-		"SidebarSelected": {l.SidebarSelected, p.Neutral100}, "RailSelected": {l.RailSelected, p.Neutral200},
+		"SidebarSelected": {l.SidebarSelected, p.Mid(p.Neutral100, p.Neutral200)}, "RailSelected": {l.RailSelected, p.Neutral200},
 		"Hover": {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
 		"WarningBg": {l.WarningBg, p.Amber50}, "WarningBorder": {l.WarningBorder, p.Amber300},
 		"WarningText": {l.WarningText, p.Amber800}, "Danger": {l.Danger, p.Red600},
 		"DangerBg": {l.DangerBg, p.Red50}, "InsBg": {l.InsBg, p.Green100}, "InsText": {l.InsText, p.Green800},
-		"DelBg": {l.DelBg, p.Red50}, "DelText": {l.DelText, p.Red700},
+		"DelBg": {l.DelBg, p.Red50}, "DelText": {l.DelText, p.Red700}, "Unread": {l.Unread, p.Blue500},
 	} {
 		if c.got != c.want.Color() {
 			t.Errorf("Light().%s = %v, want %v", name, c.got, c.want.Color())

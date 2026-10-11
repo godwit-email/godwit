@@ -119,27 +119,16 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
-	group := func(label string) {
-		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(th.Space(2.5), th.Space(2), th.Space(1), th.Space(2))
+	group := func(label string, top float32) {
+		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), th.Space(1.5), th.Space(2))
 	}
 	item := func(sec string, children func()) {
-		b := ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
-		on := sec == cur
-		switch {
-		case on:
-			b.Background(t.SidebarSelected).FontWeight(500)
-		case b.Hovered():
-			b.Background(t.Hover)
-		}
-		b.Children(children)
-		if !on {
-			b.OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: sec}) })
-		}
+		kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }}).Children(children)
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(1.5), th.Space(1.5))
-			group(i18n.T("settings.accounts"))
+			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+			group(i18n.T("settings.accounts"), th.Space(1))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID), func() {
 					mark(c, providerMark(accountProvider(a, acc)), theme.MarkSm)
@@ -151,11 +140,13 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 					}
 				})
 			}
-			ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Muted).Children(func() {
-				ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {
+				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() { // the accounts' marks' column
+					ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
+				})
 				ui.Text(c, i18n.T("settings.add_account"))
-			}).OnClick(a.openAddAccount)
-			group(i18n.T("settings.app"))
+			})
+			group(i18n.T("settings.app"), th.Space(3.5))
 			for _, sec := range appSections {
 				item(sec, func() { ui.Text(c, i18n.T("settings."+sec)) })
 			}

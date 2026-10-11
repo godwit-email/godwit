@@ -143,7 +143,7 @@ func (h *harness) see(text string) {
 func (h *harness) click(label string) {
 	h.t.Helper()
 	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
-	if r, _ := h.tt.Find(label); r.Y < 0 || r.Y+r.H > 820 { // out of the window: scroll it to the middle
+	if r, _ := h.tt.Find(label); r.Y < 0 || r.Y+r.H > 820-8 { // out of the panel (inset 8 from the window's bottom): scroll it to the middle
 		h.tt.Scroll(900, 400, 0, r.Y-400)
 		h.tt.Frame()
 	}

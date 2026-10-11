@@ -82,10 +82,10 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-	ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).Justify(ui.Start).Children(func() {
+	kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {
 		ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
 		ui.Text(c, i18n.T("ask.new"))
-	}).OnClick(func() { a.navigate(Route{Page: PageWit}) })
+	})
 	if len(p.convs) == 0 {
 		return
 	}
@@ -95,22 +95,13 @@ func (p *askPage) Sidebar(c *ui.Context) {
 			for _, conv := range p.convs {
 				id := conv.ID
 				on := id == p.wit.conv
-				b := ui.ButtonBase(c).Height(th.Space(8)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Justify(ui.Start)
-				switch {
-				case on:
-					b.Background(t.SidebarSelected).FontWeight(500)
-				case b.Hovered():
-					b.Background(t.Hover)
-				}
-				b.Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
+				kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageWit, ConversationID: id}) }}).
+					Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
 					ContextMenu(func(m *ui.Menu) {
 						if m.Item(i18n.T("ask.delete")).Chosen() {
 							p.remove(id)
 						}
 					})
-				if !on {
-					b.OnClick(func() { a.navigate(Route{Page: PageWit, ConversationID: id}) })
-				}
 			}
 		})
 	})

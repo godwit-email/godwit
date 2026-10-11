@@ -13,14 +13,15 @@ import (
 )
 
 // Tokens are Godwit's semantic colors and sizes. Attention is the amber of
-// status dots that ask for a look (amber-500).
+// status dots that ask for a look (amber-500); Unread, the blue of the dot
+// beside unread mail (blue-500).
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
 	PrimaryText, SidebarSelected, RailSelected, Hover, Success      ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
-	Attention                                                       ui.Color
+	Attention, Unread                                               ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -109,7 +110,7 @@ func sized(t Tokens) Tokens {
 func status(t Tokens) Tokens {
 	t.Success = p.Green600.Color()
 	t.WarningBg, t.WarningBorder, t.WarningText = p.Amber50.Color(), p.Amber300.Color(), p.Amber800.Color()
-	t.Danger, t.DangerBg, t.Attention = p.Red600.Color(), p.Red50.Color(), p.Amber500.Color()
+	t.Danger, t.DangerBg, t.Attention, t.Unread = p.Red600.Color(), p.Red50.Color(), p.Amber500.Color(), p.Blue500.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
 	t.FontSize, t.BodyFontSize, t.Scale = 13, 14, 1
 	return sized(t)
@@ -121,7 +122,7 @@ func Light() Tokens {
 		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
-		SidebarSelected: p.Neutral100.Color(), RailSelected: p.Neutral200.Color(), Hover: p.Neutral100.Color(),
+		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral200.Color(), Hover: p.Neutral100.Color(),
 	})
 }
 
