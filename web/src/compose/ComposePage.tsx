@@ -389,7 +389,7 @@ function Compose({
     if (!state.wit.enabled) return;
     const off = events.wit.on((ev) => onWit.current(ev));
     const tr = new WitTransport({
-      ask: (text) => startRun.current(() => api.ask(text)),
+      ask: (text, quoted = []) => startRun.current(() => api.ask(text, quoted)),
       skill: (id, lang) => startRun.current(() => api.skill(id, lang)),
       follow: () => api.follow(),
       stop: (run) => api.stop(run),
@@ -900,6 +900,7 @@ function Compose({
             onLink={(url) => api.openLink(url)}
             onRunning={setPanelRunning}
             onDecide={decideTool}
+            onSearch={(q) => api.searchMail(q)}
             model={state.wit.model}
             onModels={() =>
               void api.openModels().catch((e) => toast.error(witError(message(e), t)))

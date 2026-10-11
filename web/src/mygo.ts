@@ -25,6 +25,8 @@ export interface Approval {
   destinations: string[];
   /** Args is the call's arguments, JSON text ("" for none). */
   args: string;
+  /** SessionAllow: 本次对话都允许 can decide it (WitPage.DecideSession). */
+  sessionAllow: boolean;
 }
 
 /** AttachResult is the outcome of adding files: a partial success is no error. */
@@ -168,6 +170,15 @@ export interface ComposeState {
 export interface Language {
   tag: string;
   name: string;
+}
+
+/** MailHit is a message the quote picker offers. */
+export interface MailHit {
+  id: number;
+  subject: string;
+  from: string;
+  /** Date is in Unix milliseconds; 0 for none. */
+  date: number;
 }
 
 /** ReaderBody is a message's body as the reader page shows it. */
@@ -476,11 +487,12 @@ export const ComposePage = {
     return call("ComposePage.AddAttachments", revision);
   },
   /**
-   * Ask asks Wit about the calling window's draft (core Assist) and returns the
-   * run's ID; its events go to the window on WitStream.
+   * Ask asks Wit about the calling window's draft, with the mail the user
+   * quoted (message IDs; core AssistWith), and returns the run's ID; its
+   * events go to the window on WitStream.
    */
-  ask(input: string): Promise<number> {
-    return call("ComposePage.Ask", input);
+  ask(input: string, quoted: number[]): Promise<number> {
+    return call("ComposePage.Ask", input, quoted);
   },
   /**
    * Closed is the page's final flush for the close attempt gen, the payload
@@ -581,6 +593,10 @@ export const ComposePage = {
   save(e: ComposeEdit): Promise<SaveResult> {
     return call("ComposePage.Save", e);
   },
+  /** SearchMail is the quote picker's search (core Search, every account). */
+  searchMail(query: string): Promise<MailHit[]> {
+    return call("ComposePage.SearchMail", query);
+  },
   /**
    * Send sends exactly revision of the calling window's draft, else Conflict.
    * digest, from an earlier SendResult's warnings, sends despite them. Once
@@ -628,13 +644,14 @@ export const ComposePage = {
  */
 export const WitPage = {
   /**
-   * Ask asks input in conv, an ask conversation; 0 makes one first, which
+   * Ask asks input in conv, an ask conversation, with the mail the user quoted
+   * (message IDs; core AskWith); conv 0 makes one first, which
    * ConversationCreated hears of. The page follows conv from before the run
    * starts, unless a newer selection came meanwhile. Only Stop cancels the
    * run: a page reload does not.
    */
-  ask(conv: number, input: string): Promise<RunStart> {
-    return call("WitPage.Ask", conv, input);
+  ask(conv: number, input: string, quoted: number[]): Promise<RunStart> {
+    return call("WitPage.Ask", conv, input, quoted);
   },
   /**
    * Decide accepts or rejects approval, one of the conversation the page
@@ -649,6 +666,13 @@ export const WitPage = {
    */
   decideAll(run: number, accept: boolean): Promise<void> {
     return call("WitPage.DecideAll", run, accept);
+  },
+  /**
+   * DecideSession accepts approval and allows its tool for the rest of the
+   * conversation (本次对话都允许; core ResolveApprovalForConversation). As Decide.
+   */
+  decideSession(approval: number): Promise<void> {
+    return call("WitPage.DecideSession", approval);
   },
   /**
    * Follow makes the page follow conv, an ask conversation (0: none), and
@@ -681,6 +705,10 @@ export const WitPage = {
   /** OpenModels opens the model settings. */
   openModels(): Promise<void> {
     return call("WitPage.OpenModels");
+  },
+  /** SearchMail is the quote picker's search (core Search, every account). */
+  searchMail(query: string): Promise<MailHit[]> {
+    return call("WitPage.SearchMail", query);
   },
   /**
    * Stop cancels run: one the page's Ask started (a Stop pressed before Ask

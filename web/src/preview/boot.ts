@@ -95,7 +95,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   wit: {
-    states: ["conversation", "empty"],
+    // plus: the + menu open; picker: 引用邮件's search with hits; quoted: a quoted mail's chip
+    states: ["conversation", "empty", "plus", "picker", "quoted"],
     entry: () => import("@/wit-page/main"),
     setup() {
       const conv = state === "empty" ? 0 : 1;
@@ -110,7 +111,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Stop": nothing,
         "WitPage.Decide": nothing,
         "WitPage.DecideAll": nothing,
+        "WitPage.DecideSession": nothing,
+        "WitPage.SearchMail": async () => fx.mailHits,
       });
+      if (["plus", "picker", "quoted"].includes(state)) setTimeout(() => quote(state), 1200);
     },
   },
   signature: {
@@ -154,6 +158,25 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
 };
+
+/** Opens the + menu, then (picker, quoted) 引用邮件 with a search, then (quoted) picks a hit. */
+async function quote(step: string) {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  document.querySelector<HTMLElement>("button[aria-label='添加']")?.click();
+  await wait(300);
+  if (step === "plus") return;
+  [...document.querySelectorAll<HTMLElement>("[role=menuitem]")]
+    .find((e) => e.textContent?.includes("引用邮件"))
+    ?.click();
+  await wait(300);
+  const input = document.querySelector<HTMLInputElement>("input[type=search]");
+  if (!input) return;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Q4");
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await wait(500);
+  if (step === "picker") return;
+  document.querySelector<HTMLElement>("[role=dialog] button")?.click();
+}
 
 /** ⌘K on the second paragraph, as a user selecting it and pressing the shortcut does; retried until the page takes it. */
 function selectAndOpenCmdK(tries = 0) {

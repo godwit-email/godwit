@@ -9,6 +9,7 @@ var witKeys = []string{
 	"wit.tools.one", "wit.tools.other", "wit.suspect", "wit.suspect_quote", "wit.tool.create_draft", "wit.tool.classify_mail",
 	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
 	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
+	"wit.add", "wit.quote", "wit.quote.search", "wit.quote.none", "wit.quote.remove", "wit.approval.allow_session",
 	"link.title", "link.open", "link.copy", "link.copied",
 	"error.unknown", "error.invalid_state", "error.run_active", "error.stale_approval", "error.needs_grant",
 	"error.ai_not_configured", "error.model_not_found", "error.model_auth", "error.keychain", "error.too_large",

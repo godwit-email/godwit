@@ -172,6 +172,7 @@ const pending: Approval = {
   state: "pending",
   error: "",
   destinations: [],
+  sessionAllow: false,
   args: "",
 };
 const withPending: WitHistory = {
@@ -426,7 +427,7 @@ test("locked while running: typing in the body toasts once", async () => {
   vi.mocked(api.ask).mockResolvedValue(7);
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "改短{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短"));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", []));
   expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
   const b = await body();
   expect(b).toHaveAttribute("readonly");
@@ -593,7 +594,7 @@ test("after a ⌘K run, free input in the panel runs Ask", async () => {
     screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }),
     "更正式{Enter}",
   );
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式"));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式", []));
   expect(api.rewrite).toHaveBeenCalledTimes(1);
 });
 
@@ -651,7 +652,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
   // the next question can start: nothing waits
   vi.mocked(api.ask).mockResolvedValue(9);
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来"));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", []));
 });
 
 test("Stop while ⌘K starts stops its run once Rewrite returns it, never another run", async () => {
@@ -735,7 +736,7 @@ test("全部允许 on a run with a tool's call and a body edit settles both: the
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
   vi.mocked(api.ask).mockResolvedValue(9);
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来"));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", []));
 });
 
 test("a run's end drops its body edits no longer waiting", async () => {

@@ -231,12 +231,48 @@ func openConversation(ctx context.Context, svc *core.Service, draftID int64) (in
 
 func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
 
-// Ask asks Wit about the calling window's draft (core Assist) and returns the
-// run's ID; its events go to the window on WitStream.
-func (p *ComposePage) Ask(ctx context.Context, input string) (int64, error) {
+// Ask asks Wit about the calling window's draft, with the mail the user
+// quoted (message IDs; core AssistWith), and returns the run's ID; its
+// events go to the window on WitStream.
+func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64) (int64, error) {
 	return p.start(ctx, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
-		return svc.Assist(ctx, id, input)
+		return svc.AssistWith(ctx, id, input, quoted)
 	})
+}
+
+// SearchMail is the quote picker's search (core Search, every account).
+func (p *ComposePage) SearchMail(ctx context.Context, query string) ([]MailHit, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	s.mu.Unlock()
+	return searchMail(ctx, svc, query)
+}
+
+// MailHit is a message the quote picker offers.
+type MailHit struct {
+	ID      int64  `json:"id"`
+	Subject string `json:"subject"`
+	From    string `json:"from"`
+	// Date is in Unix milliseconds; 0 for none.
+	Date int64 `json:"date"`
+}
+
+// quoteHits caps the quote picker's results.
+const quoteHits = 8
+
+func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit, error) {
+	ms, err := svc.Search(ctx, 0, query, quoteHits)
+	out := make([]MailHit, 0, len(ms))
+	for _, m := range ms {
+		h := MailHit{ID: m.ID, Subject: m.Subject, From: m.From}
+		if !m.Date.IsZero() {
+			h.Date = m.Date.UnixMilli()
+		}
+		out = append(out, h)
+	}
+	return out, keyed(err)
 }
 
 // Skill runs skill id on the calling window's draft (core AssistSkill);

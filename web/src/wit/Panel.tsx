@@ -1,11 +1,13 @@
 import { useChat } from "@ai-sdk/react";
 import {
+  RiAddLine,
   RiAlertLine,
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
   RiEqualizerLine,
   RiLoaderLine,
+  RiMailLine,
   RiPlayFill,
   RiStopFill,
   RiTranslate2,
@@ -41,9 +43,10 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import type { Approval, Citation, WitHistory, WitInfo } from "@/mygo";
+import type { Approval, Citation, MailHit, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
+import { QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
 
@@ -117,12 +120,15 @@ function ToolCard({
   many,
   busy,
   decide,
+  session,
   t,
 }: {
   a: Approval;
   many: boolean;
   busy: boolean;
   decide(accept: boolean, all: boolean): void;
+  /** 本次对话都允许, where the host offers it and the call may take it. */
+  session?(): void;
   t: T;
 }) {
   let args: Record<string, unknown> = {};
@@ -175,6 +181,16 @@ function ToolCard({
         <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true, false)}>
           {t("wit.approval.allow")}
         </Button>
+        {session && (
+          <Button
+            variant="outline"
+            className="px-3 font-normal text-md"
+            disabled={busy}
+            onClick={session}
+          >
+            {t("wit.approval.allow_session")}
+          </Button>
+        )}
         {many && (
           <Button
             variant="outline"
@@ -371,6 +387,8 @@ export function Panel({
   onModels,
   ask: handed,
   onAsked,
+  onSearch,
+  onSession,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -390,6 +408,10 @@ export function Panel({
   /** A question the host hands over: asked once (by identity), then onAsked. */
   ask?: { text: string };
   onAsked?(): void;
+  /** Searches mail for the quote picker (+ → 引用邮件, or @); without it, no quoting. */
+  onSearch?(q: string): Promise<MailHit[]>;
+  /** Decides a with 本次对话都允许 (the Wit page only); true once decided. */
+  onSession?(a: Approval): Promise<boolean>;
 }) {
   // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
   // rebuilds it, then appends.
@@ -405,6 +427,8 @@ export function Panel({
   const [decided, setDecided] = useState<number[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
+  const [quoted, setQuoted] = useState<MailHit[]>([]);
+  const [picking, setPicking] = useState(false);
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
 
@@ -468,7 +492,13 @@ export function Panel({
     const text = draft.trim();
     if (!text || locked || running) return;
     setDraft("");
-    ask(text);
+    setQuoted([]);
+    setPicking(false);
+    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id) } : undefined);
+  };
+  const pick = (h: MailHit) => {
+    setQuoted((q) => (q.some((x) => x.id === h.id) ? q : [...q, h]));
+    setPicking(false);
   };
   const fail = (e: unknown) =>
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
@@ -511,6 +541,23 @@ export function Panel({
             setDeciding([]);
           }
         }}
+        session={
+          onSession && a.sessionAllow
+            ? async () => {
+                if (deciding.length > 0) return;
+                // the run's other pending calls of the tool are approved with it
+                const ids = open
+                  .filter((x) => x.run === a.run && x.tool === a.tool)
+                  .map((x) => x.id);
+                setDeciding(ids);
+                try {
+                  if (await onSession(a)) setDecided((d) => [...d, ...ids]);
+                } finally {
+                  setDeciding([]);
+                }
+              }
+            : undefined
+        }
         t={t}
       />
     );
@@ -615,12 +662,27 @@ export function Panel({
   const idle = locked || !draft.trim() || running;
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+      {picking && onSearch && (
+        <QuotePicker search={onSearch} onPick={pick} onClose={() => setPicking(false)} t={t} />
+      )}
+      {quoted.length > 0 && (
+        <QuoteChips
+          items={quoted}
+          onRemove={(id) => setQuoted((q) => q.filter((x) => x.id !== id))}
+          t={t}
+        />
+      )}
       <InputGroupTextarea
         aria-label={t(page ? "wit.input" : "wit.compose.input")}
         placeholder={t(page ? "wit.placeholder" : "wit.compose.placeholder")}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          if (e.key === "@" && onSearch && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            setPicking(true);
+            return;
+          }
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
             return;
           e.preventDefault();
@@ -630,12 +692,30 @@ export function Panel({
         // two lines at the least, as the design's rows="2"
         className={cn("min-h-9.5 p-0 text-md leading-5 md:text-md", page ? "max-h-44" : "max-h-40")}
       />
-      <InputGroupAddon align="block-end" className="justify-end gap-2 p-0">
+      <InputGroupAddon align="block-end" className="gap-2 p-0">
+        {onSearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <InputGroupButton variant="ghost" size="icon-sm" aria-label={t("wit.add")}>
+                  <RiAddLine className="size-4.5" />
+                </InputGroupButton>
+              }
+            />
+            <DropdownMenuContent side="top" className="min-w-45">
+              <DropdownMenuItem onClick={() => setPicking(true)}>
+                <RiMailLine className="text-muted-foreground" />
+                <span className="flex-1">{t("wit.quote")}</span>
+                <span className="text-muted-foreground/70 text-sm">@</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {model && (
           <InputGroupButton
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
+            className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
             title={t("wit.model")}
             onClick={onModels}
           >
@@ -645,6 +725,7 @@ export function Panel({
         )}
         {running && page ? (
           <InputGroupButton
+            className={cn(!model && "ml-auto")}
             variant="outline"
             size="icon-sm"
             aria-label={t("wit.stop")}
@@ -654,6 +735,7 @@ export function Panel({
           </InputGroupButton>
         ) : (
           <InputGroupButton
+            className={cn(!model && "ml-auto")}
             variant="default"
             size="icon-sm"
             aria-label={t("wit.send")}

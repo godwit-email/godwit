@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import {
+  type Approval,
   WitPage as api,
   events,
   type WitHistory,
@@ -44,9 +45,9 @@ export function WitPage() {
     let gen = 0; // the selection
     let creating: Promise<unknown> | undefined; // a first question's ask in flight
     const tr = new WitTransport({
-      ask: (text) => {
+      ask: (text, quoted = []) => {
         const g = gen;
-        const p = api.ask(conv.current, text).then((rs) => {
+        const p = api.ask(conv.current, text, quoted).then((rs) => {
           if (g === gen) conv.current = rs.conversation;
           return rs.run;
         });
@@ -184,6 +185,15 @@ function Conversation({
       return false;
     }
   };
+  const onSession = async (a: Approval) => {
+    try {
+      await decide(a.run, () => api.decideSession(a.id));
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  };
   return (
     <Panel
       layout="page"
@@ -192,6 +202,8 @@ function Conversation({
       locked={false}
       resume={resume}
       onDecide={onDecide}
+      onSession={onSession}
+      onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}
       onCite={(id) => void api.openCited(id).catch(fail)}
       ask={handed}

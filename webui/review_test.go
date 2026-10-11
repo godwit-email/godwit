@@ -22,7 +22,7 @@ const inlineNew = `<p>Hello <b>Lena</b>, see <a href="https://cal.example/x">the
 func (f *fixture) propose(t *testing.T, llm *coretest.LLM, html string) Approval {
 	t.Helper()
 	llm.Script(proposeTurn("c1", html), coretest.Turn{Text: []string{"改好了。"}})
-	_, err := f.page.Ask(f.ctx(1), "改一下")
+	_, err := f.page.Ask(f.ctx(1), "改一下", nil)
 	require.NoError(t, err)
 	ev := f.waitKind(t, 1, "interrupted")
 	require.Len(t, ev.Approvals, 1)
@@ -157,7 +157,7 @@ func TestComposeFinishPartialStale(t *testing.T) {
 func TestComposeUndo(t *testing.T) {
 	f, d, llm := witFixture(t, "")
 	llm.Script(proposeTurn("", "<p>Thanks, Lena!</p>"), coretest.Turn{Text: []string{"写好了"}})
-	_, err := f.page.Ask(f.ctx(1), "写一封感谢信")
+	_, err := f.page.Ask(f.ctx(1), "写一封感谢信", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	before := f.stored(t, d.ID)

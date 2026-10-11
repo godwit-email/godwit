@@ -2,6 +2,7 @@ import type {
   Approval,
   Citation,
   ComposeState,
+  MailHit,
   Review,
   ReviewOp,
   SignatureState,
@@ -147,6 +148,7 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
   state: "pending",
   error: "",
   destinations: [],
+  sessionAllow: false,
   args: "",
   ...p,
 });
@@ -338,9 +340,20 @@ export const witConversation = (): WitHistory =>
         tool: "create_draft",
         summary: "创建草稿",
         args: createDraft.args,
+        sessionAllow: true,
       }),
     ],
   });
+/** The quote picker's hits (invented UI: the mockup shows only 引用邮件). */
+export const mailHits: MailHit[] = [
+  {
+    id: 41,
+    subject: "Q4 partnership proposal",
+    from: "Lena Fischer <lena@partner.example>",
+    date: 0,
+  },
+  { id: 42, subject: "Re: Q4 webinar dates", from: "Lena Fischer <lena@partner.example>", date: 0 },
+];
 export const witEmpty = (): WitHistory => history({ conversation: 0, messages: [] });
 
 export const witPage = (mode: "light" | "dark", conversation: number): WitPageState => ({

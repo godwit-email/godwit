@@ -23,6 +23,7 @@ var composeKeys = []string{
 	"wit.input", "wit.placeholder", "wit.send", "wit.stop", "wit.loading", "wit.scroll_end", "wit.thinking", "wit.tools.one", "wit.tools.other", "wit.tools.called", "wit.suspect", "wit.suspect_quote", "wit.model",
 	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
 	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
+	"wit.add", "wit.quote", "wit.quote.search", "wit.quote.none", "wit.quote.remove", "wit.approval.allow_session",
 	"wit.compose.input", "wit.compose.placeholder", "wit.compose.empty", "wit.compose.writing_banner", "wit.compose.working",
 	"wit.compose.locked", "wit.compose.pending.one", "wit.compose.pending.other",
 	"wit.compose.accept_all", "wit.compose.reject_all", "wit.compose.accept", "wit.compose.reject",

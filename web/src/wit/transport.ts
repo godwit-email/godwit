@@ -9,8 +9,8 @@ import {
   type WitResult,
 } from "@/mygo";
 
-/** A question's request: free text, or a skill (with its language) when set. */
-export type WitMeta = { skill?: string; lang?: string };
+/** A question's request: free text (with the mail it quotes), or a skill (with its language) when set. */
+export type WitMeta = { skill?: string; lang?: string; quoted?: number[] };
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
 /** A question or an answer in the panel. Wit's tools are untyped here: dynamic-tool parts. */
@@ -276,7 +276,7 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
  * follow reads the conversation the host shows (subscribing to it); stop cancels a run.
  */
 export type WitApi = {
-  ask(text: string): Promise<number>;
+  ask(text: string, quoted?: number[]): Promise<number>;
   skill?(id: string, lang: string): Promise<number>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
@@ -482,7 +482,13 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     };
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
-    (skill && this.api.skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
+    const quoted = m?.metadata?.quoted;
+    (skill && this.api.skill
+      ? this.api.skill(skill, m?.metadata?.lang ?? "")
+      : quoted?.length
+        ? this.api.ask(text, quoted)
+        : this.api.ask(text)
+    )
       .then(
         (run) => {
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown

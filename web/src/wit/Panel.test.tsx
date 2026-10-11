@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Approval, WitEvent, WitHistory, WitInfo } from "@/mygo";
+import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
@@ -45,6 +45,12 @@ const t = makeT({
   "mail.no_subject": "（无主题）",
   "link.title": "打开这个链接？",
   "link.open": "打开",
+  "wit.add": "添加",
+  "wit.quote": "引用邮件",
+  "wit.quote.search": "搜索邮件",
+  "wit.quote.none": "没有找到邮件",
+  "wit.quote.remove": "移除 %s",
+  "wit.approval.allow_session": "本次对话都允许",
 });
 
 const info: WitInfo = {
@@ -85,6 +91,8 @@ async function setup(
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
     onCite?(id: number): void;
+    onSearch?(q: string): Promise<MailHit[]>;
+    onSession?(a: Approval): Promise<boolean>;
     page?: boolean;
   } = {},
 ) {
@@ -113,6 +121,8 @@ async function setup(
       onDecide={o.onDecide}
       onLink={onLink}
       onCite={o.onCite}
+      onSearch={o.onSearch}
+      onSession={o.onSession}
       layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
@@ -306,6 +316,7 @@ describe("Panel", () => {
             error: "",
             destinations: [],
             args: "{}",
+            sessionAllow: false,
           },
         ],
       },
@@ -416,6 +427,7 @@ describe("Panel", () => {
       error: "",
       destinations: [],
       args: "",
+      sessionAllow: false,
     };
     const history = (approvals: Approval[]): WitHistory => ({
       ...empty,
@@ -509,6 +521,7 @@ describe("Panel", () => {
       error: "",
       destinations: ["api.x.com", "cdn.x.com"],
       args,
+      sessionAllow: false,
     });
     const a = tool(
       5,
@@ -582,6 +595,7 @@ describe("Panel", () => {
       error: "",
       destinations: [],
       args: "{}",
+      sessionAllow: false,
     });
     emit({ kind: "tool_call", call: call("p1") });
     emit({ kind: "tool_call", call: call("p2") });
@@ -755,5 +769,108 @@ describe("Panel", () => {
     }
     await user.click(screen.getAllByRole("button", { name: /\[2\] f51/ })[0]);
     expect(onCite).toHaveBeenCalledWith(51);
+  });
+
+  it("引用邮件 @ in the + menu, or typing @, opens the picker; a pick is a chip sent with the question", async () => {
+    const user = userEvent.setup();
+    const hit: MailHit = { id: 42, subject: "Q4 partnership", from: "Lena <lena@x>", date: 0 };
+    const onSearch = vi.fn().mockResolvedValue([hit]);
+    const { api } = await setup({ onSearch, page: true });
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    const item = await screen.findByRole("menuitem", { name: /引用邮件/ });
+    expect(item).toHaveTextContent("@");
+    await user.click(item);
+    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "partner");
+    await waitFor(() => expect(onSearch).toHaveBeenLastCalledWith("partner"));
+    await user.click(await screen.findByRole("button", { name: /Q4 partnership/ }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "移除 Q4 partnership" })).toBeInTheDocument();
+
+    await user.type(input("向 Wit 提问"), "总结@");
+    expect(input("向 Wit 提问")).toHaveValue("总结"); // the @ opens the picker instead
+    expect(screen.getByRole("searchbox", { name: "搜索邮件" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    await user.type(input("向 Wit 提问"), "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [42]));
+    expect(screen.queryByRole("button", { name: "移除 Q4 partnership" })).toBeNull(); // sent: cleared
+  });
+
+  it("a chip's ✕ drops it; no match says so; without a search there is no +", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 1, subject: "", from: "a@x", date: 0 }])
+      .mockResolvedValue([]);
+    const { api, unmount } = await setup({ onSearch });
+    await user.type(input(), "@");
+    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "a");
+    await user.click(await screen.findByRole("button", { name: /（无主题）/ }));
+    await user.click(screen.getByRole("button", { name: "移除 （无主题）" }));
+    expect(screen.queryByRole("button", { name: /移除/ })).toBeNull();
+    await user.type(input(), "@");
+    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "zz");
+    expect(await screen.findByText("没有找到邮件")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.type(input(), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("hi"));
+    unmount();
+    await setup();
+    expect(screen.queryByRole("button", { name: "添加" })).toBeNull();
+  });
+
+  it("本次对话都允许 shows on a card that allows it, when the host does", async () => {
+    const user = userEvent.setup();
+    const a: Approval = {
+      id: 5,
+      run: 7,
+      callId: "p1",
+      tool: "create_draft",
+      summary: "",
+      state: "pending",
+      error: "",
+      destinations: [],
+      args: "{}",
+      sessionAllow: true,
+    };
+    const history: WitHistory = {
+      ...empty,
+      messages: [
+        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "a1",
+          role: "assistant",
+          text: "",
+          calls: [{ id: "p1", name: "create_draft", args: "{}" }],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
+      ],
+      approvals: [a],
+    };
+    const onSession = vi.fn().mockResolvedValue(true);
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const r = await setup({ history, onDecide, onSession, page: true });
+    const buttons = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(buttons.slice(buttons.indexOf("允许"), buttons.indexOf("允许") + 3)).toEqual([
+      "允许",
+      "本次对话都允许",
+      "拒绝",
+    ]);
+    expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "本次对话都允许" }));
+    expect(onSession).toHaveBeenCalledWith(a);
+    expect(onDecide).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("Wit 想要：创建草稿")).toBeNull());
+    r.unmount();
+    await setup({
+      history: { ...history, approvals: [{ ...a, sessionAllow: false }] },
+      onSession,
+      page: true,
+    });
+    expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this tool
+    await setup({ history, onDecide });
+    expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this host (compose)
   });
 });
