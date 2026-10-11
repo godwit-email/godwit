@@ -35,6 +35,9 @@ Everything around the body stays native.
   - **`Image` is refused** for a message the user hasn't allowed, and for a URL that is not in that message's sanitised body.
   - **Inline `cid:` images** already arrive as `data:` from core.
 - **Scope:** every `ReaderPage` method checks the role and acts only on the caller page's own message (registered with the page). A reader page can't read another message.
+- **The iframe's own CSP comes first in `srcdoc`:** `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`. It is the first element, before any mail content. Both it and the parent's CSP apply, so not even a same-origin http image (the dev server) can load. Never rely on clearing `src` after load.
+- **Inline images get the same budgets as remote ones.** Go validates every `data:` image in the sanitised body before returning it: format png/jpeg/gif/webp, ≤ 5 MB, ≤ 40 MP each, ≤ 50 images and ≤ 100 MP per message, all shared with that message's remote images. An image over budget has its `src` removed (alt kept).
+- **Structural limits:** Go truncates the sanitised HTML with the same limits `richtext.DefaultLimits` applies today (depth 20, blocks 5000, table cells 2000, inlines 20000), cutting at an element boundary. `Cut` is reported, and the native truncated notice keeps working.
 - **Navigation:** each reader page is locked like the others: entry-only navigation, no window opens.
 - **Links:** sanitized links carry `data-href` only. The parent page intercepts clicks in the iframe and calls `OpenLink`, which runs the native `App.openLink`: http/https → the native confirmation dialog; mailto → compose window.
 - **Appearance:** HTML mail sits on a white sheet with no inversion in dark mode (spec §E3). Plain text follows the theme, at the body font size. Add `BodyFontSize` to the page's state and theme events.
@@ -64,12 +67,13 @@ Everything around the body stays native.
 
 **Interfaces (produced, bound as `ReaderPage`):**
 ```go
-type ReaderBody struct{ Message int64; HTML, Text string; Remote bool; Theme Theme; BodyFontSize float32; Text map[string]string } // HTML sanitized (loadRemote = Remote); Text when the mail has no HTML
+type ReaderBody struct{ Message, Version int64; HTML, Plain string; Remote, Cut bool; Theme Theme; Text map[string]string } // HTML sanitized (loadRemote = Remote), inline images budgeted, structurally truncated (Cut); Plain when the mail has no HTML; Version bumps on every change (Allow) so the page drops a stale Load
 func (p *ReaderPage) Load(ctx) (ReaderBody, error)              // the caller page's message
 func (p *ReaderPage) Height(ctx, px int) error                  // → Reader.OnHeight(message, px)
 func (p *ReaderPage) Wheel(ctx, dy float64) error               // → Reader.OnWheel(dy)
 func (p *ReaderPage) OpenLink(ctx, url string) error            // → Reader.OnLink(url) (native App.openLink)
-func (p *ReaderPage) Image(ctx, url string) (string, error)     // data: URL; refused unless the message is allowed AND url appears in its sanitized HTML
+func (p *ReaderPage) Image(ctx, url string) (string, error)     // data: URL; refused unless the message is allowed AND url appears in its sanitized HTML; per-message budgets (count, bytes, pixels) and a whole-message deadline of 60 s on top of the 15 s per request
+func (p *ReaderPage) Navigate(ctx, dir int) error               // ⌘[ / ⌘] from inside the body
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that page: body changed (加载图片, retry)
 // unbound: Reader{ SetService; Bind(pageKey any, message int64); Unbind(pageKey); Allow(message int64) /* re-sanitize with remote and emit ReaderReload */; deps OnHeight/OnWheel/OnLink }
 ```
@@ -85,7 +89,10 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that p
   - `TestReaderImageRefusedUntilAllowed`: `Image` before `Allow(M)` → refused, and no request reaches the test server.
   - `TestReaderImageAfterAllow`: after `Allow(M)`, `Image(url in body)` → a `data:` URL; the server sees one request with no Cookie and no Referer.
   - `TestReaderImageRefusedNotInBody`: a URL not in the body → refused.
-  - `TestReaderAllowReloads`: `Allow(M)` emits `ReaderReload` with `Remote == true` to M's page only.
+  - `TestReaderAllowReloads`: `Allow(M)` emits `ReaderReload` with `Remote == true` and a newer `Version`, to M's page only (`EmitPage`).
+  - `TestReaderInlineImageBudgets`: a CID image over 5 MB, one over 40 MP, and the 51st image are each dropped from the body; the shared per-message budget counts inline and remote images together.
+  - `TestReaderStructuralCut`: a body over the limits → truncated at an element boundary, `Cut == true`; a normal body → `Cut == false`.
+  - `TestReaderImageMessageDeadline`: a slow server → images stop after the per-message deadline.
   - `app` image tests (`TestImageBudgets`, `TestImageTotalBudget`, `TestInlineImageBudgets`) still pass on the moved fetcher.
 - [ ] **Step 2–4:** Run → FAIL; implement; `go test -race ./webui ./internal/imagefetch ./app`; `mise run generate`.
 - [ ] **Step 5: Commit** `feat(webui): the reader page service; image fetching shared`
@@ -108,6 +115,7 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that p
 
 **Reader changes:**
 - `msgBody` gains `view`, `close`, `height`.
+  - **Lifecycle guards:** a view is created only if, at that moment on the UI thread, the body is current (same `r.gen`), the message is still expanded, and it has no view. `close` clears the handle. Callbacks from a page whose view was closed (height, wheel, link) are dropped by the page-key check. Re-expanding a folded message recreates its view.
   - `expand` / `loadBody` create the view once the body is ready.
   - `toggle` (fold), `reset` and thread change call `close`.
 - `message()` renders `ui.WebView(c, b.view).Height(b.height)` (a minimum of one line until the first report) in place of `richtext.Render`. While the translation shows, the native translation renders instead, and the view isn't built, so it hides.
@@ -118,13 +126,16 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that p
 - The truncated notice, attachments, AI area, cards and quick replies are unchanged.
 
 - [ ] **Step 1: Failing tests** (fake `NativeWebView` and fake Platform seam, as `ask_test.go`):
-  - `TestReaderWebViewsLifecycle` (Review Focus 3): open a thread with two unread messages and one read → two views; fold one → closed; switch thread → all closed; no leftover registrations.
+  - `TestReaderWebViewsLifecycle` (Review Focus 3): open a thread with two unread messages and one read → two views; fold one → closed; re-expand → recreated; switch thread → all closed; no leftover registrations.
+  - `TestReaderFoldDuringLoad`: the body arrives after a fold → no view is created; expanding again creates one.
+  - `TestReaderSwitchDuringCreate`: a thread switch while a view is being created → it is closed, nothing is shown.
+  - `TestReaderTranslationHidesView`: when the translation is shown, the body view isn't built (hidden); 显示原文 shows it again.
   - `TestReaderHeightApplied`: `OnHeight(M, 640)` → that body's element height is 640.
   - `TestReaderWheelMovesScroll` (Review Focus 4): `OnWheel(120)` → `scroll.Y` +120, clamped.
   - `TestReaderLoadImagesAllows`: 加载图片 → `Allow(M)` called; the notice hides.
   - `TestLinkConfirm` (retargeted): `OnLink("https://…")` → the native dialog; 打开 → `OpenURL`.
   - **Retarget** `TestReaderRemoteImages` to the new flow (the Go fetch assertions live in Task 1).
-  - **Keep** the tests that don't touch body rendering. Drop or retarget the ones that asserted body text through native richtext, with a test mapping in the report.
+  - **Retarget** every test that asserted body text through native richtext — including `TestReaderThreadCollapse` and the original-text assertions in `app/reader_ai_test.go` — to the web view's presence (fake view per message) or to the Go `ReaderPage.Load` content. Keep the other tests as they are. Put a full mapping in the report.
 - [ ] **Step 2–4:** Run → FAIL; implement; `go test ./...`, `go vet ./...`, `go test -race ./app ./webui ./cmd/godwit`.
 - [ ] **Step 5: Commit** `feat: reader bodies are embedded web pages (native side)`
 
@@ -136,20 +147,28 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that p
 
 **Behaviour:**
 - **Startup.** Register `readerBody` and `theme` listeners first, then `ReaderPage.load()`.
+- **Startup order:** register listeners, then `load()`; apply a body only if its `version` is newer than the one held (as `WitPage.tsx`'s guard).
 - **The iframe document.**
-  - The parent builds a `srcdoc`: `<!doctype html><meta charset=utf-8>`, a `<base target=_self>`, our own base CSS, then the body.
+  - The parent builds a `srcdoc`: `<!doctype html><meta charset=utf-8>`, then the iframe CSP meta (Global Constraints) as the first element of the head, our base CSS, then the body wrapped in `<div id=godwit-body>`.
   - **HTML mail:** white background, `#0a0a0a` text default, `img{max-width:100%;height:auto}`, wrapping tables, `word-break: break-word`. It is not inverted in dark mode.
   - **Plain text:** `white-space: pre-wrap`, theme colours and the body font size.
 - **The iframe element.** `sandbox="allow-same-origin"`; `style="border:0;width:100%;display:block"`; `scrolling="no"`.
-- **Height.** After load, measure `contentDocument.documentElement.scrollHeight` and call `height(px)` when it changes. Re-measure on ResizeObserver over the iframe document's root, on each `<img>` load or error, and on window resize. Debounce to one call per animation frame.
-- **Links.** On a click in the iframe document, find the closest element with `data-href`; call `preventDefault` and then `openLink(href)`. Any other click that would navigate is prevented.
+- **Height.** Measure the content wrapper (`#godwit-body`'s `getBoundingClientRect().height` plus body margins), not `scrollHeight`, which never shrinks below the viewport. Call `height(px)` when it changes. Re-measure on ResizeObserver over the wrapper, on each `<img>` load or error, and on window resize; one call per animation frame. The iframe's own height is set only from Go's applied value, so it can't feed back.
+- **Links.** The parent marks each `[data-href]` in the iframe document with `tabindex=0` and `role=link`.
+  - Click, or Enter on a focused link → `openLink(href)`.
+  - Any other click that would navigate is prevented.
+- **Shortcuts.** ⌘[ / ⌘] pressed inside the iframe window → `navigate(∓1)`, just as the parent window does (`forwardShortcuts` attached to both windows).
 - **Images (remote allowed).** For each `<img src^="http">` in the iframe: set `src` to empty first, so no request goes out (the CSP blocks it anyway), then `image(url)` and set the returned `data:`. Failures leave the alt text.
 - **Wheel.** Listen on `iframe.contentWindow` with `{passive:false}`. A wheel whose vertical part outweighs the horizontal → `preventDefault`, add to `pending`, and once per `requestAnimationFrame` call `wheel(pending)`. Horizontal wheels over wide content stay in the iframe, which may scroll horizontally.
 - **Selection and copy** work natively. The Edit menu reaches the page.
 
 - [ ] **Step 1: Failing tests** (jsdom; `frame.ts` is unit-tested on strings):
   - `hostile body stays inert` (Review Focus 1): the built `srcdoc` has no `<script>`, no `<meta http-equiv>`, no `on*` attributes, and no `javascript:`. The iframe has exactly `sandbox="allow-same-origin"` (Go already sanitises; this asserts the parent adds nothing unsafe).
-  - `height follows content` (Review Focus 2): a mocked document whose `scrollHeight` changes → `height` is called with each new value, at most once per frame.
+  - `height follows content` (Review Focus 2): the wrapper's height changes, large to small and small to large → `height` is called with each new value, at most once per frame.
+  - `stale load ignored`: `readerBody` arrives with version 2, then the version-1 `load` resolves → version 2 stays.
+  - `iframe csp first`: the built srcdoc's first head element is the CSP meta, with `img-src data:`.
+  - `keyboard link`: Enter on a focused `[data-href]` → `openLink`.
+  - `shortcuts from iframe`: ⌘[ inside the iframe → `navigate(-1)`.
   - `wheel coalesces per frame` (Review Focus 4): three wheel events in one frame → one `wheel(sum)`.
   - `link click opens via Go`: a click on an element with `data-href` → `openLink(url)`; navigation is prevented.
   - `remote images swapped after allow`: a `readerBody` with `remote: true` → each http img gets the `data:` from `image()`.
@@ -169,7 +188,10 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")      // Go → that p
 5. Click a link: the native dialog appears.
 6. Click a `mailto` link: a compose window opens.
 7. Resize the window: heights follow.
-8. Open a 20-message thread and expand all: note memory (Activity Monitor) and creation time. If it is unacceptable, record it in the ledger and the PR (spec §G fallback: create only for visible bodies).
+8. Open a 20-message thread and expand all: note memory (Activity Monitor) and the time to show all bodies.
+   - **Acceptance:** +300 MB or less over the app with no reader open, and all bodies shown within 2 s on the user's Mac.
+   - **Over that:** a follow-up task in this plan creates views only for bodies within one screen of the viewport and closes them beyond three screens. This is a delivery condition, not a note.
+9. In WebKit for real, check that the iframe runs no script, makes no request (Network tab, incl. dev server URLs), selects text, and hands off wheels (jsdom can't prove these).
 
 Record the results in the PR body.
 
@@ -185,3 +207,14 @@ Record the results in the PR body.
   - Update spec §E3.
 - **Ruling: ⌘F find deferred.** *Why:* it is not present today, and mygo's FindInPage doesn't search iframes. *Cost:* none versus today. Update spec §E2.
 - **Ruling: translation stays native.** The web view hides while it shows.
+- **Codex review (plan v1) folded in:**
+  - inline image budgets, and the iframe's own strict CSP first;
+  - lifecycle guards for fold, re-expand and switch;
+  - height from an inner wrapper;
+  - versioned body against a stale `Load`;
+  - keyboard links and ⌘[ / ⌘] from inside the iframe;
+  - structural truncation in Go with `Cut`;
+  - fuller test retargeting, including `reader_ai_test`;
+  - real WebKit verification;
+  - a numeric performance gate, with visible-only views as the fallback task;
+  - a whole-message image deadline.
