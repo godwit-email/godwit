@@ -67,6 +67,12 @@ var providerFormats = map[string]struct{ gen, judge []string }{
 	ProviderOther:     {[]string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}, []string{string(ai.FormatDecisions), string(ai.FormatSystemOne)}},
 }
 
+// ProviderFormats are the generate kinds and judge formats provider p offers, in the dialog's order.
+func ProviderFormats(p string) (gen, judge []string) {
+	f := providerFormats[p]
+	return slices.Clone(f.gen), slices.Clone(f.judge)
+}
+
 // inferProvider is the provider of a service added without one, as the
 // migration infers it for older services: by host, else other.
 func inferProvider(base, kind string) string {

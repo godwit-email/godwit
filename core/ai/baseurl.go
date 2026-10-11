@@ -58,21 +58,3 @@ func Endpoint(kind, base string) string {
 // AnthropicBase is the root the Anthropic SDK and its /v1 paths expect: the
 // base without a trailing "/v1" (older Godwits stored it so).
 func AnthropicBase(base string) string { return strings.TrimSuffix(base, "/v1") }
-
-type Preset struct {
-	ID, Name, Kind, BaseURL, HelpURL string
-	KeyRequired                      bool
-}
-
-func Presets() []Preset {
-	return []Preset{
-		{"openai", "OpenAI", KindResponses, "https://api.openai.com/v1", "https://platform.openai.com/api-keys", true},
-		{"anthropic", "Anthropic", KindAnthropic, "https://api.anthropic.com", "https://console.anthropic.com/settings/keys", true},
-		{"openrouter", "OpenRouter", KindOpenAI, "https://openrouter.ai/api/v1", "https://openrouter.ai/settings/keys", true},
-		{"gemini", "Google Gemini", KindOpenAI, "https://generativelanguage.googleapis.com/v1beta/openai", "https://aistudio.google.com/apikey", true},
-		{"deepseek", "DeepSeek", KindOpenAI, "https://api.deepseek.com", "https://platform.deepseek.com/api_keys", true},
-		{"groq", "Groq", KindOpenAI, "https://api.groq.com/openai/v1", "https://console.groq.com/keys", true},
-		{"ollama", "Ollama", KindOpenAI, "http://localhost:11434/v1", "https://docs.ollama.com/api/openai-compatibility", false},
-		{"lmstudio", "LM Studio", KindOpenAI, "http://localhost:1234/v1", "https://lmstudio.ai/docs/developer/openai-compat", false},
-	}
-}

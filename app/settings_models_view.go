@@ -1,9 +1,8 @@
 package app
 
 import (
-	"context"
+	"cmp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -177,51 +176,57 @@ func (m *modelsView) dialog(c *ui.Context) {
 		m.open = false
 		return
 	}
+	f.follow()
 	f.edited()
-	title := i18n.T("settings.models.dialog.add")
+	title, desc := i18n.T("settings.models.dialog.add"), i18n.T("settings.models.dialog.desc")
 	if f.id != 0 {
-		title = i18n.Tf("settings.models.edit", f.title)
+		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+f.baseURL
 	}
-	kit.DialogWide(c, &m.open, title, func() {
-		ui.Scroll(c).MaxHeight(theme.DialogBodyMax).Children(func() { m.formView(c, f) })
-	}, func() { m.footer(c, f) })
+	kit.DialogWide(c, &m.open, title, desc, func() { m.formView(c, f) }, func() { m.footer(c, f) })
 	if !m.open { // closed by Escape or a click outside
 		m.close()
 	}
 }
 
 func (m *modelsView) footer(c *ui.Context, f *modelForm) {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if f.confirmDel {
-		ui.Row(c).Grow(1).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.DangerBg).Border(theme.Hairline, t.DangerBorder).Children(func() {
-			ui.Text(c, i18n.Tf("settings.models.del_confirm", f.title)).TextColor(t.DangerText).Grow(1).Shrink(1)
-			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.confirmDel = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive, Disabled: f.busy}).OnClick(func() { m.remove(f) })
-		})
+		kit.DialogBar(c, true, func() {
+			ui.Text(c, i18n.Tf("settings.models.del_confirm", f.name)).TextColor(t.DangerText).Grow(1).Shrink(1)
+			footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { f.confirmDel = false })
+			footButton(c, i18n.T("common.delete"), kit.Default, f.busy).Background(t.Danger).TextColor(t.OnSolid).OnClick(func() { m.remove(f) })
+		}).Label(i18n.T("settings.models.del_title"))
 		return
 	}
-	if f.id != 0 {
-		kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Ghost, Disabled: f.busy}).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
-	}
-	ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-		switch {
-		case f.testing:
-			kit.Spinner(c)
-		case f.testMsg != "" && f.testOK:
-			kit.StatusDot(c, kit.OK)
-			kit.Text(c, f.testMsg, t.Text.Sm).TextColor(t.Success)
-		case f.testMsg != "":
-			kit.StatusDot(c, kit.Error)
-			kit.Text(c, f.testMsg, t.Text.Sm).TextColor(t.Danger).Shrink(1)
+	kit.DialogBar(c, false, func() {
+		if f.id != 0 {
+			footButton(c, i18n.T("settings.models.remove"), kit.Ghost, f.busy).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
+		}
+		kit.Text(c, f.hint(), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+		label := i18n.T("settings.models.test")
+		if f.testing() {
+			label = i18n.T("settings.models.test.busy")
+		}
+		// Blocked buttons keep the design's colors: a disabled element is drawn at half opacity; their clicks do nothing.
+		test := footButton(c, label, kit.Outline, false).OnClick(func() { m.test(f) })
+		if f.cantTest() {
+			test.TextColor(t.Idle).Background(t.Background)
+		}
+		footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(m.close)
+		save := i18n.T("common.save")
+		if f.id == 0 {
+			save = i18n.T("settings.models.confirm_add")
+		}
+		b := footButton(c, save, kit.Default, f.busy).PaddingX(c.Theme().Space(4)).OnClick(func() { m.save(f) })
+		if f.blocked() {
+			b.Background(t.Hover).TextColor(t.Muted)
 		}
 	})
-	kit.Button(c, i18n.T("settings.models.test"), kit.ButtonOpts{Variant: kit.Outline, Disabled: f.id == 0 || f.testing}).OnClick(func() { m.test(f) })
-	kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.close)
-	save := i18n.T("common.save")
-	if f.id == 0 {
-		save = i18n.T("settings.models.confirm_add")
-	}
-	kit.Button(c, save, kit.ButtonOpts{Disabled: f.busy}).OnClick(func() { m.save(f) })
+}
+
+// footButton is a dialog footer's button: 12 across, flat.
+func footButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled, Flat: true}).PaddingX(c.Theme().Space(3))
 }
 
 // formRow is a label in its own 96 px column beside the control; the label
@@ -230,7 +235,8 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 	th := c.Theme()
 	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
 		var in ui.Element
-		l := ui.Text(c, label).FontWeight(500).Width(theme.FormLabelWidth).Shrink(0)
+		// 4 down: where the design's 32 px line box (Geist's metrics) puts the glyphs, a little above center
+		l := ui.Text(c, label).Width(theme.FormLabelWidth).Shrink(0).LineHeight(theme.LineRow).Margin(th.Space(1), 0, 0, 0)
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1.5)).Children(func() {
 			in = control().Label(label)
 			if extra != nil {
@@ -244,31 +250,14 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 }
 
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
-	a := m.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(4)).Children(func() {
-		if f.id == 0 {
-			m.tiles(c, f)
-		}
-		formRow(c, i18n.T("settings.models.kind"), func() ui.Element {
-			return ui.Row(c).Wrap().Gap(th.Space(4)).Children(func() {
-				for _, k := range []string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic} {
-					kit.Radio(c.Key(k), &f.kind, k, kindLabel(k))
-				}
-			})
+	if f.id == 0 {
+		m.tiles(c, f)
+	}
+	ui.Column(c).Gap(th.Space(3)).Children(func() {
+		formRow(c, i18n.T("settings.models.name"), func() ui.Element {
+			return kit.Input(c, &f.name, kit.InputOpts{Placeholder: i18n.T("settings.models.name.ph"), Flat: true})
 		}, nil)
-		formRow(c, i18n.T("settings.models.name"), func() ui.Element { return kit.Input(c, &f.name, kit.InputOpts{}) }, func() {
-			if f.slug == "" {
-				return
-			}
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				kit.Text(c, i18n.Tf("settings.models.slug", f.slug), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
-					c.WriteClipboard(f.slug)
-					a.toast(i18n.T("link.copied"))
-				}
-			})
-		})
 		var urlErr string
 		if f.urlErr != "" && f.baseURL == f.urlBad {
 			urlErr = f.urlErr
@@ -276,82 +265,209 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		formRow(c, i18n.T("settings.models.base_url"), func() ui.Element {
 			var in ui.Element
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				in = kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true, Invalid: urlErr != ""}).Grow(1).Shrink(1)
+				in = kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true, Invalid: urlErr != "", Placeholder: i18n.T("settings.models.url.ph"), Flat: true}).Grow(1).Shrink(1)
 				focused := in.Focused()
 				if f.urlFocus && !focused {
 					f.normalize()
 				}
 				f.urlFocus = focused
-				if f.defURL != "" && f.baseURL != f.defURL {
-					kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { f.baseURL = f.defURL })
+				if f.canResetURL() {
+					kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost}).PaddingX(th.Space(2.5)).TextColor(t.Muted).FontWeight(400).
+						OnClick(func() { f.baseURL = providerURL[f.provider] })
 				}
 			})
 			return in
 		}, func() {
-			if f.preset == presetCustom {
-				m.commonChips(c, f)
+			if f.custom() {
+				m.gatewayChips(c, f)
 			}
 			if urlErr != "" {
 				kit.Text(c, urlErr, t.Text.Sm).TextColor(t.Danger)
-			} else if u, err := core.NormalizeModelBaseURL(strings.TrimSpace(f.baseURL)); err == nil {
-				kit.Text(c, i18n.Tf("settings.models.endpoint", core.ModelEndpoint(f.kind, u)), t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		m.keyField(c, f)
-		formRow(c, i18n.T("settings.models.models"), func() ui.Element { return m.modelChips(c, f) }, func() { m.modelNote(c, f) })
+	})
+	ui.Column(c).Gap(th.Space(2)).Children(func() {
+		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
+			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600).LineHeight(theme.LineFor(i18n.T("settings.models.caps")))
+			kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+		})
+		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
+		gen, judge := core.ProviderFormats(f.provider)
+		capCard(c, i18n.T("settings.models.use.gen"), i18n.T("settings.models.use.gen.desc"), i18n.Tf("settings.models.gen.unsupported", svcProvider(f.provider)),
+			i18n.T("settings.models.gen.switch"), len(gen) > 0, &f.genOn, genWarn, func() {
+				formatSegments(c, i18n.T("settings.models.gen.formats"), gen, &f.kind)
+				reqLine(c, gen, f.kind, core.ModelEndpoint(f.kind, f.url()))
+				m.modelChips(c, f)
+				m.modelNote(c, f)
+				capStatus(c, f.gen)
+			})
+		capCard(c, i18n.T("settings.models.use.judge"), i18n.T("settings.models.judge.desc"), i18n.Tf("settings.models.judge.unsupported", svcProvider(f.provider)),
+			i18n.T("settings.models.judge.switch"), len(judge) > 0, &f.judgeOn, judgeWarn, func() {
+				if formatSegments(c, i18n.T("settings.models.judge.formats"), judge, &f.judgeFormat) {
+					f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
+				}
+				reqLine(c, judge, f.judgeFormat, f.url()+ai.JudgeFormat(f.judgeFormat).Path())
+				m.judgeModel(c, f)
+				capStatus(c, f.judge)
+			})
 	})
 }
 
-// tiles are the providers, four to a row; the last is a service of the user's own.
-func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
+// capCard is a capability: its switch (or 不支持), and while on, body; warn
+// says what turning it off does to the defaults.
+func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, supported bool, on *bool, warn string, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	type tile struct {
-		id, name, cap string
-		pick          func()
+	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background)
+	if !supported {
+		card.Background(t.Sidebar)
+		desc = unsupported
 	}
-	var all []tile
-	for _, p := range m.a.svc.ModelPresets() {
-		all = append(all, tile{p.ID, p.Name, i18n.T("settings.models.cap.gen"), func() { f.pick(p) }})
-	}
-	all = append(all, tile{presetCustom, i18n.T("settings.models.preset.custom"), i18n.T("settings.models.cap.custom"), f.pickCustom})
-	ui.Column(c).Gap(th.Space(2)).Children(func() {
-		for row := range slices.Chunk(all, 4) {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				for _, tl := range row {
-					on := f.preset == tl.id
-					b := kit.Pressable(c.Key(tl.id), kit.PressableOpts{Bare: true, OnClick: tl.pick}).Label(tl.name).Grow(1).Basis(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).
-						Border(theme.Hairline, t.Border)
-					if on {
-						b.Background(t.Hover).Border(theme.Hairline, t.Primary)
-					}
-					b.Children(func() {
-						ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-							ui.Text(c, tl.name).FontWeight(500).SingleLine()
-							kit.Text(c, tl.cap, t.Text.Sm).TextColor(t.Muted).SingleLine()
-						})
-					})
-				}
-				for range 4 - len(row) { // keep the columns equal
-					ui.Box(c).Grow(1).Basis(0)
-				}
+	card.Children(func() {
+		ui.Row(c).AlignItems(ui.Start).Gap(th.Space(3)).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+				ui.Text(c, title).FontWeight(600).LineHeight(theme.LineFor(title))
+				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
+			})
+			if supported {
+				kit.Switch(c, on).Label(switchLabel)
+			} else {
+				ui.Box(c).Shrink(0).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+					kit.Text(c, i18n.T("settings.models.unsupported"), t.Text.Sm).TextColor(t.Muted)
+				})
+			}
+		})
+		if supported && *on {
+			body()
+		}
+		if warn != "" {
+			ui.Box(c).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.WarningBorder).Background(t.WarningBg).Label(warn).Children(func() {
+				kit.Text(c, warn, t.Text.Sm).TextColor(t.WarningText)
 			})
 		}
 	})
 }
 
-// commonChips are the usual compatible services, to fill the name and address of 其他服务.
-func (m *modelsView) commonChips(c *ui.Context, f *modelForm) {
+// formatSegments chooses *sel among list, when there is more than one, and
+// reports a choice.
+func formatSegments(c *ui.Context, label string, list []string, sel *string) (changed bool) {
+	if len(list) < 2 {
+		return false
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.RadioGroup(c, func() {
+		for _, id := range list {
+			r := ui.RadioBase(c.Key(id), sel, id).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).TextColor(t.Muted)
+			changed = changed || r.Changed()
+			if *sel == id {
+				kit.Elevate(c, r.Background(t.Background).TextColor(t.Foreground), theme.ShadowSm)
+			}
+			r.Children(func() { kit.Text(c, formats[id].label, t.Text.Sm) })
+		}
+	}).Row().Label(label).Wrap().Gap(th.Space(1)).Padding(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.Hover).AlignSelf(ui.Start)
+	return changed
+}
+
+// reqLine is where requests go; a single format is named before it.
+func reqLine(c *ui.Context, list []string, format, url string) {
+	t, th := theme.Of(c), c.Theme()
+	text := i18n.T("settings.models.req")
+	if len(list) == 1 {
+		text = formats[format].label + " · " + text
+	}
+	ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() { // the gap is the design's space before the address
+		kit.Text(c, text, t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, url, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+	})
+}
+
+// capStatus is a capability test's line: testing grey, ok green, failed red.
+func capStatus(c *ui.Context, r capTest) {
+	if r.state == "" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	dot, fg, text := t.Idle, t.Muted, i18n.T("settings.models.testing")
+	switch r.state {
+	case "ok":
+		dot, fg, text = t.Success, t.SuccessText, r.text
+	case "fail":
+		dot, fg, text = t.Danger, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
+	}
+	ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+		kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineProse).TextColor(fg) // CJK beside Latin digits: the design's line is that tall
+	})
+}
+
+// judgeModel is the judge model select and where its list came from.
+func (m *modelsView) judgeModel(c *ui.Context, f *modelForm) {
+	t, th := theme.Of(c), c.Theme()
+	list := f.decList()
+	ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
+		label := i18n.T("settings.models.judge.model")
+		ui.Text(c, label).LineHeight(theme.LineFor(label))
+		o := kit.SelectOpts{MinWidth: theme.UsageSelectMin, MaxWidth: theme.UsageSelectMin, Flat: true}
+		if len(list) == 0 {
+			none := ""
+			kit.SelectWith(c, o, &none, []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.judge.wait")}}).Label(label).Disabled(true).Opacity(0.5).Font(theme.Mono).FontSize(t.Text.Sm)
+			return
+		}
+		var opts []kit.Option[string]
+		for _, id := range list {
+			opts = append(opts, kit.Option[string]{Value: id, Label: id})
+		}
+		kit.SelectWith(c, o, &f.judgeModel, opts).Label(label).Font(theme.Mono).FontSize(t.Text.Sm)
+	})
+	note := i18n.T("settings.models.judge.hint")
+	if len(list) > 0 {
+		note = i18n.Tf("settings.models.judge.fetched", len(list))
+	}
+	kit.Text(c, note, t.Text.Sm).TextColor(t.Muted)
+}
+
+// tiles are the providers, four to a row, with what each can do.
+func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
+	t, th := theme.Of(c), c.Theme()
+	ui.RadioGroup(c, func() {
+		for _, p := range providerOrder {
+			gen, judge := core.ProviderFormats(p)
+			var caps []string
+			if len(gen) > 0 {
+				caps = append(caps, i18n.T("settings.models.cap.gen"))
+			}
+			if len(judge) > 0 {
+				caps = append(caps, i18n.T("settings.models.cap.judge"))
+			}
+			name := svcProvider(p)
+			b := ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).Border(theme.Hairline, t.Border).Background(t.Background)
+			if b.Changed() { // another provider starts the form over
+				m.form = newForm(p)
+			}
+			if f.provider == p {
+				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
+			}
+			b.Children(func() {
+				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+					ui.Text(c, name).FontWeight(500).LineHeight(theme.LineRow).SingleLine() // the row's CJK caption sets its line
+					kit.Text(c, strings.Join(caps, " · "), t.Text.Sm).LineHeight(theme.LineRow).TextColor(t.Muted).SingleLine()
+				})
+			})
+		}
+	}).Row().Label(i18n.T("settings.models.provider")).Gap(th.Space(2))
+}
+
+// gatewayChips are the usual compatible services, to fill the address (and
+// while it follows the address, the name) of 其他服务.
+func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-		kit.Text(c, i18n.T("settings.models.common"), t.Text.Sm).TextColor(t.Muted)
-		for _, p := range m.a.svc.ModelPresets() {
-			if p.Kind != ai.KindOpenAI {
-				continue
-			}
-			on := f.baseURL == p.BaseURL
-			b := kit.Pressable(c.Key(p.ID), kit.PressableOpts{Bare: true, OnClick: func() {
-				f.name, f.baseURL, f.kind, f.keyOptional, f.helpURL = p.Name, p.BaseURL, p.Kind, !p.KeyRequired, ""
-			}}).Label(p.Name+" "+i18n.T("settings.models.common")).Height(th.Space(6)).Padding(0, th.Space(2)).Radius(t.Radius.Md)
+		kit.Text(c, i18n.T("settings.models.common"), t.Text.Sm).TextColor(t.Muted).Margin(0, th.Space(0.5), 0, 0)
+		for _, g := range gateways {
+			name := cmp.Or(g.name, i18n.T("settings.models.local.name"))
+			on := f.baseURL == g.url
+			b := kit.Pressable(c.Key(g.url), kit.PressableOpts{Bare: true, OnClick: func() { f.pickGateway(name, g.url) }}).
+				Label(name+" "+i18n.T("settings.models.common")).Height(th.Space(6)).Padding(0, th.Space(2)).Radius(t.Radius.Md)
 			fg := t.Muted
 			if on {
 				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
@@ -359,24 +475,26 @@ func (m *modelsView) commonChips(c *ui.Context, f *modelForm) {
 			} else {
 				b.Border(theme.Hairline, t.Border).Background(t.Background)
 			}
-			b.Children(func() { kit.Text(c, p.Name, t.Text.Sm).TextColor(fg) })
+			b.Children(func() { kit.Text(c, name, t.Text.Sm).TextColor(fg) })
 		}
 	})
 }
 
 // modelChips are the models as toggles, then an inline field for a model ID by hand.
-func (m *modelsView) modelChips(c *ui.Context, f *modelForm) ui.Element {
+func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 		for _, name := range f.offered {
 			on := slices.Contains(f.models, name)
 			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(name).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
+			fg := t.Foreground
 			if on {
 				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
 			} else {
-				b.Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed)
+				b.Background(t.Background).Border(theme.Hairline, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
+				fg = t.Muted
 			}
-			b.Children(func() { kit.Text(c, name, t.Text.Sm).Font(theme.Mono) })
+			b.Children(func() { kit.Text(c, name, t.Text.Sm).Font(theme.Mono).TextColor(fg) })
 			if b.Clicked() {
 				if !on {
 					f.models = append(f.models, name)
@@ -386,9 +504,10 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) ui.Element {
 			}
 		}
 		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-			kit.Input(c, &f.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual")}).Label(i18n.T("settings.models.manual")).
-				Height(th.Space(7)).Width(theme.ModelIDInputWidth).OnSubmit(f.addManual)
-			kit.IconButton(c, "plus", i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Outline}).Size(th.Space(7), th.Space(7)).OnClick(f.addManual)
+			kit.Input(c, &f.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true}).Label(i18n.T("settings.models.manual")).
+				Height(th.Space(7)).Width(theme.ModelIDInputWidth).PaddingX(th.Space(2)).OnSubmit(f.addManual)
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: f.addManual}).Label(i18n.T("settings.models.manual.add")).Size(th.Space(7), th.Space(7)).Justify(ui.Center).
+				Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() { ui.Text(c, "+") })
 		})
 	})
 }
@@ -396,42 +515,36 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) ui.Element {
 // modelNote says where the models came from, or why the fetch failed.
 func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
-	retry := func(msg string) {
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			kit.Text(c, msg, t.Text.Sm).TextColor(t.WarningText).Shrink(1)
-			kit.Button(c, i18n.T("settings.models.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: f.probing}).OnClick(func() { m.fetch(f) })
-		})
-	}
 	switch {
 	case f.probing:
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Spinner(c)
 			kit.Text(c, i18n.T("settings.models.fetching"), t.Text.Sm).TextColor(t.Muted)
 		})
-	case f.fetchErr != "":
-		retry(i18n.Tf("settings.models.fetch_failed", f.fetchErr))
-	case f.noList && f.checked == f.conn():
-		if f.noListStatus > 0 {
-			retry(i18n.Tf("settings.models.fetch_failed", "HTTP "+strconv.Itoa(f.noListStatus)))
-		} else {
-			retry(i18n.T("settings.models.no_list"))
+	case f.fetch == "fail":
+		msg := i18n.T("settings.models.no_list")
+		if f.fetchErr != "" {
+			msg = i18n.Tf("settings.models.fetch_failed", f.fetchErr)
 		}
-	case f.checked == f.conn() && f.fetched > 0:
+		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			kit.Text(c, msg, t.Text.Sm).TextColor(t.WarningText).Shrink(1)
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { m.fetch(f) }}).Label(i18n.T("settings.models.retry")).Height(th.Space(6)).Padding(0, th.Space(2)).
+				Radius(t.Radius.Md).Border(theme.Hairline, t.WarningBorder).Background(t.WarningBg).Children(func() {
+				kit.Text(c, i18n.T("settings.models.retry"), t.Text.Sm).TextColor(t.WarningText)
+			})
+		})
+	case f.fetch == "ok":
 		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
-	default:
+	case len(f.offered) == 0:
 		kit.Text(c, i18n.T("settings.models.hint"), t.Text.Sm).TextColor(t.Muted)
 	}
 }
 
-// keyField is the API key, the preset's key page, and the decision a stored
-// key needs once the address or protocol changes. Leaving it lists the models.
+// keyField is the API key and the decision a stored key needs once the
+// address or format changes. Entering it, or leaving it, lists the models.
 func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
-	a := m.a
 	t, th := theme.Of(c), c.Theme()
-	label, ph := i18n.T("settings.models.api_key"), ""
-	if f.keyOptional {
-		label = i18n.T("settings.models.api_key.optional")
-	}
+	label, ph := i18n.T("settings.models.api_key"), i18n.T("settings.models.key.ph."+f.provider)
 	if f.hasKey {
 		ph = i18n.T("settings.secret_kept")
 	}
@@ -442,7 +555,7 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 			border = t.Danger
 		}
 		ui.Row(c).AlignItems(ui.Center).Height(th.Space(8)).Radius(t.Radius.Md).Border(theme.Hairline, border).Background(t.Background).Padding(0, th.Space(0.5), 0, 0).Children(func() {
-			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
+			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5)).OnSubmit(func() { m.fetch(f) })
 			icon, tip := "eye", i18n.T("settings.models.key.show")
 			if f.showKey {
 				icon, tip = "eye-off", i18n.T("settings.models.key.hide")
@@ -461,10 +574,6 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 			kit.Text(c, f.keyErr, t.Text.Sm).TextColor(t.Danger)
 		} else {
 			kit.Text(c, i18n.T("settings.models.api_key.help"), t.Text.Sm).TextColor(t.Muted)
-		}
-		if u := f.helpURL; u != "" {
-			kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) })
 		}
 		if f.hasKey && f.key == "" && f.moved() {
 			ui.Column(c).Gap(th.Space(2)).Children(func() {

@@ -56,25 +56,6 @@ func TestEndpoint(t *testing.T) {
 	}
 }
 
-func TestPresets(t *testing.T) {
-	seen := map[string]bool{}
-	for _, p := range Presets() {
-		if seen[p.ID] || !ValidKind(p.Kind) || len(p.HelpURL) < 8 || p.HelpURL[:8] != "https://" {
-			t.Errorf("bad preset %+v", p)
-		}
-		seen[p.ID] = true
-		if got, err := NormalizeBaseURL(p.BaseURL); err != nil || got != p.BaseURL {
-			t.Errorf("%s: %q, %v", p.ID, got, err)
-		}
-		if p.KeyRequired == (p.ID == "ollama" || p.ID == "lmstudio") {
-			t.Errorf("%s: KeyRequired wrong", p.ID)
-		}
-	}
-	if len(seen) != 8 {
-		t.Errorf("got %d presets", len(seen))
-	}
-}
-
 func base(kind string) string {
 	if kind == KindAnthropic {
 		return "https://x"

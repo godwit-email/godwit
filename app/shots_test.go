@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -352,10 +353,69 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "SettingsModels")
 		s.click("添加服务")
 		s.see("其他服务")
-		s.click("OpenAI")
 		s.see("https://api.openai.com/v1")
 		shot(s.harness, "SettingsModelsSheet")
 	})
+	// The dialog's states, as the design's preset() makes them: the form is
+	// set as the user would have left it; nothing reaches a real service.
+	dlg := func(state string) func(m *modelsView) {
+		ready := func(m *modelsView) *modelForm {
+			m.add()
+			f := m.form
+			f.key, f.offered, f.models, f.fetch, f.fetched = strings.Repeat("k", 20), []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, []string{"[MODEL A]", "[MODEL B]"}, "ok", 3
+			return f
+		}
+		tested := func(f *modelForm, gen, judge capTest) { f.edited(); f.gen, f.judge = gen, judge }
+		ok := func(ms int) capTest {
+			return capResult(ai.KindResponses, core.CapStatus{State: "ok", LatencyMs: ms}, nil)
+		}
+		edit := func(m *modelsView) *modelForm { m.openEdit(m.services[0]); return m.form }
+		return map[string]func(m *modelsView){
+			"SettingsModelsAddReady":   func(m *modelsView) { tested(ready(m), ok(812), ok(143)) },
+			"SettingsModelsAddTesting": func(m *modelsView) { tested(ready(m), capTest{state: "testing"}, capTest{state: "testing"}) },
+			"SettingsModelsAddFailed": func(m *modelsView) {
+				tested(ready(m), ok(812), capResult(string(ai.FormatDecisions), core.CapStatus{State: "fail", Code: "forbidden", HTTPStatus: 403}, ai.ErrModelForbidden))
+			},
+			"SettingsModelsAddFetchFailed": func(m *modelsView) {
+				m.addLocal()
+				f := m.form
+				f.name, f.baseURL, f.fetch, f.fetchErr, f.offered, f.models = "公司网关", "https://llm.example.com/v1", "fail", "404", []string{"[MODEL X]"}, []string{"[MODEL X]"}
+			},
+			"SettingsModelsAddOther": func(m *modelsView) {
+				f := newForm(core.ProviderOther)
+				m.form, m.open = f, true
+				f.pickGateway("OpenRouter", "https://openrouter.ai/api/v1")
+				f.key, f.kind, f.fetch, f.fetched = strings.Repeat("k", 18), ai.KindAnthropic, "ok", 3
+				f.offered, f.models = []string{"[VENDOR/MODEL A]", "[VENDOR/MODEL B]", "[VENDOR/MODEL C]"}, []string{"[VENDOR/MODEL A]", "[VENDOR/MODEL B]"}
+				f.judgeOn, f.judgeFormat, f.judgeModel = true, string(ai.FormatSystemOne), "jev-latest"
+			},
+			"SettingsModelsAddTypeSafe": func(m *modelsView) {
+				m.form, m.open = newForm(core.ProviderTypeSafe), true
+				m.form.key, m.form.judgeModels = strings.Repeat("k", 15), []string{"jev-latest", "jev-preview", "jev-1.13.0"}
+			},
+			"SettingsModelsAddNoCap":           func(m *modelsView) { f := ready(m); f.genOn, f.judgeOn = false, false },
+			"SettingsModelsEdit":               func(m *modelsView) { edit(m) },
+			"SettingsModelsEditDisableDefault": func(m *modelsView) { edit(m).genOn = false },
+			"SettingsModelsEditDelete":         func(m *modelsView) { edit(m).confirmDel = true },
+		}[state]
+	}
+	for _, name := range []string{"SettingsModelsAddReady", "SettingsModelsAddTesting", "SettingsModelsAddFailed", "SettingsModelsAddFetchFailed", "SettingsModelsAddOther",
+		"SettingsModelsAddTypeSafe", "SettingsModelsAddNoCap", "SettingsModelsEdit", "SettingsModelsEditDisableDefault", "SettingsModelsEditDelete"} {
+		t.Run(name, func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			modelsSetup(s, "normal")
+			s.openSettings("models")
+			s.see("Anthropic")
+			modelsStatus(s, "normal")
+			m := s.app.pages[PageSettings].(*settingsPage).models
+			m.checkService = func(context.Context, int64, core.ModelServiceInput) (core.ServiceCheck, error) {
+				return core.ServiceCheck{Models: []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, ListSupported: true, JudgeModels: []string{"gpt-6-luna"}}, nil
+			}
+			dlg(name)(m)
+			s.drain()
+			shot(s.harness, name)
+		})
+	}
 	for _, v := range []struct{ view, name string }{{"broken", "SettingsModelsBroken"}, {"gen-only", "SettingsModelsGenOnly"}, {"empty", "SettingsModelsEmpty"}} {
 		t.Run(v.name, func(t *testing.T) {
 			s := shotMail(t, noAuto)

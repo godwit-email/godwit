@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -33,7 +32,7 @@ func (h *harness) editService(name string) *settingsPage {
 	h.t.Helper()
 	p := h.openSettings("models")
 	h.click(name)
-	h.see("编辑：" + name)
+	h.see("编辑 " + name)
 	return p
 }
 
@@ -70,15 +69,10 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.fill("地址", test.BaseURL)
 	h.fill("API Key", "test-key")
 
-	// a new service lists its models before its first save: it needs one
+	// leaving the key lists the models and chooses the first
 	m := h.app.pages[PageSettings].(*settingsPage).models
-	check := m.checkService
-	m.checkService = func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
-		time.Sleep(50 * time.Millisecond) // "test / m1" shows already: the click must wait for the box itself
-		return check(ctx, id, in)
-	}
 	h.blurKey()
-	h.click("m1")
+	h.until("m1 chosen", func() bool { return m.form != nil && slices.Equal(m.form.models, []string{"m1"}) })
 	h.click("添加")
 	h.until("added", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
 	h.until("the dialog closes on the save", func() bool { return m.form == nil && !m.open })
@@ -93,7 +87,7 @@ func TestModelServiceCRUD(t *testing.T) {
 
 	h.click("local")
 	h.click("测试连接")
-	h.see("连接正常 · 0 ms")
+	h.until("the test passes", func() bool { return m.form != nil && m.form.gen.state == "ok" })
 	h.until("the list shows it normal", func() bool { return h.tt.HasText("正常") })
 
 	h.click("删除此服务")
@@ -166,13 +160,12 @@ func TestModelServiceEditDuringSave(t *testing.T) {
 func TestRenameServiceKeepsDefault(t *testing.T) {
 	h := withLLM(t)
 	h.editService("test")
-	h.see("引用名：test")
 	h.fill("名称", "renamed")
 	h.click("保存")
 	h.until("renamed", func() bool { _, ok := h.modelService("renamed"); return ok })
 	h.see("renamed") // the dialog closed on the save
 	h.click("renamed")
-	h.see("引用名：test")
+	h.see("编辑 renamed")
 	if d := h.savedDefault(); d != "test/m1" {
 		t.Fatalf("default %q: a rename must not touch it", d)
 	}
@@ -224,18 +217,18 @@ func TestModelServiceBusyAcrossNavigation(t *testing.T) {
 		return core.CapStatus{}, nil
 	}
 	h.click("test") // opening lists the models: that fetch waits on release
-	h.see("编辑：test")
+	h.see("编辑 test")
 	h.click("测试连接")
 	f := m.form
 	h.openSettings("general")
 	h.openSettings("models")
 	close(release)
-	h.until("probe and test settle", func() bool { return !f.probing && !f.testing })
+	h.until("probe and test settle", func() bool { return !f.probing && !f.testing() })
 	if m.form != f {
 		t.Fatal("the form was replaced")
 	}
-	if slices.Contains(f.offered, "stale-model") || f.testMsg != "" || h.tt.HasText("stale-model") {
-		t.Fatalf("a result from before the navigation shows: offered %q, test %q", f.offered, f.testMsg)
+	if slices.Contains(f.offered, "stale-model") || f.gen.state != "" || h.tt.HasText("stale-model") {
+		t.Fatalf("a result from before the navigation shows: offered %q, test %+v", f.offered, f.gen)
 	}
 }
 
@@ -285,31 +278,30 @@ func (h *harness) typeModel(id string) {
 	h.click("添加模型")
 }
 
-func TestAddFromPreset(t *testing.T) {
+func TestProviderTiles(t *testing.T) {
 	h := withLLM(t)
 	p := h.openSettings("models")
 	h.see("test")
 	h.click("添加服务")
-	h.click("Ollama")
 	f := p.models.form
-	if f.kind != ai.KindOpenAI || f.name != "Ollama" || f.baseURL != "http://localhost:11434/v1" {
+	if f.provider != core.ProviderOpenAI || f.name != "OpenAI" || f.baseURL != "https://api.openai.com/v1" || f.kind != ai.KindResponses || !f.genOn || !f.judgeOn || f.judgeModel != "gpt-6-luna" {
 		t.Fatalf("form %+v", f)
 	}
-	h.see("API Key（可选）")
-	h.see("将请求 http://localhost:11434/v1/chat/completions")
-	if h.tt.HasText("获取 API Key ↗") {
-		t.Fatal("a local preset links to a key page")
-	}
-	h.click("OpenAI")
-	if f := p.models.form; f.kind != ai.KindResponses || f.baseURL != "https://api.openai.com/v1" {
+	h.see("https://api.openai.com/v1/responses")
+	h.click("Chat Completions")
+	h.see("https://api.openai.com/v1/chat/completions")
+	h.click("Anthropic")
+	if f := p.models.form; f.provider != core.ProviderAnthropic || f.baseURL != "https://api.anthropic.com/v1" || f.judgeOn {
 		t.Fatalf("form %+v", f)
 	}
-	h.click("获取 API Key ↗")
-	h.until("the key page opens", func() bool {
-		return slices.Contains(h.plat.Calls(), "OpenURL https://platform.openai.com/api-keys")
-	})
-	if h.tt.HasText("API Key（可选）") {
-		t.Fatal("a key the service needs is marked optional")
+	h.see("Anthropic 不提供判断接口，判断会由生成模型兼任。")
+	h.see("https://api.anthropic.com/v1/messages")
+	h.click("TypeSafe")
+	h.see("TypeSafe 不提供生成接口。")
+	h.see("https://api.typesafe.ai/v1/systemone")
+	h.click("其他服务")
+	if f := p.models.form; f.provider != core.ProviderOther || f.name != "" || f.baseURL != "" || !f.genOn || f.judgeOn {
+		t.Fatalf("form %+v", f)
 	}
 }
 
@@ -319,7 +311,7 @@ func TestBaseURLNormalizedOnBlur(t *testing.T) {
 	h.fill("地址", "https://api.example.com/v1/chat/completions/")
 	h.click("名称")
 	h.until("normalized", func() bool { return m.form.baseURL == "https://api.example.com/v1" })
-	h.see("将请求 https://api.example.com/v1/chat/completions")
+	h.see("https://api.example.com/v1/chat/completions")
 	h.fill("地址", "http://example.com/v1")
 	h.click("名称")
 	h.see("地址必须使用 https（只有本机地址可以用 http）")
@@ -335,7 +327,10 @@ func TestManualModelAlwaysAvailable(t *testing.T) {
 	h.until("listed", func() bool { return slices.Contains(m.form.offered, "listed") })
 	h.typeModel("unlisted")
 	h.click("添加")
-	h.until("saved", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"unlisted"}) })
+	h.until("saved", func() bool {
+		s, _ := h.modelService("local")
+		return slices.Equal(s.Models, []string{"listed", "unlisted"})
+	})
 }
 
 func TestSaveWithTypedModels(t *testing.T) {
@@ -345,26 +340,26 @@ func TestSaveWithTypedModels(t *testing.T) {
 	h.fill("名称", "plain")
 	h.fill("地址", url)
 	h.blurKey()
-	h.see("拉取 /models 失败（HTTP 404）。这个服务可能不提供模型列表，直接输入模型 ID 也可以。")
+	h.see("拉取 /models 失败（404）。这个服务可能不提供模型列表，直接输入模型 ID 也可以。")
 	h.typeModel("m1")
 	h.click("添加")
 	h.until("saved", func() bool { s, _ := h.modelService("plain"); return slices.Equal(s.Models, []string{"m1"}) })
 }
 
-func TestSaveRejectsBadKey(t *testing.T) {
+// TestSaveDespiteRefusedKey: a refused key shows on the field, and saving
+// doesn't wait on a probe or a test.
+func TestSaveDespiteRefusedKey(t *testing.T) {
 	h := withLLM(t)
 	url, _ := modelsServer(t, http.StatusUnauthorized)
 	m := h.newService()
 	h.fill("名称", "bad")
 	h.fill("地址", url)
 	h.fill("API Key", "wrong-key")
-	h.typeModel("m1")
-	h.click("添加")
+	h.typeModel("m1") // leaving the key field lists the models
 	h.see("API Key 被拒绝（401/403）")
-	h.until("the save settles", func() bool { return !m.form.probing && !m.form.busy })
-	if _, ok := h.modelService("bad"); ok {
-		t.Fatal("a service with a rejected key was saved")
-	}
+	h.until("the fetch settles", func() bool { return !m.form.probing })
+	h.click("添加")
+	h.until("saved", func() bool { s, _ := h.modelService("bad"); return slices.Equal(s.Models, []string{"m1"}) })
 }
 
 func TestAddressChangeRequiresKeyDecision(t *testing.T) {
@@ -398,13 +393,13 @@ func TestStaleProbeIgnored(t *testing.T) {
 		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"stale-model"}, ListSupported: true}, nil
 	}
 	h.click("test") // opening lists the models
-	h.see("编辑：test")
+	h.see("编辑 test")
 	f := m.form
 	h.until("the fetch started", func() bool { return f.probing })
 	h.fill("地址", "https://other.example.com/v1")
 	close(release)
 	h.until("the probe settles", func() bool { return !f.probing })
-	if slices.Contains(f.offered, "stale-model") || f.checked != "" {
+	if slices.Contains(f.offered, "stale-model") {
 		t.Fatalf("a probe of the old address was adopted: offered %q", f.offered)
 	}
 }
@@ -413,10 +408,10 @@ func TestResponsesKindSelectable(t *testing.T) {
 	h := withLLM(t)
 	url, _ := modelsServer(t, 0, "r1")
 	h.newService()
-	h.click("OpenAI 兼容（Responses）")
+	h.click("OpenAI Responses")
 	h.fill("名称", "resp")
 	h.fill("地址", url)
-	h.see("将请求 " + url + "/responses")
+	h.see(url + "/responses")
 	h.typeModel("r1")
 	h.click("添加")
 	h.until("saved", func() bool { s, _ := h.modelService("resp"); return s.Kind == ai.KindResponses })
@@ -481,64 +476,6 @@ func probes(m *modelsView, gate chan struct{}, results ...error) func() int {
 	return func() int { mu.Lock(); defer mu.Unlock(); return n }
 }
 
-func TestRefusedKeyBlocksSave(t *testing.T) {
-	h := withLLM(t)
-	m := h.newService()
-	asked := probes(m, nil, nil, core.ErrModelAuth)
-	h.fill("名称", "fresh")
-	h.fill("地址", "https://api.example.com/v1")
-	h.fill("API Key", "k")
-	h.typeModel("m1") // leaving the key field lists the models
-	h.until("the first probe taken", func() bool { return m.form.checked != "" })
-	h.blurKey()
-	h.see("API Key 被拒绝（401/403）")
-	h.click("添加")
-	h.until("save probes again", func() bool { return asked() == 3 && !m.form.probing })
-	h.drain()
-	if _, ok := h.modelService("fresh"); ok {
-		t.Fatal("saved after the key was refused")
-	}
-	h.see("API Key 被拒绝（401/403）")
-
-	// a saved service whose connection is unchanged probes again too
-	h.click("取消")
-	h.click("test") // opening lists the models
-	h.see("编辑：test")
-	h.until("the fetch settles", func() bool { return asked() == 4 && !m.form.probing })
-	h.see("API Key 被拒绝（401/403）")
-	h.fill("名称", "renamed")
-	h.click("保存")
-	h.until("save probes again", func() bool { return asked() == 5 && !m.form.probing })
-	h.drain()
-	if _, ok := h.modelService("renamed"); ok {
-		t.Fatal("saved after the key was refused")
-	}
-}
-
-func TestEditDuringSaveProbeDiscards(t *testing.T) {
-	h := withLLM(t)
-	m := h.newService()
-	gate := make(chan struct{})
-	probes(m, gate, nil)
-	h.fill("名称", "first")
-	h.fill("地址", "https://api.example.com/v1")
-	h.typeModel("m1")
-	h.click("添加")
-	h.fill("名称", "second")
-	close(gate)
-	f := m.form
-	h.until("the probe settles", func() bool { return !f.probing })
-	h.drain()
-	for _, n := range []string{"first", "second"} {
-		if _, ok := h.modelService(n); ok {
-			t.Fatalf("%q submitted from a probe the form changed under", n)
-		}
-	}
-	if f.checked != "" {
-		t.Fatal("the probe was taken")
-	}
-}
-
 func TestAddressBackAndForthDiscardsProbe(t *testing.T) {
 	h := withLLM(t)
 	m := h.newService()
@@ -551,27 +488,8 @@ func TestAddressBackAndForthDiscardsProbe(t *testing.T) {
 	close(gate)
 	f := m.form
 	h.until("the probe settles", func() bool { return !f.probing })
-	if slices.Contains(f.offered, "stale-model") || f.checked != "" {
+	if slices.Contains(f.offered, "stale-model") {
 		t.Fatalf("a probe from before the edits was taken: offered %q", f.offered)
-	}
-}
-
-func TestManualTextDuringProbeDiscards(t *testing.T) {
-	h := withLLM(t)
-	m := h.newService()
-	gate := make(chan struct{})
-	probes(m, gate, nil)
-	h.fill("名称", "first")
-	h.fill("地址", "https://api.example.com/v1")
-	h.typeModel("m1")
-	h.click("添加")
-	h.fill("添加模型 ID", "m2")
-	close(gate)
-	f := m.form
-	h.until("the probe settles", func() bool { return !f.probing })
-	h.drain()
-	if _, ok := h.modelService("first"); ok || f.checked != "" {
-		t.Fatal("submitted from a probe the manual model field changed under")
 	}
 }
 
@@ -614,8 +532,8 @@ func TestModelsEmptyState(t *testing.T) {
 	}
 	h.click("连接本地网关")
 	h.see("添加模型服务")
-	if f := m.form; f == nil || f.preset != presetCustom || f.baseURL != "http://localhost:" {
-		t.Fatalf("form %+v: want 其他服务 with a localhost address", f)
+	if f := m.form; f == nil || f.provider != core.ProviderOther || f.baseURL != localGateway || f.name != "本地网关" || !f.nameAuto {
+		t.Fatalf("form %+v: want 其他服务 named 本地网关 with a loopback address", f)
 	}
 	h.click("取消")
 	h.click("添加服务")
@@ -643,7 +561,7 @@ func TestModelsDialogAutoFetchOnBlur(t *testing.T) {
 	h.fill("API Key", "k3")
 	close(gate)
 	h.until("the fetch settles", func() bool { return !f.probing })
-	if slices.Contains(f.offered, "stale-model") || f.checked != "" {
+	if slices.Contains(f.offered, "stale-model") {
 		t.Fatalf("a fetch for the old key was adopted: offered %q", f.offered)
 	}
 
@@ -733,7 +651,7 @@ func TestModelStatusFromTest(t *testing.T) {
 	h.see("test · 401 · API Key 无效")
 	h.see("生成用的 test 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用，判断也一样。")
 	h.click("去修复")
-	h.see("编辑：test")
+	h.see("编辑 test")
 }
 
 func TestModelsKeyEyeShowsOnlyTyped(t *testing.T) {
@@ -751,16 +669,22 @@ func TestModelsKeyEyeShowsOnlyTyped(t *testing.T) {
 	}
 }
 
-func TestModelsCommonChipsAndCaptions(t *testing.T) {
+func TestModelsGatewayChipsAndCaptions(t *testing.T) {
 	h := withLLM(t)
 	m := h.newService()
-	h.see("自填地址") // the tile's caption
-	h.see("常用")
-	h.click("Groq 常用")
-	if f := m.form; f.name != "Groq" || f.baseURL != "https://api.groq.com/openai/v1" || f.preset != presetCustom {
+	h.see("生成 · 判断") // the tiles' captions
+	h.click("OpenRouter 常用")
+	if f := m.form; f.name != "OpenRouter" || f.baseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("form %+v", f)
 	}
-	h.click("OpenAI") // a provider tile: no common chips
+	h.fill("地址", "https://llm.example.com/v1") // the name follows the host
+	h.until("named after the host", func() bool { return m.form.name == "llm.example.com" })
+	h.fill("名称", "mine")
+	h.click("LiteLLM 常用")
+	if f := m.form; f.name != "mine" || f.baseURL != "http://127.0.0.1:4000" {
+		t.Fatalf("form %+v: a typed name stays", f)
+	}
+	h.click("OpenAI") // a provider tile: no 常用
 	if h.tt.HasText("常用") {
 		t.Fatal("common chips show for a provider")
 	}
@@ -773,7 +697,7 @@ func TestModelsFetchFailureShowsStatus(t *testing.T) {
 	h.fill("名称", "flaky")
 	h.fill("地址", url)
 	h.blurKey()
-	h.see("拉取 /models 失败（HTTP 500）")
+	h.see("拉取 /models 失败（500）")
 }
 
 // A blur while a fetch runs, after the key changed, fetches again once the stale result is dropped.
@@ -904,5 +828,200 @@ func TestServiceLook(t *testing.T) {
 		if l, label := svcLook(c.svc); l != c.look || label != c.label {
 			t.Errorf("%+v: %d %q, want %d %q", c.svc, l, label, c.look, c.label)
 		}
+	}
+}
+
+// TestModelFormRules: the design's blocked, hint and cantTest rules, in its order.
+func TestModelFormRules(t *testing.T) {
+	ready := func() *modelForm { f := newForm(core.ProviderOpenAI); f.key, f.models = "k", []string{"m"}; return f }
+	for _, c := range []struct {
+		name          string
+		edit          func(f *modelForm)
+		blocked, cant bool
+		hint          string
+	}{
+		{"ready", func(*modelForm) {}, false, false, ""},
+		{"no capability", func(f *modelForm) { f.genOn, f.judgeOn, f.baseURL = false, false, "" }, true, true, "至少开启一种能力"},
+		{"no address", func(f *modelForm) { f.baseURL, f.name = " ", "" }, true, true, "填上地址"},
+		{"no key on add", func(f *modelForm) { f.key, f.name = "", "" }, true, true, "填上 API Key 才能添加"},
+		{"no key on edit: the stored one", func(f *modelForm) { f.id, f.key, f.hasKey = 1, "", true }, false, false, ""},
+		{"other needs no key", func(f *modelForm) { f.provider, f.key = core.ProviderOther, "" }, false, false, ""},
+		{"no name", func(f *modelForm) { f.name = "" }, true, false, "填上名称"},
+		{"generate without a model", func(f *modelForm) { f.models = nil }, true, false, "至少选一个生成模型"},
+		{"judge only needs no model", func(f *modelForm) { f.models, f.genOn = nil, false }, false, false, ""},
+		{"a failed test doesn't block", func(f *modelForm) { f.judge = capTest{"fail", "x"} }, false, false, "有一项没通过测试，仍然可以添加，之后再改"},
+		{"failed on edit", func(f *modelForm) { f.id, f.gen = 1, capTest{"fail", "x"} }, false, false, "有一项没通过测试，仍然可以保存，之后再改"},
+		{"testing", func(f *modelForm) { f.gen = capTest{state: "testing"} }, false, true, ""},
+	} {
+		f := ready()
+		c.edit(f)
+		if f.blocked() != c.blocked || f.cantTest() != c.cant || f.hint() != c.hint {
+			t.Errorf("%s: blocked %v cantTest %v hint %q, want %v %v %q", c.name, f.blocked(), f.cantTest(), f.hint(), c.blocked, c.cant, c.hint)
+		}
+	}
+}
+
+// TestModelFormDefaults: each provider's blank form, as the design's blank().
+func TestModelFormDefaults(t *testing.T) {
+	for _, c := range []struct {
+		p, name, url, kind, judge string
+		genOn, judgeOn            bool
+	}{
+		{core.ProviderOpenAI, "OpenAI", "https://api.openai.com/v1", ai.KindResponses, "decisions", true, true},
+		{core.ProviderAnthropic, "Anthropic", "https://api.anthropic.com/v1", ai.KindAnthropic, "", true, false},
+		{core.ProviderTypeSafe, "TypeSafe", "https://api.typesafe.ai/v1", "", "systemone", false, true},
+		{core.ProviderOther, "", "", ai.KindOpenAI, "decisions", true, false}, // judge starts off for other
+	} {
+		f := newForm(c.p)
+		if f.name != c.name || f.baseURL != c.url || f.kind != c.kind || f.judgeFormat != c.judge || f.genOn != c.genOn || f.judgeOn != c.judgeOn {
+			t.Errorf("%s: %+v", c.p, f)
+		}
+		if c.judge != "" && f.judgeModel != ai.JudgeFormat(c.judge).Models()[0] {
+			t.Errorf("%s: judge model %q", c.p, f.judgeModel)
+		}
+		if f.canResetURL() {
+			t.Errorf("%s: 恢复默认 shows on the default address", c.p)
+		}
+	}
+	f := newForm(core.ProviderAnthropic)
+	f.baseURL = "https://api.anthropic.com" // as older Godwits stored it
+	if f.canResetURL() {
+		t.Error("恢复默认 shows for Anthropic's address without /v1")
+	}
+	f.baseURL = "https://proxy.example.com"
+	if !f.canResetURL() {
+		t.Error("no 恢复默认 for a changed address")
+	}
+}
+
+// TestModelFormNameFollowsURL: other's name follows the address's host (or a
+// preset's name) until the user types one.
+func TestModelFormNameFollowsURL(t *testing.T) {
+	f := newForm(core.ProviderOther)
+	f.baseURL = "https://openrouter.ai/api/v1"
+	f.follow()
+	if f.name != "OpenRouter" {
+		t.Fatalf("name %q", f.name)
+	}
+	f.baseURL = "https://llm.example.com/v1"
+	f.follow()
+	if f.name != "llm.example.com" {
+		t.Fatalf("name %q", f.name)
+	}
+	f.pickGateway("LiteLLM", "http://127.0.0.1:4000")
+	if f.name != "LiteLLM" || f.baseURL != "http://127.0.0.1:4000" {
+		t.Fatalf("preset: %q %q", f.name, f.baseURL)
+	}
+	f.baseURL = "http://localhost:8080/v1"
+	f.follow()
+	if f.name != "本地网关" {
+		t.Fatalf("name %q", f.name)
+	}
+	f.name = "mine"
+	f.pickGateway("OpenRouter", "https://openrouter.ai/api/v1")
+	f.baseURL = "https://other.example.com"
+	f.follow()
+	if f.name != "mine" || f.nameAuto {
+		t.Fatalf("a typed name changed: %q", f.name)
+	}
+	p := newForm(core.ProviderOpenAI)
+	p.baseURL = "https://openrouter.ai/api/v1"
+	p.follow()
+	if p.name != "OpenAI" {
+		t.Fatalf("a provider's name followed the address: %q", p.name)
+	}
+}
+
+// TestModelFormDecList: no judge models until there is a key, except for
+// other, which lists its format's; a fetched list wins for a provider.
+func TestModelFormDecList(t *testing.T) {
+	f := newForm(core.ProviderTypeSafe)
+	if l := f.decList(); l != nil {
+		t.Fatalf("without a key: %q", l)
+	}
+	f.key = "k"
+	if l := f.decList(); !slices.Equal(l, []string{"jev-latest", "jev-preview"}) {
+		t.Fatalf("keyed, unfetched: %q", l)
+	}
+	f.judgeModels = []string{"jev-latest", "jev-preview", "jev-1.13.0"}
+	if l := f.decList(); len(l) != 3 {
+		t.Fatalf("fetched: %q", l)
+	}
+	f.key, f.id, f.hasKey, f.judgeModel = "", 1, true, "jev-old" // a stored key; a saved model no longer listed stays
+	if l := f.decList(); len(l) != 4 || l[0] != "jev-old" {
+		t.Fatalf("edit: %q", l)
+	}
+	o := newForm(core.ProviderOther) // no key: its format's own list, never a gateway's /models
+	o.judgeFormat, o.judgeModel, o.judgeModels = "systemone", "jev-latest", []string{"gateway-chat-model"}
+	if l := o.decList(); !slices.Equal(l, ai.FormatSystemOne.Models()) {
+		t.Fatalf("other: %q", l)
+	}
+}
+
+// TestModelFormStatusClears: a test's lines go when the address, key or a
+// format changes, not when a capability is switched or the name edited.
+func TestModelFormStatusClears(t *testing.T) {
+	tested := func() *modelForm {
+		f := newForm(core.ProviderOther)
+		f.baseURL, f.judgeOn = "https://gw.example.com/v1", true
+		f.edited()
+		f.gen, f.judge = capTest{"ok", "a"}, capTest{"fail", "b"}
+		return f
+	}
+	for _, c := range []struct {
+		name  string
+		edit  func(f *modelForm)
+		clear bool
+	}{
+		{"address", func(f *modelForm) { f.baseURL = "https://gw2.example.com/v1" }, true},
+		{"key", func(f *modelForm) { f.key = "k" }, true},
+		{"generate format", func(f *modelForm) { f.kind = ai.KindAnthropic }, true},
+		{"judge format", func(f *modelForm) { f.judgeFormat = "systemone" }, true},
+		{"name", func(f *modelForm) { f.name = "x" }, false},
+		{"switch", func(f *modelForm) { f.genOn = false }, false},
+	} {
+		f := tested()
+		c.edit(f)
+		f.edited()
+		if cleared := f.gen.state == "" && f.judge.state == ""; cleared != c.clear {
+			t.Errorf("%s: gen %+v judge %+v", c.name, f.gen, f.judge)
+		}
+	}
+}
+
+// TestModelFormOffWarns: turning off what the defaults use warns, naming
+// where generation moves (the same alt dropRefs applies) or that nothing
+// else generates.
+func TestModelFormOffWarns(t *testing.T) {
+	svcs := []core.ModelService{
+		{ID: 1, Name: "OpenAI", Slug: "openai", Provider: core.ProviderOpenAI, Kind: ai.KindResponses, Models: []string{"a"}, JudgeFormat: "decisions", JudgeModel: "gpt-6-luna"},
+		{ID: 2, Name: "TypeSafe", Slug: "typesafe", Provider: core.ProviderTypeSafe, JudgeFormat: "systemone", JudgeModel: "jev-latest"},
+		{ID: 3, Name: "Anthropic", Slug: "anthropic", Provider: core.ProviderAnthropic, Kind: ai.KindAnthropic, Models: []string{"[MODEL D]"}},
+	}
+	st := core.Settings{DefaultModel: "openai/a", JudgeService: "openai"}
+	m := &modelsView{}
+	m.edit(svcs[0])
+	f := m.form
+	if g, j := offWarns(f, st, svcs); g != "" || j != "" {
+		t.Fatalf("on: %q %q", g, j)
+	}
+	f.genOn, f.judgeOn = false, false
+	g, j := offWarns(f, st, svcs)
+	if g != "它是默认生成模型。关闭后，总结、翻译、写信和 Wit 改用 Anthropic / [MODEL D]。" || j != "它是默认判断模型。关闭后，判断改由生成模型兼任，会慢一些。" {
+		t.Fatalf("off: %q %q", g, j)
+	}
+	if got, _ := dropRefs(st, core.ModelService{ID: 1, Slug: "openai"}, svcs); got.DefaultModel != "anthropic/[MODEL D]" {
+		t.Fatalf("the save moves generation to %q, not the warning's", got.DefaultModel)
+	}
+	if g, _ := offWarns(f, st, svcs[:2]); g != "它是唯一能生成的服务，关闭后总结、翻译、写信和 Wit 都不可用。" {
+		t.Fatalf("no alt: %q", g)
+	}
+	if g, j := offWarns(f, core.Settings{DefaultModel: "anthropic/[MODEL D]", JudgeService: "typesafe"}, svcs); g != "" || j != "" {
+		t.Fatalf("not the default: %q %q", g, j)
+	}
+	n := newForm(core.ProviderOpenAI)
+	n.genOn = false
+	if g, _ := offWarns(n, st, svcs); g != "" {
+		t.Fatalf("a new service warns: %q", g)
 	}
 }

@@ -1032,30 +1032,23 @@ func TestSelectWith(t *testing.T) {
 }
 
 func TestDialogWideWidth(t *testing.T) {
-	span := func(wide bool) int {
-		open := true
-		tt := ui.NewTester(themed(func(c *ui.Context) {
-			f := Dialog
-			if wide {
-				f = DialogWide
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		DialogWide(c, &open, "T", "desc", func() { ui.Text(c, "body") }, func() { DialogBar(c, false, func() { ui.Text(c, "foot") }) })
+	}), 900, 600)
+	time.Sleep(2 * theme.MotionBase)
+	tt.Frame()
+	img, first, last := tt.Image(), -1, -1
+	y := 76 // the panel hangs 56 from the top, below its corners; its padding is white
+	for x := 0; x < 900; x++ {
+		if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
+			if first < 0 {
+				first = x
 			}
-			f(c, &open, "T", func() { ui.Text(c, "body") }, nil)
-		}), 900, 600)
-		time.Sleep(2 * theme.MotionBase)
-		tt.Frame()
-		img, first, last := tt.Image(), -1, -1
-		y := 300 // the panel is centered; its body rows are white
-		for x := 0; x < 900; x++ {
-			if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
-				if first < 0 {
-					first = x
-				}
-				last = x
-			}
+			last = x
 		}
-		return last - first + 1
 	}
-	if n, w := span(false), span(true); w-n < 70 || w-n > 90 {
-		t.Errorf("wide is %d wider than normal, want 80", w-n)
+	if w := last - first + 1; w < 636 || w > 640 {
+		t.Errorf("DialogWide is %d wide, want 640", w)
 	}
 }

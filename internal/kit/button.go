@@ -34,6 +34,7 @@ type ButtonOpts struct {
 	Variant  Variant
 	Size     ButtonSize
 	Disabled bool
+	Flat     bool // Outline without its shadow
 	Icon     string
 }
 
@@ -87,7 +88,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		}
 	case Outline:
 		b.Background(t.Background).Border(theme.Hairline, t.Input).TextColor(t.Foreground)
-		Elevate(c, b, theme.ShadowXs)
+		if !o.Flat {
+			Elevate(c, b, theme.ShadowXs)
+		}
 		if hover {
 			b.Background(t.Hover)
 		}

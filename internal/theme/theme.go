@@ -133,6 +133,7 @@ const (
 	TopBarHeight       = 44   // the top bar's least height
 	SheetWidth         = 560  // dialogs and the add-account sheet
 	DialogWideWidth    = 640  // DialogWide
+	DialogWideMax      = 788  // DialogWide's tallest
 	SheetMaxHeight     = 760  // the add-account sheet
 	AsideWidth         = 440  // onboarding's left panel
 	FormMaxWidth       = 520  // onboarding's form column
@@ -192,7 +193,7 @@ const (
 	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
 	TabUnderline                                     = 2              // the selected underline tab's bottom border
 	Watermark                                        = 96             // the empty reader pane's bird
-	FormLabelWidth, ModelIDInputWidth, DialogBodyMax = 96, 132, 560   // a dialog form's label column; the add-model-ID field; a dialog body's tallest before it scrolls
+	FormLabelWidth, ModelIDInputWidth                = 96, 132        // a dialog form's label column; the add-model-ID field
 	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
 	SummaryDot                                       = 5              // a summary point's disc
 )
