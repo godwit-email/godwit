@@ -172,7 +172,14 @@ func ServeConn(ctx context.Context, rwc net.Conn, d *Dispatcher, opts ConnOption
 		streams:  map[uint64]*serverStream{},
 	}
 	c.ctx, c.kill = context.WithCancelCause(ctx)
-	context.AfterFunc(c.ctx, func() { rwc.Close() }) // kill always fires it
+	context.AfterFunc(c.ctx, func() { // kill always fires it
+		// Windows may not tell the peer about a bare closesocket for a while;
+		// shutdown first sends the EOF at once.
+		if cw, ok := rwc.(interface{ CloseWrite() error }); ok {
+			cw.CloseWrite()
+		}
+		rwc.Close()
+	})
 	c.wg.Add(1)
 	go c.writeLoop()
 	if c.opts.Hello != nil {
