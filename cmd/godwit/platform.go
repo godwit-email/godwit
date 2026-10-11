@@ -31,6 +31,7 @@ type platform struct {
 	win     *mygo.Window
 	tray    *mygo.Tray
 	windows *webui.Windows // the compose windows
+	wit     *webui.Wit
 
 	dataDir string
 	svc     *core.Service
@@ -119,9 +120,12 @@ func (p *platform) ShowWindow() {
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
-func (*platform) SettingsChanged(st core.Settings) {
+func (p *platform) SettingsChanged(st core.Settings) {
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
+	}
+	if p.wit != nil {
+		p.wit.SettingsChanged(st)
 	}
 }
 func (*platform) TempDir() string {
@@ -278,18 +282,7 @@ func (c composeWindow) EmitClosing(gen int) {
 func newComposeWindow(ws *webui.Windows, cas *cascade) webui.Window {
 	w := mygo.NewWindow(composeWindowOptions(runtime.GOOS))
 	cas.place(w)
-	entry := "" // the first page the window committed: its own entry
-	w.Page().OnDidNavigate(func(u string) {
-		if entry == "" {
-			entry = u
-		}
-	})
-	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
-		if !sameDocument(entry, e.URL) {
-			e.PreventDefault()
-		}
-	})
-	w.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+	lockPage(w.Page())
 	w.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
 		ws.RequestClose(w.ID())
@@ -299,6 +292,23 @@ func newComposeWindow(ws *webui.Windows, cas *cascade) webui.Window {
 		ws.Closed(w.ID())
 	})
 	return composeWindow{w}
+}
+
+// lockPage keeps p on its entry document and from opening windows (without
+// a handler, http(s) links would open in the browser).
+func lockPage(p *mygo.Page) {
+	entry := "" // the first page committed: its own entry
+	p.OnDidNavigate(func(u string) {
+		if entry == "" {
+			entry = u
+		}
+	})
+	p.OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if !sameDocument(entry, e.URL) {
+			e.PreventDefault()
+		}
+	})
+	p.SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 }
 
 // sameDocument reports whether next is entry itself, give or take its query

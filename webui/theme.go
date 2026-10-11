@@ -4,6 +4,7 @@ package webui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -32,7 +33,9 @@ func ThemeOf(st core.Settings) Theme {
 }
 
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
-// (--ins-* and --del-*). --radius is Radius.Lg; styles.css
+// (--ins-* and --del-*), the warning colours (--warning-*) and the floating
+// input's shadow (--shadow-float: ShadowFloat in the light appearance, the
+// FloatInset inner edge in the dark). --radius is Radius.Lg; styles.css
 // derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
 func ThemeVars(t theme.Tokens) map[string]string {
 	return map[string]string{
@@ -49,7 +52,23 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		// Wit's review marks: inserted and deleted words.
 		"--ins-bg": css(t.InsBg), "--ins-text": css(t.InsText),
 		"--del-bg": css(t.DelBg), "--del-text": css(t.DelText),
+		"--sidebar":    css(t.Sidebar),
+		"--warning-bg": css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
+		"--shadow-float": floatShadow(t),
 	}
+}
+
+// floatShadow is a floating input's box-shadow: ShadowFloat's layers of
+// black in the light appearance; FloatInset's inner edge in the dark.
+func floatShadow(t theme.Tokens) string {
+	if t.Dark {
+		return fmt.Sprintf("inset 0 0 %dpx %s", theme.FloatInsetBlur, css(t.FloatInset))
+	}
+	ls := make([]string, len(theme.ShadowFloat))
+	for i, l := range theme.ShadowFloat {
+		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(0 0 0 / %.3f)", l.Y, l.Blur, l.Spread, l.Alpha)
+	}
+	return strings.Join(ls, ", ")
 }
 
 // css writes c as CSS Color 4 `rgb(r g b / a)`.

@@ -301,7 +301,7 @@ describe("WitTransport", () => {
       emit({ kind: "text", text: "lo" }); // emitted before follow resolves
       return h;
     });
-    const got = await tr.follow();
+    const got = (await tr.follow()) as WitHistory;
     const msgs = historyToMessages(got);
     const open = msgs.pop();
     const chat = new Chat<WitUIMessage>({ transport: tr, messages: msgs });
@@ -458,5 +458,94 @@ describe("WitTransport", () => {
     reject(new Error("error.run_active"));
     await readAll(s);
     expect((tr as unknown as { early: unknown[] }).early).toEqual([]);
+  });
+});
+
+describe("WitTransport selections", () => {
+  const hist = (conversation: number, runs: number[] = []): WitHistory => ({
+    conversation,
+    running: 0,
+    approvals: [],
+    messages: runs.length
+      ? [{ id: "q", role: "user", text: "Q", calls: [], results: [], citations: [], runs }]
+      : [],
+  });
+
+  it("switching conversations drops the old stream", async () => {
+    const { api, tr, emit } = fake();
+    api.ask.mockResolvedValue(7);
+    const s = await send(tr, userMsg("hi"));
+    await vi.waitFor(() => expect(tr.run).toBe(7));
+    emit({ run: 7, kind: "text", text: "a" });
+    api.follow.mockResolvedValue(hist(2));
+    await tr.follow(); // a switch: the old stream ends
+    emit({ run: 7, kind: "text", text: "late" }); // conversation 1's, still in flight
+    const deltas = (await readAll(s)).flatMap((c) => (c.type === "text-delta" ? [c.delta] : []));
+    expect(deltas).toEqual(["a"]);
+    expect(tr.conversation).toBe(2);
+  });
+
+  it("out-of-order follow results: an older follow's late result is ignored", async () => {
+    const { api, tr } = fake();
+    let resolveA!: (h: WitHistory) => void;
+    api.follow.mockReturnValueOnce(new Promise((r) => (resolveA = r)));
+    api.follow.mockResolvedValueOnce(hist(2));
+    const a = tr.follow();
+    expect(await tr.follow()).toEqual(hist(2));
+    resolveA(hist(1));
+    expect(await a).toBeUndefined();
+    expect(tr.conversation).toBe(2);
+  });
+
+  it("ask returning after a switch is ignored", async () => {
+    const { api, tr, emit } = fake();
+    let resolve!: (n: number) => void;
+    api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
+    await send(tr, userMsg("hi"));
+    api.follow.mockResolvedValue(hist(2));
+    await tr.follow();
+    resolve(9);
+    await Promise.resolve();
+    emit({ conversation: 5, run: 9, kind: "text", text: "x" });
+    expect(tr.run).toBe(0);
+    expect(tr.conversation).toBe(2);
+  });
+
+  it("history reads the conversation again without a reset; another conversation's is none", async () => {
+    const { api, tr } = fake();
+    api.follow.mockResolvedValue(hist(1));
+    await tr.follow();
+    api.follow.mockResolvedValue(hist(1, [7]));
+    expect(await tr.history()).toEqual(hist(1, [7]));
+    expect(tr.conversation).toBe(1);
+    api.follow.mockResolvedValue(hist(3, [7]));
+    expect(await tr.history()).toBeUndefined();
+  });
+
+  it("watch hears the followed conversation's events only", async () => {
+    const { api, tr, emit } = fake();
+    api.follow.mockResolvedValue(hist(1));
+    await tr.follow();
+    const heard: number[] = [];
+    const off = tr.watch((e) => heard.push(e.run));
+    emit({ conversation: 2, run: 3 });
+    emit({ conversation: 1, run: 4 });
+    off();
+    emit({ conversation: 1, run: 5 });
+    expect(heard).toEqual([4]);
+  });
+
+  it("Stop while starting, then a switch: the run is still stopped once its ID is known", async () => {
+    const { api, tr } = fake();
+    let resolve!: (n: number) => void;
+    api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
+    api.stop.mockResolvedValue(undefined);
+    await send(tr, userMsg("hi"));
+    await tr.stop();
+    api.follow.mockResolvedValue(hist(2));
+    await tr.follow(); // a switch: the start's result is no longer shown
+    resolve(9);
+    await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
+    expect(tr.run).toBe(0);
   });
 });

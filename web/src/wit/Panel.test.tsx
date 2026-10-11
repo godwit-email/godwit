@@ -5,10 +5,7 @@ import { makeT } from "@/shared/i18n";
 import { Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
-vi.mock("@/mygo", () => ({
-  ComposePage: { openLink: vi.fn(async () => {}) },
-  events: { wit: { on: () => () => {} } },
-}));
+vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 
 const t = makeT({
   "wit.compose.placeholder": "告诉 Wit 你想怎么回",
@@ -37,6 +34,12 @@ const t = makeT({
   "wit.approval.allow_all": "全部允许",
   "wit.approval.reject": "拒绝",
   "wit.approval.send_note": "发送仍需你在撰写页亲自点击",
+  "wit.input": "向 Wit 提问",
+  "ask.citations": "引用的邮件",
+  "ask.citation.suspect": "含疑似指令，已作为数据处理",
+  "mail.no_subject": "（无主题）",
+  "link.title": "打开这个链接？",
+  "link.open": "打开",
 });
 
 const info: WitInfo = {
@@ -75,6 +78,8 @@ async function setup(
     review?: PanelReview;
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
+    onCite?(id: number): void;
+    page?: boolean;
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -89,6 +94,7 @@ async function setup(
     return () => {};
   });
   api.follow.mockResolvedValue(o.history ?? empty);
+  const onLink = vi.fn().mockResolvedValue(undefined);
   await tr.follow(); // as the page does: the history read through this transport
   const ui = (resume?: { run: number }) => (
     <Panel
@@ -99,13 +105,16 @@ async function setup(
       resume={resume}
       onRunning={o.onRunning}
       onDecide={o.onDecide}
+      onLink={onLink}
+      onCite={o.onCite}
+      layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
     />
   );
   const r = render(ui());
   const emit = (e: Partial<WitEvent>) => act(() => listener?.(ev(e)));
-  return { ...r, api, tr, emit, resume: (run: number) => r.rerender(ui({ run })) };
+  return { ...r, api, tr, emit, onLink, resume: (run: number) => r.rerender(ui({ run })) };
 }
 
 const input = () => screen.getByRole("textbox", { name: "Wit 输入" });
@@ -467,5 +476,100 @@ describe("Panel", () => {
     resume(7);
     expect(await screen.findByText("one two")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(1);
+  });
+
+  it("reconcile after done replaces streamed text with the saved history", async () => {
+    const { api, emit } = await setup();
+    const saved: WitHistory = {
+      ...empty,
+      messages: [
+        { id: "q9", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "a9",
+          role: "assistant",
+          text: "Hello whole world",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
+      ],
+    };
+    api.follow.mockResolvedValue(saved);
+    await userEvent.setup().type(input(), "Q{Enter}");
+    emit({ kind: "text", text: "Hello wo" }); // a slow subscriber lost the rest
+    emit({ kind: "done" });
+    expect(await screen.findByText("Hello whole world")).toBeInTheDocument();
+    expect(screen.getAllByText("Q")).toHaveLength(1);
+    expect(api.follow).toHaveBeenCalledTimes(2);
+  });
+
+  it("a reconcile read that lacks the run keeps what streamed", async () => {
+    const { api, emit } = await setup(); // follow still gives the empty history
+    await userEvent.setup().type(input(), "Q{Enter}");
+    emit({ kind: "text", text: "kept" });
+    emit({ kind: "done" });
+    await waitFor(() => expect(api.follow).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("kept")).toBeInTheDocument();
+  });
+
+  it("links go through the host's openLink", async () => {
+    const user = userEvent.setup();
+    const { emit, onLink } = await setup();
+    await user.type(input(), "Q{Enter}");
+    emit({ kind: "text", text: "[b](https://ok.org/p)" });
+    emit({ kind: "done" });
+    await user.click(await screen.findByText("b"));
+    await user.click(await screen.findByRole("button", { name: "打开" }));
+    expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
+  });
+
+  it("citations: both layouts render; cited click opens", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn();
+    const cite = (n: number, id: number, suspect = false) => ({
+      n,
+      messageId: id,
+      subject: id === 51 ? "" : `S${id}`,
+      from: `f${id}`,
+      date: 0,
+      suspect,
+    });
+    await setup({
+      page: true,
+      onCite,
+      history: {
+        ...empty,
+        messages: [
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "A",
+            calls: [],
+            results: [],
+            citations: [cite(1, 50), cite(2, 51, true)],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    // jsdom has no container queries: both branches are in the DOM, each behind its query
+    const lists = screen.getAllByRole("region", { name: "引用的邮件" });
+    expect(lists).toHaveLength(2);
+    const column = lists.find((l) => l.closest("aside"));
+    const under = lists.find((l) => !l.closest("aside"));
+    expect(column?.closest("aside")?.className).toContain("@4xl:flex");
+    expect(column?.closest("aside")?.className).toContain("hidden");
+    expect(under?.className).toContain("@4xl:hidden");
+    expect(under?.closest("[data-role=assistant]")).not.toBeNull();
+    expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();
+    for (const l of lists) {
+      expect(l.textContent).toContain("[1] f50");
+      expect(l.textContent).toContain("（无主题）");
+      expect(l.textContent).toContain("含疑似指令，已作为数据处理");
+    }
+    await user.click(screen.getAllByRole("button", { name: /\[2\] f51/ })[0]);
+    expect(onCite).toHaveBeenCalledWith(51);
   });
 });

@@ -82,6 +82,10 @@ func TestShellNavigation(t *testing.T) {
 	h.drain()
 	h.tt.Frame()
 	want("Cmd+]", PageWit)
+	h.app.Navigate(-1) // forwarded by the Wit page, which has the keyboard
+	want("the page's Cmd+[", PageMail)
+	h.app.Navigate(1)
+	want("the page's Cmd+]", PageWit)
 	h.click("后退")
 	h.click("设置") // a new route clears the forward stack
 	want("settings", PageSettings)

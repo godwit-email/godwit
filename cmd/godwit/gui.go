@@ -65,7 +65,23 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	// Compose pages reach only their own window's draft; bound before Run.
 	pages := webui.NewCompose()
+	// Embedded pages and their roles, by their *mygo.Page.
+	roles := webui.NewPages(func(ctx context.Context) any { return mygo.CallerPage(ctx) })
 	var windows *webui.Windows
+	emit := func(t webui.Target, ev webui.WitEvent) {
+		var err error
+		if t.Page != 0 {
+			if p, ok := roles.Key(t.Page); ok {
+				err = webui.WitStream.EmitPage(p.(*mygo.Page), ev)
+			}
+		} else if w := mygo.WindowByID(t.Window); w != nil {
+			err = webui.WitStream.Emit(w, ev)
+		}
+		if err != nil {
+			log.Printf("wit event to %+v: %v", t, err)
+		}
+	}
+	openCompose := func(id int64) { windows.Open(id) } // set below, before any page runs
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -73,17 +89,43 @@ func gui(ctx context.Context, dataDir string) int {
 			}
 			return 0, false
 		},
-		PickFiles: pickFiles,
-		Emit: func(winID int, ev webui.WitEvent) {
-			if w := mygo.WindowByID(winID); w != nil {
-				if err := webui.WitStream.Emit(w, ev); err != nil {
-					log.Printf("wit event to compose window %d: %v", winID, err)
-				}
-			}
-		},
+		PickFiles:   pickFiles,
+		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
-		OpenCompose: func(id int64) { windows.Open(id) }, // set below, before any page runs
+		OpenCompose: openCompose,
 	}))
+	// The Wit page, embedded in the main window: its callbacks run on the
+	// App's UI thread; its events go to its page only.
+	var witView *mygo.WebView
+	onApp := func(f func(*app.App)) {
+		if a != nil {
+			a.OnUI(func() { f(a) }) // dropped once the App closed
+		}
+	}
+	toWit := func(what string, emit func(*mygo.Page) error) {
+		if witView == nil {
+			return
+		}
+		if err := emit(witView.Page()); err != nil {
+			log.Printf("%s to the Wit page: %v", what, err)
+		}
+	}
+	wit := webui.NewWit(roles, webui.WitPageDeps{
+		Emit: emit,
+		Open: func(m webui.WitOpenMsg) {
+			toWit("witOpen", func(p *mygo.Page) error { return webui.WitOpen.EmitPage(p, m) })
+		},
+		State: func(st webui.WitPageState) {
+			toWit("witState", func(p *mygo.Page) error { return webui.WitState.EmitPage(p, st) })
+		},
+		OpenMessage:         func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
+		OpenModels:          func() { onApp((*app.App).OpenModels) },
+		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
+		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
+		OpenURL:             mygo.Shell.OpenExternal,
+		OpenCompose:         openCompose,
+	})
+	mygo.Bind(webui.NewWitPage(wit))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -107,6 +149,7 @@ func gui(ctx context.Context, dataDir string) int {
 			return
 		}
 		pages.SetService(svc)
+		wit.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -116,7 +159,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
@@ -124,6 +167,14 @@ func gui(ctx context.Context, dataDir string) int {
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win
+		if v, err := win.NewWebView(mygo.WebViewOptions{URL: "/wit.html"}); err != nil {
+			log.Printf("the Wit page: %v", err) // the Ask page shows no content
+		} else {
+			witView = v
+			lockPage(v.Page())
+			roles.Register(v.Page(), "wit")
+			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
+		}
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })
 		mygo.App.OnSecondInstance(func([]string, string) { plat.ShowWindow() })

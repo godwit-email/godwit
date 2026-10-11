@@ -185,6 +185,10 @@ type App struct {
 	closeErr    error  // why
 	closeAnyway func() // closes after all
 
+	witView    ui.NativeWebView                 // the Wit page; nil before SetWitPage
+	witOpen    func(conv int64) (version int64) // tells the Wit page the route's conversation
+	witCreated func(conv int64) (version int64) // the same, for the conversation its Ask made
+
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
 
@@ -392,6 +396,10 @@ func (a *App) BeforeClose(proceed func()) {
 
 // SetForeground records whether the window is in front.
 func (a *App) SetForeground(on bool) { a.foreground = on }
+
+// OnUI posts f to the UI thread unless the App has closed by then, for
+// callbacks from elsewhere (the Wit page's).
+func (a *App) OnUI(f func()) { a.onUI(f) }
 
 // onUI posts f to the UI thread unless the App has closed by then.
 func (a *App) onUI(f func()) {
