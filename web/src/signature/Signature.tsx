@@ -100,27 +100,27 @@ function Toolbar({ t }: { t: T }) {
       <Icon className="size-4" />
     </ToggleGroupItem>
   );
+  // The row spans the card; ToggleGroup itself is fit-to-content and rounded.
   return (
-    <ToggleGroup
-      multiple
-      value={value}
-      size="sm"
-      spacing={0.5}
+    <div
+      data-slot="signature-toolbar"
       className="flex items-center border-b bg-sidebar px-1.5 py-1"
     >
-      {marks.map((m) =>
-        item(m.key, m.label, m.Icon, () => {
-          editor.tf.toggleMark(m.key);
-          editor.tf.focus();
-        }),
-      )}
-      <span className="mx-1 h-4 w-px bg-border" />
-      {item("link", "compose.link", RiLink, () => {
-        saved.current = editor.selection;
-        setBad(false);
-        setLink("");
-      })}
-    </ToggleGroup>
+      <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
+        {marks.map((m) =>
+          item(m.key, m.label, m.Icon, () => {
+            editor.tf.toggleMark(m.key);
+            editor.tf.focus();
+          }),
+        )}
+        <span className="mx-1 h-4 w-px bg-border" />
+        {item("link", "compose.link", RiLink, () => {
+          saved.current = editor.selection;
+          setBad(false);
+          setLink("");
+        })}
+      </ToggleGroup>
+    </div>
   );
 }
 
