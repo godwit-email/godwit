@@ -179,11 +179,9 @@ func TestShots(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	shot := func(h *harness, name string) {
+	write := func(h *harness, dir, name string) {
 		h.t.Helper()
-		h.tt.Frame()
-		h.advance(refreshEvery)
-		time.Sleep(2 * theme.MotionBase) // hover and selection fades run on the wall clock
+		time.Sleep(2 * theme.MotionBase) // hover, selection and theme fades run on the wall clock
 		h.tt.Frame()
 		f, err := os.Create(filepath.Join(dir, name+".png"))
 		if err != nil {
@@ -192,6 +190,24 @@ func TestShots(t *testing.T) {
 		defer f.Close()
 		if err := png.Encode(f, h.tt.Image()); err != nil {
 			t.Fatal(err)
+		}
+	}
+	dark := os.Getenv("GODWIT_SHOTS_DARK") // also each shot in dark mode, there (the design has no dark artboards)
+	if dark != "" {
+		if err := os.MkdirAll(dark, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shot := func(h *harness, name string) {
+		h.t.Helper()
+		h.tt.Frame()
+		h.advance(refreshEvery)
+		write(h, dir, name)
+		if dark != "" {
+			h.tt.SetDark(true)
+			write(h, dark, name)
+			h.tt.SetDark(false)
+			h.tt.Frame()
 		}
 	}
 	// quick turns quick replies on once the open message is there (they and the
@@ -368,8 +384,28 @@ func TestShots(t *testing.T) {
 			}
 		}
 		s.syncNow(s.work)
+		name, alias := "[你的名字]", "工作"
+		if _, err := s.env.Svc.UpdateAccount(context.Background(), s.work.ID, core.AccountPatch{Name: &name, Alias: &alias}); err != nil {
+			t.Fatal(err)
+		}
 		s.env.IMAP(s.work.ID).SetPassword("expired")
 		_ = s.env.Svc.SyncNow(context.Background(), s.work.ID) // rejected: the account needs signing in again
+		// The design's account is Outlook, signed in with OAuth, on Microsoft's
+		// servers: the local test servers can't be those, so the page is shown
+		// the account as the design has it.
+		fetch := s.app.fetch
+		s.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+			st, accs, err := fetch(ctx)
+			for i, acc := range accs {
+				if acc.ID == s.work.ID {
+					acc.Provider, acc.AuthType, acc.StatusDetail = "outlook", "oauth", ""
+					acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity = "outlook.office365.com", 993, core.SecurityTLS
+					acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity = "smtp.office365.com", 587, core.SecurityStartTLS
+					accs[i] = acc
+				}
+			}
+			return st, accs, err
+		}
 		s.resize(1440, 2010)
 		s.openSettings(accountRoute(s.work.ID))
 		s.see("Junk Email")
