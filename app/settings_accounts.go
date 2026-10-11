@@ -290,50 +290,57 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	f := p.form(acc)
 	prov := accountProvider(a, acc)
 
-	ui.Row(c).Gap(th.Space(3.5)).Children(func() {
-		mark(c, prov, theme.MarkLg)
+	ui.Row(c).Gap(th.Space(4)).Children(func() {
+		mark(c, prov, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Text(c, acc.Email).FontSize(t.Text.X2l).FontWeight(600).SingleLine().Shrink(1)
+			ui.Text(c, acc.Email).FontSize(t.Text.Display).FontWeight(600).SingleLine()
+			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				meta := providerName(prov)
+				if acc.StatusDetail != "" {
+					meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
+				}
+				ui.Text(c, meta).TextColor(t.Muted)
 				if acc.IsDefault {
 					kit.Badge(c, i18n.T("settings.account.default"))
 				}
+				text, bg, fg := cmpTr("settings.account.status."+acc.Status, acc.Status), t.WarningBg, t.WarningText
+				if acc.Status == "ok" {
+					bg, fg = t.SuccessBg, t.SuccessText
+					if at, ok := a.syncedAtBy[acc.ID]; ok {
+						text = i18n.Tf("shell.sync.synced", a.ago(at))
+					}
+				}
+				ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(bg).TextColor(fg).Children(func() {
+					ui.Text(c, text).FontSize(t.Text.Sm)
+				})
 			})
-			meta := providerName(prov)
-			if acc.StatusDetail != "" {
-				meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
-			}
-			ui.Text(c, meta).TextColor(t.Muted)
-		})
-		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.WarningBg).TextColor(t.WarningText)
-		if acc.Status == "ok" {
-			pill.Background(t.Success.Alpha(0.1)).TextColor(t.Success)
-		}
-		pill.Children(func() {
-			ui.Text(c, cmpTr("settings.account.status."+acc.Status, acc.Status)).FontSize(t.Text.Sm)
 		})
 	})
 
 	if acc.Status == "reauth_required" {
-		kit.Alert(c, kit.Warning, i18n.T("settings.account.reauth"), func() { p.authButton(c, acc, prov, true) })
+		msg := i18n.T("settings.account.reauth.unknown")
+		if at, ok := a.syncedAtBy[acc.ID]; ok {
+			msg = i18n.Tf("settings.account.reauth", a.ago(at))
+		}
+		kit.Alert(c, kit.Warning, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
 	row := func(label, desc string, control func()) func() {
 		return func() { settingRow(c, label, desc, control) }
 	}
-	input := func(label string, v *string, i int) func() {
-		return row(label, "", func() {
+	input := func(label, desc string, v *string, i int) func() {
+		return row(label, desc, func() {
 			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label).Changed() {
 				p.edited(acc.ID, f, i)
 			}
 		})
 	}
 	settingsSection(c, i18n.T("settings.account.basic"), "",
-		input(i18n.T("settings.account.name"), &f.name, 0),
-		input(i18n.T("settings.account.alias"), &f.alias, 1),
+		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, 0),
+		input(i18n.T("settings.account.alias"), "", &f.alias, 1),
 		func() {
 			on := acc.IsDefault
-			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), "").Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
+			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help")).Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
 				p.makeDefault(acc.ID)
 			}
 		})
@@ -344,16 +351,16 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 	})
-	unread := ""
+	desc := p.syncState(acc)
 	if acc.Status == "ok" {
-		unread = i18n.Tf("mail.unread_count", a.unread[acc.ID])
+		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")
 	}
 	usage := "…"
 	if n, ok := p.usage[acc.ID]; ok {
 		usage = formatBytes(n)
 	}
 	settingsSection(c, i18n.T("settings.account.sync"), "",
-		row(p.syncState(acc), unread, func() {
+		row(i18n.T("settings.account.sync.status"), desc, func() {
 			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
@@ -361,31 +368,28 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.setLimit(acc.ID, f)
 			}
 		}),
-		row(i18n.Tf("settings.account.usage", usage), "", func() {
-			settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
+		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
+			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, usage).TextColor(t.Muted)
+				settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
+			})
 		}))
-	server := func(proto, host string, port int, sec core.Security) {
-		ui.Row(c).Gap(th.Space(3)).Children(func() {
-			ui.Text(c, proto).Width(th.Space(12)).TextColor(t.Muted)
-			ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Shrink(1)
+	server := func(proto, host string, port int, sec core.Security) func() {
+		return row(proto, "", func() {
+			ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "",
-		row(p.authText(acc, prov), "", func() { p.authButton(c, acc, prov, false) }),
-		func() {
-			settingBlock(c, func() {
-				ui.Column(c).Gap(th.Space(1)).Children(func() {
-					server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
-					server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
-				})
-				settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).AlignSelf(ui.Start).OnClick(func() { p.openDialog("servers", acc) })
-			})
-		})
-	settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
-		settingBlock(c, func() {
-			settingButton(c, i18n.Tf("settings.account.remove.button", acc.Email), kit.DestructiveOutline, false).AlignSelf(ui.Start).OnClick(func() { p.openDialog("remove", acc) })
-		})
-	})
+		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
+		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity),
+		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity),
+		row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
+			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+		}))
+	settingsSection(c, i18n.T("settings.account.remove"), "",
+		row(i18n.T("settings.account.remove.row"), strings.TrimRight(i18n.T("settings.account.remove.help"), "。."), func() {
+			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).OnClick(func() { p.openDialog("remove", acc) })
+		}))
 }
 
 // cmpTr is key's message, or fallback when the catalog has none.
@@ -416,8 +420,9 @@ func (p *settingsPage) syncState(acc core.Account) string {
 		return i18n.T("shell.sync.syncing")
 	case a.syncErr[acc.ID] != "":
 		return i18n.T("shell.sync.failed")
-	case !a.syncedAt.IsZero():
-		return a.syncedAgo()
+	}
+	if at, ok := a.syncedAtBy[acc.ID]; ok {
+		return i18n.Tf("shell.sync.synced", a.ago(at))
 	}
 	return ""
 }

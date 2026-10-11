@@ -111,14 +111,14 @@ var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 // Sizes of glyphs and small parts; they do not follow the density.
 const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
-	Logo                                             = 64         // the About page's logo
-	BrandLogo                                        = 40         // onboarding's brand mark, beside the name
-	MarkSm, MarkMd, MarkLg                           = 20, 28, 40 // provider marks
-	RailButton                                       = 40         // the icon rail's buttons
-	CloseButton                                      = 20         // a toast's close button
-	Control                                          = 16         // check boxes and radio buttons
-	RadioDot, StatusDot                              = 8, 6       // a chosen radio's dot; status dots
-	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14 // a switch's track and thumb
+	Logo                                             = 64             // the About page's logo
+	BrandLogo                                        = 40             // onboarding's brand mark, beside the name
+	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	RailButton                                       = 40             // the icon rail's buttons
+	CloseButton                                      = 20             // a toast's close button
+	Control                                          = 16             // check boxes and radio buttons
+	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
+	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb
 	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
 	StepDot, PendingDot, DoneBadge                   = 20, 10, 36     // onboarding's check steps, OAuth wait, done mark
 	ThemeTileWidth, ThemeTileHeight, ThemeTileGap    = 76, 48, 10     // settings' theme pictures and the space between them

@@ -492,6 +492,9 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	if size <= theme.MarkSm {
 		r = t.Radius.Sm
 	}
+	if size >= theme.MarkXl {
+		r = t.Radius.Xl
+	}
 	if b := icons.Brand(p.ID); b != nil {
 		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile).Border(theme.Hairline, t.Outline)
 		in := size - 2*theme.Hairline // inside the outline: a full-size logo would sit off centre, clipped

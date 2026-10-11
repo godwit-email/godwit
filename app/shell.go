@@ -93,6 +93,7 @@ func (a *App) onEvent(ev events.Event) {
 		delete(a.syncing, ev.AccountID)
 		delete(a.syncErr, ev.AccountID)
 		a.syncedAt = a.clock.Now()
+		a.syncedAtBy[ev.AccountID] = a.syncedAt
 		a.tick()
 	case events.SyncFailed:
 		delete(a.syncing, ev.AccountID)
@@ -269,14 +270,17 @@ func (a *App) syncStatus(c *ui.Context) {
 	}
 }
 
-func (a *App) syncedAgo() string {
-	switch d := a.clock.Now().Sub(a.syncedAt); {
+func (a *App) syncedAgo() string { return i18n.Tf("shell.sync.synced", a.ago(a.syncedAt)) }
+
+// ago is how long before now t was: 刚刚, 5 分钟前, 3 小时前.
+func (a *App) ago(t time.Time) string {
+	switch d := a.clock.Now().Sub(t); {
 	case d < time.Minute:
-		return i18n.T("shell.sync.done")
+		return i18n.T("shell.sync.just_now")
 	case d < time.Hour:
-		return i18n.Tf("shell.sync.synced", i18n.Plural("shell.sync.minutes_ago", int(d.Minutes())))
+		return i18n.Plural("shell.sync.minutes_ago", int(d.Minutes()))
 	default:
-		return i18n.Tf("shell.sync.synced", i18n.Plural("shell.sync.hours_ago", int(d.Hours())))
+		return i18n.Plural("shell.sync.hours_ago", int(d.Hours()))
 	}
 }
 

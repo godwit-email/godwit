@@ -71,7 +71,7 @@ func TestSettingsAccountEdit(t *testing.T) {
 	})
 
 	// Sync range and Sync now.
-	h.click("每个文件夹最近 2000 封（推荐）")
+	h.click("每个文件夹最近 2000 封")
 	h.click("最近 10000 封")
 	h.until("sync limit saved", func() bool { return h.account(acc.ID).SyncLimit == 10000 })
 	h.click("立即同步")
@@ -102,7 +102,7 @@ func TestSettingsDefaultAccount(t *testing.T) {
 	if _, badge := h.tt.Find("默认发件"); badge {
 		t.Fatalf("bob shows as the default: %q", h.tt.Texts())
 	}
-	h.click("设为默认发件账户（在「全部收件箱」里写邮件时使用）")
+	h.click("设为默认发件账户")
 	h.until("bob is the default", func() bool { return h.account(b.ID).IsDefault && !h.account(a.ID).IsDefault })
 	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
 }
@@ -110,7 +110,7 @@ func TestSettingsDefaultAccount(t *testing.T) {
 func TestSettingsRemoveAccount(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.click("删除 alice@example.com")
+	h.clickRemove()
 	h.see("服务器上的邮件不受影响。")
 	h.click("删除")
 	h.until("onboarding", func() bool { return h.app.route.Page == PageOnboarding })
@@ -122,10 +122,10 @@ func TestSettingsRemoveAccount(t *testing.T) {
 func TestSettingsReauthBanner(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.see("状态正常")
+	h.see("已同步")
 	h.env.IMAP(acc.ID).SetPassword("x")
 	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
-	banner := "登录已过期，已停止同步。本地已有的邮件仍然可以查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。"
+	banner := "。本地邮件仍可查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。"
 	h.until("the banner", func() bool {
 		h.advance(refreshEvery)
 		return h.tt.HasText(banner)
@@ -175,12 +175,12 @@ func TestSettingsCache(t *testing.T) {
 	}
 	p := h.openSettings(accountRoute(acc.ID))
 	h.until("usage", func() bool { return p.usage[acc.ID] > 0 })
-	h.see("本地占用 " + formatBytes(p.usage[acc.ID]))
+	h.see(formatBytes(p.usage[acc.ID]))
 	h.click("清理附件缓存")
 	h.see("清理附件缓存？")
 	h.click("清理")
 	h.until("cleared", func() bool { return p.usage[acc.ID] == 0 })
-	h.see("本地占用 0 B")
+	h.see("0 B")
 	if n, err := h.env.Svc.AttachmentCacheUsage(ctx, acc.ID); err != nil || n != 0 {
 		t.Fatalf("usage %d, %v", n, err)
 	}
@@ -315,7 +315,7 @@ func (b *blockingUpdate) Log() []string {
 // saveServers opens the servers dialog, sets the hosts and saves.
 func (h *harness) saveServers(imap, smtp string) {
 	h.t.Helper()
-	h.click("编辑服务器设置")
+	h.click("编辑")
 	h.fill("IMAP 服务器", imap)
 	h.fill("SMTP 服务器", smtp)
 	h.click("保存")
@@ -351,7 +351,7 @@ func TestSettingsStaleDialogResult(t *testing.T) {
 	h.saveServers("localhost", "127.0.0.1")
 	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
 	h.click("取消")
-	h.click("编辑服务器设置")
+	h.click("编辑")
 	h.fill("IMAP 服务器", "typing.example")
 	close(b.release)
 	h.until("the first save ends", func() bool { return len(b.Log()) == 2 })
@@ -800,4 +800,80 @@ func (h *harness) fillRow(label, value string) {
 	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
 	h.tt.Command("selectAll")
 	h.typeText(value)
+}
+
+// clickRemove presses the 删除账户 button: its label is also the section title, so it clicks the right edge of the row.
+func (h *harness) clickRemove() {
+	h.t.Helper()
+	h.see("从本机移除这个账户")
+	row, _ := h.tt.Find("从本机移除这个账户")
+	if row.Y+row.H > 820-8 { // below the panel: scroll it to the middle, as click does
+		h.tt.Scroll(900, 400, 0, row.Y-400)
+		h.tt.Frame()
+		row, _ = h.tt.Find("从本机移除这个账户")
+	}
+	sync, ok := h.tt.Find("立即同步")
+	if !ok {
+		h.t.Fatal("no 立即同步 to align with")
+	}
+	sync, _ = h.tt.Find("立即同步")
+	h.tt.ClickAt(sync.X+sync.W-8, row.Y+row.H/2)
+	h.drain()
+	h.tt.Frame()
+}
+
+func TestAccountHeaderMeta(t *testing.T) {
+	h, acc := withAccount(t)
+	h.app.syncedAtBy[acc.ID] = h.clock.Now().Add(-3 * time.Hour)
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("已同步 · 3 小时前")
+	chip, _ := h.tt.Find("已同步 · 3 小时前")
+	title, _ := h.tt.Find("alice@example.com")
+	badge, ok := h.tt.Find("默认发件")
+	if !ok || badge.Y < title.Y+title.H || chip.Y < title.Y+title.H {
+		t.Fatalf("badge %v and chip %v belong under the title %v", badge, chip, title)
+	}
+	got, want := h.tt.Image().RGBAAt(int(chip.X-4), int(chip.Y+chip.H/2)), theme.Dark().SuccessBg.SRGB()
+	if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
+		t.Fatalf("chip %v, want dark SuccessBg %v", got, want)
+	}
+	delete(h.app.syncedAtBy, acc.ID)
+	h.advance(time.Minute)
+	h.tt.Frame()
+	if _, ok := h.tt.Find("已同步"); !ok {
+		t.Fatalf("no bare chip: %q", h.tt.Texts())
+	}
+}
+
+func TestReauthBannerElapsed(t *testing.T) {
+	h, acc := withAccount(t)
+	h.env.IMAP(acc.ID).SetPassword("x")
+	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
+	h.app.syncedAtBy[acc.ID] = h.clock.Now().Add(-3 * time.Hour)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("elapsed banner", func() bool {
+		h.advance(refreshEvery)
+		return h.tt.HasText("登录已过期，3 小时前起停止同步。")
+	})
+	h.see("需要重新登录")
+	delete(h.app.syncedAtBy, acc.ID)
+	h.advance(time.Minute)
+	h.tt.Frame()
+	if !h.tt.HasText("登录已过期，已停止同步。") {
+		t.Fatalf("no unknown-time banner: %q", h.tt.Texts())
+	}
+}
+
+func TestDeleteAccountOutline(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响")
+	if h.tt.HasText("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响。") {
+		t.Fatal("row desc keeps the trailing 。")
+	}
+	h.clickRemove()
+	h.see("删除 alice@example.com？") // the dialog keeps the email
 }

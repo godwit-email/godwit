@@ -185,10 +185,11 @@ type App struct {
 	refreshStop       func()         // the pending throttled refresh; nil when none
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
-	syncing  map[int64]bool   // accounts syncing now
-	syncErr  map[int64]string // each account's last sync failure, until it syncs
-	syncedAt time.Time        // the last successful sync; zero before one
-	ticking  bool             // a minute tick redraws the sync age
+	syncing    map[int64]bool      // accounts syncing now
+	syncErr    map[int64]string    // each account's last sync failure, until it syncs
+	syncedAt   time.Time           // the last successful sync; zero before one
+	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
+	ticking    bool                // a minute tick redraws the sync age
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
@@ -241,7 +242,7 @@ func New(d Deps) *App {
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
-	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
+	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]string{}, map[int64]time.Time{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
