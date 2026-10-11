@@ -113,6 +113,7 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err := st.validate(); err != nil {
 		return Settings{}, err
 	}
+	st.SettingsVersion = 2 // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
 	if err != nil {
 		return Settings{}, err

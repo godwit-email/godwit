@@ -121,8 +121,10 @@ func TestSettingsValidateModelRefs(t *testing.T) {
 
 func TestSettingsFontMigration(t *testing.T) {
 	for stored, want := range map[string][2]int{
-		`{"FontSize":13,"BodyFontSize":15}`:                     {14, 15},
-		`{"FontSize":16}`:                                       {17, 14},
+		`{"FontSize":13,"BodyFontSize":15}`: {14, 15},
+		`{"Theme":"light"}`:                 {14, 14},
+		`{"FontSize":32}`:                   {32, 14},
+		`{"FontSize":16}`:                   {17, 14},
 		`{"FontSize":13,"BodyFontSize":15,"SettingsVersion":2}`: {13, 15},
 	} {
 		s := settingsService(t, t.TempDir(), "")
@@ -132,5 +134,20 @@ func TestSettingsFontMigration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, [2]int{got.FontSize, got.BodyFontSize}, stored)
 		assert.Equal(t, 2, got.SettingsVersion, stored)
+	}
+}
+
+func TestSettingsVersionStamped(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	in, _ := s.GetSettings(t.Context())
+	in.FontSize, in.SettingsVersion = 15, 0
+	_, err := s.SetSettings(t.Context(), in)
+	require.NoError(t, err)
+	for range 2 { // load -> save -> load is stable
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, 15, got.FontSize)
+		_, err = s.SetSettings(t.Context(), got)
+		require.NoError(t, err)
 	}
 }
