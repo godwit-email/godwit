@@ -20,6 +20,17 @@ const md = [
   "[a](javascript:alert(1)) [f](file:///etc) [b](https://ok.org/p) [m](mailto:x@y.z)",
 ].join("\n\n");
 
+describe("answer layout", () => {
+  it("the page size sets the reading leading; tables get the bordered style", async () => {
+    const { container } = render(
+      <Response text={"| a | b |\n|---|---|\n| 1 | 2 |"} size="page" onLink={() => {}} t={t} />,
+    );
+    await screen.findByText("1");
+    expect(container.firstElementChild).toHaveClass("text-md", "leading-[1.75]");
+    expect(container.firstElementChild?.className).toContain("[&_th]:bg-sidebar");
+  });
+});
+
 describe("answer hardening", () => {
   it("renders no image, script or raw element; only http(s)/mailto links", async () => {
     const { container } = render(<Response text={md} onLink={() => {}} t={t} />);

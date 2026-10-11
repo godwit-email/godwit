@@ -262,6 +262,18 @@ describe("Panel", () => {
       },
     });
     expect(screen.getByText("调用了 2 个工具 · search ×2、read")).toBeInTheDocument();
+    expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
+      "data-variant",
+      "secondary",
+    );
+    expect(screen.getByText("调用了 2 个工具 · search ×2、read").closest("button")).toHaveClass(
+      "text-base",
+    );
+    expect(screen.getByText("来源 [2] 中包含疑似指令。").closest("[role=status]")).toHaveClass(
+      "bg-(--warning-bg)",
+      "text-(--warning-text)",
+      "rounded-lg",
+    );
     expect(screen.getByText("来源 [2] 中包含疑似指令。")).toBeInTheDocument();
     await user.type(input(), "more{Enter}");
     emit({ kind: "context", citations: [cite(0, 51), cite(0, 52, true)] });
@@ -407,6 +419,10 @@ describe("Panel", () => {
     expect(screen.getAllByText("会把数据发送到：api.x.com、cdn.x.com")).toHaveLength(2);
     expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument(); // create_draft's only
     expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(2); // two of run 7
+    for (const n of ["允许", "全部允许", "拒绝"])
+      for (const b of screen.getAllByRole("button", { name: n })) {
+        expect(b).toHaveClass("h-8", "text-base"); // default size, not sm
+      }
     await user.click(screen.getAllByRole("button", { name: "允许" })[0]);
     expect(onDecide).toHaveBeenCalledWith(a, true, false);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());

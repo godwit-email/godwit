@@ -40,8 +40,8 @@ export function Citations({
 }) {
   const now = new Date();
   return (
-    <section aria-label={t("ask.citations")} className={cn("flex flex-col gap-2", className)}>
-      <h2 className="px-1 font-semibold text-sm">{t("ask.citations")}</h2>
+    <section aria-label={t("ask.citations")} className={cn("flex flex-col gap-2.5", className)}>
+      <h2 className="font-semibold text-md">{t("ask.citations")}</h2>
       {items.map((c) => {
         const suspect = nums.get(c.messageId)?.suspect ?? c.suspect;
         return (
@@ -50,23 +50,23 @@ export function Citations({
             type="button"
             onClick={() => onOpen(c.messageId)}
             className={cn(
-              "flex flex-col gap-0.5 rounded-lg border bg-background p-2.5 text-left hover:bg-accent",
+              "flex flex-col gap-1 rounded-xl border bg-background px-3 py-2.5 text-left hover:bg-accent",
               suspect && "border-(--warning-border)",
             )}
           >
             <span className="flex items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate font-medium">
+              <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">
                 [{nums.get(c.messageId)?.n ?? c.n}] {c.from}
               </span>
-              <span className="shrink-0 text-muted-foreground text-xs">
+              <span className="shrink-0 text-muted-foreground text-sm">
                 {listTime(now, c.date, t)}
               </span>
             </span>
-            <span className="truncate text-muted-foreground text-sm">
+            <span className="truncate text-foreground text-md">
               {c.subject || t("mail.no_subject")}
             </span>
             {suspect && (
-              <span className="text-(--warning-text) text-xs">{t("ask.citation.suspect")}</span>
+              <span className="text-(--warning-text) text-sm">{t("ask.citation.suspect")}</span>
             )}
           </button>
         );

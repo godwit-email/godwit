@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -84,11 +85,14 @@ export function Response({
   onLink,
   t,
   streaming = false,
+  size = "panel",
 }: {
   text: string;
   onLink(url: string): void;
   t: T;
   streaming?: boolean;
+  /** "page": the Wit page's reading leading (1.75). */
+  size?: "panel" | "page";
 }) {
   const [link, setLink] = useState<string>();
   const components = useMemo<Components>(
@@ -121,7 +125,10 @@ export function Response({
   return (
     <>
       <Streamdown
-        className="text-md"
+        className={cn(
+          "text-md [&_table]:rounded-lg [&_td]:px-3 [&_td]:py-2 [&_th]:bg-sidebar [&_th]:px-3 [&_th]:py-2 [&_th]:font-medium [&_tr]:border-b",
+          size === "page" && "leading-[1.75]",
+        )}
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={remarkPlugins}

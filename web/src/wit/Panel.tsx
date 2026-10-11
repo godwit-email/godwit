@@ -146,12 +146,12 @@ function ToolCard({
     break;
   }
   return (
-    <Card size="sm" className="ring-primary">
-      <CardHeader>
+    <Card size="sm" className="pt-0 ring-primary">
+      <CardHeader className="bg-muted px-3.5 py-3">
         <CardTitle>{t("wit.approval.wants", toolLabel(a.tool, t))}</CardTitle>
         <CardDescription className="font-mono text-xs">{a.tool}</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-1.5">
+      <CardContent className="flex flex-col gap-1.5 px-3.5">
         {a.summary && <p className="text-muted-foreground">{a.summary}</p>}
         {fields.map(
           ([label, value]) =>
@@ -169,16 +169,26 @@ function ToolCard({
           </p>
         )}
       </CardContent>
-      <CardFooter className="flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={() => decide(true, false)}>
+      <CardFooter className="flex-wrap gap-2 px-3.5 py-2.5">
+        <Button className="text-base" disabled={busy} onClick={() => decide(true, false)}>
           {t("wit.approval.allow")}
         </Button>
         {many && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(true, true)}>
+          <Button
+            variant="outline"
+            className="text-base"
+            disabled={busy}
+            onClick={() => decide(true, true)}
+          >
             {t("wit.approval.allow_all")}
           </Button>
         )}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(false, false)}>
+        <Button
+          variant="outline"
+          className="text-base"
+          disabled={busy}
+          onClick={() => decide(false, false)}
+        >
           {t("wit.approval.reject")}
         </Button>
         {a.tool === "create_draft" && (
@@ -200,6 +210,7 @@ function Answer({
   tools,
   onLink,
   onCite,
+  page,
   t,
 }: {
   m: WitUIMessage;
@@ -210,6 +221,7 @@ function Answer({
   tools: (a: Approval) => ReactNode;
   onLink(url: string): void;
   onCite?(id: number): void;
+  page: boolean;
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
@@ -226,7 +238,7 @@ function Answer({
     <div data-role="assistant" className="flex flex-col gap-2.5">
       {calls.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground">
+          <CollapsibleTrigger className="flex items-center gap-1 text-base text-muted-foreground hover:text-foreground">
             {toolsLabel(calls, t)}
             <RiArrowDownSLine className="size-3.5" />
           </CollapsibleTrigger>
@@ -242,13 +254,23 @@ function Answer({
       {cites
         .filter((c) => nums.get(c.messageId)?.suspect)
         .map((c) => (
-          <Alert key={c.messageId} role="status" className="border-0 bg-muted px-3 py-2.5 text-sm">
+          <Alert
+            key={c.messageId}
+            role="status"
+            className="rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-base"
+          >
             <RiAlertLine />
             <AlertDescription>{t("wit.suspect", `[${nums.get(c.messageId)?.n}]`)}</AlertDescription>
           </Alert>
         ))}
       {text ? (
-        <Response text={text} streaming={live} t={t} onLink={onLink} />
+        <Response
+          text={text}
+          streaming={live}
+          size={page ? "page" : "panel"}
+          t={t}
+          onLink={onLink}
+        />
       ) : (
         live && <Busy t={t} />
       )}
@@ -475,7 +497,7 @@ export function Panel({
                 {m.role === "user" ? (
                   <Message align="end">
                     <MessageContent>
-                      <Bubble align="end">
+                      <Bubble variant="secondary" align="end">
                         <BubbleContent className="whitespace-pre-wrap text-base">
                           {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
                         </BubbleContent>
@@ -492,6 +514,7 @@ export function Panel({
                     tools={tools}
                     onLink={link}
                     onCite={onCite}
+                    page={page}
                     t={t}
                   />
                 )}
@@ -565,14 +588,14 @@ export function Panel({
       <div className="@container flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
           {conversation}
-          <div className="mx-auto flex w-full max-w-190 flex-col gap-2 px-6 pb-4">
+          <div className="mx-auto flex w-full max-w-190 flex-col gap-2 px-6 pt-6 pb-4">
             {error}
             {input}
           </div>
         </div>
         {cites.length > 0 && onCite && (
           // wide: the column (narrow: under each answer, Answer)
-          <aside className="hidden w-80 shrink-0 flex-col overflow-auto border-l bg-sidebar p-3 @4xl:flex">
+          <aside className="hidden w-80 shrink-0 flex-col overflow-auto border-l bg-sidebar p-4 @4xl:flex">
             <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
           </aside>
         )}
