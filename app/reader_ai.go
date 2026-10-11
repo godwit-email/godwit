@@ -425,7 +425,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 				for _, line := range points(sum.text) {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
 						ui.Box(c).Width(theme.SummaryIndent).Shrink(0).Children(func() { ui.Text(c, "•").TextColor(t.Muted) })
-						ui.Text(c, line).Grow(1).Shrink(1)
+						ui.Text(c, line).LineHeight(theme.LineSummary).Grow(1).Shrink(1)
 					})
 				}
 			})
@@ -469,7 +469,7 @@ func (r *reader) output(c *ui.Context, run *aiRun) {
 	if run.done && len(run.doc.Blocks) > 0 {
 		richtext.Render(c, run.doc, richtext.RenderOptions{OnLink: r.p.a.openLink})
 	} else if run.text != "" {
-		ui.Text(c, run.text)
+		ui.Text(c, run.text).LineHeight(theme.LineReading)
 	}
 }
 
