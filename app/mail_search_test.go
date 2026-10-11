@@ -213,3 +213,33 @@ func TestDateHeadingIsNotARow(t *testing.T) {
 		t.Fatalf("chosen %+v", got)
 	}
 }
+
+// While search results show, no sidebar view is selected (MainSearch).
+func TestSearchSidebarUnselected(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))
+	h.syncNow(accs[0])
+	h.waitMail("the thread", func() bool { return len(h.items()) == 1 })
+	// A sidebar row has the selected fill: scan the sidebar's middle column.
+	selected := func() bool {
+		h.tt.Move(1000, 700)
+		h.tt.Frame()
+		img, want := h.tt.Image(), theme.Light().SidebarSelected.SRGB()
+		x := theme.RailWidth + theme.SidebarWidth/2
+		for y := range img.Bounds().Dy() {
+			if got := img.RGBAAt(x, y); got.R == want.R && got.G == want.G && got.B == want.B {
+				return true
+			}
+		}
+		return false
+	}
+	if !selected() {
+		t.Fatal("全部收件箱 not selected")
+	}
+	h.tt.Key(ui.Cmd, ui.KeyF)
+	h.typeText("Invoice")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("the search result, no view selected", func() bool { return h.app.mail.searched && !selected() })
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the view selected again", selected)
+}

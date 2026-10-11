@@ -84,7 +84,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 // navItem is a view in the sidebar, with its icon and count; indent is in spacing steps.
 func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int, indent float32) {
 	t := theme.Of(c)
-	on := p.a.route.Page == PageMail && p.a.route.View == v
+	on := p.a.route.Page == PageMail && p.a.route.View == v && !p.searched // results: no view is shown
 	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, icon, on)
