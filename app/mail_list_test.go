@@ -353,7 +353,7 @@ func TestSearch(t *testing.T) {
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.tt.Key(ui.Cmd, ui.KeyF)
-	h.see("只搜索已同步的邮件")
+	h.see("只搜索已同步到本机的邮件")
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("the search result", func() bool { return h.app.mail.searched && len(h.app.mail.results) == 1 })
@@ -362,11 +362,11 @@ func TestSearch(t *testing.T) {
 	}
 	h.tt.Key(0, ui.KeyEscape)
 	h.see("Lunch")
-	if h.app.mail.searched || h.tt.HasText("只搜索已同步的邮件") {
+	if h.app.mail.searched || h.tt.HasText("只搜索已同步到本机的邮件") {
 		t.Fatal("Escape did not leave the search")
 	}
 	h.click("搜索")
-	h.see("只搜索已同步的邮件")
+	h.see("只搜索已同步到本机的邮件")
 }
 
 func TestKeyboardArchiveDelete(t *testing.T) {

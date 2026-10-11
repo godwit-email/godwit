@@ -38,6 +38,7 @@ type witPageFixture struct {
 	created  [][2]int64
 	messages []int64
 	models   int
+	asks     []string
 	navs     []int
 	urls     []string
 	composed []int64
@@ -66,6 +67,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 			f.record(func() { f.evs = append(f.evs, ev) })
 		},
 		Open:                func(m WitOpenMsg) { f.record(func() { f.opens = append(f.opens, m) }) },
+		Ask:                 func(q string) { f.record(func() { f.asks = append(f.asks, q) }) },
 		State:               func(s WitPageState) { f.record(func() { f.states = append(f.states, s) }) },
 		ConversationCreated: func(id, v int64) { f.record(func() { f.created = append(f.created, [2]int64{id, v}) }) },
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
@@ -890,4 +892,12 @@ func TestWitPageCreatedOnlyOnAdoption(t *testing.T) {
 	assert.True(t, f.opens[n-3].Created)
 	assert.False(t, f.opens[n-2].Created)
 	assert.False(t, f.opens[n-1].Created, "navigation to A is no creation")
+}
+
+// The hand-off sends the page the question once; an empty one is nothing.
+func TestWitHandoffEmitsOnce(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.w.Handoff("invoice")
+	f.w.Handoff("  ")
+	assert.Equal(t, []string{"invoice"}, f.asks)
 }

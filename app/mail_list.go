@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -21,8 +23,9 @@ import (
 )
 
 const (
-	pageSize = 50
-	maxPage  = 200 // the Service's largest page
+	pageSize    = 50
+	maxPage     = 200 // the Service's largest page
+	searchLimit = 100 // the most results a search reads: a full answer may have more
 )
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
@@ -86,6 +89,7 @@ type mailPage struct {
 	searchOpen, searched bool
 	query                string
 	results              []mailItem
+	hlQuery              string // the query the results answer: what they highlight
 	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
 
 	reader *reader // the thread or message the route names
@@ -475,13 +479,28 @@ func (p *mailPage) Content(c *ui.Context) {
 func (p *mailPage) listHeader(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
-		ui.Column(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(1.5)).Children(func() {
-			in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder")}).AutoFocus()
-			if in.Submitted() {
-				p.runSearch()
-			}
-			ui.Text(c, i18n.T("mail.search.hint")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
+			ui.Row(c).Height(th.Space(8)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
+				Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background).Children(func() {
+				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).AutoFocus().Grow(1)
+				if in.Submitted() {
+					p.runSearch()
+				}
+				if p.query != "" {
+					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.clearSearch)
+				}
+			})
+			ui.Text(c, p.searchHint()).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
+		if p.searched && len(p.results) > 0 {
+			q := strings.TrimSpace(p.query)
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
+				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+				ui.Text(c, i18n.Tf("mail.search.ask_wit_row", q)).FontSize(t.Text.Sm).SingleLine().Grow(1).Shrink(1)
+			})
+		}
 		if c.Shortcut(0, ui.KeyEscape) {
 			p.closeSearch()
 		}
@@ -491,8 +510,6 @@ func (p *mailPage) listHeader(c *ui.Context) {
 		p.searchOpen = true
 	}
 	ui.Row(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
-		title, _ := p.Title()
-		ui.Text(c, title).FontWeight(500).TextColor(t.Muted).SingleLine().Shrink(1)
 		ui.Spacer(c)
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
@@ -500,6 +517,110 @@ func (p *mailPage) listHeader(c *ui.Context) {
 				OnClick(func() { p.searchOpen = true })
 		}
 	})
+}
+
+// searchHint is the line under the search box: what was found, in which
+// accounts.
+func (p *mailPage) searchHint() string {
+	n := len(p.results)
+	switch {
+	case !p.searched:
+		return i18n.T("mail.search.hint")
+	case n == 0:
+		return i18n.T("mail.search.none")
+	}
+	count := strconv.Itoa(n)
+	if n >= searchLimit {
+		count += "+"
+	}
+	scope := i18n.T("mail.search.all_accounts")
+	if acc := p.viewAccount(p.view); acc != 0 {
+		for _, a := range p.a.accounts {
+			if a.ID == acc {
+				scope = a.Email
+			}
+		}
+	}
+	return i18n.Tf("mail.search.found", count, scope)
+}
+
+// dateGroup names the heading a day's mail sits under: today, yesterday,
+// this calendar week (from Monday) or earlier.
+func dateGroup(now, t time.Time) string {
+	t = t.In(now.Location())
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	switch {
+	case !t.Before(today):
+		return i18n.T("mail.group.today")
+	case !t.Before(today.AddDate(0, 0, -1)):
+		return i18n.T("mail.group.yesterday")
+	case !t.Before(today.AddDate(0, 0, -(int(now.Weekday())+6)%7)):
+		return i18n.T("mail.group.week")
+	}
+	return i18n.T("mail.group.older")
+}
+
+// highlight splits text into spans, the matches of query (a plain substring,
+// each rune compared case-insensitively) marked with the highlight tokens.
+// No query gives no spans.
+func highlight(t theme.Tokens, text, query string) []ui.Span {
+	q := []rune(query)
+	if len(q) == 0 {
+		return nil
+	}
+	var out []ui.Span
+	start := 0
+	for i := 0; i < len(text); {
+		if n := matchAt(text[i:], q); n > 0 {
+			if i > start {
+				out = append(out, ui.Span{Text: text[start:i]})
+			}
+			out = append(out, ui.Span{Text: text[i : i+n], Background: t.Highlight, Color: t.HighlightText})
+			i += n
+			start = i
+			continue
+		}
+		_, w := utf8.DecodeRuneInString(text[i:])
+		i += w
+	}
+	if start < len(text) {
+		out = append(out, ui.Span{Text: text[start:]})
+	}
+	return out
+}
+
+// matchAt is the length in bytes of the start of s that equals q rune for
+// rune, ignoring case; 0 for no match.
+func matchAt(s string, q []rune) int {
+	n := 0
+	for _, want := range q {
+		r, w := utf8.DecodeRuneInString(s[n:])
+		if w == 0 || !foldEq(r, want) {
+			return 0
+		}
+		n += w
+	}
+	return n
+}
+
+func foldEq(a, b rune) bool {
+	for f := unicode.SimpleFold(a); ; f = unicode.SimpleFold(f) {
+		if f == b {
+			return true
+		}
+		if f == a {
+			return a == b
+		}
+	}
+}
+
+// marked is s with the query's matches highlighted; plain text without one.
+func marked(c *ui.Context, s, query string) ui.Element {
+	if sp := highlight(theme.Of(c), s, query); sp != nil {
+		return ui.RichText(c, sp...)
+	}
+	return ui.Text(c, s)
 }
 
 func (p *mailPage) listView(c *ui.Context) {
@@ -512,7 +633,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	act, target := "", []mailItem(nil)
 	l := kit.List(c, &ls.list, len(rows), func(i int) {
 		it := rows[i]
-		p.row(c, it).ContextMenu(func(m *ui.Menu) {
+		p.item(c, rows, i).ContextMenu(func(m *ui.Menu) {
 			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
 				if k == "" {
 					m.Separator()
@@ -535,11 +656,11 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 		}
 		if len(rows) == 0 && !p.loading {
-			empty := i18n.T("mail.empty")
 			if p.searched {
-				empty = i18n.T("mail.search.empty")
+				p.noResults(c)
+			} else {
+				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
 			}
-			ui.Text(c, empty).TextColor(t.Muted).Padding(th.Space(3))
 		}
 	})
 	if l.Changed() {
@@ -560,6 +681,99 @@ func (p *mailPage) listView(c *ui.Context) {
 	if _, last := ls.list.Visible(); last >= len(rows)-5 {
 		p.loadMore()
 	}
+}
+
+// item is rows[i]: a search result, or a row under its date heading when it
+// opens its group. The heading sits inside the row, so the list's indices,
+// keys and selection stay one to one with the rows.
+func (p *mailPage) item(c *ui.Context, rows []mailItem, i int) ui.Element {
+	if p.searched {
+		return p.resultRow(c, rows[i])
+	}
+	now := p.a.clock.Now()
+	g := dateGroup(now, rows[i].Date)
+	if i > 0 && dateGroup(now, rows[i-1].Date) == g {
+		return p.row(c, rows[i])
+	}
+	t, th := theme.Of(c), c.Theme()
+	return ui.Column(c).Children(func() {
+		ui.Text(c, g).FontSize(t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
+		p.row(c, rows[i])
+	})
+}
+
+// folderLine is "folder · account" of a result.
+func (p *mailPage) folderLine(it mailItem) string {
+	f, ok := p.folder(it.Msg.FolderID)
+	if !ok {
+		return ""
+	}
+	for _, a := range p.a.accounts {
+		if a.ID == f.AccountID {
+			return folderName(f) + " · " + a.Email
+		}
+	}
+	return folderName(f)
+}
+
+// resultWho is the sender of a result; of mail sent, who it went to.
+func (p *mailPage) resultWho(it mailItem) string {
+	if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "sent" && len(it.Msg.To) > 0 {
+		return i18n.Tf("mail.search.sent_to", displayName(it.Msg.To[0]))
+	}
+	return it.Who
+}
+
+// resultRow is a search result: no unread gutter, the subject and the start
+// of the text with the matches marked, and the folder it is in.
+func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	q := p.hlQuery
+	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
+			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
+			if it.Attach {
+				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+			}
+			ui.Text(c, listTime(p.a.clock.Now(), it.Date)).FontSize(t.Text.Sm).TextColor(t.Muted)
+		})
+		subject := it.Subject
+		if subject == "" {
+			subject = i18n.T("mail.no_subject")
+		}
+		marked(c, subject, q).SingleLine()
+		if it.Snippet != "" {
+			marked(c, it.Snippet, q).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+		}
+		if line := p.folderLine(it); line != "" {
+			ui.Text(c, line).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+		}
+	})
+}
+
+// openAccountSettings opens an account's settings (the first account's for
+// a unified view).
+func (a *App) openAccountSettings(acc int64) func() {
+	return func() {
+		if acc == 0 && len(a.accounts) > 0 {
+			acc = a.accounts[0].ID
+		}
+		r := Route{Page: PageSettings}
+		if acc != 0 {
+			r.Settings = "account:" + strconv.FormatInt(acc, 10)
+		}
+		a.navigate(r)
+	}
+}
+
+// noResults is the list of a search that found nothing: it offers Wit and a
+// wider sync.
+func (p *mailPage) noResults(c *ui.Context) {
+	q := strings.TrimSpace(p.query)
+	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: i18n.Tf("mail.search.empty_title", q), Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
+		kit.Button(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
+		kit.Button(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))
+	}})
 }
 
 // row is one thread or message: who, when, the subject and the start of the
@@ -618,7 +832,7 @@ func (p *mailPage) search() {
 	acc, gen := p.viewAccount(p.view), p.searchGen
 	var found []core.MessageSummary
 	a.do(func(ctx context.Context) (err error) {
-		found, err = a.svc.Search(ctx, acc, q, 100)
+		found, err = a.svc.Search(ctx, acc, q, searchLimit)
 		return err
 	}, func(err error) {
 		if gen != p.searchGen {
@@ -628,12 +842,19 @@ func (p *mailPage) search() {
 			a.toastErr(err)
 			return
 		}
-		p.results = nil
+		p.results, p.hlQuery = nil, q
 		for _, m := range found {
 			p.results = append(p.results, messageItem(m))
 		}
 		p.searched = true
 	})
+}
+
+// clearSearch empties the box and the results; the search stays open.
+func (p *mailPage) clearSearch() {
+	p.searchGen++
+	p.searched, p.query, p.results = false, "", nil
+	p.found.reset()
 }
 
 func (p *mailPage) closeSearch() {

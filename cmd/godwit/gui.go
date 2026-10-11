@@ -115,6 +115,9 @@ func gui(ctx context.Context, dataDir string) int {
 		Open: func(m webui.WitOpenMsg) {
 			toWit("witOpen", func(p *mygo.Page) error { return webui.WitOpen.EmitPage(p, m) })
 		},
+		Ask: func(q string) {
+			toWit("witAsk", func(p *mygo.Page) error { return webui.WitAsk.EmitPage(p, q) })
+		},
 		State: func(st webui.WitPageState) {
 			toWit("witState", func(p *mygo.Page) error { return webui.WitState.EmitPage(p, st) })
 		},
@@ -223,6 +226,7 @@ func gui(ctx context.Context, dataDir string) int {
 		} else {
 			witView = v
 			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
+			a.SetWitAsk(wit.Handoff)
 		}
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })

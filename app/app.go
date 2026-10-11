@@ -198,6 +198,7 @@ type App struct {
 	witView    ui.NativeWebView                 // the Wit page; nil before SetWitPage
 	witOpen    func(conv int64) (version int64) // tells the Wit page the route's conversation
 	witCreated func(conv int64) (version int64) // the same, for the conversation its Ask made
+	witAsk     func(query string)               // hands a question to the Wit page, which asks it
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows

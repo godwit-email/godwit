@@ -737,4 +737,9 @@ export const events = {
    * (the settings did); the conversation and its stream stay.
    */
   witState: event<WitPageState>("witState"),
+  /**
+   * WitAsk hands the Wit page a question native collected (a search that
+   * found nothing): the page asks it once, in the conversation it shows.
+   */
+  witAsk: event<string>("witAsk"),
 } as const;

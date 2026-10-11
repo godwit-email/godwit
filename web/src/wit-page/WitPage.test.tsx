@@ -14,6 +14,7 @@ const h = vi.hoisted(() => {
     wit: new Set<(e: WitEvent) => void>(),
     open: new Set<(m: WitOpenMsg) => void>(),
     state: new Set<(s: WitPageState) => void>(),
+    ask: new Set<(q: string) => void>(),
   };
 });
 vi.mock("@/mygo", () => ({
@@ -33,6 +34,7 @@ vi.mock("@/mygo", () => ({
     wit: { on: h.on(h.wit) },
     witOpen: { on: h.on(h.open) },
     witState: { on: h.on(h.state) },
+    witAsk: { on: h.on(h.ask) },
     theme: { on: () => () => {} },
   },
 }));
@@ -355,4 +357,28 @@ test("Stop before the first ask returns, then navigation: the run is still stopp
   await act(async () => resolve({ run: 9, conversation: 7, revision: 0, conflict: false }));
   await waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
   expect(screen.getByText("four")).toBeInTheDocument();
+});
+
+test("witAsk asks the handed question once, in the new conversation", async () => {
+  vi.mocked(api.ask).mockResolvedValue({ run: 9, conversation: 7, revision: 0, conflict: false });
+  await start(3);
+  vi.mocked(api.follow).mockResolvedValueOnce(hist(0));
+  open(0, 2); // native navigates to a new conversation, then hands the question
+  send(h.ask, "invoice");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice"));
+  expect(api.ask).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText("invoice")).toBeInTheDocument();
+  // a later switch remounts the panel: the question is not asked again
+  vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
+  open(4, 3);
+  expect(await screen.findByText("four")).toBeInTheDocument();
+  expect(api.ask).toHaveBeenCalledTimes(1);
+});
+
+test("witAsk on the page already showing a new conversation asks at once", async () => {
+  vi.mocked(api.ask).mockResolvedValue({ run: 9, conversation: 7, revision: 0, conflict: false });
+  await start(0);
+  send(h.ask, "where is it");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it"));
+  expect(api.ask).toHaveBeenCalledTimes(1);
 });

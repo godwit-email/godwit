@@ -33,6 +33,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function WitPage() {
   const [st, setSt] = useState<WitPageState>();
   const [view, setView] = useState<{ history: WitHistory; tr: WitTransport; key: number }>();
+  const [handed, setHanded] = useState<{ text: string }>(); // a question native handed over
   const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
   const resetResume = useRef(witResume.reset);
@@ -92,6 +93,7 @@ export function WitPage() {
     let pushed = false; // a witState came: newer than Load's state fields
     const offs = [
       events.witOpen.on(onOpen),
+      events.witAsk.on((text) => setHanded({ text })),
       events.witState.on((s) => {
         pushed = true;
         setSt(s);
@@ -144,6 +146,8 @@ export function WitPage() {
           model={st.model}
           resume={witResume.resume}
           decide={witResume.decide}
+          handed={handed}
+          onAsked={() => setHanded(undefined)}
           t={t}
         />
       )}
@@ -157,12 +161,16 @@ function Conversation({
   model,
   resume,
   decide,
+  handed,
+  onAsked,
   t,
 }: {
   view: { history: WitHistory; tr: WitTransport };
   model: string;
   resume?: { run: number };
   decide: ReturnType<typeof useResume>["decide"];
+  handed?: { text: string };
+  onAsked(): void;
   t: T;
 }) {
   const fail = (e: unknown) => toast.error(witError(message(e), t));
@@ -185,6 +193,8 @@ function Conversation({
       onDecide={onDecide}
       onLink={(url) => api.openLink(url)}
       onCite={(id) => void api.openCited(id).catch(fail)}
+      ask={handed}
+      onAsked={onAsked}
       t={t}
       slots={{
         input: (

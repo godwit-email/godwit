@@ -19,6 +19,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -542,7 +543,13 @@ func copyFile(src, dst string) error {
 func (r *reader) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	col := ui.Column(c).Grow(1).Shrink(1)
-	if r.key[0] == 0 || !r.loaded || len(r.msgs) == 0 {
+	if r.key[0] == 0 { // nothing chosen: the bird
+		col.Center().Children(func() {
+			ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+		})
+		return
+	}
+	if !r.loaded || len(r.msgs) == 0 {
 		return
 	}
 	col.Children(func() {

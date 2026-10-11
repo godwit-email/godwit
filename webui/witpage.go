@@ -48,6 +48,9 @@ var (
 	// WitState tells the Wit page its model label, copy or theme changed
 	// (the settings did); the conversation and its stream stay.
 	WitState = mygo.NewEvent[WitPageState]("witState")
+	// WitAsk hands the Wit page a question native collected (a search that
+	// found nothing): the page asks it once, in the conversation it shows.
+	WitAsk = mygo.NewEvent[string]("witAsk")
 )
 
 // WitPageDeps is what WitPage needs from the platform. The native callbacks
@@ -58,6 +61,8 @@ type WitPageDeps struct {
 	// Open and State send WitOpen and WitState to the page.
 	Open  func(WitOpenMsg)
 	State func(WitPageState)
+	// Ask sends WitAsk to the page.
+	Ask func(query string)
 	// OpenMessage opens message id in the reader; OpenModels the model
 	// settings; Navigate goes back (-1) or forward (1).
 	OpenMessage func(id int64)
@@ -139,6 +144,15 @@ func (w *Wit) open(id int64, created bool) int64 {
 	w.mu.Unlock()
 	w.d.Open(m)
 	return m.Version
+}
+
+// Handoff gives the page a question to ask (WitAsk): the page starts the run
+// through WitPage.Ask, so it follows it and Stop works. Native navigates to a
+// new conversation first.
+func (w *Wit) Handoff(query string) {
+	if strings.TrimSpace(query) != "" {
+		w.d.Ask(query)
+	}
 }
 
 // SettingsChanged sends the page its state for st (WitState).

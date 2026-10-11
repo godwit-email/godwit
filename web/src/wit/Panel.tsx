@@ -309,6 +309,8 @@ export function Panel({
   t,
   layout = "panel",
   slots,
+  ask: handed,
+  onAsked,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -323,6 +325,9 @@ export function Panel({
   t: T;
   layout?: "panel" | "page";
   slots?: { chips?: ReactNode; actions?: ReactNode; input?: ReactNode };
+  /** A question the host hands over: asked once (by identity), then onAsked. */
+  ask?: { text: string };
+  onAsked?(): void;
 }) {
   // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
   // rebuilds it, then appends.
@@ -389,6 +394,14 @@ export function Panel({
     if (locked || running || !text) return;
     void chat.sendMessage({ text, metadata });
   };
+  const asked = useRef<object | undefined>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
+  useEffect(() => {
+    if (!handed || asked.current === handed) return;
+    asked.current = handed;
+    onAsked?.();
+    ask(handed.text);
+  }, [handed]);
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;
