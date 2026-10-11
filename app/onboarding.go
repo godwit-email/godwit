@@ -70,17 +70,16 @@ type onboarding struct {
 	name                 string
 	sync                 core.SyncRange
 	again                bool  // finish starts over for another account
-	addedID              int64 // the account added; a failed sync-range update retries only that
+	addedID              int64 // the account added
 	saveErr              error
 
-	// add and update save the account: the Service's, swapped by tests.
-	add    func(context.Context, core.AccountInput) (core.Account, error)
-	update func(context.Context, int64, core.AccountPatch) (core.Account, error)
+	// add saves the account: the Service's, swapped by tests.
+	add func(context.Context, core.AccountInput) (core.Account, error)
 }
 
 func newOnboarding(a *App, sheet bool) *onboarding {
 	return &onboarding{a: a, sheet: sheet, open: sheet, providers: append(a.svc.ListProviders(), otherProvider), sync: defaultSync,
-		add: a.svc.AddAccount, update: a.svc.UpdateAccount}
+		add: a.svc.AddAccount}
 }
 
 // openAddAccount shows the add-account sheet over the current page.
@@ -130,7 +129,7 @@ func (o *onboarding) toPick() {
 func (o *onboarding) reset() {
 	o.leave()
 	*o = onboarding{a: o.a, sheet: o.sheet, open: o.sheet, providers: o.providers, gen: o.gen, sync: defaultSync,
-		add: o.add, update: o.update}
+		add: o.add}
 }
 
 func validEmail(s string) bool {
@@ -362,8 +361,8 @@ func (o *onboarding) retry(manual bool) {
 	o.goTo(stepPassword)
 }
 
-// finish adds the account, with the default sync range, then sets the
-// range chosen; after a failed range update it retries only that. again
+// finish adds the account with the sync range chosen, in one write, so its
+// first sync never runs with another range. again
 // starts over for another account; else the window goes to the mail and
 // the sheet closes onto the account's settings. The form is disabled while
 // it saves, so what is saved is what shows.
@@ -372,7 +371,9 @@ func (o *onboarding) finish(again bool) {
 		return
 	}
 	o.adding, o.again, o.saveErr = true, again, nil
-	a, add, update, in, sync, id := o.a, o.add, o.update, o.input(), o.sync, o.addedID
+	a, add, in, id := o.a, o.add, o.input(), o.addedID
+	sync := o.sync
+	in.Sync = &sync
 	gen := o.gen
 	a.do(func(ctx context.Context) error {
 		if id == 0 {
@@ -381,10 +382,6 @@ func (o *onboarding) finish(again bool) {
 				return err
 			}
 			id = acc.ID
-		}
-		if sync != defaultSync {
-			_, err := update(ctx, id, core.AccountPatch{Sync: &sync})
-			return err
 		}
 		return nil
 	}, func(err error) {

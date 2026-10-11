@@ -289,30 +289,35 @@ func TestOnboardingSaveDisablesEdits(t *testing.T) {
 	}
 }
 
+// The range chosen is saved with the account, in one write: a sync started
+// by the add never sees the default first.
 func TestOnboardingSyncRangeRetry(t *testing.T) {
 	plaintext(t)
 	h := newHarness(t)
 	o := h.toDone("new@example.com")
 	o.sync = core.SyncRange{Months: 3}
 	adds, fails := 0, 1
-	add, update := o.add, o.update
-	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) { adds++; return add(ctx, in) }
-	o.update = func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
+	add := o.add
+	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) {
+		adds++
+		if in.Sync == nil || *in.Sync != (core.SyncRange{Months: 3}) {
+			t.Errorf("added with %+v", in.Sync)
+		}
 		if fails > 0 {
 			fails--
 			return core.Account{}, errors.New("boom")
 		}
-		return update(ctx, id, p)
+		return add(ctx, in)
 	}
 	h.click("开始使用")
 	h.see("出错了：boom")
 	if h.app.route.Page != PageOnboarding || o.step != stepDone {
-		t.Fatalf("finished after a failed update: route %+v, step %d", h.app.route, o.step)
+		t.Fatalf("finished after a failed add: route %+v, step %d", h.app.route, o.step)
 	}
 	h.click("重试")
 	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
 	accs, err := h.env.Svc.ListAccounts(context.Background())
-	if err != nil || len(accs) != 1 || accs[0].Sync != (core.SyncRange{Months: 3}) || adds != 1 {
+	if err != nil || len(accs) != 1 || accs[0].Sync != (core.SyncRange{Months: 3}) || adds != 2 {
 		t.Fatalf("accounts %+v, %v, %d adds", accs, err, adds)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -148,4 +149,57 @@ func TestSyncRangeEmptyFolderNewMail(t *testing.T) {
 		assert.Equal(t, []string{"moved@x"}, e.stored(t, "Archive"), "%+v", r)
 		assert.Equal(t, [][]any{{e.idOf(t, "moved@x")}}, e.rows(t, "SELECT message_id FROM events_log"), "%+v: new mail", r)
 	}
+}
+
+// AddAccount saves the range it is given, validated; nil is the default 2000.
+func TestAddAccountSyncRange(t *testing.T) {
+	e := newSyncEnv(t)
+	smtpAddr, _ := testmail.StartSMTP(t)
+	in := internalInput(t, e.im.Addr, smtpAddr, "bob@example.com", false)
+	in.Sync = &SyncRange{Limit: 5, Months: 3}
+	_, err := e.s.AddAccount(bg, in)
+	assert.Error(t, err, "not a range")
+	in.Sync = &SyncRange{Months: 3}
+	acc, err := e.s.AddAccount(bg, in)
+	require.NoError(t, err)
+	assert.Equal(t, SyncRange{Months: 3}, acc.Sync)
+}
+
+// A UIDVALIDITY reset under a months range clears filled_since, and the
+// window is searched again on the new UIDs.
+func TestSyncRangeMonthsUIDValidityReset(t *testing.T) {
+	e := newSyncEnv(t)
+	now := time.Now()
+	e.setRange(t, SyncRange{Months: 3})
+	e.putAt(t, "Archive", "new@x", now.AddDate(0, -1, 0))
+	e.putAt(t, "Archive", "old@x", now.AddDate(0, -9, 0))
+	e.sync(t)
+	filled := "SELECT count(*) FROM folders WHERE name = 'Archive' AND filled_since IS NOT NULL"
+	require.Equal(t, 1, e.count(t, filled))
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	e.putAt(t, "Archive", "old@x", now.AddDate(0, -9, 0))
+	e.putAt(t, "Archive", "new@x", now.AddDate(0, -1, 0))
+	e.sync(t)
+	assert.Equal(t, []string{"new@x"}, e.stored(t, "Archive"))
+	assert.Equal(t, 1, e.count(t, filled))
+}
+
+// months → 全部 → months with new mail between: all of it stays, once each.
+func TestSyncRangeMixed(t *testing.T) {
+	e := newSyncEnv(t)
+	now := time.Now()
+	e.setRange(t, SyncRange{Months: 3})
+	e.putAt(t, "Archive", "a@x", now.AddDate(0, -9, 0))
+	e.putAt(t, "Archive", "b@x", now.AddDate(0, -1, 0))
+	e.sync(t)
+	e.setRange(t, SyncRange{})
+	e.putAt(t, "Archive", "c@x", now.AddDate(0, -8, 0))
+	e.sync(t)
+	e.setRange(t, SyncRange{Months: 3})
+	e.putAt(t, "Archive", "d@x", now)
+	e.sync(t)
+	e.sync(t)
+	assert.Equal(t, []string{"a@x", "b@x", "c@x", "d@x"}, e.stored(t, "Archive"))
+	assert.Equal(t, 4, e.count(t, "SELECT count(*) FROM messages WHERE server_folder_id = ?", e.folderID(t, "Archive")))
 }

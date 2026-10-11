@@ -318,6 +318,9 @@ func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *accou
 // holds fewer than sync_limit messages, the newest server UIDs below the oldest
 // one stored, up to the shortfall (n is the mailbox's message count). Stored
 // messages and pending ops are untouched; a narrower range never deletes mail.
+// A count pages only below the oldest stored UID: after a months range left
+// gaps above it (old-dated mail with high UIDs), those stay unfilled, which
+// LoadOlder and 全部 still reach.
 func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
 	if f.lastUID == 0 {
 		return nil

@@ -125,6 +125,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	defer end()
+	if err := checkRange(in.Sync); err != nil {
+		return Account{}, err
+	}
 	if err := s.KeychainStatus(ctx); err != nil {
 		return Account{}, err
 	}
@@ -148,8 +151,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 		authType, secret, in.Username, in.Provider = "oauth", g.RefreshToken, g.Email, g.provider
 	}
-	if in.SyncLimit == 0 {
-		in.SyncLimit = defaultSyncLim
+	sync := SyncRange{Limit: defaultSyncLim}
+	if in.Sync != nil {
+		sync = *in.Sync
 	}
 	if in.Provider == "" {
 		in.Provider = "other"
@@ -175,10 +179,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0"})
 	}
 	stmts = append(stmts, sqlite.Statement{
-		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, auth_type, status, username,
+		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, sync_since_months, auth_type, status, username,
 			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), in.SyncLimit, authType, in.username(),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
 			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
@@ -205,6 +209,14 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	s.startWorker(id)
 	return s.account(ctx, id)
+}
+
+// checkRange accepts a Limit of 1–100000, 1–120 Months, or neither (all).
+func checkRange(r *SyncRange) error {
+	if r != nil && (r.Limit < 0 || r.Limit > 100000 || r.Months < 0 || r.Months > 120 || r.Limit > 0 && r.Months > 0) {
+		return fmt.Errorf("sync range %+v is not a limit of 1–100000, 1–120 months or all", *r)
+	}
+	return nil
 }
 
 func b2i(b bool) int {
@@ -403,8 +415,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if err != nil {
 		return Account{}, err
 	}
-	if r := p.Sync; r != nil && (r.Limit < 0 || r.Limit > 100000 || r.Months < 0 || r.Months > 120 || r.Limit > 0 && r.Months > 0) {
-		return Account{}, fmt.Errorf("sync range %+v is not a limit of 1–100000, 1–120 months or all", *r)
+	if err := checkRange(p.Sync); err != nil {
+		return Account{}, err
 	}
 	if p.IsDefault != nil && !*p.IsDefault && acc.IsDefault {
 		return Account{}, errors.New("make another account the default instead")

@@ -15,7 +15,7 @@ const (
 type AccountInput struct {
 	Email, Name, Alias, Signature, Username, Password string
 	IsDefault                                         bool
-	SyncLimit                                         int
+	Sync                                              *SyncRange // nil: the newest 2000 per folder
 	IMAPHost                                          string
 	IMAPPort                                          int
 	IMAPSecurity                                      Security
