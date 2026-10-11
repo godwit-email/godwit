@@ -520,11 +520,14 @@ func (o *onboarding) pickView(c *ui.Context) {
 	heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 		box := ui.Row(c).Height(th.Space(10)).AlignItems(ui.Center).Gap(th.Space(2)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background)
+		if box.FocusWithin() { // the row is the box, so it carries the ring a bare input would
+			box.Border(theme.Hairline, t.Ring)
+		}
 		if o.emailErr != "" {
 			box.Border(theme.Hairline, t.Danger)
 		}
 		kit.Elevate(c, box, theme.ShadowXs).Children(func() {
-			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Bare: true}).Label(i18n.T("onboarding.email")).Grow(1).Height(th.Space(10))
+			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Bare: true}).FocusRing(false).Label(i18n.T("onboarding.email")).Grow(1).Height(th.Space(10))
 			if in.Changed() {
 				o.emailErr = ""
 				o.scheduleDetect()
@@ -661,10 +664,9 @@ func (o *onboarding) manualView(c *ui.Context) {
 	}
 	server := func(proto string, host, port *string, sec *core.Security) {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			label := func(key string) string { return i18n.T(key) }
-			ui.Field(c, label("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1).FontSize(t.Text.Sm).TextColor(t.Muted)
-			ui.Field(c, label("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth).FontSize(t.Text.Sm).TextColor(t.Muted)
-			ui.Field(c, label("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) }).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) }).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {

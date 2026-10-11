@@ -353,7 +353,7 @@ func TestOnboardingDetectedBadgeInInput(t *testing.T) {
 		t.Fatalf("badge %v is not trailing the input %v", badge, in)
 	}
 	// The row around them draws the box: its right border sits just past the badge.
-	img, want, found := h.tt.Image(), theme.Light().Input.SRGB(), false
+	img, want, found := h.tt.Image(), theme.Light().Ring.SRGB(), false // focused after the fill
 	y := int(badge.Y + badge.H/2)
 	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+20 && !found; x++ {
 		got := img.RGBAAt(x, y)
@@ -393,5 +393,21 @@ func TestOnboardingManualLabels(t *testing.T) {
 	h.see("IMAP 服务器")
 	if _, ok := h.tt.Find("端口"); !ok {
 		t.Fatalf("no bare 端口 label: %q", h.tt.Texts())
+	}
+}
+
+func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.click("邮箱地址")
+	in, _ := h.tt.Find("邮箱地址")
+	img, want := h.tt.Image(), theme.Light().Ring.SRGB()
+	y, found := int(in.Y+in.H/2), false
+	for x := int(in.X) - 16; x < int(in.X) && !found; x++ { // the row's left border, left of its padding
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("focused email row has no ring-coloured border")
 	}
 }

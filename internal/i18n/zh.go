@@ -565,7 +565,7 @@ var zh = map[string]string{
 	"link.title":                                   "打开这个链接？",
 	"link.open":                                    "打开",
 	"link.copy":                                    "复制链接",
-	"link.copied":                                  "已复制链接",
+	"link.copied":                                  "链接已复制",
 
 	// compose
 	"compose.new":              "新邮件",

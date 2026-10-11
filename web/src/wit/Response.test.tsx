@@ -7,7 +7,7 @@ const t = makeT({
   "link.title": "打开这个链接？",
   "link.open": "打开",
   "link.copy": "复制链接",
-  "link.copied": "已复制链接",
+  "link.copied": "链接已复制",
   "common.cancel": "取消",
 });
 
