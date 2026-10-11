@@ -173,7 +173,7 @@ func (a *App) View(c *ui.Context) {
 	barH, _ := chromeMetrics(c.TitleBar().Height, theme.Of(c))
 	switch {
 	case !a.loaded:
-		ui.Box(c).Height(barH).FillWidth().DragWindow()
+		bareBar(c, barH)
 		if a.loadErr != nil {
 			ui.Column(c).Grow(1).FillWidth().Center().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, humanize(a.loadErr)).TextColor(t.Muted)
@@ -181,7 +181,7 @@ func (a *App) View(c *ui.Context) {
 			})
 		}
 	case a.route.Page == PageOnboarding:
-		ui.Box(c).Height(barH).FillWidth().DragWindow()
+		bareBar(c, barH)
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
 		a.titleBar(c, barH)
@@ -219,6 +219,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
 		}
 		lead.Children(func() {
+			winCaption(c)
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 			label := i18n.T("shell.sidebar.collapse")
 			if a.sidebarHidden {
@@ -241,6 +242,24 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		}
 		ui.Spacer(c)
 		a.syncStatus(c)
+	})
+}
+
+// bareBar is the title bar of a window with no page chrome: it drags the
+// window and, on Windows, names it.
+func bareBar(c *ui.Context, h float32) {
+	ui.Row(c).Height(h).FillWidth().Padding(0, 0, 0, c.TitleBar().Left+c.Theme().Space(2)).DragWindow().Children(func() { winCaption(c) })
+}
+
+// winCaption is Windows' app icon and name at the title bar's start.
+func winCaption(c *ui.Context) {
+	if goos != "windows" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(2)).Padding(0, th.Space(2), 0, th.Space(1)).Children(func() {
+		ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+		kit.Text(c, "Godwit", t.Text.Sm).SingleLine()
 	})
 }
 
