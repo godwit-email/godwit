@@ -28,9 +28,10 @@ func TabsUnderline(c *ui.Context, sel *int, labels ...string) ui.Element {
 	tabs := ui.TabsBase(c, sel, len(labels))
 	return tabs.List.BorderColor(t.Border).BorderWidth(0, 0, theme.Hairline, 0).Children(func() {
 		for i, l := range labels {
-			tab := tabs.Tab(i).Height(th.Space(8)).PaddingX(th.Space(3)).FontWeight(500).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+			// every tab keeps the 2 px border (transparent unless chosen) so choosing one shifts nothing
+			tab := tabs.Tab(i).Height(th.Space(8)).PaddingX(th.Space(3)).FontWeight(500).TextColor(t.Muted).BorderColor(t.Border.Alpha(0)).BorderWidth(0, 0, theme.TabUnderline, 0).Transition(colors(theme.MotionFast))
 			if i == *sel {
-				tab.FontWeight(600).TextColor(t.Foreground).BorderColor(t.Primary).BorderWidth(0, 0, theme.TabUnderline, 0)
+				tab.FontWeight(600).TextColor(t.Foreground).BorderColor(t.Primary)
 			}
 			tab.Children(func() { ui.Text(c, l) })
 		}

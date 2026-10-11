@@ -49,13 +49,17 @@ func alertLook(t theme.Tokens, kind AlertKind) (bg, border, fg ui.Color) {
 }
 
 // AlertAction is a solid button for an Alert's actions: filled with the
-// kind's text color, white text.
+// kind's text color and white text (Info: Primary with PrimaryText).
 func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	_, _, fg := alertLook(t, kind)
-	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fg).TextColor(t.OnSolid).FontWeight(500).Center()
+	_, _, fill := alertLook(t, kind)
+	text := t.OnSolid
+	if kind == Info { // Foreground flips with the appearance; Primary pairs with PrimaryText
+		fill, text = t.Primary, t.PrimaryText
+	}
+	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fill).TextColor(text).FontWeight(500).Center()
 	if b.Hovered() {
-		b.Background(fg.Mix(t.Foreground, 0.15))
+		b.Background(fill.Mix(t.Background, 0.1))
 	}
 	if onClick != nil {
 		b.OnClick(onClick)

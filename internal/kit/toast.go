@@ -14,9 +14,9 @@ const (
 )
 
 // ToastHost draws the window's toasts (c.Toast, c.AddToast) centered under
-// the top bar, the newest first and at most theme.ToastMax; call it once in the view. closeLabel names
-// the close buttons (pass the translated "Close"). A success, warning or
-// error toast is tinted: its color's 50 behind, 200 around, 700 for the
+// the top bar, the newest first and at most theme.ToastMax; call it once in
+// the view. closeLabel names the close buttons (pass the translated
+// "Close"). A success, warning or error toast is tinted: its color's 50 behind, 200 around, 700 for the
 // text and its leading icon; a plain one is white, without an icon.
 func ToastHost(c *ui.Context, closeLabel string) {
 	t, th := theme.Of(c), c.Theme()

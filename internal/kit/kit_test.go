@@ -880,8 +880,14 @@ func TestButtonGroupTooltips(t *testing.T) {
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
 	time.Sleep(900 * time.Millisecond)
 	tt.Frame()
-	if !tt.HasText("Archive") || len(tt.Texts()) == 0 {
-		t.Fatal("no tip")
+	n := 0
+	for _, x := range tt.Texts() {
+		if x == "Archive" {
+			n++
+		}
+	}
+	if n < 2 {
+		t.Fatalf("tip not shown after hover: %q", tt.Texts())
 	}
 	_ = tt.Click("Archive")
 	_ = tt.Click("Delete")
@@ -907,6 +913,10 @@ func TestTabsUnderline(t *testing.T) {
 		t.Fatalf("sel = %d", sel)
 	}
 	r, _ := tt.Find("Two")
+	one, _ := tt.Find("One")
+	if one.H != r.H {
+		t.Errorf("tab heights differ: %v vs %v", one.H, r.H)
+	}
 	// the 32-high tab's bottom 2 px are Primary under the selected tab
 	p := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)+15)
 	if p.R != tk.Primary.R || p.G != tk.Primary.G {
@@ -952,5 +962,100 @@ func TestDestructiveOutline(t *testing.T) {
 		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
 			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
 		}
+	}
+}
+
+func TestAlertAction(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, kind := range []AlertKind{Warning, Info} {
+			var tk theme.Tokens
+			n := 0
+			tt := ui.NewTester(themed(func(c *ui.Context) {
+				tk = theme.Of(c)
+				AlertAction(c, kind, "Fix", func() { n++ })
+			}), 200, 100)
+			tt.SetDark(dark)
+			tt.Frame()
+			time.Sleep(2 * theme.MotionFast)
+			tt.Frame()
+			r, ok := tt.Find("Fix")
+			if !ok {
+				t.Fatal("no button")
+			}
+			want := tk.WarningText
+			if kind == Info {
+				want = tk.Primary
+			}
+			p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2))
+			if p.R != want.R || p.G != want.G || p.B != want.B {
+				t.Errorf("dark=%v kind=%v fill %v, want %v", dark, kind, p, want)
+			}
+			if err := tt.Click("Fix"); err != nil || n != 1 {
+				t.Errorf("click err=%v n=%d", err, n)
+			}
+		}
+	}
+}
+
+func TestSelectWith(t *testing.T) {
+	width := func(o SelectOpts, label string) float32 {
+		v := 1
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			SelectWith(c, o, &v, []Option[int]{{1, label}}).Label("sel")
+		}), 600, 100)
+		r, ok := tt.Find("sel")
+		if !ok {
+			t.Fatal("no select")
+		}
+		return r.W
+	}
+	if w := width(SelectOpts{MinWidth: 300}, "a"); w < 300 {
+		t.Errorf("min width: %v", w)
+	}
+	if w := width(SelectOpts{MaxWidth: 150}, "a very long option label that would be wider than the cap"); w > 150 {
+		t.Errorf("max width: %v", w)
+	}
+	// Flat drops the shadow: the pixel under the trigger is the page's
+	below := func(flat bool) uint8 {
+		v := 1
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Padding(20).Children(func() {
+				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{1, "a"}}).Label("sel")
+			})
+		}), 300, 100)
+		r, _ := tt.Find("sel")
+		return tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H)+1).R
+	}
+	if f, s := below(true), below(false); f <= s {
+		t.Errorf("flat pixel %d not lighter than shadowed %d", f, s)
+	}
+}
+
+func TestDialogWideWidth(t *testing.T) {
+	span := func(wide bool) int {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			f := Dialog
+			if wide {
+				f = DialogWide
+			}
+			f(c, &open, "T", func() { ui.Text(c, "body") }, nil)
+		}), 900, 600)
+		time.Sleep(2 * theme.MotionBase)
+		tt.Frame()
+		img, first, last := tt.Image(), -1, -1
+		y := 300 // the panel is centered; its body rows are white
+		for x := 0; x < 900; x++ {
+			if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
+				if first < 0 {
+					first = x
+				}
+				last = x
+			}
+		}
+		return last - first + 1
+	}
+	if n, w := span(false), span(true); w-n < 70 || w-n > 90 {
+		t.Errorf("wide is %d wider than normal, want 80", w-n)
 	}
 }
