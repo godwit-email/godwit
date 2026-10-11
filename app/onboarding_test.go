@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // plaintext lets the onboarding reach the loopback fake servers, which speak
@@ -331,5 +332,66 @@ func TestOnboardingSettingsErrors(t *testing.T) {
 		if strings.Contains(s, "required") || strings.Contains(s, "range") {
 			t.Fatalf("raw core error shown: %q", s)
 		}
+	}
+}
+
+func TestOnboardingDetectedBadgeInInput(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.fill("邮箱地址", "x@qq.com")
+	h.advance(debounce)
+	h.see("识别为 QQ 邮箱")
+	in, ok1 := h.tt.Find("邮箱地址")
+	badge, ok2 := h.tt.Find("识别为 QQ 邮箱")
+	if !ok1 || !ok2 {
+		t.Fatalf("input %v, badge %v", ok1, ok2)
+	}
+	if in.H != 40 {
+		t.Fatalf("email input is %v high, want 40", in.H)
+	}
+	if badge.X < in.X+in.W || badge.Y < in.Y || badge.Y+badge.H > in.Y+in.H {
+		t.Fatalf("badge %v is not trailing the input %v", badge, in)
+	}
+	// The row around them draws the box: its right border sits just past the badge.
+	img, want, found := h.tt.Image(), theme.Light().Input.SRGB(), false
+	y := int(badge.Y + badge.H/2)
+	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+20 && !found; x++ {
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("no input border right of the badge")
+	}
+}
+
+func TestOnboardingDoneBadgeUsesSuccessTokens(t *testing.T) {
+	plaintext(t)
+	h := newHarness(t)
+	h.toDone("done@example.com")
+	title, ok := h.tt.Find("连接成功")
+	if !ok {
+		t.Fatal("no done title")
+	}
+	img, want := h.tt.Image(), theme.Light().SuccessBg.SRGB()
+	x, found := int(title.X)+theme.DoneBadge/2, false
+	for y := int(title.Y) - 60; y < int(title.Y) && !found; y++ {
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("no SuccessBg badge above the done title")
+	}
+}
+
+func TestOnboardingManualLabels(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	if _, open := h.tt.Find("IMAP 服务器"); !open {
+		h.click("手动设置服务器")
+	}
+	h.see("IMAP 服务器")
+	if _, ok := h.tt.Find("端口"); !ok {
+		t.Fatalf("no bare 端口 label: %q", h.tt.Texts())
 	}
 }

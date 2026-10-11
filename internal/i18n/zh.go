@@ -123,6 +123,7 @@ var zh = map[string]string{
 	"onboarding.manual":                   "手动设置服务器",
 	"onboarding.imap.host":                "IMAP 服务器",
 	"onboarding.imap.port":                "IMAP 端口",
+	"onboarding.port":                     "端口",
 	"onboarding.imap.security":            "IMAP 加密方式",
 	"onboarding.smtp.host":                "SMTP 服务器",
 	"onboarding.smtp.port":                "SMTP 端口",

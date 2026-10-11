@@ -123,6 +123,7 @@ var en = map[string]string{
 	"onboarding.manual":                   "Set up servers manually",
 	"onboarding.imap.host":                "IMAP server",
 	"onboarding.imap.port":                "IMAP port",
+	"onboarding.port":                     "Port",
 	"onboarding.imap.security":            "IMAP encryption",
 	"onboarding.smtp.host":                "SMTP server",
 	"onboarding.smtp.port":                "SMTP port",
