@@ -126,11 +126,15 @@ func (s *Service) ResolveApprovalForConversation(ctx context.Context, id int64) 
 		return ErrInvalidState
 	}
 	// Granted before the decision: the run it resumes may call the tool again at once.
-	// A click that loses to another (a double click) leaves that one's grant.
+	// A click that loses to another leaves the grant unless the approval
+	// ended rejected: on a double click the winner, which found the grant
+	// stored, relies on it.
 	_, had := s.sessionGrants.LoadOrStore(a.grant(), true)
 	if err := s.decide(ctx, id, true, nil, true); err != nil {
 		if errors.Is(err, ErrInvalidState) && !had {
-			s.sessionGrants.Delete(a.grant())
+			if cur, rerr := s.approvalRow(ctx, id); rerr != nil || cur.State == "rejected" {
+				s.sessionGrants.Delete(a.grant())
+			}
 		}
 		return s.cleanError(err)
 	}
