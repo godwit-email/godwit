@@ -13,7 +13,7 @@ const runStart = { run: 2, conversation: 1, revision: 1, conflict: false };
 
 const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; setup(): void }> = {
   compose: {
-    states: ["plain", "streaming", "inline", "rewrite", "applied", "cmdk"],
+    states: ["plain", "streaming", "inline", "rewrite", "applied", "cmdk", "signature"],
     entry: () => import("@/compose/main"),
     setup() {
       const withBody = ["inline", "rewrite", "cmdk"].includes(state);
@@ -25,6 +25,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         attachments: [],
         conflict: false,
         signature: "",
+        signatureImages: [],
         updatedAt: Date.now(),
         body: body(),
       });
@@ -39,7 +40,14 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
                 ? fx.applied()
                 : fx.noWit();
       const emit = installFake({
-        "ComposePage.Load": async () => ({ ...fx.compose(mode, withBody), revision }),
+        "ComposePage.Load": async () => ({
+          ...fx.compose(mode, withBody),
+          revision,
+          ...(state === "signature" && {
+            signature: "-- \nAlex Chen\nPartnerships · Example Co.",
+            signatureImages: [fx.logo],
+          }),
+        }),
         "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision }),
         "ComposePage.WitInfo": async () => fx.compose(mode, false).wit,
         "ComposePage.Follow": async () => {
@@ -106,12 +114,14 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   signature: {
-    states: ["filled"],
+    states: ["filled", "image"],
     entry: () => import("@/signature/main"),
     setup() {
       installFake({
         "SignaturePage.State": async () => fx.signature(mode),
-        "SignaturePage.Load": async () => fx.signatureHtml,
+        "SignaturePage.Load": async () =>
+          state === "image" ? fx.signatureHtmlImage : fx.signatureHtml,
+        "SignaturePage.PickImage": async () => fx.logo,
         "SignaturePage.Save": nothing,
         "SignaturePage.Saved": nothing,
       });

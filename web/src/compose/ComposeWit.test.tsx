@@ -154,6 +154,7 @@ const state: ComposeState = {
   body: "正文",
   quote: "",
   signature: "",
+  signatureImages: [],
   attachments: [],
   revision: 7,
   updatedAt: 0,
@@ -229,6 +230,7 @@ const change = (body: string, revision: number): BodyChange => ({
   conflict: false,
   attachments: [],
   signature: "",
+  signatureImages: [],
   updatedAt: 0,
 });
 const ev = (e: Partial<WitEvent>): WitEvent => ({

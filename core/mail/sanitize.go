@@ -145,8 +145,9 @@ func prepare(src string) (string, int) {
 
 var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
 
-// finish applies the display contract on bluemonday's output.
-func finish(safe string, inline map[string]Attachment, loadRemote, compose bool) string {
+// finish applies the display contract on bluemonday's output. In compose,
+// a cid in keep stays a cid: and every other image source goes.
+func finish(safe string, inline map[string]Attachment, keep map[string]bool, loadRemote, compose bool) string {
 	root := parseBody(safe)
 	walkNodes(root, func(n *html.Node) {
 		if n.Type != html.ElementNode {
@@ -161,7 +162,9 @@ func finish(safe string, inline map[string]Attachment, loadRemote, compose bool)
 				id, _ := url.QueryUnescape(strings.TrimPrefix(src, cidScheme))
 				a, ok := inline[id]
 				ct := http.DetectContentType(a.Data)
-				if compose || !ok || !allowedImage[ct] {
+				if compose && keep[id] {
+					setAttr(n, "src", "cid:"+id)
+				} else if compose || !ok || !allowedImage[ct] {
 					delAttr(n, "src")
 				} else {
 					setAttr(n, "src", "data:"+ct+";base64,"+base64.StdEncoding.EncodeToString(a.Data))
@@ -190,16 +193,51 @@ func finish(safe string, inline map[string]Attachment, loadRemote, compose bool)
 // blockedRemote counts remote resources found in the original HTML.
 func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int) {
 	prepared, blocked := prepare(src)
-	return finish(policy().Sanitize(prepared), inline, loadRemote, false), blocked
+	return finish(policy().Sanitize(prepared), inline, nil, loadRemote, false), blocked
 }
 
 // SanitizeCompose cleans pasted content in the composer: same whitelist, no
 // remote resources. data-godwit survives only as a draft marker: "quote" or "signature".
-func SanitizeCompose(src string) string {
+func SanitizeCompose(src string) string { return SanitizeDraft(src, nil) }
+
+// SanitizeDraft is SanitizeCompose keeping the images whose src is cid: of a
+// Content-ID in cids (the draft account's signature images); any other cid,
+// data: or remote source is dropped.
+func SanitizeDraft(src string, cids map[string]bool) string {
 	prepared, _ := prepare(src)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
-	return finish(p.Sanitize(prepared), nil, false, true)
+	return finish(p.Sanitize(prepared), nil, cids, false, true)
+}
+
+// ReplaceImages returns src with every <img> source s replaced by f(s); an
+// empty result drops the source. It does not sanitize.
+func ReplaceImages(src string, f func(s string) string) string {
+	root := parseBody(src)
+	walkNodes(root, func(n *html.Node) {
+		if n.Type != html.ElementNode || n.DataAtom != atom.Img {
+			return
+		}
+		s, _ := attr(n, "src")
+		if s = f(s); s == "" {
+			delAttr(n, "src")
+		} else {
+			setAttr(n, "src", s)
+		}
+	})
+	return render(root)
+}
+
+// CIDs are the Content-IDs src's images refer to as cid:, in order.
+func CIDs(src string) []string {
+	var out []string
+	ReplaceImages(src, func(s string) string {
+		if len(s) >= 4 && strings.EqualFold(s[:4], "cid:") {
+			out = append(out, cleanID(s[4:]))
+		}
+		return s
+	})
+	return out
 }
 
 // Draft markers: NewDraft puts the quoted mail in <blockquote data-godwit="quote">

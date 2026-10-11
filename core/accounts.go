@@ -430,8 +430,16 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if p.Alias != nil {
 		set("alias", *p.Alias)
 	}
+	var images []sqlite.Statement
 	if p.Signature != nil {
-		set("signature", *p.Signature)
+		sig := *p.Signature
+		if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
+			if rest, images, err = signatureAssets(id, rest); err != nil {
+				return Account{}, err
+			}
+			sig = SignatureHTMLPrefix + rest
+		}
+		set("signature", sig)
 	}
 	if p.Sync != nil {
 		set("sync_limit", p.Sync.Limit)
@@ -471,9 +479,13 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0 WHERE id <> ?", Args: []any{id}})
 		set("is_default", 1)
 	}
+	stmts = append(stmts, images...)
 	if len(cols) > 0 {
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
+	}
+	if p.Signature != nil {
+		stmts = append(stmts, unusedSignatureImages(id))
 	}
 	if p.Servers != nil && (p.Servers.IMAPHost != acc.IMAPHost || p.Servers.IMAPPort != acc.IMAPPort ||
 		serverInput(acc.Email, *p.Servers).username() != acc.Username) {

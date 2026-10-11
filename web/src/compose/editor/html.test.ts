@@ -29,6 +29,14 @@ describe("html", () => {
     }
   });
 
+  it("keeps data: images only when asked (the signature editor's load), never on paste", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    const src = `<p>a</p><img src="${png}" onerror="x()"><img src="https://t.example/p"><img src="data:image/svg+xml;base64,PHN2Zz4=">`;
+    const kept = [...sanitize(src, true).querySelectorAll("img")];
+    expect(kept.map((i) => i.outerHTML)).toEqual([`<img src="${png}">`]);
+    expect(sanitize(src).querySelectorAll("img")).toHaveLength(0);
+  });
+
   it("reads the native page's richtext.ToHTML output, line breaks kept", () => {
     // From internal/richtext TestToHTMLRoundTrip's source, as ToHTML writes it (plus a trailing break).
     const native =

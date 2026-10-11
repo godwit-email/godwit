@@ -12,16 +12,26 @@ const BLOCKISH = new Set(
 );
 const BLOCK = new Set([...BLOCKISH, "P", "UL", "OL", "LI", "BLOCKQUOTE"]);
 
+/** A signature image's source: the data: URL Go's SignaturePage gives (sniffed png, jpeg, gif, webp). */
+export const IMAGE_SRC = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
+
+const keptImage = (el: Element) =>
+  el.tagName === "IMG" && IMAGE_SRC.test(el.getAttribute("src") ?? "");
+
 /**
  * Parses html on an inert DOMParser document (no script runs, nothing loads) and returns its body
- * with every loader element removed and every attribute dropped but <a href>.
+ * with every loader element removed and every attribute dropped but <a href>. With images (the
+ * signature editor's load), an <img> whose src is IMAGE_SRC stays, with its src only.
  */
-export function sanitize(html: string): HTMLElement {
+export function sanitize(html: string, images = false): HTMLElement {
   const body = new DOMParser().parseFromString(html, "text/html").body;
-  for (const el of body.querySelectorAll(LOADERS)) el.remove();
+  for (const el of body.querySelectorAll(LOADERS)) if (!(images && keptImage(el))) el.remove();
   for (const el of [...body.querySelectorAll("*")].reverse()) {
     for (const a of [...el.attributes]) {
-      if (!(el.tagName === "A" && a.name === "href")) el.removeAttribute(a.name);
+      if (
+        !((el.tagName === "A" && a.name === "href") || (el.tagName === "IMG" && a.name === "src"))
+      )
+        el.removeAttribute(a.name);
     }
     if (!BLOCKISH.has(el.tagName)) continue;
     if ([...el.children].some((c) => BLOCK.has(c.tagName))) {
@@ -56,16 +66,19 @@ function dropTrailingBreak(nodes: Descendant[]) {
   }
 }
 
-/** Plate's HTML deserializer on sanitize(html); also the paste path. Not normalized. */
-export function deserialize(editor: SlateEditor, html: string): Descendant[] {
-  const nodes = editor.api.html.deserialize({ element: sanitize(html) }) as Descendant[];
+/** Plate's HTML deserializer on sanitize(html, images); also the paste path. Not normalized. */
+export function deserialize(editor: SlateEditor, html: string, images = false): Descendant[] {
+  const nodes = editor.api.html.deserialize({ element: sanitize(html, images) }) as Descendant[];
   dropTrailingBreak(nodes);
   return nodes;
 }
 
-/** Loads html into editor (normalized, outside undo history) and returns the editor's value. */
-export function fromHTML(editor: SlateEditor, html: string): Value {
-  const nodes = deserialize(editor, html);
+/**
+ * Loads html into editor (normalized, outside undo history) and returns the editor's value; with
+ * images, its IMAGE_SRC images too (the editor needs an "img" plugin).
+ */
+export function fromHTML(editor: SlateEditor, html: string, images = false): Value {
+  const nodes = deserialize(editor, html, images);
   editor.children = (nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }]) as Value;
   editor.tf.withoutSaving(() => editor.tf.normalize({ force: true }));
   return editor.children;
@@ -119,12 +132,16 @@ function item(n: Descendant): string {
   return `<li>${n.children.every(isInline) ? para(n.children) : blocks(n.children)}</li>`;
 }
 
-// Writes only the format set; any other node (or one out of place) becomes a paragraph of its
-// text, or nothing when it has none (an image, a rule).
+// Writes only the format set (and the signature's images); any other node (or one out of place)
+// becomes a paragraph of its text, or nothing when it has none (a rule).
 function block(n: Descendant): string {
   if (isText(n)) return para([n]);
   const inlineOnly = n.children.every(isInline);
   switch (n.type) {
+    case "img": {
+      const src = String(n.url ?? "");
+      return IMAGE_SRC.test(src) ? `<img src="${src}">` : "";
+    }
     case "p":
     case "lic":
       if (inlineOnly) return para(n.children);

@@ -35,8 +35,12 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if d.Revision != revision {
 		return Draft{}, ErrStaleDraft
 	}
+	cids, err := s.signatureCIDs(ctx, accountID)
+	if err != nil {
+		return Draft{}, err
+	}
 	ed, quote, _ := mail.SplitDraft(d.HTML)
-	body := mail.SanitizeCompose(mail.JoinDraft(ed, quote, signatureHTML(acc.Signature)))
+	body := mail.SanitizeDraft(mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids)), cids)
 	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = ?, body_html = ?, updated_at = ?, revision = revision + 1
 		WHERE id = ? AND revision = ?`, accountID, body, time.Now().Unix(), id, revision)
 	if err != nil {

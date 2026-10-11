@@ -177,6 +177,12 @@ function draftHTML(args: string): string {
 const fmt = (d: Date) =>
   d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 
+/** The read-only signature: its text, then its images (data: URLs from Go). */
+const sigOf = (s: { signature: string; signatureImages: string[] | null }) => ({
+  text: s.signature,
+  images: s.signatureImages ?? [],
+});
+
 const editOf = (s: ComposeState): ComposeEdit => ({
   to: s.to,
   cc: s.cc,
@@ -206,7 +212,7 @@ function Compose({
   const [initial, setInitial] = useState({ body: state.body, n: 0 }); // n remounts the editor
   const [fieldsKey, setFieldsKey] = useState(0); // remounts the fields
   const [from, setFrom] = useState(state.from);
-  const [signature, setSignature] = useState(state.signature);
+  const [signature, setSignature] = useState(sigOf(state));
   const [quote, setQuote] = useState(state.quote);
   const [showQuote, setShowQuote] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>(state.attachments);
@@ -476,7 +482,7 @@ function Compose({
       const r = await sv.run((rev) => api.setAccount(id, rev));
       if (!r || r.conflict) setFrom(prev);
       else {
-        setSignature(r.signature);
+        setSignature(sigOf(r));
         setSavedAt(fmt(new Date(r.updatedAt)));
       }
     } catch (e) {
@@ -508,7 +514,7 @@ function Compose({
       const r = await sv.run(op);
       if (r && !r.conflict) {
         adopt(r.revision, r.body);
-        setSignature(r.signature);
+        setSignature(sigOf(r));
         setAttachments(r.attachments);
         setSavedAt(fmt(new Date(r.updatedAt)));
       }
@@ -613,7 +619,7 @@ function Compose({
       if (saver.current !== sv) return;
       setLatestFailed(false);
       setFrom(l.from);
-      setSignature(l.signature);
+      setSignature(sigOf(l));
       setQuote(l.quote);
       setAttachments(l.attachments);
       if (mine) {
@@ -653,8 +659,14 @@ function Compose({
   // After the body's text: the signature, then the quoted mail behind its toggle.
   const tail = (
     <>
-      {signature && (
-        <div className="whitespace-pre-wrap text-base text-muted-foreground">{signature}</div>
+      {(signature.text || signature.images.length > 0) && (
+        <div className="whitespace-pre-wrap text-base text-muted-foreground">
+          {signature.text}
+          {signature.images.map((src, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the same image may repeat
+            <img key={i} src={src} alt="" className="block max-w-full" />
+          ))}
+        </div>
       )}
       {quote && (
         <div className="mt-2 text-base text-muted-foreground">

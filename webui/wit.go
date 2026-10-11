@@ -489,7 +489,11 @@ func bodyChange(ctx context.Context, svc *core.Service, s *session, err error) (
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: changeOf(d), Body: s.adopt(d)}, nil
+	ch, err := changeOf(ctx, svc, d)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	return BodyChange{Change: ch, Body: s.adopt(d)}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's

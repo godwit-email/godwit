@@ -233,6 +233,7 @@ var sentinels = map[string]error{
 	"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth, "base_url_invalid": core.ErrBaseURLInvalid,
 	"base_url_scheme": core.ErrBaseURLScheme, "no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
 	"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState, "skill_disabled": core.ErrSkillDisabled,
+	"signature_image": core.ErrSignatureImage, "signature_image_count": core.ErrSignatureImageCount,
 	"skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed, "canceled": context.Canceled,
 	"deadline": context.DeadlineExceeded, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 	"auth_failed": conn.ErrAuthFailed, "flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,

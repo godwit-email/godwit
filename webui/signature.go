@@ -2,8 +2,9 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
-	"fmt"
+	"os"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -23,8 +24,9 @@ var (
 	SignatureText = mygo.NewEvent[map[string]string]("signatureText")
 )
 
-// maxSignatureBytes caps a saved signature at a mail body's limit.
-const maxSignatureBytes = mail.MaxBodyBytes
+// maxSignatureBytes caps a saved signature at a mail body's limit, plus its
+// images as the editor sends them (data: URLs).
+var maxSignatureBytes = mail.MaxBodyBytes + core.SignatureImagesMax*(base64.StdEncoding.EncodedLen(core.SignatureImageMax)+64)
 
 // ErrSignatureAccountGone is final: the saver (saver.ts) drops the pending edit.
 var ErrSignatureAccountGone = errors.New("signature account gone")
@@ -42,7 +44,8 @@ func (s *Signature) Close() {
 
 // signatureKeys are the i18n keys the signature page shows.
 var signatureKeys = []string{"compose.bold", "compose.italic", "compose.underline", "compose.link",
-	"compose.link.url", "compose.link.apply", "settings.account.signature.label", "error.unknown"}
+	"compose.link.url", "compose.link.apply", "settings.account.signature.label", "error.unknown",
+	"settings.account.signature.image", "settings.account.signature.image_invalid"}
 
 func signatureCopy() map[string]string {
 	text := make(map[string]string, len(signatureKeys))
@@ -76,6 +79,7 @@ type SignatureState struct {
 // SignaturePage.
 type Signature struct {
 	pages *Pages
+	pick  func(ctx context.Context) (string, error)
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -86,8 +90,10 @@ type Signature struct {
 }
 
 // NewSignature is the signature page's state; SetService opens it up.
-func NewSignature(pages *Pages) *Signature {
-	return &Signature{pages: pages, waiting: map[int64]func(bool){}}
+// pick asks for one image file, in a dialog on the calling page's window:
+// its path, "" for none.
+func NewSignature(pages *Pages, pick func(ctx context.Context) (string, error)) *Signature {
+	return &Signature{pages: pages, pick: pick, waiting: map[int64]func(bool){}}
 }
 
 // SetService gives the page the service, once the data is open.
@@ -158,26 +164,43 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 }
 
 // Load is account's signature as the editor's HTML: sanitized, a plain
-// one escaped into a paragraph.
+// one escaped into a paragraph, its images as data: URLs.
 func (p *SignaturePage) Load(ctx context.Context, account int64) (string, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return "", err
 	}
-	accs, err := svc.ListAccounts(ctx)
+	return svc.SignatureEditor(ctx, account)
+}
+
+// PickImage asks for an image to insert and returns it as a data: URL, ""
+// for none picked: a png, jpeg, gif or webp (by its content) of at most
+// 512 KB, else core.ErrSignatureImage.
+func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
+	if _, err := p.s.caller(ctx); err != nil {
+		return "", err
+	}
+	path, err := p.s.pick(ctx)
+	if err != nil || path == "" {
+		return "", err
+	}
+	st, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	for _, a := range accs {
-		if a.ID == account {
-			return core.SignatureEditorHTML(a.Signature), nil
-		}
+	if st.Size() > core.SignatureImageMax {
+		return "", core.ErrSignatureImage
 	}
-	return "", fmt.Errorf("account %d not found", account)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return core.SignatureImageURL(data)
 }
 
 // Save stores html as account's signature, marked as editor HTML ("" for
-// none); drafts sanitize it as they take it.
+// none); drafts sanitize it as they take it. Its data: images become the
+// account's signature images (core.ErrSignatureImage, ErrSignatureImageCount).
 func (p *SignaturePage) Save(ctx context.Context, account int64, html string) error {
 	svc, err := p.s.caller(ctx)
 	if err != nil {

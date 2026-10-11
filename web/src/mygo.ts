@@ -34,8 +34,12 @@ export interface AttachResult {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
   /**
@@ -64,8 +68,12 @@ export interface BodyChange {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
   /** Body is the editable HTML as stored. */
@@ -79,8 +87,12 @@ export interface Change {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
 }
@@ -132,9 +144,13 @@ export interface ComposeState {
   subject: string;
   /** Body is the editable part as sanitized HTML. */
   body: string;
-  /** Quote and Signature are read-only plain text. */
+  /**
+   * Quote and Signature are read-only plain text; SignatureImages are the
+   * signature's images as data: URLs, shown after its text.
+   */
   quote: string;
   signature: string;
+  signatureImages: string[];
   /** Attachments are the draft's files. */
   attachments: Attachment[];
   /** Revision is what the next save must pass; Theme styles the page. */
@@ -730,14 +746,23 @@ export const ReaderPage = {
 export const SignaturePage = {
   /**
    * Load is account's signature as the editor's HTML: sanitized, a plain
-   * one escaped into a paragraph.
+   * one escaped into a paragraph, its images as data: URLs.
    */
   load(account: number): Promise<string> {
     return call("SignaturePage.Load", account);
   },
   /**
+   * PickImage asks for an image to insert and returns it as a data: URL, ""
+   * for none picked: a png, jpeg, gif or webp (by its content) of at most
+   * 512 KB, else core.ErrSignatureImage.
+   */
+  pickImage(): Promise<string> {
+    return call("SignaturePage.PickImage");
+  },
+  /**
    * Save stores html as account's signature, marked as editor HTML ("" for
-   * none); drafts sanitize it as they take it.
+   * none); drafts sanitize it as they take it. Its data: images become the
+   * account's signature images (core.ErrSignatureImage, ErrSignatureImageCount).
    */
   save(account: number, html: string): Promise<void> {
     return call("SignaturePage.Save", account, html);

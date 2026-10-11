@@ -54,6 +54,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   quote:
     "Following up on our call last week, I put together a draft proposal for the Q4 partnership…",
   signature: "",
+  signatureImages: [],
   attachments: [],
   revision: 1,
   theme: theme(mode),
@@ -359,3 +360,7 @@ export const signature = (mode: "light" | "dark"): SignatureState => ({
 });
 export const signatureHtml =
   '<p><strong>Alex Chen</strong></p><p>Partnerships · Example Co.</p><p><a href="https://example.com">example.com</a></p>';
+/** A company logo, as SignaturePage.Load gives a signature image (a data: URL). */
+export const logo =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAcAQMAAACktijBAAAABlBMVEUlY+v///8tVMD8AAAAHUlEQVR4nGIYGGD/gUiO/X8w+EAKB7dpMNbAAMAAz10oe+YHgF0AAAAASUVORK5CYII=";
+export const signatureHtmlImage = `${signatureHtml}<img src="${logo}">`;

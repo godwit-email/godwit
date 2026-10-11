@@ -262,4 +262,9 @@ var Migrations = [][]string{{
 	`CREATE TABLE purge_policies (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		role TEXT NOT NULL, days INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL, folder_id INTEGER,
 		blocked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(account_id, role))`,
+}, {
+	// Signature images, content-addressed per account: cid is sig-<hash>@godwit,
+	// as the signature and drafts refer to it (cid:<cid>).
+	`CREATE TABLE signature_images (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		cid TEXT NOT NULL, content_type TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account_id, cid))`,
 }}

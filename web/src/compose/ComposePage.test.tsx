@@ -112,6 +112,7 @@ const state = {
   body: "正文",
   quote: "> 原文",
   signature: "-- me",
+  signatureImages: [],
   attachments: [],
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
@@ -523,6 +524,7 @@ test("account switch keeps body", async () => {
     attachments: [],
     conflict: false,
     signature: "-- work",
+    signatureImages: ["data:image/png;base64,AAAA"],
     updatedAt: new Date(2026, 9, 10, 11, 42).getTime(),
   });
   render(<ComposePage />);
@@ -533,7 +535,8 @@ test("account switch keeps body", async () => {
   await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
-  expect(await screen.findByText("-- work")).toBeInTheDocument();
+  const sig = await screen.findByText("-- work");
+  expect(sig.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   expect(el).toHaveValue("正文!");
   expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:42")).toBeInTheDocument();
 });
@@ -544,6 +547,7 @@ test("an account switch that conflicts reverts the select", async () => {
     attachments: [],
     conflict: true,
     signature: "",
+    signatureImages: [],
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -564,6 +568,7 @@ test("attachments: add reports oversize, × removes", async () => {
     attachments: [a],
     conflict: false,
     signature: "-- me",
+    signatureImages: [],
     tooLarge: ["big.zip"],
     failed: ["bad.bin"],
     updatedAt: new Date(2026, 9, 10, 11, 43).getTime(),
@@ -573,6 +578,7 @@ test("attachments: add reports oversize, × removes", async () => {
     attachments: [],
     conflict: false,
     signature: "-- me",
+    signatureImages: [],
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -604,6 +610,7 @@ test("keep mine after conflict", async () => {
     ...state,
     body: "别处",
     signature: "-- new",
+    signatureImages: [],
     revision: 30,
   });
   vi.mocked(api.save).mockResolvedValue({ revision: 31, conflict: false });
@@ -692,6 +699,7 @@ test("a conflict stopping the adding part way still lists the files added", asyn
     attachments: [a],
     conflict: true,
     signature: "-- me",
+    signatureImages: [],
     updatedAt: 0,
     tooLarge: [],
     failed: [],

@@ -228,6 +228,11 @@ func (p *mailPage) reload() {
 		case v.Unified == "outbox" || v == (core.View{}):
 		case isDrafts:
 			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
+			for i := range drafts { // shown, never saved: signature images as data: (richtext's only kind)
+				if err == nil {
+					drafts[i].HTML, err = a.svc.InlineSignatureImages(ctx, drafts[i].AccountID, drafts[i].HTML)
+				}
+			}
 		default:
 			items, cursor, err = fetchItems(ctx, a.svc, v, threads, "", want, toEnd)
 		}

@@ -371,6 +371,21 @@ func pickFiles(_ context.Context, winID int) ([]string, error) {
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})
 }
 
+// pickImage asks for one signature image in a dialog on the calling page's
+// window; "" for none.
+func pickImage(ctx context.Context) (string, error) {
+	w := mygo.CallerWindow(ctx)
+	if w == nil || w.IsDestroyed() {
+		return "", errors.New("no window to attach the image dialog to")
+	}
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w,
+		Filters: []mygo.FileFilter{{Name: "Images", Extensions: []string{"png", "jpg", "jpeg", "gif", "webp"}}}})
+	if err != nil || len(paths) == 0 {
+		return "", err
+	}
+	return paths[0], nil
+}
+
 // composeWindow is webui.Window on mygo.
 type composeWindow struct{ w *mygo.Window }
 

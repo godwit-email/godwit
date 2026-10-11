@@ -69,6 +69,14 @@ func TestFromComposeHTML(t *testing.T) {
 	}, d.Blocks)
 }
 
+func TestFromComposeHTMLImages(t *testing.T) {
+	d := FromComposeHTML(`<p>a</p><img src="data:image/png;base64,AAAA"><img src="https://t.example/p.png" alt="x"><img src="cid:sig-a@godwit">`)
+	assert.Equal(t, []Block{
+		{Kind: Paragraph, Inlines: []Inline{{Text: "a"}}},
+		{Kind: ImageBlock, Image: &Image{Src: "data:image/png;base64,AAAA"}},
+	}, d.Blocks, "only data: images, as a draft's signature images are shown")
+}
+
 func TestTables(t *testing.T) {
 	d, trunc := FromMailHTML(sanitized(t, `<table><tr><th>A</th><th>B</th><th>C</th></tr><tr><td>1</td><td><b>2</b></td><td>3</td></tr></table>`), DefaultLimits)
 	assert.False(t, trunc)

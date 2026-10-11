@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emersion/go-message"
 	gomail "github.com/emersion/go-message/mail"
 	"golang.org/x/net/html"
 )
@@ -20,6 +21,9 @@ type Outgoing struct {
 	InReplyTo     string
 	References    []string
 	Attachments   []Attachment // Data must be filled
+	// Related are images the HTML may show as cid:<ContentID> (the account's
+	// signature images): sent inline, in multipart/related, when it does.
+	Related []Attachment
 }
 
 func addrList(in []string) ([]*gomail.Address, error) {
@@ -80,76 +84,118 @@ func Build(o Outgoing, now time.Time) (raw []byte, messageID string, err error) 
 		h.SetMsgIDList("References", ids)
 	}
 
-	safe := SanitizeCompose(o.HTML)
-	var buf bytes.Buffer
-	body := func(iw *gomail.InlineWriter) error {
+	// Only images of Related (the account's signature images) survive, and
+	// only the ones the body shows are sent.
+	keep := make(map[string]bool, len(o.Related))
+	for _, a := range o.Related {
+		keep[cleanID(a.ContentID)] = true
+	}
+	safe := SanitizeDraft(o.HTML, keep)
+	shown := map[string]bool{}
+	for _, id := range CIDs(safe) {
+		shown[id] = true
+	}
+	var related []Attachment
+	for _, a := range o.Related {
+		if id := cleanID(a.ContentID); shown[id] {
+			shown[id] = false // once
+			related = append(related, a)
+		}
+	}
+
+	// The tree: [mixed: ] [related: ] alternative(text, html) [, images] [, attachments].
+	body := func(w *message.Writer) error {
 		for _, p := range []struct{ ct, s string }{{"text/plain", HTMLToText(safe)}, {"text/html", safe}} {
-			var ph gomail.InlineHeader
+			var ph message.Header
 			ph.Set("Content-Type", p.ct+"; charset=utf-8")
-			w, err := iw.CreatePart(ph)
-			if err != nil {
-				return err
-			}
-			if _, err := w.Write([]byte(p.s)); err != nil {
-				return err
-			}
-			if err := w.Close(); err != nil {
+			ph.Set("Content-Disposition", "inline")
+			ph.Set("Content-Transfer-Encoding", "quoted-printable")
+			if err := leaf(w, ph, []byte(p.s)); err != nil {
 				return err
 			}
 		}
-		return iw.Close()
+		return w.Close()
 	}
-	if len(o.Attachments) == 0 {
-		iw, err := gomail.CreateInlineWriter(&buf, h)
-		if err != nil {
-			return nil, "", err
+	if len(related) > 0 {
+		alt := body
+		body = func(w *message.Writer) error {
+			if err := sub(w, "multipart/alternative", alt); err != nil {
+				return err
+			}
+			for _, a := range related {
+				var ih message.Header
+				ih.Set("Content-Type", a.ContentType)
+				ih.Set("Content-Disposition", "inline")
+				ih.Set("Content-ID", "<"+cleanID(a.ContentID)+">")
+				ih.Set("Content-Transfer-Encoding", "base64")
+				if err := leaf(w, ih, a.Data); err != nil {
+					return err
+				}
+			}
+			return w.Close()
 		}
-		if err := body(iw); err != nil {
-			return nil, "", err
-		}
-		return buf.Bytes(), messageID, nil
 	}
-	mw, err := gomail.CreateWriter(&buf, h)
+	top := "multipart/alternative"
+	if len(related) > 0 {
+		top = "multipart/related"
+	}
+	if len(o.Attachments) > 0 {
+		inner, innerType := body, top
+		top = "multipart/mixed"
+		body = func(w *message.Writer) error {
+			if err := sub(w, innerType, inner); err != nil {
+				return err
+			}
+			for _, a := range o.Attachments {
+				var ah gomail.AttachmentHeader
+				ct := a.ContentType
+				if ct == "" {
+					ct = "application/octet-stream"
+				}
+				ah.Set("Content-Type", ct)
+				ah.Set("Content-Disposition", "attachment")
+				ah.SetFilename(a.Filename)
+				ah.Set("Content-Transfer-Encoding", "base64")
+				if err := leaf(w, ah.Header, a.Data); err != nil {
+					return err
+				}
+			}
+			return w.Close()
+		}
+	}
+	h.Set("Content-Type", top)
+	var buf bytes.Buffer
+	w, err := message.CreateWriter(&buf, h.Header)
 	if err != nil {
 		return nil, "", err
 	}
-	iw, err := mw.CreateInline()
-	if err != nil {
-		return nil, "", err
-	}
-	if err := body(iw); err != nil {
-		return nil, "", err
-	}
-	for _, a := range o.Attachments {
-		var ah gomail.AttachmentHeader
-		ct := a.ContentType
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-		ah.Set("Content-Type", ct)
-		ah.SetFilename(a.Filename)
-		if a.Inline {
-			ah.Set("Content-Disposition", "inline")
-			ah.SetFilename(a.Filename)
-		}
-		if a.ContentID != "" {
-			ah.Set("Content-ID", "<"+cleanID(a.ContentID)+">")
-		}
-		w, err := mw.CreateAttachment(ah)
-		if err != nil {
-			return nil, "", err
-		}
-		if _, err := w.Write(a.Data); err != nil {
-			return nil, "", err
-		}
-		if err := w.Close(); err != nil {
-			return nil, "", err
-		}
-	}
-	if err := mw.Close(); err != nil {
+	if err := body(w); err != nil {
 		return nil, "", err
 	}
 	return buf.Bytes(), messageID, nil
+}
+
+// leaf writes a single part of w.
+func leaf(w *message.Writer, h message.Header, data []byte) error {
+	pw, err := w.CreatePart(h)
+	if err != nil {
+		return err
+	}
+	if _, err := pw.Write(data); err != nil {
+		return err
+	}
+	return pw.Close()
+}
+
+// sub writes a multipart part of w with media type ct, filled by fill (which closes it).
+func sub(w *message.Writer, ct string, fill func(*message.Writer) error) error {
+	var h message.Header
+	h.Set("Content-Type", ct)
+	pw, err := w.CreatePart(h)
+	if err != nil {
+		return err
+	}
+	return fill(pw)
 }
 
 func nonEmpty(s string) []string {

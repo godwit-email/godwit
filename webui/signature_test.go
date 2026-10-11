@@ -1,7 +1,13 @@
 package webui
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	pngenc "image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,6 +22,7 @@ type sigFixture struct {
 	e     *coretest.Env
 	acc   core.Account
 	pages *Pages
+	pick  string // the file PickImage's dialog answers, "" for none
 	s     *Signature
 	p     *SignaturePage
 	page  any // registered as "signature"
@@ -26,7 +33,7 @@ func newSigFixture(t *testing.T) *sigFixture {
 	f := &sigFixture{e: coretest.New(t, coretest.WithoutAutoSync())}
 	f.acc = f.e.AddAccount(t, "alice@example.com")
 	f.pages = NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
-	f.s = NewSignature(f.pages)
+	f.s = NewSignature(f.pages, func(context.Context) (string, error) { return f.pick, nil })
 	f.s.SetService(f.e.Svc)
 	f.p = NewSignaturePage(f.s)
 	f.page = new(int)
@@ -116,4 +123,46 @@ func TestSignatureCopyFollowsLanguage(t *testing.T) {
 	f.s.SettingsChanged(emit)
 	require.Len(t, sent, 1)
 	assert.Equal(t, "Bold", sent[0]["compose.bold"])
+}
+
+func TestSignaturePickImage(t *testing.T) {
+	f := newSigFixture(t)
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		p := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(p, data, 0o600))
+		return p
+	}
+	img := image.NewGray(image.Rect(0, 0, 1, 1))
+	var png bytes.Buffer
+	require.NoError(t, pngenc.Encode(&png, img))
+
+	f.pick = write("logo.png", png.Bytes())
+	_, err := f.p.PickImage(pageCtx(new(int)))
+	assert.ErrorIs(t, err, ErrWrongPage, "only the signature page")
+	got, err := f.p.PickImage(pageCtx(f.page))
+	require.NoError(t, err)
+	assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(png.Bytes()), got)
+
+	f.pick = write("logo.jpg", []byte("not an image at all"))
+	_, err = f.p.PickImage(pageCtx(f.page))
+	assert.ErrorIs(t, err, core.ErrSignatureImage, "the content decides, not the name")
+	f.pick = write("big.png", append(png.Bytes(), make([]byte, core.SignatureImageMax)...))
+	_, err = f.p.PickImage(pageCtx(f.page))
+	assert.ErrorIs(t, err, core.ErrSignatureImage)
+	f.pick = ""
+	got, err = f.p.PickImage(pageCtx(f.page))
+	require.NoError(t, err)
+	assert.Empty(t, got, "none picked")
+
+	// The editor's data: images are saved as the account's images and loaded back as data:.
+	html := `<p>Bob</p><img src="data:image/png;base64,` + base64.StdEncoding.EncodeToString(png.Bytes()) + `">`
+	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID, html))
+	assert.NotContains(t, f.stored(t), "data:")
+	assert.Contains(t, f.stored(t), "cid:sig-")
+	got, err = f.p.Load(pageCtx(f.page), f.acc.ID)
+	require.NoError(t, err)
+	assert.Contains(t, got, `src="data:image/png;base64,`)
+	four := strings.Repeat(`<img src="data:image/png;base64,`+base64.StdEncoding.EncodeToString(png.Bytes())+`">`, 4)
+	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID, four), "the same image four times is one image, and under the size cap")
 }

@@ -169,3 +169,33 @@ func TestDraftPaneLabelsNoClip(t *testing.T) {
 		}
 	}
 }
+
+func TestDraftPaneShowsSignatureImages(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg=="
+	sig := core.SignatureHTMLPrefix + `<p>Alice</p><img src="data:image/png;base64,` + png + `">`
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), accs[0].ID, core.AccountPatch{Signature: &sig}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.env.Svc.NewDraft(context.Background(), accs[0].ID, "new", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Subject = "With logo"
+	if d, err = h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
+	h.click("草稿")
+	h.see("With logo")
+	for _, b := range h.app.pages[PageMail].(*mailPage).draftView[d.ID].doc.Blocks {
+		if b.Image != nil && b.Image.Src == "data:image/png;base64,"+png {
+			return
+		}
+	}
+	t.Fatal("the pane does not show the signature image")
+}

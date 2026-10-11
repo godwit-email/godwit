@@ -417,7 +417,9 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	in.HTML = mail.SanitizeCompose(mail.StripMarkers(in.HTML) + d.HTML)
+	if in.HTML, err = s.sanitizeDraft(ctx, in.AccountID, mail.StripMarkers(in.HTML)+d.HTML); err != nil {
+		return prepared{}, err
+	}
 	b, err := json.Marshal(in)
 	if err != nil {
 		return prepared{}, err
