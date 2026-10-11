@@ -341,3 +341,20 @@ func TestVibrancyShowsThroughTopBar(t *testing.T) {
 		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
 	}
 }
+
+func TestWindowsChromeRadius(t *testing.T) {
+	tok := theme.Light()
+	for _, tc := range []struct {
+		goos   string
+		barH   float32
+		radius float32
+	}{{"windows", 40, tok.Radius.Lg}, {"darwin", 44, tok.Radius.Xl}, {"linux", 44, tok.Radius.Xl}} {
+		old := goos
+		goos = tc.goos
+		bar, r := chromeMetrics(40, tok)
+		goos = old
+		if bar != tc.barH || r != tc.radius {
+			t.Errorf("%s: bar %v radius %v, want %v %v", tc.goos, bar, r, tc.barH, tc.radius)
+		}
+	}
+}

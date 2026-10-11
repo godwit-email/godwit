@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"maps"
 	"math"
+	"runtime"
 	"slices"
 	"strconv"
 	"time"
@@ -24,6 +25,19 @@ type pageView interface {
 	Content(c *ui.Context)
 	Title() (title, sub string)
 	refresh(hints []events.Event)
+}
+
+// goos is a var so a test can pose as another platform.
+var goos = runtime.GOOS
+
+// chromeMetrics is the top bar's height and the panel's corner radius. Windows
+// draws the design's 40 px strip with 8 px corners; elsewhere the bar is at
+// least TopBarHeight (the window controls only take room beside our bar).
+func chromeMetrics(titleH float32, t theme.Tokens) (barH, radius float32) {
+	if goos == "windows" && titleH > 0 {
+		return titleH, t.Radius.Lg
+	}
+	return max(theme.TopBarHeight, titleH), t.Radius.Xl
 }
 
 const (
@@ -151,7 +165,7 @@ func (a *App) View(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyBracketRight) {
 		a.forward()
 	}
-	barH := max(theme.TopBarHeight, c.TitleBar().Height) // the window controls only take room beside our bar
+	barH, _ := chromeMetrics(c.TitleBar().Height, theme.Of(c))
 	switch {
 	case !a.loaded:
 		ui.Box(c).Height(barH).FillWidth().DragWindow()
@@ -289,7 +303,8 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Xl).Clip().Background(t.Background).
+	_, rad := chromeMetrics(c.TitleBar().Height, t)
+	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(rad).Clip().Background(t.Background).
 		Border(theme.Hairline, t.Outline)
 	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
@@ -301,7 +316,7 @@ func (a *App) panel(c *ui.Context) {
 		split := kit.Split(c, &a.sidebarW, func() {
 			// Rounded itself, inside the panel's outline: the GPU renderer does not
 			// round the panel's clip, and the material shows past a square corner.
-			r := t.Radius.Xl - theme.Hairline
+			r := rad - theme.Hairline
 			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(r, 0, 0, r).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
 		}, content).Grow(1)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
