@@ -62,7 +62,7 @@ const state = (conversation: number, version: number, model = "m1"): WitPageStat
   version,
   model,
   text,
-  theme: { mode: "light", light: {}, dark: {}, fontSize: 13, bodyFontSize: 14 },
+  theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
 });
 const msg = (id: string, role: string, t: string, runs: number[]) => ({
   id,

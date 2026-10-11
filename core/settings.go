@@ -25,10 +25,13 @@ type Settings struct {
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
+	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
+	// stored FontSize was raised by one to keep its sizes.
+	SettingsVersion int
 }
 
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
+	return Settings{Theme: "system", Density: "compact", FontSize: 14, BodyFontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
@@ -85,8 +88,17 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	if err != nil || len(rows.Values) == 0 {
 		return st, err
 	}
-	if err := json.Unmarshal([]byte(rows.Values[0][0].(string)), &st); err != nil {
+	raw := []byte(rows.Values[0][0].(string))
+	var stored struct{ FontSize, SettingsVersion int } // the defaults must not stand in for the stored version
+	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
+	}
+	_ = json.Unmarshal(raw, &st)
+	if stored.SettingsVersion < 2 {
+		if stored.FontSize > 0 { // an absent size keeps the new default
+			st.FontSize = min(stored.FontSize+1, 32)
+		}
+		st.SettingsVersion = 2
 	}
 	return st, nil
 }

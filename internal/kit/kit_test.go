@@ -14,7 +14,7 @@ func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity
 
 func themedDensity(density string, body func(c *ui.Context)) func(c *ui.Context) {
 	return func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: density, FontSize: 13, BodyFontSize: 14}, c.Theme().Dark))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: density, FontSize: 14, BodyFontSize: 14}, c.Theme().Dark))
 		body(c)
 	}
 }
@@ -165,7 +165,7 @@ func TestKitDensityScales(t *testing.T) {
 		Input(c, &s, InputOpts{}).Label("Name")
 		Card(c, func() {}).Label("Box")
 	}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
 	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")
 	st.Density = "comfortable"
 	roomy := heights(t, st, body, "Archive", "Letter", "Name", "Box")
@@ -187,7 +187,7 @@ func TestKitFontSizeFollows(t *testing.T) {
 		Kbd(c, "KbdText")
 	}
 	names := []string{"BadgeText", "AlertText", "HelpText", "KbdText"}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
 	small := heights(t, st, body, names...)
 	st.FontSize = 18
 	big := heights(t, st, body, names...)

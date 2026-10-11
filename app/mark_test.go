@@ -13,7 +13,7 @@ import (
 // shifted by the tile's outline.
 func TestMarkLogoCentred(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}, false))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}, false))
 		ui.Box(c).Padding(20).Children(func() { mark(c, auth.Provider{ID: "qq"}, theme.MarkLg) })
 	}, 100, 100)
 	img := tt.Image()

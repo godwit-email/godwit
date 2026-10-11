@@ -197,7 +197,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				})
 			})
 			sel(i18n.T("settings.font_size"), "", func() ui.Element {
-				return kit.Select(c, &st.FontSize, sizeOptions([]int{12, 13, 14, 15, 16}, 13, st.FontSize))
+				return kit.Select(c, &st.FontSize, sizeOptions([]int{13, 14, 15, 16}, 14, st.FontSize))
 			})
 			sel(i18n.T("settings.body_font_size"), i18n.T("settings.body_font_size.help"), func() ui.Element {
 				return kit.Select(c, &st.BodyFontSize, sizeOptions([]int{13, 14, 16, 18}, 14, st.BodyFontSize))

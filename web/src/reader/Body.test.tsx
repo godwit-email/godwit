@@ -34,7 +34,7 @@ const theme: Theme = {
   mode: "light",
   light: { "--foreground": "#111" },
   dark: { "--foreground": "#eee" },
-  fontSize: 13,
+  fontSize: 14,
   bodyFontSize: 14,
 };
 const body = (version: number, html: string, over: Partial<ReaderBody> = {}): ReaderBody => ({

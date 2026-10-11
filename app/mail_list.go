@@ -529,7 +529,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		if len(rows) == 0 && p.loading { // the first load: placeholder rows
 			for range 6 {
 				ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-					kit.Skeleton(c, 0, t.Text.Base)
+					kit.Skeleton(c, 0, t.Text.Body)
 					kit.Skeleton(c, theme.SkeletonShort, t.Text.Sm)
 				})
 			}

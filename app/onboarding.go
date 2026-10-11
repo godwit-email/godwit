@@ -423,7 +423,7 @@ func (o *onboarding) Content(c *ui.Context) {
 		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Radius(t.Radius.Xl-theme.Hairline, 0, 0, t.Radius.Xl-theme.Hairline).Background(t.Sidebar).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
 			ui.Row(c).Gap(th.Space(2.5)).Children(func() {
 				ui.Icon(c, logo).Size(theme.BrandLogo, theme.BrandLogo)
-				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.Text.Brand).FontWeight(600)
+				ui.Text(c, i18n.T("onboarding.brand")).FontSize(t.Text.X2l).FontWeight(600)
 			})
 			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
 				ui.Text(c, i18n.T("onboarding.headline")).FontSize(t.Text.Display).FontWeight(600)
@@ -477,7 +477,7 @@ func (o *onboarding) body(c *ui.Context) {
 func heading(c *ui.Context, title, sub string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		ui.Text(c, title).FontSize(t.Text.Heading).FontWeight(600)
+		ui.Text(c, title).FontSize(t.Text.Xl).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
@@ -567,7 +567,7 @@ func (o *onboarding) providerHeader(c *ui.Context, sub string) {
 	ui.Row(c).Gap(th.Space(3)).Children(func() {
 		mark(c, o.prov, theme.MarkLg)
 		ui.Column(c).Children(func() {
-			ui.Text(c, providerName(o.prov)).FontSize(t.Text.Heading).FontWeight(600)
+			ui.Text(c, providerName(o.prov)).FontSize(t.Text.Xl).FontWeight(600)
 			if sub != "" {
 				ui.Text(c, sub).TextColor(t.Muted)
 			}
@@ -814,7 +814,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 		ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.Success.Alpha(0.12)).TextColor(t.Success).Center().Children(func() {
 			ui.Icon(c, icons.Get("check")).Size(theme.IconMd, theme.IconMd)
 		})
-		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(t.Text.Heading).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
+		ui.Text(c, i18n.T("onboarding.done.title")).FontSize(t.Text.Xl).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 		ui.Text(c, strings.TrimSpace(o.email)).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {

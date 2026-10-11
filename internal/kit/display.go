@@ -36,7 +36,7 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
 	}
 	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(bg).Border(theme.Hairline, border).TextColor(fg).
-		FontSize(t.Text.Base).Children(func() {
+		FontSize(t.Text.Body).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
 			actions()

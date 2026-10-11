@@ -42,6 +42,9 @@ type Tokens struct {
 	// MarkTile is the tile under a provider's logo: white in either
 	// appearance, as logos are drawn for white.
 	MarkTile ui.Color
+	// Highlight marks matched text (search hits) in either appearance, with
+	// HighlightText on it.
+	Highlight, HighlightText ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -55,9 +58,10 @@ type Tokens struct {
 type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, X2l, X3l, X4l, Full float32 }
 
 // TextScale are the interface's text sizes, steps from FontSize. Mail bodies
-// use BodyFontSize. Title (dialog titles), Brand, Heading (page headings)
-// and Display (the onboarding headline) are the off-scale sizes in use.
-type TextScale struct{ Xs, Sm, Base, Lg, Xl, X2l, Title, Brand, Heading, Display float32 }
+// use BodyFontSize. Body is FontSize itself (the user's setting, 14 by
+// default); Base is the denser 13 under it. Title is dialog titles, Xl page
+// headings, X2l brand text and Display the onboarding headline.
+type TextScale struct{ Xs, Sm, Base, Body, Lg, Title, Xl, X2l, Display float32 }
 
 // Layout sizes that do not follow the density.
 const (
@@ -66,7 +70,7 @@ const (
 	SidebarWidth      = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth   = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth   = 480
-	ListWidth         = 360  // the mail list column
+	ListWidth         = 340  // the mail list column
 	TopBarHeight      = 44   // the top bar's least height
 	SheetWidth        = 560  // dialogs and the add-account sheet
 	SheetMaxHeight    = 760  // the add-account sheet
@@ -144,8 +148,8 @@ var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4
 func sized(t Tokens) Tokens {
 	f := t.FontSize
 	t.Radius = RadiusScale{Xs: 2, Sm: 4, Md: 6, Lg: 8, Xl: 12, X2l: 16, X3l: 24, X4l: 32, Full: 9999} // Tailwind v4's
-	t.Text = TextScale{Xs: f - 2, Sm: f - 1, Base: f, Lg: f + 2, Xl: f + 5, X2l: f + 7,
-		Title: f + 3, Brand: f + 4, Heading: f + 6, Display: f + 16}
+	t.Text = TextScale{Xs: f - 3, Sm: f - 2, Base: f - 1, Body: f, Lg: f + 1, Title: f + 2,
+		Xl: f + 4, X2l: f + 6, Display: f + 15}
 	return t
 }
 
@@ -157,7 +161,8 @@ func status(t Tokens) Tokens {
 	t.SuccessBg, t.SuccessBorder, t.SuccessText = p.Green50.Color(), p.Green200.Color(), p.Green700.Color()
 	t.DangerBorder, t.DangerText = p.Red200.Color(), p.Red700.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
-	t.FontSize, t.BodyFontSize, t.Scale = 13, 14, 1
+	t.Highlight, t.HighlightText = p.Yellow200.Color(), p.Neutral950.Color()
+	t.FontSize, t.BodyFontSize, t.Scale = 14, 14, 1
 	return sized(t)
 }
 
@@ -240,7 +245,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Ring.Alpha(0.5), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
 	th.Radius, th.Spacing = t.Radius.Lg, 4*t.Scale // Space(n) is n Tailwind units
-	th.Font, th.FontSize = "", t.Text.Base
+	th.Font, th.FontSize = "", t.Text.Body
 	return &th
 }
 

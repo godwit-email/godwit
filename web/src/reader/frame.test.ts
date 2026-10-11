@@ -5,7 +5,7 @@ const theme = (over: Partial<Theme> = {}): Theme => ({
   mode: "light",
   light: { "--foreground": "oklch(0.145 0 0)" },
   dark: { "--foreground": "oklch(0.985 0 0)" },
-  fontSize: 13,
+  fontSize: 14,
   bodyFontSize: 15,
   ...over,
 });

@@ -50,7 +50,7 @@ func TestThemeTokens(t *testing.T) {
 		t.Errorf("Dark() = %+v", d)
 	}
 
-	st := core.Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 15}
+	st := core.Settings{Theme: "system", Density: "compact", FontSize: 14, BodyFontSize: 15}
 	if FromSettings(st, false).Dark || !FromSettings(st, true).Dark {
 		t.Error("system theme does not follow the system")
 	}
@@ -60,7 +60,7 @@ func TestThemeTokens(t *testing.T) {
 	}
 	st.Theme = "light"
 	got := FromSettings(st, true)
-	if got.Dark || got.FontSize != 13 || got.BodyFontSize != 15 || got.Scale != 1 {
+	if got.Dark || got.FontSize != 14 || got.BodyFontSize != 15 || got.Scale != 1 {
 		t.Errorf("light compact = dark %v, sizes %v/%v, scale %v", got.Dark, got.FontSize, got.BodyFontSize, got.Scale)
 	}
 	st.Density = "comfortable"
@@ -109,7 +109,7 @@ func TestSystemFonts(t *testing.T) {
 func TestSpaceFollowsDensity(t *testing.T) {
 	for density, want := range map[string]float32{"compact": 32, "comfortable": 40} {
 		var got float32
-		tok := FromSettings(core.Settings{Theme: "light", Density: density, FontSize: 13, BodyFontSize: 14}, false)
+		tok := FromSettings(core.Settings{Theme: "light", Density: density, FontSize: 14, BodyFontSize: 14}, false)
 		ui.NewTester(func(c *ui.Context) {
 			Apply(c, tok)
 			got = c.Theme().Space(8)
@@ -126,11 +126,11 @@ func TestRadiusAndTextScale(t *testing.T) {
 	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
-	if x := tok.Text; [6]float32{x.Xs, x.Sm, x.Base, x.Lg, x.Xl, x.X2l} != [6]float32{13, 14, 15, 17, 20, 22} {
+	if x := tok.Text; [7]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Xl, x.X2l} != [7]float32{12, 13, 14, 15, 16, 19, 21} {
 		t.Errorf("Text = %+v", x)
 	}
-	if Light().Text.Base != 13 {
-		t.Errorf("Light().Text.Base = %v, want 13", Light().Text.Base)
+	if Light().Text.Body != 14 {
+		t.Errorf("Light().Text.Body = %v, want 14", Light().Text.Body)
 	}
 	var th *ui.Theme
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
@@ -164,5 +164,27 @@ func TestShadowsAsTailwind(t *testing.T) {
 	}
 	if d := Dark(); d.FloatInset != p.White.Color().Alpha(0.2) {
 		t.Errorf("dark FloatInset %v", d.FloatInset)
+	}
+}
+
+func TestTextScaleMatchesTokens(t *testing.T) {
+	tok := Light()
+	x := tok.Text
+	if got := [9]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Title, x.Xl, x.X2l, x.Display}; got != [9]float32{11, 12, 13, 14, 15, 16, 18, 20, 29} {
+		t.Errorf("Text at 14 = %+v", x)
+	}
+	if got := mygoTheme(tok).FontSize; got != 14 {
+		t.Errorf("mygo FontSize = %v, want 14", got)
+	}
+}
+
+func TestHighlightToken(t *testing.T) {
+	for name, tok := range map[string]Tokens{"light": Light(), "dark": Dark()} {
+		if tok.Highlight != p.Yellow200.Color() || tok.HighlightText != p.Neutral950.Color() {
+			t.Errorf("%s highlight = %v on %v", name, tok.Highlight, tok.HighlightText)
+		}
+		if tok.Highlight != (ui.Color{R: 0xff, G: 0xf0, B: 0x85, A: 255}) {
+			t.Errorf("%s highlight = %v, want #fff085", name, tok.Highlight)
+		}
 	}
 }
