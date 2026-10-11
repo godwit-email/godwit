@@ -198,8 +198,9 @@ func TestListTime(t *testing.T) {
 		{now.Add(-time.Hour), "08:00"},
 		{now.Add(-10 * time.Hour), "昨天"},
 		{now.AddDate(0, 0, -4), "周一"},
-		{now.AddDate(0, 0, -5), "10/4"}, // last week's Sunday
-		{now.AddDate(0, 0, -7), "10/2"},
+		{now.AddDate(0, 0, -5), "10/04"}, // last week's Sunday
+		{now.AddDate(0, 0, -7), "10/02"},
+		{now.AddDate(0, 0, -11), "9/28"},
 	} {
 		if got := listTime(now, c.t); got != c.want {
 			t.Errorf("listTime(%v) = %q, want %q", c.t, got, c.want)

@@ -5,7 +5,7 @@ import type { T } from "@/shared/i18n";
 /** Citations' numbers through the conversation, by message ID; suspect once any citation is. */
 export type Nums = Map<number, { n: number; suspect: boolean }>;
 
-/** A list time, as the native mail list's (app listTime): today's clock, 昨天, this week's day, else M/D. */
+/** A list time, as the native mail list's (app listTime): today's clock, 昨天, this week's day, else M/DD. */
 export function listTime(now: Date, ms: number, t: T): string {
   if (!ms) return "";
   const d = new Date(ms);
@@ -17,7 +17,7 @@ export function listTime(now: Date, ms: number, t: T): string {
   if (d >= yesterday) return t("mail.yesterday");
   const monday = new Date(today.getTime() - ((now.getDay() + 6) % 7) * day);
   if (d >= monday) return t(`mail.weekday.${d.getDay()}`);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /**

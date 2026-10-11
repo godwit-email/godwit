@@ -444,7 +444,7 @@ func (p *mailPage) Title() (string, string) {
 }
 
 // listTime is a row's time: HH:mm today, then yesterday, a weekday within
-// this calendar week (from Monday), else M/D.
+// this calendar week (from Monday), else M/DD.
 func listTime(now, t time.Time) string {
 	t = t.In(now.Location())
 	y, m, d := now.Date()
@@ -457,7 +457,7 @@ func listTime(now, t time.Time) string {
 	case !t.Before(today.AddDate(0, 0, -(int(now.Weekday())+6)%7)): // this week, from Monday
 		return i18n.T(fmt.Sprintf("mail.weekday.%d", t.Weekday()))
 	}
-	return fmt.Sprintf("%d/%d", t.Month(), t.Day())
+	return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
 }
 
 // Content is the list column and the reader beside it.

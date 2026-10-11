@@ -556,16 +556,18 @@ func (r *reader) view(c *ui.Context) {
 	col.Children(func() {
 		r.toolbar(c)
 		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).Children(func() {
-			ui.Column(c).MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(5), th.Space(7)).Gap(th.Space(3.5)).Children(func() {
-				subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-				kit.Text(c, subject, t.Text.X2l).FontWeight(600)
-				for _, m := range r.msgs {
-					if r.open[m.ID] {
-						r.message(c, m)
-					} else {
-						r.folded(c, m)
+			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(3.5)).Children(func() {
+					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
+					kit.Text(c, subject, t.Text.X2l).FontWeight(600)
+					for _, m := range r.msgs {
+						if r.open[m.ID] {
+							r.message(c, m)
+						} else {
+							r.folded(c, m)
+						}
 					}
-				}
+				})
 			})
 		})
 	})

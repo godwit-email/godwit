@@ -140,26 +140,28 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(5), th.Space(7)).Gap(th.Space(3.5)).Children(func() {
-				if editing {
-					kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
-				}
-				kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600)
-				ui.Column(c).Gap(th.Space(1)).Children(func() {
-					for _, f := range [][2]string{
-						{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
-						{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
-						{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
-					} {
-						ui.Row(c).Gap(th.Space(3)).Children(func() {
-							ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
-							ui.Text(c, f[1]).Grow(1).Shrink(1)
-						})
+			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(3.5)).Children(func() {
+					if editing {
+						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
 					}
+					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600)
+					ui.Column(c).Gap(th.Space(1)).Children(func() {
+						for _, f := range [][2]string{
+							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
+							{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
+							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
+						} {
+							ui.Row(c).Gap(th.Space(3)).Children(func() {
+								ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
+								ui.Text(c, f[1]).Grow(1).Shrink(1)
+							})
+						}
+					})
+					ui.Box(c).Height(theme.Hairline).Background(t.Border)
+					richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
+					p.draftAttachments(c, d.Attachments)
 				})
-				ui.Box(c).Height(theme.Hairline).Background(t.Border)
-				richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
-				p.draftAttachments(c, d.Attachments)
 			})
 		})
 	})

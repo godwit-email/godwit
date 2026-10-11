@@ -175,23 +175,25 @@ func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Padding(th.Space(8)).Gap(th.Space(8)).Children(func() {
-			switch {
-			case acc != nil:
-				p.accountView(c, *acc)
-			case sec == "general":
-				p.generalView(c)
-			case sec == "privacy":
-				p.privacyView(c)
-			case sec == "models":
-				p.models.view(c)
-			case sec == "extensions":
-				p.ext.view(c)
-			case sec == "about":
-				p.aboutView(c)
-			default:
-				pageHeading(c, i18n.T("settings."+sec), "")
-			}
+		ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
+				switch {
+				case acc != nil:
+					p.accountView(c, *acc)
+				case sec == "general":
+					p.generalView(c)
+				case sec == "privacy":
+					p.privacyView(c)
+				case sec == "models":
+					p.models.view(c)
+				case sec == "extensions":
+					p.ext.view(c)
+				case sec == "about":
+					p.aboutView(c)
+				default:
+					pageHeading(c, i18n.T("settings."+sec), "")
+				}
+			})
 		})
 	})
 	p.dialogView(c)
