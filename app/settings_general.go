@@ -263,7 +263,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 		})
 	}
 	label := i18n.T("settings.theme." + th)
-	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
 		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
 	if on {
 		b.Border(theme.SelectedBorder, t.Primary)
@@ -279,7 +279,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 			preview(theme.Light(), theme.ThemeTileWidth)
 		}
 	})
-	kit.Tooltip(c, b, label)
+	kit.TooltipLabelled(c, b, label)
 }
 
 // noTranslate picks the languages that need no translation.

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -88,4 +89,24 @@ func TestSettingsGeneralCopy(t *testing.T) {
 	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "总结、翻译和 Wit 的回答用这种语言", "登录后在后台启动 Godwit"} {
 		h.see(s)
 	}
+}
+
+// TestThemeThumbFocusTip: Tab focus shows the tooltip too.
+func TestThemeThumbFocusTip(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("general")
+	for i := 0; i < 40; i++ {
+		h.tt.Key(0, ui.KeyTab)
+		h.tt.Frame()
+		n := 0
+		for _, x := range h.tt.Texts() {
+			if x == "跟随系统" {
+				n++
+			}
+		}
+		if n >= 2 {
+			return
+		}
+	}
+	t.Fatal("no tooltip after tabbing to the thumbnails")
 }

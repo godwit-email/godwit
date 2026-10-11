@@ -65,6 +65,9 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 // pause, and describes anchor to assistive technology.
 func Tooltip(c *ui.Context, anchor ui.Element, text string) { tooltip(c, anchor, text, true) }
 
+// TooltipLabelled is Tooltip for an anchor whose Label already says text.
+func TooltipLabelled(c *ui.Context, anchor ui.Element, text string) { tooltip(c, anchor, text, false) }
+
 // tooltip is Tooltip; describe is false where anchor's Label already says text.
 func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 	t, th := theme.Of(c), c.Theme()
