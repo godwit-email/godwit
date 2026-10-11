@@ -179,12 +179,26 @@ func TestTextScaleMatchesTokens(t *testing.T) {
 }
 
 func TestHighlightToken(t *testing.T) {
-	for name, tok := range map[string]Tokens{"light": Light(), "dark": Dark()} {
-		if tok.Highlight != p.Yellow200.Color() || tok.HighlightText != p.Neutral950.Color() {
-			t.Errorf("%s highlight = %v on %v", name, tok.Highlight, tok.HighlightText)
-		}
-		if tok.Highlight != (ui.Color{R: 0xff, G: 0xf0, B: 0x85, A: 255}) {
-			t.Errorf("%s highlight = %v, want #fff085", name, tok.Highlight)
+	l, d := Light(), Dark()
+	if l.Highlight != p.Yellow200.Color() || l.HighlightText != p.Neutral950.Color() || l.Highlight != (ui.Color{R: 0xff, G: 0xf0, B: 0x85, A: 255}) {
+		t.Errorf("light highlight = %v on %v", l.Highlight, l.HighlightText)
+	}
+	if d.Highlight != p.Yellow900.Color() || d.HighlightText != p.Yellow100.Color() {
+		t.Errorf("dark highlight = %v on %v", d.Highlight, d.HighlightText)
+	}
+}
+
+// TestDarkStatus: the dark status tints are Tailwind's -950 fill, -800 edge, -300 text.
+func TestDarkStatus(t *testing.T) {
+	d := Dark()
+	for name, ok := range map[string]bool{
+		"success": d.SuccessBg == p.Green950.Color() && d.SuccessBorder == p.Green800.Color() && d.SuccessText == p.Green300.Color(),
+		"warning": d.WarningBg == p.Amber950.Color() && d.WarningBorder == p.Amber800.Color() && d.WarningText == p.Amber300.Color(),
+		"danger":  d.DangerBg == p.Red950.Color() && d.DangerBorder == p.Red800.Color() && d.DangerText == p.Red300.Color(),
+		"ins/del": d.InsBg == p.Green950.Color() && d.InsText == p.Green300.Color() && d.DelBg == p.Red950.Color() && d.DelText == p.Red300.Color(),
+	} {
+		if !ok {
+			t.Errorf("dark %s tokens wrong", name)
 		}
 	}
 }

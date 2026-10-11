@@ -246,6 +246,13 @@ func status(t Tokens) Tokens {
 	t.DangerBorder, t.DangerText = p.Red200.Color(), p.Red700.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
 	t.Highlight, t.HighlightText = p.Yellow200.Color(), p.Neutral950.Color()
+	if t.Dark { // Tailwind's dark pairing: -950 fill, -800 edge, -300 text
+		t.WarningBg, t.WarningBorder, t.WarningText = p.Amber950.Color(), p.Amber800.Color(), p.Amber300.Color()
+		t.DangerBg, t.DangerBorder, t.DangerText = p.Red950.Color(), p.Red800.Color(), p.Red300.Color()
+		t.SuccessBg, t.SuccessBorder, t.SuccessText = p.Green950.Color(), p.Green800.Color(), p.Green300.Color()
+		t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green950.Color(), p.Green300.Color(), p.Red950.Color(), p.Red300.Color()
+		t.Highlight, t.HighlightText = p.Yellow900.Color(), p.Yellow100.Color()
+	}
 	t.FontSize, t.BodyFontSize, t.Scale = 14, 14, 1
 	return sized(t)
 }

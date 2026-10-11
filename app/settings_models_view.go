@@ -122,7 +122,11 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				Border(theme.Hairline, t.DangerBorder).Background(t.DangerBg).Children(func() {
 				ui.Text(c, u.alert).TextColor(t.DangerText).Grow(1).Shrink(1).MinWidth(theme.SidebarMinWidth)
 				svc := *u.genSvc
-				settingButton(c, i18n.T("settings.models.use.fix"), kit.Default, false).Background(t.DangerText).TextColor(t.OnSolid).FontWeight(400).OnClick(func() { m.openEdit(svc) })
+				fixText := t.OnSolid
+				if t.Dark {
+					fixText = t.DangerBg
+				}
+				settingButton(c, i18n.T("settings.models.use.fix"), kit.Default, false).Background(t.DangerText).TextColor(fixText).FontWeight(400).OnClick(func() { m.openEdit(svc) })
 			})
 		}
 		settingsCard(c,
