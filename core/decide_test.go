@@ -107,12 +107,11 @@ func TestLLMDecide(t *testing.T) {
 	assert.Equal(t, "Is it spam?", reqs[0].Questions["spam"].Instructions)
 	assert.Empty(t, e.srv.Requests(), "the generation model was not asked")
 
-	rows, err := e.s.db.Query(t.Context(), "SELECT source, tool, decision FROM audit_log WHERE source = 'plugin'")
-	require.NoError(t, err)
-	assert.Equal(t, [][]any{{"plugin", "plugin:decider:llm.decide", "run"}}, rows.Values)
-
 	_, err = evalPlugin(t, e.s, "decider", toolRead, `ctx.llm.decide("x", [{"name":"Bad Name","type":"yes_no","instructions":"?"}])`)
 	assert.ErrorContains(t, err, "invalid judge question")
+	rows, err := e.s.db.Query(t.Context(), "SELECT source, tool, decision FROM audit_log WHERE source = 'plugin'")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{"plugin", "plugin:decider:llm.decide", "run"}}, rows.Values, "an invalid question is refused before the audit")
 
 	startTestPlugin(t, e.s, "nollm", `{}`, stashCtx)
 	_, err = evalPlugin(t, e.s, "nollm", toolRead, `ctx.llm.decide("x", `+decideQuestions+`)`)
@@ -257,6 +256,52 @@ func TestClassifyMailLimits(t *testing.T) {
 	assert.Contains(t, errOf(classifyTurn(ids(51))), "at most 50")
 	assert.Contains(t, errOf(classifyTurn(ids(0))), "at least 1")
 	assert.Contains(t, errOf(testllm.Turn{Calls: []testllm.Call{{Name: "classify_mail",
+		Args: `{"ids":[` + itoa(e.msg) + `],"questions":[{"name":"x","type":"yes_no","instructions":"` + strings.Repeat("?", 17<<10) + `"}]}`}}}), "too long")
+	assert.Contains(t, errOf(testllm.Turn{Calls: []testllm.Call{{Name: "classify_mail",
 		Args: `{"ids":[` + itoa(e.msg) + `],"questions":[{"name":"x","type":"yes_no","instructions":"?"},{"name":"x","type":"yes_no","instructions":"?"}]}`}}}),
 		"invalid judge question", "checked once, before any message is read")
+}
+
+// A gone message gets its own error; the others are still answered.
+func TestClassifyMailMissingID(t *testing.T) {
+	e := newSkillEnv(t)
+	withJudge(t, e)
+	e.srv.Script(classifyTurn(fmt.Sprintf("[%d,999999]", e.msg)), testllm.Turn{Text: []string{"ok"}})
+	rs := witResults(e.ask(t, e.askConv(t).ID, "classify"), "classify_mail")
+	require.Len(t, rs, 1)
+	require.Empty(t, rs[0].Result.Error)
+	var out classifyOut
+	require.NoError(t, json.Unmarshal(rs[0].Result.Output, &out))
+	require.Len(t, out.Results, 2)
+	assert.Equal(t, e.msg, out.Results[0].MessageID)
+	assert.Len(t, out.Results[0].Answers, 3)
+	assert.Equal(t, int64(999999), out.Results[1].MessageID)
+	assert.Equal(t, "not found", out.Results[1].Error)
+}
+
+// At most classifyParallel messages at the judge at once; past the deadline
+// each message reports its error.
+func TestClassifyMailParallelAndDeadline(t *testing.T) {
+	e := newSkillEnv(t)
+	j := withJudge(t, e)
+	j.arrived, j.gate = make(chan struct{}, 16), make(chan struct{})
+	t.Cleanup(func() { close(j.gate) })
+	old := classifyDeadline
+	classifyDeadline = 300 * time.Millisecond
+	t.Cleanup(func() { classifyDeadline = old })
+	l := make([]string, 6)
+	for i := range l {
+		l[i] = itoa(e.msg)
+	}
+	e.srv.Script(classifyTurn("["+strings.Join(l, ",")+"]"), testllm.Turn{Text: []string{"ok"}})
+	rs := witResults(e.ask(t, e.askConv(t).ID, "classify"), "classify_mail")
+	require.Len(t, rs, 1)
+	var out classifyOut
+	require.NoError(t, json.Unmarshal(rs[0].Result.Output, &out))
+	require.Len(t, out.Results, 6)
+	for _, r := range out.Results {
+		assert.NotEmpty(t, r.Error)
+		assert.Empty(t, r.Answers)
+	}
+	assert.Len(t, j.arrived, classifyParallel, "the rest waited, then met the deadline")
 }

@@ -476,14 +476,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		if len(qs) > MaxQuestions {
 			panic(c.Runtime().NewTypeError("llm.decide: at most 128 questions"))
 		}
-		n := len(state)
-		for _, q := range qs {
-			n += len(q.Instructions)
-			for _, o := range slices.Concat(q.Choices, q.Levels) {
-				n += len(o.Value) + len(o.Description)
-			}
-		}
-		if n > MaxLLMBytes {
+		if len(state)+QuestionBytes(qs) > MaxLLMBytes {
 			panic(ErrTooLarge)
 		}
 		return async(c, func(ctx context.Context) (any, error) { return p.h.LLMDecide(ctx, state, qs) })
@@ -694,4 +687,16 @@ func (p *Plugin) registerCard(c *CallScope, call goja.FunctionCall) goja.Value {
 	}
 	p.card = cd
 	return goja.Undefined()
+}
+
+// QuestionBytes is the size of the questions' text: instructions, values and descriptions.
+func QuestionBytes(qs []Question) int {
+	n := 0
+	for _, q := range qs {
+		n += len(q.Instructions)
+		for _, o := range slices.Concat(q.Choices, q.Levels) {
+			n += len(o.Value) + len(o.Description)
+		}
+	}
+	return n
 }

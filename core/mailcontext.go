@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -35,13 +36,15 @@ const truncatedNote = "\n[truncated]"
 // mailForModel reads a message's text and attachment metadata from the
 // database only: no IMAP, no attachment bytes. HTML is the sanitized body
 // without inline images; callers use it only through HTMLToText.
+var errMailNotFound = errors.New("not found")
+
 func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
 	if len(rows.Values) == 0 {
-		return Message{}, fmt.Errorf("message %d not found", id)
+		return Message{}, fmt.Errorf("message %d %w", id, errMailNotFound)
 	}
 	r := rows.Values[0]
 	m := Message{MessageSummary: scanSummary(r), Text: store.Str(r[11]), Truncated: store.Int(r[13]) != 0}

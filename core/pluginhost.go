@@ -255,6 +255,10 @@ func (h *pluginHost) LLMDecide(ctx context.Context, state string, qs []plugins.Q
 		return nil, ctx.Err()
 	}
 	err = h.do(ctx, func(ctx context.Context) error {
+		aqs := judgeQuestions(qs)
+		if err := ai.ValidateQuestions(aqs); err != nil { // before anything is resolved or audited
+			return err
+		}
 		j, _, _, err := h.s.resolveJudge(ctx)
 		if err != nil {
 			return err
@@ -262,7 +266,6 @@ func (h *pluginHost) LLMDecide(ctx context.Context, state string, qs []plugins.Q
 		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.decide", Decision: "run"}); err != nil {
 			return err
 		}
-		aqs := judgeQuestions(qs)
 		as, err := j.Ask(ctx, state, aqs)
 		out = judgeAnswers(aqs, as)
 		return err

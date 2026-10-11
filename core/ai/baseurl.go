@@ -19,8 +19,6 @@ var (
 	ErrBaseURLScheme  = errors.New("the address must use https (http only for localhost)")
 )
 
-func ValidKind(k string) bool { return k == KindOpenAI || k == KindResponses || k == KindAnthropic }
-
 // NormalizeBaseURL trims a pasted URL down to the service's base, the same
 // for every format: a pasted endpoint loses its path, a "/v1" stays. Each
 // format derives its endpoint from it (Endpoint, JudgeFormat.Path).

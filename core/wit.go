@@ -232,9 +232,12 @@ const (
 	maxClassifyIDs    = 50
 	maxClassifyGenIDs = 10 // when the default model judges: one generation per message
 	classifyRunes     = 8000
-	classifyDeadline  = 2 * time.Minute
+	classifyQuestions = 16 << 10 // question bytes: with a message's state, within a judge's request limit
 	classifyParallel  = 4
 )
+
+// classifyDeadline bounds a classify_mail call; tests shorten it.
+var classifyDeadline = 2 * time.Minute
 
 var optionsProp = map[string]any{"type": "array", "items": object(map[string]any{"value": stringProp, "description": stringProp}, "value")}
 
@@ -259,6 +262,9 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	if len(in.IDs) > maxClassifyIDs {
 		return nil, fmt.Errorf("at most %d messages per call", maxClassifyIDs)
 	}
+	if plugins.QuestionBytes(in.Questions) > classifyQuestions {
+		return nil, fmt.Errorf("the questions are too long: at most %d KB", classifyQuestions>>10)
+	}
 	qs := judgeQuestions(in.Questions)
 	if err := ai.ValidateQuestions(qs); err != nil {
 		return nil, err
@@ -270,22 +276,28 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	if gen && len(in.IDs) > maxClassifyGenIDs {
 		return nil, fmt.Errorf("at most %d messages per call without a judge service", maxClassifyGenIDs)
 	}
-	items := make([]mailItem, len(in.IDs))
+	res := make([]map[string]any, len(in.IDs))
+	var items []mailItem
+	var at []int // items[k] answers in.IDs[at[k]]
 	for i, id := range in.IDs {
 		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
+		if errors.Is(err, errMailNotFound) { // one gone message doesn't fail the others
+			res[i] = map[string]any{"message_id": id, "error": "not found"}
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		items[i] = it[0]
+		items, at = append(items, it[0]), append(at, i)
 	}
 	cs := s.cite(ctx, items)
 	ctx, cancel := context.WithTimeout(ctx, classifyDeadline)
 	defer cancel()
-	res := make([]map[string]any, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, classifyParallel)
-	for i, it := range items {
-		res[i] = map[string]any{"message_id": it.MessageID, "ref": cs[i].N}
+	for k, it := range items {
+		i := at[k]
+		res[i] = map[string]any{"message_id": it.MessageID, "ref": cs[k].N}
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()

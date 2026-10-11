@@ -579,7 +579,7 @@ func (s *Service) TestCapability(ctx context.Context, id int64, in ModelServiceI
 	start := time.Now()
 	switch {
 	case c == CapGen && in.Kind != "":
-		same = old.Kind == in.Kind
+		same = old.Kind == in.Kind && slices.Equal(old.Models[:min(1, len(old.Models))], in.Models[:min(1, len(in.Models))]) // the model testGen runs
 		err = s.testGen(ctx, id, in, key)
 	case c == CapJudge && in.JudgeFormat != "":
 		same = old.JudgeFormat == in.JudgeFormat && old.JudgeModel == in.JudgeModel
@@ -595,16 +595,35 @@ func (s *Service) TestCapability(ctx context.Context, id int64, in ModelServiceI
 		st.Code, st.HTTPStatus = capCode(err)
 	}
 	if id != 0 && same && action == KeyKeep && in.BaseURL == old.BaseURL && ctx.Err() == nil {
-		// Only while the service is as tested: an update in between bumped the version.
-		if _, werr := s.db.Execute(ctx, `INSERT INTO model_service_status(service_id, cap, state, latency_ms, http_status, code, at)
-			SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT version FROM model_services WHERE id = ?) = ?
-			ON CONFLICT(service_id, cap) DO UPDATE SET state = excluded.state, latency_ms = excluded.latency_ms,
-				http_status = excluded.http_status, code = excluded.code, at = excluded.at`,
-			id, c, st.State, st.LatencyMs, st.HTTPStatus, st.Code, st.At.UnixMilli(), id, old.Version); werr != nil {
+		if werr := s.putCapStatus(ctx, id, old.Version, c, st); werr != nil {
 			slog.Warn("model service status", "service", id, "err", werr)
 		}
 	}
 	return st, err
+}
+
+// RecordCapStatus stores st, a TestCapability result for capability c of
+// what service id now is at version: the dialog tests before it saves.
+func (s *Service) RecordCapStatus(ctx context.Context, id, version int64, c string, st CapStatus) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	if c != CapGen && c != CapJudge || st.State != "ok" && st.State != "fail" {
+		return fmt.Errorf("invalid capability status %q %q", c, st.State)
+	}
+	return s.putCapStatus(ctx, id, version, c, st)
+}
+
+// putCapStatus stores st only while service id is at version: an update in between bumped it.
+func (s *Service) putCapStatus(ctx context.Context, id, version int64, c string, st CapStatus) error {
+	_, err := s.db.Execute(ctx, `INSERT INTO model_service_status(service_id, cap, state, latency_ms, http_status, code, at)
+		SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT version FROM model_services WHERE id = ?) = ?
+		ON CONFLICT(service_id, cap) DO UPDATE SET state = excluded.state, latency_ms = excluded.latency_ms,
+			http_status = excluded.http_status, code = excluded.code, at = excluded.at`,
+		id, c, st.State, st.LatencyMs, st.HTTPStatus, st.Code, st.At.UnixMilli(), id, version)
+	return err
 }
 
 // genTestTimeout bounds a generation test; tests shorten it.

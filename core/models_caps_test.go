@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +25,9 @@ func TestModelServicesMigrate(t *testing.T) {
 	keyring.MockInit()
 	ctx, dir := context.Background(), t.TempDir()
 	all := store.Migrations
-	store.Migrations = all[:len(all)-1]
+	caps := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(m[len(m)-1], "CREATE TABLE model_service_status") })
+	require.Positive(t, caps)
+	store.Migrations = all[:caps] // before this migration, whatever comes after it
 	db, err := store.Open(ctx, filepath.Join(dir, "godwit.db"))
 	store.Migrations = all
 	require.NoError(t, err)
@@ -346,6 +350,28 @@ func keys(m map[string]CapStatus) []string {
 		}
 	}
 	return out
+}
+
+// A gen test of another first model isn't the saved service's; a recorded
+// dialog test lands only on the version it was taken for.
+func TestCapabilityStatusModelAndRecord(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	srv := testllm.Start(t, "openai")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "g", BaseURL: srv.URL, Kind: "openai", Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	other := ms.Input()
+	other.Models = []string{"m2"}
+	_, err = s.TestCapability(bg, ms.ID, other, CapGen)
+	require.NoError(t, err)
+	assert.Empty(t, statusOf(t, s, ms.ID), "m2 was tested, m1 is saved first")
+
+	ok := CapStatus{State: "ok", LatencyMs: 812, At: time.Now()}
+	require.NoError(t, s.RecordCapStatus(bg, ms.ID, ms.Version-1, CapGen, ok))
+	assert.Empty(t, statusOf(t, s, ms.ID), "a stale version")
+	require.NoError(t, s.RecordCapStatus(bg, ms.ID, ms.Version, CapGen, ok))
+	assert.Equal(t, 812, statusOf(t, s, ms.ID)[CapGen].LatencyMs)
+	assert.Error(t, s.RecordCapStatus(bg, ms.ID, ms.Version, "x", ok))
+	assert.Error(t, s.RecordCapStatus(bg, ms.ID, ms.Version, CapGen, CapStatus{}))
 }
 
 // A test that started before an update must not store its result.
