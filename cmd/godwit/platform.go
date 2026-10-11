@@ -2,20 +2,74 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"image/png"
+	"log"
 	"strconv"
+	"sync"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/assets"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/rpc"
+	"github.com/godwit-email/godwit/rpcbind"
 )
 
 // platform is app.Platform on mygo. win and tray are set once they exist;
-// tray stays nil where the system has none.
+// tray stays nil where the system has none. The Local API serves svc on
+// dataDir, whose owner lock the GUI holds.
 type platform struct {
 	win  *mygo.Window
 	tray *mygo.Tray
+
+	dataDir string
+	svc     *core.Service
+	apiMu   sync.Mutex
+	api     *rpc.Server // nil while the Local API is off
+	apiGen  uint64      // the newest request that asked for api
+
+	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
+	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
+	closeAPI  func(*rpc.Server) error                  // Server.Close; tests swap it
+}
+
+func (p *platform) DataDir() (string, bool) { return p.dataDir, !singleInstance(p.dataDir) }
+
+func (p *platform) SetLocalAPI(gen uint64, on bool) (string, error) {
+	p.apiMu.Lock()
+	defer p.apiMu.Unlock()
+	if !on {
+		if p.api == nil {
+			return "", nil
+		}
+		err := p.close(p.api)
+		p.api = nil
+		return "", err
+	}
+	if p.api == nil {
+		srv, err := rpcbind.Listen(p.dataDir, p.svc, app.Version)
+		if err != nil {
+			return "", err
+		}
+		p.api = srv
+		serve := p.serve
+		if serve == nil {
+			serve = func(ctx context.Context, s *rpc.Server) error { return s.Serve(ctx) }
+		}
+		go p.serveAPI(srv, serve)
+	}
+	p.apiGen = gen
+	return p.api.Path(), nil
+}
+
+func (p *platform) close(srv *rpc.Server) error {
+	if p.closeAPI != nil {
+		return p.closeAPI(srv)
+	}
+	return srv.Close()
 }
 
 func (*platform) OpenURL(url string) error   { return mygo.Shell.OpenExternal(url) }
@@ -63,6 +117,30 @@ func (*platform) TempDir() string {
 		return "" // os.CreateTemp then uses the default
 	}
 	return dir
+}
+
+// serveAPI serves srv until it closes. If it ends while still the current
+// server, which no SetLocalAPI(false) asked for, it closes srv and forgets
+// it under apiMu, so a newer server cannot start before srv's files are
+// gone, then tells the App which request the server was for.
+func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Server) error) {
+	err := serve(context.Background(), srv)
+	p.apiMu.Lock()
+	if p.api != srv {
+		p.apiMu.Unlock()
+		return // closed on request
+	}
+	p.api = nil
+	err = errors.Join(err, p.close(srv))
+	gen := p.apiGen
+	p.apiMu.Unlock()
+	if err == nil {
+		err = errors.New("the Local API server stopped")
+	}
+	log.Print(p.svc.Redact("local API: " + err.Error()))
+	if p.onAPIStop != nil {
+		p.onAPIStop(gen, err)
+	}
 }
 
 // trayPx is the tray icon's size in pixels: 16 points at 2x.

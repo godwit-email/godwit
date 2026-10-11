@@ -229,6 +229,12 @@ type fakePlatform struct {
 	notifyErr error    // Notify
 	clipHTML  string
 	tempDir   string
+
+	localAPIPath string // SetLocalAPI(true)'s answer
+	localAPIErr  error
+	localAPIFn   func(on bool) (string, error) // answers SetLocalAPI in their place when set
+	dataDir      string                        // DataDir
+	customDir    bool
 }
 
 func (p *fakePlatform) record(name string, args ...any) {
@@ -283,9 +289,28 @@ func (p *fakePlatform) NotificationsSupported() bool {
 	return p.supported
 }
 func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin", on); return nil }
-func (p *fakePlatform) SetTrayUnread(n int)          { p.record("SetTrayUnread", n) }
-func (p *fakePlatform) ShowWindow()                  { p.record("ShowWindow") }
-func (p *fakePlatform) SetThemeSource(theme string)  { p.record("SetThemeSource", theme) }
+func (p *fakePlatform) SetLocalAPI(_ uint64, on bool) (string, error) {
+	p.record("SetLocalAPI", on)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if fn := p.localAPIFn; fn != nil {
+		p.mu.Unlock()
+		defer p.mu.Lock()
+		return fn(on)
+	}
+	if !on {
+		return "", nil
+	}
+	return p.localAPIPath, p.localAPIErr
+}
+func (p *fakePlatform) DataDir() (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.dataDir, p.customDir
+}
+func (p *fakePlatform) SetTrayUnread(n int)         { p.record("SetTrayUnread", n) }
+func (p *fakePlatform) ShowWindow()                 { p.record("ShowWindow") }
+func (p *fakePlatform) SetThemeSource(theme string) { p.record("SetThemeSource", theme) }
 func (p *fakePlatform) ClipboardHTML() string {
 	p.record("ClipboardHTML")
 	p.mu.Lock()

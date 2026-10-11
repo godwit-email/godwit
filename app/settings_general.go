@@ -62,6 +62,60 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	if tag := cmp.Or(st.UILanguage, a.sysLang); st.UILanguage != old.UILanguage && tag != "" {
 		i18n.SetLanguage(tag)
 	}
+	a.syncLocalAPI()
+}
+
+// syncLocalAPI asks the platform to serve the Local API as a.settings say.
+// Requests run in order and only the newest one's result counts: when it
+// fails, the reason shows on the privacy page and the setting turns off.
+func (a *App) syncLocalAPI() {
+	on := a.settings.LocalAPI
+	if on == a.localAPIWant {
+		return
+	}
+	a.localAPIWant = on
+	a.localAPIGen++
+	gen := a.localAPIGen
+	if on {
+		a.localAPIErr = nil
+	}
+	plat := a.plat
+	var path string
+	a.writes.Chain("local-api", func(context.Context) (err error) {
+		path, err = plat.SetLocalAPI(gen, on)
+		return err
+	}, func(err error) {
+		if gen != a.localAPIGen { // a newer request runs after this one and decides
+			return
+		}
+		a.localAPIPath = path
+		if err != nil {
+			a.localAPIWant = false // a failed request leaves the server off
+			a.localAPIFailed(err)
+		}
+	})
+}
+
+// LocalAPIStopped tells the App that the Local API server that request gen
+// asked for ended by itself with err. Safe from any goroutine.
+func (a *App) LocalAPIStopped(gen uint64, err error) {
+	a.onUI(func() {
+		if gen != a.localAPIGen { // a newer request replaced or stopped that server
+			return
+		}
+		a.localAPIPath = ""
+		a.localAPIFailed(err)
+	})
+}
+
+// localAPIFailed shows err on the privacy page and turns the setting off.
+func (a *App) localAPIFailed(err error) {
+	a.localAPIErr = err
+	if a.settings.LocalAPI {
+		st := a.settings
+		st.LocalAPI = false
+		a.changeSettings(st)
+	}
 }
 
 func sameSettings(x, y core.Settings) bool {

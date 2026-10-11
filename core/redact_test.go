@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
@@ -115,4 +116,26 @@ func TestInitCachedSecretClearedRedacted(t *testing.T) {
 	out := toolOutput(t, evs)
 	assert.Contains(t, out, "cached [redacted]")
 	assert.NotContains(t, out, "boot-secret")
+}
+
+// Redact covers extension secrets, keychain values (passwords, refresh
+// tokens, model keys) read or written, and access tokens.
+func TestServiceRedact(t *testing.T) {
+	keyring.MockInit()
+	s := newMailContextService(t)
+	require.NoError(t, keyring.Set(keyringService, "pre-existing", "password-from-keychain"))
+	_, err := keychainGet("pre-existing")
+	require.NoError(t, err)
+	require.NoError(t, keychainSet("u", "refresh-token-written"))
+	s.secrets.Add("plugin-secret-value")
+	s.tokMu.Lock()
+	s.credMu.Lock()
+	s.newCredentials(99, &auth.Grant{AccessToken: "access-token-cached"})
+	s.credMu.Unlock()
+	s.tokMu.Unlock()
+	_, err = s.AddModelService(t.Context(), ModelServiceInput{Name: "m", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "model-key-123456", Models: []string{"x"}})
+	require.NoError(t, err)
+
+	out := s.Redact("a password-from-keychain b refresh-token-written c plugin-secret-value d access-token-cached e model-key-123456 f short")
+	assert.Equal(t, "a [redacted] b [redacted] c [redacted] d [redacted] e [redacted] f short", out)
 }
