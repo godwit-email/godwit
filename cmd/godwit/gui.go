@@ -126,6 +126,22 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenCompose:         openCompose,
 	})
 	mygo.Bind(webui.NewWitPage(wit))
+	// The reader pages, one per expanded message in the main window, each
+	// bound to its message (platform.NewBodyView); their callbacks run on
+	// the App's UI thread.
+	reader := webui.NewReader(roles, webui.ReaderDeps{
+		Emit: func(k any, b webui.ReaderBody) {
+			if err := webui.ReaderReload.EmitPage(k.(*mygo.Page), b); err != nil {
+				log.Printf("a body to its reader page: %v", err)
+			}
+		},
+		OnHeight:   func(m int64, px int) { onApp(func(a *app.App) { a.BodyHeight(m, px) }) },
+		OnWheel:    func(dy float64) { onApp(func(a *app.App) { a.BodyWheel(dy) }) },
+		OnLink:     func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
+		OnNavigate: func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
+		OnCut:      func(m int64, cut bool) { onApp(func(a *app.App) { a.BodyCut(m, cut) }) },
+	})
+	mygo.Bind(webui.NewReaderPage(reader))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -150,6 +166,7 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		pages.SetService(svc)
 		wit.SetService(svc)
+		reader.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -159,7 +176,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})

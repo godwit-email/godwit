@@ -99,7 +99,7 @@ func TestSummaryStreams(t *testing.T) {
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary.done })
 	n := llm.Requests()
 	h.openThread(other.ThreadID)
-	h.see("other body")
+	h.seeBody(other.ID)
 	h.until("the other summary done", func() bool { s := r.ai[other.ID]; return s != nil && s.summary != nil && s.summary.done })
 	n2 := llm.Requests()
 	if n2 != n+1 {
@@ -167,19 +167,28 @@ func TestTranslationStaysWithMessage(t *testing.T) {
 	llm.Script(coretest.Turn{Text: []string{"Die übersetzten Worte der ersten Nachricht hier."}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("p1@x"), at(h.clock.Now(), 2)))
 	h.openThread(m.ThreadID)
-	h.see("first words")
+	v := h.seeBody(m.ID)
 	h.click("翻译")
 	h.see("übersetzten")
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "reply words",
 		coretest.MessageID("p2@x"), coretest.InReplyTo("p1@x"), at(h.clock.Now(), 1)))
-	h.waitMail("the reply shown", func() bool { return h.tt.HasText("reply words") })
+	r := h.app.mail.reader
+	h.waitMail("the reply shown", func() bool {
+		if len(r.msgs) != 2 {
+			return false
+		}
+		_, ok := h.viewBox(h.plat.view(r.msgs[1].ID))
+		return ok
+	})
 	h.see("übersetzten")
 	h.see("显示原文")
-	if h.tt.HasText("first words") {
+	if _, ok := h.viewBox(v); ok {
 		t.Fatal("the older message lost its translation")
 	}
 	h.click("显示原文")
-	h.see("first words")
+	if h.seeBody(m.ID) != v {
+		t.Fatal("the original is a new page")
+	}
 	if h.tt.HasText("übersetzten") {
 		t.Fatal("the translation still shows")
 	}
@@ -208,7 +217,7 @@ func TestSummaryOnDemand(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noAuto)
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
-	h.see("the plan body")
+	h.seeBody(m.ID)
 	if h.tt.HasText("summarize") || llm.Requests() != 0 {
 		t.Fatal("a summary ran with Summary off")
 	}
@@ -225,7 +234,7 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 		coretest.Turn{Text: []string{"こんにちは世界、これは二番目の翻訳です。ここにあります。"}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "the original words"))
 	h.openThread(m.ThreadID)
-	h.see("the original words")
+	h.seeBody(m.ID)
 	h.click("翻译")
 	h.see("已翻译为简体中文 · translate · m1")
 	h.see("erste Übersetzung")
@@ -234,7 +243,7 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 	h.see("已翻译为简体中文 · translate · m1")
 	h.app.settings.DefaultModel = "test/m1"
 	h.setSettings(func(st *core.Settings) { st.ReadingLanguage = "ja" })
-	h.see("the original words")
+	h.seeBody(m.ID) // the original, not the other language's translation
 	if h.tt.HasText("erste Übersetzung") || h.tt.HasText("已翻译为") {
 		t.Fatalf("a translation into another language shown: %q", h.tt.Texts())
 	}
@@ -311,7 +320,7 @@ func TestMenuSourcesIndependent(t *testing.T) {
 		t.Fatalf("menu %q", menu)
 	}
 	h.openThread(other.ThreadID) // read again on the next visit
-	h.see("other body")
+	h.seeBody(other.ID)
 	h.until("the skills read", func() bool { return r.skills.done })
 	h.click("更多 skill ▾")
 	menu = h.tt.Menu()
@@ -325,7 +334,7 @@ func TestSummaryOffWithoutModel(t *testing.T) {
 	h, acc, _ := aiHarness(t, false, nil)
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
-	h.see("the plan body")
+	h.seeBody(m.ID)
 	for range 20 {
 		h.drain()
 		h.tt.Frame()
@@ -343,13 +352,13 @@ func TestTranslateToggle(t *testing.T) {
 	llm.Script(coretest.Turn{Text: []string{"Hallo **Welt**, das ist die Übersetzung des Textes."}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "the original words"))
 	h.openThread(m.ThreadID)
-	h.see("the original words")
+	v := h.seeBody(m.ID)
 	h.click("翻译")
 	h.see("已翻译为简体中文 · translate · m1")
 	h.see("Welt")
-	h.until("the original replaced", func() bool { return !h.tt.HasText("the original words") })
+	h.until("the original replaced", func() bool { _, ok := h.viewBox(v); return !ok })
 	h.click("显示原文")
-	h.see("the original words")
+	h.seeBody(m.ID)
 	if h.tt.HasText("Welt") {
 		t.Fatal("translation still shown")
 	}
@@ -389,7 +398,7 @@ func TestSkillMenuRuns(t *testing.T) {
 	llm.Script(coretest.Turn{Text: []string{"the skill output"}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
 	h.openThread(m.ThreadID)
-	h.see("body words")
+	h.seeBody(m.ID)
 	h.see("更多 skill ▾")
 	h.click("更多 skill ▾")
 	menu := strings.Join(h.tt.Menu(), "|")
@@ -407,7 +416,7 @@ func TestActionEgressApproval(t *testing.T) {
 	h, acc, _ := aiHarness(t, false, nil, func(e *coretest.Env) { e.InstallPlugin(t, "egress-action") })
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
 	h.openThread(m.ThreadID)
-	h.see("body words")
+	h.seeBody(m.ID)
 	h.skillMenu("Ping")
 	h.see("egress.godwit.test:80")
 	h.see("egress-action")
@@ -486,7 +495,7 @@ func TestSwitchingCancelsRun(t *testing.T) {
 	h.until("the summary started", func() bool { return runCtx(m.ID) != nil && llm.Requests() == 1 })
 	h.see("summarize")
 	h.openThread(other.ThreadID)
-	h.see("other body")
+	h.seeBody(other.ID)
 	if runCtx(m.ID).Err() == nil {
 		t.Fatal("the run of the message left goes on")
 	}
@@ -541,9 +550,9 @@ func TestOnDemandSummaryCancelled(t *testing.T) {
 	h.click("总结")
 	h.until("the summary asked", func() bool { return llm.Requests() == 1 })
 	h.openThread(other.ThreadID)
-	h.see("other body")
+	h.seeBody(other.ID)
 	h.openThread(m.ThreadID)
-	h.see("slow body")
+	h.seeBody(m.ID)
 	if h.tt.HasText("summarize") {
 		t.Fatal("a cancelled summary shown")
 	}
@@ -648,7 +657,7 @@ func TestSmallTasksHiddenWhenModelGone(t *testing.T) {
 	})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
-	h.see("the plan body")
+	h.seeBody(m.ID)
 	for range 20 {
 		h.drain()
 		h.tt.Frame()
@@ -685,7 +694,7 @@ func TestActionDraftOpensWindow(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
 	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
 	h.openThread(m.ThreadID)
-	h.see("body words")
+	h.seeBody(m.ID)
 	h.click("更多 skill ▾")
 	if err := h.tt.ChooseMenuItem("Draft it"); err != nil { // no drain: the action's callback waits
 		t.Fatalf("%v; menu %q", err, h.tt.Menu())

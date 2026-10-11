@@ -40,6 +40,7 @@ type readerFixture struct {
 	wheels  []float64
 	links   []string
 	navs    []int
+	cuts    map[int64]bool
 }
 
 type emittedBody struct {
@@ -49,7 +50,7 @@ type emittedBody struct {
 
 func newReaderFixture(t *testing.T) *readerFixture {
 	t.Helper()
-	f := &readerFixture{e: coretest.New(t, coretest.WithoutAutoSync())}
+	f := &readerFixture{e: coretest.New(t, coretest.WithoutAutoSync()), cuts: map[int64]bool{}}
 	f.acc = f.e.AddAccount(t, "alice@example.com")
 	f.pages = NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
 	f.r = NewReader(f.pages, ReaderDeps{
@@ -58,6 +59,7 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		OnWheel:    func(dy float64) { f.record(func() { f.wheels = append(f.wheels, dy) }) },
 		OnLink:     func(u string) { f.record(func() { f.links = append(f.links, u) }) },
 		OnNavigate: func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
+		OnCut:      func(m int64, cut bool) { f.record(func() { f.cuts[m] = cut }) },
 	})
 	f.r.allowLoopback = true
 	f.r.SetService(f.e.Svc)
@@ -453,6 +455,10 @@ func TestReaderStructuralCut(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, want, b.Cut, "message %d", id)
 		}
+		// Native's truncated notice follows the body as built (OnCut).
+		f.mu.Lock()
+		assert.Equal(t, map[int64]bool{1: true, 2: true, 3: false}, f.cuts)
+		f.mu.Unlock()
 	})
 }
 

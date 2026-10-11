@@ -78,6 +78,10 @@ type ReaderDeps struct {
 	OnLink func(url string)
 	// OnNavigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
 	OnNavigate func(dir int)
+	// OnCut is told, each time message's body is built, whether it is only
+	// its start (ReaderBody.Cut): the native truncated notice follows it,
+	// so the page and the notice agree.
+	OnCut func(message int64, cut bool)
 }
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
@@ -246,10 +250,17 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 		b.Plain = m.Text
 	}
 	r.mu.Lock()
-	if s := r.msgs[message]; s != nil && s.version == v && s.body == nil {
-		s.body, s.remote, s.budget = &b, remote, budget
+	current := false
+	if s := r.msgs[message]; s != nil && s.version == v {
+		current = true
+		if s.body == nil {
+			s.body, s.remote, s.budget = &b, remote, budget
+		}
 	}
 	r.mu.Unlock()
+	if current && r.d.OnCut != nil {
+		r.d.OnCut(message, b.Cut)
+	}
 	return b, nil
 }
 

@@ -32,6 +32,8 @@ type platform struct {
 	tray    *mygo.Tray
 	windows *webui.Windows // the compose windows
 	wit     *webui.Wit
+	roles   *webui.Pages  // the embedded pages' roles
+	reader  *webui.Reader // the reader pages' messages
 
 	dataDir string
 	svc     *core.Service
@@ -120,6 +122,29 @@ func (p *platform) ShowWindow() {
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
+
+// NewBodyView makes a reader page in the main window, kept on its entry
+// (lockPage), registered as "reader" and bound to message; close undoes
+// each and destroys it.
+func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
+	v, err := p.win.NewWebView(mygo.WebViewOptions{URL: "/reader.html"})
+	if err != nil {
+		return nil, nil, err
+	}
+	page := v.Page()
+	lockPage(page)
+	p.roles.Register(page, "reader")
+	p.reader.Bind(page, message)
+	return v, func() {
+		p.reader.Unbind(page)
+		p.roles.Unregister(page)
+		v.Destroy()
+	}, nil
+}
+
+// AllowImages lets message's reader pages load its remote images.
+func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
+
 func (p *platform) SettingsChanged(st core.Settings) {
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)

@@ -659,6 +659,50 @@ export const WitPage = {
   },
 } as const;
 
+/**
+ * ReaderPage is what a reader page (role "reader", one per expanded
+ * message) calls (mygo.Bind). Each acts on the caller's own message.
+ */
+export const ReaderPage = {
+  /** Height is the body's height in CSS pixels, for the native layout. */
+  height(px: number): Promise<void> {
+    return call("ReaderPage.Height", px);
+  },
+  /**
+   * Image is the remote image at url as a data: URL. It is refused
+   * (ErrImageRefused) unless the user allowed the caller's message's images
+   * and url is an image of its body as last built. The message's images
+   * share its budget (with its inline ones), at most imagefetch.Workers at
+   * once, and its deadline; each url is fetched once.
+   */
+  image(src: string): Promise<string> {
+    return call("ReaderPage.Image", src);
+  },
+  /** Load is the caller's message's body, as of its version. */
+  load(): Promise<ReaderBody> {
+    return call("ReaderPage.Load");
+  },
+  /** Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively. */
+  navigate(dir: number): Promise<void> {
+    return call("ReaderPage.Navigate", dir);
+  },
+  /**
+   * OpenLink opens a link of the body (its data-href) natively: an http or
+   * https one after the confirmation, a mailto one in a compose window. Any
+   * other is ErrBadLink.
+   */
+  openLink(link: string): Promise<void> {
+    return call("ReaderPage.OpenLink", link);
+  },
+  /**
+   * Wheel is a vertical wheel delta the body did not use: the reader
+   * scrolls by it.
+   */
+  wheel(dy: number): Promise<void> {
+    return call("ReaderPage.Wheel", dy);
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */

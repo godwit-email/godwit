@@ -46,6 +46,15 @@ type Platform interface {
 	DraftDeleted(id int64)
 	// SettingsChanged is told the settings after every change.
 	SettingsChanged(st core.Settings)
+	// NewBodyView makes a reader page in the main window showing message's
+	// body (bound to it); close unbinds and destroys it. The page reports
+	// to BodyHeight, BodyWheel, BodyCut, OpenLink and Navigate. UI thread
+	// only; it may run the event loop.
+	NewBodyView(message int64) (view ui.NativeWebView, close func(), err error)
+	// AllowImages lets the pages showing message load its remote images
+	// (加载图片). Call it after NewBodyView: it forgets once the last page
+	// of the message closes.
+	AllowImages(message int64)
 }
 
 // Notification is a system notification about a message.
