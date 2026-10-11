@@ -591,6 +591,11 @@ func TestGalleryKeepsTypedText(t *testing.T) {
 // TestKitOverlayEnters: a dialog's backdrop fades in over MotionBase, and is
 // there at once under reduced motion.
 func TestKitOverlayEnters(t *testing.T) {
+	// One Tester frame settles up to 20 frames, which a loaded machine can
+	// run past MotionBase in, so the fade runs on a clock the test moves.
+	now := time.Now()
+	clock = func(*ui.Context) time.Time { return now }
+	t.Cleanup(func() { clock = (*ui.Context).Now })
 	for _, reduce := range []bool{false, true} {
 		open := false
 		tt := ui.NewTester(themed(func(c *ui.Context) {
@@ -601,7 +606,7 @@ func TestKitOverlayEnters(t *testing.T) {
 		open = true
 		tt.Frame()
 		first := tt.Image().RGBAAt(2, 2)
-		time.Sleep(2 * theme.MotionBase)
+		now = now.Add(2 * theme.MotionBase)
 		tt.Frame()
 		last := tt.Image().RGBAAt(2, 2)
 		if moved := first != last; moved == reduce {
@@ -770,7 +775,9 @@ func TestKitRailButtonFillsSelected(t *testing.T) {
 		}
 		return n
 	}
-	if off, on := ink(false), ink(true); on < off*3/2 {
+	// The line icon inks 176 px on macOS and 200 on Windows (heavier antialiasing);
+	// the fill icon 270 on both, a line icon in the selected colour about as few.
+	if off, on := ink(false), ink(true); on < off*6/5 {
 		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
@@ -798,7 +805,9 @@ func TestKitSidebarIconFillsSelected(t *testing.T) {
 		}
 		return n
 	}
-	if off, on := ink(false), ink(true); on < off*3/2 {
+	// The line icon inks 176 px on macOS and 200 on Windows (heavier antialiasing);
+	// the fill icon 270 on both, a line icon in the selected colour about as few.
+	if off, on := ink(false), ink(true); on < off*6/5 {
 		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
