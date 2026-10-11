@@ -149,7 +149,7 @@ const state: ComposeState = {
   attachments: [],
   revision: 7,
   updatedAt: 0,
-  theme: { mode: "light", light: {}, dark: {}, fontSize: 14 },
+  theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
   text,
   wit: { enabled: true, skills: [], languages: [], chips: [] },
 } as unknown as ComposeState;

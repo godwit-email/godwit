@@ -100,7 +100,7 @@ const text = {
   "common.cancel": "取消",
   "common.retry": "重试",
 };
-const theme = { mode: "light", light: {}, dark: {}, fontSize: 14 };
+const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
 const state = {
   draftId: 1,
   accounts: [
