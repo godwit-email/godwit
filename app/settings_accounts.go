@@ -388,7 +388,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		}))
 	settingsSection(c, i18n.T("settings.account.remove"), "",
 		row(i18n.T("settings.account.remove.row"), strings.TrimRight(i18n.T("settings.account.remove.help"), "。."), func() {
-			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).OnClick(func() { p.openDialog("remove", acc) })
+			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.account.remove.aria", acc.Email)).OnClick(func() { p.openDialog("remove", acc) })
 		}))
 }
 
@@ -403,7 +403,11 @@ func cmpTr(key, fallback string) string {
 func limitOptions(cur int) []kit.Option[int] {
 	var opts []kit.Option[int]
 	for _, n := range syncLimits {
-		opts = append(opts, kit.Option[int]{Value: n, Label: i18n.T("onboarding.sync." + strconv.Itoa(n))})
+		key := "onboarding.sync."
+		if n == 2000 { // the settings label has no （推荐）
+			key = "settings.account.sync."
+		}
+		opts = append(opts, kit.Option[int]{Value: n, Label: i18n.T(key + strconv.Itoa(n))})
 	}
 	if cur > 0 && !slices.Contains(syncLimits, cur) {
 		opts = append(opts, kit.Option[int]{Value: cur, Label: i18n.Tf("settings.account.sync.limit", cur)})
@@ -441,7 +445,12 @@ func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Provider, banner bool) {
 	o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	if acc.AuthType != "oauth" {
-		kit.Button(c, i18n.Tf("settings.account.login.update", secretName(prov)), o).OnClick(func() { p.openDialog("password", acc) })
+		text, open := i18n.Tf("settings.account.login.update", secretName(prov)), func() { p.openDialog("password", acc) }
+		if banner {
+			kit.AlertAction(c, kit.Warning, text, open)
+		} else {
+			kit.Button(c, text, o).OnClick(open)
+		}
 		return
 	}
 	label := i18n.T("onboarding.relogin")

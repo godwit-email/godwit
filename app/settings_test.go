@@ -802,25 +802,8 @@ func (h *harness) fillRow(label, value string) {
 	h.typeText(value)
 }
 
-// clickRemove presses the 删除账户 button: its label is also the section title, so it clicks the right edge of the row.
-func (h *harness) clickRemove() {
-	h.t.Helper()
-	h.see("从本机移除这个账户")
-	row, _ := h.tt.Find("从本机移除这个账户")
-	if row.Y+row.H > 820-8 { // below the panel: scroll it to the middle, as click does
-		h.tt.Scroll(900, 400, 0, row.Y-400)
-		h.tt.Frame()
-		row, _ = h.tt.Find("从本机移除这个账户")
-	}
-	sync, ok := h.tt.Find("立即同步")
-	if !ok {
-		h.t.Fatal("no 立即同步 to align with")
-	}
-	sync, _ = h.tt.Find("立即同步")
-	h.tt.ClickAt(sync.X+sync.W-8, row.Y+row.H/2)
-	h.drain()
-	h.tt.Frame()
-}
+// clickRemove presses the 删除账户 button, found by its accessible label (the visible text is also the section title).
+func (h *harness) clickRemove() { h.t.Helper(); h.click("删除账户 alice@example.com") }
 
 func TestAccountHeaderMeta(t *testing.T) {
 	h, acc := withAccount(t)
@@ -876,4 +859,16 @@ func TestDeleteAccountOutline(t *testing.T) {
 	}
 	h.clickRemove()
 	h.see("删除 alice@example.com？") // the dialog keeps the email
+}
+
+// TestSyncRangeLabels: onboarding recommends 2000, settings lists it plain.
+func TestSyncRangeLabels(t *testing.T) {
+	for _, lang := range []string{"zh-CN", "en"} {
+		i18n.SetLanguage(lang)
+		onb, set := i18n.T("onboarding.sync.2000"), limitOptions(2000)[0].Label
+		if !strings.Contains(onb, "（推荐）") && !strings.Contains(onb, "recommended") || strings.Contains(set, "推荐") || strings.Contains(set, "recommended") || set == "" {
+			t.Errorf("%s: onboarding %q, settings %q", lang, onb, set)
+		}
+	}
+	i18n.SetLanguage("zh-CN")
 }
