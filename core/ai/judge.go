@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -237,16 +238,23 @@ func backoff(attempt int, retryAfter string) time.Duration {
 	return min(d, maxRetryAfter)
 }
 
+// questionName is the plugin-facing name rule (review #10), enforced here so
+// every caller gets it.
+var questionName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
+
 func validateQuestions(qs []Question) error {
 	if len(qs) == 0 {
 		return fmt.Errorf("%w: no questions", ErrJudgeQuestion)
 	}
 	seen := map[string]bool{}
 	for _, q := range qs {
-		if q.Name == "" || seen[q.Name] {
-			return fmt.Errorf("%w: empty or duplicate name %q", ErrJudgeQuestion, q.Name)
+		if !questionName.MatchString(q.Name) || seen[q.Name] {
+			return fmt.Errorf("%w: bad or duplicate name %q", ErrJudgeQuestion, q.Name)
 		}
 		seen[q.Name] = true
+		if strings.TrimSpace(q.Instructions) == "" {
+			return fmt.Errorf("%w: %q has no instructions", ErrJudgeQuestion, q.Name)
+		}
 		switch q.Kind {
 		case YesNo:
 		case Choice:
@@ -263,6 +271,11 @@ func validateQuestions(qs []Question) error {
 		case Score:
 			if len(q.Levels) < 2 || len(q.Levels) > 10 {
 				return fmt.Errorf("%w: %q needs 2–10 levels", ErrJudgeQuestion, q.Name)
+			}
+			for _, o := range q.Levels {
+				if o.Value == "" && o.Description == "" {
+					return fmt.Errorf("%w: %q has an empty level", ErrJudgeQuestion, q.Name)
+				}
 			}
 		default:
 			return fmt.Errorf("%w: %q has an unknown kind", ErrJudgeQuestion, q.Name)

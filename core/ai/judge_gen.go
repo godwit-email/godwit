@@ -64,17 +64,15 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 	if err != nil {
 		return nil, err
 	}
-	if !wrappedUntrusted(state) {
-		state = Untrusted("judge", state, SuspectInjection(state))
-	}
+	// Always wrapped: Untrusted escapes any wrapper markers inside, so mail
+	// can't fake the boundary. Wit's pre-wrapped blocks just nest, escaped.
+	state = Untrusted("judge", state, SuspectInjection(state))
 	text, err := gen(ctx, genJudgeSystem+"\n\n"+UntrustedSystemNote, state+"\n\nQuestions:\n"+string(qj))
 	if err != nil {
 		return nil, err
 	}
-	// Lenient parse: the first JSON object, past any prose or code fence.
-	i := strings.IndexByte(text, '{')
-	if i < 0 || len(text) > maxJudgeBody {
-		return nil, fmt.Errorf("%w: no JSON answer", ErrJudgeAnswer)
+	if len(text) > maxJudgeBody {
+		return nil, fmt.Errorf("%w: answer too long", ErrJudgeAnswer)
 	}
 	var resp struct {
 		Answers []struct {
@@ -83,8 +81,20 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 			Refused bool
 		}
 	}
-	if err := json.NewDecoder(strings.NewReader(text[i:])).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("%w: unreadable JSON answer", ErrJudgeAnswer)
+	// Lenient parse: the first "{" that starts a JSON object, past any prose
+	// or code fence; bounded so a brace-heavy reply can't cost n² decodes.
+	parsed := false
+	for i, tries := 0, 0; !parsed && tries < 8; tries++ {
+		j := strings.IndexByte(text[i:], '{')
+		if j < 0 {
+			break
+		}
+		i += j
+		parsed = json.NewDecoder(strings.NewReader(text[i:])).Decode(&resp) == nil
+		i++
+	}
+	if !parsed {
+		return nil, fmt.Errorf("%w: no JSON answer", ErrJudgeAnswer)
 	}
 	out := make([]raw, 0, len(resp.Answers))
 	for _, a := range resp.Answers {
@@ -98,7 +108,7 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 				if json.Unmarshal(a.Answer, &r.Choice) != nil {
 					r.kind = -1
 				}
-				r.Choice = strings.TrimSpace(r.Choice)
+				r.Choice, r.Probability = strings.TrimSpace(r.Choice), 1
 			case Score:
 				r.Score = genScore(a.Answer)
 			}
@@ -108,7 +118,8 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 	return out, nil
 }
 
-// genYesNo reads "yes"/"no", a bool or a number; anything else is NaN.
+// genYesNo reads "yes"/"no", a bool, or 0/1; anything else, a hedged 0.7
+// included, is NaN so it is rejected rather than passed off as calibrated.
 func genYesNo(m json.RawMessage) float64 {
 	var v any
 	if json.Unmarshal(m, &v) != nil {
@@ -121,7 +132,9 @@ func genYesNo(m json.RawMessage) float64 {
 		}
 		return 0
 	case float64:
-		return v
+		if v == 0 || v == 1 {
+			return v
+		}
 	case string:
 		switch strings.ToLower(strings.TrimSpace(v)) {
 		case "yes", "true":
@@ -152,11 +165,4 @@ func genScore(m json.RawMessage) float64 {
 		return math.NaN()
 	}
 	return f
-}
-
-// wrappedUntrusted reports whether s is already one untrusted_email block
-// (Wit passes Untrusted output), so it is not wrapped twice.
-func wrappedUntrusted(s string) bool {
-	return strings.HasPrefix(s, "<untrusted_email") && strings.HasSuffix(s, "</untrusted_email>") &&
-		len(untrustedTag.FindAllStringIndex(s, -1)) == 2
 }
