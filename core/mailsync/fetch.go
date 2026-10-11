@@ -37,6 +37,11 @@ var PartFetchBytes int64 = 3 * mail.MaxBodyBytes
 // which bounds its memory. Tests lower it.
 var BackfillPage = 1000
 
+// BackfillPages is how many pages a range backfill takes per sync round
+// before it yields, so new mail, ops and SyncNow wait at most that long; the
+// next round goes on. Tests lower it.
+var BackfillPages = 2
+
 // account is a sync's view of the account: limit > 0 keeps the newest limit
 // messages per folder, else months > 0 the mail since the cutoff, else all.
 type account struct {
@@ -44,6 +49,7 @@ type account struct {
 	email  string
 	limit  int
 	months int
+	budget int // range backfill pages left this round
 }
 
 // since is the SINCE date of a months range: date-only, as IMAP compares
@@ -60,6 +66,7 @@ func (a *account) since(now time.Time) time.Time {
 type result struct {
 	received, threads, changed, changedThreads []int64
 	conflicts                                  []string
+	more                                       bool // a range backfill yielded with work left
 }
 
 // gone records messages about to be deleted (or moved between threads) as changed.
@@ -83,23 +90,26 @@ func (r *result) merged(target int64, others []int64) {
 // Fetch syncs every folder of the account over c: folder list, new messages
 // (headers and text parts only; attachments stay lazy), threading, remote flag
 // changes and expunges. Rows committed before an error are still announced.
-func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) error {
+// more reports that a range backfill used its pages for the round and has
+// work left: the caller should sync again soon.
+func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) (more bool, err error) {
 	var r result
 	defer r.publish(bus, accountID)
 	a, err := loadAccount(ctx, db, accountID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	a.budget = BackfillPages
 	folders, err := syncFolders(ctx, db, c, accountID, &r)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, f := range folders {
 		if err := syncFolder(ctx, db, c, a, f, &r); err != nil {
-			return fmt.Errorf("sync %q: %w", f.name, err)
+			return r.more, fmt.Errorf("sync %q: %w", f.name, err)
 		}
 	}
-	return unclaimable(ctx, db, accountID, &r)
+	return r.more, unclaimable(ctx, db, accountID, &r)
 }
 
 // publish announces what r collected.
@@ -362,6 +372,10 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 	if f.filled != nil && *f.filled <= mark {
 		return nil
 	}
+	if a.budget <= 0 {
+		r.more = true // this round's pages are spent
+		return nil
+	}
 	var upto imap.UIDSet
 	upto.AddRange(1, imap.UID(f.lastUID))
 	found, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{upto}, Since: since}, nil).Wait()
@@ -379,6 +393,11 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 	uids := slices.DeleteFunc(found.AllUIDs(), func(u imap.UID) bool { return known[u] })
 	slices.SortFunc(uids, func(x, y imap.UID) int { return cmp.Compare(y, x) })
 	for page := range slices.Chunk(uids, BackfillPage) {
+		if a.budget <= 0 {
+			r.more = true // filled_since stays unset: the next round searches again
+			return nil
+		}
+		a.budget--
 		msgs, err := c.Fetch(imap.UIDSetNum(page...), importItems()).Collect()
 		if err != nil {
 			return err

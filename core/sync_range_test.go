@@ -107,6 +107,7 @@ func TestSyncRangeCountToAll(t *testing.T) {
 	defer func(n int) { mailsync.BackfillPage = n }(mailsync.BackfillPage)
 	mailsync.BackfillPage = 2
 	e.setRange(t, SyncRange{})
+	e.sync(t) // two pages a round (BackfillPages)
 	e.sync(t)
 	assert.Len(t, e.stored(t, "Archive"), 7)
 }

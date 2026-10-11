@@ -443,8 +443,11 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 			return smtpErr
 		}
 	}
-	err = mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
+	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
 	s.notifyHooks() // rows committed before an error count too
+	if more {
+		s.wakeWorker(accountID) // the backfill yielded: the worker's next round goes on with it
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
