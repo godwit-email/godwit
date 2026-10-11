@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -42,7 +43,9 @@ type modelForm struct {
 	confirmDel               bool   // the footer asks to confirm the removal
 	keyFocus                 bool
 	fetchErr                 string // why the last automatic /models fetch failed
-	fetched                  int    // how many models that fetch listed
+	fetched, noListStatus    int    // how many models that fetch listed; the status that said it lists none
+	probeConn                string // conn() of the probe under way
+	showKey, refetch         bool   // the typed key is shown; the key or address changed during a fetch, which asks for another
 	helpURL                  string // the preset's API key page
 	keyOptional              bool   // the preset needs no key
 	kind, name, baseURL, key string
@@ -254,9 +257,7 @@ func (m *modelsView) submit(f *modelForm) {
 		switch {
 		case m.form != f:
 		case f.unchanged(snap):
-			m.edit(saved)
-			m.form.manual = f.manual // typed, not added yet
-			m.form.offered = append(m.form.offered, slices.DeleteFunc(slices.Clone(f.offered), func(s string) bool { return slices.Contains(saved.Models, s) })...)
+			m.close()
 		default:
 			f.id, f.title, f.slug, f.hasKey, f.savedKind, f.savedURL = saved.ID, saved.Name, saved.Slug, saved.HasKey, saved.Kind, saved.BaseURL
 			if f.key == snap.key {
@@ -277,7 +278,7 @@ func (m *modelsView) submit(f *modelForm) {
 
 func (f *modelForm) unchanged(snap modelForm) bool {
 	return f.kind == snap.kind && f.name == snap.name && f.baseURL == snap.baseURL && f.key == snap.key && f.noKey == snap.noKey &&
-		slices.Equal(f.models, snap.models)
+		f.manual == snap.manual && slices.Equal(f.models, snap.models)
 }
 
 // dropRefs clears the model settings that point at service slug's models
@@ -324,6 +325,10 @@ func (m *modelsView) probe(f *modelForm, then func()) { m.probeWith(f, then, fal
 // opens. Unlike a save's probe it survives edits to the name and models; it
 // is dropped once the dialog has closed or the address or key changed.
 func (m *modelsView) fetch(f *modelForm) {
+	if f.probing { // that result is dropped if the key or address changed since it started: ask again then
+		f.refetch = f.conn() != f.probeConn
+		return
+	}
 	if _, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
 		m.probeWith(f, nil, true)
 	}
@@ -335,13 +340,18 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 	}
 	a, id, in, check, gen, conn, edits := m.a, f.id, f.input(), m.checkService, m.a.gen, f.conn(), f.edited()
 	connEdits := f.connEdits
-	f.probing, f.keyErr, f.fetchErr, f.checked, f.reprobe = true, "", "", "", true
+	f.probing, f.keyErr, f.fetchErr, f.checked, f.reprobe, f.refetch, f.probeConn = true, "", "", "", true, false, conn
 	var res core.ServiceCheck
 	a.do(func(ctx context.Context) (err error) {
 		res, err = check(ctx, id, in)
 		return err
 	}, func(err error) {
 		f.probing = false
+		defer func() {
+			if auto && f.refetch && m.form == f && gen == a.gen {
+				m.fetch(f)
+			}
+		}()
 		edited := f.edited() != edits // edited since: the user saves again
 		if auto {
 			edited = f.connEdits != connEdits // the address, protocol or key changed since, even back again
@@ -355,7 +365,7 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 			m.setStatus(f, statusBad)
 			return
 		case err != nil && then == nil:
-			f.fetchErr = humanize(err)
+			f.fetchErr = fetchFailure(err)
 			return
 		case err != nil:
 			a.toastErr(err)
@@ -363,6 +373,7 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 		}
 		m.setStatus(f, statusOK)
 		f.checked, f.reprobe, f.noList, f.fetched = conn, false, !res.ListSupported || len(res.Models) == 0, len(res.Models)
+		f.noListStatus = res.NoListStatus
 		if res.BaseURL != "" {
 			f.baseURL = res.BaseURL
 		}
@@ -440,6 +451,16 @@ func statusLook(t theme.Tokens, s svcStatus) (bg, fg, dot ui.Color, label string
 		return t.DangerBg, t.DangerText, t.Danger, i18n.T("settings.models.status.bad")
 	}
 	return t.Hover, t.Muted, t.Muted, i18n.T("settings.models.status.untested")
+}
+
+var httpStatus = regexp.MustCompile(`HTTP \d{3}`)
+
+// fetchFailure is why a fetch failed: the status the service answered when the error carries one.
+func fetchFailure(err error) string {
+	if st := httpStatus.FindString(err.Error()); st != "" {
+		return st
+	}
+	return humanize(err)
 }
 
 func kindLabel(kind string) string { return cmpTr("settings.models.kind."+kind, kind) }

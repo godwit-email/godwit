@@ -80,8 +80,8 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.click("m1")
 	h.click("添加")
 	h.until("added", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
-	h.see("编辑：local")
-	h.click("取消")
+	h.until("the dialog closes on the save", func() bool { return m.form == nil && !m.open })
+	h.see("local · OpenAI 兼容（Chat Completions）")
 
 	h.click("test / m1") // the default model
 	h.click("local / m1")
@@ -169,7 +169,8 @@ func TestRenameServiceKeepsDefault(t *testing.T) {
 	h.fill("名称", "renamed")
 	h.click("保存")
 	h.until("renamed", func() bool { _, ok := h.modelService("renamed"); return ok })
-	h.see("编辑：renamed")
+	h.see("renamed · OpenAI 兼容（Chat Completions）") // the dialog closed on the save
+	h.click("renamed · OpenAI 兼容（Chat Completions）")
 	h.see("引用名：test")
 	if d := h.savedDefault(); d != "test/m1" {
 		t.Fatalf("default %q: a rename must not touch it", d)
@@ -340,7 +341,7 @@ func TestSaveWithTypedModels(t *testing.T) {
 	h.fill("名称", "plain")
 	h.fill("地址", url)
 	h.blurKey()
-	h.see("拉取 /models 失败。这个服务可能不提供模型列表，直接输入模型 ID 也可以。")
+	h.see("拉取 /models 失败（HTTP 404）。这个服务可能不提供模型列表，直接输入模型 ID 也可以。")
 	h.typeModel("m1")
 	h.click("添加")
 	h.until("saved", func() bool { s, _ := h.modelService("plain"); return slices.Equal(s.Models, []string{"m1"}) })
@@ -377,7 +378,7 @@ func TestAddressChangeRequiresKeyDecision(t *testing.T) {
 	h.click("不使用 Key")
 	h.click("保存")
 	h.until("saved without a key", func() bool { s, _ := h.modelService("test"); return s.BaseURL == url && !s.HasKey })
-	h.until("the form shows no key", func() bool { f := p.models.form; return !f.busy && f.savedURL == url && !f.hasKey })
+	h.until("the dialog closes on the save", func() bool { return p.models.form == nil })
 	if slices.Contains(keys(), "Bearer test-key") {
 		t.Fatal("the stored key went to the new address")
 	}
@@ -691,20 +692,36 @@ func TestModelsDeleteConfirmStrip(t *testing.T) {
 	h.see("还没有接入模型服务")
 }
 
+// TestModelStatusChipDark: the rendered chip's fill and dot are the dark tokens.
 func TestModelStatusChipDark(t *testing.T) {
 	d := theme.Dark()
 	for _, c := range []struct {
-		s           svcStatus
-		bg, fg, dot ui.Color
-		label       string
+		s       svcStatus
+		bg, dot ui.Color
+		label   string
 	}{
-		{statusOK, d.SuccessBg, d.SuccessText, d.Success, "正常"},
-		{statusUntested, d.Hover, d.Muted, d.Muted, "未测试"},
-		{statusBad, d.DangerBg, d.DangerText, d.Danger, "Key 失效"},
+		{statusOK, d.SuccessBg, d.Success, "正常"},
+		{statusUntested, d.Hover, d.Muted, "未测试"},
+		{statusBad, d.DangerBg, d.Danger, "Key 失效"},
 	} {
-		bg, fg, dot, label := statusLook(d, c.s)
-		if bg != c.bg || fg != c.fg || dot != c.dot || label != c.label {
-			t.Errorf("status %d: %v %v %v %q, want %v %v %v %q", c.s, bg, fg, dot, label, c.bg, c.fg, c.dot, c.label)
+		tt := ui.NewTester(func(c2 *ui.Context) {
+			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, false))
+			ui.Box(c2).Padding(20).Children(func() { statusChip(c2, c.s) })
+		}, 200, 100)
+		r, ok := tt.Find(c.label)
+		if !ok {
+			t.Fatalf("no chip %q", c.label)
+		}
+		y := int(r.Y + r.H/2)
+		img := tt.Image()
+		for name, p := range map[string]struct {
+			x    int
+			want ui.Color
+		}{"fill": {int(r.X+r.W) + 3, c.bg}, "dot": {int(r.X) - 9, c.dot}} {
+			got, want := img.RGBAAt(p.x, y), p.want.SRGB()
+			if dd := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); dd > 8 {
+				t.Errorf("%s %s: pixel %v, want dark %v", c.label, name, got, want)
+			}
 		}
 	}
 }
@@ -713,10 +730,75 @@ func TestModelStatusFromTest(t *testing.T) {
 	h := withLLM(t)
 	p := h.editService("test")
 	m := p.models
-	h.until("untested", func() bool { return m.status[m.form.id] == statusUntested || m.status[m.form.id] == statusOK })
+	if m.status[m.form.id] == statusBad {
+		t.Fatal("starts invalid")
+	}
 	m.testService = func(context.Context, int64) error { return core.ErrModelAuth }
 	h.click("测试连接")
 	h.until("key invalid", func() bool { return m.status[m.form.id] == statusBad })
 	h.click("取消")
 	h.see("Key 失效")
+}
+
+func TestModelsKeyEyeShowsOnlyTyped(t *testing.T) {
+	h := withLLM(t)
+	h.editService("test") // its key is stored: the field is empty
+	h.click("显示 API Key")
+	h.see("隐藏 API Key")
+	if h.tt.HasText("test-key") {
+		t.Fatal("the stored key shows")
+	}
+	h.fill("API Key", "typed-secret")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	if !m.form.showKey || m.form.key != "typed-secret" {
+		t.Fatalf("form %+v", m.form)
+	}
+}
+
+func TestModelsCommonChipsAndCaptions(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	h.see("自填地址") // the tile's caption
+	h.see("常用")
+	h.click("Groq 常用")
+	if f := m.form; f.name != "Groq" || f.baseURL != "https://api.groq.com/openai/v1" || f.preset != presetCustom {
+		t.Fatalf("form %+v", f)
+	}
+	h.click("OpenAI") // a provider tile: no common chips
+	if h.tt.HasText("常用") {
+		t.Fatal("common chips show for a provider")
+	}
+}
+
+func TestModelsFetchFailureShowsStatus(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, http.StatusInternalServerError)
+	h.newService()
+	h.fill("名称", "flaky")
+	h.fill("地址", url)
+	h.blurKey()
+	h.see("拉取 /models 失败（HTTP 500）")
+}
+
+// A blur while a fetch runs, after the key changed, fetches again once the stale result is dropped.
+func TestModelsFetchAgainAfterStaleDrop(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	gate := make(chan struct{})
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		<-gate
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"for-" + in.APIKey}, ListSupported: true}, nil
+	}
+	f := m.form
+	h.fill("地址", "https://api.example.com/v1")
+	h.fill("API Key", "one")
+	h.click("名称")
+	h.until("fetching", func() bool { return f.probing })
+	h.fill("API Key", "two")
+	h.click("名称") // blur while the first fetch runs
+	close(gate)
+	h.until("fetched for the new key", func() bool { return slices.Contains(f.offered, "for-two") && !f.probing })
+	if slices.Contains(f.offered, "for-one") {
+		t.Fatalf("offered %q: the old key's result was adopted", f.offered)
+	}
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -207,6 +208,9 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			})
 			return in
 		}, func() {
+			if f.preset == presetCustom {
+				m.commonChips(c, f)
+			}
 			if urlErr != "" {
 				ui.Text(c, urlErr).FontSize(t.Text.Sm).TextColor(t.Danger)
 			} else if u, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
@@ -222,14 +226,14 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	type tile struct {
-		id, name string
-		pick     func()
+		id, name, cap string
+		pick          func()
 	}
 	var all []tile
 	for _, p := range m.a.svc.ModelPresets() {
-		all = append(all, tile{p.ID, p.Name, func() { f.pick(p) }})
+		all = append(all, tile{p.ID, p.Name, i18n.T("settings.models.cap.gen"), func() { f.pick(p) }})
 	}
-	all = append(all, tile{presetCustom, i18n.T("settings.models.preset.custom"), f.pickCustom})
+	all = append(all, tile{presetCustom, i18n.T("settings.models.preset.custom"), i18n.T("settings.models.cap.custom"), f.pickCustom})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		for row := range slices.Chunk(all, 4) {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
@@ -240,12 +244,42 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 					if on {
 						b.Background(t.Hover).Border(theme.Hairline, t.Primary)
 					}
-					b.Children(func() { ui.Text(c, tl.name).FontWeight(500).SingleLine() })
+					b.Children(func() {
+						ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+							ui.Text(c, tl.name).FontWeight(500).SingleLine()
+							ui.Text(c, tl.cap).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+						})
+					})
 				}
 				for range 4 - len(row) { // keep the columns equal
 					ui.Box(c).Grow(1).Basis(0)
 				}
 			})
+		}
+	})
+}
+
+// commonChips are the usual compatible services, to fill the name and address of 其他服务.
+func (m *modelsView) commonChips(c *ui.Context, f *modelForm) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, i18n.T("settings.models.common")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		for _, p := range m.a.svc.ModelPresets() {
+			if p.Kind != ai.KindOpenAI {
+				continue
+			}
+			on := f.baseURL == p.BaseURL
+			b := kit.Pressable(c.Key(p.ID), kit.PressableOpts{Bare: true, OnClick: func() {
+				f.name, f.baseURL, f.kind, f.keyOptional, f.helpURL = p.Name, p.BaseURL, p.Kind, !p.KeyRequired, ""
+			}}).Label(p.Name+" "+i18n.T("settings.models.common")).Height(th.Space(6)).Padding(0, th.Space(2)).Radius(t.Radius.Md)
+			fg := t.Muted
+			if on {
+				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
+				fg = t.Foreground
+			} else {
+				b.Border(theme.Hairline, t.Border).Background(t.Background)
+			}
+			b.Children(func() { ui.Text(c, p.Name).FontSize(t.Text.Sm).TextColor(fg) })
 		}
 	})
 }
@@ -290,11 +324,18 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 	}
 	switch {
 	case f.probing:
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() { kit.Spinner(c) })
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			kit.Spinner(c)
+			ui.Text(c, i18n.T("settings.models.fetching")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		})
 	case f.fetchErr != "":
 		retry(i18n.Tf("settings.models.fetch_failed", f.fetchErr))
 	case f.noList && f.checked == f.conn():
-		retry(i18n.T("settings.models.no_list"))
+		if f.noListStatus > 0 {
+			retry(i18n.Tf("settings.models.fetch_failed", "HTTP "+strconv.Itoa(f.noListStatus)))
+		} else {
+			retry(i18n.T("settings.models.no_list"))
+		}
 	case f.checked == f.conn() && f.fetched > 0:
 		ui.Text(c, i18n.Tf("settings.models.fetched", f.fetched)).FontSize(t.Text.Sm).TextColor(t.Muted)
 	default:
@@ -315,7 +356,20 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 		ph = i18n.T("settings.secret_kept")
 	}
 	formRow(c, label, func() ui.Element {
-		in := kit.Input(c, &f.key, kit.InputOpts{Password: true, Placeholder: ph, Invalid: f.keyErr != ""})
+		var in ui.Element
+		border := t.Input
+		if f.keyErr != "" {
+			border = t.Danger
+		}
+		ui.Row(c).AlignItems(ui.Center).Height(th.Space(8)).Radius(t.Radius.Md).Border(theme.Hairline, border).Background(t.Background).Padding(0, th.Space(0.5), 0, 0).Children(func() {
+			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
+			icon, tip := "eye", i18n.T("settings.models.key.show")
+			if f.showKey {
+				icon, tip = "eye-off", i18n.T("settings.models.key.hide")
+			}
+			// only what was typed this session: a stored key is never read into the form
+			kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { f.showKey = !f.showKey })
+		})
 		focused := in.Focused()
 		if f.keyFocus && !focused {
 			m.fetch(f)

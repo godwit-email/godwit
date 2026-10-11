@@ -12,6 +12,7 @@ type ServiceCheck struct {
 	BaseURL, Endpoint string
 	Models            []string
 	ListSupported     bool // false: the service has no model list; models are typed by hand
+	NoListStatus      int  // the HTTP status that said so, when known
 }
 
 // CheckModelService probes in as service id (0: a new one) would be saved,
@@ -32,7 +33,13 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	c := ServiceCheck{BaseURL: in.BaseURL, Endpoint: ai.Endpoint(in.Kind, in.BaseURL), ListSupported: true}
 	c.Models, err = ai.ListModels(ctx, s.modelHTTP, in.Kind, in.BaseURL, key)
 	if errors.Is(err, ai.ErrNoModelList) {
-		return ServiceCheck{BaseURL: c.BaseURL, Endpoint: c.Endpoint}, nil
+		var nl *ai.NoListError
+		errors.As(err, &nl)
+		out := ServiceCheck{BaseURL: c.BaseURL, Endpoint: c.Endpoint}
+		if nl != nil {
+			out.NoListStatus = nl.Status
+		}
+		return out, nil
 	}
 	if err != nil {
 		return ServiceCheck{}, err

@@ -57,7 +57,7 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, ErrModelAuth
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
-		return nil, ErrNoModelList
+		return nil, &NoListError{resp.StatusCode}
 	default:
 		return nil, fmt.Errorf("list models: HTTP %d", resp.StatusCode)
 	}
@@ -85,3 +85,9 @@ var (
 // NoRedirectClient never follows redirects, so a key is only ever sent to the
 // configured URL; a 3xx comes back as an HTTP error.
 var NoRedirectClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+// NoListError is ErrNoModelList with the status that said so.
+type NoListError struct{ Status int }
+
+func (e *NoListError) Error() string        { return ErrNoModelList.Error() }
+func (e *NoListError) Is(target error) bool { return target == ErrNoModelList }

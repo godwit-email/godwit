@@ -25,6 +25,8 @@ var RemixIcons = map[string]string{
 	"download":                "node_modules/remixicon/icons/System/download-line.svg",
 	"ellipsis":                "node_modules/remixicon/icons/System/more-line.svg",
 	"external-link":           "node_modules/remixicon/icons/System/external-link-line.svg",
+	"eye-off":                 "node_modules/remixicon/icons/System/eye-off-line.svg",
+	"eye":                     "node_modules/remixicon/icons/System/eye-line.svg",
 	"file-pen-fill":           "node_modules/remixicon/icons/Document/draft-fill.svg",
 	"file-pen":                "node_modules/remixicon/icons/Document/draft-line.svg",
 	"file-text":               "node_modules/remixicon/icons/Document/file-text-line.svg",
@@ -141,6 +143,8 @@ var RemixIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/delete-bin-line.svg
 //go:embed node_modules/remixicon/icons/System/download-line.svg
 //go:embed node_modules/remixicon/icons/System/external-link-line.svg
+//go:embed node_modules/remixicon/icons/System/eye-line.svg
+//go:embed node_modules/remixicon/icons/System/eye-off-line.svg
 //go:embed node_modules/remixicon/icons/System/information-fill.svg
 //go:embed node_modules/remixicon/icons/System/information-line.svg
 //go:embed node_modules/remixicon/icons/System/loader-4-line.svg

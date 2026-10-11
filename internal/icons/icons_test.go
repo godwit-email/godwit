@@ -5,7 +5,7 @@ import "testing"
 var names = []string{"mail", "sparkles", "sliders-horizontal", "panel-left", "arrow-left", "arrow-right",
 	"square-pen", "reply", "reply-all", "forward", "archive", "trash-2", "star", "mail-open", "search", "inbox",
 	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
-	"triangle-alert", "loader", "copy", "external-link", "image-off", "bold", "italic", "link", "list",
+	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "puzzle", "server",
 	"globe", "languages", "file-text", "wand-sparkles", "download", "ellipsis", "component", "spam", "outbox", "settings", "cpu", "info"}
 
