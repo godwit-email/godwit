@@ -14,6 +14,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -806,49 +807,60 @@ func (h *harness) fillRow(label, value string) {
 // clickRemove presses the 删除账户 button, found by its accessible label (the visible text is also the section title).
 func (h *harness) clickRemove() { h.t.Helper(); h.click("删除账户 alice@example.com") }
 
+// quietAccount is an account on a harness with no background sync, so only the test's own events set a sync time.
+func quietAccount(t *testing.T) (*harness, core.Account) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h, acc
+}
+
+// syncedHoursAgo delivers a SyncFinished through the app's event path and moves the clock on.
+func (h *harness) syncedHoursAgo(id int64, hours int) {
+	h.app.onEvent(events.Event{Type: events.SyncFinished, AccountID: id})
+	h.advance(time.Duration(hours) * time.Hour)
+	h.tt.Frame()
+}
+
 func TestAccountHeaderMeta(t *testing.T) {
-	h, acc := withAccount(t)
-	h.app.syncedAtBy[acc.ID] = h.clock.Now().Add(-3 * time.Hour)
+	h, acc := quietAccount(t)
 	st := h.app.settings
 	st.Theme = "dark"
 	h.app.changeSettings(st)
 	h.openSettings(accountRoute(acc.ID))
-	h.see("已同步 · 3 小时前")
-	chip, _ := h.tt.Find("已同步 · 3 小时前")
-	title, _ := h.tt.Find("alice@example.com")
-	badge, ok := h.tt.Find("默认发件")
-	if !ok || badge.Y < title.Y+title.H || chip.Y < title.Y+title.H {
-		t.Fatalf("badge %v and chip %v belong under the title %v", badge, chip, title)
-	}
-	got, want := h.tt.Image().RGBAAt(int(chip.X-4), int(chip.Y+chip.H/2)), theme.Dark().SuccessBg.SRGB()
-	if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
-		t.Fatalf("chip %v, want dark SuccessBg %v", got, want)
-	}
-	delete(h.app.syncedAtBy, acc.ID)
-	h.advance(time.Minute)
-	h.tt.Frame()
 	if _, ok := h.tt.Find("已同步"); !ok {
-		t.Fatalf("no bare chip: %q", h.tt.Texts())
+		t.Fatalf("no bare chip before a sync: %q", h.tt.Texts())
+	}
+	h.syncedHoursAgo(acc.ID, 3)
+	h.see("已同步 · 3 小时前")
+	// The sidebar footer shows the same text, so find the chip by its place: on the badge's row, right of it.
+	badge, ok := h.tt.Find("默认发件")
+	if !ok {
+		t.Fatalf("no badge: %q", h.tt.Texts())
+	}
+	img, want, found := h.tt.Image(), theme.Dark().SuccessBg.SRGB(), false
+	y := int(badge.Y + badge.H/2)
+	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+400 && !found; x++ {
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 8
+	}
+	if !found {
+		t.Fatalf("no dark SuccessBg chip on the badge's row %d", y)
 	}
 }
 
 func TestReauthBannerElapsed(t *testing.T) {
-	h, acc := withAccount(t)
+	h, acc := quietAccount(t)
 	h.env.IMAP(acc.ID).SetPassword("x")
-	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
-	h.app.syncedAtBy[acc.ID] = h.clock.Now().Add(-3 * time.Hour)
+	_ = h.env.Svc.SyncNow(context.Background(), acc.ID) // fails: no SyncFinished
 	h.openSettings(accountRoute(acc.ID))
-	h.until("elapsed banner", func() bool {
+	h.until("unknown-time banner", func() bool {
 		h.advance(refreshEvery)
-		return h.tt.HasText("登录已过期，3 小时前起停止同步。")
+		return h.tt.HasText("登录已过期，已停止同步。")
 	})
+	h.syncedHoursAgo(acc.ID, 3)
+	h.see("登录已过期，3 小时前起停止同步。")
 	h.see("需要重新登录")
-	delete(h.app.syncedAtBy, acc.ID)
-	h.advance(time.Minute)
-	h.tt.Frame()
-	if !h.tt.HasText("登录已过期，已停止同步。") {
-		t.Fatalf("no unknown-time banner: %q", h.tt.Texts())
-	}
 }
 
 func TestDeleteAccountOutline(t *testing.T) {
