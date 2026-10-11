@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // withAccount is a harness with one account, its initial load applied.
@@ -250,5 +251,89 @@ func TestCheckSettingsCopy(t *testing.T) {
 	got := humanize(&core.CheckError{Report: core.CheckReport{Steps: []core.CheckStep{{Name: "settings", Detail: "password is empty"}}}})
 	if got != "账户设置检查未通过：password is empty" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestKitRailOnlyInDev(t *testing.T) {
+	t.Run("production", func(t *testing.T) {
+		if withAccountHarness(t, newHarness).tt.HasText("Kit") {
+			t.Fatal("the Kit entry shows in a production build")
+		}
+	})
+	t.Run("dev", func(t *testing.T) {
+		d := withAccountHarness(t, newDevHarness)
+		d.click("Kit")
+		d.until("the gallery", func() bool { _, ok := d.tt.Find("section:Button"); return ok })
+	})
+}
+
+// withAccountHarness is mk's harness with one account, its initial load applied (past onboarding).
+func withAccountHarness(t *testing.T, mk func(*testing.T, ...func(*coretest.Env)) *harness) *harness {
+	h := mk(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h
+}
+
+// dragDivider drags the sidebars' divider by dx and lets the drag go.
+func (h *harness) dragDivider(dx float32) {
+	h.t.Helper()
+	r, ok := h.tt.Find("Divider")
+	if !ok {
+		h.t.Fatalf("no divider; texts %q", h.tt.Texts())
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	h.tt.Press(x, y)
+	h.tt.Move(x+dx/2, y)
+	h.tt.Move(x+dx, y)
+	h.tt.Release(x+dx, y)
+	h.drain()
+	h.tt.Frame()
+}
+
+// TestSidebarWidthSharedAndSaved: a drag widens every page's sidebar, within
+// 240 to 480, and the width is saved once the drag rests.
+func TestSidebarWidthSharedAndSaved(t *testing.T) {
+	h, _ := withAccount(t)
+	h.see("全部收件箱")
+	start, _ := h.tt.Find("Divider")
+	h.dragDivider(100)
+	moved, _ := h.tt.Find("Divider")
+	if d := moved.X - start.X; d < 99 || d > 101 {
+		t.Fatalf("divider moved %v, want 100", d)
+	}
+	h.openSettings("general")
+	if r, _ := h.tt.Find("Divider"); r.X != moved.X {
+		t.Errorf("settings' divider at %v, mail's at %v: want one width", r.X, moved.X)
+	}
+	h.advance(sidebarSaveDelay)
+	h.until("the width saved", func() bool {
+		st, _ := h.env.Svc.GetSettings(context.Background())
+		return st.SidebarWidth == theme.SidebarWidth+100
+	})
+
+	h.dragDivider(1000)
+	if h.app.sidebarW != theme.SidebarMaxWidth {
+		t.Errorf("dragged far right: %v, want %v", h.app.sidebarW, float32(theme.SidebarMaxWidth))
+	}
+	h.dragDivider(-1000)
+	if h.app.sidebarW != theme.SidebarMinWidth {
+		t.Errorf("dragged far left: %v, want %v", h.app.sidebarW, float32(theme.SidebarMinWidth))
+	}
+}
+
+// TestVibrancyShowsThroughTopBar: with the window's material on, the top
+// bar is drawn transparent, the sidebar's divider (kit.Split, which sets
+// the theme mid-frame) notwithstanding.
+func TestVibrancyShowsThroughTopBar(t *testing.T) {
+	h, _ := withAccount(t)
+	h.app.vibrancy = true
+	h.see("全部收件箱")
+	if _, ok := h.tt.Find("Divider"); !ok {
+		t.Fatal("no sidebar divider: the mail page should split")
+	}
+	h.tt.Frame()
+	img := h.tt.Image()
+	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 { // the top bar's middle, above its text
+		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
 	}
 }

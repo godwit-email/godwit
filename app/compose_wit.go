@@ -82,7 +82,7 @@ func (w *composeWit) chips() []string {
 func (w *composeWit) tools(c *ui.Context) {
 	th := c.Theme()
 	off := w.locked()
-	pill := kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: off}
+	pill := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: off}
 	ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 		kit.Button(c, i18n.T("wit.compose.adjust"), pill).Menu(func(m *ui.Menu) {
 			for _, sk := range adjustSkills {
@@ -108,10 +108,8 @@ func (w *composeWit) after(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
-		ui.Text(c, i18n.T("wit.compose.applied")).Padding(0, th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover)
-		ui.ButtonBase(c).TextColor(t.Foreground).Children(func() {
-			ui.Text(c, i18n.T("wit.compose.undo")).Underline()
-		}).OnClick(w.undo)
+		ui.Text(c, i18n.T("wit.compose.applied")).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover)
+		kit.Button(c, i18n.T("wit.compose.undo"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).OnClick(w.undo)
 	})
 }
 
@@ -123,7 +121,7 @@ func (w *composeWit) card(c *ui.Context, ap core.Approval) bool {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r := w.review
-	ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.T("wit.compose.review")).FontWeight(600)
 			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
@@ -149,8 +147,8 @@ func (w *composeWit) card(c *ui.Context, ap core.Approval) bool {
 
 func (w *composeWit) decideButtons(c *ui.Context) {
 	busy := w.panel.deciding[w.review.ap.ID]
-	kit.Button(c, i18n.T("wit.compose.reject_all"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: busy}).OnClick(func() { w.decideAll(false) })
-	kit.Button(c, i18n.T("wit.compose.accept_all"), kit.ButtonOpts{Small: true, Disabled: busy}).OnClick(func() { w.decideAll(true) })
+	kit.Button(c, i18n.T("wit.compose.reject_all"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: busy}).OnClick(func() { w.decideAll(false) })
+	kit.Button(c, i18n.T("wit.compose.accept_all"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: busy}).OnClick(func() { w.decideAll(true) })
 }
 
 // rewriteText tells how much a rewrite changed, as the banner or (card)
@@ -173,7 +171,7 @@ func (w *composeWit) banner(c *ui.Context) {
 	if err := w.reloadErr; err != nil {
 		ui.Box(c).Padding(th.Space(2), th.Space(5)).Children(func() {
 			kit.Alert(c, kit.Danger, cmp.Or(humanize(err), err.Error()), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(w.reload)
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(w.reload)
 			})
 		})
 	}
@@ -190,7 +188,7 @@ func (w *composeWit) banner(c *ui.Context) {
 	}
 	ui.Row(c).Gap(th.Space(2)).Padding(th.Space(2), th.Space(5)).Background(t.Hover).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Role(ui.RoleStatus).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1)
-		small := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+		small := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 		switch {
 		case w.panel.running:
 			kit.Button(c, i18n.T("wit.stop"), small).OnClick(w.panel.stopRun)
@@ -232,7 +230,7 @@ func (w *composeWit) body(c *ui.Context) bool {
 		ui.Column(c).Gap(th.Space(2.5)).Children(func() {
 			ui.Text(c, i18n.T("wit.compose.writing")).TextColor(t.Muted)
 			for _, pct := range []float32{90, 75, 50} {
-				ui.Box(c).Height(th.Space(3)).MaxWidthPercent(pct).Radius(t.Radius.Sm).Background(t.Hover)
+				ui.Box(c).Height(th.Space(3)).MaxWidthPercent(pct).Radius(t.Radius.Md).Background(t.Hover)
 			}
 		})
 	default:
@@ -262,12 +260,12 @@ func (w *composeWit) reviewView(c *ui.Context) {
 		if k := w.active; k >= 0 && r.decided[k] == 0 {
 			b := w.changeBounds(k)
 			pop := ui.Row(c).Absolute().Top(b.Y+b.H+th.Space(1)).Left(b.X).Gap(th.Space(1)).Padding(th.Space(1)).
-				Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+				Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 				if u := r.linkNote(k); u != "" {
 					ui.Text(c, i18n.Tf("wit.compose.link", u)).FontSize(t.Text.Sm).Padding(0, th.Space(1))
 				}
-				kit.Button(c, i18n.T("wit.compose.accept"), kit.ButtonOpts{Small: true}).OnClick(func() { w.decideOne(k, true) })
-				kit.Button(c, i18n.T("wit.compose.reject"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(func() { w.decideOne(k, false) })
+				kit.Button(c, i18n.T("wit.compose.accept"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() { w.decideOne(k, true) })
+				kit.Button(c, i18n.T("wit.compose.reject"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { w.decideOne(k, false) })
 			})
 			over = pop.Hovered() || pop.FocusWithin()
 		}
@@ -323,18 +321,18 @@ func (w *composeWit) editor(c *ui.Context) {
 		}
 		b, _, _ := p.ed.BoundsForRange(p.ed.Selection().Range)
 		box := ui.Column(c).Absolute().Top(b.Y+b.H+th.Space(1.5)).Left(0).Right(0).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-			Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+			Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm)
-				in := ui.TextInputBase(c, &w.cmdkInput).Grow(1).Label(i18n.T("wit.compose.cmdk.input")).AutoFocus()
+				in := kit.Input(c, &w.cmdkInput, kit.InputOpts{Bare: true}).Grow(1).Label(i18n.T("wit.compose.cmdk.input")).AutoFocus()
 				if in.Submitted() {
 					w.rewriteSelection()
 				}
 			})
 			ui.Row(c).Gap(th.Space(1.5)).FontSize(t.Text.Xs).TextColor(t.Muted).Children(func() {
 				ui.Text(c, i18n.T("wit.compose.cmdk")).Grow(1).Shrink(1)
-				kit.Button(c, i18n.T("wit.compose.cmdk.esc"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).OnClick(func() { w.cmdk = false })
-				kit.Button(c, i18n.T("wit.compose.cmdk.go"), kit.ButtonOpts{Small: true}).OnClick(w.rewriteSelection)
+				kit.Button(c, i18n.T("wit.compose.cmdk.esc"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { w.cmdk = false })
+				kit.Button(c, i18n.T("wit.compose.cmdk.go"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(w.rewriteSelection)
 			})
 		})
 		if box.Shortcut(0, ui.KeyEscape) {

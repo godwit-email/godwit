@@ -185,7 +185,7 @@ func (m *modelsView) save(f *modelForm) {
 	case f.mustProbe():
 		m.probe(f, func() {
 			if len(f.models) == 0 {
-				m.a.toast(i18n.T("settings.models.pick"))
+				m.a.toastAs(kit.ToastWarning, i18n.T("settings.models.pick"))
 				return
 			}
 			m.submit(f)
@@ -233,10 +233,14 @@ func (m *modelsView) submit(f *modelForm) {
 				f.key = ""
 			}
 		}
+		noDefault := a.settings.DefaultModel == ""
 		if id != 0 {
 			m.dropRefs(saved.Slug, saved.Models)
 		}
-		a.toast(i18n.T("settings.saved"))
+		if noDefault { // this service's first model becomes it: Wit needs one
+			m.setModel(func(st *core.Settings) { st.DefaultModel = saved.Slug + "/" + saved.Models[0] })
+		}
+		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 		m.load()
 	})
 }
@@ -368,8 +372,8 @@ func (m *modelsView) view(c *ui.Context) {
 		listCard(c, func() {
 			for i, s := range m.services {
 				on := m.form != nil && m.form.id == s.ID
-				listRow(c.Key(s.ID), i, on, func() {
-					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Md).Background(t.Hover).Center().Children(func() {
+				listRow(c.Key(s.ID), i, on, func() { m.edit(s) }, func() {
+					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
 						ui.Text(c, badge(s.Name)).Font("Geist Mono").FontSize(t.Text.Sm)
 					})
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
@@ -380,7 +384,7 @@ func (m *modelsView) view(c *ui.Context) {
 					if strings.HasPrefix(a.settings.DefaultModel, s.Slug+"/") {
 						kit.Badge(c, i18n.T("settings.models.default_badge"))
 					}
-				}).OnClick(func() { m.edit(s) })
+				})
 			}
 		})
 	}
@@ -421,7 +425,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600).Grow(1).Shrink(1)
 			if f.id != 0 { // up here, clear of the toasts
-				kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Destructive, Small: true, Disabled: f.busy}).
+				kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Destructive, Size: kit.SizeSm, Disabled: f.busy}).
 					OnClick(func() { m.remove(f) })
 			}
 		})
@@ -434,7 +438,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		if f.slug != "" {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, i18n.Tf("settings.models.slug", f.slug)).FontSize(t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).Clicked() {
+				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
 					c.WriteClipboard(f.slug)
 					a.toast(i18n.T("link.copied"))
 				}
@@ -458,7 +462,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			if f.probing {
 				kit.Spinner(c)
 			}
-			kit.Button(c, i18n.T("settings.models.probe"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: f.probing}).
+			kit.Button(c, i18n.T("settings.models.probe"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: f.probing}).
 				OnClick(func() { m.probe(f, nil) })
 		})
 		switch {
@@ -470,7 +474,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 			for _, name := range f.offered {
 				on := slices.Contains(f.models, name)
-				ui.Box(c.Key(name)).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
+				ui.Box(c.Key(name)).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
 					if kit.Checkbox(c, &on, name).Changed() {
 						if !slices.Contains(f.models, name) { // the box may have written an older frame's copy
 							f.models = append(f.models, name)
@@ -519,7 +523,7 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	ui.Field(c, label, func() { kit.Input(c, &f.key, kit.InputOpts{Password: true, Placeholder: ph}) }).
 		Description(i18n.T("settings.models.api_key.help")).Error(f.keyErr)
 	if u := f.helpURL; u != "" {
-		kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+		kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 			OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) })
 	}
 	if f.hasKey && f.key == "" && f.moved() {
@@ -569,21 +573,16 @@ func (m *modelsView) modelSelects(c *ui.Context) {
 // listCard is a bordered list of rows.
 func listCard(c *ui.Context, rows func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Clip().Children(rows)
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
 }
 
 // listRow is a clickable row of a listCard; i > 0 draws a divider above it.
-func listRow(c *ui.Context, i int, on bool, children func()) ui.Element {
+// Selected (on), it does not click.
+func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Background(t.Background)
+	b := kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
 	if i > 0 {
 		b.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
-	}
-	switch {
-	case on:
-		b.Background(t.SidebarSelected)
-	case b.Hovered():
-		b.Background(t.Hover)
 	}
 	return b.Children(children)
 }

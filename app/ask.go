@@ -9,7 +9,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -82,8 +81,9 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-	kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).FontWeight(500).Children(func() {
-		ui.Icon(c, icons.Get("square-pen")).Size(theme.Icon, theme.Icon)
+	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
+	newChat.Children(func() {
+		kit.SidebarIcon(c, newChat, "square-pen", false)
 		ui.Text(c, i18n.T("ask.new"))
 	})
 	if len(p.convs) == 0 {
@@ -192,8 +192,8 @@ func (p *askPage) citations(c *ui.Context) {
 						border = t.WarningBorder
 					}
 					id := ct.MessageID
-					ui.ButtonBase(c).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).Background(t.Background).
-						Border(theme.Hairline, border).Justify(ui.Start).Children(func() {
+					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { p.openCited(id) }}).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).
+						Border(theme.Hairline, border).Children(func() {
 						ui.Column(c).Gap(th.Space(1)).Grow(1).Shrink(1).Children(func() {
 							ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
 								ui.Text(c, citeRef(i+1)+" "+ct.From).SingleLine().Grow(1).Shrink(1)
@@ -206,7 +206,7 @@ func (p *askPage) citations(c *ui.Context) {
 								ui.Text(c, i18n.T("ask.citation.suspect")).FontSize(t.Text.Sm).TextColor(t.WarningText)
 							}
 						})
-					}).OnClick(func() { p.openCited(id) })
+					})
 				}
 			})
 		})

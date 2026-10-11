@@ -84,6 +84,9 @@ type Deps struct {
 	// Logf logs what fails out of the user's sight (log.Printf by default).
 	// Lines carry no secrets and no mail content.
 	Logf func(format string, args ...any)
+
+	// Dev: the build is a development one: the rail offers the Kit gallery.
+	Dev bool
 }
 
 // Page is a top-level screen.
@@ -95,6 +98,7 @@ const (
 	PageWit
 	PageSettings
 	PageOnboarding
+	PageKit // dev builds only
 )
 
 // Route is where the App is.
@@ -152,9 +156,12 @@ type App struct {
 	noteFirst  string                                                    // a click that came before the first load
 	trayUnread int                                                       // what the tray shows
 
-	history, ahead []Route           // navigation: routes behind and, after back, ahead
+	history, ahead []Route // navigation: routes behind and, after back, ahead
+	dev            bool
 	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
 	sidebarHidden  bool
+	sidebarW       float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
+	sidebarSave    func()  // stops the pending save of a dragged width
 
 	dirty             []events.Event // events since the last refresh
 	refreshStop       func()         // the pending throttled refresh; nil when none
@@ -213,6 +220,8 @@ func New(d Deps) *App {
 	a.mail = newMailPage(a)
 	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
+	a.pages[PageKit] = &kitPage{}
+	a.dev = d.Dev
 	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})

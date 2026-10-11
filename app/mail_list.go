@@ -81,7 +81,7 @@ type mailPage struct {
 	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
-	collapsed map[int64]bool // account groups folded in the sidebar
+	accOpen   map[int64]*bool // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool
 	query                string
@@ -114,7 +114,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, collapsed: map[int64]bool{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -520,7 +520,7 @@ func (p *mailPage) listHeader(c *ui.Context) {
 		ui.Spacer(c)
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
-			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(func() { p.searchOpen = true })
 		}
 	})
@@ -534,7 +534,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	ls.list.Key = func(i int) any { return rows[i].key() }
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := ui.List(c, &ls.list, len(rows), func(i int) {
+	l := kit.List(c, &ls.list, len(rows), func(i int) {
 		it := rows[i]
 		p.row(c, it).ContextMenu(func(m *ui.Menu) {
 			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
@@ -548,8 +548,16 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2))
+	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart
 	l.Children(func() {
+		if len(rows) == 0 && p.loading { // the first load: placeholder rows
+			for range 6 {
+				ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
+					kit.Skeleton(c, 0, t.Text.Base)
+					kit.Skeleton(c, theme.SkeletonShort, t.Text.Sm)
+				})
+			}
+		}
 		if len(rows) == 0 && !p.loading {
 			empty := i18n.T("mail.empty")
 			if p.searched {
@@ -740,10 +748,10 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		pending := 0
 		finish := func() {
 			if failed > 0 {
-				a.toast(i18n.Tf("mail.failed", failed))
+				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
 			}
 			if len(skipped) > 0 {
-				a.toast(i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
+				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
 			if op == "archive" || op == "delete" {
 				l.sel.Clear()

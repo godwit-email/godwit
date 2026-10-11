@@ -80,7 +80,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 	if msg := humanize(p.err); msg != "" {
 		kit.Alert(c, kit.Danger, msg, func() {
 			if p.retry != "" && !p.running {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() {
 					ro := o
 					if p.retryO.Start != nil {
 						ro = p.retryO
@@ -95,7 +95,7 @@ func (p *witPanel) messages(c *ui.Context, o witOptions) {
 // bubble is a question: right-aligned on the primary color.
 func (p *witPanel) bubble(c *ui.Context, text string) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Box(c).AlignSelf(ui.End).MaxWidthPercent(80).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Panel).
+	ui.Box(c).AlignSelf(ui.End).MaxWidthPercent(80).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Xl).
 		Background(t.Primary).TextColor(t.PrimaryText).Children(func() { ui.Text(c, text).Selectable() })
 }
 
@@ -119,7 +119,7 @@ func (p *witPanel) answer(c *ui.Context, live bool, m *witMsg, turn int) {
 				continue
 			}
 			n := i + 1
-			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Md).
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).
 				Background(t.WarningBg).TextColor(t.WarningText).FontSize(t.Text.Sm).Role(ui.RoleStatus).Children(func() {
 				ui.Icon(c, icons.Get("triangle-alert")).Size(theme.Icon, theme.Icon)
 				ui.Text(c, i18n.Tf("wit.suspect", citeRef(n))).Grow(1).Shrink(1)
@@ -154,23 +154,13 @@ func (p *witPanel) tools(c *ui.Context, turn int, calls []ai.ToolCall) {
 		parts = append(parts, n)
 	}
 	label := i18n.Plural("wit.tools", len(names)) + " · " + strings.Join(parts, i18n.T("mail.list_sep"))
-	open := p.toolsOpen[turn]
-	chevron := "chevron-right"
-	if open {
-		chevron = "chevron-down"
-	}
-	ui.ButtonBase(c).Label(label).Justify(ui.Start).Gap(th.Space(1)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
-		ui.Icon(c, icons.Get(chevron)).Size(theme.IconXs, theme.IconXs)
-		ui.Text(c, label).Shrink(1)
-	}).OnClick(func() { p.toolsOpen[turn] = !open })
-	if !open {
-		return
-	}
-	ui.Column(c).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
-		for _, call := range calls {
-			ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font("Geist Mono").FontSize(t.Text.Xs).Selectable()
-		}
-	})
+	kit.Collapsible(c, boolAt(p.toolsOpen, turn, false), func() { ui.Text(c, label).Shrink(1) }, func() {
+		ui.Column(c).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
+			for _, call := range calls {
+				ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font("Geist Mono").FontSize(t.Text.Xs).Selectable()
+			}
+		})
+	}).Label(label)
 }
 
 const (
@@ -205,7 +195,7 @@ func (p *witPanel) card(c *ui.Context, ap core.Approval, many bool) {
 	if key := "wit.tool." + ap.Tool; i18n.T(key) != key {
 		action = i18n.T(key)
 	}
-	ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.Tf("wit.approval.wants", action)).FontWeight(600)
 			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
@@ -273,7 +263,7 @@ func strList(v any) []string {
 
 // inputBox is the question's text area: Enter sends, Shift+Enter starts a
 // new line; while a run goes on Send is Stop. Below it the default model,
-// which opens the model settings.
+// which opens the model settings. The box floats (kit.Float).
 func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	t, th := theme.Of(c), c.Theme()
 	if o.Tools != nil {
@@ -283,8 +273,9 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 	if label == "" {
 		label = i18n.T("wit.input")
 	}
-	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Panel).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
-		area := ui.TextAreaBase(c, &p.input).Lines(2, 8).Placeholder(o.Placeholder).Label(label).
+	box := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.X2l).Background(t.Background)
+	kit.Float(c, box).Children(func() {
+		area := kit.TextArea(c, &p.input, kit.InputOpts{Bare: true, Placeholder: o.Placeholder}).Lines(2, 8).Label(label).
 			HandleInput(func(ev ui.InputEvent) bool { // before the text area's own Enter, a new line
 				if ev.Kind != ui.InputKeyDown || ev.Key != ui.KeyEnter || ev.Mods != 0 || p.composing {
 					return false
@@ -295,8 +286,13 @@ func (p *witPanel) inputBox(c *ui.Context, o witOptions) {
 		p.composing = area.Composing()
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if m := modelOf(p.a.settings.DefaultModel); m != "" {
-				kit.Button(c, m, kit.ButtonOpts{Variant: kit.Outline, Small: true}).Tooltip(i18n.T("wit.model")).
+				b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(m).
 					OnClick(func() { p.a.navigate(Route{Page: PageSettings, Settings: "models"}) })
+				kit.Tooltip(c, b, i18n.T("wit.model"))
+				b.Children(func() {
+					ui.Text(c, m)
+					ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
+				})
 			}
 			ui.Spacer(c)
 			if p.running {

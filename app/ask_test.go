@@ -489,3 +489,27 @@ func TestContextCitationsMapToRunAnswer(t *testing.T) {
 		t.Fatalf("%d notes, want one on each answer: %q", n, h.tt.Texts())
 	}
 }
+
+func TestToolDisclosurePersists(t *testing.T) {
+	h, _, llm := askHarness(t, true)
+	h.tt.SetPreferences(ui.Preferences{ReduceMotion: true}) // a record that closes hides its text at once
+	llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "search_mail", Args: `{"query":"receipt"}`}}},
+		coretest.Turn{Text: []string{"done"}})
+	h.askQuestion("receipts")
+	h.click("调用了 1 个工具 · search_mail")
+	h.see(`search_mail {"query":"receipt"}`)
+	p := h.ask().wit
+	h.until("the run over", func() bool { return !p.running })
+	h.tt.Frame()
+	p.msgs = nil                       // only the refresh's read puts them back
+	p.open(h.app.route.ConversationID) // the one shown: read again
+	h.until("the refresh read back", func() bool { return len(p.msgs) > 0 })
+	h.tt.Frame()
+	h.tt.Frame()
+	if open := p.toolsOpen[1]; open == nil || !*open {
+		t.Fatal("turn 1's tool record is not open after the refresh")
+	}
+	if !h.tt.HasText(`search_mail {"query":"receipt"}`) {
+		t.Fatalf("the tool record closed: %q", h.tt.Texts())
+	}
+}

@@ -212,8 +212,8 @@ func TestSettings(t *testing.T) {
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: true,
-			QuickReplies: false, Summary: false, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true}
+			QuickReplies: true, Summary: true, ThreadView: false,
+			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true, SidebarWidth: 320}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {

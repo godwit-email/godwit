@@ -59,7 +59,7 @@ app/           mygo 托盘应用（默认）：进程内直接调用 core.Servic
 cmd/godwit/    入口：godwit（GUI）、godwit --headless、godwit mcp（MCP 桥）、godwit call（调用一次本机 API）
 ```
 
-- 应用常驻托盘，关闭窗口只是隐藏，后台同步和 Hook 继续运行。
+- 应用常驻托盘，关闭窗口只是隐藏，后台同步和 Hook 继续运行。 macOS 菜单栏图标是模板图（随系统着色），鸟形横向铺满，约 23×11pt；Windows 的通知区图标是方的，鸟形铺满宽度。
 - **一个数据目录一个拥有者**：GUI 与 `--headless` 在打开数据库之前取得数据目录里的排他锁（`godwit.lock`），持有到退出；后来者直接失败。其他进程只能通过拥有者的**本机 API** 访问。
 - **本机 API**：拥有者在数据目录下的 Unix 域套接字（`godwit.sock`，Windows 10 1803+ 同样支持）上提供 JSON-RPC 2.0（每行一条消息），方法与 Service 一一对应，流式结果用通知推送并可取消。连接先用 `api-token`（每次启动重新生成，0600）认证并声明角色：`full`（全部方法，给用户自己的程序）或 `mcp`（只读 + 草稿的白名单）。信任边界是同一个操作系统用户：token 防其他用户，不防同一用户的程序；`mcp` 角色是最小权限而不是隔离。GUI 里默认关闭，在「隐私与安全」里打开；`--headless` 下总是开启。
 - **`godwit mcp`** 是 MCP（stdio）服务端，用 `mcp` 角色连接正在运行的拥有者，自己不打开数据库；没有拥有者时报错退出。
@@ -299,21 +299,37 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
   | 变量 | 浅色 | 用途 |
   |---|---|---|
   | `Window` | `neutral-100` 与 `neutral-200` 的 oklch 中点 | 顶栏和图标栏底色 |
-  | `Sidebar` | `neutral-50` | 侧栏 |
+  | `Sidebar` | `neutral-50` | 侧栏；卡片、快捷键标签的浅底 |
   | `Background` | `white` | 内容区 |
-  | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、分隔线 |
+  | `Foreground` / `Muted` / `Border` | `neutral-950` / `neutral-500` / `neutral-200` | 正文、次要文字、面板和卡片的描边（深色：白 10%） |
+  | `Input` | `neutral-200`（深色：白 15%） | 输入框、下拉框、复选框、开关轨道、Outline 按钮的描边 |
+  | `Ring` | `neutral-400`（深色：`neutral-500`） | 键盘焦点环（50% 透明度） |
+  | `DividerHover` | `neutral-300`（深色：`neutral-700`） | 悬停或拖动中的分隔线，比描边深一级 |
   | `Primary` | `neutral-900` | 主按钮、开关打开、选中强调 |
-  | 选中项 | 侧栏 `neutral-100`，图标栏 `neutral-200` | |
+  | 选中项 | 侧栏 `neutral-100`，常规字重；图标栏前景色 4%（深色：白 10%） | 侧栏项的图标和计数用 `Muted`，悬停时图标变前景色 |
+  | `Unread` | `blue-500` | 邮件列表未读圆点 |
   | 状态 | 成功 `green-600`；提醒 `amber-50` 底 / `amber-300` 边 / `amber-800` 字；危险 `red-600` | |
 
   深色主题对应 shadcn neutral 的深色取值，三层颜色的深色值待设计稿确定（见待定）。设计稿里个别不在色板上的灰色（如 `#ECECEC`、`#F9F9F9`、`#DEDEDE`、`#EDEDED`）实现时按上表换成色板值。
-- **图标**：Lucide 的 SVG，用 `ui.Icon` 显示，随文字颜色变化。
+- **图标**：Remix Icon v4.8.0（最后一个 Apache-2.0 版本，之后改用自有协议）的 SVG，用 `ui.Icon` 显示，随文字颜色变化。平时用 line 款；图标栏和侧栏选中的项换成同一图标的 fill 款。侧栏：邮件的统一视图和文件夹按角色配图标（收件箱、草稿、已发送、归档、垃圾邮件、废纸篓，其他文件夹用文件夹图标），设置的应用分组各有图标；未选中是 `Muted` 的 line 款，悬停变前景色。
+- **服务商标识**：Gmail、Outlook、QQ、163、126、腾讯企业邮、iCloud、飞书、钉钉、雅虎、AOL 用重绘的透明底 logo（`internal/icons/brands/`，256px），由 app 画在白色圆角方块上（`MarkTile` 白色，深色模式也是白，描边 `Outline`、`shadow-xs`，圆角取 `lg` 与边长四分之一中较小的），仿 macOS「互联网账户」的样子；其他服务商用文字方块。
 - **字体**：用 `ui.RegisterFont` 内嵌 Geist / Geist Mono；中文使用系统字体（苹方、微软雅黑、Noto Sans CJK），不内嵌，以免安装包过大。
 - **布尔设置一律用 Switch**；表单、菜单、对话框、卡片都用上面那套组件。
+- **组件库（`internal/kit`）**：上面那套组件集中在 `internal/kit`，按组件分文件，命名和变体对齐 shadcn/ui：
+  - Button 变体 `Default` / `Secondary` / `Outline` / `Ghost` / `Destructive` / `Link`，尺寸 `Sm`（28）/ `Default`（32）/ `Lg`（36），图标按钮另有 `Xs`（16，标签上的移除按钮）。
+  - 组件清单：Button、IconButton、Input、TextArea、Field、Select、Checkbox、Radio、Switch、Tabs、ToggleGroup、Dialog、Popover、Tooltip、Collapsible、Card（Header / Content / Footer）、Badge、Alert、Avatar、Separator、Skeleton、Spinner、Kbd、StatusDot、SidebarItem、RailButton、Pressable（自定义内容的可点击区域）、Toast。
+  - Toast 显示在顶栏下方居中，最新的在最上面，最多三条；分普通、成功（`circle-check`，绿）、警告（`triangle-alert`，琥珀）、失败（`circle-x`，红）四种。有色的三种用同色系浅色底（50）、边框（200，警告沿用 `amber-300`）、深色字和图标（700，警告 `amber-800`），圆角 `2xl`（16）；普通的白底灰边、不带图标。
+  - 阴影照搬 Tailwind v4（shadcn 用的那套）：xs 输入框、Select、复选框、单选、Outline 按钮、页面面板；sm 卡片、Tabs 选中项；md Popover、Select 下拉；lg 对话框、Sheet、Toast；开关滑块无阴影。另有一档 `float`，给悬浮在内容上的输入框（Wit 输入框）：浅色是 `0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006`，那圈 1px 就是它的描边；深色是 20% 白的 1px 模糊内阴影，mygo 画不了内阴影，暂用 12% 白的细线代替。
+  - 圆角照搬 Tailwind v4 的 rounded 档位：xs 2、sm 4（徽标、kbd、复选框）、md 6（输入框、Select、小按钮、Tabs）、lg 8（按钮、列表行、Popover、面板里的小卡片）、xl 12（侧栏 + 内容面板、卡片）、2xl 16（对话框、Sheet、Toast、Wit 输入框）、3xl 24、4xl 32、full（圆点、开关、头像）。
+  - 菜单（下拉菜单、右键菜单）用系统原生菜单（`Element.Menu` / `ContextMenu`），不自绘。
+  - app 里不直接用 mygo 的无样式基础组件（`ButtonBase`、`TextInputBase`、`TextAreaBase`、`DialogBase`、`PopoverBase`、`TooltipBase`）和 `Element.Tooltip`，一律经 kit；有测试守着。
+- **动效**：组件自带过渡，时长取 theme 的 `MotionFast`（120ms）和 `MotionBase`（200ms），缓动用 ease-out：悬停和选中的背景色、边框色渐变，开关滑块的移动，Collapsible 展开收起和箭头转动，Skeleton 的呼吸闪烁。Dialog / Sheet / Popover 打开时淡入并上移几像素（只做进场；mygo 不给随父层一起出现的元素播进场动画，由 kit 记下打开时刻自己算进度），关闭和 Tooltip 直接出现消失。文字颜色直接切换。系统开启「减少动态效果」时不播放：过渡由 mygo 处理，Skeleton 自己检查。
+- **组件预览页**：开发模式（`mygo.IsDev()`）下图标栏多一个「Kit」入口，列出 kit 每个组件的每种状态，供对照设计稿调整；正式构建里没有这个入口。
 
 ### 7.1 窗口与布局
 
-- 布局参考 Codex，三层颜色：窗口底色（顶栏 + 左侧图标栏）`#ECECEC` → 侧栏 `#F9F9F9`（左上圆角）→ 内容区白色，侧栏与内容区连成一块面板，贴住窗口右边和下边。
+- 布局参考 Codex，三层颜色：窗口底色（顶栏 + 左侧图标栏）→ 侧栏 `neutral-50`（左上圆角）→ 内容区白色，侧栏与内容区连成一块圆角面板，和窗口右边、下边留 8px，带 shadcn 的 `shadow-xs`。设计稿和代码共用一套 token：Godwit 设计系统（从 `internal/theme` 导出），已安装到设计画布。
+- 侧栏宽度可以拖动（两者之间的分隔线，获得焦点后也能用方向键调），范围 240–480px，默认 248；所有页面共用一个宽度，拖动停下后存进设置（`Settings.SidebarWidth`），重启后保持。
 - 左侧图标栏：邮件、Wit；设置固定在底部。扩展只从「设置 › 扩展」进入。没有用户体系，不放头像。
 - 顶栏：系统窗口按钮 + 收起侧栏、后退、前进；内容区上方显示当前标题（如「全部收件箱 · 16 封未读」）和同步状态。
 - 系统窗口按钮（mygo `TitleBarHiddenInset` / `TitleBarHeight`；原生 UI 里用 `ui.Context.TitleBar` 得到要让出的位置，用 `Element.DragWindow` 标记可拖动区域）：
@@ -326,9 +342,9 @@ v2 的倾向：模型插件跑在按需下载的 Bun 子进程里（与跑在 Qu
 - 侧栏是账户分组树：顶部是跨账户视图（全部收件箱、已标星、智能视图），下面每个账户可折叠，展开后是各自的文件夹，最后是「添加账户」。只有一个账户时不分组。
 - 写邮件的发件人默认用当前选中的账户；在跨账户视图里写邮件用默认账户。
 - **会话视图**：邮件列表按会话（thread）显示，一行一个会话，显示参与者、最新一封的摘要、封数和未读数；阅读区按时间顺序展示整个会话，较早的邮件默认折叠成一行，未读和最新一封展开。会话按 `References` / `In-Reply-To` / `Message-ID` 归并，同一账户内跨文件夹（含已发送）；被引用但还没收到的邮件也记下占位，后到的父邮件或同时引用两个会话的邮件会把它们合并（与到达顺序无关）。只有完全没有引用头时，才按「规范化后的主题 + 除自己以外的参与者有交集 + 7 天内」兜底归并。设置里可以关闭会话视图，改回逐封显示。
-- 阅读区（单封邮件）自上而下：标题与发件人 → AI 总结（可开关，只显示要点，不带操作按钮）→ 插件 Card → 远程图片拦截提示 → 正文 → 附件 → 即时回复。
+- 阅读区（单封邮件）自上而下：标题与发件人 → AI 总结（只显示要点，不带操作按钮；「设置 › 通用 › 邮件总结」打开后，打开邮件时自动总结，默认关闭，守住「AI 默认关闭」；关闭时点工具栏的「总结」才总结）→ 插件 Card → 远程图片拦截提示 → 正文 → 附件 → 即时回复。
 - 翻译不单独占区域：正文直接替换为译文，上方一行「已翻译 · 显示原文」。
-- 即时回复：在收到的邮件底部给出最多 3 条完整回复草稿（只显示一行预览，Tab 切换），选中后进入撰写页继续改。会额外消耗模型额度，设置里可以关闭。
+- 即时回复：在收到的邮件底部给出最多 3 条完整回复草稿（只显示一行预览，Tab 切换），选中后进入撰写页继续改。在「设置 › 通用」打开后才生成，默认关闭（和自动总结一样，守住「AI 默认关闭」）。会额外消耗模型额度，设置里可以关闭。
 
 ### 7.3 撰写
 
@@ -362,7 +378,7 @@ Wit 输出的 Markdown 也转成 Godwit 富文本模型显示。面板元素统�
 ### 7.5 账户接入
 
 - **首次启动**：没有账户时不显示图标栏和侧栏，窗口分左右两栏。左栏说明隐私承诺（密码只存系统钥匙串、邮件只存本机、AI 默认关闭）；右栏是接入流程。
-- **流程以服务商为先**：输入邮箱地址自动识别服务商，或从列表选择（Gmail、Outlook、QQ、网易 163/126、腾讯企业邮、iCloud、Fastmail、其他 IMAP），每个服务商标明登录方式。
+- **流程以服务商为先**：输入邮箱地址自动识别服务商，或从列表选择（Gmail、Outlook、网易 163/126、QQ、腾讯企业邮、飞书邮箱、钉钉邮箱、iCloud、雅虎邮箱、AOL 邮箱、其他 IMAP），每个服务商标明登录方式。飞书和钉钉邮箱多用公司自己的域名，靠 MX 记录识别（`feishu.cn`、`em.dingtalk.com`）；两家都要管理员先开启第三方客户端。
   - 授权码 / 应用专用密码类：说明「要用授权码，不是登录密码」，给出获取步骤和设置页链接；服务器配置折叠在「手动设置服务器」里。
   - 浏览器登录类（OAuth，XOAUTH2）：打开系统浏览器，登录完成后自动继续。
   - 连接检查逐项显示（服务器设置、IMAP、SMTP），失败时指出具体是哪一步、原因和下一步操作。

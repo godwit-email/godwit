@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -19,7 +20,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
-	ui.List(c, &p.draftList, len(drafts), func(i int) {
+	kit.List(c, &p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
 		subject, to := d.Subject, strings.Join(d.To, ", ")
 		if subject == "" {
@@ -28,7 +29,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 		if to == "" {
 			to = i18n.T("mail.no_recipient")
 		}
-		ui.ButtonBase(c).Padding(th.Space(2.5)).Radius(t.Radius.Md).Children(func() {
+		kit.Pressable(c, kit.PressableOpts{OnClick: func() { p.a.navigate(Route{Page: PageCompose, DraftID: d.ID}) }}).Padding(th.Space(2.5)).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 				ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 					ui.Text(c, to).SingleLine().Grow(1).Shrink(1)
@@ -36,12 +37,11 @@ func (p *mailPage) draftsView(c *ui.Context) {
 				})
 				ui.Text(c, subject).SingleLine()
 			})
-		}).OnClick(func() { p.a.navigate(Route{Page: PageCompose, DraftID: d.ID}) }).
-			ContextMenu(func(m *ui.Menu) {
-				if m.Item(i18n.T("mail.draft.delete")).Chosen() {
-					p.deleteDraft(d.ID)
-				}
-			})
+		}).ContextMenu(func(m *ui.Menu) {
+			if m.Item(i18n.T("mail.draft.delete")).Chosen() {
+				p.deleteDraft(d.ID)
+			}
+		})
 	}).Grow(1).Padding(0, th.Space(2)).Children(func() {
 		if len(drafts) == 0 && !p.loading {
 			ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))

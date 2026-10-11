@@ -22,11 +22,14 @@ type Settings struct {
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
 	LocalAPI                                         bool // the GUI serves the Local API; off by default
+	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
+	// 0 for the default, else 240 to 480.
+	SidebarWidth int
 }
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, QuickReplies: true, Summary: true, ThreadView: true}
+		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -49,6 +52,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
 	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize < 10 || st.BodyFontSize > 32:
 		return fmt.Errorf("font size must be between 10 and 32")
+	case st.SidebarWidth != 0 && (st.SidebarWidth < 240 || st.SidebarWidth > 480):
+		return fmt.Errorf("sidebar width must be between 240 and 480")
 	}
 	for _, r := range []string{st.DefaultModel, st.SmallModel} {
 		if _, err := ai.ParseModelRef(r); r != "" && err != nil {

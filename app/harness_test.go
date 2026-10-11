@@ -39,11 +39,22 @@ func newHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 // coretest.WithoutAutoSync for tests that need every sync to be their own.
 func newHarnessWith(t *testing.T, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
+	return newHarnessDev(t, false, opts, setup...)
+}
+
+// newDevHarness is newHarness on a development build (Deps.Dev).
+func newDevHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
+	t.Helper()
+	return newHarnessDev(t, true, nil, setup...)
+}
+
+func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
+	t.Helper()
 	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock()}
 	for _, s := range setup {
 		s(h.env)
 	}
-	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf})
+	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: dev})
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop

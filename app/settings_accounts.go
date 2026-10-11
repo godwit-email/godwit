@@ -247,7 +247,7 @@ func (p *settingsPage) startReauth(acc core.Account) {
 			if err != nil {
 				a.toastErr(err)
 			} else {
-				a.toast(i18n.T("settings.account.reauth.done"))
+				a.toastAs(kit.ToastSuccess, i18n.T("settings.account.reauth.done"))
 			}
 			a.load()
 		})
@@ -291,7 +291,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	prov := accountProvider(a, acc)
 
 	ui.Row(c).Gap(th.Space(3.5)).Children(func() {
-		mark(c, providerMark(prov), theme.MarkLg)
+		mark(c, prov, theme.MarkLg)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Text(c, acc.Email).FontSize(t.Text.X2l).FontWeight(600).SingleLine().Shrink(1)
@@ -305,7 +305,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 			ui.Text(c, meta).TextColor(t.Muted)
 		})
-		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Xs).Background(t.WarningBg).TextColor(t.WarningText)
+		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.WarningBg).TextColor(t.WarningText)
 		if acc.Status == "ok" {
 			pill.Background(t.Success.Alpha(0.1)).TextColor(t.Success)
 		}
@@ -349,7 +349,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 					ui.Text(c, i18n.Tf("mail.unread_count", a.unread[acc.ID])).TextColor(t.Muted)
 				}
 				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: a.syncing[acc.ID]}).
+				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: a.syncing[acc.ID]}).
 					OnClick(func() { p.syncNow(acc.ID) })
 			})
 			ui.Field(c, i18n.T("settings.account.sync.range"), func() {
@@ -364,7 +364,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				}
 				ui.Text(c, i18n.Tf("settings.account.usage", usage)).TextColor(t.Muted)
 				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).
+				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { p.openDialog("cache", acc) })
 			})
 		})
@@ -384,7 +384,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
 				server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
 			})
-			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).AlignSelf(ui.Start).
+			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).
 				OnClick(func() { p.openDialog("servers", acc) })
 		})
 		settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
@@ -440,7 +440,7 @@ func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 
 // authButton signs in again (OAuth) or updates the password.
 func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Provider, banner bool) {
-	o := kit.ButtonOpts{Variant: kit.Outline, Small: true}
+	o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	if acc.AuthType != "oauth" {
 		kit.Button(c, i18n.Tf("settings.account.login.update", secretName(prov)), o).OnClick(func() { p.openDialog("password", acc) })
 		return
@@ -515,7 +515,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	prov := accountProvider(a, acc)
 	var title string
 	var body, confirm func()
-	label, variant := i18n.T("common.save"), kit.Primary
+	label, variant := i18n.T("common.save"), kit.Default
 	switch p.dialog {
 	case "password":
 		title = i18n.Tf("settings.account.login.update", secretName(prov))
@@ -526,7 +526,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		secret := p.secret
 		confirm = func() {
 			p.act(id, func(ctx context.Context) error { return a.svc.UpdatePassword(ctx, id, secret) },
-				func(bool) { a.toast(i18n.Tf("settings.account.password.updated", secretName(prov))) })
+				func(bool) {
+					a.toastAs(kit.ToastSuccess, i18n.Tf("settings.account.password.updated", secretName(prov)))
+				})
 		}
 	case "servers":
 		title = i18n.T("settings.account.servers")

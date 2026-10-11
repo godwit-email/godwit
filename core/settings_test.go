@@ -24,7 +24,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, QuickReplies: true, Summary: true, ThreadView: true}, got)
+		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 func TestSettingsValidation(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	base, _ := s.GetSettings(t.Context())
-	base.Theme, base.FontSize, base.UILanguage = "dark", 20, "fr"
+	base.Theme, base.FontSize, base.UILanguage, base.SidebarWidth = "dark", 20, "fr", 480
 	_, err := s.SetSettings(t.Context(), base)
 	require.NoError(t, err)
 	for name, mod := range map[string]func(*Settings){
@@ -72,6 +72,8 @@ func TestSettingsValidation(t *testing.T) {
 		"bodyfont": func(x *Settings) { x.BodyFontSize = 33 },
 		"lang":     func(x *Settings) { x.UILanguage = "zh_CN!" },
 		"notrans":  func(x *Settings) { x.NoTranslate = []string{"en", "x y"} },
+		"narrow":   func(x *Settings) { x.SidebarWidth = 239 },
+		"wide":     func(x *Settings) { x.SidebarWidth = 481 },
 	} {
 		in := base
 		mod(&in)

@@ -56,8 +56,10 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 			id = "gmail"
 		case inDomain(host, "qq.com.") && strings.HasPrefix(host, "mxbiz"):
 			id = "exmail"
-		case inDomain(host, "messagingengine.com."):
-			id = "fastmail"
+		case inDomain(host, "feishu.cn."):
+			id = "feishu"
+		case inDomain(host, "em.dingtalk.com."):
+			id = "dingtalk"
 		}
 		if p, ok := ByID(id); ok {
 			return p, SourceMX, nil

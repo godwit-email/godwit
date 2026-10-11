@@ -1,7 +1,9 @@
 package theme
 
 import (
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -18,20 +20,33 @@ func TestThemeTokens(t *testing.T) {
 		"Background": {l.Background, p.White}, "Foreground": {l.Foreground, p.Neutral950},
 		"Muted": {l.Muted, p.Neutral500}, "Border": {l.Border, p.Neutral200},
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},
-		"SidebarSelected": {l.SidebarSelected, p.Mid(p.Neutral100, p.Neutral200)}, "RailSelected": {l.RailSelected, p.Neutral200},
-		"Hover": {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
+		"SidebarSelected": {l.SidebarSelected, p.Neutral100},
+		"Hover":           {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
+		"SuccessBg": {l.SuccessBg, p.Green50}, "SuccessBorder": {l.SuccessBorder, p.Green200}, "SuccessText": {l.SuccessText, p.Green700},
+		"DangerBorder": {l.DangerBorder, p.Red200}, "DangerText": {l.DangerText, p.Red700},
 		"WarningBg": {l.WarningBg, p.Amber50}, "WarningBorder": {l.WarningBorder, p.Amber300},
 		"WarningText": {l.WarningText, p.Amber800}, "Danger": {l.Danger, p.Red600},
 		"DangerBg": {l.DangerBg, p.Red50}, "InsBg": {l.InsBg, p.Green100}, "InsText": {l.InsText, p.Green800},
 		"DelBg": {l.DelBg, p.Red50}, "DelText": {l.DelText, p.Red700}, "Unread": {l.Unread, p.Blue500},
+		"Input": {l.Input, p.Neutral200}, "Ring": {l.Ring, p.Neutral400},
 	} {
 		if c.got != c.want.Color() {
 			t.Errorf("Light().%s = %v, want %v", name, c.got, c.want.Color())
 		}
 	}
+	if l.Outline != p.Neutral950.Color().Alpha(0.05) || Dark().Outline != p.White.Color().Alpha(0.05) {
+		t.Errorf("Outline %v / %v", l.Outline, Dark().Outline)
+	}
+	if l.DividerHover != p.Neutral300.Color() || Dark().DividerHover != p.Neutral700.Color() {
+		t.Errorf("DividerHover %v / %v", l.DividerHover, Dark().DividerHover)
+	}
+	if l.RailSelected != p.Neutral950.Color().Alpha(0.04) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
+		t.Errorf("Light() rail tints %v %v", l.RailSelected, l.HoverTint)
+	}
 	d := Dark()
 	if !d.Dark || d.Background != p.Neutral950.Color() || d.Window != p.Mid(p.Neutral900, p.Neutral800).Color() ||
-		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.Neutral700.Color() {
+		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.White.Color().Alpha(0.1) || d.HoverTint != p.White.Color().Alpha(0.08) ||
+		d.Border != p.White.Color().Alpha(0.1) || d.Input != p.White.Color().Alpha(0.15) || d.Ring != p.Neutral500.Color() {
 		t.Errorf("Dark() = %+v", d)
 	}
 
@@ -112,7 +127,8 @@ func TestSpaceFollowsDensity(t *testing.T) {
 
 func TestRadiusAndTextScale(t *testing.T) {
 	tok := FromSettings(core.Settings{Theme: "light", Density: "comfortable", FontSize: 15, BodyFontSize: 16}, false)
-	if r := tok.Radius; [4]float32{r.Sm, r.Md, r.Lg, r.Xl} != [4]float32{6, 8, 10, 14} {
+	// Tailwind v4's rounded-xs … rounded-4xl, whatever the density
+	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
 	if x := tok.Text; [6]float32{x.Xs, x.Sm, x.Base, x.Lg, x.Xl, x.X2l} != [6]float32{13, 14, 15, 17, 20, 22} {
@@ -125,5 +141,33 @@ func TestRadiusAndTextScale(t *testing.T) {
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
 	if th.Radius != 8 || th.FontSize != 15 {
 		t.Errorf("theme radius %v, font size %v; want 8, 15", th.Radius, th.FontSize)
+	}
+}
+
+func TestMotionTokens(t *testing.T) {
+	if MotionFast != 120*time.Millisecond || MotionBase != 200*time.Millisecond {
+		t.Fatal("motion tokens")
+	}
+}
+
+// TestShadowsAsTailwind: the shadows are Tailwind v4's, as shadcn uses them.
+func TestShadowsAsTailwind(t *testing.T) {
+	for name, tc := range map[string]struct{ got, want Elevation }{
+		"xs": {ShadowXs, Elevation{{1, 2, 0, 0.05}}},
+		"sm": {ShadowSm, Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}},
+		"md": {ShadowMd, Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}},
+		"lg": {ShadowLg, Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}},
+		"xl": {ShadowXl, Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}},
+	} {
+		if !slices.Equal(tc.got, tc.want) {
+			t.Errorf("shadow-%s = %v, want %v", name, tc.got, tc.want)
+		}
+	}
+	// 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 80px 8px #00000006
+	if want := (Elevation{{0, 0, 1, 10.0 / 255}, {2, 8, 0, 10.0 / 255}, {4, 80, 8, 6.0 / 255}}); !slices.Equal(ShadowFloat, want) {
+		t.Errorf("ShadowFloat = %v, want %v", ShadowFloat, want)
+	}
+	if d := Dark(); d.FloatEdge != p.White.Color().Alpha(0.12) {
+		t.Errorf("dark FloatEdge %v", d.FloatEdge)
 	}
 }

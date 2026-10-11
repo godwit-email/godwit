@@ -570,3 +570,17 @@ func TestManualTextKeptAcrossSave(t *testing.T) {
 		t.Fatalf("manual text %q, want the typed draft-id", got)
 	}
 }
+
+// TestSaveFillsEmptyDefault: with no default model, saving a service makes its
+// first model the default, so Wit works without a second step.
+func TestSaveFillsEmptyDefault(t *testing.T) {
+	h := withLLM(t)
+	st := h.app.settings
+	st.DefaultModel = ""
+	h.app.changeSettings(st)
+	h.openSettings("models")
+	h.see("编辑：test")
+	h.fill("名称", "test2")
+	h.click("保存")
+	h.until("default filled", func() bool { return h.savedDefault() == "test/m1" })
+}

@@ -44,4 +44,7 @@ func TestFallbackAndFormat(t *testing.T) {
 	if got := Tf("common.save"); got != "保存" {
 		t.Errorf("Tf: %q", got)
 	}
+	if got := T("compose.format"); got != "格式" {
+		t.Errorf("compose.format: %q", got)
+	}
 }

@@ -1,7 +1,9 @@
 package app
 
 import (
+	"cmp"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -10,7 +12,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -126,12 +127,18 @@ func (a *App) tick() {
 	})
 }
 
-func (a *App) toast(msg string) { a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg}) }
+func (a *App) toast(msg string) { a.toastAs("", msg) }
+
+// toastAs shows msg as a toast of a kind: kit.ToastSuccess, ToastWarning,
+// ToastError, or "" for a plain one.
+func (a *App) toastAs(kind, msg string) {
+	a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kind})
+}
 
 // toastErr shows err in words; a cancellation shows nothing.
 func (a *App) toastErr(err error) {
 	if msg := humanize(err); msg != "" {
-		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: "error"})
+		a.toastAs(kit.ToastError, msg)
 	}
 }
 
@@ -144,7 +151,6 @@ func (a *App) View(c *ui.Context) {
 	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
 		root = ui.Transparent // the material shows where the window's own color would
 	}
-	c.Root().Background(root)
 	for _, ts := range a.toasts {
 		c.AddToast(ts)
 	}
@@ -183,6 +189,9 @@ func (a *App) View(c *ui.Context) {
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
+	// Last: c.SetTheme, which kit.Split calls mid-frame, resets the root's
+	// background to the theme's, which would cover the window's material.
+	c.Root().Background(root)
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
@@ -194,10 +203,10 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+th.Space(4), 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
-			lead.MinWidth(max(0, theme.RailWidth+theme.SidebarWidth-padL))
+			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
 		}
 		lead.Children(func() {
-			ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
+			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 			label := i18n.T("shell.sidebar.collapse")
 			if a.sidebarHidden {
 				label = i18n.T("shell.sidebar.expand")
@@ -210,7 +219,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		})
 		if title, sub := a.page().Title(); title != "" {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Box(c).Size(theme.Hairline, theme.TitleButtonHeight).Margin(0, th.Space(2), 0, 0).Background(t.Border)
+				kit.Separator(c, true).Margin(0, th.Space(2), 0, 0)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
@@ -231,7 +240,7 @@ func (a *App) syncStatus(c *ui.Context) {
 	for _, acc := range a.accounts {
 		if acc.Status == "reauth_required" {
 			r := Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)}
-			ui.ButtonBase(c).Gap(th.Space(1.5)).PaddingX(th.Space(1.5)).Height(theme.TitleButtonHeight).Radius(t.Radius.Sm).FontSize(small).TextColor(t.WarningText).Children(func() {
+			kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(small).TextColor(t.WarningText).Children(func() {
 				kit.StatusDot(c, kit.Attention)
 				ui.Text(c, i18n.T("shell.sync.reauth"))
 			}).OnClick(func() { a.navigate(r) })
@@ -244,7 +253,8 @@ func (a *App) syncStatus(c *ui.Context) {
 		row.Children(func() { ui.Text(c, i18n.T("shell.sync.syncing")) })
 	case len(a.syncErr) > 0:
 		id := slices.Min(slices.Collect(maps.Keys(a.syncErr)))
-		row.Tooltip(a.syncErr[id]).Children(func() {
+		kit.Tooltip(c, row, a.syncErr[id])
+		row.Children(func() {
 			kit.StatusDot(c, kit.Error)
 			ui.Text(c, i18n.T("shell.sync.failed"))
 		})
@@ -274,24 +284,15 @@ func (a *App) rail(c *ui.Context) {
 		a.railItem(c, "mail", i18n.T("shell.rail.mail"), Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 		a.railItem(c, "sparkles", i18n.T("shell.rail.wit"), Route{Page: PageWit})
 		ui.Spacer(c)
+		if a.dev {
+			a.railItem(c, "component", "Kit", Route{Page: PageKit})
+		}
 		a.railItem(c, "sliders-horizontal", i18n.T("shell.rail.settings"), Route{Page: PageSettings})
 	})
 }
 
 func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
-	t := theme.Of(c)
-	on := a.route.section() == r.Page
-	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Md).Center().Label(label).Tooltip(label).TextColor(t.Muted)
-	switch {
-	case on:
-		b.Background(t.RailSelected).TextColor(t.Foreground)
-	case b.Hovered():
-		b.Background(t.Hover).TextColor(t.Foreground)
-	}
-	b.Children(func() { ui.Icon(c, icons.Get(icon)).Size(theme.IconLg, theme.IconLg) })
-	if !on {
-		b.OnClick(func() { a.navigate(r) })
-	}
+	kit.RailButton(c, icon, label, a.route.section() == r.Page, func() { a.navigate(r) })
 }
 
 // panel is the page's sidebar and content as one rounded block, inset from
@@ -299,13 +300,52 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Panel).Clip().Background(t.Background).
-		Border(theme.Hairline, t.Border).Children(func() {
-		if !a.sidebarHidden {
-			ui.Column(c).Width(theme.SidebarWidth).Padding(th.Space(3)).Gap(th.Space(0.5)).Background(t.Sidebar).
-				BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() { p.Sidebar(c) })
+	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Xl).Clip().Background(t.Background).
+		Border(theme.Hairline, t.Outline)
+	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
+		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
+		if a.sidebarHidden {
+			content()
+			return
 		}
-		ui.Column(c).Grow(1).Children(func() { p.Content(c) })
+		a.sidebarW = a.sidebarWidth()
+		split := kit.Split(c, &a.sidebarW, func() {
+			// Rounded itself, inside the panel's outline: the GPU renderer does not
+			// round the panel's clip, and the material shows past a square corner.
+			r := t.Radius.Xl - theme.Hairline
+			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(r, 0, 0, r).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
+		}, content).Grow(1)
+		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
+		if split.Changed() {
+			a.saveSidebarWidth()
+		}
+	})
+}
+
+// sidebarWidth is the page sidebars' width: as dragged, else as saved, else
+// the default. Every page's sidebar takes it, so a drag on one moves them all.
+func (a *App) sidebarWidth() float32 {
+	if a.sidebarW != 0 {
+		return a.sidebarW
+	}
+	return float32(cmp.Or(a.settings.SidebarWidth, theme.SidebarWidth))
+}
+
+// sidebarSaveDelay is how long a drag rests before its width is saved.
+const sidebarSaveDelay = 400 * time.Millisecond
+
+// saveSidebarWidth saves the dragged width once the drag rests, not every frame.
+func (a *App) saveSidebarWidth() {
+	if a.sidebarSave != nil {
+		a.sidebarSave()
+	}
+	a.sidebarSave = a.after(sidebarSaveDelay, func() {
+		a.sidebarSave = nil
+		if w := int(math.Round(float64(a.sidebarW))); w != a.settings.SidebarWidth {
+			st := a.settings
+			st.SidebarWidth = w
+			a.changeSettings(st)
+		}
 	})
 }
 

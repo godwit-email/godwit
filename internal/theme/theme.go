@@ -6,22 +6,44 @@ import (
 	"embed"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	p "github.com/godwit-email/godwit/internal/palette"
 )
 
-// Tokens are Godwit's semantic colors and sizes. Attention is the amber of
+// Tokens are Godwit's semantic colors and sizes, shadcn's neutral ones:
+// Border outlines panels and cards, Input the controls (a step stronger in
+// the dark), Ring the keyboard focus (at half opacity) and a hovered divider.
+// Attention is the amber of
 // status dots that ask for a look (amber-500); Unread, the blue of the dot
 // beside unread mail (blue-500).
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
 	PrimaryText, SidebarSelected, RailSelected, Hover, Success      ui.Color
+	// HoverTint, like RailSelected, is a tint of the foreground for what
+	// sits on the window's material (the rail, the top bar's ghost buttons),
+	// which a solid gray would cover; over white it is Hover's gray.
+	HoverTint                                                       ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
+	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
-	Attention, Unread                                               ui.Color
+	Attention, Unread, Input, Ring                                  ui.Color
+	// Outline is the faint edge of a panel over the window material: the
+	// foreground at 5%, lighter than Border, which divides inside it.
+	Outline ui.Color
+	// FloatEdge is a floating input's edge in the dark appearance: white at
+	// 20% inset by a 1 px blur in the design, which mygo cannot draw, so a
+	// hairline of white at 12%, about what that blur leaves on the edge.
+	FloatEdge ui.Color
+	// DividerHover is a draggable divider hovered or dragged: a step darker
+	// than Border.
+	DividerHover ui.Color
+	// MarkTile is the tile under a provider's logo: white in either
+	// appearance, as logos are drawn for white.
+	MarkTile ui.Color
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -29,10 +51,10 @@ type Tokens struct {
 	Text                          TextScale
 }
 
-// RadiusScale are corner radii; they do not follow the density. Xs (4) and
-// Panel (12, cards) are the off-scale radii in use; Full rounds a box's
-// short sides into half circles (renderers fit radii as CSS does).
-type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, Panel, Full float32 }
+// RadiusScale are corner radii, Tailwind v4's rounded-* steps (xs 2 … 4xl 32);
+// they do not follow the density. Full rounds a box's short sides into half
+// circles (renderers fit radii as CSS does).
+type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, X2l, X3l, X4l, Full float32 }
 
 // TextScale are the interface's text sizes, steps from FontSize. Mail bodies
 // use BodyFontSize. Title (dialog titles), Brand, Heading (page headings)
@@ -41,9 +63,11 @@ type TextScale struct{ Xs, Sm, Base, Lg, Xl, X2l, Title, Brand, Heading, Display
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline          = 1    // dividers
-	RailWidth         = 56   // the icon rail
-	SidebarWidth      = 248  // the mail and settings sidebars
+	Hairline          = 1   // dividers
+	RailWidth         = 56  // the icon rail
+	SidebarWidth      = 248 // the page sidebars, until the user drags them
+	SidebarMinWidth   = 240 // the narrowest and widest a drag makes them
+	SidebarMaxWidth   = 480
 	ListWidth         = 360  // the mail list column
 	TopBarHeight      = 44   // the top bar's least height
 	SheetWidth        = 560  // dialogs and the add-account sheet
@@ -88,19 +112,38 @@ const (
 	StepDot, PendingDot, DoneBadge               = 20, 10, 36   // onboarding's check steps, OAuth wait, done mark
 	ThemeTileWidth, ThemeTileHeight              = 132, 84      // settings' theme pictures
 	TileRail, TileInset, TileGap, TileLine       = 14, 10, 6, 5 // the parts of a theme picture
+	SkeletonShort                                = 160          // a placeholder row's shorter line
 )
 
-// Shadow is a drop shadow's offset down and its blur.
-type Shadow struct{ Y, Blur float32 }
+// ShadowLayer is one layer of a drop shadow: its offset down, blur and
+// spread (negative tucks it under the box), and its opacity of the ink.
+type ShadowLayer struct{ Y, Blur, Spread, Alpha float32 }
 
-// Shadows: Sm under thumbs and tabs, Md under popups and toasts, Lg under
-// dialogs, Xl under the add-account sheet.
-var ShadowSm, ShadowMd, ShadowLg, ShadowXl = Shadow{1, 2}, Shadow{4, 16}, Shadow{16, 48}, Shadow{24, 64}
+// Elevation is a drop shadow of one or more layers, drawn in order.
+type Elevation []ShadowLayer
+
+// Shadows, Tailwind v4's as shadcn uses them: Xs under inputs, selects,
+// checkboxes, outline buttons and the page panel; Sm under cards and the selected tab; Md
+// under popovers and select lists; Lg under dialogs, sheets and toasts; Xl
+// for anything above those.
+var (
+	ShadowXs = Elevation{{1, 2, 0, 0.05}}
+	ShadowSm = Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}
+	ShadowMd = Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}
+	ShadowLg = Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}
+	ShadowXl = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
+)
+
+// ShadowFloat is a floating input's edge and lift in the light appearance: a
+// 1 px ring of the ink at 4% (its outline), then two soft drops,
+// 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006. The dark
+// appearance's is an inner edge, FloatEdge (kit.Float).
+var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4, 80, 8, 0x06 / 255.0}}
 
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {
 	f := t.FontSize
-	t.Radius = RadiusScale{Xs: 4, Sm: 6, Md: 8, Lg: 10, Xl: 14, Panel: 12, Full: 9999}
+	t.Radius = RadiusScale{Xs: 2, Sm: 4, Md: 6, Lg: 8, Xl: 12, X2l: 16, X3l: 24, X4l: 32, Full: 9999} // Tailwind v4's
 	t.Text = TextScale{Xs: f - 2, Sm: f - 1, Base: f, Lg: f + 2, Xl: f + 5, X2l: f + 7,
 		Title: f + 3, Brand: f + 4, Heading: f + 6, Display: f + 16}
 	return t
@@ -111,6 +154,8 @@ func status(t Tokens) Tokens {
 	t.Success = p.Green600.Color()
 	t.WarningBg, t.WarningBorder, t.WarningText = p.Amber50.Color(), p.Amber300.Color(), p.Amber800.Color()
 	t.Danger, t.DangerBg, t.Attention, t.Unread = p.Red600.Color(), p.Red50.Color(), p.Amber500.Color(), p.Blue500.Color()
+	t.SuccessBg, t.SuccessBorder, t.SuccessText = p.Green50.Color(), p.Green200.Color(), p.Green700.Color()
+	t.DangerBorder, t.DangerText = p.Red200.Color(), p.Red700.Color()
 	t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green100.Color(), p.Green800.Color(), p.Red50.Color(), p.Red700.Color()
 	t.FontSize, t.BodyFontSize, t.Scale = 13, 14, 1
 	return sized(t)
@@ -121,8 +166,10 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
-		SidebarSelected: p.Mid(p.Neutral100, p.Neutral200).Color(), RailSelected: p.Neutral200.Color(), Hover: p.Neutral100.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(),
+		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
+		SidebarSelected: p.Neutral100.Color(), RailSelected: p.Neutral950.Color().Alpha(0.04), HoverTint: p.Neutral950.Color().Alpha(0.04),
+		Hover: p.Neutral100.Color(),
 	})
 }
 
@@ -132,8 +179,10 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.Neutral800.Color(), Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
-		SidebarSelected: p.Neutral800.Color(), RailSelected: p.Neutral700.Color(), Hover: p.Neutral800.Color(),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), FloatEdge: p.White.Color().Alpha(0.12),
+		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
+		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.1), HoverTint: p.White.Color().Alpha(0.08),
+		Hover: p.Neutral800.Color(),
 	})
 }
 
@@ -185,9 +234,9 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Accent, th.AccentText = t.Primary, t.PrimaryText
 	th.AccentHover, th.AccentPressed = t.Primary.Mix(t.Background, 0.1), t.Primary.Mix(t.Background, 0.2)
 	th.Danger, th.Warning, th.Success = t.Danger, t.Attention, t.Success
-	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Muted.Alpha(0.6), t.Muted.Alpha(0.5)
+	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Ring.Alpha(0.5), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
-	th.Radius, th.Spacing = t.Radius.Md, 4*t.Scale // Space(n) is n Tailwind units
+	th.Radius, th.Spacing = t.Radius.Lg, 4*t.Scale // Space(n) is n Tailwind units
 	th.Font, th.FontSize = "Geist", t.Text.Base
 	return &th
 }
@@ -230,3 +279,13 @@ var registerFonts = sync.OnceValue(func() error {
 	}
 	return nil
 })
+
+// Component transitions: MotionFast for hover and selection, MotionBase for moves.
+const (
+	MotionFast = 120 * time.Millisecond
+	MotionBase = 200 * time.Millisecond
+	// MotionOffset is how far, in DIPs, an overlay rises as it comes in.
+	MotionOffset = 4
+
+	SkeletonPulse = 1500 * time.Millisecond // one dim-and-return of a Skeleton
+)

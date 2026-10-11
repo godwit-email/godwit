@@ -15,7 +15,6 @@ import (
 	"slices"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -516,8 +515,8 @@ func (r *reader) view(c *ui.Context) {
 // and More at the end.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
-	ghost := kit.ButtonOpts{Variant: kit.Ghost, Small: true}
+	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	ui.Row(c).Wrap().Gap(th.Space(1)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.Button(c, i18n.T("reader.reply"), out).OnClick(func() { r.draft("reply") })
 		kit.IconButton(c, "reply-all", i18n.T("reader.reply_all"), ghost).OnClick(func() { r.draft("reply_all") })
@@ -549,11 +548,11 @@ func (r *reader) toolbar(c *ui.Context) {
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	name, _ := sender(m.From)
-	ui.ButtonBase(c).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
+	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		ui.Text(c, listTime(r.p.a.clock.Now(), m.Date)).FontSize(t.Text.Sm).TextColor(t.Muted).Shrink(0)
-	}).OnClick(func() { r.toggle(m.ID) })
+	})
 }
 
 // sender splits a From into a name to show and the address.
@@ -562,15 +561,6 @@ func sender(from string) (name, addr string) {
 		return cmp.Or(a.Name, a.Address), a.Address
 	}
 	return from, ""
-}
-
-// initial is the first letter of a name, upper case.
-func initial(name string) string {
-	r, _ := utf8.DecodeRuneInString(name)
-	if r == utf8.RuneError {
-		return ""
-	}
-	return string(unicode.ToUpper(r))
 }
 
 // recipients names who a message went to: "me" for the user's accounts.
@@ -603,10 +593,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	b := r.bodies[m.ID]
 	ui.Column(c).Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
-		head := ui.ButtonBase(c).Gap(th.Space(2.5)).Justify(ui.Start).Children(func() {
-			ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Shrink(0).Children(func() {
-				ui.Text(c, initial(name)).FontWeight(600)
-			})
+		var fold func() // only a thread of more than one message folds
+		if len(r.msgs) > 1 {
+			fold = func() { r.toggle(m.ID) }
+		}
+		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
+			kit.Avatar(c, name)
 			ui.Column(c).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(1)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine()
@@ -618,15 +610,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				ui.Text(c, i18n.Tf("reader.to", r.recipients(m), when)).FontSize(t.Text.Sm).TextColor(t.Muted)
 			})
 		})
-		if len(r.msgs) > 1 {
-			head.OnClick(func() { r.toggle(m.ID) })
-		}
 		r.aiArea(c, m)
 		r.cards(c, m)
 		switch {
 		case b != nil && b.err != nil && !b.loading:
 			kit.Alert(c, kit.Danger, humanize(b.err), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.loadBody(m.ID, b.remote) })
 			})
 			return
@@ -636,7 +625,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		}
 		if b.msg.RemoteImagesBlocked > 0 && !b.remote {
 			kit.Alert(c, kit.Warning, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), func() {
-				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.loadBody(m.ID, true) })
 			})
 		}
@@ -646,7 +635,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		if b.cut {
 			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, i18n.T("reader.truncated")).FontSize(t.Text.Sm).TextColor(t.Muted)
-				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Small: true}).
+				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { r.viewInBrowser(m.ID) })
 			})
 		}
@@ -663,17 +652,17 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			if att.Inline {
 				continue
 			}
-			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Md).Children(func() {
-				ui.ButtonBase(c).Grow(1).Shrink(1).Gap(th.Space(2.5)).Justify(ui.Start).Children(func() {
-					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Xs).Background(t.Hover).Center().Shrink(0).Children(func() {
+			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 						ui.Text(c, fileKind(att)).FontSize(t.Text.Xs).TextColor(t.Muted)
 					})
 					ui.Column(c).Shrink(1).Children(func() {
 						ui.Text(c, att.Filename).SingleLine()
 						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
 					})
-				}).OnClick(func() { r.openAttachment(att) })
-				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).
+				})
+				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.saveAttachment(att) })
 			})
 		}

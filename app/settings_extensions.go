@@ -126,7 +126,7 @@ func (e *extView) skillsView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	listCard(c, func() {
 		for i, s := range e.skills {
-			listRow(c.Key(s.Name), i, false, func() {
+			listRow(c.Key(s.Name), i, false, nil, func() {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).Children(func() {
 						ui.Text(c, s.Name).FontWeight(500)
@@ -218,11 +218,11 @@ func (e *extView) pluginsView(c *ui.Context) {
 	}
 	listCard(c, func() {
 		for i, p := range e.plugins {
-			listRow(c.Key(p.Name), i, p.Name == e.plugin, func() {
+			listRow(c.Key(p.Name), i, p.Name == e.plugin, func() { e.showPlugin(p.Name) }, func() {
 				ui.Text(c, p.Name).FontWeight(500).Grow(1).Shrink(1)
 				ui.Text(c, p.Version).TextColor(t.Muted)
 				statusPill(c, pluginStatus(p), p.NeedsGrant || p.Error != "")
-			}).OnClick(func() { e.showPlugin(p.Name) })
+			})
 		}
 	})
 	p, ok := e.pluginInfo()
@@ -243,7 +243,7 @@ func (e *extView) pluginsView(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			perm := func(tag, text string) {
 				ui.Row(c).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Xs).Background(t.Hover).Children(func() {
+					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 						ui.Text(c, tag).Font("Geist Mono").FontSize(t.Text.Sm)
 					})
 					ui.Text(c, text).Shrink(1)
@@ -301,7 +301,7 @@ func (e *extView) setPluginEnabled(name string, on bool) {
 // statusPill is a small status label; attention shows it amber.
 func statusPill(c *ui.Context, text string, attention bool) {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Xs).Background(t.Hover).TextColor(t.Foreground)
+	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).TextColor(t.Foreground)
 	if attention {
 		b.Background(t.WarningBg).TextColor(t.WarningText)
 	}
@@ -443,13 +443,13 @@ func (e *extView) mcpView(c *ui.Context) {
 	if len(e.servers) > 0 {
 		listCard(c, func() {
 			for i, s := range e.servers {
-				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() {
+				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() { e.mcp, e.mform = s.ID, nil }, func() {
 					ui.Text(c, s.Name).FontWeight(500).Grow(1).Shrink(1)
 					ui.Text(c, s.Transport).Font("Geist Mono").FontSize(t.Text.Sm).TextColor(t.Muted)
 					ui.Text(c, i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).TextColor(t.Muted)
 					st, attention := mcpStatus(s)
 					statusPill(c, st, attention)
-				}).OnClick(func() { e.mcp, e.mform = s.ID, nil })
+				})
 			}
 		})
 	}
@@ -530,7 +530,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		}
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			ui.Text(c, i18n.T("settings.ext.mcp.tools.title")).FontWeight(600).Grow(1)
-			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Small: true, Disabled: !s.Granted}).
+			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: !s.Granted}).
 				OnClick(func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RefreshMCPTools(ctx, id) }, nil) })
 		})
 		if len(s.Tools) == 0 {

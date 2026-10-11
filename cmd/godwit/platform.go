@@ -143,20 +143,36 @@ func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Se
 	}
 }
 
-// trayPx is the tray icon's size in pixels: 16 points at 2x.
-const trayPx = 32
+// trayBox is the tray icon's picture, w by h pixels at 2x, with the mark
+// inkW wide. macOS shows it 18 points tall at its own aspect, so the wide,
+// flat bird gets a wide picture, about 23 by 11 points where a square
+// showed it 14 by 7; Windows squares the icon, so there it stays square.
+type trayBox struct{ w, h, inkW float32 }
+
+func trayBoxFor(goos string) trayBox {
+	if goos == "darwin" {
+		return trayBox{50, 36, 46}
+	}
+	return trayBox{32, 32, 30}
+}
+
+// logoInk is where the mark's ink sits in its 512 viewBox: x 44..487,
+// y 144..351.
+var logoInk = struct{ x0, y0, x1, y1 float32 }{44, 144, 488, 352}
 
 // trayIcon draws the Godwit mark in black on transparent, as a macOS
-// template image (the system tints it).
-func trayIcon() ([]byte, error) {
+// template image (the system tints it), its ink centred and box.inkW wide.
+func trayIcon(box trayBox) ([]byte, error) {
 	svg, err := ui.ParseSVG(assets.Logo)
 	if err != nil {
 		return nil, err
 	}
+	k := box.inkW / (logoInk.x1 - logoInk.x0) // px per viewBox unit
 	img := ui.Render(func(c *ui.Context) {
 		c.Root().Background(ui.Transparent)
-		ui.Icon(c, svg).Size(trayPx, trayPx).TextColor(ui.Color{A: 255})
-	}, trayPx, trayPx, 1)
+		ui.Icon(c, svg).Size(512*k, 512*k).TextColor(ui.Color{A: 255}).Absolute().
+			Left(box.w/2 - (logoInk.x0+logoInk.x1)/2*k).Top(box.h/2 - (logoInk.y0+logoInk.y1)/2*k)
+	}, int(box.w), int(box.h), 1)
 	var b bytes.Buffer
 	err = png.Encode(&b, img)
 	return b.Bytes(), err

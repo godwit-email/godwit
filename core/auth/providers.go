@@ -46,22 +46,38 @@ func table() []Provider {
 				Scopes: []string{"openid", "email", "offline_access",
 					"https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send"},
 			}},
-		{ID: "qq", Name: "QQ Mail", Domains: []string{"qq.com", "foxmail.com", "vip.qq.com"},
-			IMAP: tls("imap.qq.com"), SMTP: smtps("smtp.qq.com"), Login: "authorization_code",
-			HelpURL: "https://service.mail.qq.com/detail/0/75"},
 		{ID: "netease163", Name: "163 Mail", Domains: []string{"163.com"},
 			IMAP: tls("imap.163.com"), SMTP: smtps("smtp.163.com"), Login: "authorization_code", HelpURL: neteaseHelp},
 		{ID: "netease126", Name: "126 Mail", Domains: []string{"126.com", "yeah.net"},
 			IMAP: tls("imap.126.com"), SMTP: smtps("smtp.126.com"), Login: "authorization_code", HelpURL: neteaseHelp},
+		{ID: "qq", Name: "QQ Mail", Domains: []string{"qq.com", "foxmail.com", "vip.qq.com"},
+			IMAP: tls("imap.qq.com"), SMTP: smtps("smtp.qq.com"), Login: "authorization_code",
+			HelpURL: "https://service.mail.qq.com/detail/0/75"},
 		{ID: "exmail", Name: "Tencent Exmail",
 			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
 			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
+		// Feishu and DingTalk Mail are on company domains, found by MX.
+		// Feishu's servers and its 专用密码 are from its help article; an admin
+		// enables third-party clients first.
+		{ID: "feishu", Name: "Feishu Mail",
+			IMAP: tls("imap.feishu.cn"), SMTP: smtps("smtp.feishu.cn"), Login: "app_password",
+			HelpURL: "https://www.feishu.cn/hc/zh-CN/articles/902478147400"},
+		// DingTalk Mail runs on Alibaba Mail; its client hosts are the em.dingtalk.com
+		// names its certificate carries (no official page lists them). A client
+		// takes the password, or the 三方客户端安全密码 when one is set; the help
+		// is Alibaba Mail's.
+		{ID: "dingtalk", Name: "DingTalk Mail",
+			IMAP: tls("imap.em.dingtalk.com"), SMTP: smtps("smtp.em.dingtalk.com"), Login: "client_password",
+			HelpURL: "https://help.aliyun.com/zh/document_detail/36576.html"}, // Alibaba Mail's client settings and 安全密码
 		{ID: "icloud", Name: "iCloud Mail", Domains: []string{"icloud.com", "me.com", "mac.com"},
 			IMAP: tls("imap.mail.me.com"), SMTP: Server{"smtp.mail.me.com", 587, conn.StartTLS}, Login: "app_password",
 			HelpURL: "https://support.apple.com/102654"},
-		{ID: "fastmail", Name: "Fastmail", Domains: []string{"fastmail.com", "fastmail.fm"},
-			IMAP: tls("imap.fastmail.com"), SMTP: smtps("smtp.fastmail.com"), Login: "app_password",
-			HelpURL: "https://www.fastmail.help/hc/en-us/articles/360058752854-App-passwords"},
+		{ID: "yahoo", Name: "Yahoo Mail", Domains: []string{"yahoo.com", "ymail.com", "rocketmail.com"},
+			IMAP: tls("imap.mail.yahoo.com"), SMTP: smtps("smtp.mail.yahoo.com"), Login: "app_password",
+			HelpURL: "https://help.yahoo.com/kb/SLN4075.html"},
+		{ID: "aol", Name: "AOL Mail", Domains: []string{"aol.com", "aim.com"},
+			IMAP: tls("imap.aol.com"), SMTP: smtps("smtp.aol.com"), Login: "app_password",
+			HelpURL: "https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail"},
 	}
 }
 

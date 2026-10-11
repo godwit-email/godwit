@@ -29,7 +29,7 @@ func (p *mailPage) outboxView(c *ui.Context) {
 				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted)
 			}
 			for _, it := range p.outbox {
-				ui.Column(c.Key(it.ID)).Gap(th.Space(1)).Padding(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
+				ui.Column(c.Key(it.ID)).Gap(th.Space(1)).Padding(th.Space(2.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
 					subject := it.Subject
 					if subject == "" {
 						subject = i18n.T("mail.no_subject")
@@ -47,7 +47,7 @@ func (p *mailPage) outboxView(c *ui.Context) {
 								if act == "discard" {
 									v = kit.Destructive
 								}
-								kit.Button(c, i18n.T("outbox."+act), kit.ButtonOpts{Variant: v, Small: true}).
+								kit.Button(c, i18n.T("outbox."+act), kit.ButtonOpts{Variant: v, Size: kit.SizeSm}).
 									OnClick(func() { p.resolve(it.ID, act) })
 							}
 						})

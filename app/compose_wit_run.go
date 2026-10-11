@@ -10,6 +10,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/editor"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/richtext"
 )
 
@@ -253,9 +254,9 @@ func (w *composeWit) lockedInput() {
 	if !w.told {
 		w.told = true
 		if w.p.frozen.Load() {
-			w.p.a.toast(i18n.T("compose.sending.locked"))
+			w.p.a.toastAs(kit.ToastWarning, i18n.T("compose.sending.locked"))
 		} else {
-			w.p.a.toast(i18n.T("wit.compose.locked"))
+			w.p.a.toastAs(kit.ToastWarning, i18n.T("wit.compose.locked"))
 		}
 	}
 }

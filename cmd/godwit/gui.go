@@ -97,7 +97,7 @@ func gui(ctx context.Context, dataDir string) int {
 		plat = &platform{dataDir: dataDir, svc: svc}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
-			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone})
+			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
@@ -120,7 +120,7 @@ func gui(ctx context.Context, dataDir string) int {
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
-		if icon, err := trayIcon(); err != nil {
+		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
 			log.Print(err)
 		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
 			Menu: mygo.NewMenu([]*mygo.MenuItem{

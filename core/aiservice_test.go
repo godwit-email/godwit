@@ -36,6 +36,7 @@ func newSkillEnv(t *testing.T) skillEnv {
 	require.NoError(t, err)
 	st := defaultSettings()
 	st.DefaultModel, st.ReadingLanguage = "x/m1", "zh-CN"
+	st.QuickReplies = true // off by default
 	_, err = s.SetSettings(t.Context(), st)
 	require.NoError(t, err)
 	_, err = s.db.Execute(t.Context(), "INSERT INTO threads(id, account_id, subject) VALUES (1, 1, 'Plans')")
