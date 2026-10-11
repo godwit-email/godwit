@@ -42,6 +42,9 @@ type Platform interface {
 	DataDir() (dir string, custom bool)
 	// OpenCompose shows draftID in a compose window of its own.
 	OpenCompose(draftID int64)
+	// DraftDeleted is told draft id was deleted, sent or discarded here:
+	// its compose window, if one is open, closes.
+	DraftDeleted(id int64)
 	// SettingsChanged is told the settings after every change.
 	SettingsChanged(st core.Settings)
 }

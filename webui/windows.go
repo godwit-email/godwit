@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -65,38 +66,72 @@ type Windows struct {
 	newWindow func(draftID int64) Window
 	ask       func(w Window) bool
 	after     func(d time.Duration, f func()) (stop func() bool) // the clock; tests swap it
+	spawn     func(f func())                                     // runs a release; tests swap it
 
 	mu      sync.Mutex // never held while calling a Window, ask or a done
 	byDraft map[int64]*win
 	byID    map[int]*win
 	batch   *closeBatch // the CloseAll in progress
+	// releasing holds the drafts whose closed window is being released:
+	// true when an Open waits for that to finish.
+	releasing map[int64]bool
+	// opening holds the drafts whose window is being made: true when an
+	// Open joined it, to focus the window once it exists.
+	opening map[int64]bool
 }
 
 // NewWindows opens windows with newWindow. ask shows 「有修改没有保存」 for
 // a window whose last input could not be saved: true closes it anyway.
 // Windows hears the pages' final flush through c.OnClosed.
 func NewWindows(c *Compose, newWindow func(draftID int64) Window, ask func(w Window) bool) *Windows {
-	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{},
-		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }}
+	ws := &Windows{c: c, newWindow: newWindow, ask: ask, byDraft: map[int64]*win{}, byID: map[int]*win{}, releasing: map[int64]bool{}, opening: map[int64]bool{},
+		after: func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop },
+		spawn: func(f func()) { go f() }}
 	c.OnClosed(ws.answer)
+	c.OnDone(ws.Done)
 	return ws
 }
 
-// Open shows draftID's window, opening it unless it is open already.
+// Open shows draftID's window, opening it unless it is open already. While
+// the draft's closed window is still being released, the Open waits for
+// that: it opens then, unless the release deleted the draft as empty. While
+// the window is being made, the Open joins that: it is focused once made.
 func (ws *Windows) Open(draftID int64) {
 	ws.mu.Lock()
-	x := ws.byDraft[draftID]
-	ws.mu.Unlock()
-	if x != nil {
+	if x := ws.byDraft[draftID]; x != nil {
+		ws.mu.Unlock()
 		x.w.Focus()
 		return
 	}
+	if _, ok := ws.releasing[draftID]; ok {
+		ws.releasing[draftID] = true
+		ws.mu.Unlock()
+		return
+	}
+	if _, ok := ws.opening[draftID]; ok {
+		ws.opening[draftID] = true
+		ws.mu.Unlock()
+		return
+	}
+	ws.opening[draftID] = false
+	ws.mu.Unlock()
+	ws.make(draftID)
+}
+
+// make makes and registers draftID's window, reserved in opening, and
+// focuses it if an Open joined meanwhile.
+func (ws *Windows) make(draftID int64) {
 	w := ws.newWindow(draftID)
 	ws.c.Attach(w.ID(), draftID)
-	x = &win{w: w, draft: draftID}
+	x := &win{w: w, draft: draftID}
 	ws.mu.Lock()
+	focus := ws.opening[draftID]
+	delete(ws.opening, draftID)
 	ws.byDraft[draftID], ws.byID[w.ID()] = x, x
 	ws.mu.Unlock()
+	if focus {
+		w.Focus()
+	}
 }
 
 // RequestClose starts closing window winID, from its OnClose (always
@@ -135,7 +170,7 @@ func (ws *Windows) answer(winID, gen int, saved bool) {
 		ws.mu.Unlock()
 		closeAnyway := ws.ask(x.w)
 		ws.mu.Lock()
-		if ws.byID[winID] != x { // it went meanwhile
+		if ws.byID[winID] != x || x.state != asking { // it went meanwhile (Done)
 			ws.mu.Unlock()
 			return
 		}
@@ -152,21 +187,83 @@ func (ws *Windows) answer(winID, gen int, saved bool) {
 	x.w.Destroy()
 }
 
-// Closed is told when window winID went: its page loses the draft, and a
-// CloseAll counts it closed.
-func (ws *Windows) Closed(winID int) {
-	ws.c.Detach(winID)
+// Done destroys window winID now, without a flush or a question: its draft
+// was sent or discarded. A close or quit waiting for it settles once it has
+// gone.
+func (ws *Windows) Done(winID int) {
 	ws.mu.Lock()
-	done := func() {}
-	if x := ws.byID[winID]; x != nil {
-		delete(ws.byID, winID)
+	x := ws.byID[winID]
+	if x == nil || x.state == destroying {
+		ws.mu.Unlock()
+		return
+	}
+	if x.state == waiting {
+		x.stop()
+	}
+	x.state = destroying
+	ws.mu.Unlock()
+	x.w.Destroy()
+}
+
+// CloseDraft destroys draftID's window, if one is open, as Done: the draft
+// was deleted elsewhere.
+func (ws *Windows) CloseDraft(draftID int64) {
+	ws.mu.Lock()
+	x := ws.byDraft[draftID]
+	ws.mu.Unlock()
+	if x != nil {
+		ws.Done(x.w.ID())
+	}
+}
+
+// Closed is told when window winID went, on mygo's main thread: it returns
+// at once, and its page's session is released (Compose.Release, which
+// waits for a call in progress and deletes an empty draft) on another
+// goroutine. The window counts as open, and a CloseAll waits for it, until
+// that release is done, so a quit never exits in the middle of it.
+func (ws *Windows) Closed(winID int) {
+	ws.mu.Lock()
+	x := ws.byID[winID]
+	if x != nil {
+		x.state = destroying
 		if ws.byDraft[x.draft] == x {
 			delete(ws.byDraft, x.draft)
+			ws.releasing[x.draft] = false
 		}
-		done = ws.settle(winID, false)
 	}
 	ws.mu.Unlock()
-	done()
+	ws.spawn(func() {
+		ws.c.Release(winID)
+		if x != nil {
+			// The reopen is reserved in opening under the same lock that ends
+			// the release, so no Open slips in between to make a second window.
+			ws.mu.Lock()
+			reopen := ws.releasing[x.draft]
+			delete(ws.releasing, x.draft)
+			if reopen {
+				ws.opening[x.draft] = false
+			}
+			ws.mu.Unlock()
+			if reopen {
+				if ws.c.exists(x.draft) {
+					ws.make(x.draft)
+				} else {
+					ws.mu.Lock()
+					delete(ws.opening, x.draft)
+					ws.mu.Unlock()
+					log.Printf("not opening draft %d: deleted as empty when its window closed", x.draft)
+				}
+			}
+		}
+		ws.mu.Lock()
+		done := func() {}
+		if x != nil && ws.byID[winID] == x {
+			delete(ws.byID, winID)
+			done = ws.settle(winID, false)
+		}
+		ws.mu.Unlock()
+		done()
+	})
 }
 
 // Count is the number of open windows.

@@ -421,6 +421,7 @@ func (a *App) sendDraft(ctx context.Context, id int64, digest string) error {
 // gone ends the composer of a draft sent or deleted: it never saves again.
 func (p *composer) gone() {
 	p.s.Stop()
+	p.a.plat.DraftDeleted(p.id)
 	if p.a.drafts[p.id] == p {
 		delete(p.a.drafts, p.id)
 	}

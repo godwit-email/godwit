@@ -32,10 +32,10 @@ type Tokens struct {
 	// Outline is the faint edge of a panel over the window material: the
 	// foreground at 5%, lighter than Border, which divides inside it.
 	Outline ui.Color
-	// FloatEdge is a floating input's edge in the dark appearance: white at
-	// 20% inset by a 1 px blur in the design, which mygo cannot draw, so a
-	// hairline of white at 12%, about what that blur leaves on the edge.
-	FloatEdge ui.Color
+	// FloatInset is the color of a floating input's inner edge in the dark
+	// appearance: white at 20%, drawn inset with no offset or spread and a
+	// 1 px blur (FloatInsetBlur), rgba(255 255 255 / 0.2) 0 0 1px 0 inset.
+	FloatInset ui.Color
 	// DividerHover is a draggable divider hovered or dragged: a step darker
 	// than Border.
 	DividerHover ui.Color
@@ -132,10 +132,13 @@ var (
 	ShadowXl = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
 )
 
+// FloatInsetBlur is the blur of FloatInset's inner edge, in DIPs.
+const FloatInsetBlur = 1
+
 // ShadowFloat is a floating input's edge and lift in the light appearance: a
 // 1 px ring of the ink at 4% (its outline), then two soft drops,
 // 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006. The dark
-// appearance's is an inner edge, FloatEdge (kit.Float).
+// appearance's is an inner edge, FloatInset (kit.Float).
 var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4, 80, 8, 0x06 / 255.0}}
 
 // sized fills the size tokens from the font size.
@@ -177,7 +180,7 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), FloatEdge: p.White.Color().Alpha(0.12),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.1), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),

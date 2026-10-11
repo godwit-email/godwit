@@ -54,6 +54,8 @@ func (p *mailPage) deleteDraft(id int64) {
 	a.writes.Chain(fmt.Sprintf("draft:%d", id), func(ctx context.Context) error { return a.svc.DeleteDraft(ctx, id) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
+		} else {
+			a.plat.DraftDeleted(id)
 		}
 		p.reload()
 	})

@@ -109,7 +109,7 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 |---|---|---|
 | `load(): ComposeState` | 账户列表、草稿字段、可编辑正文 HTML、引用与签名（纯文本）、附件、revision、设置（是否有模型、语言）、主题 | `GetDraft`、`SplitDraft`、`ListAccounts` |
 | `save(edit): SaveResult` | 保存字段与正文，带 revision；返回新 revision 或冲突 | `SaveDraft`（`ErrStaleDraft` → 冲突） |
-| `resolveConflict(keepMine)` | 保留我的版本 / 使用最新版本 | 现有 `KeepMine` / `useLatest` 语义 |
+| `latest(): ComposeState` | 读最新草稿；网页据此「保留我的版本」（用最新 revision 重存本地内容）、「使用最新版本」（填入最新内容）或「重试」 | `GetDraft`，现有 `KeepMine` / `useLatest` 语义 |
 | `setAccount(id)` | 切换发件账户，换签名 | `SetDraftAccount` |
 | `addAttachments()` | 弹原生多选文件对话框（挂在本窗口），逐个添加 | `plat.OpenFiles`、`AddAttachment` |
 | `removeAttachment(id)` | 删除附件 | `RemoveAttachment` |
@@ -118,7 +118,7 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 | `assist(input)`、`skill(name, lang?)`、`rewriteSelection(html, instruction)` | Wit；返回 `Channel<WitEvent>` 流式事件 | `Assist`、`AssistSkill`、`RewriteSelection` |
 | `witHistory()` | 草稿的 Wit 对话历史（UI 消息形状）与是否有进行中的回复 | `ListConversations`、`ListApprovals`、对话消息 |
 | `decide(approvalID, accept)`、`applyEdited(approvalID, html)`、`undoAssist()`、`stop()` | 审批与撤销 | `ResolveApproval`、`ApplyEditedProposal`、`UndoLastAssist`、`CancelRun` |
-| `openLink(url)` | 用户确认后用系统浏览器打开 | 现有链接确认 |
+| `openLink(url)` | 用户确认后用系统浏览器打开（计划 3，随 Wit 回答里的链接一起做；编辑器里的链接只编辑、不跳转） | 现有链接确认 |
 
 **事件（Go → 网页）**：`draftChanged`（Wit 应用或别处保存后，网页按现有重载规则决定是否重载）、`theme`、`closing`（请网页立即提交输入）。
 
@@ -250,13 +250,13 @@ Godwit 的主窗口是 mygo 原生界面。三处更适合用网页实现，本�
 | 计划 | 内容 | 依赖 |
 |---|---|---|
 | 1 | 前端工程（多入口、组件生成脚本、主题变量、生成客户端、构建与 CI）+ 原生去掉 Geist 改用系统字体 + 撰写窗口骨架（`Compose` 的 `load` / `save`、窗口打开关闭、纯文本正文；主窗口入口改为开窗口） | 无 |
-| 2 | 完整撰写（Plate、字段、附件、引用与签名、发送与插件警告、丢弃、冲突、关闭与退出、空草稿自动删除）；删除旧撰写页与 `internal/editor` | 1 |
-| 3 | 撰写里的 Wit（`src/wit/` 组件、`WitTransport`、修订、⌘K） | 2 |
+| 2 | 完整撰写（Plate、字段、附件、引用与签名、发送与插件警告、丢弃、冲突、关闭与退出、空草稿自动删除）；仍只从开发版入口打开 | 1 |
+| 3 | 撰写里的 Wit（`src/wit/` 组件、`WitTransport`、修订、⌘K）；所有入口切到撰写窗口，删除旧撰写页、`internal/editor`、`app/proposal.go` 与 `internal/worddiff` | 2 |
 | 4 | 嵌入网页基础（fork 依赖、页面角色登记与限权、`ui.WebView` 的使用约定） | 1 |
 | 5 | Wit 页（`wit.html`） | 3、4 |
 | 6 | 阅读区（`reader.html`、沙箱 iframe、高度上报、图片代理） | 4 |
 
-计划 1 结束时新旧撰写暂时并存，计划 2 一次切换。计划 5、6 各自替换对应的原生实现；原生的富文本渲染在计划 6 后只剩少量用途，届时清理。
+计划 1、2 期间新旧撰写并存（新窗口只在开发版入口），计划 3 补上 Wit 后一次切换：旧撰写页里的 Wit 是撰写 Wit 的唯一实现，先删会让用户在两个 PR 之间失去它。计划 5、6 各自替换对应的原生实现；原生的富文本渲染在计划 6 后只剩少量用途，届时清理。
 
 ## G. 风险与待验证
 

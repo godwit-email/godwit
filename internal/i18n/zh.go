@@ -518,6 +518,7 @@ var zh = map[string]string{
 	"compose.attach":           "添加附件",
 	"compose.remove":           "移除 %s",
 	"compose.attach.too_large": "附件超过了 %s 的上限",
+	"compose.attach.failed":    "未能添加：%s",
 	"compose.quote.show":       "显示引用的原邮件（助手只读）",
 	"compose.conflict":         "草稿在别处被修改",
 	"compose.conflict.keep":    "保留我的版本",

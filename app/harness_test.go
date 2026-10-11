@@ -337,3 +337,4 @@ func (p *fakePlatform) TempDir() string {
 }
 func (p *fakePlatform) OpenCompose(draftID int64)        { p.record("OpenCompose", draftID) }
 func (p *fakePlatform) SettingsChanged(st core.Settings) { p.record("SettingsChanged", st.Theme) }
+func (p *fakePlatform) DraftDeleted(id int64)            { p.record("DraftDeleted", id) }

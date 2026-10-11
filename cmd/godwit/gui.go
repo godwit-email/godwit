@@ -65,14 +65,18 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	// Compose pages reach only their own window's draft; bound before Run.
 	pages := webui.NewCompose()
-	mygo.Bind(webui.NewComposePage(pages, func(ctx context.Context) (int, bool) {
-		if w := mygo.CallerWindow(ctx); w != nil {
-			return w.ID(), true
-		}
-		return 0, false
+	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
+		WinOf: func(ctx context.Context) (int, bool) {
+			if w := mygo.CallerWindow(ctx); w != nil {
+				return w.ID(), true
+			}
+			return 0, false
+		},
+		PickFiles: pickFiles,
 	}))
 	var windows *webui.Windows
-	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows) }, askUnsaved)
+	var cas cascade
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := mygo.App.Locale()
 		var err error

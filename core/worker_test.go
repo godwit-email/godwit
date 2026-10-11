@@ -173,7 +173,7 @@ func TestStartupCleansOrphans(t *testing.T) {
 
 	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
 	require.NoError(t, err)
-	da, err := e.s.addAttachment(bg, d.ID, "k.txt", "text/plain", []byte("keep"))
+	da, _, err := e.s.addAttachment(bg, d.ID, -1, "k.txt", "text/plain", []byte("keep"))
 	require.NoError(t, err)
 	orphanInDraft := filepath.Join(filepath.Dir(store.Str(e.rows(t, "SELECT path FROM draft_attachments WHERE id = ?", da.ID)[0][0])), "9999")
 	draftFile := store.Str(e.rows(t, "SELECT path FROM draft_attachments WHERE id = ?", da.ID)[0][0])

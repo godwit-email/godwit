@@ -11,14 +11,54 @@ export interface Account {
   email: string;
 }
 
+/** AttachResult is the outcome of adding files: a partial success is no error. */
+export interface AttachResult {
+  /** Revision and Attachments are the draft's after the change. */
+  revision: number;
+  attachments: Attachment[];
+  /** Conflict means the draft changed elsewhere: nothing was done. */
+  conflict: boolean;
+  /** Signature is the draft's signature as plain text. */
+  signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
+  /**
+   * TooLarge are the files over the size limit; Failed those that failed
+   * for another reason (logged).
+   */
+  tooLarge: string[];
+  failed: string[];
+}
+
+/** Attachment is a file attached to the draft. */
+export interface Attachment {
+  /** ID names it to RemoveAttachment; Size is in bytes. */
+  id: number;
+  filename: string;
+  size: number;
+}
+
+/** Change is the outcome of an account switch or an attachment change. */
+export interface Change {
+  /** Revision and Attachments are the draft's after the change. */
+  revision: number;
+  attachments: Attachment[];
+  /** Conflict means the draft changed elsewhere: nothing was done. */
+  conflict: boolean;
+  /** Signature is the draft's signature as plain text. */
+  signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
+}
+
 /**
  * ComposeEdit is what the page saves: the fields it edits, and the revision
  * they were made against.
  */
 export interface ComposeEdit {
   /**
-   * To, Cc, Bcc, ReplyTo, Subject and Body are the edited fields, as in
-   * ComposeState; Revision is the one they were made against.
+   * To, Cc, Bcc, ReplyTo, Subject and Body (HTML) are the edited fields, as
+   * in ComposeState; Revision is the one they were made against.
    */
   to: string[];
   cc: string[];
@@ -42,14 +82,20 @@ export interface ComposeState {
   bcc: string[];
   replyTo: string;
   subject: string;
-  /** Body is the editable part as plain text (plan 1). */
+  /** Body is the editable part as sanitized HTML. */
   body: string;
   /** Quote and Signature are read-only plain text. */
   quote: string;
   signature: string;
+  /** Attachments are the draft's files. */
+  attachments: Attachment[];
   /** Revision is what the next save must pass; Theme styles the page. */
   revision: number;
   theme: Theme;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
+  /** Text is the page's copy: i18n key → text in the UI language. */
+  text: Record<string, string>;
 }
 
 /** SaveResult is the outcome of a save. */
@@ -58,6 +104,26 @@ export interface SaveResult {
   revision: number;
   /** Conflict means the draft changed elsewhere: nothing was saved. */
   conflict: boolean;
+}
+
+/** SendResult is the outcome of a send. */
+export interface SendResult {
+  /** Sent means it is in the outbox and the window closes. */
+  sent: boolean;
+  /** Conflict means the draft is not at the revision sent: nothing was sent. */
+  conflict: boolean;
+  /** Warnings, with Digest, need the user's go-ahead: Send again with Digest. */
+  warnings: SendWarning[];
+  digest: string;
+  /** Blocked is the plugin that refused the draft, and its message. */
+  blocked: SendWarning | null;
+}
+
+/** SendWarning is a plugin's word about the draft. */
+export interface SendWarning {
+  /** Plugin is its name; Message what it said. */
+  plugin: string;
+  message: string;
 }
 
 /**
@@ -83,15 +149,50 @@ export interface Theme {
  */
 export const ComposePage = {
   /**
+   * AddAttachments asks for files in a dialog on the calling window and adds
+   * each to its draft, if the draft is at revision (else Conflict, without the
+   * dialog). A file over the limit or failing is reported, not an error; a
+   * write from elsewhere stops the adding with Conflict, the files added so
+   * far in Attachments.
+   *
+   * The dialog runs without the session lock: Release does not wait for it
+   * (AppKit gives no promise a sheet on a closed window ever ends), and once
+   * the window is released the files are dropped (ErrNoDraft).
+   */
+  addAttachments(revision: number): Promise<AttachResult> {
+    return call("ComposePage.AddAttachments", revision);
+  },
+  /**
    * Closed is the page's final flush for the close attempt gen, the payload
    * of the Closing event it answers: saved reports whether it succeeded.
    */
   closed(gen: number, saved: boolean): Promise<void> {
     return call("ComposePage.Closed", gen, saved);
   },
-  /** Load is the calling window's draft, with the accounts and the theme. */
+  /** Discard deletes the calling window's draft; the window closes (OnDone). */
+  discard(): Promise<void> {
+    return call("ComposePage.Discard");
+  },
+  /**
+   * Latest is the draft as stored now, as Load, for resolving a conflict: its
+   * quote and signature become the ones saves keep.
+   */
+  latest(): Promise<ComposeState> {
+    return call("ComposePage.Latest");
+  },
+  /**
+   * Load is the calling window's draft, with the accounts, the theme and the
+   * page's copy.
+   */
   load(): Promise<ComposeState> {
     return call("ComposePage.Load");
+  },
+  /**
+   * RemoveAttachment removes attachment id from the calling window's draft,
+   * if the draft is at revision (else Conflict).
+   */
+  removeAttachment(id: number, revision: number): Promise<Change> {
+    return call("ComposePage.RemoveAttachment", id, revision);
   },
   /**
    * Save stores the edit in the calling window's draft, keeping its quote and
@@ -99,6 +200,22 @@ export const ComposePage = {
    */
   save(e: ComposeEdit): Promise<SaveResult> {
     return call("ComposePage.Save", e);
+  },
+  /**
+   * Send sends exactly revision of the calling window's draft, else Conflict.
+   * digest, from an earlier SendResult's warnings, sends despite them. Once
+   * sent, the window closes (OnDone).
+   */
+  send(revision: number, digest: string): Promise<SendResult> {
+    return call("ComposePage.Send", revision, digest);
+  },
+  /**
+   * SetAccount moves the calling window's draft to account id, whose
+   * signature replaces the old one; revision must be the stored one, else
+   * Conflict.
+   */
+  setAccount(id: number, revision: number): Promise<Change> {
+    return call("ComposePage.SetAccount", id, revision);
   },
 } as const;
 

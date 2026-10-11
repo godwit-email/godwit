@@ -42,8 +42,10 @@ type winFixture struct {
 	made   []*fakeWin
 	answer atomic.Bool // what ask says: true = close anyway
 	asked  atomic.Int32
-	asking chan bool // when set, ask waits on it for its answer instead
+	asking chan bool   // when set, ask waits on it for its answer instead
+	block  func(n int) // when set, runs before window n (from 1) is made
 	mu     sync.Mutex
+	inNew  int // windows being made
 	timers []func()
 }
 
@@ -51,6 +53,17 @@ func newWinFixture(t *testing.T) *winFixture {
 	t.Helper()
 	f := &winFixture{fixture: newFixture(t)}
 	f.ws = NewWindows(f.c, func(int64) Window {
+		f.mu.Lock()
+		n := len(f.made) + 1 + f.inNew
+		f.inNew++
+		block := f.block
+		f.mu.Unlock()
+		if block != nil {
+			block(n)
+		}
+		f.mu.Lock()
+		f.inNew--
+		defer f.mu.Unlock()
 		w := &fakeWin{id: len(f.made) + 1, ws: f.ws}
 		f.made = append(f.made, w)
 		return w
@@ -68,6 +81,7 @@ func newWinFixture(t *testing.T) *winFixture {
 		f.timers = append(f.timers, fn)
 		return func() bool { return true }
 	}
+	f.ws.spawn = func(fn func()) { fn() } // the release in line: these tests do not race a call
 	return f
 }
 
@@ -102,7 +116,7 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	assert.EqualValues(t, 1, w.emitted.Load())
 	assert.False(t, w.destroyed())
 	// The page flushes, then reports.
-	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "最后一句", Revision: st.Revision})
+	_, err = f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p>最后一句</p>", Revision: st.Revision})
 	require.NoError(t, err)
 	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
 	assert.True(t, w.destroyed())
@@ -111,7 +125,7 @@ func TestWindowsCloseWaitsForSave(t *testing.T) {
 	stored, err := f.e.Svc.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
 	ed, _, _ := splitOf(stored.HTML)
-	assert.Equal(t, "最后一句", bodyText(ed))
+	assert.Equal(t, "<p>最后一句</p>", ed)
 	f.elapse() // the stopped timer, if a clock ran it anyway
 	assert.EqualValues(t, 1, w.destroys.Load())
 	assert.Zero(t, f.asked.Load())
@@ -155,7 +169,7 @@ func TestWindowsSlowPageAsksNotCloses(t *testing.T) {
 	assert.True(t, w.destroyed())
 }
 
-func TestWindowsClosedDetaches(t *testing.T) {
+func TestWindowsClosedReleases(t *testing.T) {
 	f := newWinFixture(t)
 	d := f.draft(t, "new", 0)
 	f.ws.Open(d.ID)
@@ -163,12 +177,156 @@ func TestWindowsClosedDetaches(t *testing.T) {
 	f.ws.Closed(w.id)
 	_, err := f.page.Load(f.ctx(w.id))
 	assert.ErrorIs(t, err, ErrNoDraft)
+	assert.True(t, f.gone(t, d.ID), "the empty draft is deleted")
 	assert.Zero(t, f.ws.Count())
+}
+
+// Closed runs on mygo's main thread: it never waits for the release, which
+// waits for the window's call in progress. A quit still waits for it, so
+// the empty draft is deleted before the process exits.
+func TestWindowsClosedReleasesOffCaller(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.spawn = func(fn func()) { go fn() }
+	d := f.draft(t, "new", 0)
 	f.ws.Open(d.ID)
-	require.Len(t, f.made, 2)
-	assert.Zero(t, w.focused.Load())
-	_, err = f.page.Load(f.ctx(f.made[1].id))
-	assert.NoError(t, err)
+	w := f.made[0]
+	w.async = true
+	inSave, resume := make(chan struct{}), make(chan struct{})
+	saveHook = func() { close(inSave); <-resume }
+	t.Cleanup(func() { saveHook = nil })
+	saved := make(chan error)
+	go func() {
+		_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p></p>", Revision: d.Revision})
+		saved <- err
+	}()
+	<-inSave
+	results := make(chan bool, 1)
+	f.ws.CloseAll(func(ok bool) { results <- ok })
+	require.NoError(t, f.page.Closed(f.ctx(w.id), w.closing(), true))
+	require.True(t, w.destroyed())
+	f.ws.Closed(w.id) // returns at once: the release waits for the save
+	assert.Equal(t, 1, f.ws.Count(), "counted until released")
+	select {
+	case <-results:
+		t.Fatal("the quit went on before the release")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(resume)
+	require.NoError(t, <-saved)
+	assert.True(t, <-results)
+	assert.True(t, f.gone(t, d.ID), "released before the quit went on")
+	assert.Zero(t, f.ws.Count())
+}
+
+// windows is how many windows were made so far.
+func (f *winFixture) windows() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.made)
+}
+
+// Opening a draft whose closed window is still being released waits for
+// the release: a draft kept opens then; one deleted as empty does not.
+func TestWindowsOpenWaitsForRelease(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		kept bool
+	}{{"<p>kept</p>", true}, {"<p></p>", false}} {
+		t.Run(tc.body, func(t *testing.T) {
+			f := newWinFixture(t)
+			f.ws.spawn = func(fn func()) { go fn() }
+			d := f.draft(t, "new", 0)
+			f.ws.Open(d.ID)
+			w := f.made[0]
+			inSave, resume := make(chan struct{}), make(chan struct{})
+			saveHook = func() { close(inSave); <-resume }
+			t.Cleanup(func() { saveHook = nil })
+			saved := make(chan error)
+			go func() {
+				_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: tc.body, Revision: d.Revision})
+				saved <- err
+			}()
+			<-inSave
+			f.ws.Closed(w.id) // the release waits for the save
+			f.ws.Open(d.ID)
+			assert.Equal(t, 1, f.windows(), "no second window while the first is released")
+			close(resume)
+			require.NoError(t, <-saved)
+			if tc.kept {
+				require.Eventually(t, func() bool { return f.windows() == 2 }, 5*time.Second, time.Millisecond)
+				require.Eventually(t, func() bool { return f.ws.Count() == 1 }, 5*time.Second, time.Millisecond)
+				_, err := f.page.Load(f.ctx(f.made[1].id))
+				assert.NoError(t, err)
+				return
+			}
+			require.Eventually(t, func() bool { return f.ws.Count() == 0 }, 5*time.Second, time.Millisecond)
+			assert.True(t, f.gone(t, d.ID))
+			assert.Equal(t, 1, f.windows(), "no window for a deleted draft")
+		})
+	}
+}
+
+func TestWindowsDoneDestroysWithoutAsking(t *testing.T) {
+	f := newWinFixture(t)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w1, w2 := f.made[0], f.made[1]
+	f.ws.Done(w1.id)
+	assert.True(t, w1.destroyed())
+	assert.Zero(t, w1.emitted.Load())
+	assert.Zero(t, f.asked.Load())
+	assert.Equal(t, 1, f.ws.Count())
+
+	// A close in progress, then the page sends: the close settles.
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	f.ws.Done(w2.id)
+	f.elapse() // its timer, had it not stopped, finds nothing to ask
+	assert.True(t, w2.destroyed())
+	assert.Zero(t, f.asked.Load())
+	assert.Equal(t, []bool{true}, results)
+	f.ws.Done(w2.id) // gone: nothing
+	assert.EqualValues(t, 1, w2.destroys.Load())
+}
+
+// The page sends while the close question shows: the window goes, and the
+// answer to the question does nothing.
+func TestWindowsDoneWhileAsking(t *testing.T) {
+	f := newWinFixture(t)
+	f.asking = make(chan bool)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w := f.made[0]
+	w.async = true
+	var results []bool
+	f.ws.CloseAll(func(ok bool) { results = append(results, ok) })
+	answered := make(chan error)
+	go func() { answered <- f.page.Closed(f.ctx(w.id), w.closing(), false) }()
+	require.Eventually(t, func() bool { return f.asked.Load() == 1 }, 5*time.Second, time.Millisecond)
+	f.ws.Done(w.id)
+	assert.True(t, w.destroyed())
+	f.asking <- false // 返回, too late
+	require.NoError(t, <-answered)
+	assert.Empty(t, results, "not kept: it is going")
+	f.ws.Closed(w.id)
+	assert.Equal(t, []bool{true}, results)
+	assert.EqualValues(t, 1, w.destroys.Load())
+}
+
+func TestWindowsDraftDeletedCloses(t *testing.T) {
+	f := newWinFixture(t)
+	d7 := f.draft(t, "new", 0)
+	f.ws.Open(d7.ID)
+	f.ws.Open(f.draft(t, "new", 0).ID)
+	w1, w2 := f.made[0], f.made[1]
+	require.NoError(t, f.e.Svc.DeleteDraft(t.Context(), d7.ID))
+	f.ws.CloseDraft(d7.ID)
+	assert.True(t, w1.destroyed())
+	assert.Zero(t, w1.emitted.Load())
+	assert.Zero(t, f.asked.Load())
+	assert.False(t, w2.destroyed())
+	f.ws.CloseDraft(d7.ID + 100) // no window
+	assert.False(t, w2.destroyed())
+	assert.Equal(t, 1, f.ws.Count())
 }
 
 func TestWindowsCloseAllForQuit(t *testing.T) {
@@ -293,4 +451,57 @@ func TestWindowsLateReplyOfEarlierAttemptIgnored(t *testing.T) {
 	require.NoError(t, f.page.Closed(f.ctx(w.id), round2, true))
 	assert.True(t, w.destroyed())
 	assert.EqualValues(t, 1, f.asked.Load())
+}
+
+// gate blocks the making of window n until the returned release: entered
+// receives once it is being made.
+func (f *winFixture) gate(n int) (entered chan struct{}, release func()) {
+	entered, rel := make(chan struct{}, 1), make(chan struct{})
+	f.block = func(i int) {
+		if i == n {
+			entered <- struct{}{}
+			<-rel
+		}
+	}
+	return entered, func() { close(rel) }
+}
+
+// An Open while the draft's window is being made joins it: one window,
+// focused once it exists.
+func TestWindowsConcurrentOpensMakeOne(t *testing.T) {
+	f := newWinFixture(t)
+	entered, release := f.gate(1)
+	opened := make(chan struct{})
+	go func() { f.ws.Open(7); close(opened) }()
+	<-entered
+	f.ws.Open(7)
+	release()
+	<-opened
+	require.Equal(t, 1, f.windows())
+	assert.EqualValues(t, 1, f.made[0].focused.Load())
+	assert.Equal(t, 1, f.ws.Count())
+}
+
+// The reopen after a release and a fresh Open racing it make one window.
+func TestWindowsReopenAfterReleaseRacesOpen(t *testing.T) {
+	f := newWinFixture(t)
+	var rel func()
+	f.ws.spawn = func(fn func()) { rel = fn }
+	d := f.draft(t, "new", 0)
+	f.ws.Open(d.ID)
+	w := f.made[0]
+	_, err := f.page.Save(f.ctx(w.id), ComposeEdit{Body: "<p>kept</p>", Revision: d.Revision})
+	require.NoError(t, err)
+	f.ws.Closed(w.id)
+	f.ws.Open(d.ID) // waits for the release
+	entered, release := f.gate(2)
+	released := make(chan struct{})
+	go func() { rel(); close(released) }()
+	<-entered // the release reopens it
+	f.ws.Open(d.ID)
+	release()
+	<-released
+	require.Equal(t, 2, f.windows())
+	assert.Equal(t, 1, f.ws.Count())
+	assert.EqualValues(t, 1, f.made[1].focused.Load())
 }

@@ -46,6 +46,23 @@
   --radius-4xl: calc(var(--radius) + 24px);
 }
 
+/* The native scales (internal/theme): Space(n) = 4n px at density 1; text steps from the root
+   font size, which applyTheme sets to the native FontSize (13 px): xs −2, sm −1, base, md +1
+   (mail body text, 14 px), lg +2. */
+@theme {
+  --spacing: 4px;
+  --text-xs: calc(1rem - 2px);
+  --text-xs--line-height: 1.4;
+  --text-sm: calc(1rem - 1px);
+  --text-sm--line-height: 1.45;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-md: calc(1rem + 1px);
+  --text-md--line-height: 1.6;
+  --text-lg: calc(1rem + 2px);
+  --text-lg--line-height: 1.5;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -135,4 +152,14 @@ code,
 pre,
 kbd {
   font-family: ui-monospace, monospace;
+}
+
+/* The compose window's top bar: drags the window (mygo), clear of macOS's traffic lights. */
+.compose-titlebar {
+  --app-region: drag;
+  min-height: var(--mygo-titlebar-height, 44px);
+  padding-left: max(20px, var(--mygo-titlebar-inset-left, 0px));
+}
+.compose-titlebar :is(button, input, a, select) {
+  --app-region: no-drag;
 }
