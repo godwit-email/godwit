@@ -94,7 +94,7 @@ func (s *shotEnv) shotDrafts() {
 	h.syncNow(s.you)
 	for _, d := range []struct{ to, subj, html string }{
 		{"", "", "<p>周会要点：发布时间、研讨会议程、预算……</p>"},
-		{"finance@company.example", "差旅报销补充材料", "<p>附件是 10 月出差的酒店发票，请查收。</p>"},
+		{"财务部 <finance@company.example>", "差旅报销补充材料", "<p>附件是 10 月出差的酒店发票，请查收。</p>"},
 		{"Lena Fischer <lena@partner.example>", "Re: Q4 partnership proposal", "<p>Hi Lena,</p><p>Thank you for the proposal. November works well for us; would it be possible to move the webinar back by one week?</p><p>Best,</p>"},
 	} {
 		dr, err := h.env.Svc.NewDraft(context.Background(), s.you.ID, "new", 0)
@@ -208,24 +208,32 @@ func TestShots(t *testing.T) {
 		s.shotDrafts()
 		s.click("Re: Q4 partnership proposal")
 		s.see("继续编辑")
+		s.plat.setComposeOpen(s.app.mail.draftSel, true) // the design's editing state
+		s.app.ComposeWindowsChanged()
+		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
 	t.Run("MainSearch", func(t *testing.T) {
 		s := shotMail(t, noAuto)
-		s.tt.Key(ui.Cmd, ui.KeyF)
-		s.typeText("proposal")
-		s.tt.Key(0, ui.KeyEnter)
-		s.advance(debounce)
+		search := func(q string) {
+			s.tt.Key(ui.Cmd, ui.KeyF)
+			s.tt.Key(ui.Cmd, ui.KeyA)
+			s.typeText(q)
+			s.tt.Key(0, ui.KeyEnter)
+			s.advance(debounce)
+		}
+		search("Q3 预算 v4")
+		s.waitMail("no results", func() bool { return s.tt.HasText("没有找到「Q3 预算 v4」") })
+		shot(s.harness, "MainSearchEmpty")
+		// the design's results: the proposal open, and chosen among them
+		s.tt.Key(0, ui.KeyEscape)
+		s.click("Q4 partnership proposal")
+		s.see("Q4-proposal.pdf")
+		search("proposal")
 		s.waitMail("the results", func() bool {
 			return s.tt.HasText("Partnership proposal — revised deck") && s.tt.HasText("Re: proposal timeline")
 		})
 		shot(s.harness, "MainSearch")
-		s.tt.Key(ui.Cmd, ui.KeyA)
-		s.typeText("Q3 预算 v4")
-		s.tt.Key(0, ui.KeyEnter)
-		s.advance(debounce)
-		s.waitMail("no results", func() bool { return s.tt.HasText("没有结果") || s.tt.HasText("没有找到") })
-		shot(s.harness, "MainSearchEmpty")
 	})
 	t.Run("MainOTP", func(t *testing.T) {
 		s := shotMail(t, noAuto)

@@ -28,7 +28,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 			title = i18n.Tf("mail.draft.heading", email)
 		}
 	}
-	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
+	kit.Text(c, title, t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
 	kit.List(c, &p.draftList, len(drafts), func(i int) {
@@ -87,27 +87,34 @@ func (p *mailPage) accountEmail(id int64) string {
 	return acc.Email
 }
 
-// draftRow is the inbox row's lines: who it goes to and when, the subject
-// (with 编辑中 while a compose window has it) and the start of the text.
+// draftRow is the inbox row's lines: who it goes to (names only) and when,
+// the subject, the start of the text, and 编辑中 while a compose window has it.
 func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
-			ui.Text(c, cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))).SingleLine().Grow(1).Shrink(1)
+			ui.Text(c, cmp.Or(recipients(d.To), i18n.T("mail.no_recipient"))).SingleLine().Grow(1).Shrink(1)
 			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Sm).TextColor(t.Muted)
 		})
-		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
-			ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine().Grow(1).Shrink(1)
-			if p.draftView[d.ID].editing {
-				ui.Box(c).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
-					kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
-				})
-			}
-		})
+		ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine()
 		if text := p.draftView[d.ID].preview; text != "" {
-			ui.Text(c, text).TextColor(t.Muted).SingleLine()
+			kit.Text(c, text, t.Text.Base).TextColor(t.Muted).SingleLine()
+		}
+		if p.draftView[d.ID].editing {
+			ui.Box(c).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
+				kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
+			})
 		}
 	})
+}
+
+// recipients are the display names of addresses, joined.
+func recipients(to []string) string {
+	names := make([]string, len(to))
+	for i, a := range to {
+		names[i] = displayName(a)
+	}
+	return strings.Join(names, i18n.T("mail.list_sep"))
 }
 
 // draftPane is the reading pane of the drafts folder: the chosen draft as

@@ -483,19 +483,26 @@ func (p *mailPage) Content(c *ui.Context) {
 	})
 }
 
-func (p *mailPage) listHeader(c *ui.Context) {
+// listHeader is the search box, or the first date group's heading (the
+// list carries the later ones) with the all/unread tabs.
+func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
-			ui.Row(c).Height(th.Space(8)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
-				Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background).Children(func() {
+			box := ui.Row(c).Height(th.Space(8)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
+				Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background)
+			if box.FocusWithin() { // the row is the box, so it carries the ring
+				box.Border(theme.Hairline, t.Ring).Shadow(0, 0, 0, theme.RingWidth, th.Focus)
+			}
+			box.Children(func() {
 				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).AutoFocus().Grow(1)
+				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)
 				if in.Submitted() {
 					p.runSearch()
 				}
 				if p.query != "" {
-					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.clearSearch)
+					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						Size(th.Space(6), th.Space(6)).TextColor(t.Muted).OnClick(p.clearSearch)
 				}
 			})
 			kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted)
@@ -516,7 +523,8 @@ func (p *mailPage) listHeader(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
 		p.searchOpen = true
 	}
-	ui.Row(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
+	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
+		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
@@ -630,10 +638,14 @@ func marked(c *ui.Context, s, query string) ui.Element {
 
 func (p *mailPage) listView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	p.listHeader(c)
 	rows := p.shown()
 	ls := p.ls()
 	es := p.entries(rows)
+	head := ""
+	if len(rows) > 0 && !p.searched {
+		head = dateGroup(p.a.clock.Now(), rows[0].Date)
+	}
+	p.listHeader(c, head)
 	ls.list.Key = func(i int) any {
 		if e := es[i]; e.head != "" {
 			return "h:" + e.head
@@ -665,7 +677,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart
+	}).Grow(1).Padding(0, th.Space(2))
 	l.Children(func() {
 		if len(rows) == 0 && p.loading { // the first load: placeholder rows
 			for range 6 {
@@ -710,15 +722,19 @@ type listEntry struct {
 	row  int
 }
 
-// entries are the list's lines: each group of rows under its date heading, a
-// search's results as they are. The list's own choice (cur) counts these.
+// entries are the list's lines: each group of rows under its date heading
+// (but the first, whose heading the list header shows), a search's results
+// as they are. The list's own choice (cur) counts these.
 func (p *mailPage) entries(rows []mailItem) []listEntry {
 	var out []listEntry
 	now, last := p.a.clock.Now(), ""
 	for i, it := range rows {
 		if !p.searched {
 			if g := dateGroup(now, it.Date); g != last {
-				out, last = append(out, listEntry{head: g}), g
+				if i > 0 {
+					out = append(out, listEntry{head: g})
+				}
+				last = g
 			}
 		}
 		out = append(out, listEntry{row: i})
@@ -807,11 +823,11 @@ func (a *App) openAccountSettings(acc int64) func() {
 // noResults is the list of a search that found nothing: it offers Wit and a
 // wider sync.
 func (p *mailPage) noResults(c *ui.Context) {
-	q := p.hlQuery
+	q, th := p.hlQuery, c.Theme()
 	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: i18n.Tf("mail.search.empty_title", q), Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
 		kit.Button(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
 		kit.Button(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))
-	}})
+	}}).Margin(th.Space(8), th.Space(1))
 }
 
 // row is one thread or message: who, when, the subject and the start of the
@@ -834,9 +850,6 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
-			if it.Count > 1 {
-				kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted)
-			}
 			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
 		})
 		subject := it.Subject
@@ -845,7 +858,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		ui.Text(c, subject).FontWeight(weight).SingleLine()
 		if it.Snippet != "" {
-			ui.Text(c, it.Snippet).TextColor(t.Muted).SingleLine()
+			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
 	})
 }
@@ -881,8 +894,14 @@ func (p *mailPage) search() {
 			return
 		}
 		p.results, p.hlQuery = nil, q
-		for _, m := range found {
-			p.results = append(p.results, messageItem(m))
+		r := p.a.route
+		for i, m := range found {
+			it := messageItem(m)
+			if p.found.cur < 0 && (m.ID == r.MessageID || r.MessageID == 0 && m.ThreadID == r.ThreadID && r.ThreadID != 0) {
+				p.found.cur = i // the mail open stays chosen among the results
+				p.found.sel.Add(it.key())
+			}
+			p.results = append(p.results, it)
 		}
 		p.searched = true
 	})

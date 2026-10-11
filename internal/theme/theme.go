@@ -135,6 +135,7 @@ const (
 	TitleButtonHeight     = 24  // buttons in the top bar
 	PopupOffset           = 4   // room between a popup and its anchor
 	SelectedBorder        = 2   // the border of a chosen tile
+	RingWidth             = 2   // a focused box's ring, outside its border
 	QuoteBar              = 2   // the bar left of a quote in a mail body
 	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
 	ReaderMaxWidth        = 720 // the reading pane's text column

@@ -131,7 +131,7 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	}
 	// Folders by role: inbox, sent, archive, trash (the fake server has no drafts or junk).
 	var ys []float32
-	for _, name := range []string{"收件箱", "已发送", "归档", "废纸篓"} {
+	for _, name := range []string{"收件箱", "已发送", "归档", "已删除"} {
 		r, ok := h.tt.Find(name)
 		if !ok {
 			t.Fatalf("no folder %s: %q", name, h.tt.Texts())
@@ -578,7 +578,8 @@ func TestSelectionKeepsToMode(t *testing.T) {
 	h.typeText("note")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("both found", func() bool { return p.searched && len(p.results) == 2 })
-	if got := p.chosen(p.shown()); len(got) != 0 {
+	// only the mail open stays chosen, by its own key, not the thread list's
+	if got := p.chosen(p.shown()); len(got) != 1 || got[0].Subject != "note alpha" {
 		t.Fatalf("search results chosen by the thread list's choice: %+v", got)
 	}
 	h.tt.Key(0, ui.KeyEscape)

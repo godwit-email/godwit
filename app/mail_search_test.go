@@ -188,21 +188,25 @@ func TestSearchEmptyUsesSearchedQuery(t *testing.T) {
 }
 
 // A date heading is no row: clicking it chooses nothing, and the choice
-// (counted in list lines) opens the right thread.
+// (counted in list lines) opens the right thread. The first group's heading
+// sits in the list header, the later ones in the list.
 func TestDateHeadingIsNotARow(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Lunch today", "x", at(base, 0)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay", at(base, 24)))
 	h.syncNow(accs[0])
-	h.waitMail("a thread", func() bool { return len(h.items()) == 1 })
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.tt.Frame()
 	p := h.app.mail
+	h.see("今天")
 	before := h.app.route
-	h.click("今天")
+	h.click("昨天")
 	if p.main.sel.Len() != 0 || p.main.cur != -1 || h.app.route != before {
 		t.Fatalf("a heading was chosen: sel %d, cur %d, route %+v", p.main.sel.Len(), p.main.cur, h.app.route)
 	}
 	h.click("Invoice March")
-	if p.main.cur != 1 || h.app.route.ThreadID != h.items()[0].ID {
+	if p.main.cur != 2 || h.app.route.ThreadID != h.items()[1].ID {
 		t.Fatalf("cur %d, route %+v", p.main.cur, h.app.route)
 	}
 	if got := p.chosen(p.shown()); len(got) != 1 || got[0].Subject != "Invoice March" {

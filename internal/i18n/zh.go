@@ -200,7 +200,7 @@ var zh = map[string]string{
 	"mail.folder.sent":               "已发送",
 	"mail.folder.archive":            "归档",
 	"mail.folder.junk":               "垃圾邮件",
-	"mail.folder.trash":              "废纸篓",
+	"mail.folder.trash":              "已删除",
 	"mail.outbox":                    "发件箱",
 	"mail.add_account":               "添加账户",
 	"mail.unread_count":              "%d 封未读",
