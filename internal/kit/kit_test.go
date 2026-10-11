@@ -772,7 +772,9 @@ func TestKitRailButtonFillsSelected(t *testing.T) {
 		}
 		return n
 	}
-	if off, on := ink(false), ink(true); on < off*3/2 {
+	// The line icon inks 176 px on macOS and 200 on Windows (heavier antialiasing);
+	// the fill icon 270 on both, a line icon in the selected colour about as few.
+	if off, on := ink(false), ink(true); on < off*6/5 {
 		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
@@ -800,7 +802,9 @@ func TestKitSidebarIconFillsSelected(t *testing.T) {
 		}
 		return n
 	}
-	if off, on := ink(false), ink(true); on < off*3/2 {
+	// The line icon inks 176 px on macOS and 200 on Windows (heavier antialiasing);
+	// the fill icon 270 on both, a line icon in the selected colour about as few.
+	if off, on := ink(false), ink(true); on < off*6/5 {
 		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
