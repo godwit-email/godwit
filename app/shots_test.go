@@ -227,6 +227,15 @@ func TestShots(t *testing.T) {
 		s.see("能否在周五前看一下")
 		shot(s.harness, "MainTranslated")
 	})
+	t.Run("MainWindows", func(t *testing.T) {
+		old := goos
+		goos = "windows"
+		defer func() { goos = old }()
+		s := shotMail(t, noQuick)
+		s.tt.SetTitleBar(ui.TitleBar{Height: 40, Right: 138}) // 3 caption buttons of 46 px
+		openLena(s)
+		shot(s.harness, "MainWindows")
+	})
 	t.Run("MainDrafts", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		s.shotDrafts()

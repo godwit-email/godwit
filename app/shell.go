@@ -205,7 +205,11 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
 	padL := bar.Left + th.Space(2)
-	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+th.Space(4), 0, padL).DragWindow().Children(func() {
+	padR := bar.Right + th.Space(4)
+	if goos == "windows" {
+		padR = bar.Right + th.Space(3) // the design's 150 = 3 caption buttons of 46 + 12
+	}
+	ui.Row(c).Height(h).FillWidth().Padding(0, padR, 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
 			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
