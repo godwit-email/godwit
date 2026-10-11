@@ -38,7 +38,8 @@ type Account struct {
 	ID                                      int64
 	Email, Name, Alias, Signature, Username string
 	IsDefault                               bool
-	SyncLimit                               int
+	Sync                                    SyncRange
+	Folders                                 int // folders synced so far: 0 before the first sync
 	AuthType, Status                        string
 	IMAPHost                                string
 	IMAPPort                                int
@@ -69,10 +70,15 @@ type ServerSettings struct {
 	SMTPSecurity Security
 }
 
+// SyncRange is how much of each folder a sync fetches: the newest Limit
+// messages, the mail of the last Months months, or (both 0) all of it.
+// Narrowing it only stops fetching older mail; nothing stored is deleted.
+type SyncRange struct{ Limit, Months int }
+
 // AccountPatch changes the account settings that are not nil.
 type AccountPatch struct {
 	Name, Alias, Signature *string
 	IsDefault              *bool
-	SyncLimit              *int
+	Sync                   *SyncRange
 	Servers                *ServerSettings
 }

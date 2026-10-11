@@ -60,8 +60,13 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	h.fill("密码", "secret")
 	h.click("连接")
 	h.see("连接成功")
-	if o := h.app.pages[PageOnboarding].(*onboarding); !o.report.OK() {
+	h.see("new@example.com · 4 个文件夹") // INBOX, Sent, Trash, Archive
+	o := h.app.pages[PageOnboarding].(*onboarding)
+	if !o.report.OK() {
 		t.Fatalf("report %+v", o.report)
+	}
+	if text, detail, _ := o.checkRow(o.report.Steps[1]); text != "IMAP 登录成功" || detail != "4 个文件夹" {
+		t.Fatalf("imap row %q, %q", text, detail)
 	}
 	h.fill("发件人名称", "New Person")
 	h.click("开始使用")
@@ -239,7 +244,7 @@ func TestAddAccountSheet(t *testing.T) {
 			added = a
 		}
 	}
-	if want := "account:" + strconv.FormatInt(added.ID, 10); added.ID == 0 || h.app.route.Settings != want || added.Name != "Second" || added.SyncLimit != 2000 {
+	if want := "account:" + strconv.FormatInt(added.ID, 10); added.ID == 0 || h.app.route.Settings != want || added.Name != "Second" || added.Sync != (core.SyncRange{Limit: 2000}) {
 		t.Fatalf("route %+v, added %+v", h.app.route, added)
 	}
 }
@@ -284,11 +289,11 @@ func TestOnboardingSaveDisablesEdits(t *testing.T) {
 	}
 }
 
-func TestOnboardingSyncLimitRetry(t *testing.T) {
+func TestOnboardingSyncRangeRetry(t *testing.T) {
 	plaintext(t)
 	h := newHarness(t)
 	o := h.toDone("new@example.com")
-	o.syncLimit = 10000
+	o.sync = core.SyncRange{Months: 3}
 	adds, fails := 0, 1
 	add, update := o.add, o.update
 	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) { adds++; return add(ctx, in) }
@@ -307,7 +312,7 @@ func TestOnboardingSyncLimitRetry(t *testing.T) {
 	h.click("重试")
 	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
 	accs, err := h.env.Svc.ListAccounts(context.Background())
-	if err != nil || len(accs) != 1 || accs[0].SyncLimit != 10000 || adds != 1 {
+	if err != nil || len(accs) != 1 || accs[0].Sync != (core.SyncRange{Months: 3}) || adds != 1 {
 		t.Fatalf("accounts %+v, %v, %d adds", accs, err, adds)
 	}
 }

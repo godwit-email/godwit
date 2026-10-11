@@ -845,12 +845,31 @@ func (p *mailPage) noResults(c *ui.Context) {
 	if q == "" { // filters alone: nothing to hand Wit
 		title = i18n.T("mail.search.empty_filtered")
 	}
-	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
+	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: p.searchedDesc(), Actions: func() {
 		if q != "" {
 			kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
 		}
 		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.searchAccount()))
 	}}).Margin(th.Space(8), th.Space(1))
+}
+
+// searchedDesc says what a search covered: the searched accounts' sync range
+// when they share one that is not all mail.
+func (p *mailPage) searchedDesc() string {
+	acc, ranges := p.searchAccount(), map[core.SyncRange]bool{}
+	for _, a := range p.a.accounts {
+		if acc == 0 || a.ID == acc {
+			ranges[a.Sync] = true
+		}
+	}
+	if len(ranges) == 1 {
+		for r := range ranges {
+			if r != (core.SyncRange{}) {
+				return i18n.Tf("mail.search.empty_desc_range", rangeLabel(r))
+			}
+		}
+	}
+	return i18n.T("mail.search.empty_desc")
 }
 
 // row is one thread or message: who, when, the subject and the start of the

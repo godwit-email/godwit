@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/mailsync"
 )
 
 // KindInvalid marks a failed settings step: the input itself is not valid.
@@ -24,7 +25,11 @@ type CheckStep struct {
 	Detail  string
 }
 
-type CheckReport struct{ Steps []CheckStep }
+// Folders is how many selectable folders the imap step listed (0 if LIST failed).
+type CheckReport struct {
+	Steps   []CheckStep
+	Folders int
+}
 
 // OK reports whether every step passed.
 func (r CheckReport) OK() bool {
@@ -91,7 +96,13 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				return conn.DialIMAP(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: user, Password: in.Password, AccessToken: token})
+				c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: user, Password: in.Password, AccessToken: token}, nil)
+				if err == nil {
+					stop := context.AfterFunc(ctx, abort)   // a stalled LIST ends with the step's timeout
+					r.Folders, _ = mailsync.CountFolders(c) // a failing LIST does not fail the sign-in
+					stop()
+				}
+				return c, err
 			})
 			if err == nil {
 				c.Close()

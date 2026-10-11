@@ -54,7 +54,7 @@ func TestAddAccount(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotZero(t, acc.ID)
 	assert.True(t, acc.IsDefault)
-	assert.Equal(t, 2000, acc.SyncLimit)
+	assert.Equal(t, core.SyncRange{Limit: 2000}, acc.Sync)
 	assert.Equal(t, "password", acc.AuthType)
 	assert.Equal(t, "ok", acc.Status)
 	require.NoError(t, s.SyncNow(ctx, acc.ID), "the password is in the keychain")
@@ -62,6 +62,8 @@ func TestAddAccount(t *testing.T) {
 	list, err := s.ListAccounts(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
+	assert.Equal(t, 4, list[0].Folders, "the sync mirrored the folders")
+	acc.Folders = 4
 	assert.Equal(t, acc, list[0])
 
 	in2 := input(t, im.Addr, smtpAddr, "secret")

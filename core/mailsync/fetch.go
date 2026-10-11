@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -32,10 +33,27 @@ const (
 // bytes for mail.MaxBodyBytes of text even in quoted-printable. Tests lower it.
 var PartFetchBytes int64 = 3 * mail.MaxBodyBytes
 
+// BackfillPage is how many messages one FETCH of a range backfill asks for,
+// which bounds its memory. Tests lower it.
+var BackfillPage = 1000
+
+// account is a sync's view of the account: limit > 0 keeps the newest limit
+// messages per folder, else months > 0 the mail since the cutoff, else all.
 type account struct {
-	id    int64
-	email string
-	limit int
+	id     int64
+	email  string
+	limit  int
+	months int
+}
+
+// since is the SINCE date of a months range: date-only, as IMAP compares
+// INTERNALDATE by day; zero for all mail.
+func (a *account) since(now time.Time) time.Time {
+	if a.months <= 0 {
+		return time.Time{}
+	}
+	y, m, d := now.AddDate(0, -a.months, 0).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // result collects what one Fetch changed, for the events it publishes.
@@ -79,14 +97,15 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: strings.Join(r.conflicts, "; ")})
 		}
 	}()
-	rows, err := db.Query(ctx, "SELECT email, sync_limit FROM accounts WHERE id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT email, sync_limit, sync_since_months FROM accounts WHERE id = ?", accountID)
 	if err != nil {
 		return err
 	}
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("account %d not found", accountID)
 	}
-	a := &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1]))}
+	a := &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1])),
+		months: int(store.Int(rows.Values[0][2]))}
 	folders, err := syncFolders(ctx, db, c, accountID, &r)
 	if err != nil {
 		return err
@@ -137,13 +156,13 @@ func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, 
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
 			AND message_id IN (SELECT id FROM messages WHERE server_folder_id = ?)`, Args: []any{accountID, f.id}},
 		{SQL: "DELETE FROM messages WHERE server_folder_id = ?", Args: []any{f.id}},
-		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0 WHERE id = ?", Args: []any{uidValidity, f.id}},
+		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{uidValidity, f.id}},
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
 	}
 	r.gone(ids, tids)
-	f.uidValidity, f.lastUID, f.synced = uidValidity, 0, false
+	f.uidValidity, f.lastUID, f.synced, f.filled = uidValidity, 0, false, nil
 	for _, p := range files.Values {
 		os.Remove(store.Str(p[0])) // best effort, see above
 	}
@@ -170,17 +189,29 @@ func headerSection() *imap.FetchItemBodySection {
 		HeaderFields: []string{"REFERENCES", "IN-REPLY-TO", "REPLY-TO"}, Peek: true}
 }
 
-// fetchNew imports messages above last_uid; the first sync takes only the newest
-// sync_limit (n is the mailbox's message count). What it imports into a
-// folder whose first sync completed is new mail; completing one marks it.
+// fetchNew imports messages above last_uid; the first sync of a count range
+// takes only the newest sync_limit (n is the mailbox's message count), and that
+// of a months or all range only notes the top UID, leaving the mail to the
+// backfill. What it imports into a folder whose first sync completed is new
+// mail; completing one marks it.
 func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
 	if n == 0 {
 		return advance(ctx, db, f, f.lastUID)
 	}
+	if f.lastUID == 0 && a.limit <= 0 {
+		top, err := c.Fetch(imap.SeqSetNum(n), &imap.FetchOptions{UID: true}).Collect()
+		if err != nil {
+			return err
+		}
+		if len(top) == 0 {
+			return fmt.Errorf("no message %d", n)
+		}
+		return advance(ctx, db, f, uint32(top[0].UID))
+	}
 	var set imap.NumSet
 	if f.lastUID == 0 {
 		start := uint32(1)
-		if a.limit > 0 && n > uint32(a.limit) {
+		if n > uint32(a.limit) {
 			start = n - uint32(a.limit) + 1
 		}
 		var s imap.SeqSet
@@ -265,10 +296,13 @@ func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *accou
 // backfill imports older messages a lower sync_limit left out: while the folder
 // holds fewer than sync_limit messages, the newest server UIDs below the oldest
 // one stored, up to the shortfall (n is the mailbox's message count). Stored
-// messages and pending ops are untouched; a lower limit never deletes mail.
+// messages and pending ops are untouched; a narrower range never deletes mail.
 func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
-	if a.limit <= 0 || f.lastUID == 0 {
-		return nil // the first sync applies the limit itself
+	if f.lastUID == 0 {
+		return nil
+	}
+	if a.limit <= 0 {
+		return backfillRange(ctx, db, c, a, f, r)
 	}
 	rows, err := db.Query(ctx, "SELECT count(*), min(server_uid) FROM messages WHERE server_folder_id = ?", f.id)
 	if err != nil {
@@ -301,6 +335,53 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	// what is missing and the next round resumes below it.
 	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
 	return importAll(ctx, db, c, a, f, msgs, false, r) // older mail, not new arrivals
+}
+
+// backfillRange imports the messages up to last_uid that a months range (or
+// all) covers and the folder lacks: UID SEARCH SINCE the cutoff, less what is
+// stored, newest first in pages. UIDs and INTERNALDATE are not monotonic, so it
+// diffs the whole window rather than paging below the oldest stored UID. A
+// window filled once is not searched again until it grows (filled_since).
+func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, r *result) error {
+	since := a.since(time.Now())
+	mark := int64(0)
+	if !since.IsZero() {
+		mark = since.Unix()
+	}
+	if f.filled != nil && *f.filled <= mark {
+		return nil
+	}
+	var upto imap.UIDSet
+	upto.AddRange(1, imap.UID(f.lastUID))
+	found, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{upto}, Since: since}, nil).Wait()
+	if err != nil {
+		return err
+	}
+	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ?", f.id)
+	if err != nil {
+		return err
+	}
+	known := map[imap.UID]bool{}
+	for _, v := range have.Values {
+		known[imap.UID(store.Int(v[0]))] = true
+	}
+	uids := slices.DeleteFunc(found.AllUIDs(), func(u imap.UID) bool { return known[u] })
+	slices.SortFunc(uids, func(x, y imap.UID) int { return cmp.Compare(y, x) })
+	for page := range slices.Chunk(uids, BackfillPage) {
+		msgs, err := c.Fetch(imap.UIDSetNum(page...), importItems()).Collect()
+		if err != nil {
+			return err
+		}
+		slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
+		if err := importAll(ctx, db, c, a, f, msgs, false, r); err != nil { // older mail, not new arrivals
+			return err
+		}
+	}
+	if _, err := db.Execute(ctx, "UPDATE folders SET filled_since = ? WHERE id = ?", mark, f.id); err != nil {
+		return err
+	}
+	f.filled = &mark
+	return nil
 }
 
 func byUID(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) }

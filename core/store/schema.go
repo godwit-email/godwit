@@ -234,4 +234,9 @@ var Migrations = [][]string{{
 	`CREATE TABLE model_service_status (service_id INTEGER NOT NULL REFERENCES model_services(id) ON DELETE CASCADE,
 		cap TEXT NOT NULL, state TEXT NOT NULL, latency_ms INTEGER NOT NULL DEFAULT 0, http_status INTEGER NOT NULL DEFAULT 0,
 		code TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, PRIMARY KEY(service_id, cap))`,
+}, {
+	// With sync_limit 0, the months a sync fetches; both 0 is all mail.
+	`ALTER TABLE accounts ADD COLUMN sync_since_months INTEGER NOT NULL DEFAULT 0`,
+	// The SINCE cutoff (unix; 0 for all) a range backfill last completed down to; NULL for none.
+	`ALTER TABLE folders ADD COLUMN filled_since INTEGER`,
 }}

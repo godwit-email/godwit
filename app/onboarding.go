@@ -20,7 +20,7 @@ import (
 // debounce is how long typing pauses before the provider is detected.
 const debounce = 400 * time.Millisecond
 
-const defaultSyncLimit = 2000
+var defaultSync = core.SyncRange{Limit: 2000}
 
 type obStep int
 
@@ -68,7 +68,7 @@ type onboarding struct {
 	checking, adding     bool
 	invalid, invalidNext string // the form's own settings-step failure, in words
 	name                 string
-	syncLimit            int
+	sync                 core.SyncRange
 	again                bool  // finish starts over for another account
 	addedID              int64 // the account added; a failed sync-range update retries only that
 	saveErr              error
@@ -79,7 +79,7 @@ type onboarding struct {
 }
 
 func newOnboarding(a *App, sheet bool) *onboarding {
-	return &onboarding{a: a, sheet: sheet, open: sheet, providers: append(a.svc.ListProviders(), otherProvider), syncLimit: defaultSyncLimit,
+	return &onboarding{a: a, sheet: sheet, open: sheet, providers: append(a.svc.ListProviders(), otherProvider), sync: defaultSync,
 		add: a.svc.AddAccount, update: a.svc.UpdateAccount}
 }
 
@@ -129,7 +129,7 @@ func (o *onboarding) toPick() {
 // reset starts over at the pick step, dropping what is in flight.
 func (o *onboarding) reset() {
 	o.leave()
-	*o = onboarding{a: o.a, sheet: o.sheet, open: o.sheet, providers: o.providers, gen: o.gen, syncLimit: defaultSyncLimit,
+	*o = onboarding{a: o.a, sheet: o.sheet, open: o.sheet, providers: o.providers, gen: o.gen, sync: defaultSync,
 		add: o.add, update: o.update}
 }
 
@@ -372,7 +372,7 @@ func (o *onboarding) finish(again bool) {
 		return
 	}
 	o.adding, o.again, o.saveErr = true, again, nil
-	a, add, update, in, limit, id := o.a, o.add, o.update, o.input(), o.syncLimit, o.addedID
+	a, add, update, in, sync, id := o.a, o.add, o.update, o.input(), o.sync, o.addedID
 	gen := o.gen
 	a.do(func(ctx context.Context) error {
 		if id == 0 {
@@ -382,8 +382,8 @@ func (o *onboarding) finish(again bool) {
 			}
 			id = acc.ID
 		}
-		if limit != defaultSyncLimit {
-			_, err := update(ctx, id, core.AccountPatch{SyncLimit: &limit})
+		if sync != defaultSync {
+			_, err := update(ctx, id, core.AccountPatch{Sync: &sync})
 			return err
 		}
 		return nil
@@ -732,6 +732,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 			}
 			detail = i18n.Tf("onboarding.check.settings."+src, o.imapHost, o.smtpHost)
 		}
+		if st.Name == "imap" {
+			detail = o.foldersText()
+		}
 		return i18n.T(k + ".ok"), detail, 1
 	case st.Skipped:
 		return i18n.T(k + ".waiting"), i18n.T("onboarding.check.waiting"), 0
@@ -772,6 +775,14 @@ func (o *onboarding) settingsReason(st core.CheckStep) string {
 		return i18n.T("onboarding.invalid.provider")
 	}
 	return i18n.T("onboarding.invalid.other")
+}
+
+// foldersText is "N 个文件夹" from the check, or "" when LIST found none.
+func (o *onboarding) foldersText() string {
+	if o.report.Folders == 0 {
+		return ""
+	}
+	return i18n.Tf("settings.account.folders", o.report.Folders)
 }
 
 func (o *onboarding) settingsNext() string {
@@ -835,8 +846,6 @@ func (o *onboarding) checkView(c *ui.Context) {
 	}
 }
 
-var syncLimits = []int{2000, 10000, 100000}
-
 func (o *onboarding) doneView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
@@ -844,16 +853,18 @@ func (o *onboarding) doneView(c *ui.Context) {
 			ui.Text(c, "✓")
 		})
 		lineText(c, i18n.T("onboarding.done.title"), t.Text.X2l).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
-		lineText(c, strings.TrimSpace(o.email), t.Text.Body).TextColor(t.Muted)
+		line := strings.TrimSpace(o.email)
+		if f := o.foldersText(); f != "" {
+			line += " · " + f
+		}
+		lineText(c, line, t.Text.Body).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(inputHeight(c)).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
-	opts := make([]kit.Option[int], len(syncLimits))
-	for i, n := range syncLimits {
-		opts[i] = kit.Option[int]{Value: n, Label: i18n.T("onboarding.sync." + strconv.Itoa(n))}
-	}
-	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.syncLimit, opts).Height(th.Space(10)).Disabled(o.adding) }).
+	opts := rangeOptions(defaultSync)
+	opts[0].Label = i18n.T("onboarding.sync.2000") // （推荐） here only
+	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.sync, opts).Height(th.Space(10)).Disabled(o.adding) }).
 		Description(i18n.T("onboarding.sync.help")).LineHeight(theme.LineFor(i18n.T("onboarding.sync")))
 	if o.saveErr != nil {
 		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {

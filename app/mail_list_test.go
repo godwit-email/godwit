@@ -375,6 +375,28 @@ func TestSearch(t *testing.T) {
 	h.see("只搜索已同步到本机的邮件")
 }
 
+// The empty search says which range was searched: the account's, the one
+// all searched accounts share, else none; all mail needs no parenthesis.
+func TestSearchedDescFollowsRange(t *testing.T) {
+	p := &mailPage{a: &App{accounts: []core.Account{{ID: 1, Sync: core.SyncRange{Limit: 2000}}}}}
+	if got := p.searchedDesc(); got != "只搜索了已同步到本机的邮件（每个文件夹最近 2000 封）。换个关键词，或者让 Wit 帮你找。" {
+		t.Fatalf("2000: %q", got)
+	}
+	p.a.accounts = append(p.a.accounts, core.Account{ID: 2, Sync: core.SyncRange{Months: 3}})
+	plain := "只搜索了已同步到本机的邮件。换个关键词，或者让 Wit 帮你找。"
+	if got := p.searchedDesc(); got != plain {
+		t.Fatalf("mixed: %q", got)
+	}
+	p.sf.accSet, p.sf.acc = true, 2
+	if got := p.searchedDesc(); got != "只搜索了已同步到本机的邮件（最近 3 个月）。换个关键词，或者让 Wit 帮你找。" {
+		t.Fatalf("months: %q", got)
+	}
+	p.a.accounts[1].Sync = core.SyncRange{}
+	if got := p.searchedDesc(); got != plain {
+		t.Fatalf("all: %q", got)
+	}
+}
+
 func TestKeyboardArchiveDelete(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	base := h.clock.Now()

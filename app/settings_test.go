@@ -73,8 +73,11 @@ func TestSettingsAccountEdit(t *testing.T) {
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封")
-	h.click("最近 10000 封")
-	h.until("sync limit saved", func() bool { return h.account(acc.ID).SyncLimit == 10000 })
+	h.click("最近 3 个月")
+	h.until("sync range saved", func() bool { return h.account(acc.ID).Sync == core.SyncRange{Months: 3} })
+	h.click("最近 3 个月")
+	h.click("全部")
+	h.until("sync range saved", func() bool { return h.account(acc.ID).Sync == core.SyncRange{} })
 	h.click("立即同步")
 	h.see("已同步 · 刚刚")
 }
@@ -878,12 +881,29 @@ func TestDeleteAccountOutline(t *testing.T) {
 func TestSyncRangeLabels(t *testing.T) {
 	for _, lang := range []string{"zh-CN", "en"} {
 		i18n.SetLanguage(lang)
-		onb, set := i18n.T("onboarding.sync.2000"), limitOptions(2000)[0].Label
+		onb, set := i18n.T("onboarding.sync.2000"), rangeOptions(defaultSync)[0].Label
 		if !strings.Contains(onb, "（推荐）") && !strings.Contains(onb, "recommended") || strings.Contains(set, "推荐") || strings.Contains(set, "recommended") || set == "" {
 			t.Errorf("%s: onboarding %q, settings %q", lang, onb, set)
 		}
 	}
 	i18n.SetLanguage("zh-CN")
+}
+
+// An account from before the range options keeps its own count; the header
+// counts the folders once synced.
+func TestSyncRangeCustomAndFolders(t *testing.T) {
+	opts := rangeOptions(core.SyncRange{Limit: 10000})
+	var got []string
+	for _, o := range opts {
+		got = append(got, o.Label)
+	}
+	if want := "每个文件夹最近 2000 封|最近 3 个月|全部|最近 10000 封"; strings.Join(got, "|") != want {
+		t.Fatalf("options %q", got)
+	}
+	h, acc := withAccount(t)
+	h.syncNow(acc)
+	h.openSettings(accountRoute(acc.ID))
+	h.waitMail("the header counts the folders", func() bool { return h.tt.HasText("其他 IMAP 邮箱 · 4 个文件夹") })
 }
 
 // A signature page that never answers the flush holds the close for

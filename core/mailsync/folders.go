@@ -15,7 +15,8 @@ type folder struct {
 	id                   int64
 	name                 string
 	uidValidity, lastUID uint32
-	synced               bool // a first sync at uidValidity completed
+	synced               bool   // a first sync at uidValidity completed
+	filled               *int64 // the cutoff a range backfill completed down to
 }
 
 var specialUse = map[imap.MailboxAttr]string{
@@ -48,6 +49,22 @@ func role(d *imap.ListData) string {
 	return roleNames[strings.ToLower(name)]
 }
 
+func selectable(d *imap.ListData) bool {
+	return !slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) && !slices.Contains(d.Attrs, imap.MailboxAttrNonExistent)
+}
+
+// CountFolders is how many selectable folders LIST returns: those a sync mirrors.
+func CountFolders(c *imapclient.Client) (int, error) {
+	list, err := c.List("", "*", nil).Collect()
+	n := 0
+	for _, d := range list {
+		if selectable(d) {
+			n++
+		}
+	}
+	return n, err
+}
+
 // syncFolders mirrors the server's selectable folders into the folders table and
 // returns them in LIST order. Folders gone from the server are deleted with the
 // messages in them; a message only moved there locally returns to its server folder.
@@ -59,7 +76,7 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	var names []string
 	var stmts []sqlite.Statement
 	for _, d := range list {
-		if slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) || slices.Contains(d.Attrs, imap.MailboxAttrNonExistent) {
+		if !selectable(d) {
 			continue
 		}
 		names = append(names, d.Mailbox)
@@ -88,7 +105,7 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		return nil, err
 	}
 	r.gone(ids, tids)
-	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid, synced FROM folders WHERE account_id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid, synced, filled_since FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +113,10 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	for _, r := range rows.Values {
 		byName[store.Str(r[1])] = &folder{id: store.Int(r[0]), name: store.Str(r[1]),
 			uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
+		if r[5] != nil {
+			v := store.Int(r[5])
+			byName[store.Str(r[1])].filled = &v
+		}
 	}
 	out := make([]*folder, 0, len(names))
 	for _, n := range names {

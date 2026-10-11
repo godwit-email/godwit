@@ -24,12 +24,12 @@ const accountSaveDelay = 600 * time.Millisecond
 // edit keeps what the user typed; otherwise it follows the account, though
 // not to a snapshot read before its last confirmed save.
 type accountForm struct {
-	name, alias    string
-	limit, okLimit int          // the sync range shown, and the account's
-	ok             core.Account // the values last confirmed
-	okAt           uint64       // a.loadGen when ok was confirmed; older loads are stale
-	edits          [2]fieldEdit // name, alias
-	limitBusy      int          // sync-range writes in flight
+	name, alias  string
+	sync, okSync core.SyncRange // the sync range shown, and the account's
+	ok           core.Account   // the values last confirmed
+	okAt         uint64         // a.loadGen when ok was confirmed; older loads are stale
+	edits        [2]fieldEdit   // name, alias
+	syncBusy     int            // sync-range writes in flight
 }
 
 // fieldEdit is one text field's debounce: typing restarts it, and only the
@@ -59,7 +59,7 @@ type serverForm struct {
 func (p *settingsPage) form(acc core.Account) *accountForm {
 	f := p.forms[acc.ID]
 	if f == nil {
-		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, limit: acc.SyncLimit, okLimit: acc.SyncLimit}
+		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sync: acc.Sync, okSync: acc.Sync}
 		p.forms[acc.ID] = f
 	}
 	if p.a.accountsGen > f.okAt {
@@ -70,8 +70,8 @@ func (p *settingsPage) form(acc core.Account) *accountForm {
 		}
 		f.ok = acc
 	}
-	if f.limitBusy == 0 && acc.SyncLimit != f.okLimit {
-		f.limit, f.okLimit = acc.SyncLimit, acc.SyncLimit
+	if f.syncBusy == 0 && acc.Sync != f.okSync {
+		f.sync, f.okSync = acc.Sync, acc.Sync
 	}
 	return f
 }
@@ -250,12 +250,12 @@ func (p *settingsPage) makeDefault(id int64) {
 	p.patch(id, core.AccountPatch{IsDefault: &on}, nil)
 }
 
-func (p *settingsPage) setLimit(id int64, f *accountForm) {
-	lim := f.limit
-	f.limitBusy++
-	p.patch(id, core.AccountPatch{SyncLimit: &lim}, func(err error) {
-		if f.limitBusy--; err != nil && f.limitBusy == 0 {
-			f.limit = f.okLimit
+func (p *settingsPage) setSync(id int64, f *accountForm) {
+	r := f.sync
+	f.syncBusy++
+	p.patch(id, core.AccountPatch{Sync: &r}, func(err error) {
+		if f.syncBusy--; err != nil && f.syncBusy == 0 {
+			f.sync = f.okSync
 		}
 	})
 }
@@ -360,6 +360,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			kit.Text(c, acc.Email, t.Text.Display).FontWeight(600).SingleLine()
 			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				meta := providerName(prov)
+				if acc.Folders > 0 { // 0 until the first sync
+					meta += " · " + i18n.Tf("settings.account.folders", acc.Folders)
+				}
 				if acc.StatusDetail != "" {
 					meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
 				}
@@ -432,8 +435,8 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
-			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.limit, limitOptions(acc.SyncLimit)).Changed() {
-				p.setLimit(acc.ID, f)
+			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(acc.Sync)).Changed() {
+				p.setSync(acc.ID, f)
 			}
 		}),
 		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
@@ -468,17 +471,31 @@ func cmpTr(key, fallback string) string {
 	return fallback
 }
 
-func limitOptions(cur int) []kit.Option[int] {
-	var opts []kit.Option[int]
-	for _, n := range syncLimits {
-		key := "onboarding.sync."
-		if n == 2000 { // the settings label has no （推荐）
-			key = "settings.account.sync."
-		}
-		opts = append(opts, kit.Option[int]{Value: n, Label: i18n.T(key + strconv.Itoa(n))})
+// syncRanges are the ranges offered: 2000 per folder, 3 months and all.
+var syncRanges = []core.SyncRange{{Limit: 2000}, {Months: 3}, {}}
+
+// rangeLabel names r as settings lists it (2000 without （推荐）).
+func rangeLabel(r core.SyncRange) string {
+	switch {
+	case r.Limit == 2000:
+		return i18n.T("settings.account.sync.2000")
+	case r.Limit > 0:
+		return i18n.Tf("settings.account.sync.limit", r.Limit)
+	case r.Months > 0:
+		return i18n.Tf("settings.account.sync.months", r.Months)
 	}
-	if cur > 0 && !slices.Contains(syncLimits, cur) {
-		opts = append(opts, kit.Option[int]{Value: cur, Label: i18n.Tf("settings.account.sync.limit", cur)})
+	return i18n.T("settings.account.sync.all")
+}
+
+// rangeOptions are syncRanges, and cur (an older account's 10000, say) when
+// it is none of them.
+func rangeOptions(cur core.SyncRange) []kit.Option[core.SyncRange] {
+	var opts []kit.Option[core.SyncRange]
+	for _, r := range syncRanges {
+		opts = append(opts, kit.Option[core.SyncRange]{Value: r, Label: rangeLabel(r)})
+	}
+	if !slices.Contains(syncRanges, cur) {
+		opts = append(opts, kit.Option[core.SyncRange]{Value: cur, Label: rangeLabel(cur)})
 	}
 	return opts
 }
