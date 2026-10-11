@@ -127,8 +127,8 @@ func (s *shotEnv) shotDrafts() {
 			h.t.Fatal(err)
 		}
 	}
-	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
-	h.click("草稿")
+	f := h.folderOf(s.you, "drafts")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
 	h.see("差旅报销补充材料")
 }
 
@@ -182,6 +182,7 @@ func TestShots(t *testing.T) {
 		h.t.Helper()
 		h.tt.Frame()
 		h.advance(refreshEvery)
+		time.Sleep(2 * theme.MotionBase) // hover and selection fades run on the wall clock
 		h.tt.Frame()
 		f, err := os.Create(filepath.Join(dir, name+".png"))
 		if err != nil {
