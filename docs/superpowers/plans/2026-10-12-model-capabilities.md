@@ -57,6 +57,39 @@ Judge is used by plugins (a new `llm.decide`) and by Wit (a new read tool `class
 - **Tests:** `go test ./... && go vet ./...`. No live API calls; use httptest servers that follow the research doc's schemas.
 - Commit trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Do not touch the untracked `assets/AppIcon.icon/`.
 
+## Review amendments (binding)
+
+The plan review in `docs/superpowers/plans/2026-10-12-model-capabilities/review.md` is adopted in full. Where it conflicts with the task text below, the review wins. In short:
+
+- **One source of truth.** `kind` *is* the generate format: `openai` = chat, `openai-responses` = responses, `anthropic` = messages, and `""` = generate off. There is no GenFormat column. Add only `provider`, `judge_format` and `judge_model` (#1).
+- **Base URL.** It is stored as entered, normalized independently of kind, with endpoints derived per format (#2, #21).
+- **Validity.** A judge-only service is valid: models are required only when generate is on, and at least one capability must be on (#3).
+- **Tests.** The signature is `TestCapability(ctx, id, in, cap)`, run on a throwaway engine for unsaved input. It replaces `TestModelService` (#4).
+- **Status.** `CapStatus` stores codes and HTTP status, never text. It lives in its own `model_service_status` table, written only when the version matches, and it never bumps `version` (#5, #11).
+- **References:**
+  - generate off ⇒ the refs stop resolving;
+  - the app applies the design's `alt` re-pointing (#6);
+  - the judge default is a service slug with its own resolver, falling back to generation (#7).
+- **Generation fallback.** A text `Generator` func, JSON asked in text, lenient parse, strict validation, 0/1 probabilities (#8).
+- **Budgets:**
+  - per-message budgets and a deadline for `classify_mail` (#9);
+  - per-call caps plus a per-plugin semaphore for `llm.decide`, and updated consent copy (#10);
+  - a single deadline per `Ask` (#16).
+- **Build.** Every task ends green on `go build ./... && go vet ./...`. Old presets are removed only in Task 5 (#12).
+- **Errors.** Reuse `ai.ErrModelAuth` and add `ai.ErrModelForbidden`. Use a named `JudgeFormat` type. `NewJudge(client, format, base, key, model)` with a testable sleep (#13).
+- **Local API and contract.** They change; update `contract/scenarios_test.go` (#14).
+- **HTTP client.** Reuse `s.modelHTTP` / `NoRedirectClient`, with no invented proxy rule (#15).
+- **Remaining items.** #17–#24 (provider validation, judge model sources, design rules, 用途 details, chips) and the missing tests #25–#29 belong to the tasks noted below.
+
+Task ownership:
+- Task 1: #8 (validator and parsing), #13, #16, #26.
+- Task 2: #1–#7, #11, #12, #14, #15, #18, #19, #21, #25, #28.
+- Task 3: #9, #10, #17, #27.
+- Task 4: #23, #24, and #29 for the page states.
+- Task 5: #20, #22, #29, and the preset removal.
+
+At the start of Tasks 4 and 5, render the 12 missing artboard states with `$D/pp/shot.mjs` into `$D/dshots/`.
+
 ## Review Focus
 
 1. **Existing users:** after the migration every current service, `DefaultModel` and `SmallModel` resolve exactly as before. Covered by a migration test with old rows.
