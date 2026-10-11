@@ -25,6 +25,8 @@ type WitInfo struct {
 	Languages []Language `json:"languages"`
 	// Chips name what Wit knows of the draft.
 	Chips []string `json:"chips"`
+	// Model is the default model's label, as the input's chip.
+	Model string `json:"model"`
 }
 
 // Skill is a 调整 menu item.
@@ -145,7 +147,7 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	if err != nil {
 		return WitInfo{}, err
 	}
-	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}}
+	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}, Model: modelLabel(st.DefaultModel)}
 	for _, id := range adjustSkills {
 		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
@@ -553,6 +555,17 @@ func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, 
 		run = c.Runs[len(c.Runs)-1].ID
 	}
 	return RunStart{Run: run, Revision: d.Revision}, nil
+}
+
+// OpenModels opens the model settings (the input's model chip).
+func (p *ComposePage) OpenModels(ctx context.Context) error {
+	if _, ok := p.d.WinOf(ctx); !ok {
+		return keyed(ErrNoDraft)
+	}
+	if p.d.OpenModels != nil {
+		p.d.OpenModels()
+	}
+	return nil
 }
 
 // OpenLink opens a link from Wit's answer: an http or https one in the

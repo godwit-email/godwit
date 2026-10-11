@@ -1,9 +1,8 @@
 import { expect, test } from "vitest";
-import { listTime } from "./Citations";
+import { citeDate } from "./Citations";
 
-test("older days read M/DD", () => {
-  const now = new Date(2026, 9, 11, 9, 0); // Sunday
-  const t = ((k: string) => k) as never;
-  expect(listTime(now, new Date(2026, 9, 3, 9).getTime(), t)).toBe("10/03");
-  expect(listTime(now, new Date(2026, 8, 28, 9).getTime(), t)).toBe("9/28");
+test("citation dates are absolute M/DD", () => {
+  expect(citeDate(new Date(2026, 9, 3, 9).getTime())).toBe("10/03");
+  expect(citeDate(new Date(2026, 8, 28, 9).getTime())).toBe("9/28");
+  expect(citeDate(0)).toBe("");
 });

@@ -27,7 +27,27 @@ describe("answer layout", () => {
     );
     await screen.findByText("1");
     expect(container.firstElementChild).toHaveClass("text-md", "leading-[1.75]");
-    expect(container.firstElementChild?.className).toContain("[&_th]:bg-sidebar");
+    // one border, the table's own box: no outer frame around it
+    const table = container.querySelector("table");
+    expect(table?.parentElement).toHaveClass("border", "rounded-lg");
+    expect(container.querySelectorAll(".border")).toHaveLength(1);
+    expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
+  });
+
+  it("[n] opens what cite(n) gives; one it has none for, code and no cite stay text", async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    const cite = vi.fn((n: number) => (n === 1 ? open : undefined));
+    const text = "see [1] and [9], `[1]`";
+    const { unmount } = render(<Response text={text} onLink={() => {}} t={t} cite={cite} />);
+    await user.click(await screen.findByRole("link", { name: "[1]" }));
+    expect(open).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("link")).toHaveLength(1); // not [9], not the code's
+    expect(screen.getByText("[1]", { selector: "code" })).toBeInTheDocument();
+    unmount();
+    render(<Response text={text} onLink={() => {}} t={t} />);
+    await screen.findByText(/see/);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 });
 

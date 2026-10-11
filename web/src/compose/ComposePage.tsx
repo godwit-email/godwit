@@ -637,7 +637,7 @@ function Compose({
     <Button
       variant="ghost"
       size="icon-sm"
-      className="size-7 rounded-md text-foreground/80"
+      className="size-7 rounded-md text-foreground/80 disabled:opacity-100"
       aria-label={t("compose.attach")}
       disabled={locked || witLocked} // an attachment bumps the revision: a waiting edit would go stale
       onClick={() => change((rev) => api.addAttachments(rev))}
@@ -855,31 +855,27 @@ function Compose({
               reviewing
                 ? {
                     approval: reviewing.approval,
-                    body: (
-                      <div className="flex flex-col gap-2">
-                        <span className="text-muted-foreground text-sm">
-                          {reviewSummary(reviewing, t)}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="text-base"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, true), true)}
-                          >
-                            {t("wit.compose.accept_all")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-base"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, false), false)}
-                          >
-                            {t("wit.compose.reject_all")}
-                          </Button>
-                        </div>
-                      </div>
+                    summary: reviewSummary(reviewing, t),
+                    actions: (
+                      <>
+                        <Button
+                          size="sm"
+                          className="px-3 font-normal text-base"
+                          disabled={deciding}
+                          onClick={() => decide((id) => api.decide(id, true), true)}
+                        >
+                          {t("wit.compose.accept_all")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="font-normal text-base"
+                          disabled={deciding}
+                          onClick={() => decide((id) => api.decide(id, false), false)}
+                        >
+                          {t("wit.compose.reject_all")}
+                        </Button>
+                      </>
                     ),
                   }
                 : undefined
@@ -888,6 +884,10 @@ function Compose({
             onLink={(url) => api.openLink(url)}
             onRunning={setPanelRunning}
             onDecide={decideTool}
+            model={state.wit.model}
+            onModels={() =>
+              void api.openModels().catch((e) => toast.error(witError(message(e), t)))
+            }
             transport={wit.tr}
             t={t}
           />

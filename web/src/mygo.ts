@@ -382,6 +382,8 @@ export interface WitInfo {
   languages: Language[];
   /** Chips name what Wit knows of the draft. */
   chips: string[];
+  /** Model is the default model's label, as the input's chip. */
+  model: string;
 }
 
 /**
@@ -525,6 +527,10 @@ export const ComposePage = {
    */
   openLink(link: string): Promise<void> {
     return call("ComposePage.OpenLink", link);
+  },
+  /** OpenModels opens the model settings (the input's model chip). */
+  openModels(): Promise<void> {
+    return call("ComposePage.OpenModels");
   },
   /**
    * RemoveAttachment removes attachment id from the calling window's draft,

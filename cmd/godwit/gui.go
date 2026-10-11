@@ -82,6 +82,12 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 	}
 	openCompose := func(id int64) { windows.Open(id) } // set below, before any page runs
+	// Callbacks into the App run on its UI thread.
+	onApp := func(f func(*app.App)) {
+		if a != nil {
+			a.OnUI(func() { f(a) }) // dropped once the App closed
+		}
+	}
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -93,15 +99,11 @@ func gui(ctx context.Context, dataDir string) int {
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
+		OpenModels:  func() { onApp((*app.App).OpenModels) },
 	}))
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.
 	var witView *mygo.WebView
-	onApp := func(f func(*app.App)) {
-		if a != nil {
-			a.OnUI(func() { f(a) }) // dropped once the App closed
-		}
-	}
 	toWit := func(what string, emit func(*mygo.Page) error) {
 		if witView == nil {
 			return

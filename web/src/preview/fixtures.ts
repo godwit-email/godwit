@@ -74,6 +74,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
       { tag: "ja", name: "日本語" },
     ],
     chips: ["原邮件", "Q4-proposal.pdf", "与 Lena 的往来 3 封"],
+    model: "[MODEL]",
   },
 });
 
@@ -343,7 +344,7 @@ export const witEmpty = (): WitHistory => history({ conversation: 0, messages: [
 export const witPage = (mode: "light" | "dark", conversation: number): WitPageState => ({
   conversation,
   version: 1,
-  model: "Claude Sonnet",
+  model: "[MODEL]",
   text,
   theme: theme(mode),
 });

@@ -159,7 +159,7 @@ const state: ComposeState = {
   updatedAt: 0,
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
   text,
-  wit: { enabled: true, skills: [], languages: [], chips: [] },
+  wit: { enabled: true, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
 const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
 const pending: Approval = {

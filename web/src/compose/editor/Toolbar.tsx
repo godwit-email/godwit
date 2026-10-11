@@ -110,7 +110,8 @@ export function Toolbar(props: {
     <ToggleGroupItem
       value={it.key}
       aria-label={t(it.label)}
-      className="size-7 min-w-7 rounded-md px-0 text-foreground/80"
+      // read-only (Wit's lock), the toggles do nothing but keep their look, as the design shows
+      className="size-7 min-w-7 rounded-md px-0 text-foreground/80 disabled:opacity-100"
       disabled={readOnly}
       onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
       onClick={() => {

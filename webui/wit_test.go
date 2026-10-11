@@ -99,6 +99,7 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err := f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.False(t, info.Enabled, "no model")
+	assert.Empty(t, info.Model)
 
 	llm := f.e.LLM(t)
 	t.Cleanup(llm.Release)
@@ -110,6 +111,9 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err = f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.True(t, info.Enabled)
+	_, model, _ := strings.Cut(st.DefaultModel, "/")
+	assert.Equal(t, model, info.Model, "the model chip: its name, without the provider")
+	assert.NotEmpty(t, info.Model)
 	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}}, info.Skills)
 	assert.Equal(t, []Language{{"ja", "日本語"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}}, info.Languages)
 	assert.Empty(t, info.Chips)
@@ -127,6 +131,16 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err = f.page.WitInfo(f.ctx(2))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"原邮件", "与 Bob 的往来 1 封"}, info.Chips)
+}
+
+func TestComposeOpenModels(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	opened := 0
+	f.page.d.OpenModels = func() { opened++ }
+	require.NoError(t, f.page.OpenModels(f.ctx(1)))
+	assert.Equal(t, 1, opened)
+	assert.Error(t, f.page.OpenModels(t.Context()), "no calling window")
+	assert.Equal(t, 1, opened)
 }
 
 func TestComposeAskStreams(t *testing.T) {

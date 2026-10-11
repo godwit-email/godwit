@@ -1,7 +1,5 @@
-import { RiArrowDownSLine } from "@remixicon/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { InputGroupButton } from "@/components/ui/input-group";
 import { Toaster } from "@/components/ui/sonner";
 import {
   WitPage as api,
@@ -199,20 +197,8 @@ function Conversation({
       ask={handed}
       onAsked={onAsked}
       t={t}
-      slots={{
-        input: (
-          <InputGroupButton
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground text-sm"
-            title={t("wit.model")}
-            onClick={() => void api.openModels().catch(fail)}
-          >
-            {model}
-            <RiArrowDownSLine />
-          </InputGroupButton>
-        ),
-      }}
+      model={model}
+      onModels={() => void api.openModels().catch(fail)}
     />
   );
 }

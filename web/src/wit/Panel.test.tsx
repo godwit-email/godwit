@@ -21,6 +21,9 @@ const t = makeT({
   "error.unknown": "出错了：%s",
   "wit.tools.one": "调用了 %d 个工具",
   "wit.tools.other": "调用了 %d 个工具",
+  "wit.tools.called": "调用了 %s",
+  "wit.compose.working": "正在写入正文…",
+  "wit.model": "模型服务设置",
   "wit.suspect": "来源 %s 中包含疑似指令。",
   "mail.list_sep": "、",
   "wit.tool.update_draft": "修改正文",
@@ -53,6 +56,7 @@ const info: WitInfo = {
     { tag: "en", name: "English" },
   ],
   chips: ["原邮件", "a.pdf"],
+  model: "",
 };
 
 const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
@@ -117,7 +121,7 @@ async function setup(
   return { ...r, api, tr, emit, onLink, resume: (run: number) => r.rerender(ui({ run })) };
 }
 
-const input = () => screen.getByRole("textbox", { name: "Wit 输入" });
+const input = (name = "Wit 输入") => screen.getByRole("textbox", { name });
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -129,17 +133,52 @@ describe("Panel", () => {
     expect(input()).toHaveAttribute("placeholder", "告诉 Wit 你想怎么回");
   });
 
-  it("Send is an icon button named 发送; Stop is too while running", async () => {
+  it("Send is a Primary icon button named 发送, idle while empty; the page's Stop is too while running", async () => {
     const user = userEvent.setup();
-    const { api } = await setup();
+    const { api, unmount } = await setup({ page: true });
     const send = screen.getByRole("button", { name: "发送" });
-    expect(send).toHaveAttribute("aria-label", "发送");
     expect(send).toHaveTextContent("");
-    await user.type(input(), "hi{Enter}");
+    expect(send).not.toBeDisabled(); // the Primary look: never greyed by disabled
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    await user.click(send);
+    expect(api.ask).not.toHaveBeenCalled();
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
     const stop = await screen.findByRole("button", { name: "停止" });
-    expect(stop).toHaveAttribute("aria-label", "停止");
     expect(stop).toHaveTextContent("");
+    unmount();
+  });
+
+  it("the panel's running answer says Wit writes the body, with Stop; Send stays", async () => {
+    const user = userEvent.setup();
+    const { api, tr } = await setup();
+    const stopRun = vi.spyOn(tr, "stop").mockResolvedValue(undefined);
+    await user.type(input(), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("button", { name: "停止" }));
+    expect(stopRun).toHaveBeenCalled();
+  });
+
+  it("the model chip shows the model and opens its settings", async () => {
+    const user = userEvent.setup();
+    const onModels = vi.fn();
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="Sonnet"
+        onModels={onModels}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Sonnet/ }));
+    expect(onModels).toHaveBeenCalledOnce();
   });
 
   it("the compose layout's 调整 / 翻译 tray sits right above the input; the page has none", async () => {
@@ -223,11 +262,16 @@ describe("Panel", () => {
     expect(screen.getByText("翻译为English")).toBeInTheDocument();
   });
 
-  it("locked: the menus and Send are disabled", async () => {
-    await setup({ locked: true });
+  it("locked: the menus are disabled (in their usual look) and Send does nothing", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ locked: true });
     expect(screen.getByRole("button", { name: "调整" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "调整" })).toHaveClass("disabled:opacity-100");
     expect(screen.getByRole("button", { name: "翻译" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+    await user.type(input(), "hi");
+    expect(screen.getByRole("button", { name: "发送" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(api.ask).not.toHaveBeenCalled();
   });
 
   it("folds tool calls, numbers citations after the history's, notes suspect ones", async () => {
@@ -261,13 +305,13 @@ describe("Panel", () => {
         ],
       },
     });
-    expect(screen.getByText("调用了 2 个工具 · search ×2、read")).toBeInTheDocument();
+    // the panel names the tools; the triangle leads
+    const tools = screen.getByText("调用了 search · read").closest("button");
+    expect(tools).toHaveClass("text-sm", "text-left");
+    expect(tools?.firstElementChild?.tagName).toBe("svg");
     expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
       "data-variant",
       "secondary",
-    );
-    expect(screen.getByText("调用了 2 个工具 · search ×2、read").closest("button")).toHaveClass(
-      "text-base",
     );
     expect(screen.getByText("来源 [2] 中包含疑似指令。").closest("[role=status]")).toHaveClass(
       "bg-(--warning-bg)",
@@ -311,10 +355,18 @@ describe("Panel", () => {
     });
     const { unmount } = await setup({
       history: history([a]),
-      review: { approval: 4, body: <button type="button">全部接受</button> },
+      review: {
+        approval: 4,
+        summary: "修改 2 处",
+        actions: <button type="button">全部接受</button>,
+      },
     });
-    expect(screen.getByText("待确认")).toBeInTheDocument();
-    expect(screen.getByText("update_draft")).toHaveClass("font-mono", "text-xs"); // the tool, as the design names it
+    // one header line: 待确认 and the tool, as the design names it
+    expect(screen.getByText("待确认").parentElement).toBe(
+      screen.getByText("update_draft").parentElement,
+    );
+    expect(screen.getByText("update_draft")).toHaveClass("font-mono", "text-sm");
+    expect(screen.getByText("修改 2 处")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "全部接受" })).toBeInTheDocument();
     unmount();
     await setup({ history: history([a]) }); // not the one reviewed: no card
@@ -421,8 +473,12 @@ describe("Panel", () => {
     expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(2); // two of run 7
     for (const n of ["允许", "全部允许", "拒绝"])
       for (const b of screen.getAllByRole("button", { name: n })) {
-        expect(b).toHaveClass("h-8", "text-base"); // default size, not sm
+        expect(b).toHaveClass("h-8", "text-md"); // default size, not sm
       }
+    // one header line: what Wit wants and the tool
+    expect(screen.getByText("Wit 想要：创建草稿").parentElement).toBe(
+      screen.getByText("create_draft").parentElement,
+    );
     await user.click(screen.getAllByRole("button", { name: "允许" })[0]);
     expect(onDecide).toHaveBeenCalledWith(a, true, false);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());

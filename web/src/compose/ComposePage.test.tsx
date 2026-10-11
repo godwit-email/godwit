@@ -117,7 +117,7 @@ const state = {
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
   text,
-  wit: { enabled: false, skills: [], languages: [], chips: [] },
+  wit: { enabled: false, skills: [], languages: [], chips: [], model: "" },
 };
 const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };
 

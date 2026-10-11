@@ -161,11 +161,15 @@ func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	model := st.DefaultModel
+	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(st.DefaultModel), Text: witText(), Theme: ThemeOf(st)}
+}
+
+// modelLabel is a default model's label: its name without the provider.
+func modelLabel(model string) string {
 	if _, m, ok := strings.Cut(model, "/"); ok {
-		model = m
+		return m
 	}
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: model, Text: witText(), Theme: ThemeOf(st)}
+	return model
 }
 
 // Load is the page's state: the snapshot, the model, the copy and the theme.
