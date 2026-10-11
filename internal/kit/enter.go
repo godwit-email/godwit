@@ -16,6 +16,10 @@ var entered = map[*bool]struct {
 	at  time.Time
 }{}
 
+// clock is the frame time; tests freeze it, as a Tester frame can run longer
+// than an overlay takes to come in.
+var clock = (*ui.Context).Now
+
 // enter returns how far the overlay that *open shows has come in: 0 in the
 // frame it opens, 1 after d, eased out; 1 at once under reduced motion. mygo
 // plays no Enter for an overlay, whose panel is born with its layer, so the
@@ -23,14 +27,14 @@ var entered = map[*bool]struct {
 func enter(c *ui.Context, open *bool, d time.Duration) float32 {
 	s := entered[open]
 	if *open && !s.was {
-		s.at = c.Now()
+		s.at = clock(c)
 	}
 	s.was = *open
 	entered[open] = s
 	if !*open || c.Preferences().ReduceMotion {
 		return 1
 	}
-	k := float32(c.Now().Sub(s.at)) / float32(d)
+	k := float32(clock(c).Sub(s.at)) / float32(d)
 	if k >= 1 {
 		return 1
 	}
