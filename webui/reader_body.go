@@ -9,13 +9,16 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// bodyLimits bound a body's structure, as the native reader's conversion
-// did (richtext.DefaultLimits): element nesting, block elements, cells of
-// one table and inline nodes of one block.
+// bodyLimits bound a body's structure with the native reader's numbers
+// (richtext.DefaultLimits): element nesting, block elements, cells of one
+// table, and inline nodes (non-empty text nodes and inline elements) of the
+// whole body, table cells included. They are performance guards, counted
+// simply: no parity with richtext's merged runs is meant. Past the block or
+// inline limit the rest of the body goes: only its beginning is shown, as
+// the native truncated notice says.
 var bodyLimits = richtext.DefaultLimits
 
-// blockElems are the elements counted as blocks; a block also starts a new
-// count of inline nodes.
+// blockElems are the elements counted as blocks.
 var blockElems = map[atom.Atom]bool{
 	atom.P: true, atom.Div: true, atom.Center: true, atom.Section: true, atom.Article: true, atom.Header: true,
 	atom.Footer: true, atom.Main: true, atom.Nav: true, atom.Aside: true, atom.Address: true, atom.Figure: true,
@@ -29,12 +32,13 @@ var blockElems = map[atom.Atom]bool{
 // prepareBody readies safe, a sanitized body (mail.Sanitize), for the
 // reader page:
 //   - Every data: image must be a PNG, JPEG, GIF or WebP within the
-//     per-image limits and what budget has left (count, pixels); one that
-//     is not loses its src (its alt stays).
+//     per-image limits and what budget has left (count, bytes, pixels),
+//     which the message's remote images share; one that is not loses its
+//     src (its alt stays).
 //   - The structure is held to bodyLimits. An element nested deeper than
 //     MaxDepth becomes its text; a table's rows past MaxCells cells go; past
-//     MaxBlocks blocks or MaxInlines inline nodes in one block, the rest of
-//     the body goes. Cuts fall on element boundaries; the result is
+//     MaxBlocks blocks or MaxInlines inline nodes, the rest of the body
+//     goes. Cuts fall on element boundaries; the result is
 //     well-formed.
 //
 // remote is the http(s) image sources left in the result, as the DOM reads
@@ -50,8 +54,7 @@ func prepareBody(safe string, budget *imagefetch.Budget) (out string, remote map
 		root.AppendChild(n)
 	}
 	p := &preparer{budget: budget, remote: map[string]bool{}}
-	inlines := 0
-	p.walk(root, 0, &inlines, nil)
+	p.walk(root, 0, nil)
 	if !p.changed {
 		return safe, p.remote, false
 	}
@@ -68,6 +71,7 @@ type preparer struct {
 	budget  *imagefetch.Budget
 	remote  map[string]bool
 	blocks  int
+	inlines int
 	stopped bool // a limit ended the body: everything after goes
 	cut     bool
 	changed bool
@@ -80,9 +84,9 @@ type table struct {
 	full  bool
 }
 
-// walk keeps n's children within the limits; depth is n's nesting,
-// inlines the count of the block n is in, t the table n is in.
-func (p *preparer) walk(n *html.Node, depth int, inlines *int, t *table) {
+// walk keeps n's children within the limits; depth is n's nesting, t the
+// table n is in.
+func (p *preparer) walk(n *html.Node, depth int, t *table) {
 	for k := n.FirstChild; k != nil; {
 		next := k.NextSibling
 		if p.stopped {
@@ -92,30 +96,30 @@ func (p *preparer) walk(n *html.Node, depth int, inlines *int, t *table) {
 		}
 		switch k.Type {
 		case html.TextNode:
-			if strings.TrimSpace(k.Data) != "" && !p.inline(inlines) {
+			if strings.TrimSpace(k.Data) != "" && !p.inline() {
 				n.RemoveChild(k)
 			}
 		case html.ElementNode:
-			p.element(n, k, depth+1, inlines, t)
+			p.element(n, k, depth+1, t)
 		}
 		k = next
 	}
 }
 
-// inline counts one inline node of the block; false (and the body stops)
-// past MaxInlines.
-func (p *preparer) inline(inlines *int) bool {
-	if *inlines >= bodyLimits.MaxInlines {
+// inline counts one inline node; false (and the body stops) past
+// MaxInlines.
+func (p *preparer) inline() bool {
+	if p.inlines >= bodyLimits.MaxInlines {
 		p.stop()
 		return false
 	}
-	*inlines++
+	p.inlines++
 	return true
 }
 
 func (p *preparer) stop() { p.stopped, p.cut, p.changed = true, true, true }
 
-func (p *preparer) element(parent, k *html.Node, depth int, inlines *int, t *table) {
+func (p *preparer) element(parent, k *html.Node, depth int, t *table) {
 	if depth > bodyLimits.MaxDepth {
 		parent.InsertBefore(&html.Node{Type: html.TextNode, Data: textOf(k)}, k)
 		parent.RemoveChild(k)
@@ -144,21 +148,20 @@ func (p *preparer) element(parent, k *html.Node, depth int, inlines *int, t *tab
 			return
 		}
 		p.blocks++
-		own := 0
 		if k.DataAtom == atom.Table {
 			t = &table{}
 		}
-		p.walk(k, depth, &own, t)
+		p.walk(k, depth, t)
 		return
 	}
-	if !p.inline(inlines) {
+	if !p.inline() {
 		parent.RemoveChild(k)
 		return
 	}
 	if k.DataAtom == atom.Img {
 		p.image(k)
 	}
-	p.walk(k, depth, inlines, t)
+	p.walk(k, depth, t)
 }
 
 // image checks img's src: a data: image against the budget (its src goes
@@ -193,10 +196,7 @@ func (p *preparer) inlineImage(src string) error {
 	if err != nil {
 		return err
 	}
-	if err := p.budget.Take(); err != nil {
-		return err
-	}
-	return p.budget.TakePixels(px)
+	return p.budget.TakeInline(int64(len(data)), px)
 }
 
 func attrIndex(n *html.Node, key string) int {

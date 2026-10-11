@@ -65,6 +65,17 @@ func TestBudget(t *testing.T) {
 	if err := b.TakePixels(1); err != nil {
 		t.Errorf("given back: %v", err)
 	}
+
+	b = NewBudget()
+	if err := b.TakeInline(MaxTotalBytes-10, 5); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.TakeInline(11, 5); !errors.Is(err, ErrTotalTooLarge) {
+		t.Errorf("over the bytes: %v", err)
+	}
+	if err := b.TakeInline(10, MaxTotalPixels); !errors.Is(err, ErrTotalPixels) || b.BytesLeft() != 10 {
+		t.Errorf("over the pixels: %v, %d bytes left (want them back)", err, b.BytesLeft())
+	}
 }
 
 func TestDataURL(t *testing.T) {

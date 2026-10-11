@@ -32,7 +32,7 @@ import (
 const (
 	MaxImages      = 50       // images, remote and inline
 	MaxImageBytes  = 5 << 20  // one image
-	MaxTotalBytes  = 20 << 20 // all remote images together
+	MaxTotalBytes  = 20 << 20 // all images together
 	Workers        = 4        // downloads and decodes at once
 	MaxPixels      = 40_000_000
 	MaxTotalPixels = 100_000_000 // all images together, decoded
@@ -99,12 +99,12 @@ func PublicIP(ip netip.Addr) bool {
 // IsHTTP reports an http or https URL.
 func IsHTTP(u *url.URL) bool { return u.Scheme == "http" || u.Scheme == "https" }
 
-// Budget is one message's images' budget: their count and decoded pixels,
-// inline and remote together, and the bytes of the remote ones. It is safe
+// Budget is one message's images' budget: their count, bytes and decoded
+// pixels, inline and remote together. It is safe
 // for concurrent use.
 type Budget struct {
 	count  atomic.Int64 // images taken
-	bytes  atomic.Int64 // remote bytes left
+	bytes  atomic.Int64 // bytes left
 	pixels atomic.Int64 // decoded pixels left
 }
 
@@ -124,7 +124,7 @@ func (b *Budget) Take() error {
 	return nil
 }
 
-// BytesLeft is what the remote bytes' budget has left.
+// BytesLeft is what the bytes' budget has left.
 func (b *Budget) BytesLeft() int64 { return b.bytes.Load() }
 
 // TakePixels takes px decoded pixels; ErrTotalPixels when fewer are left.
@@ -142,6 +142,36 @@ func (b *Budget) TakePixels(px int64) error {
 
 // GivePixels gives back pixels taken for an image not shown after all.
 func (b *Budget) GivePixels(px int64) { b.pixels.Add(px) }
+
+// TakeBytes takes n bytes; ErrTotalTooLarge when fewer are left.
+func (b *Budget) TakeBytes(n int64) error {
+	for {
+		left := b.bytes.Load()
+		if n > left {
+			return ErrTotalTooLarge
+		}
+		if b.bytes.CompareAndSwap(left, left-n) {
+			return nil
+		}
+	}
+}
+
+// TakeInline takes an inline image of size bytes and px pixels: its count,
+// bytes and pixels, all or none of them but the count (as a remote image's,
+// which is counted once asked for).
+func (b *Budget) TakeInline(size, px int64) error {
+	if err := b.Take(); err != nil {
+		return err
+	}
+	if err := b.TakeBytes(size); err != nil {
+		return err
+	}
+	if err := b.TakePixels(px); err != nil {
+		b.bytes.Add(size)
+		return err
+	}
+	return nil
+}
 
 // Config is data's format and pixels, read from its header: a PNG, JPEG,
 // GIF or WebP image (by content) of at most MaxPixels.

@@ -64,7 +64,10 @@ var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 // ReaderDeps is what Reader needs from the platform. The callbacks come on
 // the page's call: they post to the UI thread themselves.
 type ReaderDeps struct {
-	// Emit sends a body to the page with key page (ReaderReload.EmitPage).
+	// Emit sends a body to the page with key page (ReaderReload.EmitPage,
+	// which only queues it). It runs with the Reader's lock held, so the
+	// page is bound to b's message as it is sent: it must not block or call
+	// back into the Reader.
 	Emit func(page any, b ReaderBody)
 	// OnHeight is the height of message's body, in CSS pixels.
 	OnHeight func(message int64, px int)
@@ -205,18 +208,17 @@ func (r *Reader) Allow(message int64) {
 			log.Printf("reader: message %d: %v", message, err)
 			return
 		}
+		// Sent under the lock: a page rebound meanwhile, or a newer
+		// version, gets nothing of this body.
 		r.mu.Lock()
-		var keys []any
-		if r.msgs[message] == st && st.version == v {
-			for k, m := range r.bound {
-				if m == message {
-					keys = append(keys, k)
-				}
-			}
+		defer r.mu.Unlock()
+		if r.msgs[message] != st || st.version != v {
+			return
 		}
-		r.mu.Unlock()
-		for _, k := range keys {
-			r.d.Emit(k, b)
+		for k, m := range r.bound {
+			if m == message {
+				r.d.Emit(k, b)
+			}
 		}
 	}()
 }

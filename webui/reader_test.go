@@ -481,3 +481,90 @@ func TestReaderImageMessageDeadline(t *testing.T) {
 	assert.ErrorIs(t, err, ErrImageDeadline)
 	assert.EqualValues(t, 1, started.Load(), "no request after the deadline")
 }
+
+// TestReaderInlineImageBytes: inline images take their bytes from the
+// budget the remote ones share.
+func TestReaderInlineImageBytes(t *testing.T) {
+	const size = 4<<20 + 512<<10 // 4.5 MiB: four fit in 20 MiB, five do not
+	inline := dataPNG(append(pngHeader(10, 10), make([]byte, size)...))
+	var sb strings.Builder
+	for i := range 5 {
+		fmt.Fprintf(&sb, `<img src="%s" alt="i%d">`, inline, i)
+	}
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(append(pngHeader(10, 10), make([]byte, 3<<20)...))
+	})
+	f := newReaderFixture(t)
+	f.fakeMessage(func(_ int64, remote bool) core.Message {
+		h := sb.String()
+		if remote {
+			h += `<img src="` + srv.URL + `/r.png">`
+		}
+		return core.Message{HTML: h}
+	})
+	k := f.page(1)
+	b, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`), "the fifth inline image is over the bytes")
+	f.r.Allow(1)
+	f.waitEmitted(t, k)
+	_, err = f.p.Image(pageCtx(k), srv.URL+"/r.png")
+	assert.ErrorIs(t, err, imagefetch.ErrTotalTooLarge, "2 MiB left for a 3 MiB remote image")
+}
+
+// TestReaderTableInlineBudget: the inline count runs across the whole
+// body, table cells included (richtext's TestTableInlineBudget input).
+func TestReaderTableInlineBudget(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("<table><tr><th>h</th><th>h</th></tr>")
+	for range 300 {
+		sb.WriteString("<tr>")
+		for range 2 {
+			sb.WriteString("<td>" + strings.Repeat("a<b>b</b>", 25) + "<p>x</p></td>")
+		}
+		sb.WriteString("</tr>")
+	}
+	sb.WriteString("</table>")
+	out, _, cut := prepareBody(sb.String(), imagefetch.NewBudget())
+	assert.True(t, cut)
+	doc, err := html.Parse(strings.NewReader(out))
+	require.NoError(t, err)
+	inlines := 0
+	for n := range doc.Descendants() {
+		if n.Type == html.TextNode && strings.TrimSpace(n.Data) != "" || n.Type == html.ElementNode && n.Data == "b" {
+			inlines++
+		}
+	}
+	assert.LessOrEqual(t, inlines, bodyLimits.MaxInlines)
+	assert.Greater(t, inlines, bodyLimits.MaxInlines-200)
+}
+
+// TestReaderEmitFollowsBinding: a body goes only to pages bound to its
+// message as it is sent, though pages are rebound meanwhile.
+func TestReaderEmitFollowsBinding(t *testing.T) {
+	f := newReaderFixture(t)
+	f.fakeMessage(func(id int64, _ bool) core.Message { return core.Message{HTML: fmt.Sprintf("<p>%d</p>", id)} })
+	var wrong atomic.Int64
+	f.r.d.Emit = func(page any, b ReaderBody) {
+		if f.r.bound[page] != b.Message { // the lock is held
+			wrong.Add(1)
+		}
+	}
+	k := f.page(1)
+	f.page(1) // keeps message 1 bound while k moves
+	end := time.Now().Add(300 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; time.Now().Before(end); i++ {
+			f.r.Bind(k, int64(1+i%2))
+		}
+	}()
+	for time.Now().Before(end) {
+		f.r.Allow(1)
+		time.Sleep(time.Millisecond)
+	}
+	<-done
+	time.Sleep(200 * time.Millisecond) // the Allows' goroutines finish
+	assert.Zero(t, wrong.Load(), "a page got another message's body")
+}
