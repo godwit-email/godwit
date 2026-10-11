@@ -88,35 +88,116 @@ func nullID(id int64) any {
 	return id
 }
 
-// purgeStillDue checks a purge op again as it is pushed: the message must still
-// be purgeable and its folder still the role's folder, on a server with UIDPLUS.
+// PurgeStep, when set (tests only), runs at each step of a purge's push:
+// "selected", then "stored" (\Deleted set, UID EXPUNGE not sent yet).
+var PurgeStep func(step string)
+
+// claimable is the condition on the ops row of a purge that it may go on: still
+// pending (a rescue cancels it) and its message still purgeable. Its arguments
+// are the role and the op's id.
+const claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN purge_policies p ON p.account_id = m.account_id
+	AND p.role = ? JOIN folders f ON f.id = p.folder_id WHERE m.id = ops.message_id AND p.folder_id = ops.dst_folder_id AND ` + purgeable + `)`
+
+// purgeStillDue checks a purge op as it is pushed: claimable, its folder still
+// the role's folder, on a server with UIDPLUS.
 func purgeStillDue(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (bool, error) {
 	var p purgePayload
 	if json.Unmarshal([]byte(o.payload), &p) != nil || !c.Caps().Has(imap.CapUIDPlus) {
 		return false, nil
 	}
-	r, err := db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", o.msg)
+	r, err := db.Query(ctx, "SELECT account_id FROM ops WHERE id = ?", o.id)
 	if err != nil || len(r.Values) == 0 {
 		return false, err
 	}
-	acc := store.Int(r.Values[0][0])
-	folder, _, err := RoleFolder(ctx, db, acc, p.Role)
+	folder, _, err := RoleFolder(ctx, db, store.Int(r.Values[0][0]), p.Role)
 	if err != nil || folder != o.dst {
 		return false, err
 	}
-	r, err = db.Query(ctx, `SELECT 1 FROM messages m JOIN purge_policies p ON p.account_id = m.account_id AND p.role = ?
-		JOIN folders f ON f.id = p.folder_id WHERE m.id = ? AND p.folder_id = ? AND `+purgeable, p.Role, o.msg, o.dst, o.id)
+	r, err = db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND "+claimable, o.id, p.Role, o.id)
 	return err == nil && len(r.Values) > 0, err
 }
 
-// expunge removes the message with uid from the selected folder: \Deleted, then
-// UID EXPUNGE of that UID only.
-func expunge(c *imapclient.Client, uid imap.UID) error {
-	set := imap.UIDSetNum(uid)
-	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
-		return err
+// pushPurge expunges the message of purge op o, which is at uid in folder
+// srcName. It claims the op in one statement before sending anything and checks
+// it again after SELECT and between STORE \Deleted and UID EXPUNGE; when it no
+// longer holds (a rescue, the role or the policy changed) the op is cancelled
+// and any \Deleted a purge of it set is removed again. The one window left is
+// the UID EXPUNGE's own round trip.
+func pushPurge(ctx context.Context, db *store.DB, c *imapclient.Client, o op, srcName string, srcValidity uint32, uid imap.UID) (string, error) {
+	flagged := o.attempts > 0 // an earlier attempt may have set \Deleted
+	selected := false
+	cancel := func() (string, error) {
+		if flagged {
+			if !selected {
+				if _, err := c.Select(srcName, nil).Wait(); err != nil {
+					return fail(ctx, db, o, err)
+				}
+			}
+			if err := undelete(c, uid); err != nil {
+				return fail(ctx, db, o, err)
+			}
+		}
+		return "", finish(ctx, db, o, "cancelled", "")
 	}
-	return c.UIDExpunge(set).Close()
+	var p purgePayload
+	_ = json.Unmarshal([]byte(o.payload), &p)
+	due, err := purgeStillDue(ctx, db, c, o)
+	if err != nil {
+		return "", err
+	}
+	if !due {
+		return cancel()
+	}
+	res, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND "+claimable, o.id, p.Role, o.id)
+	if err != nil {
+		return "", err
+	}
+	if res.Changes != 1 {
+		return cancel()
+	}
+	o.attempts++
+	sel, err := c.Select(srcName, nil).Wait()
+	if err != nil {
+		return fail(ctx, db, o, err)
+	}
+	selected = true
+	if sel.UIDValidity != srcValidity { // the folder was recreated: nothing of ours to purge
+		return "", finish(ctx, db, o, "cancelled", "")
+	}
+	if !stillDue(ctx, db, c, o, "selected") {
+		return cancel()
+	}
+	set := imap.UIDSetNum(uid)
+	flagged = true
+	if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+		undelete(c, uid) // best effort; a rescue's move removes it too
+		return fail(ctx, db, o, err)
+	}
+	if !stillDue(ctx, db, c, o, "stored") {
+		return cancel()
+	}
+	if err := c.UIDExpunge(set).Close(); err != nil {
+		undelete(c, uid) // best effort, as above
+		return fail(ctx, db, o, err)
+	}
+	// Recorded even if a rescue cancelled it meanwhile: the message is gone.
+	_, err = db.Execute(ctx, "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", o.id)
+	return "", err
+}
+
+// stillDue runs the PurgeStep hook for step, then checks the purge again; a
+// database error counts as no.
+func stillDue(ctx context.Context, db *store.DB, c *imapclient.Client, o op, step string) bool {
+	if PurgeStep != nil {
+		PurgeStep(step)
+	}
+	due, err := purgeStillDue(ctx, db, c, o)
+	return err == nil && due
+}
+
+// undelete removes \Deleted from uid in the selected folder.
+func undelete(c *imapclient.Client, uid imap.UID) error {
+	return c.Store(imap.UIDSetNum(uid), &imap.StoreFlags{Op: imap.StoreFlagsDel, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close()
 }
 
 // auditPurges writes one audit_log row per folder a push expunged mail from:

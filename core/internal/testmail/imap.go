@@ -68,17 +68,18 @@ type IMAP struct {
 	Addr string
 	User *imapmemserver.User
 
-	cfg        config
-	srv        *imapserver.Server
-	mu         sync.Mutex
-	ln         net.Listener
-	conn       map[*tconn]struct{}
-	sent       atomic.Int64 // bytes written to clients
-	drop       atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
-	cmds       atomic.Int64 // MOVE and COPY commands handled
-	dropAppend atomic.Bool
-	logins     atomic.Int64
-	ids        []map[string]string // guarded by mu
+	cfg         config
+	srv         *imapserver.Server
+	mu          sync.Mutex
+	ln          net.Listener
+	conn        map[*tconn]struct{}
+	sent        atomic.Int64 // bytes written to clients
+	drop        atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
+	cmds        atomic.Int64 // MOVE and COPY commands handled
+	dropAppend  atomic.Bool
+	dropExpunge atomic.Bool
+	logins      atomic.Int64
+	ids         []map[string]string // guarded by mu
 }
 
 // Logins is how many LOGIN and AUTHENTICATE commands the server has handled.
@@ -98,6 +99,10 @@ func (s *IMAP) IDs() []map[string]string {
 // DropAfterNextAppend makes the next APPEND store the message and then close the
 // client's connection before the tagged OK.
 func (s *IMAP) DropAfterNextAppend() { s.dropAppend.Store(true) }
+
+// DropOnNextUIDExpunge makes the next UID EXPUNGE close the client's
+// connection without expunging anything.
+func (s *IMAP) DropOnNextUIDExpunge() { s.dropExpunge.Store(true) }
 
 // MovesAndCopies is how many MOVE and COPY commands the server has handled.
 func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
@@ -280,6 +285,15 @@ func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) 
 		d = nil
 	}
 	return d, err
+}
+
+// Expunge drops the connection instead of a UID EXPUNGE when asked to.
+func (s session) Expunge(w *imapserver.ExpungeWriter, uids *imap.UIDSet) error {
+	if uids != nil && s.s.dropExpunge.CompareAndSwap(true, false) {
+		s.conn.Conn.Close()
+		return errors.New("dropped")
+	}
+	return s.Session.Expunge(w, uids)
 }
 
 // Move cannot return nil data (MoveWriter is concrete), so the connection strips COPYUID.

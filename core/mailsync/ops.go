@@ -136,13 +136,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		return "", finish(ctx, db, o, "done", "")
 	}
 	if o.kind == "purge" {
-		due, err := purgeStillDue(ctx, db, c, o)
-		if err != nil {
-			return "", err
-		}
-		if !due { // moved out, its role or policy changed, or the server lost UIDPLUS
-			return "", finish(ctx, db, o, "cancelled", "")
-		}
+		return pushPurge(ctx, db, c, o, srcName, srcValidity, uid)
 	}
 	// Counted before anything is sent: after a dropped connection the next round
 	// knows the command may have reached the server.
@@ -155,7 +149,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	var dstName string
 	var dstValidity uint32
 	switch o.kind {
-	case "flags", "purge":
+	case "flags":
 	case "move":
 		if !c.Caps().Has(imap.CapMove) && !c.Caps().Has(imap.CapUIDPlus) {
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
@@ -183,12 +177,6 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		return msg, finish(ctx, db, o, "conflict", msg)
 	}
 	set := imap.UIDSetNum(uid)
-	if o.kind == "purge" {
-		if err := expunge(c, uid); err != nil {
-			return fail(ctx, db, o, err)
-		}
-		return "", finish(ctx, db, o, "done", "")
-	}
 	if o.kind == "flags" {
 		var p FlagsPayload
 		if err := json.Unmarshal([]byte(o.payload), &p); err != nil {
@@ -208,6 +196,14 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		}
 		if len(got) == 0 {
 			return "", moved(ctx, db, o, 0, 0)
+		}
+	}
+	// A purge of it that reached the server may have left \Deleted: the rescued copy must not carry it.
+	if r, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg); err != nil {
+		return "", err
+	} else if len(r.Values) > 0 {
+		if err := undelete(c, uid); err != nil {
+			return fail(ctx, db, o, err)
 		}
 	}
 	validity, dstUID, err := move(c, set, dstName)
@@ -295,7 +291,11 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 // finish sets o's state. A move that ends failed or conflict puts the message
 // back in the folder the server has it in, unless another move of it is queued.
 func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
-	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE id = ?", Args: []any{state, nullable(lastError), o.id}}}
+	where := "id = ?"
+	if o.kind == "purge" {
+		where += " AND state = 'pending'" // a rescue's cancel stands
+	}
+	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE " + where, Args: []any{state, nullable(lastError), o.id}}}
 	if o.kind == "move" && (state == "failed" || state == "conflict") {
 		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch()
 			WHERE id = ? AND server_folder_id IS NOT NULL AND folder_id != server_folder_id AND NOT EXISTS (SELECT 1 FROM ops

@@ -108,7 +108,9 @@ func TestPurgeSkipsPendingMoves(t *testing.T) {
 	e.sync(t)
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	// Shown in Trash but on the server in INBOX, with no move queued.
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET folder_id = ? WHERE message_id = 'stray@x'", e.folderID(t, "Trash"))
+	// Its UIDVALIDITY is set to Trash's, so only the server-folder guard holds it.
+	_, err := e.s.db.Execute(bg, "UPDATE messages SET folder_id = ?, server_uidvalidity = (SELECT uidvalidity FROM folders WHERE id = ?) WHERE message_id = 'stray@x'",
+		e.folderID(t, "Trash"), e.folderID(t, "Trash"))
 	require.NoError(t, err)
 	e.im.Stop()
 	require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "out@x")}, e.folderID(t, "INBOX")))
@@ -119,6 +121,7 @@ func TestPurgeSkipsPendingMoves(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []string{"stray@x", "out@x"}, e.onServer(t, "INBOX"))
 	assert.Equal(t, []string{"in@x"}, e.onServer(t, "Trash"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge'"), "none even queued")
 	assert.Zero(t, e.audits(t))
 }
 
@@ -207,6 +210,13 @@ func TestPurgeRoleChangeRestartsClock(t *testing.T) {
 		assert.Equal(t, "Trash", e.roles(t)["trash"], "the role falls back to detection")
 		assert.Equal(t, []string{"bin@x"}, e.onServer(t, "Bin2"))
 		assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"), "the fallback's clock starts now")
+		_, err := e.s.db.Execute(bg, "UPDATE folders SET purged_at = 0")
+		require.NoError(t, err)
+		e.sync(t)
+		assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"), "and holds on the next round")
+		e.age(t, 2)
+		e.sync(t)
+		assert.Equal(t, []string{}, e.onServer(t, "Trash"))
 	})
 }
 
@@ -305,4 +315,104 @@ func TestEnteredAtFollowsFolder(t *testing.T) {
 	e.age(t, 10)
 	e.sync(t)
 	assert.Greater(t, entered(), int64(86400), "the move's push keeps it")
+}
+
+func TestPurgeClockStartsWhenTurnedOn(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("m@x"))
+	e.put(t, "Trash", msg("unknown@x"))
+	e.sync(t)
+	e.age(t, 30) // a month in Trash with the purge off
+	_, err := e.s.db.Execute(bg, "UPDATE messages SET entered_at = 0 WHERE message_id = 'unknown@x'")
+	require.NoError(t, err)
+	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x", "unknown@x"}, e.onServer(t, "Trash"), "only mail a day past turning it on")
+	e.age(t, 2)
+	e.sync(t)
+	assert.Equal(t, []string{"unknown@x"}, e.onServer(t, "Trash"), "an unknown entered_at is never old")
+}
+
+func TestPurgeTurnedOffBeforePush(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
+	e.age(t, 2)
+	require.NoError(t, mailsync.QueuePurge(bg, e.s.db, e.dial(t), e.acc.ID))
+	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 0))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
+	assert.Equal(t, []string{"cancelled"}, e.opStates(t))
+}
+
+func TestPurgeWaitsForPendingFlags(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
+	e.age(t, 2)
+	e.im.Stop()
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "m@x")}, []string{`\Seen`}, nil))
+	e.im.Restart()
+	e.sync(t)
+	assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "Trash"))
+}
+
+// interruptPurge leaves m@x in Trash with \Deleted set and its purge pending:
+// the connection drops at UID EXPUNGE.
+func interruptPurge(t *testing.T, e *syncEnv) {
+	t.Helper()
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
+	e.age(t, 2)
+	e.im.DropOnNextUIDExpunge()
+	_ = e.s.SyncNow(bg, e.acc.ID)
+	require.Equal(t, []string{`m@x \Deleted`}, e.onServer(t, "Trash"))
+	require.Equal(t, 1, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge' AND state = 'pending' AND attempts = 1"))
+}
+
+func TestPurgeInterruptedLeavesNoDeleted(t *testing.T) {
+	t.Run("rescue", func(t *testing.T) {
+		e := newSyncEnv(t)
+		interruptPurge(t, e)
+		require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "m@x")}, e.folderID(t, "INBOX")))
+		e.sync(t)
+		assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"), "rescued without \\Deleted")
+		assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+	})
+	t.Run("turned off", func(t *testing.T) {
+		e := newSyncEnv(t)
+		interruptPurge(t, e)
+		require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 0))
+		e.sync(t)
+		assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"), "the cancel removes \\Deleted")
+		assert.Contains(t, e.opStates(t), "cancelled")
+	})
+}
+
+func TestPurgeRacingRescue(t *testing.T) {
+	for _, step := range []string{"selected", "stored"} {
+		t.Run(step, func(t *testing.T) {
+			e := newSyncEnv(t)
+			e.put(t, "Trash", msg("m@x"))
+			e.sync(t)
+			require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
+			e.age(t, 2)
+			id, inbox := e.idOf(t, "m@x"), e.folderID(t, "INBOX")
+			mailsync.PurgeStep = func(s string) {
+				if s == step {
+					require.NoError(t, e.s.Move(bg, []int64{id}, inbox))
+				}
+			}
+			t.Cleanup(func() { mailsync.PurgeStep = nil })
+			e.sync(t)
+			mailsync.PurgeStep = nil
+			e.sync(t)
+			assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
+			assert.Zero(t, e.audits(t))
+			assert.Equal(t, inbox, store.Int(e.rows(t, "SELECT server_folder_id FROM messages WHERE id = ?", id)[0][0]))
+		})
+	}
 }
