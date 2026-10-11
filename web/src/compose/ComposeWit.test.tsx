@@ -465,7 +465,10 @@ test("after a ⌘K run, free input in the panel runs Ask", async () => {
   vi.mocked(api.latest).mockResolvedValue(latest("Hello world", 8));
   emit({ run: 9, conversation: 3, kind: "done" });
   await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
-  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "更正式{Enter}");
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }),
+    "更正式{Enter}",
+  );
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式"));
   expect(api.rewrite).toHaveBeenCalledTimes(1);
 });
