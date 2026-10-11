@@ -44,7 +44,8 @@ func newFixture(t *testing.T, opts ...coretest.Option) *fixture {
 			return w, ok
 		},
 		PickFiles: func(context.Context, int) ([]string, error) { return f.pick() },
-		Emit: func(win int, ev WitEvent) {
+		Emit: func(tg Target, ev WitEvent) {
+			win := tg.Window
 			f.evMu.Lock()
 			defer f.evMu.Unlock()
 			if f.evs == nil {

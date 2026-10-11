@@ -170,8 +170,9 @@ type PageDeps struct {
 	// PickFiles asks for files to attach, in a dialog on window winID; none
 	// picked is no error.
 	PickFiles func(ctx context.Context, winID int) ([]string, error)
-	// Emit sends a Wit event to window winID (WitStream.Emit in production).
-	Emit func(winID int, ev WitEvent)
+	// Emit sends a Wit event to a window or page (WitStream.Emit or
+	// EmitPage in production).
+	Emit func(t Target, ev WitEvent)
 	// OpenURL opens an http(s) link in the browser; OpenCompose opens draft
 	// id in a compose window.
 	OpenURL     func(url string) error

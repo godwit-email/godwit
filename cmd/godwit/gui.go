@@ -65,6 +65,8 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	// Compose pages reach only their own window's draft; bound before Run.
 	pages := webui.NewCompose()
+	// Embedded pages and their roles, by their *mygo.Page.
+	roles := webui.NewPages(func(ctx context.Context) any { return mygo.CallerPage(ctx) })
 	var windows *webui.Windows
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
@@ -74,11 +76,17 @@ func gui(ctx context.Context, dataDir string) int {
 			return 0, false
 		},
 		PickFiles: pickFiles,
-		Emit: func(winID int, ev webui.WitEvent) {
-			if w := mygo.WindowByID(winID); w != nil {
-				if err := webui.WitStream.Emit(w, ev); err != nil {
-					log.Printf("wit event to compose window %d: %v", winID, err)
+		Emit: func(t webui.Target, ev webui.WitEvent) {
+			var err error
+			if t.Page != 0 {
+				if p, ok := roles.Key(t.Page); ok {
+					err = webui.WitStream.EmitPage(p.(*mygo.Page), ev)
 				}
+			} else if w := mygo.WindowByID(t.Window); w != nil {
+				err = webui.WitStream.Emit(w, ev)
+			}
+			if err != nil {
+				log.Printf("wit event to %+v: %v", t, err)
 			}
 		},
 		OpenURL:     mygo.Shell.OpenExternal,

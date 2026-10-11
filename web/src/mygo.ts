@@ -534,6 +534,12 @@ export const ComposePage = {
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
   /**
+   * WitStream carries Wit events to the window or page following them only
+   * (a Target). Each follows one conversation at a time: a run or Follow in
+   * another conversation replaces what it followed.
+   */
+  wit: event<WitEvent>("wit"),
+  /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close
    * attempt, so an answer to an earlier attempt counts for nothing.
@@ -541,10 +547,4 @@ export const events = {
   closing: event<number>("closing"),
   /** ThemeChanged carries the theme to every page when the settings change. */
   theme: event<Theme>("theme"),
-  /**
-   * WitStream carries the Wit events of a compose window's draft, emitted to
-   * that window only. A window follows one conversation at a time: a run or
-   * Follow in another conversation replaces what it followed.
-   */
-  wit: event<WitEvent>("wit"),
 } as const;
