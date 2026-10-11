@@ -254,7 +254,7 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Decide", "Discard", "Finish", "Follow", "Latest", "Load",
+	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Decide", "DecideAll", "Discard", "Finish", "Follow", "Latest", "Load",
 		"OpenLink", "RemoveAttachment", "Review", "Rewrite", "Save", "Send", "SetAccount", "Skill", "Stop", "Undo", "WitInfo"}, names)
 }
 

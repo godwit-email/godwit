@@ -498,6 +498,15 @@ function Compose({
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
     void reload();
   };
+  // Decides a tool's call (its card in the panel), or every one of its run waiting; the run it
+  // resumes streams in the panel.
+  const decideTool = async (a: Approval, accept: boolean, all: boolean) => {
+    if (deciding) return false;
+    runEdits.current = edits.current;
+    decidedRun.current = a.run;
+    const r = await bodyOp(() => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
+    return !!r;
+  };
   const undo = async () => {
     setApplied(false);
     await bodyOp(() => api.undo());
@@ -828,6 +837,7 @@ function Compose({
             }
             resume={resume}
             onRunning={setPanelRunning}
+            onDecide={decideTool}
             transport={wit.tr}
             t={t}
           />

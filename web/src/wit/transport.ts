@@ -294,6 +294,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private log: WitEvent[] = [];
   private sink?: (ev: WitEvent) => void;
   private resuming?: { open?: WitUIMessage; id: string };
+  private runsOf = new Map<string, number[]>(); // the history's answers' runs, by message ID
   private off: () => void;
 
   constructor(
@@ -340,11 +341,23 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   async follow(): Promise<WitHistory> {
     this.reset();
     const h = await this.api.follow();
+    this.runsOf = new Map(h.messages.map((m) => [m.id, m.runs]));
     this.adopt(h.conversation);
     return h;
   }
 
-  /** The next reconnect streams the live run, going on with open (the history's last answer, taken out of the chat's messages). */
+  /**
+   * Whether m is run's answer: by the history's runs, or the ID a live run's answer takes
+   * (`live<run>`; `w<run>` for a run's synthetic answer).
+   */
+  owns(m: WitUIMessage | undefined, run: number): boolean {
+    if (m?.role !== "assistant") return false;
+    return (
+      m.id === `live${run}` || m.id === `w${run}` || (this.runsOf.get(m.id)?.includes(run) ?? false)
+    );
+  }
+
+  /** The next reconnect streams the live run, going on with open (its own answer, the chat's last) or else in an answer of its own. */
   resume(open: WitUIMessage | undefined, run: number) {
     this.run = run;
     this.resuming = { open, id: open?.id ?? `live${run}` };
@@ -392,6 +405,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
       ctl.enqueue(key ? { type: "error", errorText: key } : { type: "finish" });
       end();
     };
+    // Names the answer before anything of it is written (sendMessages: once its run is known).
+    const named = (id: string) => {
+      if (open) ctl.enqueue({ type: "start", messageId: id });
+    };
     const s = new ReadableStream<Chunk>({
       start: (c) => {
         ctl = c;
@@ -401,7 +418,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     });
     abortSignal?.addEventListener("abort", end);
     this.sink = push;
-    return { s, push, fail };
+    return { s, push, fail, named };
   }
 
   async sendMessages({
@@ -415,11 +432,12 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.run = 0;
     this.starting = true;
     this.stopping = false;
-    const { s, fail } = this.stream(abortSignal, [], new Set());
+    const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     (skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
       .then(
         (run) => {
+          named(`live${run}`); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;
           const ev = this.early.find((e) => e.run === run);
           if (ev) this.adopt(ev.conversation);

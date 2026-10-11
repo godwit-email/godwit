@@ -16,6 +16,7 @@ vi.mock("@/mygo", () => ({
     stop: vi.fn(),
     review: vi.fn(),
     decide: vi.fn(),
+    decideAll: vi.fn(),
     finish: vi.fn(),
     undo: vi.fn(),
     rewrite: vi.fn(),
@@ -118,6 +119,10 @@ const text: Record<string, string> = {
   "wit.compose.cmdk.esc": "Esc",
   "wit.compose.cmdk.go": "生成 ↵",
   "wit.tool.update_draft": "修改正文",
+  "wit.approval.wants": "Wit 想要：%s",
+  "wit.approval.allow": "允许",
+  "wit.approval.allow_all": "全部允许",
+  "wit.approval.reject": "拒绝",
 };
 const state: ComposeState = {
   draftId: 1,
@@ -148,6 +153,7 @@ const pending: Approval = {
   state: "pending",
   error: "",
   destinations: [],
+  args: "",
 };
 const withPending: WitHistory = {
   conversation: 1,
@@ -485,4 +491,47 @@ test("⌘K without a model keeps the link popover", async () => {
   vi.mocked(api.load).mockResolvedValue({ ...state, wit: { ...state.wit, enabled: false } });
   render(<ComposePage />);
   expect(await body()).toHaveAttribute("data-cmdk", "false");
+});
+
+test("a tool's approval is decided in the panel; the run it resumes streams there", async () => {
+  const ping = (id: number, callId: string): Approval => ({
+    ...pending,
+    id,
+    callId,
+    tool: "plugin_netty_ping",
+    args: "{}",
+  });
+  vi.mocked(api.decide).mockResolvedValue(change("正文", 7));
+  vi.mocked(api.decideAll).mockResolvedValue(change("正文", 7));
+  vi.mocked(api.latest).mockResolvedValue(latest("正文", 7));
+  await setup({
+    ...withPending,
+    messages: [
+      withPending.messages[0],
+      {
+        ...withPending.messages[1],
+        calls: [
+          { id: "p1", name: "plugin_netty_ping", args: "{}" },
+          { id: "p2", name: "plugin_netty_ping", args: "{}" },
+          { id: "p3", name: "plugin_netty_ping", args: "{}" },
+        ],
+      },
+    ],
+    approvals: [ping(5, "p1"), ping(6, "p2"), ping(8, "p3")],
+  });
+  expect(screen.getAllByText("Wit 想要：plugin_netty_ping")).toHaveLength(3);
+  expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull(); // not a draft edit
+  fireEvent.click(screen.getAllByRole("button", { name: "拒绝" })[0]);
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(5, false));
+  await waitFor(() => expect(screen.getAllByText("Wit 想要：plugin_netty_ping")).toHaveLength(2));
+  fireEvent.click(screen.getAllByRole("button", { name: "全部允许" })[0]);
+  await waitFor(() => expect(api.decideAll).toHaveBeenCalledWith(7, true));
+  await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+  emit({ kind: "text", text: "都发出去了。" });
+  emit({ kind: "done" });
+  expect(await screen.findByText("都发出去了。")).toBeInTheDocument();
+  // the next question can start: nothing waits
+  vi.mocked(api.ask).mockResolvedValue(9);
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来"));
 });

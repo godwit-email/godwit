@@ -7,7 +7,14 @@ import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -52,6 +59,7 @@ const Busy = ({ t }: { t: T }) => (
 );
 
 const ARGS = 160; // a call's arguments shown, in characters (app/wit.go argsRunes)
+const BODY = 240; // a call's body on its approval card (app/wit.go bodyRunes)
 
 /** An error key (or a bridge error's text) in the page's copy. */
 export function witError(m: string, t: T): string {
@@ -82,7 +90,102 @@ function toolsLabel(calls: DynamicToolUIPart[], t: T): string {
   return `${t(key, count.size)} · ${names.join(t("mail.list_sep"))}`;
 }
 
-const clip = (s: string) => (s.length > ARGS ? `${s.slice(0, ARGS)}…` : s);
+const clip = (s: string, n = ARGS) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+const isDraftEdit = (tool: string) => tool === "update_draft" || tool === "update_selection";
+
+const toolLabel = (tool: string, t: T) =>
+  t(`wit.tool.${tool}`) !== `wit.tool.${tool}` ? t(`wit.tool.${tool}`) : tool;
+
+const strList = (v: unknown): string[] =>
+  typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+
+/** Decides approval a, or with all every pending one of its run; true once decided. */
+export type Decide = (a: Approval, accept: boolean, all: boolean) => Promise<boolean>;
+
+/**
+ * A tool call waiting for the user (app/wit.go card): what Wit wants, the call's recipients,
+ * subject and body, where it sends data; Allow, Allow all (others of its run pending) and Reject.
+ */
+function ToolCard({
+  a,
+  many,
+  busy,
+  decide,
+  t,
+}: {
+  a: Approval;
+  many: boolean;
+  busy: boolean;
+  decide(accept: boolean, all: boolean): void;
+  t: T;
+}) {
+  let args: Record<string, unknown> = {};
+  try {
+    const v = JSON.parse(a.args || "{}");
+    if (v && typeof v === "object") args = v;
+  } catch {
+    // not JSON: nothing to show of it
+  }
+  const fields: [string, string][] = [
+    [t("wit.approval.to"), strList(args.to).join(", ")],
+    [t("wit.approval.cc"), strList(args.cc).join(", ")],
+    [t("wit.approval.subject"), typeof args.subject === "string" ? args.subject : ""],
+  ];
+  let body = "";
+  for (const k of ["html", "body", "text"]) {
+    const v = args[k];
+    if (typeof v !== "string" || !v.trim()) continue;
+    body =
+      k === "html" ? (new DOMParser().parseFromString(v, "text/html").body.textContent ?? "") : v;
+    body = clip(body.trim(), BODY);
+    break;
+  }
+  return (
+    <Card size="sm" className="ring-primary">
+      <CardHeader>
+        <CardTitle>{t("wit.approval.wants", toolLabel(a.tool, t))}</CardTitle>
+        <CardDescription className="font-mono text-xs">{a.tool}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1.5">
+        {a.summary && <p className="text-muted-foreground">{a.summary}</p>}
+        {fields.map(
+          ([label, value]) =>
+            value && (
+              <div key={label} className="flex items-start gap-3">
+                <span className="shrink-0 text-muted-foreground">{label}</span>
+                <span className="min-w-0 break-words">{value}</span>
+              </div>
+            ),
+        )}
+        {body && <p className="text-muted-foreground">{body}</p>}
+        {a.destinations.length > 0 && (
+          <p className="text-destructive">
+            {t("wit.approval.destinations", a.destinations.join(t("mail.list_sep")))}
+          </p>
+        )}
+      </CardContent>
+      <CardFooter className="flex-wrap gap-2">
+        <Button size="sm" disabled={busy} onClick={() => decide(true, false)}>
+          {t("wit.approval.allow")}
+        </Button>
+        {many && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(true, true)}>
+            {t("wit.approval.allow_all")}
+          </Button>
+        )}
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(false, false)}>
+          {t("wit.approval.reject")}
+        </Button>
+        {a.tool === "create_draft" && (
+          <span className="ml-auto text-muted-foreground text-sm">
+            {t("wit.approval.send_note")}
+          </span>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}
 
 function Answer({
   m,
@@ -90,6 +193,7 @@ function Answer({
   nums,
   approvals,
   review,
+  tools,
   t,
 }: {
   m: WitUIMessage;
@@ -97,6 +201,7 @@ function Answer({
   nums: Map<number, { n: number; suspect: boolean }>;
   approvals: Map<string, Approval>;
   review?: PanelReview;
+  tools: (a: Approval) => ReactNode;
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
@@ -104,10 +209,11 @@ function Answer({
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
     .join("\n\n");
-  const waiting = calls.flatMap((c) => {
+  const requested = calls.flatMap((c) => {
     const a = c.state === "approval-requested" ? approvals.get(c.approval.id) : undefined;
-    return a && a.id === review?.approval ? [a] : [];
+    return a ? [a] : [];
   });
+  const waiting = requested.filter((a) => a.id === review?.approval);
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
       {calls.length > 0 && (
@@ -167,13 +273,12 @@ function Answer({
         <Card key={a.id} size="sm" className="ring-primary">
           <CardHeader>
             <CardTitle>{t("wit.compose.review")}</CardTitle>
-            <CardDescription className="font-mono">
-              {t(`wit.tool.${a.tool}`) !== `wit.tool.${a.tool}` ? t(`wit.tool.${a.tool}`) : a.tool}
-            </CardDescription>
+            <CardDescription className="font-mono">{toolLabel(a.tool, t)}</CardDescription>
           </CardHeader>
           <CardContent>{review?.body}</CardContent>
         </Card>
       ))}
+      {requested.filter((a) => !isDraftEdit(a.tool)).map(tools)}
     </div>
   );
 }
@@ -184,9 +289,10 @@ export type PanelReview = { approval: number; body: ReactNode };
 /**
  * The compose window's Wit panel: what Wit knows (chips), 调整 / 翻译, the conversation, and the
  * input. `transport` must be the one whose follow() read `history`; a live run in it resumes into
- * its open answer. The edit the page reviews (`review`) shows as a card on its answer. A new
- * `resume` streams that run (resumed by a decision) onto the last answer. onRunning tells whether
- * a run streams.
+ * its own answer, if the history's last. The edit the page reviews (`review`) shows as a card on
+ * its answer; a tool's call waiting shows its own, decided by onDecide. A new `resume` streams that
+ * run (resumed by a decision) onto the last answer if that is the run's, else into an answer of
+ * its own. onRunning tells whether a run streams.
  */
 export function Panel({
   info,
@@ -195,6 +301,7 @@ export function Panel({
   review,
   resume,
   onRunning,
+  onDecide,
   transport,
   t,
   slots,
@@ -205,17 +312,23 @@ export function Panel({
   review?: PanelReview;
   resume?: { run: number };
   onRunning?(on: boolean): void;
+  onDecide?: Decide;
   transport: WitTransport;
   t: T;
   slots?: { chips?: ReactNode; actions?: ReactNode };
 }) {
-  // The answer a live run goes on with is taken out: the resumed stream rebuilds it, then appends.
+  // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
+  // rebuilds it, then appends.
   const [start] = useState(() => {
     const messages = historyToMessages(history);
     const open =
-      history.running && messages.at(-1)?.role === "assistant" ? messages.pop() : undefined;
+      history.running && transport.owns(messages.at(-1), history.running)
+        ? messages.pop()
+        : undefined;
     return { messages, open };
   });
+  const [deciding, setDeciding] = useState<number[]>([]);
+  const [decided, setDecided] = useState<number[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
   const running = chat.status === "submitted" || chat.status === "streaming";
@@ -229,12 +342,12 @@ export function Panel({
 
   useEffect(() => onRunning?.(running), [running, onRunning]);
 
-  // A decision resumed a run: its events (logged since) go on in the last answer.
+  // A decision resumed a run: its events (logged since) go on in the last answer, if the run's.
   const last = chat.messages.at(-1);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new resume streams
   useEffect(() => {
     if (!resume || running) return;
-    transport.resume(last?.role === "assistant" ? last : undefined, resume.run);
+    transport.resume(transport.owns(last, resume.run) ? last : undefined, resume.run);
     void resumeStream();
   }, [resume]);
 
@@ -267,6 +380,30 @@ export function Panel({
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
   }
+  // A tool's call waiting: decided here (once decided, its card goes until the run resumes).
+  const open = [...approvals.values()].filter(
+    (a) => a.state === "pending" && !decided.includes(a.id),
+  );
+  const tools = (a: Approval) =>
+    decided.includes(a.id) ? null : (
+      <ToolCard
+        key={a.id}
+        a={a}
+        many={open.filter((x) => x.run === a.run).length > 1}
+        busy={!onDecide || deciding.length > 0}
+        decide={async (accept, all) => {
+          if (!onDecide || deciding.length > 0) return;
+          const ids = all ? open.filter((x) => x.run === a.run).map((x) => x.id) : [a.id];
+          setDeciding(ids);
+          try {
+            if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
+          } finally {
+            setDeciding([]);
+          }
+        }}
+        t={t}
+      />
+    );
   return (
     <aside className="flex w-90 shrink-0 flex-col border-l">
       {(info.chips.length > 0 || slots?.chips) && (
@@ -337,6 +474,7 @@ export function Panel({
                       nums={nums}
                       approvals={approvals}
                       review={review}
+                      tools={tools}
                       t={t}
                     />
                   )}

@@ -28,6 +28,7 @@ const approval = (a: Partial<Approval>): Approval => ({
   state: "pending",
   error: "",
   destinations: [],
+  args: "",
   ...a,
 });
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -431,6 +433,66 @@ func TestComposeWitErrorKeys(t *testing.T) {
 	assert.True(t, strings.HasPrefix(errorKey(ErrNoDraft), "error."))
 	assert.Equal(t, "", keyed(context.Canceled).Error(), "a cancellation shows nothing")
 	assert.ErrorIs(t, keyed(context.Canceled), context.Canceled)
+}
+
+// installNetPlugin installs a plugin holding mail:read and net with a read
+// tool, ping: every call of it waits for an egress approval.
+func (f *fixture) installNetPlugin(t *testing.T) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "netty")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	m := `{"name":"netty","version":"1.0.0","main":"index.ts","permissions":{"mail":["read"],"net":["` + coretest.EgressHost + `:80"]}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(m), 0o600))
+	code := `export default function (ctx: any) {
+  ctx.tools.register({ name: "ping", description: "Pings.", write: false, schema: { type: "object" },
+    run: async () => (await ctx.net.fetch("http://` + coretest.EgressHost + `:80/ping")).text() })
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(code), 0o600))
+	ctx := t.Context()
+	_, err := f.e.Svc.InstallPlugin(ctx, dir)
+	require.NoError(t, err)
+	require.NoError(t, f.e.Svc.GrantPermission(ctx, "netty"))
+	require.NoError(t, f.e.Svc.SetPluginEnabled(ctx, "netty", true))
+}
+
+// A plugin tool's approval in an Assist run is decided from the compose
+// window: one by Decide, the rest of its run by DecideAll; another
+// draft's window can do neither.
+func TestComposeDecideToolApprovals(t *testing.T) {
+	f, _, llm := witFixture(t, "<p>Hello</p>")
+	f.installNetPlugin(t)
+	f.c.Attach(2, f.draft(t, "new", 0).ID)
+	llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "p1", Name: "plugin_netty_ping", Args: `{"to":["a@x.com"]}`},
+		{ID: "p2", Name: "plugin_netty_ping", Args: `{}`}}}, coretest.Turn{Text: []string{"pinged"}})
+	run, err := f.page.Ask(f.ctx(1), "ping twice")
+	require.NoError(t, err)
+	in := f.waitKind(t, 1, "interrupted")
+	require.Len(t, in.Approvals, 2)
+	a := in.Approvals[0]
+	assert.Equal(t, "plugin_netty_ping", a.Tool)
+	assert.Equal(t, []string{coretest.EgressHost + ":80"}, a.Destinations)
+	assert.JSONEq(t, `{"to":["a@x.com"]}`, a.Args, "the page shows the call's arguments")
+
+	_, err = f.page.Decide(f.ctx(2), a.ID, true)
+	assert.ErrorIs(t, err, core.ErrInvalidState, "another draft's window")
+	_, err = f.page.DecideAll(f.ctx(2), run, true)
+	assert.ErrorIs(t, err, core.ErrInvalidState, "another draft's window")
+
+	_, err = f.page.Decide(f.ctx(1), a.ID, true)
+	require.NoError(t, err)
+	n := len(f.events(1))
+	_, err = f.page.DecideAll(f.ctx(1), run, false)
+	require.NoError(t, err)
+	f.doneAfter(t, n, run)
+	as, err := f.e.Svc.ListApprovals(t.Context(), in.Conversation)
+	require.NoError(t, err)
+	var states []string
+	for _, x := range as {
+		states = append(states, x.State)
+	}
+	assert.Equal(t, []string{"done", "rejected"}, states)
+	_, err = f.page.DecideAll(f.ctx(1), run, true)
+	assert.ErrorIs(t, err, core.ErrInvalidState, "nothing pending")
 }
 
 // A ⌘K run goes on after its window closes: the window reopened follows

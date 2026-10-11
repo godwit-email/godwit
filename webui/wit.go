@@ -86,6 +86,8 @@ type Approval struct {
 	State        string   `json:"state"`
 	Error        string   `json:"error"`
 	Destinations []string `json:"destinations"`
+	// Args is the call's arguments, JSON text ("" for none).
+	Args string `json:"args"`
 }
 
 // WitInfo is what the Wit panel offers for the draft.
@@ -568,7 +570,7 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations)}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args)}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).
@@ -660,6 +662,12 @@ var (
 // pendingApproval is approval id of the draft's conversations, waiting for
 // a decision; else core.ErrInvalidState.
 func pendingApproval(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
+	return pendingWhere(ctx, svc, draftID, func(a core.Approval) bool { return a.ID == id })
+}
+
+// pendingWhere is the first approval of the draft's conversations waiting
+// for a decision that is; else core.ErrInvalidState.
+func pendingWhere(ctx context.Context, svc *core.Service, draftID int64, is func(core.Approval) bool) (core.Approval, error) {
 	cs, err := draftConversations(ctx, svc, draftID)
 	if err != nil {
 		return core.Approval{}, err
@@ -670,7 +678,7 @@ func pendingApproval(ctx context.Context, svc *core.Service, draftID, id int64) 
 			return core.Approval{}, err
 		}
 		for _, a := range as {
-			if a.ID == id && a.State == "pending" {
+			if is(a) && a.State == "pending" {
 				return a, nil
 			}
 		}
@@ -702,12 +710,21 @@ func (p *ComposePage) Review(ctx context.Context, approval int64) (Review, error
 	return newProposal(a).review(), nil
 }
 
-// Decide accepts or rejects approval, one of the calling window's draft.
-// The window follows its conversation first, so the run it resumes streams
-// on WitStream. A draft changed since the edit was proposed is Conflict.
+// Decide accepts or rejects approval, any pending one of the calling
+// window's draft (a draft edit or a tool's call). The window follows its
+// conversation first, so the run it resumes streams on WitStream. A draft
+// changed since the edit was proposed is Conflict.
 func (p *ComposePage) Decide(ctx context.Context, approval int64, accept bool) (BodyChange, error) {
-	return p.decide(ctx, approval, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
 		return svc.ResolveApproval(context.WithoutCancel(ctx), a.ID, accept)
+	})
+}
+
+// DecideAll accepts or rejects every pending approval of run, one of the
+// calling window's draft (core ResolveAll; 全部允许). As Decide.
+func (p *ComposePage) DecideAll(ctx context.Context, run int64, accept bool) (BodyChange, error) {
+	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc *core.Service, a core.Approval) error {
+		return svc.ResolveAll(context.WithoutCancel(ctx), a.RunID, accept)
 	})
 }
 
@@ -715,7 +732,7 @@ func (p *ComposePage) Decide(ctx context.Context, approval int64, accept bool) (
 // (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
 // decides it; a mix applies the text the decisions make. As Decide.
 func (p *ComposePage) Finish(ctx context.Context, approval int64, decisions []int) (BodyChange, error) {
-	return p.decide(ctx, approval, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
 		r := newProposal(a)
 		if !r.inline() || len(decisions) != len(r.changes) || slices.ContainsFunc(decisions, func(d int) bool { return d != 1 && d != -1 }) {
 			return ErrBadDecisions
@@ -728,15 +745,16 @@ func (p *ComposePage) Finish(ctx context.Context, approval int64, decisions []in
 	})
 }
 
-// decide runs act on pending approval of the calling window's draft, the
-// window following its conversation first, and reads the draft after.
-func (p *ComposePage) decide(ctx context.Context, approval int64, act func(*core.Service, core.Approval) error) (BodyChange, error) {
+// decide runs act on the pending approval of the calling window's draft
+// that is, the window following its conversation first, and reads the
+// draft after.
+func (p *ComposePage) decide(ctx context.Context, is func(core.Approval) bool, act func(*core.Service, core.Approval) error) (BodyChange, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
 	defer s.mu.Unlock()
-	a, err := pendingApproval(ctx, svc, s.draftID, approval)
+	a, err := pendingWhere(ctx, svc, s.draftID, is)
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}

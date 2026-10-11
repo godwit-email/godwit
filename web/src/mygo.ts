@@ -23,6 +23,8 @@ export interface Approval {
   state: string;
   error: string;
   destinations: string[];
+  /** Args is the call's arguments, JSON text ("" for none). */
+  args: string;
 }
 
 /** AttachResult is the outcome of adding files: a partial success is no error. */
@@ -395,12 +397,20 @@ export const ComposePage = {
     return call("ComposePage.Closed", gen, saved);
   },
   /**
-   * Decide accepts or rejects approval, one of the calling window's draft.
-   * The window follows its conversation first, so the run it resumes streams
-   * on WitStream. A draft changed since the edit was proposed is Conflict.
+   * Decide accepts or rejects approval, any pending one of the calling
+   * window's draft (a draft edit or a tool's call). The window follows its
+   * conversation first, so the run it resumes streams on WitStream. A draft
+   * changed since the edit was proposed is Conflict.
    */
   decide(approval: number, accept: boolean): Promise<BodyChange> {
     return call("ComposePage.Decide", approval, accept);
+  },
+  /**
+   * DecideAll accepts or rejects every pending approval of run, one of the
+   * calling window's draft (core ResolveAll; 全部允许). As Decide.
+   */
+  decideAll(run: number, accept: boolean): Promise<BodyChange> {
+    return call("ComposePage.DecideAll", run, accept);
   },
   /** Discard deletes the calling window's draft; the window closes (OnDone). */
   discard(): Promise<void> {
@@ -415,9 +425,9 @@ export const ComposePage = {
     return call("ComposePage.Finish", approval, decisions);
   },
   /**
-   * Follow makes the calling window follow its draft's conversation (an edit
-   * waiting, else the Assist one) and returns its history as read after
-   * subscribing. Events that come during the reads are held back and sent
+   * Follow makes the calling window follow its draft's conversation (a run
+   * going on, else an edit waiting, else the Assist one) and returns its
+   * history as read after subscribing. Events that come during the reads are held back and sent
    * after: a run seen ending meanwhile shows as ended, read again. A run that
    * ends later shows as Running: its end reaches the window after the reply,
    * on the subscription, which goes on.

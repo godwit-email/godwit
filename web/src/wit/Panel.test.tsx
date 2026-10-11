@@ -27,6 +27,16 @@ const t = makeT({
   "wit.suspect": "来源 %s 中包含疑似指令。",
   "mail.list_sep": "、",
   "wit.tool.update_draft": "修改正文",
+  "wit.tool.create_draft": "创建草稿",
+  "wit.approval.wants": "Wit 想要：%s",
+  "wit.approval.to": "收件人",
+  "wit.approval.cc": "抄送",
+  "wit.approval.subject": "主题",
+  "wit.approval.destinations": "会把数据发送到：%s",
+  "wit.approval.allow": "允许",
+  "wit.approval.allow_all": "全部允许",
+  "wit.approval.reject": "拒绝",
+  "wit.approval.send_note": "发送仍需你在撰写页亲自点击",
 });
 
 const info: WitInfo = {
@@ -64,6 +74,7 @@ async function setup(
     locked?: boolean;
     review?: PanelReview;
     onRunning?(on: boolean): void;
+    onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -87,6 +98,7 @@ async function setup(
       review={o.review}
       resume={resume}
       onRunning={o.onRunning}
+      onDecide={o.onDecide}
       transport={tr}
       t={t}
     />
@@ -227,6 +239,7 @@ describe("Panel", () => {
       state: "pending",
       error: "",
       destinations: [],
+      args: "",
     };
     const history = (approvals: Approval[]): WitHistory => ({
       ...empty,
@@ -298,5 +311,161 @@ describe("Panel", () => {
     expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(1);
     await userEvent.setup().click(screen.getByRole("button", { name: "停止" }));
     expect(api.stop).toHaveBeenCalledWith(7);
+  });
+
+  it("a tool's approval shows its card: what, arguments, destinations; Allow / Allow all / Reject", async () => {
+    const user = userEvent.setup();
+    const tool = (id: number, callId: string, tool: string, args: string): Approval => ({
+      id,
+      run: 7,
+      callId,
+      tool,
+      summary: `Run ${tool}`,
+      state: "pending",
+      error: "",
+      destinations: ["api.x.com", "cdn.x.com"],
+      args,
+    });
+    const a = tool(
+      5,
+      "p1",
+      "plugin_netty_ping",
+      '{"to":["a@x.com"],"cc":"b@x.com","subject":"Hi","html":"<p>Body <b>text</b></p>"}',
+    );
+    const b = tool(6, "p2", "create_draft", "{}");
+    const onDecide = vi.fn().mockResolvedValue(true);
+    await setup({
+      onDecide,
+      history: {
+        ...empty,
+        messages: [
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "",
+            calls: [
+              { id: "p1", name: "plugin_netty_ping", args: a.args },
+              { id: "p2", name: "create_draft", args: "{}" },
+            ],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [a, b],
+      },
+    });
+    expect(screen.getByText("Wit 想要：plugin_netty_ping")).toBeInTheDocument();
+    expect(screen.getByText("Wit 想要：创建草稿")).toBeInTheDocument();
+    expect(screen.getByText("Run plugin_netty_ping")).toBeInTheDocument();
+    expect(screen.getByText("a@x.com")).toBeInTheDocument();
+    expect(screen.getByText("b@x.com")).toBeInTheDocument();
+    expect(screen.getByText("Hi")).toBeInTheDocument();
+    expect(screen.getByText("Body text")).toBeInTheDocument();
+    expect(screen.getAllByText("会把数据发送到：api.x.com、cdn.x.com")).toHaveLength(2);
+    expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument(); // create_draft's only
+    expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(2); // two of run 7
+    await user.click(screen.getAllByRole("button", { name: "允许" })[0]);
+    expect(onDecide).toHaveBeenCalledWith(a, true, false);
+    await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+    expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull(); // one left
+    await user.click(screen.getByRole("button", { name: "拒绝" }));
+    expect(onDecide).toHaveBeenLastCalledWith(b, false, false);
+  });
+
+  it("全部允许 decides the run's approvals at once; a failed decision keeps the card", async () => {
+    const user = userEvent.setup();
+    const onDecide = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const { emit } = await setup({ onDecide });
+    await user.type(input(), "ping{Enter}");
+    const call = (id: string) => ({ id, name: "plugin_netty_ping", args: "{}" });
+    const ap = (id: number, callId: string): Approval => ({
+      id,
+      run: 7,
+      callId,
+      tool: "plugin_netty_ping",
+      summary: "",
+      state: "pending",
+      error: "",
+      destinations: [],
+      args: "{}",
+    });
+    emit({ kind: "tool_call", call: call("p1") });
+    emit({ kind: "tool_call", call: call("p2") });
+    emit({
+      kind: "interrupted",
+      interrupts: [call("p1"), call("p2")],
+      approvals: [ap(5, "p1"), ap(6, "p2")],
+    });
+    const all = await screen.findAllByRole("button", { name: "全部允许" });
+    await user.click(all[0]);
+    expect(onDecide).toHaveBeenCalledWith(ap(5, "p1"), true, true);
+    expect(screen.getAllByText("Wit 想要：plugin_netty_ping")).toHaveLength(2); // refused: kept
+    await user.click(screen.getAllByRole("button", { name: "全部允许" })[1]);
+    await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+  });
+
+  it("a resumed run that is not the last answer's streams into an answer of its own", async () => {
+    const { emit } = await setup({
+      history: {
+        ...empty,
+        running: 9, // run 9 saved nothing yet: its question is not in the history
+        messages: [
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Answer A",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    expect(await screen.findByRole("button", { name: "停止" })).toBeInTheDocument();
+    emit({ run: 9, kind: "text", text: "Answer B" });
+    expect(await screen.findByText("Answer B")).toBeInTheDocument();
+    expect(screen.getByText("Answer A")).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(2);
+  });
+
+  it("a decision's resume goes on in its run's answer only", async () => {
+    const { emit, resume } = await setup({
+      history: {
+        ...empty,
+        messages: [
+          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Answer A",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    emit({ run: 9, kind: "text", text: "Answer B" }); // another run's (a ⌘K run's), logged
+    resume(9);
+    expect(await screen.findByText("Answer B")).toBeInTheDocument();
+    expect(screen.getByText("Answer A")).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(2);
+  });
+
+  it("a live answer goes on when a decision resumes its run", async () => {
+    const { emit, resume } = await setup();
+    await userEvent.setup().type(input(), "Q{Enter}");
+    emit({ run: 7, kind: "text", text: "one" });
+    emit({ run: 7, kind: "interrupted", approvals: [] });
+    await screen.findByText("one");
+    emit({ run: 7, kind: "text", text: " two" });
+    resume(7);
+    expect(await screen.findByText("one two")).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-role=assistant]")).toHaveLength(1);
   });
 });
