@@ -7,6 +7,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +53,7 @@ func TestSignatureSaveRole(t *testing.T) {
 		assert.ErrorIs(t, err, ErrWrongPage, name)
 	}
 	assert.Equal(t, "", f.stored(t))
-	assert.Error(t, f.p.Save(pageCtx(f.page), f.acc.ID+99, "<p>x</p>"), "an unknown account")
+	assert.ErrorIs(t, f.p.Save(pageCtx(f.page), f.acc.ID+99, "<p>x</p>"), ErrSignatureAccountGone, "an unknown account")
 
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID, "<p><u>Bob</u></p>"))
 	assert.Equal(t, core.SignatureHTMLPrefix+"<p><u>Bob</u></p>", f.stored(t))
@@ -99,4 +100,20 @@ func TestSignatureFlushAck(t *testing.T) {
 	flush()
 	assert.Len(t, tokens, 1, "a closed page is not asked")
 	assert.Equal(t, []bool{false, true}, acks)
+}
+
+func TestSignatureCopyFollowsLanguage(t *testing.T) {
+	f := newSigFixture(t)
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	var sent []map[string]string
+	emit := func(text map[string]string) { sent = append(sent, text) }
+	f.s.SettingsChanged(emit)
+	assert.Empty(t, sent, "a page that never ran is not told")
+	i18n.SetLanguage("zh-CN")
+	_, err := f.p.State(pageCtx(f.page))
+	require.NoError(t, err)
+	i18n.SetLanguage("en")
+	f.s.SettingsChanged(emit)
+	require.Len(t, sent, 1)
+	assert.Equal(t, "Bold", sent[0]["compose.bold"])
 }

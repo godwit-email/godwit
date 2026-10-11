@@ -770,6 +770,8 @@ export const events = {
    * SignaturePage.Saved and the same token.
    */
   signatureFlush: event<number>("signatureFlush"),
+  /** SignatureText carries the page's copy again after a language change. */
+  signatureText: event<Record<string, string>>("signatureText"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close

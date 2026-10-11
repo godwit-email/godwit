@@ -93,7 +93,9 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
 	}
-	_ = json.Unmarshal(raw, &st)
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return Settings{}, fmt.Errorf("stored settings: %w", err)
+	}
 	if stored.SettingsVersion < 2 {
 		if stored.FontSize > 0 { // an absent size keeps the new default
 			st.FontSize = min(stored.FontSize+1, 32)

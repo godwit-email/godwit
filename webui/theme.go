@@ -54,8 +54,7 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		// Wit's review marks: inserted and deleted words.
 		"--ins-bg": css(t.InsBg), "--ins-text": css(t.InsText),
 		"--del-bg": css(t.DelBg), "--del-text": css(t.DelText),
-		"--sidebar":   css(t.Sidebar),
-		"--highlight": css(t.Highlight), "--highlight-foreground": css(t.HighlightText),
+		"--sidebar":    css(t.Sidebar),
 		"--warning-bg": css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
 		"--shadow-float": floatShadow(t),
 	}

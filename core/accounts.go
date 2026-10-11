@@ -217,13 +217,16 @@ func b2i(b bool) int {
 const accountCols = `id, email, name, alias, signature, username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail`
 
+// ErrAccountNotFound is returned for an account id that does not exist.
+var ErrAccountNotFound = errors.New("account not found")
+
 func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts WHERE id = ?", id)
 	if err != nil {
 		return Account{}, err
 	}
 	if len(rows.Values) == 0 {
-		return Account{}, fmt.Errorf("account %d not found", id)
+		return Account{}, fmt.Errorf("account %d: %w", id, ErrAccountNotFound)
 	}
 	return scanAccount(rows.Values[0]), nil
 }

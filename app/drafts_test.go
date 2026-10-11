@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // draftsHarness has an account with saved drafts (subject, body "body of
@@ -139,4 +140,30 @@ func TestDraftSelectionClearsWhenGone(t *testing.T) {
 	}
 	h.app.ComposeWindowsChanged()
 	h.until("cleared", func() bool { return h.app.mail.draftSel == 0 })
+}
+
+// TestDraftPaneLabelsNoClip: each label fits its column at font 16 in English, on one line and ends before its value.
+func TestDraftPaneLabelsNoClip(t *testing.T) {
+	h, _ := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.see("继续编辑")
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	i18n.SetLanguage("en")
+	h.setSettings(func(s *core.Settings) { s.FontSize = 16 })
+	for _, label := range []string{"To", "Subject", "From"} {
+		h.see(label)
+	}
+	for _, label := range []string{"To", "Subject", "From"} {
+		lab, ok1 := h.tt.Find(label)
+		val, ok2 := h.tt.Find("draft field: " + label)
+		if !ok1 || !ok2 {
+			t.Fatalf("%s: boxes found %v %v", label, ok1, ok2)
+		}
+		if lab.X+lab.W > val.X {
+			t.Errorf("%s label right %v past the value left %v", label, lab.X+lab.W, val.X)
+		}
+		if lab.H > val.H { // a label squeezed into a fixed column wraps
+			t.Errorf("%s label wraps: height %v, its value's %v", label, lab.H, val.H)
+		}
+	}
 }

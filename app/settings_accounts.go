@@ -581,13 +581,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	}
 	a := p.a
 	t := theme.Of(c)
-	var acc core.Account
-	for _, x := range a.accounts {
-		if x.ID == p.dlgAcc {
-			acc = x
-		}
-	}
-	if acc.ID == 0 {
+	acc, ok := a.accountByID(p.dlgAcc)
+	if !ok {
 		p.closeDialog()
 		return
 	}

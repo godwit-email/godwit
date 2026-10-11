@@ -542,10 +542,8 @@ func (p *mailPage) searchHint() string {
 	}
 	scope := i18n.T("mail.search.all_accounts")
 	if acc := p.viewAccount(p.view); acc != 0 {
-		for _, a := range p.a.accounts {
-			if a.ID == acc {
-				scope = a.Email
-			}
+		if a, ok := p.a.accountByID(acc); ok {
+			scope = a.Email
 		}
 	}
 	return i18n.Tf("mail.search.found", count, scope)
@@ -750,10 +748,8 @@ func (p *mailPage) folderLine(it mailItem) string {
 	if !ok {
 		return ""
 	}
-	for _, a := range p.a.accounts {
-		if a.ID == f.AccountID {
-			return folderName(f) + " · " + a.Email
-		}
+	if acc, ok := p.a.accountByID(f.AccountID); ok {
+		return folderName(f) + " · " + acc.Email
 	}
 	return folderName(f)
 }

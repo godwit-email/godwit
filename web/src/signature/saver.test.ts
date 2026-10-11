@@ -129,3 +129,22 @@ describe("signatureSaver", () => {
     expect(api.saved).toHaveBeenLastCalledWith(5, true);
   });
 });
+
+describe("signatureSaver, a removed account", () => {
+  it("drops the edit of an account that is gone instead of retrying it", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    s.edit(1, "<p>a</p>");
+    api.save.mockRejectedValueOnce(new Error("signature account gone"));
+    s.flush(1);
+    await vi.advanceTimersByTimeAsync(0);
+    s.flush(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save).toHaveBeenCalledTimes(1);
+    expect(api.saved.mock.calls).toEqual([
+      [1, true],
+      [2, true],
+    ]);
+  });
+});

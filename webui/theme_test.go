@@ -24,8 +24,7 @@ func TestThemeVars(t *testing.T) {
 		"--radius": "8px",
 		"--ins-bg": css(l.InsBg), "--ins-text": css(l.InsText),
 		"--del-bg": css(l.DelBg), "--del-text": css(l.DelText),
-		"--sidebar":   css(l.Sidebar),
-		"--highlight": css(l.Highlight), "--highlight-foreground": css(l.HighlightText),
+		"--sidebar":    css(l.Sidebar),
 		"--warning-bg": css(l.WarningBg), "--warning-border": css(l.WarningBorder), "--warning-text": css(l.WarningText),
 		"--shadow-float": "0 0px 0px 1px rgb(0 0 0 / 0.039), 0 2px 8px 0px rgb(0 0 0 / 0.039), 0 4px 80px 8px rgb(0 0 0 / 0.024)",
 	}

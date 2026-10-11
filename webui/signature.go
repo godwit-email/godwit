@@ -19,10 +19,15 @@ var (
 	// SignatureFlush asks the signature page to save now; it answers with
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
+	// SignatureText carries the page's copy again after a language change.
+	SignatureText = mygo.NewEvent[map[string]string]("signatureText")
 )
 
 // maxSignatureBytes caps a saved signature at a mail body's limit.
 const maxSignatureBytes = mail.MaxBodyBytes
+
+// ErrSignatureAccountGone is final: the saver (saver.ts) drops the pending edit.
+var ErrSignatureAccountGone = errors.New("signature account gone")
 
 // ErrSignatureTooLarge is returned for a signature over maxSignatureBytes.
 var ErrSignatureTooLarge = errors.New("the signature is too large")
@@ -38,6 +43,24 @@ func (s *Signature) Close() {
 // signatureKeys are the i18n keys the signature page shows.
 var signatureKeys = []string{"compose.bold", "compose.italic", "compose.underline", "compose.link",
 	"compose.link.url", "compose.link.apply", "settings.account.signature.label", "error.unknown"}
+
+func signatureCopy() map[string]string {
+	text := make(map[string]string, len(signatureKeys))
+	for _, k := range signatureKeys {
+		text[k] = i18n.T(k)
+	}
+	return text
+}
+
+// SettingsChanged sends a running page its copy through emit (SignatureText).
+func (s *Signature) SettingsChanged(emit func(text map[string]string)) {
+	s.mu.Lock()
+	live := s.live
+	s.mu.Unlock()
+	if live {
+		emit(signatureCopy())
+	}
+}
 
 // SignatureState is what the signature page needs besides a signature:
 // the account shown (0 before native showed one), its copy and theme.
@@ -127,10 +150,7 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	if err != nil {
 		return SignatureState{}, err
 	}
-	text := make(map[string]string, len(signatureKeys))
-	for _, k := range signatureKeys {
-		text[k] = i18n.T(k)
-	}
+	text := signatureCopy()
 	p.s.mu.Lock()
 	defer p.s.mu.Unlock()
 	p.s.live = true
@@ -170,6 +190,9 @@ func (p *SignaturePage) Save(ctx context.Context, account int64, html string) er
 		html = core.SignatureHTMLPrefix + html
 	}
 	_, err = svc.UpdateAccount(ctx, account, core.AccountPatch{Signature: &html})
+	if errors.Is(err, core.ErrAccountNotFound) {
+		return ErrSignatureAccountGone
+	}
 	return err
 }
 

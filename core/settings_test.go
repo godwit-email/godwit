@@ -151,3 +151,11 @@ func TestSettingsVersionStamped(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestSettingsTypeMismatchErrors(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", `{"FontSize":14,"Theme":5}`)
+	require.NoError(t, err)
+	_, err = s.GetSettings(t.Context())
+	assert.ErrorContains(t, err, "stored settings")
+}

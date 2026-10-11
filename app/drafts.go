@@ -72,13 +72,19 @@ func (p *mailPage) setDrafts() {
 	}
 }
 
-func (p *mailPage) accountEmail(id int64) string {
-	for _, acc := range p.a.accounts {
+// accountByID is the loaded account with id.
+func (a *App) accountByID(id int64) (core.Account, bool) {
+	for _, acc := range a.accounts {
 		if acc.ID == id {
-			return acc.Email
+			return acc, true
 		}
 	}
-	return ""
+	return core.Account{}, false
+}
+
+func (p *mailPage) accountEmail(id int64) string {
+	acc, _ := p.a.accountByID(id)
+	return acc.Email
 }
 
 // draftRow is the inbox row's lines: who it goes to and when, the subject
@@ -146,8 +152,8 @@ func (p *mailPage) draftPane(c *ui.Context) {
 						{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
 					} {
 						ui.Row(c).Gap(th.Space(3)).Children(func() {
-							ui.Text(c, f[0]).TextColor(t.Muted).Width(th.Space(12)).Shrink(0)
-							ui.Text(c, f[1]).Grow(1).Shrink(1)
+							ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
+							ui.Text(c, f[1]).Grow(1).Shrink(1).Label("draft field: " + f[0])
 						})
 					}
 				})

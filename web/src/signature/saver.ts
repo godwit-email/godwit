@@ -8,13 +8,16 @@ type Api = {
 };
 
 const DELAY = 600;
+/** What Go's SignaturePage.Save answers for an account that no longer exists (webui.ErrSignatureAccountGone). */
+const ACCOUNT_GONE = "signature account gone";
 
 /**
  * The signature page's protocol. An edit is saved as the account its editor showed, 600 ms after
  * typing pauses, and saves run one after another. show(B) first saves the shown account's pending
  * edit, then loads B; a Load older than the newest show is dropped, and edits for any account but
  * the shown one are ignored. flush saves at once and answers Go with the token; a failed save
- * stays pending for its account, and every save (a flush, the next debounce) tries it again.
+ * stays pending for its account, and every save (a flush, the next debounce) tries it again, unless
+ * the account is gone: that failure is final and the edit is dropped.
  */
 export function signatureSaver(api: Api, onDoc: (d: Doc | undefined) => void) {
   let account = 0;
@@ -36,7 +39,9 @@ export function signatureSaver(api: Api, onDoc: (d: Doc | undefined) => void) {
       round = round.then((ok) =>
         api.save(acc, html).then(
           () => ok,
-          () => {
+          (e) => {
+            // The account is gone: retrying can never work, so the edit is dropped as saved.
+            if (String(e instanceof Error ? e.message : e).includes(ACCOUNT_GONE)) return ok;
             if (!pending.has(acc)) pending.set(acc, html);
             return false;
           },

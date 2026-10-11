@@ -28,6 +28,7 @@ var sentinels = []struct {
 	{"run_active", core.ErrRunActive},
 	{"keychain_unavailable", core.ErrKeychainUnavailable},
 	{"wrong_account", core.ErrWrongAccount},
+	{"account_not_found", core.ErrAccountNotFound},
 	{"provider_mismatch", core.ErrProviderMismatch},
 	{"needs_grant", core.ErrNeedsGrant},
 	{"plugin_not_found", core.ErrPluginNotFound},

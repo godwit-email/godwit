@@ -233,6 +233,13 @@ func (p *platform) SettingsChanged(st core.Settings) {
 	if p.wit != nil {
 		p.wit.SettingsChanged(st)
 	}
+	if p.sig != nil {
+		p.sig.SettingsChanged(func(text map[string]string) {
+			if err := webui.SignatureText.Broadcast(text); err != nil {
+				log.Printf("the copy to the signature page: %v", err)
+			}
+		})
+	}
 }
 func (*platform) TempDir() string {
 	dir, err := mygo.App.Path(mygo.PathTemp)

@@ -166,6 +166,7 @@ export function SignatureApp() {
       events.signatureAccount.on(saver.show),
       events.signatureFlush.on(saver.flush),
       events.theme.on((th) => setTheme(th as PageTheme)),
+      events.signatureText.on((text) => setState((s) => s && { ...s, text })),
     ];
     const g = saver.gen();
     api.state().then((s) => {
