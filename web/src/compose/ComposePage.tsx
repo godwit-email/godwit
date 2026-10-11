@@ -1,6 +1,6 @@
 import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -235,8 +235,9 @@ function Compose({
   const refresh = useRef(false); // a reload skipped while the saver was busy: retried once idle
   const reloadRef = useRef(async () => {});
 
-  // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
-  useEffect(() => {
+  // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer; a
+  // layout one, re-rendered at once, so no input reaches the editor before the saver (an edit then is lost).
+  useLayoutEffect(() => {
     const n = createSaver(api.save, { revision: state.revision, snapshot: editOf(state) });
     // The composition's final input lands first: committing before it would keep the half-composed text.
     n.setSettle(async () => {
@@ -256,6 +257,7 @@ function Compose({
       rerender((i) => i + 1);
     });
     saver.current = n;
+    rerender((i) => i + 1); // the handlers read the saver from the render
     return () => {
       off();
       n.dispose();

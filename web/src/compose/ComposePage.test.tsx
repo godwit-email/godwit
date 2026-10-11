@@ -214,6 +214,24 @@ test("a composition in progress at closing is committed, then flushed", async ()
   expect(api.closed).toHaveBeenCalledWith(5, true);
 });
 
+test("an edit as soon as the body shows reaches the saver", async () => {
+  // A slow first render: React yields between the commit that shows the body and its passive
+  // effects, and a timer task (here the poll) runs in between.
+  let now = performance.now();
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 10));
+  render(<ComposePage />);
+  const el = await new Promise<HTMLElement>(function poll(done) {
+    const found = screen.queryByRole("textbox", { name: "正文" });
+    if (found) done(found);
+    else setTimeout(() => poll(done), 0);
+  });
+  clock.mockRestore();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await act(async () => h.closing?.(3));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
+  expect(api.closed).toHaveBeenCalledWith(3, true);
+});
+
 test("a compositionend fired synchronously by the blur still flushes and answers", async () => {
   render(<ComposePage />);
   const el = await body();
