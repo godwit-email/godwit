@@ -1052,3 +1052,42 @@ func TestDialogWideWidth(t *testing.T) {
 		t.Errorf("DialogWide is %d wide, want 640", w)
 	}
 }
+
+// A disabled button paints the design's disabled colours, not mygo's
+// half-opacity dimming: a Default one on Hover, an Outline one's text Idle.
+func TestKitButtonDisabledColors(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Gap(8).Padding(8).Children(func() {
+			Button(c, "Add", ButtonOpts{Disabled: true})
+			Button(c, "Test", ButtonOpts{Variant: Outline, Disabled: true})
+		})
+	}), 300, 200)
+	tt.Frame()
+	tok := theme.Light()
+	img := tt.Image()
+	at := func(label string, f func(r ui.Rect) (int, int)) color.RGBA {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("%s not found", label)
+		}
+		x, y := f(r)
+		return img.RGBAAt(x, y)
+	}
+	same := func(name string, got color.RGBA, want ui.Color) {
+		if got.R != want.R || got.G != want.G || got.B != want.B {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+	}
+	same("disabled Default background", at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Hover)
+	// The darkest pixel of the Outline label is its text colour.
+	r, _ := tt.Find("Test")
+	dark := color.RGBA{255, 255, 255, 255}
+	for x := int(r.X); x < int(r.X+r.W); x++ {
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			if c := img.RGBAAt(x, y); int(c.R)+int(c.G)+int(c.B) < int(dark.R)+int(dark.G)+int(dark.B) {
+				dark = c
+			}
+		}
+	}
+	same("disabled Outline text", dark, tok.Idle)
+}
