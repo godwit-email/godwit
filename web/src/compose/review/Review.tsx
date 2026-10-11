@@ -1,3 +1,4 @@
+import { RiSparkling2Line } from "@remixicon/react";
 import { type FocusEvent, type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
@@ -27,11 +28,19 @@ function inert(html: string): string {
   return body.innerHTML;
 }
 
-function Static({ html, label }: { html: string; label?: string }) {
+function Static({
+  html,
+  label,
+  className = "text-lg",
+}: {
+  html: string;
+  label?: string;
+  className?: string;
+}) {
   return (
     <section
       aria-label={label}
-      className="text-lg leading-[1.75] [&>*+*]:mt-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+      className={`${className} leading-[1.75] [&>*+*]:mt-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6`}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: inert() keeps only the format set's tags, no attribute, no link
       dangerouslySetInnerHTML={{ __html: inert(html) }}
     />
@@ -167,17 +176,22 @@ export function Review({
             >
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
-                <span className="absolute top-full left-0 z-10 flex items-center gap-1 whitespace-nowrap rounded-md border bg-popover p-1 text-base shadow-md">
+                <span className="absolute top-full left-0 z-10 mt-1 flex items-center gap-1 whitespace-nowrap rounded-lg border bg-popover p-1 text-base shadow-md">
                   {link && (
                     <span className="px-1 text-muted-foreground text-sm">
                       {t("wit.compose.link", link)}
                     </span>
                   )}
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => decide(s.k, -1)}>
-                    {t("wit.compose.reject")}
-                  </Button>
-                  <Button size="sm" disabled={busy} onClick={() => decide(s.k, 1)}>
+                  <Button size="xs" disabled={busy} onClick={() => decide(s.k, 1)}>
                     {t("wit.compose.accept")}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => decide(s.k, -1)}
+                  >
+                    {t("wit.compose.reject")}
                   </Button>
                 </span>
               )}
@@ -191,7 +205,8 @@ export function Review({
   const pct = Math.round(r.ratio * 100);
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b bg-muted/50 px-5 py-2 text-sm">
+      <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+        <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
           {r.inline
             ? plural(t, "wit.compose.pending", open)
@@ -200,29 +215,40 @@ export function Review({
               : t("wit.compose.rewrite_plain")}
         </span>
         {!r.inline && (
-          <Button size="sm" variant="ghost" onClick={() => setCompare(!compare)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-base"
+            onClick={() => setCompare(!compare)}
+          >
             {t(compare ? "wit.compose.back" : "wit.compose.compare")}
           </Button>
         )}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => onDecide(false)}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-base"
+          disabled={busy}
+          onClick={() => onDecide(false)}
+        >
           {t("wit.compose.reject_all")}
         </Button>
-        <Button size="sm" disabled={busy} onClick={() => onDecide(true)}>
+        <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
           {t("wit.compose.accept_all")}
         </Button>
       </div>
-      <section aria-label={t("wit.compose.review_body")} className="min-h-70 flex-1 p-5">
+      <section aria-label={t("wit.compose.review_body")} className="min-h-70 flex-1 p-4">
         {r.inline ? (
           <div className="text-lg leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
         ) : compare ? (
-          <div className="grid grid-cols-2 gap-5">
-            <div className="flex flex-col gap-2">
-              <h2 className="text-muted-foreground text-sm">{t("wit.compose.original")}</h2>
-              <Static html={r.old} label={t("wit.compose.original")} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2 text-muted-foreground">
+              <h2 className="font-semibold text-sm">{t("wit.compose.original")}</h2>
+              <Static html={r.old} label={t("wit.compose.original")} className="text-md" />
             </div>
-            <div className="flex flex-col gap-2">
-              <h2 className="text-muted-foreground text-sm">{t("wit.compose.new")}</h2>
-              <Static html={r.new} label={t("wit.compose.new")} />
+            <div className="flex flex-col gap-2 border-l pl-4">
+              <h2 className="font-semibold text-sm">{t("wit.compose.new")}</h2>
+              <Static html={r.new} label={t("wit.compose.new")} className="text-md" />
             </div>
           </div>
         ) : (

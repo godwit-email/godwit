@@ -10,7 +10,13 @@ import {
   RiListUnordered,
 } from "@remixicon/react";
 import type { SlateEditor, TRange } from "platejs";
-import { useEditorReadOnly, useEditorRef, useEditorSelector } from "platejs/react";
+import {
+  Plate,
+  useEditorReadOnly,
+  useEditorRef,
+  useEditorSelector,
+  usePlateEditor,
+} from "platejs/react";
 import { type ReactElement, type ReactNode, useEffect, useRef } from "react";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -104,7 +110,7 @@ export function Toolbar(props: {
     <ToggleGroupItem
       value={it.key}
       aria-label={t(it.label)}
-      className="size-7.5 min-w-7.5 rounded-md px-0 text-foreground/80"
+      className="size-7 min-w-7 rounded-md px-0 text-foreground/80"
       disabled={readOnly}
       onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
       onClick={() => {
@@ -118,7 +124,7 @@ export function Toolbar(props: {
   );
 
   return (
-    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b bg-background px-3.5 py-1.5">
+    <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {items.map((it) => {
           const trigger = <TooltipTrigger render={button(it)} />;
@@ -147,5 +153,15 @@ export function Toolbar(props: {
         </>
       )}
     </div>
+  );
+}
+
+/** The toolbar while no editor shows (a review or Wit writing in its place): every toggle off. */
+export function IdleToolbar({ t, attach }: { t: T; attach?: ReactNode }) {
+  const editor = usePlateEditor({ plugins: [] });
+  return (
+    <Plate editor={editor} readOnly>
+      <Toolbar t={t} linkOpen={false} onLinkOpenChange={() => {}} attach={attach} />
+    </Plate>
   );
 }

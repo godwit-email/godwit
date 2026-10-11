@@ -9,9 +9,9 @@ function From({ w, t }: { w: SendWarning; t: T }) {
   );
 }
 
-// The design's notice: a filled box, no outline (bg-muted for a warning: the theme has no amber).
+// The design's notice: a filled box, no outline; a warning in the theme's warning colours.
 const box = "gap-1 border-0 px-3.5 py-3 text-md";
-const warn = `${box} bg-muted`;
+const warn = `${box} bg-(--warning-bg) text-(--warning-text) *:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
 const small = "bg-background px-2.5 font-normal text-base";
 
@@ -57,7 +57,7 @@ export function Notices({
         <div>
           <Button
             variant="outline"
-            className="px-3 font-normal text-md"
+            className="border-(--warning-border) bg-transparent px-3 font-normal text-(--warning-text) text-md"
             disabled={frozen}
             onClick={() => !frozen && onSendAnyway()}
           >

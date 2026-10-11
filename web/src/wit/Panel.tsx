@@ -1,5 +1,14 @@
 import { useChat } from "@ai-sdk/react";
-import { RiAlertLine, RiArrowDownLine, RiArrowDownSLine, RiLoaderLine } from "@remixicon/react";
+import {
+  RiAlertLine,
+  RiArrowDownLine,
+  RiArrowDownSLine,
+  RiArrowUpLine,
+  RiLoaderLine,
+  RiMagicLine,
+  RiStopFill,
+  RiTranslate2,
+} from "@remixicon/react";
 import type { DynamicToolUIPart } from "ai";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -266,10 +275,10 @@ function Answer({
         </div>
       )}
       {waiting.map((a) => (
-        <Card key={a.id} size="sm" className="ring-primary">
-          <CardHeader>
+        <Card key={a.id} size="sm" className="pt-0 ring-primary">
+          <CardHeader className="bg-muted py-2">
             <CardTitle>{t("wit.compose.review")}</CardTitle>
-            <CardDescription className="font-mono">{toolLabel(a.tool, t)}</CardDescription>
+            <CardDescription className="font-mono text-xs">{a.tool}</CardDescription>
           </CardHeader>
           <CardContent>{review?.body}</CardContent>
         </Card>
@@ -459,7 +468,7 @@ export function Panel({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            className={page ? "mx-auto w-full max-w-190 gap-5 p-6" : "gap-4 px-3 py-2"}
+            className={page ? "mx-auto w-full max-w-190 gap-5 p-6" : "gap-4 px-4 py-2"}
           >
             {chat.messages.map((m) => (
               <MessageScrollerItem key={m.id} messageId={m.id}>
@@ -509,9 +518,7 @@ export function Panel({
     </Alert>
   );
   const input = (
-    <InputGroup
-      className={page ? "rounded-2xl border-0 bg-background shadow-(--shadow-float)" : undefined}
-    >
+    <InputGroup className="relative rounded-2xl border-0 bg-background shadow-(--shadow-float)">
       <InputGroupTextarea
         aria-label={t(page ? "wit.input" : "wit.compose.input")}
         placeholder={t(page ? "wit.placeholder" : "wit.compose.placeholder")}
@@ -523,23 +530,29 @@ export function Panel({
           e.preventDefault();
           submit();
         }}
-        className={page ? "max-h-44 min-h-14 text-base" : "max-h-40 min-h-16 text-base"}
+        className={page ? "max-h-44 min-h-14 text-md" : "max-h-40 min-h-16 text-md"}
       />
       <InputGroupAddon align="block-end" className={slots?.input ? undefined : "justify-end"}>
         {slots?.input}
         {slots?.input && <span className="flex-1" />}
         {running ? (
-          <InputGroupButton variant="outline" size="sm" onClick={stop}>
-            {t("wit.stop")}
+          <InputGroupButton
+            variant="outline"
+            size="icon-sm"
+            aria-label={t("wit.stop")}
+            onClick={stop}
+          >
+            <RiStopFill />
           </InputGroupButton>
         ) : (
           <InputGroupButton
             variant="default"
-            size="sm"
+            size="icon-sm"
+            aria-label={t("wit.send")}
             disabled={locked || !draft.trim()}
             onClick={submit}
           >
-            {t("wit.send")}
+            <RiArrowUpLine />
           </InputGroupButton>
         )}
       </InputGroupAddon>
@@ -566,61 +579,74 @@ export function Panel({
       </div>
     );
   }
+  // 调整 / 翻译: a tray the input overlaps from below.
+  const trayButton = (Icon: typeof RiMagicLine, label: string) => (
+    <Button variant="ghost" size="sm" className="gap-1 text-sm">
+      <Icon className="size-3.5 text-muted-foreground" />
+      {label}
+      <RiArrowDownSLine className="size-3 text-muted-foreground" />
+    </Button>
+  );
   return (
-    <aside className="flex w-90 shrink-0 flex-col border-l">
+    <aside className="flex w-80 shrink-0 flex-col border-l">
       {info && (info.chips.length > 0 || slots?.chips) && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge key={c} variant="secondary" className="max-w-full truncate">
+            <Badge key={c} variant="secondary" className="max-w-full truncate rounded-sm">
               {c}
             </Badge>
           ))}
           {slots?.chips}
         </div>
       )}
-      {info && (
-        <div className="flex items-center gap-1 px-3 py-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-              {t("wit.compose.adjust")}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {info.skills.map((s) => (
-                <DropdownMenuItem
-                  key={s.id}
-                  onClick={() => ask(s.label, { skill: s.id, lang: "" })}
-                >
-                  {s.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-              {t("wit.compose.translate")}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {info.languages.map((l) => (
-                <DropdownMenuItem
-                  key={l.tag}
-                  onClick={() =>
-                    ask(t("wit.compose.translate_to", l.name), {
-                      skill: "translate-draft",
-                      lang: l.tag,
-                    })
-                  }
-                >
-                  {l.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {slots?.actions}
-        </div>
-      )}
       {conversation}
-      {error && <div className="px-3 pb-2">{error}</div>}
-      <div className="px-3 pb-3">{input}</div>
+      {error && <div className="px-4 pb-2">{error}</div>}
+      <div className="px-4 pb-3">
+        {info && (
+          <div data-tray className="mx-1 -mb-4 flex gap-1 rounded-t-2xl bg-muted px-1 pt-1 pb-5">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={locked}
+                render={trayButton(RiMagicLine, t("wit.compose.adjust"))}
+              />
+              <DropdownMenuContent className="min-w-45">
+                {info.skills.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onClick={() => ask(s.label, { skill: s.id, lang: "" })}
+                  >
+                    {s.label}
+                    <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={locked}
+                render={trayButton(RiTranslate2, t("wit.compose.translate"))}
+              />
+              <DropdownMenuContent className="min-w-45">
+                {info.languages.map((l) => (
+                  <DropdownMenuItem
+                    key={l.tag}
+                    onClick={() =>
+                      ask(t("wit.compose.translate_to", l.name), {
+                        skill: "translate-draft",
+                        lang: l.tag,
+                      })
+                    }
+                  >
+                    {l.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {slots?.actions}
+          </div>
+        )}
+        {input}
+      </div>
     </aside>
   );
 }

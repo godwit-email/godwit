@@ -1,4 +1,4 @@
-import { RiAttachment2 } from "@remixicon/react";
+import { RiAttachment2, RiSparkling2Line } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ import { useResume } from "@/wit/resume";
 import { ends, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
 import { type CmdKSelection, Editor } from "./editor/Editor";
+import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
 import { Notices } from "./Notices";
 import { CmdK } from "./review/CmdK";
@@ -271,12 +272,13 @@ function Compose({
   const witResume = useResume(wit?.tr);
   const toasted = useRef(false); // the lock's toast, once per lock
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   // The one way a locked page says so: once until it unlocks.
   const lockToast = useRef<(key: string) => void>(() => {});
   lockToast.current = (key) => {
     if (toasted.current) return;
     toasted.current = true;
-    toast(t(key), { id: "locked" });
+    (key === "wit.compose.locked" ? toast.warning : toast)(t(key), { id: "locked" });
   };
 
   // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
@@ -626,6 +628,20 @@ function Compose({
   };
 
   const status = sv?.status === "saving" || sv?.status === "saved" ? sv.status : "unsaved";
+  const writing = running && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim(); // Wit writes a blank body
+  const showEditor = !reviewing && !writing;
+  const attach = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="size-7 rounded-md text-foreground/80"
+      aria-label={t("compose.attach")}
+      disabled={locked}
+      onClick={() => change((rev) => api.addAttachments(rev))}
+    >
+      <RiAttachment2 className="size-3.75" />
+    </Button>
+  );
   const title = f.subject.trim() || t("compose.new");
 
   return (
@@ -658,14 +674,10 @@ function Compose({
       }}
     >
       <header className="compose-titlebar flex shrink-0 items-center border-b pr-4">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate font-semibold text-md">{title}</h1>
-          <p className="shrink-0 text-muted-foreground text-sm">
-            {status === "saved"
-              ? t("compose.status.saved", savedAt)
-              : t(`compose.status.${status}`)}
-          </p>
-        </div>
+        <h1 className="min-w-0 flex-1 truncate font-semibold text-md">{title}</h1>
+        <p className="ml-auto shrink-0 text-muted-foreground text-sm">
+          {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
+        </p>
       </header>
       {/* A row: the compose column, the Wit panel beside it. */}
       <div className="flex min-h-0 flex-1">
@@ -687,11 +699,15 @@ function Compose({
               t={t}
             />
             {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}
-            <div ref={bodyRef} className="flex flex-1 flex-col">
+            <div
+              ref={bodyRef}
+              data-locked={running || !!reviewing || undefined}
+              className="flex flex-1 flex-col data-locked:bg-sidebar"
+            >
               {reloadErr && (
                 <Alert
                   variant="destructive"
-                  className="mx-5 mt-2 w-auto border-0 bg-destructive/10"
+                  className="mx-4 mt-2 w-auto border-0 bg-destructive/10"
                 >
                   <AlertDescription>{reloadErr}</AlertDescription>
                   <AlertAction>
@@ -702,15 +718,16 @@ function Compose({
                 </Alert>
               )}
               {running && (
-                <div className="mx-5 mt-2 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+                  <RiSparkling2Line className="size-3.5 shrink-0" />
                   <span className="flex-1">{t("wit.compose.writing_banner")}</span>
-                  <Button variant="ghost" size="sm" onClick={stop}>
+                  <Button variant="outline" size="sm" className="text-base" onClick={stop}>
                     {t("wit.stop")}
                   </Button>
                 </div>
               )}
               {applied && !witLocked && !locked && (
-                <div className="mx-5 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
+                <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
                   <span>{t("wit.compose.applied")}</span>
                   <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
                     {t("wit.compose.undo")}
@@ -726,8 +743,8 @@ function Compose({
                   onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
                   t={t}
                 />
-              ) : running && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim() ? (
-                <div className="flex min-h-70 flex-1 flex-col gap-3 p-5">
+              ) : writing ? (
+                <div className="flex min-h-70 flex-1 flex-col gap-3 p-4">
                   <span className="text-muted-foreground">{t("wit.compose.writing")}</span>
                   {["90%", "75%", "50%"].map((w) => (
                     <div
@@ -742,23 +759,14 @@ function Compose({
                   key={`${state.draftId}:${initial.n}`}
                   initial={initial.body}
                   readOnly={locked || witLocked}
-                  placeholder=""
+                  placeholder={wit ? t("wit.compose.empty") : ""}
                   onChange={(body) => edit({ body })}
                   onComposing={() => {}} // <main> tracks compositions, the fields' too
                   t={t}
                   onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
-                  attach={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-7.5 rounded-md text-foreground/80"
-                      aria-label={t("compose.attach")}
-                      disabled={locked}
-                      onClick={() => change((rev) => api.addAttachments(rev))}
-                    >
-                      <RiAttachment2 className="size-3.75" />
-                    </Button>
-                  }
+                  held={!!cmdk}
+                  toolbarSlot={toolbarSlot}
+                  attach={attach}
                 />
               )}
               {cmdk && !locked && !witLocked && (
@@ -770,7 +778,7 @@ function Compose({
                 />
               )}
             </div>
-            <div className="flex flex-col gap-4 px-5 pb-4 *:empty:hidden">
+            <div className="mx-4 mb-4 flex flex-col gap-4 *:empty:hidden">
               {signature && (
                 <div className="whitespace-pre-wrap text-base text-muted-foreground">
                   {signature}
@@ -817,7 +825,11 @@ function Compose({
               />
             </div>
           </div>
-          <div className="shrink-0 border-t px-5 py-3">
+          {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
+          <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
+            <div ref={setToolbarSlot} className="contents">
+              {!showEditor && <IdleToolbar t={t} attach={attach} />}
+            </div>
             <SendBar
               sending={sending}
               frozen={locked}
@@ -845,18 +857,20 @@ function Compose({
                         <div className="flex gap-2">
                           <Button
                             size="sm"
-                            variant="outline"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, false), false)}
-                          >
-                            {t("wit.compose.reject_all")}
-                          </Button>
-                          <Button
-                            size="sm"
+                            className="text-base"
                             disabled={deciding}
                             onClick={() => decide((id) => api.decide(id, true), true)}
                           >
                             {t("wit.compose.accept_all")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-base"
+                            disabled={deciding}
+                            onClick={() => decide((id) => api.decide(id, false), false)}
+                          >
+                            {t("wit.compose.reject_all")}
                           </Button>
                         </div>
                       </div>

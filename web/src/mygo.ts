@@ -304,6 +304,8 @@ export interface SignatureState {
 export interface Skill {
   id: string;
   label: string;
+  /** Hint is what the skill changes, shown beside its label. */
+  hint: string;
 }
 
 /**

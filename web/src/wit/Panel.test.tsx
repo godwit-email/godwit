@@ -10,8 +10,8 @@ vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 const t = makeT({
   "wit.compose.placeholder": "告诉 Wit 你想怎么回",
   "wit.compose.input": "Wit 输入",
-  "wit.compose.adjust": "调整 ▾",
-  "wit.compose.translate": "翻译 ▾",
+  "wit.compose.adjust": "调整",
+  "wit.compose.translate": "翻译",
   "wit.compose.translate_to": "翻译为%s",
   "wit.compose.review": "待确认",
   "wit.send": "发送",
@@ -45,8 +45,8 @@ const t = makeT({
 const info: WitInfo = {
   enabled: true,
   skills: [
-    { id: "tone-formal", label: "更正式" },
-    { id: "shorter", label: "更短" },
+    { id: "tone-formal", label: "更正式", hint: "语气" },
+    { id: "shorter", label: "更短", hint: "长度" },
   ],
   languages: [
     { tag: "zh-CN", name: "简体中文" },
@@ -129,6 +129,38 @@ describe("Panel", () => {
     expect(input()).toHaveAttribute("placeholder", "告诉 Wit 你想怎么回");
   });
 
+  it("Send is an icon button named 发送; Stop is too while running", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup();
+    const send = screen.getByRole("button", { name: "发送" });
+    expect(send).toHaveAttribute("aria-label", "发送");
+    expect(send).toHaveTextContent("");
+    await user.type(input(), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    const stop = await screen.findByRole("button", { name: "停止" });
+    expect(stop).toHaveAttribute("aria-label", "停止");
+    expect(stop).toHaveTextContent("");
+  });
+
+  it("the compose layout's 调整 / 翻译 tray sits right above the input; the page has none", async () => {
+    const { unmount } = await setup();
+    const tray = screen.getByRole("button", { name: "调整" }).closest("[data-tray]");
+    expect(tray).not.toBeNull();
+    expect(tray?.nextElementSibling).toContainElement(input());
+    unmount();
+    await setup({ page: true });
+    expect(screen.queryByRole("button", { name: "调整" })).toBeNull();
+  });
+
+  it("the 调整 menu shows each skill's hint", async () => {
+    const user = userEvent.setup();
+    await setup();
+    await user.click(screen.getByRole("button", { name: "调整" }));
+    const item = await screen.findByRole("menuitem", { name: /更正式/ });
+    expect(item).toHaveTextContent("语气");
+    expect(screen.getByRole("menuitem", { name: /更短/ })).toHaveTextContent("长度");
+  });
+
   it("sends with Enter, not with Shift+Enter or during composition", async () => {
     const user = userEvent.setup();
     const { api } = await setup();
@@ -161,8 +193,8 @@ describe("Panel", () => {
   it("an error shows 重试, which repeats the last skill", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup();
-    await user.click(screen.getByRole("button", { name: "调整 ▾" }));
-    await user.click(await screen.findByRole("menuitem", { name: "更正式" }));
+    await user.click(screen.getByRole("button", { name: "调整" }));
+    await user.click(await screen.findByRole("menuitem", { name: /更正式/ }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledWith("tone-formal", ""));
     emit({ kind: "error", error: "error.ai.unavailable" });
     expect(await screen.findByText("服务不可用")).toBeInTheDocument();
@@ -185,7 +217,7 @@ describe("Panel", () => {
   it("translates to a language from the 翻译 menu", async () => {
     const user = userEvent.setup();
     const { api } = await setup();
-    await user.click(screen.getByRole("button", { name: "翻译 ▾" }));
+    await user.click(screen.getByRole("button", { name: "翻译" }));
     await user.click(await screen.findByRole("menuitem", { name: "English" }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledWith("translate-draft", "en"));
     expect(screen.getByText("翻译为English")).toBeInTheDocument();
@@ -193,8 +225,8 @@ describe("Panel", () => {
 
   it("locked: the menus and Send are disabled", async () => {
     await setup({ locked: true });
-    expect(screen.getByRole("button", { name: "调整 ▾" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "翻译 ▾" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "调整" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "翻译" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
@@ -270,7 +302,7 @@ describe("Panel", () => {
       review: { approval: 4, body: <button type="button">全部接受</button> },
     });
     expect(screen.getByText("待确认")).toBeInTheDocument();
-    expect(screen.getByText("修改正文")).toBeInTheDocument();
+    expect(screen.getByText("update_draft")).toHaveClass("font-mono", "text-xs"); // the tool, as the design names it
     expect(screen.getByRole("button", { name: "全部接受" })).toBeInTheDocument();
     unmount();
     await setup({ history: history([a]) }); // not the one reviewed: no card

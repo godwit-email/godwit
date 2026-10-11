@@ -33,7 +33,7 @@ export function CmdK({
     <form
       ref={box}
       style={{ left: at.left, top: at.top }}
-      className="fixed z-50 flex w-96 flex-col gap-2 rounded-lg border bg-popover p-2 shadow-md"
+      className="fixed z-50 flex w-96 flex-col gap-1.5 rounded-xl border bg-popover p-2.5 shadow-md"
       onSubmit={(e) => {
         e.preventDefault();
         const s = text.trim();
@@ -50,21 +50,22 @@ export function CmdK({
       }}
     >
       <div className="flex items-center gap-2">
-        <RiSparkling2Line className="size-4 shrink-0 text-primary" />
+        <RiSparkling2Line className="size-3.5 shrink-0" />
         <Input
           autoFocus
           aria-label={t("wit.compose.cmdk.input")}
           placeholder={t("wit.compose.cmdk.input")}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          className="h-auto border-0 bg-transparent px-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
         />
       </div>
       <div className="flex items-center gap-2">
         <span className="flex-1 text-muted-foreground text-sm">{t("wit.compose.cmdk")}</span>
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>
+        <Button type="button" size="xs" variant="outline" onClick={onClose}>
           {t("wit.compose.cmdk.esc")}
         </Button>
-        <Button type="submit" size="sm">
+        <Button type="submit" size="xs">
           {t("wit.compose.cmdk.go")}
         </Button>
       </div>

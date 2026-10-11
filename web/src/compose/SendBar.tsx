@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
 
-/** The send button, discard (behind a confirm) and the note. */
+/** The send button, discard (behind a confirm) and the note, at the bottom bar's end. */
 export function SendBar({
   sending,
   frozen,
@@ -30,8 +30,8 @@ export function SendBar({
   const [asking, setAsking] = useState(false);
   const off = sending || frozen;
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button className="px-5 font-semibold text-md" disabled={off} onClick={onSend}>
+    <div className="ml-auto flex flex-wrap items-center gap-2">
+      <Button className="px-4 font-semibold text-md" disabled={off} onClick={onSend}>
         {t("compose.send")}
       </Button>
       <Button
@@ -42,7 +42,7 @@ export function SendBar({
       >
         {t("compose.discard")}
       </Button>
-      <p className="ml-auto text-base text-muted-foreground">{t("compose.note")}</p>
+      <p className="text-base text-muted-foreground">{t("compose.note")}</p>
       <AlertDialog open={asking} onOpenChange={setAsking}>
         <AlertDialogContent>
           <AlertDialogHeader>

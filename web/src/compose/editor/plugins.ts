@@ -2,6 +2,7 @@ import { BlockquotePlugin, BoldPlugin, ItalicPlugin } from "@platejs/basic-nodes
 import { LinkPlugin } from "@platejs/link/react";
 import { ListPlugin, TaskListPlugin } from "@platejs/list-classic/react";
 import { type AnyPluginConfig, createSlatePlugin, NodeApi } from "platejs";
+import { createPlatePlugin } from "platejs/react";
 import { deserialize, safeHref, toHTML } from "./html";
 
 /**
@@ -43,6 +44,12 @@ export const linkPlugin = LinkPlugin.configure({
   options: { allowedSchemes: ["http", "https", "mailto"], isUrl: (u: string) => !!safeHref(u) },
 });
 
+/** ⌘K's selection marked while its popover has focus (Editor's `held` decoration); never saved. */
+export const HeldPlugin = createPlatePlugin({
+  key: "held",
+  node: { isLeaf: true, props: { className: "bg-border" } },
+});
+
 /**
  * The native compose page's formats and nothing else: paragraph (core), bold, italic, link,
  * bulleted and numbered list (list-classic ul/ol/li/lic; its task list disabled), block quote.
@@ -54,4 +61,5 @@ export const plugins: AnyPluginConfig[] = [
   ListPlugin.configurePlugin(TaskListPlugin, { enabled: false }),
   BlockquotePlugin,
   SafePastePlugin,
+  HeldPlugin,
 ];

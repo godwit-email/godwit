@@ -121,7 +121,7 @@ export function Response({
   return (
     <>
       <Streamdown
-        className="text-base"
+        className="text-md"
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={remarkPlugins}

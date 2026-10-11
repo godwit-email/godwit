@@ -202,8 +202,9 @@ function Conversation({
       slots={{
         input: (
           <InputGroupButton
-            variant="outline"
+            variant="ghost"
             size="sm"
+            className="text-muted-foreground text-sm"
             title={t("wit.model")}
             onClick={() => void api.openModels().catch(fail)}
           >

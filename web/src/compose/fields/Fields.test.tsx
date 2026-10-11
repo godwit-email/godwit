@@ -165,3 +165,22 @@ test("while an IME composes, neither a comma nor leaving commits", () => {
   fireEvent.change(to, { target: { value: "你@x.io," } });
   expect(chips()).toEqual(["移除 你@x.io"]);
 });
+
+test("rows read 收件人, 抄送 · 密送's, 主题, then 发件人", () => {
+  const { container } = render(
+    <Fields
+      accounts={accounts}
+      from={1}
+      onFrom={vi.fn()}
+      to={[]}
+      cc={["c@x.com"]}
+      bcc={[]}
+      replyTo=""
+      subject=""
+      onChange={vi.fn()}
+      t={t}
+    />,
+  );
+  const labels = [...container.querySelectorAll("label")].map((l) => l.textContent);
+  expect(labels).toEqual(["收件人", "抄送", "密送", "回复地址", "主题", "发件人"]);
+});

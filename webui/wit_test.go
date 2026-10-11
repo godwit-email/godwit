@@ -79,6 +79,19 @@ func proposeTurn(id, html string) coretest.Turn {
 	return coretest.Turn{Calls: []coretest.Call{{ID: id, Name: "update_draft", Args: string(b)}}}
 }
 
+func TestWitInfoSkillHints(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	hints := map[string]string{}
+	for _, s := range info.Skills {
+		hints[s.ID] = s.Hint
+	}
+	assert.Equal(t, map[string]string{"tone-formal": "语气", "tone-friendly": "语气", "shorter": "长度", "longer": "长度", "proofread": "只改错字和语法"}, hints)
+}
+
 func TestComposeWitInfo(t *testing.T) {
 	f := newFixture(t, coretest.WithoutAutoSync())
 	d := f.draft(t, "new", 0)
@@ -97,7 +110,7 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err = f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.True(t, info.Enabled)
-	assert.Equal(t, []Skill{{"tone-formal", "更正式"}, {"tone-friendly", "更友好"}, {"shorter", "更短"}, {"longer", "更长"}, {"proofread", "校对"}}, info.Skills)
+	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}}, info.Skills)
 	assert.Equal(t, []Language{{"ja", "日本語"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}}, info.Languages)
 	assert.Empty(t, info.Chips)
 	st2, err := f.page.Load(f.ctx(1))

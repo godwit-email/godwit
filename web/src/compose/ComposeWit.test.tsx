@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   Approval,
@@ -45,7 +45,7 @@ vi.mock("@/mygo", () => ({
 vi.mock("mygo-runtime", () => ({ currentWindow: { setTitle: vi.fn() } }));
 vi.mock("sonner", async (orig) => ({
   ...(await orig<typeof import("sonner")>()),
-  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { error: vi.fn(), warning: vi.fn() }),
 }));
 // The body as a textarea that reads `initial` at mount; ⌘K on a selection gives its plain text
 // (the textarea's value) and the selection, as the Plate editor does (its own tests cover toText).
@@ -55,6 +55,7 @@ vi.mock("./editor/Editor", async () => {
     Editor(p: {
       initial: string;
       readOnly: boolean;
+      placeholder: string;
       onChange(html: string): void;
       onCmdK?(s: unknown): void;
       t(k: string): string;
@@ -64,6 +65,7 @@ vi.mock("./editor/Editor", async () => {
         <textarea
           aria-label={p.t("compose.body")}
           data-cmdk={!!p.onCmdK}
+          placeholder={p.placeholder}
           value={v}
           readOnly={p.readOnly}
           onChange={(e) => {
@@ -94,6 +96,8 @@ import { ComposePage as api } from "@/mygo";
 const text: Record<string, string> = {
   "compose.body": "正文",
   "compose.subject": "主题",
+  "compose.bold": "加粗",
+  "wit.compose.empty": "自己写，或者在右边告诉 Wit 你想怎么回",
   "compose.sending.locked": "正在发送，暂时不能修改草稿",
   "error.unknown": "出错了：%s",
   "common.retry": "重试",
@@ -282,6 +286,32 @@ test("inline review: accept one, reject one → finish([1,-1]); the body takes t
   expect(await screen.findByRole("button", { name: "撤销" })).toBeInTheDocument();
 });
 
+test("an empty body with Wit shows the hint", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, body: "" });
+  await setup();
+  expect(await body()).toHaveAttribute("placeholder", "自己写，或者在右边告诉 Wit 你想怎么回");
+});
+
+test("a change's popover offers 接受 before 拒绝", async () => {
+  await setup(withPending);
+  const region = await screen.findByRole("region", { name: "正文修订" });
+  fireEvent.mouseEnter(region.querySelector("[data-change]") as HTMLElement);
+  expect(
+    within(region)
+      .getAllByRole("button")
+      .map((b) => b.textContent),
+  ).toEqual(["接受", "拒绝"]);
+});
+
+test("the formatting toolbar sits in the bottom bar with Send, disabled while an edit waits", async () => {
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  const bold = screen.getByRole("button", { name: "加粗" });
+  expect(bold).toBeDisabled();
+  const send = screen.getByRole("button", { name: "compose.send" });
+  expect(send.closest("[data-bar]")).toContainElement(bold);
+});
+
 test("accept all → decide(id, true)", async () => {
   vi.mocked(api.decide).mockResolvedValue(change("<p>Hi Ann and more</p>", 9));
   vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
@@ -375,9 +405,9 @@ test("locked while running: typing in the body toasts once", async () => {
   expect(b).toHaveAttribute("readonly");
   fireEvent.keyDown(b, { key: "a" });
   fireEvent.keyDown(b, { key: "b" });
-  expect(vi.mocked(toast).mock.calls.filter(([m]) => m === "先接受或拒绝助手的修改")).toHaveLength(
-    1,
-  );
+  expect(
+    vi.mocked(toast.warning).mock.calls.filter(([m]) => m === "先接受或拒绝助手的修改"),
+  ).toHaveLength(1);
   vi.mocked(api.latest).mockResolvedValue(latest("正文", 7));
   emit({ kind: "done" });
   await waitFor(() => expect(b).not.toHaveAttribute("readonly"));

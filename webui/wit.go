@@ -31,6 +31,8 @@ type WitInfo struct {
 type Skill struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	// Hint is what the skill changes, shown beside its label.
+	Hint string `json:"hint"`
 }
 
 // Language is a 翻译 menu item.
@@ -145,7 +147,7 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	}
 	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}}
 	for _, id := range adjustSkills {
-		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id)})
+		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
 	read := svc.ReadingLanguage(ctx)
 	info.Languages = []Language{{read, langName(read)}}

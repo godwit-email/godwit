@@ -214,4 +214,52 @@ describe("Editor", () => {
     await user.click(screen.getByRole("button", { name: "compose.quote" }));
     await waitFor(() => expect(last(onChange)).toBe("<ul><li><p>1</p></li></ul>"));
   });
+
+  it("the toolbar renders in the host's slot, still driving the editor", async () => {
+    const user = userEvent.setup();
+    const slot = document.createElement("div");
+    document.body.append(slot);
+    const onChange = vi.fn();
+    render(
+      <Editor
+        initial="<p>a</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={onChange}
+        onComposing={() => {}}
+        toolbarSlot={slot}
+        t={t}
+      />,
+    );
+    const quote = screen.getByRole("button", { name: "compose.quote" });
+    expect(slot).toContainElement(quote);
+    const box = screen.getByLabelText("body");
+    await select(box, 0, 1);
+    await user.click(quote);
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+    slot.remove();
+  });
+
+  it("the ⌘K selection stays marked while held", async () => {
+    const ui = (held: boolean) => (
+      <Editor
+        initial="<p>hello world</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={() => {}}
+        onComposing={() => {}}
+        onCmdK={() => {}}
+        held={held}
+        t={t}
+      />
+    );
+    const { rerender } = render(ui(false));
+    const box = screen.getByLabelText("body");
+    await select(box, 6, 5);
+    fireEvent.keyDown(box, { key: "k", code: "KeyK", ...mod });
+    rerender(ui(true));
+    await waitFor(() => expect(box.querySelector(".bg-border")).toHaveTextContent(/^world$/));
+    rerender(ui(false));
+    await waitFor(() => expect(box.querySelector(".bg-border")).toBeNull());
+  });
 });
