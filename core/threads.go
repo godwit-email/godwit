@@ -15,12 +15,13 @@ type View struct {
 	Unified  string
 }
 
-// ThreadSummary is a conversation as listed. Count and Unread cover the whole thread.
+// ThreadSummary is a conversation as listed. Count, Unread and Flagged cover the whole thread.
 type ThreadSummary struct {
 	ID               int64
 	Subject, Snippet string
 	Participants     []string
 	Count, Unread    int
+	Flagged          int // messages starred
 	LastDate         time.Time
 	HasAttachments   bool
 }
@@ -90,6 +91,9 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		t.Count++
 		if !strings.Contains(store.Str(r[3]), `\Seen`) {
 			t.Unread++
+		}
+		if strings.Contains(store.Str(r[3]), `\Flagged`) {
+			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
 		name := displayName(store.Str(r[1]))

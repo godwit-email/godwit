@@ -338,7 +338,7 @@ func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int6
 	return 0, fmt.Errorf("folder %d not found", folderID)
 }
 
-// last is the newest message shown: the one replies and the More menu act on.
+// last is the newest message shown: the one replies and the AI buttons act on.
 func (r *reader) last() (core.MessageSummary, bool) {
 	if len(r.msgs) == 0 {
 		return core.MessageSummary{}, false
@@ -446,23 +446,6 @@ func fileURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: p}).String()
 }
 
-// exportEML saves the message's raw source where the user chooses.
-func (r *reader) exportEML(m core.MessageSummary) {
-	a := r.p.a
-	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		path, err := plat.SaveFile(fileName(m.Subject, "message") + ".eml")
-		if err != nil || path == "" {
-			return err
-		}
-		raw, err := a.svc.GetRawMessage(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(path, raw, 0o600)
-	}, a.toastErr)
-}
-
 // fileName makes s a file name: separators and control characters become
 // _, leading and trailing dots and spaces go, and a name Windows reserves
 // (CON, COM1.txt…) gets a _ in front. Empty, it is fallback.
@@ -559,7 +542,7 @@ func (r *reader) view(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-					kit.Text(c, subject, t.Text.X2l).FontWeight(600)
+					kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
 					for _, m := range r.msgs {
 						if r.open[m.ID] {
 							r.message(c, m)
@@ -573,11 +556,10 @@ func (r *reader) view(c *ui.Context) {
 	})
 }
 
-// toolbar: the reply group and the archive group as icon buttons, the AI
-// buttons, and More, which holds star, mark unread, view in browser and export.
+// toolbar: the reply group and the archive group as icon buttons, then
+// the AI buttons.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
@@ -589,28 +571,7 @@ func (r *reader) toolbar(c *ui.Context) {
 			kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
 		)
 		ui.Spacer(c)
-		r.aiTools(c)
-		starred := !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) })
-		m, _ := r.last()
-		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), ghost).Menu(func(menu *ui.Menu) {
-			star, op := i18n.T("mail.action.star"), "star"
-			if starred {
-				star, op = i18n.T("reader.unstar"), "unstar"
-			}
-			if menu.Item(star).Chosen() {
-				r.act(op)
-			}
-			if menu.Item(i18n.T("mail.action.unread")).Chosen() {
-				r.act("unread")
-			}
-			menu.Separator()
-			if menu.Item(i18n.T("reader.view_in_browser")).Chosen() {
-				r.viewInBrowser(m.ID)
-			}
-			if menu.Item(i18n.T("reader.export_eml")).Chosen() {
-				r.exportEML(m)
-			}
-		})
+		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
 }
 
@@ -700,13 +661,15 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.allowImages(m.ID) })
 			})
-		default: // until the page has them
-			kit.Alert(c, kit.Warning, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), func() {
+		default: // until the page has them; a slimmer notice than an Alert, at Base
+			ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
+				Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+				kit.Text(c, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
 				if b.allow {
 					kit.Spinner(c)
 					return
 				}
-				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText).OnClick(func() { r.allowImages(m.ID) })
+				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
 			})
 		}
 		// The translation shows in the body's place: the page is not

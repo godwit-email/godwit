@@ -186,25 +186,17 @@ func (h *harness) scrollTo(label string) {
 	h.t.Fatalf("%q never came into view", label)
 }
 
-// more chooses an item of the reader's More menu.
-func (h *harness) more(item string) {
-	h.t.Helper()
-	h.click("更多")
-	if err := h.tt.ChooseMenuItem(item); err != nil {
-		h.t.Fatalf("%v; menu %q", err, h.tt.Menu())
-	}
-	h.drain()
-	h.tt.Frame()
-}
-
+// View in browser is offered only for a body cut short: the notice's button.
 func TestViewInBrowserHasCSP(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.plat.tempDir = t.TempDir()
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Page", "text",
 		coretest.HTML(`<p>Shown in a browser</p><script>alert(1)</script><img src="https://tracker.example/p.gif">`)))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.more("在浏览器中查看原文")
+	v := h.seeBody(m.ID)
+	h.app.BodyBuilt(v, m.ID, true, false)
+	h.tt.Frame()
+	h.click("在浏览器中查看")
 	u, err := url.Parse(h.callArg("OpenURL"))
 	if err != nil || u.Scheme != "file" {
 		t.Fatalf("opened %v (%v)", u, err)
@@ -224,29 +216,6 @@ func TestViewInBrowserHasCSP(t *testing.T) {
 	csp := `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">`
 	if !strings.Contains(s, csp) || strings.Contains(strings.ToLower(s), "<script") || !strings.Contains(s, "Shown in a browser") {
 		t.Fatalf("file:\n%s", s)
-	}
-}
-
-func TestExportEML(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
-	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Keep: this/that", "raw body"))
-	h.plat.savePath = filepath.Join(t.TempDir(), "out.eml")
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.more("导出原始邮件 (.eml)")
-	if name := h.callArg("SaveFile"); name != "Keep_ this_that.eml" {
-		t.Errorf("default name %q", name)
-	}
-	raw, err := h.env.Svc.GetRawMessage(context.Background(), m.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.until("the file written", func() bool {
-		got, err := os.ReadFile(h.plat.savePath)
-		return err == nil && bytes.Equal(got, raw)
-	})
-	if h.hasCall("OpenURL") || h.hasCall("OpenPath") {
-		t.Fatalf("export opened something: %q", h.plat.Calls())
 	}
 }
 
@@ -441,25 +410,6 @@ func TestReplyAfterSwitchingMailOpensWindow(t *testing.T) {
 	}
 }
 
-func TestReaderMoreMenuKeepsStarUnread(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
-	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.click("更多")
-	menu := strings.Join(h.tt.Menu(), "|")
-	for _, want := range []string{"加星", "标为未读", "在浏览器中查看原文", "导出原始邮件 (.eml)"} {
-		if !strings.Contains(menu, want) {
-			t.Errorf("menu %q lacks %q", menu, want)
-		}
-	}
-	if err := h.tt.ChooseMenuItem("加星"); err != nil {
-		t.Fatal(err)
-	}
-	h.drain()
-	h.until("starred", func() bool { return slices.Contains(h.messages(m.ThreadID)[0].Flags, `\Flagged`) })
-}
-
 func TestRelativeSenderDate(t *testing.T) {
 	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) // a Wednesday
 	for _, c := range []struct {
@@ -488,7 +438,7 @@ func TestReaderToolbarAt16(t *testing.T) {
 			h.openThread(m.ThreadID)
 			h.seeBody(m.ID)
 			var prev ui.Rect
-			for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "更多"} {
+			for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "翻译"} {
 				r, ok := h.tt.Find(label)
 				if !ok {
 					t.Fatalf("no %q", label)

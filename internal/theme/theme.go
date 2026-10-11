@@ -77,6 +77,8 @@ const (
 	LineTitle, LineXl, LineX2l, LineDisplay    = 1.4, 1.35, 1.3, 1.25
 	LineReading, LineSummary, LineProse        = 1.75, 1.65, 1.6
 	LineLede, LineTight                        = 1.7, 1
+	LineCJK                                    = 1.4  // a CJK line at the fallback font's normal height (the drafts pane's fields, an AI panel's title, the remote-image notice)
+	LineSubject                                = 1.35 // a mail's subject over the reader and the drafts pane
 )
 
 // Line returns the line height of the step whose size is size, Body's for
@@ -139,7 +141,8 @@ const (
 	QuoteBar              = 2   // the bar left of a quote in a mail body
 	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
 	ReaderMaxWidth        = 720 // the reading pane's text column
-	AttachmentWidth       = 260 // an attachment in the reading pane
+	AttachmentWidth       = 282 // an attachment in the reading pane, with its download button
+	DraftAttachmentWidth  = 286 // an attachment in the drafts pane
 	WitMaxWidth           = 760 // the Ask page's conversation column
 	CitationsWidth        = 320 // the Ask page's cited mail column
 )
@@ -172,6 +175,7 @@ const (
 	Watermark                                        = 96             // the empty reader pane's bird
 	FormLabelWidth, ModelIDInputWidth, DialogBodyMax = 96, 132, 560   // a dialog form's label column; the add-model-ID field; a dialog body's tallest before it scrolls
 	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
+	SummaryDot                                       = 5              // a summary point's disc
 )
 
 // ShadowLayer is one layer of a drop shadow: its offset down, blur and

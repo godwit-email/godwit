@@ -148,11 +148,11 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(3.5)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(4)).Children(func() {
 					if editing {
-						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
+						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
 					}
-					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600)
+					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
 					ui.Column(c).Gap(th.Space(1)).Children(func() {
 						for _, f := range [][2]string{
 							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
@@ -160,13 +160,14 @@ func (p *mailPage) draftPane(c *ui.Context) {
 							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
 						} {
 							ui.Row(c).Gap(th.Space(3)).Children(func() {
-								ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
-								ui.Text(c, f[1]).Grow(1).Shrink(1)
+								ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
+								ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
 							})
 						}
 					})
-					ui.Box(c).Height(theme.Hairline).Background(t.Border)
-					richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
+					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
+					})
 					p.draftAttachments(c, d.Attachments)
 				})
 			})
@@ -178,7 +179,7 @@ func (p *mailPage) draftAttachments(c *ui.Context, atts []core.DraftAttachment) 
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 		for _, att := range atts {
-			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+			ui.Row(c).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 					kit.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType}), t.Text.Xs).TextColor(t.Muted)
 				})

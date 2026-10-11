@@ -182,6 +182,7 @@ func TestShots(t *testing.T) {
 	// openLena opens the proposal thread and waits for its summary and quick
 	// replies (the fake model answers in the order scripted).
 	openLena := func(s *shotEnv) {
+		writeSkill(t, s.env, "brief") // the design's 更多 skill ▾
 		s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
 		s.click("Q4 partnership proposal")
 		s.see("需要你在周五前确认")
@@ -237,13 +238,15 @@ func TestShots(t *testing.T) {
 	})
 	t.Run("MainOTP", func(t *testing.T) {
 		s := shotMail(t, noAuto)
-		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [{ label: "", value: "482 913" }, { label: "有效期", value: "10 分钟" }], buttons: [{ label: "复制", kind: "copy", value: "482913" }] }`)
+		writeSkill(t, s.env, "brief")
+		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [{ label: "", value: "482 913" }, { label: "", value: "10 分钟内有效" }], buttons: [{ label: "复制", kind: "copy", value: "482913" }] }`)
 		s.click("[Code Host] 你的登录验证码")
 		s.see("复制")
 		shot(s.harness, "MainOTP")
 	})
 	t.Run("MainFlight", func(t *testing.T) {
 		s := shotMail(t, noAuto)
+		writeSkill(t, s.env, "brief")
 		shotPlugin(t, s.harness, "flight-cards", "NW 1858", `{ title: "航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]", fields: [{ label: "", value: "PVG → CTU" }, { label: "座位", value: "[待选] · 行李额 [待确认]" }], buttons: [{ label: "在线值机", kind: "open-url", value: "https://northwind.example/checkin" }] }`)
 		s.click("值机提醒：NW 1858 上海 → 成都")
 		s.see("在线值机")

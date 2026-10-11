@@ -405,6 +405,46 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	}
 }
 
+// The row menu offers read or unread, star or unstar, by the row's state,
+// as S and U toggle.
+func TestRowMenuByState(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(h.clock.Now(), 1)))
+	h.syncNow(accs[0])
+	h.waitMail("the thread", func() bool { return len(h.items()) == 1 })
+	choose := func(want, not, item string) {
+		t.Helper()
+		if err := h.tt.RightClick("first"); err != nil {
+			t.Fatal(err)
+		}
+		menu := strings.Join(h.tt.Menu(), "|")
+		if !strings.Contains(menu, want) || strings.Contains(menu, not) {
+			t.Fatalf("menu %q: want %q, not %q", menu, want, not)
+		}
+		if err := h.tt.ChooseMenuItem(item); err != nil {
+			t.Fatal(err)
+		}
+		h.tt.Frame()
+	}
+	choose("标为已读|加星", "标为未读", "标为已读")
+	h.waitMail("read", func() bool { return h.items()[0].Unread == 0 })
+	choose("标为未读|加星", "取消星标", "加星")
+	h.waitMail("starred", func() bool { return h.items()[0].Flagged == 1 })
+	choose("取消星标", "加星", "取消星标")
+	h.waitMail("unstarred", func() bool { return h.items()[0].Flagged == 0 })
+	choose("标为未读", "标为已读", "标为未读")
+	h.waitMail("unread", func() bool { return h.items()[0].Unread == 1 })
+	h.click("first") // reads it; the list has the focus
+	h.waitMail("read by the reader", func() bool { return h.items()[0].Unread == 0 })
+	h.click("first")
+	h.tt.Key(0, ui.KeyS)
+	h.waitMail("starred by S", func() bool { return h.items()[0].Flagged == 1 })
+	h.tt.Key(0, ui.KeyS)
+	h.waitMail("unstarred by S", func() bool { return h.items()[0].Flagged == 0 })
+	h.tt.Key(0, ui.KeyU)
+	h.waitMail("unread by U", func() bool { return h.items()[0].Unread == 1 })
+}
+
 func TestBatchAcrossAccounts(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com", "dave@example.com")
 	if err := h.env.IMAP(accs[2].ID).User.Delete("Archive"); err != nil {

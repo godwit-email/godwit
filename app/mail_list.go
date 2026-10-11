@@ -30,18 +30,18 @@ const (
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
 type mailItem struct {
-	ID                    int64
-	Thread                bool
-	Who, Subject, Snippet string
-	Date                  time.Time
-	Count, Unread         int
-	Attach                bool
-	Msg                   core.MessageSummary // a message row's own summary
+	ID                     int64
+	Thread                 bool
+	Who, Subject, Snippet  string
+	Date                   time.Time
+	Count, Unread, Flagged int
+	Attach                 bool
+	Msg                    core.MessageSummary // a message row's own summary
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
 	return mailItem{ID: t.ID, Thread: true, Who: strings.Join(t.Participants, ", "), Subject: t.Subject, Snippet: t.Snippet,
-		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Attach: t.HasAttachments}
+		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Flagged: t.Flagged, Attach: t.HasAttachments}
 }
 
 func messageItem(m core.MessageSummary) mailItem {
@@ -49,6 +49,9 @@ func messageItem(m core.MessageSummary) mailItem {
 		Count: 1, Attach: m.HasAttachments, Msg: m}
 	if !slices.Contains(m.Flags, `\Seen`) {
 		it.Unread = 1
+	}
+	if slices.Contains(m.Flags, `\Flagged`) {
+		it.Flagged = 1
 	}
 	return it
 }
@@ -666,14 +669,23 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 		it := rows[es[i].row]
 		p.item(c, it).ContextMenu(func(m *ui.Menu) {
-			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
+			on := []mailItem{it}
+			if ls.sel.Has(it.key()) {
+				on = p.chosen(rows)
+			}
+			// as S and U: read/star when any of them is unread/unstarred
+			read, star := "unread", "unstar"
+			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Unread > 0 }) {
+				read = "read"
+			}
+			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Flagged < r.Count }) {
+				star = "star"
+			}
+			for _, k := range []string{read, star, "", "archive", "delete"} {
 				if k == "" {
 					m.Separator()
 				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
-					act, target = k, []mailItem{it}
-					if ls.sel.Has(it.key()) {
-						target = p.chosen(rows)
-					}
+					act, target = k, on
 				}
 			}
 		})

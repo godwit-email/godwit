@@ -236,11 +236,11 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("已翻译为简体中文 · translate · m1")
+	h.see("已翻译为中文 · translate · m1")
 	h.see("erste Übersetzung")
 	h.app.settings.DefaultModel = "test/m2" // a later model does not relabel the result
 	h.tt.Frame()
-	h.see("已翻译为简体中文 · translate · m1")
+	h.see("已翻译为中文 · translate · m1")
 	h.app.settings.DefaultModel = "test/m1"
 	h.setSettings(func(st *core.Settings) { st.ReadingLanguage = "ja" })
 	h.seeBody(m.ID) // the original, not the other language's translation
@@ -248,7 +248,7 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 		t.Fatalf("a translation into another language shown: %q", h.tt.Texts())
 	}
 	h.click("翻译")
-	h.see("已翻译为日本語 · translate · m1")
+	h.see("已翻译为日文 · translate · m1")
 	h.see("二番目の翻訳")
 	if n := llm.Requests(); n != 2 {
 		t.Fatalf("%d requests, want 2", n)
@@ -354,7 +354,7 @@ func TestTranslateToggle(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("已翻译为简体中文 · translate · m1")
+	h.see("已翻译为中文 · translate · m1")
 	h.see("Welt")
 	h.until("the original replaced", func() bool { _, ok := h.viewBox(v); return !ok })
 	h.click("显示原文")
@@ -432,7 +432,10 @@ func TestCardCopy(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Invoice 42", "pay me"))
 	h.openThread(m.ThreadID)
 	h.see("Invoice · 来自插件 card-demo")
-	h.see("From") // the first field keeps its label over its value
+	h.see("bob@example.com") // the first field's value, in large mono
+	if h.tt.HasText("From") {
+		t.Fatal("the first field's label shows")
+	}
 	h.click("Copy")
 	if got := h.tt.Clipboard(); got != "INV-1" {
 		t.Fatalf("clipboard %q", got)
@@ -716,10 +719,9 @@ func TestSummaryHeaderSplit(t *testing.T) {
 	}
 }
 
-func TestCardCode(t *testing.T) {
-	for v, want := range map[string]bool{"482913": true, "CA1234": true, "Shop <shop@x.com>": false, "a very long value": false, "averyveryveryverylongcode": false} {
-		if cardCode(v) != want {
-			t.Errorf("cardCode(%q) = %v", v, !want)
-		}
+func TestCardHint(t *testing.T) {
+	got := cardHint([]core.CardField{{Label: "座位", Value: "[待选]"}, {Value: "10 分钟内有效"}})
+	if want := "座位 [待选] · 10 分钟内有效"; got != want {
+		t.Errorf("cardHint = %q, want %q", got, want)
 	}
 }

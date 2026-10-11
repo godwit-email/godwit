@@ -143,9 +143,9 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	})
 }
 
-// TextLink is an underlined Sm text button in color (a notice's action).
-func TextLink(c *ui.Context, label string, color ui.Color) ui.Element {
+// TextLink is an underlined text button of size in color (a notice's action).
+func TextLink(c *ui.Context, label string, color ui.Color, size float32) ui.Element {
 	return ui.ButtonBase(c).Label(label).Children(func() {
-		Text(c, label, theme.Of(c).Text.Sm).TextColor(color).Underline()
+		Text(c, label, size).TextColor(color).Underline()
 	})
 }

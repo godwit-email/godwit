@@ -6,8 +6,6 @@ import (
 	"errors"
 	"slices"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -127,6 +125,17 @@ func modelLabel(s string) string { return strings.TrimSuffix(s, " · ") }
 func (r *reader) readingLang() string {
 	st := r.p.a.settings
 	return cmp.Or(st.ReadingLanguage, st.UILanguage, r.p.a.sysLang, "en")
+}
+
+// shortLang names a reading language in the UI's language, briefly: 中文, not 简体中文.
+func shortLang(tag string) string {
+	switch t := strings.ToLower(tag); {
+	case strings.HasPrefix(t, "zh"):
+		return i18n.T("reader.lang.zh")
+	case strings.HasPrefix(t, "ja"):
+		return i18n.T("reader.lang.ja")
+	}
+	return i18n.T("reader.lang.en")
 }
 
 // summaryShown reports whether a message's summary shows: with a model,
@@ -362,13 +371,14 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 // aiTools are the toolbar's Summary, Translate and skill menu, for the
 // newest message.
 func (r *reader) aiTools(c *ui.Context) {
-	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+	out := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	m, _ := r.last()
 	st := r.state(m.ID)
 	t := theme.Of(c)
-	// aiButton is Outline at the AI height; on, it takes the Primary border and a Hover fill.
+	// aiButton is bordered, flat (no Outline shadow), at the AI height; on,
+	// it takes the Primary border and a Hover fill.
 	aiButton := func(icon, label string, on bool) ui.Element {
-		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg)
+		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border)
 		if on {
 			b.Border(theme.Hairline, t.Primary).Background(t.Hover)
 		}
@@ -423,8 +433,11 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 		r.panel(c, i18n.T("reader.ai.summary"), modelLabel(i18n.Tf("reader.ai.summary.meta", "summarize", sum.model)), nil, func() {
 			ui.Column(c).Gap(th.Space(1)).Children(func() {
 				for _, line := range points(sum.text) {
-					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-						ui.Box(c).Width(theme.SummaryIndent).Shrink(0).Children(func() { ui.Text(c, "•").TextColor(t.Muted) })
+					ui.Row(c).AlignItems(ui.Start).Children(func() {
+						// a disc in the indent, on the first line's middle, as a list's marker
+						ui.Row(c).Size(theme.SummaryIndent, t.Text.Body*theme.LineSummary).Shrink(0).AlignItems(ui.Center).Padding(th.Space(1), 0, 0, th.Space(0.5)).Children(func() { // the browser sets its marker a little low
+							ui.Box(c).Size(theme.SummaryDot, theme.SummaryDot).Radius(t.Radius.Full).Background(t.Foreground)
+						})
 						ui.Text(c, line).LineHeight(theme.LineSummary).Grow(1).Shrink(1)
 					})
 				}
@@ -441,8 +454,8 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model)), t.Text.Sm).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground).OnClick(func() { r.toggleTranslate(m.ID) })
+			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Sm).TextColor(t.Muted)
+			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Sm).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }
@@ -456,7 +469,7 @@ func (r *reader) translated(c *ui.Context, m core.MessageSummary) bool {
 	}
 	tr := st.translation
 	if tr.done && strings.TrimSpace(tr.text) == "" { // it is in the reading language already
-		kit.Text(c, i18n.Tf("reader.ai.no_translation", langName(tr.lang)), theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
+		kit.Text(c, i18n.Tf("reader.ai.no_translation", shortLang(tr.lang)), theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
 		return false
 	}
 	r.output(c, tr)
@@ -502,7 +515,7 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
-			ui.Text(c, title).FontWeight(600).Shrink(1)
+			ui.Text(c, title).FontWeight(600).LineHeight(theme.LineCJK).Shrink(1)
 			kit.Text(c, meta, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
@@ -540,18 +553,14 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 		row := ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border)
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Sm).TextColor(t.Muted)
-				for i, f := range card.Fields {
-					if i == 0 { // the prominent field: its label over its value, mono only for a short code
-						kit.Text(c, f.Label, t.Text.Sm).TextColor(t.Muted)
-						v := ui.Text(c, f.Value).Shrink(1)
-						if cardCode(f.Value) {
-							v.Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
-						}
-						continue
-					}
-					kit.Text(c, f.Label+": "+f.Value, t.Text.Sm).TextColor(t.Muted)
+				if len(card.Fields) == 0 {
+					return
+				}
+				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
+				if hint := cardHint(card.Fields[1:]); hint != "" {
+					kit.Text(c, hint, t.Text.Sm).TextColor(t.Muted)
 				}
 			})
 			if len(card.Buttons) == 0 {
@@ -636,8 +645,12 @@ func (r *reader) egressDialog(c *ui.Context) {
 	})
 }
 
-// cardCode reports whether a card value is short and code-like (an OTP,
-// a flight number): at most 12 runes, no whitespace.
-func cardCode(v string) bool {
-	return utf8.RuneCountInString(v) <= 12 && !strings.ContainsFunc(v, unicode.IsSpace)
+// cardHint is a card's fields after the first on one line: "label value"
+// (the value alone without a label), joined by " · ".
+func cardHint(fs []core.CardField) string {
+	var out []string
+	for _, f := range fs {
+		out = append(out, strings.TrimSpace(f.Label+" "+f.Value))
+	}
+	return strings.Join(out, " · ")
 }
