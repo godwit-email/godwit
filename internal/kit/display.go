@@ -115,7 +115,7 @@ func initial(name string) string {
 func Avatar(c *ui.Context, name string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm).TextColor(t.Foreground)
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).TextColor(t.Foreground)
 	})
 }
 

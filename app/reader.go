@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
@@ -570,29 +571,37 @@ func (r *reader) view(c *ui.Context) {
 	})
 }
 
-// toolbar: reply, reply all, forward, archive, delete; star, mark unread
-// and More at the end.
+// toolbar: the reply group and the archive group as icon buttons, the AI
+// buttons, and More, which holds star, mark unread, view in browser and export.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
-	ui.Row(c).Wrap().Gap(th.Space(1)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
-		kit.Button(c, i18n.T("reader.reply"), out).OnClick(func() { r.draft("reply") })
-		kit.IconButton(c, "reply-all", i18n.T("reader.reply_all"), ghost).OnClick(func() { r.draft("reply_all") })
-		kit.Button(c, i18n.T("reader.forward"), out).OnClick(func() { r.draft("forward") })
-		kit.Button(c, i18n.T("mail.action.archive"), out).OnClick(func() { r.act("archive") })
-		kit.Button(c, i18n.T("mail.action.delete"), out).OnClick(func() { r.act("delete") })
+	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+		kit.ButtonGroup(c,
+			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
+			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
+			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
+		)
+		kit.ButtonGroup(c,
+			kit.GroupItem{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
+			kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
+		)
 		ui.Spacer(c)
 		r.aiTools(c)
 		starred := !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) })
-		if starred {
-			kit.IconButton(c, "star", i18n.T("reader.unstar"), ghost).OnClick(func() { r.act("unstar") })
-		} else {
-			kit.IconButton(c, "star", i18n.T("mail.action.star"), ghost).OnClick(func() { r.act("star") })
-		}
-		kit.IconButton(c, "mail", i18n.T("mail.action.unread"), ghost).OnClick(func() { r.act("unread") })
 		m, _ := r.last()
 		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), ghost).Menu(func(menu *ui.Menu) {
+			star, op := i18n.T("mail.action.star"), "star"
+			if starred {
+				star, op = i18n.T("reader.unstar"), "unstar"
+			}
+			if menu.Item(star).Chosen() {
+				r.act(op)
+			}
+			if menu.Item(i18n.T("mail.action.unread")).Chosen() {
+				r.act("unread")
+			}
+			menu.Separator()
 			if menu.Item(i18n.T("reader.view_in_browser")).Chosen() {
 				r.viewInBrowser(m.ID)
 			}
@@ -665,7 +674,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
 					}
 				})
-				when := m.Date.In(r.p.a.clock.Now().Location()).Format("2006-01-02 15:04")
+				when := senderDate(r.p.a.clock.Now(), m.Date)
 				ui.Text(c, i18n.Tf("reader.to", r.recipients(m), when)).FontSize(t.Text.Sm).TextColor(t.Muted)
 			})
 		})
@@ -695,8 +704,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					kit.Spinner(c)
 					return
 				}
-				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.allowImages(m.ID) })
+				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText).OnClick(func() { r.allowImages(m.ID) })
 			})
 		}
 		// The translation shows in the body's place: the page is not
@@ -838,4 +846,19 @@ func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
 	if b := a.mail.reader.shown(view, message); b != nil && b.allow {
 		b.allowErr = err
 	}
+}
+
+// senderDate is a message's time in the sender line: today or yesterday,
+// the weekday this week, with the hour; else month and day.
+func senderDate(now, t time.Time) string {
+	t = t.In(now.Location())
+	clock := t.Format("15:04")
+	day := listTime(now, t)
+	switch {
+	case day == clock:
+		return i18n.T("reader.today") + " " + clock
+	case !strings.Contains(day, "/"): // yesterday or a weekday; older is "M/D"
+		return day + " " + clock
+	}
+	return i18n.Tf("reader.date", int(t.Month()), t.Day())
 }

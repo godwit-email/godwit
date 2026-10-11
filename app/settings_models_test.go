@@ -430,7 +430,7 @@ func TestSmallModelSetting(t *testing.T) {
 	h.app.navigate(Route{Page: PageMail})
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m2")
+	h.see("summarize · m2")
 
 	h.openSettings("models")
 	h.see("编辑：test")

@@ -11,7 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
@@ -435,5 +437,63 @@ func TestReplyAfterSwitchingMailOpensWindow(t *testing.T) {
 	h.openThread(other.ThreadID)
 	if d := h.draft(h.composeOpened(0)); d.Mode != "reply" || d.SourceMessageID != m.ID {
 		t.Fatalf("draft %+v", d)
+	}
+}
+
+func TestReaderMoreMenuKeepsStarUnread(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("更多")
+	menu := strings.Join(h.tt.Menu(), "|")
+	for _, want := range []string{"加星", "标为未读", "在浏览器中查看原文", "导出原始邮件 (.eml)"} {
+		if !strings.Contains(menu, want) {
+			t.Errorf("menu %q lacks %q", menu, want)
+		}
+	}
+	if err := h.tt.ChooseMenuItem("加星"); err != nil {
+		t.Fatal(err)
+	}
+	h.drain()
+	h.until("starred", func() bool { return slices.Contains(h.messages(m.ThreadID)[0].Flags, `\Flagged`) })
+}
+
+func TestRelativeSenderDate(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) // a Wednesday
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "今天 09:41"},
+		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "昨天 18:05"},
+		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "周一 07:30"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "10 月 2 日"},
+	} {
+		if got := senderDate(now, c.t); got != c.want {
+			t.Errorf("senderDate(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+}
+
+func TestReaderToolbarAt16(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	h.setSettings(func(s *core.Settings) { s.FontSize = 16 })
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	var prev ui.Rect
+	for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "更多"} {
+		r, ok := h.tt.Find(label)
+		if !ok {
+			t.Fatalf("no %q", label)
+		}
+		if r.X < 0 || r.X+r.W > 1280 || r.Y < 0 {
+			t.Errorf("%q clipped: %+v", label, r)
+		}
+		if i > 0 && r.Y == prev.Y && r.X < prev.X+prev.W {
+			t.Errorf("%q overlaps the one before: %+v over %+v", label, r, prev)
+		}
+		prev = r
 	}
 }

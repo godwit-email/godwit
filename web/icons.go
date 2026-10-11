@@ -27,6 +27,7 @@ var RemixIcons = map[string]string{
 	"external-link":           "node_modules/remixicon/icons/System/external-link-line.svg",
 	"file-pen-fill":           "node_modules/remixicon/icons/Document/draft-fill.svg",
 	"file-pen":                "node_modules/remixicon/icons/Document/draft-line.svg",
+	"file-text":               "node_modules/remixicon/icons/Document/file-text-line.svg",
 	"folder-fill":             "node_modules/remixicon/icons/Document/folder-open-fill.svg",
 	"folder":                  "node_modules/remixicon/icons/Document/folder-3-line.svg",
 	"forward":                 "node_modules/remixicon/icons/System/share-forward-line.svg",
@@ -113,6 +114,7 @@ var RemixIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Device/server-line.svg
 //go:embed node_modules/remixicon/icons/Document/draft-fill.svg
 //go:embed node_modules/remixicon/icons/Document/draft-line.svg
+//go:embed node_modules/remixicon/icons/Document/file-text-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-copy-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-open-fill.svg

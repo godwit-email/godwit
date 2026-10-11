@@ -86,7 +86,7 @@ func TestSummaryStreams(t *testing.T) {
 	release := gateAfterFirstText(r)
 	t.Cleanup(release)
 	h.openThread(m.ThreadID)
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	h.see("第一点要点")
 	if h.tt.HasText("第二点要点") || !r.ai[m.ID].summary.running {
 		t.Fatalf("the second point before it streamed: %q", h.tt.Texts())
@@ -157,7 +157,7 @@ func TestSummaryEveryExpanded(t *testing.T) {
 		}
 		return true
 	})
-	if n := h.countTexts("总结 · summarize · m1"); n != 2 {
+	if n := h.countTexts("summarize · m1"); n != 2 {
 		t.Fatalf("%d summaries shown: %q", n, h.tt.Texts())
 	}
 }
@@ -200,12 +200,12 @@ func TestSummaryFollowsSettings(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	n := llm.Requests()
 	h.setSettings(func(st *core.Settings) { st.Summary = false })
 	h.until("the summary hidden", func() bool { return !h.tt.HasText("summarize") })
 	h.click("总结")
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	if got := llm.Requests(); got != n {
 		t.Fatalf("requests %d, want %d: the summary ran again", got, n)
 	}
@@ -222,7 +222,7 @@ func TestSummaryOnDemand(t *testing.T) {
 		t.Fatal("a summary ran with Summary off")
 	}
 	h.click("总结")
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	h.until("one request", func() bool { return llm.Requests() == 1 })
 	h.click("总结")
 	h.until("hidden again", func() bool { return !h.tt.HasText("summarize") })
@@ -432,7 +432,9 @@ func TestCardCopy(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Invoice 42", "pay me"))
 	h.openThread(m.ThreadID)
 	h.see("Invoice · 来自插件 card-demo")
-	h.see("From")
+	if n := h.countTexts("bob@example.com"); n < 3 { // the card shows its first field, the value, without its label
+		t.Fatalf("card value missing: %q", h.tt.Texts())
+	}
 	h.click("Copy")
 	if got := h.tt.Clipboard(); got != "INV-1" {
 		t.Fatalf("clipboard %q", got)
@@ -534,7 +536,7 @@ func TestSkillModelLabel(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m2")
+	h.see("summarize · m2")
 	if h.tt.HasText("summarize · m1") {
 		t.Fatal("labelled with the default model")
 	}
@@ -558,7 +560,7 @@ func TestOnDemandSummaryCancelled(t *testing.T) {
 	}
 	h.click("总结") // one click starts it again
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	if n := llm.Requests(); n != 2 {
 		t.Fatalf("%d requests, want 2", n)
 	}
@@ -582,7 +584,7 @@ func TestSummaryLabelFromRun(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m2")
+	h.see("summarize · m2")
 }
 
 // Final whole-branch review #3: with only a small-task model the reader's
@@ -595,7 +597,7 @@ func TestSmallModelOnlyReaderAI(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	h.see("翻译")
 	h.see("Reply one")
 	if h.tt.HasText("更多 skill ▾") {
@@ -622,7 +624,7 @@ func TestSummaryBySkillModel(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("总结 · summarize · m1")
+	h.see("summarize · m1")
 	if h.tt.HasText("翻译") {
 		t.Fatal("translate shown: it has no model")
 	}
@@ -702,5 +704,16 @@ func TestActionDraftOpensWindow(t *testing.T) {
 	h.openThread(other.ThreadID)
 	if d := h.draft(h.composeOpened(0)); d.Subject != "Re: Hi" || d.AccountID != acc.ID {
 		t.Fatalf("draft %+v", d)
+	}
+}
+
+func TestSummaryHeaderSplit(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, noQuick)
+	llm.Script(coretest.Turn{Text: []string{"- 第一点要点\n"}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	h.openThread(m.ThreadID)
+	h.see("summarize · m1")
+	if h.tt.HasText("总结 · summarize") {
+		t.Fatalf("one string: %q", h.tt.Texts())
 	}
 }

@@ -122,6 +122,7 @@ const (
 	GroupHeight, GroupSepHeight                  = 32, 16       // a button group; its separators
 	TabUnderline                                 = 2            // the selected underline tab's bottom border
 	Watermark                                    = 96           // the empty reader pane's bird
+	AIButtonHeight, SummaryIndent, CardTracking  = 30, 18, 3    // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
 )
 
 // ShadowLayer is one layer of a drop shadow: its offset down, blur and
