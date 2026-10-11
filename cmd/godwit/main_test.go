@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/godwit-email/godwit/internal/theme"
 	"image/png"
 	"testing"
 
@@ -12,18 +13,22 @@ func TestWindowOptionsPerOS(t *testing.T) {
 	for _, tc := range []struct {
 		goos     string
 		vibrancy mygo.Vibrancy
+		style    mygo.TitleBarStyle
 		barH     int
 	}{
-		{"darwin", mygo.VibrancySidebar, 0},
-		{"windows", mygo.VibrancyMica, 40},
-		{"linux", mygo.VibrancyNone, 0},
+		{"darwin", mygo.VibrancySidebar, mygo.TitleBarHidden, 0},
+		{"windows", mygo.VibrancyMica, mygo.TitleBarHiddenInset, 40},
+		{"linux", mygo.VibrancyNone, mygo.TitleBarHiddenInset, 0},
 	} {
 		o := windowOptions(tc.goos)
 		if o.Width != 1280 || o.Height != 820 || o.MinWidth != 960 || o.MinHeight != 600 || o.StateKey != "main" || o.Title != "Godwit" {
 			t.Errorf("%s: size %+v", tc.goos, o)
 		}
-		if o.TitleBarStyle != mygo.TitleBarHiddenInset || o.Vibrancy != tc.vibrancy || o.TitleBarHeight != tc.barH {
+		if o.TitleBarStyle != tc.style || o.Vibrancy != tc.vibrancy || o.TitleBarHeight != tc.barH {
 			t.Errorf("%s: title bar %v %v %d", tc.goos, o.TitleBarStyle, o.Vibrancy, o.TitleBarHeight)
+		}
+		if p := o.TrafficLightPosition; (tc.goos == "darwin") != (p != nil) || p != nil && 2*p.Y+trafficLightSize != theme.TopBarHeight {
+			t.Errorf("%s: traffic lights %+v", tc.goos, p)
 		}
 	}
 }
