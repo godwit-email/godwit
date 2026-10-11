@@ -425,6 +425,27 @@ func TestReaderStaleCallbacksDropped(t *testing.T) {
 	}
 }
 
+// ⌘F forwarded from a body's page opens the mail search; a closed page's
+// is dropped.
+func TestReaderBodySearch(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Hi", "body"))
+	h.openThread(m.ThreadID)
+	old := h.seeBody(m.ID)
+	r := h.app.mail.reader
+	r.toggle(m.ID)
+	r.toggle(m.ID)
+	v := h.seeBody(m.ID)
+	h.app.BodySearch(old)
+	if h.app.mail.searchOpen {
+		t.Fatal("a closed page opened the search")
+	}
+	h.app.BodySearch(v)
+	if !h.app.mail.searchOpen {
+		t.Fatal("the current page's ⌘F did not open the search")
+	}
+}
+
 // Close closes every body page; one being made as the App closes is
 // closed at once.
 func TestReaderCloseClosesViews(t *testing.T) {

@@ -22,6 +22,7 @@ vi.mock("@/mygo", () => ({
     openLink: vi.fn(async () => {}),
     image: vi.fn(),
     navigate: vi.fn(async () => {}),
+    search: vi.fn(async () => {}),
   },
   events: { readerBody: { on: h.on(h.body) }, theme: { on: h.on(h.theme) } },
 }));
@@ -269,6 +270,29 @@ test("shortcuts from iframe: ⌘[ inside the iframe → navigate(-1)", async () 
   expect(api.navigate).toHaveBeenCalledExactlyOnceWith(-1);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "]", metaKey: true, cancelable: true }));
   expect(api.navigate).toHaveBeenLastCalledWith(1);
+});
+
+test("area[data-href] in the iframe → openLink", async () => {
+  const { doc } = await start(
+    body(1, '<map name="m"><area data-href="https://a.example/m" alt="m"></map>'),
+  );
+  (doc.querySelector("area") as HTMLElement).click();
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://a.example/m");
+});
+
+test("⌘F in the iframe or the page → search()", async () => {
+  const { doc, win } = await start(body(1, "<p>x</p>"));
+  const e = new win.KeyboardEvent("keydown", {
+    key: "f",
+    metaKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  doc.body.dispatchEvent(e);
+  expect(e.defaultPrevented).toBe(true);
+  expect(api.search).toHaveBeenCalledOnce();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, cancelable: true }));
+  expect(api.search).toHaveBeenCalledTimes(2);
 });
 
 test("wheel in the iframe goes to Go once per frame", async () => {

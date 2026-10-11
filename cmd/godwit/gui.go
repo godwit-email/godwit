@@ -157,6 +157,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OnNavigate: func(k any, dir int) {
 			onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
 		},
+		OnSearch: func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySearch(v) }) },
 		OnBuilt: func(k any, b webui.ReaderBody) {
 			onBody(k, b.Message, func(a *app.App, v ui.NativeWebView) { a.BodyBuilt(v, b.Message, b.Cut, b.Remote) })
 		},

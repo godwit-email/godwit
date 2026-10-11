@@ -171,7 +171,7 @@ func finish(safe string, inline map[string]Attachment, loadRemote, compose bool)
 			default: // relative, backslash forms, data:, other schemes, remote when not allowed
 				delAttr(n, "src")
 			}
-		case atom.A:
+		case atom.A, atom.Area:
 			href, ok := attr(n, "href")
 			if !ok || compose {
 				return

@@ -35,16 +35,17 @@ type readerFixture struct {
 	r     *Reader
 	p     *ReaderPage
 
-	mu      sync.Mutex
-	emitted []emittedBody
-	heights [][2]int64
-	wheels  []float64
-	links   []string
-	navs    []int
-	callers []any // the page each of the above named
-	cuts    map[int64]bool
-	built   []emittedBody // OnBuilt's
-	failed  []any         // the pages OnFailed named
+	mu       sync.Mutex
+	emitted  []emittedBody
+	heights  [][2]int64
+	wheels   []float64
+	links    []string
+	navs     []int
+	searches int
+	callers  []any // the page each of the above named
+	cuts     map[int64]bool
+	built    []emittedBody // OnBuilt's
+	failed   []any         // the pages OnFailed named
 }
 
 type emittedBody struct {
@@ -71,6 +72,7 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		OnNavigate: func(k any, dir int) {
 			f.record(func() { f.callers, f.navs = append(f.callers, k), append(f.navs, dir) })
 		},
+		OnSearch: func(k any) { f.record(func() { f.callers, f.searches = append(f.callers, k), f.searches+1 }) },
 		OnBuilt: func(k any, b ReaderBody) {
 			f.record(func() { f.cuts[b.Message], f.built = b.Cut, append(f.built, emittedBody{k, b}) })
 		},
@@ -239,6 +241,7 @@ func TestReaderPageScoped(t *testing.T) {
 		assert.ErrorIs(t, f.p.Wheel(ctx, 10), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://x.example/"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, 1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
 	}
 	assert.Zero(t, srv.hits())
 
@@ -264,6 +267,7 @@ func TestReaderPageCallbacks(t *testing.T) {
 	assert.ErrorIs(t, f.p.OpenLink(ctx, "javascript:alert(1)"), ErrBadLink)
 	require.NoError(t, f.p.Navigate(ctx, -1))
 	assert.ErrorIs(t, f.p.Navigate(ctx, 2), ErrBadDirection)
+	require.NoError(t, f.p.Search(ctx))
 	assert.Error(t, f.p.Height(ctx, -1))
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -271,7 +275,8 @@ func TestReaderPageCallbacks(t *testing.T) {
 	assert.Equal(t, []float64{120}, f.wheels)
 	assert.Equal(t, []string{"https://x.example/", "mailto:bob@example.com"}, f.links)
 	assert.Equal(t, []int{-1}, f.navs)
-	assert.Equal(t, []any{k, k, k, k, k}, f.callers, "each callback names the calling page")
+	assert.Equal(t, 1, f.searches)
+	assert.Equal(t, []any{k, k, k, k, k, k}, f.callers, "each callback names the calling page")
 }
 
 // Each body built as current is told to the pages bound to its message

@@ -695,6 +695,13 @@ export const ReaderPage = {
     return call("ReaderPage.OpenLink", link);
   },
   /**
+   * Search opens the mail list's search, as ⌘F does natively: a page that
+   * has the keyboard misses the native shortcut.
+   */
+  search(): Promise<void> {
+    return call("ReaderPage.Search");
+  },
+  /**
    * Wheel is a vertical wheel delta the body did not use: the reader
    * scrolls by it.
    */

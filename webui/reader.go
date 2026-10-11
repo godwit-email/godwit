@@ -80,6 +80,8 @@ type ReaderDeps struct {
 	OnLink func(page any, url string)
 	// OnNavigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
 	OnNavigate func(page any, dir int)
+	// OnSearch opens the mail list's search, as ⌘F does natively.
+	OnSearch func(page any)
 	// OnBuilt is told, for each page bound to b.Message, each body built
 	// as the message's current version: native shows the truncated notice
 	// by b.Cut and hides the remote-image notice once b.Remote. It runs
@@ -404,6 +406,17 @@ func (p *ReaderPage) Navigate(ctx context.Context, dir int) error {
 		return ErrBadDirection
 	}
 	p.r.d.OnNavigate(key, dir)
+	return nil
+}
+
+// Search opens the mail list's search, as ⌘F does natively: a page that
+// has the keyboard misses the native shortcut.
+func (p *ReaderPage) Search(ctx context.Context) error {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
+		return err
+	}
+	p.r.d.OnSearch(key)
 	return nil
 }
 

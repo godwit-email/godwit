@@ -86,3 +86,11 @@ func TestSanitizeImageSrcForms(t *testing.T) {
 	safe, _ := mail.Sanitize(`<img src="https://h.example/x.gif">`, nil, true)
 	assert.Contains(t, safe, `src="https://h.example/x.gif"`)
 }
+
+func TestImageMapAreaLinksNotNavigable(t *testing.T) {
+	safe, _ := mail.Sanitize(`<img src="https://x/i.png" usemap="#m"><map name="m"><area shape="rect" coords="0,0,9,9" href="https://x" alt="a"><area shape="rect" coords="0,0,9,9" href="javascript:alert(1)" alt="b"></map>`, nil, true)
+	assert.Contains(t, safe, `<area`)
+	assert.Contains(t, safe, `data-href="https://x"`)
+	assert.NotContains(t, safe, ` href=`)
+	assert.NotContains(t, safe, `javascript:`)
+}

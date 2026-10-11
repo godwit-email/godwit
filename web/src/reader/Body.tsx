@@ -68,7 +68,15 @@ export function ReaderApp() {
     };
   }, []);
 
-  useEffect(() => forwardShortcuts((dir) => api.navigate(dir)), []);
+  useEffect(
+    () =>
+      forwardShortcuts(
+        (dir) => api.navigate(dir),
+        window,
+        () => api.search(),
+      ),
+    [],
+  );
   useEffect(() => (theme ? applyTheme(theme as PageTheme) : undefined), [theme]);
 
   if (failed !== undefined)
@@ -255,7 +263,13 @@ function attach(
   });
 
   on(win, "wheel", wheel, { passive: false });
-  offs.push(forwardShortcuts((dir) => api.navigate(dir), win));
+  offs.push(
+    forwardShortcuts(
+      (dir) => api.navigate(dir),
+      win,
+      () => api.search(),
+    ),
+  );
 
   // Remote images (allowed): no request leaves (the frame's CSP blocks it anyway); Go fetches
   // each as a data: URL. A failure leaves the alt.

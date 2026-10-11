@@ -806,6 +806,13 @@ func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
 	}
 }
 
+// BodySearch opens the mail list's search for a body's page (⌘F).
+func (a *App) BodySearch(view ui.NativeWebView) {
+	if a.mail.reader.current(view) {
+		a.mail.searchOpen = true
+	}
+}
+
 // BodyBuilt is told message's body as its page got it: whether it is only
 // the start (ReaderBody.Cut), for the truncated notice, and has the remote
 // images (Remote), which hides their notice.
