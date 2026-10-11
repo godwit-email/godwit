@@ -7,11 +7,20 @@ import (
 
 // Dialog is a 560-wide modal panel; Escape and a click outside close it.
 func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
+	dialog(c, open, theme.SheetWidth, title, body, footer)
+}
+
+// DialogWide is Dialog at 640 wide.
+func DialogWide(c *ui.Context, open *bool, title string, body, footer func()) {
+	dialog(c, open, theme.DialogWideWidth, title, body, footer)
+}
+
+func dialog(c *ui.Context, open *bool, width float32, title string, body, footer func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionBase)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4 * k))
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
 		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
 		body()

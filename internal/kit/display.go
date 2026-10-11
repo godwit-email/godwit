@@ -11,7 +11,7 @@ import (
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+	return ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 		ui.Text(c, text).FontSize(t.Text.Sm).TextColor(t.Foreground)
 	})
 }
@@ -28,20 +28,39 @@ const (
 // Alert is a bordered message bar with optional actions after the text.
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	bg, border, fg := t.Background, t.Border, t.Foreground
-	switch kind {
-	case Warning:
-		bg, border, fg = t.WarningBg, t.WarningBorder, t.WarningText
-	case Danger:
-		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
-	}
-	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(bg).Border(theme.Hairline, border).TextColor(fg).
+	bg, border, fg := alertLook(t, kind)
+	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
 		FontSize(t.Text.Body).Children(func() {
 		ui.Text(c, text)
 		if actions != nil {
 			actions()
 		}
 	})
+}
+
+func alertLook(t theme.Tokens, kind AlertKind) (bg, border, fg ui.Color) {
+	switch kind {
+	case Warning:
+		return t.WarningBg, t.WarningBorder, t.WarningText
+	case Danger:
+		return t.DangerBg, t.Danger.Alpha(0.3), t.Danger
+	}
+	return t.Background, t.Border, t.Foreground
+}
+
+// AlertAction is a solid button for an Alert's actions: filled with the
+// kind's text color, white text.
+func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	_, _, fg := alertLook(t, kind)
+	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fg).TextColor(t.OnSolid).FontWeight(500).Center()
+	if b.Hovered() {
+		b.Background(fg.Mix(t.Foreground, 0.15))
+	}
+	if onClick != nil {
+		b.OnClick(onClick)
+	}
+	return b.Children(func() { ui.Text(c, label) })
 }
 
 // Status is what a StatusDot tells.

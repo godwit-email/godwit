@@ -42,6 +42,8 @@ type Tokens struct {
 	// MarkTile is the tile under a provider's logo: white in either
 	// appearance, as logos are drawn for white.
 	MarkTile ui.Color
+	// OnSolid is text on a solid status fill (AlertAction): white in either appearance.
+	OnSolid ui.Color
 	// Highlight marks matched text (search hits) in either appearance, with
 	// HighlightText on it.
 	Highlight, HighlightText ui.Color
@@ -73,6 +75,7 @@ const (
 	ListWidth         = 340  // the mail list column
 	TopBarHeight      = 44   // the top bar's least height
 	SheetWidth        = 560  // dialogs and the add-account sheet
+	DialogWideWidth   = 640  // DialogWide
 	SheetMaxHeight    = 760  // the add-account sheet
 	AsideWidth        = 440  // onboarding's left panel
 	FormMaxWidth      = 520  // onboarding's form column
@@ -81,6 +84,7 @@ const (
 	PortWidth         = 90   // port fields
 	SelectMinWidth    = 120
 	ToastMaxWidth     = 420
+	ToastMax          = 3   // toasts shown at once
 	TitleButtonHeight = 24  // buttons in the top bar
 	PopupOffset       = 4   // room between a popup and its anchor
 	SelectedBorder    = 2   // the border of a chosen tile
@@ -114,6 +118,9 @@ const (
 	ThemeTileWidth, ThemeTileHeight              = 132, 84      // settings' theme pictures
 	TileRail, TileInset, TileGap, TileLine       = 14, 10, 6, 5 // the parts of a theme picture
 	SkeletonShort                                = 160          // a placeholder row's shorter line
+	EmptyIcon, EmptyDescMax                      = 40, 400      // an empty state's icon tile; its text's widest
+	GroupHeight, GroupSepHeight                  = 32, 16       // a button group; its separators
+	TabUnderline                                 = 2            // the selected underline tab's bottom border
 )
 
 // ShadowLayer is one layer of a drop shadow: its offset down, blur and
@@ -171,7 +178,7 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Neutral100.Color(), RailSelected: p.Neutral950.Color().Alpha(0.04), HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover: p.Neutral100.Color(),
@@ -184,7 +191,7 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.1), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),

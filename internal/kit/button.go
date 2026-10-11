@@ -16,6 +16,7 @@ const (
 	Ghost
 	Destructive
 	Link
+	DestructiveOutline
 )
 
 // ButtonSize is a button's height; the zero value is the 32 px default.
@@ -100,6 +101,11 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		}
 	case Destructive:
 		b.TextColor(t.Danger)
+		if hover {
+			b.Background(t.DangerBg)
+		}
+	case DestructiveOutline:
+		b.Background(t.Background).Border(theme.Hairline, t.DangerBorder).TextColor(t.Danger)
 		if hover {
 			b.Background(t.DangerBg)
 		}

@@ -1,6 +1,7 @@
 package kit
 
 import (
+	"image/color"
 	"testing"
 	"time"
 
@@ -545,6 +546,8 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt := ui.NewTester(themed(func(c *ui.Context) { Gallery(c, &g) }), 1200, 8000)
 		tt.SetDark(dark)
 		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
 			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
 			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast"} {
@@ -821,5 +824,133 @@ func TestKitFloatDarkInnerEdge(t *testing.T) {
 	}
 	if inner.R > mid.R+1 {
 		t.Errorf("the edge is wider than a hairline: %v", inner)
+	}
+}
+
+func TestEmptyLayout(t *testing.T) {
+	for _, dashed := range []bool{false, true} {
+		var tk theme.Tokens
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			tk = theme.Of(c)
+			Empty(c, EmptyOpts{Icon: "inbox", Title: "No mail", Desc: "Nothing here yet", Dashed: dashed, Actions: func() {
+				Button(c, "Compose", ButtonOpts{})
+			}}).Label("empty").Width(400)
+		}), 500, 400)
+		for _, s := range []string{"No mail", "Nothing here yet", "Compose"} {
+			if !tt.HasText(s) {
+				t.Errorf("dashed=%v: missing %q in %q", dashed, s, tt.Texts())
+			}
+		}
+		r, ok := tt.Find("empty")
+		if !ok {
+			t.Fatal("no empty")
+		}
+		img, border := tt.Image(), 0
+		for x := int(r.X + r.W/4); x < int(r.X+3*r.W/4); x++ {
+			p := img.RGBAAt(x, int(r.Y))
+			if p.R == tk.Border.R && p.G == tk.Border.G && p.B == tk.Border.B {
+				border++
+			}
+		}
+		half := int(r.W / 2)
+		if dashed && (border == 0 || border > half*3/4) {
+			t.Errorf("dashed top edge has %d/%d border pixels, want a broken line", border, half)
+		}
+		if !dashed && border != 0 {
+			t.Errorf("undashed Empty draws a border (%d pixels)", border)
+		}
+		if dashed {
+			_ = tt.Click("Compose")
+		}
+	}
+}
+
+func TestButtonGroupTooltips(t *testing.T) {
+	var got []string
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ButtonGroup(c,
+			GroupItem{Icon: "archive", Tip: "Archive", OnClick: func() { got = append(got, "a") }},
+			GroupItem{Icon: "trash-2", Tip: "Delete", OnClick: func() { got = append(got, "d") }, Disabled: true},
+		)
+	}), 300, 100)
+	r, ok := tt.Find("Archive")
+	if !ok {
+		t.Fatal("no Archive item")
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	time.Sleep(900 * time.Millisecond)
+	tt.Frame()
+	if !tt.HasText("Archive") || len(tt.Texts()) == 0 {
+		t.Fatal("no tip")
+	}
+	_ = tt.Click("Archive")
+	_ = tt.Click("Delete")
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("actions ran %v, want only a", got)
+	}
+}
+
+func TestTabsUnderline(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		TabsUnderline(c, &sel, "One", "Two")
+	}), 300, 100)
+	if err := tt.Click("Two"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	time.Sleep(2 * theme.MotionFast)
+	tt.Frame()
+	if sel != 1 {
+		t.Fatalf("sel = %d", sel)
+	}
+	r, _ := tt.Find("Two")
+	// the 32-high tab's bottom 2 px are Primary under the selected tab
+	p := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)+15)
+	if p.R != tk.Primary.R || p.G != tk.Primary.G {
+		t.Errorf("selected underline pixel %v, want primary %v", p, tk.Primary)
+	}
+}
+
+func TestToastCap(t *testing.T) {
+	n := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		for ; n < 4; n++ {
+			c.AddToast(ui.Toast{ID: string(rune('a' + n)), Title: []string{"first", "second", "third", "fourth"}[n], Timeout: -1})
+		}
+		ToastHost(c, "Close")
+	}), 800, 600)
+	tt.Frame()
+	tt.Frame()
+	if tt.HasText("first") || !tt.HasText("second") || !tt.HasText("fourth") {
+		t.Errorf("toasts = %q, want the oldest dropped", tt.Texts())
+	}
+}
+
+func TestDestructiveOutline(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		var tk theme.Tokens
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			tk = theme.Of(c)
+			Button(c, "Delete", ButtonOpts{Variant: DestructiveOutline})
+		}), 200, 100)
+		tt.SetDark(dark)
+		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
+		r, _ := tt.Find("Delete")
+		same := func(p color.RGBA, c ui.Color) bool { return p.R == c.R && p.G == c.G && p.B == c.B }
+		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.Background) {
+			t.Errorf("dark=%v rest bg %v, want %v", dark, p, tk.Background)
+		}
+		tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
+		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
+			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
+		}
 	}
 }
