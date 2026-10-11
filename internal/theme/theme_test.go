@@ -81,7 +81,7 @@ func TestThemeApplyOf(t *testing.T) {
 	if got != want {
 		t.Errorf("Of = %+v, want %+v", got, want)
 	}
-	if th.Font != "Geist" || th.FontSize != 15 || th.Background != want.Background || !th.Dark {
+	if th.Font != "" || th.FontSize != 15 || th.Background != want.Background || !th.Dark {
 		t.Errorf("theme = font %q size %v dark %v", th.Font, th.FontSize, th.Dark)
 	}
 	// Without Apply, Of follows the window's appearance.
@@ -94,20 +94,15 @@ func TestThemeApplyOf(t *testing.T) {
 	}
 }
 
-func TestFontsRegister(t *testing.T) {
-	if err := RegisterFonts(); err != nil {
-		t.Fatal(err)
+// TestSystemFonts: the native UI uses the system's fonts, as the web pages do.
+func TestSystemFonts(t *testing.T) {
+	var font string
+	ui.NewTester(func(c *ui.Context) { Apply(c, Light()); font = c.Theme().Font }, 10, 10)
+	if font != "" {
+		t.Errorf("Theme.Font = %q, want the system's (\"\")", font)
 	}
-	if err := RegisterFonts(); err != nil {
-		t.Fatalf("second call: %v", err)
-	}
-	tt := ui.NewTester(func(c *ui.Context) {
-		Apply(c, Light())
-		ui.Text(c, "Geist 收件箱")
-		ui.Text(c, "mono").Font("Geist Mono")
-	}, 200, 100)
-	if !tt.HasText("Geist 收件箱") {
-		t.Errorf("texts %q", tt.Texts())
+	if Mono != "monospace" {
+		t.Errorf("Mono = %q", Mono)
 	}
 }
 

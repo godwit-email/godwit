@@ -1,27 +1,21 @@
-// Package icons embeds the Remix Icon icons Godwit uses (remixicon v4.8.0,
-// the last Apache-2.0 release; license in svg/LICENSE-remixicon.txt), the line
-// style, and the fill style of those a selected rail button or sidebar row shows. Each file is
-// named for its use, as "trash-2"; its first line names the Remix icon. ui.Icon
-// tints them with the text color.
+// Package icons parses the Remix Icon icons Godwit uses (web.RemixIcons,
+// embedded from the remixicon package, v4.8.0, the last Apache-2.0 release),
+// the line style, and the fill style of those a selected rail button or
+// sidebar row shows. Each is named for its use, as "trash-2". ui.Icon tints
+// them with the text color.
 package icons
 
 import (
-	"embed"
-	"path"
-	"strings"
-
 	"github.com/egoist/mygo/ui"
+
+	"github.com/godwit-email/godwit/web"
 )
 
-//go:embed svg/*.svg
-var files embed.FS
-
 var all = func() map[string]*ui.SVG {
-	entries, _ := files.ReadDir("svg")
-	m := make(map[string]*ui.SVG, len(entries))
-	for _, e := range entries {
-		b, _ := files.ReadFile("svg/" + e.Name())
-		m[strings.TrimSuffix(e.Name(), path.Ext(e.Name()))] = ui.MustParseSVG(b)
+	m := make(map[string]*ui.SVG, len(web.RemixIcons))
+	for name := range web.RemixIcons {
+		b, _ := web.RemixIcon(name)
+		m[name] = ui.MustParseSVG(b)
 	}
 	return m
 }()

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"image/png"
 	"log"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -14,16 +16,19 @@ import (
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/assets"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/webui"
 )
 
 // platform is app.Platform on mygo. win and tray are set once they exist;
 // tray stays nil where the system has none. The Local API serves svc on
 // dataDir, whose owner lock the GUI holds.
 type platform struct {
-	win  *mygo.Window
-	tray *mygo.Tray
+	win     *mygo.Window
+	tray    *mygo.Tray
+	windows *webui.Windows // the compose windows
 
 	dataDir string
 	svc     *core.Service
@@ -111,6 +116,12 @@ func (p *platform) ShowWindow() {
 }
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (*platform) ClipboardHTML() string       { return mygo.Clipboard.ReadHTML() }
+func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
+func (*platform) SettingsChanged(st core.Settings) {
+	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
+		log.Printf("theme to the pages: %v", err)
+	}
+}
 func (*platform) TempDir() string {
 	dir, err := mygo.App.Path(mygo.PathTemp)
 	if err != nil {
@@ -176,4 +187,76 @@ func trayIcon(box trayBox) ([]byte, error) {
 	var b bytes.Buffer
 	err = png.Encode(&b, img)
 	return b.Bytes(), err
+}
+
+// composeWindowOptions is a compose window: the compose page of the
+// frontend, the dev server's under `go tool mygo dev`, else web/dist's.
+func composeWindowOptions() mygo.WindowOptions {
+	return mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
+		StateKey: "compose", Title: "新邮件"}
+}
+
+// composeWindow is webui.Window on mygo.
+type composeWindow struct{ w *mygo.Window }
+
+func (c composeWindow) ID() int { return c.w.ID() }
+func (c composeWindow) Focus() {
+	if c.w.IsMinimized() {
+		c.w.Restore()
+	}
+	c.w.Show()
+	c.w.Focus()
+}
+func (c composeWindow) Destroy() { c.w.Destroy() }
+func (c composeWindow) EmitClosing(gen int) {
+	if err := webui.Closing.Emit(c.w, gen); err != nil {
+		log.Printf("closing compose window %d: %v", c.w.ID(), err)
+	}
+}
+
+// newComposeWindow opens a compose window whose closing goes through ws:
+// closing is always prevented and asked of ws, and the page never leaves
+// its entry nor opens windows.
+func newComposeWindow(ws *webui.Windows) webui.Window {
+	w := mygo.NewWindow(composeWindowOptions())
+	entry := "" // the first page the window committed: its own entry
+	w.Page().OnDidNavigate(func(u string) {
+		if entry == "" {
+			entry = u
+		}
+	})
+	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if !sameDocument(entry, e.URL) {
+			e.PreventDefault()
+		}
+	})
+	w.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+	w.OnClose(func(e *mygo.CloseEvent) {
+		e.PreventDefault()
+		ws.RequestClose(w.ID())
+	})
+	w.OnClosed(func() { ws.Closed(w.ID()) })
+	return composeWindow{w}
+}
+
+// sameDocument reports whether next is entry itself, give or take its query
+// and fragment: the only navigation a compose page may make.
+func sameDocument(entry, next string) bool {
+	e, err1 := url.Parse(entry)
+	n, err2 := url.Parse(next)
+	return entry != "" && err1 == nil && err2 == nil && e.Scheme != "" &&
+		strings.EqualFold(e.Scheme, n.Scheme) && strings.EqualFold(e.Host, n.Host) && e.Path == n.Path
+}
+
+// askUnsaved asks over w whether to close it with its last input unsaved:
+// 「有修改没有保存」, 关闭 or 返回; true is 关闭.
+func askUnsaved(w webui.Window) bool {
+	var parent *mygo.Window
+	if c, ok := w.(composeWindow); ok {
+		parent = c.w
+	}
+	r, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: parent, Type: mygo.MessageWarning,
+		Message: i18n.T("close.unsaved.title"), Buttons: []string{i18n.T("common.close"), i18n.T("close.unsaved.back")},
+		DefaultButton: 1, CancelButton: 1})
+	return err == nil && r.Button == 0
 }

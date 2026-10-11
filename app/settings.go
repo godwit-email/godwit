@@ -268,7 +268,7 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
 		ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
 		config := a.mcpConfig()
-		ui.Text(c, config).Font("Geist Mono").FontSize(t.Text.Sm).Selectable()
+		ui.Text(c, config).Font(theme.Mono).FontSize(t.Text.Sm).Selectable()
 		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Clicked() {
 			c.WriteClipboard(config)
 		}

@@ -124,7 +124,7 @@ func (w *composeWit) card(c *ui.Context, ap core.Approval) bool {
 	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.T("wit.compose.review")).FontWeight(600)
-			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
+			ui.Text(c, ap.Tool).Font(theme.Mono).FontSize(t.Text.Xs)
 		})
 		ui.Box(c).Padding(th.Space(2), th.Space(3)).Children(func() {
 			switch {

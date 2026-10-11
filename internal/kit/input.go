@@ -20,7 +20,7 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		Elevate(c, e, theme.ShadowXs)
 	}
 	if o.Mono {
-		e.Font("Geist Mono").FontSize(t.Text.Base)
+		e.Font(theme.Mono).FontSize(t.Text.Base)
 	}
 	if o.Password {
 		e.Password()

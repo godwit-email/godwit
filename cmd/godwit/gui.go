@@ -15,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/webui"
 )
 
 // trafficLightSize is the height of macOS's window buttons; trafficLightInset
@@ -46,9 +47,6 @@ func gui(ctx context.Context, dataDir string) int {
 	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}
-	if err := theme.RegisterFonts(); err != nil {
-		log.Print(err) // the system's fonts stand in
-	}
 	defer context.AfterFunc(ctx, mygo.App.Quit)() // SIGINT / SIGTERM quit as the menu does
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -65,6 +63,16 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		a.NotificationClicked(id) // it shows the window
 	})
+	// Compose pages reach only their own window's draft; bound before Run.
+	pages := webui.NewCompose()
+	mygo.Bind(webui.NewComposePage(pages, func(ctx context.Context) (int, bool) {
+		if w := mygo.CallerWindow(ctx); w != nil {
+			return w.ID(), true
+		}
+		return 0, false
+	}))
+	var windows *webui.Windows
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := mygo.App.Locale()
 		var err error
@@ -85,6 +93,7 @@ func gui(ctx context.Context, dataDir string) int {
 			mygo.App.Quit()
 			return
 		}
+		pages.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -94,7 +103,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
@@ -112,11 +121,16 @@ func gui(ctx context.Context, dataDir string) int {
 		})
 
 		compose := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.Compose() }
+		mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose}}
+		if mygo.IsDev() { // the web compose window, until it replaces the native page
+			mailMenu = append(mailMenu, &mygo.MenuItem{Label: "写邮件（网页窗口）",
+				Click: func(*mygo.MenuItem, *mygo.Window) { a.ComposeInWindow() }})
+		}
+		// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+		mailMenu = append(mailMenu, mygo.Separator(), &mygo.MenuItem{Role: mygo.RoleClose})
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
-			{Label: i18n.T("shell.rail.mail"), Submenu: []*mygo.MenuItem{
-				{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-			}},
+			{Label: i18n.T("shell.rail.mail"), Submenu: mailMenu},
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
@@ -134,29 +148,23 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 
 		// Closing the window hides it while the App keeps running in the
-		// background; otherwise closing quits. Quitting first saves every
-		// draft's last edits (a failed or slow save asks first), then quits
-		// again. Hiding needs no save: the drafts stay open.
-		flushed := false
-		saveThen := func(prevent, then func()) {
-			if !flushed {
-				prevent()
-				a.BeforeClose(func() { flushed = true; go then() }) // mygo's calls are goroutine-safe
-			}
-		}
+		// background; otherwise closing quits. Every quit goes through
+		// quitHook: first the compose windows close, each flushing its page,
+		// then nq saves every draft's last edits (a failed or slow save asks
+		// first) and quits again. Hiding needs no save: the drafts stay open.
+		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go mygo.App.Quit() }} // mygo's calls are goroutine-safe
 		win.OnClose(func(e *mygo.CloseEvent) {
-			if !flushed && a.KeepInBackground() {
-				e.PreventDefault()
+			if nq.flushed {
+				return // the quit's last step closes it
+			}
+			e.PreventDefault()
+			if a.KeepInBackground() {
 				win.Hide()
 				return
 			}
-			saveThen(e.PreventDefault, mygo.App.Quit)
+			mygo.App.Quit()
 		})
-		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
-			if saveThen(e.PreventDefault, mygo.App.Quit); flushed {
-				a.Close()
-			}
-		})
+		mygo.App.OnBeforeQuit(quitHook(windows, nq.onQuit, nq.reset))
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
 		for _, id := range clicked { // the App takes them once it has loaded; the last one wins
@@ -178,6 +186,67 @@ func gui(ctx context.Context, dataDir string) int {
 	}
 	return code
 }
+
+// quitApp quits again once the compose windows closed; tests swap it.
+var quitApp = func() { mygo.App.Quit() }
+
+// quitHook is the one OnBeforeQuit listener: mygo runs every listener even
+// after one prevented the quit. With compose windows open it prevents the
+// quit, calls reset (the native flush must run after them, again if it ran)
+// and closes them, each flushing its page; once all have gone it quits
+// again, or stops when the user kept one. With none it runs native.
+func quitHook(windows interface {
+	Count() int
+	CloseAll(func(bool))
+}, native func(e *mygo.QuitEvent), reset func()) func(*mygo.QuitEvent) {
+	return func(e *mygo.QuitEvent) {
+		if windows.Count() == 0 {
+			native(e)
+			return
+		}
+		e.PreventDefault()
+		reset()
+		windows.CloseAll(func(ok bool) {
+			if ok {
+				quitApp()
+			}
+		})
+	}
+}
+
+// nativeQuit is the main window's part of a quit: it saves every draft's
+// last edits (beforeClose), then quits again; that pass closes the App.
+// flushed holds for the current quit attempt only: reset forgets it and
+// starts a new attempt (gen), so a flush still running from an earlier
+// attempt neither marks this one flushed nor quits. Used on the UI thread only.
+type nativeQuit struct {
+	beforeClose func(proceed func()) // App.BeforeClose
+	close       func()               // App.Close
+	quit        func()
+	flushed     bool
+	gen         int
+}
+
+// onQuit prevents a quit not flushed yet and flushes; a flushed one closes
+// the App and goes on.
+func (n *nativeQuit) onQuit(e *mygo.QuitEvent) {
+	if n.flushed {
+		n.close()
+		return
+	}
+	e.PreventDefault()
+	gen := n.gen
+	n.beforeClose(func() {
+		if gen != n.gen {
+			return // reset since: a later quit owns the outcome
+		}
+		n.flushed = true
+		n.quit()
+	})
+}
+
+// reset makes the next quit flush again and voids flushes still running.
+func (n *nativeQuit) reset() { n.flushed = false; n.gen++ }
 
 // openFailure is what the GUI tells the user when core.New fails: a class
 // of reason, never err's text.

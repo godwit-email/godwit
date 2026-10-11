@@ -157,7 +157,7 @@ func (p *witPanel) tools(c *ui.Context, turn int, calls []ai.ToolCall) {
 	kit.Collapsible(c, boolAt(p.toolsOpen, turn, false), func() { ui.Text(c, label).Shrink(1) }, func() {
 		ui.Column(c).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
 			for _, call := range calls {
-				ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font("Geist Mono").FontSize(t.Text.Xs).Selectable()
+				ui.Text(c, call.Name+" "+clip(compactJSON(call.Args), argsRunes)).Font(theme.Mono).FontSize(t.Text.Xs).Selectable()
 			}
 		})
 	}).Label(label)
@@ -198,7 +198,7 @@ func (p *witPanel) card(c *ui.Context, ap core.Approval, many bool) {
 	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Primary).Background(t.Background).Clip().Children(func() {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Background(t.Hover).Children(func() {
 			ui.Text(c, i18n.Tf("wit.approval.wants", action)).FontWeight(600)
-			ui.Text(c, ap.Tool).Font("Geist Mono").FontSize(t.Text.Xs)
+			ui.Text(c, ap.Tool).Font(theme.Mono).FontSize(t.Text.Xs)
 		})
 		ui.Column(c).Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(3.5)).Children(func() {
 			if ap.Summary != "" {

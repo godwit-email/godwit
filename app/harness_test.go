@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -334,3 +335,5 @@ func (p *fakePlatform) TempDir() string {
 	defer p.mu.Unlock()
 	return p.tempDir
 }
+func (p *fakePlatform) OpenCompose(draftID int64)        { p.record("OpenCompose", draftID) }
+func (p *fakePlatform) SettingsChanged(st core.Settings) { p.record("SettingsChanged", st.Theme) }

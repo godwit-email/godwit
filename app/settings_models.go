@@ -374,11 +374,11 @@ func (m *modelsView) view(c *ui.Context) {
 				on := m.form != nil && m.form.id == s.ID
 				listRow(c.Key(s.ID), i, on, func() { m.edit(s) }, func() {
 					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-						ui.Text(c, badge(s.Name)).Font("Geist Mono").FontSize(t.Text.Sm)
+						ui.Text(c, badge(s.Name)).Font(theme.Mono).FontSize(t.Text.Sm)
 					})
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 						ui.Text(c, s.Name+" · "+kindLabel(s.Kind)).FontWeight(500).SingleLine()
-						ui.Text(c, s.BaseURL).Font("Geist Mono").FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+						ui.Text(c, s.BaseURL).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
 					})
 					ui.Text(c, i18n.Plural("settings.models.count", len(s.Models))).TextColor(t.Muted)
 					if strings.HasPrefix(a.settings.DefaultModel, s.Slug+"/") {

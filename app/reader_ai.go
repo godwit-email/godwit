@@ -589,7 +589,7 @@ func (r *reader) egressDialog(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			ui.Text(c, i18n.Tf("reader.egress.body", ask.plugin))
 			for _, h := range ask.hosts {
-				ui.Text(c, h).Font("Geist Mono").FontSize(t.Text.Sm)
+				ui.Text(c, h).Font(theme.Mono).FontSize(t.Text.Sm)
 			}
 		})
 	}, func() {

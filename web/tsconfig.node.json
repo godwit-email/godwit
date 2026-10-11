@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node", "bun"]
+  },
+  "include": ["vite.config.ts", "vitest.config.ts", "scripts"]
+}

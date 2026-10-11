@@ -109,3 +109,20 @@ func TestRawPrimitiveScanner(t *testing.T) {
 		}
 	}
 }
+
+// TestNoGeist: the native UI uses the system's fonts; code-like text is theme.Mono.
+func TestNoGeist(t *testing.T) {
+	files, _ := filepath.Glob("*.go")
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), `"Geist`) {
+			t.Errorf("%s names the Geist font; use theme.Mono", f)
+		}
+	}
+}

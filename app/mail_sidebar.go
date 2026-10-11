@@ -135,6 +135,18 @@ func boolAt[K comparable](m map[K]*bool, k K, def bool) *bool {
 // compose starts a new draft from the view's account, else the default
 // one, and opens it.
 func (p *mailPage) compose() {
+	p.newDraft(func(d core.Draft) { p.a.navigate(Route{Page: PageCompose, DraftID: d.ID}) })
+}
+
+// ComposeInWindow starts a new draft as Compose does, in a compose window
+// of its own.
+func (a *App) ComposeInWindow() {
+	a.mail.newDraft(func(d core.Draft) { a.plat.OpenCompose(d.ID) })
+}
+
+// newDraft starts a new draft from the viewed account, else the default or
+// first one, and hands it to then.
+func (p *mailPage) newDraft(then func(core.Draft)) {
 	a := p.a
 	acc := p.viewAccount(a.route.View)
 	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.IsDefault }); acc == 0 && i >= 0 {
@@ -154,6 +166,6 @@ func (p *mailPage) compose() {
 			a.toastErr(err)
 			return
 		}
-		a.navigate(Route{Page: PageCompose, DraftID: d.ID})
+		then(d)
 	})
 }

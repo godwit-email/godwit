@@ -62,6 +62,7 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	if tag := cmp.Or(st.UILanguage, a.sysLang); st.UILanguage != old.UILanguage && tag != "" {
 		i18n.SetLanguage(tag)
 	}
+	a.plat.SettingsChanged(st)
 	a.syncLocalAPI()
 }
 

@@ -3,8 +3,6 @@
 package theme
 
 import (
-	"embed"
-	"fmt"
 	"sync"
 	"time"
 
@@ -211,8 +209,11 @@ var (
 	tokens = map[*ui.Theme]Tokens{}
 )
 
+// Mono is the font for code-like text: the system's monospace font.
+const Mono = "monospace"
+
 // Apply makes the frame draw with t: mygo's theme for the appearance with
-// t's colors, Geist and t's font size. Of(c) returns t afterwards.
+// t's colors, the system's font and t's font size. Of(c) returns t afterwards.
 func Apply(c *ui.Context, t Tokens) {
 	mu.Lock()
 	th, ok := themes[t]
@@ -237,7 +238,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	th.Selection, th.Focus, th.Scrollbar = t.Primary.Alpha(0.15), t.Ring.Alpha(0.5), t.Muted.Alpha(0.5)
 	th.Inverse, th.InverseText = t.Foreground, t.Background
 	th.Radius, th.Spacing = t.Radius.Lg, 4*t.Scale // Space(n) is n Tailwind units
-	th.Font, th.FontSize = "Geist", t.Text.Base
+	th.Font, th.FontSize = "", t.Text.Base
 	return &th
 }
 
@@ -256,29 +257,6 @@ func Of(c *ui.Context) Tokens {
 	}
 	return Light()
 }
-
-//go:embed fonts/*.ttf
-var fonts embed.FS
-
-// RegisterFonts adds Geist (400, 500, 600) and Geist Mono (500). Chinese and
-// other scripts Geist lacks fall back to the system's fonts.
-func RegisterFonts() error { return registerFonts() }
-
-var registerFonts = sync.OnceValue(func() error {
-	for file, family := range map[string]string{
-		"Geist-Regular.ttf": "Geist", "Geist-Medium.ttf": "Geist", "Geist-SemiBold.ttf": "Geist",
-		"GeistMono-Medium.ttf": "Geist Mono",
-	} {
-		b, err := fonts.ReadFile("fonts/" + file)
-		if err != nil {
-			return err
-		}
-		if err := ui.RegisterFont(b, family); err != nil {
-			return fmt.Errorf("register %s: %w", file, err)
-		}
-	}
-	return nil
-})
 
 // Component transitions: MotionFast for hover and selection, MotionBase for moves.
 const (
