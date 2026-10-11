@@ -75,7 +75,10 @@ export function WitPage() {
           if (live && history && g === gen) setView({ history, tr, key: g });
         },
         (e) => {
-          if (live && g === gen) toast.error(message(e));
+          if (live && g === gen) {
+            setHanded(undefined); // a question for this conversation is not carried to the next
+            toast.error(message(e));
+          }
         },
       );
     };

@@ -356,8 +356,8 @@ func (p *mailPage) chosen(rows []mailItem) []mailItem {
 			out = append(out, it)
 		}
 	}
-	if len(out) == 0 && l.cur >= 0 && l.cur < len(rows) {
-		out = append(out, rows[l.cur])
+	if i := rowOf(p.entries(rows), l.cur); len(out) == 0 && i >= 0 {
+		out = append(out, rows[i])
 	}
 	return out
 }
@@ -494,7 +494,7 @@ func (p *mailPage) listHeader(c *ui.Context) {
 			ui.Text(c, p.searchHint()).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
 		if p.searched && len(p.results) > 0 {
-			q := strings.TrimSpace(p.query)
+			q := p.hlQuery
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
 				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
@@ -628,12 +628,27 @@ func (p *mailPage) listView(c *ui.Context) {
 	p.listHeader(c)
 	rows := p.shown()
 	ls := p.ls()
-	ls.list.Key = func(i int) any { return rows[i].key() }
+	es := p.entries(rows)
+	ls.list.Key = func(i int) any {
+		if e := es[i]; e.head != "" {
+			return "h:" + e.head
+		}
+		return rows[es[i].row].key()
+	}
+	ls.list.Header = nil
+	if !p.searched {
+		ls.list.Header = func(i int) bool { return es[i].head != "" }
+	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := kit.List(c, &ls.list, len(rows), func(i int) {
-		it := rows[i]
-		p.item(c, rows, i).ContextMenu(func(m *ui.Menu) {
+	l := kit.List(c, &ls.list, len(es), func(i int) {
+		if es[i].head != "" { // a date heading: no row, never chosen
+			ui.Text(c, es[i].head).FontSize(t.Text.Base).FontWeight(500).TextColor(t.Muted).Background(t.Background).
+				Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
+			return
+		}
+		it := rows[es[i].row]
+		p.item(c, it).ContextMenu(func(m *ui.Menu) {
 			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
 				if k == "" {
 					m.Separator()
@@ -664,7 +679,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 	})
 	if l.Changed() {
-		p.open(rows, ls.cur)
+		p.open(rows, rowOf(es, ls.cur))
 	}
 	for _, k := range []struct {
 		mods ui.Modifiers
@@ -678,28 +693,48 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
-	if _, last := ls.list.Visible(); last >= len(rows)-5 {
+	if _, last := ls.list.Visible(); last >= len(es)-5 {
 		p.loadMore()
 	}
 }
 
-// item is rows[i]: a search result, or a row under its date heading when it
-// opens its group. The heading sits inside the row, so the list's indices,
-// keys and selection stay one to one with the rows.
-func (p *mailPage) item(c *ui.Context, rows []mailItem, i int) ui.Element {
+// listEntry is a line of the list: a date heading (head), or the row
+// rows[row].
+type listEntry struct {
+	head string
+	row  int
+}
+
+// entries are the list's lines: each group of rows under its date heading, a
+// search's results as they are. The list's own choice (cur) counts these.
+func (p *mailPage) entries(rows []mailItem) []listEntry {
+	var out []listEntry
+	now, last := p.a.clock.Now(), ""
+	for i, it := range rows {
+		if !p.searched {
+			if g := dateGroup(now, it.Date); g != last {
+				out, last = append(out, listEntry{head: g}), g
+			}
+		}
+		out = append(out, listEntry{row: i})
+	}
+	return out
+}
+
+// rowOf is the row entry cur is, -1 for none or a heading.
+func rowOf(es []listEntry, cur int) int {
+	if cur < 0 || cur >= len(es) || es[cur].head != "" {
+		return -1
+	}
+	return es[cur].row
+}
+
+// item is a row of the list: a search result, or a thread or message.
+func (p *mailPage) item(c *ui.Context, it mailItem) ui.Element {
 	if p.searched {
-		return p.resultRow(c, rows[i])
+		return p.resultRow(c, it)
 	}
-	now := p.a.clock.Now()
-	g := dateGroup(now, rows[i].Date)
-	if i > 0 && dateGroup(now, rows[i-1].Date) == g {
-		return p.row(c, rows[i])
-	}
-	t, th := theme.Of(c), c.Theme()
-	return ui.Column(c).Children(func() {
-		ui.Text(c, g).FontSize(t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
-		p.row(c, rows[i])
-	})
+	return p.row(c, it)
 }
 
 // folderLine is "folder · account" of a result.
@@ -769,7 +804,7 @@ func (a *App) openAccountSettings(acc int64) func() {
 // noResults is the list of a search that found nothing: it offers Wit and a
 // wider sync.
 func (p *mailPage) noResults(c *ui.Context) {
-	q := strings.TrimSpace(p.query)
+	q := p.hlQuery
 	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: i18n.Tf("mail.search.empty_title", q), Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
 		kit.Button(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
 		kit.Button(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))

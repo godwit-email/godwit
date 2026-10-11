@@ -270,9 +270,13 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	}
 	h.scrollLoad(100)
 	h.scrollLoad(120)
-	h.app.mail.main.list.ScrollTo(60, ui.Start)
-	h.until("row 60 on top", func() bool { top, _ := h.app.mail.main.list.Visible(); return top == 60 })
-	anchor := h.items()[60].ID
+	// the list counts date headings too: row 60 is the entry after its own
+	es := h.app.mail.entries(h.items())
+	at := slices.IndexFunc(es, func(e listEntry) bool { return e.head == "" && e.row == 60 })
+	h.app.mail.main.list.ScrollTo(at, ui.Start)
+	h.until("row 60 on top", func() bool { top, _ := h.app.mail.main.list.Visible(); return top > at-4 && top <= at }) // the pinned heading may cover a line
+	top0, _ := h.app.mail.main.list.Visible()
+	anchor := h.items()[rowOf(es, top0)].ID
 
 	// The next refresh stops once it has read the list, until the new mail is in.
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -318,7 +322,8 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	if h.app.route.ThreadID != first.ID || !h.app.mail.main.sel.Has(first.key()) || h.app.mail.main.sel.Len() != 1 {
 		t.Fatalf("the choice moved: route %+v", h.app.route)
 	}
-	if top, _ := h.app.mail.main.list.Visible(); h.items()[top].ID != anchor {
+	top, _ := h.app.mail.main.list.Visible()
+	if top = rowOf(h.app.mail.entries(h.items()), top); h.items()[top].ID != anchor {
 		t.Fatalf("the anchor moved: row %d is %q", top, h.items()[top].Subject)
 	}
 }

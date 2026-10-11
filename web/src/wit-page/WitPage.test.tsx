@@ -382,3 +382,16 @@ test("witAsk on the page already showing a new conversation asks at once", async
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it"));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
+
+test("a handed question is dropped when the open fails: not asked in a later conversation", async () => {
+  await start(3);
+  vi.mocked(api.follow).mockRejectedValueOnce(new Error("boom"));
+  open(0, 2);
+  send(h.ask, "lost"); // native hands it right after the open, before the open fails
+  await waitFor(() => expect(api.follow).toHaveBeenCalledWith(0));
+  await act(async () => {});
+  vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
+  open(4, 3);
+  expect(await screen.findByText("four")).toBeInTheDocument();
+  expect(api.ask).not.toHaveBeenCalled();
+});
