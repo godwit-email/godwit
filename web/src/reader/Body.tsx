@@ -5,10 +5,23 @@ import { ReaderPage as api, events, type ReaderBody, type Theme } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
-import { buildSrcdoc } from "./frame";
+import { buildSrcdoc, frameScheme } from "./frame";
 import { wheelForwarder } from "./wheel";
 
 const ignore = () => {};
+
+/**
+ * The page's own copy before any body (and its Text) arrived, as when the first Load fails: the
+ * reader keys (webui readerKeys) in the default UI language. A body's Text replaces them.
+ */
+const DEFAULT_TEXT: Record<string, string> = {
+  "common.retry": "重试",
+  "error.unknown": "出错了：%s",
+  "reader.body": "邮件正文",
+};
+
+// Go refuses a taller body (webui maxBodyHeight): the page clamps to it.
+const MAX_HEIGHT = 1 << 20;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
@@ -77,7 +90,7 @@ function Failed({
   retry: () => void;
   text?: Record<string, string>;
 }) {
-  const t = useMemo(() => makeT(text ?? {}), [text]);
+  const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...text }), [text]);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const px = Math.ceil(ref.current?.getBoundingClientRect().height ?? 0);
@@ -85,7 +98,7 @@ function Failed({
   }, []);
   return (
     <main ref={ref} className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
-      <span>{error || t("error.unknown")}</span>
+      <span>{t("error.unknown", error)}</span>
       <Button variant="ghost" size="icon-sm" aria-label={t("common.retry")} onClick={retry}>
         <RiRefreshLine />
       </Button>
@@ -102,6 +115,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const srcdoc = useMemo(() => buildSrcdoc(body, theme), [body, theme]);
   const frame = useRef<HTMLIFrameElement>(null);
   const remote = body.remote;
+  const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...body.text }), [body.text]);
 
   // One forwarder for both windows, so a frame's wheels are summed once.
   const wheel = useMemo(() => wheelForwarder((dy) => void api.wheel(dy).catch(ignore)), []);
@@ -132,11 +146,16 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   return (
     <iframe
       ref={frame}
-      title="body"
+      title={t("reader.body")}
       sandbox="allow-same-origin"
       scrolling="no"
       srcDoc={srcdoc}
-      style={{ border: 0, width: "100%", display: "block" }}
+      style={{
+        border: 0,
+        width: "100%",
+        display: "block",
+        colorScheme: frameScheme(body, theme),
+      }}
     />
   );
 }
@@ -163,30 +182,38 @@ function attach(
     offs.push(() => t.removeEventListener(type, f as EventListener, o));
   };
 
-  // Height: the wrapper's own (not scrollHeight, which never shrinks below the viewport), so
-  // sizing the iframe to it can't feed back. One call per frame, when it changed.
+  // Height: the wrapper's own (not scrollHeight, which never shrinks below the viewport), applied
+  // to the iframe so nothing is clipped. One call per frame, when it changed, clamped to Go's limit.
+  // Mail sized by the viewport (vh) grows with the iframe: after the page resizes the iframe by Δ, a
+  // change of ≈Δ with no content change since (an image, the width) is that echo, so the last
+  // height holds instead of chasing it.
   let last = -1;
+  let echo = 0; // the iframe's last change made by the page
+  let changed = true; // the content changed since then
   let queued = false;
   const measure = () => {
     const cs = win.getComputedStyle(doc.body);
     const ws = win.getComputedStyle(wrap);
-    const px = Math.ceil(
-      wrap.getBoundingClientRect().height +
-        [
-          cs.marginTop,
-          cs.marginBottom,
-          cs.paddingTop,
-          cs.paddingBottom,
-          ws.marginTop,
-          ws.marginBottom,
-        ]
-          .map((v) => Number.parseFloat(v) || 0)
-          .reduce((a, b) => a + b, 0),
-    );
+    const extra = [
+      cs.marginTop,
+      cs.marginBottom,
+      cs.paddingTop,
+      cs.paddingBottom,
+      ws.marginTop,
+      ws.marginBottom,
+    ].reduce((a, v) => a + (Number.parseFloat(v) || 0), 0);
+    const px = Math.min(MAX_HEIGHT, Math.ceil(wrap.getBoundingClientRect().height + extra));
     if (px === last) return;
+    if (!changed && echo !== 0 && Math.abs(px - last - echo) <= 1) return;
+    changed = false;
+    echo = px - frame.getBoundingClientRect().height;
     last = px;
     frame.style.height = `${px}px`;
     api.height(px).catch(ignore);
+  };
+  const contentChanged = () => {
+    changed = true;
+    schedule();
   };
   const schedule = () => {
     if (queued) return;
@@ -199,10 +226,10 @@ function attach(
   const ro = new ResizeObserver(schedule);
   ro.observe(wrap);
   offs.push(() => ro.disconnect());
-  on(window, "resize", schedule);
+  on(window, "resize", contentChanged);
   for (const img of doc.images) {
-    on(img, "load", schedule);
-    on(img, "error", schedule);
+    on(img, "load", contentChanged);
+    on(img, "error", contentChanged);
   }
   schedule();
 

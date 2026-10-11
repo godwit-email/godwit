@@ -1,5 +1,5 @@
 import type { ReaderBody, Theme } from "@/mygo";
-import { buildSrcdoc, FRAME_CSP } from "./frame";
+import { buildSrcdoc, FRAME_CSP, frameScheme } from "./frame";
 
 const theme = (over: Partial<Theme> = {}): Theme => ({
   mode: "light",
@@ -86,4 +86,18 @@ test("plain text in system mode follows the appearance", () => {
   )?.textContent;
   expect(css).toContain("oklch(0.145 0 0)");
   expect(css).toMatch(/@media \(prefers-color-scheme: ?dark\)\{[^}]*\{[^}]*oklch\(0\.985 0 0\)/);
+});
+
+test("plain text is transparent in the theme's colour scheme; html mail stays a light sheet", () => {
+  const plain = body({ html: "", plain: "x" });
+  const css = (m: string) =>
+    parse(buildSrcdoc(plain, theme({ mode: m }))).querySelector("style")?.textContent ?? "";
+  expect(css("dark")).toContain("color-scheme:dark");
+  expect(css("light")).toContain("color-scheme:light");
+  expect(css("system")).toContain("color-scheme:light dark");
+  expect(css("dark")).toMatch(/html,body\{[^}]*background:transparent/);
+  expect(css("dark")).not.toContain("#fff");
+  expect(frameScheme(plain, theme({ mode: "dark" }))).toBe("dark");
+  expect(frameScheme(plain, theme({ mode: "system" }))).toBe("light dark");
+  expect(frameScheme(body(), theme({ mode: "dark" }))).toBe("light");
 });

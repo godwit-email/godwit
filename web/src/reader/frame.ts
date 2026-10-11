@@ -32,11 +32,23 @@ const htmlCSS =
   "#godwit-body table{max-width:100%}" +
   ":where(#godwit-body td,#godwit-body th){word-break:break-word}";
 
-// Plain text: the theme's text colour (by its mode; "system" follows the appearance).
-const plainCSS = (t: Theme) => {
+/**
+ * The colour scheme of a body's document, also set on its iframe element (a scheme differing from
+ * the iframe's would give it an opaque canvas): HTML mail is a light sheet; plain text follows the
+ * theme's mode ("system": both, by the appearance).
+ */
+export function frameScheme(b: ReaderBody, t: Theme): string {
+  if (b.html !== "") return "light";
+  return t.mode === "light" || t.mode === "dark" ? t.mode : "light dark";
+}
+
+// Plain text: on the page's background (transparent), in the theme's text colour by its mode.
+const plainCSS = (t: Theme, scheme: string) => {
   const fg = (m: Record<string, string> | undefined) => color(m?.["--foreground"]);
   const rule = (c: string) => (c ? `:root{color:${c}}` : "");
-  const pre = "#godwit-body{white-space:pre-wrap}";
+  const pre =
+    `html,body{background:transparent}html{color-scheme:${scheme}}` +
+    "#godwit-body{white-space:pre-wrap}";
   if (t.mode === "light") return pre + rule(fg(t.light));
   if (t.mode === "dark") return pre + rule(fg(t.dark));
   const dark = rule(fg(t.dark));
@@ -50,7 +62,7 @@ const plainCSS = (t: Theme) => {
  */
 export function buildSrcdoc(b: ReaderBody, t: Theme): string {
   const html = b.html !== "";
-  const css = base(size(t.bodyFontSize)) + (html ? htmlCSS : plainCSS(t));
+  const css = base(size(t.bodyFontSize)) + (html ? htmlCSS : plainCSS(t, frameScheme(b, t)));
   return (
     "<!doctype html><html><head>" +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +

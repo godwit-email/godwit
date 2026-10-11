@@ -189,6 +189,7 @@ func TestReaderPageLoad(t *testing.T) {
 	assert.Empty(t, b.Plain)
 	assert.EqualValues(t, 14, b.Theme.BodyFontSize)
 	assert.Equal(t, "重试", b.Text["common.retry"])
+	assert.Equal(t, "邮件正文", b.Text["reader.body"])
 
 	again, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)

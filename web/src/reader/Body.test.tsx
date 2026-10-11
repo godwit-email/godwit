@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReaderBody, Theme } from "@/mygo";
 
 const h = vi.hoisted(() => {
@@ -45,7 +45,7 @@ const body = (version: number, html: string, over: Partial<ReaderBody> = {}): Re
   blocked: 0,
   cut: false,
   theme,
-  text: {},
+  text: { "reader.body": "Message body" },
   ...over,
 });
 
@@ -118,6 +118,60 @@ test("the iframe is sandboxed with allow-same-origin only, borderless and unscro
   expect(frame.style.border).toMatch(/^0/);
   expect(frame.style.width).toBe("100%");
   expect(frame.style.display).toBe("block");
+  expect(frame.getAttribute("title")).toBe("Message body");
+});
+
+test("height doesn't run away with viewport-sized mail (vh): it converges, bounded calls", async () => {
+  const { frame, doc } = await start(
+    body(1, '<div style="min-height:100vh">x <img src="data:image/gif;base64,R0" alt="i"></div>'),
+  );
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  const frameH = () => Number.parseFloat(frame.style.height) || 150; // 150: an iframe's default
+  frame.getBoundingClientRect = () => ({ height: frameH() }) as DOMRect;
+  let base = 40;
+  wrap.getBoundingClientRect = () => ({ height: base + frameH() }) as DOMRect; // grows with the frame
+  const ro = observers.find((o) => o.targets.includes(wrap));
+  const settle = () => {
+    for (let i = 0; i < 30; i++) {
+      ro?.cb([], {} as ResizeObserver); // any layout change re-fires the observer
+      flush();
+    }
+  };
+  settle();
+  expect(api.height).toHaveBeenCalledTimes(1);
+  const stable = frame.style.height;
+  expect(stable).toBe("190px");
+
+  // A real change (an image loads) is followed, then holds again.
+  base = 100;
+  wrap.querySelector("img")?.dispatchEvent(new Event("load"));
+  settle();
+  expect(api.height).toHaveBeenCalledTimes(2);
+  expect(api.height).toHaveBeenLastCalledWith(290);
+  expect(frame.style.height).toBe("290px");
+});
+
+test("height is clamped to Go's maximum and stops growing there", async () => {
+  const { frame, doc } = await start(body(1, "<p>x</p>"));
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  wrap.getBoundingClientRect = () => ({ height: 5_000_000 }) as DOMRect;
+  flush();
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1 << 20);
+  expect(frame.style.height).toBe(`${1 << 20}px`);
+  wrap.getBoundingClientRect = () => ({ height: 6_000_000 }) as DOMRect;
+  window.dispatchEvent(new Event("resize"));
+  flush();
+  expect(api.height).toHaveBeenCalledTimes(1);
+});
+
+test("a failed first load offers retry with the page's own labels", async () => {
+  vi.mocked(api.load).mockRejectedValueOnce(new Error("boom"));
+  render(<ReaderApp />);
+  const retry = await screen.findByRole("button", { name: "重试" });
+  expect(screen.getByText("出错了：boom")).toBeInTheDocument();
+  vi.mocked(api.load).mockResolvedValueOnce(body(1, "<p>x</p>"));
+  act(() => retry.click());
+  await waitFor(() => expect(document.querySelector("iframe")).not.toBeNull());
 });
 
 test("stale load ignored: readerBody v2, then load's v1 resolves → v2 stays", async () => {
