@@ -580,3 +580,46 @@ test("a run ending while its start's save is in flight reloads the body once the
   await waitFor(async () => expect(await body()).toHaveValue("Wit 写的"));
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
 });
+
+test("全部允许 on a run with a tool's call and a body edit settles both: the edit applies, Wit unlocks", async () => {
+  const ping: Approval = { ...pending, id: 5, callId: "p1", tool: "plugin_netty_ping", args: "{}" };
+  vi.mocked(api.decideAll).mockResolvedValue(change("<p>Hi Ann and more</p>", 9));
+  vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
+  await setup({
+    ...withPending,
+    messages: [
+      withPending.messages[0],
+      {
+        ...withPending.messages[1],
+        calls: [
+          { id: "c1", name: "update_draft", args: "{}" },
+          { id: "p1", name: "plugin_netty_ping", args: "{}" },
+        ],
+      },
+    ],
+    approvals: [pending, ping],
+  });
+  await screen.findByRole("region", { name: "正文修订" });
+  fireEvent.click(screen.getByRole("button", { name: "全部允许" }));
+  await waitFor(() => expect(api.decideAll).toHaveBeenCalledWith(7, true));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull());
+  emit({ kind: "text", text: "都好了。" });
+  emit({ kind: "done" });
+  expect(await screen.findByText("都好了。")).toBeInTheDocument();
+  const b = await body();
+  expect(b).toHaveValue("<p>Hi Ann and more</p>");
+  await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+  vi.mocked(api.ask).mockResolvedValue(9);
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来"));
+});
+
+test("a run's end drops its body edits no longer waiting", async () => {
+  vi.mocked(api.latest).mockResolvedValue(latest("正文", 7));
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  emit({ kind: "error", error: "" }); // decided elsewhere, or cancelled: the run is over
+  await waitFor(() => expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull());
+  await waitFor(async () => expect(await body()).not.toHaveAttribute("readonly"));
+});

@@ -338,6 +338,8 @@ function Compose({
       setResume({ run: ev.run });
     }
     if (!ends(ev)) return;
+    // Over: none of its body edits waits any more (an interrupt's are set above).
+    if (ev.kind !== "interrupted") setPendings((p) => p.filter((x) => x.run !== ev.run));
     ended.current.add(ev.run);
     if (ev.run === cmdkRef.current) {
       cmdkRef.current = 0;
@@ -519,6 +521,12 @@ function Compose({
     runEdits.current = edits.current;
     decidedRun.current = a.run;
     const r = await bodyOp(() => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
+    if (r && all) {
+      // The run's body edits were decided with it: no longer reviewed; an accepted one applied.
+      const edited = pendings.some((x) => x.run === a.run);
+      setPendings((p) => p.filter((x) => x.run !== a.run));
+      if (edited && accept && !r.conflict) setApplied(true);
+    }
     return !!r;
   };
   const undo = async () => {
