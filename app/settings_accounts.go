@@ -435,7 +435,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
-			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(acc.Sync)).Changed() {
+			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions()).Changed() {
 				p.setSync(acc.ID, f)
 			}
 		}),
@@ -477,25 +477,19 @@ var syncRanges = []core.SyncRange{{Limit: 2000}, {Months: 3}, {}}
 // rangeLabel names r as settings lists it (2000 without （推荐）).
 func rangeLabel(r core.SyncRange) string {
 	switch {
-	case r.Limit == 2000:
-		return i18n.T("settings.account.sync.2000")
 	case r.Limit > 0:
-		return i18n.Tf("settings.account.sync.limit", r.Limit)
+		return i18n.T("settings.account.sync.2000")
 	case r.Months > 0:
 		return i18n.Tf("settings.account.sync.months", r.Months)
 	}
 	return i18n.T("settings.account.sync.all")
 }
 
-// rangeOptions are syncRanges, and cur (an older account's 10000, say) when
-// it is none of them.
-func rangeOptions(cur core.SyncRange) []kit.Option[core.SyncRange] {
+// rangeOptions are syncRanges, labelled as settings lists them.
+func rangeOptions() []kit.Option[core.SyncRange] {
 	var opts []kit.Option[core.SyncRange]
 	for _, r := range syncRanges {
 		opts = append(opts, kit.Option[core.SyncRange]{Value: r, Label: rangeLabel(r)})
-	}
-	if !slices.Contains(syncRanges, cur) {
-		opts = append(opts, kit.Option[core.SyncRange]{Value: cur, Label: rangeLabel(cur)})
 	}
 	return opts
 }

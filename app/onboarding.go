@@ -862,7 +862,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(inputHeight(c)).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
-	opts := rangeOptions(defaultSync)
+	opts := rangeOptions()
 	opts[0].Label = i18n.T("onboarding.sync.2000") // （推荐） here only
 	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.Select(c, &o.sync, opts).Height(th.Space(10)).Disabled(o.adding) }).
 		Description(i18n.T("onboarding.sync.help")).LineHeight(theme.LineFor(i18n.T("onboarding.sync")))
