@@ -20,7 +20,7 @@ var composeKeys = []string{
 	"error.model_not_found", "error.model_auth", "error.keychain", "error.ai.unauthorized", "error.ai.rate_limited",
 	"error.ai.unavailable", "error.ai.bad_response", "error.ai.internal", "error.ai.stale", "error.ai.incomplete",
 	"link.title", "link.open", "link.copy", "link.copied",
-	"wit.input", "wit.placeholder", "wit.send", "wit.stop", "wit.loading", "wit.scroll_end", "wit.tools.one", "wit.tools.other", "wit.tools.called", "wit.suspect", "wit.model",
+	"wit.input", "wit.placeholder", "wit.send", "wit.stop", "wit.loading", "wit.scroll_end", "wit.thinking", "wit.tools.one", "wit.tools.other", "wit.tools.called", "wit.suspect", "wit.model",
 	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
 	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
 	"wit.compose.input", "wit.compose.placeholder", "wit.compose.empty", "wit.compose.writing_banner", "wit.compose.working",
