@@ -152,6 +152,37 @@ export interface Language {
   name: string;
 }
 
+/** ReaderBody is a message's body as the reader page shows it. */
+export interface ReaderBody {
+  message: number;
+  /**
+   * Version orders the bodies of a page: it applies only a newer one, so
+   * a Load that resolves after a ReaderReload is dropped.
+   */
+  version: number;
+  /**
+   * HTML is the sanitized body (remote images kept when Remote), its
+   * inline images within the message's budget and its structure within
+   * the limits; "" when the mail has no HTML, which Plain then holds.
+   */
+  html: string;
+  plain: string;
+  /**
+   * Remote is that the user allowed the remote images (加载图片): the page
+   * gets each http(s) src of HTML through Image.
+   */
+  remote: boolean;
+  /** Blocked is the remote images left out while not Remote. */
+  blocked: number;
+  /**
+   * Cut is that the body is only its start: the Service kept only that,
+   * or the limits cut it.
+   */
+  cut: boolean;
+  theme: Theme;
+  text: Record<string, string>;
+}
+
 /** Review is a pending draft edit as the compose page reviews it. */
 export interface Review {
   approval: number;
@@ -268,7 +299,7 @@ export interface Skill {
 /**
  * Theme is what a web page needs to look like the native UI: the CSS
  * variables of both appearances (the page picks by Mode, following the
- * system's for "system") and the interface font size.
+ * system's for "system"), the interface font size and the mail body's.
  */
 export interface Theme {
   /** Mode is the user's choice: "system", "light" or "dark". */
@@ -278,6 +309,8 @@ export interface Theme {
   dark: Record<string, string>;
   /** FontSize is the interface font size in CSS pixels. */
   fontSize: number;
+  /** BodyFontSize is the mail body font size in CSS pixels (the reader's). */
+  bodyFontSize: number;
 }
 
 /** WitCall is a tool call; Args is its JSON text. */
@@ -636,6 +669,8 @@ export const events = {
    * another conversation replaces what it followed.
    */
   wit: event<WitEvent>("wit"),
+  /** ReaderReload tells a reader page its body changed (加载图片, a retry). */
+  readerBody: event<ReaderBody>("readerBody"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close

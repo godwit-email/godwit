@@ -13,7 +13,7 @@ import (
 
 // Theme is what a web page needs to look like the native UI: the CSS
 // variables of both appearances (the page picks by Mode, following the
-// system's for "system") and the interface font size.
+// system's for "system"), the interface font size and the mail body's.
 type Theme struct {
 	// Mode is the user's choice: "system", "light" or "dark".
 	Mode string `json:"mode"`
@@ -22,6 +22,8 @@ type Theme struct {
 	Dark  map[string]string `json:"dark"`
 	// FontSize is the interface font size in CSS pixels.
 	FontSize float32 `json:"fontSize"`
+	// BodyFontSize is the mail body font size in CSS pixels (the reader's).
+	BodyFontSize float32 `json:"bodyFontSize"`
 }
 
 // ThemeOf is the theme for the user's settings.
@@ -29,7 +31,7 @@ func ThemeOf(st core.Settings) Theme {
 	lt, dk := st, st
 	lt.Theme, dk.Theme = "light", "dark"
 	l, d := theme.FromSettings(lt, false), theme.FromSettings(dk, true)
-	return Theme{Mode: st.Theme, Light: ThemeVars(l), Dark: ThemeVars(d), FontSize: l.FontSize}
+	return Theme{Mode: st.Theme, Light: ThemeVars(l), Dark: ThemeVars(d), FontSize: l.FontSize, BodyFontSize: l.BodyFontSize}
 }
 
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks

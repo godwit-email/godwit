@@ -1,66 +1,46 @@
 package app
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"errors"
-	"fmt"
-	"image"
-	"io"
-	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
-	"sync/atomic"
-	"syscall"
-	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
-// The budget of one message's images (global constraints).
+// The budget of one message's images (global constraints), as
+// imagefetch keeps it.
 const (
-	maxImages      = 50       // images, remote and inline
-	maxImageBytes  = 5 << 20  // one image
-	maxImagesBytes = 20 << 20 // all remote images together
-	imageWorkers   = 4        // downloads and decodes at once
-	maxPixels      = 40_000_000
-	maxViewPixels  = 100_000_000 // all images together, decoded
-	imageTimeout   = 15 * time.Second
-	maxRedirects   = 5
+	maxImages      = imagefetch.MaxImages
+	maxImagesBytes = imagefetch.MaxTotalBytes
+	imageWorkers   = imagefetch.Workers
 )
 
 var (
-	errTooManyImages  = errors.New("too many images")
-	errImageTooLarge  = errors.New("image too large")
-	errImagesTooLarge = errors.New("images too large together")
-	errImagePixels    = errors.New("image has too many pixels")
-	errImagesPixels   = errors.New("images have too many pixels together")
-	errImageFormat    = errors.New("not a PNG, JPEG, GIF or WebP image")
-	errImageScheme    = errors.New("image address is not http or https")
-	errImageHost      = errors.New("image host is not public")
+	errTooManyImages  = imagefetch.ErrTooMany
+	errImageTooLarge  = imagefetch.ErrTooLarge
+	errImagesTooLarge = imagefetch.ErrTotalTooLarge
+	errImagePixels    = imagefetch.ErrPixels
+	errImagesPixels   = imagefetch.ErrTotalPixels
+	errImageFormat    = imagefetch.ErrFormat
+	errImageScheme    = imagefetch.ErrScheme
+	errImageHost      = imagefetch.ErrHost
 )
-
-// imageFormats are the formats shown, as image.DecodeConfig names them.
-var imageFormats = map[string]bool{"png": true, "jpeg": true, "gif": true, "webp": true}
 
 // imageLoader loads one message's images within its budget. Load, cancel
 // and imgs belong to the UI thread; downloads post their results to it.
 type imageLoader struct {
-	ctx           context.Context // ends with cancel
-	stop          context.CancelFunc
-	post          func(func())
-	client        *http.Client
-	sem           chan struct{}
-	left          atomic.Int64 // bytes the budget has left
-	pixels        atomic.Int64 // decoded pixels the budget has left
-	count         int          // images asked for
-	closed        bool
-	imgs          map[string]*loadedImage
-	allowLoopback bool                             // tests: dial the httptest server
-	decode        func([]byte) (*ui.Bitmap, error) // the pixels, once the size is checked; tests swap it
+	ctx    context.Context // ends with cancel
+	stop   context.CancelFunc
+	post   func(func())
+	client *http.Client
+	sem    chan struct{}
+	budget *imagefetch.Budget
+	closed bool
+	imgs   map[string]*loadedImage
+	decode func([]byte) (*ui.Bitmap, error) // the pixels, once the size is checked; tests swap it
 }
 
 type loadedImage struct {
@@ -73,12 +53,9 @@ type loadedImage struct {
 // servers, which listen on loopback.
 func newImageLoader(parent context.Context, post func(func()), allowLoopback bool) *imageLoader {
 	ctx, stop := context.WithCancel(parent)
-	l := &imageLoader{ctx: ctx, stop: stop, post: post, sem: make(chan struct{}, imageWorkers),
-		imgs: map[string]*loadedImage{}, allowLoopback: allowLoopback, decode: ui.DecodeBitmap}
-	l.left.Store(maxImagesBytes)
-	l.pixels.Store(maxViewPixels)
-	l.client = l.newClient()
-	return l
+	return &imageLoader{ctx: ctx, stop: stop, post: post, sem: make(chan struct{}, imageWorkers),
+		budget: imagefetch.NewBudget(), imgs: map[string]*loadedImage{},
+		client: imagefetch.NewClient(allowLoopback), decode: ui.DecodeBitmap}
 }
 
 // cancel stops the downloads and decodes; what they bring is dropped.
@@ -86,47 +63,6 @@ func (l *imageLoader) cancel() {
 	l.closed = true
 	l.stop()
 }
-
-// newClient is a client of its own: no proxy, no cookie jar, no Referer,
-// public hosts only (checked on the address dialed, after DNS), http(s)
-// redirects only and at most maxRedirects of them.
-func (l *imageLoader) newClient() *http.Client {
-	d := &net.Dialer{Timeout: imageTimeout, Control: func(_, address string, _ syscall.RawConn) error {
-		if l.allowLoopback {
-			return nil
-		}
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return errImageHost
-		}
-		ip, err := netip.ParseAddr(host)
-		if err != nil || !publicIP(ip.Unmap()) {
-			return errImageHost
-		}
-		return nil
-	}}
-	tr := &http.Transport{Proxy: nil, DialContext: d.DialContext, DisableKeepAlives: true,
-		TLSHandshakeTimeout: imageTimeout, ResponseHeaderTimeout: imageTimeout, MaxResponseHeaderBytes: 64 << 10}
-	return &http.Client{Transport: tr, Timeout: imageTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) > maxRedirects {
-			return fmt.Errorf("more than %d redirects", maxRedirects)
-		}
-		if !isHTTP(req.URL) {
-			return errImageScheme
-		}
-		req.Header.Del("Referer")
-		return nil
-	}}
-}
-
-// publicIP is false for loopback, private, link-local, unspecified and
-// multicast addresses.
-func publicIP(ip netip.Addr) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified())
-}
-
-func isHTTP(u *url.URL) bool { return u.Scheme == "http" || u.Scheme == "https" }
 
 // Load returns src's image once it has loaded; until then, and when it
 // fails, nil (the renderer shows a placeholder). The first call starts the
@@ -145,18 +81,17 @@ func (l *imageLoader) Load(src string) *ui.Bitmap {
 	u, err := url.Parse(src)
 	switch {
 	case err == nil && strings.EqualFold(u.Scheme, "data"):
-		fetch = func() ([]byte, error) { return dataURL(src) }
-	case err == nil && isHTTP(u):
-		fetch = func() ([]byte, error) { return l.download(src) }
+		fetch = func() ([]byte, error) { return imagefetch.DataURL(src) }
+	case err == nil && imagefetch.IsHTTP(u):
+		fetch = func() ([]byte, error) { return l.budget.Download(l.ctx, l.client, src) }
 	default:
 		e.err, e.done = errImageScheme, true
 		return nil
 	}
-	if l.count >= maxImages {
-		e.err, e.done = errTooManyImages, true
+	if err := l.budget.Take(); err != nil {
+		e.err, e.done = err, true
 		return nil
 	}
-	l.count++
 	go func() {
 		bm, err := l.load(fetch)
 		l.post(func() {
@@ -188,133 +123,16 @@ func (l *imageLoader) load(fetch func() ([]byte, error)) (*ui.Bitmap, error) {
 	return l.decodeImage(data)
 }
 
-func (l *imageLoader) download(src string) ([]byte, error) {
-	held := reserve(&l.left, readChunk) // the first read's share: none left, no request
-	if held == 0 {
-		return nil, errImagesTooLarge
-	}
-	body := &budgetReader{left: &l.left, held: held}
-	defer body.release()
-	ctx, cancel := context.WithCancel(l.ctx)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := l.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	// Cancel before Close: closing a body not read to the end would read
-	// up to 256 KiB more of it, past the budget, to reuse the connection.
-	defer func() { cancel(); resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("image: %s", resp.Status)
-	}
-	body.r = resp.Body
-	data, err := io.ReadAll(io.LimitReader(body, maxImageBytes+1))
-	switch {
-	case err != nil:
-		return nil, err
-	case len(data) > maxImageBytes:
-		return nil, errImageTooLarge
-	}
-	return data, nil
-}
-
-// readChunk is the most a read reserves of the budget at once.
-const readChunk = 32 << 10
-
-// reserve takes up to want bytes of left in one step; 0 when none is left.
-func reserve(left *atomic.Int64, want int64) int64 {
-	for {
-		l := left.Load()
-		if l <= 0 {
-			return 0
-		}
-		n := min(want, l)
-		if left.CompareAndSwap(l, l-n) {
-			return n
-		}
-	}
-}
-
-// budgetReader reads only bytes reserved from left beforehand, so readers
-// at the same time never overrun it together; release gives back what
-// was reserved and not read.
-type budgetReader struct {
-	r    io.Reader
-	left *atomic.Int64
-	held int64 // reserved, not read yet
-}
-
-func (b *budgetReader) Read(p []byte) (int, error) {
-	if b.held == 0 {
-		if b.held = reserve(b.left, min(int64(len(p)), readChunk)); b.held == 0 {
-			return 0, errImagesTooLarge
-		}
-	}
-	n, err := b.r.Read(p[:min(int64(len(p)), b.held)])
-	b.held -= int64(n)
-	return n, err
-}
-
-func (b *budgetReader) release() {
-	b.left.Add(b.held)
-	b.held = 0
-}
-
-// dataURL decodes a data: URL's bytes.
-func dataURL(src string) ([]byte, error) {
-	meta, payload, ok := strings.Cut(src[len("data:"):], ",")
-	if !ok {
-		return nil, errImageFormat
-	}
-	if len(payload) > maxImageBytes/3*4+4 {
-		return nil, errImageTooLarge
-	}
-	var data []byte
-	var err error
-	if strings.HasSuffix(strings.ToLower(meta), ";base64") {
-		data, err = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(payload), ""))
-	} else {
-		var s string
-		s, err = url.PathUnescape(payload)
-		data = []byte(s)
-	}
-	if err != nil {
-		return nil, errImageFormat
-	}
-	if len(data) > maxImageBytes {
-		return nil, errImageTooLarge
-	}
-	return data, nil
-}
-
-// decodeImage decodes a PNG, JPEG, GIF or WebP image, known by its content,
-// of at most maxPixels and within what is left of maxViewPixels; the size is
-// read before the pixels.
+// decodeImage decodes a PNG, JPEG, GIF or WebP image within the budget's
+// pixels; the size is read before the pixels.
 func (l *imageLoader) decodeImage(data []byte) (*ui.Bitmap, error) {
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || !imageFormats[format] {
-		return nil, errImageFormat
-	}
-	px := int64(cfg.Width) * int64(cfg.Height)
-	if px > maxPixels {
-		return nil, errImagePixels
-	}
-	for {
-		left := l.pixels.Load()
-		if px > left {
-			return nil, errImagesPixels
-		}
-		if l.pixels.CompareAndSwap(left, left-px) {
-			break
-		}
+	_, px, err := l.budget.Check(data)
+	if err != nil {
+		return nil, err
 	}
 	bm, err := l.decode(data)
 	if err != nil {
-		l.pixels.Add(px)
+		l.budget.GivePixels(px)
 	}
 	return bm, err
 }

@@ -221,13 +221,13 @@ func TestImageTotalBudget(t *testing.T) {
 		}
 		return true
 	})
-	if left := l.left.Load(); left < 0 {
+	if left := l.budget.BytesLeft(); left < 0 {
 		t.Errorf("the budget overran by %d bytes", -left)
 	}
 	// Each of the imageWorkers requests may have one chunk in the server's
 	// write and the client's read buffer when the budget runs out.
 	if s, most := sent.Load(), int64(maxImagesBytes+imageWorkers*chunk); s > most {
-		t.Errorf("the server sent %d bytes, at most %d expected; read %d, %d requests", s, most, maxImagesBytes-l.left.Load(), hits.Load())
+		t.Errorf("the server sent %d bytes, at most %d expected; read %d, %d requests", s, most, maxImagesBytes-l.budget.BytesLeft(), hits.Load())
 	}
 	if h := hits.Load(); h >= n {
 		t.Errorf("%d of %d requests sent after the budget ran out", h, n)

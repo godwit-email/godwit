@@ -47,10 +47,10 @@ func TestThemeVars(t *testing.T) {
 
 func TestThemeOf(t *testing.T) {
 	st := core.Settings{}
-	st.Theme, st.FontSize = "dark", 15
+	st.Theme, st.FontSize, st.BodyFontSize = "dark", 15, 17
 	got := ThemeOf(st)
-	if got.Mode != "dark" || got.FontSize != 15 {
-		t.Errorf("mode/font = %q/%v", got.Mode, got.FontSize)
+	if got.Mode != "dark" || got.FontSize != 15 || got.BodyFontSize != 17 {
+		t.Errorf("mode/font/body = %q/%v/%v", got.Mode, got.FontSize, got.BodyFontSize)
 	}
 	if got.Light["--background"] == got.Dark["--background"] {
 		t.Error("light and dark backgrounds are equal")
