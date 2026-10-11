@@ -451,6 +451,25 @@ test("⌘K saves first, then rewrites the selection of the text saved", async ()
   expect(api.follow).toHaveBeenCalledTimes(2); // the panel follows the draft's conversation again
 });
 
+test("after a ⌘K run, free input in the panel runs Ask", async () => {
+  vi.mocked(api.rewrite).mockResolvedValue({ run: 9, revision: 8, conflict: false });
+  vi.mocked(api.ask).mockResolvedValue(10);
+  await setup();
+  const b = (await body()) as HTMLTextAreaElement;
+  await userEvent.clear(b);
+  await userEvent.type(b, "Hello world");
+  b.setSelectionRange(6, 11);
+  fireEvent.keyDown(b, { key: "k", metaKey: true });
+  await userEvent.type(screen.getByRole("textbox", { name: "修改选中的内容" }), "更正式{Enter}");
+  await waitFor(() => expect(api.rewrite).toHaveBeenCalledTimes(1));
+  vi.mocked(api.latest).mockResolvedValue(latest("Hello world", 8));
+  emit({ run: 9, conversation: 3, kind: "done" });
+  await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "更正式{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式"));
+  expect(api.rewrite).toHaveBeenCalledTimes(1);
+});
+
 test("⌘K goes to Wit only with a model and unlocked; else the link popover", async () => {
   await setup();
   expect(await body()).toHaveAttribute("data-cmdk", "true");

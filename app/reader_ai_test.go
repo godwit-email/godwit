@@ -660,3 +660,38 @@ func TestSmallTasksHiddenWhenModelGone(t *testing.T) {
 		t.Fatal("a summary started without a model")
 	}
 }
+
+// A quick reply's draft created after the user switched mail still opens.
+func TestQuickReplyAfterSwitchingMailOpensWindow(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, noSummary)
+	llm.Script(coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Reply one</p>"},{"html":"<p>Reply two</p>"},{"html":"<p>Reply three</p>"}]}`}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Question", "can you?"))
+	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
+	h.openThread(m.ThreadID)
+	h.see("Reply two")
+	if err := h.tt.Click("Reply two"); err != nil { // no drain: the draft's callback waits
+		t.Fatal(err)
+	}
+	h.openThread(other.ThreadID)
+	if d := h.draft(h.composeOpened(0)); !strings.Contains(d.HTML, "Reply two") || d.SourceMessageID != m.ID {
+		t.Fatalf("draft %+v", d)
+	}
+}
+
+// A plugin action's draft opens in a compose window, also when the user
+// switched mail before the action finished.
+func TestActionDraftOpensWindow(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, nil, func(e *coretest.Env) { e.InstallPlugin(t, "draft-action") })
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
+	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
+	h.openThread(m.ThreadID)
+	h.see("body words")
+	h.click("更多 skill ▾")
+	if err := h.tt.ChooseMenuItem("Draft it"); err != nil { // no drain: the action's callback waits
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.openThread(other.ThreadID)
+	if d := h.draft(h.composeOpened(0)); d.Subject != "Re: Hi" || d.AccountID != acc.ID {
+		t.Fatalf("draft %+v", d)
+	}
+}

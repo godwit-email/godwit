@@ -105,7 +105,7 @@ func TestComposeSaveThenLoad(t *testing.T) {
 	st, err := f.page.Load(f.ctx(1))
 	require.NoError(t, err)
 	body := "<p>第一行</p><p></p><p>  第三行</p>"
-	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: body, Subject: "Hi", To: []string{"a@example.com"}, Revision: st.Revision})
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: body, Subject: "Hi", To: []string{"a@example.com"}, ReplyTo: "r@example.com", Revision: st.Revision})
 	require.NoError(t, err)
 	assert.False(t, res.Conflict)
 	got, err := f.page.Load(f.ctx(1))
@@ -113,11 +113,13 @@ func TestComposeSaveThenLoad(t *testing.T) {
 	assert.Equal(t, body, got.Body)
 	assert.Equal(t, "Hi", got.Subject)
 	assert.Equal(t, []string{"a@example.com"}, got.To)
+	assert.Equal(t, "r@example.com", got.ReplyTo)
 	assert.Equal(t, res.Revision, got.Revision)
 	stored, err := f.e.Svc.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Hi", stored.Subject)
 	assert.Equal(t, []string{"a@example.com"}, stored.To)
+	assert.Equal(t, "r@example.com", stored.ReplyTo)
 }
 
 func TestComposeConsecutiveSaves(t *testing.T) {
@@ -649,4 +651,23 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 	}
 	assert.True(t, f.gone(t, empty.ID))
 	assert.Empty(t, f.stored(t, kept.ID).Attachments)
+}
+
+// A discard that fails keeps the window's draft: the error comes back, the
+// window stays, and saving goes on.
+func TestComposeDiscardFailureKeepsDraft(t *testing.T) {
+	f := newFixture(t)
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	ctx, cancel := context.WithCancel(f.ctx(1))
+	cancel()
+	require.Error(t, f.page.Discard(ctx))
+	assert.False(t, f.gone(t, d.ID))
+	assert.Empty(t, f.done)
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>kept</p>", Revision: d.Revision})
+	require.NoError(t, err)
+	assert.False(t, res.Conflict)
+	got, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	assert.Equal(t, "<p>kept</p>", got.Body)
 }

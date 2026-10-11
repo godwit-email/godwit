@@ -125,3 +125,39 @@ func TestComposeRewriteSelectionReviewed(t *testing.T) {
 	assert.Equal(t, "<p>First para.</p><p>Second paragraph, rewritten.</p>", bc.Body)
 	f.doneAfter(t, n, rs.Run)
 }
+
+// Free input after a ⌘K run is Ask: it runs in the draft's Assist
+// conversation, not the ⌘K run's own.
+func TestComposeAskAfterRewriteRunsAssist(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>Hello world</p>")
+	llm.Script(coretest.Turn{Text: []string{"no change"}})
+	n := len(f.events(1))
+	rs, err := f.page.Rewrite(f.ctx(1), f.stored(t, d.ID).Revision, "Hello world", 6, 11, "更具体一点")
+	require.NoError(t, err)
+	require.False(t, rs.Conflict)
+	f.doneAfter(t, n, rs.Run)
+
+	llm.Script(coretest.Turn{Text: []string{"这是 Assist 的回答。"}})
+	n = len(f.events(1))
+	run, err := f.page.Ask(f.ctx(1), "更具体一点")
+	require.NoError(t, err)
+	f.doneAfter(t, n, run)
+	cs, err := draftConversations(t.Context(), f.e.Svc, d.ID)
+	require.NoError(t, err)
+	var assist, cmdk []string
+	for _, c := range cs {
+		full, err := f.e.Svc.GetConversation(t.Context(), c.ID)
+		require.NoError(t, err)
+		for _, m := range full.Messages {
+			if m.Role == "user" {
+				if c.Title == "" {
+					assist = append(assist, m.Text)
+				} else {
+					cmdk = append(cmdk, m.Text)
+				}
+			}
+		}
+	}
+	assert.Equal(t, []string{"更具体一点"}, assist, "the free input ran in the Assist conversation")
+	assert.Len(t, cmdk, 1, "the ⌘K run kept its own conversation")
+}

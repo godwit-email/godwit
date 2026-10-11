@@ -322,13 +322,14 @@ func (r *reader) act(op string) {
 }
 
 // draft starts a reply, reply-all or forward of the newest message and
-// opens it in a compose window.
+// opens it in a compose window, even when the reader has moved on since:
+// the window does not cover it.
 func (r *reader) draft(mode string) {
 	m, ok := r.last()
 	if !ok {
 		return
 	}
-	a, gen, acc := r.p.a, r.gen, r.account()
+	a, acc := r.p.a, r.account()
 	var id int64
 	a.do(func(ctx context.Context) (err error) {
 		if acc == 0 { // the folders have not loaded yet
@@ -344,9 +345,7 @@ func (r *reader) draft(mode string) {
 			a.toastErr(err)
 			return
 		}
-		if gen == r.gen {
-			a.plat.OpenCompose(id)
-		}
+		a.plat.OpenCompose(id)
 	})
 }
 
