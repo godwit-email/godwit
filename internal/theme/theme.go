@@ -131,6 +131,7 @@ const (
 	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
 	TabUnderline                                     = 2              // the selected underline tab's bottom border
 	Watermark                                        = 96             // the empty reader pane's bird
+	FormLabelWidth, ModelIDInputWidth, DialogBodyMax = 96, 132, 560   // a dialog form's label column; the add-model-ID field; a dialog body's tallest before it scrolls
 	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
 )
 
