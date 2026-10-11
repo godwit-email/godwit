@@ -105,4 +105,27 @@ describe("signatureSaver", () => {
     expect(api.save).toHaveBeenLastCalledWith(1, "<p>c</p>");
     expect(api.save).toHaveBeenCalledTimes(4);
   });
+
+  it("a failed save for A survives switching to B and typing there; a flush saves both", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(new Error("disk")).mockRejectedValueOnce(new Error("disk"));
+    s.edit(1, "<p>a</p>");
+    await vi.advanceTimersByTimeAsync(600);
+    s.show(2); // its save of A fails again
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(0);
+    s.edit(2, "<p>b</p>");
+    s.flush(5);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save.mock.calls.slice(2)).toEqual(
+      expect.arrayContaining([
+        [1, "<p>a</p>"],
+        [2, "<p>b</p>"],
+      ]),
+    );
+    expect(api.saved).toHaveBeenLastCalledWith(5, true);
+  });
 });
