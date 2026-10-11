@@ -208,6 +208,7 @@ func gui(ctx context.Context, dataDir string) int {
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
+		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win

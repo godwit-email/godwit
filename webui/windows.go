@@ -78,6 +78,25 @@ type Windows struct {
 	// opening holds the drafts whose window is being made: true when an
 	// Open joined it, to focus the window once it exists.
 	opening map[int64]bool
+
+	// OnChange, when set (before any window opens), is called after a window
+	// registers and after a closed window's release, the empty-draft delete
+	// included: IsOpen has changed. Never under mu.
+	OnChange func()
+}
+
+// IsOpen reports whether draftID's window is open or being made.
+func (ws *Windows) IsOpen(draftID int64) bool {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	_, making := ws.opening[draftID]
+	return making || ws.byDraft[draftID] != nil
+}
+
+func (ws *Windows) changed() {
+	if ws.OnChange != nil {
+		ws.OnChange()
+	}
 }
 
 // NewWindows opens windows with newWindow. ask shows 「有修改没有保存」 for
@@ -132,6 +151,7 @@ func (ws *Windows) make(draftID int64) {
 	if focus {
 		w.Focus()
 	}
+	ws.changed()
 }
 
 // RequestClose starts closing window winID, from its OnClose (always
@@ -262,6 +282,7 @@ func (ws *Windows) Closed(winID int) {
 			done = ws.settle(winID, false)
 		}
 		ws.mu.Unlock()
+		ws.changed()
 		done()
 	})
 }

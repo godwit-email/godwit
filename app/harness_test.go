@@ -258,6 +258,8 @@ type fakePlatform struct {
 	views     map[int64]*fakeBodyView // the body pages open, by message
 	onNewView func(message int64)     // runs inside NewBodyView, as the event loop may run there
 	viewErr   error                   // NewBodyView's error
+
+	composing map[int64]bool // the drafts whose compose window is open (ComposeOpen)
 }
 
 // fakeBodyView stands for a reader page's *mygo.WebView, bound to message.
@@ -395,6 +397,19 @@ func (p *fakePlatform) TempDir() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.tempDir
+}
+func (p *fakePlatform) ComposeOpen(id int64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.composing[id]
+}
+func (p *fakePlatform) setComposeOpen(id int64, on bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.composing == nil {
+		p.composing = map[int64]bool{}
+	}
+	p.composing[id] = on
 }
 func (p *fakePlatform) OpenCompose(draftID int64)        { p.record("OpenCompose", draftID) }
 func (p *fakePlatform) SettingsChanged(st core.Settings) { p.record("SettingsChanged", st.Theme) }

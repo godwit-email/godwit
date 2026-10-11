@@ -123,6 +123,7 @@ func (p *platform) ShowWindow() {
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
+func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 
 // NewBodyView makes a reader page in the main window, kept on its entry
 // (lockPage), registered as "reader" and bound to message before it

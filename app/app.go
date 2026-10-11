@@ -41,6 +41,9 @@ type Platform interface {
 	DataDir() (dir string, custom bool)
 	// OpenCompose shows draftID in a compose window of its own.
 	OpenCompose(draftID int64)
+	// ComposeOpen reports whether draftID's compose window is open or opening.
+	// The platform tells the App when that changes: ComposeWindowsChanged.
+	ComposeOpen(draftID int64) bool
 	// DraftDeleted is told draft id was deleted here: its compose window,
 	// if one is open, closes.
 	DraftDeleted(id int64)
@@ -413,6 +416,14 @@ func (a *App) SetForeground(on bool) { a.foreground = on }
 // OnUI posts f to the UI thread unless the App has closed by then, for
 // callbacks from elsewhere (the Wit page's).
 func (a *App) OnUI(f func()) { a.onUI(f) }
+
+// ComposeWindowsChanged is told a compose window opened or went (on the UI
+// thread): the drafts list is read again, and the pane follows its draft.
+func (a *App) ComposeWindowsChanged() {
+	if _, ok := draftsOf(a.mail.folders, a.mail.view); ok {
+		a.mail.reload()
+	}
+}
 
 // onUI posts f to the UI thread unless the App has closed by then.
 func (a *App) onUI(f func()) {

@@ -84,6 +84,7 @@ type mailPage struct {
 	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
+	draftSel  int64           // the draft the pane shows; 0 for none
 	accOpen   map[int64]*bool // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool
@@ -175,7 +176,7 @@ func (p *mailPage) reload() {
 		p.view, p.items, p.cursor, p.stalled = v, nil, "", false
 		p.main.reset()
 		p.closeSearch()
-		p.draftList = ui.ListState{}
+		p.draftList, p.draftSel = ui.ListState{}, 0
 		want, toEnd = 0, false
 	}
 	if p.searched {
@@ -460,9 +461,9 @@ func listTime(now, t time.Time) string {
 // Content is the list column and the reader beside it.
 func (p *mailPage) Content(c *ui.Context) {
 	t := theme.Of(c)
+	_, isDrafts := draftsOf(p.folders, p.view)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
-			_, isDrafts := draftsOf(p.folders, p.view)
 			switch {
 			case p.view.Unified == "outbox":
 				p.outboxView(c)
@@ -472,7 +473,11 @@ func (p *mailPage) Content(c *ui.Context) {
 				p.listView(c)
 			}
 		})
-		p.reader.view(c)
+		if isDrafts {
+			p.draftPane(c)
+		} else {
+			p.reader.view(c)
+		}
 	})
 }
 

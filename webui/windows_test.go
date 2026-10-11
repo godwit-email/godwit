@@ -505,3 +505,37 @@ func TestWindowsReopenAfterReleaseRacesOpen(t *testing.T) {
 	assert.Equal(t, 1, f.ws.Count())
 	assert.EqualValues(t, 1, f.made[1].focused.Load())
 }
+
+// IsOpen is true from the moment a window is being made.
+func TestWindowsIsOpenWhileOpening(t *testing.T) {
+	f := newWinFixture(t)
+	assert.False(t, f.ws.IsOpen(7))
+	entered, release := f.gate(1)
+	go f.ws.Open(7)
+	<-entered
+	assert.True(t, f.ws.IsOpen(7), "being made")
+	release()
+	require.Eventually(t, func() bool { return f.ws.Count() == 1 }, time.Second, time.Millisecond)
+	assert.True(t, f.ws.IsOpen(7))
+	f.ws.Closed(f.made[0].id)
+	assert.False(t, f.ws.IsOpen(7), "gone")
+}
+
+// OnChange fires when a window registers and after its release has deleted
+// an empty draft, when IsOpen is false and the draft is gone.
+func TestWindowsOnChangeAfterEmptyDelete(t *testing.T) {
+	f := newWinFixture(t)
+	d := f.draft(t, "new", 0)
+	var opened, gone []bool
+	f.ws.OnChange = func() {
+		if f.ws.IsOpen(d.ID) {
+			opened = append(opened, true)
+		} else {
+			gone = append(gone, f.gone(t, d.ID))
+		}
+	}
+	f.ws.Open(d.ID)
+	assert.Equal(t, []bool{true}, opened)
+	f.ws.Closed(f.made[0].id)
+	assert.Equal(t, []bool{true}, gone, "told after the empty draft was deleted")
+}

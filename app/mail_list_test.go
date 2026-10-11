@@ -473,6 +473,7 @@ func TestDraftsListRoute(t *testing.T) {
 	h.tt.Frame()
 	h.until("the draft deleted", func() bool { return !h.tt.HasText("Draft bye") })
 	h.click("Draft hello")
+	h.click("继续编辑")
 	if id := h.composeOpened(0); id != keep.ID {
 		t.Fatalf("opened draft %d, want %d", id, keep.ID)
 	}
@@ -640,6 +641,7 @@ func TestLocalDraftsEntry(t *testing.T) {
 	h.click("草稿")
 	h.see("local only")
 	h.click("local only")
+	h.click("继续编辑")
 	if id := h.composeOpened(0); id != d.ID {
 		t.Fatalf("opened draft %d, want %d", id, d.ID)
 	}
