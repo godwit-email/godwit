@@ -55,14 +55,25 @@ func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	return push(ctx, db, c, accountID, " AND attempts = 0")
 }
 
-func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, filter string) error {
+func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, filter string) (rerr error) {
 	var problems []string
 	var changed []int64
+	// A purge of a message already gone has nothing left to do.
+	if _, err := db.Execute(ctx, `UPDATE ops SET state = 'cancelled'
+		WHERE account_id = ? AND message_id IS NULL AND kind = 'purge' AND state = 'pending'`, accountID); err != nil {
+		return err
+	}
 	res, err := db.Execute(ctx, `UPDATE ops SET state = 'conflict', last_error = 'the message no longer exists'
 		WHERE account_id = ? AND message_id IS NULL AND state IN ('pending', 'awaiting_claim')`, accountID)
 	if err != nil {
 		return err
 	}
+	purged := map[int64]int{} // expunged per folder, audited when the push ends
+	defer func() {
+		if aerr := auditPurges(context.WithoutCancel(ctx), db, accountID, purged); aerr != nil && rerr == nil {
+			rerr = aerr
+		}
+	}()
 	if res.Changes > 0 {
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
@@ -75,6 +86,11 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]),
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
 		problem, err := pushOp(ctx, db, c, o)
+		if o.kind == "purge" && err == nil && problem == "" {
+			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
+				purged[o.dst]++
+			}
+		}
 		if problem != "" {
 			problems = append(problems, problem)
 			if o.kind == "move" {
@@ -119,6 +135,15 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	if o.kind == "move" && o.dst == src {
 		return "", finish(ctx, db, o, "done", "")
 	}
+	if o.kind == "purge" {
+		due, err := purgeStillDue(ctx, db, c, o)
+		if err != nil {
+			return "", err
+		}
+		if !due { // moved out, its role or policy changed, or the server lost UIDPLUS
+			return "", finish(ctx, db, o, "cancelled", "")
+		}
+	}
 	// Counted before anything is sent: after a dropped connection the next round
 	// knows the command may have reached the server.
 	if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
@@ -130,7 +155,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	var dstName string
 	var dstValidity uint32
 	switch o.kind {
-	case "flags":
+	case "flags", "purge":
 	case "move":
 		if !c.Caps().Has(imap.CapMove) && !c.Caps().Has(imap.CapUIDPlus) {
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
@@ -158,6 +183,12 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		return msg, finish(ctx, db, o, "conflict", msg)
 	}
 	set := imap.UIDSetNum(uid)
+	if o.kind == "purge" {
+		if err := expunge(c, uid); err != nil {
+			return fail(ctx, db, o, err)
+		}
+		return "", finish(ctx, db, o, "done", "")
+	}
 	if o.kind == "flags" {
 		var p FlagsPayload
 		if err := json.Unmarshal([]byte(o.payload), &p); err != nil {
@@ -266,8 +297,8 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
 	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE id = ?", Args: []any{state, nullable(lastError), o.id}}}
 	if o.kind == "move" && (state == "failed" || state == "conflict") {
-		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id
-			WHERE id = ? AND server_folder_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ops
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch()
+			WHERE id = ? AND server_folder_id IS NOT NULL AND folder_id != server_folder_id AND NOT EXISTS (SELECT 1 FROM ops
 				WHERE message_id = messages.id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))`, Args: []any{o.msg}})
 	}
 	_, err := db.Transaction(ctx, stmts)

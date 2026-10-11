@@ -288,14 +288,14 @@ func displayName(from string) string {
 // Op is a queued local change that has not reached the server yet, or could not.
 type Op struct {
 	ID          int64
-	Kind, State string // Kind: flags or move. State: pending, awaiting_claim, conflict or failed
+	Kind, State string // Kind: flags, move or purge. State: pending, awaiting_claim, conflict or failed
 	Attempts    int
 	LastError   string
 }
 
-// PendingOps lists the account's ops that are not done, oldest first.
+// PendingOps lists the account's ops that are not done (or cancelled), oldest first.
 func (s *Service) PendingOps(ctx context.Context, accountID int64) ([]Op, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state != 'done' ORDER BY id", accountID)
+	rows, err := s.db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state NOT IN ('done', 'cancelled') ORDER BY id", accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -482,16 +482,13 @@ func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) erro
 	return s.move(ctx, acc, ts, folder)
 }
 
-// roleFolder is the account's folder of role: the lowest id holding it.
+// roleFolder is the account's folder of role (mailsync.RoleFolder).
 func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64, error) {
-	rows, err := s.db.Query(ctx, "SELECT id FROM folders WHERE account_id = ? AND role = ? ORDER BY id LIMIT 1", acc, role)
-	if err != nil {
-		return 0, err
+	id, _, err := mailsync.RoleFolder(ctx, s.db, acc, role)
+	if err == nil && id == 0 {
+		err = &ErrNoRoleFolder{Role: role}
 	}
-	if len(rows.Values) == 0 {
-		return 0, &ErrNoRoleFolder{Role: role}
-	}
-	return store.Int(rows.Values[0][0]), nil
+	return id, err
 }
 
 // move sets the desired folder of the messages not already in folderID and queues
@@ -505,7 +502,9 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, folder
 		}
 		moved = append(moved, m)
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ? WHERE id = ?", Args: []any{folderID, m.id}},
+			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ?, entered_at = unixepoch() WHERE id = ?", Args: []any{folderID, m.id}},
+			// A rescue beats a purge queued before it (the move would otherwise wait for it).
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}},
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
 				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
 	}

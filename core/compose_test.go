@@ -586,3 +586,15 @@ func TestSignatureEditorHTMLLegacy(t *testing.T) {
 	assert.Equal(t, "<p>a &amp; b<br>c</p>", SignatureEditorHTML("a & b\nc"))
 	assert.Equal(t, "", SignatureEditorHTML(""))
 }
+
+func TestSentArchivedToOverriddenFolder(t *testing.T) {
+	e := newSendEnv(t, false)
+	require.NoError(t, e.im.User.Create("Sent Messages", nil))
+	e.sync(t)
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "sent", e.folderID(t, "Sent Messages")))
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Sent Messages"), 1)
+	assert.Empty(t, e.onServer(t, "Sent"))
+	assert.Equal(t, "done", e.state(t))
+}

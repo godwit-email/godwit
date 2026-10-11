@@ -232,8 +232,9 @@ func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error
 		return false, err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT m.from_addr, f.role FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
-	if err != nil || len(rows.Values) == 0 || store.Str(rows.Values[0][1]) == "junk" {
+	// Junk detected or given by the user, even where another folder holds the role.
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, 'junk' IN (f.role, f.role_override) FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
+	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
 		return false, err
 	}
 	a, err := mail.ParseAddress(store.Str(rows.Values[0][0]))

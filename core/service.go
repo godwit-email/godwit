@@ -2,6 +2,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -433,6 +434,10 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	defer release()
+	// Queued first, so this round's push expunges and its fetch drops the rows.
+	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
+		return err
+	}
 	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
@@ -528,18 +533,31 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 	return err
 }
 
-// ListFolders returns the account's folders with their unread counts.
+// ListFolders returns the account's folders with their unread counts. Each role
+// is on one folder at most, the one mailsync.RoleFolder resolves; inbox is
+// detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
-	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, f.role,
+	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role = 'inbox' THEN 'inbox' ELSE '' END,
 		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0)
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err
 	}
+	roles := map[int64]string{}
+	for _, role := range mailsync.Roles {
+		id, _, err := mailsync.RoleFolder(ctx, s.db, accountID, role)
+		if err != nil {
+			return nil, err
+		}
+		if id != 0 {
+			roles[id] = role
+		}
+	}
 	out := make([]Folder, 0, len(rows.Values))
 	for _, r := range rows.Values {
-		out = append(out, Folder{ID: store.Int(r[0]), AccountID: store.Int(r[1]), Name: store.Str(r[2]),
-			Role: store.Str(r[3]), Unread: int(store.Int(r[4]))})
+		id := store.Int(r[0])
+		out = append(out, Folder{ID: id, AccountID: store.Int(r[1]), Name: store.Str(r[2]),
+			Role: cmp.Or(roles[id], store.Str(r[3])), Unread: int(store.Int(r[4]))})
 	}
 	return out, nil
 }

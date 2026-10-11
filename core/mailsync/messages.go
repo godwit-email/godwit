@@ -38,8 +38,8 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			snippet, body_text, body_html, body_truncated, has_attachments, entered_at)
+			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
 		Args: args,
 	})
 	msgAt := len(stmts) - 1

@@ -35,6 +35,7 @@ type settingsPage struct {
 	// accounts
 	forms   map[int64]*accountForm
 	usage   map[int64]int64                                                                // attachment cache bytes per account; absent until read
+	boxes   map[int64]*mailbox                                                             // 邮箱行为 per account; absent until read
 	dialog  string                                                                         // the open dialog: "password", "servers", "remove", "cache"; "" none
 	dlgAcc  int64                                                                          // the account the dialog is about
 	dlgGen  uint64                                                                         // bumped per dialog opened; an older dialog's result leaves it alone
@@ -68,7 +69,7 @@ type settingsPage struct {
 }
 
 func newSettingsPage(a *App) *settingsPage {
-	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, reauth: map[int64]bool{},
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{},
 		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability}, ext: &extView{a: a, tab: 1}}
 }
 
@@ -102,6 +103,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	switch sec, acc := p.section(); {
 	case acc != nil:
 		p.readUsage(acc.ID)
+		p.readMailbox(acc.ID)
 	case sec == "models" && hints == nil:
 		p.models.load()
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):

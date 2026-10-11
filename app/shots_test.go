@@ -352,6 +352,18 @@ func TestShots(t *testing.T) {
 		s.openSettings(accountRoute(s.you.ID))
 		s.see("签名")
 		shot(s.harness, "SettingsAccounts")
+		// The whole account page, as SettingsAccountsReauth draws it (邮箱行为 below the fold).
+		for _, n := range []string{"Drafts", "Junk Email"} {
+			if err := s.env.IMAP(s.work.ID).User.Create(n, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s.syncNow(s.work)
+		s.resize(1440, 2010)
+		s.openSettings(accountRoute(s.work.ID))
+		s.see("Junk Email")
+		shot(s.harness, "SettingsAccountsReauth")
+		s.resize(1440, 900)
 		s.openSettings("general")
 		s.see("界面密度")
 		shot(s.harness, "SettingsGeneral")

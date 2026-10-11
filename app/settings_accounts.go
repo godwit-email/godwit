@@ -445,6 +445,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
 			})
 		}))
+	p.mailboxSection(c, acc.ID)
 	server := func(proto, host string, port int, sec core.Security) func() {
 		return row(proto, "", func() {
 			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
@@ -683,4 +684,139 @@ func (p *settingsPage) serversForm(c *ui.Context) {
 	server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
 	server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
 	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })
+}
+
+// mailbox is an account's 邮箱行为 as read: its folders (roles resolved),
+// and the selects' values, which follow them unless a write is in flight.
+type mailbox struct {
+	folders []core.Folder
+	roles   [5]int64 // per mailboxRoles: the folder holding it, 0 none
+	purge   [2]int   // per mailsync.PurgeRoles: days
+	blocked [2]bool
+	busy    int // writes in flight
+}
+
+// mailboxRoles are the role rows in the design's order.
+var mailboxRoles = []string{"drafts", "sent", "junk", "trash", "archive"}
+
+func (p *settingsPage) readMailbox(id int64) {
+	a := p.a
+	var fs []core.Folder
+	var ps map[string]core.Purge
+	a.query(func(ctx context.Context) (err error) {
+		if fs, err = a.svc.ListFolders(ctx, id); err != nil {
+			return err
+		}
+		ps, err = a.svc.Purges(ctx, id)
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		b := p.boxes[id]
+		if b == nil {
+			b = &mailbox{}
+			p.boxes[id] = b
+		}
+		if b.busy > 0 {
+			return // the write's own read follows
+		}
+		b.folders = fs
+		for i, r := range mailboxRoles {
+			b.roles[i] = 0
+			if j := slices.IndexFunc(fs, func(f core.Folder) bool { return f.Role == r }); j >= 0 {
+				b.roles[i] = fs[j].ID
+			}
+		}
+		for i, r := range []string{"junk", "trash"} {
+			b.purge[i], b.blocked[i] = ps[r].Days, ps[r].Blocked
+		}
+	})
+}
+
+// writeMailbox runs a 邮箱行为 change, then reads the section again; a
+// failure shows as a toast and the selects return to what core has.
+func (p *settingsPage) writeMailbox(id int64, b *mailbox, fn func(ctx context.Context) error) {
+	a := p.a
+	b.busy++
+	a.do(fn, func(err error) {
+		b.busy--
+		a.toastErr(err)
+		p.readMailbox(id)
+	})
+}
+
+// roleOptions are the role's choices as the design lists them: the folder
+// holding it first (or 不使用 when none does), then the other folders but
+// INBOX; archive also offers 不使用 once it has a folder. Junk and trash
+// leave out the folders core refuses for them (sent, drafts, archive).
+func roleOptions(b *mailbox, i int) []kit.Option[int64] {
+	cur, role := b.roles[i], mailboxRoles[i]
+	none := kit.Option[int64]{Value: 0, Label: i18n.T("settings.account.mailbox.none")}
+	var opts []kit.Option[int64]
+	if cur == 0 {
+		opts = append(opts, none)
+	}
+	for _, f := range b.folders {
+		if f.ID == cur {
+			opts = slices.Insert(opts, 0, kit.Option[int64]{Value: f.ID, Label: f.Name})
+			continue
+		}
+		if f.Role == "inbox" || (slices.Contains([]string{"junk", "trash"}, role) && slices.Contains([]string{"sent", "drafts", "archive"}, f.Role)) {
+			continue
+		}
+		opts = append(opts, kit.Option[int64]{Value: f.ID, Label: f.Name})
+	}
+	if cur != 0 && role == "archive" {
+		opts = append(opts, none)
+	}
+	return opts
+}
+
+func purgeOptions() []kit.Option[int] {
+	var opts []kit.Option[int]
+	for _, d := range core.PurgeDays {
+		opts = append(opts, kit.Option[int]{Value: d, Label: i18n.T("settings.account.purge." + strconv.Itoa(d))})
+	}
+	return opts
+}
+
+// mailboxSection is 邮箱行为: a select per role, and the junk and trash purges
+// under their roles.
+func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
+	b := p.boxes[id]
+	if b == nil {
+		b = &mailbox{}
+	}
+	role := func(i int) func() {
+		r := mailboxRoles[i]
+		label := i18n.T("mail.folder." + r)
+		return func() {
+			settingRow(c, label, cmpTr("settings.account.mailbox."+r+".help", ""), func() {
+				if settingSelect(c, label, &b.roles[i], roleOptions(b, i)).Changed() {
+					folder := b.roles[i]
+					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetRoleFolder(ctx, id, r, folder) })
+				}
+			})
+		}
+	}
+	purge := func(i int) func() {
+		r := []string{"junk", "trash"}[i]
+		label := i18n.T("settings.account.purge." + r)
+		desc := i18n.T("settings.account.purge." + r + ".help")
+		if b.blocked[i] && b.purge[i] > 0 {
+			desc = i18n.T("settings.account.purge.blocked")
+		}
+		return func() {
+			settingRow(c, label, desc, func() {
+				if settingSelect(c, label, &b.purge[i], purgeOptions()).Changed() {
+					days := b.purge[i]
+					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetPurge(ctx, id, r, days) })
+				}
+			})
+		}
+	}
+	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"),
+		role(0), role(1), role(2), purge(0), role(3), purge(1), role(4))
 }

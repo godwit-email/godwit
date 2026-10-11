@@ -239,4 +239,27 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN sync_since_months INTEGER NOT NULL DEFAULT 0`,
 	// The SINCE cutoff (unix; 0 for all) a range backfill last completed down to; NULL for none.
 	`ALTER TABLE folders ADD COLUMN filled_since INTEGER`,
+}, {
+	// When Godwit first saw the message in its folder (unix): what a purge measures,
+	// never the Date header. Every write of folder_id sets it; existing rows start now.
+	`ALTER TABLE messages ADD COLUMN entered_at INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE messages SET entered_at = unixepoch()`,
+	// The user's role for the folder (drafts, sent, junk, trash, archive), or 'none'
+	// for no role; '' follows detection (role). Sync never writes it.
+	`ALTER TABLE folders ADD COLUMN role_override TEXT NOT NULL DEFAULT ''`,
+	// When role or role_override last changed: a purge counts from it too.
+	`ALTER TABLE folders ADD COLUMN role_since INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE folders SET role_since = unixepoch()`,
+	`CREATE TRIGGER folders_role_since AFTER UPDATE OF role, role_override ON folders
+		WHEN old.role IS NOT new.role OR old.role_override IS NOT new.role_override BEGIN
+		UPDATE folders SET role_since = unixepoch() WHERE id = new.id;
+	END`,
+	// When a purge last ran on the folder: at most once a day.
+	`ALTER TABLE folders ADD COLUMN purged_at INTEGER NOT NULL DEFAULT 0`,
+	// The junk and trash purges: days 0 is never. since starts the clock (turning it on,
+	// or the role's folder changing); folder_id is the folder the clock runs for.
+	// blocked is 1 while the server lacks UIDPLUS, so the purge is skipped.
+	`CREATE TABLE purge_policies (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		role TEXT NOT NULL, days INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL, folder_id INTEGER,
+		blocked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(account_id, role))`,
 }}

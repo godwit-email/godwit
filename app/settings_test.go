@@ -1000,3 +1000,41 @@ func TestSettingsTrustedSenders(t *testing.T) {
 	h.advance(refreshEvery)
 	h.see("还没有信任的发件人")
 }
+
+func TestMailboxRoleOptions(t *testing.T) {
+	b := &mailbox{folders: []core.Folder{{ID: 1, Name: "INBOX", Role: "inbox"}, {ID: 2, Name: "Sent", Role: "sent"},
+		{ID: 3, Name: "Trash", Role: "trash"}, {ID: 4, Name: "Archive", Role: "archive"}, {ID: 5, Name: "Bin"}},
+		roles: [5]int64{0, 2, 0, 3, 4}}
+	labels := func(i int) string {
+		var out []string
+		for _, o := range roleOptions(b, i) {
+			out = append(out, o.Label)
+		}
+		return strings.Join(out, "|")
+	}
+	for i, want := range []string{
+		"不使用|Sent|Trash|Archive|Bin", // drafts: none yet
+		"Sent|Trash|Archive|Bin",     // sent: no 不使用 once set
+		"不使用|Trash|Bin",              // junk: never the sent, drafts or archive folder
+		"Trash|Bin",
+		"Archive|Sent|Trash|Bin|不使用", // archive keeps 不使用
+	} {
+		if got := labels(i); got != want {
+			t.Errorf("%s: %q, want %q", mailboxRoles[i], got, want)
+		}
+	}
+}
+
+func TestSettingsMailboxPurge(t *testing.T) {
+	h, acc := withAccount(t)
+	h.syncNow(acc)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("邮箱行为")
+	h.see("超过这个时间的已删除邮件会被永久删除")
+	h.click("永不") // junk's purge comes first
+	h.click("一周后")
+	h.until("the junk purge saved", func() bool {
+		p, err := h.env.Svc.Purges(context.Background(), acc.ID)
+		return err == nil && p["junk"].Days == 7 && p["trash"].Days == 0
+	})
+}
