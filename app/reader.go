@@ -573,11 +573,14 @@ func (r *reader) toolbar(c *ui.Context) {
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
 			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
 		)
-		kit.ButtonGroup(c,
-			kit.GroupItem{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
-			kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
-			kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }},
-		)
+		file := []kit.GroupItem{
+			{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
+			{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
+		}
+		if !r.p.inJunk() {
+			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
+		}
+		kit.ButtonGroup(c, file...)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
@@ -678,8 +681,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					return
 				}
 				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-				if f, _ := r.p.folder(m.FolderID); addr != "" && f.Role != "junk" { // core never trusts junk
-					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(addr) })
+				if addr != "" && !b.msg.InJunk { // core never trusts junk
+					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
 				}
 			})
 		}
@@ -761,10 +764,11 @@ func (r *reader) allowImages(id int64) {
 }
 
 // trustSender trusts addr's remote images from now on (始终信任此发件人)
-// and loads them in its messages shown.
-func (r *reader) trustSender(addr string) {
+// and loads them in its messages shown. Core gets the From as sent: a quoted
+// local part parses there, its bare address does not.
+func (r *reader) trustSender(from, addr string) {
 	a, gen := r.p.a, r.gen
-	a.do(func(ctx context.Context) error { return a.svc.TrustImageSender(ctx, addr) }, func(err error) {
+	a.do(func(ctx context.Context) error { return a.svc.TrustImageSender(ctx, from) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -773,7 +777,7 @@ func (r *reader) trustSender(addr string) {
 			return
 		}
 		for id, b := range r.bodies {
-			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) {
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.msg.InJunk { // as core: never junk
 				r.allowImages(id)
 			}
 		}

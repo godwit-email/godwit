@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"sync"
 
@@ -184,18 +185,17 @@ func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	st, err := os.Stat(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	if st.Size() > core.SignatureImageMax {
-		return "", core.ErrSignatureImage
-	}
-	data, err := os.ReadFile(path)
+	defer f.Close()
+	// One read, capped: a file that grows after a size check cannot slip past it.
+	data, err := io.ReadAll(io.LimitReader(f, core.SignatureImageMax+1))
 	if err != nil {
 		return "", err
 	}
-	return core.SignatureImageURL(data)
+	return core.SignatureImageURL(data) // over SignatureImageMax: ErrSignatureImage
 }
 
 // Save stores html as account's signature, marked as editor HTML ("" for

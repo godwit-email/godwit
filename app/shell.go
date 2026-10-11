@@ -77,6 +77,9 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
+	if r.Page != PageMail {
+		a.mail.stopOlder() // older mail is fetched only while the list shows
+	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
@@ -94,6 +97,7 @@ func (a *App) onEvent(ev events.Event) {
 		delete(a.syncErr, ev.AccountID)
 		a.syncedAt = a.clock.Now()
 		a.syncedAtBy[ev.AccountID] = a.syncedAt
+		a.mail.older.notYet = 0
 		a.tick()
 	case events.SyncFailed:
 		delete(a.syncing, ev.AccountID)

@@ -79,6 +79,26 @@ func TestDraftEditingChipFollowsWindow(t *testing.T) {
 	h.until("the chip gone", func() bool { return !h.tt.HasText("编辑中") && !h.tt.HasText("正在撰写窗口里编辑") })
 }
 
+// A window opened since the pane drew refuses the send at click, and says why.
+func TestDraftPaneSendRefusedSays(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true)
+	h.post(func() { h.app.mail.sendDraft(ds[0]) }) // the click, before the pane redraws
+	h.until("the toast beside the button's tip", func() bool {
+		n := 0
+		for _, s := range h.tt.Texts() {
+			if s == "正在撰写窗口里编辑，先在那里发送" {
+				n++
+			}
+		}
+		return n == 2
+	})
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a window owns it")
+	}
+}
+
 // A draft deleted as empty when its window closed leaves the pane.
 func TestEmptyDraftClosedLeavesPane(t *testing.T) {
 	h, ds := draftsHarness(t, "Draft hello", "Draft bye")
@@ -242,6 +262,25 @@ func TestDraftPaneSendWarningCancelled(t *testing.T) {
 	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
 	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
 		t.Fatal("a cancelled send went out")
+	}
+}
+
+// Leaving the drafts view drops the warnings dialog: back there, it is gone.
+func TestDraftPaneSendWarningLeft(t *testing.T) {
+	h, _ := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("仍然发送")
+	drafts := h.app.route
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
+	h.drain()
+	h.tt.Frame()
+	h.post(func() { h.app.navigate(drafts) })
+	h.click("Draft hello")
+	h.see("继续编辑")
+	if h.tt.HasText("仍然发送") {
+		t.Fatal("the warnings dialog came back")
 	}
 }
 

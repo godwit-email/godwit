@@ -154,6 +154,9 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 				if !hit.accounts {
 					break
 				}
+				if hit.email != "" && !strings.Contains(strings.ToLower(acc.Email), hit.email) {
+					continue
+				}
 				item(accountRoute(acc.ID)).Children(func() {
 					mark(c, accountProvider(a, acc), theme.MarkSm)
 					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
@@ -361,7 +364,7 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 	for _, addr := range a.settings.TrustedImageSenders {
 		rows = append(rows, func() {
 			settingRow(c, addr, "", func() {
-				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Clicked() {
+				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Label(i18n.Tf("settings.trusted.remove.label", addr)).Clicked() {
 					a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
 				}
 			}).Label(addr)

@@ -486,3 +486,23 @@ func TestReaderJunkWithoutFolder(t *testing.T) {
 		t.Fatal("the message moved")
 	}
 }
+
+// Inside a junk folder 移到垃圾邮件 is not offered; elsewhere it is.
+func TestJunkActionNotInJunk(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "x"))
+	h.openThread(m.ThreadID)
+	h.see("移到垃圾邮件")
+	f := h.folderOf(acc, "junk")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the junk folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.openThread(m.ThreadID)
+	h.see("回复")
+	if h.tt.HasText("移到垃圾邮件") {
+		t.Fatal("移到垃圾邮件 inside Junk")
+	}
+}

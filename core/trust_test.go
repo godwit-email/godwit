@@ -49,8 +49,10 @@ func TestTrustImageSenderCap(t *testing.T) {
 func TestImagesTrusted(t *testing.T) {
 	e := newSyncEnv(t)
 	require.NoError(t, e.im.User.Create("Junk", nil))
+	require.NoError(t, e.im.User.Create("Spam2", nil))
 	e.put(t, "INBOX", eml("a@x", "Bob <bob@example.com>", "alice@example.com", "s", day, "b"))
 	e.put(t, "INBOX", eml("b@x", "bob <carol@example.com>", "alice@example.com", "s", day, "b", "Reply-To: bob@example.com"))
+	e.put(t, "INBOX", eml("d@x", `"bob@example.com" <mallory@evil.example>`, "alice@example.com", "s", day, "b"))
 	e.put(t, "Junk", eml("c@x", "bob@example.com", "alice@example.com", "s", day, "b"))
 	e.sync(t)
 	trusted := func(mid string) bool {
@@ -62,7 +64,16 @@ func TestImagesTrusted(t *testing.T) {
 	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
 	assert.True(t, trusted("a@x"))
 	assert.False(t, trusted("b@x"), "the From address only, not the name or Reply-To")
+	assert.False(t, trusted("d@x"), "a display name that holds the address is not it")
 	assert.False(t, trusted("c@x"), "never in the junk folder")
+	// Message.InJunk agrees, also once the role moved to another folder (the app offers no trust there).
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "junk", e.folderID(t, "Spam2")))
+	assert.False(t, trusted("c@x"))
+	for mid, junk := range map[string]bool{"a@x": false, "c@x": true} {
+		m, err := e.s.GetMessage(bg, e.idOf(t, mid), false)
+		require.NoError(t, err)
+		assert.Equal(t, junk, m.InJunk, mid)
+	}
 	require.NoError(t, e.s.UntrustImageSender(bg, "bob@example.com"))
 	assert.False(t, trusted("a@x"))
 }

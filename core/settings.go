@@ -224,6 +224,10 @@ func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string
 	return err
 }
 
+// inJunk is whether folder f is junk, detected or given by the user, even
+// where another folder holds the role: ImagesTrusted and Message.InJunk agree.
+const inJunk = "'junk' IN (f.role, f.role_override)"
+
 // ImagesTrusted is whether message's remote images load at once: its From
 // address is trusted and it is not in a junk folder (From is unauthenticated).
 func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error) {
@@ -232,8 +236,7 @@ func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error
 		return false, err
 	}
 	defer end()
-	// Junk detected or given by the user, even where another folder holds the role.
-	rows, err := s.db.Query(ctx, "SELECT m.from_addr, 'junk' IN (f.role, f.role_override) FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+inJunk+" FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
 	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
 		return false, err
 	}

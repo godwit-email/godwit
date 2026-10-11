@@ -44,7 +44,10 @@ type Message struct {
 	HTML, Text          string
 	Truncated           bool
 	RemoteImagesBlocked int
-	Attachments         []AttachmentInfo
+	// InJunk: the folder is junk, detected or given (even where another
+	// folder holds the role), so its sender's images are never trusted.
+	InJunk      bool
+	Attachments []AttachmentInfo
 }
 
 // AttachmentInfo describes one attachment; its bytes are fetched lazily.
@@ -233,7 +236,7 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 // GetMessage returns the message with sanitized HTML. Inline images are
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -241,7 +244,7 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		return Message{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0}
+	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0, InJunk: store.Int(r[15]) != 0}
 	raw := store.Str(r[13])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {

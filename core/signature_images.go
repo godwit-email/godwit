@@ -1,11 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"image/gif"
 	"net/http"
 	"strings"
 
@@ -18,7 +21,7 @@ import (
 // SignatureImageMax bytes each and SignatureImagesMax per signature. They are
 // stored per account, content-addressed, and referenced in the signature as
 // cid:sig-<hash>@godwit; a sent mail carries them as inline parts.
-// shortcut: images are stored as given, EXIF (GPS) included; re-encode them if a user ever asks.
+// Their metadata (EXIF with its GPS, XMP, text) is stripped before storing.
 const (
 	SignatureImageMax  = 512 << 10
 	SignatureImagesMax = 4
@@ -71,6 +74,9 @@ func signatureAssets(accountID int64, editor string) (string, []sqlite.Statement
 				return ""
 			}
 			ct, err := signatureImageType(data)
+			if err == nil {
+				data, err = stripImageMetadata(ct, data)
+			}
 			if err != nil {
 				bad = err
 				return ""
@@ -195,4 +201,116 @@ func (s *Service) SignatureEditor(ctx context.Context, accountID int64) (string,
 		return "", err
 	}
 	return s.InlineSignatureImages(ctx, accountID, SignatureEditorHTML(acc.Signature, cids))
+}
+
+// stripImageMetadata drops what a picture says about where and how it was
+// taken: EXIF (GPS included), XMP, IPTC and comments. jpeg, png and webp lose
+// those segments or chunks losslessly, so stripping twice gives the same bytes
+// (and the same cid); a gif is re-encoded. Malformed data is ErrSignatureImage.
+func stripImageMetadata(ct string, data []byte) ([]byte, error) {
+	var out []byte
+	ok := false
+	switch ct {
+	case "image/jpeg":
+		out, ok = stripJPEG(data)
+	case "image/png":
+		out, ok = stripPNG(data)
+	case "image/webp":
+		out, ok = stripWebP(data)
+	case "image/gif":
+		g, err := gif.DecodeAll(bytes.NewReader(data))
+		var b bytes.Buffer
+		if err == nil && gif.EncodeAll(&b, g) == nil {
+			out, ok = b.Bytes(), true
+		}
+	}
+	if !ok {
+		return nil, ErrSignatureImage
+	}
+	return out, nil
+}
+
+// stripJPEG drops the APP1 (EXIF, XMP), APP13 (IPTC) and COM segments before
+// the scan; APP0, the ICC profile (APP2) and Adobe's APP14 stay.
+func stripJPEG(data []byte) ([]byte, bool) {
+	if len(data) < 2 || data[0] != 0xFF || data[1] != 0xD8 {
+		return nil, false
+	}
+	out := []byte{0xFF, 0xD8}
+	for i := 2; ; {
+		if i+4 > len(data) || data[i] != 0xFF {
+			return nil, false
+		}
+		m := data[i+1]
+		if m == 0xDA { // start of scan: the rest is image data
+			return append(out, data[i:]...), true
+		}
+		n := int(binary.BigEndian.Uint16(data[i+2:]))
+		if n < 2 || i+2+n > len(data) {
+			return nil, false
+		}
+		if m != 0xE1 && m != 0xED && m != 0xFE {
+			out = append(out, data[i:i+2+n]...)
+		}
+		i += 2 + n
+	}
+}
+
+// stripPNG drops the text, time and EXIF chunks.
+func stripPNG(data []byte) ([]byte, bool) {
+	const sig = "\x89PNG\r\n\x1a\n"
+	if !bytes.HasPrefix(data, []byte(sig)) {
+		return nil, false
+	}
+	out := []byte(sig)
+	for i := len(sig); i < len(data); {
+		if i+12 > len(data) {
+			return nil, false
+		}
+		n := int(binary.BigEndian.Uint32(data[i:]))
+		end := i + 12 + n
+		if n < 0 || end > len(data) || end < i {
+			return nil, false
+		}
+		switch string(data[i+4 : i+8]) {
+		case "tEXt", "zTXt", "iTXt", "eXIf", "tIME":
+		default:
+			out = append(out, data[i:end]...)
+		}
+		i = end
+	}
+	return out, true
+}
+
+// stripWebP drops the EXIF and XMP chunks of the RIFF container and clears
+// their flags in VP8X.
+func stripWebP(data []byte) ([]byte, bool) {
+	if len(data) < 12 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WEBP" {
+		return nil, false
+	}
+	out := append([]byte(nil), data[:12]...)
+	for i := 12; i < len(data); {
+		if i+8 > len(data) {
+			return nil, false
+		}
+		n := int(binary.LittleEndian.Uint32(data[i+4:]))
+		end := i + 8 + n + n&1 // chunks pad to even
+		if n < 0 || end > len(data) || end < i {
+			return nil, false
+		}
+		switch string(data[i : i+4]) {
+		case "EXIF", "XMP ":
+		case "VP8X":
+			at := len(out)
+			out = append(out, data[i:end]...)
+			if n > 0 {
+				out[at+8] &^= 0x08 | 0x04 // the EXIF and XMP flags
+			}
+		default:
+			out = append(out, data[i:end]...)
+		}
+		i = end
+	}
+	binary.LittleEndian.PutUint32(out[4:], uint32(len(out)-8))
+	return out, true
 }

@@ -263,6 +263,8 @@ describe("Panel", () => {
     const { api } = await setup();
     api.ask.mockRejectedValueOnce(new Error("error.ai.unavailable"));
     await user.type(input(), "hi{Enter}");
+    await waitFor(() => expect(input()).toHaveValue("hi")); // the question is kept
+    await user.clear(input());
     await user.click(await screen.findByRole("button", { name: "重试" }));
     await waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
     expect(api.ask).toHaveBeenLastCalledWith("hi");

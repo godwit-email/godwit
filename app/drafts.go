@@ -232,6 +232,7 @@ func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
 		return
 	}
 	if a.plat.ComposeOpen(id) {
+		a.toast(i18n.T("mail.draft.send_disabled"))
 		p.reload() // refresh the chip and the disabled button
 		return
 	}

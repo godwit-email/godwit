@@ -8,6 +8,9 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
+// ErrNotSynced is LoadOlder on a folder whose first sync has not completed.
+var ErrNotSynced = mailsync.ErrNotSynced
+
 // LoadOlder imports one page (about 200) of the folder's mail that the sync
 // range left out, newest first, and keeps it. more is false once the server
 // holds nothing more the folder lacks. It takes the account's sync lock, so a

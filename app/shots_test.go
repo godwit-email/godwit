@@ -368,9 +368,16 @@ func TestShots(t *testing.T) {
 			}
 		}
 		s.syncNow(s.work)
+		s.env.IMAP(s.work.ID).SetPassword("expired")
+		_ = s.env.Svc.SyncNow(context.Background(), s.work.ID) // rejected: the account needs signing in again
 		s.resize(1440, 2010)
 		s.openSettings(accountRoute(s.work.ID))
 		s.see("Junk Email")
+		s.until("the reauth banner", func() bool {
+			s.advance(refreshEvery) // the throttled refresh reloads the accounts
+			return s.tt.HasText("需要重新登录")
+		})
+		s.advance(3 * time.Hour) // the design's 3 小时前起停止同步
 		shot(s.harness, "SettingsAccountsReauth")
 		s.resize(1440, 900)
 		s.openSettings("general")

@@ -29,8 +29,8 @@ type Purge struct {
 // SetRoleFolder gives role (drafts, sent, junk, trash or archive) to the folder;
 // 0 leaves the account without a folder of the role. The choice survives sync;
 // once the folder is gone the role follows detection again. INBOX takes no role,
-// and junk and trash cannot go to the folder of sent, drafts or archive (their
-// mail would be purged).
+// and a folder holding another role cannot take this one (junk and trash would
+// purge its mail): that role moves elsewhere first.
 func (s *Service) SetRoleFolder(ctx context.Context, accountID int64, role string, folderID int64) error {
 	if !slices.Contains(mailsync.Roles, role) {
 		return fmt.Errorf("invalid role %q", role)
@@ -52,15 +52,16 @@ func (s *Service) SetRoleFolder(ctx context.Context, accountID int64, role strin
 		if store.Str(rows.Values[0][0]) == "inbox" {
 			return errors.New("the inbox cannot take another role")
 		}
-		if slices.Contains(mailsync.PurgeRoles, role) {
-			for _, keep := range []string{"sent", "drafts", "archive"} {
-				id, _, err := mailsync.RoleFolder(ctx, s.db, accountID, keep)
-				if err != nil {
-					return err
-				}
-				if id == folderID {
-					return fmt.Errorf("the %s folder cannot be the %s folder", keep, role)
-				}
+		for _, other := range mailsync.Roles { // a folder holds one role: junk or trash never purges sent mail
+			if other == role {
+				continue
+			}
+			id, _, err := mailsync.RoleFolder(ctx, s.db, accountID, other)
+			if err != nil {
+				return err
+			}
+			if id == folderID {
+				return fmt.Errorf("the %s folder cannot be the %s folder", other, role)
 			}
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE folders SET role_override = ? WHERE id = ?", Args: []any{role, folderID}})

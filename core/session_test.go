@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -68,6 +69,35 @@ func TestSessionAllow(t *testing.T) {
 	// Deleting the conversation drops its grant.
 	require.NoError(t, e.s.DeleteConversation(t.Context(), conv.ID))
 	assert.False(t, e.s.hasGrants(conv.ID))
+}
+
+// hasGrants reports whether conversation conv has a session grant.
+func (s *Service) hasGrants(conv int64) bool {
+	found := false
+	s.sessionGrants.Range(func(k, _ any) bool {
+		found = k.(grantKey).conv == conv
+		return !found
+	})
+	return found
+}
+
+// A double-clicked 本次对话都允许: the losing click's failed decision does not
+// revoke the grant the winning one made.
+func TestSessionAllowDoubleClick(t *testing.T) {
+	for range 10 {
+		e := newExtEnv(t)
+		conv := e.askConv(t)
+		e.srv.Script(testllm.Turn{Calls: []testllm.Call{draftCall("A")}}, testllm.Turn{Text: []string{"Drafted."}})
+		in := e.skillEnv.ask(t, conv.ID, "Draft")
+		id := in[len(in)-1].Approvals[0].ID
+		var wg sync.WaitGroup
+		for range 2 {
+			wg.Add(1)
+			go func() { defer wg.Done(); _ = e.s.ResolveApprovalForConversation(t.Context(), id) }()
+		}
+		wg.Wait()
+		require.True(t, e.s.hasGrants(conv.ID), "the grant was revoked by the second click")
+	}
 }
 
 // TestSessionGrantBinding: a grant covers the tool as bound when granted; a

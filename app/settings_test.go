@@ -900,6 +900,10 @@ func TestSyncRangeOptionsAndFolders(t *testing.T) {
 	if want := "每个文件夹最近 2000 封|最近 3 个月|全部"; strings.Join(got, "|") != want {
 		t.Fatalf("options %q", got)
 	}
+	// A limit set outside the app shows as it is, as an option of its own.
+	if o := rangeOptions(core.SyncRange{Limit: 500}, core.SyncRange{Months: 3}); len(o) != 4 || o[3].Label != "每个文件夹最近 500 封" {
+		t.Fatalf("options with 500: %+v", o)
+	}
 	h, acc := withAccount(t)
 	h.syncNow(acc)
 	h.openSettings(accountRoute(acc.ID))
@@ -991,7 +995,7 @@ func TestSettingsTrustedSenders(t *testing.T) {
 	h.settle()
 	h.advance(refreshEvery)
 	h.see("bob@example.com")
-	h.click("移除")
+	h.click("移除 bob@example.com") // the button names whom it removes
 	h.until("untrusted", func() bool {
 		st, _ := h.env.Svc.GetSettings(context.Background())
 		return len(st.TrustedImageSenders) == 0
@@ -1013,11 +1017,11 @@ func TestMailboxRoleOptions(t *testing.T) {
 		return strings.Join(out, "|")
 	}
 	for i, want := range []string{
-		"不使用|Sent|Trash|Archive|Bin", // drafts: none yet
-		"Sent|Trash|Archive|Bin",     // sent: no 不使用 once set
-		"不使用|Trash|Bin",              // junk: never the sent, drafts or archive folder
+		"不使用|Bin",  // drafts: none yet; never another role's folder
+		"Sent|Bin", // sent: no 不使用 once set
+		"不使用|Bin",  // junk
 		"Trash|Bin",
-		"Archive|Sent|Trash|Bin|不使用", // archive keeps 不使用
+		"Archive|Bin|不使用", // archive keeps 不使用
 	} {
 		if got := labels(i); got != want {
 			t.Errorf("%s: %q, want %q", mailboxRoles[i], got, want)

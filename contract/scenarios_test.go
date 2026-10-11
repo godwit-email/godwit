@@ -224,6 +224,10 @@ func TestSettings(t *testing.T) {
 		require.NoError(t, api.TrustImageSender(ctx, "Bob <bob@example.com>"))
 		out["set"] = res(api.SetSettings(ctx, st))
 		out["after"] = res(api.GetSettings(ctx))
+		require.NoError(t, api.UntrustImageSender(ctx, "bob@example.com"))
+		untrusted, err := api.GetSettings(ctx)
+		require.NoError(t, err)
+		out["untrusted"] = untrusted.TrustedImageSenders
 		bad := st
 		bad.Theme = "neon"
 		out["invalid"] = res(api.SetSettings(ctx, bad))
@@ -332,6 +336,7 @@ func TestAskApproval(t *testing.T) {
 func TestEvents(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		acc := env.AddAccount(t, "alice@example.com")
+		require.NoError(t, env.Svc.SyncNow(t.Context(), acc.ID)) // the first sync is not new mail
 		ch, unsub := api.Subscribe()
 		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plans", "Meet on Friday.",
 			coretest.MessageID("m1@contract"), coretest.Date(day1)))

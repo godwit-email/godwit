@@ -137,7 +137,7 @@ func Build(o Outgoing, now time.Time) (raw []byte, messageID string, err error) 
 	}
 	top := "multipart/alternative"
 	if len(related) > 0 {
-		top = "multipart/related"
+		top = `multipart/related; type="multipart/alternative"` // RFC 2387: the root's type
 	}
 	if len(o.Attachments) > 0 {
 		inner, innerType := body, top

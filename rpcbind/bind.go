@@ -25,6 +25,7 @@ var sentinels = []struct {
 	{"too_large", core.ErrTooLarge},
 	{"not_on_server_yet", core.ErrNotOnServerYet},
 	{"stale_draft", core.ErrStaleDraft},
+	{"not_synced", core.ErrNotSynced},
 	{"run_active", core.ErrRunActive},
 	{"keychain_unavailable", core.ErrKeychainUnavailable},
 	{"wrong_account", core.ErrWrongAccount},

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,4 +97,55 @@ func TestLoadOlderWithSync(t *testing.T) {
 	_, err = e.s.LoadOlder(bg, f)
 	require.NoError(t, err)
 	assert.Len(t, e.stored(t, "Archive"), 8)
+}
+
+// Older mail and a range backfill are not new mail: they change the list but
+// announce nothing as received, so no new-mail notification follows.
+func TestOlderAndBackfillAreNotReceived(t *testing.T) {
+	e := newSyncEnv(t)
+	e.setRange(t, SyncRange{Months: 3})
+	now := time.Now()
+	e.putAt(t, "INBOX", "new@x", now.AddDate(0, -1, 0))
+	e.putAt(t, "INBOX", "old@x", now.AddDate(0, -9, 0))
+	e.putAt(t, "INBOX", "older@x", now.AddDate(0, -10, 0))
+	e.sync(t)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	_, err := e.s.LoadOlder(bg, e.folderID(t, "INBOX"))
+	require.NoError(t, err)
+	e.setRange(t, SyncRange{})
+	e.sync(t)
+	require.Len(t, e.stored(t, "INBOX"), 3)
+	evs := collect(ch)
+	assert.Empty(t, ofType(evs, events.MessageReceived))
+	assert.NotEmpty(t, ofType(evs, events.MessagesChanged), "the list still refreshes")
+}
+
+// An empty folder, synced, has nothing older: no error, no more.
+func TestLoadOlderEmptyFolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.sync(t)
+	more, err := e.s.LoadOlder(bg, e.folderID(t, "Trash"))
+	require.NoError(t, err)
+	assert.False(t, more)
+}
+
+// Pages walk the folder down in windows of sequence numbers: across several
+// windows every message comes, newest first, each once.
+func TestLoadOlderWindows(t *testing.T) {
+	smallOlderPage(t, 1) // windows of 5
+	e := newSyncEnv(t)
+	e.setRange(t, SyncRange{Limit: 1})
+	for i := range 12 {
+		e.put(t, "Archive", msg(fmt.Sprintf("a%02d@x", i)))
+	}
+	e.sync(t)
+	f := e.folderID(t, "Archive")
+	for i := 10; i >= 0; i-- {
+		more, err := e.s.LoadOlder(bg, f)
+		require.NoError(t, err)
+		assert.Equal(t, i > 0, more, "page for a%02d", i)
+		assert.Contains(t, e.stored(t, "Archive"), fmt.Sprintf("a%02d@x", i), "newest first")
+	}
+	assert.Len(t, e.stored(t, "Archive"), 12)
 }

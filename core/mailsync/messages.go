@@ -71,8 +71,13 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		r.gone(plan.moved, nil)
 		r.merged(tid, plan.others)
 	}
-	r.received = append(r.received, res[msgAt].LastInsertID)
-	r.threads = append(r.threads, tid)
+	if arrival { // only new mail is announced as received; older mail and backfills only change the list
+		r.received = append(r.received, res[msgAt].LastInsertID)
+		r.threads = append(r.threads, tid)
+	} else {
+		r.changed = append(r.changed, res[msgAt].LastInsertID)
+		r.changedThreads = append(r.changedThreads, tid)
+	}
 	return nil
 }
 

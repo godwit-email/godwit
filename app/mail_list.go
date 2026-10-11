@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/mail"
@@ -187,6 +188,7 @@ func (p *mailPage) reload() {
 		p.main.reset()
 		p.closeSearch()
 		p.draftList, p.draftSel = ui.ListState{}, 0
+		p.sending.ask = false // a warnings dialog does not outlive its view
 		want, toEnd = 0, false
 	}
 	if p.searched {
@@ -380,6 +382,12 @@ func (p *mailPage) chosen(rows []mailItem) []mailItem {
 }
 
 func (p *mailPage) folder(id int64) (core.Folder, bool) { return findFolder(p.folders, id) }
+
+// inJunk reports whether the view is a junk folder: 移到垃圾邮件 is not offered there.
+func (p *mailPage) inJunk() bool {
+	f, ok := p.folder(p.view.FolderID)
+	return ok && f.Role == "junk"
+}
 
 // localDrafts is the drafts entry of an account whose server has no drafts
 // folder: drafts are local, so every account has one.
@@ -695,6 +703,9 @@ func (p *mailPage) listView(c *ui.Context) {
 				star = "star"
 			}
 			for _, k := range []string{read, star, "", "archive", "delete", "junk"} {
+				if k == "junk" && p.inJunk() {
+					continue // already there
+				}
 				if k == "" {
 					m.Separator()
 				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
@@ -754,6 +765,7 @@ type olderLoad struct {
 	err    error
 	cancel context.CancelFunc
 	done   map[int64]bool // folders whose server has nothing older, this session
+	notYet int64          // a folder whose first sync is under way: its next SyncFinished asks again
 }
 
 // olderFolder is the folder whose older mail the list may fetch, or 0.
@@ -769,7 +781,7 @@ func (p *mailPage) olderFolder() int64 {
 // again) or the server has nothing older.
 func (p *mailPage) loadOlder() {
 	f, o := p.olderFolder(), &p.older
-	if f == 0 || p.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.busy || o.err != nil || o.done[f] {
+	if f == 0 || p.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.busy || o.err != nil || o.done[f] || o.notYet == f {
 		return
 	}
 	a := p.a
@@ -788,6 +800,9 @@ func (p *mailPage) loadOlder() {
 		}
 		o.busy, o.cancel = false, nil
 		switch {
+		case errors.Is(err, core.ErrNotSynced): // not an error: the sync fills it first
+			o.notYet = f
+			return
 		case err != nil:
 			o.err = err
 		case !more:

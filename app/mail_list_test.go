@@ -734,6 +734,37 @@ func TestAccountFoldPersists(t *testing.T) {
 	}
 }
 
+// An empty folder, synced, has nothing older: no error row, and it is done.
+func TestLoadOlderEmptyFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.syncNow(accs[0])
+	f := h.folderOf(accs[0], "trash")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] || h.app.mail.older.err != nil })
+	if err := h.app.mail.older.err; err != nil {
+		t.Fatalf("older error %v in an empty folder", err)
+	}
+	h.advance(refreshEvery)
+	if slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载") }) {
+		t.Fatalf("an error row: %q", h.tt.Texts())
+	}
+}
+
+// Leaving the Mail page cancels a fetch of older mail under way.
+func TestLoadOlderCancelledLeavingMail(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	cancelled := false
+	h.post(func() {
+		o := &h.app.mail.older
+		o.busy, o.cancel = true, func() { cancelled = true }
+		h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+	})
+	h.drain()
+	if !cancelled || h.app.mail.older.busy {
+		t.Fatalf("still fetching after leaving: cancelled %v, %+v", cancelled, h.app.mail.older)
+	}
+}
+
 // A folder list at its local end fetches older mail past the sync range, with
 // an inline error and 重试, and stops once the server has nothing older.
 func TestLoadOlderInFolder(t *testing.T) {

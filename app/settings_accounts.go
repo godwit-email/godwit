@@ -435,7 +435,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
-			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions()).Changed() {
+			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync)).Changed() {
 				p.setSync(acc.ID, f)
 			}
 		}),
@@ -478,18 +478,24 @@ var syncRanges = []core.SyncRange{{Limit: 2000}, {Months: 3}, {}}
 // rangeLabel names r as settings lists it (2000 without （推荐）).
 func rangeLabel(r core.SyncRange) string {
 	switch {
-	case r.Limit > 0:
+	case r.Limit == 2000:
 		return i18n.T("settings.account.sync.2000")
+	case r.Limit > 0: // set outside the app: shown as it is
+		return i18n.Tf("settings.account.sync.limit", r.Limit)
 	case r.Months > 0:
 		return i18n.Tf("settings.account.sync.months", r.Months)
 	}
 	return i18n.T("settings.account.sync.all")
 }
 
-// rangeOptions are syncRanges, labelled as settings lists them.
-func rangeOptions() []kit.Option[core.SyncRange] {
+// rangeOptions are syncRanges, labelled as settings lists them, and also
+// the range of cur when it is none of them.
+func rangeOptions(cur ...core.SyncRange) []kit.Option[core.SyncRange] {
 	var opts []kit.Option[core.SyncRange]
-	for _, r := range syncRanges {
+	for _, r := range slices.Concat(syncRanges, cur) {
+		if slices.ContainsFunc(opts, func(o kit.Option[core.SyncRange]) bool { return o.Value == r }) {
+			continue
+		}
 		opts = append(opts, kit.Option[core.SyncRange]{Value: r, Label: rangeLabel(r)})
 	}
 	return opts
@@ -749,8 +755,8 @@ func (p *settingsPage) writeMailbox(id int64, b *mailbox, fn func(ctx context.Co
 
 // roleOptions are the role's choices as the design lists them: the folder
 // holding it first (or 不使用 when none does), then the other folders but
-// INBOX; archive also offers 不使用 once it has a folder. Junk and trash
-// leave out the folders core refuses for them (sent, drafts, archive).
+// INBOX and those holding another role, which core refuses (a folder holds
+// one role); archive also offers 不使用 once it has a folder.
 func roleOptions(b *mailbox, i int) []kit.Option[int64] {
 	cur, role := b.roles[i], mailboxRoles[i]
 	none := kit.Option[int64]{Value: 0, Label: i18n.T("settings.account.mailbox.none")}
@@ -763,7 +769,7 @@ func roleOptions(b *mailbox, i int) []kit.Option[int64] {
 			opts = slices.Insert(opts, 0, kit.Option[int64]{Value: f.ID, Label: f.Name})
 			continue
 		}
-		if f.Role == "inbox" || (slices.Contains([]string{"junk", "trash"}, role) && slices.Contains([]string{"sent", "drafts", "archive"}, f.Role)) {
+		if f.Role != "" && f.Role != role {
 			continue
 		}
 		opts = append(opts, kit.Option[int64]{Value: f.ID, Label: f.Name})

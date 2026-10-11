@@ -495,6 +495,13 @@ export function Panel({
     onAsked?.();
     ask(handed.text);
   }, [handed]);
+  // A start refused (nothing answered the question): its text goes back to the input, not lost.
+  const refused = chat.error && !running ? chat.messages.at(-1) : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new refusal restores
+  useEffect(() => {
+    if (refused?.role !== "user" || draft) return;
+    setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
+  }, [refused]);
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;

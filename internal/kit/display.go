@@ -36,9 +36,9 @@ const (
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	bg, border, fg := alertLook(t, kind)
-	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
+	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
 		FontSize(t.Text.Body).Children(func() {
-		ui.Text(c, text)
+		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
 			actions()
 		}

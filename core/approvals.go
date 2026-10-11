@@ -61,7 +61,9 @@ var ErrNotGrantable = errors.New("this tool cannot be allowed for the whole conv
 
 // sessionTools are the tools 本次对话都允许 can grant: built-in ones that
 // write only locally, with no destinations. Never an external (plugin or
-// MCP) tool, and never a send: no tool sends.
+// MCP) tool, and never a send: no tool sends. A grant is keyed by
+// conversation, tool and extension binding (empty for built-ins), not by
+// model: it still holds after the conversation switches models.
 var sessionTools = []string{"create_draft"}
 
 // decisionSession is the audit decision of a call a session grant approved.
@@ -90,16 +92,6 @@ func (s *Service) granted(ctx context.Context, id int64) bool {
 	}
 	_, ok := s.sessionGrants.Load(a.grant())
 	return ok
-}
-
-// hasGrants reports whether conversation conv has a session grant.
-func (s *Service) hasGrants(conv int64) bool {
-	found := false
-	s.sessionGrants.Range(func(k, _ any) bool {
-		found = k.(grantKey).conv == conv
-		return !found
-	})
-	return found
 }
 
 // dropGrants ends conversation conv's session grants.
@@ -134,9 +126,10 @@ func (s *Service) ResolveApprovalForConversation(ctx context.Context, id int64) 
 		return ErrInvalidState
 	}
 	// Granted before the decision: the run it resumes may call the tool again at once.
-	s.sessionGrants.Store(a.grant(), true)
+	// A click that loses to another (a double click) leaves that one's grant.
+	_, had := s.sessionGrants.LoadOrStore(a.grant(), true)
 	if err := s.decide(ctx, id, true, nil, true); err != nil {
-		if errors.Is(err, ErrInvalidState) {
+		if errors.Is(err, ErrInvalidState) && !had {
 			s.sessionGrants.Delete(a.grant())
 		}
 		return s.cleanError(err)

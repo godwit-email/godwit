@@ -3,8 +3,10 @@ package core
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"strconv"
 	"strings"
@@ -176,4 +178,53 @@ func TestSignatureImagesCountTowardSizeLimit(t *testing.T) {
 	attachLimit = int64(len(d.HTML) + len(img) - 1)
 	t.Cleanup(func() { attachLimit = old })
 	assert.ErrorIs(t, e.s.Send(bg, d.ID), ErrTooLarge)
+}
+
+// withChunk inserts a PNG chunk after IHDR (its CRC is not checked here).
+func withChunk(p []byte, typ, body string) []byte {
+	at := 8 + 12 + 13 // signature, IHDR
+	c := binary.BigEndian.AppendUint32(nil, uint32(len(body)))
+	c = append(append(append(c, typ...), body...), 0, 0, 0, 0)
+	return append(append(append([]byte(nil), p[:at]...), c...), p[at:]...)
+}
+
+// The stored images carry no EXIF, XMP or text: GPS never leaves with a mail.
+func TestSignatureImageMetadataStripped(t *testing.T) {
+	const gps = "GPSLatitude 52.37"
+	var j bytes.Buffer
+	require.NoError(t, jpeg.Encode(&j, image.NewGray(image.Rect(0, 0, 2, 2)), nil))
+	app1 := append([]byte{0xFF, 0xE1, 0, byte(2 + len("Exif\x00\x00"+gps))}, "Exif\x00\x00"+gps...)
+	jp := append(append([]byte{0xFF, 0xD8}, app1...), j.Bytes()[2:]...)
+	vp8x := append([]byte("VP8X\x0a\x00\x00\x00"), 0x08|0x04, 0, 0, 0, 1, 0, 0, 1, 0, 0)
+	exif := append([]byte("EXIF"), byte(len(gps)), 0, 0, 0)
+	exif = append(append(exif, gps...), 0) // odd: padded
+	xmp := append([]byte("XMP \x04\x00\x00\x00"), "<x/>"...)
+	body := append(append(append([]byte("WEBP"), vp8x...), exif...), xmp...)
+	body = append(body, "VP8L\x05\x00\x00\x00\x2f\x00\x00\x00\x00\x00"...) // a stand-in bitstream, padded
+	wp := append(binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(len(body))), body...)
+	pn := withChunk(withChunk(logo(t, 9), "eXIf", gps), "tEXt", "Comment\x00"+gps)
+
+	for ct, data := range map[string][]byte{"image/jpeg": jp, "image/png": pn, "image/webp": wp} {
+		got, err := stripImageMetadata(ct, data)
+		require.NoError(t, err, ct)
+		assert.NotContains(t, string(got), gps, ct)
+		assert.NotContains(t, string(got), "<x/>", ct)
+		again, err := stripImageMetadata(ct, got)
+		require.NoError(t, err, ct)
+		assert.Equal(t, got, again, "%s: stripping is stable, so the cid is", ct)
+		if ct == "image/webp" {
+			assert.Equal(t, uint32(len(got)-8), binary.LittleEndian.Uint32(got[4:]), "RIFF size")
+			assert.Zero(t, got[20]&(0x08|0x04), "VP8X flags")
+		} else {
+			_, _, err := image.Decode(bytes.NewReader(got))
+			require.NoError(t, err, ct)
+		}
+	}
+
+	e := newSendEnv(t, false)
+	_, err := setSignature(t, e.s, e.acc.ID, `<img src="`+dataURL("image/jpeg", jp)+`">`)
+	require.NoError(t, err)
+	stored := e.rows(t, "SELECT data FROM signature_images WHERE account_id = ?", e.acc.ID)
+	require.Len(t, stored, 1)
+	assert.NotContains(t, string(stored[0][0].([]byte)), gps)
 }

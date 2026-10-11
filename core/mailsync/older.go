@@ -1,7 +1,6 @@
 package mailsync
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -44,14 +43,11 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	if err != nil {
 		return false, err
 	}
-	if f.lastUID == 0 || !f.synced || f.uidValidity != sel.UIDValidity {
+	if !f.synced || f.uidValidity != sel.UIDValidity {
 		return false, ErrNotSynced
 	}
-	var upto imap.UIDSet
-	upto.AddRange(1, imap.UID(f.lastUID))
-	found, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{upto}}, nil).Wait()
-	if err != nil {
-		return false, err
+	if f.lastUID == 0 { // synced empty: nothing older
+		return false, nil
 	}
 	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ?", f.id)
 	if err != nil {
@@ -61,11 +57,31 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	for _, v := range have.Values {
 		known[imap.UID(store.Int(v[0]))] = true
 	}
-	uids := slices.DeleteFunc(found.AllUIDs(), func(u imap.UID) bool { return known[u] })
+	// Down from the newest by sequence number, a window of UIDs at a time,
+	// until a page (and one more, for more) the folder lacks: no UID SEARCH
+	// of the whole folder per page.
+	var uids []imap.UID
+	window := uint32(5 * OlderPage)
+	for hi := sel.NumMessages; hi > 0 && len(uids) <= OlderPage; {
+		lo := max(1, int64(hi)-int64(window)+1)
+		var seq imap.SeqSet
+		seq.AddRange(uint32(lo), hi)
+		got, err := c.Fetch(seq, &imap.FetchOptions{UID: true}).Collect()
+		if err != nil {
+			return false, err
+		}
+		slices.SortFunc(got, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
+		for _, m := range got {
+			if m.UID <= imap.UID(f.lastUID) && !known[m.UID] {
+				known[m.UID] = true // once, should an expunge shift a window
+				uids = append(uids, m.UID)
+			}
+		}
+		hi = uint32(lo) - 1
+	}
 	if len(uids) == 0 {
 		return false, nil
 	}
-	slices.SortFunc(uids, func(x, y imap.UID) int { return cmp.Compare(y, x) })
 	more = len(uids) > OlderPage
 	msgs, err := c.Fetch(imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), importItems()).Collect()
 	if err != nil {
