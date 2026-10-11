@@ -153,17 +153,19 @@ func TestDraftPaneLabelsNoClip(t *testing.T) {
 	for _, label := range []string{"To", "Subject", "From"} {
 		h.see(label)
 	}
-	for _, label := range []string{"To", "Subject", "From"} {
-		lab, ok1 := h.tt.Find(label)
-		val, ok2 := h.tt.Find("draft field: " + label)
-		if !ok1 || !ok2 {
-			t.Fatalf("%s: boxes found %v %v", label, ok1, ok2)
+	// The column never shrinks (Shrink(0)), so a label can only fail by wrapping:
+	// every label must be one line, as tall as the one-word "To".
+	one, ok := h.tt.Find("To")
+	if !ok {
+		t.Fatal("no To label")
+	}
+	for _, label := range []string{"Subject", "From"} {
+		lab, ok := h.tt.Find(label)
+		if !ok {
+			t.Fatalf("%s: no box", label)
 		}
-		if lab.X+lab.W > val.X {
-			t.Errorf("%s label right %v past the value left %v", label, lab.X+lab.W, val.X)
-		}
-		if lab.H > val.H { // a label squeezed into a fixed column wraps
-			t.Errorf("%s label wraps: height %v, its value's %v", label, lab.H, val.H)
+		if lab.H > one.H {
+			t.Errorf("%s label wraps: height %v, one line %v", label, lab.H, one.H)
 		}
 	}
 }

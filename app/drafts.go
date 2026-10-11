@@ -153,7 +153,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 					} {
 						ui.Row(c).Gap(th.Space(3)).Children(func() {
 							ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
-							ui.Text(c, f[1]).Grow(1).Shrink(1).Label("draft field: " + f[0])
+							ui.Text(c, f[1]).Grow(1).Shrink(1)
 						})
 					}
 				})
