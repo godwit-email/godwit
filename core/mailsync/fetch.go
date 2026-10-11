@@ -203,12 +203,13 @@ func headerSection() *imap.FetchItemBodySection {
 // takes only the newest sync_limit (n is the mailbox's message count), and that
 // of a months or all range only notes the top UID, leaving the mail to the
 // backfill. What it imports into a folder whose first sync completed is new
-// mail; completing one marks it.
+// mail, whatever its date (a folder synced empty included); completing one
+// marks it.
 func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, n uint32, r *result) error {
 	if n == 0 {
 		return advance(ctx, db, f, f.lastUID)
 	}
-	if f.lastUID == 0 && a.limit <= 0 {
+	if !f.synced && a.limit <= 0 { // a folder synced empty gets its mail as new below
 		top, err := c.Fetch(imap.SeqSetNum(n), &imap.FetchOptions{UID: true}).Collect()
 		if err != nil {
 			return err
@@ -219,7 +220,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		return advance(ctx, db, f, uint32(top[0].UID))
 	}
 	var set imap.NumSet
-	if f.lastUID == 0 {
+	if f.lastUID == 0 && a.limit > 0 {
 		start := uint32(1)
 		if n > uint32(a.limit) {
 			start = n - uint32(a.limit) + 1

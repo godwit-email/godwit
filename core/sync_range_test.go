@@ -134,3 +134,17 @@ func TestFolderCounts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 4, acc.Folders)
 }
+
+// A folder empty at its first sync: what arrives later is new mail (logged,
+// so it notifies), whatever its date, under a months range and under 全部.
+func TestSyncRangeEmptyFolderNewMail(t *testing.T) {
+	for _, r := range []SyncRange{{Months: 3}, {}} {
+		e := newSyncEnv(t)
+		e.setRange(t, r)
+		e.sync(t) // Archive is empty
+		e.putAt(t, "Archive", "moved@x", time.Now().AddDate(-1, 0, 0))
+		e.sync(t)
+		assert.Equal(t, []string{"moved@x"}, e.stored(t, "Archive"), "%+v", r)
+		assert.Equal(t, [][]any{{e.idOf(t, "moved@x")}}, e.rows(t, "SELECT message_id FROM events_log"), "%+v: new mail", r)
+	}
+}
