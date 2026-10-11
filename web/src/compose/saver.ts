@@ -34,7 +34,7 @@ export interface Saver {
   readonly frozen: boolean;
   /** The revision saves and operations use: the stored one as far as the page knows. */
   readonly revision: number;
-  /** A save, flush or operation is queued or running. */
+  /** A save, flush or operation is queued or running; listeners hear when it no longer is. */
   readonly busy: boolean;
   /** An edit is not saved yet (none after a conflict, which keeps it in the snapshot). */
   readonly dirty: boolean;
@@ -82,7 +82,9 @@ export function createSaver(
   };
   const enqueue = <R>(fn: () => Promise<R>): Promise<R> => {
     queued++;
-    const p = queue.then(fn).finally(() => queued--);
+    const p = queue.then(fn).finally(() => {
+      if (--queued === 0) notify(); // idle: listeners may want what waited for it
+    });
     queue = p.catch(() => {});
     return p;
   };

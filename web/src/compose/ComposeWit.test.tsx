@@ -564,3 +564,19 @@ test("Stop while ⌘K starts stops its run once Rewrite returns it, never anothe
   await act(async () => {});
   expect(api.stop).toHaveBeenCalledTimes(1);
 });
+
+test("a run ending while its start's save is in flight reloads the body once the saver is idle", async () => {
+  let started!: (run: number) => void;
+  vi.mocked(api.ask).mockReturnValue(new Promise((r) => (started = r)));
+  vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 9));
+  await setup();
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenCalled());
+  emit({ kind: "done" }); // a first generation, applied at once: the run is over before Ask returns
+  await waitFor(() => expect(api.latest).toHaveBeenCalled());
+  await act(async () => {});
+  expect(await body()).toHaveValue("正文"); // skipped: the saver is busy
+  await act(async () => started(7));
+  await waitFor(async () => expect(await body()).toHaveValue("Wit 写的"));
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+});

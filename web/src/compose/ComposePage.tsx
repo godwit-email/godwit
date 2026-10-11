@@ -214,6 +214,8 @@ function Compose({
   const busy = useRef(false);
   const [savedAt, setSavedAt] = useState(() => fmt(new Date(state.updatedAt)));
   const [, rerender] = useState(0);
+  const refresh = useRef(false); // a reload skipped while the saver was busy: retried once idle
+  const reloadRef = useRef(async () => {});
 
   // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
   useEffect(() => {
@@ -229,6 +231,10 @@ function Compose({
     const off = n.onChange(() => {
       if (n.status === "saved" && last === "saving") setSavedAt(fmt(new Date()));
       last = n.status;
+      if (!n.busy && refresh.current) {
+        refresh.current = false;
+        void reloadRef.current(); // a reload skipped while busy: read again, checked again
+      }
       rerender((i) => i + 1);
     });
     saver.current = n;
@@ -282,8 +288,9 @@ function Compose({
     saver.current?.useLatest(revision, cur.current);
   };
 
-  // Reads the draft after a run or a decision; the newest read wins. Skipped while the saver is
-  // busy or in conflict, when the stored revision is not newer, or with a local edit since the run.
+  // Reads the draft after a run or a decision; the newest read wins. Skipped in conflict, when the
+  // stored revision is not newer, or with a local edit since the run; while the saver is busy,
+  // read again once it is idle.
   const reload = async () => {
     const n = ++reloads.current;
     setReloading(true);
@@ -292,7 +299,11 @@ function Compose({
       const l = await api.latest();
       const s = saver.current;
       if (n !== reloads.current || !s) return;
-      if (s.busy || s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
+      if (s.busy) {
+        refresh.current = true;
+        return;
+      }
+      if (s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
       if (edits.current !== runEdits.current) return;
       adopt(l.revision, l.body);
       setApplied(true);
@@ -302,6 +313,8 @@ function Compose({
       if (n === reloads.current) setReloading(false);
     }
   };
+
+  reloadRef.current = reload;
 
   // The panel follows the draft's conversation again (after ⌘K: the one its edit waits in).
   const refollow = () => {

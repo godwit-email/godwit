@@ -441,3 +441,23 @@ test("revision, busy and dirty read the saver's state", async () => {
   await f;
   expect([s.revision, s.busy, s.dirty]).toEqual([2, false, false]);
 });
+
+test("tells its listeners when it goes idle", async () => {
+  const s = createSaver(vi.fn().mockResolvedValue(ok));
+  let done!: () => void;
+  const p = s.run(
+    () =>
+      new Promise<{ revision: number; conflict: boolean }>(
+        (r) => (done = () => r({ revision: 3, conflict: false })),
+      ),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(s.busy).toBe(true);
+  const idle: boolean[] = [];
+  s.onChange(() => idle.push(!s.busy));
+  done();
+  await p;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(s.busy).toBe(false);
+  expect(idle.at(-1)).toBe(true);
+});
