@@ -396,6 +396,10 @@ func (a *App) BeforeClose(proceed func()) {
 // SetForeground records whether the window is in front.
 func (a *App) SetForeground(on bool) { a.foreground = on }
 
+// OnUI posts f to the UI thread unless the App has closed by then, for
+// callbacks from elsewhere (the Wit page's).
+func (a *App) OnUI(f func()) { a.onUI(f) }
+
 // onUI posts f to the UI thread unless the App has closed by then.
 func (a *App) onUI(f func()) {
 	a.post(func() {

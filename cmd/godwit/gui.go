@@ -98,8 +98,8 @@ func gui(ctx context.Context, dataDir string) int {
 	// App's UI thread; its events go to its page only.
 	var witView *mygo.WebView
 	onApp := func(f func(*app.App)) {
-		if plat != nil && plat.win != nil {
-			plat.win.Update(func() { f(a) })
+		if a != nil {
+			a.OnUI(func() { f(a) }) // dropped once the App closed
 		}
 	}
 	toWit := func(what string, emit func(*mygo.Page) error) {

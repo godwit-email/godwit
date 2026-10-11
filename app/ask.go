@@ -172,11 +172,16 @@ func (a *App) Navigate(dir int) {
 // ConversationCreated is told the Wit page's first question made
 // conversation id, under snapshot version: while the route still shows
 // that version's new conversation it takes id in place (back and forward
-// keep it); the sidebar reads the conversations again either way.
+// keep it), and the page is told it as a new version, so a page that
+// reloaded meanwhile shows it too; the sidebar reads the conversations
+// again either way.
 func (a *App) ConversationCreated(id, version int64) {
 	p := a.pages[PageWit].(*askPage)
 	if r := &a.route; r.Page == PageWit && r.ConversationID == 0 && version == p.version {
 		r.ConversationID = id
+		if a.witOpen != nil {
+			p.version = a.witOpen(id)
+		}
 	}
 	p.load()
 }

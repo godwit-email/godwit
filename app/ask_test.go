@@ -71,7 +71,7 @@ func TestAskNoModel(t *testing.T) {
 // place, and back and forward keep it; one asked under an older snapshot
 // leaves the route alone.
 func TestAskConversationCreated(t *testing.T) {
-	h, _, _ := askHarness(t, true)
+	h, _, opens := askHarness(t, true)
 	ctx := context.Background()
 	c, err := h.env.Svc.NewConversation(ctx, "ask", 0)
 	if err != nil {
@@ -82,6 +82,10 @@ func TestAskConversationCreated(t *testing.T) {
 	h.tt.Frame()
 	if r := h.app.route; r.Page != PageWit || r.ConversationID != c.ID {
 		t.Fatalf("route %+v", r)
+	}
+	// The page is told it as a new version: one reloaded meanwhile shows it.
+	if last := opens.convs[len(opens.convs)-1]; last != c.ID || h.ask().version != int64(len(opens.convs)) {
+		t.Fatalf("the page was told %v, version %d", opens.convs, h.ask().version)
 	}
 	h.see("未命名对话") // listed
 	h.app.navigate(Route{Page: PageSettings})
@@ -96,9 +100,10 @@ func TestAskConversationCreated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	told := len(opens.convs)
 	h.app.ConversationCreated(c2.ID, stale)
-	if r := h.app.route; r.ConversationID != 0 {
-		t.Fatalf("a stale creation took the route: %+v", r)
+	if r := h.app.route; r.ConversationID != 0 || len(opens.convs) != told {
+		t.Fatalf("a stale creation took the route: %+v, told %v", r, opens.convs)
 	}
 	h.until("both listed", func() bool { return len(h.ask().convs) == 2 })
 }

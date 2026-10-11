@@ -802,3 +802,37 @@ func TestContextCitationsMapToRunAnswer(t *testing.T) {
 		assert.Equal(t, 1, m.Citations[0].N)
 	}
 }
+
+// A page that reloads while Ask(0) makes the conversation loads the
+// snapshot of conversation 0; native, taking the creation, tells it the
+// conversation as a newer version.
+func TestWitPageReloadDuringCreation(t *testing.T) {
+	f := newWitPageFixture(t)
+	native := f.w.SetConversation(0)                // the route: a new conversation
+	f.w.d.ConversationCreated = func(id, v int64) { // as App.ConversationCreated
+		if v == native {
+			native = f.w.SetConversation(id)
+		}
+	}
+	ctx, cancel := context.WithCancel(f.ctx())
+	var reloaded WitPageState
+	startHook = func() { // the page reloads while Ask is inside
+		cancel()
+		var err error
+		reloaded, err = f.p.Load(f.ctx())
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() { startHook = nil })
+	rs, err := f.p.Ask(ctx, 0, "hi")
+	require.NoError(t, err)
+	assert.Zero(t, reloaded.Conversation, "the reloaded page loads the new conversation")
+	f.mu.Lock()
+	last := f.opens[len(f.opens)-1]
+	f.mu.Unlock()
+	assert.Equal(t, WitOpenMsg{rs.Conversation, reloaded.Version + 1}, last, "told the conversation made, as newer")
+	st, err := f.p.Load(f.ctx())
+	require.NoError(t, err)
+	assert.Equal(t, last.Conversation, st.Conversation)
+	assert.Equal(t, last.Version, st.Version)
+	f.idle(t, rs.Conversation)
+}
