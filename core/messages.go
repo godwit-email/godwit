@@ -143,26 +143,70 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 	return page, nil
 }
 
+// SearchQuery is a search: free text ANDed with the filters set. Zero
+// fields filter nothing; AccountID 0 is every account.
+type SearchQuery struct {
+	AccountID      int64
+	Text           string
+	From           string    // a substring of the From header, any case
+	Since, Until   time.Time // the date from Since, before Until
+	HasAttachments bool
+}
+
+// Filtered reports whether a filter beyond the account is set: such a query
+// needs no text.
+func (q SearchQuery) Filtered() bool {
+	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments
+}
+
 // Search finds synced messages; accountID 0 searches every account.
 func (s *Service) Search(ctx context.Context, accountID int64, query string, limit int) ([]MessageSummary, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
+	return s.SearchWith(ctx, SearchQuery{AccountID: accountID, Text: query}, limit)
+}
+
+// likeArg is a LIKE pattern matching s anywhere, its wildcards literal.
+func likeArg(s string) string {
+	return "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s) + "%"
+}
+
+// SearchWith finds synced messages matching q, newest first. A query with
+// neither text nor a filter finds nothing.
+func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]MessageSummary, error) {
+	query := strings.TrimSpace(q.Text)
+	if query == "" && !q.Filtered() {
 		return nil, nil
 	}
-	var cond string
-	var args []any
-	if utf8.RuneCountInString(query) < 3 {
+	cond, args := "1", []any(nil)
+	switch {
+	case query == "":
+	case utf8.RuneCountInString(query) < 3:
 		// ponytail: full scan; use a bigram index when mailboxes get large.
-		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(query) + "%"
+		like := likeArg(query)
 		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\')`
 		args = []any{like, like, like}
-	} else {
+	default:
 		cond = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)"
 		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`}
 	}
-	if accountID != 0 {
+	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
-		args = append(args, accountID)
+		args = append(args, q.AccountID)
+	}
+	// shortcut: filters without text scan every message (no (account_id, date) index); add one if 100k-mail stores get slow.
+	if from := strings.TrimSpace(q.From); from != "" {
+		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
+		args = append(args, likeArg(from))
+	}
+	if !q.Since.IsZero() {
+		cond += " AND m.date >= ?"
+		args = append(args, q.Since.Unix())
+	}
+	if !q.Until.IsZero() {
+		cond += " AND m.date < ?"
+		args = append(args, q.Until.Unix())
+	}
+	if q.HasAttachments {
+		cond += " AND m.has_attachments = 1" // as the list's paperclip: inline parts count
 	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
 		append(args, clampLimit(limit))...)

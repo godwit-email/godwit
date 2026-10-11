@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -242,4 +243,79 @@ func TestSearchSidebarUnselected(t *testing.T) {
 	h.until("the search result, no view selected", func() bool { return h.app.mail.searched && !selected() })
 	h.tt.Key(0, ui.KeyEscape)
 	h.until("the view selected again", selected)
+}
+
+// The chips filter the search, show what they are set to, and searching
+// again with one cleared brings the rest back.
+func TestSearchFilterChips(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	now := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay", at(now, 1),
+		coretest.Attachment("march.pdf", "application/pdf", []byte("%PDF"))))
+	h.put(accs[0], "INBOX", coretest.Msg("dave@example.com", "alice@example.com", "Invoice April", "pay", at(now, 24*40)))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", "carol@example.com", "Invoice carol", "pay", at(now, 2)))
+	h.syncNow(accs[0])
+	h.syncNow(accs[1])
+	h.waitMail("three threads", func() bool { return len(h.items()) == 3 })
+	n := func(want int) {
+		t.Helper()
+		h.until(fmt.Sprintf("%d results", want), func() bool { return h.app.mail.searched && len(h.app.mail.results) == want })
+	}
+	h.tt.Key(ui.Cmd, ui.KeyF)
+	h.typeText("Invoice")
+	h.tt.Key(0, ui.KeyEnter)
+	n(3)
+	h.see("找到 3 封 · 全部账户 · 只搜索已同步到本机的邮件")
+
+	h.app.sidebarHidden = true // the menu's accounts are then the only ones
+	h.click("全部账户")
+	h.click("alice@example.com")
+	n(2)
+	h.see("找到 2 封 · alice@example.com · 只搜索已同步到本机的邮件")
+
+	h.click("有附件")
+	n(1)
+	h.see("Invoice March")
+	h.click("有附件")
+	n(2)
+
+	h.click("时间")
+	h.click("最近 30 天")
+	n(1)
+	h.click("最近 30 天") // the chip says what it is set to
+	h.click("任何时间")
+	n(2)
+
+	h.click("发件人")
+	h.typeText("dave")
+	h.tt.Key(0, ui.KeyEnter)
+	n(1)
+	h.see("Invoice April")
+	h.click("dave")
+	h.click("任何发件人")
+	n(2)
+
+	h.click("有附件") // a filter alone searches, with the box cleared
+	h.click("清除搜索")
+	n(1)
+	h.see("Invoice March")
+	if h.tt.HasText("让 Wit 帮你找") {
+		t.Fatal("no text to hand Wit, yet the row shows")
+	}
+	h.click("有附件") // nothing left to search by
+	h.until("no search", func() bool { return !h.app.mail.searched })
+
+	h.click("有附件")
+	h.click("时间")
+	h.tt.Key(0, ui.KeyEscape) // closes the menu only
+	h.drain()
+	h.tt.Frame()
+	if h.app.mail.sf.spanOpen || !h.app.mail.searchOpen {
+		t.Fatalf("Escape: menu open %v, search open %v", h.app.mail.sf.spanOpen, h.app.mail.searchOpen)
+	}
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the search left", func() bool { return !h.app.mail.searchOpen })
+	if h.app.mail.sf != (searchFilters{}) {
+		t.Fatalf("filters outlive the search: %+v", h.app.mail.sf)
+	}
 }

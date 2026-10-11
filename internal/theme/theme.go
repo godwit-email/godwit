@@ -152,6 +152,7 @@ const (
 	SectionGap            = 10 // a section's title to its card
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
+	FilterMenuMin         = 200 // a search filter chip's menu
 	ToastMaxWidth         = 420
 	ToastMax              = 3   // toasts shown at once
 	TitleButtonHeight     = 24  // buttons in the top bar

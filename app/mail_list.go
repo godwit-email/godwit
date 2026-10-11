@@ -95,6 +95,7 @@ type mailPage struct {
 	query                string
 	results              []mailItem
 	hlQuery              string // the query the results answer: what they highlight
+	sf                   searchFilters
 	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
 
 	reader *reader // the thread or message the route names
@@ -492,7 +493,8 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
-			box := ui.Row(c).Height(th.Space(8)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
+			// the design's box is 32 inside its border (a content-box label)
+			box := ui.Row(c).Height(th.Space(8.5)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
 				Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background)
 			if box.FocusWithin() { // the row is the box, so it carries the ring
 				box.Border(theme.Hairline, t.Ring).Shadow(0, 0, 0, theme.RingWidth, th.Focus)
@@ -508,9 +510,10 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 						Size(th.Space(6), th.Space(6)).TextColor(t.Muted).OnClick(p.clearSearch)
 				}
 			})
+			p.filterChips(c)
 			kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted)
 		})
-		if p.searched && len(p.results) > 0 {
+		if p.searched && len(p.results) > 0 && p.hlQuery != "" {
 			q := p.hlQuery
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
 				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
@@ -552,7 +555,7 @@ func (p *mailPage) searchHint() string {
 		count += "+"
 	}
 	scope := i18n.T("mail.search.all_accounts")
-	if acc := p.viewAccount(p.view); acc != 0 {
+	if acc := p.searchAccount(); acc != 0 {
 		if a, ok := p.a.accountByID(acc); ok {
 			scope = a.Email
 		}
@@ -836,9 +839,15 @@ func (a *App) openAccountSettings(acc int64) func() {
 // wider sync.
 func (p *mailPage) noResults(c *ui.Context) {
 	q, th := p.hlQuery, c.Theme()
-	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: i18n.Tf("mail.search.empty_title", q), Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
-		kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
-		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))
+	title := i18n.Tf("mail.search.empty_title", q)
+	if q == "" { // filters alone: nothing to hand Wit
+		title = i18n.T("mail.search.empty_filtered")
+	}
+	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
+		if q != "" {
+			kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
+		}
+		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.searchAccount()))
 	}}).Margin(th.Space(8), th.Space(1))
 }
 
@@ -875,8 +884,8 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	})
 }
 
-// runSearch searches the synced mail of the view's account, every
-// account's in a unified view.
+// runSearch searches the synced mail of the view's account (every
+// account's in a unified view) or the account chip's, with the filters.
 func (p *mailPage) runSearch() {
 	p.found.reset() // new results, a new choice
 	p.search()
@@ -886,16 +895,16 @@ func (p *mailPage) runSearch() {
 // once the search is left.
 func (p *mailPage) search() {
 	p.searchGen++
-	q := strings.TrimSpace(p.query)
-	if q == "" {
+	sq := p.searchQuery()
+	if sq.Text == "" && !sq.Filtered() {
 		p.searched, p.results = false, nil
 		return
 	}
 	a := p.a
-	acc, gen := p.viewAccount(p.view), p.searchGen
+	q, gen := sq.Text, p.searchGen
 	var found []core.MessageSummary
 	a.do(func(ctx context.Context) (err error) {
-		found, err = a.svc.Search(ctx, acc, q, searchLimit)
+		found, err = a.svc.SearchWith(ctx, sq, searchLimit)
 		return err
 	}, func(err error) {
 		if gen != p.searchGen {
@@ -919,16 +928,17 @@ func (p *mailPage) search() {
 	})
 }
 
-// clearSearch empties the box and the results; the search stays open.
+// clearSearch empties the box; the search stays open, the filters set
+// still apply.
 func (p *mailPage) clearSearch() {
-	p.searchGen++
-	p.searched, p.query, p.results = false, "", nil
-	p.found.reset()
+	p.query = ""
+	p.runSearch()
 }
 
 func (p *mailPage) closeSearch() {
 	p.searchGen++
 	p.searchOpen, p.searched, p.query, p.results = false, false, "", nil
+	p.sf = searchFilters{}
 	p.found.reset()
 }
 
