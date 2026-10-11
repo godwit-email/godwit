@@ -1,0 +1,550 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
+)
+
+// openSettings shows the settings section sec ("general", "account:<id>"…).
+func (h *harness) openSettings(sec string) *settingsPage {
+	h.t.Helper()
+	h.app.navigate(Route{Page: PageSettings, Settings: sec})
+	h.drain()
+	h.tt.Frame()
+	return h.app.pages[PageSettings].(*settingsPage)
+}
+
+func (h *harness) account(id int64) core.Account {
+	h.t.Helper()
+	accs, err := h.env.Svc.ListAccounts(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, a := range accs {
+		if a.ID == id {
+			return a
+		}
+	}
+	h.t.Fatalf("no account %d", id)
+	return core.Account{}
+}
+
+func (h *harness) called(call string) {
+	h.t.Helper()
+	h.until(call, func() bool { return slices.Contains(h.plat.Calls(), call) })
+}
+
+func TestSettingsAccountEdit(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("基本信息")
+	h.see("登录与服务器")
+	h.fill("发件人名称", "Alice Liddell")
+	h.fill("侧栏显示名称", "个人")
+	h.fill("签名内容", "Alice")
+	h.advance(599 * time.Millisecond)
+	h.drain()
+	if got := h.account(acc.ID); got.Name != "alice" {
+		t.Fatalf("saved before 600 ms of quiet: %+v", got)
+	}
+	h.advance(time.Millisecond)
+	h.until("fields saved", func() bool {
+		got := h.account(acc.ID)
+		return got.Name == "Alice Liddell" && got.Alias == "个人" && got.Signature == "Alice"
+	})
+	h.until("the form settles", func() bool {
+		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
+		return !f.edits[0].pending && !f.edits[1].pending && !f.edits[2].pending
+	})
+
+	// Sync range and Sync now.
+	h.click("每个文件夹最近 2000 封（推荐）")
+	h.click("最近 10000 封")
+	h.until("sync limit saved", func() bool { return h.account(acc.ID).SyncLimit == 10000 })
+	h.click("立即同步")
+	h.see("已同步 · 刚刚")
+}
+
+func TestSettingsAccountEditFailureReverts(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	p.update = func(context.Context, int64, core.AccountPatch) (core.Account, error) {
+		return core.Account{}, errors.New("disk full")
+	}
+	h.fill("发件人名称", "Nope")
+	h.advance(600 * time.Millisecond)
+	h.see("出错了：disk full")
+	h.until("name reverted", func() bool { return p.forms[acc.ID].name == "alice" })
+}
+
+func TestSettingsDefaultAccount(t *testing.T) {
+	var a, b core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		a = e.AddAccount(t, "alice@example.com")
+		b = e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings(accountRoute(b.ID))
+	h.see("bob@example.com")
+	if _, badge := h.tt.Find("默认发件"); badge {
+		t.Fatalf("bob shows as the default: %q", h.tt.Texts())
+	}
+	h.click("设为默认发件账户（在「全部收件箱」里写邮件时使用）")
+	h.until("bob is the default", func() bool { return h.account(b.ID).IsDefault && !h.account(a.ID).IsDefault })
+	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
+}
+
+func TestSettingsRemoveAccount(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.click("删除 alice@example.com")
+	h.see("服务器上的邮件不受影响。")
+	h.click("删除")
+	h.until("onboarding", func() bool { return h.app.route.Page == PageOnboarding })
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 0 {
+		t.Fatalf("accounts %+v, %v", accs, err)
+	}
+}
+
+func TestSettingsReauthBanner(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("状态正常")
+	h.env.IMAP(acc.ID).SetPassword("x")
+	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
+	banner := "登录已过期，已停止同步。本地已有的邮件仍然可以查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。"
+	h.until("the banner", func() bool {
+		h.advance(refreshEvery)
+		return h.tt.HasText(banner)
+	})
+	r, ok := h.tt.Find("需要处理")
+	if !ok {
+		t.Fatalf("no amber dot: %q", h.tt.Texts())
+	}
+	got, want := h.tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)), theme.Light().Attention.SRGB()
+	if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
+		t.Fatalf("dot %v, want amber %v", got, want)
+	}
+
+	h.env.IMAP(acc.ID).SetPassword("secret") // the user changed it back on the server
+	h.click("更新密码")
+	h.fill("密码", "secret")
+	h.click("保存")
+	h.until("signed in again", func() bool { return h.account(acc.ID).Status == "ok" })
+	h.until("the banner goes", func() bool { return !h.tt.HasText(banner) })
+}
+
+func diff(a, b uint8) int {
+	if a > b {
+		return int(a - b)
+	}
+	return int(b - a)
+}
+
+func TestSettingsCache(t *testing.T) {
+	h, acc := withAccount(t)
+	ctx := context.Background()
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Report", "see attached",
+		coretest.Attachment("report.txt", "text/plain", []byte("quarterly numbers"))))
+	if err := h.env.Svc.SyncNow(ctx, acc.ID); err != nil {
+		t.Fatal(err)
+	}
+	page, err := h.env.Svc.ListMessages(ctx, core.View{Unified: "inbox"}, "", 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("messages %+v, %v", page, err)
+	}
+	m, err := h.env.Svc.GetMessage(ctx, page.Items[0].ID, false)
+	if err != nil || len(m.Attachments) != 1 {
+		t.Fatalf("message %+v, %v", m, err)
+	}
+	if _, _, err := h.env.Svc.GetAttachment(ctx, m.Attachments[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	p := h.openSettings(accountRoute(acc.ID))
+	h.until("usage", func() bool { return p.usage[acc.ID] > 0 })
+	h.see("本地占用 " + formatBytes(p.usage[acc.ID]))
+	h.click("清理附件缓存")
+	h.see("清理附件缓存？")
+	h.click("清理")
+	h.until("cleared", func() bool { return p.usage[acc.ID] == 0 })
+	h.see("本地占用 0 B")
+	if n, err := h.env.Svc.AttachmentCacheUsage(ctx, acc.ID); err != nil || n != 0 {
+		t.Fatalf("usage %d, %v", n, err)
+	}
+}
+
+func TestSettingsGeneralApplies(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	h, _ := withAccount(t)
+	h.openSettings("general")
+	h.see("外观")
+	h.click("深色")
+	h.called("SetThemeSource dark")
+	px := h.tt.Image().RGBAAt(theme.RailWidth/2, 400) // the rail shows the window's color
+	if int(px.R)+int(px.G)+int(px.B) > 3*96 {
+		t.Fatalf("window pixel %v is not dark", px)
+	}
+	h.click("开机时自动启动")
+	h.called("SetOpenAtLogin true")
+	h.click(i18n.Tf("settings.ui_language.system", langName(h.app.sysLang)))
+	h.click("English")
+	h.see("General")
+	h.see("Privacy & security")
+	h.until("saved", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.Theme == "dark" && st.LaunchAtLogin && st.UILanguage == "en"
+	})
+}
+
+func TestSettingsRapidTogglesOrdered(t *testing.T) {
+	h, _ := withAccount(t)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	save := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		if calls.Add(1) == 1 {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return save(ctx, st)
+	}
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(release)
+		}
+	})
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("the first save blocks", func() bool { return calls.Load() == 1 })
+	h.click("在菜单栏显示未读数")
+	h.click("通知里显示邮件预览")
+	h.click("开机时自动启动")
+	close(release)
+	released = true
+	h.until("saves done", func() bool { return h.app.writes.keys["settings"] == nil })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.LaunchAtLogin || !st.UnreadInMenuBar || !st.NotifyPreview {
+		t.Fatalf("saved %+v", st)
+	}
+	if ui := h.app.settings; ui.LaunchAtLogin != st.LaunchAtLogin || ui.UnreadInMenuBar != st.UnreadInMenuBar || ui.NotifyPreview != st.NotifyPreview {
+		t.Fatalf("UI %+v, saved %+v", ui, st)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("%d saves, want 2 (the waiting ones coalesce)", n)
+	}
+}
+
+func TestSettingsSaveFailureReverts(t *testing.T) {
+	h, _ := withAccount(t)
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		return core.Settings{}, errors.New("disk full")
+	}
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.called("SetOpenAtLogin true")
+	h.see("出错了：disk full")
+	if h.app.settings.LaunchAtLogin {
+		t.Fatal("the failed setting stayed on")
+	}
+	h.called("SetOpenAtLogin false")
+}
+
+func TestSettingsPrivacyAndAbout(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("privacy")
+	h.see("密码只存在系统钥匙串")
+	h.see("系统钥匙串可用")
+	h.openSettings("about")
+	h.see("版本 " + Version)
+	h.click("github.com/godwit-email/godwit")
+	h.called("OpenURL https://github.com/godwit-email/godwit")
+}
+
+// blockingUpdate is the Service's UpdateAccount, whose first call waits
+// for release; it records each call's IMAP host as it starts and ends.
+type blockingUpdate struct {
+	svc     *core.Service
+	mu      sync.Mutex
+	log     []string
+	release chan struct{}
+	calls   int
+}
+
+func (b *blockingUpdate) update(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
+	b.mu.Lock()
+	b.calls++
+	n := b.calls
+	host := p.Servers.IMAPHost
+	b.log = append(b.log, "start "+host)
+	b.mu.Unlock()
+	if n == 1 {
+		<-b.release
+	}
+	acc, err := b.svc.UpdateAccount(ctx, id, p)
+	b.mu.Lock()
+	b.log = append(b.log, "end "+host)
+	b.mu.Unlock()
+	return acc, err
+}
+
+func (b *blockingUpdate) Log() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.log)
+}
+
+// saveServers opens the servers dialog, sets the hosts and saves.
+func (h *harness) saveServers(imap, smtp string) {
+	h.t.Helper()
+	h.click("编辑服务器设置")
+	h.fill("IMAP 服务器", imap)
+	h.fill("SMTP 服务器", smtp)
+	h.click("保存")
+}
+
+func TestSettingsAccountWritesOrdered(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	b := &blockingUpdate{svc: h.env.Svc, release: make(chan struct{})}
+	p.update = b.update
+	h.saveServers("localhost", "127.0.0.1")
+	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
+	h.click("取消")
+	h.saveServers("127.0.0.1", "localhost")
+	h.drain()
+	if got := b.Log(); len(got) != 1 {
+		t.Fatalf("the second save started while the first ran: %q", got)
+	}
+	close(b.release)
+	want := []string{"start localhost", "end localhost", "start 127.0.0.1", "end 127.0.0.1"}
+	h.until("both saves", func() bool { return slices.Equal(b.Log(), want) })
+	h.until("the dialog closes", func() bool { return p.dialog == "" })
+	if got := h.account(acc.ID); got.IMAPHost != "127.0.0.1" || got.SMTPHost != "localhost" {
+		t.Fatalf("stored IMAP %q SMTP %q, want the second save's 127.0.0.1 / localhost", got.IMAPHost, got.SMTPHost)
+	}
+}
+
+func TestSettingsStaleDialogResult(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	b := &blockingUpdate{svc: h.env.Svc, release: make(chan struct{})}
+	p.update = b.update
+	h.saveServers("localhost", "127.0.0.1")
+	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
+	h.click("取消")
+	h.click("编辑服务器设置")
+	h.fill("IMAP 服务器", "typing.example")
+	close(b.release)
+	h.until("the first save ends", func() bool { return len(b.Log()) == 2 })
+	h.until("the reload after it", func() bool { h.drain(); return h.app.writes.chains[accountRoute(acc.ID)] == nil })
+	h.tt.Frame()
+	if p.dialog != "servers" || !p.open || p.busy || p.servers.imapHost != "typing.example" {
+		t.Fatalf("the old save touched the new dialog: %q open %v busy %v host %q", p.dialog, p.open, p.busy, p.servers.imapHost)
+	}
+}
+
+func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	stale := slices.Clone(h.app.accounts)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		if calls.Add(1) == 1 { // read before the save: hand back the old accounts
+			<-release
+			return st, stale, err
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	staleGen := h.app.loadGen
+	h.until("the stale load runs", func() bool { return calls.Load() == 1 })
+	h.fill("发件人名称", "Alice Liddell")
+	h.advance(accountSaveDelay)
+	h.until("saved", func() bool { return p.forms[acc.ID].ok.Name == "Alice Liddell" })
+	if h.app.accounts[0].Name != "Alice Liddell" {
+		t.Fatalf("the saved account was not merged: %+v", h.app.accounts[0])
+	}
+	h.until("the reload after the save", func() bool { return h.app.accountsGen > staleGen })
+	h.app.loadGen = staleGen // let the stale load apply, as if it were the newest
+	close(release)
+	h.until("the stale load applies", func() bool { return h.app.accountsGen == staleGen && h.app.accounts[0].Name == "alice" })
+	h.tt.Frame()
+	if f := p.forms[acc.ID]; f.name != "Alice Liddell" {
+		t.Fatalf("a stale load reverted the field to %q", f.name)
+	}
+}
+
+func TestSettingsStaleLoadKeepsSavedSettings(t *testing.T) {
+	h, _ := withAccount(t)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx) // reads the settings before the save
+		if calls.Add(1) == 1 {
+			<-release
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("the load read", func() bool { return calls.Load() == 1 })
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("saved", func() bool { return h.app.writes.keys["settings"] == nil && h.app.settingsOK.LaunchAtLogin })
+	gen := h.app.loadGen
+	close(release)
+	h.until("the old load finishes", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load begun before the save reverted the setting")
+	}
+}
+
+func TestSettingsLanguageAtStart(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		st, err := e.Svc.GetSettings(context.Background())
+		if err == nil {
+			st.UILanguage = "en"
+			_, err = e.Svc.SetSettings(context.Background(), st)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.see("Mail")
+	h.see("Settings")
+}
+
+// gatedSettings blocks the App's first settings save until releaseSave, and
+// (once armed) a load after it read the settings until releaseLoad.
+type gatedSettings struct {
+	releaseSave, releaseLoad chan struct{}
+	saves                    atomic.Int32
+	armed, read              atomic.Bool
+}
+
+func gateSettings(h *harness) *gatedSettings {
+	g := &gatedSettings{releaseSave: make(chan struct{}), releaseLoad: make(chan struct{})}
+	save, fetch := h.app.saveSettings, h.app.fetch
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		if g.saves.Add(1) == 1 {
+			select {
+			case <-g.releaseSave:
+			case <-ctx.Done():
+			}
+		}
+		return save(ctx, st)
+	}
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		if g.armed.CompareAndSwap(true, false) {
+			g.read.Store(true)
+			select {
+			case <-g.releaseLoad:
+			case <-ctx.Done():
+			}
+		}
+		return st, accs, err
+	}
+	return g
+}
+
+// staleLoad starts a load that reads the stored settings now and is held;
+// it returns the load's gen.
+func (g *gatedSettings) staleLoad(h *harness) uint64 {
+	g.armed.Store(true)
+	h.app.load()
+	gen := h.app.loadGen
+	h.until("the load read", func() bool { return g.read.Load() })
+	return gen
+}
+
+func TestSettingsLoadDuringSaveKeepsEdit(t *testing.T) {
+	h, _ := withAccount(t)
+	g := gateSettings(h)
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("the save blocks", func() bool { return g.saves.Load() == 1 })
+	gen := g.staleLoad(h)
+	close(g.releaseSave)
+	h.until("saved", func() bool { return h.app.writes.keys["settings"] == nil && h.app.settingsOK.LaunchAtLogin })
+	close(g.releaseLoad)
+	h.until("the load applies", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load that read before the save reverted the edit")
+	}
+}
+
+func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
+	h, _ := withAccount(t)
+	g := gateSettings(h)
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.until("the save blocks", func() bool { return g.saves.Load() == 1 })
+	gen := g.staleLoad(h)
+	close(g.releaseLoad)
+	h.until("the load applies", func() bool { return h.app.accountsGen == gen })
+	if !h.app.settings.LaunchAtLogin {
+		t.Fatal("a load during the save reverted the edit")
+	}
+	h.click("在菜单栏显示未读数")
+	close(g.releaseSave)
+	h.until("saves done", func() bool { return h.app.writes.keys["settings"] == nil })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !st.LaunchAtLogin || !st.UnreadInMenuBar {
+		t.Fatalf("stored %+v, %v; want both edits", st, err)
+	}
+}
+
+func TestCloseSavesSettings(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.fill("签名内容", "Bye")
+	closed := false
+	h.app.BeforeClose(func() {
+		closed = true
+		if got := h.account(acc.ID).Signature; got != "Bye" {
+			t.Errorf("closed before the signature saved: %q", got)
+		}
+	})
+	h.until("closed", func() bool { return closed })
+
+	// A settings snapshot still saving holds the close until it is done.
+	release := make(chan struct{})
+	save := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		<-release
+		return save(ctx, st)
+	}
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	closed = false
+	h.app.BeforeClose(func() { closed = true })
+	h.drain()
+	if closed {
+		t.Fatal("closed while the settings were saving")
+	}
+	close(release)
+	h.until("closed after the settings saved", func() bool { return closed })
+}

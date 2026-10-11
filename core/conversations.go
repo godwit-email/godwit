@@ -20,12 +20,20 @@ import (
 
 // Conversation is a Wit chat: kind "ask" (the mailbox panel) or "assist" (one
 // draft's compose panel, DraftID set). Messages is decoded from the saved
-// model state, for display; ListConversations leaves it empty.
+// model state, for display; Citations are the mail its runs showed the
+// model, in the order they came, each with the run and tool call that showed
+// it (a message shown twice is there twice); Runs are the parts of Messages
+// each run added, in run order; ActiveRunID is its run that is
+// running, resuming or waiting for approvals (0: none). ListConversations
+// leaves those four empty.
 type Conversation struct {
 	ID                 int64
 	Kind, Title, Model string
 	DraftID            int64
 	Messages           []ai.Message
+	Citations          []Citation
+	Runs               []RunSpan
+	ActiveRunID        int64
 	UpdatedAt          time.Time
 }
 
@@ -39,11 +47,23 @@ type WitEvent struct {
 	Approvals []Approval
 }
 
-// Citation is a message a run's tools showed the model.
+// RunSpan is the part of a conversation's Messages that run ID added, its
+// question included: Messages[From:To]. A resume extends its run's span; a
+// run that saved nothing (failed, cancelled while running) has none.
+type RunSpan struct {
+	ID       int64
+	From, To int
+}
+
+// Citation is a message a run's tools showed the model: RunID's call CallID
+// (its tool_result), or its context when CallID is "".
 type Citation struct {
 	MessageID     int64
 	Subject, From string
+	Date          time.Time
 	Suspect       bool
+	RunID         int64
+	CallID        string
 }
 
 // ErrRunActive: the conversation has a run that is running, waiting for
@@ -120,8 +140,57 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	c.Messages, err = ai.Messages(state)
-	return c, err
+	if c.Messages, err = ai.Messages(state); err != nil {
+		return Conversation{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if len(rows.Values) > 0 {
+		c.ActiveRunID = store.Int(rows.Values[0][0])
+	}
+	rows, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	for _, r := range rows.Values {
+		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
+	}
+	rows, err = s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
+		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	for _, r := range rows.Values {
+		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
+			RunID: store.Int(r[5]), CallID: store.Str(r[6])}
+		if d := store.Int(r[3]); d != 0 {
+			ct.Date = time.Unix(d, 0)
+		}
+		c.Citations = append(c.Citations, ct)
+	}
+	return c, nil
+}
+
+// saveCitations records what a run's event cites, for GetConversation.
+func (s *Service) saveCitations(ctx context.Context, runID int64, cs []Citation) {
+	stmts := make([]sqlite.Statement, 0, len(cs))
+	for _, c := range cs {
+		var date any // NULL without one
+		if !c.Date.IsZero() {
+			date = c.Date.Unix()
+		}
+		suspect := 0
+		if c.Suspect {
+			suspect = 1
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect}})
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		slog.Default().Warn("could not save a run's citations", "run", runID, "err", err)
+	}
 }
 
 // DeleteConversation deletes the conversation with its runs and approvals. A
@@ -657,6 +726,15 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	}()
 	emit := func(ev WitEvent) {
 		ev.RunID = job.id
+		for i := range ev.Citations { // the run and call that showed each
+			ev.Citations[i].RunID = job.id
+			if ev.Kind == "tool_result" && ev.Result != nil {
+				ev.Citations[i].CallID = ev.Result.CallID
+			}
+		}
+		if len(ev.Citations) > 0 { // saved first: a reader that re-reads after the event finds them
+			s.saveCitations(context.WithoutCancel(job.ctx), job.id, ev.Citations)
+		}
 		if out != nil {
 			out.push(ev)
 		}
@@ -724,6 +802,18 @@ func (s *Service) exec(ctx context.Context, st sqlite.Statement) error {
 	return err
 }
 
+// runSpan records that runID's history runs from before (its first save
+// keeps its start) to after.
+func runSpan(runID int64, before, after []byte) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE runs SET hist_from = COALESCE(hist_from, ?), hist_to = ? WHERE id = ?",
+		Args: []any{countMessages(before), countMessages(after), runID}}
+}
+
+func countMessages(state []byte) int {
+	ms, _ := ai.Messages(state) // the state was just decoded or encoded
+	return len(ms)
+}
+
 func runState(runID int64, state string) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE runs SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), runID}}
 }
@@ -752,12 +842,13 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		}
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
-		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done")})
+		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done"),
+			runSpan(job.id, job.full, res.State)})
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
-	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State),
+	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State),
 		{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}}}
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)

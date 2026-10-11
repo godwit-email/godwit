@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 主界面</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="{{windowStyle}}">
+
+  <div style="height: {{stripH}}; flex: none; display: flex; align-items: center; gap: 4px; padding-left: {{stripPadLeft}}; position: relative">
+    <sc-if value="{{isMac}}" hint-placeholder-val="{{ true }}">
+      <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+        <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+        <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+        <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      </span>
+    </sc-if>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg>
+    </button>
+    <button type="button" aria-label="后退" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg>
+    </button>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+    </button>
+    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
+      <span style="font-weight: 600">全部收件箱</span>
+      <span style="font-size: 12px; color: #737373">16 封未读</span>
+    </span>
+    <span style="margin-left: auto; margin-right: {{stripPadRight}}; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+    <sc-if value="{{isWin}}" hint-placeholder-val="{{ false }}">
+      <span aria-hidden="true" style="position: absolute; right: 0; top: 0; display: flex; height: 40px">
+        <span style="width: 46px; display: flex; align-items: center; justify-content: center"><span style="width: 10px; height: 1px; background: #404040"></span></span>
+        <span style="width: 46px; display: flex; align-items: center; justify-content: center"><span style="width: 9px; height: 9px; border: 1px solid #404040; border-radius: 1px"></span></span>
+        <span style="width: 46px; display: flex; align-items: center; justify-content: center; color: #404040; font-size: 15px; line-height: 1">✕</span>
+      </span>
+    </sc-if>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex">
+
+    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px">
+      <a href="Main.dc.html" aria-label="邮件" aria-current="page" style="width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg>
+      </a>
+      <a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+      </a>
+      <a href="SettingsModels.dc.html" aria-label="设置" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>
+      </a>
+    </nav>
+
+    <aside aria-label="文件夹" style="{{sidebarStyle}}">
+      <div style="display: flex; align-items: center; gap: 4px; padding: 4px 6px 10px">
+        <span style="font-size: 18px; font-weight: 600">邮件</span>
+        <button type="button" aria-label="搜索" style="margin-left: auto; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        </button>
+      </div>
+      <a href="Compose.dc.html" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 500">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+        写邮件
+      </a>
+      <div style="height: 8px"></div>
+      <sc-for list="{{unified}}" as="u" hint-placeholder-count="4">
+        <a href="#" style="{{u.style}}">
+          <span>{{u.name}}<span style="color: #A3A3A3; font-size: 12px">{{u.note}}</span></span>
+          <span style="font-size: 12px; color: #737373">{{u.count}}</span>
+        </a>
+      </sc-for>
+      <div style="height: 10px"></div>
+      <sc-for list="{{accounts}}" as="acc" hint-placeholder-count="2">
+        <button type="button" onClick="{{acc.toggle}}" aria-expanded="{{acc.open}}" style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #737373; font-size: 12px; text-align: left">
+          <span style="{{acc.chevronStyle}}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+          </span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{acc.email}}</span>
+          <span>{{acc.unread}}</span>
+        </button>
+        <sc-if value="{{acc.open}}" hint-placeholder-val="{{ true }}">
+          <sc-for list="{{acc.folders}}" as="f" hint-placeholder-count="5">
+            <a href="#" style="{{f.style}}">
+              <span>{{f.name}}</span>
+              <span style="font-size: 12px; color: #737373">{{f.count}}</span>
+            </a>
+          </sc-for>
+        </sc-if>
+      </sc-for>
+      <a href="SettingsAccounts.dc.html" style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border-radius: 8px; color: #737373; text-decoration: none; font-size: 12px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        添加账户
+      </a>
+    </aside>
+
+    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: hidden">
+
+      <section aria-label="邮件列表" style="flex: 0 0 340px; border-right: 1px solid #E5E5E5; display: flex; flex-direction: column; min-width: 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px">
+          <h1 style="margin: 0; font-size: 13px; font-weight: 500; color: #737373">今天</h1>
+          <div style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F5F5F5">
+            <button type="button" style="height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.06)">全部</button>
+            <button type="button" style="height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #737373; font-size: 12px">未读</button>
+          </div>
+        </div>
+        <sc-for list="{{messages}}" as="m" hint-placeholder-count="5">
+          <button type="button" onClick="{{m.pick}}" style="{{m.rowStyle}}">
+            <span style="display: flex; justify-content: space-between; gap: 8px">
+              <span style="{{m.fromStyle}}">{{m.from}}</span>
+              <span style="font-size: 12px; color: #737373; flex: none">{{m.time}}</span>
+            </span>
+            <span style="{{m.subjectStyle}}">{{m.subject}}</span>
+            <span style="font-size: 13px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.preview}}</span>
+            <sc-if value="{{m.tag}}" hint-placeholder-val="{{ false }}">
+              <span style="align-self: flex-start; margin-top: 2px; padding: 0 6px; border-radius: 4px; border: 1px solid #E5E5E5; color: #404040; font-size: 12px">{{m.tag}}</span>
+            </sc-if>
+          </button>
+        </sc-for>
+      </section>
+
+      <main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 4px; padding: 8px 16px; border-bottom: 1px solid #E5E5E5; flex-wrap: wrap">
+          <a href="Compose.dc.html" style="height: 30px; padding: 0 10px; display: flex; align-items: center; border: 1px solid #E5E5E5; border-radius: 6px; color: #0A0A0A; text-decoration: none">回复</a>
+          <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">转发</button>
+          <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">归档</button>
+          <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">删除</button>
+          <span style="margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap">
+            <button type="button" onClick="{{toggleSummary}}" style="{{summaryBtnStyle}}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>总结
+            </button>
+            <button type="button" onClick="{{toggleTranslate}}" style="{{translateBtnStyle}}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>翻译
+            </button>
+            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">更多 skill ▾</button>
+          </span>
+        </div>
+
+        <article style="padding: 20px 28px; display: flex; flex-direction: column; gap: 14px; max-width: 720px">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35">{{sel.subject}}</h2>
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span style="width: 32px; height: 32px; border-radius: 50%; background: #F5F5F5; color: #171717; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">{{sel.initial}}</span>
+            <span style="display: flex; flex-direction: column">
+              <span style="font-weight: 500">{{sel.from}} <span style="color: #737373; font-weight: 400">&lt;{{sel.addr}}&gt;</span></span>
+              <span style="font-size: 12px; color: #737373">发给 我 · {{sel.date}}</span>
+            </span>
+          </div>
+
+          <sc-if value="{{summaryOpen}}" hint-placeholder-val="{{ true }}">
+            <section aria-label="AI 总结" style="border: 1px solid #E5E5E5; border-radius: 10px; background: #FAFAFA; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+                <span style="font-weight: 600">总结</span>
+                <span style="font-size: 12px; color: #737373">summarize · [MODEL]</span>
+              </div>
+              <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.65">
+                <sc-for list="{{sel.summary}}" as="line" hint-placeholder-count="3">
+                  <li>{{line}}</li>
+                </sc-for>
+              </ul>
+            </section>
+          </sc-if>
+
+          <sc-if value="{{translated}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #737373">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+              <span>已翻译为中文 · translate · [MODEL]</span>
+              <button type="button" onClick="{{toggleTranslate}}" style="border: 0; background: transparent; padding: 0; color: #0A0A0A; text-decoration: underline; font-size: 12px">显示原文</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{sel.card}}" hint-placeholder-val="{{ false }}">
+            <div style="border: 1px solid #E5E5E5; border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
+              <span style="display: flex; flex-direction: column; gap: 2px; flex: 1">
+                <span style="font-size: 12px; color: #737373">{{sel.card.label}} · 来自插件 {{sel.card.plugin}}</span>
+                <span style="font-family: 'Geist Mono', monospace; font-size: 22px; letter-spacing: 3px">{{sel.card.value}}</span>
+                <span style="font-size: 12px; color: #737373">{{sel.card.hint}}</span>
+              </span>
+              <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">{{sel.card.action}}</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{sel.blocked}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid #FCD34D; background: #FFFBEB; color: #92400E; font-size: 13px; flex-wrap: wrap">
+              <span>已阻止 {{sel.blocked}} 张远程图片，防止发件人追踪你是否打开了邮件</span>
+              <button type="button" style="border: 0; background: transparent; color: #92400E; text-decoration: underline; padding: 0">加载图片</button>
+              <button type="button" style="border: 0; background: transparent; color: #92400E; text-decoration: underline; padding: 0">始终信任此发件人</button>
+            </div>
+          </sc-if>
+
+          <div style="line-height: 1.75; font-size: 14px; display: flex; flex-direction: column; gap: 10px">
+            <sc-for list="{{bodyLines}}" as="p" hint-placeholder-count="3">
+              <p style="margin: 0">{{p}}</p>
+            </sc-for>
+          </div>
+
+          <sc-if value="{{sel.attachment}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 10px; width: 260px; padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 8px">
+              <span style="width: 28px; height: 34px; border-radius: 4px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #737373">PDF</span>
+              <span style="display: flex; flex-direction: column"><span>{{sel.attachment}}</span><span style="font-size: 12px; color: #737373">218 KB</span></span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{hasQuick}}" hint-placeholder-val="{{ true }}">
+            <section aria-label="即时回复" style="margin-top: 8px; padding-top: 16px; border-top: 1px solid #F5F5F5; display: flex; flex-direction: column; gap: 8px">
+              <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>即时回复 · 选一封，进入撰写页再改</span>
+              <sc-for list="{{quickReplies}}" as="q" hint-placeholder-count="3">
+                <a href="Compose.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #E5E5E5; border-radius: 8px; color: #0A0A0A; text-decoration: none">
+                  <span style="flex: none; padding: 0 6px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #404040">{{q.kind}}</span>
+                  <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{q.text}}</span>
+                  <span style="flex: none; font-family: 'Geist Mono', monospace; font-size: 12px; color: #A3A3A3">{{q.key}}</span>
+                </a>
+              </sc-for>
+            </section>
+          </sc-if>
+        </article>
+      </main>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"platform":{"editor":"enum","options":["mac","windows"],"default":"mac"},"initialMessage":{"editor":"int","min":0,"max":4,"default":2},"initialSummary":{"editor":"boolean","default":true},"initialTranslated":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var flag = function (v, d) { return v === undefined || v === null ? d : (v === true || v === 'true'); };
+    this.state = { sel: Number(props.initialMessage ?? 2), summary: flag(props.initialSummary, true), translated: flag(props.initialTranslated, false) };
+  }
+  renderVals() {
+    var data = [
+      { from: 'Code Host', addr: 'noreply@codehost.example', initial: 'C', time: '09:41', date: '今天 09:41', unread: true,
+        subject: '[Code Host] 你的登录验证码', preview: '有人正在尝试登录你的账户，验证码 10 分钟内有效……', tag: '验证码',
+        card: { label: '验证码', plugin: 'otp-card', value: '482 913', hint: '10 分钟内有效', action: '复制' },
+        blocked: 0, attachment: '',
+        body: ['你好，', '有人正在尝试从一台新的设备登录你的账户。如果是你本人，请输入下面的验证码完成登录：482913。', '如果不是你本人，请忽略这封邮件，并尽快修改密码。'],
+        summary: ['新设备登录验证，验证码 482913，10 分钟内有效。', '如果不是本人操作，应修改密码。'],
+        translation: ['（原文已是中文，无需翻译）'] },
+      { from: 'Northwind Airlines', addr: 'checkin@northwind.example', initial: 'N', time: '08:15', date: '今天 08:15', unread: true,
+        subject: '值机提醒：NW 1858 上海 → 成都', preview: '你的航班将于明天 14:20 起飞，现已开放在线值机……', tag: '航班',
+        card: { label: '航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]', plugin: 'flight-cards', value: 'PVG → CTU', hint: '座位 [待选] · 行李额 [待确认]', action: '在线值机' },
+        blocked: 3, attachment: '',
+        body: ['尊敬的旅客：', '你预订的 NW 1858 航班（上海浦东 → 成都天府）将于明天 14:20 起飞，现已开放在线值机。', '请至少在起飞前 45 分钟到达登机口。'],
+        summary: ['明天 14:20 的 NW 1858，上海浦东飞成都天府。', '已开放在线值机；起飞前 45 分钟到登机口。'],
+        translation: ['（原文已是中文，无需翻译）'] },
+      { from: 'Lena Fischer', addr: 'lena@partner.example', initial: 'L', time: '昨天', date: '昨天 21:03', unread: false,
+        subject: 'Q4 partnership proposal', preview: 'Hi, following up on our call last week, I put together a draft…', tag: '',
+        card: null, blocked: 0, attachment: 'Q4-proposal.pdf',
+        body: ['Hi,', 'Following up on our call last week, I put together a draft proposal for the Q4 partnership. The main points are a shared launch in November and a joint webinar.', 'Could you take a look and let me know by Friday whether the timeline works on your side?', 'Best, Lena'],
+        summary: ['对方发来 Q4 合作提案草稿（附件 PDF）。', '要点：11 月联合发布、一场联合网络研讨会。', '需要你在周五前确认时间安排是否可行。'],
+        translation: ['你好，', '接着上周的通话，我整理了一份 Q4 合作的提案草稿。要点是 11 月联合发布，以及一场联合网络研讨会。', '能否在周五前看一下，告诉我时间安排对你们来说是否可行？', '祝好，Lena'] },
+      { from: '财务部', addr: 'finance@company.example', initial: '财', time: '周一', date: '周一 17:30', unread: false,
+        subject: '10 月报销单已审批通过', preview: '你提交的 10 月差旅报销单已审批通过，款项将于……', tag: '',
+        card: null, blocked: 0, attachment: '',
+        body: ['你好，', '你提交的 10 月差旅报销单已审批通过，款项将在 3 个工作日内打入工资卡。', '如有疑问请回复本邮件。'],
+        summary: ['10 月差旅报销已通过，3 个工作日内到账。'],
+        translation: ['（原文已是中文，无需翻译）'] },
+      { from: 'Acme Cloud', addr: 'billing@acme.example', initial: 'A', time: '10/02', date: '10 月 2 日', unread: false,
+        subject: 'Your receipt for October', preview: 'Thanks for your payment. Amount: [AMOUNT]…', tag: '账单',
+        card: { label: '账单 · 来自 Acme Cloud', plugin: 'receipts', value: '[AMOUNT]', hint: '已于 10 月 2 日扣款', action: '查看账单' },
+        blocked: 2, attachment: 'receipt-oct.pdf',
+        body: ['Thanks for your payment.', 'Amount: [AMOUNT]. Paid on October 2 with the card on file.', 'You can download the receipt from the attachment.'],
+        summary: ['10 月账单已付款，金额 [AMOUNT]，收据在附件里。'],
+        translation: ['感谢你的付款。', '金额：[AMOUNT]。已于 10 月 2 日通过已绑定的卡支付。', '收据可在附件中下载。'] }
+    ];
+    var self = this;
+    var sel = data[this.state.sel];
+    var messages = data.map(function (m, i) {
+      var on = i === self.state.sel;
+      return {
+        from: m.from, time: m.time, subject: m.subject, preview: m.preview, tag: m.tag,
+        pick: function () { self.setState({ sel: i }); },
+        rowStyle: 'display: flex; flex-direction: column; gap: 2px; width: calc(100% - 16px); margin: 0 8px; text-align: left; padding: 10px 10px; border: 0; border-radius: 8px; background: ' + (on ? '#F5F5F5' : '#FFFFFF') + '; color: #0A0A0A',
+        fromStyle: 'font-weight: ' + (m.unread ? '600' : '400') + '; overflow: hidden; text-overflow: ellipsis; white-space: nowrap',
+        subjectStyle: 'font-weight: ' + (m.unread ? '600' : '400') + '; overflow: hidden; text-overflow: ellipsis; white-space: nowrap'
+      };
+    });
+    var item = function (on, indent) {
+      return 'display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 ' + (indent ? '26px' : '8px') + '; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: ' + (on ? '#EDEDED' : 'transparent') + '; font-weight: ' + (on ? '500' : '400');
+    };
+    var unified = [['全部收件箱', '', '16', true], ['已标星', '', '', false], ['待回复', ' · 智能视图', '3', false], ['订阅与账单', ' · 智能视图', '7', false]].map(function (u) {
+      return { name: u[0], note: u[1], count: u[2], style: item(u[3], false) };
+    });
+    var expanded = this.state.expanded || { 0: true };
+    var accounts = [
+      { email: 'you@example.com', unread: '12', folders: [['收件箱', '12'], ['草稿', '2'], ['已发送', ''], ['归档', ''], ['垃圾箱', '']] },
+      { email: 'work@company.example', unread: '4', folders: [['收件箱', '4'], ['草稿', ''], ['已发送', ''], ['项目/Q4', ''], ['垃圾箱', '']] }
+    ].map(function (a, i) {
+      var open = !!expanded[i];
+      return {
+        email: a.email, unread: open ? '' : a.unread, open: open,
+        chevronStyle: 'display: flex; transition: transform 120ms; transform: rotate(' + (open ? '90deg' : '0deg') + ')',
+        toggle: function () { var e = Object.assign({}, expanded); e[i] = !open; self.setState({ expanded: e }); },
+        folders: a.folders.map(function (f) { return { name: f[0], count: f[1], style: item(false, true) }; })
+      };
+    });
+    var btn = function (on) {
+      return 'height: 30px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border-radius: 6px; border: 1px solid ' + (on ? '#171717' : '#E5E5E5') + '; background: ' + (on ? '#F5F5F5' : '#FFFFFF') + '; color: ' + (on ? '#0A0A0A' : '#0A0A0A');
+    };
+    var st = this.state;
+    var quick = [
+      [],
+      [['确认', 'Thanks, checked in. See you on board.'], ['改签', '你好，我想把航班改到后一天，请问怎么操作？']],
+      [['同意', 'Hi Lena, thanks for the proposal. November works for us, happy to move ahead.'], ['同意但调整', 'Hi Lena, November works, but could we move the webinar one week later?'], ['稍后答复', 'Hi Lena, thanks! I will review it with the team and get back to you by Friday.']],
+      [['收到', '收到，谢谢！']],
+      []
+    ][this.state.sel].map(function (q, i) { return { kind: q[0], text: q[1], key: i === 0 ? 'Tab' : '' }; });
+    var win = (this.props.platform ?? 'mac') === 'windows';
+    return {
+      isMac: !win,
+      isWin: win,
+      windowStyle: 'width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: ' + (win ? "'Segoe UI Variable', 'Segoe UI', " : '') + "'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: " + (win ? '#EEEEEE' : '#ECECEC') + '; border: 1px solid #D4D4D4; border-radius: ' + (win ? '8px' : '12px'),
+      stripH: win ? '40px' : '44px',
+      stripPadLeft: win ? '8px' : '88px',
+      stripPadRight: win ? '150px' : '16px',
+      sidebarStyle: 'flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px 12px 12px 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: ' + (win ? '8px' : '14px'),
+      unified: unified,
+      accounts: accounts,
+      messages: messages,
+      sel: sel,
+      quickReplies: quick,
+      hasQuick: quick.length > 0,
+      summaryOpen: st.summary,
+      translated: st.translated,
+      bodyLines: st.translated ? sel.translation : sel.body,
+      summaryBtnStyle: btn(st.summary),
+      translateBtnStyle: btn(st.translated),
+      toggleSummary: function () { self.setState({ summary: !st.summary }); },
+      toggleTranslate: function () { self.setState({ translated: !st.translated }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/godwit-email/godwit/core/auth"
@@ -256,4 +257,20 @@ type oauthToken struct {
 	access string
 	expiry time.Time
 	ver    uint64 // its credential version
+}
+
+var serializeKeyring sync.Once
+
+// SerializeKeyringForTest makes keychain calls one at a time. Tests only:
+// go-keyring's mock (keyring.MockInit) is not safe for concurrent use, and
+// sync workers read credentials while a test writes them. Call it before any
+// Service starts; later calls do nothing.
+func SerializeKeyringForTest() {
+	serializeKeyring.Do(func() {
+		var mu sync.Mutex
+		get, set, del := keyringGet, keyringSet, keyringDelete
+		keyringGet = func(svc, user string) (string, error) { mu.Lock(); defer mu.Unlock(); return get(svc, user) }
+		keyringSet = func(svc, user, v string) error { mu.Lock(); defer mu.Unlock(); return set(svc, user, v) }
+		keyringDelete = func(svc, user string) error { mu.Lock(); defer mu.Unlock(); return del(svc, user) }
+	})
 }

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 添加账户</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <sc-if value="{{isWindow}}" hint-placeholder-val="{{ true }}">
+  <div style="height: 44px; flex: none; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+  </div>
+  </sc-if>
+
+  <div style="{{panelStyle}}">
+
+    <sc-if value="{{isWindow}}" hint-placeholder-val="{{ true }}">
+    <aside style="flex: 0 0 440px; box-sizing: border-box; padding: 48px 44px; background: #F9F9F9; border-right: 1px solid #E5E5E5; display: flex; flex-direction: column; gap: 28px">
+      <span style="display: flex; align-items: center; gap: 10px">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c3-1 5-4 9-4 3 0 4 2 4 2l5 1-5 1s-1 3-5 3c-3 0-5-1-8-3z"></path><path d="M16 11l5-6"></path><path d="M9 16l-1 5M12 16l1 5"></path></svg>
+        <span style="font-size: 18px; font-weight: 600">Godwit</span>
+      </span>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h1 style="margin: 0; font-size: 30px; font-weight: 600; line-height: 1.25">先把邮箱接进来</h1>
+        <p style="margin: 0; color: #737373; line-height: 1.7">支持任何 IMAP 邮箱，可以同时添加多个账户。</p>
+      </div>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 18px">
+        <li style="display: flex; gap: 12px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">密码只存在系统钥匙串</span><span style="color: #737373; font-size: 13px; line-height: 1.6">不会写进配置文件，也不会出现在日志里。</span></span>
+        </li>
+        <li style="display: flex; gap: 12px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">邮件只保存在这台电脑上</span><span style="color: #737373; font-size: 13px; line-height: 1.6">直接连接你的邮件服务器，没有中间服务器。</span></span>
+        </li>
+        <li style="display: flex; gap: 12px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+          <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">AI 功能默认关闭</span><span style="color: #737373; font-size: 13px; line-height: 1.6">配置了模型服务才会启用，只发送你要处理的那封邮件。</span></span>
+        </li>
+      </ul>
+      <span style="margin-top: auto; font-size: 12px; color: #A3A3A3">Godwit 是开源软件 · MIT</span>
+    </aside>
+    </sc-if>
+
+    <main style="flex: 1; min-width: 0; display: flex; justify-content: center; overflow: auto">
+      <div style="{{innerStyle}}">
+        <sc-if value="{{isSheet}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: -6px">
+            <span style="font-size: 16px; font-weight: 600">添加账户</span>
+            <a href="SettingsAccounts.dc.html" aria-label="关闭" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 18px">×</a>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isPick}}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 22px">
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 600">你的邮箱地址</h2>
+              <span style="color: #737373">输入后自动识别服务商，也可以直接在下面选择。</span>
+            </div>
+            <label style="display: flex; flex-direction: column; gap: 6px">
+              <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">邮箱地址</span>
+              <span style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
+                <input type="email" value="12345678@qq.com" style="flex: 1; border: 0; outline: none">
+                <span style="padding: 1px 8px; border-radius: 10px; background: #F5F5F5; font-size: 12px; color: #404040">识别为 QQ 邮箱</span>
+              </span>
+            </label>
+            <button type="button" onClick="{{pickQQ}}" style="height: 36px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">继续</button>
+            <div style="display: flex; align-items: center; gap: 12px; color: #A3A3A3; font-size: 12px"><span style="flex: 1; height: 1px; background: #E5E5E5"></span>或选择服务商<span style="flex: 1; height: 1px; background: #E5E5E5"></span></div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+              <sc-for list="{{providers}}" as="p" hint-placeholder-count="8">
+                <button type="button" onClick="{{p.pick}}" style="height: 48px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; text-align: left">
+                  <span style="width: 28px; height: 28px; flex: none; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #404040">{{p.mark}}</span>
+                  <span style="display: flex; flex-direction: column; min-width: 0"><span>{{p.name}}</span><span style="font-size: 12px; color: #737373">{{p.how}}</span></span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isPassword}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 20px">
+            <button type="button" onClick="{{toPick}}" style="align-self: flex-start; border: 0; background: transparent; padding: 0; color: #737373">← 换一个邮箱</button>
+            <div style="display: flex; align-items: center; gap: 12px">
+              <span style="width: 40px; height: 40px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #404040">QQ</span>
+              <span style="display: flex; flex-direction: column"><span style="font-size: 20px; font-weight: 600">QQ 邮箱</span><span style="color: #737373">12345678@qq.com</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; background: #FAFAFA; border: 1px solid #F0F0F0">
+              <span style="font-weight: 500">QQ 邮箱要用「授权码」登录，不是 QQ 密码</span>
+              <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; color: #404040; line-height: 1.6">
+                <li>在网页版 QQ 邮箱打开「设置 → 账号」</li>
+                <li>开启「IMAP/SMTP 服务」</li>
+                <li>按提示生成授权码，复制回来</li>
+              </ol>
+              <a href="#" style="align-self: flex-start; font-size: 13px">打开 QQ 邮箱设置 ↗</a>
+            </div>
+            <label style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-weight: 500">授权码</span>
+              <input type="password" value="placeholder" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px">
+              <span style="font-size: 12px; color: #737373">保存在系统钥匙串</span>
+            </label>
+            <button type="button" onClick="{{connect}}" style="height: 36px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">连接</button>
+            <details style="color: #737373; font-size: 13px">
+              <summary style="cursor: pointer">手动设置服务器</summary>
+              <div style="margin-top: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; color: #0A0A0A">
+                <label style="display: flex; flex-direction: column; gap: 4px; grid-column: span 2"><span style="font-size: 12px; color: #737373">IMAP 服务器</span><input type="text" value="imap.qq.com" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
+                <label style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #737373">端口 · SSL</span><input type="text" value="993" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
+                <label style="display: flex; flex-direction: column; gap: 4px; grid-column: span 2"><span style="font-size: 12px; color: #737373">SMTP 服务器</span><input type="text" value="smtp.qq.com" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
+                <label style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #737373">端口 · SSL</span><input type="text" value="465" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
+              </div>
+            </details>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isOAuth}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 20px">
+            <button type="button" onClick="{{toPick}}" style="align-self: flex-start; border: 0; background: transparent; padding: 0; color: #737373">← 换一个邮箱</button>
+            <div style="display: flex; align-items: center; gap: 12px">
+              <span style="width: 40px; height: 40px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #404040">O</span>
+              <span style="display: flex; flex-direction: column"><span style="font-size: 20px; font-weight: 600">Outlook / Hotmail</span><span style="color: #737373">需要在浏览器里登录 Microsoft 账户</span></span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px dashed #D4D4D4; border-radius: 10px; align-items: center; text-align: center">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: #A3A3A3"></span>
+              <span style="font-weight: 500">已在浏览器中打开登录页</span>
+              <span style="color: #737373; font-size: 13px; line-height: 1.6">登录并允许 Godwit 读写邮件后，这里会自动继续。Godwit 拿到的是访问令牌，看不到你的密码。</span>
+              <span style="display: flex; gap: 8px"><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">重新打开浏览器</button><button type="button" onClick="{{connect}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #171717; color: #FAFAFA">（演示）登录完成</button></span>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isChecking}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 20px">
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 600">{{checkTitle}}</h2>
+              <span style="color: #737373">12345678@qq.com</span>
+            </div>
+            <div style="display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 10px; overflow: hidden">
+              <sc-for list="{{checks}}" as="c" hint-placeholder-count="3">
+                <div style="{{c.row}}">
+                  <span style="{{c.icon}}">{{c.glyph}}</span>
+                  <span style="display: flex; flex-direction: column; gap: 2px; flex: 1"><span>{{c.text}}</span><span style="font-size: 12px; color: #737373">{{c.detail}}</span></span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{failed}}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; gap: 8px">
+                <button type="button" onClick="{{retype}}" style="height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">重新输入授权码</button>
+                <button type="button" style="height: 36px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">手动设置服务器</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{inProgress}}" hint-placeholder-val="{{ false }}">
+              <button type="button" onClick="{{finish}}" style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">（演示）检查完成</button>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{isDone}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 22px">
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span style="width: 36px; height: 36px; border-radius: 50%; background: #F0FDF4; color: #15803D; display: flex; align-items: center; justify-content: center; font-size: 18px">✓</span>
+              <h2 style="margin: 8px 0 0; font-size: 20px; font-weight: 600">连接成功</h2>
+              <span style="color: #737373">12345678@qq.com · 6 个文件夹</span>
+            </div>
+            <label style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-weight: 500">发件人名称</span>
+              <input type="text" value="[你的名字]" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px">
+              <span style="font-size: 12px; color: #737373">收件人看到的名字</span>
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 6px">
+              <span style="font-weight: 500">先同步多少邮件</span>
+              <select style="height: 40px; padding: 0 10px; border: 1px solid #D4D4D4; border-radius: 8px; background: #FFFFFF"><option>每个文件夹最近 2000 封（推荐）</option><option>最近 3 个月</option><option>全部</option></select>
+              <span style="font-size: 12px; color: #737373">更早的邮件在你翻到或搜索时再加载</span>
+            </label>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <a href="Main.dc.html" style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #171717; color: #FAFAFA; text-decoration: none; font-weight: 500">{{doneLabel}}</a>
+              <button type="button" onClick="{{toPick}}" style="height: 36px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">再添加一个账户</button>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["window","sheet"],"default":"window"},"step":{"editor":"enum","options":["pick","password","oauth","checking","error","done"],"default":"pick"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { step: props.step ?? 'pick' };
+  }
+  renderVals() {
+    var self = this;
+    var step = this.state.step;
+    var sheet = (this.props.mode ?? 'window') === 'sheet';
+    var go = function (s) { return function () { self.setState({ step: s }); }; };
+    var row = 'display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-top: 1px solid #F5F5F5';
+    var icon = function (bg, fg) { return 'width: 20px; height: 20px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; background: ' + bg + '; color: ' + fg; };
+    var ok = { icon: icon('#F0FDF4', '#15803D'), glyph: '✓' };
+    var wait = { icon: icon('#F5F5F5', '#737373'), glyph: '…' };
+    var bad = { icon: icon('#FEF2F2', '#B91C1C'), glyph: '✕' };
+    var mk = function (s, text, detail) { return { icon: s.icon, glyph: s.glyph, text: text, detail: detail, row: row }; };
+    var checks = step === 'error' ? [
+      mk(ok, '找到服务器设置', '来自内置的服务商列表 · imap.qq.com / smtp.qq.com'),
+      mk(bad, 'IMAP 登录失败：授权码不正确', '检查是否复制完整，或者在 QQ 邮箱里重新生成一个'),
+      mk(wait, 'SMTP 认证', '等待上一步')
+    ] : [
+      mk(ok, '找到服务器设置', '来自内置的服务商列表 · imap.qq.com / smtp.qq.com'),
+      mk(ok, 'IMAP 登录成功', '6 个文件夹'),
+      mk(wait, 'SMTP 认证中…', '')
+    ];
+    var providers = [
+      ['G', 'Gmail', '应用专用密码', 'password'],
+      ['O', 'Outlook / Hotmail', '浏览器登录', 'oauth'],
+      ['QQ', 'QQ 邮箱', '授权码', 'password'],
+      ['163', '网易 163 / 126', '授权码', 'password'],
+      ['企', '腾讯企业邮', '密码或授权码', 'password'],
+      ['i', 'iCloud', '应用专用密码', 'password'],
+      ['F', 'Fastmail', '应用专用密码', 'password'],
+      ['@', '其他 IMAP 邮箱', '手动设置', 'password']
+    ].map(function (p) { return { mark: p[0], name: p[1], how: p[2], pick: go(p[3]) }; });
+    return {
+      isWindow: !sheet,
+      isSheet: sheet,
+      rootStyle: sheet
+        ? "width: 560px; max-height: 760px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 14px; box-shadow: 0 24px 64px rgba(0,0,0,0.18)"
+        : "width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px",
+      panelStyle: sheet ? 'display: flex; min-height: 0; overflow: auto' : 'flex: 1; min-height: 0; margin: 0 8px 8px; display: flex; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; overflow: hidden',
+      innerStyle: 'width: 100%; max-width: 520px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; padding: ' + (sheet ? '20px 24px 24px' : '56px 32px'),
+      doneLabel: sheet ? '完成' : '开始使用',
+      providers: providers,
+      isPick: step === 'pick',
+      isPassword: step === 'password',
+      isOAuth: step === 'oauth',
+      isChecking: step === 'checking' || step === 'error',
+      isDone: step === 'done',
+      failed: step === 'error',
+      inProgress: step === 'checking',
+      checkTitle: step === 'error' ? '连接失败' : '正在连接…',
+      checks: checks,
+      pickQQ: go('password'),
+      toPick: go('pick'),
+      connect: go('checking'),
+      finish: go('done'),
+      retype: go('password')
+    };
+  }
+}
+</script>
+</body>
+</html>

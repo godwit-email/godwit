@@ -125,7 +125,7 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if int64(len(data)) > attachLimit {
 		return "", info, ErrTooLarge
 	}
-	path, err := filepath.Abs(filepath.Join(s.dataDir, "cache", strconv.FormatInt(a.accountID, 10), strconv.FormatInt(attachmentID, 10)))
+	path, err := filepath.Abs(filepath.Join(s.cacheDir(a.accountID), strconv.FormatInt(attachmentID, 10)))
 	if err != nil {
 		return "", info, err
 	}

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 撰写</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
+      <span style="font-weight: 600">回复：Q4 partnership proposal</span>
+      <span style="font-size: 12px; color: #737373">草稿已保存 · 09:52</span>
+    </span>
+    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex">
+    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px"><a href="Main.dc.html" aria-label="邮件" aria-current="page" style="width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></a><a href="SettingsModels.dc.html" aria-label="设置" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></a></nav>
+    <aside aria-label="邮件" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: 14px; overflow: hidden"><div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">邮件</div><a href="Compose.dc.html" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 500">写邮件</a><div style="height: 8px"></div><a href="Main.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>全部收件箱</span><span style="font-size: 12px; color: #737373">16</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>已标星</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>待回复</span><span style="font-size: 12px; color: #737373">3</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>订阅与账单</span><span style="font-size: 12px; color: #737373">7</span></a><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">you@example.com</div><a href="Main.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 26px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>收件箱</span><span style="font-size: 12px; color: #737373">12</span></a><a href="#" aria-current="page" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 26px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: #EDEDED; font-weight: 500"><span>草稿</span><span style="font-size: 12px; color: #737373">3</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 26px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>已发送</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 26px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>归档</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 26px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>垃圾箱</span></a><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">work@company.example · 4</div></aside>
+    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: auto; ">
+
+    <main style="flex: 999 1 560px; min-width: 0; display: flex">
+      <div style="width: 100%; display: flex; flex-direction: column">
+        <div style="display: flex; flex-direction: column; border-bottom: 1px solid #F5F5F5">
+          <label style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid #F5F5F5">
+            <span style="width: 48px; color: #737373">发件人</span>
+            <select style="border: 0; font: inherit; color: #0A0A0A; background: transparent"><option>you@example.com</option></select>
+          </label>
+          <label style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid #F5F5F5; flex-wrap: wrap">
+            <span style="width: 48px; color: #737373">收件人</span>
+            <span style="display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 12px; background: #F5F5F5">Lena Fischer</span>
+            <input type="text" aria-label="添加收件人" style="flex: 1; min-width: 120px; border: 0; font: inherit; outline: none">
+            <span style="color: #737373; font-size: 13px">抄送 · 密送</span>
+          </label>
+          <label style="display: flex; align-items: center; gap: 12px; padding: 10px 20px">
+            <span style="width: 48px; color: #737373">主题</span>
+            <input type="text" value="Re: Q4 partnership proposal" style="flex: 1; border: 0; font: inherit; outline: none">
+          </label>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 2px; padding: 6px 14px; border-bottom: 1px solid #F5F5F5; flex-wrap: wrap"><button type="button" aria-label="加粗" style="width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #404040; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"></path></svg></button><button type="button" aria-label="斜体" style="width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #404040; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5h-4M14 19h-4M14 5l-4 14"></path></svg></button><button type="button" aria-label="链接" style="width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #404040; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"></path><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"></path></svg></button><button type="button" aria-label="列表" style="width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #404040; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"></path></svg></button><span style="width: 1px; height: 18px; background: #E5E5E5; margin: 0 6px"></span><button type="button" aria-label="添加附件" style="width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #404040; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></button><span style="margin-left: auto; font-size: 12px; color: #737373">{{bodyNote}}</span></div>
+
+        <sc-if value="{{banner}}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 20px; background: #FAFAFA; border-bottom: 1px solid #F5F5F5; font-size: 13px; flex-wrap: wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+            <span>{{banner.text}}</span>
+            <span style="margin-left: auto; display: flex; gap: 6px">
+              <sc-if value="{{banner.compare}}" hint-placeholder-val="{{ false }}">
+                <button type="button" onClick="{{toggleCompare}}" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">{{banner.compare}}</button>
+              </sc-if>
+              <sc-if value="{{banner.stop}}" hint-placeholder-val="{{ false }}">
+                <button type="button" onClick="{{reject}}" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">停止</button>
+              </sc-if>
+              <sc-if value="{{banner.decide}}" hint-placeholder-val="{{ false }}">
+                <button type="button" onClick="{{reject}}" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">全部拒绝</button>
+                <button type="button" onClick="{{accept}}" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: #171717; color: #FAFAFA; font-size: 13px">全部接受</button>
+              </sc-if>
+            </span>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{showCompare}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; line-height: 1.75; font-size: 14px; min-height: 280px">
+            <div style="display: flex; flex-direction: column; gap: 10px; color: #737373">
+              <span style="font-size: 12px; font-weight: 600">原文</span>
+              <sc-for list="{{original}}" as="p" hint-placeholder-count="4"><p style="margin: 0">{{p}}</p></sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px; padding-left: 20px; border-left: 1px solid #E5E5E5">
+              <span style="font-size: 12px; font-weight: 600">新版本</span>
+              <sc-for list="{{rewritten}}" as="p" hint-placeholder-count="4"><p style="margin: 0">{{p}}</p></sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{showBody}}" hint-placeholder-val="{{ true }}">
+          <div style="{{bodyStyle}}">
+            <sc-if value="{{emptyHint}}" hint-placeholder-val="{{ false }}">
+              <p style="margin: 0; color: #A3A3A3">{{emptyHint}}</p>
+            </sc-if>
+            <sc-for list="{{paras}}" as="p" hint-placeholder-count="4">
+              <p style="{{p.style}}"><sc-for list="{{p.segs}}" as="g" hint-placeholder-count="1"><span style="{{g.style}}">{{g.text}}<sc-if value="{{g.pop}}" hint-placeholder-val="{{ false }}"><span style="position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 2; display: flex; gap: 4px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.08); white-space: nowrap; text-decoration: none; color: #0A0A0A"><button type="button" style="height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: #171717; color: #FAFAFA; font-size: 12px">接受</button><button type="button" style="height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: #F5F5F5; color: #0A0A0A; font-size: 12px">拒绝</button></span></sc-if></span></sc-for><sc-if value="{{p.caret}}" hint-placeholder-val="{{ false }}"><span style="display: inline-block; width: 2px; height: 1.1em; vertical-align: -2px; background: #0A0A0A; margin-left: 1px"></span></sc-if></p>
+              <sc-if value="{{p.cmdk}}" hint-placeholder-val="{{ false }}">
+                <div style="border: 1px solid #D4D4D4; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5">
+                  <span style="display: flex; align-items: center; gap: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg><input type="text" value="语气委婉一点，再提一句期待合作" aria-label="修改选中的内容" style="flex: 1; border: 0; font: inherit; outline: none"></span>
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #737373">⌘K · 只修改选中的这一段<span style="margin-left: auto; display: flex; gap: 6px"><button type="button" style="height: 24px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 4px; background: #FFFFFF; color: #0A0A0A; font-size: 12px">Esc</button><button type="button" style="height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: #171717; color: #FAFAFA; font-size: 12px">生成 ↵</button></span></span>
+                </div>
+              </sc-if>
+            </sc-for>
+            <details style="margin-top: 8px; color: #737373; font-size: 13px">
+              <summary style="cursor: pointer">显示引用的原邮件（助手只读）</summary>
+              <p style="margin: 8px 0 0; padding-left: 12px; border-left: 2px solid #E5E5E5">Following up on our call last week, I put together a draft proposal for the Q4 partnership…</p>
+            </details>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{warning}}" hint-placeholder-val="{{ false }}">
+          <div role="alert" style="margin: 0 20px 16px; padding: 12px 14px; border-radius: 8px; background: #FFFBEB; color: #92400E; display: flex; flex-direction: column; gap: 10px">
+            <span style="font-weight: 600">发送前检查：正文提到「附件」，但这封邮件没有附件</span>
+            <span style="font-size: 13px">来自插件 attachment-check（message.beforeSend）</span>
+            <span style="display: flex; gap: 8px; flex-wrap: wrap">
+              <button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #92400E; color: #FFFFFF">添加附件</button>
+              <button type="button" onClick="{{dismiss}}" style="height: 32px; padding: 0 12px; border: 1px solid #FCD34D; border-radius: 6px; background: transparent; color: #92400E">仍然发送</button>
+            </span>
+          </div>
+        </sc-if>
+
+        <div style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid #F5F5F5">
+          <button type="button" onClick="{{send}}" style="height: 32px; padding: 0 20px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 600">发送</button>
+          <button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">定时发送</button>
+          <span style="margin-left: auto; font-size: 13px; color: #737373">发送永远需要你亲自点击，插件和 agent 只能写草稿</span>
+        </div>
+      </div>
+    </main>
+
+    <aside aria-label="Wit" style="flex: 0 0 380px; border-left: 1px solid #E5E5E5; display: flex; flex-direction: column; min-height: 0">
+      <div style="padding: 12px 16px; border-bottom: 1px solid #E5E5E5; display: flex; flex-direction: column; gap: 8px">
+        <span style="display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px">
+          <span style="padding: 1px 8px; border-radius: 10px; border: 1px solid #E5E5E5; color: #404040">原邮件</span>
+          <span style="padding: 1px 8px; border-radius: 10px; border: 1px solid #E5E5E5; color: #404040">Q4-proposal.pdf</span>
+          <span style="padding: 1px 8px; border-radius: 10px; border: 1px solid #E5E5E5; color: #404040">与 Lena 的往来 3 封</span>
+        </span>
+      </div>
+      <div style="flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px">
+        <sc-for list="{{turns}}" as="t" hint-placeholder-count="2">
+          <div style="display: flex; flex-direction: column; gap: 10px">
+            <div style="align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 12px; background: #171717; color: #FAFAFA; line-height: 1.6">{{t.ask}}</div>
+            <sc-if value="{{t.tools}}" hint-placeholder-val="{{ false }}">
+              <details style="font-size: 12px; color: #737373"><summary style="cursor: pointer">调用了 {{t.tools}}</summary></details>
+            </sc-if>
+            <sc-if value="{{t.working}}" hint-placeholder-val="{{ false }}">
+              <span style="display: flex; align-items: center; gap: 8px; color: #737373"><span style="width: 8px; height: 8px; border-radius: 50%; background: #A3A3A3"></span>正在写入正文…<button type="button" onClick="{{reject}}" style="margin-left: auto; height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">停止</button></span>
+            </sc-if>
+            <sc-if value="{{t.reply}}" hint-placeholder-val="{{ true }}">
+              <span style="line-height: 1.65">{{t.reply}}</span>
+            </sc-if>
+            <sc-if value="{{t.review}}" hint-placeholder-val="{{ false }}">
+              <div style="border: 1px solid #171717; border-radius: 10px; overflow: hidden">
+                <div style="padding: 8px 12px; background: #F5F5F5; display: flex; align-items: center; gap: 8px"><span style="font-weight: 600">待确认</span><span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #404040">update_draft</span></div>
+                <div style="padding: 8px 12px; line-height: 1.6">{{t.review}}</div>
+                <div style="padding: 8px 12px; border-top: 1px solid #F5F5F5; display: flex; gap: 6px"><button type="button" onClick="{{accept}}" style="height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: #171717; color: #FAFAFA; font-size: 13px">全部接受</button><button type="button" onClick="{{reject}}" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">全部拒绝</button></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{t.applied}}" hint-placeholder-val="{{ false }}">
+              <span style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #737373"><span style="padding: 1px 6px; border-radius: 4px; background: #F5F5F5">已应用到正文</span><sc-if value="{{t.undo}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{t.undo}}" style="border: 0; background: transparent; padding: 0; color: #0A0A0A; text-decoration: underline; font-size: 12px">撤销</button></sc-if></span>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding: 12px 16px; border-top: 1px solid #E5E5E5; display: flex; flex-direction: column; gap: 8px; border-style: none">
+        <div style="position: relative; display: flex; gap: 6px">
+          <button type="button" onClick="{{openStyle}}" aria-haspopup="menu" style="height: 26px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 13px; background: #FFFFFF; color: #404040; font-size: 12px">调整 ▾</button>
+          <button type="button" onClick="{{openLang}}" aria-haspopup="menu" style="height: 26px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 13px; background: #FFFFFF; color: #404040; font-size: 12px">翻译 ▾</button>
+          <sc-if value="{{menu}}" hint-placeholder-val="{{ false }}">
+            <div role="menu" style="position: absolute; left: 0; bottom: 100%; margin-bottom: 6px; min-width: 180px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,0.08); display: flex; flex-direction: column; z-index: 3">
+              <sc-for list="{{menu}}" as="m" hint-placeholder-count="5">
+                <button type="button" role="menuitem" onClick="{{m.run}}" style="height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>{{m.label}}</span><span style="font-size: 12px; color: #A3A3A3">{{m.hint}}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0px 0px 8px 0px #00000019">
+          <label for="compose-ask" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">告诉 Wit 你想怎么回</label>
+          <textarea id="compose-ask" rows="2" placeholder="告诉 Wit 你想怎么回，比如：答应时间，但研讨会推迟一周" style="border: 0; resize: none; font: inherit; outline: none">{{draftAsk}}</textarea>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">@ 引用邮件</button>
+            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">[MODEL] ▾</button>
+            <button type="button" onClick="{{askNext}}" style="margin-left: auto; height: 32px; padding: 0 16px; border: 0; border-radius: 6px; background: #171717; color: #FFFFFF; font-weight: 500">发送</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["chat","empty","streaming","inline","rewrite","cmdk"],"default":"chat"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: props.state ?? 'chat', step: 1, compare: false, warning: false };
+  }
+  renderVals() {
+    var self = this;
+    var st = this.state;
+    var formal = ['Hi Lena,', 'Thank you for sending over the proposal. November works well for us overall, though the webinar date is a little early on our side. Would it be possible to move it back by one week?', 'I have attached our team calendar for reference.', 'Best regards'];
+    var brief = ['Hi Lena,', 'Thanks for the proposal. November works for us; could we move the webinar one week later?', 'Best regards'];
+    var friendly = ['Hi Lena!', 'Thanks so much for putting the proposal together. It looks great, and November works for us.', 'One small ask: could we push the webinar back a week? Our team is stretched that week.', 'Our calendar is attached so you can see what is going on.', 'Cheers'];
+    var S = { same: '', del: 'text-decoration: line-through; color: #B91C1C; background: #FEF2F2', ins: 'background: #DCFCE7; color: #166534' };
+    var seg = function (kind, text, pop) { return { text: text, pop: !!pop, style: S[kind] + (pop ? '; position: relative' : '') }; };
+    var plain = function (lines, opt) {
+      opt = opt || {};
+      return lines.map(function (l, i) {
+        return { segs: [seg('same', l)], caret: opt.caret && i === lines.length - 1, cmdk: opt.sel === i,
+          style: 'margin: 0' + (opt.sel === i ? '; background: #E5E5E5; border-radius: 4px; box-shadow: 0 0 0 4px #E5E5E5' : '') };
+      });
+    };
+    var inlineParas = [
+      { segs: [seg('same', 'Hi Lena,')] },
+      { segs: [seg('same', 'Thank you for sending over the proposal. November works well for us overall'), seg('del', ', though the webinar date is a little early on our side.'), seg('ins', ', and we are really looking forward to working together. Our only concern is that the webinar may come a little early for our team.', true), seg('same', ' Would it be possible to move it back by one week?')] },
+      { segs: [seg('same', 'I have attached our team calendar for reference.')] },
+      { segs: [seg('del', 'Best regards'), seg('ins', 'Warm regards')] }
+    ].map(function (p) { return { segs: p.segs, caret: false, cmdk: false, style: 'margin: 0' }; });
+
+    var t1 = { ask: '答应 11 月的时间，但研讨会想推迟一周，正式一点', tools: 'read_message · update_draft', reply: '已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。', applied: true, undo: null };
+    var mode = st.mode;
+    var vals = { paras: [], turns: [], banner: null, showCompare: false, emptyHint: '', locked: false, draftAsk: '' };
+
+    if (mode === 'empty') {
+      vals.emptyHint = '自己写，或者在右边告诉 Wit 你想怎么回';
+      vals.draftAsk = '答应 11 月的时间，但研讨会想推迟一周，正式一点';
+    } else if (mode === 'streaming') {
+      vals.paras = plain(['Hi Lena,', 'Thank you for sending over the proposal. November works well for us overall, though the webi'], { caret: true });
+      vals.turns = [{ ask: t1.ask, tools: 'read_message', working: true }];
+      vals.banner = { text: '助手正在写入正文，暂时不能编辑', stop: true };
+      vals.locked = true;
+    } else if (mode === 'inline') {
+      vals.paras = inlineParas;
+      vals.turns = [t1, { ask: '第二段语气再委婉一点，再提一句我们很期待合作', tools: 'update_draft', reply: '改了 2 处，正文里用删除线和高亮标出来了。', review: '修改 2 处：第二段改写一句，落款改为 Warm regards。鼠标停在某处修改上，可以单独接受或拒绝。' }];
+      vals.banner = { text: '2 处修改待确认', decide: true };
+      vals.locked = true;
+    } else if (mode === 'rewrite') {
+      vals.paras = plain(friendly);
+      vals.turns = [t1, { ask: '整封改成轻松友好一点的语气', tools: 'update_draft', reply: '整封重写了，改动比较大，所以没有逐词标出。可以点正文上方的「对比原文」。', review: '整体重写，改动约 70%。' }];
+      vals.banner = { text: '已整体重写，改动约 70%', decide: true, compare: st.compare ? '返回新版本' : '对比原文' };
+      vals.showCompare = st.compare;
+      vals.locked = true;
+    } else if (mode === 'cmdk') {
+      vals.paras = plain(formal, { sel: 1 });
+      vals.turns = [t1];
+    } else {
+      var bodies = [formal, formal, brief];
+      vals.paras = plain(bodies[st.step]);
+      vals.turns = [Object.assign({}, t1, { undo: st.step === 1 ? function () { self.setState({ mode: 'empty' }); } : null })];
+      if (st.step >= 2) vals.turns.push({ ask: '再短一点', tools: 'update_draft', reply: '已缩短到 3 句，保留了推迟一周的请求。', applied: true, undo: function () { self.setState({ step: 1 }); } });
+      vals.draftAsk = st.step < 2 ? '再短一点' : '';
+    }
+    return {
+      paras: vals.paras,
+      turns: vals.turns,
+      banner: vals.banner,
+      showCompare: vals.showCompare,
+      showBody: !vals.showCompare,
+      original: formal,
+      rewritten: friendly,
+      emptyHint: vals.emptyHint,
+      draftAsk: vals.draftAsk,
+      bodyStyle: 'padding: 20px; display: flex; flex-direction: column; gap: 12px; line-height: 1.75; font-size: 15px; min-height: 280px' + (vals.locked ? '; background: #FCFCFC' : ''),
+      bodyNote: vals.locked ? '待确认的修改处理完之前，正文不能编辑' : (mode === 'cmdk' ? '选中一段后按 ⌘K，只改这一段' : '正文可以直接编辑'),
+      toggleCompare: function () { self.setState({ compare: !st.compare }); },
+      accept: function () { self.setState({ mode: 'chat', step: 1, compare: false }); },
+      reject: function () { self.setState({ mode: 'chat', step: 1, compare: false }); },
+      askNext: function () { if (mode === 'empty') self.setState({ mode: 'streaming' }); else self.setState({ mode: 'chat', step: 2 }); },
+      menu: st.menu === 'style' ? [
+        { label: '更正式', hint: '语气', run: function () { self.setState({ mode: 'inline', menu: null }); } },
+        { label: '更友好', hint: '语气', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } },
+        { label: '更短', hint: '长度', run: function () { self.setState({ mode: 'chat', step: 2, menu: null }); } },
+        { label: '更长', hint: '长度', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } },
+        { label: '校对', hint: '只改错字和语法', run: function () { self.setState({ mode: 'inline', menu: null }); } }
+      ] : st.menu === 'lang' ? [
+        { label: 'English', hint: '', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } },
+        { label: '中文', hint: '', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } },
+        { label: '日本語', hint: '', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } },
+        { label: '与收件人相同的语言', hint: '自动', run: function () { self.setState({ mode: 'rewrite', compare: false, menu: null }); } }
+      ] : null,
+      openStyle: function () { self.setState({ menu: st.menu === 'style' ? null : 'style' }); },
+      openLang: function () { self.setState({ menu: st.menu === 'lang' ? null : 'lang' }); },
+      warning: st.warning,
+      send: function () { self.setState({ warning: true }); },
+      dismiss: function () { self.setState({ warning: false }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

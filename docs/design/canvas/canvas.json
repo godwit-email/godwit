@@ -1,0 +1,255 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Ask.dc.html": {
+      "h": 900,
+      "title": "Wit · 对话与审批",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "Compose.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "撰写 · ⑤ 已应用（多轮对话，可撤销）",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "ComposeCmdK.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "撰写 · ⑥ 选中一段 ⌘K 改写",
+      "w": 1440,
+      "x": 4560,
+      "y": 2640
+    },
+    "ComposeInline.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "撰写 · ③ 局部修改待确认（逐词修订）",
+      "w": 1440,
+      "x": 1520,
+      "y": 2640
+    },
+    "ComposeRewrite.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "撰写 · ④ 整体重写待确认（可对比原文）",
+      "w": 1440,
+      "x": 3040,
+      "y": 2640
+    },
+    "ComposeStreaming.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "撰写 · ② 生成中",
+      "w": 1440,
+      "x": 0,
+      "y": 2640
+    },
+    "Main.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "主界面 · macOS（总结）",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "MainFlight.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "状态 · 航班卡片 + 远程图片已拦截",
+      "w": 1440,
+      "x": 1520,
+      "y": 1320
+    },
+    "MainOTP.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "状态 · 验证码卡片",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "MainTranslated.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "状态 · 总结 + 已翻译",
+      "w": 1440,
+      "x": 3040,
+      "y": 1320
+    },
+    "MainWindows.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "主界面 · Windows 11",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Onboarding.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "添加账户 · 选择邮箱（首次启动）",
+      "w": 1440,
+      "x": 0,
+      "y": 3960
+    },
+    "SettingsExtensions.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "设置 · 扩展（Skill / 插件 / MCP）",
+      "w": 1440,
+      "x": 3040,
+      "y": 3960
+    },
+    "SettingsModels.dc.html": {
+      "h": 900,
+      "title": "设置 · 模型服务",
+      "w": 1440,
+      "x": 1520,
+      "y": 3960
+    },
+    "OnboardingPassword.dc.html": {
+      "x": 0,
+      "y": 5280,
+      "w": 1440,
+      "h": 900,
+      "title": "添加账户 · 授权码登录（QQ 邮箱）",
+      "is_interactive": true
+    },
+    "OnboardingOAuth.dc.html": {
+      "x": 1520,
+      "y": 5280,
+      "w": 1440,
+      "h": 900,
+      "title": "添加账户 · 浏览器登录（Outlook）",
+      "is_interactive": true
+    },
+    "OnboardingError.dc.html": {
+      "x": 3040,
+      "y": 5280,
+      "w": 1440,
+      "h": 900,
+      "title": "添加账户 · 连接失败",
+      "is_interactive": true
+    },
+    "OnboardingDone.dc.html": {
+      "x": 4560,
+      "y": 5280,
+      "w": 1440,
+      "h": 900,
+      "title": "添加账户 · 连接成功",
+      "is_interactive": true
+    },
+    "AddAccountSheet.dc.html": {
+      "x": 6080,
+      "y": 5280,
+      "w": 1440,
+      "h": 900,
+      "title": "添加账户 · 非首次（设置 › 账户里的弹窗）",
+      "is_interactive": true
+    },
+    "SettingsAccounts.dc.html": {
+      "x": 4560,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "title": "设置 · 账户",
+      "is_interactive": true
+    },
+    "SettingsAccountsReauth.dc.html": {
+      "x": 6080,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "title": "设置 · 账户（登录过期）",
+      "is_interactive": true
+    },
+    "SettingsGeneral.dc.html": {
+      "x": 7600,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "title": "设置 · 通用（外观、语言）",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-08T09:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "compose": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "撰写的不同状态",
+      "w": 240,
+      "x": 0,
+      "y": 2340
+    },
+    "row1": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "主流程：读信 → AI → 写信 → Wit",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "引导与设置",
+      "w": 240,
+      "x": 0,
+      "y": 3660
+    },
+    "states": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "主界面的不同状态",
+      "w": 240,
+      "x": 0,
+      "y": 1020
+    },
+    "onboarding": {
+      "x": 0,
+      "y": 4980,
+      "text": "添加账户的不同状态",
+      "kind": "title1",
+      "maxW": 6000
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "MainWindows.dc.html",
+    "MainOTP.dc.html",
+    "MainFlight.dc.html",
+    "MainTranslated.dc.html",
+    "Compose.dc.html",
+    "Ask.dc.html",
+    "ComposeStreaming.dc.html",
+    "ComposeInline.dc.html",
+    "ComposeRewrite.dc.html",
+    "ComposeCmdK.dc.html",
+    "Onboarding.dc.html",
+    "SettingsModels.dc.html",
+    "SettingsExtensions.dc.html",
+    "OnboardingPassword.dc.html",
+    "OnboardingOAuth.dc.html",
+    "OnboardingError.dc.html",
+    "OnboardingDone.dc.html",
+    "AddAccountSheet.dc.html",
+    "SettingsAccounts.dc.html",
+    "SettingsAccountsReauth.dc.html",
+    "SettingsGeneral.dc.html"
+  ],
+  "pages": [],
+  "title": "Godwit UI"
+}
