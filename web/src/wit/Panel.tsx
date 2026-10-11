@@ -73,7 +73,10 @@ function citesOf(...ms: WitUIMessage[]): Citation[] {
     for (const c of p.data) {
       const i = out.findIndex((x) => x.messageId === c.messageId);
       if (i < 0) out.push({ ...c });
-      else out[i].suspect ||= c.suspect;
+      else {
+        out[i].suspect ||= c.suspect;
+        out[i].quote ||= c.quote;
+      }
     }
   }
   return out;
@@ -269,16 +272,20 @@ function Answer({
         </Collapsible>
       )}
       {cites
-        .filter((c) => nums.get(c.messageId)?.suspect)
+        .flatMap((c) => {
+          const k = nums.get(c.messageId);
+          return k?.suspect ? [{ id: c.messageId, ...k }] : [];
+        })
         .map((c) => (
           <Alert
-            key={c.messageId}
+            key={c.id}
             role="status"
             className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-base"
           >
             <RiAlertLine />
             <AlertDescription className="text-base text-current leading-relaxed">
-              {t("wit.suspect", `[${nums.get(c.messageId)?.n}]`)}
+              {/* the quote is mail text: a plain string, never markup */}
+              {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}
             </AlertDescription>
           </Alert>
         ))}
@@ -475,8 +482,10 @@ export function Panel({
   for (const m of chat.messages) {
     for (const c of citesOf(m)) {
       const k = nums.get(c.messageId);
-      if (k) k.suspect ||= c.suspect;
-      else nums.set(c.messageId, { n: c.n, suspect: c.suspect });
+      if (k) {
+        k.suspect ||= c.suspect;
+        k.quote ||= c.quote;
+      } else nums.set(c.messageId, { n: c.n, suspect: c.suspect, quote: c.quote });
     }
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);

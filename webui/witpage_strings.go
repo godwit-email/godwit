@@ -6,7 +6,7 @@ import "github.com/godwit-email/godwit/internal/i18n"
 var witKeys = []string{
 	"ask.citations", "ask.citation.suspect",
 	"wit.input", "wit.placeholder", "wit.send", "wit.stop", "wit.loading", "wit.scroll_end", "wit.model",
-	"wit.tools.one", "wit.tools.other", "wit.suspect", "wit.tool.create_draft",
+	"wit.tools.one", "wit.tools.other", "wit.suspect", "wit.suspect_quote", "wit.tool.create_draft",
 	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
 	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
 	"link.title", "link.open", "link.copy", "link.copied",

@@ -242,7 +242,9 @@ test("cited click opens", async () => {
       msg("q", "user", "Q", [1]),
       {
         ...msg("a", "assistant", "A", [1]),
-        citations: [{ n: 1, messageId: 51, subject: "S", from: "f", date: 0, suspect: false }],
+        citations: [
+          { n: 1, messageId: 51, subject: "S", from: "f", date: 0, suspect: false, quote: "" },
+        ],
       },
     ],
   });

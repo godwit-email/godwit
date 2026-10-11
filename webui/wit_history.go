@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -96,6 +97,7 @@ func cited(cs []core.Citation) []Citation {
 	for _, c := range cs {
 		if i := slices.IndexFunc(out, func(x Citation) bool { return x.MessageID == c.MessageID }); i >= 0 {
 			out[i].Suspect = out[i].Suspect || c.Suspect
+			out[i].Quote = cmp.Or(out[i].Quote, c.Quote)
 			continue
 		}
 		out = append(out, citationOf(c))

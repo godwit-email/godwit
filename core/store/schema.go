@@ -216,4 +216,7 @@ var Migrations = [][]string{{
 	// at startup when that failed or the process stopped first. No foreign key: a
 	// removed service's entry stays listed until it is gone.
 	`CREATE TABLE model_key_trash (service_id INTEGER NOT NULL, key_version INTEGER NOT NULL, PRIMARY KEY(service_id, key_version))`,
+}, {
+	// Citation.Quote: a suspect message's text from where the suspicion starts.
+	`ALTER TABLE run_citations ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
 }}

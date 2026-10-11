@@ -65,6 +65,7 @@ type Citation struct {
 	Subject, From string
 	Date          time.Time
 	Suspect       bool
+	Quote         string // the suspect text, from where it starts (ai.InjectionQuote): show as plain text
 	RunID         int64
 	CallID        string
 }
@@ -166,7 +167,7 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 
 // citationsOf is conversation id's saved citations, numbered.
 func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
-	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote
 		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
 		return nil, err
@@ -174,7 +175,7 @@ func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error)
 	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
-			RunID: store.Int(r[5]), CallID: store.Str(r[6])}
+			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7])}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
@@ -234,8 +235,8 @@ func (s *Service) saveCitations(ctx context.Context, runID int64, cs []Citation)
 		if c.Suspect {
 			suspect = 1
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect, quote)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect, c.Quote}})
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		slog.Default().Warn("could not save a run's citations", "run", runID, "err", err)

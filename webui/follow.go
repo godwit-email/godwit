@@ -66,6 +66,8 @@ type Citation struct {
 	Date int64 `json:"date"`
 	// Suspect means it seems to hold instructions (wit.suspect).
 	Suspect bool `json:"suspect"`
+	// Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text.
+	Quote string `json:"quote"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -241,7 +243,7 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}

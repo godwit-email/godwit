@@ -2,8 +2,11 @@ import { cn } from "cn";
 import type { Citation } from "@/mygo";
 import type { T } from "@/shared/i18n";
 
-/** Citations' numbers through the conversation, by message ID; suspect once any citation is. */
-export type Nums = Map<number, { n: number; suspect: boolean }>;
+/**
+ * Citations' numbers through the conversation, by message ID; suspect once any citation is, with
+ * the first quote of the suspect text (mail text: plain text only).
+ */
+export type Nums = Map<number, { n: number; suspect: boolean; quote: string }>;
 
 /** A citation's date, absolute: M/DD this year, YYYY/M/DD another ("" for none). */
 export function citeDate(ms: number): string {

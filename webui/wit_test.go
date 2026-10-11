@@ -432,7 +432,7 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 		},
 		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4}},
 		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
-			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true}},
+			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "q"}},
 	}
 	got := witMessages(c)
 	require.Len(t, got, 2)
@@ -444,7 +444,7 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 	assert.Equal(t, []int64{1}, a.Runs)
 	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
 	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)
-	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true}, {N: 2, MessageID: 5}}, a.Citations)
+	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, Quote: "q"}, {N: 2, MessageID: 5}}, a.Citations)
 }
 
 func TestComposeWitErrorKeys(t *testing.T) {

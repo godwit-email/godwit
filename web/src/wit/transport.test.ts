@@ -155,6 +155,7 @@ describe("toChunks", () => {
       from: "f",
       date: 0,
       suspect: false,
+      quote: "",
     };
     expect(toChunks(ev({ kind: "context", citations: [cite] }), new Set())).toEqual([
       { type: "data-citations", data: [cite] },
@@ -172,7 +173,15 @@ describe("toChunks", () => {
 
 describe("historyToMessages", () => {
   it("groups questions and answers with results, approvals and citations", () => {
-    const cite = { n: 1, messageId: 5, subject: "s", from: "f", date: 0, suspect: true };
+    const cite = {
+      n: 1,
+      messageId: 5,
+      subject: "s",
+      from: "f",
+      date: 0,
+      suspect: true,
+      quote: "q",
+    };
     const h: WitHistory = {
       conversation: 1,
       running: 0,

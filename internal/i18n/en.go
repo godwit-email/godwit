@@ -653,6 +653,7 @@ var en = map[string]string{
 	"wit.tools.other":                  "Used %d tools",
 	"wit.tools.called":                 "Used %s",
 	"wit.suspect":                      "Source %s contains suspected instructions. It was treated as mail content only and not followed.",
+	"wit.suspect_quote":                "Source %s contains suspected instructions (“%s”). It was treated as mail content only and not followed.",
 	"wit.tool.create_draft":            "create a draft",
 	"wit.approval.wants":               "Wit wants to: %s",
 	"wit.approval.to":                  "To",

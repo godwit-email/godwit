@@ -653,6 +653,7 @@ var zh = map[string]string{
 	"wit.tools.other":                  "调用了 %d 个工具",
 	"wit.tools.called":                 "调用了 %s",
 	"wit.suspect":                      "来源 %s 中包含疑似指令。它只被当作邮件内容处理，没有执行。",
+	"wit.suspect_quote":                "来源 %s 中包含疑似指令（「%s」）。它只被当作邮件内容处理，没有执行。",
 	"wit.tool.create_draft":            "创建草稿",
 	"wit.approval.wants":               "Wit 想要：%s",
 	"wit.approval.to":                  "收件人",

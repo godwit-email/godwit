@@ -95,6 +95,8 @@ export interface Citation {
   date: number;
   /** Suspect means it seems to hold instructions (wit.suspect). */
   suspect: boolean;
+  /** Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text. */
+  quote: string;
 }
 
 /**

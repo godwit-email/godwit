@@ -21,6 +21,7 @@ type mailItem struct {
 	Subject, From string
 	Date          time.Time
 	Suspect       bool
+	Quote         string // where the suspect text starts (ai.InjectionQuote)
 	Block         string
 }
 
@@ -97,7 +98,8 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		if len(att) > 0 {
 			head += "Attachments: " + strings.Join(att, "; ") + "\n"
 		}
-		suspect := ai.SuspectInjection(head + body)
+		quote := ai.InjectionQuote(head + body)
+		suspect := quote != ""
 		cut := m.Truncated
 		if n := min(budget.PerMessage, left); utf8.RuneCountInString(body) > n {
 			body, cut = string([]rune(body)[:max(n, 0)]), true
@@ -107,7 +109,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		if cut {
 			block += truncatedNote
 		}
-		out[i] = mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date, Suspect: suspect, Block: block}
+		out[i] = mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date, Suspect: suspect, Quote: quote, Block: block}
 	}
 	return out, nil
 }
@@ -116,7 +118,8 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 // same block, PerMessage budget and suspect check. It marks scope as having read mail.
 func (s *Service) selectionContext(scope *gateway.Scope, id int64, text string, budget mailBudget) mailItem {
 	scope.MarkReadMail()
-	suspect := ai.SuspectInjection(text)
+	quote := ai.InjectionQuote(text)
+	suspect := quote != ""
 	cut := utf8.RuneCountInString(text) > budget.PerMessage
 	if cut {
 		text = string([]rune(text)[:budget.PerMessage])
@@ -125,7 +128,7 @@ func (s *Service) selectionContext(scope *gateway.Scope, id int64, text string, 
 	if cut {
 		block += truncatedNote
 	}
-	return mailItem{MessageID: id, Suspect: suspect, Block: block}
+	return mailItem{MessageID: id, Suspect: suspect, Quote: quote, Block: block}
 }
 
 // summaryContext wraps search results (subject, from, date, snippet) the same
@@ -135,9 +138,10 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 	out := make([]mailItem, 0, len(list))
 	for _, m := range list {
 		text := mailHeader(m) + "\n" + m.Snippet
-		suspect := ai.SuspectInjection(text)
+		quote := ai.InjectionQuote(text)
+		suspect := quote != ""
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
-			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
+			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
 	}
 	return out
 }
@@ -148,9 +152,10 @@ func (s *Service) subjectContext(scope *gateway.Scope, list []MessageSummary) []
 	scope.MarkReadMail()
 	out := make([]mailItem, 0, len(list))
 	for _, m := range list {
-		suspect := ai.SuspectInjection(m.Subject)
+		quote := ai.InjectionQuote(m.Subject)
+		suspect := quote != ""
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
-			Suspect: suspect, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), "Subject: "+m.Subject, suspect)})
+			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), "Subject: "+m.Subject, suspect)})
 	}
 	return out
 }
