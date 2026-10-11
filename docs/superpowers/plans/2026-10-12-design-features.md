@@ -40,6 +40,14 @@ Renders are in `$D/dshots/`; render missing states with `$D/pp/shot.mjs`. `$D` i
 - **Builds.** Each task ends green on `go build ./... && go vet ./... && go test ./...`, plus `cd web && bun run test && bun run typecheck && bun run lint` when web changes.
 - **Commits.** Trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never touch the untracked `assets/AppIcon.icon/`.
 
+## Review amendments (binding)
+
+The review in `docs/superpowers/plans/2026-10-12-design-features/review.md` is adopted in full. Where it conflicts with the task text, the review wins. Controller rulings on its "invented UI" items:
+- **Follow the mockup exactly.** Role selects offer 不使用 only where the mockup does. Junk has no undo. Settings search has no row highlight.
+- **Kept as minimal, mockup-styled UI** (the design shows the entry point but not the content): the trusted-sender list in 隐私与安全 (the user was told), the filter chip menus, and the `@` mail picker.
+
+Execution order: this plan starts after the model-capabilities plan finishes, because both touch core/settings.go, schema.go, wit.go and i18n. Commits stage explicit paths only.
+
 ## Review Focus
 
 1. **Purge never deletes mail the user didn't mean to purge.** Covered by tests for:
