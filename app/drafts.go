@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -133,11 +134,17 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	d := p.drafts[i]
 	info := p.draftView[d.ID]
 	editing := info.editing
+	sendTip := i18n.T("compose.send")
+	if editing {
+		sendTip = i18n.T("mail.draft.send_disabled")
+	}
 	saved := d.UpdatedAt.In(p.a.clock.Now().Location()).Format("15:04")
 	col.Children(func() {
+		p.sendDialog(c)
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 			kit.ButtonGroup(c,
 				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.plat.OpenCompose(d.ID) }},
+				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
 				kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.draft.delete"), OnClick: func() { p.deleteDraft(d.ID) }})
 			ui.Spacer(c)
 			status := i18n.Tf("mail.draft.saved", saved)
@@ -201,5 +208,76 @@ func (p *mailPage) deleteDraft(id int64) {
 			a.plat.DraftDeleted(id)
 		}
 		p.reload()
+	})
+}
+
+// draftSend is the pane's send: busy while a call is out, and the warnings a
+// plugin raised for revision rev of draft id, shown until sent or cancelled.
+type draftSend struct {
+	busy     bool
+	ask      bool
+	id, rev  int64
+	warnings core.SendCheck
+}
+
+// sendDraft queues the draft as last saved. A compose window opened since
+// the pane was drawn owns the draft, so it is refused here, not at render.
+func (p *mailPage) sendDraft(d core.Draft) {
+	p.doSend(d.ID, d.Revision, func(ctx context.Context) error { return p.a.svc.SendRevision(ctx, d.ID, d.Revision) })
+}
+
+func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
+	a := p.a
+	if p.sending.busy {
+		return
+	}
+	if a.plat.ComposeOpen(id) {
+		p.reload() // refresh the chip and the disabled button
+		return
+	}
+	p.sending.busy = true
+	a.writes.Chain(fmt.Sprintf("draft:%d", id), call, func(err error) {
+		p.sending.busy = false
+		var warn *core.SendWarningsError
+		switch {
+		case err == nil:
+			a.plat.DraftDeleted(id)
+			p.draftSel = 0
+		case errors.As(err, &warn):
+			p.sending.ask, p.sending.id, p.sending.rev, p.sending.warnings = true, id, rev, warn.Check
+			return
+		default:
+			a.toastErr(err) // blocked, stale and the rest read from humanize
+		}
+		p.reload()
+	})
+}
+
+// sendDialog lists the plugins' warnings; 仍然发送 sends with their digest.
+func (p *mailPage) sendDialog(c *ui.Context) {
+	if !p.sending.ask {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	s := p.sending
+	kit.Dialog(c, &p.sending.ask, i18n.T("compose.send"), func() {
+		ui.Column(c).Gap(th.Space(3)).Children(func() {
+			for _, w := range s.warnings.Warnings {
+				ui.Column(c).Children(func() {
+					ui.Text(c, i18n.Tf("compose.warn", w.Message))
+					kit.Text(c, i18n.Tf("compose.warn.from", w.Plugin), t.Text.Sm).TextColor(t.Muted)
+				})
+			}
+		})
+	}, func() {
+		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
+			p.sending.ask = false
+		}
+		if kit.Button(c, i18n.T("compose.send_anyway"), kit.ButtonOpts{}).Clicked() {
+			p.sending.ask = false
+			p.doSend(s.id, s.rev, func(ctx context.Context) error {
+				return p.a.svc.SendAcknowledgedRevision(ctx, s.id, s.rev, s.warnings.Digest)
+			})
+		}
 	})
 }

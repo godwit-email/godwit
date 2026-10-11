@@ -90,6 +90,7 @@ type mailPage struct {
 	draftList ui.ListState
 	draftSel  int64               // the draft the pane shows; 0 for none
 	draftView map[int64]draftInfo // by draft, made when the drafts load
+	sending   draftSend           // the pane's send in flight, or awaiting warnings' acknowledgement
 	accOpen   map[int64]*bool     // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool

@@ -262,6 +262,7 @@ var en = map[string]string{
 	"mail.list_sep":                  ", ",
 	"mail.draft.delete":              "Delete draft",
 	"mail.draft.chip":                "Editing",
+	"mail.draft.send_disabled":       "Being edited in the compose window; send it there",
 	"mail.draft.edit":                "Continue editing",
 	"mail.draft.heading":             "Drafts · %s",
 	"mail.draft.saved":               "Draft saved · %s",

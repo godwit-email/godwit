@@ -262,6 +262,7 @@ var zh = map[string]string{
 	"mail.list_sep":                  "、",
 	"mail.draft.delete":              "删除草稿",
 	"mail.draft.chip":                "编辑中",
+	"mail.draft.send_disabled":       "正在撰写窗口里编辑，先在那里发送",
 	"mail.draft.edit":                "继续编辑",
 	"mail.draft.heading":             "草稿 · %s",
 	"mail.draft.saved":               "草稿已保存 · %s",

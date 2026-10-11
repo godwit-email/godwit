@@ -199,3 +199,99 @@ func TestDraftPaneShowsSignatureImages(t *testing.T) {
 	}
 	t.Fatal("the pane does not show the signature image")
 }
+
+func (h *harness) draftGone(id int64) {
+	h.t.Helper()
+	h.until("the draft queued", func() bool {
+		_, err := h.env.Svc.GetDraft(context.Background(), id)
+		return err != nil
+	})
+}
+
+func TestDraftPaneSend(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.click("发送")
+	h.draftGone(ds[0].ID)
+	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
+	h.until("the pane gone", func() bool { return !h.tt.HasText("继续编辑") })
+}
+
+func TestDraftPaneSendWarnsThenAcknowledged(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("发送前检查：check before sending: Draft hello")
+	h.see("来自插件 send-warn（message.beforeSend）")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent before the warning was acknowledged")
+	}
+	h.click("仍然发送")
+	h.draftGone(ds[0].ID)
+	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
+}
+
+func TestDraftPaneSendWarningCancelled(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("仍然发送")
+	h.click("取消")
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("a cancelled send went out")
+	}
+}
+
+func TestDraftPaneSendBlocked(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-block")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("阻止了发送")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("a blocked draft was sent")
+	}
+}
+
+// A draft saved elsewhere since the pane loaded is not sent.
+func TestDraftPaneSendStaleReloads(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	d := ds[0]
+	d.Subject = "Edited elsewhere"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.click("发送")
+	h.see("Edited elsewhere")
+	if _, err := h.env.Svc.GetDraft(context.Background(), d.ID); err != nil {
+		t.Fatal("a stale draft was sent")
+	}
+}
+
+func TestDraftPaneSendDisabledWhileEditing(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true)
+	h.app.ComposeWindowsChanged()
+	h.click("Draft hello")
+	h.see("正在撰写窗口里编辑，先在那里发送")
+	h.click("正在撰写窗口里编辑，先在那里发送")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a compose window has it")
+	}
+}
+
+// A window opened after the pane was drawn still refuses the send.
+func TestDraftPaneSendRechecksAtClick(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true) // no ComposeWindowsChanged: the pane is stale
+	h.click("发送")
+	h.see("编辑中") // the refused click refreshed the pane
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a compose window has it")
+	}
+}
