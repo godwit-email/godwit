@@ -67,33 +67,39 @@ type TextScale struct{ Xs, Sm, Base, Body, Lg, Title, Xl, X2l, Display float32 }
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline          = 1   // dividers
-	RailWidth         = 56  // the icon rail
-	SidebarWidth      = 248 // the page sidebars, until the user drags them
-	SidebarMinWidth   = 240 // the narrowest and widest a drag makes them
-	SidebarMaxWidth   = 480
-	ListWidth         = 340  // the mail list column
-	TopBarHeight      = 44   // the top bar's least height
-	SheetWidth        = 560  // dialogs and the add-account sheet
-	DialogWideWidth   = 640  // DialogWide
-	SheetMaxHeight    = 760  // the add-account sheet
-	AsideWidth        = 440  // onboarding's left panel
-	FormMaxWidth      = 520  // onboarding's form column
-	ContentMaxWidth   = 1040 // settings pages
-	ControlWidth      = 220  // settings' selects and buttons
-	PortWidth         = 90   // port fields
-	SelectMinWidth    = 120
-	ToastMaxWidth     = 420
-	ToastMax          = 3   // toasts shown at once
-	TitleButtonHeight = 24  // buttons in the top bar
-	PopupOffset       = 4   // room between a popup and its anchor
-	SelectedBorder    = 2   // the border of a chosen tile
-	QuoteBar          = 2   // the bar left of a quote in a mail body
-	ImagePlaceholder  = 64  // an image not loaded, when its size is unknown
-	ReaderMaxWidth    = 720 // the reading pane's text column
-	AttachmentWidth   = 260 // an attachment in the reading pane
-	WitMaxWidth       = 760 // the Ask page's conversation column
-	CitationsWidth    = 320 // the Ask page's cited mail column
+	Hairline           = 1   // dividers
+	RailWidth          = 56  // the icon rail
+	SidebarWidth       = 248 // the page sidebars, until the user drags them
+	SidebarMinWidth    = 240 // the narrowest and widest a drag makes them
+	SidebarMaxWidth    = 480
+	ListWidth          = 340  // the mail list column
+	TopBarHeight       = 44   // the top bar's least height
+	SheetWidth         = 560  // dialogs and the add-account sheet
+	DialogWideWidth    = 640  // DialogWide
+	SheetMaxHeight     = 760  // the add-account sheet
+	AsideWidth         = 440  // onboarding's left panel
+	FormMaxWidth       = 520  // onboarding's form column
+	ContentMaxWidth    = 1040 // settings pages
+	ControlWidth       = 220  // settings' wide buttons
+	SettingsMaxWidth   = 760  // a settings page's column
+	SettingsSelectMin  = 200  // a select in a settings row
+	SettingsSelectMax  = 280
+	SettingsInputWidth = 260 // an input in a settings row
+	HeadingGap         = 6   // a page heading to its subtitle
+	SectionGap         = 10  // a section's title to its card
+	PortWidth          = 90  // port fields
+	SelectMinWidth     = 120
+	ToastMaxWidth      = 420
+	ToastMax           = 3   // toasts shown at once
+	TitleButtonHeight  = 24  // buttons in the top bar
+	PopupOffset        = 4   // room between a popup and its anchor
+	SelectedBorder     = 2   // the border of a chosen tile
+	QuoteBar           = 2   // the bar left of a quote in a mail body
+	ImagePlaceholder   = 64  // an image not loaded, when its size is unknown
+	ReaderMaxWidth     = 720 // the reading pane's text column
+	AttachmentWidth    = 260 // an attachment in the reading pane
+	WitMaxWidth        = 760 // the Ask page's conversation column
+	CitationsWidth     = 320 // the Ask page's cited mail column
 )
 
 // BoldWeight is the font weight of bold text in mail bodies and the editor.

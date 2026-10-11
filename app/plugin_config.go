@@ -194,7 +194,7 @@ func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.Conf
 		label := fd.Label.For(lang)
 		cc := c.Key(fd.Key)
 		if fd.Type == "boolean" {
-			kit.SwitchRow(cc, &v.on, label, v.err)
+			kit.SwitchRow(cc, &v.on, label, v.err).Padding(0)
 			continue
 		}
 		ui.Field(cc, label, func() {

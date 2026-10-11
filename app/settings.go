@@ -122,8 +122,8 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
-	group := func(label string, top float32) {
-		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), th.Space(1.5), th.Space(2))
+	group := func(label string, top, bottom float32) {
+		ui.Text(c, label).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
 	}
 	item := func(sec string) ui.Element {
 		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
@@ -131,7 +131,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, i18n.T("settings.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-			group(i18n.T("settings.accounts"), th.Space(1))
+			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID)).Children(func() {
 					mark(c, accountProvider(a, acc), theme.MarkSm)
@@ -149,7 +149,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 				})
 				ui.Text(c, i18n.T("settings.add_account"))
 			})
-			group(i18n.T("settings.app"), th.Space(3.5))
+			group(i18n.T("settings.app"), th.Space(3), th.Space(1))
 			for _, sec := range appSections {
 				b := item(sec)
 				b.Children(func() {
@@ -165,7 +165,7 @@ func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).MaxWidth(theme.ContentMaxWidth).Padding(th.Space(6)).Gap(th.Space(5)).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Padding(th.Space(8)).Gap(th.Space(8)).Children(func() {
 			switch {
 			case acc != nil:
 				p.accountView(c, *acc)
@@ -188,43 +188,65 @@ func (p *settingsPage) Content(c *ui.Context) {
 }
 
 func pageHeading(c *ui.Context, title, sub string) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(1)).Children(func() {
-		ui.Text(c, title).FontSize(t.Text.X2l).FontWeight(600)
+	t := theme.Of(c)
+	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
+		ui.Text(c, title).FontSize(t.Text.Display).FontWeight(600)
 		if sub != "" {
 			ui.Text(c, sub).TextColor(t.Muted)
 		}
 	})
 }
 
-// settingsSection is a titled block: the title (and help) in a 200-wide
-// column, body beside it.
-func settingsSection(c *ui.Context, title, help string, body func()) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(6)).Padding(th.Space(5), 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Column(c).Width(th.Space(50)).Shrink(0).Gap(th.Space(1)).Children(func() {
-			ui.Text(c, title).FontWeight(600)
-			if help != "" {
-				ui.Text(c, help).TextColor(t.Muted)
+// settingsSection is a titled card of rows with an optional footnote under
+// it. Rows are builders (mygo cannot move built elements into a parent);
+// the hairlines between them are the section's.
+func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
+	t := theme.Of(c)
+	ui.Column(c).Gap(theme.SectionGap).Children(func() {
+		ui.Text(c, title).FontSize(t.Text.Base).FontWeight(600)
+		ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
+			for i, row := range rows {
+				if i > 0 {
+					ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(t.Border)
+				}
+				row()
 			}
 		})
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(3)).Children(body)
+		if footnote != "" {
+			ui.Text(c, footnote).FontSize(t.Text.Sm).TextColor(t.Muted)
+		}
 	})
 }
 
-// settingRow is a labelled control: label and help on the left, the
-// control on the right.
-func settingRow(c *ui.Context, label, help string, control func()) {
+// settingRow is a labelled control: label (500) and description on the
+// left, the control on the right; at least 48 high.
+func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Gap(th.Space(4)).Children(func() {
+	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label)
-			if help != "" {
-				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Text(c, label).FontWeight(500)
+			if desc != "" {
+				ui.Text(c, desc).FontSize(t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		control()
 	})
+}
+
+// settingBlock is a card row of free content (padded like a settingRow).
+func settingBlock(c *ui.Context, body func()) {
+	th := c.Theme()
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(body)
+}
+
+// settingButton is a button in a settings row: the default size, 12 padding.
+func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled}).PaddingX(c.Theme().Space(3))
+}
+
+// settingSelect is a select in a settings row.
+func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
+	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
 }
 
 func (p *settingsPage) privacyView(c *ui.Context) {
@@ -237,42 +259,52 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.keychain"), "", func() {
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			switch {
-			case !p.keychainSet:
-				kit.Spinner(c)
-				ui.Text(c, i18n.T("settings.keychain.checking")).TextColor(t.Muted)
-			case p.keychain != nil:
-				kit.StatusDot(c, kit.Error)
-				ui.Text(c, humanize(p.keychain))
-			default:
-				kit.StatusDot(c, kit.OK)
-				ui.Text(c, i18n.T("settings.keychain.ok"))
-			}
+		settingBlock(c, func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				switch {
+				case !p.keychainSet:
+					kit.Spinner(c)
+					ui.Text(c, i18n.T("settings.keychain.checking")).TextColor(t.Muted)
+				case p.keychain != nil:
+					kit.StatusDot(c, kit.Error)
+					ui.Text(c, humanize(p.keychain))
+				default:
+					kit.StatusDot(c, kit.OK)
+					ui.Text(c, i18n.T("settings.keychain.ok"))
+				}
+			})
 		})
 	})
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
 	a := p.a
-	settingsSection(c, i18n.T("settings.local_api"), "", func() {
+	rows := []func(){func() {
 		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
-		if err := a.localAPIErr; err != nil {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				kit.StatusDot(c, kit.Error)
-				ui.Text(c, humanize(err)).Selectable()
+	}}
+	if err := a.localAPIErr; err != nil {
+		rows = append(rows, func() {
+			settingBlock(c, func() {
+				ui.Row(c).Gap(th.Space(2)).Children(func() {
+					kit.StatusDot(c, kit.Error)
+					ui.Text(c, humanize(err)).Selectable()
+				})
 			})
-		}
-		if !a.settings.LocalAPI || a.localAPIPath == "" {
-			return
-		}
-		ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
-		ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
-		config := a.mcpConfig()
-		ui.Text(c, config).Font(theme.Mono).FontSize(t.Text.Sm).Selectable()
-		if kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Clicked() {
-			c.WriteClipboard(config)
-		}
-	})
+		})
+	}
+	if a.settings.LocalAPI && a.localAPIPath != "" {
+		rows = append(rows, func() {
+			settingBlock(c, func() {
+				ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
+				ui.Text(c, i18n.T("settings.local_api.mcp")).FontSize(t.Text.Sm).TextColor(t.Muted)
+				config := a.mcpConfig()
+				ui.Text(c, config).Font(theme.Mono).FontSize(t.Text.Sm).Selectable()
+				if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).AlignSelf(ui.Start).Clicked() {
+					c.WriteClipboard(config)
+				}
+			})
+		})
+	}
+	settingsSection(c, i18n.T("settings.local_api"), "", rows...)
 }
 
 // godwitExe is this executable's absolute path.

@@ -52,8 +52,8 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.openSettings(accountRoute(acc.ID))
 	h.see("基本信息")
 	h.see("登录与服务器")
-	h.fill("发件人名称", "Alice Liddell")
-	h.fill("侧栏显示名称", "个人")
+	h.fillRow("发件人名称", "Alice Liddell")
+	h.fillRow("侧栏显示名称", "个人")
 	h.fill("签名内容", "Alice")
 	h.advance(599 * time.Millisecond)
 	h.drain()
@@ -84,7 +84,7 @@ func TestSettingsAccountEditFailureReverts(t *testing.T) {
 	p.update = func(context.Context, int64, core.AccountPatch) (core.Account, error) {
 		return core.Account{}, errors.New("disk full")
 	}
-	h.fill("发件人名称", "Nope")
+	h.fillRow("发件人名称", "Nope")
 	h.advance(600 * time.Millisecond)
 	h.see("出错了：disk full")
 	h.until("name reverted", func() bool { return p.forms[acc.ID].name == "alice" })
@@ -380,7 +380,7 @@ func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
 	h.app.load()
 	staleGen := h.app.loadGen
 	h.until("the stale load runs", func() bool { return calls.Load() == 1 })
-	h.fill("发件人名称", "Alice Liddell")
+	h.fillRow("发件人名称", "Alice Liddell")
 	h.advance(accountSaveDelay)
 	h.until("saved", func() bool { return p.forms[acc.ID].ok.Name == "Alice Liddell" })
 	if h.app.accounts[0].Name != "Alice Liddell" {
@@ -787,4 +787,17 @@ func TestLocalAPIStaleStopIgnored(t *testing.T) {
 	if h.tt.HasText("the old server died") {
 		t.Fatal("a stale notice shows")
 	}
+}
+
+// fillRow fills the input at the right of the settings row labelled label; the
+// row's text sits in the label's name too, so a click lands beside it.
+func (h *harness) fillRow(label, value string) {
+	h.t.Helper()
+	r, ok := h.tt.Find(label)
+	if !ok {
+		h.t.Fatalf("no row %q", label)
+	}
+	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
+	h.tt.Command("selectAll")
+	h.typeText(value)
 }

@@ -488,7 +488,10 @@ func heading(c *ui.Context, title, sub string) {
 // its letters on a rounded square.
 func mark(c *ui.Context, p auth.Provider, size float32) {
 	t := theme.Of(c)
-	r := min(t.Radius.Lg, size/4) // a quarter of small marks
+	r := min(t.Radius.Lg, size/4) // a quarter of larger marks
+	if size <= theme.MarkSm {
+		r = t.Radius.Sm
+	}
 	if b := icons.Brand(p.ID); b != nil {
 		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile).Border(theme.Hairline, t.Outline)
 		in := size - 2*theme.Hairline // inside the outline: a full-size logo would sit off centre, clipped

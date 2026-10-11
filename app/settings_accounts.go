@@ -318,78 +318,72 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		kit.Alert(c, kit.Warning, i18n.T("settings.account.reauth"), func() { p.authButton(c, acc, prov, true) })
 	}
 
-	ui.Column(c).Children(func() {
-		settingsSection(c, i18n.T("settings.account.basic"), "", func() {
-			ui.Field(c, i18n.T("settings.account.name"), func() {
-				if kit.Input(c, &f.name, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f, 0)
-				}
-			})
-			ui.Field(c, i18n.T("settings.account.alias"), func() {
-				if kit.Input(c, &f.alias, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f, 1)
-				}
-			})
+	row := func(label, desc string, control func()) func() {
+		return func() { settingRow(c, label, desc, control) }
+	}
+	input := func(label string, v *string, i int) func() {
+		return row(label, "", func() {
+			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label).Changed() {
+				p.edited(acc.ID, f, i)
+			}
+		})
+	}
+	settingsSection(c, i18n.T("settings.account.basic"), "",
+		input(i18n.T("settings.account.name"), &f.name, 0),
+		input(i18n.T("settings.account.alias"), &f.alias, 1),
+		func() {
 			on := acc.IsDefault
 			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), "").Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
 				p.makeDefault(acc.ID)
 			}
 		})
-		settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
+	settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
+		settingBlock(c, func() {
 			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(th.Space(21)).Label(i18n.T("settings.account.signature.label")).Changed() {
 				p.edited(acc.ID, f, 2)
 			}
 		})
-		settingsSection(c, i18n.T("settings.account.sync"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if st := p.syncState(acc); st != "" {
-					ui.Text(c, st)
-				}
-				if acc.Status == "ok" {
-					ui.Text(c, i18n.Tf("mail.unread_count", a.unread[acc.ID])).TextColor(t.Muted)
-				}
-				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: a.syncing[acc.ID]}).
-					OnClick(func() { p.syncNow(acc.ID) })
-			})
-			ui.Field(c, i18n.T("settings.account.sync.range"), func() {
-				if kit.Select(c, &f.limit, limitOptions(acc.SyncLimit)).Changed() {
-					p.setLimit(acc.ID, f)
-				}
-			})
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				usage := "…"
-				if n, ok := p.usage[acc.ID]; ok {
-					usage = formatBytes(n)
-				}
-				ui.Text(c, i18n.Tf("settings.account.usage", usage)).TextColor(t.Muted)
-				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
-					OnClick(func() { p.openDialog("cache", acc) })
+	})
+	unread := ""
+	if acc.Status == "ok" {
+		unread = i18n.Tf("mail.unread_count", a.unread[acc.ID])
+	}
+	usage := "…"
+	if n, ok := p.usage[acc.ID]; ok {
+		usage = formatBytes(n)
+	}
+	settingsSection(c, i18n.T("settings.account.sync"), "",
+		row(p.syncState(acc), unread, func() {
+			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
+		}),
+		row(i18n.T("settings.account.sync.range"), "", func() {
+			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.limit, limitOptions(acc.SyncLimit)).Changed() {
+				p.setLimit(acc.ID, f)
+			}
+		}),
+		row(i18n.Tf("settings.account.usage", usage), "", func() {
+			settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
+		}))
+	server := func(proto, host string, port int, sec core.Security) {
+		ui.Row(c).Gap(th.Space(3)).Children(func() {
+			ui.Text(c, proto).Width(th.Space(12)).TextColor(t.Muted)
+			ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Shrink(1)
+		})
+	}
+	settingsSection(c, i18n.T("settings.account.login"), "",
+		row(p.authText(acc, prov), "", func() { p.authButton(c, acc, prov, false) }),
+		func() {
+			settingBlock(c, func() {
+				ui.Column(c).Gap(th.Space(1)).Children(func() {
+					server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
+					server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
+				})
+				settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).AlignSelf(ui.Start).OnClick(func() { p.openDialog("servers", acc) })
 			})
 		})
-		settingsSection(c, i18n.T("settings.account.login"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Text(c, p.authText(acc, prov))
-				ui.Spacer(c)
-				p.authButton(c, acc, prov, false)
-			})
-			ui.Column(c).Gap(th.Space(1)).Children(func() {
-				server := func(proto, host string, port int, sec core.Security) {
-					ui.Row(c).Gap(th.Space(3)).Children(func() {
-						ui.Text(c, proto).Width(th.Space(12)).TextColor(t.Muted)
-						ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Shrink(1)
-					})
-				}
-				server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
-				server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
-			})
-			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).
-				OnClick(func() { p.openDialog("servers", acc) })
-		})
-		settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
-			kit.Button(c, i18n.Tf("settings.account.remove.button", acc.Email), kit.ButtonOpts{Variant: kit.Destructive}).AlignSelf(ui.Start).
-				OnClick(func() { p.openDialog("remove", acc) })
+	settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
+		settingBlock(c, func() {
+			settingButton(c, i18n.Tf("settings.account.remove.button", acc.Email), kit.DestructiveOutline, false).AlignSelf(ui.Start).OnClick(func() { p.openDialog("remove", acc) })
 		})
 	})
 }

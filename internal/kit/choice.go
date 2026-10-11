@@ -27,13 +27,14 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 	return ui.SwitchBase(c, on).Radius(theme.Of(c).Radius.Full).Children(func() { switchTrack(c, *on) })
 }
 
-// SwitchRow is a full-width switch named label: label and help on the left,
-// the track on the right; a click anywhere on the row toggles it.
+// SwitchRow is a full-width switch named label in the settings row shape
+// (8/16 padding, at least 48 high): label and help on the left, the track
+// on the right; a click anywhere on the row toggles it.
 func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(4)).Label(label).Children(func() {
+	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label)
+			ui.Text(c, label).FontWeight(500)
 			if help != "" {
 				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
 			}

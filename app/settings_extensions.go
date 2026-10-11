@@ -279,7 +279,7 @@ func (e *extView) pluginsView(c *ui.Context) {
 			})
 		} else {
 			on := p.Enabled
-			if kit.SwitchRow(c, &on, i18n.T("settings.ext.plugin.enable"), "").Changed() {
+			if kit.SwitchRow(c, &on, i18n.T("settings.ext.plugin.enable"), "").Padding(0).Changed() {
 				e.setPluginEnabled(name, !p.Enabled)
 			}
 		}
@@ -523,7 +523,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 			})
 		} else {
 			on := s.Enabled
-			if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.enable"), "").Changed() {
+			if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.enable"), "").Padding(0).Changed() {
 				on = !s.Enabled
 				e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPServerEnabled(ctx, id, on) }, nil)
 			}
@@ -548,7 +548,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 					ui.Text(c, tool.Description).TextColor(t.Muted)
 				}
 				on, name := tool.Trusted, tool.Name
-				if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.trust"), i18n.T("settings.ext.mcp.trust.help")).Changed() {
+				if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.trust"), i18n.T("settings.ext.mcp.trust.help")).Padding(0).Changed() {
 					on = !tool.Trusted
 					e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPToolTrusted(ctx, id, name, on) }, nil)
 				}
