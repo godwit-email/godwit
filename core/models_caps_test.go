@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -368,6 +369,22 @@ func TestCapabilityStatusStale(t *testing.T) {
 	close(gate)
 	require.NoError(t, <-done)
 	assert.Empty(t, statusOf(t, s, ms.ID), "the service changed while the test ran")
+}
+
+// A generation test that hangs ends at genTestTimeout with code timeout.
+func TestCapabilityGenTimeout(t *testing.T) {
+	prev := genTestTimeout
+	genTestTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { genTestTimeout = prev })
+	s, bg := modelSvc(t), context.Background()
+	srv := testllm.Start(t, "openai")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "g", BaseURL: srv.URL, Kind: "openai", Models: []string{"m1"}})
+	require.NoError(t, err)
+	srv.Script(testllm.Turn{Hang: true})
+	st, err := s.TestCapability(bg, ms.ID, ms.Input(), CapGen)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, "timeout", st.Code)
+	assert.Equal(t, "timeout", statusOf(t, s, ms.ID)[CapGen].Code)
 }
 
 // The status holds codes: never the key, the body or error text.

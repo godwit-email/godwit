@@ -19,7 +19,7 @@ func (m *modelsView) view(c *ui.Context) {
 	empty := m.loaded && len(m.services) == 0
 	var add []func()
 	if !empty {
-		add = append(add, func() { kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add) })
+		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
 	}
 	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
 	if empty {
@@ -29,8 +29,9 @@ func (m *modelsView) view(c *ui.Context) {
 		}})
 	}
 	if len(m.services) > 0 {
-		m.list(c)
-		m.modelSelects(c)
+		u := deriveUsage(m.a.settings, m.services)
+		m.usage(c, u)
+		m.list(c, u)
 	}
 	if m.open {
 		m.dialog(c)
@@ -41,26 +42,31 @@ func (m *modelsView) view(c *ui.Context) {
 func (m *modelsView) close() { m.open, m.form = false, nil }
 
 // list is the services, one card row each.
-func (m *modelsView) list(c *ui.Context) {
+func (m *modelsView) list(c *ui.Context, u usage) {
 	t, th := theme.Of(c), c.Theme()
 	var rows []func()
 	for _, s := range m.services {
 		rows = append(rows, func() {
 			listRow(c.Key(s.ID), 0, false, func() { m.openEdit(s) }, func() {
 				ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-					kit.Text(c, badge(s.Name), t.Text.Sm).Font(theme.Mono)
+					kit.Text(c, badge(s.Provider), t.Text.Sm).Font(theme.Mono)
 				})
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, s.Name+" · "+kindLabel(s.Kind)).FontWeight(500).SingleLine().Shrink(1)
-						statusChip(c, m.status[s.ID])
+						ui.Text(c, s.Name).FontWeight(500).LineHeight(theme.LineFor(s.Name)).SingleLine().Shrink(1)
+						l, label := svcLook(s)
+						statusLine(c, line{label, l})
 					})
-					kit.Text(c, s.BaseURL, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).SingleLine()
+					kit.Text(c, s.BaseURL, t.Text.Sm).Font(theme.Mono).LineHeight(theme.LineBase).TextColor(t.Muted).SingleLine()
+					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
+						if s.Kind != "" && len(s.Models) > 0 {
+							capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), u.genSvc != nil && u.genSvc.ID == s.ID)
+						}
+						if s.JudgeFormat != "" && s.JudgeModel != "" {
+							capChip(c, i18n.Tf("settings.models.judge_chip", s.JudgeModel), u.judgeSvc != nil && u.judgeSvc.ID == s.ID)
+						}
+					})
 				})
-				capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), false)
-				if strings.HasPrefix(m.a.settings.DefaultModel, s.Slug+"/") {
-					capChip(c, i18n.T("settings.models.default_badge"), true)
-				}
 				ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 			}).Padding(th.Space(2), th.Space(4))
 		})
@@ -68,23 +74,99 @@ func (m *modelsView) list(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.models.services"), i18n.T("settings.models.foot"), rows...)
 }
 
-func statusChip(c *ui.Context, s svcStatus) {
+// statusLine is a dot and a text in the look's colors.
+func statusLine(c *ui.Context, l line) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	bg, fg, dot, label := statusLook(t, s)
-	ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Full).Background(bg).Shrink(0).Children(func() {
-		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Radius(t.Radius.Full).Background(dot)
-		kit.Text(c, label, t.Text.Sm).TextColor(fg)
+	dot, fg := l.look.colors(t)
+	return ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(0).Children(func() {
+		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+		kit.Text(c, l.text, t.Text.Sm).TextColor(fg)
 	})
 }
 
-// capChip is a capability chip; the default one carries a check.
+// capChip is a capability chip; the one in use as the default carries a check.
 func capChip(c *ui.Context, text string, check bool) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(th.Space(5)).Padding(0, th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Shrink(0).Children(func() {
+	fg := t.Muted
+	if check {
+		fg = t.Foreground
+	}
+	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(th.Space(5)).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).TextColor(fg).Shrink(0).Children(func() {
 		if check {
-			ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
+			ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs).Label(i18n.T("settings.models.default_badge"))
 		}
 		kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineTight)
+	})
+}
+
+// usage is the 用途 card: the generate, small-task and judge defaults with
+// their last tests, an alert when the generator is broken, and a hint when
+// generation answers the judge.
+func (m *modelsView) usage(c *ui.Context, u usage) {
+	a := m.a
+	t, th := theme.Of(c), c.Theme()
+	defer func() {
+		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
+	}() // what the next frame shows
+	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string)) {
+		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, MinWidth: theme.UsageSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, v, opts).Label(label).Disabled(u.disabled)
+		if u.disabled {
+			s.Opacity(0.5)
+		}
+		if s.Changed() {
+			val := *v
+			m.setModel(func(st *core.Settings) { set(st, val) })
+		}
+	}
+	gen, small, judge := i18n.T("settings.models.use.gen"), i18n.T("settings.models.use.small"), i18n.T("settings.models.use.judge")
+	ui.Column(c).Gap(theme.SectionGap).Children(func() {
+		sectionTitle(c, i18n.T("settings.models.usage"))
+		if u.alert != "" {
+			ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).
+				Border(theme.Hairline, t.DangerBorder).Background(t.DangerBg).Children(func() {
+				ui.Text(c, u.alert).TextColor(t.DangerText).Grow(1).Shrink(1).MinWidth(theme.SidebarMinWidth)
+				svc := *u.genSvc
+				settingButton(c, i18n.T("settings.models.use.fix"), kit.Default, false).Background(t.DangerText).TextColor(t.OnSolid).FontWeight(400).OnClick(func() { m.openEdit(svc) })
+			})
+		}
+		settingsCard(c,
+			func() {
+				usageRow(c, gen, i18n.T("settings.models.use.gen.desc"), &u.gen, func() {
+					sel(gen, &m.defModel, u.genOpts, func(st *core.Settings, v string) { st.DefaultModel = v })
+				})
+			},
+			func() {
+				usageRow(c, small, i18n.T("settings.models.use.small.desc"), nil, func() {
+					sel(small, &m.smallModel, u.smallOpts, func(st *core.Settings, v string) { st.SmallModel = v })
+				})
+			},
+			func() {
+				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
+					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v })
+				})
+			})
+	})
+	if u.suggest {
+		ui.Row(c).Wrap().AlignItems(ui.Center).Children(func() {
+			kit.Text(c, i18n.T("settings.models.use.suggest"), t.Text.Sm).TextColor(t.Muted)
+			kit.TextLink(c, i18n.T("settings.models.add"), t.Foreground, t.Text.Sm).OnClick(m.add)
+		})
+	}
+}
+
+// usageRow is a row of the 用途 card: label, description and status line
+// on the left, the select on the right.
+func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			kit.Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
+			kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
+			if l != nil {
+				statusLine(c, *l).Margin(th.Space(1.25), 0, 0, 0) // the design's 4, and the pixel its CJK line height adds
+			}
+		})
+		control()
 	})
 }
 
@@ -393,44 +475,4 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 			})
 		}
 	})
-}
-
-// modelSelects pick Settings.DefaultModel and SmallModel among the saved
-// services' models, as rows of a 用途 section.
-func (m *modelsView) modelSelects(c *ui.Context) {
-	a := m.a
-	defer func() { m.defModel, m.smallModel = a.settings.DefaultModel, a.settings.SmallModel }() // what the next frame shows
-	opts := func(none string) []kit.Option[string] {
-		o := []kit.Option[string]{{Value: "", Label: none}}
-		for _, s := range m.services {
-			for _, mod := range s.Models {
-				o = append(o, kit.Option[string]{Value: s.Slug + "/" + mod, Label: s.Name + " / " + mod})
-			}
-		}
-		return o
-	}
-	def := opts(i18n.T("settings.models.default.none"))
-	label, small := i18n.T("settings.models.default"), i18n.T("settings.models.small")
-	rows := []func(){func() {
-		settingRow(c, label, "", func() {
-			if settingSelect(c, label, &m.defModel, def).Changed() {
-				v := m.defModel
-				m.setModel(func(st *core.Settings) { st.DefaultModel = v })
-			}
-		})
-	}}
-	if dm := a.settings.DefaultModel; !slices.ContainsFunc(def, func(o kit.Option[string]) bool { return o.Value == dm }) {
-		rows = append(rows, func() {
-			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.Tf("settings.models.default.missing", dm), nil) })
-		})
-	}
-	rows = append(rows, func() {
-		settingRow(c, small, "", func() {
-			if settingSelect(c, small, &m.smallModel, opts(i18n.T("settings.models.small.same"))).Changed() {
-				v := m.smallModel
-				m.setModel(func(st *core.Settings) { st.SmallModel = v })
-			}
-		})
-	})
-	settingsSection(c, i18n.T("settings.models.usage"), "", rows...)
 }

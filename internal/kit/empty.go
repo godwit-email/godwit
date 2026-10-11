@@ -28,7 +28,7 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 			})
 		}
 		ui.Column(c).AlignItems(ui.Center).Gap(th.Space(1)).MaxWidth(theme.EmptyDescMax).Children(func() {
-			Text(c, o.Title, t.Text.Title).FontWeight(600).TextAlign(ui.Center)
+			Text(c, o.Title, t.Text.Title).LineHeight(theme.LineFor(o.Title)).FontWeight(600).TextAlign(ui.Center)
 			if o.Desc != "" {
 				Text(c, o.Desc, t.Text.Body).LineHeight(theme.LineProse).TextColor(t.Muted).TextAlign(ui.Center)
 			}

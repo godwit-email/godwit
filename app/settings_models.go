@@ -21,12 +21,12 @@ import (
 type modelsView struct {
 	a                    *App
 	services             []core.ModelService
-	listGen              uint64              // bumped per list read; only the newest applies
-	form                 *modelForm          // nil until a service is chosen or added
-	defModel, smallModel string              // the model selects' values; follow a.settings between frames
-	open                 bool                // the add/edit dialog shows form
-	loaded               bool                // the list has been read once
-	status               map[int64]svcStatus // what a probe or test this session found, per service
+	listGen              uint64     // bumped per list read; only the newest applies
+	form                 *modelForm // nil until a service is chosen or added
+	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
+	judge                string
+	open                 bool // the add/edit dialog shows form
+	loaded               bool // the list has been read once
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
 	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
@@ -157,7 +157,7 @@ func (f *modelForm) addManual() {
 func (m *modelsView) load() {
 	a := m.a
 	m.listGen++
-	m.defModel, m.smallModel = a.settings.DefaultModel, a.settings.SmallModel
+	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	gen := m.listGen
 	var list []core.ModelService
 	a.query(func(ctx context.Context) (err error) {
@@ -386,7 +386,6 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 		switch {
 		case errors.Is(err, core.ErrModelAuth):
 			f.keyErr = humanize(err)
-			m.setStatus(f, statusBad)
 			return
 		case err != nil && then == nil:
 			f.fetchErr = fetchFailure(err)
@@ -395,7 +394,6 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 			a.toastErr(err)
 			return
 		}
-		m.setStatus(f, statusOK)
 		f.checked, f.reprobe, f.noList, f.fetched = conn, false, !res.ListSupported || len(res.Models) == 0, len(res.Models)
 		f.noListStatus = res.NoListStatus
 		if res.BaseURL != "" {
@@ -412,24 +410,23 @@ func (m *modelsView) probeWith(f *modelForm, then func(), auto bool) {
 	})
 }
 
-// test runs the saved service and shows how long it took, as probe does.
+// test runs the saved service and shows how long it took, as probe does;
+// core stores the status, which the list reads again.
 func (m *modelsView) test(f *modelForm) {
 	a, id, in, test, gen := m.a, f.id, f.input(), m.testService, m.a.gen
 	f.testing, f.testMsg = true, ""
 	start := a.clock.Now()
 	a.do(func(ctx context.Context) error { _, err := test(ctx, id, in, core.CapGen); return err }, func(err error) {
 		f.testing = false
-		if m.form != f || gen != a.gen {
+		if gen != a.gen {
+			return
+		}
+		m.load()
+		if m.form != f {
 			return
 		}
 		f.testOK = err == nil
-		m.setStatus(f, statusOK)
 		if err != nil {
-			if errors.Is(err, core.ErrModelAuth) {
-				m.setStatus(f, statusBad)
-			} else {
-				delete(m.status, f.id)
-			}
 			f.testMsg = humanize(err)
 			return
 		}
@@ -445,36 +442,152 @@ func (m *modelsView) setModel(set func(*core.Settings)) {
 	m.a.changeSettings(st)
 }
 
-// svcStatus is what a probe or test of a saved service found this session;
-// nothing is stored per service, so a service starts untested.
-type svcStatus int
+// look is a status line's dot and text color: what a test found.
+type look int
 
 const (
-	statusUntested svcStatus = iota
-	statusOK
-	statusBad
+	lookNone     look = iota // nothing to test: grey
+	lookOK                   // passed
+	lookUntested             // not tested since it changed: amber
+	lookFail                 // failed: red, red text
+	lookSlow                 // the judge falls back to generation: amber
 )
 
-// setStatus records the result for a saved service whose connection the form has not changed.
-func (m *modelsView) setStatus(f *modelForm, s svcStatus) {
-	if f.id == 0 || f.moved() {
-		return
+// colors are the look's dot and text colors.
+func (l look) colors(t theme.Tokens) (dot, fg ui.Color) {
+	switch l {
+	case lookOK:
+		return t.Success, t.Muted
+	case lookUntested, lookSlow:
+		return t.Attention, t.Muted
+	case lookFail:
+		return t.Danger, t.DangerText
 	}
-	if m.status == nil {
-		m.status = map[int64]svcStatus{}
-	}
-	m.status[f.id] = s
+	return t.Idle, t.Muted
 }
 
-// statusLook is a status chip's colors and label.
-func statusLook(t theme.Tokens, s svcStatus) (bg, fg, dot ui.Color, label string) {
-	switch s {
-	case statusOK:
-		return t.SuccessBg, t.SuccessText, t.Success, i18n.T("settings.models.status.ok")
-	case statusBad:
-		return t.DangerBg, t.DangerText, t.Danger, i18n.T("settings.models.status.bad")
+// line is a status line: a dot and its text.
+type line struct {
+	text string
+	look look
+}
+
+// usage is the 用途 card as the settings and the services' tests make it.
+type usage struct {
+	genOpts, smallOpts, judgeOpts []kit.Option[string]
+	disabled                      bool // no generate model: the selects say 先添加一个服务
+	gen, judge                    line
+	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers
+	alert                         string             // the default generator failed its test
+	suggest                       bool               // a judge service would be faster
+}
+
+// deriveUsage is the 用途 card for st and the services.
+func deriveUsage(st core.Settings, services []core.ModelService) usage {
+	var u usage
+	var genModel string
+	for i, s := range services {
+		if s.Kind != "" {
+			for _, mod := range s.Models {
+				ref := s.Slug + "/" + mod
+				u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + mod})
+				if ref == st.DefaultModel {
+					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
+				}
+			}
+		}
+		if s.JudgeFormat != "" && s.Slug == st.JudgeService {
+			u.judgeSvc = &services[i]
+		}
 	}
-	return t.Hover, t.Muted, t.Muted, i18n.T("settings.models.status.untested")
+	if len(u.genOpts) == 0 {
+		none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
+		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
+		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
+		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
+		return u
+	}
+	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
+	u.judgeOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.judge.by_gen")}}
+	for _, s := range services {
+		if s.JudgeFormat != "" {
+			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: s.Slug, Label: s.Name + " / " + s.JudgeModel})
+		}
+	}
+	if u.genSvc == nil {
+		u.genOpts = append([]kit.Option[string]{{Value: st.DefaultModel, Label: i18n.T("settings.models.default.none")}}, u.genOpts...)
+		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
+		if st.DefaultModel != "" {
+			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
+		}
+		return u
+	}
+	u.gen = capLine(u.genSvc, core.CapGen)
+	if u.judgeSvc != nil {
+		u.judge = capLine(u.judgeSvc, core.CapJudge)
+	} else {
+		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
+	}
+	if u.gen.look == lookFail {
+		end := i18n.T("settings.models.use.alert.end")
+		if u.judge.look == lookFail || u.judgeSvc == nil {
+			end = i18n.T("settings.models.use.alert.judge_too")
+		}
+		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
+	}
+	return u
+}
+
+// capLine is a default's status line: its last test of capability c.
+func capLine(s *core.ModelService, c string) line {
+	st, ok := s.Status[c]
+	switch {
+	case !ok:
+		return line{s.Name + " · " + i18n.T("settings.models.status.untested"), lookUntested}
+	case st.State == "ok":
+		return line{s.Name + " · " + i18n.Tf("settings.models.test.ok", st.LatencyMs), lookOK}
+	}
+	return line{s.Name + " · " + failReason(st), lookFail}
+}
+
+// failReason is why a test failed: the HTTP status, when known, and the code.
+func failReason(st core.CapStatus) string {
+	r := cmpTr("settings.models.fail."+st.Code, i18n.T("settings.models.fail.error"))
+	if st.HTTPStatus > 0 {
+		return strconv.Itoa(st.HTTPStatus) + " · " + r
+	}
+	return r
+}
+
+// svcLook is a service's status chip: Key 失效 when a capability's key was
+// refused, 连接失败 when one failed otherwise, 未测试 while one is untested.
+func svcLook(s core.ModelService) (look, string) {
+	var caps []string
+	if s.Kind != "" {
+		caps = append(caps, core.CapGen)
+	}
+	if s.JudgeFormat != "" {
+		caps = append(caps, core.CapJudge)
+	}
+	l := lookOK
+	for _, c := range caps {
+		st, ok := s.Status[c]
+		switch {
+		case ok && st.State != "ok" && st.Code == "auth":
+			return lookFail, i18n.T("settings.models.status.bad")
+		case ok && st.State != "ok":
+			l = lookFail
+		case !ok && l == lookOK:
+			l = lookUntested
+		}
+	}
+	switch l {
+	case lookFail:
+		return l, i18n.T("settings.models.fail.error")
+	case lookUntested:
+		return l, i18n.T("settings.models.status.untested")
+	}
+	return l, i18n.T("settings.models.status.ok")
 }
 
 var httpStatus = regexp.MustCompile(`HTTP \d{3}`)
@@ -489,10 +602,17 @@ func fetchFailure(err error) string {
 
 func kindLabel(kind string) string { return cmpTr("settings.models.kind."+kind, kind) }
 
-// badge is a service's two-letter mark.
-func badge(name string) string {
-	r := []rune(strings.ToUpper(strings.TrimSpace(name)))
-	return string(r[:min(2, len(r))])
+// badge is a service's two-letter mark: its provider's.
+func badge(provider string) string {
+	switch provider {
+	case core.ProviderOpenAI:
+		return "AI"
+	case core.ProviderAnthropic:
+		return "AN"
+	case core.ProviderTypeSafe:
+		return "TS"
+	}
+	return "GW" // other: a gateway or compatible service
 }
 
 // listCard is a bordered list of rows.

@@ -222,17 +222,28 @@ func pageHeading(c *ui.Context, title, sub string, action ...func()) {
 func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600)
-		ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
-			for i, row := range rows {
-				if i > 0 {
-					ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(t.Border)
-				}
-				row()
-			}
-		})
+		sectionTitle(c, title)
+		settingsCard(c, rows...)
 		if footnote != "" {
 			kit.Text(c, footnote, t.Text.Sm).TextColor(t.Muted)
+		}
+	})
+}
+
+// sectionTitle is a settings section's title.
+func sectionTitle(c *ui.Context, title string) {
+	kit.Text(c, title, theme.Of(c).Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600)
+}
+
+// settingsCard is a section's card of rows, with hairlines between them.
+func settingsCard(c *ui.Context, rows ...func()) {
+	t := theme.Of(c)
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
+		for i, row := range rows {
+			if i > 0 {
+				ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(t.Border)
+			}
+			row()
 		}
 	})
 }

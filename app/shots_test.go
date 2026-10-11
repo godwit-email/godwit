@@ -277,36 +277,69 @@ func TestShots(t *testing.T) {
 		s.see("Thanks, checked in. See you on board.")
 		shot(s.harness, "MainFlight")
 	})
-	// modelsSetup swaps the fake model service for the design's three.
-	modelsSetup := func(s *shotEnv, keep bool) {
+	// modelsSetup swaps the fake model service for the design's: the views
+	// (normal, broken, gen-only) pick which of the three and their tests.
+	modelsSetup := func(s *shotEnv, view string) {
 		ctx := context.Background()
 		list, err := s.env.Svc.ListModelServices(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.setSettings(func(st *core.Settings) { st.DefaultModel, st.SmallModel = "", "" })
+		s.setSettings(func(st *core.Settings) { st.DefaultModel, st.SmallModel, st.JudgeService = "", "", "" })
 		for _, ms := range list {
 			if err := s.env.Svc.RemoveModelService(ctx, ms.ID); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if !keep {
+		defer func() { // a load still under way read the sample's settings: the newest applies
+			want := s.app.settings.DefaultModel
+			s.app.load()
+			s.until("the app reads the design's settings", func() bool { return s.app.settings.DefaultModel == want })
+		}()
+		if view == "empty" {
 			return
 		}
-		for _, in := range []core.ModelServiceInput{
-			{Name: "OpenAI", Kind: "openai-responses", BaseURL: "https://api.openai.com/v1", APIKey: "k1", Models: []string{"[MODEL A]", "gpt-6-luna"}},
-			{Name: "Anthropic", Kind: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "k2", Models: []string{"[MODEL B]"}},
-			{Name: "本地网关", Kind: "openai", BaseURL: "http://127.0.0.1:8080/v1", APIKey: "k3", Models: []string{"[MODEL C]", "[MODEL D]", "[MODEL E]"}},
-		} {
+		all := []core.ModelServiceInput{
+			{Name: "OpenAI", Kind: "openai-responses", BaseURL: "https://api.openai.com/v1", APIKey: "k1", Models: []string{"[MODEL A]", "[MODEL B]"}, JudgeFormat: "decisions", JudgeModel: "gpt-6-luna"},
+			{Name: "Anthropic", Kind: "anthropic", BaseURL: "https://api.anthropic.com/v1", APIKey: "k2", Models: []string{"[MODEL D]"}},
+			// the design's address is http://127.0.0.1:[PORT]/v1, which no service can store
+			{Name: "本地网关", Kind: "openai", BaseURL: "http://127.0.0.1:8080/v1", APIKey: "k3", Models: []string{"[MODEL F]", "[MODEL G]", "[MODEL H]"}},
+		}
+		if view == "gen-only" {
+			all = all[1:]
+		}
+		for _, in := range all {
 			if _, err := s.env.Svc.AddModelService(ctx, in); err != nil {
 				t.Fatal(err)
 			}
 		}
-		s.setSettings(func(st *core.Settings) { st.DefaultModel, st.SmallModel = "openai/[MODEL A]", "openai/gpt-6-luna" })
+		s.setSettings(func(st *core.Settings) {
+			st.DefaultModel, st.JudgeService = "openai/[MODEL A]", "openai"
+			if view == "gen-only" {
+				st.DefaultModel, st.JudgeService = "anthropic/[MODEL D]", ""
+			}
+		})
+	}
+	// modelsStatus gives the listed services the design's test results:
+	// stored tests need a reachable service, which the design's addresses aren't.
+	modelsStatus := func(s *shotEnv, view string) {
+		m := s.app.pages[PageSettings].(*settingsPage).models
+		ok := func(ms int) core.CapStatus { return core.CapStatus{State: "ok", LatencyMs: ms} }
+		auth := core.CapStatus{State: "fail", Code: "auth", HTTPStatus: 401}
+		for i, svc := range m.services {
+			switch {
+			case svc.Name == "OpenAI" && view == "broken":
+				m.services[i].Status = map[string]core.CapStatus{core.CapGen: auth, core.CapJudge: auth}
+			case svc.Name == "OpenAI":
+				m.services[i].Status = map[string]core.CapStatus{core.CapGen: ok(812), core.CapJudge: ok(143)}
+			case svc.Name == "Anthropic":
+				m.services[i].Status = map[string]core.CapStatus{core.CapGen: ok(812)}
+			}
+		}
 	}
 	t.Run("Settings", func(t *testing.T) {
 		s := shotMail(t, noAuto)
-		modelsSetup(s, true)
+		modelsSetup(s, "normal")
 		s.openSettings(accountRoute(s.you.ID))
 		s.see("签名")
 		shot(s.harness, "SettingsAccounts")
@@ -315,6 +348,7 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "SettingsGeneral")
 		s.openSettings("models")
 		s.see("OpenAI")
+		modelsStatus(s, "normal")
 		shot(s.harness, "SettingsModels")
 		s.click("添加服务")
 		s.see("其他服务")
@@ -322,13 +356,21 @@ func TestShots(t *testing.T) {
 		s.see("https://api.openai.com/v1")
 		shot(s.harness, "SettingsModelsSheet")
 	})
-	t.Run("SettingsModelsEmpty", func(t *testing.T) {
-		s := shotMail(t, noAuto)
-		modelsSetup(s, false)
-		s.openSettings("models")
-		s.see("添加服务")
-		shot(s.harness, "SettingsModelsEmpty")
-	})
+	for _, v := range []struct{ view, name string }{{"broken", "SettingsModelsBroken"}, {"gen-only", "SettingsModelsGenOnly"}, {"empty", "SettingsModelsEmpty"}} {
+		t.Run(v.name, func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			modelsSetup(s, v.view)
+			s.openSettings("models")
+			s.see("模型服务")
+			if v.view != "empty" {
+				s.see("Anthropic")
+				modelsStatus(s, v.view)
+			} else {
+				s.see("还没有接入模型服务")
+			}
+			shot(s.harness, v.name)
+		})
+	}
 	t.Run("SettingsExtensions", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		shotInstall(t, s.harness, "deepl-translate", `{"name":"deepl-translate","version":"0.1.0","description":"用 DeepL 翻译邮件，不经过大模型","main":"index.ts",

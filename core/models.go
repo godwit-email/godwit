@@ -293,13 +293,14 @@ func (s *Service) modelServiceBy(ctx context.Context, where string, arg any) (Mo
 	return s.scanModelService(rows.Values[0])
 }
 
+// ListModelServices lists the services in the order they were added.
 func (s *Service) ListModelServices(ctx context.Context) ([]ModelService, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT "+modelCols+" FROM model_services ORDER BY name")
+	rows, err := s.db.Query(ctx, "SELECT "+modelCols+" FROM model_services ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +601,20 @@ func (s *Service) TestCapability(ctx context.Context, id int64, in ModelServiceI
 	return st, err
 }
 
+// genTestTimeout bounds a generation test; tests shorten it.
+var genTestTimeout = 30 * time.Second
+
 func (s *Service) testGen(ctx context.Context, id int64, in ModelServiceInput, key string) error {
+	tctx, cancel := context.WithTimeout(ctx, genTestTimeout)
+	defer cancel()
+	err := s.testGenRun(tctx, id, in, key)
+	if err != nil && ctx.Err() == nil && errors.Is(tctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("the model service did not answer in time: %w", context.DeadlineExceeded)
+	}
+	return err
+}
+
+func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput, key string) error {
 	models := in.Models
 	if len(models) == 0 {
 		var err error

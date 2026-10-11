@@ -25,7 +25,7 @@ type pluginHost struct {
 	s      *Service
 	name   string
 	net    *plugins.Client
-	decide chan struct{} // LLMDecide's per-plugin limit
+	decide chan struct{}                          // LLMDecide's per-plugin limit
 	config atomic.Pointer[plugins.ConfigSnapshot] // the current config; each call takes it when admitted
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -31,7 +32,7 @@ func withLLM(t *testing.T) *harness {
 func (h *harness) editService(name string) *settingsPage {
 	h.t.Helper()
 	p := h.openSettings("models")
-	h.click(name + " · OpenAI 兼容（Chat Completions）")
+	h.click(name)
 	h.see("编辑：" + name)
 	return p
 }
@@ -61,7 +62,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	h := withLLM(t)
 	test, _ := h.modelService("test")
 	h.openSettings("models")
-	h.see("test · OpenAI 兼容")
+	h.see("test")
 	h.see("默认")
 	h.click("添加服务")
 	h.click("其他服务")
@@ -81,7 +82,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.click("添加")
 	h.until("added", func() bool { s, _ := h.modelService("local"); return slices.Equal(s.Models, []string{"m1"}) })
 	h.until("the dialog closes on the save", func() bool { return m.form == nil && !m.open })
-	h.see("local · OpenAI 兼容（Chat Completions）")
+	h.see("local")
 
 	h.click("test / m1") // the default model
 	h.click("local / m1")
@@ -90,7 +91,7 @@ func TestModelServiceCRUD(t *testing.T) {
 		return err == nil && st.DefaultModel == "local/m1"
 	})
 
-	h.click("local · OpenAI 兼容（Chat Completions）")
+	h.click("local")
 	h.click("测试连接")
 	h.see("连接正常 · 0 ms")
 	h.until("the list shows it normal", func() bool { return h.tt.HasText("正常") })
@@ -98,7 +99,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.click("删除此服务")
 	h.click("删除")
 	h.until("removed", func() bool { _, ok := h.modelService("local"); return !ok })
-	h.until("the list drops it", func() bool { return !h.tt.HasText("local · OpenAI 兼容") })
+	h.until("the list drops it", func() bool { return !h.tt.HasText("local") })
 }
 
 func TestModelServiceKeyKept(t *testing.T) {
@@ -169,8 +170,8 @@ func TestRenameServiceKeepsDefault(t *testing.T) {
 	h.fill("名称", "renamed")
 	h.click("保存")
 	h.until("renamed", func() bool { _, ok := h.modelService("renamed"); return ok })
-	h.see("renamed · OpenAI 兼容（Chat Completions）") // the dialog closed on the save
-	h.click("renamed · OpenAI 兼容（Chat Completions）")
+	h.see("renamed") // the dialog closed on the save
+	h.click("renamed")
 	h.see("引用名：test")
 	if d := h.savedDefault(); d != "test/m1" {
 		t.Fatalf("default %q: a rename must not touch it", d)
@@ -222,7 +223,7 @@ func TestModelServiceBusyAcrossNavigation(t *testing.T) {
 		<-release
 		return core.CapStatus{}, nil
 	}
-	h.click("test · OpenAI 兼容（Chat Completions）") // opening lists the models: that fetch waits on release
+	h.click("test") // opening lists the models: that fetch waits on release
 	h.see("编辑：test")
 	h.click("测试连接")
 	f := m.form
@@ -272,7 +273,7 @@ func modelsServer(t *testing.T, status int, models ...string) (url string, keys 
 func (h *harness) newService() *modelsView {
 	h.t.Helper()
 	p := h.openSettings("models")
-	h.see("test · OpenAI 兼容")
+	h.see("test")
 	h.click("添加服务")
 	h.click("其他服务")
 	return p.models
@@ -287,7 +288,7 @@ func (h *harness) typeModel(id string) {
 func TestAddFromPreset(t *testing.T) {
 	h := withLLM(t)
 	p := h.openSettings("models")
-	h.see("test · OpenAI 兼容")
+	h.see("test")
 	h.click("添加服务")
 	h.click("Ollama")
 	f := p.models.form
@@ -396,7 +397,7 @@ func TestStaleProbeIgnored(t *testing.T) {
 		<-release
 		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"stale-model"}, ListSupported: true}, nil
 	}
-	h.click("test · OpenAI 兼容（Chat Completions）") // opening lists the models
+	h.click("test") // opening lists the models
 	h.see("编辑：test")
 	f := m.form
 	h.until("the fetch started", func() bool { return f.probing })
@@ -441,7 +442,7 @@ func TestSmallModelSetting(t *testing.T) {
 		return st.SmallModel
 	}
 	h.openSettings("models")
-	h.see("小任务模型（总结、翻译、即时回复）")
+	h.see("小任务")
 	h.click("与默认模型相同")
 	h.click("test / m2")
 	h.until("small model saved", func() bool { return small() == "test/m2" })
@@ -501,7 +502,7 @@ func TestRefusedKeyBlocksSave(t *testing.T) {
 
 	// a saved service whose connection is unchanged probes again too
 	h.click("取消")
-	h.click("test · OpenAI 兼容（Chat Completions）") // opening lists the models
+	h.click("test") // opening lists the models
 	h.see("编辑：test")
 	h.until("the fetch settles", func() bool { return asked() == 4 && !m.form.probing })
 	h.see("API Key 被拒绝（401/403）")
@@ -695,54 +696,44 @@ func TestModelsDeleteConfirmStrip(t *testing.T) {
 	h.see("还没有接入模型服务")
 }
 
-// TestModelStatusChipDark: the rendered chip's fill and dot are the dark tokens.
-func TestModelStatusChipDark(t *testing.T) {
+// TestModelStatusLineDark: a status line's dot is the dark token of its look.
+func TestModelStatusLineDark(t *testing.T) {
 	d := theme.Dark()
 	for _, c := range []struct {
-		s       svcStatus
-		bg, dot ui.Color
-		label   string
-	}{
-		{statusOK, d.SuccessBg, d.Success, "正常"},
-		{statusUntested, d.Hover, d.Muted, "未测试"},
-		{statusBad, d.DangerBg, d.Danger, "Key 失效"},
-	} {
+		l   look
+		dot ui.Color
+	}{{lookOK, d.Success}, {lookUntested, d.Attention}, {lookFail, d.Danger}, {lookSlow, d.Attention}, {lookNone, d.Idle}} {
 		tt := ui.NewTester(func(c2 *ui.Context) {
 			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, false))
-			ui.Box(c2).Padding(20).Children(func() { statusChip(c2, c.s) })
+			ui.Box(c2).Padding(20).Children(func() { statusLine(c2, line{"状态", c.l}) })
 		}, 200, 100)
-		r, ok := tt.Find(c.label)
+		r, ok := tt.Find("状态")
 		if !ok {
-			t.Fatalf("no chip %q", c.label)
+			t.Fatal("no status line")
 		}
-		y := int(r.Y + r.H/2)
-		img := tt.Image()
-		for name, p := range map[string]struct {
-			x    int
-			want ui.Color
-		}{"fill": {int(r.X+r.W) + 3, c.bg}, "dot": {int(r.X) - 9, c.dot}} {
-			got, want := img.RGBAAt(p.x, y), p.want.SRGB()
-			if dd := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); dd > 8 {
-				t.Errorf("%s %s: pixel %v, want dark %v", c.label, name, got, want)
-			}
+		got, want := tt.Image().RGBAAt(int(r.X)-9, int(r.Y+r.H/2)), c.dot.SRGB() // the 6 px dot, 6 px before the text
+		if dd := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); dd > 8 {
+			t.Errorf("look %d dot: pixel %v, want dark %v", c.l, got, want)
 		}
 	}
 }
 
+// TestModelStatusFromTest: a failed test is stored, and the list and 用途 read it.
 func TestModelStatusFromTest(t *testing.T) {
-	h := withLLM(t)
-	p := h.editService("test")
-	m := p.models
-	if m.status[m.form.id] == statusBad {
-		t.Fatal("starts invalid")
-	}
-	m.testService = func(context.Context, int64, core.ModelServiceInput, string) (core.CapStatus, error) {
-		return core.CapStatus{}, core.ErrModelAuth
-	}
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		e.LLM(t).Script(coretest.Turn{Status: 401})
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.editService("test")
+	h.see("未测试")
 	h.click("测试连接")
-	h.until("key invalid", func() bool { return m.status[m.form.id] == statusBad })
-	h.click("取消")
 	h.see("Key 失效")
+	h.click("取消")
+	h.see("test · 401 · API Key 无效")
+	h.see("生成用的 test 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用，判断也一样。")
+	h.click("去修复")
+	h.see("编辑：test")
 }
 
 func TestModelsKeyEyeShowsOnlyTyped(t *testing.T) {
@@ -826,5 +817,92 @@ func TestDropRefsGenOff(t *testing.T) {
 	got, _ = dropRefs(st, core.ModelService{ID: 1, Slug: "gw"}, others[:2]) // removed, no alt
 	if got.DefaultModel != "" || got.SmallModel != "" || got.JudgeService != "" {
 		t.Fatalf("removed: %+v", got)
+	}
+}
+
+// TestDeriveUsage: the 用途 card's status lines, alert, suggestion and
+// disabled selects follow the defaults and the services' stored tests.
+func TestDeriveUsage(t *testing.T) {
+	ok := func(ms int) core.CapStatus { return core.CapStatus{State: "ok", LatencyMs: ms} }
+	auth := core.CapStatus{State: "fail", Code: "auth", HTTPStatus: 401}
+	oai := core.ModelService{ID: 1, Name: "OpenAI", Slug: "openai", Provider: core.ProviderOpenAI, Kind: "openai-responses", Models: []string{"[MODEL A]", "[MODEL B]"},
+		JudgeFormat: "decisions", JudgeModel: "gpt-6-luna", Status: map[string]core.CapStatus{core.CapGen: ok(812), core.CapJudge: ok(143)}}
+	ant := core.ModelService{ID: 2, Name: "Anthropic", Slug: "anthropic", Kind: "anthropic", Models: []string{"[MODEL D]"}}
+	ts := core.ModelService{ID: 3, Name: "TypeSafe", Slug: "typesafe", JudgeFormat: "systemone", JudgeModel: "jev-latest"}
+	broken := oai
+	broken.Status = map[string]core.CapStatus{core.CapGen: auth, core.CapJudge: auth}
+	labels := func(o []kit.Option[string]) (l []string) {
+		for _, x := range o {
+			l = append(l, x.Label)
+		}
+		return l
+	}
+	for _, c := range []struct {
+		name            string
+		st              core.Settings
+		svcs            []core.ModelService
+		gen, judge      line
+		alert           string
+		suggest, off    bool
+		genOpts, judges []string
+	}{
+		{name: "normal", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "openai"}, svcs: []core.ModelService{oai, ant},
+			gen: line{"OpenAI · 连接正常 · 812 ms", lookOK}, judge: line{"OpenAI · 连接正常 · 143 ms", lookOK},
+			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna"}},
+		{name: "gen-only", st: core.Settings{DefaultModel: "anthropic/[MODEL D]"}, svcs: []core.ModelService{ant},
+			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"用 Anthropic / [MODEL D] 回答判断题，约慢 10 倍", lookSlow}, suggest: true,
+			genOpts: []string{"Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）"}},
+		{name: "broken", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "openai"}, svcs: []core.ModelService{broken},
+			gen: line{"OpenAI · 401 · API Key 无效", lookFail}, judge: line{"OpenAI · 401 · API Key 无效", lookFail},
+			alert:   "生成用的 OpenAI 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用，判断也一样。",
+			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna"}},
+		{name: "broken gen, judge fine", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "typesafe"}, svcs: []core.ModelService{broken, ts},
+			gen: line{"OpenAI · 401 · API Key 无效", lookFail}, judge: line{"TypeSafe · 未测试", lookUntested},
+			alert:   "生成用的 OpenAI 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用。",
+			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna", "TypeSafe / jev-latest"}},
+		{name: "judge only: nothing generates", st: core.Settings{JudgeService: "typesafe"}, svcs: []core.ModelService{ts},
+			gen: line{"未配置，这些功能暂时不可用", lookNone}, judge: line{"未配置", lookNone}, off: true,
+			genOpts: []string{"先添加一个服务"}, judges: []string{"先添加一个服务"}},
+		{name: "missing default", st: core.Settings{DefaultModel: "ghost/x"}, svcs: []core.ModelService{ant},
+			gen: line{"未找到的模型：ghost/x", lookFail}, judge: line{"未配置", lookNone},
+			genOpts: []string{"未设置", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			u := deriveUsage(c.st, c.svcs)
+			if u.gen != c.gen || u.judge != c.judge {
+				t.Errorf("lines %+v %+v, want %+v %+v", u.gen, u.judge, c.gen, c.judge)
+			}
+			if u.alert != c.alert || u.suggest != c.suggest || u.disabled != c.off {
+				t.Errorf("alert %q suggest %v disabled %v", u.alert, u.suggest, u.disabled)
+			}
+			if !slices.Equal(labels(u.genOpts), c.genOpts) || !slices.Equal(labels(u.judgeOpts), c.judges) {
+				t.Errorf("options %q %q", labels(u.genOpts), labels(u.judgeOpts))
+			}
+			if c.off != (len(u.smallOpts) == 1) {
+				t.Errorf("small options %q", labels(u.smallOpts))
+			}
+		})
+	}
+}
+
+// TestServiceLook: the list's chip is Key 失效 on a refused key, 连接失败 on
+// another failure, 未测试 while an enabled capability is untested.
+func TestServiceLook(t *testing.T) {
+	ok, auth, down := core.CapStatus{State: "ok"}, core.CapStatus{State: "fail", Code: "auth"}, core.CapStatus{State: "fail", Code: "timeout"}
+	for _, c := range []struct {
+		svc   core.ModelService
+		look  look
+		label string
+	}{
+		{core.ModelService{Kind: "openai", Status: map[string]core.CapStatus{core.CapGen: ok}}, lookOK, "正常"},
+		{core.ModelService{Kind: "openai"}, lookUntested, "未测试"},
+		{core.ModelService{Kind: "openai", JudgeFormat: "decisions", Status: map[string]core.CapStatus{core.CapGen: ok}}, lookUntested, "未测试"},
+		{core.ModelService{Kind: "openai", JudgeFormat: "decisions", Status: map[string]core.CapStatus{core.CapGen: down, core.CapJudge: auth}}, lookFail, "Key 失效"},
+		{core.ModelService{Kind: "openai", Status: map[string]core.CapStatus{core.CapGen: down}}, lookFail, "连接失败"},
+		{core.ModelService{JudgeFormat: "systemone", Status: map[string]core.CapStatus{core.CapGen: auth, core.CapJudge: ok}}, lookOK, "正常"}, // generate off: its old status doesn't count
+	} {
+		if l, label := svcLook(c.svc); l != c.look || label != c.label {
+			t.Errorf("%+v: %d %q, want %d %q", c.svc, l, label, c.look, c.label)
+		}
 	}
 }
