@@ -38,3 +38,8 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 		}
 	})
 }
+
+// EmptyAction is a button for Empty's Actions: the default size, 12 to each side as the design's.
+func EmptyAction(c *ui.Context, label string, o ButtonOpts) ui.Element {
+	return Button(c, label, o).PaddingX(c.Theme().Space(3))
+}

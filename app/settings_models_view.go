@@ -24,8 +24,8 @@ func (m *modelsView) view(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
 	if empty {
 		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
-			kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
-			kit.Button(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
+			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
+			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
 	if len(m.services) > 0 {

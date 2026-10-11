@@ -837,8 +837,8 @@ func (a *App) openAccountSettings(acc int64) func() {
 func (p *mailPage) noResults(c *ui.Context) {
 	q, th := p.hlQuery, c.Theme()
 	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: i18n.Tf("mail.search.empty_title", q), Desc: i18n.T("mail.search.empty_desc"), Actions: func() {
-		kit.Button(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
-		kit.Button(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))
+		kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
+		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.viewAccount(p.view)))
 	}}).Margin(th.Space(8), th.Space(1))
 }
 
