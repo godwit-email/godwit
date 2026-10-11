@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -23,12 +24,13 @@ type extView struct {
 	skills     []core.SkillInfo
 	plugins    []core.PluginInfo
 	servers    []core.MCPServer
-	plugin     string      // the plugin shown
-	cfg        *pluginForm // its settings form; nil while it loads or has none
-	mcp        int64       // the server shown
-	mform      *mcpForm    // the add or edit form; nil when closed
-	confirm    string      // the open confirmation: "plugin", "mcp"; "" none
-	open       bool        // the confirmation shows
+	plugin     string          // the plugin shown
+	cfg        *pluginForm     // its settings form; nil while it loads or has none
+	mcp        int64           // the server shown
+	mform      *mcpForm        // the add or edit form; nil when closed
+	later      map[string]bool // pending plugins collapsed with 暂不启用, this session only
+	confirm    string          // the open confirmation: "plugin", "mcp"; "" none
+	open       bool            // the confirmation shows
 	installing bool
 }
 
@@ -105,8 +107,8 @@ func (e *extView) view(c *ui.Context) {
 		ui.Column(c).Grow(1).Shrink(1).Children(func() { pageHeading(c, i18n.T("settings.extensions"), i18n.T("settings.ext.sub")) })
 		kit.Button(c, i18n.T("settings.ext.install"), kit.ButtonOpts{Disabled: e.installing}).OnClick(e.install)
 	})
-	kit.Tabs(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)),
-		i18n.Tf("settings.ext.tab.mcp", len(e.servers))).AlignSelf(ui.Start)
+	kit.TabsUnderline(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)),
+		i18n.Tf("settings.ext.tab.mcp", len(e.servers)))
 	switch e.tab {
 	case 0:
 		e.skillsView(c)
@@ -123,26 +125,19 @@ func (e *extView) view(c *ui.Context) {
 var skillTargets = []string{"message", "thread", "selection", "draft"}
 
 func (e *extView) skillsView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	listCard(c, func() {
-		for i, s := range e.skills {
-			listRow(c.Key(s.Name), i, false, nil, func() {
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-					ui.Row(c).Gap(th.Space(2)).Children(func() {
-						ui.Text(c, s.Name).FontWeight(500)
-						if s.Builtin {
-							kit.Badge(c, i18n.T("settings.ext.builtin"))
-						}
-					})
-					if s.Description != "" {
-						ui.Text(c, s.Description).TextColor(t.Muted)
-					}
-					if s.Error != "" {
-						ui.Text(c, i18n.Tf("settings.ext.skill.error", s.Error)).FontSize(t.Text.Sm).TextColor(t.Danger)
-					} else {
-						ui.Text(c, skillOn(s)).FontSize(t.Text.Sm).TextColor(t.Muted)
-					}
-				})
+	rows := make([]func(), len(e.skills))
+	for i, s := range e.skills {
+		rows[i] = func() {
+			desc := s.Description
+			if s.Error != "" {
+				desc = i18n.Tf("settings.ext.skill.error", s.Error)
+			} else if desc == "" {
+				desc = skillOn(s)
+			}
+			if s.Builtin {
+				desc += " · " + i18n.T("settings.ext.builtin")
+			}
+			settingRow(c.Key(s.Name), s.Name, desc, func() {
 				on := s.Enabled
 				if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", s.Name)).Changed() {
 					on = !s.Enabled // the switch may have written an older frame's copy
@@ -152,7 +147,8 @@ func (e *extView) skillsView(c *ui.Context) {
 				}
 			})
 		}
-	})
+	}
+	settingsSection(c, i18n.T("settings.ext.sec.skills"), "", rows...)
 }
 
 func skillOn(s core.SkillInfo) string {
@@ -210,40 +206,91 @@ func pluginStatus(p core.PluginInfo) string {
 	return i18n.T("settings.ext.status.disabled")
 }
 
+// pluginExcluded is the 不包含 line: what the plugin did not ask for. Sending
+// is always named: no plugin can send.
+func pluginExcluded(pm plugins.Permissions) string {
+	var no []string
+	if !slices.Contains(pm.Mail, "write") {
+		no = append(no, i18n.T("settings.ext.excl.write"))
+	}
+	if !pm.LLM {
+		no = append(no, i18n.T("settings.ext.excl.llm"))
+	}
+	no = append(no, i18n.T("settings.ext.excl.send"))
+	return i18n.Tf("settings.ext.excluded", strings.Join(no, i18n.T("mail.list_sep")))
+}
+
+// pluginRows: a row per plugin. The manifest has no description field yet, so
+// the description is empty (ledgered); plugins carry no built-in flag either.
 func (e *extView) pluginsView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if len(e.plugins) == 0 {
 		ui.Text(c, i18n.T("settings.ext.plugins.empty")).TextColor(t.Muted)
 		return
 	}
-	listCard(c, func() {
-		for i, p := range e.plugins {
-			listRow(c.Key(p.Name), i, p.Name == e.plugin, func() { e.showPlugin(p.Name) }, func() {
-				ui.Text(c, p.Name).FontWeight(500).Grow(1).Shrink(1)
-				ui.Text(c, p.Version).TextColor(t.Muted)
-				statusPill(c, pluginStatus(p), p.NeedsGrant || p.Error != "")
+	rows := make([]func(), len(e.plugins))
+	for i, p := range e.plugins {
+		rows[i] = func() { e.pluginRow(c.Key(p.Name), p) }
+	}
+	settingsSection(c, i18n.T("settings.ext.sec.plugins"), i18n.T("settings.ext.no_send"), rows...)
+}
+
+func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
+	t, th := theme.Of(c), c.Theme()
+	name := p.Name
+	open := p.Name == e.plugin
+	if p.NeedsGrant {
+		open = !e.later[name]
+	}
+	ui.Column(c).FillWidth().Children(func() {
+		ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+			kit.Pressable(c, kit.PressableOpts{OnClick: func() {
+				if p.NeedsGrant {
+					if e.later == nil {
+						e.later = map[string]bool{}
+					}
+					e.later[name] = open
+				} else {
+					e.showPlugin(name)
+				}
+			}}).Grow(1).Shrink(1).Children(func() {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, p.Name).FontWeight(500)
+					ui.Text(c, p.Version).FontSize(t.Text.Sm).TextColor(t.Muted)
+				})
 			})
+			if p.NeedsGrant {
+				statusPill(c, i18n.T("settings.ext.status.pending"), true)
+				return
+			}
+			on := p.Enabled
+			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", name)).Changed() {
+				e.setPluginEnabled(name, !p.Enabled)
+			}
+		})
+		if open {
+			e.pluginBody(c, p)
 		}
 	})
-	p, ok := e.pluginInfo()
-	if !ok {
-		return
+}
+
+func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
+	t, th := theme.Of(c), c.Theme()
+	name := p.Name
+	if p.NeedsGrant {
+		e.showPlugin(name) // loads its config form
 	}
-	kit.Card(c, func() {
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, p.Name).FontSize(t.Text.Lg).FontWeight(600)
-			ui.Text(c, p.Version+" · "+pluginStatus(p)).TextColor(t.Muted)
-		})
+	ui.Column(c).FillWidth().Gap(th.Space(4)).Padding(th.Space(1), th.Space(4), th.Space(4)).Children(func() {
 		if p.Error != "" {
 			kit.Alert(c, kit.Danger, p.Error, nil)
 		} else if p.DisabledReason != "" && !p.Enabled {
 			kit.Alert(c, kit.Warning, p.DisabledReason, nil)
 		}
-		ui.Text(c, i18n.T("settings.ext.perms")).FontWeight(600)
-		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+		ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+			ui.Text(c, i18n.T("settings.ext.perms")).FontWeight(500)
 			perm := func(tag, text string) {
-				ui.Row(c).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+				ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
+					ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 						ui.Text(c, tag).Font(theme.Mono).FontSize(t.Text.Sm)
 					})
 					ui.Text(c, text).Shrink(1)
@@ -265,29 +312,31 @@ func (e *extView) pluginsView(c *ui.Context) {
 			if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
 				ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
 			}
-			ui.Text(c, i18n.T("settings.ext.no_send")).TextColor(t.Muted)
+			ui.Text(c, pluginExcluded(pm)).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
-		name := p.Name
-		if p.NeedsGrant {
-			kit.Button(c, i18n.T("settings.ext.grant"), kit.ButtonOpts{}).AlignSelf(ui.Start).OnClick(func() {
-				e.write("plugins", func(ctx context.Context) error {
-					if err := e.a.svc.GrantPermission(ctx, name); err != nil {
-						return err
-					}
-					return e.a.svc.SetPluginEnabled(ctx, name, true)
-				}, nil)
-			})
-		} else {
-			on := p.Enabled
-			if kit.SwitchRow(c, &on, i18n.T("settings.ext.plugin.enable"), "").Padding(0).Changed() {
-				e.setPluginEnabled(name, !p.Enabled)
-			}
-		}
 		if f := e.cfg; f != nil && f.name == name && len(p.Config) > 0 {
 			e.configView(c, f, p.Config)
 		}
-		kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Variant: kit.Destructive}).AlignSelf(ui.Start).
-			OnClick(func() { e.confirm, e.open = "plugin", true })
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
+			if p.NeedsGrant {
+				kit.Button(c, i18n.T("settings.ext.allow"), kit.ButtonOpts{}).OnClick(func() {
+					e.write("plugins", func(ctx context.Context) error {
+						if err := e.a.svc.GrantPermission(ctx, name); err != nil {
+							return err
+						}
+						return e.a.svc.SetPluginEnabled(ctx, name, true)
+					}, nil)
+				})
+				kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+					if e.later == nil {
+						e.later = map[string]bool{}
+					}
+					e.later[name] = true
+				})
+			}
+			kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Variant: kit.Destructive}).
+				OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
+		})
 	})
 }
 

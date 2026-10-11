@@ -67,13 +67,12 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.PluginFixture(t, "config-demo")
 	p := h.openSettings("extensions")
-	h.click("安装插件…")
+	h.click("从文件夹安装")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("config-demo"); return ok })
-	h.see("需要授权")
-	h.click("授权并启用")
+	h.see("待授权")
+	h.click("允许并启用")
 	h.until("enabled", func() bool { info, _ := h.plugin("config-demo"); return info.Enabled && !info.NeedsGrant })
-	h.see("已启用")
 
 	// endpoint shows only on the Pro plan.
 	h.see("套餐")
@@ -125,7 +124,7 @@ func TestPluginDetailNoSend(t *testing.T) {
 	h.openSettings("extensions")
 	h.click("插件 · 1")
 	h.click("config-demo")
-	h.see("任何插件都不能发送邮件")
+	h.see("任何插件都不能发送邮件。")
 	h.see("不请求任何权限")
 	h.click("卸载插件")
 	h.see("卸载 config-demo？")
@@ -230,4 +229,59 @@ func TestMCPEditDuringSave(t *testing.T) {
 		f := p.ext.mform
 		return f != nil && !f.busy && f.id != 0 && f.name == "two"
 	})
+}
+
+// pendingHarness has config-demo installed but not approved.
+func pendingHarness(t *testing.T) *harness {
+	h, _ := withAccount(t)
+	if _, err := h.env.Svc.InstallPlugin(context.Background(), coretest.PluginFixture(t, "config-demo")); err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestPluginRowSwitch(t *testing.T) {
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		e.InstallPlugin(t, "config-demo")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings("extensions")
+	h.click("插件 · 1")
+	h.see("config-demo")
+	h.see("0.1.0")
+	h.click("启用 config-demo")
+	h.until("off", func() bool { p, _ := h.plugin("config-demo"); return !p.Enabled })
+	h.click("启用 config-demo")
+	h.until("on", func() bool { p, _ := h.plugin("config-demo"); return p.Enabled })
+}
+
+func TestPendingPluginExcludedLine(t *testing.T) {
+	got := pluginExcluded(plugins.Permissions{Mail: []string{"read"}})
+	if got != "不包含：修改邮件、调用大模型、发送邮件（任何插件都不能发送）" {
+		t.Fatalf("excluded %q", got)
+	}
+	got = pluginExcluded(plugins.Permissions{Mail: []string{"read", "write"}, LLM: true})
+	if got != "不包含：发送邮件（任何插件都不能发送）" {
+		t.Fatalf("excluded %q", got)
+	}
+	h := pendingHarness(t)
+	h.openSettings("extensions")
+	h.click("插件 · 1")
+	h.see("待授权")
+	h.see("它请求的权限")
+	h.see("不包含：")
+}
+
+func TestPendingNotNowCollapses(t *testing.T) {
+	h := pendingHarness(t)
+	h.openSettings("extensions")
+	h.click("插件 · 1")
+	h.see("允许并启用")
+	h.click("暂不启用")
+	h.until("collapsed", func() bool { return !h.tt.HasText("允许并启用") })
+	if p, _ := h.plugin("config-demo"); !p.NeedsGrant || p.Enabled {
+		t.Fatalf("core changed: %+v", p)
+	}
+	h.see("待授权")
 }
