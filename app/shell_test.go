@@ -244,9 +244,10 @@ func TestTitleBarHeight(t *testing.T) {
 	h, _ := withAccount(t)
 	for _, bar := range []ui.TitleBar{{Height: 28, Left: 78}, {Height: 40, Right: 138}} {
 		h.tt.SetTitleBar(bar)
+		barH, _ := chromeMetrics(bar.Height, theme.Light()) // 44 here, the strip's own height on Windows
 		r, ok := h.tt.Find("后退")
-		if !ok || r.Y+r.H/2 != 22 {
-			t.Errorf("bar %+v: back button at %+v, want centered in a 44-high bar", bar, r)
+		if !ok || r.Y+r.H/2 != barH/2 {
+			t.Errorf("bar %+v: back button at %+v, want centered in a %v-high bar", bar, r, barH)
 		}
 	}
 }
