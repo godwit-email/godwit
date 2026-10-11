@@ -133,7 +133,7 @@ func (e *extView) saveConfig(f *pluginForm, fields []plugins.ConfigField) {
 		return err
 	}, func(err error) {
 		f.busy = false
-		if e.cfg != f {
+		if e.cfgs[name] != f {
 			a.toastErr(err)
 			return
 		}
@@ -141,9 +141,10 @@ func (e *extView) saveConfig(f *pluginForm, fields []plugins.ConfigField) {
 			f.fieldError(err, fields)
 			return
 		}
-		e.cfg = newPluginForm(name, got)
+		nf := newPluginForm(name, got)
+		e.cfgs[name] = nf
 		for k, v := range f.vals { // edits made while it saved stay
-			if nv := e.cfg.vals[k]; nv != nil && [2]any{v.s, v.on} != sent[k] {
+			if nv := nf.vals[k]; nv != nil && [2]any{v.s, v.on} != sent[k] {
 				nv.s, nv.on = v.s, v.on
 			}
 		}

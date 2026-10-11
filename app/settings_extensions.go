@@ -24,13 +24,14 @@ type extView struct {
 	skills     []core.SkillInfo
 	plugins    []core.PluginInfo
 	servers    []core.MCPServer
-	plugin     string          // the plugin shown
-	cfg        *pluginForm     // its settings form; nil while it loads or has none
-	mcp        int64           // the server shown
-	mform      *mcpForm        // the add or edit form; nil when closed
-	later      map[string]bool // pending plugins collapsed with 暂不启用, this session only
-	confirm    string          // the open confirmation: "plugin", "mcp"; "" none
-	open       bool            // the confirmation shows
+	plugin     string                 // the plugin shown
+	cfgs       map[string]*pluginForm // each plugin's settings form, read once; absent while it loads
+	cfgBusy    map[string]bool        // a form read is in flight
+	mcp        int64                  // the server shown
+	mform      *mcpForm               // the add or edit form; nil when closed
+	later      map[string]bool        // pending plugins collapsed with 暂不启用, this session only
+	confirm    string                 // the open confirmation: "plugin", "mcp"; "" none
+	open       bool                   // the confirmation shows
 	installing bool
 }
 
@@ -64,8 +65,16 @@ func (e *extView) load() {
 			return
 		}
 		e.skills, e.plugins, e.servers = sk, pl, ms
+		for _, p := range pl {
+			e.loadCfg(p.Name)
+		}
+		for n := range e.cfgs { // uninstalled
+			if !slices.ContainsFunc(pl, func(p core.PluginInfo) bool { return p.Name == n }) {
+				delete(e.cfgs, n)
+			}
+		}
 		if _, ok := e.pluginInfo(); !ok && len(pl) > 0 {
-			e.showPlugin(pl[0].Name)
+			e.plugin = pl[0].Name
 		}
 		if _, ok := e.server(); !ok && len(ms) > 0 {
 			e.mcp = ms[0].ID
@@ -188,7 +197,7 @@ func (e *extView) install() {
 			e.installing = false
 			if err == nil {
 				e.tab = 1
-				e.showPlugin(info.Name)
+				e.plugin = info.Name
 			}
 		})
 	})
@@ -210,8 +219,14 @@ func pluginStatus(p core.PluginInfo) string {
 // is always named: no plugin can send.
 func pluginExcluded(pm plugins.Permissions) string {
 	var no []string
+	if !slices.Contains(pm.Mail, "read") {
+		no = append(no, i18n.T("settings.ext.excl.read"))
+	}
 	if !slices.Contains(pm.Mail, "write") {
 		no = append(no, i18n.T("settings.ext.excl.write"))
+	}
+	if len(pm.Net) == 0 {
+		no = append(no, i18n.T("settings.ext.excl.net"))
 	}
 	if !pm.LLM {
 		no = append(no, i18n.T("settings.ext.excl.llm"))
@@ -251,7 +266,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 					}
 					e.later[name] = open
 				} else {
-					e.showPlugin(name)
+					e.plugin = name
 				}
 			}}).Grow(1).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
@@ -277,9 +292,6 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 	t, th := theme.Of(c), c.Theme()
 	name := p.Name
-	if p.NeedsGrant {
-		e.showPlugin(name) // loads its config form
-	}
 	ui.Column(c).FillWidth().Gap(th.Space(4)).Padding(th.Space(1), th.Space(4), th.Space(4)).Children(func() {
 		if p.Error != "" {
 			kit.Alert(c, kit.Danger, p.Error, nil)
@@ -314,7 +326,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			}
 			ui.Text(c, pluginExcluded(pm)).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
-		if f := e.cfg; f != nil && f.name == name && len(p.Config) > 0 {
+		if f := e.cfgs[name]; f != nil && len(p.Config) > 0 {
 			e.configView(c, f, p.Config)
 		}
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
@@ -357,24 +369,31 @@ func statusPill(c *ui.Context, text string, attention bool) {
 	b.Children(func() { ui.Text(c, text).FontSize(t.Text.Sm) })
 }
 
-func (e *extView) showPlugin(name string) {
+// loadCfg reads a plugin's settings form once; a form already read or being read stays.
+func (e *extView) loadCfg(name string) {
 	a := e.a
-	e.plugin = name
-	if e.cfg != nil && e.cfg.name == name {
+	if e.cfgs[name] != nil || e.cfgBusy[name] {
 		return
 	}
-	e.cfg = nil
+	if e.cfgBusy == nil {
+		e.cfgBusy = map[string]bool{}
+	}
+	e.cfgBusy[name] = true
 	var vals []core.ConfigValue
 	a.query(func(ctx context.Context) (err error) {
 		vals, err = a.svc.GetPluginConfig(ctx, name)
 		return err
 	}, func(err error) {
+		delete(e.cfgBusy, name)
 		if err != nil {
 			a.toastErr(err)
 			return
 		}
-		if e.plugin == name && e.cfg == nil {
-			e.cfg = newPluginForm(name, vals)
+		if e.cfgs == nil {
+			e.cfgs = map[string]*pluginForm{}
+		}
+		if e.cfgs[name] == nil {
+			e.cfgs[name] = newPluginForm(name, vals)
 		}
 	})
 }
@@ -483,24 +502,31 @@ func mcpStatus(s core.MCPServer) (string, bool) {
 }
 
 func (e *extView) mcpView(c *ui.Context) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	kit.Button(c, i18n.T("settings.ext.mcp.add"), kit.ButtonOpts{Variant: kit.Outline, Icon: "plus"}).AlignSelf(ui.Start).
 		OnClick(func() { e.mform = &mcpForm{transport: "stdio"} })
 	if len(e.servers) == 0 && e.mform == nil {
 		ui.Text(c, i18n.T("settings.ext.mcp.empty")).TextColor(t.Muted)
 	}
 	if len(e.servers) > 0 {
-		listCard(c, func() {
-			for i, s := range e.servers {
-				listRow(c.Key(s.ID), i, s.ID == e.mcp && e.mform == nil, func() { e.mcp, e.mform = s.ID, nil }, func() {
-					ui.Text(c, s.Name).FontWeight(500).Grow(1).Shrink(1)
-					ui.Text(c, s.Transport).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted)
-					ui.Text(c, i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).TextColor(t.Muted)
+		rows := make([]func(), len(e.servers))
+		for i, s := range e.servers {
+			rows[i] = func() {
+				cc := c.Key(s.ID)
+				ui.Row(cc).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+					kit.Pressable(cc, kit.PressableOpts{Selected: s.ID == e.mcp && e.mform == nil, OnClick: func() { e.mcp, e.mform = s.ID, nil }}).
+						Grow(1).Shrink(1).Children(func() {
+						ui.Column(cc).Gap(th.Space(0.5)).Children(func() {
+							ui.Text(cc, s.Name).FontWeight(500)
+							ui.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools))).FontSize(t.Text.Sm).TextColor(t.Muted)
+						})
+					})
 					st, attention := mcpStatus(s)
-					statusPill(c, st, attention)
+					statusPill(cc, st, attention)
 				})
 			}
-		})
+		}
+		settingsSection(c, "MCP", "", rows...)
 	}
 	if f := e.mform; f != nil {
 		e.mcpFormView(c, f)
@@ -510,105 +536,115 @@ func (e *extView) mcpView(c *ui.Context) {
 }
 
 func (e *extView) mcpFormView(c *ui.Context, f *mcpForm) {
-	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, func() {
-		title := i18n.T("settings.ext.mcp.add")
-		if f.id != 0 {
-			title = i18n.Tf("settings.ext.mcp.edit.title", f.title)
-		}
-		ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
-		ui.Field(c, i18n.T("settings.ext.mcp.name"), func() { kit.Input(c, &f.name, kit.InputOpts{}) })
-		ui.Field(c, i18n.T("settings.ext.mcp.transport"), func() {
-			ui.Row(c).Gap(th.Space(4)).Children(func() {
-				kit.Radio(c.Key("stdio"), &f.transport, "stdio", "stdio")
-				kit.Radio(c.Key("http"), &f.transport, "http", "http")
+	th := c.Theme()
+	title := i18n.T("settings.ext.mcp.add")
+	if f.id != 0 {
+		title = i18n.Tf("settings.ext.mcp.edit.title", f.title)
+	}
+	settingsSection(c, title, "", func() {
+		settingBlock(c, func() {
+			ui.Field(c, i18n.T("settings.ext.mcp.name"), func() { kit.Input(c, &f.name, kit.InputOpts{}) })
+			ui.Field(c, i18n.T("settings.ext.mcp.transport"), func() {
+				ui.Row(c).Gap(th.Space(4)).Children(func() {
+					kit.Radio(c.Key("stdio"), &f.transport, "stdio", "stdio")
+					kit.Radio(c.Key("http"), &f.transport, "http", "http")
+				})
 			})
-		})
-		kv := func(label string, s *string) {
-			ui.Field(c, label, func() { kit.TextArea(c, s, kit.InputOpts{Mono: true}).Height(th.Space(20)) }).
-				Description(i18n.T("settings.ext.mcp.kv.help"))
-		}
-		if f.transport == "http" {
-			ui.Field(c, i18n.T("settings.ext.mcp.url"), func() { kit.Input(c, &f.url, kit.InputOpts{Mono: true}) })
-			kv(i18n.T("settings.ext.mcp.headers"), &f.headers)
-		} else {
-			ui.Field(c, i18n.T("settings.ext.mcp.command"), func() { kit.Input(c, &f.command, kit.InputOpts{Mono: true}) })
-			ui.Field(c, i18n.T("settings.ext.mcp.args"), func() { kit.TextArea(c, &f.args, kit.InputOpts{Mono: true}).Height(th.Space(20)) }).
-				Description(i18n.T("settings.ext.mcp.args.help"))
-			kv(i18n.T("settings.ext.mcp.env"), &f.env)
-		}
-		if f.err != "" {
-			kit.Alert(c, kit.Danger, f.err, nil)
-		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).OnClick(func() { e.saveServer(f) })
-			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.mform = nil })
+			kv := func(label string, s *string) {
+				ui.Field(c, label, func() { kit.TextArea(c, s, kit.InputOpts{Mono: true}).Height(th.Space(20)) }).
+					Description(i18n.T("settings.ext.mcp.kv.help"))
+			}
+			if f.transport == "http" {
+				ui.Field(c, i18n.T("settings.ext.mcp.url"), func() { kit.Input(c, &f.url, kit.InputOpts{Mono: true}) })
+				kv(i18n.T("settings.ext.mcp.headers"), &f.headers)
+			} else {
+				ui.Field(c, i18n.T("settings.ext.mcp.command"), func() { kit.Input(c, &f.command, kit.InputOpts{Mono: true}) })
+				ui.Field(c, i18n.T("settings.ext.mcp.args"), func() { kit.TextArea(c, &f.args, kit.InputOpts{Mono: true}).Height(th.Space(20)) }).
+					Description(i18n.T("settings.ext.mcp.args.help"))
+				kv(i18n.T("settings.ext.mcp.env"), &f.env)
+			}
+			if f.err != "" {
+				kit.Alert(c, kit.Danger, f.err, nil)
+			}
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).OnClick(func() { e.saveServer(f) })
+				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.mform = nil })
+			})
 		})
 	})
 }
 
 func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 	a := e.a
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	id := s.ID
-	kit.Card(c, func() {
-		st, _ := mcpStatus(s)
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, s.Name).FontSize(t.Text.Lg).FontWeight(600)
-			ui.Text(c, s.Transport+" · "+st).TextColor(t.Muted)
-		})
-		if s.Error != "" {
-			kit.Alert(c, kit.Danger, s.Error, nil)
-		}
+	st, _ := mcpStatus(s)
+	rows := []func(){func() {
+		desc := s.Transport + " · " + st
 		if !s.Granted {
-			ui.Text(c, i18n.T("settings.ext.mcp.grant.help")).TextColor(t.Muted)
-			kit.Button(c, i18n.T("settings.ext.grant"), kit.ButtonOpts{}).AlignSelf(ui.Start).OnClick(func() {
-				e.write("mcp", func(ctx context.Context) error {
-					if err := a.svc.GrantMCPServer(ctx, id); err != nil {
-						return err
-					}
-					return a.svc.SetMCPServerEnabled(ctx, id, true)
-				}, nil)
-			})
-		} else {
+			desc = i18n.T("settings.ext.mcp.grant.help")
+		}
+		if s.Error != "" {
+			desc += " · " + s.Error
+		}
+		settingRow(c, s.Name, desc, func() {
+			if !s.Granted {
+				kit.Button(c, i18n.T("settings.ext.grant"), kit.ButtonOpts{}).OnClick(func() {
+					e.write("mcp", func(ctx context.Context) error {
+						if err := a.svc.GrantMCPServer(ctx, id); err != nil {
+							return err
+						}
+						return a.svc.SetMCPServerEnabled(ctx, id, true)
+					}, nil)
+				})
+				return
+			}
 			on := s.Enabled
-			if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.enable"), "").Padding(0).Changed() {
+			if kit.Switch(c, &on).Label(i18n.T("settings.ext.mcp.enable")).Changed() {
 				on = !s.Enabled
 				e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPServerEnabled(ctx, id, on) }, nil)
 			}
-		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, i18n.T("settings.ext.mcp.tools.title")).FontWeight(600).Grow(1)
+		})
+	}, func() {
+		settingRow(c, i18n.T("settings.ext.mcp.tools.title"), "", func() {
 			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: !s.Granted}).
 				OnClick(func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RefreshMCPTools(ctx, id) }, nil) })
 		})
-		if len(s.Tools) == 0 {
-			ui.Text(c, i18n.T("settings.ext.mcp.no_tools")).TextColor(t.Muted)
-		}
-		for _, tool := range s.Tools {
-			ui.Column(c.Key(tool.Name)).Gap(th.Space(1.5)).Padding(th.Space(3), 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-				ui.Row(c).Gap(th.Space(2)).Children(func() {
-					ui.Text(c, tool.Name).Font(theme.Mono).FontWeight(500)
-					if tool.ReadOnlyHint {
-						kit.Badge(c, i18n.T("settings.ext.mcp.read_only"))
-					}
-				})
-				if tool.Description != "" {
-					ui.Text(c, tool.Description).TextColor(t.Muted)
-				}
+	}}
+	if len(s.Tools) == 0 {
+		rows = append(rows, func() {
+			settingBlock(c, func() { ui.Text(c, i18n.T("settings.ext.mcp.no_tools")).TextColor(theme.Of(c).Muted) })
+		})
+	}
+	for _, tool := range s.Tools {
+		rows = append(rows, func() {
+			desc := tool.Description
+			if tool.ReadOnlyHint {
+				desc = strings.TrimSuffix(i18n.T("settings.ext.mcp.read_only")+" · "+desc, " · ")
+			}
+			if desc != "" {
+				desc += " · "
+			}
+			desc += i18n.T("settings.ext.mcp.trust.help")
+			settingRow(c.Key(tool.Name), tool.Name, desc, func() {
 				on, name := tool.Trusted, tool.Name
-				if kit.SwitchRow(c, &on, i18n.T("settings.ext.mcp.trust"), i18n.T("settings.ext.mcp.trust.help")).Padding(0).Changed() {
+				if kit.Switch(c, &on).Label(i18n.T("settings.ext.mcp.trust")).Changed() {
 					on = !tool.Trusted
 					e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPToolTrusted(ctx, id, name, on) }, nil)
 				}
 			})
-		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			kit.Button(c, i18n.T("settings.ext.mcp.edit"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.editServer(s) })
-			kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Variant: kit.Destructive}).
-				OnClick(func() { e.confirm, e.open = "mcp", true })
+		})
+	}
+	rows = append(rows, func() {
+		settingBlock(c, func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				kit.Button(c, i18n.T("settings.ext.mcp.edit"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.editServer(s) })
+				kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Variant: kit.Destructive}).
+					OnClick(func() { e.confirm, e.open = "mcp", true })
+			})
 		})
 	})
+	settingsSection(c, s.Name, "", rows...)
 }
 
 // confirmView asks before an uninstall or a removal.
@@ -636,7 +672,8 @@ func (e *extView) confirmView(c *ui.Context) {
 		run = func() {
 			e.write("plugins", func(ctx context.Context) error { return a.svc.UninstallPlugin(ctx, name) }, func(err error) {
 				if err == nil && e.plugin == name {
-					e.plugin, e.cfg = "", nil
+					e.plugin = ""
+					delete(e.cfgs, name)
 				}
 			})
 		}

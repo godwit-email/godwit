@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -87,7 +88,7 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	// A short secret fails under its field; nothing is saved.
 	h.fill("API Key", "short")
 	h.click("保存")
-	h.until("the field error", func() bool { f := p.ext.cfg; return f != nil && f.vals["apiKey"].err != "" })
+	h.until("the field error", func() bool { f := p.ext.cfgs["config-demo"]; return f != nil && f.vals["apiKey"].err != "" })
 	if h.pluginConfig("config-demo")["endpoint"].Set {
 		t.Fatal("saved despite the error")
 	}
@@ -105,7 +106,10 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	if ep != "https://pro.example" || plan != "pro" {
 		t.Fatalf("config %+v", c)
 	}
-	h.until("the secret field clears", func() bool { f := p.ext.cfg; return f != nil && f.vals["apiKey"].s == "" && f.vals["apiKey"].set })
+	h.until("the secret field clears", func() bool {
+		f := p.ext.cfgs["config-demo"]
+		return f != nil && f.vals["apiKey"].s == "" && f.vals["apiKey"].set
+	})
 	if h.tt.HasText("supersecret1") {
 		t.Fatal("the secret shows")
 	}
@@ -190,7 +194,7 @@ func TestPluginConfigEditDuringSave(t *testing.T) {
 	}
 	h.until("saved", func() bool { return stored() == "a.example" })
 	h.until("the later edit stays", func() bool {
-		f := p.ext.cfg
+		f := p.ext.cfgs["config-demo"]
 		return f != nil && !f.busy && f.vals["endpoint"].s == " b.example " && f.vals["endpoint"].orig == "a.example"
 	})
 	h.click("保存")
@@ -258,11 +262,11 @@ func TestPluginRowSwitch(t *testing.T) {
 
 func TestPendingPluginExcludedLine(t *testing.T) {
 	got := pluginExcluded(plugins.Permissions{Mail: []string{"read"}})
-	if got != "不包含：修改邮件、调用大模型、发送邮件（任何插件都不能发送）" {
+	if got != "不包含：修改邮件、访问网络、调用大模型、发送邮件（任何插件都不能发送）" {
 		t.Fatalf("excluded %q", got)
 	}
 	got = pluginExcluded(plugins.Permissions{Mail: []string{"read", "write"}, LLM: true})
-	if got != "不包含：发送邮件（任何插件都不能发送）" {
+	if got != "不包含：访问网络、发送邮件（任何插件都不能发送）" {
 		t.Fatalf("excluded %q", got)
 	}
 	h := pendingHarness(t)
@@ -284,4 +288,40 @@ func TestPendingNotNowCollapses(t *testing.T) {
 		t.Fatalf("core changed: %+v", p)
 	}
 	h.see("待授权")
+}
+
+// Two pending plugins each keep their own form, read once, across frames.
+func TestPendingPluginsKeepOwnForms(t *testing.T) {
+	h, _ := withAccount(t)
+	src := coretest.PluginFixture(t, "config-demo")
+	if _, err := h.env.Svc.InstallPlugin(context.Background(), src); err != nil {
+		t.Fatal(err)
+	}
+	src2 := coretest.PluginFixture(t, "config-demo")
+	m, err := os.ReadFile(src2 + "/plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = bytes.Replace(m, []byte(`"config-demo"`), []byte(`"config-two"`), 1)
+	if err := os.WriteFile(src2+"/plugin.json", m, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.InstallPlugin(context.Background(), src2); err != nil {
+		t.Fatal(err)
+	}
+	p := h.openSettings("extensions")
+	h.click("插件 · 2")
+	h.until("both forms", func() bool { return p.ext.cfgs["config-demo"] != nil && p.ext.cfgs["config-two"] != nil })
+	a, b := p.ext.cfgs["config-demo"], p.ext.cfgs["config-two"]
+	a.vals["apiKey"].s, b.vals["apiKey"].s = "aaa", "bbb"
+	for range 5 {
+		h.tt.Frame()
+		h.drain()
+	}
+	if p.ext.cfgs["config-demo"] != a || p.ext.cfgs["config-two"] != b || a.vals["apiKey"].s != "aaa" || b.vals["apiKey"].s != "bbb" {
+		t.Fatal("a form was re-read or lost its values")
+	}
+	if len(p.ext.cfgBusy) != 0 {
+		t.Fatal("a read is still in flight")
+	}
 }

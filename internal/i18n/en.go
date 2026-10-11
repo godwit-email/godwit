@@ -480,6 +480,8 @@ var en = map[string]string{
 	"settings.ext.excl.send":                       "sending mail (no plugin can send)",
 	"settings.ext.sec.plugins":                     "Plugins",
 	"settings.ext.sec.skills":                      "Skills",
+	"settings.ext.excl.read":                       "reading mail",
+	"settings.ext.excl.net":                        "network access",
 	"settings.ext.grant":                           "Approve and enable",
 	"settings.ext.plugin.enable":                   "Enable plugin",
 	"settings.ext.uninstall":                       "Uninstall plugin",

@@ -480,6 +480,8 @@ var zh = map[string]string{
 	"settings.ext.excl.send":                       "发送邮件（任何插件都不能发送）",
 	"settings.ext.sec.plugins":                     "插件",
 	"settings.ext.sec.skills":                      "Skill",
+	"settings.ext.excl.read":                       "读取邮件",
+	"settings.ext.excl.net":                        "访问网络",
 	"settings.ext.grant":                           "授权并启用",
 	"settings.ext.plugin.enable":                   "启用插件",
 	"settings.ext.uninstall":                       "卸载插件",
