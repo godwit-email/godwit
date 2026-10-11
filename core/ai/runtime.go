@@ -319,7 +319,12 @@ func (r *runner) run(req Request) Result {
 	if len(history) > 0 {
 		opts = append(opts, gai.WithMessages(history...))
 	}
-	if req.Prompt != "" {
+	switch {
+	case req.Context != "" && req.Prompt != "":
+		ctxPart := gai.NewTextPart(req.Context)
+		ctxPart.Metadata = map[string]any{contextKey: true}
+		opts = append(opts, gai.WithPromptParts(ctxPart, gai.NewTextPart(req.Prompt)))
+	case req.Prompt != "":
 		opts = append(opts, gai.WithPrompt(req.Prompt))
 	}
 	if len(req.Responses) == 0 && openCalls(history) {
@@ -655,13 +660,16 @@ func toolCall(r *gai.ToolRequest) ToolCall {
 	return ToolCall{ID: r.Ref, Name: r.Name, Args: rawJSON(r.Input)}
 }
 
+// contextKey marks a Request.Context part in the state.
+const contextKey = "godwit_context"
+
 func display(msgs []*gai.Message) []Message {
 	out := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
 		d := Message{Role: string(m.Role)}
 		for _, p := range m.Content {
 			switch {
-			case p.IsText():
+			case p.IsText() && p.Metadata[contextKey] == nil:
 				d.Text += p.Text
 			case p.IsToolRequest():
 				d.Calls = append(d.Calls, toolCall(p.ToolRequest))

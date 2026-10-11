@@ -98,6 +98,11 @@ func (s *Service) registerAssistTools() {
 // is applied at once (see applyInitial); the others wait for the user. The
 // channel ends with done, error or interrupted, as Ask's.
 func (s *Service) Assist(ctx context.Context, draftID int64, input string) (<-chan WitEvent, error) {
+	return s.AssistWith(ctx, draftID, input, nil)
+}
+
+// AssistWith is Assist with the mail the user quoted, as AskWith.
+func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, quoted []int64) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the request is empty")
 	}
@@ -105,10 +110,14 @@ func (s *Service) Assist(ctx context.Context, draftID int64, input string) (<-ch
 	if err != nil {
 		return nil, err
 	}
-	conv, err := s.assistConversation(ctx, draftID)
+	quoted, err = s.quotedIDs(ctx, quoted)
+	var conv Conversation
+	if err == nil {
+		conv, err = s.assistConversation(ctx, draftID)
+	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), nil)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, nil)
 	}
 	if err != nil {
 		end()
@@ -337,17 +346,26 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 }
 
 // applyInitial approves, through the normal path, the pending proposals that
-// write an empty draft (spec 7.3: the first generation is written directly).
-// It returns the approvals as they are now, and whether any was decided; the
-// caller then resumes the run (resumeRun).
+// write an empty draft (spec 7.3: the first generation is written directly)
+// and those a session grant covers (audited auto:session). It returns the
+// approvals as they are now, and whether any was decided; the caller then
+// resumes the run (resumeRun).
 func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, bool) {
 	applied := false
 	for i, a := range as {
-		if !isDraftEdit(a.Tool) || a.Summary != kindInitial || a.State != "pending" {
+		if a.State != "pending" {
 			continue
 		}
-		if err := s.decide(ctx, a.ID, true, nil, false); err != nil {
-			slog.Default().Warn("could not apply a first generation", "approval", a.ID, "err", err)
+		decision := "executed"
+		switch {
+		case isDraftEdit(a.Tool) && a.Summary == kindInitial:
+		case s.granted(ctx, a.ID):
+			decision = decisionSession
+		default:
+			continue
+		}
+		if err := s.decideAs(ctx, a.ID, true, nil, false, decision); err != nil {
+			slog.Default().Warn("could not apply an approval at once", "approval", a.ID, "err", err)
 		}
 		applied = true
 		if got, err := s.getApproval(ctx, a.ID); err == nil {
@@ -527,7 +545,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil)
+	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, nil)
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,

@@ -696,3 +696,68 @@ func TestConversationRunSpans(t *testing.T) {
 	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: len(c.Messages)}, c.Runs[2], "the resume extends it")
 	assert.Equal(t, "a3", c.Messages[len(c.Messages)-1].Text)
 }
+
+// TestAskWithQuoted: quoted mail goes to the model in the user's turn, read
+// through mailContext in the run's scope and numbered like the tools' citations;
+// the conversation shows only the question.
+func TestAskWithQuoted(t *testing.T) {
+	e := newSkillEnv(t)
+	other := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "train at nine", "", 1_700_000_300)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":` + itoa(e.msg) + `}`}}},
+		testllm.Turn{Text: []string{"See [1] and [2]."}})
+	ch, err := e.s.AskWith(t.Context(), conv.ID, "Compare these", []int64{other, e.msg, other})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	require.Equal(t, "context", evs[0].Kind, "the quoted mail's citations come first")
+	cs := evs[0].Citations
+	require.Len(t, cs, 2, "deduped")
+	assert.Equal(t, []int64{other, e.msg}, []int64{cs[0].MessageID, cs[1].MessageID})
+	assert.Equal(t, []int{1, 2}, []int{cs[0].N, cs[1].N})
+	assert.Empty(t, cs[0].CallID)
+
+	p := promptOf(t, e.srv.Requests()[0])
+	assert.Contains(t, p, "train at nine", "the quoted mail reaches the model")
+	assert.Contains(t, p, "untrusted_email", "as untrusted data")
+	assert.Less(t, strings.Index(p, "train at nine"), strings.Index(p, "Compare these"))
+
+	rs := witResults(evs, "get_message")
+	require.Len(t, rs, 1)
+	assert.Equal(t, 2, rs[0].Citations[0].N, "a tool showing quoted mail cites it by the same ref")
+
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Compare these", c.Messages[0].Text, "the question shows without the quoted mail")
+	require.Len(t, c.Citations, 3)
+	assert.Equal(t, 1, e.count(t, "SELECT read_mail FROM conversations WHERE id = ?", conv.ID), "quoting reads mail")
+}
+
+func TestAskWithQuotedLimits(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	_, err := e.s.AskWith(t.Context(), conv.ID, "q", []int64{e.msg, 9999})
+	require.Error(t, err, "a message that does not exist")
+	many := make([]int64, maxQuoted+1)
+	for i := range many {
+		many[i] = addMessage(t, e.s, "m", "a@x", "b", "", 1_700_000_000+int64(i))
+	}
+	_, err = e.s.AskWith(t.Context(), conv.ID, "q", many)
+	require.Error(t, err, "too many")
+	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM runs"), "no run for a refused quote")
+}
+
+func TestAssistWithQuoted(t *testing.T) {
+	e := newSkillEnv(t)
+	other := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "train at nine", "", 1_700_000_300)
+	d := e.draft(t)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	ch, err := e.s.AssistWith(t.Context(), d, "Use this", []int64{other})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	require.Equal(t, "context", evs[0].Kind)
+	assert.Equal(t, other, evs[0].Citations[0].MessageID)
+	assert.Contains(t, promptOf(t, e.srv.Requests()[0]), "train at nine")
+}

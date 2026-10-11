@@ -82,7 +82,8 @@ type Service struct {
 	streamsEnd chan struct{}  // closed by Close: every witStream stops delivering
 	streams    sync.WaitGroup // witStream goroutines
 
-	assistMu sync.Mutex // finding or creating a draft's assist conversation
+	assistMu      sync.Mutex // finding or creating a draft's assist conversation
+	sessionGrants sync.Map   // grantKey -> true: session grants (本次对话都允许)
 
 	toolsMu sync.Mutex
 	tools   map[string]toolDesc // tools Wit runs can offer, by name

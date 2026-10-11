@@ -253,8 +253,12 @@ func (s *Service) DeleteConversation(ctx context.Context, id int64) error {
 	defer end()
 	r, err := s.db.Execute(ctx, `DELETE FROM conversations WHERE id = ? AND NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
 		AND (state IN ('running', 'resuming') OR EXISTS (SELECT 1 FROM approvals WHERE run_id = runs.id AND state = 'executing')))`, id, id)
-	if err != nil || r.Changes > 0 {
+	if err != nil {
 		return err
+	}
+	if r.Changes > 0 {
+		s.dropGrants(id)
+		return nil
 	}
 	if _, _, err := s.conversation(ctx, id); err != nil {
 		return err
@@ -532,6 +536,7 @@ type runJob struct {
 	// tool-less run into an interrupt on the proposal; it is not resumed.
 	host   func(ctx context.Context, res ai.Result) ai.Result
 	cited  []Citation // the mail the run's context shows the model, sent first
+	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -595,7 +600,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools, nil)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil, nil)
 	if err != nil {
 		end()
 		return nil, err
@@ -603,10 +608,11 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	return w.ch, nil
 }
 
-// launch claims a run and hands end to it. claimed, if set, runs once the run
-// is claimed and before the hand-off; its error fails the run and launch.
+// launch claims a run and hands end to it. The quoted mail (checked IDs) goes
+// before the prompt (quote). claimed, if set, runs once the run is claimed
+// and before the hand-off; its error fails the run and launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
-	claimed func(context.Context) error) (*witStream, error) {
+	quoted []int64, claimed func(context.Context) error) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
@@ -634,6 +640,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		return nil, err
 	}
 	req, err := s.request(ctx, job, model, state, tools)
+	if err == nil && len(quoted) > 0 {
+		req.Context, err = s.quote(ctx, job, quoted)
+	}
 	if err == nil && claimed != nil {
 		err = claimed(ctx)
 	}
@@ -773,8 +782,12 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 		}
 		s.publishWit(job.conv.ID, ev)
 	}
+	cs := job.quoted
 	if len(job.cited) > 0 {
-		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: s.number(job.ctx, job, "", job.cited)})
+		cs = append(cs, s.number(job.ctx, job, "", job.cited)...)
+	}
+	if len(cs) > 0 {
+		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
 	}
 	events, wait := e.Run(job.ctx, req)
 	for ev := range events {

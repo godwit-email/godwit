@@ -39,6 +39,14 @@ const (
 // create_draft calls become approvals. The first input titles the
 // conversation. The channel ends with done, error or interrupted (see startRun).
 func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (<-chan WitEvent, error) {
+	return s.AskWith(ctx, conversationID, input, nil)
+}
+
+// AskWith is Ask with the mail the user quoted (message IDs, at most
+// maxQuoted after dedupe): the run reads it through mailContext, in its scope,
+// and the model gets it before the question, cited like the tools' mail (a
+// "context" event first). An ID that does not exist fails AskWith.
+func (s *Service) AskWith(ctx context.Context, conversationID int64, input string, quoted []int64) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
@@ -46,7 +54,11 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	if err != nil {
 		return nil, err
 	}
-	conv, _, err := s.conversation(ctx, conversationID)
+	quoted, err = s.quotedIDs(ctx, quoted)
+	var conv Conversation
+	if err == nil {
+		conv, _, err = s.conversation(ctx, conversationID)
+	}
 	if err == nil && conv.Kind != "ask" {
 		err = fmt.Errorf("conversation %d is not an ask conversation", conversationID)
 	}
@@ -62,13 +74,54 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, setTitle)
 	}
 	if err != nil {
 		end()
 		return nil, err
 	}
 	return w.ch, nil
+}
+
+// maxQuoted caps the messages a question quotes.
+const maxQuoted = 10
+
+// quotedIDs is ids without repeats, each an existing message.
+func (s *Service) quotedIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	var out []int64
+	for _, id := range ids {
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	if len(out) > maxQuoted {
+		return nil, fmt.Errorf("quote at most %d emails", maxQuoted)
+	}
+	for _, id := range out {
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows.Values) == 0 {
+			return nil, fmt.Errorf("message %d %w", id, errMailNotFound)
+		}
+	}
+	return out, nil
+}
+
+// quote is the model's context of the quoted mail ids for job: read in its
+// scope and numbered as the context's citations (job.quoted).
+func (s *Service) quote(ctx context.Context, job *runJob, ids []int64) (string, error) {
+	items, err := s.mailContext(ctx, job.scope, ids, defaultMailBudget)
+	if err != nil {
+		return "", err
+	}
+	job.quoted = s.number(ctx, job, "", citations(items))
+	b, err := json.Marshal(blocks(items, job.quoted))
+	if err != nil {
+		return "", err
+	}
+	return "The user quoted these emails for the question below; cite them by their ref:\n" + string(b), nil
 }
 
 // witSystem is the system prompt of a run's requests, started or resumed: for
