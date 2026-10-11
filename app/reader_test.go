@@ -276,7 +276,7 @@ func TestReaderArchive(t *testing.T) {
 	}
 }
 
-// A body's link (ReaderPage.OpenLink → OpenLink) asks first, showing the
+// A body's link (ReaderPage.OpenLink → BodyLink) asks first, showing the
 // whole address; 打开 opens it, 复制链接 copies it.
 func TestLinkConfirm(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
@@ -284,8 +284,8 @@ func TestLinkConfirm(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Deal", "text",
 		coretest.HTML(`<p>Go to <a href="`+link+`">the deal</a> now</p>`)))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.app.OpenLink(link)
+	v := h.seeBody(m.ID)
+	h.app.BodyLink(v, link)
 	h.tt.Frame()
 	h.see("shop.example.com")
 	h.see("/deal?id=7")
@@ -298,7 +298,7 @@ func TestLinkConfirm(t *testing.T) {
 	}
 	h.until("the dialog closed", func() bool { return !h.tt.HasText("复制链接") })
 
-	h.app.OpenLink(link)
+	h.app.BodyLink(v, link)
 	h.tt.Frame()
 	h.see("复制链接")
 	h.click("复制链接")

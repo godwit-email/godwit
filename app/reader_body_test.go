@@ -257,12 +257,12 @@ func TestReaderHeightApplied(t *testing.T) {
 	if box, _ := h.viewBox(v); box.H > 40 {
 		t.Fatalf("height %v before any report, want about a line", box.H)
 	}
-	h.app.BodyHeight(m.ID, 640)
+	h.app.BodyHeight(v, m.ID, 640)
 	h.tt.Frame()
 	if box, _ := h.viewBox(v); box.H < 636 || box.H > 640 {
 		t.Fatalf("height %v, want 640", box.H)
 	}
-	h.app.BodyHeight(m.ID+1000, 10) // not a body shown: ignored
+	h.app.BodyHeight(v, m.ID+1000, 10) // not its message: ignored
 	h.tt.Frame()
 	if box, _ := h.viewBox(v); box.H < 636 {
 		t.Fatalf("another message's height applied: %v", box.H)
@@ -275,23 +275,23 @@ func TestReaderWheelMovesScroll(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Tall", "body"))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
+	v := h.seeBody(m.ID)
 	r := h.app.mail.reader
-	h.app.BodyHeight(m.ID, 3000)
+	h.app.BodyHeight(v, m.ID, 3000)
 	h.tt.Frame()
 	if r.scroll.MaxY < 1000 {
 		t.Fatalf("MaxY %v: the reader does not scroll", r.scroll.MaxY)
 	}
-	h.app.BodyWheel(120)
+	h.app.BodyWheel(v, 120)
 	h.tt.Frame()
 	if r.scroll.Y != 120 {
 		t.Fatalf("Y %v, want 120", r.scroll.Y)
 	}
-	h.app.BodyWheel(-1000)
+	h.app.BodyWheel(v, -1000)
 	if r.scroll.Y != 0 {
 		t.Fatalf("Y %v, want 0", r.scroll.Y)
 	}
-	h.app.BodyWheel(1e9)
+	h.app.BodyWheel(v, 1e9)
 	if r.scroll.Y != r.scroll.MaxY {
 		t.Fatalf("Y %v, want MaxY %v", r.scroll.Y, r.scroll.MaxY)
 	}
@@ -302,8 +302,9 @@ func TestReaderWheelMovesScroll(t *testing.T) {
 }
 
 // 加载图片 lets the body's page load the remote images (Reader.Allow);
-// the notice goes. Re-expanding asks again for the new page. Native
-// makes no request itself.
+// the notice waits until the page's body has them (BodyBuilt), and offers
+// a retry when reading it failed (BodyFailed). Re-expanding asks again for
+// the new page. Native makes no request itself.
 func TestReaderRemoteImages(t *testing.T) {
 	var mu sync.Mutex
 	hits := 0
@@ -323,7 +324,7 @@ func TestReaderRemoteImages(t *testing.T) {
 	msgs := h.messages(page.Items[0].ID)
 	m := msgs[1]
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
+	v := h.seeBody(m.ID)
 	h.see("已阻止 1 张远程图片，防止发件人追踪你是否打开了邮件")
 	if h.hasCall("AllowImages") {
 		t.Fatal("allowed before 加载图片")
@@ -333,7 +334,23 @@ func TestReaderRemoteImages(t *testing.T) {
 	if h.countCalls(allow) != 1 {
 		t.Fatalf("calls %q", h.plat.Calls())
 	}
-	h.until("the notice gone", func() bool { return !h.tt.HasText("已阻止") })
+	h.tt.Frame()
+	if !h.tt.HasText("已阻止") || h.tt.HasText("加载图片") {
+		t.Fatalf("the notice did not wait for the page: %q", h.tt.Texts())
+	}
+	h.app.BodyFailed(v, m.ID, errors.New("images went away"))
+	h.see("images went away")
+	h.click("重试")
+	if h.countCalls(allow) != 2 {
+		t.Fatalf("the retry did not allow again: %q", h.plat.Calls())
+	}
+	h.app.BodyBuilt(v, m.ID, false, false) // an older body, without them
+	h.tt.Frame()
+	if !h.tt.HasText("已阻止") {
+		t.Fatal("the notice went before the page had the images")
+	}
+	h.app.BodyBuilt(v, m.ID, false, true)
+	h.until("the notice gone", func() bool { return !h.tt.HasText("已阻止") && !h.tt.HasText("images went away") })
 	r := h.app.mail.reader
 	r.toggle(m.ID)
 	r.toggle(m.ID)
@@ -345,7 +362,7 @@ func TestReaderRemoteImages(t *testing.T) {
 			lastView = i
 		}
 	}
-	if h.countCalls(allow) != 2 || !slices.Contains(calls[lastView:], allow) {
+	if h.countCalls(allow) != 3 || !slices.Contains(calls[lastView:], allow) {
 		t.Fatalf("re-expanding did not allow the new page: %q", calls)
 	}
 	mu.Lock()
@@ -356,22 +373,76 @@ func TestReaderRemoteImages(t *testing.T) {
 }
 
 // The truncated notice follows the body as the page's Reader built it
-// (OnCut → BodyCut): the structural limits included.
+// (OnBuilt → BodyBuilt): the structural limits included.
 func TestReaderTruncatedNotice(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.plat.tempDir = t.TempDir()
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Long", "text",
 		coretest.HTML(strings.Repeat("<p>line</p>", 5100))))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
+	v := h.seeBody(m.ID)
 	if h.tt.HasText("正文过长，只显示了开头") {
 		t.Fatal("the notice shows before the body was built")
 	}
-	h.app.BodyCut(m.ID, true)
+	h.app.BodyBuilt(v, m.ID, true, false)
 	h.see("正文过长，只显示了开头")
 	h.scrollTo("在浏览器中查看")
 	h.click("在浏览器中查看")
 	if u := h.callArg("OpenURL"); !strings.HasPrefix(u, "file://") {
 		t.Fatalf("opened %q", u)
+	}
+}
+
+// A page's calls queued before it was closed or replaced are dropped:
+// height, wheel, link, navigation and what its body was built as.
+func TestReaderStaleCallbacksDropped(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Hi", "body"))
+	h.openThread(m.ThreadID)
+	old := h.seeBody(m.ID)
+	r := h.app.mail.reader
+	r.toggle(m.ID)
+	r.toggle(m.ID)
+	v := h.seeBody(m.ID)
+	h.app.BodyHeight(v, m.ID, 3000)
+	h.tt.Frame()
+	route := h.app.route
+	h.app.BodyHeight(old, m.ID, 50)
+	h.app.BodyWheel(old, 200)
+	h.app.BodyLink(old, "https://shop.example.com/")
+	h.app.BodyNavigate(old, -1)
+	h.app.BodyBuilt(old, m.ID, true, true)
+	h.tt.Frame()
+	b := r.bodies[m.ID]
+	if b.height != 3000 || r.scroll.Y != 0 || h.app.linkOpen || b.cut || b.remote || h.app.route != route {
+		t.Fatalf("a closed page acted: height %d, Y %v, link %v, cut %v, remote %v, route %+v",
+			b.height, r.scroll.Y, h.app.linkOpen, b.cut, b.remote, h.app.route)
+	}
+	h.app.BodyWheel(v, 200)
+	h.app.BodyLink(v, "https://shop.example.com/")
+	if r.scroll.Y != 200 || !h.app.linkOpen {
+		t.Fatal("the current page's calls were dropped too")
+	}
+}
+
+// Close closes every body page; one being made as the App closes is
+// closed at once.
+func TestReaderCloseClosesViews(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	thread, msgs := threeMessages(t, h, accs[0])
+	h.openThread(thread)
+	h.seeBody(msgs[1].ID)
+	h.seeBody(msgs[2].ID)
+	r := h.app.mail.reader
+	r.toggle(msgs[0].ID) // read the oldest, then fold it
+	h.seeBody(msgs[0].ID)
+	r.toggle(msgs[0].ID)
+	h.plat.onNewView = func(int64) { h.app.Close() }
+	r.toggle(msgs[0].ID) // expand: its page is made as the App closes
+	if n := h.plat.openViews(); n != 0 {
+		t.Fatalf("%d pages open after Close", n)
+	}
+	if made, closed := h.countPrefix("NewBodyView"), h.countPrefix("CloseBodyView"); made != closed {
+		t.Fatalf("%d pages made, %d closed", made, closed)
 	}
 }

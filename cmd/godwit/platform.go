@@ -32,8 +32,9 @@ type platform struct {
 	tray    *mygo.Tray
 	windows *webui.Windows // the compose windows
 	wit     *webui.Wit
-	roles   *webui.Pages  // the embedded pages' roles
-	reader  *webui.Reader // the reader pages' messages
+	roles   *webui.Pages                 // the embedded pages' roles
+	reader  *webui.Reader                // the reader pages' messages
+	bodies  map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
 
 	dataDir string
 	svc     *core.Service
@@ -124,22 +125,61 @@ func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 
 // NewBodyView makes a reader page in the main window, kept on its entry
-// (lockPage), registered as "reader" and bound to message; close undoes
-// each and destroys it.
+// (lockPage), registered as "reader" and bound to message before it
+// loads (loadAfterSetup), so that its first call finds it so; close
+// undoes each and destroys it. UI thread.
 func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
-	v, err := p.win.NewWebView(mygo.WebViewOptions{URL: "/reader.html"})
+	v, err := p.win.NewWebView(mygo.WebViewOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
 	page := v.Page()
-	lockPage(page)
-	p.roles.Register(page, "reader")
-	p.reader.Bind(page, message)
-	return v, func() {
+	closeView := func() {
+		delete(p.bodies, page)
 		p.reader.Unbind(page)
 		p.roles.Unregister(page)
 		v.Destroy()
-	}, nil
+	}
+	err = loadAfterSetup(func() {
+		lockPage(page)
+		p.roles.Register(page, "reader")
+		p.reader.Bind(page, message)
+		if p.bodies == nil {
+			p.bodies = map[*mygo.Page]*mygo.WebView{}
+		}
+		p.bodies[page] = v
+	}, func() error { return page.LoadURL("/reader.html") }, closeView)
+	if err != nil {
+		return nil, nil, err
+	}
+	return v, closeView, nil
+}
+
+// bodyView is the web view of the reader page page, while it is open as
+// one: in bodies, registered as "reader", and bound (to message). UI
+// thread.
+func (p *platform) bodyView(page *mygo.Page) (v *mygo.WebView, message int64, ok bool) {
+	v = p.bodies[page]
+	if v == nil {
+		return nil, 0, false
+	}
+	if role, ok := p.roles.Role(page); !ok || role != "reader" {
+		return nil, 0, false
+	}
+	message, ok = p.reader.Bound(page)
+	return v, message, ok
+}
+
+// loadAfterSetup readies an embedded page before it loads: setup
+// (lockPage, its role, its binding) runs first, then load; when load
+// fails, undo runs.
+func loadAfterSetup(setup func(), load func() error, undo func()) error {
+	setup()
+	if err := load(); err != nil {
+		undo()
+		return err
+	}
+	return nil
 }
 
 // AllowImages lets message's reader pages load its remote images.

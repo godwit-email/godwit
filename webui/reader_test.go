@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -40,7 +41,10 @@ type readerFixture struct {
 	wheels  []float64
 	links   []string
 	navs    []int
+	callers []any // the page each of the above named
 	cuts    map[int64]bool
+	built   []emittedBody // OnBuilt's
+	failed  []any         // the pages OnFailed named
 }
 
 type emittedBody struct {
@@ -54,12 +58,23 @@ func newReaderFixture(t *testing.T) *readerFixture {
 	f.acc = f.e.AddAccount(t, "alice@example.com")
 	f.pages = NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
 	f.r = NewReader(f.pages, ReaderDeps{
-		Emit:       func(page any, b ReaderBody) { f.record(func() { f.emitted = append(f.emitted, emittedBody{page, b}) }) },
-		OnHeight:   func(m int64, px int) { f.record(func() { f.heights = append(f.heights, [2]int64{m, int64(px)}) }) },
-		OnWheel:    func(dy float64) { f.record(func() { f.wheels = append(f.wheels, dy) }) },
-		OnLink:     func(u string) { f.record(func() { f.links = append(f.links, u) }) },
-		OnNavigate: func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
-		OnCut:      func(m int64, cut bool) { f.record(func() { f.cuts[m] = cut }) },
+		Emit: func(page any, b ReaderBody) { f.record(func() { f.emitted = append(f.emitted, emittedBody{page, b}) }) },
+		OnHeight: func(k any, m int64, px int) {
+			f.record(func() { f.callers, f.heights = append(f.callers, k), append(f.heights, [2]int64{m, int64(px)}) })
+		},
+		OnWheel: func(k any, dy float64) {
+			f.record(func() { f.callers, f.wheels = append(f.callers, k), append(f.wheels, dy) })
+		},
+		OnLink: func(k any, u string) {
+			f.record(func() { f.callers, f.links = append(f.callers, k), append(f.links, u) })
+		},
+		OnNavigate: func(k any, dir int) {
+			f.record(func() { f.callers, f.navs = append(f.callers, k), append(f.navs, dir) })
+		},
+		OnBuilt: func(k any, b ReaderBody) {
+			f.record(func() { f.cuts[b.Message], f.built = b.Cut, append(f.built, emittedBody{k, b}) })
+		},
+		OnFailed: func(k any, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
 	})
 	f.r.allowLoopback = true
 	f.r.SetService(f.e.Svc)
@@ -226,9 +241,14 @@ func TestReaderPageScoped(t *testing.T) {
 	}
 	assert.Zero(t, srv.hits())
 
+	got, ok := f.r.Bound(km)
+	assert.True(t, ok)
+	assert.Equal(t, m.ID, got)
 	f.r.Unbind(km)
 	_, err = f.p.Load(pageCtx(km))
 	assert.ErrorIs(t, err, ErrWrongPage, "unbound after Unbind")
+	_, ok = f.r.Bound(km)
+	assert.False(t, ok)
 }
 
 func TestReaderPageCallbacks(t *testing.T) {
@@ -250,6 +270,50 @@ func TestReaderPageCallbacks(t *testing.T) {
 	assert.Equal(t, []float64{120}, f.wheels)
 	assert.Equal(t, []string{"https://x.example/", "mailto:bob@example.com"}, f.links)
 	assert.Equal(t, []int{-1}, f.navs)
+	assert.Equal(t, []any{k, k, k, k, k}, f.callers, "each callback names the calling page")
+}
+
+// Each body built as current is told to the pages bound to its message
+// (OnBuilt), Remote once allowed; a failed Allow is told too (OnFailed).
+func TestReaderBuiltAndFailed(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "hi", "https://img.example/a.png")
+	other := f.remoteMail(t, "other", "https://img.example/b.png")
+	k, ko := f.page(m.ID), f.page(other.ID)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	f.r.Allow(m.ID)
+	require.Eventually(t, func() bool {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return len(f.built) == 2
+	}, 10*time.Second, 5*time.Millisecond)
+	f.mu.Lock()
+	assert.Equal(t, k, f.built[0].page)
+	assert.False(t, f.built[0].body.Remote)
+	assert.Equal(t, k, f.built[1].page)
+	assert.True(t, f.built[1].body.Remote)
+	f.mu.Unlock()
+
+	real := f.r.getMessage
+	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+		if remote {
+			return core.Message{}, errors.New("server went away")
+		}
+		return real(ctx, svc, id, remote)
+	}
+	f.r.Allow(m.ID)
+	require.Eventually(t, func() bool {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return len(f.failed) == 1
+	}, 10*time.Second, 5*time.Millisecond)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Equal(t, []any{k}, f.failed)
+	for _, b := range f.built {
+		assert.True(t, b.page != ko, "the other page told of M's body")
+	}
 }
 
 func TestReaderImageRefusedUntilAllowed(t *testing.T) {
@@ -455,7 +519,7 @@ func TestReaderStructuralCut(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, want, b.Cut, "message %d", id)
 		}
-		// Native's truncated notice follows the body as built (OnCut).
+		// Native's truncated notice follows the body as built (OnBuilt).
 		f.mu.Lock()
 		assert.Equal(t, map[int64]bool{1: true, 2: true, 3: false}, f.cuts)
 		f.mu.Unlock()

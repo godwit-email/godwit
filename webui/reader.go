@@ -61,27 +61,34 @@ type ReaderBody struct {
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 
-// ReaderDeps is what Reader needs from the platform. The callbacks come on
-// the page's call: they post to the UI thread themselves.
+// ReaderDeps is what Reader needs from the platform. The callbacks post to
+// the UI thread themselves. Each names the page (its key) it is about, bound
+// as the call was made: by the time the post runs the page may be closed or
+// rebound, which the UI thread checks.
 type ReaderDeps struct {
 	// Emit sends a body to the page with key page (ReaderReload.EmitPage,
 	// which only queues it). It runs with the Reader's lock held, so the
 	// page is bound to b's message as it is sent: it must not block or call
 	// back into the Reader.
 	Emit func(page any, b ReaderBody)
-	// OnHeight is the height of message's body, in CSS pixels.
-	OnHeight func(message int64, px int)
-	// OnWheel is a wheel delta the body did not use: the reader scrolls.
-	OnWheel func(dy float64)
-	// OnLink opens a link of a body (the native confirmation; mailto
+	// OnHeight is the height of message's body in page, in CSS pixels.
+	OnHeight func(page any, message int64, px int)
+	// OnWheel is a wheel delta page's body did not use: the reader scrolls.
+	OnWheel func(page any, dy float64)
+	// OnLink opens a link of page's body (the native confirmation; mailto
 	// composes).
-	OnLink func(url string)
+	OnLink func(page any, url string)
 	// OnNavigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
-	OnNavigate func(dir int)
-	// OnCut is told, each time message's body is built, whether it is only
-	// its start (ReaderBody.Cut): the native truncated notice follows it,
-	// so the page and the notice agree.
-	OnCut func(message int64, cut bool)
+	OnNavigate func(page any, dir int)
+	// OnBuilt is told, for each page bound to b.Message, each body built
+	// as the message's current version: native shows the truncated notice
+	// by b.Cut and hides the remote-image notice once b.Remote. It runs
+	// with the Reader's lock held, as Emit does (so a page is told the
+	// bodies in their versions' order): it must not block or call back.
+	OnBuilt func(page any, b ReaderBody)
+	// OnFailed is told, for each page bound to message, that the body
+	// Allow read failed: native offers 加载图片 again. Under the lock too.
+	OnFailed func(page any, message int64, err error)
 }
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
@@ -160,6 +167,14 @@ func (r *Reader) Bind(key any, message int64) {
 	st.pages++
 }
 
+// Bound is the message the page with key shows, while it is bound.
+func (r *Reader) Bound(key any) (message int64, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	message, ok = r.bound[key]
+	return message, ok
+}
+
 // Unbind forgets the page with key; the last page of a message takes its
 // state along (allowed images, fetches in flight).
 func (r *Reader) Unbind(key any) {
@@ -210,6 +225,15 @@ func (r *Reader) Allow(message int64) {
 		b, err := r.build(ctx, svc, message, v, true)
 		if err != nil {
 			log.Printf("reader: message %d: %v", message, err)
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.msgs[message] == st && st.version == v {
+				for k, m := range r.bound {
+					if m == message {
+						r.d.OnFailed(k, message, err)
+					}
+				}
+			}
 			return
 		}
 		// Sent under the lock: a page rebound meanwhile, or a newer
@@ -250,16 +274,16 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 		b.Plain = m.Text
 	}
 	r.mu.Lock()
-	current := false
+	defer r.mu.Unlock()
 	if s := r.msgs[message]; s != nil && s.version == v {
-		current = true
 		if s.body == nil {
 			s.body, s.remote, s.budget = &b, remote, budget
 		}
-	}
-	r.mu.Unlock()
-	if current && r.d.OnCut != nil {
-		r.d.OnCut(message, b.Cut)
+		for k, m := range r.bound {
+			if m == message {
+				r.d.OnBuilt(k, b)
+			}
+		}
 	}
 	return b, nil
 }
@@ -274,24 +298,30 @@ func NewReaderPage(r *Reader) *ReaderPage { return &ReaderPage{r: r} }
 // caller is the calling page's message, if it is a reader page bound to
 // one, and the service.
 func (r *Reader) caller(ctx context.Context) (message int64, svc *core.Service, err error) {
+	_, message, svc, err = r.callerKey(ctx)
+	return message, svc, err
+}
+
+// callerKey is caller with the page's key.
+func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc *core.Service, err error) {
 	id, err := r.pages.Caller(ctx, "reader")
 	if err != nil {
-		return 0, nil, err
+		return nil, 0, nil, err
 	}
 	key, ok := r.pages.Key(id)
 	if !ok {
-		return 0, nil, ErrWrongPage
+		return nil, 0, nil, ErrWrongPage
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	message, ok = r.bound[key]
 	if !ok {
-		return 0, nil, ErrWrongPage
+		return nil, 0, nil, ErrWrongPage
 	}
 	if r.svc == nil {
-		return 0, nil, ErrNotReady
+		return nil, 0, nil, ErrNotReady
 	}
-	return message, r.svc, nil
+	return key, message, r.svc, nil
 }
 
 // Load is the caller's message's body, as of its version.
@@ -318,27 +348,28 @@ func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
 
 // Height is the body's height in CSS pixels, for the native layout.
 func (p *ReaderPage) Height(ctx context.Context, px int) error {
-	message, _, err := p.r.caller(ctx)
+	key, message, _, err := p.r.callerKey(ctx)
 	if err != nil {
 		return err
 	}
 	if px < 0 || px > maxBodyHeight {
 		return ErrBadHeight
 	}
-	p.r.d.OnHeight(message, px)
+	p.r.d.OnHeight(key, message, px)
 	return nil
 }
 
 // Wheel is a vertical wheel delta the body did not use: the reader
 // scrolls by it.
 func (p *ReaderPage) Wheel(ctx context.Context, dy float64) error {
-	if _, _, err := p.r.caller(ctx); err != nil {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
 		return err
 	}
 	if math.IsNaN(dy) || math.IsInf(dy, 0) {
 		return ErrBadWheel
 	}
-	p.r.d.OnWheel(dy)
+	p.r.d.OnWheel(key, dy)
 	return nil
 }
 
@@ -346,7 +377,8 @@ func (p *ReaderPage) Wheel(ctx context.Context, dy float64) error {
 // https one after the confirmation, a mailto one in a compose window. Any
 // other is ErrBadLink.
 func (p *ReaderPage) OpenLink(ctx context.Context, link string) error {
-	if _, _, err := p.r.caller(ctx); err != nil {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
 		return err
 	}
 	u, err := url.Parse(link)
@@ -358,19 +390,20 @@ func (p *ReaderPage) OpenLink(ctx context.Context, link string) error {
 	default:
 		return ErrBadLink
 	}
-	p.r.d.OnLink(link)
+	p.r.d.OnLink(key, link)
 	return nil
 }
 
 // Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
 func (p *ReaderPage) Navigate(ctx context.Context, dir int) error {
-	if _, _, err := p.r.caller(ctx); err != nil {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
 		return err
 	}
 	if dir != -1 && dir != 1 {
 		return ErrBadDirection
 	}
-	p.r.d.OnNavigate(dir)
+	p.r.d.OnNavigate(key, dir)
 	return nil
 }
 

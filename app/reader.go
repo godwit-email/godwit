@@ -61,8 +61,7 @@ type reader struct {
 // while the message is expanded.
 type msgBody struct {
 	msg     core.Message
-	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyCut)
-	remote  bool // the user allowed the remote images (加载图片): every page made for it is told so
+	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
 	loading bool
 	ready   bool
 	err     error // the last read, or making the page, failed; a retry reads again
@@ -70,6 +69,14 @@ type msgBody struct {
 	view   ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
 	close  func()           // closes view: unbinds and destroys it
 	height int              // the page's last reported height, CSS px; 0 until it reports
+
+	// The remote images: allow is the user's 加载图片, which every page
+	// made for the message is told (Platform.AllowImages); remote that the
+	// page's body has them (BodyBuilt), which hides the notice; allowErr
+	// that reading it so failed (BodyFailed), which offers a retry.
+	allow    bool
+	remote   bool
+	allowErr error
 }
 
 func newReader(p *mailPage) *reader {
@@ -255,7 +262,7 @@ func (r *reader) openView(id int64) {
 	}
 	gen := r.gen
 	v, closeView, err := r.p.a.plat.NewBodyView(id)
-	if gen != r.gen || r.bodies[id] != b || !r.open[id] || b.view != nil {
+	if gen != r.gen || r.bodies[id] != b || !r.open[id] || b.view != nil || r.p.a.ctx.Err() != nil {
 		if err == nil {
 			closeView()
 		}
@@ -266,17 +273,43 @@ func (r *reader) openView(id int64) {
 		return
 	}
 	b.view, b.close = v, closeView
-	if b.remote {
+	if b.allow {
 		r.p.a.plat.AllowImages(id)
 	}
 }
 
-// closeView closes b's page, if it has one.
+// closeView closes b's page, if it has one; what the page told goes with
+// it (the user's 加载图片 stays).
 func (b *msgBody) closeView() {
 	if b.close != nil {
 		b.close()
 	}
-	b.view, b.close = nil, nil
+	b.view, b.close, b.remote, b.allowErr = nil, nil, false, nil
+}
+
+// closeViews closes every page (the App closing).
+func (r *reader) closeViews() {
+	for _, b := range r.bodies {
+		b.closeView()
+	}
+}
+
+// shown is the body whose page is v, if v is message's current page.
+func (r *reader) shown(v ui.NativeWebView, message int64) *msgBody {
+	if b := r.bodies[message]; b != nil && b.view != nil && b.view == v {
+		return b
+	}
+	return nil
+}
+
+// current reports whether v is the page of a body shown.
+func (r *reader) current(v ui.NativeWebView) bool {
+	for id, b := range r.bodies {
+		if b.view != nil && b.view == v {
+			return r.open[id]
+		}
+	}
+	return false
 }
 
 // accountOf is the account of a folder; 0 when the folder is unknown.
@@ -642,8 +675,19 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			kit.Spinner(c)
 			return
 		}
-		if b.msg.RemoteImagesBlocked > 0 && !b.remote {
+		switch {
+		case b.msg.RemoteImagesBlocked == 0 || b.remote:
+		case b.allowErr != nil:
+			kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+					OnClick(func() { r.allowImages(m.ID) })
+			})
+		default: // until the page has them
 			kit.Alert(c, kit.Warning, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), func() {
+				if b.allow {
+					kit.Spinner(c)
+					return
+				}
 				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.allowImages(m.ID) })
 			})
@@ -712,42 +756,72 @@ func byteSize(n int) string {
 }
 
 // allowImages lets message id's page load its remote images (加载图片),
-// and every page made for it again while the thread shows; the notice goes.
+// and every page made for it again while the thread shows; the notice
+// waits for the page's body to have them.
 func (r *reader) allowImages(id int64) {
 	b := r.bodies[id]
-	if b == nil || b.remote {
+	if b == nil {
 		return
 	}
-	b.remote = true
+	b.allow, b.allowErr = true, nil
 	if b.view != nil {
 		r.p.a.plat.AllowImages(id)
 	}
 }
 
+// The calls of a body's page (view), on the UI thread. Each acts only
+// while view is still a page the reader shows: one queued before its
+// page was closed, or replaced, is dropped.
+
 // BodyHeight is told the height, in CSS pixels, of message's body as its
-// page laid it out: its element takes it. One for a message without a
-// page (folded or switched away from since) is dropped.
-func (a *App) BodyHeight(message int64, px int) {
-	if b := a.mail.reader.bodies[message]; b != nil && b.view != nil {
+// page laid it out: its element takes it.
+func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
+	if b := a.mail.reader.shown(view, message); b != nil {
 		b.height = px
 	}
 }
 
 // BodyWheel is told a vertical wheel delta a body's page did not use: the
 // reader scrolls by it, within its content.
-func (a *App) BodyWheel(dy float64) {
+func (a *App) BodyWheel(view ui.NativeWebView, dy float64) {
+	if !a.mail.reader.current(view) {
+		return
+	}
 	s := &a.mail.reader.scroll
 	s.Y = min(max(s.Y+float32(dy), 0), s.MaxY)
 }
 
-// BodyCut is told whether message's body, as its page got it, is only the
-// start (ReaderBody.Cut): the truncated notice follows.
-func (a *App) BodyCut(message int64, cut bool) {
-	if b := a.mail.reader.bodies[message]; b != nil {
-		b.cut = cut
+// BodyLink opens a link of a body's page as one of the native reader's:
+// http(s) after the confirmation, mailto in a compose window.
+func (a *App) BodyLink(view ui.NativeWebView, link string) {
+	if a.mail.reader.current(view) {
+		a.openLink(link)
 	}
 }
 
-// OpenLink opens a link of a body's page as one of the native reader's:
-// http(s) after the confirmation, mailto in a compose window.
-func (a *App) OpenLink(link string) { a.openLink(link) }
+// BodyNavigate goes back or forward for a body's page (⌘[ and ⌘]).
+func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
+	if a.mail.reader.current(view) {
+		a.Navigate(dir)
+	}
+}
+
+// BodyBuilt is told message's body as its page got it: whether it is only
+// the start (ReaderBody.Cut), for the truncated notice, and has the remote
+// images (Remote), which hides their notice.
+func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) {
+	if b := a.mail.reader.shown(view, message); b != nil {
+		b.cut, b.remote = cut, remote
+		if remote {
+			b.allowErr = nil
+		}
+	}
+}
+
+// BodyFailed is told reading message's body with its remote images
+// failed: the notice offers a retry.
+func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
+	if b := a.mail.reader.shown(view, message); b != nil && b.allow {
+		b.allowErr = err
+	}
+}
