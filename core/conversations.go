@@ -559,17 +559,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	if err != nil {
 		return nil, err
 	}
-	ref := conv.Model
-	if ref == "" {
-		st, err := s.loadSettings(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if ref = st.DefaultModel; ref == "" {
-			return nil, ErrAINotConfigured
-		}
-	}
-	model, err := s.resolveModel(ctx, ref)
+	model, ref, err := s.resolveRef(ctx, conv.Model) // the run stores the slug form
 	if err != nil {
 		return nil, err
 	}

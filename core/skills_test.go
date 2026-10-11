@@ -125,3 +125,16 @@ func TestSkillInfoModel(t *testing.T) {
 	sum, _ := find(infos, "summarize")
 	assert.Empty(t, sum.Model)
 }
+
+func TestSkillInfoTier(t *testing.T) {
+	s, root := skillService(t)
+	writeSkill(t, root, "brief", "---\nname: brief\ndescription: brief it\nmetadata:\n  godwit-model-tier: \"large\"\n---\nx")
+	infos, err := s.ListSkills(ctx)
+	require.NoError(t, err)
+	b, _ := find(infos, "brief")
+	assert.Empty(t, b.Tier, "only small is recognised")
+	for _, n := range []string{"summarize", "translate"} {
+		i, _ := find(infos, n)
+		assert.Equal(t, "small", i.Tier, n)
+	}
+}

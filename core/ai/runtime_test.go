@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var kinds = []string{"openai", "anthropic"}
+var kinds = []string{"openai", "openai-responses", "anthropic"}
 
 func eachKind(t *testing.T, f func(t *testing.T, kind string)) {
 	for _, k := range kinds {
@@ -75,6 +75,15 @@ func toolIDs(t *testing.T, kind string, raw json.RawMessage) (calls, results []s
 	var msgs []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &msgs))
 	for _, m := range msgs {
+		if kind == "openai-responses" { // input items
+			switch m["type"] {
+			case "function_call":
+				calls = append(calls, m["call_id"].(string))
+			case "function_call_output":
+				results = append(results, m["call_id"].(string))
+			}
+			continue
+		}
 		if kind == "openai" {
 			if id, ok := m["tool_call_id"].(string); ok {
 				results = append(results, id)
@@ -128,7 +137,7 @@ func TestRunStreamsText(t *testing.T) {
 		assert.Contains(t, string(reqs[1].Messages), "hi there")
 		assert.Contains(t, string(reqs[1].Messages), "Hel")
 		system := string(reqs[1].Messages) // openai: the system prompt is the first message
-		if kind == "anthropic" {
+		if kind != "openai" {
 			system += string(reqs[1].System)
 		}
 		assert.Equal(t, 1, strings.Count(system, "be brief"))
@@ -327,7 +336,7 @@ func TestRunIgnoresEnv(t *testing.T) {
 				}
 			}
 			wantAuth, wantXKey := "", ""
-			if key != "" && kind == "openai" {
+			if key != "" && kind != "anthropic" {
 				wantAuth = "Bearer " + key
 			}
 			if key != "" && kind == "anthropic" {
@@ -759,4 +768,21 @@ func TestForgetEndsRunWithStalledReader(t *testing.T) {
 	}
 	for range events { // the terminal event is still delivered
 	}
+}
+
+// Final whole-branch review #5: an escaped "/" in the base path reaches the
+// service as it is shown in the settings preview (ai.Endpoint), for every kind.
+func TestEscapedBasePathKept(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		uris := make(chan string, 4)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uris <- r.RequestURI
+			http.Error(w, "no", http.StatusBadRequest) // not retried
+		}))
+		t.Cleanup(srv.Close)
+		base := srv.URL + "/a%2Fb/v1"
+		_, res := run(newEngine(t), Request{Model: ResolvedModel{ServiceID: 1, Version: 1, Kind: kind, BaseURL: base, Model: "m", APIKey: "k"}, Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, strings.TrimPrefix(Endpoint(kind, base), srv.URL), <-uris)
+	})
 }

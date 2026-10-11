@@ -21,6 +21,7 @@ type SkillInfo struct {
 	On                []string
 	Output            string
 	Model             string // godwit-model; "" is the default model
+	Tier              string // godwit-model-tier: "small" or ""
 	Builtin, Enabled  bool
 	UI                bool // has godwit-action-*
 	Error             string
@@ -72,7 +73,7 @@ func (s *Service) ListSkills(ctx context.Context) ([]SkillInfo, error) {
 	}
 	var out []SkillInfo
 	for n, sk := range ok {
-		out = append(out, SkillInfo{Name: n, Description: sk.Description, On: sk.On, Output: sk.Output, Model: sk.Model,
+		out = append(out, SkillInfo{Name: n, Description: sk.Description, On: sk.On, Output: sk.Output, Model: sk.Model, Tier: sk.Tier,
 			Builtin: sk.Builtin, Enabled: !slices.Contains(off, n), UI: len(sk.On) > 0})
 	}
 	for n, e := range failed {

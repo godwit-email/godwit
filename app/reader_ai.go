@@ -101,11 +101,12 @@ func (r *reader) state(id int64) *msgAI {
 	return s
 }
 
-// aiReady reports whether a default model is set.
+// aiReady reports whether a default model is set: the skill menu's skills need it.
 func (r *reader) aiReady() bool { return r.p.a.settings.DefaultModel != "" }
 
-// modelName is the default model without its service.
-func (r *reader) modelName() string { return modelOf(r.p.a.settings.DefaultModel) }
+// taskReady reports whether core resolves a model for the reader task:
+// "summarize", "translate" or "" for quick replies (App.taskModels).
+func (r *reader) taskReady(task string) bool { return r.p.a.taskModels[task] }
 
 // modelOf is a model reference (service/model) without its service.
 func modelOf(ref string) string {
@@ -114,6 +115,10 @@ func modelOf(ref string) string {
 	}
 	return ref
 }
+
+// modelLabel drops the empty model slot that ends a label until the run
+// reports its model.
+func modelLabel(s string) string { return strings.TrimSuffix(s, " · ") }
 
 // readingLang is the language mail is translated into.
 func (r *reader) readingLang() string {
@@ -124,7 +129,7 @@ func (r *reader) readingLang() string {
 // summaryShown reports whether a message's summary shows: with a model,
 // as the Summary action chose, else as Settings.Summary says.
 func (r *reader) summaryShown(st *msgAI) bool {
-	if !r.aiReady() {
+	if !r.taskReady("summarize") {
 		return false
 	}
 	if st.sumShown != nil {
@@ -173,7 +178,7 @@ func (r *reader) stopAI() {
 // (Settings.Summary with a model) and its plugin cards. Each runs once.
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
-	if r.aiReady() && r.p.a.settings.Summary && st.summary == nil {
+	if r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
 		st.summary = r.stream(id, "summarize")
 	}
 	r.loadCards(id, false)
@@ -199,7 +204,7 @@ func (r *reader) startAI() {
 	for id := range r.open {
 		r.startFor(id)
 	}
-	if r.aiReady() && r.p.a.settings.QuickReplies {
+	if r.taskReady("") && r.p.a.settings.QuickReplies {
 		r.loadQuick(m.ID, false)
 	}
 	a, skills, actions := r.p.a, r.skillsFn, r.actionsFn
@@ -215,20 +220,12 @@ func (r *reader) startAI() {
 }
 
 // stream runs skill on a message; its text streams into the run returned,
-// labelled with the skill's own model, else the default one.
+// labelled with the model the run reports in its context event.
 func (r *reader) stream(id int64, skill string) *aiRun {
-	a, ctx, start, list := r.p.a, r.aiContext(), r.runSkill, r.skillsFn
-	run := &aiRun{running: true, model: r.modelName(), lang: r.readingLang()}
+	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
+	run := &aiRun{running: true, lang: r.readingLang()}
 	var doc richtext.Doc
 	a.do(func(context.Context) error {
-		sks, err := list(ctx)
-		if err != nil {
-			return err
-		}
-		if i := slices.IndexFunc(sks, func(s core.SkillInfo) bool { return s.Name == skill }); i >= 0 && sks[i].Model != "" {
-			model := modelOf(sks[i].Model)
-			a.onUI(func() { run.model = model })
-		}
 		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id})
 		if err != nil {
 			return err
@@ -236,6 +233,9 @@ func (r *reader) stream(id int64, skill string) *aiRun {
 		var all strings.Builder
 		for ev := range ch {
 			switch ev.Kind {
+			case "context":
+				model := modelOf(ev.Model)
+				a.onUI(func() { run.model = model })
 			case "text":
 				all.WriteString(ev.Text)
 				s := ev.Text
@@ -354,15 +354,17 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 func (r *reader) aiTools(c *ui.Context) {
 	out := kit.ButtonOpts{Variant: kit.Outline, Small: true}
 	m, _ := r.last()
-	if r.aiReady() {
-		st := r.state(m.ID)
-		on := func(b bool) kit.ButtonOpts {
-			if b {
-				return kit.ButtonOpts{Variant: kit.Primary, Small: true}
-			}
-			return out
+	st := r.state(m.ID)
+	on := func(b bool) kit.ButtonOpts {
+		if b {
+			return kit.ButtonOpts{Variant: kit.Primary, Small: true}
 		}
+		return out
+	}
+	if r.taskReady("summarize") {
 		kit.Button(c, i18n.T("reader.ai.summarize"), on(r.summaryShown(st) && st.summary != nil)).OnClick(r.toggleSummary)
+	}
+	if r.taskReady("translate") {
 		kit.Button(c, i18n.T("reader.ai.translate"), on(r.trShown(st))).OnClick(func() { r.toggleTranslate(m.ID) })
 	}
 	var skills []core.SkillInfo
@@ -400,7 +402,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	if sum := st.summary; sum != nil && r.summaryShown(st) {
-		r.panel(c, i18n.Tf("reader.ai.summary", sum.model), nil, func() {
+		r.panel(c, modelLabel(i18n.Tf("reader.ai.summary", sum.model)), nil, func() {
 			ui.Column(c).Gap(th.Space(1)).Children(func() {
 				for _, line := range points(sum.text) {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
@@ -420,7 +422,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			ui.Text(c, i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Text(c, modelLabel(i18n.Tf("reader.ai.translated", langName(tr.lang), tr.model))).FontSize(t.Text.Sm).TextColor(t.Muted)
 			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Ghost, Small: true}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
@@ -554,7 +556,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	last, _ := r.last()
 	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil || !r.aiReady() || !r.p.a.settings.QuickReplies {
+	if m.ID != last.ID || st == nil || !r.taskReady("") || !r.p.a.settings.QuickReplies {
 		return
 	}
 	r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(m.ID, true) })

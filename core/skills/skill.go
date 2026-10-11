@@ -31,6 +31,7 @@ type Skill struct {
 	Name, Description, Body string
 	On                      []string
 	Output, Model           string
+	Tier                    string // godwit-model-tier; only "small" is kept
 	Builtin                 bool
 	Version                 string // first 16 hex digits of SHA-256 of SKILL.md
 	FS                      fs.FS  // the skill directory (built-ins)
@@ -81,6 +82,9 @@ func Parse(name string, fsys fs.FS) (Skill, []string, error) {
 		Name: name, Description: strings.TrimSpace(fm.Description), Body: strings.TrimSpace(rest),
 		Output: fm.Metadata["godwit-action-output"], Model: fm.Metadata["godwit-model"],
 		Version: hex.EncodeToString(sum[:])[:16], FS: fsys,
+	}
+	if fm.Metadata["godwit-model-tier"] == "small" {
+		s.Tier = "small"
 	}
 	if on := fm.Metadata["godwit-action-on"]; on != "" {
 		for _, v := range strings.Split(on, ",") {

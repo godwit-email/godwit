@@ -3,6 +3,7 @@ name: summarize
 description: Summarize an email or thread into a few key points
 metadata:
   godwit-action-on: "message,thread"
+  godwit-model-tier: "small"
   godwit-action-output: "panel"
 ---
 

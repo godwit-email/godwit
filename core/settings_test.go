@@ -98,3 +98,21 @@ func TestReadingLanguageFallback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ja", s.readingLanguage(t.Context()))
 }
+
+func TestSettingsValidateModelRefs(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	st, _ := s.GetSettings(t.Context())
+	st.DefaultModel, st.SmallModel = "nowhere/m1", "nowhere/m2" // format only, no lookup
+	_, err := s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	for _, bad := range []string{"nomodel", "/m", "svc/"} {
+		in := st
+		in.DefaultModel = bad
+		_, err = s.SetSettings(t.Context(), in)
+		assert.Error(t, err, "default %q", bad)
+		in = st
+		in.SmallModel = bad
+		_, err = s.SetSettings(t.Context(), in)
+		assert.Error(t, err, "small %q", bad)
+	}
+}

@@ -120,7 +120,9 @@ type App struct {
 	loadErr     error // the newest load's error; nil once a load succeeds
 	loadFailing bool  // loads have failed since the last success: toast once per streak
 	accounts    []core.Account
-	settings    core.Settings // what the interface shows: the newest edit while one saves
+	settings    core.Settings   // what the interface shows: the newest edit while one saves
+	taskModels  map[string]bool // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for
+	taskGen     uint64          // bumped per refreshTasks; only the newest answer counts
 
 	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
 	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
@@ -278,6 +280,7 @@ func (a *App) load() {
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st
 		}
+		a.refreshTasks() // skills or services may have changed too
 		a.showTrayUnread(inbox)
 		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {
 			i18n.SetLanguage(tag)
@@ -388,6 +391,29 @@ func (a *App) do(fn func(ctx context.Context) error, done func(err error)) {
 			a.onUI(func() { done(err) })
 		}
 	}()
+}
+
+// refreshTasks asks core which of the reader's tasks resolve a model, after
+// a load, a settings save and a model service change. Without a model they
+// are hidden; any other error shows them, so their run reports it.
+func (a *App) refreshTasks() {
+	a.taskGen++
+	gen, got := a.taskGen, map[string]bool{}
+	a.do(func(ctx context.Context) error {
+		for _, task := range []string{"summarize", "translate", ""} {
+			_, err := a.svc.TaskModel(ctx, task)
+			got[task] = !errors.Is(err, core.ErrAINotConfigured) && !errors.Is(err, core.ErrModelServiceNotFound) && !errors.Is(err, core.ErrModelNotFound)
+		}
+		return nil
+	}, func(error) {
+		if gen != a.taskGen || maps.Equal(a.taskModels, got) {
+			return
+		}
+		a.taskModels = got
+		if a.route.Page == PageMail {
+			a.mail.reader.startAI() // what became available starts; each part runs once
+		}
+	})
 }
 
 // query is do for a read whose result belongs to the current route: done is

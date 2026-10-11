@@ -3,6 +3,7 @@ name: translate
 description: Translate the email into the user's preferred language
 metadata:
   godwit-action-on: "message,selection"
+  godwit-model-tier: "small"
   godwit-action-output: "replace-body"
 ---
 

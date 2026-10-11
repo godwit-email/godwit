@@ -30,6 +30,7 @@ func (a *App) changeSettings(st core.Settings) {
 		saved, err = save(ctx, st)
 		return err
 	}, func(gen uint64, err error) {
+		a.refreshTasks() // saved or not, ask again: it may name other models
 		if err == nil {
 			a.settingsOK, a.settingsSavedVer = saved, ver
 		}
