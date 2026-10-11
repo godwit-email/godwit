@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -187,8 +188,8 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
 	settingsSection(c, i18n.T("settings.appearance"), "",
 		func() {
-			settingBlock(c, func() {
-				ui.Row(c).Gap(c.Theme().Space(3)).Children(func() {
+			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() {
+				ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
 					for _, th := range []string{"system", "light", "dark"} {
 						p.themeTile(c, th)
 					}
@@ -233,7 +234,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
 		})
 	settingsSection(c, i18n.T("settings.startup"), "",
-		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), ""),
+		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
 		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
 		sw(&st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), ""))
 	settingsSection(c, i18n.T("settings.notifications"), "",
@@ -247,39 +248,38 @@ func (p *settingsPage) generalView(c *ui.Context) {
 }
 
 // themeTile is a small picture of the window in a theme; "system" shows
-// both halves.
+// both halves. The name is only its tooltip and label.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
 	preview := func(tok theme.Tokens, w float32) {
-		side, long, short := w/4, w/3, w/5
 		ui.Row(c).Size(w, theme.ThemeTileHeight).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
-			ui.Box(c).Width(min(theme.TileRail, side))
-			ui.Box(c).Width(side).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
+			ui.Box(c).Width(min(theme.TileRail, w))
+			ui.Box(c).Width(theme.TileSide).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
 			ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
-				ui.Box(c).Height(theme.TileLine).Width(long).Radius(t.Radius.Full).Background(tok.Border)
-				ui.Box(c).Height(theme.TileLine).Width(short).Radius(t.Radius.Full).Background(tok.Border)
+				ui.Box(c).Height(theme.TileLine).WidthPercent(70).Radius(t.Radius.Xs).Background(tok.Border)
+				ui.Box(c).Height(theme.TileLine).WidthPercent(45).Radius(t.Radius.Xs).Background(tok.Border)
 			})
 		})
 	}
-	kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start).Children(func() {
-		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Lg).Clip().Border(theme.Hairline, t.Border)
-		if on {
-			frame.Border(theme.SelectedBorder, t.Primary)
+	label := i18n.T("settings.theme." + th)
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
+	if on {
+		b.Border(theme.SelectedBorder, t.Primary)
+	}
+	b.Children(func() {
+		switch th {
+		case "system":
+			preview(theme.Light(), theme.ThemeTileWidth/2)
+			preview(theme.Dark(), theme.ThemeTileWidth/2)
+		case "dark":
+			preview(theme.Dark(), theme.ThemeTileWidth)
+		default:
+			preview(theme.Light(), theme.ThemeTileWidth)
 		}
-		frame.Children(func() {
-			switch th {
-			case "system":
-				preview(theme.Light(), theme.ThemeTileWidth/2)
-				preview(theme.Dark(), theme.ThemeTileWidth/2)
-			case "dark":
-				preview(theme.Dark(), theme.ThemeTileWidth)
-			default:
-				preview(theme.Light(), theme.ThemeTileWidth)
-			}
-		})
-		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.Text.Sm)
 	})
+	kit.Tooltip(c, b, label)
 }
 
 // noTranslate picks the languages that need no translation.
@@ -295,8 +295,14 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	anchor := settingButton(c, label, kit.Outline, false).Width(theme.ControlWidth).Label(i18n.T("settings.no_translate")).
-		OnClick(func() { p.noTrans = !p.noTrans })
+	t := theme.Of(c)
+	anchor := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.noTrans = !p.noTrans }}).Label(i18n.T("settings.no_translate")).
+		Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background).
+		MinWidth(theme.SettingsSelectMin).MaxWidth(theme.SettingsSelectMax)
+	anchor.Children(func() {
+		ui.Text(c, label).Grow(1)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+	})
 	kit.Popover(c, anchor, &p.noTrans, func() {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {
 			for _, l := range languages {

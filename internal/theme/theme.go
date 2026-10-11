@@ -110,25 +110,25 @@ var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 
 // Sizes of glyphs and small parts; they do not follow the density.
 const (
-	IconXs, IconSm, Icon, IconMd, IconLg, IconXl = 12, 14, 16, 18, 20, 28
-	Logo                                         = 64         // the About page's logo
-	BrandLogo                                    = 40         // onboarding's brand mark, beside the name
-	MarkSm, MarkMd, MarkLg                       = 20, 28, 40 // provider marks
-	RailButton                                   = 40         // the icon rail's buttons
-	CloseButton                                  = 20         // a toast's close button
-	Control                                      = 16         // check boxes and radio buttons
-	RadioDot, StatusDot                          = 8, 6       // a chosen radio's dot; status dots
-	SwitchWidth, SwitchHeight, SwitchThumb       = 32, 18, 14 // a switch's track and thumb
-	SwitchInset                                  = (SwitchHeight - SwitchThumb) / 2
-	StepDot, PendingDot, DoneBadge               = 20, 10, 36   // onboarding's check steps, OAuth wait, done mark
-	ThemeTileWidth, ThemeTileHeight              = 132, 84      // settings' theme pictures
-	TileRail, TileInset, TileGap, TileLine       = 14, 10, 6, 5 // the parts of a theme picture
-	SkeletonShort                                = 160          // a placeholder row's shorter line
-	EmptyIcon, EmptyDescMax                      = 40, 400      // an empty state's icon tile; its text's widest
-	GroupHeight, GroupSepHeight                  = 32, 16       // a button group; its separators
-	TabUnderline                                 = 2            // the selected underline tab's bottom border
-	Watermark                                    = 96           // the empty reader pane's bird
-	AIButtonHeight, SummaryIndent, CardTracking  = 30, 18, 3    // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
+	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
+	Logo                                             = 64         // the About page's logo
+	BrandLogo                                        = 40         // onboarding's brand mark, beside the name
+	MarkSm, MarkMd, MarkLg                           = 20, 28, 40 // provider marks
+	RailButton                                       = 40         // the icon rail's buttons
+	CloseButton                                      = 20         // a toast's close button
+	Control                                          = 16         // check boxes and radio buttons
+	RadioDot, StatusDot                              = 8, 6       // a chosen radio's dot; status dots
+	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14 // a switch's track and thumb
+	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
+	StepDot, PendingDot, DoneBadge                   = 20, 10, 36     // onboarding's check steps, OAuth wait, done mark
+	ThemeTileWidth, ThemeTileHeight, ThemeTileGap    = 76, 48, 10     // settings' theme pictures and the space between them
+	TileRail, TileSide, TileInset, TileGap, TileLine = 8, 18, 6, 4, 3 // the parts of a theme picture
+	SkeletonShort                                    = 160            // a placeholder row's shorter line
+	EmptyIcon, EmptyDescMax                          = 40, 400        // an empty state's icon tile; its text's widest
+	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
+	TabUnderline                                     = 2              // the selected underline tab's bottom border
+	Watermark                                        = 96             // the empty reader pane's bird
+	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
 )
 
 // ShadowLayer is one layer of a drop shadow: its offset down, blur and
