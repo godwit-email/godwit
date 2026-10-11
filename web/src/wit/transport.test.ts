@@ -534,4 +534,18 @@ describe("WitTransport selections", () => {
     emit({ conversation: 1, run: 5 });
     expect(heard).toEqual([4]);
   });
+
+  it("Stop while starting, then a switch: the run is still stopped once its ID is known", async () => {
+    const { api, tr } = fake();
+    let resolve!: (n: number) => void;
+    api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
+    api.stop.mockResolvedValue(undefined);
+    await send(tr, userMsg("hi"));
+    await tr.stop();
+    api.follow.mockResolvedValue(hist(2));
+    await tr.follow(); // a switch: the start's result is no longer shown
+    resolve(9);
+    await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
+    expect(tr.run).toBe(0);
+  });
 });

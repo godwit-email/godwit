@@ -99,7 +99,8 @@ const send = <T,>(set: Set<(x: T) => void>, x: T) =>
     for (const f of [...set]) f(x);
   });
 const emit = (e: Partial<WitEvent>) => send(h.wit, ev(e));
-const open = (conversation: number, version: number) => send(h.open, { conversation, version });
+const open = (conversation: number, version: number, created = false) =>
+  send(h.open, { conversation, version, created });
 const input = () => screen.getByRole("textbox", { name: "向 Wit 提问" });
 
 beforeEach(() => {
@@ -180,7 +181,7 @@ test("first ask creates and keeps the conversation", async () => {
   await start(0);
   expect(api.follow).toHaveBeenCalledWith(0);
   await user.type(input(), "first{Enter}");
-  open(7, 2); // native took the new conversation (ConversationCreated) before ask returned
+  open(7, 2, true); // native took the new conversation (ConversationCreated) before ask returned
   await act(async () => resolve({ run: 9, conversation: 7, revision: 0, conflict: false }));
   emit({ conversation: 7, run: 9, text: "made" });
   emit({ conversation: 7, run: 9, kind: "done" });
@@ -306,4 +307,34 @@ test("approvals decide through WitPage.decide", async () => {
   await userEvent.setup().click(await screen.findByRole("button", { name: "允许" }));
   expect(api.decide).toHaveBeenCalledWith(5, true);
   await waitFor(() => expect(screen.queryByRole("button", { name: "允许" })).toBeNull());
+});
+
+test("navigation while the first question is creating switches at once; the ask's result doesn't pull it back", async () => {
+  const user = userEvent.setup();
+  type RS = { run: number; conversation: number; revision: number; conflict: boolean };
+  let resolve!: (x: RS) => void;
+  vi.mocked(api.ask).mockReturnValueOnce(new Promise<RS>((r) => (resolve = r)));
+  await start(0);
+  await user.type(input(), "first{Enter}");
+  vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
+  open(4, 2); // the user picked conversation 4
+  expect(await screen.findByText("four")).toBeInTheDocument();
+  await act(async () => resolve({ run: 9, conversation: 7, revision: 0, conflict: false }));
+  emit({ conversation: 7, run: 9, text: "elsewhere" });
+  expect(screen.getByText("four")).toBeInTheDocument();
+  expect(screen.queryByText("elsewhere")).toBeNull();
+  expect(api.follow).not.toHaveBeenCalledWith(7);
+  vi.mocked(api.ask).mockResolvedValue({ run: 10, conversation: 4, revision: 0, conflict: false });
+  await user.type(input(), "next{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(4, "next"));
+});
+
+test("a stale Load does not overwrite a newer witState", async () => {
+  let resolve!: (s: WitPageState) => void;
+  vi.mocked(api.load).mockReturnValue(new Promise((r) => (resolve = r)));
+  render(<WitPage />);
+  send(h.state, state(3, 1, "m2")); // settings changed after Load was issued
+  await act(async () => resolve(state(3, 1, "m1")));
+  expect(await screen.findByRole("button", { name: /m2/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /m1/ })).toBeNull();
 });

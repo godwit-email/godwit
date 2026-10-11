@@ -193,7 +193,7 @@ func TestWitPageLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), st.Conversation)
 	assert.Equal(t, int64(2), st.Version)
-	assert.Equal(t, []WitOpenMsg{{5, 1}, {7, 2}}, f.opens)
+	assert.Equal(t, []WitOpenMsg{{Conversation: 5, Version: 1}, {Conversation: 7, Version: 2}}, f.opens)
 
 	f.w.SettingsChanged(core.Settings{DefaultModel: "x/m2", Theme: "dark"})
 	require.Len(t, f.states, 1)
@@ -829,10 +829,15 @@ func TestWitPageReloadDuringCreation(t *testing.T) {
 	f.mu.Lock()
 	last := f.opens[len(f.opens)-1]
 	f.mu.Unlock()
-	assert.Equal(t, WitOpenMsg{rs.Conversation, reloaded.Version + 1}, last, "told the conversation made, as newer")
+	assert.Equal(t, WitOpenMsg{Conversation: rs.Conversation, Version: reloaded.Version + 1, Created: true}, last,
+		"told the conversation made, as newer, marked as the creation")
 	st, err := f.p.Load(f.ctx())
 	require.NoError(t, err)
 	assert.Equal(t, last.Conversation, st.Conversation)
 	assert.Equal(t, last.Version, st.Version)
+	f.w.SetConversation(5) // navigation is no creation
+	f.mu.Lock()
+	assert.False(t, f.opens[len(f.opens)-1].Created)
+	f.mu.Unlock()
 	f.idle(t, rs.Conversation)
 }

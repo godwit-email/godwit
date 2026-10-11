@@ -299,7 +299,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private want = 0; // a started run, whose first event names the conversation
   private early: WitEvent[] = []; // while conv is unknown
   private starting = false; // a run start is in flight: its ID is not known yet
-  private stopping = false; // Stop was asked for while starting
+  private stopStart?: () => void; // marks the start in flight to be stopped once its ID is known
   private log: WitEvent[] = [];
   private sink?: (ev: WitEvent) => void;
   private resuming?: { open?: WitUIMessage; id: string };
@@ -346,7 +346,8 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   // Forgets the conversation followed (its stream ends): a follow or a run start names the next.
   private reset() {
     this.endOpen?.();
-    this.starting = this.stopping = false;
+    this.starting = false; // a start in flight keeps its own stop mark (sendMessages)
+    this.stopStart = undefined;
     this.conv = undefined;
     this.want = 0;
     this.early = [];
@@ -406,7 +407,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   /** Stops the run: one still starting is stopped as soon as its ID is known; none, nothing. */
   stop(): Promise<void> {
     if (this.starting) {
-      this.stopping = true;
+      this.stopStart?.();
       return Promise.resolve();
     }
     return this.run ? this.api.stop(this.run) : Promise.resolve();
@@ -474,18 +475,22 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.resuming = undefined;
     this.run = 0;
     this.starting = true;
-    this.stopping = false;
+    // Stop's mark belongs to this start, not to what is shown: a switch drops its result, not the stop.
+    const req = { stop: false };
+    this.stopStart = () => {
+      req.stop = true;
+    };
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     (skill && this.api.skill ? this.api.skill(skill, m?.metadata?.lang ?? "") : this.api.ask(text))
       .then(
         (run) => {
-          if (g !== this.gen) return; // a switch came meanwhile: its stream ended
+          if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown
           named(`live${run}`); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;
           const ev = this.early.find((e) => e.run === run);
           if (ev) this.adopt(ev.conversation);
-          if (this.stopping) return this.api.stop(run);
+          if (req.stop) return this.api.stop(run);
         },
         (e: unknown) => {
           if (g !== this.gen) return;
@@ -495,7 +500,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
       )
       .catch(() => {}) // ponytail: a failed deferred stop is dropped; Stop stays to try again
       .finally(() => {
-        if (g === this.gen) this.starting = this.stopping = false;
+        if (g === this.gen) {
+          this.starting = false;
+          this.stopStart = undefined;
+        }
       });
     return s;
   }

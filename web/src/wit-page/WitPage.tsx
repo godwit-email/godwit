@@ -78,22 +78,32 @@ export function WitPage() {
         },
       );
     };
-    const onOpen = (m: WitOpenMsg) => {
+    // The creation's notice waits for the ask (which keeps the conversation); navigation switches
+    // at once, and the ask's result is then not shown (a Stop asked for still stops its run).
+    const onOpen = (m: Omit<WitOpenMsg, "created"> & { created?: boolean }) => {
       if (m.version <= version) return;
       version = m.version;
       const apply = () => {
         if (live && version === m.version && m.conversation !== conv.current) open(m.conversation);
       };
-      if (creating) void creating.then(apply);
+      if (creating && m.created) void creating.then(apply);
       else apply();
     };
-    const onState = (s: WitPageState) => {
-      setSt(s);
-      onOpen(s);
-    };
-    const offs = [events.witOpen.on(onOpen), events.witState.on(onState)];
+    let pushed = false; // a witState came: newer than Load's state fields
+    const offs = [
+      events.witOpen.on(onOpen),
+      events.witState.on((s) => {
+        pushed = true;
+        setSt(s);
+        onOpen(s);
+      }),
+    ];
     api.load().then(
-      (s) => live && onState(s),
+      (s) => {
+        if (!live) return;
+        if (!pushed) setSt(s);
+        onOpen(s);
+      },
       (e) => live && toast.error(message(e)),
     );
     return () => {

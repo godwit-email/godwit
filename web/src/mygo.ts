@@ -357,11 +357,13 @@ export interface WitMessage {
 
 /**
  * WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
- * snapshot at Version.
+ * snapshot at Version. Created marks the conversation the page's Ask made
+ * (the route took it): the page's first question goes on in it, no switch.
  */
 export interface WitOpenMsg {
   conversation: number;
   version: number;
+  created: boolean;
 }
 
 /** WitPageState is what the Wit page shows besides the conversation. */

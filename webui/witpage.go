@@ -33,10 +33,12 @@ type WitPageState struct {
 }
 
 // WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
-// snapshot at Version.
+// snapshot at Version. Created marks the conversation the page's Ask made
+// (the route took it): the page's first question goes on in it, no switch.
 type WitOpenMsg struct {
 	Conversation int64 `json:"conversation"`
 	Version      int64 `json:"version"`
+	Created      bool  `json:"created"`
 }
 
 var (
@@ -81,6 +83,7 @@ type Wit struct {
 	mu      sync.Mutex
 	svc     *core.Service
 	conv    int64   // the snapshot: the route's conversation
+	made    int64   // the conversation Ask made last
 	version int64   // bumped per SetConversation
 	sel     uint64  // bumped per selection (Follow, Ask): only the newest subscribes
 	f       *follow // the page's subscription; nil for none
@@ -123,7 +126,7 @@ func (w *Wit) caller(ctx context.Context) (Target, *core.Service, error) {
 func (w *Wit) SetConversation(id int64) int64 {
 	w.mu.Lock()
 	w.version++
-	m := WitOpenMsg{Conversation: id, Version: w.version}
+	m := WitOpenMsg{Conversation: id, Version: w.version, Created: id != 0 && id == w.made}
 	w.conv = id
 	w.mu.Unlock()
 	w.d.Open(m)
@@ -292,6 +295,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string) (RunStart, 
 // takes it while it is still that version's new conversation.
 func (w *Wit) created(conv, version int64) {
 	w.mu.Lock()
+	w.made = conv
 	if w.version == version && w.conv == 0 {
 		w.conv = conv
 	}
