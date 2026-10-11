@@ -1,0 +1,341 @@
+package core
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	netmail "net/mail"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/mailsync"
+	"github.com/godwit-email/godwit/core/send"
+	"github.com/godwit-email/godwit/core/store"
+	"github.com/zalando/go-keyring"
+)
+
+// ErrInvalidState is returned by ResolveOutbox for an item that needs no decision.
+var ErrInvalidState = errors.New("outbox item is not waiting for a decision")
+
+const maxSendAttempts = 5
+
+// beforeOutboxItem, when set, runs after processOutbox read the items and before
+// it handles each one. Tests use it to change an item under a running sync.
+var beforeOutboxItem func(id int64)
+
+// OutboxItem is a message that has not finished sending and archiving. State is
+// queued, sending, sent, archiving, send_uncertain, archive_uncertain or failed.
+type OutboxItem struct {
+	ID               int64
+	Subject          string
+	State, LastError string
+	CreatedAt        time.Time
+}
+
+// ListOutbox returns the account's unfinished outbox items, oldest first.
+func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem, error) {
+	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at FROM outbox
+		WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OutboxItem, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
+			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0)})
+	}
+	return out, nil
+}
+
+// ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
+// confirm_sent treats it as sent (it is archived next), resend queues it again
+// and discard drops it.
+func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT account_id, raw_path FROM outbox WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return fmt.Errorf("outbox item %d not found", id)
+	}
+	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
+		return err
+	}
+	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0])) // never while a sync is handling the item
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
+	var sql string
+	switch action {
+	case "confirm_sent":
+		sql = "UPDATE outbox SET state = 'sent', last_error = NULL WHERE " + decidable
+	case "resend":
+		sql = "UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL WHERE " + decidable
+	case "discard":
+		sql = "DELETE FROM outbox WHERE " + decidable
+	default:
+		return fmt.Errorf("unknown outbox action %q", action)
+	}
+	r, err := s.db.Execute(ctx, sql, id)
+	if err != nil {
+		return err
+	}
+	if r.Changes == 0 {
+		return ErrInvalidState
+	}
+	if action == "discard" {
+		if p := store.Str(rows.Values[0][1]); p != "" {
+			os.Remove(p)
+		}
+	}
+	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: store.Int(rows.Values[0][0])})
+	s.wakeWorker(store.Int(rows.Values[0][0]))
+	return nil
+}
+
+// recoverOutbox runs at startup: an item caught mid-SMTP or mid-APPEND by a crash
+// may or may not have gone through.
+func recoverOutbox(ctx context.Context, db *store.DB) error {
+	if _, err := db.Execute(ctx, "UPDATE outbox SET state = 'send_uncertain' WHERE state = 'sending'"); err != nil {
+		return err
+	}
+	_, err := db.Execute(ctx, "UPDATE outbox SET state = 'archive_uncertain' WHERE state = 'archiving'")
+	return err
+}
+
+type outboxRow struct {
+	id                 int64
+	messageID, rawPath string
+	rcpts              []string
+	state              string
+}
+
+// processOutbox sends the account's queued messages and files sent ones into the
+// Sent folder over c. Every state change is written before the network action it
+// guards, and a message whose submission may have succeeded is never sent again
+// automatically. Network failures are recorded on the items; database errors are
+// returned, and so is a refused SMTP login, which stops the round and pauses the
+// account's outbox (smtp_reauth).
+func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
+	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state FROM outbox
+		WHERE account_id = ? AND state IN ('queued', 'sent', 'send_uncertain', 'archive_uncertain') ORDER BY id`, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	defer s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: accountID})
+	// Writes after a network action use wctx: a cancelled sync must still record
+	// what happened, or the item would stay in sending/archiving.
+	wctx := context.WithoutCancel(ctx)
+	var (
+		ep         *conn.Endpoint
+		from       string
+		sent       string
+		sentLooked bool
+	)
+	sentFolder := func() (string, error) {
+		if !sentLooked {
+			var err error
+			if sent, err = mailsync.SentFolder(c); err != nil {
+				return "", err
+			}
+			sentLooked = true
+		}
+		return sent, nil
+	}
+	for _, r := range rows.Values {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		o := outboxRow{id: store.Int(r[0]), messageID: store.Str(r[1]), rawPath: store.Str(r[2]),
+			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4])}
+		if beforeOutboxItem != nil {
+			beforeOutboxItem(o.id)
+		}
+		switch o.state {
+		case "queued":
+			if ep == nil {
+				e, f, err := s.smtpEndpoint(ctx, accountID)
+				if err != nil {
+					return err
+				}
+				ep, from = &e, f
+			}
+			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
+			if errors.Is(err, conn.ErrAuthFailed) {
+				// Not this message's fault: it is queued again, uncharged, and the
+				// outbox waits for new credentials instead of trying each item.
+				_, derr := s.db.Execute(wctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", accountID)
+				return errors.Join(err, derr)
+			}
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			o.state = "sent"
+			fallthrough
+		case "sent", "archive_uncertain":
+			if err := s.archiveItem(ctx, wctx, c, sentFolder, o); err != nil {
+				return err
+			}
+		case "send_uncertain":
+			folder, err := sentFolder()
+			if err != nil || folder == "" {
+				continue // cannot check; the user decides
+			}
+			found, err := inFolder(c, folder, o.messageID)
+			if err != nil {
+				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
+			} else if found {
+				err = s.finishOutbox(wctx, o)
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// smtpEndpoint returns the account's SMTP server with its password, and its address.
+func (s *Service) smtpEndpoint(ctx context.Context, accountID int64) (conn.Endpoint, string, error) {
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return conn.Endpoint{}, "", err
+	}
+	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
+	if err != nil {
+		return conn.Endpoint{}, "", err
+	}
+	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username, Password: pw}, acc.Email, nil
+}
+
+// sendItem submits a queued item and reports whether it is now sent. A refused
+// login puts the item back to queued and returns the conn.ErrAuthFailed error.
+func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
+	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
+		return false, err
+	}
+	o.state = "sending"
+	raw, err := os.ReadFile(o.rawPath)
+	if err != nil {
+		_, err = s.setOutbox(wctx, o, "failed", err.Error())
+		return false, err
+	}
+	err = send.Send(ctx, ep, from, o.rcpts, raw)
+	switch {
+	case err == nil:
+		return s.setOutbox(wctx, o, "sent", "")
+	case errors.Is(err, send.ErrUncertain):
+		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
+		return false, err
+	case errors.Is(err, conn.ErrAuthFailed):
+		_, derr := s.setOutbox(wctx, o, "queued", err.Error())
+		return false, errors.Join(err, derr)
+	}
+	_, derr := s.db.Execute(wctx, `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
+		state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'queued' END WHERE id = ? AND state = 'sending'`,
+		err.Error(), maxSendAttempts, o.id)
+	return false, derr
+}
+
+// archiveItem files a sent item into the Sent folder unless it is there already
+// (the provider saved it, or an earlier uncertain APPEND went through). Without
+// a Sent folder there is nowhere to file it, so it is done.
+func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, sentFolder func() (string, error), o outboxRow) error {
+	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
+		return err
+	}
+	o.state = "archiving"
+	err := func() error {
+		folder, err := sentFolder()
+		if err != nil || folder == "" {
+			return err
+		}
+		found, err := inFolder(c, folder, o.messageID)
+		if err != nil || found {
+			return err
+		}
+		raw, err := os.ReadFile(o.rawPath)
+		if err != nil {
+			return err
+		}
+		cmd := c.Append(folder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagSeen}})
+		if _, err := cmd.Write(raw); err != nil {
+			cmd.Close()
+			return err
+		}
+		if err := cmd.Close(); err != nil {
+			return err
+		}
+		_, err = cmd.Wait()
+		return err
+	}()
+	if err != nil {
+		// Possibly appended: the next round looks before appending again.
+		_, err = s.setOutbox(wctx, o, "archive_uncertain", err.Error())
+		return err
+	}
+	return s.finishOutbox(wctx, o)
+}
+
+// setOutbox moves the item from o.state to state and reports whether it did: an
+// item changed since it was read (resolved, discarded) is left alone.
+func (s *Service) setOutbox(ctx context.Context, o outboxRow, state, lastError string) (bool, error) {
+	r, err := s.db.Execute(ctx, "UPDATE outbox SET state = ?, last_error = ? WHERE id = ? AND state = ?", state, lastError, o.id, o.state)
+	return err == nil && r.Changes == 1, err
+}
+
+// finishOutbox marks the item done and drops its raw copy, which the Sent folder now holds.
+func (s *Service) finishOutbox(ctx context.Context, o outboxRow) error {
+	if ok, err := s.setOutbox(ctx, o, "done", ""); !ok || err != nil {
+		return err
+	}
+	os.Remove(o.rawPath) // ponytail: a failed removal leaves an orphan .eml; sweep outbox/ if it matters
+	return nil
+}
+
+// inFolder reports whether folder holds a message whose Message-ID is exactly
+// messageID. SEARCH HEADER matches substrings, so each hit is checked.
+func inFolder(c *imapclient.Client, folder, messageID string) (bool, error) {
+	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		return false, err
+	}
+	res, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}, nil).Wait()
+	if err != nil {
+		return false, err
+	}
+	uids := res.AllUIDs()
+	if len(uids) == 0 {
+		return false, nil
+	}
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	if err != nil {
+		return false, err
+	}
+	for _, m := range msgs {
+		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
+		if err != nil {
+			continue
+		}
+		if strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
+			return true, nil
+		}
+	}
+	return false, nil
+}

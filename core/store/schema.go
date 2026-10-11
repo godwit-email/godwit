@@ -1,0 +1,119 @@
+package store
+
+// Migrations[i] holds the statements of schema version i+1, one statement each.
+var Migrations = [][]string{{
+	`CREATE TABLE accounts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT NOT NULL UNIQUE,
+		name TEXT, alias TEXT, signature TEXT,
+		is_default INTEGER DEFAULT 0,
+		sync_limit INTEGER DEFAULT 2000,
+		auth_type TEXT DEFAULT 'password',
+		status TEXT DEFAULT 'ok',
+		username TEXT,
+		imap_host TEXT, imap_port INTEGER, imap_security TEXT,
+		smtp_host TEXT, smtp_port INTEGER, smtp_security TEXT,
+		created_at INTEGER)`,
+	`CREATE TABLE folders (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		name TEXT,
+		role TEXT NOT NULL DEFAULT '',
+		uidvalidity INTEGER,
+		last_uid INTEGER DEFAULT 0,
+		UNIQUE(account_id, name))`,
+	`CREATE TABLE threads (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		subject TEXT,
+		last_date INTEGER)`,
+	`CREATE INDEX threads_account_date ON threads(account_id, last_date DESC)`,
+	`CREATE TABLE messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+		server_folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
+		server_uidvalidity INTEGER,
+		server_uid INTEGER,
+		thread_id INTEGER REFERENCES threads(id) ON DELETE CASCADE,
+		message_id TEXT, in_reply_to TEXT, refs TEXT,
+		subject TEXT, from_addr TEXT, to_addrs TEXT, cc_addrs TEXT, reply_to TEXT,
+		date INTEGER,
+		flags TEXT NOT NULL DEFAULT '',
+		size INTEGER,
+		snippet TEXT, body_text TEXT, body_html TEXT,
+		body_truncated INTEGER DEFAULT 0,
+		has_attachments INTEGER,
+		UNIQUE(server_folder_id, server_uid))`,
+	`CREATE INDEX messages_folder_date ON messages(folder_id, date DESC, id DESC)`,
+	`CREATE INDEX messages_thread ON messages(thread_id)`,
+	`CREATE INDEX messages_account_mid ON messages(account_id, message_id)`,
+	`CREATE TABLE attachments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		part TEXT, encoding TEXT, charset TEXT, filename TEXT, content_type TEXT,
+		size INTEGER, content_id TEXT, inline INTEGER, cache_path TEXT, last_used INTEGER)`,
+	`CREATE TABLE thread_refs (
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		message_id_hdr TEXT NOT NULL,
+		thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+		PRIMARY KEY(account_id, message_id_hdr))`,
+	`CREATE TABLE events_log (
+		seq INTEGER PRIMARY KEY AUTOINCREMENT,
+		type TEXT, account_id INTEGER, message_id INTEGER, created_at INTEGER)`,
+	`CREATE VIRTUAL TABLE messages_fts USING fts5(subject, from_addr, body, tokenize='trigram')`,
+	`CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+		INSERT INTO messages_fts(rowid, subject, from_addr, body)
+		VALUES (new.id, new.subject, new.from_addr, new.body_text);
+	END`,
+	`CREATE TRIGGER messages_ai_event AFTER INSERT ON messages BEGIN
+		INSERT INTO events_log(type, account_id, message_id, created_at)
+		VALUES ('message.received', new.account_id, new.id, unixepoch());
+	END`,
+	`CREATE TRIGGER messages_au AFTER UPDATE OF subject, from_addr, body_text ON messages BEGIN
+		UPDATE messages_fts SET subject = new.subject, from_addr = new.from_addr, body = new.body_text
+		WHERE rowid = old.id;
+	END`,
+	`CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+		DELETE FROM messages_fts WHERE rowid = old.id;
+	END`,
+	`CREATE TABLE drafts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		mode TEXT,
+		source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+		to_addrs TEXT, cc_addrs TEXT, bcc_addrs TEXT, reply_to TEXT,
+		subject TEXT, body_html TEXT, body_text TEXT, updated_at INTEGER)`,
+	`CREATE TABLE draft_attachments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		draft_id INTEGER NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+		filename TEXT, content_type TEXT, size INTEGER, path TEXT)`,
+	`CREATE TABLE ops (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+		kind TEXT,
+		dst_folder_id INTEGER,
+		payload TEXT,
+		depends_on INTEGER,
+		state TEXT DEFAULT 'pending',
+		attempts INTEGER DEFAULT 0,
+		last_error TEXT,
+		created_at INTEGER)`,
+	`CREATE TABLE outbox (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		message_id_hdr TEXT, raw_path TEXT, rcpts TEXT,
+		state TEXT,
+		attempts INTEGER DEFAULT 0,
+		last_error TEXT,
+		created_at INTEGER)`,
+}, {
+	`ALTER TABLE outbox ADD COLUMN subject TEXT`,
+}, {
+	`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+}, {
+	// 1 while SMTP refuses the password: the outbox pauses (IMAP sync goes on)
+	// until an SMTP login on an explicit SyncNow succeeds. status is IMAP's.
+	`ALTER TABLE accounts ADD COLUMN smtp_reauth INTEGER NOT NULL DEFAULT 0`,
+}}
