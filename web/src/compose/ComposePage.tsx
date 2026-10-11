@@ -636,7 +636,7 @@ function Compose({
       size="icon-sm"
       className="size-7 rounded-md text-foreground/80"
       aria-label={t("compose.attach")}
-      disabled={locked}
+      disabled={locked || witLocked} // an attachment bumps the revision: a waiting edit would go stale
       onClick={() => change((rev) => api.addAttachments(rev))}
     >
       <RiAttachment2 className="size-3.75" />

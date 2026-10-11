@@ -6,7 +6,7 @@ import type { T } from "@/shared/i18n";
 
 /**
  * ⌘K's popover under the selection: what to change (Enter or 生成 ↵ submits the trimmed text; an
- * empty one does nothing), Esc closes. A pointer down outside closes it too.
+ * empty one does nothing), Esc closes. A pointer down or focus leaving it closes it too.
  */
 export function CmdK({
   at,
@@ -38,6 +38,10 @@ export function CmdK({
         e.preventDefault();
         const s = text.trim();
         if (s) onSubmit(s);
+      }}
+      onBlur={(e) => {
+        // Focus leaving the popover (Tab) closes it, and with it the held selection.
+        if (e.relatedTarget && !box.current?.contains(e.relatedTarget)) onClose(); // not a window switch
       }}
       onKeyDown={(e) => {
         // Enter that commits an IME composition is not a submit.

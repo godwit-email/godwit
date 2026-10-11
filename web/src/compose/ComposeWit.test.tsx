@@ -97,6 +97,7 @@ const text: Record<string, string> = {
   "compose.body": "正文",
   "compose.subject": "主题",
   "compose.bold": "加粗",
+  "compose.attach": "附件",
   "wit.compose.empty": "自己写，或者在右边告诉 Wit 你想怎么回",
   "compose.sending.locked": "正在发送，暂时不能修改草稿",
   "error.unknown": "出错了：%s",
@@ -310,6 +311,27 @@ test("the formatting toolbar sits in the bottom bar with Send, disabled while an
   expect(bold).toBeDisabled();
   const send = screen.getByRole("button", { name: "compose.send" });
   expect(send.closest("[data-bar]")).toContainElement(bold);
+});
+
+test("attach is off while an edit waits; accepting still applies", async () => {
+  vi.mocked(api.decide).mockResolvedValue(change("<p>Hi Ann and more</p>", 9));
+  vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  expect(screen.getByRole("button", { name: "附件" })).toBeDisabled();
+  fireEvent.click(screen.getAllByRole("button", { name: "全部接受" })[0]);
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(4, true));
+  expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
+});
+
+test("tabbing out of ⌘K closes it", async () => {
+  await setup();
+  const b = (await body()) as HTMLTextAreaElement;
+  b.setSelectionRange(0, 2);
+  fireEvent.keyDown(b, { key: "k", metaKey: true });
+  const input = screen.getByRole("textbox", { name: "修改选中的内容" });
+  fireEvent.blur(input, { relatedTarget: b });
+  expect(screen.queryByText("⌘K · 只修改选中的这一段")).toBeNull();
 });
 
 test("accept all → decide(id, true)", async () => {
