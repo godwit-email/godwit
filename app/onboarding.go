@@ -415,9 +415,10 @@ func (o *onboarding) finish(again bool) {
 // steps on the right.
 func (o *onboarding) Content(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Radius(t.Radius.Xl).Clip().Background(t.Background).Border(theme.Hairline, t.Outline)
+	_, rad := chromeMetrics(c.TitleBar().Height, t) // Windows rounds 8, as the main window
+	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Radius(rad).Clip().Background(t.Background).Border(theme.Hairline, t.Outline)
 	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
-		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Radius(t.Radius.Xl-theme.Hairline, 0, 0, t.Radius.Xl-theme.Hairline).Background(t.Sidebar).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Radius(rad-theme.Hairline, 0, 0, rad-theme.Hairline).Background(t.Sidebar).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, logo).Size(theme.BrandLogo, theme.BrandLogo)
 				kit.Text(c, i18n.T("onboarding.brand"), t.Text.X2l).FontWeight(600)
