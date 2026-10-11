@@ -15,8 +15,9 @@ import (
 
 // importMessage claims the message for a local row awaiting it or inserts it,
 // with its attachments and thread, in one transaction. twins is how many messages
-// of this fetch share its Message-ID and size.
-func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, twins int, r *result) error {
+// of this fetch share its Message-ID and size. An inserted arrival also logs its
+// message.received event (plugin hooks) in that transaction; a claim does not.
+func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, twins int, arrival bool, r *result) error {
 	p := toParsed(m, texts)
 	uid := uint32(m.UID)
 	if id, err := claim(ctx, db, a.id, f, uid, p.MessageID, m.RFC822Size, twins, r); err != nil || id != 0 {
@@ -50,6 +51,14 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		})
 	}
 	stmts = append(stmts, threadTail(a.id, f.id, uid, ids)...)
+	if arrival {
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
+				VALUES ('message.received', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
+					AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, unixepoch())`,
+			Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
+		})
+	}
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {
 		return err

@@ -141,4 +141,53 @@ var Migrations = [][]string{{
 		target_kind TEXT, target_id INTEGER, decision TEXT)`,
 	`ALTER TABLE drafts ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`,
 	`ALTER TABLE drafts ADD COLUMN ai_approval_id INTEGER`,
+}, {
+	`CREATE TABLE plugins (name TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, source_hash TEXT NOT NULL,
+		permission_hash TEXT NOT NULL, config_version INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 0, granted_hash TEXT,
+		failures INTEGER NOT NULL DEFAULT 0, disabled_reason TEXT NOT NULL DEFAULT '', installed_at INTEGER)`,
+	`CREATE TABLE plugin_config (plugin TEXT NOT NULL REFERENCES plugins(name) ON DELETE CASCADE, key TEXT NOT NULL,
+		value TEXT NOT NULL, PRIMARY KEY(plugin, key))`,
+	`CREATE TABLE plugin_kv (plugin TEXT NOT NULL REFERENCES plugins(name) ON DELETE CASCADE, key TEXT NOT NULL,
+		value TEXT NOT NULL, PRIMARY KEY(plugin, key))`,
+	// It logged every insert, first syncs and rebuild imports included; sync writes message.received itself.
+	`DROP TRIGGER messages_ai_event`,
+	`ALTER TABLE events_log ADD COLUMN subject TEXT`,
+	`ALTER TABLE events_log ADD COLUMN from_addr TEXT`,
+	`ALTER TABLE events_log ADD COLUMN msg_date INTEGER`,
+	`CREATE TABLE plugin_cursors (plugin TEXT PRIMARY KEY REFERENCES plugins(name) ON DELETE CASCADE, seq INTEGER NOT NULL)`,
+	`CREATE TABLE mcp_servers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, transport TEXT NOT NULL,
+		command TEXT, args TEXT NOT NULL DEFAULT '[]', env_keys TEXT NOT NULL DEFAULT '[]', url TEXT,
+		header_keys TEXT NOT NULL DEFAULT '[]', version INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 0,
+		granted_version INTEGER NOT NULL DEFAULT 0, created_at INTEGER)`,
+	`CREATE TABLE mcp_tool_trust (server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE, tool TEXT NOT NULL,
+		definition_hash TEXT NOT NULL, PRIMARY KEY(server_id, tool))`,
+	`ALTER TABLE audit_log ADD COLUMN extension TEXT`,
+	`ALTER TABLE audit_log ADD COLUMN call_id TEXT`,
+	`ALTER TABLE audit_log ADD COLUMN destination TEXT`,
+	`ALTER TABLE audit_log ADD COLUMN reason TEXT`,
+	`ALTER TABLE approvals ADD COLUMN exec_mode TEXT NOT NULL DEFAULT 'tx'`, // tx or external
+}, {
+	// The active version's directory under DataDir/plugins/<name>/ (written once per install).
+	`ALTER TABLE plugins ADD COLUMN install_dir TEXT NOT NULL DEFAULT ''`,
+	// JSON list of the config keys that may have a keychain entry (deleted by uninstall).
+	`ALTER TABLE plugins ADD COLUMN secret_keys TEXT NOT NULL DEFAULT '[]'`,
+	// An approval's egress destinations (JSON list of host[:port]), shown on its card.
+	`ALTER TABLE approvals ADD COLUMN destinations TEXT NOT NULL DEFAULT '[]'`,
+	// What an external approval was bound to when proposed (plugin or MCP versions); a change makes it stale.
+	`ALTER TABLE approvals ADD COLUMN binding TEXT NOT NULL DEFAULT ''`,
+	// The proposing tool's source and extension, for the audit rows of its decision.
+	`ALTER TABLE approvals ADD COLUMN source TEXT NOT NULL DEFAULT 'wit'`,
+	`ALTER TABLE approvals ADD COLUMN extension TEXT NOT NULL DEFAULT ''`,
+}, {
+	// 1 once a first sync of the folder (at its current UIDVALIDITY) completed:
+	// from then on what sync imports above last_uid is new mail (message.received).
+	`ALTER TABLE folders ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE folders SET synced = 1 WHERE last_uid > 0`,
+}, {
+	// 1 once mail content entered the conversation (a run's scope read mail):
+	// every later run of it starts as having read mail.
+	`ALTER TABLE conversations ADD COLUMN read_mail INTEGER NOT NULL DEFAULT 0`,
+	// 1 once the plugin was handed mail content: its storage may hold mail, so
+	// its action and tool egress needs approval until it is uninstalled.
+	`ALTER TABLE plugins ADD COLUMN holds_mail INTEGER NOT NULL DEFAULT 0`,
 }}

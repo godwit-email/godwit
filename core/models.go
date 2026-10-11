@@ -266,13 +266,13 @@ func (s *Service) TestModelService(ctx context.Context, id int64) error {
 }
 
 // aiEngine creates the engine on first use, so GENKIT_ENV=dev fails only AI
-// calls. The engine redacts every key it is handed from Genkit's logs; no other
-// secret reaches Genkit.
+// calls. The engine redacts every model key it is handed, and every extension
+// secret in s.secrets, from Genkit's logs, tool errors and run errors.
 func (s *Service) aiEngine() (*ai.Engine, error) {
 	s.aiMu.Lock()
 	defer s.aiMu.Unlock()
 	if s.ai == nil {
-		e, err := ai.NewEngine(slog.Default(), nil)
+		e, err := ai.NewEngine(slog.Default(), s.secrets.Values)
 		if err != nil {
 			return nil, err
 		}

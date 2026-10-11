@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -252,7 +253,7 @@ func (r *runner) finish(ev Event) {
 }
 
 // redact replaces every known key in s.
-func (r *runner) redact(s string) string { return redact(s, append(r.e.allSecrets(), r.key)) }
+func (r *runner) redact(s string) string { return Redact(s, append(r.e.allSecrets(), r.key)) }
 
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
@@ -564,7 +565,9 @@ func resultOutput(res ToolResult) (any, error) {
 	}
 	var out any
 	if len(res.Output) > 0 {
-		if err := json.Unmarshal(res.Output, &out); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(res.Output))
+		dec.UseNumber() // large integers reach the model exactly
+		if err := dec.Decode(&out); err != nil || dec.More() {
 			return nil, fmt.Errorf("ai: tool result %q is not JSON", res.CallID)
 		}
 	}

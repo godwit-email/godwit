@@ -18,7 +18,8 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// askTools are the tools of an Ask run. None of them sends mail.
+// askTools are the built-in tools of an Ask run, which also offers every
+// running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
 var askTools = []string{"search_mail", "get_message", "get_thread", "list_skills", "use_skill", "read_skill_file", "create_draft"}
 
 const (
@@ -57,7 +58,7 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, s.registered(askTools...), setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), setTitle)
 	}
 	if err != nil {
 		end()
@@ -69,7 +70,7 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 // witSystem is the system prompt of a run's requests, started or resumed: for
 // ask the same for every run of the conversation; for assist built from the
 // draft as it is (assistSystemPrompt).
-func (s *Service) witSystem(ctx context.Context, job *runJob, tools []registeredTool) (string, error) {
+func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) (string, error) {
 	switch job.conv.Kind {
 	case "assist":
 		return s.assistSystemPrompt(ctx, job, tools)
@@ -127,7 +128,7 @@ var (
 // registerAskTools offers Ask's tools to Wit runs.
 func (s *Service) registerAskTools() {
 	read := func(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (any, error)) {
-		s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
+		s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
 	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first.",
 		object(map[string]any{"query": stringProp, "account_id": intProp,
@@ -140,7 +141,7 @@ func (s *Service) registerAskTools() {
 		object(map[string]any{"name": stringProp}, "name"), s.useSkill)
 	read("read_skill_file", "Read a file of a skill, under references/ or assets/.",
 		object(map[string]any{"name": stringProp, "path": stringProp}, "name", "path"), s.readSkillFile)
-	s.registerTool(registeredTool{Spec: ai.ToolSpec{Name: "create_draft",
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "create_draft",
 		Description: "Propose a new draft. The user approves it before it is saved, and sends it themselves. html is the body; the signature is added.",
 		Schema: object(map[string]any{"account_id": intProp, "to": listProp, "cc": listProp, "subject": stringProp, "html": stringProp},
 			"to", "subject", "html")},

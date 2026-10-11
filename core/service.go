@@ -12,12 +12,14 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -55,6 +57,7 @@ type Service struct {
 	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	aiMu        sync.Mutex
 	ai          *ai.Engine         // created on first use; see aiEngine
+	secrets     secretSet          // extension secrets, redacted by the engine and extension output
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
@@ -69,6 +72,7 @@ type Service struct {
 
 	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
 	active map[int64]*runJob // runs in flight, guarded by runMu
+	extRun map[int64]extExec // approvals executing outside runMu (external mode) by ID, guarded by runMu
 
 	subsMu     sync.Mutex
 	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
@@ -79,10 +83,27 @@ type Service struct {
 	assistMu sync.Mutex // finding or creating a draft's assist conversation
 
 	toolsMu sync.Mutex
-	tools   map[string]registeredTool // tools Wit runs can offer, by name
+	tools   map[string]toolDesc // tools Wit runs can offer, by name
 
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
+
+	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running     map[string]*runningPlugin  // started plugins by name
+	pluginGen   uint64                     // last runningPlugin.gen handed out
+	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
+	hookClock   plugins.Clock              // hook backoff and polling; nil is the real clock
+	pluginNet   plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock plugins.Clock              // plugin VM call limits; nil is the real clock
+
+	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
+	mcpStMu sync.Mutex          // guards mcpSt
+	mcpSt   map[int64]*mcpState // MCP servers' connections, listed tools and errors
+
+	checksMu   sync.Mutex
+	sendChecks map[string]keptCheck // beforeSend checks with warnings, by digest, until they expire
+	sendNow    func() time.Time     // stored checks' clock; nil is time.Now
 
 	closeOnce sync.Once
 	closeErr  error
@@ -106,16 +127,26 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{})}
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
+		hookClock: testHookClock, pluginClock: testPluginClock}
 	s.registerAskTools()
 	s.registerAssistTools()
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
+	if err := s.startPlugins(ctx); err != nil {
+		s.Close() // stops dispatchers already started
+		return nil, err
+	}
+	if err := s.loadMCPSecrets(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
+	s.startJanitor()
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
-		db.Close()
+		s.Close()
 		return nil, err
 	}
 	for _, a := range accs {
@@ -137,6 +168,8 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.stopPlugins()
+		s.stopMCP()    // after stopCalls: nothing connects any more
 		s.endStreams() // every run, resumes included, has published its end
 		s.closeOAuth()
 		s.aiMu.Lock()
@@ -397,7 +430,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 			return smtpErr
 		}
 	}
-	if err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus); err != nil {
+	err = mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
+	s.notifyHooks() // rows committed before an error count too
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

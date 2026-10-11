@@ -10,6 +10,7 @@ import (
 	netmail "net/mail"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -350,14 +351,75 @@ func recipients(d Draft) ([]string, error) {
 	return out, nil
 }
 
+// errSendChanged: the draft or the checking plugins changed since the check.
+var errSendChanged = errors.New("draft or send checks changed")
+
 // Send moves the draft into the outbox; the next sync submits it. Nothing is
-// sent and the draft stays when validation or building fails.
+// sent and the draft stays when validation or building fails. Plugins'
+// message.beforeSend handlers check it first (hooks.go): a block returns
+// *SendBlockedError, warnings *SendWarningsError (see SendAcknowledged).
+// A draft changed during the checks is checked again; changed twice in a
+// row, Send returns ErrStaleDraft.
 func (s *Service) Send(ctx context.Context, draftID int64) error {
+	ctx, end, err := s.begin(ctx, 0) // Close cancels the checks and waits
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.send(ctx, draftID)
+}
+
+// send is Send inside a begun call.
+func (s *Service) send(ctx context.Context, draftID int64) error {
+	for changes := 0; ; {
+		cs := s.sendCheckers()
+		rev := int64(-1) // no checks: the draft as it is when queued
+		if len(cs) > 0 {
+			s.editMu.Lock()
+			d, err := s.GetDraft(ctx, draftID)
+			s.editMu.Unlock()
+			if err != nil {
+				return err
+			}
+			if _, err := recipients(d); err != nil {
+				return err // not sendable: nothing to check
+			}
+			warns, err := s.runSendChecks(ctx, d, cs)
+			if err != nil {
+				return err
+			}
+			if len(warns) > 0 {
+				c := SendCheck{DraftID: draftID, Revision: d.Revision, Plugins: checkerIDs(cs), Warnings: warns}
+				c.Digest = sendDigest(c)
+				s.keepSendCheck(c)
+				return &SendWarningsError{Check: c.clone()}
+			}
+			rev = d.Revision
+		}
+		err := s.enqueue(ctx, draftID, rev, checkerIDs(cs))
+		if !errors.Is(err, errSendChanged) {
+			return err
+		}
+		if changes++; changes == 2 {
+			return ErrStaleDraft
+		}
+	}
+}
+
+// enqueue queues the draft if it is still at revision rev (any, if rev < 0)
+// and the checking plugins are still checked, else errSendChanged. Plugin
+// changes wait from the comparison until the draft is queued.
+func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
 	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
+	s.pluginsMu.RLock()
+	defer s.pluginsMu.RUnlock()
 	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
 		return err
+	}
+	if (rev >= 0 && d.Revision != rev) || !slices.Equal(checkerIDs(s.sendCheckersLocked()), checked) {
+		return errSendChanged
 	}
 	if afterDraftLoad != nil {
 		afterDraftLoad()

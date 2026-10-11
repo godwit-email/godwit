@@ -143,7 +143,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	}
 
 	// Skills get no tools; the run itself is audited once.
-	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "skill:"+name, t.Kind, t.ID, "run"); err != nil {
+	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: t.Kind, TargetID: t.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
 	e, err := s.aiEngine()
@@ -331,7 +331,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	for _, it := range items {
 		blocks = append(blocks, it.Block)
 	}
-	if err := gateway.New(s.db).Record(ctx, gateway.SourceSkill, "quick_replies", "message", messageID, "run"); err != nil {
+	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "quick_replies", TargetKind: "message", TargetID: messageID, Decision: "run"}); err != nil {
 		return nil, err
 	}
 	e, err := s.aiEngine()

@@ -41,12 +41,12 @@ func (h *redactor) WithGroup(name string) slog.Handler {
 
 func (h *redactor) cleaner() func(string) string {
 	secrets := h.secrets()
-	return func(s string) string { return redact(s, secrets) }
+	return func(s string) string { return Redact(s, secrets) }
 }
 
-// redact replaces each secret in s. Secrets under 8 characters are skipped:
+// Redact replaces each secret in s with "[redacted]". Secrets under 8 characters are skipped:
 // replacing them by value would mangle ordinary text, and real keys are longer.
-func redact(s string, secrets []string) string {
+func Redact(s string, secrets []string) string {
 	for _, k := range secrets {
 		if len(k) >= 8 {
 			s = strings.ReplaceAll(s, k, "[redacted]")

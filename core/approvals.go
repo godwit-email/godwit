@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,11 +16,15 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// prepared is a write call's final arguments, fixed before the approval is recorded.
+// prepared is a call's final arguments, fixed before the approval is
+// recorded. The Service fills Destinations, Binding and the tool's source.
 type prepared struct {
 	Args                    json.RawMessage
 	Summary, TargetKind     string
 	TargetID, TargetVersion int64
+	Destinations            []string // host[:port] the call sends to
+	Binding                 string   // toolDesc.Binding when proposed
+	source, extension       string
 }
 
 // executor runs a write tool's approved calls.
@@ -34,16 +39,23 @@ type executor struct {
 	Apply func(ctx context.Context, a Approval) (stmts []sqlite.Statement, result, undo any, err error)
 }
 
-// Approval is a write call waiting for the user or decided. State goes
+// Approval is a call waiting for the user or decided. State goes
 // pending → executing → done or failed, or pending → rejected or stale. Error
-// is what the model was told for any end state but done.
+// is what the model was told for any end state but done. Destinations are
+// the hosts (host[:port]) the call sends data to, if any.
 type Approval struct {
 	ID, RunID, ConversationID int64
 	Seq                       int
 	Tool                      string
 	Args                      json.RawMessage
 	Summary, State, Error     string
+	Destinations              []string
 }
+
+// ErrStaleApproval: what an external approval was bound to (plugin code,
+// permissions or config; an MCP server or tool definition) changed since it
+// was proposed; it was not run.
+var ErrStaleApproval = errors.New("the tool changed since this was proposed")
 
 // What the model is told for an approval that did not run.
 const (
@@ -53,6 +65,7 @@ const (
 	msgQuit      = "the app quit before this finished"
 	msgNotSaved  = "the change could not be saved"
 	msgRecovery  = "recovery failed"
+	msgUncertain = "the result is uncertain: it may have run"
 )
 
 // Test hooks, nil in production; true simulates a crash at that point.
@@ -71,10 +84,40 @@ type approvalRow struct {
 	Approval
 	callID, result, targetKind string
 	targetID, targetVersion    int64
+	binding, source, extension string
+	label                      string // the extension's name, for an MCP server too (else extension)
 }
 
+// auditRow is the audit_log row of the approval's decision.
+func (s *Service) auditRow(a approvalRow, decision string) sqlite.Statement {
+	return gateway.Audit(gateway.Entry{Source: a.source, Extension: a.extension, Tool: a.Tool, CallID: a.callID,
+		TargetKind: a.targetKind, TargetID: a.targetID, Destinations: a.Destinations, Decision: decision}, s.secrets.Redact)
+}
+
+// gateway is the Service's gateway: its audit rows are redacted.
+func (s *Service) gateway() *gateway.Gateway { return gateway.New(s.db, s.secrets.Redact) }
+
+// toolResult is the approval's outcome as the model gets it. A plugin or
+// MCP tool's outcome of any kind is wrapped (as "<source>:<name>"); a done
+// result that is a JSON string is wrapped as its text.
 func (a approvalRow) toolResult() ai.ToolResult {
 	r := ai.ToolResult{CallID: a.callID, Name: a.Tool}
+	if a.source == gateway.SourcePlugin || a.source == gateway.SourceMCP {
+		wrap := func(text string) string {
+			return ai.Untrusted(a.source+":"+cmp.Or(a.label, a.extension), text, ai.SuspectInjection(text))
+		}
+		text := a.result
+		if a.State != "done" {
+			r.Error = wrap(text)
+			return r
+		}
+		var str string
+		if len(text) > 0 && text[0] == '"' && json.Unmarshal([]byte(text), &str) == nil { // null and the rest stay JSON
+			text = str
+		}
+		r.Output, _ = json.Marshal(wrap(text))
+		return r
+	}
 	if a.State == "done" {
 		r.Output = json.RawMessage(a.result)
 	} else {
@@ -85,7 +128,9 @@ func (a approvalRow) toolResult() ai.ToolResult {
 
 func (s *Service) approvalRows(ctx context.Context, where string, args ...any) ([]approvalRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.id, a.run_id, r.conversation_id, a.seq, a.tool, a.args, a.summary, a.state, a.result,
-		a.call_id, a.target_kind, a.target_id, a.target_version FROM approvals a JOIN runs r ON r.id = a.run_id
+		a.call_id, a.target_kind, a.target_id, a.target_version, a.destinations, a.binding, a.source, a.extension,
+		CASE a.source WHEN 'mcp' THEN (SELECT name FROM mcp_servers WHERE id = CAST(a.extension AS INTEGER)) END
+		FROM approvals a JOIN runs r ON r.id = a.run_id
 		WHERE `+where+" ORDER BY a.run_id, a.seq", args...)
 	if err != nil {
 		return nil, err
@@ -95,7 +140,11 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 		a := approvalRow{Approval: Approval{ID: store.Int(r[0]), RunID: store.Int(r[1]), ConversationID: store.Int(r[2]),
 			Seq: int(store.Int(r[3])), Tool: store.Str(r[4]), Args: json.RawMessage(store.Str(r[5])), Summary: store.Str(r[6]),
 			State: store.Str(r[7])}, result: store.Str(r[8]), callID: store.Str(r[9]), targetKind: store.Str(r[10]),
-			targetID: store.Int(r[11]), targetVersion: store.Int(r[12])}
+			targetID: store.Int(r[11]), targetVersion: store.Int(r[12]), binding: store.Str(r[14]), source: store.Str(r[15]),
+			extension: store.Str(r[16]), label: store.Str(r[17])}
+		if err := json.Unmarshal([]byte(store.Str(r[13])), &a.Destinations); err != nil {
+			return nil, err
+		}
 		if a.State != "done" {
 			a.Error = a.result
 		}
@@ -144,15 +193,17 @@ func (s *Service) ListApprovals(ctx context.Context, conversationID int64) ([]Ap
 // call that claims it (pending → executing) decides it; any other gets
 // ErrInvalidState. Accepting applies the recorded arguments and marks it done
 // in one transaction, after checking the target draft's revision (changed →
-// stale, ErrStaleDraft). The call that ends the run's last open approval
-// resumes the run in the background; SubscribeConversation streams it.
+// stale, ErrStaleDraft). An external tool's approval runs outside the lock
+// instead and records its outcome afterwards (see decideExternal; a changed
+// binding makes it stale, ErrStaleApproval). The call that ends the run's last
+// open approval resumes the run in the background; SubscribeConversation streams it.
 func (s *Service) ResolveApproval(ctx context.Context, id int64, accept bool) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	return s.resolveApproval(ctx, id, accept)
+	return s.cleanError(s.resolveApproval(ctx, id, accept))
 }
 
 func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) error {
@@ -169,7 +220,15 @@ func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.R
 	}
 	var ex *executor
 	if accept {
-		if ex = s.executor(a.Tool); ex == nil {
+		d, ok := s.desc(a.Tool)
+		switch {
+		case ok && d.Mode == modeExternal && d.Run != nil && args == nil:
+			return s.decideExternal(ctx, a, d, resume)
+		case ok && d.Mode != modeExternal && d.Exec != nil:
+			ex = d.Exec
+		case !ok && a.binding != "": // its extension is gone: what it was bound to changed
+			return s.decideExternal(ctx, a, toolDesc{Binding: func(context.Context) (string, error) { return "", ErrStaleApproval }}, resume)
+		default:
 			return fmt.Errorf("tool %s is not available", a.Tool)
 		}
 	}
@@ -216,8 +275,7 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 			edited = nil
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = ?, args = COALESCE(?, args), result = ?, undo = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}},
-			gateway.Audit(gateway.SourceWit, a.Tool, a.targetKind, a.targetID, decision))
+			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}}, s.auditRow(a, decision))
 		_, err := s.db.Transaction(ctx, stmts)
 		return err
 	}
@@ -305,6 +363,10 @@ func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) erro
 		return err
 	}
 	defer end()
+	return s.cleanError(s.resolveAll(ctx, runID, accept))
+}
+
+func (s *Service) resolveAll(ctx context.Context, runID int64, accept bool) error {
 	as, err := s.approvalRows(ctx, "a.run_id = ? AND a.state = 'pending'", runID)
 	if err != nil {
 		return err
@@ -319,6 +381,7 @@ func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) erro
 }
 
 // CancelRun ends a run when its panel closes. A run in flight is cancelled;
+// an approved call executing outside the lock (external mode) is waited for;
 // an interrupted one has its pending approvals rejected ("cancelled") and those
 // results added to the conversation state without asking the model, so the
 // conversation can take a new run. A run already over is left as it is.
@@ -330,14 +393,19 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 	defer end()
 	for {
 		s.runMu.Lock()
-		job := s.active[runID]
-		if job == nil {
+		var wait <-chan struct{}
+		if job := s.active[runID]; job != nil {
+			job.cancel()
+			wait = job.done // it may end interrupted
+		} else {
+			wait = s.externalOf(runID) // an approved call still running: its real result goes into the history
+		}
+		if wait == nil {
 			break
 		}
 		s.runMu.Unlock()
-		job.cancel()
 		select {
-		case <-job.done: // it may have ended interrupted: look again
+		case <-wait: // look again
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -362,7 +430,9 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 // its pending approvals become rejected with pendingMsg, and every call of its
 // current interrupt gets its approval's result in the conversation state. If
 // the state cannot be closed nothing is written. No approval may be
-// executing: the caller holds runMu, or none is left open.
+// executing: the caller holds runMu and no external execution of the run is
+// in flight (CancelRun waits for them), or none is left open. One left
+// executing anyway is an external run whose outcome could not be recorded.
 func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg string) (int64, error) {
 	rows, err := s.db.Query(ctx, "SELECT r.conversation_id, r.snapshot, c.state FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE r.id = ?", runID)
 	if err != nil {
@@ -385,12 +455,18 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	results := make([]ai.ToolResult, 0, len(as))
 	now := time.Now().Unix()
 	for _, a := range as {
-		if a.State == "pending" {
+		switch a.State {
+		case "pending":
 			a.State, a.result = "rejected", pendingMsg
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-				Args: []any{pendingMsg, now, a.ID}}, gateway.Audit(gateway.SourceWit, a.Tool, a.targetKind, a.targetID, "rejected"))
+				Args: []any{pendingMsg, now, a.ID}}, s.auditRow(a, "rejected"))
+		case "executing": // an external run whose outcome could not be recorded
+			a.result = msgUncertain
 		}
 		results = append(results, a.toolResult())
+	}
+	if snap.ReadMail {
+		stmts = append(stmts, markConvReadMail(convID))
 	}
 	if !snap.Host { // a host proposal left no call in the conversation
 		closed, err := ai.CloseState(state, results)
@@ -404,15 +480,24 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	return convID, err
 }
 
-// recoverRuns runs at startup. An approval left executing never took effect
-// (its writes commit with done), so it failed. A run cut off while running
+// recoverRuns runs at startup. A tx approval left executing never took effect
+// (its writes commit with done), so it failed; an external one may have run,
+// so it failed with an uncertain result (audited "uncertain") and is never run again. A run cut off while running
 // failed and keeps its last saved state; one cut off while resuming failed
 // with its calls answered. An interrupted run with nothing left open resumes.
 // A run that cannot be recovered fails (failRun) so the app still starts;
 // only a database error while recording that is returned.
 func (s *Service) recoverRuns(ctx context.Context) error {
-	if _, err := s.db.Execute(ctx, "UPDATE approvals SET state = 'failed', result = ?, updated_at = ? WHERE state = 'executing'",
-		msgQuit, time.Now().Unix()); err != nil {
+	cut, err := s.approvalRows(ctx, "a.state = 'executing' AND a.exec_mode = 'external'")
+	if err != nil {
+		return err
+	}
+	stmts := []sqlite.Statement{{SQL: `UPDATE approvals SET state = 'failed', result = CASE exec_mode WHEN 'external' THEN ? ELSE ? END,
+		updated_at = ? WHERE state = 'executing'`, Args: []any{msgUncertain, msgQuit, time.Now().Unix()}}}
+	for _, a := range cut {
+		stmts = append(stmts, s.auditRow(a, "uncertain"))
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
 	rows, err := s.db.Query(ctx, "SELECT id, state FROM runs WHERE state IN ('running', 'resuming', 'interrupted') ORDER BY id")

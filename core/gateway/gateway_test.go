@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -21,7 +22,7 @@ func newGateway(t *testing.T) (*Gateway, *store.DB) {
 	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "g.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
-	return New(db), db
+	return New(db, nil), db
 }
 
 func TestGatewayDecisions(t *testing.T) {
@@ -35,10 +36,10 @@ func TestGatewayDecisions(t *testing.T) {
 	}{
 		{clean, Call{Source: "wit", Tool: "search"}, Allow},
 		{clean, Call{Source: "skill", Tool: "search"}, Deny},
-		{clean, Call{Source: "skill", Tool: "fetch", Egress: "example.com"}, Deny},
+		{clean, Call{Source: "skill", Tool: "fetch", Egress: []string{"example.com"}}, Deny},
 		{clean, Call{Source: "wit", Tool: "create_draft", Write: true}, Approve},
-		{clean, Call{Source: "plugin", Tool: "post", Egress: "example.com"}, Allow},
-		{tainted, Call{Source: "mcp", Tool: "post", Egress: "example.com"}, Approve},
+		{clean, Call{Source: "plugin", Tool: "post", Egress: []string{"example.com"}}, Allow},
+		{tainted, Call{Source: "mcp", Tool: "post", Egress: []string{"example.com"}}, Approve},
 		{tainted, Call{Source: "hook", Tool: "read"}, Allow},
 		{clean, Call{Source: "other", Tool: "x"}, Deny},
 	} {
@@ -51,7 +52,7 @@ func TestGatewayScopeAcrossTools(t *testing.T) {
 	g, _ := newGateway(t)
 	scope := &Scope{}
 	run := func(context.Context, json.RawMessage) (any, error) { return "ok", nil }
-	post := g.Wrap(scope, "mcp", ai.ToolSpec{Name: "post", Run: run}, false, "example.com")
+	post := g.Wrap(scope, Call{Source: "mcp"}, ai.ToolSpec{Name: "post", Run: run}, egressTo("example.com"))
 	require.False(t, post.NeedsApproval)
 	d, err := post.Gate(t.Context(), nil)
 	require.NoError(t, err)
@@ -71,7 +72,7 @@ func TestGatewayScopeAcrossTools(t *testing.T) {
 			if i%2 == 0 {
 				s2.MarkReadMail()
 			}
-			_, err := g.Check(context.Background(), s2, Call{Source: "wit", Tool: "post", Egress: "example.com"})
+			_, err := g.Check(context.Background(), s2, Call{Source: "wit", Tool: "post", Egress: []string{"example.com"}})
 			assert.NoError(t, err)
 		}()
 	}
@@ -99,7 +100,7 @@ func engineRun(t *testing.T, script []testllm.Turn, tools []ai.ToolSpec) []ai.Ev
 func TestWrappedWriteInterruptsAndAudits(t *testing.T) {
 	g, db := newGateway(t)
 	ran := false
-	w := g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "create_draft", Run: func(context.Context, json.RawMessage) (any, error) { ran = true; return nil, nil }}, true, "")
+	w := g.Wrap(&Scope{}, Call{Source: "wit", Write: true}, ai.ToolSpec{Name: "create_draft", Run: func(context.Context, json.RawMessage) (any, error) { ran = true; return nil, nil }}, nil)
 	evs := engineRun(t, []testllm.Turn{{Calls: []testllm.Call{{ID: "c1", Name: "create_draft"}}}}, []ai.ToolSpec{w})
 	end := evs[len(evs)-1]
 	require.Equal(t, "interrupted", end.Kind)
@@ -113,11 +114,11 @@ func TestEgressAfterReadInterrupts(t *testing.T) {
 	g, _ := newGateway(t)
 	scope := &Scope{}
 	posted := false
-	read := g.Wrap(scope, "wit", ai.ToolSpec{Name: "read_message", Run: func(context.Context, json.RawMessage) (any, error) {
+	read := g.Wrap(scope, Call{Source: "wit"}, ai.ToolSpec{Name: "read_message", Run: func(context.Context, json.RawMessage) (any, error) {
 		scope.MarkReadMail()
 		return "mail", nil
-	}}, false, "")
-	post := g.Wrap(scope, "mcp", ai.ToolSpec{Name: "post", Run: func(context.Context, json.RawMessage) (any, error) { posted = true; return nil, nil }}, false, "example.com")
+	}}, nil)
+	post := g.Wrap(scope, Call{Source: "mcp"}, ai.ToolSpec{Name: "post", Run: func(context.Context, json.RawMessage) (any, error) { posted = true; return nil, nil }}, egressTo("example.com"))
 	evs := engineRun(t, []testllm.Turn{
 		{Calls: []testllm.Call{{ID: "r1", Name: "read_message"}}},
 		{Calls: []testllm.Call{{ID: "p1", Name: "post"}}},
@@ -142,7 +143,9 @@ func TestAuditLogStructured(t *testing.T) {
 	for _, r := range cols.Values {
 		names = append(names, store.Str(r[0]))
 	}
-	require.Equal(t, []string{"id", "at", "source", "tool", "target_kind", "target_id", "decision"}, names)
+	// Structured fields only: no arguments, request bodies, URLs or secrets (migration 7 adds the extension ones).
+	require.Equal(t, []string{"id", "at", "source", "tool", "target_kind", "target_id", "decision",
+		"extension", "call_id", "destination", "reason"}, names)
 
 	rows, err := db.Query(t.Context(), "SELECT at, source, tool, target_kind, target_id, decision FROM audit_log ORDER BY id")
 	require.NoError(t, err)
@@ -156,8 +159,8 @@ func TestAuditLogStructured(t *testing.T) {
 
 func TestRecord(t *testing.T) {
 	g, db := newGateway(t)
-	require.NoError(t, g.Record(t.Context(), "skill", "skill:summarize", "thread", 3, "run"))
-	require.NoError(t, g.Record(t.Context(), "skill", "skill:translate", "", 0, "run"))
+	require.NoError(t, g.Record(t.Context(), Entry{Source: "skill", Tool: "skill:summarize", TargetKind: "thread", TargetID: 3, Decision: "run"}))
+	require.NoError(t, g.Record(t.Context(), Entry{Source: "skill", Tool: "skill:translate", Decision: "run"}))
 	rows, err := db.Query(t.Context(), "SELECT source, tool, target_kind, target_id, decision FROM audit_log ORDER BY id")
 	require.NoError(t, err)
 	require.Equal(t, [][]any{{"skill", "skill:summarize", "thread", int64(3), "run"}, {"skill", "skill:translate", "", nil, "run"}}, rows.Values)
@@ -169,7 +172,7 @@ func TestWrapDenyForSkill(t *testing.T) {
 	for _, needs := range []bool{false, true} {
 		for _, write := range []bool{false, true} {
 			for _, src := range []string{"skill", "other"} {
-				w := g.Wrap(&Scope{}, src, ai.ToolSpec{Name: "x", Run: run, NeedsApproval: needs}, write, "")
+				w := g.Wrap(&Scope{}, Call{Source: src, Write: write}, ai.ToolSpec{Name: "x", Run: run, NeedsApproval: needs}, nil)
 				require.False(t, w.NeedsApproval, "deny beats a NeedsApproval flag")
 				d, err := w.Gate(t.Context(), nil)
 				require.NoError(t, err)
@@ -181,9 +184,55 @@ func TestWrapDenyForSkill(t *testing.T) {
 		needs, write bool
 		want         Decision
 	}{{false, false, Allow}, {false, true, Approve}, {true, false, Approve}} {
-		w := g.Wrap(&Scope{}, "wit", ai.ToolSpec{Name: "y", Run: run, NeedsApproval: c.needs}, c.write, "")
+		w := g.Wrap(&Scope{}, Call{Source: "wit", Write: c.write}, ai.ToolSpec{Name: "y", Run: run, NeedsApproval: c.needs}, nil)
 		d, err := w.Gate(t.Context(), nil)
 		require.NoError(t, err)
 		require.Equal(t, c.want, d, "%+v", c)
+	}
+}
+
+func egressTo(hosts ...string) func(*Scope) []string { return func(*Scope) []string { return hosts } }
+
+func TestNilScopeReadNoMail(t *testing.T) {
+	g, _ := newGateway(t)
+	d, err := g.Check(t.Context(), nil, Call{Source: "plugin", Tool: "post", Egress: []string{"example.com"}})
+	require.NoError(t, err)
+	require.Equal(t, Allow, d)
+}
+
+func TestWrapComposesOwnGate(t *testing.T) {
+	g, db := newGateway(t)
+	run := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	for _, c := range []struct {
+		source    string
+		own, want Decision
+	}{{"wit", Allow, Allow}, {"wit", Approve, Approve}, {"wit", Deny, Deny}, {"skill", Allow, Deny}, {"skill", Approve, Deny}} {
+		own := c.own
+		w := g.Wrap(nil, Call{Source: c.source}, ai.ToolSpec{Name: "z", Run: run,
+			Gate: func(context.Context, json.RawMessage) (Decision, error) { return own, nil }}, nil)
+		d, err := w.Gate(t.Context(), nil)
+		require.NoError(t, err)
+		require.Equal(t, c.want, d, "%+v", c)
+	}
+	w := g.Wrap(nil, Call{Source: "wit"}, ai.ToolSpec{Name: "z", Run: run,
+		Gate: func(context.Context, json.RawMessage) (Decision, error) { return Allow, errors.New("boom") }}, nil)
+	d, err := w.Gate(t.Context(), nil)
+	require.Error(t, err)
+	require.Equal(t, Deny, d)
+	rows, err := db.Query(t.Context(), "SELECT decision, reason FROM audit_log WHERE tool = 'z' ORDER BY id")
+	require.NoError(t, err)
+	require.Equal(t, [][]any{{"allow", nil}, {"approve", nil}, {"deny", "policy_denied"}, {"deny", "source_denied"},
+		{"deny", "source_denied"}, {"deny", "gate_error"}}, rows.Values, "the final decision is audited with its reason")
+}
+
+func TestHost(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://u:p@api.example.com:8443/v1?token=x": "api.example.com:8443",
+		"api.example.com":            "api.example.com",
+		"api.example.com:444/path?q": "api.example.com:444",
+		"u:p@host.example":           "host.example",
+		"mcp:My Server":              "mcp:My Server",
+	} {
+		require.Equal(t, want, Host(in), in)
 	}
 }
