@@ -563,7 +563,10 @@ func TestRowUnreadCount(t *testing.T) {
 	}
 	h.waitMail("two unread of three", func() bool { return h.items()[0].Unread == 2 })
 	h.until("the dot labeled 2 unread", func() bool { _, ok := h.tt.Find("2 未读"); return ok })
-	h.see("3")
+	// The row no longer shows the thread's size (07a4d40); a bare see("3") matched the sidebar's stale unread count.
+	if n := h.items()[0].Count; n != 3 {
+		t.Fatalf("the row holds %d messages, want 3", n)
+	}
 }
 
 func TestSearchDropsStaleResults(t *testing.T) {
