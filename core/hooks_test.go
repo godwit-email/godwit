@@ -153,11 +153,13 @@ func TestHookAtLeastOnceAcrossRestarts(t *testing.T) {
 	e := newSyncedEnv(t)
 	var mu sync.Mutex
 	crashes := 0
+	crashed := make(chan struct{}, 2)
 	setPluginHook(t, func(stage, name string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		if stage == "hook.advance" && crashes < 2 {
 			crashes++
+			crashed <- struct{}{}
 			return errors.New("crash")
 		}
 		return nil
@@ -167,6 +169,13 @@ func TestHookAtLeastOnceAcrossRestarts(t *testing.T) {
 	e.sync(t)
 	for n := 1; n <= 2; n++ {
 		waitLog(t, e.s, "rec", n)
+		// The log write is visible before the crash; closing earlier would
+		// cancel the delivery instead and leave the crash to a later instance.
+		select {
+		case <-crashed:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("delivery %d never reached the cursor move", n)
+		}
 		require.NoError(t, e.s.Close())
 		s, err := New(bg, Options{DataDir: e.dir})
 		require.NoError(t, err)
