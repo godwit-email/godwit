@@ -26,6 +26,10 @@
 - **The Wit page's scope.** It acts only on `ask` conversations. A conversation ID it sends is checked to be kind `ask`, and so is any approval or run it decides or stops.
 - **Native callbacks.** They run on the UI thread, through the App's posting function.
 - **Shortcuts.** The page forwards ⌘[ / ⌘] to Go, because native `c.Shortcut` handlers don't see keys while the page has focus. Menu accelerators (⌘N, ⌘W, Edit menu) need no forwarding.
+- **Run lifetimes.** Runs started by a page use a context detached from the page call's context (as `ComposePage.start`, `WithoutCancel`): a page reload cancels its calls, never a run; only Stop cancels.
+- **Latest selection wins.** Conversation switches are guarded by a generation on both sides (Go's subscription replacement and the page's application of follow/ask results ignore anything older than the newest selection).
+- **Snapshot + events.** The page registers its event listeners BEFORE `Load`; Go keeps the current conversation as a versioned snapshot that `Load` returns and `WitOpen` carries; the page applies only newer versions (mygo drops events that arrive before a listener exists).
+- **Reconcile at the end.** On a terminal event the page re-reads the persisted history, approvals and citations and replaces what it streamed (native `reconcile`; core may drop text for slow subscribers).
 - **No scroll hand-off.** The Wit page fills its area and scrolls itself, so wheels are not handed off (spec §C2).
 - **Reuse:** components from `web/src/wit`, Streamdown settings from plan 3, theme via `ThemeOf` and the `theme` broadcast, and copy from the native tables (`ask.*`, `wit.*`, `link.*`, `error.*`) added to a key list.
 - **Generated code.** Generated components and `web/src/mygo.ts` are never hand-edited. npm versions are pinned exactly.
