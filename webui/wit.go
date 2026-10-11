@@ -345,12 +345,22 @@ func draftConversations(ctx context.Context, svc *core.Service, draftID int64) (
 	return cs, err
 }
 
-// openConversation is the draft's conversation to show: the newest with an
-// edit waiting, else its Assist conversation, else 0.
+// openConversation is the draft's conversation to show: the newest with a
+// run going on (a ⌘K run outlives its window), else the newest with an edit
+// waiting, else its Assist conversation, else 0.
 func openConversation(ctx context.Context, svc *core.Service, draftID int64) (int64, error) {
 	cs, err := draftConversations(ctx, svc, draftID)
 	if err != nil {
 		return 0, err
+	}
+	for _, c := range slices.Backward(cs) {
+		c, err := svc.GetConversation(ctx, c.ID)
+		if err != nil {
+			return 0, err
+		}
+		if c.ActiveRunID != 0 {
+			return c.ID, nil
+		}
 	}
 	for _, c := range slices.Backward(cs) {
 		as, err := svc.ListApprovals(ctx, c.ID)
@@ -455,9 +465,9 @@ func (p *ComposePage) Stop(ctx context.Context, run int64) error {
 	return keyed(ErrNoDraft)
 }
 
-// Follow makes the calling window follow its draft's conversation (an edit
-// waiting, else the Assist one) and returns its history as read after
-// subscribing. Events that come during the reads are held back and sent
+// Follow makes the calling window follow its draft's conversation (a run
+// going on, else an edit waiting, else the Assist one) and returns its
+// history as read after subscribing. Events that come during the reads are held back and sent
 // after: a run seen ending meanwhile shows as ended, read again. A run that
 // ends later shows as Running: its end reaches the window after the reply,
 // on the subscription, which goes on.

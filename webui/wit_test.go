@@ -432,3 +432,30 @@ func TestComposeWitErrorKeys(t *testing.T) {
 	assert.Equal(t, "", keyed(context.Canceled).Error(), "a cancellation shows nothing")
 	assert.ErrorIs(t, keyed(context.Canceled), context.Canceled)
 }
+
+// A ⌘K run goes on after its window closes: the window reopened follows
+// its conversation, running, and gets the rest of its events.
+func TestComposeFollowReopenedCmdKRun(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>Hello world</p>")
+	llm.Script(coretest.Turn{Text: []string{"hi"}})
+	_, err := f.page.Ask(f.ctx(1), "hi") // the draft has its Assist conversation too
+	require.NoError(t, err)
+	f.waitKind(t, 1, "done")
+	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+	st, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	text, _, _ := plainText(st.Body)
+	rs, err := f.page.Rewrite(f.ctx(1), st.Revision, text, 6, 11, "更正式")
+	require.NoError(t, err)
+	require.False(t, rs.Conflict)
+	require.Eventually(t, func() bool {
+		return slices.ContainsFunc(f.events(1), func(ev WitEvent) bool { return ev.Kind == "text" && ev.Run == rs.Run })
+	}, 10*time.Second, 5*time.Millisecond)
+	f.c.Release(1)
+	f.c.Attach(3, d.ID)
+	h, err := f.page.Follow(f.ctx(3))
+	require.NoError(t, err)
+	assert.Equal(t, rs.Run, h.Running)
+	llm.Release()
+	assert.Equal(t, rs.Run, f.waitKind(t, 3, "done").Run)
+}
