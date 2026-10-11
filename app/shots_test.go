@@ -44,7 +44,11 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 	t.Helper()
 	s := &shotEnv{}
 	h := newHarnessWith(t, nil, func(e *coretest.Env) {
-		s.you, s.work = e.AddAccount(t, "you@example.com"), e.AddAccount(t, "work@company.example")
+		s.you, s.work = addQQ(t, e, "you@example.com"), e.AddAccount(t, "work@company.example")
+		def := true // the second account took the default
+		if _, err := e.Svc.UpdateAccount(context.Background(), s.you.ID, core.AccountPatch{IsDefault: &def}); err != nil {
+			t.Fatal(err)
+		}
 		s.llm = e.LLM(t)
 		t.Cleanup(s.llm.Release)
 		st, err := e.Svc.GetSettings(context.Background())
@@ -83,6 +87,19 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 		return h.tt.HasText("Q4 partnership proposal") && h.tt.HasText("Your receipt for October")
 	})
 	return s
+}
+
+// addQQ adds the default account as a QQ mailbox on fake servers, so its
+// settings show QQ's logo and meta as the design does.
+func addQQ(t *testing.T, e *coretest.Env, email string) core.Account {
+	t.Helper()
+	ih, ip, sh, sp, user, pass := e.StartServers(t)
+	acc, err := e.Svc.AddAccount(context.Background(), core.AccountInput{Email: email, Name: "you", Username: user, Password: pass, IsDefault: true,
+		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone, Provider: "qq"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return acc
 }
 
 // shotDrafts adds the design's three drafts and opens the drafts folder.
@@ -139,11 +156,14 @@ func shotInstall(t *testing.T, h *harness, name, manifest, index string, grant b
 	}
 }
 
+// shotDescs are the design's plugin descriptions.
+var shotDescs = map[string]string{"otp-card": "识别验证码，显示复制卡片", "flight-cards": "航班邮件显示行程卡片", "attachment-check": "发送前检查遗漏的附件"}
+
 // shotPlugin installs an enabled plugin with a card on the messages whose
 // subject has match.
 func shotPlugin(t *testing.T, h *harness, name, match, card string) {
 	t.Helper()
-	shotInstall(t, h, name, fmt.Sprintf(`{"name":%q,"version":"0.1.0","main":"index.ts","permissions":{"mail":["read"]}}`, name),
+	shotInstall(t, h, name, fmt.Sprintf(`{"name":%q,"version":"0.1.0","description":%q,"main":"index.ts","permissions":{"mail":["read"]}}`, name, shotDescs[name]),
 		fmt.Sprintf(`export default function (ctx: any) { ctx.cards.register({ match: (m: any) => m.subject.includes(%q), render: (m: any) => (%s) }) }`, match, card), true)
 }
 
@@ -309,7 +329,7 @@ func TestShots(t *testing.T) {
 	})
 	t.Run("SettingsExtensions", func(t *testing.T) {
 		s := shotMail(t, noAuto)
-		shotInstall(t, s.harness, "deepl-translate", `{"name":"deepl-translate","version":"0.1.0","main":"index.ts",
+		shotInstall(t, s.harness, "deepl-translate", `{"name":"deepl-translate","version":"0.1.0","description":"用 DeepL 翻译邮件，不经过大模型","main":"index.ts",
 			"permissions":{"mail":["read"],"net":["api-free.deepl.com","api.deepl.com"]},
 			"config":[{"key":"apiKey","type":"secret","label":"DeepL API Key"},
 				{"key":"plan","type":"select","label":"套餐","options":[{"value":"free","label":"Free"},{"value":"pro","label":"Pro"}],"default":"free"}]}`,

@@ -16,14 +16,12 @@ import (
 )
 
 func (m *modelsView) view(c *ui.Context) {
-	th := c.Theme()
 	empty := m.loaded && len(m.services) == 0
-	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Children(func() { pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub")) })
-		if !empty {
-			kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
-		}
-	})
+	var add []func()
+	if !empty {
+		add = append(add, func() { kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add) })
+	}
+	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
 	if empty {
 		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
 			kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)

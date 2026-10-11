@@ -69,7 +69,7 @@ type settingsPage struct {
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, reauth: map[int64]bool{},
-		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestModelService}, ext: &extView{a: a}}
+		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestModelService}, ext: &extView{a: a, tab: 1}}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -116,9 +116,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 func (p *settingsPage) Title() (string, string) {
 	sec, acc := p.section()
 	if acc != nil {
-		return i18n.T("settings.accounts"), acc.Email
+		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + acc.Email
 	}
-	return i18n.T("settings." + sec), ""
+	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
 var appSections = []string{"general", "models", "extensions", "privacy", "about"}
@@ -140,7 +140,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+			kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
 			for _, acc := range a.accounts {
 				item(accountRoute(acc.ID)).Children(func() {
@@ -199,12 +199,19 @@ func (p *settingsPage) Content(c *ui.Context) {
 	p.dialogView(c)
 }
 
-func pageHeading(c *ui.Context, title, sub string) {
-	t := theme.Of(c)
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		kit.Text(c, title, t.Text.Display).FontWeight(600)
-		if sub != "" {
-			ui.Text(c, sub).TextColor(t.Muted)
+// pageHeading is a page's title and subtitle; action, if any, is a button
+// level with the subtitle's bottom on the right.
+func pageHeading(c *ui.Context, title, sub string, action ...func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).AlignItems(ui.End).Gap(th.Space(4)).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(theme.HeadingGap).Children(func() {
+			kit.Text(c, title, t.Text.Display).FontWeight(600)
+			if sub != "" {
+				kit.Text(c, sub, t.Text.Body).LineHeight(theme.LineFor(sub)).TextColor(t.Muted)
+			}
+		})
+		for _, f := range action {
+			f()
 		}
 	})
 }
@@ -215,7 +222,7 @@ func pageHeading(c *ui.Context, title, sub string) {
 func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		kit.Text(c, title, t.Text.Base).FontWeight(600)
+		kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600)
 		ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
 			for i, row := range rows {
 				if i > 0 {
@@ -236,7 +243,7 @@ func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label).FontWeight(500)
+			kit.Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
 			if desc != "" {
 				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
 			}

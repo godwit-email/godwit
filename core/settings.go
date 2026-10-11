@@ -14,7 +14,7 @@ import (
 // ReplyLanguage is "match" (the mail's language) or "reading".
 type Settings struct {
 	Theme, Density                                   string
-	FontSize, BodyFontSize                           int
+	FontSize, BodyFontSize                           int // BodyFontSize 0 follows FontSize
 	UILanguage, ReadingLanguage, ReplyLanguage       string
 	NoTranslate                                      []string
 	LaunchAtLogin, KeepInBackground, UnreadInMenuBar bool
@@ -31,7 +31,7 @@ type Settings struct {
 }
 
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 14, BodyFontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
+	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
@@ -53,7 +53,7 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid density %q", st.Density)
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
-	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize < 10 || st.BodyFontSize > 32:
+	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):
 		return fmt.Errorf("font size must be between 10 and 32")
 	case st.SidebarWidth != 0 && (st.SidebarWidth < 240 || st.SidebarWidth > 480):
 		return fmt.Errorf("sidebar width must be between 240 and 480")

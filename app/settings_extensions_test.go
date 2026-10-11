@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"os"
 	"testing"
 
@@ -46,7 +47,9 @@ func (h *harness) pluginConfig(name string) map[string]core.ConfigValue {
 
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("extensions")
+	p := h.openSettings("extensions")
+	h.see("插件 · 0") // plugins come first
+	h.click(i18n.Tf("settings.ext.tab.skills", len(p.ext.skills)))
 	h.see("summarize")
 	h.see("内置")
 	h.click("启用 summarize")
@@ -180,6 +183,7 @@ func TestPluginConfigEditDuringSave(t *testing.T) {
 	h.until("initial load", func() bool { return h.app.loaded })
 	p := h.openSettings("extensions")
 	h.click("插件 · 1")
+	h.click("config-demo") // an installed plugin opens on a click
 	h.click("Free")
 	h.click("Pro")
 	h.fill("自定义地址", "a.example")
@@ -251,9 +255,14 @@ func TestPluginRowSwitch(t *testing.T) {
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
 	h.openSettings("extensions")
-	h.click("插件 · 1")
-	h.see("config-demo")
-	h.see("0.1.0")
+	h.see("config-demo") // the plugins tab shows first, each plugin one closed row
+	if h.tt.HasText("它请求的权限") || h.tt.HasText("卸载插件") {
+		t.Fatal("an installed plugin opens by default")
+	}
+	h.click("config-demo")
+	h.see("卸载插件")
+	h.click("config-demo")
+	h.until("closed", func() bool { return !h.tt.HasText("卸载插件") })
 	h.click("启用 config-demo")
 	h.until("off", func() bool { p, _ := h.plugin("config-demo"); return !p.Enabled })
 	h.click("启用 config-demo")
@@ -262,11 +271,11 @@ func TestPluginRowSwitch(t *testing.T) {
 
 func TestPendingPluginExcludedLine(t *testing.T) {
 	got := pluginExcluded(plugins.Permissions{Mail: []string{"read"}})
-	if got != "不包含：修改邮件、访问网络、调用大模型、发送邮件（任何插件都不能发送）" {
+	if got != "修改邮件、访问网络、调用大模型、发送邮件（任何插件都不能发送）" {
 		t.Fatalf("excluded %q", got)
 	}
 	got = pluginExcluded(plugins.Permissions{Mail: []string{"read", "write"}, LLM: true})
-	if got != "不包含：访问网络、发送邮件（任何插件都不能发送）" {
+	if got != "访问网络、发送邮件（任何插件都不能发送）" {
 		t.Fatalf("excluded %q", got)
 	}
 	h := pendingHarness(t)
@@ -274,7 +283,32 @@ func TestPendingPluginExcludedLine(t *testing.T) {
 	h.click("插件 · 1")
 	h.see("待授权")
 	h.see("它请求的权限")
-	h.see("不包含：")
+	h.see("不包含")
+	if h.tt.HasText("保存") || h.tt.HasText("卸载插件") {
+		t.Fatal("a pending plugin shows save or uninstall")
+	}
+}
+
+// 允许并启用 saves what the pending plugin's form holds, then enables it.
+func TestPendingAllowSavesConfig(t *testing.T) {
+	h := pendingHarness(t)
+	h.openSettings("extensions")
+	h.fill("API Key", "supersecret1")
+	h.click("允许并启用")
+	h.until("enabled with its key", func() bool {
+		p, _ := h.plugin("config-demo")
+		return p.Enabled && !p.NeedsGrant && h.pluginConfig("config-demo")["apiKey"].Set
+	})
+}
+
+// A plugin row shows the manifest's description under the name.
+func TestPluginRowDescription(t *testing.T) {
+	h, _ := withAccount(t)
+	shotInstall(t, h, "desc-demo", `{"name":"desc-demo","version":"0.1.0","description":{"default":"Demo","zh-CN":"演示插件"},"main":"index.ts"}`,
+		`export default function (_ctx: any) {}`, true)
+	h.openSettings("extensions")
+	h.see("desc-demo")
+	h.see("演示插件")
 }
 
 func TestPendingNotNowCollapses(t *testing.T) {

@@ -34,6 +34,7 @@ var (
 // damaged or an update was interrupted); such a plugin is listed, not hidden.
 type PluginInfo struct {
 	Name, Version         string
+	Description           plugins.Text
 	Permissions           plugins.Permissions
 	Enabled, NeedsGrant   bool
 	DisabledReason, Error string
@@ -143,7 +144,7 @@ func (s *Service) checkPluginFiles(name string, r pluginRow) error {
 }
 
 func (s *Service) pluginInfo(name string, r pluginRow) PluginInfo {
-	info := PluginInfo{Name: name, Version: r.m.Version, Permissions: r.m.Permissions, Enabled: r.enabled,
+	info := PluginInfo{Name: name, Version: r.m.Version, Description: r.m.Description, Permissions: r.m.Permissions, Enabled: r.enabled,
 		NeedsGrant: r.granted != r.permHash, DisabledReason: r.reason, Config: r.m.Config}
 	if err := s.checkPluginFiles(name, r); err != nil {
 		info.Error = err.Error()

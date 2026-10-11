@@ -179,12 +179,19 @@ func (f *pluginForm) fieldError(err error, fields []plugins.ConfigField) {
 	f.err = humanize(err)
 }
 
-func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.ConfigField) {
+// configView is the plugin's settings form; save adds its 保存 button (a
+// pending plugin's form is saved by 允许并启用).
+func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.ConfigField, save bool) {
+	th := c.Theme()
+	ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() { e.configFields(c, f, fields, save) })
+}
+
+func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.ConfigField, save bool) {
 	t, th := theme.Of(c), c.Theme()
 	lang := i18n.Language()
-	ui.Row(c).Gap(th.Space(2)).Children(func() {
-		ui.Text(c, i18n.T("settings.ext.config")).FontWeight(600)
-		ui.Text(c, i18n.T("settings.ext.config.sub")).TextColor(t.Muted)
+	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.config"))).FontWeight(500)
+		kit.Text(c, i18n.T("settings.ext.config.sub"), t.Text.Sm).TextColor(t.Muted)
 	})
 	shown := f.shown(fields)
 	for _, fd := range fields {
@@ -221,10 +228,12 @@ func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.Conf
 			default:
 				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""})
 			}
-		}).Error(v.err)
+		}).Error(v.err).LineHeight(theme.LineFor(label)) // the label's line, as LineFor says
 	}
 	if f.err != "" {
 		kit.Alert(c, kit.Danger, f.err, nil)
 	}
-	kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).AlignSelf(ui.Start).OnClick(func() { e.saveConfig(f, fields) })
+	if save {
+		kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).AlignSelf(ui.Start).OnClick(func() { e.saveConfig(f, fields) })
+	}
 }

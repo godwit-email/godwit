@@ -3,8 +3,10 @@
 package theme
 
 import (
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -79,7 +81,20 @@ const (
 	LineLede, LineTight                        = 1.7, 1
 	LineCJK                                    = 1.4  // a CJK line at the fallback font's normal height (the drafts pane's fields, an AI panel's title, the remote-image notice)
 	LineSubject                                = 1.35 // a mail's subject over the reader and the drafts pane
+	LineRow                                    = 1.45 // settings' labels, subtitles and section titles with CJK in them (LineFor)
 )
+
+// LineFor is the line height of a settings label, subtitle or section title
+// s: LineRow with CJK in it, whose fallback font has the taller normal line
+// (1.448), else Body's, as a browser lays out the design's settings pages.
+func LineFor(s string) float32 {
+	if strings.ContainsFunc(s, func(r rune) bool {
+		return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	}) {
+		return LineRow
+	}
+	return LineBody
+}
 
 // Line returns the line height of the step whose size is size, Body's for
 // a size between steps.
@@ -126,8 +141,9 @@ const (
 	SettingsSelectMax  = 280
 	SettingsInputWidth = 260 // an input in a settings row
 	// SignatureEditorHeight is the signature page: its toolbar (4+28+4 and a
-	// hairline) over the editor's least 96; the editor scrolls inside.
-	SignatureEditorHeight = 133
+	// hairline) over the editor's least 96 and its 10/10 padding; the editor
+	// scrolls inside.
+	SignatureEditorHeight = 153
 	HeadingGap            = 6  // a page heading to its subtitle
 	SectionGap            = 10 // a section's title to its card
 	PortWidth             = 90 // port fields
@@ -263,6 +279,7 @@ func FromSettings(st core.Settings, systemDark bool) Tokens {
 	if st.FontSize > 0 {
 		t.FontSize = float32(st.FontSize)
 	}
+	t.BodyFontSize = t.FontSize // 0 follows the interface
 	if st.BodyFontSize > 0 {
 		t.BodyFontSize = float32(st.BodyFontSize)
 	}

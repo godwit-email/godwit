@@ -23,7 +23,7 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, BodyFontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 2, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}, got)
 }
 
@@ -122,9 +122,9 @@ func TestSettingsValidateModelRefs(t *testing.T) {
 func TestSettingsFontMigration(t *testing.T) {
 	for stored, want := range map[string][2]int{
 		`{"FontSize":13,"BodyFontSize":15}`: {14, 15},
-		`{"Theme":"light"}`:                 {14, 14},
-		`{"FontSize":32}`:                   {32, 14},
-		`{"FontSize":16}`:                   {17, 14},
+		`{"Theme":"light"}`:                 {14, 0},
+		`{"FontSize":32}`:                   {32, 0},
+		`{"FontSize":16}`:                   {17, 0},
 		`{"FontSize":13,"BodyFontSize":15,"SettingsVersion":2}`: {13, 15},
 	} {
 		s := settingsService(t, t.TempDir(), "")

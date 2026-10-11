@@ -207,10 +207,11 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			return settingSelect(c, i18n.T("settings.font_size"), &st.FontSize, sizeOptions([]int{13, 14, 15, 16}, 14, st.FontSize))
 		}),
 		sel(i18n.T("settings.body_font_size"), i18n.T("settings.body_font_size.help"), func() ui.Element {
-			return settingSelect(c, i18n.T("settings.body_font_size"), &st.BodyFontSize, sizeOptions([]int{13, 14, 16, 18}, 14, st.BodyFontSize))
+			opts := append([]kit.Option[int]{{Value: 0, Label: i18n.T("settings.body_font_size.ui")}}, sizeOptions([]int{16, 18}, 0, cmp.Or(st.BodyFontSize, 16))...)
+			return settingSelect(c, i18n.T("settings.body_font_size"), &st.BodyFontSize, opts)
 		}))
 	settingsSection(c, i18n.T("settings.language"), "",
-		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
+		sel(i18n.T("settings.ui_language"), i18n.T("settings.ui_language.help"), func() ui.Element {
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
 				{Value: "zh-CN", Label: "简体中文"},
@@ -247,37 +248,32 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")))
 }
 
-// themeTile is a small picture of the window in a theme; "system" shows
-// both halves. The name is only its tooltip and label.
+// themeTile is a small picture of the window in a theme: rail, sidebar and
+// content; "system" is the light window on a light/dark diagonal. The name is
+// only its tooltip and label.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
-	preview := func(tok theme.Tokens, w float32) {
-		ui.Row(c).Size(w, theme.ThemeTileHeight).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
-			ui.Box(c).Width(min(theme.TileRail, w))
-			ui.Box(c).Width(theme.TileSide).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
-			ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
-				ui.Box(c).Height(theme.TileLine).WidthPercent(70).Radius(t.Radius.Xs).Background(tok.Border)
-				ui.Box(c).Height(theme.TileLine).WidthPercent(45).Radius(t.Radius.Xs).Background(tok.Border)
-			})
-		})
+	tok := theme.Light()
+	if th == "dark" {
+		tok = theme.Dark()
 	}
 	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
-		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border)
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border).Background(tok.Window)
 	if on {
 		b.Border(theme.SelectedBorder, t.Primary)
 	}
-	b.Children(func() {
-		switch th {
-		case "system":
-			preview(theme.Light(), theme.ThemeTileWidth/2)
-			preview(theme.Dark(), theme.ThemeTileWidth/2)
-		case "dark":
-			preview(theme.Dark(), theme.ThemeTileWidth)
-		default:
-			preview(theme.Light(), theme.ThemeTileWidth)
-		}
+	if th == "system" {
+		b.LinearGradient(ui.LinearGradient{From: tok.Window, To: theme.Dark().Window, Angle: 135, Start: 0.5, End: 0.5})
+	}
+	b.AlignItems(ui.Stretch).Children(func() {
+		ui.Box(c).Width(theme.TileRail).Shrink(0)
+		ui.Box(c).Width(theme.TileSide).Shrink(0).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
+		ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
+			ui.Box(c).Height(theme.TileLine).WidthPercent(70).Radius(t.Radius.Xs).Background(tok.Border)
+			ui.Box(c).Height(theme.TileLine).WidthPercent(45).Radius(t.Radius.Xs).Background(tok.Border)
+		})
 	})
 	kit.TooltipLabelled(c, b, label)
 }

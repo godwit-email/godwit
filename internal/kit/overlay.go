@@ -39,13 +39,15 @@ func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
 		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.X2l).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
-		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
+		// The content is the form column (FormMaxWidth, padded 24) centred in the sheet.
+		inset := th.Space(6) + (theme.SheetWidth-2*theme.Hairline-theme.FormMaxWidth)/2
+		ui.Row(c).Padding(th.Space(5), inset, 0, inset).Children(func() {
 			Text(c, title, t.Text.Lg).FontWeight(600)
 			ui.Spacer(c)
 			IconButton(c, "x", closeLabel, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
 		})
 		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(body)
+			ui.Column(c).Padding(th.Space(4), inset, th.Space(6), inset).Gap(th.Space(5.5)).Children(body)
 		})
 	})
 }

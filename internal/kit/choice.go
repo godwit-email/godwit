@@ -34,7 +34,7 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label).FontWeight(500)
+			Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
 			if help != "" {
 				Text(c, help, t.Text.Sm).TextColor(t.Muted)
 			}
