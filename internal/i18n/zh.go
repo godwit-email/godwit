@@ -282,6 +282,7 @@ var zh = map[string]string{
 	// settings, task 8
 	"settings.heading":                             "设置",
 	"settings.accounts":                            "账户",
+	"settings.search":                              "搜索设置",
 	"settings.app":                                 "应用",
 	"settings.add_account":                         "添加账户",
 	"settings.general":                             "通用",

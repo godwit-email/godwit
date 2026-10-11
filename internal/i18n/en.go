@@ -282,6 +282,7 @@ var en = map[string]string{
 	// settings, task 8
 	"settings.heading":                             "Settings",
 	"settings.accounts":                            "Accounts",
+	"settings.search":                              "Search settings",
 	"settings.app":                                 "App",
 	"settings.add_account":                         "Add account",
 	"settings.general":                             "General",
