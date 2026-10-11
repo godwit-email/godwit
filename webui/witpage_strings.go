@@ -14,7 +14,8 @@ var witKeys = []string{
 	"error.ai_not_configured", "error.model_not_found", "error.model_auth", "error.keychain", "error.too_large",
 	"error.stale_draft", "error.ai.unauthorized", "error.ai.rate_limited", "error.ai.unavailable",
 	"error.ai.bad_response", "error.ai.internal", "error.ai.stale", "error.ai.incomplete",
-	"mail.no_subject", "mail.list_sep", "common.retry", "common.cancel",
+	"mail.no_subject", "mail.list_sep", "mail.yesterday", "mail.weekday.0", "mail.weekday.1", "mail.weekday.2",
+	"mail.weekday.3", "mail.weekday.4", "mail.weekday.5", "mail.weekday.6", "common.retry", "common.cancel",
 }
 
 // witText is witKeys in the UI language.

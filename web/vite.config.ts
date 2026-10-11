@@ -30,6 +30,11 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    rollupOptions: { input: { compose: fileURLToPath(new URL("compose.html", import.meta.url)) } },
+    rollupOptions: {
+      input: {
+        compose: fileURLToPath(new URL("compose.html", import.meta.url)),
+        wit: fileURLToPath(new URL("wit.html", import.meta.url)),
+      },
+    },
   },
 });
