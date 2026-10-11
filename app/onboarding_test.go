@@ -355,7 +355,7 @@ func TestOnboardingDetectedBadgeInInput(t *testing.T) {
 	// The row around them draws the box: its right border sits just past the badge.
 	img, want, found := h.tt.Image(), theme.Light().Ring.SRGB(), false // focused after the fill
 	y := int(badge.Y + badge.H/2)
-	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+20 && !found; x++ {
+	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+24 && !found; x++ { // the badge's and the box's padding
 		got := img.RGBAAt(x, y)
 		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
 	}

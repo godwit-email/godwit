@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // shotEnv is a mail harness shaped like the design's sample data: two accounts,
@@ -350,6 +351,7 @@ func TestShots(t *testing.T) {
 		s.app.toastAs(kit.ToastWarning, "work@company.example 没有归档文件夹，已跳过")
 		s.app.toast("链接已复制")
 		s.see("链接已复制")
+		time.Sleep(2 * theme.MotionBase) // the toasts' enter motion runs on the wall clock
 		shot(s.harness, "Toasts")
 	})
 	t.Run("AddAccountSheet", func(t *testing.T) {

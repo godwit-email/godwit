@@ -610,7 +610,7 @@ func TestKitOverlayEnters(t *testing.T) {
 	}
 }
 
-// TestKitToastTopCenter: toasts show at the top center, the newest first.
+// TestKitToastTopCenter: toasts show at the top center, the oldest first.
 func TestKitToastTopCenter(t *testing.T) {
 	n := 0
 	tt := ui.NewTester(themed(func(c *ui.Context) {
@@ -625,8 +625,8 @@ func TestKitToastTopCenter(t *testing.T) {
 	if !ok1 || !ok2 {
 		t.Fatalf("toasts not shown: %q", tt.Texts())
 	}
-	if newer.Y >= older.Y || newer.Y > 120 {
-		t.Errorf("newer at %v, older at %v: want the newest on top, at the top", newer, older)
+	if older.Y >= newer.Y || older.Y > 120 {
+		t.Errorf("newer at %v, older at %v: want the oldest on top, at the top", newer, older)
 	}
 	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
 		t.Errorf("newer centered at x=%v, want near 400", mid)
