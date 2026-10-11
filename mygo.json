@@ -5,5 +5,11 @@
   "devCommand": "cd web && bun run dev",
   "buildCommand": "cd web && bun install --frozen-lockfile && bun run build",
   "frontendDist": "web/dist",
-  "bindings": "web/src/mygo.ts"
+  "bindings": "web/src/mygo.ts",
+  "macos": {
+    "infoPlist": {
+      "CFBundleIconFile": "Icon",
+      "CFBundleIconName": "AppIcon"
+    }
+  }
 }
