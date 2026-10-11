@@ -37,7 +37,7 @@ Everything around the body stays native.
 - **Scope:** every `ReaderPage` method checks the role and acts only on the caller page's own message (registered with the page). A reader page can't read another message.
 - **The iframe's own CSP comes first in `srcdoc`:** `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`. It is the first element, before any mail content. Both it and the parent's CSP apply, so not even a same-origin http image (the dev server) can load. Never rely on clearing `src` after load.
 - **Inline images get the same budgets as remote ones.** Go validates every `data:` image in the sanitised body before returning it: format png/jpeg/gif/webp, ≤ 5 MB, ≤ 40 MP each, ≤ 50 images and ≤ 100 MP per message, all shared with that message's remote images. An image over budget has its `src` removed (alt kept).
-- **Structural limits:** Go truncates the sanitised HTML with the same limits `richtext.DefaultLimits` applies today (depth 20, blocks 5000, table cells 2000, inlines 20000), cutting at an element boundary. `Cut` is reported, and the native truncated notice keeps working.
+- **Structural limits:** dropped by the user's decision: Go no longer truncates the sanitised HTML structurally (the browser renders large DOMs fine; sanitising and the sandboxed iframe stay). `Cut` comes only from core's 2 MB storage truncation (`Message.Truncated`), so the native truncated notice shows only for bodies cut at storage.
 - **Navigation:** each reader page is locked like the others: entry-only navigation, no window opens.
 - **Links:** sanitized links carry `data-href` only. The parent page intercepts clicks in the iframe and calls `OpenLink`, which runs the native `App.openLink`: http/https → the native confirmation dialog; mailto → compose window.
 - **Appearance:** HTML mail sits on a white sheet with no inversion in dark mode (spec §E3). Plain text follows the theme, at the body font size. Add `BodyFontSize` to the page's state and theme events.
@@ -67,7 +67,7 @@ Everything around the body stays native.
 
 **Interfaces (produced, bound as `ReaderPage`):**
 ```go
-type ReaderBody struct{ Message, Version int64; HTML, Plain string; Remote, Cut bool; Theme Theme; Text map[string]string } // HTML sanitized (loadRemote = Remote), inline images budgeted, structurally truncated (Cut); Plain when the mail has no HTML; Version bumps on every change (Allow) so the page drops a stale Load
+type ReaderBody struct{ Message, Version int64; HTML, Plain string; Remote, Cut bool; Theme Theme; Text map[string]string } // HTML sanitized (loadRemote = Remote), inline images budgeted, Cut = Message.Truncated only; Plain when the mail has no HTML; Version bumps on every change (Allow) so the page drops a stale Load
 func (p *ReaderPage) Load(ctx) (ReaderBody, error)              // the caller page's message
 func (p *ReaderPage) Height(ctx, px int) error                  // → Reader.OnHeight(message, px)
 func (p *ReaderPage) Wheel(ctx, dy float64) error               // → Reader.OnWheel(dy)

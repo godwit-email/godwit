@@ -269,9 +269,7 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	budget := imagefetch.NewBudget()
 	remote := map[string]bool{}
 	if m.HTML != "" {
-		var cut bool
-		b.HTML, remote, cut = prepareBody(m.HTML, budget)
-		b.Cut = b.Cut || cut
+		b.HTML, remote = prepareBody(m.HTML, budget)
 	} else {
 		b.Plain = m.Text
 	}

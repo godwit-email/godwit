@@ -462,72 +462,42 @@ func attr(n *html.Node, key string) string {
 	return ""
 }
 
-func TestReaderStructuralCut(t *testing.T) {
-	balanced := func(t *testing.T, s, tag string) {
-		t.Helper()
-		assert.Equal(t, strings.Count(s, "<"+tag+">"), strings.Count(s, "</"+tag+">"), "%s balanced", tag)
-	}
-	t.Run("normal body unchanged", func(t *testing.T) {
-		in := `<p>Hi <b>there</b></p><table><tbody><tr><td>a</td></tr></tbody></table>`
-		out, _, cut := prepareBody(in, imagefetch.NewBudget())
-		assert.False(t, cut)
+// TestReaderBodyWhole: a body over the old structural limits comes back
+// whole; only the Service's storage truncation (Message.Truncated) cuts.
+func TestReaderBodyWhole(t *testing.T) {
+	t.Run("paragraphs", func(t *testing.T) {
+		in := strings.Repeat("<p>x</p>", 6000) + "<p>tail</p>"
+		out, _ := prepareBody(in, imagefetch.NewBudget())
 		assert.Equal(t, in, out)
 	})
-	t.Run("blocks", func(t *testing.T) {
-		in := strings.Repeat("<p>x</p>", 5001) + "<p>tail</p>"
-		out, _, cut := prepareBody(in, imagefetch.NewBudget())
-		assert.True(t, cut)
-		assert.Equal(t, 5000, strings.Count(out, "<p>"))
-		assert.NotContains(t, out, "tail")
-		assert.True(t, strings.HasSuffix(out, "</p>"))
-		balanced(t, out, "p")
-	})
-	t.Run("depth", func(t *testing.T) {
-		in := strings.Repeat("<div>", 25) + "deep words" + strings.Repeat("</div>", 25) + "<p>after</p>"
-		out, _, cut := prepareBody(in, imagefetch.NewBudget())
-		assert.True(t, cut)
-		assert.Equal(t, 20, strings.Count(out, "<div>"))
-		assert.Contains(t, out, "deep words", "the deep subtree's text is kept")
-		assert.Contains(t, out, "<p>after</p>", "what follows stays")
-		balanced(t, out, "div")
-	})
 	t.Run("cells", func(t *testing.T) {
-		row := "<tr>" + strings.Repeat("<td>c</td>", 1000) + "</tr>"
-		in := "<table><tbody>" + strings.Repeat(row, 3) + "</tbody></table><p>after</p>"
-		out, _, cut := prepareBody(in, imagefetch.NewBudget())
-		assert.True(t, cut)
-		assert.Equal(t, 2000, strings.Count(out, "<td>"))
-		assert.Contains(t, out, "<p>after</p>")
-		balanced(t, out, "tr")
+		in := "<table><tbody><tr>" + strings.Repeat("<td>c</td>", 3000) + "</tr></tbody></table><p>after</p>"
+		out, _ := prepareBody(in, imagefetch.NewBudget())
+		assert.Equal(t, in, out)
 	})
-	t.Run("inlines", func(t *testing.T) {
-		in := "<p>" + strings.Repeat("<b>x</b>", 20001) + "</p><p>after</p>"
-		out, _, cut := prepareBody(in, imagefetch.NewBudget())
-		assert.True(t, cut)
-		assert.LessOrEqual(t, strings.Count(out, "<b>"), 20000)
-		assert.NotContains(t, out, "after")
-		balanced(t, out, "b")
-		balanced(t, out, "p")
+	t.Run("depth and inlines", func(t *testing.T) {
+		in := strings.Repeat("<div>", 30) + strings.Repeat("<b>x</b>", 25000) + strings.Repeat("</div>", 30) + "<p>after</p>"
+		out, _ := prepareBody(in, imagefetch.NewBudget())
+		assert.Equal(t, in, out)
 	})
 	t.Run("reported", func(t *testing.T) {
 		f := newReaderFixture(t)
 		f.fakeMessage(func(id int64, _ bool) core.Message {
-			if id == 1 {
-				return core.Message{HTML: strings.Repeat("<p>x</p>", 5001)}
-			}
-			if id == 2 {
+			switch id {
+			case 1:
+				return core.Message{HTML: strings.Repeat("<p>x</p>", 6000)}
+			case 2:
 				return core.Message{HTML: "<p>x</p>", Truncated: true}
 			}
 			return core.Message{HTML: "<p>x</p>"}
 		})
-		for id, want := range map[int64]bool{1: true, 2: true, 3: false} {
+		for id, want := range map[int64]bool{1: false, 2: true, 3: false} {
 			b, err := f.p.Load(pageCtx(f.page(id)))
 			require.NoError(t, err)
 			assert.Equal(t, want, b.Cut, "message %d", id)
 		}
-		// Native's truncated notice follows the body as built (OnBuilt).
 		f.mu.Lock()
-		assert.Equal(t, map[int64]bool{1: true, 2: true, 3: false}, f.cuts)
+		assert.Equal(t, map[int64]bool{1: false, 2: true, 3: false}, f.cuts)
 		f.mu.Unlock()
 	})
 }
@@ -586,33 +556,6 @@ func TestReaderInlineImageBytes(t *testing.T) {
 	f.waitEmitted(t, k)
 	_, err = f.p.Image(pageCtx(k), srv.URL+"/r.png")
 	assert.ErrorIs(t, err, imagefetch.ErrTotalTooLarge, "2 MiB left for a 3 MiB remote image")
-}
-
-// TestReaderTableInlineBudget: the inline count runs across the whole
-// body, table cells included (richtext's TestTableInlineBudget input).
-func TestReaderTableInlineBudget(t *testing.T) {
-	var sb strings.Builder
-	sb.WriteString("<table><tr><th>h</th><th>h</th></tr>")
-	for range 300 {
-		sb.WriteString("<tr>")
-		for range 2 {
-			sb.WriteString("<td>" + strings.Repeat("a<b>b</b>", 25) + "<p>x</p></td>")
-		}
-		sb.WriteString("</tr>")
-	}
-	sb.WriteString("</table>")
-	out, _, cut := prepareBody(sb.String(), imagefetch.NewBudget())
-	assert.True(t, cut)
-	doc, err := html.Parse(strings.NewReader(out))
-	require.NoError(t, err)
-	inlines := 0
-	for n := range doc.Descendants() {
-		if n.Type == html.TextNode && strings.TrimSpace(n.Data) != "" || n.Type == html.ElementNode && n.Data == "b" {
-			inlines++
-		}
-	}
-	assert.LessOrEqual(t, inlines, bodyLimits.MaxInlines)
-	assert.Greater(t, inlines, bodyLimits.MaxInlines-200)
 }
 
 // TestReaderEmitFollowsBinding: a body goes only to pages bound to its
