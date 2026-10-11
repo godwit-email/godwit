@@ -29,6 +29,10 @@ type Draft struct {
 	ReplyTo, Subject, HTML string
 	Attachments            []DraftAttachment
 	UpdatedAt              time.Time
+	// Revision grows by one on every update, an attachment added or removed
+	// included (refetch it after one). SaveDraft with a non-zero Revision
+	// fails with ErrStaleDraft unless it is still the stored one.
+	Revision int64
 }
 
 // DraftAttachment is a file copied into the draft's directory.
@@ -41,6 +45,9 @@ type DraftAttachment struct {
 // afterDraftLoad, when set, runs in Send right after the draft is read. Tests use
 // it to edit the draft while Send is building the message.
 var afterDraftLoad func()
+
+// ErrStaleDraft means the draft changed since the revision the caller saved against.
+var ErrStaleDraft = errors.New("draft changed since it was loaded")
 
 var draftModes = map[string]bool{"new": true, "reply": true, "reply_all": true, "forward": true}
 
@@ -61,6 +68,24 @@ func nullID(id int64) any {
 // its non-inline attachments, downloading them if needed. The account signature
 // ends the body.
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
+	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
+	if err != nil {
+		return Draft{}, err
+	}
+	if d, err = s.SaveDraft(ctx, d); err != nil {
+		return Draft{}, err
+	}
+	if mode == "forward" {
+		if err := s.copyAttachments(ctx, d.ID, sourceMessageID); err != nil {
+			return Draft{}, errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
+		}
+	}
+	return s.GetDraft(ctx, d.ID)
+}
+
+// buildDraft is NewDraft's draft before it is saved: addresses, subject,
+// quote and signature, without attachments.
+func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
 	if !draftModes[mode] {
 		return Draft{}, fmt.Errorf("unknown draft mode %q", mode)
 	}
@@ -81,20 +106,14 @@ func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, so
 			d.To, d.Cc = mail.ReplyRecipients(orig, acc.Email, mode == "reply_all")
 			d.Subject = mail.ReplySubject(orig.Subject)
 		}
-		d.HTML = "<p></p>" + mail.QuoteHTML(orig)
+		// The marker blockquote only marks the quote (attribution line included)
+		// as read-only for Wit; it is styled away so the quote is not indented twice.
+		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTML(orig) + "</blockquote>"
 	}
 	if acc.Signature != "" {
-		d.HTML += "<p>-- <br>" + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p>"
+		d.HTML += `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(acc.Signature), "\n", "<br>") + "</p></div>"
 	}
-	if d, err = s.SaveDraft(ctx, d); err != nil {
-		return Draft{}, err
-	}
-	if mode == "forward" {
-		if err := s.copyAttachments(ctx, d.ID, sourceMessageID); err != nil {
-			return Draft{}, errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
-		}
-	}
-	return s.GetDraft(ctx, d.ID)
+	return d, nil
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
@@ -156,11 +175,24 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 		}
 		return s.GetDraft(ctx, r.LastInsertID)
 	}
-	r, err := s.db.Execute(ctx, `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
-		body_html = ?, updated_at = ? WHERE id = ?`,
-		encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID)
+	q, args := `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
+		body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
+		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID}
+	if d.Revision != 0 {
+		q, args = q+" AND revision = ?", append(args, d.Revision)
+	}
+	r, err := s.db.Execute(ctx, q, args...)
 	if err != nil {
 		return Draft{}, err
+	}
+	if r.Changes == 0 && d.Revision != 0 {
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM drafts WHERE id = ?", d.ID)
+		if err != nil {
+			return Draft{}, err
+		}
+		if len(rows.Values) > 0 {
+			return Draft{}, ErrStaleDraft
+		}
 	}
 	if r.Changes == 0 {
 		return Draft{}, fmt.Errorf("draft %d not found", d.ID)
@@ -189,7 +221,7 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 // read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
-		subject, body_html, updated_at FROM drafts WHERE id = ?`, id)
+		subject, body_html, updated_at, revision FROM drafts WHERE id = ?`, id)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -199,7 +231,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0)}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
 	if err != nil {
 		return Draft{}, err
@@ -241,12 +273,12 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	r, err := s.db.Execute(ctx, "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
-		draftID, filename, contentType, len(data))
+	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
+		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(draftID)})
 	if err != nil {
 		return DraftAttachment{}, err
 	}
-	id := r.LastInsertID
+	id := rs[0].LastInsertID
 	path := filepath.Join(s.draftDir(draftID), strconv.FormatInt(id, 10))
 	err = store.WriteFileAtomic(path, data)
 	if err == nil {
@@ -254,10 +286,17 @@ func (s *Service) addAttachment(ctx context.Context, draftID int64, filename, co
 	}
 	if err != nil {
 		os.Remove(path)
-		_, derr := s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM draft_attachments WHERE id = ?", id)
+		_, derr := s.db.Transaction(context.WithoutCancel(ctx), []sqlite.Statement{
+			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(draftID)})
 		return DraftAttachment{}, errors.Join(err, derr)
 	}
 	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, nil
+}
+
+// bumpRevision marks the draft changed: an attachment change makes the
+// proposals and saves bound to its old revision stale, as a body change does.
+func bumpRevision(draftID int64) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ? WHERE id = ?", Args: []any{time.Now().Unix(), draftID}}
 }
 
 // RemoveAttachment deletes the attachment from the draft and its file.
@@ -271,7 +310,8 @@ func (s *Service) RemoveAttachment(ctx context.Context, draftID, attachmentID in
 	if len(rows.Values) == 0 {
 		return fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
-	if _, err := s.db.Execute(ctx, "DELETE FROM draft_attachments WHERE id = ?", attachmentID); err != nil {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
 		return err
 	}
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {

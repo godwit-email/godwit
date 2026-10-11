@@ -147,15 +147,7 @@ var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image
 
 // finish applies the display contract on bluemonday's output.
 func finish(safe string, inline map[string]Attachment, loadRemote, compose bool) string {
-	ctx := &html.Node{Type: html.ElementNode, DataAtom: atom.Body, Data: "body"}
-	nodes, err := html.ParseFragment(strings.NewReader(safe), ctx)
-	if err != nil {
-		return ""
-	}
-	root := &html.Node{Type: html.ElementNode, DataAtom: atom.Body, Data: "body"}
-	for _, n := range nodes {
-		root.AppendChild(n)
-	}
+	root := parseBody(safe)
 	walkNodes(root, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
@@ -201,8 +193,74 @@ func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe s
 	return finish(policy().Sanitize(prepared), inline, loadRemote, false), blocked
 }
 
-// SanitizeCompose cleans pasted content in the composer: same whitelist, no remote resources.
+// SanitizeCompose cleans pasted content in the composer: same whitelist, no
+// remote resources. data-godwit survives only as a draft marker: "quote" or "signature".
 func SanitizeCompose(src string) string {
 	prepared, _ := prepare(src)
-	return finish(policy().Sanitize(prepared), nil, false, true)
+	p := policy()
+	p.AllowAttrs(marker).Matching(markerValue).Globally()
+	return finish(p.Sanitize(prepared), nil, false, true)
 }
+
+// Draft markers: NewDraft puts the quoted mail in <blockquote data-godwit="quote">
+// and the signature in <div data-godwit="signature">, at the top level.
+const marker = "data-godwit"
+
+var markerValue = regexp.MustCompile(`^(quote|signature)$`)
+
+func parseBody(src string) *html.Node {
+	ctx := &html.Node{Type: html.ElementNode, DataAtom: atom.Body, Data: "body"}
+	root := &html.Node{Type: html.ElementNode, DataAtom: atom.Body, Data: "body"}
+	nodes, _ := html.ParseFragment(strings.NewReader(src), ctx)
+	for _, n := range nodes {
+		root.AppendChild(n)
+	}
+	return root
+}
+
+// StripMarkers removes every data-godwit attribute, in any letter case (the
+// parser lowercases names), so marked HTML from a model or another mail
+// becomes ordinary content.
+func StripMarkers(src string) string {
+	root := parseBody(src)
+	walkNodes(root, func(n *html.Node) { delAttr(n, marker) })
+	return render(root)
+}
+
+// SplitDraft splits a sanitized draft body into its editable part, its quote
+// and its signature: the first top-level elements marked "quote" and
+// "signature"; everything else is editable. JoinDraft puts them back together.
+func SplitDraft(src string) (editable, quote, signature string) {
+	var ed strings.Builder
+	for n := parseBody(src).FirstChild; n != nil; n = n.NextSibling {
+		var sb strings.Builder
+		_ = html.Render(&sb, n)
+		switch v, _ := attr(n, marker); {
+		case n.Type == html.ElementNode && v == "quote" && quote == "":
+			quote = sb.String()
+		case n.Type == html.ElementNode && v == "signature" && signature == "":
+			signature = sb.String()
+		default:
+			ed.WriteString(sb.String())
+		}
+	}
+	return ed.String(), quote, signature
+}
+
+// Blank reports whether HTML has no content at all: only whitespace and the
+// editor's empty placeholders (p, div, br). An image, a rule or a table is content.
+func Blank(src string) bool {
+	blank := true
+	walkNodes(parseBody(src), func(n *html.Node) {
+		switch n.Type {
+		case html.TextNode:
+			blank = blank && strings.TrimSpace(n.Data) == ""
+		case html.ElementNode:
+			blank = blank && (n.DataAtom == atom.P || n.DataAtom == atom.Div || n.DataAtom == atom.Br)
+		}
+	})
+	return blank
+}
+
+// JoinDraft is the draft body of its parts, as SplitDraft returns them.
+func JoinDraft(editable, quote, signature string) string { return editable + quote + signature }

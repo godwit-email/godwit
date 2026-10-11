@@ -19,8 +19,9 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// ErrInvalidState is returned by ResolveOutbox for an item that needs no decision.
-var ErrInvalidState = errors.New("outbox item is not waiting for a decision")
+// ErrInvalidState is returned by ResolveOutbox and ResolveApproval for an item
+// that is not waiting for a decision.
+var ErrInvalidState = errors.New("item is not waiting for a decision")
 
 const maxSendAttempts = 5
 

@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -26,10 +28,13 @@ var ErrClosed = errors.New("service is closed")
 type Options struct {
 	DataDir  string
 	AutoSync bool // run a background sync worker per account
+	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
+	SystemLanguage string
 }
 
 // Service owns the database and event bus of one Godwit data directory.
 type Service struct {
+	skillsMu  sync.Mutex
 	db        *store.DB
 	bus       *events.Bus
 	dataDir   string
@@ -46,6 +51,10 @@ type Service struct {
 	closed    bool
 
 	callsMu     sync.Mutex
+	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
+	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
+	aiMu        sync.Mutex
+	ai          *ai.Engine         // created on first use; see aiEngine
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
@@ -57,6 +66,20 @@ type Service struct {
 	tokMu      sync.Mutex
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
 	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
+
+	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
+	active map[int64]*runJob // runs in flight, guarded by runMu
+
+	subsMu     sync.Mutex
+	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
+	subsClosed bool
+	streamsEnd chan struct{}  // closed by Close: every witStream stops delivering
+	streams    sync.WaitGroup // witStream goroutines
+
+	assistMu sync.Mutex // finding or creating a draft's assist conversation
+
+	toolsMu sync.Mutex
+	tools   map[string]registeredTool // tools Wit runs can offer, by name
 
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
@@ -83,7 +106,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install}
+	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{})}
+	s.registerAskTools()
+	s.registerAssistTools()
 	if err := s.cleanOrphans(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -95,6 +120,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	for _, a := range accs {
 		s.startWorker(a.ID)
+	}
+	if err := s.recoverRuns(ctx); err != nil {
+		s.Close()
+		return nil, err
 	}
 	return s, nil
 }
@@ -108,7 +137,13 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.endStreams() // every run, resumes included, has published its end
 		s.closeOAuth()
+		s.aiMu.Lock()
+		if s.ai != nil {
+			s.ai.Close() // every call using it has ended
+		}
+		s.aiMu.Unlock()
 		s.workersMu.Lock()
 		s.closed = true
 		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping

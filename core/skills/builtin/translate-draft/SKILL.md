@@ -1,0 +1,11 @@
+---
+name: translate-draft
+description: Translate the draft into the language the user asks for
+metadata:
+  godwit-action-on: "draft"
+  godwit-action-output: "replace-draft"
+---
+
+Translate the draft into the target language the host names.
+
+Return only the rewritten body as HTML. Keep the meaning, facts, names and links. Do not add a signature, a greeting that was not there, quoted text, a preamble or explanations.

@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,4 +91,54 @@ func TestDraftHTMLSanitized(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, upd.HTML, "iframe")
 	assert.Contains(t, upd.HTML, "edit")
+}
+
+func TestDraftRevision(t *testing.T) {
+	keyring.MockInit()
+	s, err := core.New(ctx, core.Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	d, err := s.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	r0 := d.Revision
+	assert.Equal(t, int64(1), r0)
+	stale := d
+	d.HTML = "<p>a</p>"
+	d, err = s.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	assert.Equal(t, r0+1, d.Revision)
+	d.HTML = "<p>b</p>" // same second, still a new revision
+	d, err = s.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	assert.Equal(t, r0+2, d.Revision)
+	list, err := s.ListDrafts(ctx, acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, r0+2, list[0].Revision)
+
+	stale.HTML = "<p>old</p>"
+	_, err = s.SaveDraft(ctx, stale)
+	assert.ErrorIs(t, err, core.ErrStaleDraft)
+	stale.Revision = 0 // 0 skips the check
+	got, err := s.SaveDraft(ctx, stale)
+	require.NoError(t, err)
+	assert.Equal(t, r0+3, got.Revision)
+}
+
+func TestSaveDraftCancelledContext(t *testing.T) {
+	keyring.MockInit()
+	s, err := core.New(ctx, core.Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	d, err := s.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	c, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = s.SaveDraft(c, d)
+	assert.ErrorIs(t, err, context.Canceled)
 }
