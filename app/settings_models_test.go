@@ -769,6 +769,7 @@ func TestDeriveUsage(t *testing.T) {
 		alert           string
 		suggest, off    bool
 		genOpts, judges []string
+		smalls          []string // nil: not checked
 	}{
 		{name: "normal", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "openai"}, svcs: []core.ModelService{oai, ant},
 			gen: line{"OpenAI · 连接正常 · 812 ms", lookOK}, judge: line{"OpenAI · 连接正常 · 143 ms", lookOK},
@@ -790,6 +791,12 @@ func TestDeriveUsage(t *testing.T) {
 		{name: "missing default", st: core.Settings{DefaultModel: "ghost/x"}, svcs: []core.ModelService{ant},
 			gen: line{"未找到的模型：ghost/x", lookFail}, judge: line{"未配置", lookNone},
 			genOpts: []string{"未设置", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）"}},
+		{name: "missing default, judge works", st: core.Settings{DefaultModel: "ghost/x", JudgeService: "typesafe"}, svcs: []core.ModelService{ant, ts},
+			gen: line{"未找到的模型：ghost/x", lookFail}, judge: line{"TypeSafe · 未测试", lookUntested},
+			genOpts: []string{"未设置", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）", "TypeSafe / jev-latest"}},
+		{name: "small and judge name what's gone", st: core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "ghost/y", JudgeService: "ghost"}, svcs: []core.ModelService{ant},
+			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"用 Anthropic / [MODEL D] 回答判断题，约慢 10 倍", lookSlow}, suggest: true,
+			genOpts: []string{"Anthropic / [MODEL D]"}, smalls: []string{"未设置", "与默认模型相同", "Anthropic / [MODEL D]"}, judges: []string{"未设置", "由生成模型兼任（较慢）"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			u := deriveUsage(c.st, c.svcs)
@@ -801,6 +808,9 @@ func TestDeriveUsage(t *testing.T) {
 			}
 			if !slices.Equal(labels(u.genOpts), c.genOpts) || !slices.Equal(labels(u.judgeOpts), c.judges) {
 				t.Errorf("options %q %q", labels(u.genOpts), labels(u.judgeOpts))
+			}
+			if c.smalls != nil && !slices.Equal(labels(u.smallOpts), c.smalls) {
+				t.Errorf("small options %q", labels(u.smallOpts))
 			}
 			if c.off != (len(u.smallOpts) == 1) {
 				t.Errorf("small options %q", labels(u.smallOpts))
@@ -849,8 +859,8 @@ func TestModelFormRules(t *testing.T) {
 		{"no name", func(f *modelForm) { f.name = "" }, true, false, "填上名称"},
 		{"generate without a model", func(f *modelForm) { f.models = nil }, true, false, "至少选一个生成模型"},
 		{"judge only needs no model", func(f *modelForm) { f.models, f.genOn = nil, false }, false, false, ""},
-		{"a failed test doesn't block", func(f *modelForm) { f.judge = capTest{"fail", "x"} }, false, false, "有一项没通过测试，仍然可以添加，之后再改"},
-		{"failed on edit", func(f *modelForm) { f.id, f.gen = 1, capTest{"fail", "x"} }, false, false, "有一项没通过测试，仍然可以保存，之后再改"},
+		{"a failed test doesn't block", func(f *modelForm) { f.judge = capTest{state: "fail", text: "x"} }, false, false, "有一项没通过测试，仍然可以添加，之后再改"},
+		{"failed on edit", func(f *modelForm) { f.id, f.gen = 1, capTest{state: "fail", text: "x"} }, false, false, "有一项没通过测试，仍然可以保存，之后再改"},
 		{"testing", func(f *modelForm) { f.gen = capTest{state: "testing"} }, false, true, ""},
 	} {
 		f := ready()
@@ -965,7 +975,7 @@ func TestModelFormStatusClears(t *testing.T) {
 		f := newForm(core.ProviderOther)
 		f.baseURL, f.judgeOn = "https://gw.example.com/v1", true
 		f.edited()
-		f.gen, f.judge = capTest{"ok", "a"}, capTest{"fail", "b"}
+		f.gen, f.judge = capTest{state: "ok", text: "a"}, capTest{state: "fail", text: "b"}
 		return f
 	}
 	for _, c := range []struct {
@@ -1023,5 +1033,79 @@ func TestModelFormOffWarns(t *testing.T) {
 	n.genOn = false
 	if g, _ := offWarns(n, st, svcs); g != "" {
 		t.Fatalf("a new service warns: %q", g)
+	}
+}
+
+// TestAddKeepsDialogTest: a test the add dialog ran becomes the saved
+// service's status, and a judge service added becomes the judge default.
+func TestAddKeepsDialogTest(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "m1")
+	m := h.newService()
+	m.testService = func(_ context.Context, _ int64, _ core.ModelServiceInput, c string) (core.CapStatus, error) {
+		if c == core.CapJudge {
+			return core.CapStatus{State: "fail", Code: "auth", HTTPStatus: 401}, core.ErrModelAuth
+		}
+		return core.CapStatus{State: "ok", LatencyMs: 812}, nil
+	}
+	h.fill("名称", "added")
+	h.fill("地址", url)
+	h.typeModel("m1")
+	h.click("开启判断")
+	h.click("测试连接")
+	h.see("连接正常 · 812 ms")
+	h.click("添加")
+	h.until("saved with its status", func() bool {
+		s, _ := h.modelService("added")
+		return s.Status[core.CapGen].LatencyMs == 812 && s.Status[core.CapJudge].Code == "auth"
+	})
+	h.until("judge default", func() bool { return h.app.settings.JudgeService == "added" })
+}
+
+// TestDialogTestOfOtherModelNotKept: a test of a model no longer first isn't the saved one's.
+func TestDialogTestOfOtherModelNotKept(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "m1")
+	m := h.newService()
+	m.testService = func(context.Context, int64, core.ModelServiceInput, string) (core.CapStatus, error) {
+		return core.CapStatus{State: "ok", LatencyMs: 812}, nil
+	}
+	h.fill("名称", "added")
+	h.fill("地址", url)
+	h.typeModel("m1")
+	h.click("测试连接")
+	h.see("连接正常 · 812 ms")
+	m.form.models = []string{"m2", "m1"}
+	h.click("添加")
+	h.until("saved", func() bool { _, ok := h.modelService("added"); return ok })
+	if s, _ := h.modelService("added"); len(s.Status) != 0 {
+		t.Fatalf("status %+v", s.Status)
+	}
+}
+
+// TestBlockedFooterDisabled: blocked 测试连接 and 添加 are disabled (skipped
+// by Tab, announced as such), not only recolored.
+func TestBlockedFooterDisabled(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "m1")
+	h.newService()
+	reached := func(label string) bool {
+		for range 60 {
+			h.tt.Key(0, ui.KeyTab)
+			h.tt.Frame()
+			if h.tt.Focused(label) {
+				return true
+			}
+		}
+		return false
+	}
+	if reached("添加") || reached("测试连接") {
+		t.Fatal("a blocked footer button takes focus")
+	}
+	h.fill("名称", "added")
+	h.fill("地址", url)
+	h.typeModel("m1")
+	if !reached("添加") || !reached("测试连接") {
+		t.Fatal("the ready footer buttons don't take focus")
 	}
 }

@@ -109,9 +109,6 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	}() // what the next frame shows
 	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string)) {
 		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, MinWidth: theme.UsageSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, v, opts).Label(label).Disabled(u.disabled)
-		if u.disabled {
-			s.Opacity(0.5)
-		}
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -207,8 +204,8 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 		if f.testing() {
 			label = i18n.T("settings.models.test.busy")
 		}
-		// Blocked buttons keep the design's colors: a disabled element is drawn at half opacity; their clicks do nothing.
-		test := footButton(c, label, kit.Outline, false).OnClick(func() { m.test(f) })
+		// Blocked buttons are disabled in the design's blocked colors, which mygo then paints at half opacity.
+		test := footButton(c, label, kit.Outline, f.cantTest()).OnClick(func() { m.test(f) })
 		if f.cantTest() {
 			test.TextColor(t.Idle).Background(t.Background)
 		}
@@ -217,7 +214,7 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 		if f.id == 0 {
 			save = i18n.T("settings.models.confirm_add")
 		}
-		b := footButton(c, save, kit.Default, f.busy).PaddingX(c.Theme().Space(4)).OnClick(func() { m.save(f) })
+		b := footButton(c, save, kit.Default, f.busy || f.blocked()).PaddingX(c.Theme().Space(4)).Description(f.hint()).OnClick(func() { m.save(f) })
 		if f.blocked() {
 			b.Background(t.Hover).TextColor(t.Muted)
 		}
@@ -410,7 +407,7 @@ func (m *modelsView) judgeModel(c *ui.Context, f *modelForm) {
 		o := kit.SelectOpts{MinWidth: theme.UsageSelectMin, MaxWidth: theme.UsageSelectMin, Flat: true}
 		if len(list) == 0 {
 			none := ""
-			kit.SelectWith(c, o, &none, []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.judge.wait")}}).Label(label).Disabled(true).Opacity(0.5).Font(theme.Mono).FontSize(t.Text.Sm)
+			kit.SelectWith(c, o, &none, []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.judge.wait")}}).Label(label).Disabled(true).Font(theme.Mono).FontSize(t.Text.Sm)
 			return
 		}
 		var opts []kit.Option[string]

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strconv"
@@ -65,8 +66,14 @@ type modelForm struct {
 	urlErr, urlBad           string // why the address urlBad was refused when it lost focus
 }
 
-// capTest is a capability's test in the dialog: state "", "testing", "ok" or "fail".
-type capTest struct{ state, text string }
+// capTest is a capability's test in the dialog: state "", "testing", "ok" or
+// "fail". status is what core found (State "" for an input error), basis
+// the form's capBasis when the test started.
+type capTest struct {
+	state, text string
+	status      core.CapStatus
+	basis       string
+}
 
 // providerURL is each provider's address (the design's PROVIDERS).
 var providerURL = map[string]string{core.ProviderOpenAI: "https://api.openai.com/v1", core.ProviderAnthropic: "https://api.anthropic.com/v1",
@@ -170,6 +177,26 @@ func (f *modelForm) keyAction() string {
 // conn is what a fetch or test depends on: the formats, address and key.
 func (f *modelForm) conn() string {
 	return strings.Join([]string{f.kind, f.judgeFormat, f.url(), f.keyAction(), f.key}, "\n")
+}
+
+// capBasis is what a test of capability c ran on: conn() and the model it asked.
+func (f *modelForm) capBasis(c string) string {
+	if c == core.CapGen {
+		return f.conn() + "\n" + first(f.models)
+	}
+	return f.conn() + "\n" + f.judgeModel
+}
+
+// found is the dialog's finished tests that still describe the form: they
+// become the saved service's status.
+func (f *modelForm) found() map[string]core.CapStatus {
+	out := map[string]core.CapStatus{}
+	for c, t := range map[string]capTest{core.CapGen: f.gen, core.CapJudge: f.judge} {
+		if on := c == core.CapGen && f.genOn || c == core.CapJudge && f.judgeOn; on && t.status.State != "" && t.basis == f.capBasis(c) {
+			out[c] = t.status
+		}
+	}
+	return out
 }
 
 // edited counts the changes of conn() it sees; each clears the tests, which
@@ -406,7 +433,7 @@ func (m *modelsView) submit(f *modelForm) {
 	a := m.a
 	snap := *f
 	snap.models = slices.Clone(f.models)
-	in, id := f.input(), f.id
+	in, id, found := f.input(), f.id, f.found()
 	f.busy = true
 	var saved core.ModelService
 	a.writes.Chain("models", func(ctx context.Context) (err error) {
@@ -415,7 +442,16 @@ func (m *modelsView) submit(f *modelForm) {
 		} else {
 			saved, err = a.svc.UpdateModelService(ctx, id, in)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// shortcut: a test still running at save time isn't kept; the user tests again.
+		for c, st := range found {
+			if rerr := a.svc.RecordCapStatus(ctx, saved.ID, saved.Version, c, st); rerr != nil {
+				slog.Warn("model service status", "service", saved.ID, "err", rerr)
+			}
+		}
+		return nil
 	}, func(err error) {
 		f.busy = false
 		a.refreshTasks()
@@ -439,8 +475,17 @@ func (m *modelsView) submit(f *modelForm) {
 		if id != 0 {
 			m.dropRefs(saved)
 		}
-		if noDefault && saved.Kind != "" && len(saved.Models) > 0 { // this service's first model becomes it: Wit needs one
-			m.setModel(func(st *core.Settings) { st.DefaultModel = saved.Slug + "/" + saved.Models[0] })
+		fillGen := noDefault && saved.Kind != "" && len(saved.Models) > 0                              // this service's first model becomes it: Wit needs one
+		fillJudge := a.settings.JudgeService == "" && saved.JudgeFormat != "" && snap.savedJudge == "" // judge just turned on answers the judge questions
+		if fillGen || fillJudge {
+			m.setModel(func(st *core.Settings) {
+				if fillGen {
+					st.DefaultModel = saved.Slug + "/" + saved.Models[0]
+				}
+				if fillJudge {
+					st.JudgeService = saved.Slug
+				}
+			})
 		}
 		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 		m.load()
@@ -597,6 +642,7 @@ func (m *modelsView) test(f *modelForm) {
 			continue
 		}
 		*c.res = capTest{state: "testing"}
+		basis := f.capBasis(c.cap)
 		var st core.CapStatus
 		a.do(func(ctx context.Context) (err error) {
 			st, err = test(ctx, id, in, c.cap)
@@ -611,6 +657,7 @@ func (m *modelsView) test(f *modelForm) {
 				*c.res = capTest{}
 			default:
 				*c.res = capResult(c.format, st, err)
+				c.res.status, c.res.basis = st, basis
 			}
 		})
 	}
@@ -620,13 +667,13 @@ func (m *modelsView) test(f *modelForm) {
 func capResult(format string, st core.CapStatus, err error) capTest {
 	switch {
 	case err == nil:
-		return capTest{"ok", i18n.Tf("settings.models.test.ok", st.LatencyMs)}
+		return capTest{state: "ok", text: i18n.Tf("settings.models.test.ok", st.LatencyMs)}
 	case st.Code == "forbidden":
-		return capTest{"fail", strconv.Itoa(st.HTTPStatus) + " · " + i18n.Tf("settings.models.fail.no_api", formats[format].api)}
+		return capTest{state: "fail", text: strconv.Itoa(st.HTTPStatus) + " · " + i18n.Tf("settings.models.fail.no_api", formats[format].api)}
 	case st.State == "fail":
-		return capTest{"fail", failReason(st)}
+		return capTest{state: "fail", text: failReason(st)}
 	}
-	return capTest{"fail", humanize(err)}
+	return capTest{state: "fail", text: humanize(err)}
 }
 
 // setModel saves a model setting through the settings write queue.
@@ -709,11 +756,16 @@ func deriveUsage(st core.Settings, services []core.ModelService) usage {
 			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: s.Slug, Label: s.Name + " / " + s.JudgeModel})
 		}
 	}
+	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
+	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
 	if u.genSvc == nil {
 		u.genOpts = append([]kit.Option[string]{{Value: st.DefaultModel, Label: i18n.T("settings.models.default.none")}}, u.genOpts...)
 		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
 		if st.DefaultModel != "" {
 			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
+		}
+		if u.judgeSvc != nil {
+			u.judge = capLine(u.judgeSvc, core.CapJudge)
 		}
 		return u
 	}
@@ -731,6 +783,14 @@ func deriveUsage(st core.Settings, services []core.ModelService) usage {
 		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
 	}
 	return u
+}
+
+// unset puts v first as 未设置 when opts doesn't offer it.
+func unset(opts []kit.Option[string], v string) []kit.Option[string] {
+	if slices.ContainsFunc(opts, func(o kit.Option[string]) bool { return o.Value == v }) {
+		return opts
+	}
+	return append([]kit.Option[string]{{Value: v, Label: i18n.T("settings.models.default.none")}}, opts...)
 }
 
 // capLine is a default's status line: its last test of capability c.

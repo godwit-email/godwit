@@ -60,9 +60,6 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		if b.Hovered() && !o.Disabled {
 			b.TextColor(t.Foreground).Underline()
 		}
-		if o.Disabled {
-			b.Opacity(0.5)
-		}
 		return b
 	}
 	b.Height(h).Radius(t.Radius.Lg)
@@ -113,10 +110,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.DangerBg)
 		}
 	}
-	if o.Disabled {
-		b.Opacity(0.5)
-	}
-	return b
+	return b // a disabled element paints at half opacity: mygo dims it once
 }
 
 // ButtonFrame is the styled button without children.
