@@ -451,6 +451,10 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 	if p.reauth[acc.ID] {
 		label, o.Disabled = i18n.T("settings.account.reauth.waiting"), true
 	}
+	if banner && !o.Disabled {
+		kit.AlertAction(c, kit.Warning, label, func() { p.startReauth(acc) })
+		return
+	}
 	kit.Button(c, label, o).OnClick(func() { p.startReauth(acc) })
 }
 
