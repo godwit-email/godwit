@@ -454,3 +454,35 @@ func TestReaderToolbarAt16(t *testing.T) {
 		})
 	}
 }
+
+func TestReaderJunk(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Win", "a prize"))
+	h.waitMail("the junk folder", func() bool {
+		return slices.ContainsFunc(h.app.mail.folders[accs[0].ID], func(f core.Folder) bool { return f.Role == "junk" })
+	})
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("移到垃圾邮件")
+	h.until("in junk", func() bool { return h.countIn(h.folderOf(accs[0], "junk")) == 1 })
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v", r)
+	}
+}
+
+// An account without a junk folder is skipped and named; nothing moves.
+func TestReaderJunkWithoutFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Win", "a prize"))
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("移到垃圾邮件")
+	h.see("alice@example.com 没有垃圾邮件文件夹，已跳过")
+	if h.countIn(h.folderOf(accs[0], "inbox")) != 1 {
+		t.Fatal("the message moved")
+	}
+}

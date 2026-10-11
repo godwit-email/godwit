@@ -467,3 +467,28 @@ func TestReaderCloseClosesViews(t *testing.T) {
 		t.Fatalf("%d pages made, %d closed", made, closed)
 	}
 }
+
+// 始终信任此发件人 trusts the From address in core and loads the images;
+// the sender's next message loads them at once, without the notice.
+func TestReaderTrustSender(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
+	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.see("已阻止 1 张远程图片")
+	h.click("始终信任此发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !slices.Equal(st.TrustedImageSenders, []string{"bob@example.com"}) {
+		t.Fatalf("trusted %q, %v", st.TrustedImageSenders, err)
+	}
+	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
+	h.openThread(n.ThreadID)
+	h.seeBody(n.ID)
+	h.tt.Frame()
+	if h.tt.HasText("已阻止") {
+		t.Fatal("a trusted sender's message shows the notice")
+	}
+}

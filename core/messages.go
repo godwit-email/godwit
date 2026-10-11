@@ -455,20 +455,43 @@ func (s *Service) Move(ctx context.Context, ids []int64, folderID int64) error {
 
 // Delete moves the messages to their account's Trash; ones already there stay.
 func (s *Service) Delete(ctx context.Context, ids []int64) error {
+	return s.MoveToRole(ctx, ids, "trash")
+}
+
+// ErrNoRoleFolder is MoveToRole's error for an account without a folder of Role.
+type ErrNoRoleFolder struct{ Role string }
+
+func (e *ErrNoRoleFolder) Error() string { return "the account has no " + e.Role + " folder" }
+
+// MoveToRole moves the messages to their account's folder of role (trash,
+// junk or archive); ones already there stay.
+func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) error {
+	if role != "trash" && role != "junk" && role != "archive" {
+		return fmt.Errorf("invalid role %q", role)
+	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	acc, ts, err := s.targets(ctx, ids)
 	if err != nil || len(ts) == 0 {
 		return err
 	}
-	rows, err := s.db.Query(ctx, "SELECT id FROM folders WHERE account_id = ? AND role = 'trash' ORDER BY id LIMIT 1", acc)
+	folder, err := s.roleFolder(ctx, acc, role)
 	if err != nil {
 		return err
 	}
-	if len(rows.Values) == 0 {
-		return errors.New("the account has no Trash folder")
+	return s.move(ctx, acc, ts, folder)
+}
+
+// roleFolder is the account's folder of role: the lowest id holding it.
+func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64, error) {
+	rows, err := s.db.Query(ctx, "SELECT id FROM folders WHERE account_id = ? AND role = ? ORDER BY id LIMIT 1", acc, role)
+	if err != nil {
+		return 0, err
 	}
-	return s.move(ctx, acc, ts, store.Int(rows.Values[0][0]))
+	if len(rows.Values) == 0 {
+		return 0, &ErrNoRoleFolder{Role: role}
+	}
+	return store.Int(rows.Values[0][0]), nil
 }
 
 // move sets the desired folder of the messages not already in folderID and queues

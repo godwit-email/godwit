@@ -88,6 +88,9 @@ func NewCodec() *rpc.Codec {
 			return core.EgressApprovalRequired{Plugin: e.Plugin, Hosts: e.Hosts}
 		},
 		rpc.DecodeDetail[core.EgressApprovalRequired])
+	rpc.RegisterType(c, "no_role_folder",
+		func(e *core.ErrNoRoleFolder) any { return *e },
+		rpc.DecodeDetail[core.ErrNoRoleFolder])
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg} },
 		rpc.DecodeDetail[ai.Error])

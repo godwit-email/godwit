@@ -217,9 +217,8 @@ func (r *Reader) Allow(message int64) {
 	if st.stop != nil {
 		st.stop()
 	}
-	st.allowed, st.version, st.body, st.remote, st.budget = true, v, nil, nil, nil
-	st.ctx, st.stop = context.WithTimeout(context.Background(), r.imageDeadline)
-	st.client, st.sem, st.imgs = imagefetch.NewClient(r.allowLoopback), make(chan struct{}, imagefetch.Workers), map[string]*fetched{}
+	st.version, st.body, st.remote, st.budget = v, nil, nil, nil
+	r.allow(st)
 	r.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -251,6 +250,14 @@ func (r *Reader) Allow(message int64) {
 			}
 		}
 	}()
+}
+
+// allow starts st's remote images: a fresh deadline, client and fetches.
+// The caller holds r.mu.
+func (r *Reader) allow(st *bodyOf) {
+	st.allowed = true
+	st.ctx, st.stop = context.WithTimeout(context.Background(), r.imageDeadline)
+	st.client, st.sem, st.imgs = imagefetch.NewClient(r.allowLoopback), make(chan struct{}, imagefetch.Workers), map[string]*fetched{}
 }
 
 // build reads message's body for version v and keeps it, if v is still
@@ -343,6 +350,20 @@ func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
 	}
 	v, allowed := st.version, st.allowed
 	p.r.mu.Unlock()
+	if !allowed { // a trusted sender's images load at once (core decides)
+		trusted, err := svc.ImagesTrusted(ctx, message)
+		if err != nil {
+			return ReaderBody{}, err
+		}
+		if trusted {
+			p.r.mu.Lock()
+			if p.r.msgs[message] == st && st.version == v && !st.allowed {
+				p.r.allow(st)
+			}
+			allowed = st.allowed
+			p.r.mu.Unlock()
+		}
+	}
 	return p.r.build(ctx, svc, message, v, allowed)
 }
 

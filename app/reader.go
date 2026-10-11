@@ -75,10 +75,12 @@ type msgBody struct {
 	// The remote images: allow is the user's 加载图片, which every page
 	// made for the message is told (Platform.AllowImages); remote that the
 	// page's body has them (BodyBuilt), which hides the notice; allowErr
-	// that reading it so failed (BodyFailed), which offers a retry.
+	// that reading it so failed (BodyFailed), which offers a retry;
+	// trusted that core loads them at once (ImagesTrusted): no notice.
 	allow    bool
 	remote   bool
 	allowErr error
+	trusted  bool
 }
 
 func newReader(p *mailPage) *reader {
@@ -235,8 +237,12 @@ func (r *reader) loadBody(id int64) {
 	}
 	b.loading, b.err = true, nil
 	var m core.Message
+	var trusted bool
 	a.do(func(ctx context.Context) (err error) {
-		m, err = get(ctx, id, false)
+		if m, err = get(ctx, id, false); err != nil {
+			return err
+		}
+		trusted, err = a.svc.ImagesTrusted(ctx, id)
 		return err
 	}, func(err error) {
 		if gen != r.gen {
@@ -247,7 +253,7 @@ func (r *reader) loadBody(id int64) {
 			b.err = err
 			return
 		}
-		b.msg, b.ready = m, true
+		b.msg, b.ready, b.trusted = m, true, trusted
 		r.openView(id)
 	})
 }
@@ -366,10 +372,11 @@ func (r *reader) items() []mailItem {
 	return []mailItem{{ID: r.key[0], Thread: true, Count: len(r.msgs)}}
 }
 
-// act applies a list action to what is shown; archiving and deleting close it.
+// act applies a list action to what is shown; archiving, deleting and
+// moving to junk close it.
 func (r *reader) act(op string) {
 	r.p.batch(op, r.items())
-	if op == "archive" || op == "delete" {
+	if op == "archive" || op == "delete" || op == "junk" {
 		rt := &r.p.a.route
 		rt.ThreadID, rt.MessageID = 0, 0
 		r.sync(false)
@@ -569,6 +576,7 @@ func (r *reader) toolbar(c *ui.Context) {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
 			kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
+			kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }},
 		)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
@@ -655,7 +663,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			return
 		}
 		switch {
-		case b.msg.RemoteImagesBlocked == 0 || b.remote:
+		case b.msg.RemoteImagesBlocked == 0 || b.remote || b.trusted:
 		case b.allowErr != nil:
 			kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -670,6 +678,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					return
 				}
 				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
+				if f, _ := r.p.folder(m.FolderID); addr != "" && f.Role != "junk" { // core never trusts junk
+					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(addr) })
+				}
 			})
 		}
 		// The translation shows in the body's place: the page is not
@@ -747,6 +758,26 @@ func (r *reader) allowImages(id int64) {
 	if b.view != nil {
 		r.p.a.plat.AllowImages(id)
 	}
+}
+
+// trustSender trusts addr's remote images from now on (始终信任此发件人)
+// and loads them in its messages shown.
+func (r *reader) trustSender(addr string) {
+	a, gen := r.p.a, r.gen
+	a.do(func(ctx context.Context) error { return a.svc.TrustImageSender(ctx, addr) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		if gen != r.gen {
+			return
+		}
+		for id, b := range r.bodies {
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) {
+				r.allowImages(id)
+			}
+		}
+	})
 }
 
 // The calls of a body's page (view), on the UI thread. Each acts only

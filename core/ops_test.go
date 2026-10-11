@@ -469,3 +469,30 @@ func TestUnclaimableMoveEndsInConflict(t *testing.T) {
 	assert.Equal(t, []string{"conflict", "conflict"}, e.opStates(t))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE subject = 'anon'"))
 }
+
+func TestMoveToJunk(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "junk"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "Junk")}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Junk"))
+	assert.Equal(t, []string{}, e.onServer(t, "INBOX"))
+}
+
+func TestMoveToRoleWithoutFolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	err := e.s.MoveToRole(bg, []int64{id}, "junk")
+	var nf *ErrNoRoleFolder
+	require.ErrorAs(t, err, &nf)
+	assert.Equal(t, "junk", nf.Role)
+	assert.Error(t, e.s.MoveToRole(bg, []int64{id}, "inbox"), "only trash, junk and archive")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
+}

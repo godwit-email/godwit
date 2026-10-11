@@ -335,6 +335,29 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.local_api"), "", rows...)
+	p.trustedView(c)
+}
+
+// trustedView lists the senders whose remote images load at once, each
+// with a remove (始终信任此发件人 adds them).
+func (p *settingsPage) trustedView(c *ui.Context) {
+	t, a := theme.Of(c), p.a
+	var rows []func()
+	for _, addr := range a.settings.TrustedImageSenders {
+		rows = append(rows, func() {
+			settingRow(c, addr, "", func() {
+				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Clicked() {
+					a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
+				}
+			}).Label(addr)
+		})
+	}
+	if len(rows) == 0 {
+		rows = append(rows, func() {
+			settingBlock(c, func() { ui.Text(c, i18n.T("settings.trusted.none")).TextColor(t.Muted) })
+		})
+	}
+	settingsSection(c, i18n.T("settings.trusted"), i18n.T("settings.trusted.sub"), rows...)
 }
 
 // godwitExe is this executable's absolute path.

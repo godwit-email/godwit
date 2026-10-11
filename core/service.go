@@ -46,7 +46,8 @@ type Service struct {
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
 
-	editMu sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+	settingsMu sync.Mutex // settings read then written (SetSettings, the trusted senders)
+	editMu     sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
 
 	workersMu sync.Mutex
 	workers   map[int64]*worker

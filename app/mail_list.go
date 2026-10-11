@@ -155,6 +155,8 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 		return svc.Move(ctx, ids, folder)
 	case "delete":
 		return svc.Delete(ctx, ids)
+	case "junk":
+		return svc.MoveToRole(ctx, ids, "junk")
 	}
 	return fmt.Errorf("unknown mail action %q", op)
 }
@@ -684,7 +686,7 @@ func (p *mailPage) listView(c *ui.Context) {
 			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Flagged < r.Count }) {
 				star = "star"
 			}
-			for _, k := range []string{read, star, "", "archive", "delete"} {
+			for _, k := range []string{read, star, "", "archive", "delete", "junk"} {
 				if k == "" {
 					m.Separator()
 				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
@@ -944,20 +946,21 @@ func (p *mailPage) closeSearch() {
 
 // batch applies act to rows: threads become their messages (GetThread),
 // grouped by account, one call per account. Archiving and deleting take
-// only the messages in the view; an account without an archive folder is
-// skipped and named.
+// only the messages in the view; an account without an archive (junk)
+// folder is skipped and named.
 func (p *mailPage) batch(act string, rows []mailItem) {
 	if len(rows) == 0 {
 		return
 	}
 	a := p.a
-	acctOf, role, archive := map[int64]int64{}, map[int64]string{}, map[int64]int64{}
+	acctOf, role, archive, junk := map[int64]int64{}, map[int64]string{}, map[int64]int64{}, map[int64]bool{}
 	for acc, fs := range p.folders {
 		for _, f := range fs {
 			acctOf[f.ID], role[f.ID] = acc, f.Role
 			if f.Role == "archive" && archive[acc] == 0 {
 				archive[acc] = f.ID
 			}
+			junk[acc] = junk[acc] || f.Role == "junk"
 		}
 	}
 	names := map[int64]string{}
@@ -1008,7 +1011,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 		}
 		for _, m := range msgs {
-			if (op == "archive" || op == "delete") && !inView(m) {
+			if (op == "archive" || op == "delete" || op == "junk") && !inView(m) {
 				continue
 			}
 			acc, ok := acctOf[m.FolderID]
@@ -1027,15 +1030,15 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
 			}
 			if len(skipped) > 0 {
-				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
+				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_"+op, strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
-			if op == "archive" || op == "delete" {
+			if op == "archive" || op == "delete" || op == "junk" {
 				l.sel.Clear()
 			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
-			if op == "archive" && archive[acc] == 0 {
+			if op == "archive" && archive[acc] == 0 || op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
 				continue
 			}

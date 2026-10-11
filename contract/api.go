@@ -37,6 +37,7 @@ type API interface {
 	ListOutbox(ctx context.Context, accountID int64) ([]core.OutboxItem, error)
 	GetSettings(ctx context.Context) (core.Settings, error)
 	SetSettings(ctx context.Context, st core.Settings) (core.Settings, error)
+	TrustImageSender(ctx context.Context, from string) error
 	CheckModelService(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error)
 	RunSkill(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error)
 	NewConversation(ctx context.Context, kind string, draftID int64) (core.Conversation, error)
@@ -241,6 +242,10 @@ func (r *Remote) GetSettings(ctx context.Context) (core.Settings, error) {
 
 func (r *Remote) SetSettings(ctx context.Context, st core.Settings) (core.Settings, error) {
 	return call[core.Settings](r, ctx, "SetSettings", st)
+}
+
+func (r *Remote) TrustImageSender(ctx context.Context, from string) error {
+	return r.C.Call(ctx, "TrustImageSender", nil, from)
 }
 
 func (r *Remote) CheckModelService(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) {

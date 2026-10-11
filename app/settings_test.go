@@ -959,3 +959,24 @@ func TestSignatureSwitchKeepsAccounts(t *testing.T) {
 		t.Fatalf("%d signature views, want one", n)
 	}
 }
+
+// 隐私与安全 lists the trusted senders; 移除 stops trusting one.
+func TestSettingsTrustedSenders(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("privacy")
+	h.see("还没有信任的发件人")
+	if err := h.env.Svc.TrustImageSender(context.Background(), "Bob <bob@example.com>"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("bob@example.com")
+	h.click("移除")
+	h.until("untrusted", func() bool {
+		st, _ := h.env.Svc.GetSettings(context.Background())
+		return len(st.TrustedImageSenders) == 0
+	})
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("还没有信任的发件人")
+}

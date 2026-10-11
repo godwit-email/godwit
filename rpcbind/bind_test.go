@@ -95,6 +95,11 @@ func TestErrorRoundTrip(t *testing.T) {
 	require.ErrorAs(t, got, &sb)
 	assert.Equal(t, core.SendBlockedError{Plugin: "p", Message: "no"}, *sb)
 
+	_, _, got = wire(t, c, &core.ErrNoRoleFolder{Role: "junk"}, nil)
+	var nf *core.ErrNoRoleFolder
+	require.ErrorAs(t, got, &nf)
+	assert.Equal(t, "junk", nf.Role)
+
 	_, _, got = wire(t, c, &core.EgressApprovalRequired{Plugin: "p", Hosts: []string{"a.example", "b.example"}}, nil)
 	var ea *core.EgressApprovalRequired
 	require.ErrorAs(t, got, &ea)
@@ -225,8 +230,9 @@ func TestWireCodesPinned(t *testing.T) {
 		"send_blocked":             &core.SendBlockedError{},
 		"egress_approval_required": &core.EgressApprovalRequired{},
 		"ai_error":                 &ai.Error{Code: ai.CodeCanceled},
+		"no_role_folder":           &core.ErrNoRoleFolder{Role: "junk"},
 	}
-	assert.Len(t, pinned, len(sentinels)+5, "every registration is pinned")
+	assert.Len(t, pinned, len(sentinels)+6, "every registration is pinned")
 	for code, err := range pinned {
 		we := c.Encode(err, nil)
 		assert.Equal(t, rpc.CodeApp, we.Code, code)
@@ -238,7 +244,7 @@ func TestWireCodesPinned(t *testing.T) {
 // or partial business error.
 func TestBadErrorData(t *testing.T) {
 	c := rpcbind.NewCodec()
-	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error"} {
+	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error", "no_role_folder"} {
 		for name, detail := range map[string]string{"missing": ``, "wrong type": `{"Plugin":1,"Steps":1,"Code":1}`, "partial": `{}`} {
 			got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "m", Data: &rpc.WireErrorData{Code: code, Detail: json.RawMessage(detail)}})
 			assert.ErrorIs(t, got, rpc.ErrBadErrorData, "%s %s", code, name)

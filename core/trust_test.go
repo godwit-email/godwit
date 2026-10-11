@@ -1,0 +1,68 @@
+package core
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestTrustImageSender(t *testing.T) {
+	dir := t.TempDir()
+	s := settingsService(t, dir, "")
+	ctx := t.Context()
+	require.NoError(t, s.TrustImageSender(ctx, `"Bob" <Bob@Example.COM>`))
+	require.NoError(t, s.TrustImageSender(ctx, "bob@example.com"), "again: no duplicate")
+	assert.Error(t, s.TrustImageSender(ctx, "not an address"))
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"bob@example.com"}, st.TrustedImageSenders)
+
+	// A settings page's full snapshot never drops or adds trusted senders.
+	st.Theme, st.TrustedImageSenders = "dark", []string{"evil@x"}
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+	s = settingsService(t, dir, "")
+	st, err = s.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "dark", st.Theme)
+	assert.Equal(t, []string{"bob@example.com"}, st.TrustedImageSenders, "persists")
+
+	require.NoError(t, s.UntrustImageSender(ctx, "BOB@example.com"))
+	st, err = s.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, st.TrustedImageSenders)
+}
+
+func TestTrustImageSenderCap(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	ctx := t.Context()
+	for i := range maxTrustedSenders {
+		require.NoError(t, s.TrustImageSender(ctx, fmt.Sprintf("u%d@x.example", i)))
+	}
+	assert.Error(t, s.TrustImageSender(ctx, "one-more@x.example"))
+	assert.NoError(t, s.TrustImageSender(ctx, "u0@x.example"), "one already there is fine")
+}
+
+func TestImagesTrusted(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.put(t, "INBOX", eml("a@x", "Bob <bob@example.com>", "alice@example.com", "s", day, "b"))
+	e.put(t, "INBOX", eml("b@x", "bob <carol@example.com>", "alice@example.com", "s", day, "b", "Reply-To: bob@example.com"))
+	e.put(t, "Junk", eml("c@x", "bob@example.com", "alice@example.com", "s", day, "b"))
+	e.sync(t)
+	trusted := func(mid string) bool {
+		ok, err := e.s.ImagesTrusted(bg, e.idOf(t, mid))
+		require.NoError(t, err)
+		return ok
+	}
+	assert.False(t, trusted("a@x"), "never trusted by default")
+	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
+	assert.True(t, trusted("a@x"))
+	assert.False(t, trusted("b@x"), "the From address only, not the name or Reply-To")
+	assert.False(t, trusted("c@x"), "never in the junk folder")
+	require.NoError(t, e.s.UntrustImageSender(bg, "bob@example.com"))
+	assert.False(t, trusted("a@x"))
+}

@@ -587,3 +587,25 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 	time.Sleep(200 * time.Millisecond) // the Allows' goroutines finish
 	assert.Zero(t, wrong.Load(), "a page got another message's body")
 }
+
+func TestReaderTrustedSenderLoadsImages(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
+	f := newReaderFixture(t)
+	src := srv.URL + "/pixel.png"
+	m := f.remoteMail(t, "hi", src)
+	require.NoError(t, f.e.Svc.TrustImageSender(t.Context(), "Bob@Example.com"))
+	k := f.page(m.ID)
+	b, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.True(t, b.Remote, "a trusted sender's images load at once")
+	got, err := f.p.Image(pageCtx(k), src)
+	require.NoError(t, err)
+	assert.Equal(t, dataPNG(pic), got)
+
+	require.NoError(t, f.e.Svc.UntrustImageSender(t.Context(), "bob@example.com"))
+	k2 := f.page(f.remoteMail(t, "again", srv.URL+"/other.png").ID)
+	b, err = f.p.Load(pageCtx(k2))
+	require.NoError(t, err)
+	assert.False(t, b.Remote, "removed: blocked again")
+}
