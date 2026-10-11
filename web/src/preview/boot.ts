@@ -145,11 +145,12 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
   },
 };
 
-/** ⌘K on the second paragraph, as a user selecting it and pressing the shortcut does. */
-function selectAndOpenCmdK() {
+/** ⌘K on the second paragraph, as a user selecting it and pressing the shortcut does; retried until the page takes it. */
+function selectAndOpenCmdK(tries = 0) {
+  const again = () => tries < 40 && setTimeout(() => selectAndOpenCmdK(tries + 1), 250);
   const ed = document.querySelector<HTMLElement>('[contenteditable="true"]');
   const p = ed?.querySelectorAll("[data-slate-node=element]")[1];
-  if (!ed || !p) return;
+  if (!ed || !p) return again();
   ed.focus();
   const r = document.createRange();
   r.selectNodeContents(p);
@@ -164,7 +165,7 @@ function selectAndOpenCmdK() {
     // the mockup's instruction, typed the way React hears it
     setTimeout(() => {
       const input = document.querySelector<HTMLInputElement>("input[aria-label='修改选中的内容']");
-      if (!input) return;
+      if (!input) return again();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
         input,
         "语气委婉一点，再提一句期待合作",

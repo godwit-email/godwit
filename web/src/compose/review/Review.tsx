@@ -28,19 +28,29 @@ function inert(html: string): string {
   return body.innerHTML;
 }
 
-function Static({
+/** The body block (the editor's, a review's, Wit writing): text, then the signature and the quote toggle. */
+export const BODY = "flex min-h-78 flex-col gap-3 p-4";
+
+// A caret after the last block's text: Wit is still writing.
+const CARET =
+  "[&>:last-child]:after:ml-px [&>:last-child]:after:inline-block [&>:last-child]:after:h-4 [&>:last-child]:after:w-0.5 [&>:last-child]:after:bg-foreground [&>:last-child]:after:align-text-bottom [&>:last-child]:after:content-['']";
+
+/** Editable HTML shown read-only (sanitized, links inert); `caret` while Wit writes it. */
+export function Static({
   html,
   label,
   className = "text-lg",
+  caret = false,
 }: {
   html: string;
   label?: string;
   className?: string;
+  caret?: boolean;
 }) {
   return (
     <section
       aria-label={label}
-      className={`${className} leading-[1.75] [&>*+*]:mt-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6`}
+      className={`${className} ${caret ? CARET : ""} leading-[1.75] [&>*+*]:mt-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6`}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: inert() keeps only the format set's tags, no attribute, no link
       dangerouslySetInnerHTML={{ __html: inert(html) }}
     />
@@ -109,16 +119,19 @@ function blockClass(b: ReviewBlock): string {
  * marked; hovering a change or focusing it offers 接受 / 拒绝, and the last decision calls onFinish
  * with every change's (1 or -1). A rewrite: the new version read-only, or both side by side
  * (对比原文). 全部接受 / 全部拒绝 call onDecide. `busy` disables the decisions (one is in flight).
+ * `after` (the signature, the quote toggle) follows the text, not the compare.
  */
 export function Review({
   review: r,
   busy,
   onDecide,
   onFinish,
+  after,
   t,
 }: {
   review: ReviewT;
   busy: boolean;
+  after?: ReactNode;
   onDecide(accept: boolean): void;
   onFinish(decisions: number[]): void;
   t: T;
@@ -204,7 +217,7 @@ export function Review({
 
   const pct = Math.round(r.ratio * 100);
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-col">
       <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
         <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
@@ -237,7 +250,7 @@ export function Review({
           {t("wit.compose.accept_all")}
         </Button>
       </div>
-      <section aria-label={t("wit.compose.review_body")} className="min-h-70 flex-1 p-4">
+      <section aria-label={t("wit.compose.review_body")} className={`${BODY} bg-sidebar`}>
         {r.inline ? (
           <div className="text-lg leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
         ) : compare ? (
@@ -254,6 +267,7 @@ export function Review({
         ) : (
           <Static html={r.new} />
         )}
+        {!compare && after}
       </section>
     </div>
   );

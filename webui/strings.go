@@ -13,8 +13,6 @@ var composeKeys = []string{
 	"compose.attach", "compose.remove", "compose.attach.too_large", "compose.attach.failed", "compose.quote.show",
 	"compose.conflict", "compose.conflict.keep", "compose.conflict.latest", "compose.warn",
 	"compose.warn.from", "compose.send_anyway", "compose.send", "compose.sending.locked",
-	"compose.note", "compose.discard", "compose.discard.title", "compose.discard.body",
-	"compose.discard.confirm",
 	"common.cancel", "common.close", "common.retry", "close.unsaved.title",
 	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject", "mail.list_sep",
 	// Wit
@@ -26,7 +24,7 @@ var composeKeys = []string{
 	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
 	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
 	"wit.compose.input", "wit.compose.placeholder", "wit.compose.empty", "wit.compose.writing_banner",
-	"wit.compose.writing", "wit.compose.locked", "wit.compose.pending.one", "wit.compose.pending.other",
+	"wit.compose.locked", "wit.compose.pending.one", "wit.compose.pending.other",
 	"wit.compose.accept_all", "wit.compose.reject_all", "wit.compose.accept", "wit.compose.reject",
 	"wit.compose.link", "wit.compose.rewrite", "wit.compose.rewrite_plain", "wit.compose.compare",
 	"wit.compose.back", "wit.compose.original", "wit.compose.new", "wit.compose.review",

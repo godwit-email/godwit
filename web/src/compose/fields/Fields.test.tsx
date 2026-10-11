@@ -91,6 +91,14 @@ test("× removes", async () => {
   expect(chips()).toEqual(["移除 c@d.e"]);
 });
 
+test("a chip shows the display name; the address is in its tooltip", async () => {
+  setup({ to: ["Lena Fischer <lena@partner.example>", '"Doe, J." <j@x.io>', "a@b.c"] });
+  const names = screen.getAllByTestId("chip").map((c) => c.firstChild?.textContent);
+  expect(names).toEqual(["Lena Fischer", "Doe, J.", "a@b.c"]);
+  await userEvent.hover(screen.getByText("Lena Fischer"));
+  expect(await screen.findByText("Lena Fischer <lena@partner.example>")).toBeInTheDocument();
+});
+
 test("Cc, Bcc and Reply-To hidden until 抄送 · 密送", async () => {
   setup();
   expect(screen.queryByRole("textbox", { name: "抄送" })).not.toBeInTheDocument();

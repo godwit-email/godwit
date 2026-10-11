@@ -17,7 +17,6 @@ vi.mock("@/mygo", () => ({
     addAttachments: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
-    discard: vi.fn(),
   },
   events: {
     closing: {
@@ -91,9 +90,6 @@ const text = {
   "compose.send_anyway": "仍然发送",
   "compose.send": "发送",
   "compose.sending.locked": "正在发送，暂时不能修改草稿",
-  "compose.discard": "丢弃草稿",
-  "compose.discard.title": "丢弃这封草稿？",
-  "compose.discard.confirm": "丢弃",
   "compose.attach.failed": "未能添加：%s",
   "error.stale_draft": "草稿在别处被修改。",
   "error.unknown": "出错了：%s",
@@ -131,7 +127,6 @@ beforeEach(() => {
   vi.mocked(api.save).mockResolvedValue({ revision: 8, conflict: false });
   vi.mocked(api.closed).mockResolvedValue();
   vi.mocked(api.send).mockResolvedValue({ ...noWarnings, sent: true });
-  vi.mocked(api.discard).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
@@ -290,20 +285,6 @@ describe("autosave", () => {
     await u.type(await body(), "!");
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByRole("alert")).toHaveTextContent("草稿在别处被修改");
-  });
-
-  test("a failed discard keeps the page editable and saving", async () => {
-    vi.mocked(api.discard).mockRejectedValue(new Error("disk full"));
-    const u = setup();
-    render(<ComposePage />);
-    const el = await body();
-    await u.click(screen.getByRole("button", { name: "丢弃草稿" }));
-    await u.click(await screen.findByRole("button", { name: "丢弃" }));
-    expect(api.discard).toHaveBeenCalledTimes(1);
-    await u.type(el, "!");
-    expect(el).toHaveValue("正文!");
-    await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!", revision: 7 }));
   });
 
   test("first save carries the loaded revision, later ones the previous result's", async () => {
@@ -668,13 +649,13 @@ test("a failed read of the latest offers 重试", async () => {
   expect(await body()).toHaveValue("最新");
 });
 
-test("discard asks then discards", async () => {
+test("the bottom bar holds the format toolbar and 发送 only: no discard, no note", async () => {
   render(<ComposePage />);
   await body();
-  await userEvent.click(screen.getByRole("button", { name: "丢弃草稿" }));
-  expect(api.discard).not.toHaveBeenCalled();
-  await userEvent.click(await screen.findByRole("button", { name: "丢弃" }));
-  expect(api.discard).toHaveBeenCalledTimes(1);
+  const bar = document.querySelector("[data-bar]") as HTMLElement;
+  expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
+  expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
+  expect(bar).not.toHaveTextContent("只能写草稿");
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {

@@ -33,7 +33,7 @@ type session struct {
 	quote, signature string // HTML, kept as loaded
 	loaded           bool
 	closed           bool // released: calls get ErrNoDraft
-	gone             bool // sent or discarded: calls get ErrNoDraft, nothing to release
+	gone             bool // sent: calls get ErrNoDraft, nothing to release
 }
 
 // adopt keeps d's quote and signature as the ones the page does not edit.
@@ -426,22 +426,6 @@ func (p *ComposePage) Send(ctx context.Context, revision int64, digest string) (
 		p.c.finish(win)
 	}
 	return res, err
-}
-
-// Discard deletes the calling window's draft; the window closes (OnDone).
-func (p *ComposePage) Discard(ctx context.Context) error {
-	win, svc, s, err := p.open(ctx)
-	if err != nil {
-		return err
-	}
-	err = svc.DeleteDraft(ctx, s.draftID)
-	s.gone = err == nil
-	s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	p.c.finish(win)
-	return nil
 }
 
 // Closed is the page's final flush for the close attempt gen, the payload

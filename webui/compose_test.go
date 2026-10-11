@@ -255,7 +255,7 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Decide", "DecideAll", "Discard", "Finish", "Follow", "Latest", "Load",
+	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Decide", "DecideAll", "Finish", "Follow", "Latest", "Load",
 		"OpenLink", "RemoveAttachment", "Review", "Rewrite", "Save", "Send", "SetAccount", "Skill", "Stop", "Undo", "WitInfo"}, names)
 }
 
@@ -522,15 +522,6 @@ func TestComposeSendBlocked(t *testing.T) {
 	assert.Empty(t, f.done)
 }
 
-func TestComposeDiscard(t *testing.T) {
-	f := newFixture(t)
-	d := f.draft(t, "new", 0)
-	f.c.Attach(1, d.ID)
-	require.NoError(t, f.page.Discard(f.ctx(1)))
-	assert.True(t, f.gone(t, d.ID))
-	assert.Equal(t, []int{1}, f.done)
-}
-
 func TestComposeLatest(t *testing.T) {
 	f := newFixture(t)
 	d := f.draft(t, "new", 0)
@@ -652,23 +643,4 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 	}
 	assert.True(t, f.gone(t, empty.ID))
 	assert.Empty(t, f.stored(t, kept.ID).Attachments)
-}
-
-// A discard that fails keeps the window's draft: the error comes back, the
-// window stays, and saving goes on.
-func TestComposeDiscardFailureKeepsDraft(t *testing.T) {
-	f := newFixture(t)
-	d := f.draft(t, "new", 0)
-	f.c.Attach(1, d.ID)
-	ctx, cancel := context.WithCancel(f.ctx(1))
-	cancel()
-	require.Error(t, f.page.Discard(ctx))
-	assert.False(t, f.gone(t, d.ID))
-	assert.Empty(t, f.done)
-	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>kept</p>", Revision: d.Revision})
-	require.NoError(t, err)
-	assert.False(t, res.Conflict)
-	got, err := f.page.Load(f.ctx(1))
-	require.NoError(t, err)
-	assert.Equal(t, "<p>kept</p>", got.Body)
 }

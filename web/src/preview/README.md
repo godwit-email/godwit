@@ -19,4 +19,4 @@ Example: `/preview.html?page=compose&state=inline&theme=dark`.
 `preview.html` is not a build input; nothing here reaches `vite build`. `fake.ts` is the
 `window.mygo`, `fixtures.ts` the data, `boot.ts` picks the state and scripts what a state needs
 (`streaming`'s tool calls, `applied`'s finished run, `cmdk`'s selection and ⌘K).
-Not reproduced: the compose body does not stream text (the page blanks it while Wit writes).
+`streaming`'s body is its update_draft call's text, cut short where the mockup's caret is.

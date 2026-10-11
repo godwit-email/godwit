@@ -86,7 +86,7 @@ export function Fields({
     <div key={k} className="mx-4 flex items-center gap-3 border-b py-2 text-md">
       <Label
         htmlFor={`${id}${k}`}
-        className="w-12 shrink-0 font-normal text-md text-muted-foreground leading-normal"
+        className="w-12 shrink-0 font-normal text-md text-muted-foreground leading-5"
       >
         {label}
       </Label>
@@ -155,7 +155,7 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-7 flex-1 rounded-none border-0 bg-transparent px-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
+          className="h-5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}
@@ -175,7 +175,7 @@ export function Fields({
             id={`${id}from`}
             aria-label={t("compose.from.select")}
             size="sm"
-            className="-ml-2.5 border-transparent text-md hover:bg-muted dark:bg-transparent"
+            className="gap-0 border-0 py-0 pr-0 pl-1 text-md data-[size=sm]:h-5 dark:bg-transparent dark:hover:bg-transparent [&_svg]:size-4 [&_svg]:text-foreground"
           >
             <SelectValue />
           </SelectTrigger>

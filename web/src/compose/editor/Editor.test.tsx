@@ -240,26 +240,67 @@ describe("Editor", () => {
     slot.remove();
   });
 
-  it("the ⌘K selection stays marked while held", async () => {
-    const ui = (held: boolean) => (
+  // ⌘K on [from, from + len) of the text node reading `text`; the popover shows while `pop`.
+  async function cmdk(initial: string, text: string, from: number, len: number, onCmdK = () => {}) {
+    const ui = (pop: boolean) => (
       <Editor
-        initial="<p>hello world</p>"
+        initial={initial}
         readOnly={false}
         placeholder="p"
         onChange={() => {}}
         onComposing={() => {}}
-        onCmdK={() => {}}
-        held={held}
+        onCmdK={onCmdK}
+        popover={pop ? <input aria-label="pop" /> : undefined}
         t={t}
       />
     );
     const { rerender } = render(ui(false));
     const box = screen.getByLabelText("body");
-    await select(box, 6, 5);
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node && node.textContent !== text) node = walker.nextNode();
+    await act(async () => {
+      box.focus();
+      const r = document.createRange();
+      r.setStart(node as Node, from);
+      r.setEnd(node as Node, from + len);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(r);
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((res) => setTimeout(res, 150));
+    });
     fireEvent.keyDown(box, { key: "k", code: "KeyK", ...mod });
     rerender(ui(true));
+    return { box, close: () => rerender(ui(false)) };
+  }
+
+  it("the ⌘K selection stays marked while its popover shows, the popover under its block", async () => {
+    const { box, close } = await cmdk("<p>hello world</p><p>next</p>", "hello world", 6, 5);
     await waitFor(() => expect(box.querySelector(".bg-border")).toHaveTextContent(/^world$/));
-    rerender(ui(false));
+    const pop = screen.getByRole("textbox", { name: "pop" });
+    // right after the selected paragraph, before the next one, outside the editable text
+    const slot = pop.closest("[contenteditable=false]") as HTMLElement;
+    expect(slot.previousElementSibling).toHaveTextContent("hello world");
+    expect(slot.nextElementSibling).toHaveTextContent("next");
+    expect(box.querySelector("[data-held-block]")).toBeNull(); // part of a block: no block mark
+    close();
     await waitFor(() => expect(box.querySelector(".bg-border")).toBeNull());
+    expect(screen.queryByRole("textbox", { name: "pop" })).toBeNull();
+  });
+
+  it("a ⌘K on a whole paragraph marks the paragraph as one block", async () => {
+    const { box } = await cmdk("<p>one</p><p>two words</p><p>three</p>", "two words", 0, 9);
+    await waitFor(() =>
+      expect(box.querySelector("[data-held-block]")).toHaveTextContent(/^two words$/),
+    );
+  });
+
+  it("keys in the popover are not the editor's: ⌘K there is not another ⌘K", async () => {
+    const onCmdK = vi.fn();
+    await cmdk("<p>hello world</p>", "hello world", 0, 5, onCmdK);
+    expect(onCmdK).toHaveBeenCalledTimes(1);
+    const pop = await screen.findByRole("textbox", { name: "pop" });
+    fireEvent.keyDown(pop, { key: "k", code: "KeyK", ...mod });
+    expect(onCmdK).toHaveBeenCalledTimes(1);
   });
 });

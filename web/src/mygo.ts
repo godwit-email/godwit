@@ -194,7 +194,7 @@ export interface Review {
   inline: boolean;
   /**
    * Ratio is the share of words changed; Exact means the diff completed
-   * within its budget with the block shapes kept (else wit.compose.rewrite_plain).
+   * within its budget, so Ratio is known (else wit.compose.rewrite_plain).
    */
   ratio: number;
   exact: boolean;
@@ -484,10 +484,6 @@ export const ComposePage = {
    */
   decideAll(run: number, accept: boolean): Promise<BodyChange> {
     return call("ComposePage.DecideAll", run, accept);
-  },
-  /** Discard deletes the calling window's draft; the window closes (OnDone). */
-  discard(): Promise<void> {
-    return call("ComposePage.Discard");
   },
   /**
    * Finish settles approval, an inline draft edit, with a decision per change

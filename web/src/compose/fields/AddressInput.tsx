@@ -2,12 +2,13 @@ import { RiCloseLine } from "@remixicon/react";
 import { useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { T } from "@/shared/i18n";
-import { invalid } from "./address";
+import { display, invalid } from "./address";
 
 /**
- * An address field: its addresses as chips (red when invalid), each with a × taking it out,
- * before an input whose text becomes addresses on Enter, a comma, or leaving it. Never while an IME
+ * An address field: its addresses as chips (red when invalid) showing the display name, the address
+ * in a tooltip, and a × taking it out on hover or focus; then an input whose text becomes addresses on Enter, a comma, or leaving it. Never while an IME
  * composes: the text is half-typed until its final input.
  */
 export function AddressInput({
@@ -41,14 +42,19 @@ export function AddressInput({
       {list.map((addr) => (
         <Badge
           key={addr}
+          data-testid="chip"
           variant={invalid([addr]).length ? "destructive" : "secondary"}
-          className="h-6 rounded-full pr-0.5 pl-2 font-normal text-base"
+          className="h-auto rounded-full px-2 py-0.5 font-normal text-md leading-4"
         >
-          {addr}
+          <Tooltip>
+            <TooltipTrigger render={<span />}>{display(addr)}</TooltipTrigger>
+            <TooltipContent>{addr}</TooltipContent>
+          </Tooltip>
+          {/* Out of the layout until the chip is hovered or the × focused: the chip is just the name. */}
           <Button
             variant="ghost"
             size="icon-xs"
-            className="size-5 rounded-full"
+            className="-mr-1 size-4 rounded-full not-group-hover/badge:not-focus-visible:sr-only"
             aria-label={t("compose.remove", addr)}
             disabled={frozen}
             onClick={() => !frozen && onRemove(addr)}
@@ -59,8 +65,8 @@ export function AddressInput({
       ))}
       <input
         id={id}
-        className="h-7 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
-        placeholder={placeholder}
+        className="h-5.25 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
+        placeholder={list.length ? undefined : placeholder}
         value={pending}
         readOnly={frozen}
         onChange={(e) => {

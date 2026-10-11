@@ -127,6 +127,18 @@ func TestComposeReviewRewriteCompare(t *testing.T) {
 	assert.Equal(t, "<p>One two three four.</p>", bc.Body)
 }
 
+// A rewrite that changes a block's shape still says how much changed.
+func TestComposeReviewRewriteShapeRatio(t *testing.T) {
+	f, _, llm := witFixture(t, "<p>One two three four.</p>")
+	a := f.propose(t, llm, "<ul><li>One two three five.</li></ul>")
+	r, err := f.page.Review(f.ctx(1), a.ID)
+	require.NoError(t, err)
+	assert.False(t, r.Inline)
+	assert.Empty(t, r.Blocks, "a shape change is not reviewed word by word")
+	assert.True(t, r.Exact)
+	assert.InDelta(t, 0.2, r.Ratio, 0.01)
+}
+
 func TestComposeFinishPartialStale(t *testing.T) {
 	f, d, llm := witFixture(t, inlineOld)
 	a := f.propose(t, llm, inlineNew)

@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import type {
   Approval,
   BodyChange,
@@ -58,33 +59,36 @@ vi.mock("./editor/Editor", async () => {
       placeholder: string;
       onChange(html: string): void;
       onCmdK?(s: unknown): void;
+      popover?: unknown;
       t(k: string): string;
     }) {
       const [v, setV] = useState(p.initial);
       return (
-        <textarea
-          aria-label={p.t("compose.body")}
-          data-cmdk={!!p.onCmdK}
-          placeholder={p.placeholder}
-          value={v}
-          readOnly={p.readOnly}
-          onChange={(e) => {
-            if (p.readOnly) return;
-            setV(e.target.value);
-            p.onChange(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            const el = e.currentTarget;
-            if (e.key !== "k" || !e.metaKey || !p.onCmdK || el.selectionStart === el.selectionEnd)
-              return;
-            p.onCmdK({
-              text: el.value,
-              start: el.selectionStart,
-              end: el.selectionEnd,
-              at: { left: 0, top: 0 },
-            });
-          }}
-        />
+        <>
+          <textarea
+            aria-label={p.t("compose.body")}
+            data-cmdk={!!p.onCmdK}
+            placeholder={p.placeholder}
+            value={v}
+            readOnly={p.readOnly}
+            onChange={(e) => {
+              if (p.readOnly) return;
+              setV(e.target.value);
+              p.onChange(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              const el = e.currentTarget;
+              if (e.key !== "k" || !e.metaKey || !p.onCmdK || el.selectionStart === el.selectionEnd)
+                return;
+              p.onCmdK({
+                text: el.value,
+                start: el.selectionStart,
+                end: el.selectionEnd,
+              });
+            }}
+          />
+          {p.popover as ReactNode}
+        </>
       );
     },
   };
@@ -106,7 +110,6 @@ const text: Record<string, string> = {
   "wit.stop": "停止",
   "wit.compose.input": "告诉 Wit 你想怎么回",
   "wit.compose.writing_banner": "助手正在写入正文，暂时不能编辑",
-  "wit.compose.writing": "Wit 正在写…",
   "wit.compose.locked": "先接受或拒绝助手的修改",
   "wit.compose.pending.one": "%d 处修改待确认",
   "wit.compose.pending.other": "%d 处修改待确认",
@@ -435,13 +438,22 @@ test("locked while running: typing in the body toasts once", async () => {
   await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
 });
 
-test("a run on a blank body shows Wit writing", async () => {
+test("a run on a blank body shows update_draft's text in the read-only body as it comes", async () => {
   vi.mocked(api.load).mockResolvedValue({ ...state, body: "<p><br></p>" });
   vi.mocked(api.ask).mockResolvedValue(7);
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
-  expect(await screen.findByText("Wit 正在写…")).toBeInTheDocument();
+  expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "正文" })).toBeNull();
+  const html = "<p>Hi <b>Lena</b></p><p>Thanks <img src=x></p>";
+  emit({
+    kind: "tool_call",
+    call: { id: "c1", name: "update_draft", args: JSON.stringify({ html }) },
+  });
+  const region = await screen.findByRole("region", { name: "正文" });
+  expect(region).toHaveTextContent("Hi LenaThanks");
+  expect(region.querySelector("img")).toBeNull(); // sanitized
+  expect(screen.queryByText("Wit 正在写…")).toBeNull();
 });
 
 test("reload skips a local edit", async () => {

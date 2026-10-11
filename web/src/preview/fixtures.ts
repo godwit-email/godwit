@@ -100,7 +100,7 @@ export const review = (inline: boolean): Review => ({
   tool: "update_draft",
   inline,
   ratio: inline ? 0.2 : 0.7,
-  exact: inline,
+  exact: true,
   blocks: inline
     ? [
         block([op("same", -1, formal[0])]),
@@ -157,8 +157,8 @@ const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">):
 });
 
 const read = call("c1", "read_message", { id: 41 });
-const upd1 = call("c2", "update_draft", { body: html(formal) });
-const upd2 = call("c3", "update_draft", { body: html(formal) });
+const upd1 = call("c2", "update_draft", { html: html(formal) });
+const upd2 = call("c3", "update_draft", { html: html(formal) });
 /** The first reply, applied to the body. */
 const turn1: WitMessage[] = [
   msg({
@@ -195,10 +195,16 @@ export const noWit = (): WitHistory => history({ conversation: 0, messages: [] }
 export const applied = (): WitHistory => history({ messages: turn1, approvals: [done1] });
 /** Run 1 still going: its question is the whole history. */
 export const streaming = (): WitHistory => history({ messages: [turn1[0]], running: 1 });
-/** Events a streaming run emits once the page follows it. */
+/** Events a streaming run emits once the page follows it: its body text is the mockup's, cut short. */
 export const streamEvents: WitEvent[] = [
   { kind: "tool_call", call: read },
   { kind: "tool_result", result: ok(read) },
+  {
+    kind: "tool_call",
+    call: call("c2", "update_draft", {
+      html: html([formal[0], formal[1].slice(0, formal[1].indexOf("webinar") + 4)]),
+    }),
+  },
 ].map((e) => ({
   conversation: 1,
   run: 1,
@@ -223,7 +229,7 @@ export const pending = (inline: boolean): WitHistory => {
     summary: inline
       ? "修改 2 处：第二段改写一句，落款改为 Warm regards。鼠标停在某处修改上，可以单独接受或拒绝。"
       : "整体重写，改动约 70%。",
-    args: JSON.stringify({ body: html(inline ? formal : friendly) }),
+    args: JSON.stringify({ html: html(inline ? formal : friendly) }),
   });
   return history({
     messages: [
