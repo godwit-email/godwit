@@ -40,6 +40,7 @@ var sentinels = []struct {
 	{"base_url_invalid", core.ErrBaseURLInvalid},
 	{"base_url_scheme", core.ErrBaseURLScheme},
 	{"no_model_list", ai.ErrNoModelList},
+	{"model_forbidden", ai.ErrModelForbidden},
 	{"key_needs_confirm", core.ErrKeyNeedsConfirm},
 	{"unknown_flow", core.ErrUnknownFlow},
 	{"invalid_state", core.ErrInvalidState},

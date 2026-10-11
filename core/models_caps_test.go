@@ -207,9 +207,10 @@ func TestResolveJudge(t *testing.T) {
 
 	// Unset: the default model answers.
 	srv.Script(testllm.Turn{Text: []string{`{"answers":[{"name":"q","answer":"yes"}]}`}})
-	j, label, err := s.resolveJudge(bg)
+	j, label, byGen, err := s.resolveJudge(bg)
 	require.NoError(t, err)
 	assert.Equal(t, "gen/m1", label)
+	assert.True(t, byGen)
 	as, err := j.Ask(bg, "state", q)
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, as[0].Probability)
@@ -217,9 +218,10 @@ func TestResolveJudge(t *testing.T) {
 	st.JudgeService = "ts"
 	_, err = s.SetSettings(bg, st)
 	require.NoError(t, err)
-	j, label, err = s.resolveJudge(bg)
+	j, label, byGen, err = s.resolveJudge(bg)
 	require.NoError(t, err)
 	assert.Equal(t, "ts/jev-latest", label)
+	assert.False(t, byGen)
 	as, err = j.Ask(bg, "state", q)
 	require.NoError(t, err)
 	assert.Equal(t, 0.9, as[0].Probability)
@@ -227,16 +229,16 @@ func TestResolveJudge(t *testing.T) {
 	// Judge off, then removed: back to the default model.
 	_, err = s.UpdateModelService(bg, ts.ID, ModelServiceInput{Name: "ts", BaseURL: srv.URL, Kind: "openai", Models: []string{"x"}})
 	require.NoError(t, err)
-	_, label, err = s.resolveJudge(bg)
+	_, label, _, err = s.resolveJudge(bg)
 	require.NoError(t, err)
 	assert.Equal(t, "gen/m1", label)
 	require.NoError(t, s.RemoveModelService(bg, ts.ID))
-	_, label, err = s.resolveJudge(bg)
+	_, label, _, err = s.resolveJudge(bg)
 	require.NoError(t, err)
 	assert.Equal(t, "gen/m1", label)
 
 	require.NoError(t, s.RemoveModelService(bg, gen.ID))
-	_, _, err = s.resolveJudge(bg)
+	_, _, _, err = s.resolveJudge(bg)
 	assert.ErrorIs(t, err, ErrModelServiceNotFound, "no judge and no default model")
 }
 

@@ -482,7 +482,7 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	// SetPluginConfig, so reading it never waits for pluginsMu.
 	netOpts := s.pluginNet
 	netOpts.UserAgent = "Godwit-Plugin/" + r.m.Version
-	h := &pluginHost{s: s, name: name, net: plugins.NewClient(netOpts)}
+	h := &pluginHost{s: s, name: name, net: plugins.NewClient(netOpts), decide: make(chan struct{}, 2)}
 	if err := h.refreshConfig(ctx); err != nil {
 		return err
 	}

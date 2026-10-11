@@ -42,7 +42,7 @@ var sentinels = map[string]error{
 	"ErrInvalidState": core.ErrInvalidState, "ErrSkillDisabled": core.ErrSkillDisabled,
 	"ErrSkillNotFound": core.ErrSkillNotFound, "ErrClosed": core.ErrClosed,
 	"context.Canceled": context.Canceled, "context.DeadlineExceeded": context.DeadlineExceeded,
-	"ai.ErrNoModelList": ai.ErrNoModelList, "conn.ErrAuthFailed": conn.ErrAuthFailed,
+	"ai.ErrNoModelList": ai.ErrNoModelList, "ai.ErrModelForbidden": ai.ErrModelForbidden, "conn.ErrAuthFailed": conn.ErrAuthFailed,
 	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
 	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
 }
@@ -214,7 +214,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
 		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
 		"base_url_invalid": core.ErrBaseURLInvalid, "base_url_scheme": core.ErrBaseURLScheme,
-		"no_model_list": ai.ErrNoModelList, "key_needs_confirm": core.ErrKeyNeedsConfirm,
+		"no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
 		"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState,
 		"skill_disabled": core.ErrSkillDisabled, "skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed,
 		"canceled": context.Canceled, "deadline": context.DeadlineExceeded,

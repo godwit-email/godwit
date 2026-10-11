@@ -159,6 +159,31 @@ export interface Mail {
   updateDraft(update: DraftUpdate): Promise<number>
 }
 
+/** a typed question for llm.decide; name matches ^[a-z][a-z0-9_]{0,40}$ */
+export interface Question {
+  name: string
+  type: "yes_no" | "choice" | "score"
+  instructions: string
+  /** choice: 2 to 255 unique values */
+  choices?: QuestionOption[]
+  /** score: 2 to 10 levels, lowest first */
+  levels?: QuestionOption[]
+}
+
+export interface QuestionOption {
+  value: string
+  description?: string
+}
+
+/** yes_no sets probability (of yes); choice sets choice, and probability when known; score sets score, a level index */
+export interface Answer {
+  name: string
+  choice?: string
+  probability?: number
+  score?: number
+  refused?: boolean
+}
+
 export interface Ctx {
   on(event: "message.received", handler: (message: ReceivedMessage, info: DeliveryInfo) => MaybePromise<void>): void
   on(event: "message.beforeSend", handler: (draft: OutgoingDraft) => MaybePromise<SendCheck | void>): void
@@ -171,8 +196,15 @@ export interface Ctx {
   readonly config: Readonly<Record<string, string | number | boolean | undefined>>
   /** needs mail:read; setFlags, move, createDraft and updateDraft need mail:write */
   mail: Mail
-  /** needs llm: true; runs on the user's chosen model service */
-  llm: { complete(prompt: string): Promise<string> }
+  /**
+   * needs llm: true. complete runs on the user's default model service. decide runs on
+   * the user's judge service, which may be another vendor's (else the default model).
+   */
+  llm: {
+    complete(prompt: string): Promise<string>
+    /** state and all question text at most 64 KB; at most 128 questions; at most 2 calls at once */
+    decide(state: string, questions: Question[]): Promise<Answer[]>
+  }
   /** https only, to hosts declared in permissions.net */
   net: { fetch(url: string, init?: FetchInit): Promise<FetchResponse> }
   /** this plugin's own key-value store */

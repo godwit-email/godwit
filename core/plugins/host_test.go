@@ -22,6 +22,7 @@ type fakeHost struct {
 	msg      MailMessage
 	limit    int
 	prompt   string
+	decided  []Question
 	kv       map[string]string
 	audits   []string // AuditEgress rows, apart from calls
 	auditErr error
@@ -95,6 +96,14 @@ func (h *fakeHost) LLMComplete(_ context.Context, p string) (string, error) {
 	h.mu.Unlock()
 	return strings.Repeat("é", 40000), nil // 80 KB
 }
+func (h *fakeHost) LLMDecide(_ context.Context, _ string, qs []Question) ([]Answer, error) {
+	h.rec("LLMDecide")
+	h.mu.Lock()
+	h.decided = qs
+	h.mu.Unlock()
+	p := 0.75
+	return []Answer{{Name: qs[0].Name, Probability: &p}}, nil
+}
 func (h *fakeHost) Fetch(_ context.Context, _ Invocation, r FetchRequest) (FetchResponse, error) {
 	h.rec("Fetch")
 	return FetchResponse{Status: 200, Headers: map[string]string{"content-type": "text/plain"}, Body: "hi " + r.URL}, nil
@@ -143,6 +152,7 @@ func TestCtxManifestPermissions(t *testing.T) {
 		`ctx.mail.createDraft({accountId: 1})`:     "mail:write",
 		`ctx.mail.updateDraft({draftId: 1})`:       "mail:write",
 		`ctx.llm.complete("hi")`:                   "llm",
+		`ctx.llm.decide("s", [])`:                  "llm",
 		`ctx.net.fetch("https://api.example.com")`: "net:api.example.com",
 	} {
 		got := try(t, none, Invocation{Kind: KindTool, Write: true, EgressHosts: []string{"api.example.com"}}, expr)
@@ -174,6 +184,22 @@ func TestLLMCompleteLimits(t *testing.T) {
 	assert.True(t, utf8.ValidString(out))
 	assert.Contains(t, try(t, p, readOnly, `ctx.llm.complete("x".repeat(65537))`), "too large")
 	assert.Equal(t, "hi", h.prompt)
+}
+
+func TestLLMDecideLimits(t *testing.T) {
+	h := &fakeHost{}
+	p := mustLoad(t, Permissions{LLM: true}, h, stash)
+	q := `{name: "spam", type: "yes_no", instructions: "Is it spam?"}`
+	assert.Equal(t, map[string]any{"name": "spam", "probability": 0.75},
+		try(t, p, readOnly, `ctx.llm.decide("mail", [`+q+`]).then(a => a[0])`), "the host's answers mapped back")
+	assert.Equal(t, []Question{{Name: "spam", Type: "yes_no", Instructions: "Is it spam?"}}, h.decided)
+
+	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("mail", Array.from({length: 129}, (_, i) => ({name: "q"+i, type: "yes_no", instructions: "x"})))`),
+		"at most 128", "rejected, not split")
+	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("x".repeat(65530), [{name: "a", type: "yes_no", instructions: "y".repeat(10)}])`), "too large",
+		"state and instructions together")
+	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("mail", "spam?")`), "questions must be")
+	assert.Equal(t, []string{"LLMDecide"}, h.got())
 }
 
 func TestReadOnlyInvocationNeverReachesWrites(t *testing.T) {
@@ -326,7 +352,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 		walk(ctx, "")
 		return out
 	})()`)
-	assert.Equal(t, []any{"actions.register", "cards.register", "config", "llm.complete",
+	assert.Equal(t, []any{"actions.register", "cards.register", "config", "llm.complete", "llm.decide",
 		"mail.createDraft", "mail.get", "mail.move", "mail.search", "mail.setFlags", "mail.updateDraft",
 		"net.fetch", "on", "storage.delete", "storage.get", "storage.set", "tools.register"}, got)
 
@@ -335,7 +361,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	for i := range ht.NumMethod() {
 		methods = append(methods, ht.Method(i).Name)
 	}
-	assert.Equal(t, []string{"AuditEgress", "Fetch", "LLMComplete", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
+	assert.Equal(t, []string{"AuditEgress", "Fetch", "LLMComplete", "LLMDecide", "MailCreateDraft", "MailGet", "MailMove", "MailSearch",
 		"MailSetFlags", "MailUpdateDraft", "StorageDelete", "StorageGet", "StorageSet"}, methods)
 }
 

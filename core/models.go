@@ -802,33 +802,33 @@ func (s *Service) serviceByRef(ctx context.Context, name string) (ModelService, 
 
 // resolveJudge is the judge Settings.JudgeService names, and its "slug/model"
 // label. When that is unset, gone or has judge off, the default generation
-// model answers instead (ai.NewGenJudge), as SmallModel falls back to it.
-func (s *Service) resolveJudge(ctx context.Context) (ai.Judge, string, error) {
+// model answers instead (ai.NewGenJudge, gen true), as SmallModel falls back to it.
+func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, gen bool, err error) {
 	st, err := s.loadSettings(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	if st.JudgeService != "" {
 		m, key, err := s.serviceByRef(ctx, st.JudgeService)
 		if err != nil && !errors.Is(err, ErrModelServiceNotFound) {
-			return nil, "", err
+			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
 			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
-			return j, m.Slug + "/" + m.JudgeModel, err
+			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
 	model, ref, err := s.resolveRef(ctx, "")
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	e, err := s.aiEngine()
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
 		return runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
-	}), ref, nil
+	}), ref, true, nil
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.

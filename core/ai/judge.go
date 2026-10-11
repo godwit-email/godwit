@@ -242,6 +242,9 @@ func backoff(attempt int, retryAfter string) time.Duration {
 // every caller gets it.
 var questionName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
 
+// ValidateQuestions checks qs as Ask does, for callers that ask many times.
+func ValidateQuestions(qs []Question) error { return validateQuestions(qs) }
+
 func validateQuestions(qs []Question) error {
 	if len(qs) == 0 {
 		return fmt.Errorf("%w: no questions", ErrJudgeQuestion)

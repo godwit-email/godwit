@@ -25,6 +25,7 @@ type pluginHost struct {
 	s      *Service
 	name   string
 	net    *plugins.Client
+	decide chan struct{} // LLMDecide's per-plugin limit
 	config atomic.Pointer[plugins.ConfigSnapshot] // the current config; each call takes it when admitted
 }
 
@@ -241,6 +242,76 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		return nil
 	})
 	return out, err
+}
+
+// LLMDecide asks the judge (Settings.JudgeService, else the default model)
+// the plugin's typed questions about state. At most two of a plugin's calls
+// run at once; each is audited.
+func (h *pluginHost) LLMDecide(ctx context.Context, state string, qs []plugins.Question) (out []plugins.Answer, err error) {
+	select {
+	case h.decide <- struct{}{}:
+		defer func() { <-h.decide }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	err = h.do(ctx, func(ctx context.Context) error {
+		j, _, _, err := h.s.resolveJudge(ctx)
+		if err != nil {
+			return err
+		}
+		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.decide", Decision: "run"}); err != nil {
+			return err
+		}
+		aqs := judgeQuestions(qs)
+		as, err := j.Ask(ctx, state, aqs)
+		out = judgeAnswers(aqs, as)
+		return err
+	})
+	return out, err
+}
+
+var questionKinds = map[string]ai.QuestionKind{"yes_no": ai.YesNo, "choice": ai.Choice, "score": ai.Score}
+
+// judgeQuestions converts questions as plugins and Wit write them; an
+// unknown type gets a kind the judge's validation rejects.
+func judgeQuestions(qs []plugins.Question) []ai.Question {
+	opts := func(l []plugins.QuestionOption) []ai.Option {
+		out := make([]ai.Option, len(l))
+		for i, o := range l {
+			out[i] = ai.Option{Value: o.Value, Description: o.Description}
+		}
+		return out
+	}
+	out := make([]ai.Question, len(qs))
+	for i, q := range qs {
+		k, ok := questionKinds[q.Type]
+		if !ok {
+			k = -1
+		}
+		out[i] = ai.Question{Name: q.Name, Instructions: q.Instructions, Kind: k, Choices: opts(q.Choices), Levels: opts(q.Levels)}
+	}
+	return out
+}
+
+// judgeAnswers keeps the fields each answer's kind sets (answers line up with qs).
+func judgeAnswers(qs []ai.Question, as []ai.Answer) []plugins.Answer {
+	out := make([]plugins.Answer, len(as))
+	for i, a := range as {
+		out[i] = plugins.Answer{Name: a.Name, Refused: a.Refused}
+		switch {
+		case a.Refused:
+		case qs[i].Kind == ai.YesNo:
+			out[i].Probability = &a.Probability
+		case qs[i].Kind == ai.Choice:
+			out[i].Choice = a.Choice
+			if a.Probability > 0 { // zero: the judge gave none
+				out[i].Probability = &a.Probability
+			}
+		case qs[i].Kind == ai.Score:
+			out[i].Score = &a.Score
+		}
+	}
+	return out
 }
 
 // Fetch runs the request through the plugin's hardened client, the

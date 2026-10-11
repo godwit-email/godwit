@@ -9,18 +9,20 @@ import (
 	netmail "net/mail"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "list_skills", "use_skill", "read_skill_file", "create_draft"}
+var askTools = []string{"search_mail", "get_message", "get_thread", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft"}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
@@ -143,6 +145,21 @@ func (s *Service) registerAskTools() {
 		s.searchMail)
 	read("get_message", "Read one message by its message_id.", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
+	// No Egress: the judge is a model service, so its traffic is model traffic,
+	// as for the run itself (review #17).
+	read("classify_mail", "Ask typed questions about many messages at once: yes/no, one choice of a list, or a score on levels. "+
+		"Use it for bulk questions over messages you found (is it a newsletter, which project, how urgent) instead of reading each one. "+
+		"Returns each message's answers and ref; it does not return the mail text.",
+		object(map[string]any{
+			"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1, "maxItems": maxClassifyIDs},
+			"questions": map[string]any{"type": "array", "minItems": 1, "maxItems": plugins.MaxQuestions, "items": object(map[string]any{
+				"name":         map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$"},
+				"type":         map[string]any{"type": "string", "enum": []string{"yes_no", "choice", "score"}},
+				"instructions": stringProp,
+				"choices":      optionsProp, "levels": optionsProp,
+			}, "name", "type", "instructions")},
+		}, "ids", "questions"),
+		s.classifyMail)
 	read("list_skills", "List the skills you can use, with what each is for.", object(map[string]any{}), s.listSkills)
 	read("use_skill", "Load a skill's instructions and the list of its reference files.",
 		object(map[string]any{"name": stringProp}, "name"), s.useSkill)
@@ -209,6 +226,78 @@ func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, err
 		return nil, err
 	}
 	return map[string]any{"thread_id": in.ID, "messages": blocks(items, s.cite(ctx, items))}, nil
+}
+
+const (
+	maxClassifyIDs    = 50
+	maxClassifyGenIDs = 10 // when the default model judges: one generation per message
+	classifyRunes     = 8000
+	classifyDeadline  = 2 * time.Minute
+	classifyParallel  = 4
+)
+
+var optionsProp = map[string]any{"type": "array", "items": object(map[string]any{"value": stringProp, "description": stringProp}, "value")}
+
+// classifyMail asks the judge the questions about each message alone, with
+// its own body budget so none is starved. Questions come only from the
+// arguments; the judge sees mail only as untrusted state, and only typed
+// answers come back.
+func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, error) {
+	var in struct {
+		IDs       []int64            `json:"ids"`
+		Questions []plugins.Question `json:"questions"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if len(in.IDs) == 0 || len(in.Questions) == 0 {
+		return nil, errors.New("give at least one id and one question")
+	}
+	if len(in.Questions) > plugins.MaxQuestions {
+		return nil, fmt.Errorf("at most %d questions", plugins.MaxQuestions)
+	}
+	if len(in.IDs) > maxClassifyIDs {
+		return nil, fmt.Errorf("at most %d messages per call", maxClassifyIDs)
+	}
+	qs := judgeQuestions(in.Questions)
+	if err := ai.ValidateQuestions(qs); err != nil {
+		return nil, err
+	}
+	j, _, gen, err := s.resolveJudge(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if gen && len(in.IDs) > maxClassifyGenIDs {
+		return nil, fmt.Errorf("at most %d messages per call without a judge service", maxClassifyGenIDs)
+	}
+	items := make([]mailItem, len(in.IDs))
+	for i, id := range in.IDs {
+		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
+		if err != nil {
+			return nil, err
+		}
+		items[i] = it[0]
+	}
+	cs := s.cite(ctx, items)
+	ctx, cancel := context.WithTimeout(ctx, classifyDeadline)
+	defer cancel()
+	res := make([]map[string]any, len(items))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, classifyParallel)
+	for i, it := range items {
+		res[i] = map[string]any{"message_id": it.MessageID, "ref": cs[i].N}
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if as, err := j.Ask(ctx, it.Block, qs); err != nil {
+				res[i]["error"] = err.Error()
+			} else {
+				res[i]["answers"] = judgeAnswers(qs, as)
+			}
+		})
+	}
+	wg.Wait()
+	return map[string]any{"results": res}, nil
 }
 
 // listSkills lists the enabled skills without a UI binding, by name.
