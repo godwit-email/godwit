@@ -84,8 +84,9 @@ type mailPage struct {
 	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
-	draftSel  int64           // the draft the pane shows; 0 for none
-	accOpen   map[int64]*bool // account groups unfolded in the sidebar, by account
+	draftSel  int64               // the draft the pane shows; 0 for none
+	draftView map[int64]draftInfo // by draft, made when the drafts load
+	accOpen   map[int64]*bool     // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool
 	query                string
@@ -240,6 +241,7 @@ func (p *mailPage) reload() {
 		}
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.items, p.cursor, p.stalled = items, cursor, false
+		p.setDrafts()
 	})
 }
 

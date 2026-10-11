@@ -50,6 +50,28 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	})
 }
 
+// draftInfo is what a draft's row and pane show, worked out once per load.
+type draftInfo struct {
+	preview string
+	doc     richtext.Doc
+	editing bool // a compose window has it
+}
+
+// setDrafts parses the loaded drafts, asks the platform which are being
+// edited, and drops a choice whose draft is gone.
+func (p *mailPage) setDrafts() {
+	p.draftView = make(map[int64]draftInfo, len(p.drafts))
+	found := false
+	for _, d := range p.drafts {
+		doc := richtext.FromComposeHTML(d.HTML)
+		p.draftView[d.ID] = draftInfo{strings.Join(strings.Fields(doc.PlainText()), " "), doc, p.a.plat.ComposeOpen(d.ID)}
+		found = found || d.ID == p.draftSel
+	}
+	if !found {
+		p.draftSel = 0
+	}
+}
+
 func (p *mailPage) accountEmail(id int64) string {
 	for _, acc := range p.a.accounts {
 		if acc.ID == id {
@@ -70,13 +92,13 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 		})
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine().Grow(1).Shrink(1)
-			if p.a.plat.ComposeOpen(d.ID) {
+			if p.draftView[d.ID].editing {
 				ui.Box(c).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
 					ui.Text(c, i18n.T("mail.draft.chip")).FontSize(t.Text.Sm)
 				})
 			}
 		})
-		if text := strings.Join(strings.Fields(richtext.FromComposeHTML(d.HTML).PlainText()), " "); text != "" {
+		if text := p.draftView[d.ID].preview; text != "" {
 			ui.Text(c, text).TextColor(t.Muted).SingleLine()
 		}
 	})
@@ -96,7 +118,8 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		return
 	}
 	d := p.drafts[i]
-	editing := p.a.plat.ComposeOpen(d.ID)
+	info := p.draftView[d.ID]
+	editing := info.editing
 	saved := d.UpdatedAt.In(p.a.clock.Now().Location()).Format("15:04")
 	col.Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
@@ -129,7 +152,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 					}
 				})
 				ui.Box(c).Height(theme.Hairline).Background(t.Border)
-				richtext.Render(c, richtext.FromComposeHTML(d.HTML), richtext.RenderOptions{OnLink: p.a.openLink})
+				richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 				p.draftAttachments(c, d.Attachments)
 			})
 		})

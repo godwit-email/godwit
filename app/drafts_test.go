@@ -65,6 +65,10 @@ func TestDraftEditingChipFollowsWindow(t *testing.T) {
 		t.Fatal("chip without a window")
 	}
 	h.plat.setComposeOpen(ds[0].ID, true)
+	h.advance(1)
+	if h.tt.HasText("编辑中") {
+		t.Fatal("chip before ComposeWindowsChanged")
+	}
 	h.app.ComposeWindowsChanged()
 	h.see("编辑中")
 	h.click("Draft hello")
@@ -105,15 +109,34 @@ func TestDraftDoubleClickOpensCompose(t *testing.T) {
 	}
 }
 
-func TestDraftEnterAndContinueOpenCompose(t *testing.T) {
+func (h *harness) opens(id int64) int {
+	return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != fmt.Sprint("OpenCompose ", id) }))
+}
+
+// Enter on the chosen row (not on a button) opens it.
+func TestDraftEnterOpensCompose(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.noCompose()
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("Enter opens it", func() bool { return h.opens(ds[0].ID) == 1 })
+}
+
+func TestDraftContinueOpensCompose(t *testing.T) {
 	h, ds := draftsHarness(t, "Draft hello")
 	h.click("Draft hello")
 	h.click("继续编辑")
-	h.composeOpened(0)
-	n := func() int {
-		return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != fmt.Sprint("OpenCompose ", ds[0].ID) }))
+	h.until("opened", func() bool { return h.opens(ds[0].ID) == 1 })
+}
+
+// The selection clears when its draft leaves the list.
+func TestDraftSelectionClearsWhenGone(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.see("继续编辑")
+	if err := h.env.Svc.DeleteDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal(err)
 	}
-	before := n()
-	h.tt.Key(0, ui.KeyEnter)
-	h.until("Enter opens it", func() bool { return n() > before })
+	h.app.ComposeWindowsChanged()
+	h.until("cleared", func() bool { return h.app.mail.draftSel == 0 })
 }
