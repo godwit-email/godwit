@@ -25,7 +25,7 @@ type Review struct {
 	// within its budget, so Ratio is known (else wit.compose.rewrite_plain).
 	Ratio float64 `json:"ratio"`
 	Exact bool    `json:"exact"`
-	// Blocks are the new text with the changes marked, when Exact; Changes
+	// Blocks are the new text with the changes marked, when the block shapes are kept (Inline); Changes
 	// is how many changes they hold, the length Finish wants.
 	Blocks  []ReviewBlock `json:"blocks"`
 	Changes int           `json:"changes"`

@@ -644,6 +644,7 @@ var zh = map[string]string{
 	"wit.input":                        "向 Wit 提问",
 	"wit.placeholder":                  "问点什么，比如：上周谁还在等我回复？",
 	"wit.send":                         "发送给 Wit",
+	"wit.thinking":                     "正在思考…",
 	"wit.stop":                         "停止",
 	"wit.loading":                      "Wit 正在回复…",
 	"wit.scroll_end":                   "回到最新",

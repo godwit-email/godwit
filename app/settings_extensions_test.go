@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/godwit-email/godwit/internal/i18n"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 func TestMain(m *testing.M) {
@@ -301,14 +304,52 @@ func TestPendingAllowSavesConfig(t *testing.T) {
 	})
 }
 
-// A plugin row shows the manifest's description under the name.
+// 允许并启用 is one chained write: the form is busy meanwhile; a config error
+// shows on its field only (no toast) and clears on the retry.
+func TestPendingAllowBusyAndFieldError(t *testing.T) {
+	h := pendingHarness(t)
+	p := h.openSettings("extensions")
+	h.until("the form", func() bool { return p.ext.cfgs["config-demo"] != nil })
+	f := p.ext.cfgs["config-demo"]
+	f.vals["plan"].s = "gold"
+	release := h.block("plugins")
+	h.click("允许并启用")
+	if !f.busy {
+		t.Fatal("not busy while it writes")
+	}
+	release()
+	h.until("the error on its field", func() bool { return !f.busy && f.vals["plan"].err != "" })
+	msg := f.vals["plan"].err
+	for range 3 {
+		h.tt.Frame()
+		h.drain()
+	}
+	if n := len(slices.DeleteFunc(h.tt.Texts(), func(s string) bool { return s != msg })); n != 1 {
+		t.Fatalf("the error shows %d times, want once (no toast): %q", n, msg)
+	}
+	f.vals["plan"].s = "pro"
+	h.click("允许并启用")
+	if f.vals["plan"].err != "" {
+		t.Fatal("the old error stays during the retry")
+	}
+	h.until("enabled", func() bool { p, _ := h.plugin("config-demo"); return p.Enabled })
+}
+
+// A plugin row shows the manifest's description under the name, on one
+// line however long (the whole text in its tooltip).
 func TestPluginRowDescription(t *testing.T) {
 	h, _ := withAccount(t)
-	shotInstall(t, h, "desc-demo", `{"name":"desc-demo","version":"0.1.0","description":{"default":"Demo","zh-CN":"演示插件"},"main":"index.ts"}`,
+	long := strings.Repeat("演示插件", 80)
+	shotInstall(t, h, "desc-demo", `{"name":"desc-demo","version":"0.1.0","description":{"default":"Demo","zh-CN":"`+long+`"},"main":"index.ts"}`,
 		`export default function (_ctx: any) {}`, true)
 	h.openSettings("extensions")
 	h.see("desc-demo")
 	h.see("演示插件")
+	desc, ok := h.tt.Find(long)
+	sm := theme.Light().Text.Sm
+	if line := sm * theme.Light().Text.Line(sm); !ok || desc.H > line*1.5 {
+		t.Fatalf("the description is %v high, a line %v: not one line", desc.H, line)
+	}
 }
 
 func TestPendingNotNowCollapses(t *testing.T) {

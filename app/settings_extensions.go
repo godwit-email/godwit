@@ -272,15 +272,15 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 					e.plugin = name
 				}
 			}}).Label(name).Expanded(open).Grow(1).Shrink(1).Children(func() {
-				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+				ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 					ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 						kit.Text(c, p.Name, t.Text.Body).LineHeight(theme.LineFor(p.Name)).FontWeight(500)
 						if p.NeedsGrant {
 							kit.Text(c, p.Version, t.Text.Sm).TextColor(t.Muted)
 						}
 					})
-					if d := p.Description.For(i18n.Language()); d != "" {
-						kit.Text(c, d, t.Text.Sm).TextColor(t.Muted)
+					if d := p.Description.For(i18n.Language()); d != "" { // untrusted length: one line, all of it in the tooltip
+						kit.Tooltip(c, kit.Text(c, d, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1), d)
 					}
 				})
 			})
@@ -352,7 +352,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 					OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
 				return
 			}
-			kit.Button(c, i18n.T("settings.ext.allow"), kit.ButtonOpts{}).OnClick(func() { e.allow(name, f, p.Config) })
+			kit.Button(c, i18n.T("settings.ext.allow"), kit.ButtonOpts{Disabled: f != nil && f.busy}).OnClick(func() { e.allow(name, f, p.Config) })
 			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
 				if e.later == nil {
 					e.later = map[string]bool{}
@@ -364,30 +364,44 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 }
 
 // allow saves what the pending plugin's form holds, grants its permissions
-// and enables it, in one write; a config error stays on its field.
+// and enables it, as one chained write (not one transaction: a failure keeps
+// the steps before it); a config error stays on its field.
 func (e *extView) allow(name string, f *pluginForm, fields []plugins.ConfigField) {
-	svc := e.a.svc
+	a := e.a
 	var vals map[string]json.RawMessage
 	if f != nil {
+		if f.busy {
+			return
+		}
 		vals = f.values(fields)
+		f.busy, f.err = true, ""
+		for _, v := range f.vals {
+			v.err = ""
+		}
 	}
-	e.write("plugins", func(ctx context.Context) error {
+	a.writes.Chain("plugins", func(ctx context.Context) error {
 		if len(vals) > 0 {
-			if err := svc.SetPluginConfig(ctx, name, vals); err != nil {
+			if err := a.svc.SetPluginConfig(ctx, name, vals); err != nil {
 				return err
 			}
 		}
-		if err := svc.GrantPermission(ctx, name); err != nil {
+		if err := a.svc.GrantPermission(ctx, name); err != nil {
 			return err
 		}
-		return svc.SetPluginEnabled(ctx, name, true)
+		return a.svc.SetPluginEnabled(ctx, name, true)
 	}, func(err error) {
+		if f != nil {
+			f.busy = false
+		}
 		switch {
 		case err == nil:
 			delete(e.cfgs, name) // read again: the saved values
 		case f != nil && e.cfgs[name] == f:
 			f.fieldError(err, fields)
+		default:
+			a.toastErr(err)
 		}
+		e.load()
 	})
 }
 

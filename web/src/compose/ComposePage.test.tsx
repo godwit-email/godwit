@@ -656,6 +656,11 @@ test("the bottom bar holds the format toolbar and 发送 only: no discard, no no
   expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
   expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
   expect(bar).not.toHaveTextContent("只能写草稿");
+  // a narrow window wraps it, the toolbar first and 发送 kept at the end (ml-auto)
+  expect(bar).toHaveClass("flex-wrap");
+  const send = within(bar).getByRole("button", { name: "发送" });
+  expect(send).toHaveClass("ml-auto");
+  expect(bar.lastElementChild).toBe(send);
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {

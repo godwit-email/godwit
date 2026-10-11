@@ -99,6 +99,13 @@ test("a chip shows the display name; the address is in its tooltip", async () =>
   expect(await screen.findByText("Lena Fischer <lena@partner.example>")).toBeInTheDocument();
 });
 
+test("a chip is labelled with name and address; an invalid one shows the entry as typed", () => {
+  setup({ to: ["Lena Fischer <lena@partner.example>", "Bob <bob>"] });
+  const [ok, bad] = screen.getAllByTestId("chip");
+  expect(ok).toHaveAccessibleName("Lena Fischer <lena@partner.example>");
+  expect(bad.firstChild?.textContent).toBe("Bob <bob>");
+});
+
 test("Cc, Bcc and Reply-To hidden until 抄送 · 密送", async () => {
   setup();
   expect(screen.queryByRole("textbox", { name: "抄送" })).not.toBeInTheDocument();

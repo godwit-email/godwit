@@ -68,7 +68,6 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Stop": nothing,
         "ComposePage.OpenLink": nothing,
         "ComposePage.OpenModels": nothing,
-        "ComposePage.Discard": nothing,
         "ComposePage.Ask": async () => 2,
         "ComposePage.Skill": async () => 2,
         "ComposePage.Rewrite": async () => runStart,

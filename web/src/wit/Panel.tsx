@@ -463,18 +463,15 @@ export function Panel({
   const stop = () => void transport.stop().catch(fail);
   const link = (url: string) => void onLink(url).catch(fail);
 
-  // Citations numbered through the conversation: the history's as given, live ones (N=0) after;
-  // a message is suspect once any citation of it is.
+  // Citations with core's numbers (the refs the model cites by); a message is suspect once any
+  // citation of it is.
   const nums: Nums = new Map();
   const approvals = new Map<string, Approval>();
   for (const m of chat.messages) {
     for (const c of citesOf(m)) {
       const k = nums.get(c.messageId);
       if (k) k.suspect ||= c.suspect;
-      else {
-        const next = Math.max(0, ...[...nums.values()].map((x) => x.n)) + 1;
-        nums.set(c.messageId, { n: c.n || next, suspect: c.suspect });
-      }
+      else nums.set(c.messageId, { n: c.n, suspect: c.suspect });
     }
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
@@ -505,13 +502,22 @@ export function Panel({
     );
   const page = layout === "page";
   // The page's column (max-w-202): 760 of text inside its 24 padding, as the design's.
-  // A run going: the page's spinner; the panel's row says Wit writes the body, with Stop.
+  // A run going: the page's spinner; the panel's row, with Stop, says Wit writes the body while a
+  // body edit's call is in (no result yet), else that it thinks.
+  const writes =
+    last?.role === "assistant" &&
+    last.parts.some(
+      (p) =>
+        p.type === "dynamic-tool" &&
+        isDraftEdit(p.toolName) &&
+        (p.state === "input-streaming" || p.state === "input-available"),
+    );
   const working = page ? (
     <Busy t={t} />
   ) : (
     <div className="flex items-center gap-2 text-muted-foreground">
       <span className="size-2 shrink-0 rounded-full bg-muted-foreground/65" />
-      <span role="status">{t("wit.compose.working")}</span>
+      <span role="status">{t(writes ? "wit.compose.working" : "wit.thinking")}</span>
       <Button
         variant="outline"
         size="sm"

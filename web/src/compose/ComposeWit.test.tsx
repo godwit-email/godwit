@@ -456,6 +456,38 @@ test("a run on a blank body shows update_draft's text in the read-only body as i
   expect(screen.queryByText("Wit 正在写…")).toBeNull();
 });
 
+test("a run ending without applying clears its streamed text: a resumed run shows a blank body", async () => {
+  const blank = { ...state, body: "<p><br></p>" };
+  vi.mocked(api.load).mockResolvedValue(blank);
+  vi.mocked(api.latest).mockResolvedValue(blank);
+  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.decide).mockResolvedValue(change("<p><br></p>", 7));
+  await setup();
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
+  const html = "<p>Hi Lena</p>";
+  emit({
+    kind: "tool_call",
+    call: { id: "c1", name: "update_draft", args: JSON.stringify({ html }) },
+  });
+  expect(await screen.findByRole("region", { name: "正文" })).toHaveTextContent("Hi Lena");
+  const ping = { ...pending, id: 5, callId: "p1", tool: "plugin_netty_ping", args: "{}" };
+  emit({
+    kind: "tool_call",
+    call: { id: "p1", name: "plugin_netty_ping", args: "{}" },
+  });
+  emit({
+    kind: "interrupted",
+    interrupts: [{ id: "p1", name: "plugin_netty_ping", args: "{}" }],
+    approvals: [ping],
+  });
+  await waitFor(() => expect(api.latest).toHaveBeenCalled());
+  fireEvent.click(await screen.findByRole("button", { name: "允许" }));
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(5, true));
+  emit({ kind: "text", text: "继续" }); // the resumed run streams
+  expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "正文" })).not.toHaveTextContent("Hi Lena");
+});
+
 test("reload skips a local edit", async () => {
   vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 9));
   await setup();

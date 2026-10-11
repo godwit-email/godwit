@@ -67,7 +67,7 @@ func TestAskSearchesAndCites(t *testing.T) {
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 
 	date := e.msgDate(t)
-	want := []Citation{{MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>", Date: date}}
+	want := []Citation{{N: 1, MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>", Date: date}}
 	for _, tool := range []string{"search_mail", "get_thread", "get_message"} {
 		rs := witResults(evs, tool)
 		require.Len(t, rs, 1, tool)
@@ -107,6 +107,48 @@ func TestAskSearchesAndCites(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.s.Ask(t.Context(), other.ID, "hi")
 	assert.Error(t, err, "Ask runs only in ask conversations")
+}
+
+// TestAskCitationRefs: a mail keeps one citation number through the
+// conversation; the model sees it as the tool result's ref and is told to cite [ref].
+func TestAskCitationRefs(t *testing.T) {
+	e := newSkillEnv(t)
+	other := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "hi", "", 1_700_000_300)
+	third := addMessage(t, e.s, "Hotel", "Cy <cy@x>", "hi", "", 1_700_000_400)
+	get := func(id int64) testllm.Turn {
+		return testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":` + itoa(id) + `}`}}}
+	}
+	conv := e.askConv(t)
+	e.srv.Script(get(other), get(e.msg), testllm.Turn{Text: []string{"a"}})
+	e.ask(t, conv.ID, "one")
+	e.srv.Script(get(e.msg), get(third), testllm.Turn{Text: []string{"b"}})
+	evs := e.ask(t, conv.ID, "two")
+
+	rs := witResults(evs, "get_message")
+	require.Len(t, rs, 2)
+	for i, want := range []struct {
+		id  int64
+		ref int
+	}{{e.msg, 2}, {third, 3}} {
+		var out struct {
+			MessageID int64 `json:"message_id"`
+			Ref       int   `json:"ref"`
+		}
+		require.NoError(t, json.Unmarshal(rs[i].Result.Output, &out))
+		assert.Equal(t, want.id, out.MessageID)
+		assert.Equal(t, want.ref, out.Ref, "the ref the model sees")
+		require.Len(t, rs[i].Citations, 1)
+		assert.Equal(t, want.ref, rs[i].Citations[0].N, "the number the event carries")
+	}
+	assert.Contains(t, string(e.srv.Requests()[0].System), "[ref]")
+
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	var got []int
+	for _, ct := range c.Citations {
+		got = append(got, ct.N)
+	}
+	assert.Equal(t, []int{1, 2, 2, 3}, got, "the saved numbering agrees")
 }
 
 func (e skillEnv) count(t *testing.T, q string, args ...any) int {

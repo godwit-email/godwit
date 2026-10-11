@@ -142,8 +142,10 @@ export function Response({
       ),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         if (href?.startsWith(CITE)) {
-          const open = citeRef.current?.(Number(href.slice(CITE.length)));
+          const n = Number(href.slice(CITE.length));
+          const open = citeRef.current?.(n);
           if (!open) return <span>{children}</span>;
+          // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
           return (
             // biome-ignore lint/a11y/useSemanticElements: no href; it opens the cited mail in the app
             <span
@@ -157,7 +159,7 @@ export function Response({
                 open();
               }}
             >
-              {children}
+              [{n}]
             </span>
           );
         }

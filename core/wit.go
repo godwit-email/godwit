@@ -24,7 +24,9 @@ var askTools = []string{"search_mail", "get_message", "get_thread", "list_skills
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
-		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves.`
+		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves. ` +
+		`Each mail a tool returns has a "ref" number, the same for that mail through the whole conversation. ` +
+		`When your answer draws on a mail, cite it right after the claim as [ref], for example [2]. Cite only refs the tools returned.`
 	titleRunes      = 40
 	maxSearchResult = 20
 	languageClues   = 3 // latest subjects from each recipient
@@ -90,9 +92,13 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	return askSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
 }
 
-// cite records the mail a read tool showed the model, for its tool_result event.
-func cite(ctx context.Context, items []mailItem) {
-	runOf(ctx).cites.Store(ai.CallID(ctx), citations(items))
+// cite numbers and records the mail a read tool showed the model, for its
+// tool_result event; the citations line up with items.
+func (s *Service) cite(ctx context.Context, items []mailItem) []Citation {
+	job, call := runOf(ctx), ai.CallID(ctx)
+	cs := s.number(ctx, job, call, citations(items))
+	job.cites.Store(call, cs)
+	return cs
 }
 
 func citations(items []mailItem) []Citation {
@@ -103,10 +109,11 @@ func citations(items []mailItem) []Citation {
 	return cs
 }
 
-func blocks(items []mailItem) []map[string]any {
+// blocks is what the model sees of items; ref is the citation number (cs[i].N) it cites them by.
+func blocks(items []mailItem, cs []Citation) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
-	for _, it := range items {
-		out = append(out, map[string]any{"message_id": it.MessageID, "mail": it.Block})
+	for i, it := range items {
+		out = append(out, map[string]any{"message_id": it.MessageID, "ref": cs[i].N, "mail": it.Block})
 	}
 	return out
 }
@@ -165,8 +172,7 @@ func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, er
 		return nil, err
 	}
 	items := s.summaryContext(runOf(ctx).scope, list)
-	cite(ctx, items)
-	res := blocks(items)
+	res := blocks(items, s.cite(ctx, items))
 	for i, m := range list {
 		res[i]["thread_id"] = m.ThreadID
 	}
@@ -186,8 +192,7 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 	if err != nil {
 		return nil, err
 	}
-	cite(ctx, items)
-	return blocks(items)[0], nil
+	return blocks(items, s.cite(ctx, items))[0], nil
 }
 
 func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, error) {
@@ -203,8 +208,7 @@ func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
-	cite(ctx, items)
-	return map[string]any{"thread_id": in.ID, "messages": blocks(items)}, nil
+	return map[string]any{"thread_id": in.ID, "messages": blocks(items, s.cite(ctx, items))}, nil
 }
 
 // listSkills lists the enabled skills without a UI binding, by name.
@@ -353,7 +357,7 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	b.WriteString("Not created yet. Write the draft in the language of the recipient's past emails to the user. " +
 		"Subjects of their latest emails, as language clues:\n")
 	items := s.subjectContext(job.scope, from)
-	cite(ctx, items)
+	s.cite(ctx, items)
 	for _, it := range items {
 		b.WriteString(it.Block + "\n")
 	}

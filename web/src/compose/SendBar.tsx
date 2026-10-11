@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
 
-/** The send button, at the bottom bar's end. */
+/** The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps). */
 export function SendBar({
   sending,
   frozen,

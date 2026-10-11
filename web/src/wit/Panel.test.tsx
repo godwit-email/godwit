@@ -23,6 +23,7 @@ const t = makeT({
   "wit.tools.other": "调用了 %d 个工具",
   "wit.tools.called": "调用了 %s",
   "wit.compose.working": "正在写入正文…",
+  "wit.thinking": "正在思考…",
   "wit.model": "模型服务设置",
   "wit.suspect": "来源 %s 中包含疑似指令。",
   "mail.list_sep": "、",
@@ -149,12 +150,15 @@ describe("Panel", () => {
     unmount();
   });
 
-  it("the panel's running answer says Wit writes the body, with Stop; Send stays", async () => {
+  it("the panel's running answer says Wit thinks, or writes the body during update_draft, with Stop; Send stays", async () => {
     const user = userEvent.setup();
-    const { api, tr } = await setup();
+    const { api, tr, emit } = await setup();
     const stopRun = vi.spyOn(tr, "stop").mockResolvedValue(undefined);
     await user.type(input(), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    expect(await screen.findByText("正在思考…")).toBeInTheDocument();
+    expect(screen.queryByText("正在写入正文…")).toBeNull();
+    emit({ kind: "tool_call", call: { id: "c1", name: "update_draft", args: "{}" } });
     expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toHaveAttribute("aria-disabled", "true");
     await user.click(screen.getByRole("button", { name: "停止" }));
@@ -274,7 +278,7 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
-  it("folds tool calls, numbers citations after the history's, notes suspect ones", async () => {
+  it("folds tool calls, shows core's citation numbers, notes suspect ones", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, suspect = false) => ({
       n,
@@ -320,7 +324,7 @@ describe("Panel", () => {
     );
     expect(screen.getByText("来源 [2] 中包含疑似指令。")).toBeInTheDocument();
     await user.type(input(), "more{Enter}");
-    emit({ kind: "context", citations: [cite(0, 51), cite(0, 52, true)] });
+    emit({ kind: "context", citations: [cite(2, 51), cite(3, 52, true)] });
     emit({ kind: "text", text: "B" });
     expect(await screen.findByText("来源 [3] 中包含疑似指令。")).toBeInTheDocument();
     expect(screen.getAllByText("来源 [2] 中包含疑似指令。")).toHaveLength(2);

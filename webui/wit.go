@@ -559,9 +559,11 @@ func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, 
 
 // OpenModels opens the model settings (the input's model chip).
 func (p *ComposePage) OpenModels(ctx context.Context) error {
-	if _, ok := p.d.WinOf(ctx); !ok {
-		return keyed(ErrNoDraft)
+	_, _, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
 	}
+	s.mu.Unlock()
 	if p.d.OpenModels != nil {
 		p.d.OpenModels()
 	}

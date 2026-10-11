@@ -323,7 +323,11 @@ function Compose({
     } catch (e) {
       if (n === reloads.current) setReloadErr(witError(message(e), t));
     } finally {
-      if (n === reloads.current) setReloading(false);
+      // A run's end reloads: its streamed text goes (adopted or not), so no later run shows it.
+      if (n === reloads.current) {
+        setReloading(false);
+        setStreamed("");
+      }
     }
   };
 
@@ -838,7 +842,7 @@ function Compose({
             </div>
           </div>
           {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
-          <div data-bar className="mx-4 flex shrink-0 items-center gap-2 py-3">
+          <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
             <div ref={setToolbarSlot} className="contents">
               {!showEditor && <IdleToolbar t={t} attach={attach} />}
             </div>

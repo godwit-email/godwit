@@ -56,7 +56,7 @@ type WitResult struct {
 	Error  string `json:"error"`
 }
 
-// Citation is a message Wit read, numbered N from 1 in the conversation.
+// Citation is a message Wit read, numbered N from 1 in the conversation (core.Citation.N).
 type Citation struct {
 	N         int    `json:"n"`
 	MessageID int64  `json:"messageId"`
@@ -241,7 +241,7 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}

@@ -5,11 +5,12 @@ import type { T } from "@/shared/i18n";
 /** Citations' numbers through the conversation, by message ID; suspect once any citation is. */
 export type Nums = Map<number, { n: number; suspect: boolean }>;
 
-/** A citation's date, absolute: M/DD, as the mail list's older days ("" for none). */
+/** A citation's date, absolute: M/DD this year, YYYY/M/DD another ("" for none). */
 export function citeDate(ms: number): string {
   if (!ms) return "";
   const d = new Date(ms);
-  return `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")}`;
+  const md = `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")}`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}/${md}`;
 }
 
 /**

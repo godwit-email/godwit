@@ -56,8 +56,11 @@ type RunSpan struct {
 }
 
 // Citation is a message a run's tools showed the model: RunID's call CallID
-// (its tool_result), or its context when CallID is "".
+// (its tool_result), or its context when CallID is "". N is the message's
+// citation number in the conversation (from 1, by first citation): the
+// model sees it as the mail's "ref" and cites it as [N].
 type Citation struct {
+	N             int
 	MessageID     int64
 	Subject, From string
 	Date          time.Time
@@ -157,20 +160,66 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	for _, r := range rows.Values {
 		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
 	}
-	rows, err = s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
+	c.Citations, err = s.citationsOf(ctx, id)
+	return c, err
+}
+
+// citationsOf is conversation id's saved citations, numbered.
+func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id
 		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
-		return Conversation{}, err
+		return nil, err
 	}
+	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
 			RunID: store.Int(r[5]), CallID: store.Str(r[6])}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
-		c.Citations = append(c.Citations, ct)
+		out = append(out, ct)
 	}
-	return c, nil
+	numberCitations(out, map[int64]int{})
+	return out, nil
+}
+
+// numberCitations sets each N from refs (message ID -> N), giving a message
+// not in it the next number. The one numbering of citations: a run numbers
+// new ones the same way and saves them at once, so the saved order agrees.
+func numberCitations(cs []Citation, refs map[int64]int) {
+	for i := range cs {
+		n, ok := refs[cs[i].MessageID]
+		if !ok {
+			n = len(refs) + 1
+			refs[cs[i].MessageID] = n
+		}
+		cs[i].N = n
+	}
+}
+
+// number numbers cs, which job's call (or its context, call "") shows the
+// model, and saves them.
+func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Citation) []Citation {
+	ctx = context.WithoutCancel(ctx)
+	job.refsMu.Lock()
+	defer job.refsMu.Unlock()
+	if job.refs == nil {
+		job.refs = map[int64]int{}
+		saved, err := s.citationsOf(ctx, job.conv.ID)
+		if err != nil {
+			slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
+		}
+		numberCitations(saved, job.refs)
+	}
+	for i := range cs {
+		cs[i].RunID, cs[i].CallID = job.id, call
+	}
+	numberCitations(cs, job.refs)
+	if len(cs) > 0 {
+		s.saveCitations(ctx, job.id, cs)
+	}
+	return cs
 }
 
 // saveCitations records what a run's event cites, for GetConversation.
@@ -473,9 +522,11 @@ type runJob struct {
 	round    int      // seq of the first approval the next interrupt records
 	prepared sync.Map // call ID -> prepared, stored by write tools' gates
 	cites    sync.Map // call ID -> []Citation, stored by read tools
-	clued    sync.Map // recipients create_draft has shown language clues for
-	full     []byte   // the conversation state before TrimState
-	dropped  int      // messages TrimState left out of the request
+	refsMu   sync.Mutex
+	refs     map[int64]int // message ID -> citation number, read on first use (number)
+	clued    sync.Map      // recipients create_draft has shown language clues for
+	full     []byte        // the conversation state before TrimState
+	dropped  int           // messages TrimState left out of the request
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed.
 	host   func(ctx context.Context, res ai.Result) ai.Result
@@ -715,23 +766,14 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 		s.runMu.Unlock()
 	}()
 	emit := func(ev WitEvent) {
-		ev.RunID = job.id
-		for i := range ev.Citations { // the run and call that showed each
-			ev.Citations[i].RunID = job.id
-			if ev.Kind == "tool_result" && ev.Result != nil {
-				ev.Citations[i].CallID = ev.Result.CallID
-			}
-		}
-		if len(ev.Citations) > 0 { // saved first: a reader that re-reads after the event finds them
-			s.saveCitations(context.WithoutCancel(job.ctx), job.id, ev.Citations)
-		}
+		ev.RunID = job.id // its Citations are numbered and saved (number): a reader that re-reads after it finds them
 		if out != nil {
 			out.push(ev)
 		}
 		s.publishWit(job.conv.ID, ev)
 	}
 	if len(job.cited) > 0 {
-		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: job.cited})
+		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: s.number(job.ctx, job, "", job.cited)})
 	}
 	events, wait := e.Run(job.ctx, req)
 	for ev := range events {

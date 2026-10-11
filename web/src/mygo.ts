@@ -85,7 +85,7 @@ export interface Change {
   updatedAt: number;
 }
 
-/** Citation is a message Wit read, numbered N from 1 in the conversation. */
+/** Citation is a message Wit read, numbered N from 1 in the conversation (core.Citation.N). */
 export interface Citation {
   n: number;
   messageId: number;
@@ -199,7 +199,7 @@ export interface Review {
   ratio: number;
   exact: boolean;
   /**
-   * Blocks are the new text with the changes marked, when Exact; Changes
+   * Blocks are the new text with the changes marked, when the block shapes are kept (Inline); Changes
    * is how many changes they hold, the length Finish wants.
    */
   blocks: ReviewBlock[];

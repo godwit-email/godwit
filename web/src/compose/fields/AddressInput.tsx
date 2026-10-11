@@ -7,8 +7,8 @@ import type { T } from "@/shared/i18n";
 import { display, invalid } from "./address";
 
 /**
- * An address field: its addresses as chips (red when invalid) showing the display name, the address
- * in a tooltip, and a × taking it out on hover or focus; then an input whose text becomes addresses on Enter, a comma, or leaving it. Never while an IME
+ * An address field: its addresses as chips, each labelled with the whole entry, showing the display
+ * name with the address in a tooltip (an invalid one red, as typed), and a × taking it out on hover or focus; then an input whose text becomes addresses on Enter, a comma, or leaving it. Never while an IME
  * composes: the text is half-typed until its final input.
  */
 export function AddressInput({
@@ -39,30 +39,36 @@ export function AddressInput({
   const ends = (v: string) => v.replace(/"(?:[^"\\]|\\.)*("|$)/g, "").includes(",");
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-      {list.map((addr) => (
-        <Badge
-          key={addr}
-          data-testid="chip"
-          variant={invalid([addr]).length ? "destructive" : "secondary"}
-          className="h-auto rounded-full px-2 py-0.5 font-normal text-md leading-4"
-        >
-          <Tooltip>
-            <TooltipTrigger render={<span />}>{display(addr)}</TooltipTrigger>
-            <TooltipContent>{addr}</TooltipContent>
-          </Tooltip>
-          {/* Out of the layout until the chip is hovered or the × focused: the chip is just the name. */}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="-mr-1 size-4 rounded-full not-group-hover/badge:not-focus-visible:sr-only"
-            aria-label={t("compose.remove", addr)}
-            disabled={frozen}
-            onClick={() => !frozen && onRemove(addr)}
+      {list.map((addr) => {
+        const bad = invalid([addr]).length > 0;
+        return (
+          <Badge
+            key={addr}
+            data-testid="chip"
+            role="group"
+            aria-label={addr}
+            variant={bad ? "destructive" : "secondary"}
+            className="h-auto rounded-full px-2 py-0.5 font-normal text-md leading-4"
           >
-            <RiCloseLine />
-          </Button>
-        </Badge>
-      ))}
+            <Tooltip>
+              {/* invalid: the entry as typed, so what is wrong shows */}
+              <TooltipTrigger render={<span />}>{bad ? addr : display(addr)}</TooltipTrigger>
+              <TooltipContent>{addr}</TooltipContent>
+            </Tooltip>
+            {/* Out of the layout until the chip is hovered or the × focused: the chip is just the name. */}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="-mr-1 size-4 rounded-full not-group-hover/badge:not-focus-visible:sr-only"
+              aria-label={t("compose.remove", addr)}
+              disabled={frozen}
+              onClick={() => !frozen && onRemove(addr)}
+            >
+              <RiCloseLine />
+            </Button>
+          </Badge>
+        );
+      })}
       <input
         id={id}
         className="h-5.25 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"

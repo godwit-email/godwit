@@ -137,6 +137,7 @@ func TestComposeOpenModels(t *testing.T) {
 	f := newFixture(t, coretest.WithoutAutoSync())
 	opened := 0
 	f.page.d.OpenModels = func() { opened++ }
+	f.c.Attach(1, f.draft(t, "new", 0).ID)
 	require.NoError(t, f.page.OpenModels(f.ctx(1)))
 	assert.Equal(t, 1, opened)
 	assert.Error(t, f.page.OpenModels(t.Context()), "no calling window")
@@ -430,8 +431,8 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 			{Role: "model", Text: "b"},
 		},
 		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4}},
-		Citations: []core.Citation{{MessageID: 7, Subject: "s7", RunID: 1}, {MessageID: 5, RunID: 1, CallID: "c1"},
-			{MessageID: 7, RunID: 1, CallID: "c1", Suspect: true}},
+		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
+			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true}},
 	}
 	got := witMessages(c)
 	require.Len(t, got, 2)

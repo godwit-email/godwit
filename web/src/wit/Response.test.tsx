@@ -49,6 +49,13 @@ describe("answer layout", () => {
     await screen.findByText(/see/);
     expect(screen.queryByRole("link")).toBeNull();
   });
+
+  it("a model-written #cite- link shows as [n], whatever its text", async () => {
+    const cite = (n: number) => (n === 1 ? () => {} : undefined);
+    render(<Response text="[open your bank](#cite-1)" onLink={() => {}} t={t} cite={cite} />);
+    expect(await screen.findByRole("link", { name: "[1]" })).toBeInTheDocument();
+    expect(screen.queryByText("open your bank")).toBeNull();
+  });
 });
 
 describe("answer hardening", () => {
