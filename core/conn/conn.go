@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-sasl"
@@ -33,12 +34,17 @@ const timeout = 30 * time.Second
 // included, because servers may echo the submitted password.
 var ErrAuthFailed = errors.New("authentication failed")
 
-// Endpoint describes one server and the credentials to use on it.
+// ClientVersion is sent in the IMAP ID command; release builds set it.
+var ClientVersion = "dev"
+
+// Endpoint describes one server and the credentials to use on it. A non-empty
+// AccessToken selects XOAUTH2 and Password is ignored.
 type Endpoint struct {
 	Host               string
 	Port               int
 	Security           Security
 	Username, Password string
+	AccessToken        string
 }
 
 func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
@@ -131,9 +137,15 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
 	if err == nil {
-		err = c.Login(e.Username, e.Password).Wait()
-		if err != nil {
+		if err = imapLogin(c, e); err != nil {
 			err = loginErr(cctx, "imap", err)
+		} else if c.Caps().Has(imap.CapID) {
+			// Some servers (NetEase) refuse SELECT until the client identifies
+			// itself. A failed ID is not a failed login.
+			c.ID(&imap.IDData{Name: "Godwit", Version: ClientVersion}).Wait()
+			if cctx.Err() != nil {
+				err = fmt.Errorf("imap id: %w", cctx.Err())
+			}
 		}
 	} else {
 		err = fmt.Errorf("imap connect %s: %w", e.addr(), ctxErr(cctx, err))
@@ -147,7 +159,36 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 	return c, func() { nc.Close() }, nil
 }
 
-// DialSMTP connects to e and authenticates with PLAIN.
+func imapLogin(c *imapclient.Client, e Endpoint) error {
+	if e.AccessToken == "" {
+		return c.Login(e.Username, e.Password).Wait()
+	}
+	caps, err := c.Capability().Wait()
+	if err != nil {
+		return err
+	}
+	if !caps.Has("AUTH=XOAUTH2") {
+		return ErrAuthFailed
+	}
+	return c.Authenticate(NewXOAuth2Client(e.Username, e.AccessToken))
+}
+
+func smtpAuth(c *smtp.Client, e Endpoint) error {
+	if e.AccessToken == "" {
+		return c.Auth(sasl.NewPlainClient("", e.Username, e.Password))
+	}
+	if !c.SupportsAuth("XOAUTH2") {
+		// SupportsAuth is also false when EHLO failed; Noop returns that error.
+		if err := c.Noop(); err != nil {
+			return err
+		}
+		return ErrAuthFailed
+	}
+	return c.Auth(NewXOAuth2Client(e.Username, e.AccessToken))
+}
+
+// DialSMTP connects to e and authenticates with PLAIN, or XOAUTH2 when e has an
+// AccessToken.
 func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
@@ -163,7 +204,7 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
 	if err == nil {
-		if err = c.Auth(sasl.NewPlainClient("", e.Username, e.Password)); err != nil {
+		if err = smtpAuth(c, e); err != nil {
 			err = loginErr(cctx, "smtp", err)
 		}
 	} else {

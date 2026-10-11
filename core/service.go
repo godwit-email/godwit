@@ -17,7 +17,6 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
-	"github.com/zalando/go-keyring"
 )
 
 // ErrClosed is returned by calls made after Close.
@@ -50,6 +49,17 @@ type Service struct {
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
+
+	oauthMu sync.Mutex
+	flows   map[string]oauthFlow  // OAuth flows begun and not yet awaited or cancelled
+	grants  map[string]oauthGrant // finished flows' grants, kept for grantTTL
+
+	tokMu      sync.Mutex
+	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
+	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
+
+	credMu  sync.Mutex
+	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
 	closeOnce sync.Once
 	closeErr  error
@@ -98,6 +108,7 @@ func (s *Service) Close() error {
 		s.callsClosed = true
 		s.callsMu.Unlock()
 		s.stopCalls(func(int64) bool { return true })
+		s.closeOAuth()
 		s.workersMu.Lock()
 		s.closed = true
 		ws := slices.Collect(maps.Values(s.workers)) // includes workers a RemoveAccount is still stopping
@@ -296,22 +307,32 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)
 	}
-	pw, err := keyring.Get(keyringService, s.keyringUser(accountID))
-	if err != nil {
-		return nil, nil, nil, err
+	var ver uint64
+	for rejected := ""; ; {
+		var pw, tok string
+		if pw, tok, ver, err = s.credentials(ctx, acc, rejected); err != nil {
+			return nil, nil, nil, err
+		}
+		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
+			Username: acc.Username, Password: pw, AccessToken: tok}, h)
+		// A refused access token may just be stale: refresh it and try once more.
+		if rejected != "" || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {
+			break
+		}
+		rejected = tok
 	}
-	c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
-		Username: acc.Username, Password: pw}, h)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
-			err = errors.Join(err, s.setStatus(ctx, accountID, "reauth_required"))
+			err = errors.Join(err, s.ifCurrent(accountID, ver, func() error {
+				return s.setStatus(ctx, accountID, "reauth_required", "auth_rejected")
+			}))
 		}
 		return nil, nil, nil, err
 	}
 	// The credentials work: clear reauth_required as it is now, not as it was read
 	// above, since another login may have failed meanwhile. A parked worker resumes.
 	// SMTP's refusal (smtp_reauth) is separate and stays until checkSMTP clears it.
-	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok' WHERE id = ? AND status = 'reauth_required'", accountID)
+	r, err := s.db.Execute(ctx, "UPDATE accounts SET status = 'ok', status_detail = '' WHERE id = ? AND status = 'reauth_required'", accountID)
 	if err != nil {
 		c.Close()
 		return nil, nil, nil, err
@@ -365,11 +386,16 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	if !explicit {
 		return false, nil
 	}
-	ep, _, err := s.smtpEndpoint(ctx, accountID)
+	ep, _, _, err := s.smtpEndpoint(ctx, accountID, "")
 	if err != nil {
 		return false, err
 	}
 	sc, err := conn.DialSMTP(ctx, ep)
+	if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
+		if ep, _, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
+			sc, err = conn.DialSMTP(ctx, ep)
+		}
+	}
 	if err != nil {
 		return false, err
 	}
@@ -411,8 +437,8 @@ func (s *Service) announce(ctx context.Context, accountID int64, ids []int64) {
 	s.bus.Publish(ev)
 }
 
-func (s *Service) setStatus(ctx context.Context, accountID int64, status string) error {
-	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ? WHERE id = ?", status, accountID)
+func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail string) error {
+	_, err := s.db.Execute(ctx, "UPDATE accounts SET status = ?, status_detail = ? WHERE id = ?", status, detail, accountID)
 	return err
 }
 

@@ -27,6 +27,18 @@ func internalInput(t *testing.T, imapAddr, smtpAddr, email string, def bool) Acc
 		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: SecurityNone}
 }
 
+// failAccountWrites makes saving an account's password fail with "boom" after
+// calling before; the KeychainStatus probe still works.
+func failAccountWrites(t *testing.T, before func()) {
+	setFor(t, &keyringSet, func(svc, user, pw string) error {
+		if strings.Contains(user, "/probe/") {
+			return keyring.Set(svc, user, pw)
+		}
+		before()
+		return errors.New("boom")
+	})
+}
+
 func TestKeyringFailureKeepsPreviousDefault(t *testing.T) {
 	keyring.MockInit()
 	s, err := New(context.Background(), Options{DataDir: t.TempDir()})
@@ -38,8 +50,7 @@ func TestKeyringFailureKeepsPreviousDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, first.IsDefault)
 
-	keyringSet = func(string, string, string) error { return errors.New("boom") }
-	t.Cleanup(func() { keyringSet = keyring.Set })
+	failAccountWrites(t, func() {})
 	_, err = s.AddAccount(context.Background(), internalInput(t, im.Addr, smtpAddr, "b@example.com", true))
 	require.ErrorContains(t, err, "boom")
 
@@ -58,8 +69,7 @@ func TestKeyringFailureWithCancelledContextLeavesNoRow(t *testing.T) {
 	im := testmail.StartIMAP(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	keyringSet = func(string, string, string) error { cancel(); return errors.New("boom") }
-	t.Cleanup(func() { keyringSet = keyring.Set })
+	failAccountWrites(t, cancel)
 	_, err = s.AddAccount(ctx, internalInput(t, im.Addr, smtpAddr, "a@example.com", false))
 	require.ErrorContains(t, err, "boom")
 

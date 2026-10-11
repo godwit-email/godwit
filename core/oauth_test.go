@@ -1,0 +1,23 @@
+package core_test
+
+import (
+	"testing"
+
+	"github.com/godwit-email/godwit/core/auth"
+	"github.com/stretchr/testify/require"
+)
+
+func TestOutlookNotConfigured(t *testing.T) {
+	require.Empty(t, auth.MicrosoftClientID, "builds without a client ID cannot sign in to Outlook")
+	s := newTestService(t)
+	_, _, err := s.BeginOAuth(ctx, "outlook", "alice@outlook.com")
+	require.ErrorIs(t, err, auth.ErrOAuthNotConfigured)
+}
+
+func TestBeginOAuthNeedsOAuthProvider(t *testing.T) {
+	s := newTestService(t)
+	for _, id := range []string{"gmail", "nope"} {
+		_, _, err := s.BeginOAuth(ctx, id, "")
+		require.Error(t, err, id)
+	}
+}

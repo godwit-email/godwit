@@ -126,3 +126,26 @@ func TestIDsNeverReused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, res.LastInsertID, int64(1), "a deleted message's id must never point at another message")
 }
+
+// A version 4 database with an account upgrades with empty provider and status_detail.
+func TestMigration5(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:4]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO accounts(id, email, status) VALUES (1, 'a@b.c', 'reauth_required')")
+	require.NoError(t, err)
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "PRAGMA user_version")
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), store.Int(rows.Values[0][0]))
+	rows, err = db.Query(ctx, "SELECT provider, status_detail, status FROM accounts WHERE id = 1")
+	require.NoError(t, err)
+	assert.Equal(t, []any{"", "", "reauth_required"}, rows.Values[0])
+}

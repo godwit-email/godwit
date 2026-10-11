@@ -419,6 +419,7 @@ func TestSMTPAuthFailurePausesOnlyOutbox(t *testing.T) {
 	acc, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "reauth_required", acc.Status, "the user is asked for the password")
+	assert.Equal(t, "auth_rejected", acc.StatusDetail)
 	r := e.rows(t, "SELECT state, attempts FROM outbox")
 	assert.Equal(t, []any{"queued", int64(0)}, r[0], "the item is not charged for the login")
 
@@ -442,5 +443,6 @@ func TestSMTPAuthFailurePausesOnlyOutbox(t *testing.T) {
 	acc, err = e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", acc.Status)
+	assert.Empty(t, acc.StatusDetail)
 	assert.Len(t, e.smtp.Messages(), 4)
 }
