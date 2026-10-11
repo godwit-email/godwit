@@ -46,9 +46,12 @@ import {
 import type { Approval, Citation, MailHit, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
-import { QuoteChips, QuotePicker } from "./Quote";
+import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
+
+/** The emails a question quotes at most (core maxQuoted). */
+const MAX_QUOTED = 10;
 
 // ponytail: shadcn's spinner.tsx fails the typecheck (children on a Remix icon); its markup here.
 const Busy = ({ t }: { t: T }) => (
@@ -428,7 +431,11 @@ export function Panel({
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
   const [quoted, setQuoted] = useState<MailHit[]>([]);
-  const [picking, setPicking] = useState(false);
+  // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
+  const [picking, setPicking] = useState<{ at: number; query: string }>();
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const pickerKeys = useRef<PickerKeys>(null);
+  const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
 
@@ -493,12 +500,46 @@ export function Panel({
     if (!text || locked || running) return;
     setDraft("");
     setQuoted([]);
-    setPicking(false);
+    setPicking(undefined);
     ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id) } : undefined);
   };
+  // Closing the picker gives the textarea its focus back, the caret at caret.
+  const closePicker = (caret?: number) => {
+    setPicking(undefined);
+    setTimeout(() => {
+      const el = textarea.current;
+      el?.focus();
+      if (el && caret !== undefined) el.setSelectionRange(caret, caret);
+    });
+  };
   const pick = (h: MailHit) => {
-    setQuoted((q) => (q.some((x) => x.id === h.id) ? q : [...q, h]));
-    setPicking(false);
+    setQuoted((q) => (q.some((x) => x.id === h.id) || q.length >= MAX_QUOTED ? q : [...q, h]));
+    const at = picking?.at ?? -1;
+    if (at < 0) return closePicker();
+    // the @query becomes the chip
+    setDraft((d) => d.slice(0, at) + d.slice(at + 1 + (picking?.query.length ?? 0)));
+    closePicker(at);
+  };
+  // An @ typed at a word's start opens the picker; the text after it is its query, until a space,
+  // or the @ goes. An @ inside a word (an address) is just text.
+  const typed = (value: string, caret: number) => {
+    setDraft(value);
+    if (picking && picking.at >= 0) {
+      const query = value.slice(picking.at + 1, caret);
+      if (value[picking.at] !== "@" || caret <= picking.at || /\s/.test(query))
+        setPicking(undefined);
+      else setPicking({ at: picking.at, query });
+      return;
+    }
+    const at = caret - 1;
+    if (
+      onSearch &&
+      !full &&
+      value.length === draft.length + 1 &&
+      value[at] === "@" &&
+      (at === 0 || /\s/.test(value[at - 1]))
+    )
+      setPicking({ at, query: "" });
   };
   const fail = (e: unknown) =>
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
@@ -663,7 +704,14 @@ export function Panel({
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
       {picking && onSearch && (
-        <QuotePicker search={onSearch} onPick={pick} onClose={() => setPicking(false)} t={t} />
+        <QuotePicker
+          search={onSearch}
+          query={picking.at >= 0 ? picking.query : undefined}
+          onPick={pick}
+          onClose={() => closePicker()}
+          keys={pickerKeys}
+          t={t}
+        />
       )}
       {quoted.length > 0 && (
         <QuoteChips
@@ -675,14 +723,11 @@ export function Panel({
       <InputGroupTextarea
         aria-label={t(page ? "wit.input" : "wit.compose.input")}
         placeholder={t(page ? "wit.placeholder" : "wit.compose.placeholder")}
+        ref={textarea}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
-          if (e.key === "@" && onSearch && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            setPicking(true);
-            return;
-          }
+          if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
             return;
           e.preventDefault();
@@ -703,7 +748,7 @@ export function Panel({
               }
             />
             <DropdownMenuContent side="top" className="min-w-45">
-              <DropdownMenuItem onClick={() => setPicking(true)}>
+              <DropdownMenuItem disabled={full} onClick={() => setPicking({ at: -1, query: "" })}>
                 <RiMailLine className="text-muted-foreground" />
                 <span className="flex-1">{t("wit.quote")}</span>
                 <span className="text-muted-foreground/70 text-sm">@</span>

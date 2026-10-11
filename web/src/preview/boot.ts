@@ -169,13 +169,13 @@ async function quote(step: string) {
     .find((e) => e.textContent?.includes("引用邮件"))
     ?.click();
   await wait(300);
-  const input = document.querySelector<HTMLInputElement>("input[type=search]");
+  const input = document.querySelector<HTMLInputElement>("input[role=combobox]");
   if (!input) return;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Q4");
   input.dispatchEvent(new Event("input", { bubbles: true }));
   await wait(500);
   if (step === "picker") return;
-  document.querySelector<HTMLElement>("[role=dialog] button")?.click();
+  document.querySelector<HTMLElement>("[role=option]")?.click();
 }
 
 /** ⌘K on the second paragraph, as a user selecting it and pressing the shortcut does; retried until the page takes it. */

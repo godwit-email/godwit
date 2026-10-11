@@ -1,5 +1,12 @@
 import { RiCloseLine, RiMailLine } from "@remixicon/react";
-import { type KeyboardEvent, useEffect, useState } from "react";
+import {
+  type KeyboardEvent,
+  type Ref,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import type { MailHit } from "@/mygo";
@@ -7,23 +14,37 @@ import type { T } from "@/shared/i18n";
 
 const subjectOf = (h: MailHit, t: T) => h.subject || t("mail.no_subject");
 
+/** What the picker does with a key the textarea forwards (an @ query): true when it took it. */
+export type PickerKeys = { key(e: KeyboardEvent): boolean };
+
 /**
- * The quote picker (引用邮件): a search of the user's mail over the input, each hit a pick.
- * Invented UI (the mockup shows only its entry point), built from the menu's look. Escape closes.
+ * The quote picker (引用邮件): a search of the user's mail over the input, its hits a listbox.
+ * From the + menu it has its own search box; from an @ in the text, `query` is what follows the @
+ * and the textarea forwards its keys (`keys`). ArrowUp / ArrowDown move, Enter picks, Escape
+ * closes. Invented UI (the mockup shows only its entry point), built from the menu's look.
  */
 export function QuotePicker({
   search,
+  query,
   onPick,
   onClose,
+  keys,
   t,
 }: {
   search(q: string): Promise<MailHit[]>;
+  /** The @ query; undefined: the picker's own search box. */
+  query?: string;
   onPick(h: MailHit): void;
   onClose(): void;
+  keys?: Ref<PickerKeys>;
   t: T;
 }) {
-  const [q, setQ] = useState("");
+  const own = query === undefined;
+  const [typed, setTyped] = useState("");
+  const q = own ? typed : query;
   const [hits, setHits] = useState<MailHit[]>();
+  const [active, setActive] = useState(0);
+  const id = useId();
   useEffect(() => {
     if (!q.trim()) {
       setHits(undefined);
@@ -33,7 +54,11 @@ export function QuotePicker({
     const timer = setTimeout(
       () =>
         search(q).then(
-          (h) => live && setHits(h),
+          (h) => {
+            if (!live) return;
+            setHits(h);
+            setActive(0);
+          },
           () => live && setHits([]),
         ),
       150,
@@ -43,47 +68,75 @@ export function QuotePicker({
       clearTimeout(timer);
     };
   }, [q, search]);
-  const keys = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      onClose();
-    } else if (e.key === "Enter" && !e.nativeEvent.isComposing && hits?.[0]) {
-      e.preventDefault();
-      onPick(hits[0]);
+  const key = (e: KeyboardEvent) => {
+    const n = hits?.length ?? 0;
+    switch (e.key) {
+      case "Escape":
+        onClose();
+        break;
+      case "ArrowDown":
+      case "ArrowUp":
+        if (!n) return false;
+        setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        break;
+      case "Enter":
+        if (e.nativeEvent.isComposing || !hits?.[active]) return false;
+        onPick(hits[active]);
+        break;
+      default:
+        return false;
     }
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
   };
+  useImperativeHandle(keys, () => ({ key }));
+  const option = (i: number) => `${id}-${i}`;
   return (
     <div
       role="dialog"
       aria-label={t("wit.quote")}
       className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
     >
-      <Input
-        type="search"
-        autoFocus
-        className="[&::-webkit-search-cancel-button]:appearance-none"
-        aria-label={t("wit.quote.search")}
-        placeholder={t("wit.quote.search")}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={keys}
-      />
+      {own && (
+        <Input
+          role="combobox"
+          autoFocus
+          aria-label={t("wit.quote.search")}
+          aria-expanded={!!hits?.length}
+          aria-controls={id}
+          aria-activedescendant={hits?.length ? option(active) : undefined}
+          placeholder={t("wit.quote.search")}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={key}
+        />
+      )}
       {hits?.length === 0 && (
         <p className="px-2.5 py-2 text-muted-foreground text-sm">{t("wit.quote.none")}</p>
       )}
-      {hits?.map((h) => (
-        <button
-          key={h.id}
-          type="button"
-          className="flex flex-col items-start rounded-md px-2.5 py-1.5 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-          onClick={() => onPick(h)}
-          onKeyDown={keys}
-        >
-          <span className="w-full truncate">{subjectOf(h, t)}</span>
-          <span className="w-full truncate text-muted-foreground text-sm">{h.from}</span>
-        </button>
-      ))}
+      {!!hits?.length && (
+        <div role="listbox" id={id} aria-label={t("wit.quote")} className="flex flex-col">
+          {hits.map((h, i) => (
+            <div
+              key={h.id}
+              id={option(i)}
+              role="option"
+              tabIndex={-1}
+              aria-selected={i === active}
+              className="flex cursor-default flex-col items-start rounded-md px-2.5 py-1.5 text-left aria-selected:bg-accent"
+              // the focus stays in the box (or the textarea) that drives the list
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => onPick(h)}
+              onKeyDown={key}
+            >
+              <span className="w-full truncate">{subjectOf(h, t)}</span>
+              <span className="w-full truncate text-muted-foreground text-sm">{h.from}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

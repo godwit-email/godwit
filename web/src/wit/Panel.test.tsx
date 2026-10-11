@@ -771,7 +771,7 @@ describe("Panel", () => {
     expect(onCite).toHaveBeenCalledWith(51);
   });
 
-  it("引用邮件 @ in the + menu, or typing @, opens the picker; a pick is a chip sent with the question", async () => {
+  it("引用邮件 @ in the + menu opens the picker; a pick is a chip sent with the question, focus back in the input", async () => {
     const user = userEvent.setup();
     const hit: MailHit = { id: 42, subject: "Q4 partnership", from: "Lena <lena@x>", date: 0 };
     const onSearch = vi.fn().mockResolvedValue([hit]);
@@ -780,40 +780,95 @@ describe("Panel", () => {
     const item = await screen.findByRole("menuitem", { name: /引用邮件/ });
     expect(item).toHaveTextContent("@");
     await user.click(item);
-    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "partner");
+    const box = screen.getByRole("combobox", { name: "搜索邮件" });
+    expect(box).toHaveFocus();
+    await user.type(box, "partner");
     await waitFor(() => expect(onSearch).toHaveBeenLastCalledWith("partner"));
-    await user.click(await screen.findByRole("button", { name: /Q4 partnership/ }));
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    const opt = await screen.findByRole("option", { name: /Q4 partnership/ });
+    expect(screen.getByRole("listbox")).toContainElement(opt);
+    expect(opt).toHaveAttribute("aria-selected", "true");
+    expect(box).toHaveAttribute("aria-activedescendant", opt.id);
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByRole("button", { name: "移除 Q4 partnership" })).toBeInTheDocument();
-
-    await user.type(input("向 Wit 提问"), "总结@");
-    expect(input("向 Wit 提问")).toHaveValue("总结"); // the @ opens the picker instead
-    expect(screen.getByRole("searchbox", { name: "搜索邮件" })).toHaveFocus();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("searchbox")).toBeNull();
-    await user.type(input("向 Wit 提问"), "{Enter}");
+    await waitFor(() => expect(input("向 Wit 提问")).toHaveFocus());
+    await user.type(input("向 Wit 提问"), "总结{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [42]));
     expect(screen.queryByRole("button", { name: "移除 Q4 partnership" })).toBeNull(); // sent: cleared
   });
 
-  it("a chip's ✕ drops it; no match says so; without a search there is no +", async () => {
+  it("an @ at a word's start searches what follows it; arrows move, Enter turns the @query into the chip", async () => {
     const user = userEvent.setup();
-    const onSearch = vi
-      .fn()
-      .mockResolvedValueOnce([{ id: 1, subject: "", from: "a@x", date: 0 }])
-      .mockResolvedValue([]);
-    const { api, unmount } = await setup({ onSearch });
-    await user.type(input(), "@");
-    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "a");
-    await user.click(await screen.findByRole("button", { name: /（无主题）/ }));
-    await user.click(screen.getByRole("button", { name: "移除 （无主题）" }));
-    expect(screen.queryByRole("button", { name: /移除/ })).toBeNull();
-    await user.type(input(), "@");
-    await user.type(screen.getByRole("searchbox", { name: "搜索邮件" }), "zz");
+    const hits: MailHit[] = [
+      { id: 1, subject: "First", from: "a@x", date: 0 },
+      { id: 2, subject: "Second", from: "b@x", date: 0 },
+    ];
+    const onSearch = vi.fn().mockResolvedValue(hits);
+    const { api } = await setup({ onSearch, page: true });
+    const box = input("向 Wit 提问");
+    await user.type(box, "总结 @Q4");
+    expect(box).toHaveValue("总结 @Q4"); // the @ is typed
+    expect(box).toHaveFocus();
+    await waitFor(() => expect(onSearch).toHaveBeenLastCalledWith("Q4"));
+    await screen.findByRole("option", { name: /Second/ });
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("option", { name: /Second/ })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowDown}"); // wraps
+    await user.keyboard("{ArrowUp}");
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(box).toHaveValue("总结 ");
+    expect(screen.getByRole("button", { name: "移除 Second" })).toBeInTheDocument();
+    expect(api.ask).not.toHaveBeenCalled(); // Enter picked, it did not send
+    await waitFor(() => expect(box).toHaveFocus());
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [2]));
+  });
+
+  it("an @ in an address is text; Escape closes the picker and keeps what was typed", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([]);
+    const { api } = await setup({ onSearch, page: true });
+    const box = input("向 Wit 提问");
+    await user.type(box, "回复 bob@example.com");
+    expect(box).toHaveValue("回复 bob@example.com");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.type(box, " @zz");
     expect(await screen.findByText("没有找到邮件")).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await user.type(input(), "hi{Enter}");
-    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("hi"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(box).toHaveValue("回复 bob@example.com @zz");
+    expect(box).toHaveFocus();
+    await user.type(box, " ok{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("回复 bob@example.com @zz ok"));
+  });
+
+  it("a space ends the @ query; ✕ drops a chip; at 10 chips no more quoting; without a search there is no +", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn((q: string) =>
+      Promise.resolve([{ id: Number(q.slice(1)), subject: q, from: "a@x", date: 0 }]),
+    );
+    const { unmount } = await setup({ onSearch, page: true });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@a b");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.clear(box);
+    for (let i = 1; i <= 10; i++) {
+      await user.type(box, `@q${i}`);
+      await screen.findByRole("option", { name: new RegExp(`^q${i}`) });
+      await user.keyboard("{Enter}");
+    }
+    expect(screen.getAllByRole("button", { name: /^移除/ })).toHaveLength(10);
+    await user.type(box, " @");
+    expect(screen.queryByRole("dialog")).toBeNull(); // full
+    await user.click(screen.getByRole("button", { name: "添加" }));
+    expect(await screen.findByRole("menuitem", { name: /引用邮件/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "移除 q1" }));
+    expect(screen.getAllByRole("button", { name: /^移除/ })).toHaveLength(9);
     unmount();
     await setup();
     expect(screen.queryByRole("button", { name: "添加" })).toBeNull();
