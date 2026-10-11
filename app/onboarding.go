@@ -804,12 +804,13 @@ func (o *onboarding) checkView(c *ui.Context) {
 				row.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover)
 			}
 			row.Children(func() {
-				dot := ui.Box(c).Size(theme.StepDot, theme.StepDot).Radius(t.Radius.Full).Center().FontSize(t.Text.Xs)
+				dot := ui.Box(c).Size(theme.StepDot, theme.StepDot).Radius(t.Radius.Full).Center().FontSize(t.Text.Sm)
+				// the design's text glyphs: taller than the check and x icons
 				switch status {
 				case 1:
-					dot.Background(t.SuccessBg).TextColor(t.SuccessText).Children(func() { ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs) })
+					dot.Background(t.SuccessBg).TextColor(t.SuccessText).Children(func() { ui.Text(c, "✓") })
 				case 2:
-					dot.Background(t.DangerBg).TextColor(t.DangerText).Children(func() { ui.Icon(c, icons.Get("x")).Size(theme.IconXs, theme.IconXs) })
+					dot.Background(t.DangerBg).TextColor(t.DangerText).Children(func() { ui.Text(c, "✕") })
 				default:
 					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Text(c, "…") })
 				}
@@ -839,8 +840,8 @@ var syncLimits = []int{2000, 10000, 100000}
 func (o *onboarding) doneView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().Children(func() {
-			ui.Icon(c, icons.Get("check")).Size(theme.IconMd, theme.IconMd)
+		ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().FontSize(t.Text.Xl).Children(func() {
+			ui.Text(c, "✓")
 		})
 		lineText(c, i18n.T("onboarding.done.title"), t.Text.X2l).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 		lineText(c, strings.TrimSpace(o.email), t.Text.Body).TextColor(t.Muted)
