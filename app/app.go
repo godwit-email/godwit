@@ -359,9 +359,10 @@ var errFlushSlow = errors.New("still saving")
 
 // BeforeClose saves the settings' account fields, waits for every write in
 // flight, then calls proceed: before the window closes or the App quits
-// (compose windows flush their drafts first, on their own). When a write fails, or they have not finished within
-// flushWait, the window shows and asks whether to close anyway; writes that
-// finish while it asks close after all.
+// (compose windows have flushed their drafts by then, on their own). When
+// a write fails, or they have not finished within flushWait, the window
+// shows and asks whether to close anyway; writes that finish while it asks
+// close after all.
 func (a *App) BeforeClose(proceed func()) {
 	settled := false
 	ask := func(err error) {
