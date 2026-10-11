@@ -90,6 +90,7 @@ func TestE2EQuickReplyAndDraftsList(t *testing.T) {
 	h.click("草稿")
 	h.see("Re: Lunch")
 	h.click("Re: Lunch")
+	h.click("继续编辑")
 	call := fmt.Sprint("OpenCompose ", id)
 	h.until("the same draft opened again", func() bool {
 		return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != call })) == 2

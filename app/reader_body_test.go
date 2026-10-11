@@ -467,3 +467,70 @@ func TestReaderCloseClosesViews(t *testing.T) {
 		t.Fatalf("%d pages made, %d closed", made, closed)
 	}
 }
+
+// 始终信任此发件人 trusts the From address in core and loads the images;
+// the sender's next message loads them at once, without the notice.
+func TestReaderTrustSender(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
+	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.see("已阻止 1 张远程图片")
+	h.click("始终信任此发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !slices.Equal(st.TrustedImageSenders, []string{"bob@example.com"}) {
+		t.Fatalf("trusted %q, %v", st.TrustedImageSenders, err)
+	}
+	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
+	h.openThread(n.ThreadID)
+	h.seeBody(n.ID)
+	h.tt.Frame()
+	if h.tt.HasText("已阻止") {
+		t.Fatal("a trusted sender's message shows the notice")
+	}
+}
+
+// A quoted local part: core gets the From as sent, which parses.
+func TestReaderTrustQuotedSender(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
+	m := h.deliverOne(acc, coretest.Msg(`Bob <"bob smith"@example.com>`, acc.Email, "News", "text", img))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("始终信任此发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+}
+
+// Trusting a sender loads its images in the thread, but not in a copy in Junk.
+func TestReaderTrustSkipsJunk(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text", img, coretest.MessageID("n1@x")))
+	h.env.Deliver(t, acc.ID, "Junk", coretest.Msg("Bob <bob@example.com>", acc.Email, "Re: News", "text", img, coretest.InReplyTo("n1@x")))
+	msgs := h.messages(m.ThreadID)
+	if len(msgs) != 2 {
+		t.Fatalf("thread of %d", len(msgs))
+	}
+	h.openThread(m.ThreadID)
+	for _, x := range msgs {
+		if r := h.app.mail.reader; !r.open[x.ID] {
+			r.toggle(x.ID)
+		}
+		h.seeBody(x.ID)
+	}
+	h.click("始终信任此发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	for _, x := range msgs {
+		if x.ID != m.ID && h.countCalls(fmt.Sprint("AllowImages ", x.ID)) != 0 {
+			t.Fatal("the Junk copy's images loaded")
+		}
+	}
+}

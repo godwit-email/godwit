@@ -33,7 +33,7 @@ type session struct {
 	quote, signature string // HTML, kept as loaded
 	loaded           bool
 	closed           bool // released: calls get ErrNoDraft
-	gone             bool // sent or discarded: calls get ErrNoDraft, nothing to release
+	gone             bool // sent: calls get ErrNoDraft, nothing to release
 }
 
 // adopt keeps d's quote and signature as the ones the page does not edit.
@@ -177,6 +177,8 @@ type PageDeps struct {
 	// id in a compose window.
 	OpenURL     func(url string) error
 	OpenCompose func(draftID int64)
+	// OpenModels opens the model settings in the main window.
+	OpenModels func()
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on
@@ -234,7 +236,11 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 		return ComposeState{}, err
 	}
 	editable := s.adopt(d)
-	out := ComposeState{Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
+	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, s.signature)
+	if err != nil {
+		return ComposeState{}, err
+	}
+	out := ComposeState{SignatureImages: imgs, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Signature: mail.HTMLToText(s.signature), Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Text: composeText()}
@@ -300,7 +306,7 @@ func (p *ComposePage) SetAccount(ctx context.Context, id, revision int64) (Chang
 		return Change{}, err
 	}
 	s.adopt(d)
-	return changeOf(d), nil
+	return changeOf(ctx, svc, d)
 }
 
 // AddAttachments asks for files in a dialog on the calling window and adds
@@ -361,7 +367,9 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 	if d, err = svc.GetDraft(ctx, s.draftID); err != nil {
 		return AttachResult{}, err
 	}
-	res.Change = changeOf(d)
+	if res.Change, err = changeOf(ctx, svc, d); err != nil {
+		return AttachResult{}, err
+	}
 	res.Conflict = stale || d.Revision != rev // a write from elsewhere, even with no file picked
 	return res, nil
 }
@@ -385,9 +393,9 @@ func (p *ComposePage) RemoveAttachment(ctx context.Context, id, revision int64) 
 	if err != nil {
 		return Change{}, err
 	}
-	ch := changeOf(d)
+	ch, err := changeOf(ctx, svc, d)
 	ch.Conflict = d.Revision != rev // a write from elsewhere since
-	return ch, nil
+	return ch, err
 }
 
 // Send sends exactly revision of the calling window's draft, else Conflict.
@@ -428,22 +436,6 @@ func (p *ComposePage) Send(ctx context.Context, revision int64, digest string) (
 	return res, err
 }
 
-// Discard deletes the calling window's draft; the window closes (OnDone).
-func (p *ComposePage) Discard(ctx context.Context) error {
-	win, svc, s, err := p.open(ctx)
-	if err != nil {
-		return err
-	}
-	err = svc.DeleteDraft(ctx, s.draftID)
-	s.gone = err == nil
-	s.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	p.c.finish(win)
-	return nil
-}
-
 // Closed is the page's final flush for the close attempt gen, the payload
 // of the Closing event it answers: saved reports whether it succeeded.
 func (p *ComposePage) Closed(ctx context.Context, gen int, saved bool) error {
@@ -465,12 +457,14 @@ func (p *ComposePage) Closed(ctx context.Context, gen int, saved bool) error {
 }
 
 // conflict is the Change for a draft not at the revision the page passed.
-var conflict = Change{Conflict: true, Attachments: []Attachment{}}
+var conflict = Change{Conflict: true, Attachments: []Attachment{}, SignatureImages: []string{}}
 
 // changeOf is d's state after a change.
-func changeOf(d core.Draft) Change {
+func changeOf(ctx context.Context, svc *core.Service, d core.Draft) (Change, error) {
 	_, _, sig := mail.SplitDraft(d.HTML)
-	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), UpdatedAt: d.UpdatedAt.UnixMilli()}
+	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, sig)
+	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), SignatureImages: imgs,
+		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }
 
 // attachments is d's attachments for the page, never nil.

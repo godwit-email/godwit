@@ -786,3 +786,42 @@ func TestEscapedBasePathKept(t *testing.T) {
 		assert.Equal(t, strings.TrimPrefix(Endpoint(kind, base), srv.URL), <-uris)
 	})
 }
+
+// An Anthropic base entered with "/v1" reaches the same /v1/messages as one without.
+func TestAnthropicBaseWithV1(t *testing.T) {
+	e, err := NewEngine(nil, nil)
+	require.NoError(t, err)
+	defer e.Close()
+	srv := testllm.Start(t, "anthropic")
+	m := modelFor(srv, "anthropic", "k")
+	m.BaseURL += "/v1"
+	_, res := run(e, Request{Model: m, Prompt: "x"})
+	require.Nil(t, res.Err)
+	require.Len(t, srv.Requests(), 1)
+	ids, err := ListModels(context.Background(), nil, KindAnthropic, m.BaseURL, "k")
+	require.NoError(t, err)
+	assert.NotNil(t, ids)
+}
+
+// TestRunContextHidden: Context goes to the model in the user's turn, before
+// the prompt, and stays in the state, but Messages show only the prompt.
+func TestRunContextHidden(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Text: []string{"ok"}}, testllm.Turn{Text: []string{"again"}})
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Context: "QUOTED-MAIL", Prompt: "hi there"})
+		require.Nil(t, res.Err)
+		reqs := srv.Requests()
+		require.Len(t, reqs, 1)
+		msgs := string(reqs[0].Messages)
+		require.Contains(t, msgs, "QUOTED-MAIL")
+		assert.Less(t, strings.Index(msgs, "QUOTED-MAIL"), strings.Index(msgs, "hi there"), "context first")
+		shown, err := Messages(res.State)
+		require.NoError(t, err)
+		assert.Equal(t, Message{Role: "user", Text: "hi there"}, shown[0])
+
+		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Prompt: "more"})
+		require.Nil(t, res2.Err)
+		assert.Contains(t, string(srv.Requests()[1].Messages), "QUOTED-MAIL", "the state keeps it")
+	})
+}

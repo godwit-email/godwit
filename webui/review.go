@@ -22,10 +22,10 @@ type Review struct {
 	// else it is a rewrite, decided as a whole (Decide).
 	Inline bool `json:"inline"`
 	// Ratio is the share of words changed; Exact means the diff completed
-	// within its budget with the block shapes kept (else wit.compose.rewrite_plain).
+	// within its budget, so Ratio is known (else wit.compose.rewrite_plain).
 	Ratio float64 `json:"ratio"`
 	Exact bool    `json:"exact"`
-	// Blocks are the new text with the changes marked, when Exact; Changes
+	// Blocks are the new text with the changes marked, when the block shapes are kept (Inline); Changes
 	// is how many changes they hold, the length Finish wants.
 	Blocks  []ReviewBlock `json:"blocks"`
 	Changes int           `json:"changes"`
@@ -77,6 +77,7 @@ type proposal struct {
 	old, new richtext.Doc
 	blocks   []worddiff.BlockDiff
 	ok       bool // diffed, block shapes kept: changes can be decided one by one
+	exact    bool // diffed: ratio is known
 	ratio    float64
 	changes  []change
 	owner    [][]int // per block, per op: its change, -1 for none
@@ -92,10 +93,12 @@ func newProposal(ap core.Approval) *proposal {
 	_ = json.Unmarshal(ap.Args, &args)
 	r := &proposal{ap: ap, oldHTML: args.Old, newHTML: args.HTML,
 		old: richtext.FromComposeHTML(args.Old), new: richtext.FromComposeHTML(args.HTML)}
-	r.blocks, r.ok = worddiff.Diff(worddiff.Tokenize(r.old), worddiff.Tokenize(r.new), worddiff.DefaultBudget)
-	r.ok = r.ok && r.shapesKept()
-	if r.ok {
+	r.blocks, r.exact = worddiff.Diff(worddiff.Tokenize(r.old), worddiff.Tokenize(r.new), worddiff.DefaultBudget)
+	r.ok = r.exact && r.shapesKept()
+	if r.exact {
 		r.ratio = worddiff.Ratio(r.blocks)
+	}
+	if r.ok {
 		r.split()
 	}
 	return r
@@ -242,7 +245,7 @@ var opKinds = map[worddiff.OpKind]string{worddiff.Same: "same", worddiff.Del: "d
 
 // review is r for the page.
 func (r *proposal) review() Review {
-	out := Review{Approval: r.ap.ID, Tool: r.ap.Tool, Inline: r.inline(), Ratio: r.ratio, Exact: r.ok,
+	out := Review{Approval: r.ap.ID, Tool: r.ap.Tool, Inline: r.inline(), Ratio: r.ratio, Exact: r.exact,
 		Blocks: []ReviewBlock{}, Changes: len(r.changes), Old: r.oldHTML, New: r.newHTML}
 	if !r.ok {
 		return out

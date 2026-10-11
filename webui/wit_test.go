@@ -79,6 +79,19 @@ func proposeTurn(id, html string) coretest.Turn {
 	return coretest.Turn{Calls: []coretest.Call{{ID: id, Name: "update_draft", Args: string(b)}}}
 }
 
+func TestWitInfoSkillHints(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	hints := map[string]string{}
+	for _, s := range info.Skills {
+		hints[s.ID] = s.Hint
+	}
+	assert.Equal(t, map[string]string{"tone-formal": "语气", "tone-friendly": "语气", "shorter": "长度", "longer": "长度", "proofread": "只改错字和语法"}, hints)
+}
+
 func TestComposeWitInfo(t *testing.T) {
 	f := newFixture(t, coretest.WithoutAutoSync())
 	d := f.draft(t, "new", 0)
@@ -86,6 +99,7 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err := f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.False(t, info.Enabled, "no model")
+	assert.Empty(t, info.Model)
 
 	llm := f.e.LLM(t)
 	t.Cleanup(llm.Release)
@@ -97,7 +111,10 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err = f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.True(t, info.Enabled)
-	assert.Equal(t, []Skill{{"tone-formal", "更正式"}, {"tone-friendly", "更友好"}, {"shorter", "更短"}, {"longer", "更长"}, {"proofread", "校对"}}, info.Skills)
+	_, model, _ := strings.Cut(st.DefaultModel, "/")
+	assert.Equal(t, model, info.Model, "the model chip: its name, without the provider")
+	assert.NotEmpty(t, info.Model)
+	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}}, info.Skills)
 	assert.Equal(t, []Language{{"ja", "日本語"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}}, info.Languages)
 	assert.Empty(t, info.Chips)
 	st2, err := f.page.Load(f.ctx(1))
@@ -108,7 +125,7 @@ func TestComposeWitInfo(t *testing.T) {
 		coretest.Date(time.Now().Add(-time.Hour))))
 	reply := f.replyDraft(t)
 	f.c.Attach(2, reply.ID)
-	_, err = f.page.Ask(f.ctx(2), "hi")
+	_, err = f.page.Ask(f.ctx(2), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 2, "done")
 	info, err = f.page.WitInfo(f.ctx(2))
@@ -116,11 +133,22 @@ func TestComposeWitInfo(t *testing.T) {
 	assert.Equal(t, []string{"原邮件", "与 Bob 的往来 1 封"}, info.Chips)
 }
 
+func TestComposeOpenModels(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	opened := 0
+	f.page.d.OpenModels = func() { opened++ }
+	f.c.Attach(1, f.draft(t, "new", 0).ID)
+	require.NoError(t, f.page.OpenModels(f.ctx(1)))
+	assert.Equal(t, 1, opened)
+	assert.Error(t, f.page.OpenModels(t.Context()), "no calling window")
+	assert.Equal(t, 1, opened)
+}
+
 func TestComposeAskStreams(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Text: []string{"Hel", "lo"}})
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	done := f.waitKind(t, 1, "done")
 	assert.Equal(t, run, done.Run)
@@ -142,10 +170,10 @@ func TestComposeAskStreams(t *testing.T) {
 func TestComposeAskRunActive(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	_, err := f.page.Ask(f.ctx(1), "hi")
+	_, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
-	_, err = f.page.Ask(f.ctx(1), "again")
+	_, err = f.page.Ask(f.ctx(1), "again", nil)
 	require.ErrorIs(t, err, core.ErrRunActive)
 	assert.Equal(t, "error.run_active", err.Error())
 	llm.Release()
@@ -155,7 +183,7 @@ func TestComposeAskRunActive(t *testing.T) {
 func TestComposeStop(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	require.NoError(t, f.page.Stop(f.ctx(1), run))
@@ -172,7 +200,7 @@ func TestComposeStopOtherDraftRefused(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	ev := f.waitKind(t, 1, "text")
 	assert.ErrorIs(t, f.page.Stop(f.ctx(2), run), ErrNoDraft)
@@ -187,7 +215,7 @@ func TestComposeHistoryPendingEdit(t *testing.T) {
 	f, d, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "c1", Name: "search_mail", Args: `{"query":"plan"}`}}},
 		proposeTurn("c2", "<p>Hi</p>"))
-	_, err := f.page.Ask(f.ctx(1), "改一下")
+	_, err := f.page.Ask(f.ctx(1), "改一下", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "interrupted")
 	f.c.Release(1)
@@ -218,7 +246,7 @@ func TestComposeHistoryPendingEdit(t *testing.T) {
 func TestComposeFollowRaceEnded(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	followHook = func() { // the run ends after Follow read it running
@@ -243,7 +271,7 @@ func TestComposeFollowRaceEnded(t *testing.T) {
 func TestComposeFollowRunningThenEnds(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	h, err := f.page.Follow(f.ctx(1))
@@ -256,7 +284,7 @@ func TestComposeFollowRunningThenEnds(t *testing.T) {
 func TestComposeFollowKeepsRunStartedDuringReads(t *testing.T) {
 	f, d, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true}, coretest.Turn{Status: 503}) // the second run retries: still running
-	run, err := f.page.Ask(f.ctx(1), "hi")
+	run, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	var next int64
@@ -298,7 +326,7 @@ func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
 		}, 10*time.Second, 5*time.Millisecond)
 	}
 	t.Cleanup(func() { startHook = nil })
-	_, err := f.page.Ask(f.ctx(1), "hi")
+	_, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.ErrorIs(t, err, ErrNoDraft)
 	f.c.mu.Lock()
 	assert.Empty(t, f.c.follows)
@@ -310,14 +338,14 @@ func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
 func TestComposeSameConversationNoDuplicates(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"one"}, Hang: true}, coretest.Turn{Text: []string{"two"}})
-	r1, err := f.page.Ask(f.ctx(1), "hi")
+	r1, err := f.page.Ask(f.ctx(1), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
-	_, err = f.page.Ask(f.ctx(1), "again")
+	_, err = f.page.Ask(f.ctx(1), "again", nil)
 	require.ErrorIs(t, err, core.ErrRunActive)
 	llm.Release()
 	f.waitKind(t, 1, "done")
-	r2, err := f.page.Ask(f.ctx(1), "and again") // right after: the first run's subscription stays
+	r2, err := f.page.Ask(f.ctx(1), "and again", nil) // right after: the first run's subscription stays
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return slices.ContainsFunc(f.events(1), func(ev WitEvent) bool { return ev.Kind == "done" && ev.Run == r2 })
@@ -355,7 +383,7 @@ func TestComposeWitJSONLists(t *testing.T) {
 func TestComposeFirstGenerationFollows(t *testing.T) {
 	f, d, llm := witFixture(t, "")
 	llm.Script(proposeTurn("", "<p>Thanks, Lena!</p>"), coretest.Turn{Text: []string{"写好了"}})
-	_, err := f.page.Ask(f.ctx(1), "写一封感谢信")
+	_, err := f.page.Ask(f.ctx(1), "写一封感谢信", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	ks := kinds(f.events(1))
@@ -387,7 +415,7 @@ func TestComposeCloseEmptyReplyMidRun(t *testing.T) {
 	reply := f.replyDraft(t)
 	f.c.Attach(2, reply.ID)
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	_, err := f.page.Ask(f.ctx(2), "hi")
+	_, err := f.page.Ask(f.ctx(2), "hi", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 2, "text")
 	f.c.Release(2)
@@ -403,8 +431,8 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 			{Role: "model", Text: "b"},
 		},
 		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4}},
-		Citations: []core.Citation{{MessageID: 7, Subject: "s7", RunID: 1}, {MessageID: 5, RunID: 1, CallID: "c1"},
-			{MessageID: 7, RunID: 1, CallID: "c1", Suspect: true}},
+		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
+			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "q"}},
 	}
 	got := witMessages(c)
 	require.Len(t, got, 2)
@@ -416,7 +444,7 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 	assert.Equal(t, []int64{1}, a.Runs)
 	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
 	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)
-	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true}, {N: 2, MessageID: 5}}, a.Citations)
+	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, Quote: "q"}, {N: 2, MessageID: 5}}, a.Citations)
 }
 
 func TestComposeWitErrorKeys(t *testing.T) {
@@ -464,7 +492,7 @@ func TestComposeDecideToolApprovals(t *testing.T) {
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "p1", Name: "plugin_netty_ping", Args: `{"to":["a@x.com"]}`},
 		{ID: "p2", Name: "plugin_netty_ping", Args: `{}`}}}, coretest.Turn{Text: []string{"pinged"}})
-	run, err := f.page.Ask(f.ctx(1), "ping twice")
+	run, err := f.page.Ask(f.ctx(1), "ping twice", nil)
 	require.NoError(t, err)
 	in := f.waitKind(t, 1, "interrupted")
 	require.Len(t, in.Approvals, 2)
@@ -500,7 +528,7 @@ func TestComposeDecideToolApprovals(t *testing.T) {
 func TestComposeFollowReopenedCmdKRun(t *testing.T) {
 	f, d, llm := witFixture(t, "<p>Hello world</p>")
 	llm.Script(coretest.Turn{Text: []string{"hi"}})
-	_, err := f.page.Ask(f.ctx(1), "hi") // the draft has its Assist conversation too
+	_, err := f.page.Ask(f.ctx(1), "hi", nil) // the draft has its Assist conversation too
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
@@ -520,4 +548,23 @@ func TestComposeFollowReopenedCmdKRun(t *testing.T) {
 	assert.Equal(t, rs.Run, h.Running)
 	llm.Release()
 	assert.Equal(t, rs.Run, f.waitKind(t, 3, "done").Run)
+}
+
+// The compose panel quotes mail as the Wit page does: SearchMail finds it,
+// Ask cites it first.
+func TestComposeAskQuotes(t *testing.T) {
+	f, _, llm := witFixture(t, "")
+	f.e.Deliver(t, f.acc.ID, "INBOX", coretest.Msg("lena@partner.example", f.acc.Email, "Q4 partnership", "November works"))
+	hits, err := f.page.SearchMail(f.ctx(1), "partnership")
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	_, err = f.page.SearchMail(f.ctx(2), "partnership")
+	assert.Error(t, err, "a window without a draft")
+	llm.Script(coretest.Turn{Text: []string{"ok"}})
+	_, err = f.page.Ask(f.ctx(1), "用这封", []int64{hits[0].ID})
+	require.NoError(t, err)
+	f.waitKind(t, 1, "done")
+	evs := f.events(1)
+	require.Equal(t, "context", evs[0].Kind)
+	assert.Equal(t, hits[0].ID, evs[0].Citations[0].MessageID)
 }

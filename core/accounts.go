@@ -125,6 +125,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	defer end()
+	if err := checkRange(in.Sync); err != nil {
+		return Account{}, err
+	}
 	if err := s.KeychainStatus(ctx); err != nil {
 		return Account{}, err
 	}
@@ -148,8 +151,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 		authType, secret, in.Username, in.Provider = "oauth", g.RefreshToken, g.Email, g.provider
 	}
-	if in.SyncLimit == 0 {
-		in.SyncLimit = defaultSyncLim
+	sync := SyncRange{Limit: defaultSyncLim}
+	if in.Sync != nil {
+		sync = *in.Sync
 	}
 	if in.Provider == "" {
 		in.Provider = "other"
@@ -175,10 +179,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0"})
 	}
 	stmts = append(stmts, sqlite.Statement{
-		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, auth_type, status, username,
+		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, sync_since_months, auth_type, status, username,
 			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), in.SyncLimit, authType, in.username(),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
 			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
@@ -207,6 +211,14 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	return s.account(ctx, id)
 }
 
+// checkRange accepts a Limit of 1–100000, 1–120 Months, or neither (all).
+func checkRange(r *SyncRange) error {
+	if r != nil && (r.Limit < 0 || r.Limit > 100000 || r.Months < 0 || r.Months > 120 || r.Limit > 0 && r.Months > 0) {
+		return fmt.Errorf("sync range %+v is not a limit of 1–100000, 1–120 months or all", *r)
+	}
+	return nil
+}
+
 func b2i(b bool) int {
 	if b {
 		return 1
@@ -215,7 +227,11 @@ func b2i(b bool) int {
 }
 
 const accountCols = `id, email, name, alias, signature, username, is_default, sync_limit, auth_type, status,
-	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail`
+	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id)`
+
+// ErrAccountNotFound is returned for an account id that does not exist.
+var ErrAccountNotFound = errors.New("account not found")
 
 func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts WHERE id = ?", id)
@@ -223,7 +239,7 @@ func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 		return Account{}, err
 	}
 	if len(rows.Values) == 0 {
-		return Account{}, fmt.Errorf("account %d not found", id)
+		return Account{}, fmt.Errorf("account %d: %w", id, ErrAccountNotFound)
 	}
 	return scanAccount(rows.Values[0]), nil
 }
@@ -232,7 +248,7 @@ func scanAccount(r []any) Account {
 	a := Account{
 		ID: store.Int(r[0]), Email: store.Str(r[1]), Name: store.Str(r[2]), Alias: store.Str(r[3]),
 		Signature: store.Str(r[4]), Username: store.Str(r[5]), IsDefault: store.Int(r[6]) == 1,
-		SyncLimit: int(store.Int(r[7])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
+		Sync: SyncRange{Limit: int(store.Int(r[7])), Months: int(store.Int(r[19]))}, Folders: int(store.Int(r[20])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]),
@@ -387,7 +403,8 @@ func serverInput(email string, ss ServerSettings) AccountInput {
 // UpdateAccount writes p's fields in one transaction. New Servers are first
 // checked with the stored credentials (a failure is a *CheckError and nothing is
 // saved). IsDefault true makes the account the only default; false fails on the
-// default account, as one account is always the default. SyncLimit is 1–100000.
+// default account, as one account is always the default. Sync is a Limit of
+// 1–100000, Months of 1–120, or neither (all).
 func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (Account, error) {
 	ctx, end, err := s.begin(ctx, id)
 	if err != nil {
@@ -398,8 +415,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if err != nil {
 		return Account{}, err
 	}
-	if p.SyncLimit != nil && (*p.SyncLimit < 1 || *p.SyncLimit > 100000) {
-		return Account{}, fmt.Errorf("sync limit %d is out of range 1–100000", *p.SyncLimit)
+	if err := checkRange(p.Sync); err != nil {
+		return Account{}, err
 	}
 	if p.IsDefault != nil && !*p.IsDefault && acc.IsDefault {
 		return Account{}, errors.New("make another account the default instead")
@@ -413,11 +430,20 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if p.Alias != nil {
 		set("alias", *p.Alias)
 	}
+	var images []sqlite.Statement
 	if p.Signature != nil {
-		set("signature", *p.Signature)
+		sig := *p.Signature
+		if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
+			if rest, images, err = signatureAssets(id, rest); err != nil {
+				return Account{}, err
+			}
+			sig = SignatureHTMLPrefix + rest
+		}
+		set("signature", sig)
 	}
-	if p.SyncLimit != nil {
-		set("sync_limit", *p.SyncLimit)
+	if p.Sync != nil {
+		set("sync_limit", p.Sync.Limit)
+		set("sync_since_months", p.Sync.Months)
 	}
 	if p.Servers != nil {
 		in := serverInput(acc.Email, *p.Servers)
@@ -453,9 +479,13 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0 WHERE id <> ?", Args: []any{id}})
 		set("is_default", 1)
 	}
+	stmts = append(stmts, images...)
 	if len(cols) > 0 {
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
+	}
+	if p.Signature != nil {
+		stmts = append(stmts, unusedSignatureImages(id))
 	}
 	if p.Servers != nil && (p.Servers.IMAPHost != acc.IMAPHost || p.Servers.IMAPPort != acc.IMAPPort ||
 		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
@@ -486,7 +516,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if err != nil {
 		return Account{}, err
 	}
-	if p.Servers != nil || p.SyncLimit != nil {
+	if p.Servers != nil || p.Sync != nil {
 		s.wakeWorker(id) // the next round dials the new servers or backfills
 	}
 	return s.account(ctx, id)

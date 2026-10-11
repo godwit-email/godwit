@@ -56,7 +56,7 @@ type WitResult struct {
 	Error  string `json:"error"`
 }
 
-// Citation is a message Wit read, numbered N from 1 in the conversation.
+// Citation is a message Wit read, numbered N from 1 in the conversation (core.Citation.N).
 type Citation struct {
 	N         int    `json:"n"`
 	MessageID int64  `json:"messageId"`
@@ -66,6 +66,8 @@ type Citation struct {
 	Date int64 `json:"date"`
 	// Suspect means it seems to hold instructions (wit.suspect).
 	Suspect bool `json:"suspect"`
+	// Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text.
+	Quote string `json:"quote"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -82,6 +84,8 @@ type Approval struct {
 	Destinations []string `json:"destinations"`
 	// Args is the call's arguments, JSON text ("" for none).
 	Args string `json:"args"`
+	// SessionAllow: 本次对话都允许 can decide it (WitPage.DecideSession).
+	SessionAllow bool `json:"sessionAllow"`
 }
 
 // follow is a target's subscription to a conversation. It lasts until the
@@ -241,7 +245,7 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}
@@ -250,7 +254,7 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args)}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).

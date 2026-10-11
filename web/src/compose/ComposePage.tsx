@@ -1,6 +1,6 @@
-import { RiAttachment2 } from "@remixicon/react";
+import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,11 @@ import { useResume } from "@/wit/resume";
 import { ends, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
 import { type CmdKSelection, Editor } from "./editor/Editor";
+import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
 import { Notices } from "./Notices";
 import { CmdK } from "./review/CmdK";
-import { Review, reviewSummary } from "./review/Review";
+import { BODY, Review, reviewSummary, Static } from "./review/Review";
 import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
 
@@ -56,7 +57,7 @@ async function settle(g: CloseGate): Promise<boolean> {
 
 /**
  * The compose page: loads the window's draft, autosaves it, flushes when the window closes; the
- * header fields, the body, attachments, send and discard, and the conflict's resolution.
+ * header fields, the body, attachments, send, and the conflict's resolution.
  *
  * A closing freezes input until its answer, so nothing typed after the flush is lost to the
  * window's Destroy. A composition in progress commits first (blur, up to 1 s) so its text is
@@ -163,8 +164,24 @@ const pendingEdit = (a: Approval) =>
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** update_draft's HTML from its call's JSON arguments; "" for none. */
+function draftHTML(args: string): string {
+  try {
+    const h = JSON.parse(args)?.html;
+    return typeof h === "string" ? h : "";
+  } catch {
+    return "";
+  }
+}
+
 const fmt = (d: Date) =>
   d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** The read-only signature: its text, then its images (data: URLs from Go). */
+const sigOf = (s: { signature: string; signatureImages: string[] | null }) => ({
+  text: s.signature,
+  images: s.signatureImages ?? [],
+});
 
 const editOf = (s: ComposeState): ComposeEdit => ({
   to: s.to,
@@ -195,7 +212,7 @@ function Compose({
   const [initial, setInitial] = useState({ body: state.body, n: 0 }); // n remounts the editor
   const [fieldsKey, setFieldsKey] = useState(0); // remounts the fields
   const [from, setFrom] = useState(state.from);
-  const [signature, setSignature] = useState(state.signature);
+  const [signature, setSignature] = useState(sigOf(state));
   const [quote, setQuote] = useState(state.quote);
   const [showQuote, setShowQuote] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>(state.attachments);
@@ -209,7 +226,7 @@ function Compose({
   const [latestFailed, setLatestFailed] = useState(false);
   const retry = useRef<() => void>(() => {});
   const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false); // sent or discarded: Go closes the window
+  const [done, setDone] = useState(false); // sent: Go closes the window
   const doneRef = useRef(false);
   const [resolving, setResolving] = useState(false); // a conflict resolution runs
   const busy = useRef(false);
@@ -218,8 +235,9 @@ function Compose({
   const refresh = useRef(false); // a reload skipped while the saver was busy: retried once idle
   const reloadRef = useRef(async () => {});
 
-  // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer.
-  useEffect(() => {
+  // Created in an effect so StrictMode's discarded mount is disposed, not left with a live timer; a
+  // layout one, re-rendered at once, so no input reaches the editor before the saver (an edit then is lost).
+  useLayoutEffect(() => {
     const n = createSaver(api.save, { revision: state.revision, snapshot: editOf(state) });
     // The composition's final input lands first: committing before it would keep the half-composed text.
     n.setSettle(async () => {
@@ -239,6 +257,7 @@ function Compose({
       rerender((i) => i + 1);
     });
     saver.current = n;
+    rerender((i) => i + 1); // the handlers read the saver from the render
     return () => {
       off();
       n.dispose();
@@ -261,6 +280,7 @@ function Compose({
   const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
   const [applied, setApplied] = useState(false);
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
+  const [streamed, setStreamed] = useState(""); // update_draft's HTML, shown while Wit writes a blank body
   const edits = useRef(0); // local body edits taken
   const runEdits = useRef(0); // body edits when the last run or decision started
   const reloads = useRef(0);
@@ -271,12 +291,13 @@ function Compose({
   const witResume = useResume(wit?.tr);
   const toasted = useRef(false); // the lock's toast, once per lock
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   // The one way a locked page says so: once until it unlocks.
   const lockToast = useRef<(key: string) => void>(() => {});
   lockToast.current = (key) => {
     if (toasted.current) return;
     toasted.current = true;
-    toast(t(key), { id: "locked" });
+    (key === "wit.compose.locked" ? toast.warning : toast)(t(key), { id: "locked" });
   };
 
   // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
@@ -310,7 +331,11 @@ function Compose({
     } catch (e) {
       if (n === reloads.current) setReloadErr(witError(message(e), t));
     } finally {
-      if (n === reloads.current) setReloading(false);
+      // A run's end reloads: its streamed text goes (adopted or not), so no later run shows it.
+      if (n === reloads.current) {
+        setReloading(false);
+        setStreamed("");
+      }
     }
   };
 
@@ -333,6 +358,8 @@ function Compose({
 
   const onWit = useRef<(ev: WitEvent) => void>(() => {});
   onWit.current = (ev) => {
+    if (ev.kind === "tool_call" && ev.call?.name === "update_draft")
+      setStreamed(draftHTML(ev.call.args));
     if (ev.kind === "interrupted") setPendings(ev.approvals.filter(pendingEdit));
     if (!ends(ev)) return;
     // Over: none of its body edits waits any more (an interrupt's are set above).
@@ -350,6 +377,7 @@ function Compose({
   const startRun = useRef(async (start: () => Promise<number>) => {
     const s = saver.current;
     setApplied(false);
+    setStreamed("");
     const r = await s?.run(async (rev) => {
       runEdits.current = edits.current;
       return { revision: rev, conflict: false, run: await start() };
@@ -363,7 +391,7 @@ function Compose({
     if (!state.wit.enabled) return;
     const off = events.wit.on((ev) => onWit.current(ev));
     const tr = new WitTransport({
-      ask: (text) => startRun.current(() => api.ask(text)),
+      ask: (text, quoted = []) => startRun.current(() => api.ask(text, quoted)),
       skill: (id, lang) => startRun.current(() => api.skill(id, lang)),
       follow: () => api.follow(),
       stop: (run) => api.stop(run),
@@ -416,7 +444,7 @@ function Compose({
   };
 
   const edit = (e: Partial<ComposeEdit>) => {
-    // A closing's answer is out (the window may be gone), the draft is sent or discarded, or a
+    // A closing's answer is out (the window may be gone), the draft is sent, or a
     // conflict resolution is replacing it.
     if (gate.frozen || doneRef.current || busy.current) return;
     const n = { ...cur.current, ...e };
@@ -456,7 +484,7 @@ function Compose({
       const r = await sv.run((rev) => api.setAccount(id, rev));
       if (!r || r.conflict) setFrom(prev);
       else {
-        setSignature(r.signature);
+        setSignature(sigOf(r));
         setSavedAt(fmt(new Date(r.updatedAt)));
       }
     } catch (e) {
@@ -488,7 +516,7 @@ function Compose({
       const r = await sv.run(op);
       if (r && !r.conflict) {
         adopt(r.revision, r.body);
-        setSignature(r.signature);
+        setSignature(sigOf(r));
         setAttachments(r.attachments);
         setSavedAt(fmt(new Date(r.updatedAt)));
       }
@@ -574,18 +602,6 @@ function Compose({
     setCmdkRun(0);
   };
 
-  const discard = async () => {
-    if (!sv) return;
-    try {
-      const r = await sv.run(async (rev) => {
-        await api.discard();
-        return { revision: rev, conflict: false };
-      });
-      if (r) finish();
-    } catch (e) {
-      failure(e);
-    }
-  };
   // The conflict: read the draft as stored; keep mine saves the local edit over it, use latest
   // takes it. Either way its account, signature, quote and attachments (not edited here) are adopted.
   // One at a time, the form frozen throughout; a reply for a saver since replaced is dropped.
@@ -605,7 +621,7 @@ function Compose({
       if (saver.current !== sv) return;
       setLatestFailed(false);
       setFrom(l.from);
-      setSignature(l.signature);
+      setSignature(sigOf(l));
       setQuote(l.quote);
       setAttachments(l.attachments);
       if (mine) {
@@ -626,7 +642,53 @@ function Compose({
   };
 
   const status = sv?.status === "saving" || sv?.status === "saved" ? sv.status : "unsaved";
+  // Wit writes a blank body: its text shows read-only until the draft is read again.
+  const writing = (running || reloading) && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim();
+  const showEditor = !reviewing && !writing;
+  const attach = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="size-7 rounded-md text-foreground/80 disabled:opacity-100"
+      aria-label={t("compose.attach")}
+      disabled={locked || witLocked} // an attachment bumps the revision: a waiting edit would go stale
+      onClick={() => change((rev) => api.addAttachments(rev))}
+    >
+      <RiAttachment2 className="size-3.75" />
+    </Button>
+  );
   const title = f.subject.trim() || t("compose.new");
+  // After the body's text: the signature, then the quoted mail behind its toggle.
+  const tail = (
+    <>
+      {(signature.text || signature.images.length > 0) && (
+        <div className="whitespace-pre-wrap text-base text-muted-foreground">
+          {signature.text}
+          {signature.images.map((src, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the same image may repeat
+            <img key={i} src={src} alt="" className="block max-w-full" />
+          ))}
+        </div>
+      )}
+      {quote && (
+        <div className="mt-2 text-base text-muted-foreground">
+          <Button
+            variant="link"
+            size="sm"
+            aria-expanded={showQuote}
+            className="h-auto gap-1.25 px-0 font-normal text-base text-muted-foreground hover:text-foreground hover:no-underline"
+            onClick={() => setShowQuote(!showQuote)}
+          >
+            <RiPlayFill
+              className={`-ml-1.25 size-3.5 transition-transform ${showQuote ? "rotate-90" : ""}`}
+            />
+            {t("compose.quote.show")}
+          </Button>
+          {showQuote && <div className="mt-2 whitespace-pre-wrap border-l-2 pl-3">{quote}</div>}
+        </div>
+      )}
+    </>
+  );
 
   return (
     <main
@@ -657,15 +719,11 @@ function Compose({
         void send();
       }}
     >
-      <header className="compose-titlebar flex shrink-0 items-center border-b pr-4">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="truncate font-semibold text-md">{title}</h1>
-          <p className="shrink-0 text-muted-foreground text-sm">
-            {status === "saved"
-              ? t("compose.status.saved", savedAt)
-              : t(`compose.status.${status}`)}
-          </p>
-        </div>
+      <header className="compose-titlebar flex shrink-0 items-center gap-2 border-b pr-4">
+        <h1 className="min-w-0 truncate font-semibold text-md">{title}</h1>
+        <p className="shrink-0 text-muted-foreground text-sm">
+          {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
+        </p>
       </header>
       {/* A row: the compose column, the Wit panel beside it. */}
       <div className="flex min-h-0 flex-1">
@@ -687,11 +745,11 @@ function Compose({
               t={t}
             />
             {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}
-            <div ref={bodyRef} className="flex flex-1 flex-col">
+            <div ref={bodyRef} className="flex flex-col">
               {reloadErr && (
                 <Alert
                   variant="destructive"
-                  className="mx-5 mt-2 w-auto border-0 bg-destructive/10"
+                  className="mx-4 mt-2 w-auto border-0 bg-destructive/10"
                 >
                   <AlertDescription>{reloadErr}</AlertDescription>
                   <AlertAction>
@@ -702,15 +760,16 @@ function Compose({
                 </Alert>
               )}
               {running && (
-                <div className="mx-5 mt-2 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+                <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+                  <RiSparkling2Line className="size-3.5 shrink-0" />
                   <span className="flex-1">{t("wit.compose.writing_banner")}</span>
-                  <Button variant="ghost" size="sm" onClick={stop}>
+                  <Button variant="outline" size="sm" className="text-base" onClick={stop}>
                     {t("wit.stop")}
                   </Button>
                 </div>
               )}
               {applied && !witLocked && !locked && (
-                <div className="mx-5 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
+                <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
                   <span>{t("wit.compose.applied")}</span>
                   <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
                     {t("wit.compose.undo")}
@@ -724,73 +783,52 @@ function Compose({
                   busy={deciding}
                   onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
                   onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
+                  after={tail}
                   t={t}
                 />
-              ) : running && !f.body.replace(/<[^>]*>|&nbsp;/g, "").trim() ? (
-                <div className="flex min-h-70 flex-1 flex-col gap-3 p-5">
-                  <span className="text-muted-foreground">{t("wit.compose.writing")}</span>
-                  {["90%", "75%", "50%"].map((w) => (
-                    <div
-                      key={w}
-                      style={{ width: w }}
-                      className="h-3 animate-pulse rounded bg-muted"
-                    />
-                  ))}
-                </div>
               ) : (
-                <Editor
-                  key={`${state.draftId}:${initial.n}`}
-                  initial={initial.body}
-                  readOnly={locked || witLocked}
-                  placeholder=""
-                  onChange={(body) => edit({ body })}
-                  onComposing={() => {}} // <main> tracks compositions, the fields' too
-                  t={t}
-                  onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
-                  attach={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="size-7.5 rounded-md text-foreground/80"
-                      aria-label={t("compose.attach")}
-                      disabled={locked}
-                      onClick={() => change((rev) => api.addAttachments(rev))}
-                    >
-                      <RiAttachment2 className="size-3.75" />
-                    </Button>
-                  }
-                />
-              )}
-              {cmdk && !locked && !witLocked && (
-                <CmdK
-                  at={cmdk.at}
-                  onSubmit={(instruction) => void rewrite(cmdk, instruction)}
-                  onClose={closeCmdK}
-                  t={t}
-                />
+                // biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it
+                <div
+                  data-locked={running || undefined}
+                  className={`${BODY} data-locked:bg-sidebar`}
+                  onMouseDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    e.preventDefault();
+                    e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
+                  }}
+                >
+                  {writing ? (
+                    <Static html={streamed} label={t("compose.body")} caret />
+                  ) : (
+                    <Editor
+                      key={`${state.draftId}:${initial.n}`}
+                      initial={initial.body}
+                      readOnly={locked || witLocked}
+                      placeholder={wit ? t("wit.compose.empty") : ""}
+                      onChange={(body) => edit({ body })}
+                      onComposing={() => {}} // <main> tracks compositions, the fields' too
+                      t={t}
+                      onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
+                      toolbarSlot={toolbarSlot}
+                      attach={attach}
+                      popover={
+                        cmdk &&
+                        !locked &&
+                        !witLocked && (
+                          <CmdK
+                            onSubmit={(instruction) => void rewrite(cmdk, instruction)}
+                            onClose={closeCmdK}
+                            t={t}
+                          />
+                        )
+                      }
+                    />
+                  )}
+                  {tail}
+                </div>
               )}
             </div>
-            <div className="flex flex-col gap-4 px-5 pb-4 *:empty:hidden">
-              {signature && (
-                <div className="whitespace-pre-wrap text-base text-muted-foreground">
-                  {signature}
-                </div>
-              )}
-              {quote && (
-                <div className="text-base text-muted-foreground">
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="h-auto px-0 font-normal text-base text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowQuote(!showQuote)}
-                  >
-                    {t("compose.quote.show")}
-                  </Button>
-                  {showQuote && (
-                    <div className="mt-2 whitespace-pre-wrap border-l-2 pl-3">{quote}</div>
-                  )}
-                </div>
-              )}
+            <div className="mx-4 mb-4 flex flex-col gap-4 *:empty:hidden">
               <Attachments
                 items={attachments}
                 tooLarge={tooLarge}
@@ -817,14 +855,12 @@ function Compose({
               />
             </div>
           </div>
-          <div className="shrink-0 border-t px-5 py-3">
-            <SendBar
-              sending={sending}
-              frozen={locked}
-              onSend={() => send()}
-              onDiscard={discard}
-              t={t}
-            />
+          {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
+          <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
+            <div ref={setToolbarSlot} className="contents">
+              {!showEditor && <IdleToolbar t={t} attach={attach} />}
+            </div>
+            <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
           </div>
         </section>
         {wit && (
@@ -837,29 +873,27 @@ function Compose({
               reviewing
                 ? {
                     approval: reviewing.approval,
-                    body: (
-                      <div className="flex flex-col gap-2">
-                        <span className="text-muted-foreground text-sm">
-                          {reviewSummary(reviewing, t)}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, false), false)}
-                          >
-                            {t("wit.compose.reject_all")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, true), true)}
-                          >
-                            {t("wit.compose.accept_all")}
-                          </Button>
-                        </div>
-                      </div>
+                    summary: reviewSummary(reviewing, t),
+                    actions: (
+                      <>
+                        <Button
+                          size="sm"
+                          className="px-3 font-normal text-base"
+                          disabled={deciding}
+                          onClick={() => decide((id) => api.decide(id, true), true)}
+                        >
+                          {t("wit.compose.accept_all")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="font-normal text-base"
+                          disabled={deciding}
+                          onClick={() => decide((id) => api.decide(id, false), false)}
+                        >
+                          {t("wit.compose.reject_all")}
+                        </Button>
+                      </>
                     ),
                   }
                 : undefined
@@ -868,6 +902,11 @@ function Compose({
             onLink={(url) => api.openLink(url)}
             onRunning={setPanelRunning}
             onDecide={decideTool}
+            onSearch={(q) => api.searchMail(q)}
+            model={state.wit.model}
+            onModels={() =>
+              void api.openModels().catch((e) => toast.error(witError(message(e), t)))
+            }
             transport={wit.tr}
             t={t}
           />

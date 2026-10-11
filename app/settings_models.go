@@ -1,8 +1,11 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"log/slog"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,10 +25,13 @@ type modelsView struct {
 	services             []core.ModelService
 	listGen              uint64     // bumped per list read; only the newest applies
 	form                 *modelForm // nil until a service is chosen or added
-	defModel, smallModel string     // the model selects' values; follow a.settings between frames
+	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
+	judge                string
+	open                 bool // the add/edit dialog shows form
+	loaded               bool // the list has been read once
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
-	testService  func(ctx context.Context, id int64) error
+	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
 }
 
 // modelForm edits one service (id 0: a new one). A result for a form that
@@ -33,39 +39,125 @@ type modelsView struct {
 type modelForm struct {
 	id                       int64
 	title, slug              string // as saved
-	savedKind, savedURL      string // as saved: where a stored key may go
-	picking                  bool   // a new service choosing its preset
-	helpURL                  string // the preset's API key page
-	keyOptional              bool   // the preset needs no key
-	kind, name, baseURL, key string
-	hasKey, noKey            bool   // noKey: the user chose no key for a changed address
-	manual                   string // a model ID being typed
+	savedKind, savedJudge    string // as saved: where a stored key may go
+	savedURL                 string // as saved, normalized
+	provider                 string // its tile; fixed once added
+	confirmDel               bool   // the footer asks to confirm the removal
+	keyFocus, urlFocus       bool
+	fetch, fetchErr          string // "ok" or "fail" once the key's /models fetch is back; why it failed
+	fetched                  int    // how many models that fetch listed
+	probeConn                string // conn() of the fetch under way
+	showKey, refetch         bool   // the typed key is shown; the key or address changed during a fetch, which asks for another
+	kind, name, baseURL, key string // kind: the generate format, kept while generate is off
+	genOn, judgeOn           bool
+	judgeFormat, judgeModel  string   // kept while judge is off
+	judgeModels              []string // the judge models the last fetch listed
+	hasKey, noKey            bool     // noKey: the user chose no key for a changed address
+	nameAuto                 bool     // other: the name follows the address's host until the user types one
+	autoName, autoURL        string   // the name nameAuto set last, and the address it set it for
+	manual                   string   // a model ID being typed
 	models, offered          []string
-	busy, testing, probing   bool
-	checked                  string // conn() of the last probe taken; "" from a probe's start until it is taken
-	reprobe                  bool   // a probe was not taken: saving probes again
-	edits                    uint64 // bumped by every edit edited sees
-	seen                     string // the form as edited last saw it
-	noList                   bool   // that probe found no model list
+	busy, probing            bool
+	gen, judge               capTest // the dialog's tests; cleared when conn() changes
+	tests                    int     // bumped by each test: only the newest one's results show
+	connEdits                uint64  // bumped by every change of conn() edited sees
+	connSeen                 string
 	keyErr                   string // that service refused the key
-	urlFocus                 bool
 	urlErr, urlBad           string // why the address urlBad was refused when it lost focus
-	testMsg                  string
-	testOK                   bool
 }
+
+// capTest is a capability's test in the dialog: state "", "testing", "ok" or
+// "fail". status is what core found (State "" for an input error), basis
+// the form's capBasis when the test started.
+type capTest struct {
+	state, text string
+	status      core.CapStatus
+	basis       string
+}
+
+// providerURL is each provider's address (the design's PROVIDERS).
+var providerURL = map[string]string{core.ProviderOpenAI: "https://api.openai.com/v1", core.ProviderAnthropic: "https://api.anthropic.com/v1",
+	core.ProviderTypeSafe: "https://api.typesafe.ai/v1", core.ProviderOther: ""}
+
+var providerOrder = []string{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther}
+
+func svcProvider(p string) string {
+	switch p {
+	case core.ProviderOpenAI:
+		return "OpenAI"
+	case core.ProviderAnthropic:
+		return "Anthropic"
+	case core.ProviderTypeSafe:
+		return "TypeSafe"
+	}
+	return i18n.T("settings.models.preset.custom")
+}
+
+// formats are the generate and judge formats' labels, and their API's name in an error.
+var formats = map[string]struct{ label, api string }{
+	ai.KindResponses: {"OpenAI Responses", "Responses"}, ai.KindOpenAI: {"Chat Completions", "Chat Completions"}, ai.KindAnthropic: {"Anthropic Messages", "Messages"},
+	string(ai.FormatDecisions): {"OpenAI Decisions", "Decisions"}, string(ai.FormatSystemOne): {"TypeSafe System One", "System One"},
+}
+
+// localGateway is the 本地网关 preset: the port and path are the user's to type.
+const localGateway = "http://127.0.0.1:"
+
+// gateways are the 常用 presets of other; "" names the local gateway.
+var gateways = []struct{ name, url string }{
+	{"OpenRouter", "https://openrouter.ai/api/v1"}, {"Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1"}, {"LiteLLM", "http://127.0.0.1:4000"}, {"", localGateway},
+}
+
+// hosts name an other service after its address (the design's HOSTS); "" is the local gateway.
+var hosts = map[string]string{"openrouter.ai": "OpenRouter", "ai-gateway.vercel.sh": "Vercel AI Gateway", "127.0.0.1": "", "localhost": ""}
+
+var hostOf = regexp.MustCompile(`(?i)^[a-z]+://([^/:]+)`)
+
+// hostName is the name an other service at u gets: its host's, else the host.
+func hostName(u string) string {
+	m := hostOf.FindStringSubmatch(strings.TrimSpace(u))
+	if m == nil {
+		return ""
+	}
+	n, ok := hosts[m[1]]
+	switch {
+	case !ok:
+		return m[1]
+	case n == "":
+		return i18n.T("settings.models.local.name")
+	}
+	return n
+}
+
+// newForm is a new service of provider p as the design's blank() makes it.
+func newForm(p string) *modelForm {
+	gen, judge := core.ProviderFormats(p)
+	f := &modelForm{provider: p, baseURL: providerURL[p], nameAuto: true, genOn: len(gen) > 0, judgeOn: len(judge) > 0 && p != core.ProviderOther}
+	if p != core.ProviderOther {
+		f.name = svcProvider(p)
+	}
+	f.kind, f.judgeFormat = first(gen), first(judge)
+	f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
+	return f
+}
+
+func first(s []string) string { return append(s, "")[0] }
 
 // url is the address as it will be saved, or as typed when it is not valid.
 func (f *modelForm) url() string {
 	raw := strings.TrimSpace(f.baseURL)
-	if u, err := core.NormalizeModelBaseURL(f.kind, raw); err == nil {
+	if u, err := core.NormalizeModelBaseURL(raw); err == nil {
 		return u
 	}
 	return raw
 }
 
-// moved reports whether a saved service now points at another address or protocol.
+func (f *modelForm) custom() bool { return f.provider == core.ProviderOther }
+
+// moved reports whether a saved service now points at another address or
+// format, which core won't send the stored key to.
 func (f *modelForm) moved() bool {
-	return f.id != 0 && (f.kind != f.savedKind || f.url() != f.savedURL)
+	switched := func(was, is string, on bool) bool { return was != "" && on && was != is }
+	return f.id != 0 && (f.url() != f.savedURL || switched(f.savedKind, f.kind, f.genOn) || switched(f.savedJudge, f.judgeFormat, f.judgeOn))
 }
 
 // needsKeyDecision: the stored key may not follow a move, and the user has
@@ -82,30 +174,136 @@ func (f *modelForm) keyAction() string {
 	return core.KeyKeep
 }
 
-// conn is what a probe depends on: its result is taken only while it is the same.
+// conn is what a fetch or test depends on: the formats, address and key.
 func (f *modelForm) conn() string {
-	return strings.Join([]string{f.kind, f.url(), f.keyAction(), f.key}, "\n")
+	return strings.Join([]string{f.kind, f.judgeFormat, f.url(), f.keyAction(), f.key}, "\n")
 }
 
-// mustProbe reports whether saving probes first: a new service, or a new
-// address, protocol or key.
-func (f *modelForm) mustProbe() bool {
-	return (f.reprobe || f.id == 0 || f.moved() || f.keyAction() != core.KeyKeep) && f.checked != f.conn()
-}
-
-// edited counts the form's edits: every change to what it would save, or
-// to the model ID being typed, since the last call is one.
-func (f *modelForm) edited() uint64 {
-	if p := strings.Join(append([]string{f.kind, f.name, f.baseURL, f.key, strconv.FormatBool(f.noKey), f.manual}, f.models...), "\n"); p != f.seen {
-		f.seen, f.edits = p, f.edits+1
+// capBasis is what a test of capability c ran on: conn() and the model it asked.
+func (f *modelForm) capBasis(c string) string {
+	if c == core.CapGen {
+		return f.conn() + "\n" + first(f.models)
 	}
-	return f.edits
+	return f.conn() + "\n" + f.judgeModel
 }
 
-// input is the form as a service input, with an explicit key action.
+// found is the dialog's finished tests that still describe the form: they
+// become the saved service's status.
+func (f *modelForm) found() map[string]core.CapStatus {
+	out := map[string]core.CapStatus{}
+	for c, t := range map[string]capTest{core.CapGen: f.gen, core.CapJudge: f.judge} {
+		if on := c == core.CapGen && f.genOn || c == core.CapJudge && f.judgeOn; on && t.status.State != "" && t.basis == f.capBasis(c) {
+			out[c] = t.status
+		}
+	}
+	return out
+}
+
+// edited counts the changes of conn() it sees; each clears the tests, which
+// said nothing about the new address, key or format.
+func (f *modelForm) edited() {
+	if c := f.conn(); c != f.connSeen {
+		f.connSeen, f.connEdits = c, f.connEdits+1
+		f.gen, f.judge = capTest{}, capTest{}
+	}
+}
+
+// follow keeps an other service's name on its address's host until the
+// user types a name.
+func (f *modelForm) follow() {
+	if f.name != f.autoName {
+		f.nameAuto = false
+	}
+	if f.nameAuto && f.custom() && f.baseURL != f.autoURL {
+		f.name = hostName(f.baseURL)
+		f.autoName, f.autoURL = f.name, f.baseURL
+	}
+}
+
+// pickGateway fills the address of a 常用 preset, and its name while the name follows the address.
+func (f *modelForm) pickGateway(name, url string) {
+	f.follow()
+	f.baseURL = url
+	if f.nameAuto {
+		f.name, f.autoName, f.autoURL = name, name, url
+	}
+}
+
+func (f *modelForm) anyCap() bool    { return f.genOn || f.judgeOn }
+func (f *modelForm) anyKey() bool    { return f.key != "" || f.hasKey }
+func (f *modelForm) testing() bool   { return f.gen.state == "testing" || f.judge.state == "testing" }
+func (f *modelForm) needKey() bool   { return f.id == 0 && !f.custom() && f.key == "" }
+func (f *modelForm) needModel() bool { return f.genOn && len(f.models) == 0 }
+func (f *modelForm) noURL() bool     { return strings.TrimSpace(f.baseURL) == "" }
+func (f *modelForm) noName() bool    { return strings.TrimSpace(f.name) == "" }
+func (f *modelForm) failed() bool    { return f.gen.state == "fail" || f.judge.state == "fail" }
+func (f *modelForm) canResetURL() bool {
+	return !f.custom() && !defaultURL(f.provider, strings.TrimSpace(f.baseURL))
+}
+
+// defaultURL: u is provider p's address. Older Godwits stored Anthropic's without /v1.
+func defaultURL(p, u string) bool {
+	return u == providerURL[p] || p == core.ProviderAnthropic && u == "https://api.anthropic.com"
+}
+
+// blocked is the design's rule for the primary button, and a generator needs a model.
+func (f *modelForm) blocked() bool {
+	return f.noName() || f.noURL() || !f.anyCap() || f.needKey() || f.needModel()
+}
+
+// hint is what the footer says is missing, in the design's order.
+func (f *modelForm) hint() string {
+	switch {
+	case !f.anyCap():
+		return i18n.T("settings.models.need.cap")
+	case f.noURL():
+		return i18n.T("settings.models.need.url")
+	case f.needKey():
+		return i18n.T("settings.models.need.key")
+	case f.noName():
+		return i18n.T("settings.models.need.name")
+	case f.needModel():
+		return i18n.T("settings.models.need.model")
+	case f.failed() && f.id == 0:
+		return i18n.T("settings.models.need.failed_add")
+	case f.failed():
+		return i18n.T("settings.models.need.failed_save")
+	}
+	return ""
+}
+
+func (f *modelForm) cantTest() bool {
+	return !f.anyCap() || !f.custom() && !f.anyKey() || f.noURL() || f.testing()
+}
+
+// decList is the judge models to choose from: none until there is a key
+// (other: the format's own); the fetched ones, else the format's.
+func (f *modelForm) decList() []string {
+	if f.judgeFormat == "" || !f.anyKey() && !f.custom() {
+		return nil
+	}
+	list := ai.JudgeFormat(f.judgeFormat).Models()
+	if !f.custom() && len(f.judgeModels) > 0 {
+		list = slices.Clone(f.judgeModels)
+	}
+	if f.judgeModel != "" && !slices.Contains(list, f.judgeModel) {
+		list = append([]string{f.judgeModel}, list...)
+	}
+	return list
+}
+
+// input is the form as a service input, with an explicit key action. The
+// models are kept while generate is off, for when it is turned on again.
 func (f *modelForm) input() core.ModelServiceInput {
-	return core.ModelServiceInput{Name: strings.TrimSpace(f.name), Kind: f.kind, BaseURL: strings.TrimSpace(f.baseURL),
-		APIKey: f.key, KeyAction: f.keyAction(), Models: slices.Clone(f.models)}
+	in := core.ModelServiceInput{Name: strings.TrimSpace(f.name), BaseURL: strings.TrimSpace(f.baseURL), APIKey: f.key, KeyAction: f.keyAction(),
+		Models: slices.Clone(f.models), Provider: f.provider}
+	if f.genOn {
+		in.Kind = f.kind
+	}
+	if f.judgeOn {
+		in.JudgeFormat, in.JudgeModel = f.judgeFormat, f.judgeModel
+	}
+	return in
 }
 
 // normalize rewrites the address as it will be saved, or says why it can't be.
@@ -115,7 +313,7 @@ func (f *modelForm) normalize() {
 		f.urlErr = ""
 		return
 	}
-	u, err := core.NormalizeModelBaseURL(f.kind, raw)
+	u, err := core.NormalizeModelBaseURL(raw)
 	if err != nil {
 		f.urlErr, f.urlBad = humanize(err), f.baseURL
 		return
@@ -138,10 +336,40 @@ func (f *modelForm) addManual() {
 	f.manual = ""
 }
 
+// offWarns are the warnings for turning off a capability of the saved
+// service the defaults use: generate's names the service it moves to (alt).
+func offWarns(f *modelForm, st core.Settings, services []core.ModelService) (gen, judge string) {
+	if f.id == 0 {
+		return
+	}
+	genF, judgeF := core.ProviderFormats(f.provider)
+	if strings.HasPrefix(st.DefaultModel, f.slug+"/") && !f.genOn && len(genF) > 0 {
+		gen = i18n.T("settings.models.off.gen.only")
+		if alt := altGen(services, f.id); alt != nil {
+			gen = i18n.Tf("settings.models.off.gen.alt", alt.Name+" / "+alt.Models[0])
+		}
+	}
+	if st.JudgeService == f.slug && !f.judgeOn && len(judgeF) > 0 {
+		judge = i18n.T("settings.models.off.judge")
+	}
+	return gen, judge
+}
+
+// altGen is where the default generator moves when service id stops
+// generating: the first other service that generates, at its first model.
+func altGen(services []core.ModelService, id int64) *core.ModelService {
+	for i, o := range services {
+		if o.ID != id && o.Kind != "" && len(o.Models) > 0 {
+			return &services[i]
+		}
+	}
+	return nil
+}
+
 func (m *modelsView) load() {
 	a := m.a
 	m.listGen++
-	m.defModel, m.smallModel = a.settings.DefaultModel, a.settings.SmallModel
+	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	gen := m.listGen
 	var list []core.ModelService
 	a.query(func(ctx context.Context) (err error) {
@@ -155,55 +383,57 @@ func (m *modelsView) load() {
 			a.toastErr(err)
 			return
 		}
-		m.services = list
-		if m.form == nil && len(list) > 0 {
-			m.edit(list[0])
-		}
+		m.services, m.loaded = list, true
 	})
 }
 
 func (m *modelsView) edit(s core.ModelService) {
-	m.form = &modelForm{id: s.ID, title: s.Name, slug: s.Slug, savedKind: s.Kind, savedURL: s.BaseURL, kind: s.Kind, name: s.Name,
-		baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models)}
-}
-
-func (m *modelsView) add() { m.form = &modelForm{picking: true, kind: ai.KindOpenAI} }
-
-// pick fills the new service's form from a preset.
-func (f *modelForm) pick(p ai.Preset) {
-	f.picking, f.kind, f.name, f.baseURL, f.keyOptional = false, p.Kind, p.Name, p.BaseURL, !p.KeyRequired
-	if p.KeyRequired {
-		f.helpURL = p.HelpURL
+	p := cmp.Or(s.Provider, core.ProviderOther)
+	gen, judge := core.ProviderFormats(p)
+	savedURL, _ := core.NormalizeModelBaseURL(s.BaseURL)
+	f := &modelForm{id: s.ID, title: s.Name, slug: s.Slug, savedKind: s.Kind, savedJudge: s.JudgeFormat, savedURL: cmp.Or(savedURL, s.BaseURL), provider: p,
+		name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models),
+		kind: cmp.Or(s.Kind, first(gen)), genOn: s.Kind != "", judgeOn: s.JudgeFormat != "", judgeFormat: cmp.Or(s.JudgeFormat, first(judge)), judgeModel: s.JudgeModel}
+	if f.judgeModel == "" {
+		f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
 	}
+	m.form = f
 }
 
-// save probes the service first when its address, protocol or key is new,
-// and submits once the probe is taken and a model is chosen.
+// openEdit shows the service in the dialog and quietly lists its models.
+func (m *modelsView) openEdit(s core.ModelService) {
+	m.edit(s)
+	m.open = true
+	m.fetchAs(m.form, true)
+}
+
+func (m *modelsView) add() { m.form, m.open = newForm(core.ProviderOpenAI), true }
+
+// addLocal opens the dialog for a local gateway: 其他服务 with a loopback address to complete.
+func (m *modelsView) addLocal() {
+	f := newForm(core.ProviderOther)
+	f.name, f.baseURL = i18n.T("settings.models.local.name"), localGateway
+	f.autoName, f.autoURL = f.name, f.baseURL
+	m.form, m.open = f, true
+}
+
+// save writes the form; a failed test doesn't stop it.
 func (m *modelsView) save(f *modelForm) {
-	switch {
-	case f.busy || f.probing || f.needsKeyDecision(): // the form says what is missing
-	case f.mustProbe():
-		m.probe(f, func() {
-			if len(f.models) == 0 {
-				m.a.toastAs(kit.ToastWarning, i18n.T("settings.models.pick"))
-				return
-			}
-			m.submit(f)
-		})
-	default:
-		m.submit(f)
+	if f.busy || f.blocked() || f.needsKeyDecision() { // the form says what is missing
+		return
 	}
+	m.submit(f)
 }
 
 // submit writes the form as it is now. On success an unedited form shows the
 // saved service; one edited meanwhile keeps the edits and takes only the
-// service's ID, name, address and key state. References to models it no
-// longer has are cleared.
+// service's ID, name, address and key state. References to what it no
+// longer offers are cleared, the default generator moving to altGen.
 func (m *modelsView) submit(f *modelForm) {
 	a := m.a
 	snap := *f
 	snap.models = slices.Clone(f.models)
-	in, id := f.input(), f.id
+	in, id, found := f.input(), f.id, f.found()
 	f.busy = true
 	var saved core.ModelService
 	a.writes.Chain("models", func(ctx context.Context) (err error) {
@@ -212,7 +442,16 @@ func (m *modelsView) submit(f *modelForm) {
 		} else {
 			saved, err = a.svc.UpdateModelService(ctx, id, in)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// shortcut: a test still running at save time isn't kept; the user tests again.
+		for c, st := range found {
+			if rerr := a.svc.RecordCapStatus(ctx, saved.ID, saved.Version, c, st); rerr != nil {
+				slog.Warn("model service status", "service", saved.ID, "err", rerr)
+			}
+		}
+		return nil
 	}, func(err error) {
 		f.busy = false
 		a.refreshTasks()
@@ -224,21 +463,29 @@ func (m *modelsView) submit(f *modelForm) {
 		switch {
 		case m.form != f:
 		case f.unchanged(snap):
-			m.edit(saved)
-			m.form.manual = f.manual // typed, not added yet
-			m.form.offered = append(m.form.offered, slices.DeleteFunc(slices.Clone(f.offered), func(s string) bool { return slices.Contains(saved.Models, s) })...)
+			m.close()
 		default:
-			f.id, f.title, f.slug, f.hasKey, f.savedKind, f.savedURL = saved.ID, saved.Name, saved.Slug, saved.HasKey, saved.Kind, saved.BaseURL
+			f.id, f.title, f.slug, f.hasKey, f.savedKind, f.savedJudge = saved.ID, saved.Name, saved.Slug, saved.HasKey, saved.Kind, saved.JudgeFormat
+			f.savedURL, _ = core.NormalizeModelBaseURL(saved.BaseURL)
 			if f.key == snap.key {
 				f.key = ""
 			}
 		}
 		noDefault := a.settings.DefaultModel == ""
 		if id != 0 {
-			m.dropRefs(saved.Slug, saved.Models)
+			m.dropRefs(saved)
 		}
-		if noDefault { // this service's first model becomes it: Wit needs one
-			m.setModel(func(st *core.Settings) { st.DefaultModel = saved.Slug + "/" + saved.Models[0] })
+		fillGen := noDefault && saved.Kind != "" && len(saved.Models) > 0                              // this service's first model becomes it: Wit needs one
+		fillJudge := a.settings.JudgeService == "" && saved.JudgeFormat != "" && snap.savedJudge == "" // judge just turned on answers the judge questions
+		if fillGen || fillJudge {
+			m.setModel(func(st *core.Settings) {
+				if fillGen {
+					st.DefaultModel = saved.Slug + "/" + saved.Models[0]
+				}
+				if fillJudge {
+					st.JudgeService = saved.Slug
+				}
+			})
 		}
 		a.toastAs(kit.ToastSuccess, i18n.T("settings.saved"))
 		m.load()
@@ -247,24 +494,40 @@ func (m *modelsView) submit(f *modelForm) {
 
 func (f *modelForm) unchanged(snap modelForm) bool {
 	return f.kind == snap.kind && f.name == snap.name && f.baseURL == snap.baseURL && f.key == snap.key && f.noKey == snap.noKey &&
-		slices.Equal(f.models, snap.models)
+		f.manual == snap.manual && slices.Equal(f.models, snap.models) && f.genOn == snap.genOn && f.judgeOn == snap.judgeOn &&
+		f.judgeFormat == snap.judgeFormat && f.judgeModel == snap.judgeModel
 }
 
-// dropRefs clears the model settings that point at service slug's models
-// other than keep (all of them after a removal, keep nil). A rename keeps the
-// slug, so references need no rewrite.
-func (m *modelsView) dropRefs(slug string, keep []string) {
-	st := m.a.settings
-	changed := false
-	for _, ref := range []*string{&st.DefaultModel, &st.SmallModel} {
-		if model, ok := strings.CutPrefix(*ref, slug+"/"); ok && !slices.Contains(keep, model) {
-			*ref, changed = "", true
-		}
-	}
-	if changed {
+// dropRefs clears the model settings that point at what service svc no
+// longer offers (a removed service: its ID and slug only). A rename keeps
+// the slug, so references need no rewrite.
+func (m *modelsView) dropRefs(svc core.ModelService) {
+	if st, changed := dropRefs(m.a.settings, svc, m.services); changed {
 		st.NoTranslate = slices.Clone(st.NoTranslate)
 		m.a.changeSettings(st)
 	}
+}
+
+// dropRefs clears st's references to models svc doesn't generate with (all
+// of them with generate off) and to its judge when that is off. A
+// DefaultModel cleared moves to altGen, as the dialog's warning promises.
+func dropRefs(st core.Settings, svc core.ModelService, services []core.ModelService) (core.Settings, bool) {
+	keep, changed := svc.Models, false
+	if svc.Kind == "" {
+		keep = nil
+	}
+	for _, ref := range []*string{&st.DefaultModel, &st.SmallModel} {
+		if model, ok := strings.CutPrefix(*ref, svc.Slug+"/"); ok && !slices.Contains(keep, model) {
+			*ref, changed = "", true
+		}
+	}
+	if st.JudgeService == svc.Slug && svc.JudgeFormat == "" {
+		st.JudgeService, changed = "", true
+	}
+	if alt := altGen(services, svc.ID); changed && st.DefaultModel == "" && alt != nil {
+		st.DefaultModel = alt.Slug + "/" + alt.Models[0]
+	}
+	return st, changed
 }
 
 func (m *modelsView) remove(f *modelForm) {
@@ -275,32 +538,49 @@ func (m *modelsView) remove(f *modelForm) {
 		a.refreshTasks()
 		a.toastErr(err)
 		if err == nil {
-			m.dropRefs(slug, nil)
+			m.dropRefs(core.ModelService{ID: id, Slug: slug})
 			if m.form == f {
-				m.form = nil
+				m.form, m.open = nil, false
 			}
 		}
 		m.load()
 	})
 }
 
-// probe checks the service as the form has it, saved or not, and offers its
-// models; then runs after a probe that is taken. Until one is taken, saving
-// probes again. The result is taken only on the form and page visit that
-// asked, with no edit since it started; a refused key shows on the key field.
-func (m *modelsView) probe(f *modelForm, then func()) {
-	if f.probing || f.needsKeyDecision() {
+// fetch lists the models when the key is entered or loses focus. A result
+// is dropped once the dialog has closed or the formats, address or key
+// changed since it started; a key or address changed meanwhile asks again.
+func (m *modelsView) fetch(f *modelForm) { m.fetchAs(f, false) }
+
+// fetchAs is fetch; quiet (an edit dialog opening) offers what it lists
+// without saying how the fetch went.
+func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
+	if f.probing {
+		f.refetch = f.conn() != f.probeConn
 		return
 	}
-	a, id, in, check, gen, conn, edits := m.a, f.id, f.input(), m.checkService, m.a.gen, f.conn(), f.edited()
-	f.probing, f.keyErr, f.checked, f.reprobe = true, "", "", true
+	if _, err := core.NormalizeModelBaseURL(strings.TrimSpace(f.baseURL)); err != nil || !f.anyCap() || f.needsKeyDecision() {
+		return
+	}
+	f.edited()
+	a, id, in, check, gen, conn, connEdits := m.a, f.id, f.input(), m.checkService, m.a.gen, f.conn(), f.connEdits
+	in.Name = cmp.Or(in.Name, "-") // checked, never saved
+	f.probing, f.keyErr, f.refetch, f.probeConn = true, "", false, conn
+	if !quiet {
+		f.fetch, f.fetchErr = "", ""
+	}
 	var res core.ServiceCheck
 	a.do(func(ctx context.Context) (err error) {
 		res, err = check(ctx, id, in)
 		return err
 	}, func(err error) {
 		f.probing = false
-		if m.form != f || gen != a.gen || f.edited() != edits { // edited since: the user saves again
+		defer func() {
+			if f.refetch && m.form == f && gen == a.gen {
+				m.fetch(f)
+			}
+		}()
+		if m.form != f || gen != a.gen || f.connEdits != connEdits {
 			return
 		}
 		switch {
@@ -308,41 +588,92 @@ func (m *modelsView) probe(f *modelForm, then func()) {
 			f.keyErr = humanize(err)
 			return
 		case err != nil:
-			a.toastErr(err)
+			if !quiet {
+				f.fetch, f.fetchErr = "fail", fetchFailure(err)
+			}
 			return
 		}
-		f.checked, f.reprobe, f.noList = conn, false, !res.ListSupported || len(res.Models) == 0
-		if res.BaseURL != "" {
-			f.baseURL = res.BaseURL
+		f.judgeModels = res.JudgeModels
+		if f.judgeModel == "" {
+			f.judgeModel = first(f.decList())
 		}
+		if in.Kind == "" {
+			return
+		}
+		fresh := len(f.offered) == 0
 		for _, g := range res.Models {
 			if !slices.Contains(f.offered, g) {
 				f.offered = append(f.offered, g)
 			}
 		}
-		if then != nil {
-			then()
+		if fresh && len(f.models) == 0 && len(res.Models) > 0 { // the first listed is chosen, as the design's onKey does
+			f.models = []string{res.Models[0]}
+		}
+		switch {
+		case quiet:
+		case !res.ListSupported || len(res.Models) == 0:
+			f.fetch, f.fetchErr = "fail", ""
+			if res.NoListStatus > 0 {
+				f.fetchErr = strconv.Itoa(res.NoListStatus)
+			}
+		default:
+			f.fetch, f.fetched = "ok", len(res.Models)
 		}
 	})
 }
 
-// test runs the saved service and shows how long it took, as probe does.
+// test tests each capability that is on, as the form has it, saved or not;
+// core stores a saved service's status, which the list reads again. A result
+// is dropped once conn() changed since it started.
 func (m *modelsView) test(f *modelForm) {
-	a, id, test, gen := m.a, f.id, m.testService, m.a.gen
-	f.testing, f.testMsg = true, ""
-	start := a.clock.Now()
-	a.do(func(ctx context.Context) error { return test(ctx, id) }, func(err error) {
-		f.testing = false
-		if m.form != f || gen != a.gen {
-			return
+	if f.cantTest() {
+		return
+	}
+	f.edited()
+	f.tests++
+	a, id, in, test, gen, connEdits, run := m.a, f.id, f.input(), m.testService, m.a.gen, f.connEdits, f.tests
+	for _, c := range []struct {
+		cap, format string
+		on          bool
+		res         *capTest
+	}{{core.CapGen, f.kind, f.genOn, &f.gen}, {core.CapJudge, f.judgeFormat, f.judgeOn, &f.judge}} {
+		*c.res = capTest{}
+		if !c.on {
+			continue
 		}
-		f.testOK = err == nil
-		if err != nil {
-			f.testMsg = humanize(err)
-			return
-		}
-		f.testMsg = i18n.Tf("settings.models.test.ok", a.clock.Now().Sub(start).Milliseconds())
-	})
+		*c.res = capTest{state: "testing"}
+		basis := f.capBasis(c.cap)
+		var st core.CapStatus
+		a.do(func(ctx context.Context) (err error) {
+			st, err = test(ctx, id, in, c.cap)
+			return err
+		}, func(err error) {
+			if gen == a.gen {
+				m.load()
+			}
+			switch {
+			case m.form != f || f.tests != run: // a later test owns the lines
+			case gen != a.gen || f.connEdits != connEdits:
+				*c.res = capTest{}
+			default:
+				*c.res = capResult(c.format, st, err)
+				c.res.status, c.res.basis = st, basis
+			}
+		})
+	}
+}
+
+// capResult is a capability test's status line.
+func capResult(format string, st core.CapStatus, err error) capTest {
+	switch {
+	case err == nil:
+		return capTest{state: "ok", text: i18n.Tf("settings.models.test.ok", st.LatencyMs)}
+	case st.Code == "forbidden":
+		return capTest{state: "fail", text: strconv.Itoa(st.HTTPStatus) + " · " + i18n.Tf("settings.models.fail.no_api", formats[format].api)}
+	case st.State == "fail":
+		return capTest{state: "fail", text: failReason(st)}
+	}
+	return capTest{state: "fail", text: humanize(err)}
 }
 
 // setModel saves a model setting through the settings write queue.
@@ -353,221 +684,188 @@ func (m *modelsView) setModel(set func(*core.Settings)) {
 	m.a.changeSettings(st)
 }
 
-func kindLabel(kind string) string { return cmpTr("settings.models.kind."+kind, kind) }
+// look is a status line's dot and text color: what a test found.
+type look int
 
-// badge is a service's two-letter mark.
-func badge(name string) string {
-	r := []rune(strings.ToUpper(strings.TrimSpace(name)))
-	return string(r[:min(2, len(r))])
+const (
+	lookNone     look = iota // nothing to test: grey
+	lookOK                   // passed
+	lookUntested             // not tested since it changed: amber
+	lookFail                 // failed: red, red text
+	lookSlow                 // the judge falls back to generation: amber
+)
+
+// colors are the look's dot and text colors.
+func (l look) colors(t theme.Tokens) (dot, fg ui.Color) {
+	switch l {
+	case lookOK:
+		return t.Success, t.Muted
+	case lookUntested, lookSlow:
+		return t.Attention, t.Muted
+	case lookFail:
+		return t.Danger, t.DangerText
+	}
+	return t.Idle, t.Muted
 }
 
-func (m *modelsView) view(c *ui.Context) {
-	a := m.a
-	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Children(func() { pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub")) })
-		kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
-	})
-	if len(m.services) > 0 {
-		listCard(c, func() {
-			for i, s := range m.services {
-				on := m.form != nil && m.form.id == s.ID
-				listRow(c.Key(s.ID), i, on, func() { m.edit(s) }, func() {
-					ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-						ui.Text(c, badge(s.Name)).Font(theme.Mono).FontSize(t.Text.Sm)
-					})
-					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-						ui.Text(c, s.Name+" · "+kindLabel(s.Kind)).FontWeight(500).SingleLine()
-						ui.Text(c, s.BaseURL).Font(theme.Mono).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
-					})
-					ui.Text(c, i18n.Plural("settings.models.count", len(s.Models))).TextColor(t.Muted)
-					if strings.HasPrefix(a.settings.DefaultModel, s.Slug+"/") {
-						kit.Badge(c, i18n.T("settings.models.default_badge"))
-					}
-				})
-			}
-		})
-	}
-	m.modelSelects(c)
-	switch f := m.form; {
-	case f == nil:
-	case f.picking:
-		m.presetView(c, f)
-	default:
-		m.formView(c, f)
-	}
+// line is a status line: a dot and its text.
+type line struct {
+	text string
+	look look
 }
 
-// presetView is the first step of adding a service: a provider, or a custom address.
-func (m *modelsView) presetView(c *ui.Context, f *modelForm) {
-	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, func() {
-		ui.Text(c, i18n.T("settings.models.add")).FontSize(t.Text.Lg).FontWeight(600)
-		ui.Text(c, i18n.T("settings.models.preset")).TextColor(t.Muted)
-		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			for _, p := range m.a.svc.ModelPresets() {
-				kit.Button(c.Key(p.ID), p.Name, kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.pick(p) })
-			}
-			kit.Button(c, i18n.T("settings.models.preset.custom"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.picking = false })
-		})
-	})
+// usage is the 用途 card as the settings and the services' tests make it.
+type usage struct {
+	genOpts, smallOpts, judgeOpts []kit.Option[string]
+	disabled                      bool // no generate model: the selects say 先添加一个服务
+	gen, judge                    line
+	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers
+	alert                         string             // the default generator failed its test
+	suggest                       bool               // a judge service would be faster
 }
 
-func (m *modelsView) formView(c *ui.Context, f *modelForm) {
-	f.edited()
-	a := m.a
-	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, func() {
-		title := i18n.T("settings.models.add")
-		if f.id != 0 {
-			title = i18n.Tf("settings.models.edit", f.title)
-		}
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600).Grow(1).Shrink(1)
-			if f.id != 0 { // up here, clear of the toasts
-				kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Destructive, Size: kit.SizeSm, Disabled: f.busy}).
-					OnClick(func() { m.remove(f) })
-			}
-		})
-		ui.Row(c).Wrap().Gap(th.Space(4)).Children(func() {
-			for _, k := range []string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic} {
-				kit.Radio(c.Key(k), &f.kind, k, kindLabel(k))
-			}
-		})
-		ui.Field(c, i18n.T("settings.models.name"), func() { kit.Input(c, &f.name, kit.InputOpts{}) })
-		if f.slug != "" {
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.Tf("settings.models.slug", f.slug)).FontSize(t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-				if kit.Button(c, i18n.T("settings.models.slug.copy"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
-					c.WriteClipboard(f.slug)
-					a.toast(i18n.T("link.copied"))
-				}
-			})
-		}
-		url := ui.Field(c, i18n.T("settings.models.base_url"), func() {
-			focused := kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true}).Focused()
-			if f.urlFocus && !focused {
-				f.normalize()
-			}
-			f.urlFocus = focused
-		})
-		if f.urlErr != "" && f.baseURL == f.urlBad {
-			url.Error(f.urlErr)
-		} else if u, err := core.NormalizeModelBaseURL(f.kind, strings.TrimSpace(f.baseURL)); err == nil {
-			url.Description(i18n.Tf("settings.models.endpoint", core.ModelEndpoint(f.kind, u)))
-		}
-		m.keyField(c, f)
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, i18n.T("settings.models.models")).FontWeight(500).Grow(1)
-			if f.probing {
-				kit.Spinner(c)
-			}
-			kit.Button(c, i18n.T("settings.models.probe"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: f.probing}).
-				OnClick(func() { m.probe(f, nil) })
-		})
-		switch {
-		case f.noList && f.checked == f.conn():
-			ui.Text(c, i18n.T("settings.models.no_list")).TextColor(t.Muted)
-		case len(f.offered) == 0:
-			ui.Text(c, i18n.T("settings.models.none")).TextColor(t.Muted)
-		}
-		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			for _, name := range f.offered {
-				on := slices.Contains(f.models, name)
-				ui.Box(c.Key(name)).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Children(func() {
-					if kit.Checkbox(c, &on, name).Changed() {
-						if !slices.Contains(f.models, name) { // the box may have written an older frame's copy
-							f.models = append(f.models, name)
-						} else {
-							f.models = slices.DeleteFunc(f.models, func(s string) bool { return s == name })
-						}
-					}
-				})
-			}
-		})
-		ui.Field(c, i18n.T("settings.models.manual"), func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				kit.Input(c, &f.manual, kit.InputOpts{Mono: true}).Grow(1).OnSubmit(f.addManual)
-				kit.Button(c, i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(f.addManual)
-			})
-		})
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).OnClick(func() { m.save(f) })
-			kit.Button(c, i18n.T("settings.models.test"), kit.ButtonOpts{Variant: kit.Outline, Disabled: f.id == 0 || f.testing}).
-				OnClick(func() { m.test(f) })
-			switch {
-			case f.testing:
-				kit.Spinner(c)
-			case f.testMsg != "" && f.testOK:
-				kit.StatusDot(c, kit.OK)
-				ui.Text(c, f.testMsg).TextColor(t.Success)
-			case f.testMsg != "":
-				kit.StatusDot(c, kit.Error)
-				ui.Text(c, f.testMsg).TextColor(t.Danger).Shrink(1)
-			}
-		})
-	})
-}
-
-// keyField is the API key, the preset's key page, and the decision a stored
-// key needs once the address or protocol changes.
-func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
-	a := m.a
-	label, ph := i18n.T("settings.models.api_key"), ""
-	if f.keyOptional {
-		label = i18n.T("settings.models.api_key.optional")
-	}
-	if f.hasKey {
-		ph = i18n.T("settings.secret_kept")
-	}
-	ui.Field(c, label, func() { kit.Input(c, &f.key, kit.InputOpts{Password: true, Placeholder: ph}) }).
-		Description(i18n.T("settings.models.api_key.help")).Error(f.keyErr)
-	if u := f.helpURL; u != "" {
-		kit.Button(c, i18n.T("settings.models.api_key.get"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-			OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) })
-	}
-	if f.hasKey && f.key == "" && f.moved() {
-		if !f.noKey {
-			kit.Alert(c, kit.Warning, i18n.T("settings.models.key_moved"), nil)
-		}
-		kit.Checkbox(c, &f.noKey, i18n.T("settings.models.no_key"))
-	}
-}
-
-// modelSelects pick Settings.DefaultModel and SmallModel among the saved
-// services' models.
-func (m *modelsView) modelSelects(c *ui.Context) {
-	a := m.a
-	defer func() { m.defModel, m.smallModel = a.settings.DefaultModel, a.settings.SmallModel }() // what the next frame shows
-	opts := func(none string) []kit.Option[string] {
-		o := []kit.Option[string]{{Value: "", Label: none}}
-		for _, s := range m.services {
+// deriveUsage is the 用途 card for st and the services.
+func deriveUsage(st core.Settings, services []core.ModelService) usage {
+	var u usage
+	var genModel string
+	for i, s := range services {
+		if s.Kind != "" {
 			for _, mod := range s.Models {
-				o = append(o, kit.Option[string]{Value: s.Slug + "/" + mod, Label: s.Name + " / " + mod})
+				ref := s.Slug + "/" + mod
+				u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + mod})
+				if ref == st.DefaultModel {
+					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
+				}
 			}
 		}
-		return o
+		if s.JudgeFormat != "" && s.Slug == st.JudgeService {
+			u.judgeSvc = &services[i]
+		}
 	}
-	kit.Card(c, func() {
-		def := opts(i18n.T("settings.models.default.none"))
-		label := i18n.T("settings.models.default")
-		ui.Field(c, label, func() {
-			if kit.Select(c, &m.defModel, def).Label(label).Changed() {
-				v := m.defModel
-				m.setModel(func(st *core.Settings) { st.DefaultModel = v })
-			}
-		})
-		if dm := a.settings.DefaultModel; !slices.ContainsFunc(def, func(o kit.Option[string]) bool { return o.Value == dm }) {
-			kit.Alert(c, kit.Warning, i18n.Tf("settings.models.default.missing", dm), nil)
+	if len(u.genOpts) == 0 {
+		none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
+		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
+		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
+		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
+		return u
+	}
+	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
+	u.judgeOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.judge.by_gen")}}
+	for _, s := range services {
+		if s.JudgeFormat != "" {
+			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: s.Slug, Label: s.Name + " / " + s.JudgeModel})
 		}
-		small := i18n.T("settings.models.small")
-		ui.Field(c, small, func() {
-			if kit.Select(c, &m.smallModel, opts(i18n.T("settings.models.small.same"))).Label(small).Changed() {
-				v := m.smallModel
-				m.setModel(func(st *core.Settings) { st.SmallModel = v })
-			}
-		})
-	})
+	}
+	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
+	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
+	if u.genSvc == nil {
+		u.genOpts = append([]kit.Option[string]{{Value: st.DefaultModel, Label: i18n.T("settings.models.default.none")}}, u.genOpts...)
+		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
+		if st.DefaultModel != "" {
+			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
+		}
+		if u.judgeSvc != nil {
+			u.judge = capLine(u.judgeSvc, core.CapJudge)
+		}
+		return u
+	}
+	u.gen = capLine(u.genSvc, core.CapGen)
+	if u.judgeSvc != nil {
+		u.judge = capLine(u.judgeSvc, core.CapJudge)
+	} else {
+		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
+	}
+	if u.gen.look == lookFail {
+		end := i18n.T("settings.models.use.alert.end")
+		if u.judge.look == lookFail || u.judgeSvc == nil {
+			end = i18n.T("settings.models.use.alert.judge_too")
+		}
+		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
+	}
+	return u
+}
+
+// unset puts v first as 未设置 when opts doesn't offer it.
+func unset(opts []kit.Option[string], v string) []kit.Option[string] {
+	if slices.ContainsFunc(opts, func(o kit.Option[string]) bool { return o.Value == v }) {
+		return opts
+	}
+	return append([]kit.Option[string]{{Value: v, Label: i18n.T("settings.models.default.none")}}, opts...)
+}
+
+// capLine is a default's status line: its last test of capability c.
+func capLine(s *core.ModelService, c string) line {
+	st, ok := s.Status[c]
+	switch {
+	case !ok:
+		return line{s.Name + " · " + i18n.T("settings.models.status.untested"), lookUntested}
+	case st.State == "ok":
+		return line{s.Name + " · " + i18n.Tf("settings.models.test.ok", st.LatencyMs), lookOK}
+	}
+	return line{s.Name + " · " + failReason(st), lookFail}
+}
+
+// failReason is why a test failed: the HTTP status, when known, and the code.
+func failReason(st core.CapStatus) string {
+	r := cmpTr("settings.models.fail."+st.Code, i18n.T("settings.models.fail.error"))
+	if st.HTTPStatus > 0 {
+		return strconv.Itoa(st.HTTPStatus) + " · " + r
+	}
+	return r
+}
+
+// svcLook is a service's status chip: Key 失效 when a capability's key was
+// refused, 连接失败 when one failed otherwise, 未测试 while one is untested.
+func svcLook(s core.ModelService) (look, string) {
+	var caps []string
+	if s.Kind != "" {
+		caps = append(caps, core.CapGen)
+	}
+	if s.JudgeFormat != "" {
+		caps = append(caps, core.CapJudge)
+	}
+	l := lookOK
+	for _, c := range caps {
+		st, ok := s.Status[c]
+		switch {
+		case ok && st.State != "ok" && st.Code == "auth":
+			return lookFail, i18n.T("settings.models.status.bad")
+		case ok && st.State != "ok":
+			l = lookFail
+		case !ok && l == lookOK:
+			l = lookUntested
+		}
+	}
+	switch l {
+	case lookFail:
+		return l, i18n.T("settings.models.fail.error")
+	case lookUntested:
+		return l, i18n.T("settings.models.status.untested")
+	}
+	return l, i18n.T("settings.models.status.ok")
+}
+
+var httpStatus = regexp.MustCompile(`HTTP \d{3}`)
+
+// fetchFailure is why a fetch failed: the status the service answered when the error carries one.
+func fetchFailure(err error) string {
+	if st := httpStatus.FindString(err.Error()); st != "" {
+		return strings.TrimPrefix(st, "HTTP ")
+	}
+	return humanize(err)
+}
+
+// badge is a service's two-letter mark: its provider's.
+func badge(provider string) string {
+	switch provider {
+	case core.ProviderOpenAI:
+		return "AI"
+	case core.ProviderAnthropic:
+		return "AN"
+	case core.ProviderTypeSafe:
+		return "TS"
+	}
+	return "GW" // other: a gateway or compatible service
 }
 
 // listCard is a bordered list of rows.

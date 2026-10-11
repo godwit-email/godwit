@@ -195,7 +195,9 @@ func TestSyncNewMessages(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'quarterly'"))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'marmalade'"))
 
-	got := ofType(collect(ch), events.MessageReceived)
+	evs := collect(ch)
+	assert.Empty(t, ofType(evs, events.MessageReceived), "a first sync is not new mail")
+	got := ofType(evs, events.MessagesChanged)
 	require.Len(t, got, 1)
 	assert.Len(t, got[0].MessageIDs, 3)
 	assert.Equal(t, e.acc.ID, got[0].AccountID)
@@ -207,6 +209,7 @@ func TestSyncNewMessages(t *testing.T) {
 
 	e.put(t, "Archive", withAttachments("a3@x", "three", 3))
 	e.sync(t)
+	assert.Len(t, ofType(collect(ch), events.MessageReceived), 1, "an arrival is")
 	id := store.Int(e.rows(t, "SELECT id FROM messages WHERE message_id = 'a3@x'")[0][0])
 	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM attachments WHERE message_id = ?", id))
 	assert.Equal(t, 4, e.count(t, "SELECT count(*) FROM attachments"))

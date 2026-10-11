@@ -14,16 +14,19 @@ const (
 )
 
 // ToastHost draws the window's toasts (c.Toast, c.AddToast) centered under
-// the top bar, the newest first; call it once in the view. closeLabel names
-// the close buttons (pass the translated "Close"). A success, warning or
-// error toast is tinted: its color's 50 behind, 200 around, 700 for the
+// the top bar, the oldest first and at most theme.ToastMax; call it once in
+// the view. closeLabel names the close buttons (pass the translated
+// "Close"). A success, warning or error toast is tinted: its color's 50 behind, 200 around, 700 for the
 // text and its leading icon; a plain one is white, without an icon.
 func ToastHost(c *ui.Context, closeLabel string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
 		viewport.Padding(theme.TopBarHeight+th.Space(2), th.Space(4), th.Space(4), th.Space(4)).AlignItems(ui.Center).Justify(ui.Start).Gap(th.Space(2))
-		for i := range toasts {
-			tst := toasts[len(toasts)-1-i]
+		for len(toasts) > theme.ToastMax { // the oldest makes room
+			c.CloseToast(toasts[0].ID)
+			toasts = toasts[1:]
+		}
+		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
 			look := toastLook(t, tst.Type)
 			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.X2l).Background(look.bg).Border(theme.Hairline, look.border).
@@ -37,7 +40,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, tst.Title).FontWeight(500)
 					if tst.Description != "" {
-						ui.Text(c, tst.Description).FontSize(t.Text.Sm).TextColor(look.muted)
+						Text(c, tst.Description, t.Text.Sm).TextColor(look.muted)
 					}
 				})
 				if tst.Action != "" {

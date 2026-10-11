@@ -27,15 +27,16 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 	return ui.SwitchBase(c, on).Radius(theme.Of(c).Radius.Full).Children(func() { switchTrack(c, *on) })
 }
 
-// SwitchRow is a full-width switch named label: label and help on the left,
-// the track on the right; a click anywhere on the row toggles it.
+// SwitchRow is a full-width switch named label in the settings row shape
+// (8/16 padding, at least 48 high): label and help on the left, the track
+// on the right; a click anywhere on the row toggles it.
 func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(4)).Label(label).Children(func() {
+	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label)
+			Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
 			if help != "" {
-				ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
+				Text(c, help, t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		switchTrack(c, *on)
@@ -76,8 +77,20 @@ type Option[T comparable] struct {
 	Label string
 }
 
+// SelectOpts style a SelectWith: zero Radius is Md, zero MinWidth the
+// default, zero MaxWidth unbounded; Flat drops the shadow.
+type SelectOpts struct {
+	Radius, MinWidth, MaxWidth float32
+	Flat                       bool
+}
+
 // Select is a 32-high select of opts; give it a Label.
 func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
+	return SelectWith(c, SelectOpts{}, sel, opts)
+}
+
+// SelectWith is Select styled by o.
+func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option[T]) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	s := ui.SelectBase(c, sel)
 	current := ""
@@ -86,11 +99,23 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 			current = o.Label
 		}
 	}
-	Elevate(c, s.Trigger, theme.ShadowXs)
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(theme.SelectMinWidth).Children(func() {
+	if !o.Flat {
+		Elevate(c, s.Trigger, theme.ShadowXs)
+	}
+	radius, minW := o.Radius, o.MinWidth
+	if radius == 0 {
+		radius = t.Radius.Md
+	}
+	if minW == 0 {
+		minW = theme.SelectMinWidth
+	}
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(minW).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
+	if o.MaxWidth > 0 {
+		s.Trigger.MaxWidth(o.MaxWidth)
+	}
 	s.Popup(func(panel ui.Element) {
 		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowMd)

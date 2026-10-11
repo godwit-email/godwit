@@ -216,4 +216,55 @@ var Migrations = [][]string{{
 	// at startup when that failed or the process stopped first. No foreign key: a
 	// removed service's entry stays listed until it is gone.
 	`CREATE TABLE model_key_trash (service_id INTEGER NOT NULL, key_version INTEGER NOT NULL, PRIMARY KEY(service_id, key_version))`,
+}, {
+	// Citation.Quote: a suspect message's text from where the suspicion starts.
+	`ALTER TABLE run_citations ADD COLUMN quote TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Model capabilities: kind stays the generate format ('' = generate off). provider is
+	// the add dialog's tile, inferred for older rows from the address; judge starts off.
+	`ALTER TABLE model_services ADD COLUMN provider TEXT NOT NULL DEFAULT 'other'`,
+	`UPDATE model_services SET provider = 'openai' WHERE kind IN ('openai', 'openai-responses')
+		AND (base_url = 'https://api.openai.com' OR base_url LIKE 'https://api.openai.com/%')`,
+	`UPDATE model_services SET provider = 'anthropic' WHERE kind = 'anthropic'
+		AND (base_url = 'https://api.anthropic.com' OR base_url LIKE 'https://api.anthropic.com/%')`,
+	`ALTER TABLE model_services ADD COLUMN judge_format TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN judge_model TEXT NOT NULL DEFAULT ''`,
+	// The last test of each capability ('gen', 'judge') as codes, never error text. Kept
+	// apart from model_services so writing it never bumps a service's version.
+	`CREATE TABLE model_service_status (service_id INTEGER NOT NULL REFERENCES model_services(id) ON DELETE CASCADE,
+		cap TEXT NOT NULL, state TEXT NOT NULL, latency_ms INTEGER NOT NULL DEFAULT 0, http_status INTEGER NOT NULL DEFAULT 0,
+		code TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, PRIMARY KEY(service_id, cap))`,
+}, {
+	// With sync_limit 0, the months a sync fetches; both 0 is all mail.
+	`ALTER TABLE accounts ADD COLUMN sync_since_months INTEGER NOT NULL DEFAULT 0`,
+	// The SINCE cutoff (unix; 0 for all) a range backfill last completed down to; NULL for none.
+	`ALTER TABLE folders ADD COLUMN filled_since INTEGER`,
+}, {
+	// When Godwit first saw the message in its folder (unix): what a purge measures,
+	// never the Date header. Every write of folder_id sets it; existing rows start now.
+	`ALTER TABLE messages ADD COLUMN entered_at INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE messages SET entered_at = unixepoch()`,
+	// The user's role for the folder (drafts, sent, junk, trash, archive), or 'none'
+	// for no role; '' follows detection (role). Sync never writes it.
+	`ALTER TABLE folders ADD COLUMN role_override TEXT NOT NULL DEFAULT ''`,
+	// When role or role_override last changed: a purge counts from it too.
+	`ALTER TABLE folders ADD COLUMN role_since INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE folders SET role_since = unixepoch()`,
+	`CREATE TRIGGER folders_role_since AFTER UPDATE OF role, role_override ON folders
+		WHEN old.role IS NOT new.role OR old.role_override IS NOT new.role_override BEGIN
+		UPDATE folders SET role_since = unixepoch() WHERE id = new.id;
+	END`,
+	// When a purge last ran on the folder: at most once a day.
+	`ALTER TABLE folders ADD COLUMN purged_at INTEGER NOT NULL DEFAULT 0`,
+	// The junk and trash purges: days 0 is never. since starts the clock (turning it on,
+	// or the role's folder changing); folder_id is the folder the clock runs for.
+	// blocked is 1 while the server lacks UIDPLUS, so the purge is skipped.
+	`CREATE TABLE purge_policies (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		role TEXT NOT NULL, days INTEGER NOT NULL DEFAULT 0, since INTEGER NOT NULL, folder_id INTEGER,
+		blocked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(account_id, role))`,
+}, {
+	// Signature images, content-addressed per account: cid is sig-<hash>@godwit,
+	// as the signature and drafts refer to it (cid:<cid>).
+	`CREATE TABLE signature_images (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		cid TEXT NOT NULL, content_type TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account_id, cid))`,
 }}

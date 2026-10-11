@@ -4,31 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/mail"
 	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // Settings are the app-wide preferences, stored as one JSON row.
 // ReplyLanguage is "match" (the mail's language) or "reading".
 type Settings struct {
 	Theme, Density                                   string
-	FontSize, BodyFontSize                           int
+	FontSize, BodyFontSize                           int // BodyFontSize 0 follows FontSize
 	UILanguage, ReadingLanguage, ReplyLanguage       string
 	NoTranslate                                      []string
 	LaunchAtLogin, KeepInBackground, UnreadInMenuBar bool
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
-	LocalAPI                                         bool // the GUI serves the Local API; off by default
+	// JudgeService is the slug of the service whose judge answers typed
+	// questions; "" (or one gone or with judge off): the DefaultModel does.
+	JudgeService string
+	LocalAPI     bool // the GUI serves the Local API; off by default
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
+	// TrustedImageSenders are the lower-cased From addresses whose remote
+	// images load at once (始终信任此发件人). Only TrustImageSender and
+	// UntrustImageSender change it; SetSettings keeps the stored list.
+	TrustedImageSenders []string
+	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
+	// stored FontSize was raised by one to keep its sizes; 3 once a stored
+	// BodyFontSize of 14, the old default, became 0 (follow FontSize).
+	SettingsVersion int
 }
 
+const settingsVersion = 3
+
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
+	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
 }
 
@@ -50,10 +67,13 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid density %q", st.Density)
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
-	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize < 10 || st.BodyFontSize > 32:
+	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):
 		return fmt.Errorf("font size must be between 10 and 32")
 	case st.SidebarWidth != 0 && (st.SidebarWidth < 240 || st.SidebarWidth > 480):
 		return fmt.Errorf("sidebar width must be between 240 and 480")
+	}
+	if strings.Contains(st.JudgeService, "/") {
+		return fmt.Errorf("invalid judge service %q", st.JudgeService)
 	}
 	for _, r := range []string{st.DefaultModel, st.SmallModel} {
 		if _, err := ai.ParseModelRef(r); r != "" && err != nil {
@@ -85,9 +105,21 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	if err != nil || len(rows.Values) == 0 {
 		return st, err
 	}
-	if err := json.Unmarshal([]byte(rows.Values[0][0].(string)), &st); err != nil {
+	raw := []byte(rows.Values[0][0].(string))
+	var stored struct{ FontSize, SettingsVersion int } // the defaults must not stand in for the stored version
+	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
 	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return Settings{}, fmt.Errorf("stored settings: %w", err)
+	}
+	if stored.SettingsVersion < 2 && stored.FontSize > 0 { // an absent size keeps the new default
+		st.FontSize = min(stored.FontSize+1, 32)
+	}
+	if stored.SettingsVersion < 3 && st.BodyFontSize == 14 {
+		st.BodyFontSize = 0
+	}
+	st.SettingsVersion = settingsVersion
 	return st, nil
 }
 
@@ -101,6 +133,19 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err := st.validate(); err != nil {
 		return Settings{}, err
 	}
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	stored, err := s.loadSettings(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust
+	return s.storeSettings(ctx, st)
+}
+
+// storeSettings writes st and announces settings.changed; the caller holds settingsMu.
+func (s *Service) storeSettings(ctx context.Context, st Settings) (Settings, error) {
+	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
 	if err != nil {
 		return Settings{}, err
@@ -126,4 +171,82 @@ func (s *Service) readingLanguage(ctx context.Context) string {
 		}
 	}
 	return "en"
+}
+
+const maxTrustedSenders = 1000
+
+// TrustImageSender trusts the address of from (a From header) to load
+// remote images; from must parse as an address.
+func (s *Service) TrustImageSender(ctx context.Context, from string) error {
+	a, err := mail.ParseAddress(from)
+	if err != nil {
+		return fmt.Errorf("invalid sender address: %w", err)
+	}
+	addr := strings.ToLower(a.Address)
+	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+		if slices.Contains(l, addr) {
+			return l, nil
+		}
+		if len(l) >= maxTrustedSenders {
+			return nil, fmt.Errorf("at most %d trusted senders", maxTrustedSenders)
+		}
+		return append(l, addr), nil
+	})
+}
+
+// UntrustImageSender stops trusting addr.
+func (s *Service) UntrustImageSender(ctx context.Context, addr string) error {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+		return slices.DeleteFunc(l, func(a string) bool { return a == addr }), nil
+	})
+}
+
+// editTrusted changes the trusted senders under settingsMu.
+func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string, error)) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return err
+	}
+	l, err := edit(slices.Clone(st.TrustedImageSenders))
+	if err != nil {
+		return err
+	}
+	st.TrustedImageSenders = l
+	_, err = s.storeSettings(ctx, st)
+	return err
+}
+
+// inJunk is whether folder f is junk, detected or given by the user, even
+// where another folder holds the role: ImagesTrusted and Message.InJunk agree.
+const inJunk = "'junk' IN (f.role, f.role_override)"
+
+// ImagesTrusted is whether message's remote images load at once: its From
+// address is trusted and it is not in a junk folder (From is unauthenticated).
+func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+inJunk+" FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
+	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
+		return false, err
+	}
+	a, err := mail.ParseAddress(store.Str(rows.Values[0][0]))
+	if err != nil {
+		return false, nil
+	}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return false, err
+	}
+	return slices.Contains(st.TrustedImageSenders, strings.ToLower(a.Address)), nil
 }

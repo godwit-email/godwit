@@ -82,6 +82,12 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 	}
 	openCompose := func(id int64) { windows.Open(id) } // set below, before any page runs
+	// Callbacks into the App run on its UI thread.
+	onApp := func(f func(*app.App)) {
+		if a != nil {
+			a.OnUI(func() { f(a) }) // dropped once the App closed
+		}
+	}
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -93,15 +99,11 @@ func gui(ctx context.Context, dataDir string) int {
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
+		OpenModels:  func() { onApp((*app.App).OpenModels) },
 	}))
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.
 	var witView *mygo.WebView
-	onApp := func(f func(*app.App)) {
-		if a != nil {
-			a.OnUI(func() { f(a) }) // dropped once the App closed
-		}
-	}
 	toWit := func(what string, emit func(*mygo.Page) error) {
 		if witView == nil {
 			return
@@ -114,6 +116,9 @@ func gui(ctx context.Context, dataDir string) int {
 		Emit: emit,
 		Open: func(m webui.WitOpenMsg) {
 			toWit("witOpen", func(p *mygo.Page) error { return webui.WitOpen.EmitPage(p, m) })
+		},
+		Ask: func(q string) {
+			toWit("witAsk", func(p *mygo.Page) error { return webui.WitAsk.EmitPage(p, q) })
 		},
 		State: func(st webui.WitPageState) {
 			toWit("witState", func(p *mygo.Page) error { return webui.WitState.EmitPage(p, st) })
@@ -166,6 +171,10 @@ func gui(ctx context.Context, dataDir string) int {
 		},
 	})
 	mygo.Bind(webui.NewReaderPage(reader))
+	// The signature page, embedded in the account settings
+	// (platform.NewSignatureView).
+	sig := webui.NewSignature(roles, pickImage)
+	mygo.Bind(webui.NewSignaturePage(sig))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -191,6 +200,7 @@ func gui(ctx context.Context, dataDir string) int {
 		pages.SetService(svc)
 		wit.SetService(svc)
 		reader.SetService(svc)
+		sig.SetService(svc)
 		uiLang := lang // for the menus; the App applies the language to itself
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
@@ -200,11 +210,12 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(uiLang)
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader}
+		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
+		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
 		plat.win = win
@@ -223,6 +234,7 @@ func gui(ctx context.Context, dataDir string) int {
 		} else {
 			witView = v
 			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
+			a.SetWitAsk(wit.Handoff)
 		}
 		win.OnFocus(func() { a.SetForeground(true) })
 		win.OnBlur(func() { a.SetForeground(false) })

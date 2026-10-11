@@ -562,3 +562,39 @@ func TestDraftReadSanitizedAndStable(t *testing.T) {
 		assert.Equal(t, first, d.HTML, "save of a loaded draft is stable")
 	}
 }
+
+func TestSignatureHTMLPlainEscapes(t *testing.T) {
+	assert.Equal(t, `<div data-godwit="signature"><p>-- <br>Bob &lt;bob@x.com&gt;<br>line2</p></div>`,
+		signatureHTML("Bob <bob@x.com>\nline2", nil))
+	assert.Equal(t, "", signatureHTML("", nil))
+}
+
+func TestSignatureHTMLMarked(t *testing.T) {
+	got := signatureHTML(SignatureHTMLPrefix+`<p><b>Bob</b> <a href="https://x.com">site</a><script>alert(1)</script>`+
+		`<img src="https://x.com/t.png" onerror="alert(2)"></p><div data-godwit="quote">q</div>`, nil)
+	assert.True(t, strings.HasPrefix(got, `<div data-godwit="signature"><p>-- </p><p><b>Bob</b>`), got)
+	assert.Equal(t, 1, strings.Count(got, "data-godwit"), got)
+	assert.Contains(t, got, "<b>Bob</b>")
+	assert.Contains(t, got, `href="https://x.com"`)
+	for _, bad := range []string{"<script", "alert", "onerror", "t.png"} {
+		assert.NotContains(t, got, bad)
+	}
+	assert.Equal(t, "", signatureHTML(SignatureHTMLPrefix, nil))
+}
+
+func TestSignatureEditorHTMLLegacy(t *testing.T) {
+	assert.Equal(t, "<p>a &amp; b<br>c</p>", SignatureEditorHTML("a & b\nc", nil))
+	assert.Equal(t, "", SignatureEditorHTML("", nil))
+}
+
+func TestSentArchivedToOverriddenFolder(t *testing.T) {
+	e := newSendEnv(t, false)
+	require.NoError(t, e.im.User.Create("Sent Messages", nil))
+	e.sync(t)
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "sent", e.folderID(t, "Sent Messages")))
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Sent Messages"), 1)
+	assert.Empty(t, e.onServer(t, "Sent"))
+	assert.Equal(t, "done", e.state(t))
+}

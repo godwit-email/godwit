@@ -29,6 +29,7 @@ type Host interface {
 	MailCreateDraft(ctx context.Context, d DraftInput) (int64, error)
 	MailUpdateDraft(ctx context.Context, u DraftUpdate) (int64, error)
 	LLMComplete(ctx context.Context, prompt string) (string, error)
+	LLMDecide(ctx context.Context, state string, qs []Question) ([]Answer, error)
 	Fetch(ctx context.Context, inv Invocation, req FetchRequest) (FetchResponse, error)
 	AuditEgress(ctx context.Context, inv Invocation, dest, decision, reason string) error
 }
@@ -38,7 +39,8 @@ const (
 	MaxBodyBytes     = 256 << 10 // each of a message's text and html, as a plugin gets it
 	MaxStorageValue  = 64 << 10
 	MaxStorageTotal  = 1 << 20  // keys and values of one plugin
-	MaxLLMBytes      = 64 << 10 // llm.complete prompt and answer
+	MaxLLMBytes      = 64 << 10 // llm.complete prompt and answer; llm.decide state and question text
+	MaxQuestions     = 128      // per llm.decide call: rejected beyond, never split
 	MaxFetchBody     = 1 << 20
 	maxSearch        = 50
 	defaultSearch    = 20
@@ -55,6 +57,32 @@ var (
 	actionIDRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,40}$`)
 	actionOn   = []string{"message", "thread", "selection", "draft"}
 )
+
+// Question is a typed judge question, as llm.decide and Wit's classify_mail
+// take it. Type is yes_no, choice or score; Choices and Levels are its options.
+type Question struct {
+	Name         string           `json:"name"`
+	Type         string           `json:"type"`
+	Instructions string           `json:"instructions"`
+	Choices      []QuestionOption `json:"choices,omitempty"`
+	Levels       []QuestionOption `json:"levels,omitempty"` // lowest first
+}
+
+type QuestionOption struct {
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
+// Answer is a validated answer: yes_no sets Probability, choice sets Choice
+// (and Probability when the judge gives one), score sets Score, an index
+// into Levels. Refused answers carry nothing else.
+type Answer struct {
+	Name        string   `json:"name"`
+	Choice      string   `json:"choice,omitempty"`
+	Probability *float64 `json:"probability,omitempty"`
+	Score       *float64 `json:"score,omitempty"`
+	Refused     bool     `json:"refused,omitempty"`
+}
 
 // ToolInfo is a registered tool; Write defaults to true.
 type ToolInfo struct {
@@ -439,6 +467,19 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 			out, _ = cut(out, MaxLLMBytes)
 			return out, err
 		})
+	}), "decide", fn("llm.decide", func(c *CallScope, call goja.FunctionCall) goja.Value {
+		p.need(c, permLLM)
+		var state string
+		var qs []Question
+		arg(c, "llm.decide", call.Argument(0), &state, "state must be a string")
+		arg(c, "llm.decide", call.Argument(1), &qs, "questions must be a list of {name, type, instructions, choices?, levels?}")
+		if len(qs) > MaxQuestions {
+			panic(c.Runtime().NewTypeError("llm.decide: at most 128 questions"))
+		}
+		if len(state)+QuestionBytes(qs) > MaxLLMBytes {
+			panic(ErrTooLarge)
+		}
+		return async(c, func(ctx context.Context) (any, error) { return p.h.LLMDecide(ctx, state, qs) })
 	}))
 
 	netObj := object("fetch", fn("net.fetch", func(c *CallScope, call goja.FunctionCall) goja.Value {
@@ -646,4 +687,16 @@ func (p *Plugin) registerCard(c *CallScope, call goja.FunctionCall) goja.Value {
 	}
 	p.card = cd
 	return goja.Undefined()
+}
+
+// QuestionBytes is the size of the questions' text: instructions, values and descriptions.
+func QuestionBytes(qs []Question) int {
+	n := 0
+	for _, q := range qs {
+		n += len(q.Instructions)
+		for _, o := range slices.Concat(q.Choices, q.Levels) {
+			n += len(o.Value) + len(o.Description)
+		}
+	}
+	return n
 }

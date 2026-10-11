@@ -50,19 +50,19 @@
 }
 
 /* The native scales (internal/theme): Space(n) = 4n px at density 1; text steps from the root
-   font size, which applyTheme sets to the native FontSize (13 px): xs −2, sm −1, base, md +1
-   (mail body text, 14 px), lg +2. */
+   font size, which applyTheme sets to the native FontSize (14 px): xs −3, sm −2, base −1, md (the
+   default text and mail body, 14 px), lg +1. */
 @theme {
   --spacing: 4px;
-  --text-xs: calc(1rem - 2px);
+  --text-xs: calc(1rem - 3px);
   --text-xs--line-height: 1.4;
-  --text-sm: calc(1rem - 1px);
+  --text-sm: calc(1rem - 2px);
   --text-sm--line-height: 1.45;
-  --text-base: 1rem;
+  --text-base: calc(1rem - 1px);
   --text-base--line-height: 1.5;
-  --text-md: calc(1rem + 1px);
+  --text-md: 1rem;
   --text-md--line-height: 1.6;
-  --text-lg: calc(1rem + 2px);
+  --text-lg: calc(1rem + 1px);
   --text-lg--line-height: 1.5;
 }
 

@@ -41,6 +41,9 @@ type Platform interface {
 	DataDir() (dir string, custom bool)
 	// OpenCompose shows draftID in a compose window of its own.
 	OpenCompose(draftID int64)
+	// ComposeOpen reports whether draftID's compose window is open or opening.
+	// The platform tells the App when that changes: ComposeWindowsChanged.
+	ComposeOpen(draftID int64) bool
 	// DraftDeleted is told draft id was deleted here: its compose window,
 	// if one is open, closes.
 	DraftDeleted(id int64)
@@ -56,6 +59,13 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
+	// NewSignatureView makes the signature page (the account settings'
+	// rich-text editor) in the main window; the App makes one and closes
+	// it (unregistered and destroyed) as it closes. show
+	// switches it to account: the page saves the shown account's edit as
+	// that account first. flush asks the page to save now; done hears
+	// whether it did, on the UI thread, at most once. UI thread only.
+	NewSignatureView() (view ui.NativeWebView, show func(account int64), flush func(done func(ok bool)), close func(), err error)
 }
 
 // Notification is a system notification about a message.
@@ -182,10 +192,11 @@ type App struct {
 	refreshStop       func()         // the pending throttled refresh; nil when none
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
-	syncing  map[int64]bool   // accounts syncing now
-	syncErr  map[int64]string // each account's last sync failure, until it syncs
-	syncedAt time.Time        // the last successful sync; zero before one
-	ticking  bool             // a minute tick redraws the sync age
+	syncing    map[int64]bool      // accounts syncing now
+	syncErr    map[int64]string    // each account's last sync failure, until it syncs
+	syncedAt   time.Time           // the last successful sync; zero before one
+	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
+	ticking    bool                // a minute tick redraws the sync age
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
@@ -198,6 +209,7 @@ type App struct {
 	witView    ui.NativeWebView                 // the Wit page; nil before SetWitPage
 	witOpen    func(conv int64) (version int64) // tells the Wit page the route's conversation
 	witCreated func(conv int64) (version int64) // the same, for the conversation its Ask made
+	witAsk     func(query string)               // hands a question to the Wit page, which asks it
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
@@ -237,7 +249,7 @@ func New(d Deps) *App {
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
-	a.syncing, a.syncErr = map[int64]bool{}, map[int64]string{}
+	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]string{}, map[int64]time.Time{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
@@ -344,6 +356,7 @@ func (a *App) load() {
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
 	a.mail.reader.closeViews()
+	a.pages[PageSettings].(*settingsPage).closeSignature()
 	a.tempMu.Lock()
 	defer a.tempMu.Unlock()
 	for _, d := range a.tempDirs {
@@ -373,7 +386,8 @@ const flushWait = 3 * time.Second
 // errFlushSlow is why BeforeClose asks when the writes take longer than flushWait.
 var errFlushSlow = errors.New("still saving")
 
-// BeforeClose saves the settings' account fields, waits for every write in
+// BeforeClose saves the signature page's edit and the settings' account
+// fields, waits for every write in
 // flight, then calls proceed: before the window closes or the App quits
 // (compose windows have flushed their drafts by then, on their own). When
 // a write fails, or they have not finished within flushWait, the window
@@ -394,7 +408,7 @@ func (a *App) BeforeClose(proceed func()) {
 	settle := func(err error) {
 		stop()
 		switch {
-		case err == nil && (!settled || a.closeAsk && errors.Is(a.closeErr, errFlushSlow)):
+		case err == nil && (!settled || a.closeAsk && (errors.Is(a.closeErr, errFlushSlow) || a.closeErr == errSignatureUnsaved)):
 			settled, a.closeAsk = true, false
 			proceed()
 		case !settled:
@@ -402,8 +416,19 @@ func (a *App) BeforeClose(proceed func()) {
 		}
 	}
 	mark := a.writes.Mark() // every write failing from here on counts
-	a.pages[PageSettings].(*settingsPage).commitEdits()
-	a.writes.Idle(func() { settle(errors.Join(a.writes.ErrorsSince(mark)...)) })
+	p := a.pages[PageSettings].(*settingsPage)
+	p.flushSignature(func(sigErr error) {
+		p.commitEdits()
+		a.writes.Idle(func() {
+			err := errors.Join(a.writes.ErrorsSince(mark)...)
+			if err == nil {
+				err = sigErr // alone, so a late save can settle it
+			} else if sigErr != nil {
+				err = errors.Join(err, sigErr)
+			}
+			settle(err)
+		})
+	})
 }
 
 // SetForeground records whether the window is in front.
@@ -412,6 +437,14 @@ func (a *App) SetForeground(on bool) { a.foreground = on }
 // OnUI posts f to the UI thread unless the App has closed by then, for
 // callbacks from elsewhere (the Wit page's).
 func (a *App) OnUI(f func()) { a.onUI(f) }
+
+// ComposeWindowsChanged is told a compose window opened or went (on the UI
+// thread): the drafts list is read again, and the pane follows its draft.
+func (a *App) ComposeWindowsChanged() {
+	if _, ok := draftsOf(a.mail.folders, a.mail.view); ok {
+		a.mail.reload()
+	}
+}
 
 // onUI posts f to the UI thread unless the App has closed by then.
 func (a *App) onUI(f func()) {

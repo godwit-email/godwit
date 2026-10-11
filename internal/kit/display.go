@@ -8,11 +8,18 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// Text is text at a step of the text scale with that step's line height.
+// Leaves only: a line height passes down as a multiplier, so on a container
+// it would reach texts of other sizes.
+func Text(c *ui.Context, s string, size float32) ui.Element {
+	return ui.Text(c, s).FontSize(size).LineHeight(theme.Of(c).Text.Line(size))
+}
+
 // Badge is a small gray label.
 func Badge(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Padding(th.Space(0.25), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-		ui.Text(c, text).FontSize(t.Text.Sm).TextColor(t.Foreground)
+	return ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+		Text(c, text, t.Text.Sm).TextColor(t.Foreground)
 	})
 }
 
@@ -28,20 +35,46 @@ const (
 // Alert is a bordered message bar with optional actions after the text.
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	bg, border, fg := t.Background, t.Border, t.Foreground
-	switch kind {
-	case Warning:
-		bg, border, fg = t.WarningBg, t.WarningBorder, t.WarningText
-	case Danger:
-		bg, border, fg = t.DangerBg, t.Danger.Alpha(0.3), t.Danger
-	}
-	return ui.Row(c).Wrap().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(bg).Border(theme.Hairline, border).TextColor(fg).
-		FontSize(t.Text.Base).Children(func() {
-		ui.Text(c, text)
+	bg, border, fg := alertLook(t, kind)
+	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
+		FontSize(t.Text.Body).Children(func() {
+		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
 			actions()
 		}
 	})
+}
+
+func alertLook(t theme.Tokens, kind AlertKind) (bg, border, fg ui.Color) {
+	switch kind {
+	case Warning:
+		return t.WarningBg, t.WarningBorder, t.WarningText
+	case Danger:
+		return t.DangerBg, t.Danger.Alpha(0.3), t.Danger
+	}
+	return t.Background, t.Border, t.Foreground
+}
+
+// AlertAction is a solid button for an Alert's actions: filled with the
+// kind's text color and white text (the kind's background in dark) (Info: Primary with PrimaryText).
+func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	bg, _, fill := alertLook(t, kind)
+	text := t.OnSolid
+	if t.Dark { // the dark fill is the light -300 text colour: the dark -950 background reads on it
+		text = bg
+	}
+	if kind == Info { // Foreground flips with the appearance; Primary pairs with PrimaryText
+		fill, text = t.Primary, t.PrimaryText
+	}
+	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fill).TextColor(text).FontWeight(500).Center()
+	if b.Hovered() {
+		b.Background(fill.Mix(t.Background, 0.1))
+	}
+	if onClick != nil {
+		b.OnClick(onClick)
+	}
+	return b.Children(func() { ui.Text(c, label) })
 }
 
 // Status is what a StatusDot tells.
@@ -75,7 +108,7 @@ func Spinner(c *ui.Context) ui.Element {
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).TextColor(t.Muted)
+		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
 	})
 }
 
@@ -92,7 +125,7 @@ func initial(name string) string {
 func Avatar(c *ui.Context, name string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm).TextColor(t.Foreground)
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(t.Foreground)
 	})
 }
 

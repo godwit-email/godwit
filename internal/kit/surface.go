@@ -113,9 +113,9 @@ func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()
 func CardHeader(c *ui.Context, title, description string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1)).Children(func() {
-		ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
+		Text(c, title, t.Text.Lg).FontWeight(600)
 		if description != "" {
-			ui.Text(c, description).FontSize(t.Text.Sm).TextColor(t.Muted)
+			Text(c, description, t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }

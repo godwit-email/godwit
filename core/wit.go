@@ -9,22 +9,26 @@ import (
 	netmail "net/mail"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "list_skills", "use_skill", "read_skill_file", "create_draft"}
+var askTools = []string{"search_mail", "get_message", "get_thread", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft"}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
-		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves.`
+		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves. ` +
+		`Each mail a tool returns has a "ref" number, the same for that mail through the whole conversation. ` +
+		`When your answer draws on a mail, cite it right after the claim as [ref], for example [2]. Cite only refs the tools returned.`
 	titleRunes      = 40
 	maxSearchResult = 20
 	languageClues   = 3 // latest subjects from each recipient
@@ -35,6 +39,14 @@ const (
 // create_draft calls become approvals. The first input titles the
 // conversation. The channel ends with done, error or interrupted (see startRun).
 func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (<-chan WitEvent, error) {
+	return s.AskWith(ctx, conversationID, input, nil)
+}
+
+// AskWith is Ask with the mail the user quoted (message IDs, at most
+// maxQuoted after dedupe): the run reads it through mailContext, in its scope,
+// and the model gets it before the question, cited like the tools' mail (a
+// "context" event first). An ID that does not exist fails AskWith.
+func (s *Service) AskWith(ctx context.Context, conversationID int64, input string, quoted []int64) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
@@ -42,7 +54,11 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	if err != nil {
 		return nil, err
 	}
-	conv, _, err := s.conversation(ctx, conversationID)
+	quoted, err = s.quotedIDs(ctx, quoted)
+	var conv Conversation
+	if err == nil {
+		conv, _, err = s.conversation(ctx, conversationID)
+	}
 	if err == nil && conv.Kind != "ask" {
 		err = fmt.Errorf("conversation %d is not an ask conversation", conversationID)
 	}
@@ -58,13 +74,54 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, setTitle)
 	}
 	if err != nil {
 		end()
 		return nil, err
 	}
 	return w.ch, nil
+}
+
+// maxQuoted caps the messages a question quotes.
+const maxQuoted = 10
+
+// quotedIDs is ids without repeats, each an existing message.
+func (s *Service) quotedIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	var out []int64
+	for _, id := range ids {
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	if len(out) > maxQuoted {
+		return nil, fmt.Errorf("quote at most %d emails", maxQuoted)
+	}
+	for _, id := range out {
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows.Values) == 0 {
+			return nil, fmt.Errorf("message %d %w", id, errMailNotFound)
+		}
+	}
+	return out, nil
+}
+
+// quote is the model's context of the quoted mail ids for job: read in its
+// scope and numbered as the context's citations (job.quoted).
+func (s *Service) quote(ctx context.Context, job *runJob, ids []int64) (string, error) {
+	items, err := s.mailContext(ctx, job.scope, ids, defaultMailBudget)
+	if err != nil {
+		return "", err
+	}
+	job.quoted = s.number(ctx, job, "", citations(items))
+	b, err := json.Marshal(blocks(items, job.quoted))
+	if err != nil {
+		return "", err
+	}
+	return "The user quoted these emails for the question below; cite them by their ref:\n" + string(b), nil
 }
 
 // witSystem is the system prompt of a run's requests, started or resumed: for
@@ -90,23 +147,28 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	return askSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
 }
 
-// cite records the mail a read tool showed the model, for its tool_result event.
-func cite(ctx context.Context, items []mailItem) {
-	runOf(ctx).cites.Store(ai.CallID(ctx), citations(items))
+// cite numbers and records the mail a read tool showed the model, for its
+// tool_result event; the citations line up with items.
+func (s *Service) cite(ctx context.Context, items []mailItem) []Citation {
+	job, call := runOf(ctx), ai.CallID(ctx)
+	cs := s.number(ctx, job, call, citations(items))
+	job.cites.Store(call, cs)
+	return cs
 }
 
 func citations(items []mailItem) []Citation {
 	cs := make([]Citation, 0, len(items))
 	for _, it := range items {
-		cs = append(cs, Citation{MessageID: it.MessageID, Subject: it.Subject, From: it.From, Date: it.Date, Suspect: it.Suspect})
+		cs = append(cs, Citation{MessageID: it.MessageID, Subject: it.Subject, From: it.From, Date: it.Date, Suspect: it.Suspect, Quote: it.Quote})
 	}
 	return cs
 }
 
-func blocks(items []mailItem) []map[string]any {
+// blocks is what the model sees of items; ref is the citation number (cs[i].N) it cites them by.
+func blocks(items []mailItem, cs []Citation) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
-	for _, it := range items {
-		out = append(out, map[string]any{"message_id": it.MessageID, "mail": it.Block})
+	for i, it := range items {
+		out = append(out, map[string]any{"message_id": it.MessageID, "ref": cs[i].N, "mail": it.Block})
 	}
 	return out
 }
@@ -136,6 +198,21 @@ func (s *Service) registerAskTools() {
 		s.searchMail)
 	read("get_message", "Read one message by its message_id.", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
+	// No Egress: the judge is a model service, so its traffic is model traffic,
+	// as for the run itself (review #17).
+	read("classify_mail", "Ask typed questions about many messages at once: yes/no, one choice of a list, or a score on levels. "+
+		"Use it for bulk questions over messages you found (is it a newsletter, which project, how urgent) instead of reading each one. "+
+		"Returns each message's answers and ref; it does not return the mail text.",
+		object(map[string]any{
+			"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1, "maxItems": maxClassifyIDs},
+			"questions": map[string]any{"type": "array", "minItems": 1, "maxItems": plugins.MaxQuestions, "items": object(map[string]any{
+				"name":         map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$"},
+				"type":         map[string]any{"type": "string", "enum": []string{"yes_no", "choice", "score"}},
+				"instructions": stringProp,
+				"choices":      optionsProp, "levels": optionsProp,
+			}, "name", "type", "instructions")},
+		}, "ids", "questions"),
+		s.classifyMail)
 	read("list_skills", "List the skills you can use, with what each is for.", object(map[string]any{}), s.listSkills)
 	read("use_skill", "Load a skill's instructions and the list of its reference files.",
 		object(map[string]any{"name": stringProp}, "name"), s.useSkill)
@@ -165,8 +242,7 @@ func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, er
 		return nil, err
 	}
 	items := s.summaryContext(runOf(ctx).scope, list)
-	cite(ctx, items)
-	res := blocks(items)
+	res := blocks(items, s.cite(ctx, items))
 	for i, m := range list {
 		res[i]["thread_id"] = m.ThreadID
 	}
@@ -186,8 +262,7 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 	if err != nil {
 		return nil, err
 	}
-	cite(ctx, items)
-	return blocks(items)[0], nil
+	return blocks(items, s.cite(ctx, items))[0], nil
 }
 
 func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, error) {
@@ -203,8 +278,91 @@ func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
-	cite(ctx, items)
-	return map[string]any{"thread_id": in.ID, "messages": blocks(items)}, nil
+	return map[string]any{"thread_id": in.ID, "messages": blocks(items, s.cite(ctx, items))}, nil
+}
+
+const (
+	maxClassifyIDs    = 50
+	maxClassifyGenIDs = 10 // when the default model judges: one generation per message
+	classifyRunes     = 8000
+	classifyQuestions = 16 << 10 // question bytes: with a message's state, within a judge's request limit
+	classifyParallel  = 4
+)
+
+// classifyDeadline bounds a classify_mail call; tests shorten it.
+var classifyDeadline = 2 * time.Minute
+
+var optionsProp = map[string]any{"type": "array", "items": object(map[string]any{"value": stringProp, "description": stringProp}, "value")}
+
+// classifyMail asks the judge the questions about each message alone, with
+// its own body budget so none is starved. Questions come only from the
+// arguments; the judge sees mail only as untrusted state, and only typed
+// answers come back.
+func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, error) {
+	var in struct {
+		IDs       []int64            `json:"ids"`
+		Questions []plugins.Question `json:"questions"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if len(in.IDs) == 0 || len(in.Questions) == 0 {
+		return nil, errors.New("give at least one id and one question")
+	}
+	if len(in.Questions) > plugins.MaxQuestions {
+		return nil, fmt.Errorf("at most %d questions", plugins.MaxQuestions)
+	}
+	if len(in.IDs) > maxClassifyIDs {
+		return nil, fmt.Errorf("at most %d messages per call", maxClassifyIDs)
+	}
+	if plugins.QuestionBytes(in.Questions) > classifyQuestions {
+		return nil, fmt.Errorf("the questions are too long: at most %d KB", classifyQuestions>>10)
+	}
+	qs := judgeQuestions(in.Questions)
+	if err := ai.ValidateQuestions(qs); err != nil {
+		return nil, err
+	}
+	j, _, gen, err := s.resolveJudge(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if gen && len(in.IDs) > maxClassifyGenIDs {
+		return nil, fmt.Errorf("at most %d messages per call without a judge service", maxClassifyGenIDs)
+	}
+	res := make([]map[string]any, len(in.IDs))
+	var items []mailItem
+	var at []int // items[k] answers in.IDs[at[k]]
+	for i, id := range in.IDs {
+		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
+		if errors.Is(err, errMailNotFound) { // one gone message doesn't fail the others
+			res[i] = map[string]any{"message_id": id, "error": "not found"}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		items, at = append(items, it[0]), append(at, i)
+	}
+	cs := s.cite(ctx, items)
+	ctx, cancel := context.WithTimeout(ctx, classifyDeadline)
+	defer cancel()
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, classifyParallel)
+	for k, it := range items {
+		i := at[k]
+		res[i] = map[string]any{"message_id": it.MessageID, "ref": cs[k].N}
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if as, err := j.Ask(ctx, it.Block, qs); err != nil {
+				res[i]["error"] = err.Error()
+			} else {
+				res[i]["answers"] = judgeAnswers(qs, as)
+			}
+		})
+	}
+	wg.Wait()
+	return map[string]any{"results": res}, nil
 }
 
 // listSkills lists the enabled skills without a UI binding, by name.
@@ -312,7 +470,9 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	in.HTML = mail.SanitizeCompose(mail.StripMarkers(in.HTML) + d.HTML)
+	if in.HTML, err = s.sanitizeDraft(ctx, in.AccountID, mail.StripMarkers(in.HTML)+d.HTML); err != nil {
+		return prepared{}, err
+	}
 	b, err := json.Marshal(in)
 	if err != nil {
 		return prepared{}, err
@@ -353,7 +513,7 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	b.WriteString("Not created yet. Write the draft in the language of the recipient's past emails to the user. " +
 		"Subjects of their latest emails, as language clues:\n")
 	items := s.subjectContext(job.scope, from)
-	cite(ctx, items)
+	s.cite(ctx, items)
 	for _, it := range items {
 		b.WriteString(it.Block + "\n")
 	}

@@ -1,20 +1,25 @@
 import { useChat } from "@ai-sdk/react";
-import { RiAlertLine, RiArrowDownLine, RiArrowDownSLine, RiLoaderLine } from "@remixicon/react";
+import {
+  RiAddLine,
+  RiAlertLine,
+  RiArrowDownLine,
+  RiArrowDownSLine,
+  RiArrowUpLine,
+  RiEqualizerLine,
+  RiLoaderLine,
+  RiMailLine,
+  RiPlayFill,
+  RiStopFill,
+  RiTranslate2,
+} from "@remixicon/react";
 import type { DynamicToolUIPart } from "ai";
+import { cn } from "cn";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -38,11 +43,15 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import type { Approval, Citation, WitHistory, WitInfo } from "@/mygo";
+import type { Approval, Citation, MailHit, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
+import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
+
+/** The emails a question quotes at most (core maxQuoted). */
+const MAX_QUOTED = 10;
 
 // ponytail: shadcn's spinner.tsx fails the typecheck (children on a Remix icon); its markup here.
 const Busy = ({ t }: { t: T }) => (
@@ -70,16 +79,23 @@ function citesOf(...ms: WitUIMessage[]): Citation[] {
     for (const c of p.data) {
       const i = out.findIndex((x) => x.messageId === c.messageId);
       if (i < 0) out.push({ ...c });
-      else out[i].suspect ||= c.suspect;
+      else {
+        out[i].suspect ||= c.suspect;
+        out[i].quote ||= c.quote;
+      }
     }
   }
   return out;
 }
 
-/** "调用了 n 个工具 · a ×2、b": the distinct tools, each with its count. */
-function toolsLabel(calls: DynamicToolUIPart[], t: T): string {
+/**
+ * The tools an answer called: on the page "调用了 n 个工具 · a ×2、b" (the distinct tools, each
+ * with its count), in the panel "调用了 a · b".
+ */
+function toolsLabel(calls: DynamicToolUIPart[], page: boolean, t: T): string {
   const count = new Map<string, number>();
   for (const c of calls) count.set(c.toolName, (count.get(c.toolName) ?? 0) + 1);
+  if (!page) return t("wit.tools.called", [...count.keys()].join(" · "));
   const names = [...count].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n));
   const key = count.size === 1 ? "wit.tools.one" : "wit.tools.other";
   return `${t(key, count.size)} · ${names.join(t("mail.list_sep"))}`;
@@ -107,12 +123,15 @@ function ToolCard({
   many,
   busy,
   decide,
+  session,
   t,
 }: {
   a: Approval;
   many: boolean;
   busy: boolean;
   decide(accept: boolean, all: boolean): void;
+  /** 本次对话都允许, where the host offers it and the call may take it. */
+  session?(): void;
   t: T;
 }) {
   let args: Record<string, unknown> = {};
@@ -136,18 +155,19 @@ function ToolCard({
     body = clip(body.trim(), BODY);
     break;
   }
+  const label = toolLabel(a.tool, t);
   return (
-    <Card size="sm" className="ring-primary">
-      <CardHeader>
-        <CardTitle>{t("wit.approval.wants", toolLabel(a.tool, t))}</CardTitle>
-        <CardDescription className="font-mono text-xs">{a.tool}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-1.5">
-        {a.summary && <p className="text-muted-foreground">{a.summary}</p>}
+    <div className="overflow-hidden rounded-xl border border-primary">
+      <div className="flex flex-wrap items-center gap-2 bg-muted px-3.5 py-3 leading-5">
+        <span className="font-semibold">{t("wit.approval.wants", label)}</span>
+        <span className="font-mono text-sm">{a.tool}</span>
+      </div>
+      <div className="flex flex-col gap-1.5 px-3.5 py-3 text-md">
+        {a.summary && a.summary !== label && <p className="text-muted-foreground">{a.summary}</p>}
         {fields.map(
           ([label, value]) =>
             value && (
-              <div key={label} className="flex items-start gap-3">
+              <div key={label} className="flex items-start gap-3.5">
                 <span className="shrink-0 text-muted-foreground">{label}</span>
                 <span className="min-w-0 break-words">{value}</span>
               </div>
@@ -159,17 +179,37 @@ function ToolCard({
             {t("wit.approval.destinations", a.destinations.join(t("mail.list_sep")))}
           </p>
         )}
-      </CardContent>
-      <CardFooter className="flex-wrap gap-2">
-        <Button size="sm" disabled={busy} onClick={() => decide(true, false)}>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 border-muted border-t px-3.5 py-2.5">
+        <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true, false)}>
           {t("wit.approval.allow")}
         </Button>
+        {session && (
+          <Button
+            variant="outline"
+            className="px-3 font-normal text-md"
+            disabled={busy}
+            onClick={session}
+          >
+            {t("wit.approval.allow_session")}
+          </Button>
+        )}
         {many && (
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(true, true)}>
+          <Button
+            variant="outline"
+            className="px-3 font-normal text-md"
+            disabled={busy}
+            onClick={() => decide(true, true)}
+          >
             {t("wit.approval.allow_all")}
           </Button>
         )}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(false, false)}>
+        <Button
+          variant="outline"
+          className="px-3 font-normal text-md"
+          disabled={busy}
+          onClick={() => decide(false, false)}
+        >
           {t("wit.approval.reject")}
         </Button>
         {a.tool === "create_draft" && (
@@ -177,8 +217,8 @@ function ToolCard({
             {t("wit.approval.send_note")}
           </span>
         )}
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -191,6 +231,8 @@ function Answer({
   tools,
   onLink,
   onCite,
+  working,
+  page,
   t,
 }: {
   m: WitUIMessage;
@@ -201,9 +243,17 @@ function Answer({
   tools: (a: Approval) => ReactNode;
   onLink(url: string): void;
   onCite?(id: number): void;
+  /** What shows while the answer is live: the panel's working row, or the page's spinner. */
+  working: ReactNode;
+  page: boolean;
   t: T;
 }) {
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
+  // The tools line lists finished calls; a pending one shows as its card or the working row.
+  const done = calls.filter(
+    (c) =>
+      c.state === "output-available" || c.state === "output-error" || c.state === "output-denied",
+  );
   const cites = citesOf(m);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
@@ -213,16 +263,26 @@ function Answer({
     return a ? [a] : [];
   });
   const waiting = requested.filter((a) => a.id === review?.approval);
+  // [n] in the answer opens citation n (its message), when the host opens cited mail.
+  const cite = (n: number) => {
+    const id = [...nums].find(([, x]) => x.n === n)?.[0];
+    return id !== undefined && onCite ? () => onCite(id) : undefined;
+  };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
-      {calls.length > 0 && (
+      {done.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground">
-            {toolsLabel(calls, t)}
-            <RiArrowDownSLine className="size-3.5" />
+          <CollapsibleTrigger
+            className={cn(
+              "group flex items-start gap-1 text-left text-muted-foreground hover:text-foreground",
+              page ? "text-base" : "text-sm",
+            )}
+          >
+            <RiPlayFill className="mt-0.5 size-3 shrink-0 transition-transform group-data-panel-open:rotate-90" />
+            {toolsLabel(done, page, t)}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-1 flex flex-col gap-1 text-muted-foreground">
-            {calls.map((c) => (
+            {done.map((c) => (
               <code key={c.toolCallId} className="break-all text-xs">
                 {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
               </code>
@@ -231,17 +291,33 @@ function Answer({
         </Collapsible>
       )}
       {cites
-        .filter((c) => nums.get(c.messageId)?.suspect)
+        .flatMap((c) => {
+          const k = nums.get(c.messageId);
+          return k?.suspect ? [{ id: c.messageId, ...k }] : [];
+        })
         .map((c) => (
-          <Alert key={c.messageId} role="status" className="border-0 bg-muted px-3 py-2.5 text-sm">
+          <Alert
+            key={c.id}
+            role="status"
+            className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-base"
+          >
             <RiAlertLine />
-            <AlertDescription>{t("wit.suspect", `[${nums.get(c.messageId)?.n}]`)}</AlertDescription>
+            <AlertDescription className="text-base text-current leading-relaxed">
+              {/* the quote is mail text: a plain string, never markup */}
+              {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}
+            </AlertDescription>
           </Alert>
         ))}
-      {text ? (
-        <Response text={text} streaming={live} t={t} onLink={onLink} />
-      ) : (
-        live && <Busy t={t} />
+      {live && (!page || !text) && working}
+      {text && (
+        <Response
+          text={text}
+          streaming={live}
+          size={page ? "page" : "panel"}
+          t={t}
+          onLink={onLink}
+          cite={cite}
+        />
       )}
       {cites.length > 0 && onCite && (
         // narrow: the cards under the answer; wide, the page's column shows them (Panel)
@@ -266,28 +342,30 @@ function Answer({
         </div>
       )}
       {waiting.map((a) => (
-        <Card key={a.id} size="sm" className="ring-primary">
-          <CardHeader>
-            <CardTitle>{t("wit.compose.review")}</CardTitle>
-            <CardDescription className="font-mono">{toolLabel(a.tool, t)}</CardDescription>
-          </CardHeader>
-          <CardContent>{review?.body}</CardContent>
-        </Card>
+        <div key={a.id} className="overflow-hidden rounded-xl border border-primary">
+          <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
+            <span className="font-semibold">{t("wit.compose.review")}</span>
+            <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+          </div>
+          <div className="px-3 py-2 text-md">{review?.summary}</div>
+          <div className="flex gap-1.5 border-muted border-t px-3 py-2">{review?.actions}</div>
+        </div>
       ))}
       {requested.filter((a) => !isDraftEdit(a.tool)).map(tools)}
     </div>
   );
 }
 
-/** The edit the page reviews: its card in the panel holds `body` (the summary and the decisions). */
-export type PanelReview = { approval: number; body: ReactNode };
+/** The edit the page reviews: its card in the panel holds its summary, then its decisions. */
+export type PanelReview = { approval: number; summary: ReactNode; actions: ReactNode };
 
 /**
  * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
  * what Wit knows (chips), 调整 / 翻译 (`info`), the conversation, and the input. As the Wit page
- * (layout "page"): the conversation centred, the input floating under it with `slots.input` (the
- * model chip), the cited mail opening by onCite in a column when the page is wide, else under each
- * answer. Links open through the host's onLink (after the confirmation); its failure toasts.
+ * (layout "page"): the conversation centred, the input floating under it, the cited mail opening
+ * by onCite in a column when the page is wide, else under each answer. Both inputs show the model
+ * (`model`, its chip opening onModels); the panel's live answer says Wit writes the body. Links
+ * open through the host's onLink (after the confirmation); its failure toasts.
  * A run's end reconciles: the history read again replaces what streamed, once it has the run.
  * `transport` must be the one whose follow() read `history`; a live run in it resumes into
  * its own answer, if the history's last. The edit the page reviews (`review`) shows as a card on
@@ -308,7 +386,12 @@ export function Panel({
   transport,
   t,
   layout = "panel",
-  slots,
+  model,
+  onModels,
+  ask: handed,
+  onAsked,
+  onSearch,
+  onSession,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -322,7 +405,16 @@ export function Panel({
   transport: WitTransport;
   t: T;
   layout?: "panel" | "page";
-  slots?: { chips?: ReactNode; actions?: ReactNode; input?: ReactNode };
+  /** The default model's label, as the input's chip (onModels opens the model settings). */
+  model?: string;
+  onModels?(): void;
+  /** A question the host hands over: asked once (by identity), then onAsked. */
+  ask?: { text: string };
+  onAsked?(): void;
+  /** Searches mail for the quote picker (+ → 引用邮件, or @); without it, no quoting. */
+  onSearch?(q: string): Promise<MailHit[]>;
+  /** Decides a with 本次对话都允许 (the Wit page only); true once decided. */
+  onSession?(a: Approval): Promise<boolean>;
 }) {
   // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
   // rebuilds it, then appends.
@@ -338,6 +430,12 @@ export function Panel({
   const [decided, setDecided] = useState<number[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
+  const [quoted, setQuoted] = useState<MailHit[]>([]);
+  // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
+  const [picking, setPicking] = useState<{ at: number; query: string }>();
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const pickerKeys = useRef<PickerKeys>(null);
+  const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
 
@@ -389,29 +487,83 @@ export function Panel({
     if (locked || running || !text) return;
     void chat.sendMessage({ text, metadata });
   };
+  const asked = useRef<object | undefined>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
+  useEffect(() => {
+    if (!handed || asked.current === handed) return;
+    asked.current = handed;
+    onAsked?.();
+    ask(handed.text);
+  }, [handed]);
+  // A start refused (nothing answered the question): its text goes back to the input, not lost.
+  const refused = chat.error && !running ? chat.messages.at(-1) : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new refusal restores
+  useEffect(() => {
+    if (refused?.role !== "user" || draft) return;
+    setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
+  }, [refused]);
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;
     setDraft("");
-    ask(text);
+    setQuoted([]);
+    setPicking(undefined);
+    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id) } : undefined);
+  };
+  // Closing the picker gives the textarea its focus back, the caret at caret.
+  const closePicker = (caret?: number) => {
+    setPicking(undefined);
+    setTimeout(() => {
+      const el = textarea.current;
+      el?.focus();
+      if (el && caret !== undefined) el.setSelectionRange(caret, caret);
+    });
+  };
+  const pick = (h: MailHit) => {
+    setQuoted((q) => (q.some((x) => x.id === h.id) || q.length >= MAX_QUOTED ? q : [...q, h]));
+    const at = picking?.at ?? -1;
+    if (at < 0) return closePicker();
+    // the @query becomes the chip
+    setDraft((d) => d.slice(0, at) + d.slice(at + 1 + (picking?.query.length ?? 0)));
+    closePicker(at);
+  };
+  // An @ typed at a word's start opens the picker; the text after it is its query, until a space,
+  // or the @ goes. An @ inside a word (an address) is just text.
+  const typed = (value: string, caret: number) => {
+    setDraft(value);
+    if (picking && picking.at >= 0) {
+      const query = value.slice(picking.at + 1, caret);
+      if (value[picking.at] !== "@" || caret <= picking.at || /\s/.test(query))
+        setPicking(undefined);
+      else setPicking({ at: picking.at, query });
+      return;
+    }
+    const at = caret - 1;
+    if (
+      onSearch &&
+      !full &&
+      value.length === draft.length + 1 &&
+      value[at] === "@" &&
+      (at === 0 || /\s/.test(value[at - 1]))
+    )
+      setPicking({ at, query: "" });
   };
   const fail = (e: unknown) =>
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
   const stop = () => void transport.stop().catch(fail);
   const link = (url: string) => void onLink(url).catch(fail);
 
-  // Citations numbered through the conversation: the history's as given, live ones (N=0) after;
-  // a message is suspect once any citation of it is.
+  // Citations with core's numbers (the refs the model cites by); a message is suspect once any
+  // citation of it is.
   const nums: Nums = new Map();
   const approvals = new Map<string, Approval>();
   for (const m of chat.messages) {
     for (const c of citesOf(m)) {
       const k = nums.get(c.messageId);
-      if (k) k.suspect ||= c.suspect;
-      else {
-        const next = Math.max(0, ...[...nums.values()].map((x) => x.n)) + 1;
-        nums.set(c.messageId, { n: c.n || next, suspect: c.suspect });
-      }
+      if (k) {
+        k.suspect ||= c.suspect;
+        k.quote ||= c.quote;
+      } else nums.set(c.messageId, { n: c.n, suspect: c.suspect, quote: c.quote });
     }
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
@@ -437,24 +589,80 @@ export function Panel({
             setDeciding([]);
           }
         }}
+        session={
+          onSession && a.sessionAllow
+            ? async () => {
+                if (deciding.length > 0) return;
+                // the run's other pending calls of the tool are approved with it
+                const ids = open
+                  .filter((x) => x.run === a.run && x.tool === a.tool)
+                  .map((x) => x.id);
+                setDeciding(ids);
+                try {
+                  if (await onSession(a)) setDecided((d) => [...d, ...ids]);
+                } finally {
+                  setDeciding([]);
+                }
+              }
+            : undefined
+        }
         t={t}
       />
     );
   const page = layout === "page";
+  // The page's column (max-w-202): 760 of text inside its 24 padding, as the design's.
+  // A run going: the page's spinner; the panel's row, with Stop, says Wit writes the body while a
+  // body edit's call is in (no result yet), else that it thinks.
+  const writes =
+    last?.role === "assistant" &&
+    last.parts.some(
+      (p) =>
+        p.type === "dynamic-tool" &&
+        isDraftEdit(p.toolName) &&
+        (p.state === "input-streaming" || p.state === "input-available"),
+    );
+  const working = page ? (
+    <Busy t={t} />
+  ) : (
+    <div className="flex items-center gap-2 text-muted-foreground">
+      <span className="size-2 shrink-0 rounded-full bg-muted-foreground/65" />
+      <span role="status">{t(writes ? "wit.compose.working" : "wit.thinking")}</span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="ml-auto font-normal text-base text-foreground"
+        onClick={stop}
+      >
+        {t("wit.stop")}
+      </Button>
+    </div>
+  );
   const conversation = (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            className={page ? "mx-auto w-full max-w-190 gap-5 p-6" : "gap-4 px-3 py-2"}
+            className={page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4"}
           >
-            {chat.messages.map((m) => (
-              <MessageScrollerItem key={m.id} messageId={m.id}>
+            {chat.messages.map((m, i) => (
+              <MessageScrollerItem
+                key={m.id}
+                messageId={m.id}
+                // the panel: a turn's question and answer 10 apart, turns 18
+                className={!page && m.role === "user" && i > 0 ? "mt-2" : undefined}
+              >
                 {m.role === "user" ? (
                   <Message align="end">
                     <MessageContent>
-                      <Bubble align="end">
-                        <BubbleContent className="whitespace-pre-wrap text-base">
+                      {/* the design's max-width is the text's (80%, the panel's 85%), padding aside */}
+                      <Bubble
+                        variant="secondary"
+                        align="end"
+                        className={
+                          page ? "max-w-[calc(80%+--spacing(6))]" : "max-w-[calc(85%+--spacing(6))]"
+                        }
+                      >
+                        <BubbleContent className="whitespace-pre-wrap border-0 text-md">
                           {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
                         </BubbleContent>
                       </Bubble>
@@ -470,12 +678,14 @@ export function Panel({
                     tools={tools}
                     onLink={link}
                     onCite={onCite}
+                    working={working}
+                    page={page}
                     t={t}
                   />
                 )}
               </MessageScrollerItem>
             ))}
-            {running && last?.role !== "assistant" && <Busy t={t} />}
+            {running && last?.role !== "assistant" && working}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton>
@@ -495,38 +705,96 @@ export function Panel({
       </AlertAction>
     </Alert>
   );
+  // Send keeps the Primary look while nothing can be sent (an empty or locked input): only a
+  // disabled control would grey the whole group.
+  const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup
-      className={page ? "rounded-2xl border-0 bg-background shadow-(--shadow-float)" : undefined}
-    >
+    <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+      {picking && onSearch && (
+        <QuotePicker
+          search={onSearch}
+          query={picking.at >= 0 ? picking.query : undefined}
+          onPick={pick}
+          onClose={() => closePicker()}
+          keys={pickerKeys}
+          t={t}
+        />
+      )}
+      {quoted.length > 0 && (
+        <QuoteChips
+          items={quoted}
+          onRemove={(id) => setQuoted((q) => q.filter((x) => x.id !== id))}
+          t={t}
+        />
+      )}
       <InputGroupTextarea
         aria-label={t(page ? "wit.input" : "wit.compose.input")}
         placeholder={t(page ? "wit.placeholder" : "wit.compose.placeholder")}
+        ref={textarea}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
+          if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
             return;
           e.preventDefault();
           submit();
         }}
-        className={page ? "max-h-44 min-h-14 text-base" : "max-h-40 min-h-16 text-base"}
+        rows={2}
+        // two lines at the least, as the design's rows="2"
+        className={cn("min-h-9.5 p-0 text-md leading-5 md:text-md", page ? "max-h-44" : "max-h-40")}
       />
-      <InputGroupAddon align="block-end" className={slots?.input ? undefined : "justify-end"}>
-        {slots?.input}
-        {slots?.input && <span className="flex-1" />}
-        {running ? (
-          <InputGroupButton variant="outline" size="sm" onClick={stop}>
-            {t("wit.stop")}
+      <InputGroupAddon align="block-end" className="gap-2 p-0">
+        {onSearch && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <InputGroupButton variant="ghost" size="icon-sm" aria-label={t("wit.add")}>
+                  <RiAddLine className="size-4.5" />
+                </InputGroupButton>
+              }
+            />
+            <DropdownMenuContent side="top" className="min-w-45">
+              <DropdownMenuItem disabled={full} onClick={() => setPicking({ at: -1, query: "" })}>
+                <RiMailLine className="text-muted-foreground" />
+                <span className="flex-1">{t("wit.quote")}</span>
+                <span className="text-muted-foreground/70 text-sm">@</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {model && (
+          <InputGroupButton
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
+            title={t("wit.model")}
+            onClick={onModels}
+          >
+            {model}
+            <RiArrowDownSLine className="size-3" />
+          </InputGroupButton>
+        )}
+        {running && page ? (
+          <InputGroupButton
+            className={cn(!model && "ml-auto")}
+            variant="outline"
+            size="icon-sm"
+            aria-label={t("wit.stop")}
+            onClick={stop}
+          >
+            <RiStopFill />
           </InputGroupButton>
         ) : (
           <InputGroupButton
+            className={cn(!model && "ml-auto")}
             variant="default"
-            size="sm"
-            disabled={locked || !draft.trim()}
+            size="icon-sm"
+            aria-label={t("wit.send")}
+            aria-disabled={idle}
             onClick={submit}
           >
-            {t("wit.send")}
+            <RiArrowUpLine />
           </InputGroupButton>
         )}
       </InputGroupAddon>
@@ -539,75 +807,95 @@ export function Panel({
       <div className="@container flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
           {conversation}
-          <div className="mx-auto flex w-full max-w-190 flex-col gap-2 px-6 pb-4">
+          <div className="mx-auto flex w-full max-w-202 flex-col gap-2 p-6">
             {error}
             {input}
           </div>
         </div>
         {cites.length > 0 && onCite && (
-          // wide: the column (narrow: under each answer, Answer)
-          <aside className="hidden w-80 shrink-0 flex-col overflow-auto border-l bg-sidebar p-3 @4xl:flex">
+          // wide: the column, 320 inside its padding (narrow: under each answer, Answer)
+          <aside className="hidden w-88 shrink-0 flex-col overflow-auto border-l bg-sidebar p-4 @4xl:flex">
             <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
           </aside>
         )}
       </div>
     );
   }
+  // 调整 / 翻译: a tray the input overlaps from below; locked, they do nothing but keep their look.
+  const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="gap-1.5 px-2 font-normal text-sm disabled:opacity-100"
+    >
+      <Icon className="size-3.5 text-muted-foreground" />
+      {label}
+      <RiArrowDownSLine className="size-3 text-muted-foreground" />
+    </Button>
+  );
+  // 320 and the border, as the design's panel
   return (
-    <aside className="flex w-90 shrink-0 flex-col border-l">
-      {info && (info.chips.length > 0 || slots?.chips) && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
+    <aside className="flex w-80.25 shrink-0 flex-col border-l">
+      {info && info.chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge key={c} variant="secondary" className="max-w-full truncate">
+            <Badge
+              key={c}
+              variant="secondary"
+              className="h-auto max-w-full truncate rounded-sm font-normal text-sm"
+            >
               {c}
             </Badge>
           ))}
-          {slots?.chips}
-        </div>
-      )}
-      {info && (
-        <div className="flex items-center gap-1 px-3 py-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-              {t("wit.compose.adjust")}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {info.skills.map((s) => (
-                <DropdownMenuItem
-                  key={s.id}
-                  onClick={() => ask(s.label, { skill: s.id, lang: "" })}
-                >
-                  {s.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger disabled={locked} render={<Button variant="ghost" size="sm" />}>
-              {t("wit.compose.translate")}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {info.languages.map((l) => (
-                <DropdownMenuItem
-                  key={l.tag}
-                  onClick={() =>
-                    ask(t("wit.compose.translate_to", l.name), {
-                      skill: "translate-draft",
-                      lang: l.tag,
-                    })
-                  }
-                >
-                  {l.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {slots?.actions}
         </div>
       )}
       {conversation}
-      {error && <div className="px-3 pb-2">{error}</div>}
-      <div className="px-3 pb-3">{input}</div>
+      {error && <div className="px-4 pb-2">{error}</div>}
+      <div className="px-4 pb-3">
+        {info && (
+          <div data-tray className="mx-1 -mb-4 flex gap-1 rounded-t-2xl bg-muted px-1 pt-1 pb-5">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={locked}
+                render={trayButton(RiEqualizerLine, t("wit.compose.adjust"))}
+              />
+              <DropdownMenuContent className="min-w-45">
+                {info.skills.map((s) => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onClick={() => ask(s.label, { skill: s.id, lang: "" })}
+                  >
+                    {s.label}
+                    <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={locked}
+                render={trayButton(RiTranslate2, t("wit.compose.translate"))}
+              />
+              <DropdownMenuContent className="min-w-45">
+                {info.languages.map((l) => (
+                  <DropdownMenuItem
+                    key={l.tag}
+                    onClick={() =>
+                      ask(t("wit.compose.translate_to", l.name), {
+                        skill: "translate-draft",
+                        lang: l.tag,
+                      })
+                    }
+                  >
+                    {l.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+        {input}
+      </div>
     </aside>
   );
 }

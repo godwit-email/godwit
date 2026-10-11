@@ -1,9 +1,8 @@
-import { RiArrowDownSLine } from "@remixicon/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { InputGroupButton } from "@/components/ui/input-group";
 import { Toaster } from "@/components/ui/sonner";
 import {
+  type Approval,
   WitPage as api,
   events,
   type WitHistory,
@@ -33,6 +32,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function WitPage() {
   const [st, setSt] = useState<WitPageState>();
   const [view, setView] = useState<{ history: WitHistory; tr: WitTransport; key: number }>();
+  const [handed, setHanded] = useState<{ text: string }>(); // a question native handed over
   const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
   const resetResume = useRef(witResume.reset);
@@ -45,9 +45,9 @@ export function WitPage() {
     let gen = 0; // the selection
     let creating: Promise<unknown> | undefined; // a first question's ask in flight
     const tr = new WitTransport({
-      ask: (text) => {
+      ask: (text, quoted = []) => {
         const g = gen;
-        const p = api.ask(conv.current, text).then((rs) => {
+        const p = api.ask(conv.current, text, quoted).then((rs) => {
           if (g === gen) conv.current = rs.conversation;
           return rs.run;
         });
@@ -74,7 +74,10 @@ export function WitPage() {
           if (live && history && g === gen) setView({ history, tr, key: g });
         },
         (e) => {
-          if (live && g === gen) toast.error(message(e));
+          if (live && g === gen) {
+            setHanded(undefined); // a question for this conversation is not carried to the next
+            toast.error(message(e));
+          }
         },
       );
     };
@@ -92,6 +95,7 @@ export function WitPage() {
     let pushed = false; // a witState came: newer than Load's state fields
     const offs = [
       events.witOpen.on(onOpen),
+      events.witAsk.on((text) => setHanded({ text })),
       events.witState.on((s) => {
         pushed = true;
         setSt(s);
@@ -144,6 +148,8 @@ export function WitPage() {
           model={st.model}
           resume={witResume.resume}
           decide={witResume.decide}
+          handed={handed}
+          onAsked={() => setHanded(undefined)}
           t={t}
         />
       )}
@@ -157,18 +163,31 @@ function Conversation({
   model,
   resume,
   decide,
+  handed,
+  onAsked,
   t,
 }: {
   view: { history: WitHistory; tr: WitTransport };
   model: string;
   resume?: { run: number };
   decide: ReturnType<typeof useResume>["decide"];
+  handed?: { text: string };
+  onAsked(): void;
   t: T;
 }) {
   const fail = (e: unknown) => toast.error(witError(message(e), t));
   const onDecide: Decide = async (a, accept, all) => {
     try {
       await decide(a.run, () => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  };
+  const onSession = async (a: Approval) => {
+    try {
+      await decide(a.run, () => api.decideSession(a.id));
       return true;
     } catch (e) {
       fail(e);
@@ -183,22 +202,15 @@ function Conversation({
       locked={false}
       resume={resume}
       onDecide={onDecide}
+      onSession={onSession}
+      onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}
       onCite={(id) => void api.openCited(id).catch(fail)}
+      ask={handed}
+      onAsked={onAsked}
       t={t}
-      slots={{
-        input: (
-          <InputGroupButton
-            variant="outline"
-            size="sm"
-            title={t("wit.model")}
-            onClick={() => void api.openModels().catch(fail)}
-          >
-            {model}
-            <RiArrowDownSLine />
-          </InputGroupButton>
-        ),
-      }}
+      model={model}
+      onModels={() => void api.openModels().catch(fail)}
     />
   );
 }

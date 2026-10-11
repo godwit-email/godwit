@@ -14,6 +14,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -52,9 +53,8 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.openSettings(accountRoute(acc.ID))
 	h.see("基本信息")
 	h.see("登录与服务器")
-	h.fill("发件人名称", "Alice Liddell")
-	h.fill("侧栏显示名称", "个人")
-	h.fill("签名内容", "Alice")
+	h.fillRow("发件人名称", "Alice Liddell")
+	h.fillRow("侧栏显示名称", "个人")
 	h.advance(599 * time.Millisecond)
 	h.drain()
 	if got := h.account(acc.ID); got.Name != "alice" {
@@ -63,17 +63,21 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.advance(time.Millisecond)
 	h.until("fields saved", func() bool {
 		got := h.account(acc.ID)
-		return got.Name == "Alice Liddell" && got.Alias == "个人" && got.Signature == "Alice"
+		return got.Name == "Alice Liddell" && got.Alias == "个人"
 	})
 	h.until("the form settles", func() bool {
 		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
-		return !f.edits[0].pending && !f.edits[1].pending && !f.edits[2].pending
+		return !f.edits[0].pending && !f.edits[1].pending
 	})
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
 
 	// Sync range and Sync now.
-	h.click("每个文件夹最近 2000 封（推荐）")
-	h.click("最近 10000 封")
-	h.until("sync limit saved", func() bool { return h.account(acc.ID).SyncLimit == 10000 })
+	h.click("每个文件夹最近 2000 封")
+	h.click("最近 3 个月")
+	h.until("sync range saved", func() bool { return h.account(acc.ID).Sync == core.SyncRange{Months: 3} })
+	h.click("最近 3 个月")
+	h.click("全部")
+	h.until("sync range saved", func() bool { return h.account(acc.ID).Sync == core.SyncRange{} })
 	h.click("立即同步")
 	h.see("已同步 · 刚刚")
 }
@@ -84,7 +88,7 @@ func TestSettingsAccountEditFailureReverts(t *testing.T) {
 	p.update = func(context.Context, int64, core.AccountPatch) (core.Account, error) {
 		return core.Account{}, errors.New("disk full")
 	}
-	h.fill("发件人名称", "Nope")
+	h.fillRow("发件人名称", "Nope")
 	h.advance(600 * time.Millisecond)
 	h.see("出错了：disk full")
 	h.until("name reverted", func() bool { return p.forms[acc.ID].name == "alice" })
@@ -102,7 +106,7 @@ func TestSettingsDefaultAccount(t *testing.T) {
 	if _, badge := h.tt.Find("默认发件"); badge {
 		t.Fatalf("bob shows as the default: %q", h.tt.Texts())
 	}
-	h.click("设为默认发件账户（在「全部收件箱」里写邮件时使用）")
+	h.click("设为默认发件账户")
 	h.until("bob is the default", func() bool { return h.account(b.ID).IsDefault && !h.account(a.ID).IsDefault })
 	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
 }
@@ -110,7 +114,7 @@ func TestSettingsDefaultAccount(t *testing.T) {
 func TestSettingsRemoveAccount(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.click("删除 alice@example.com")
+	h.clickRemove()
 	h.see("服务器上的邮件不受影响。")
 	h.click("删除")
 	h.until("onboarding", func() bool { return h.app.route.Page == PageOnboarding })
@@ -122,10 +126,10 @@ func TestSettingsRemoveAccount(t *testing.T) {
 func TestSettingsReauthBanner(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.see("状态正常")
+	h.see("已同步")
 	h.env.IMAP(acc.ID).SetPassword("x")
 	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
-	banner := "登录已过期，已停止同步。本地已有的邮件仍然可以查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。"
+	banner := "。本地邮件仍可查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。"
 	h.until("the banner", func() bool {
 		h.advance(refreshEvery)
 		return h.tt.HasText(banner)
@@ -175,12 +179,12 @@ func TestSettingsCache(t *testing.T) {
 	}
 	p := h.openSettings(accountRoute(acc.ID))
 	h.until("usage", func() bool { return p.usage[acc.ID] > 0 })
-	h.see("本地占用 " + formatBytes(p.usage[acc.ID]))
+	h.see(formatBytes(p.usage[acc.ID]))
 	h.click("清理附件缓存")
 	h.see("清理附件缓存？")
 	h.click("清理")
 	h.until("cleared", func() bool { return p.usage[acc.ID] == 0 })
-	h.see("本地占用 0 B")
+	h.see("0 B")
 	if n, err := h.env.Svc.AttachmentCacheUsage(ctx, acc.ID); err != nil || n != 0 {
 		t.Fatalf("usage %d, %v", n, err)
 	}
@@ -315,7 +319,7 @@ func (b *blockingUpdate) Log() []string {
 // saveServers opens the servers dialog, sets the hosts and saves.
 func (h *harness) saveServers(imap, smtp string) {
 	h.t.Helper()
-	h.click("编辑服务器设置")
+	h.click("编辑")
 	h.fill("IMAP 服务器", imap)
 	h.fill("SMTP 服务器", smtp)
 	h.click("保存")
@@ -351,7 +355,7 @@ func TestSettingsStaleDialogResult(t *testing.T) {
 	h.saveServers("localhost", "127.0.0.1")
 	h.until("the first save blocks", func() bool { return len(b.Log()) == 1 })
 	h.click("取消")
-	h.click("编辑服务器设置")
+	h.click("编辑")
 	h.fill("IMAP 服务器", "typing.example")
 	close(b.release)
 	h.until("the first save ends", func() bool { return len(b.Log()) == 2 })
@@ -380,7 +384,7 @@ func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
 	h.app.load()
 	staleGen := h.app.loadGen
 	h.until("the stale load runs", func() bool { return calls.Load() == 1 })
-	h.fill("发件人名称", "Alice Liddell")
+	h.fillRow("发件人名称", "Alice Liddell")
 	h.advance(accountSaveDelay)
 	h.until("saved", func() bool { return p.forms[acc.ID].ok.Name == "Alice Liddell" })
 	if h.app.accounts[0].Name != "Alice Liddell" {
@@ -522,11 +526,12 @@ func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
 func TestCloseSavesSettings(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.fill("签名内容", "Bye")
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigType("<p>Bye</p>")
 	closed := false
 	h.app.BeforeClose(func() {
 		closed = true
-		if got := h.account(acc.ID).Signature; got != "Bye" {
+		if got := h.account(acc.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Bye</p>" {
 			t.Errorf("closed before the signature saved: %q", got)
 		}
 	})
@@ -787,4 +792,253 @@ func TestLocalAPIStaleStopIgnored(t *testing.T) {
 	if h.tt.HasText("the old server died") {
 		t.Fatal("a stale notice shows")
 	}
+}
+
+// fillRow fills the input at the right of the settings row labelled label; the
+// row's text sits in the label's name too, so a click lands beside it.
+func (h *harness) fillRow(label, value string) {
+	h.t.Helper()
+	r, ok := h.tt.Find(label)
+	if !ok {
+		h.t.Fatalf("no row %q", label)
+	}
+	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
+	h.tt.Command("selectAll")
+	h.typeText(value)
+}
+
+// clickRemove presses the 删除账户 button, found by its accessible label (the visible text is also the section title).
+func (h *harness) clickRemove() { h.t.Helper(); h.click("删除账户 alice@example.com") }
+
+// quietAccount is an account on a harness with no background sync, so only the test's own events set a sync time.
+func quietAccount(t *testing.T) (*harness, core.Account) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h, acc
+}
+
+// syncedHoursAgo delivers a SyncFinished through the app's event path and moves the clock on.
+func (h *harness) syncedHoursAgo(id int64, hours int) {
+	h.app.onEvent(events.Event{Type: events.SyncFinished, AccountID: id})
+	h.advance(time.Duration(hours) * time.Hour)
+	h.tt.Frame()
+}
+
+func TestAccountHeaderMeta(t *testing.T) {
+	h, acc := quietAccount(t)
+	st := h.app.settings
+	st.Theme = "dark"
+	h.app.changeSettings(st)
+	h.openSettings(accountRoute(acc.ID))
+	if _, ok := h.tt.Find("已同步"); !ok {
+		t.Fatalf("no bare chip before a sync: %q", h.tt.Texts())
+	}
+	h.syncedHoursAgo(acc.ID, 3)
+	h.see("已同步 · 3 小时前")
+	// The sidebar footer shows the same text, so find the chip by its place: on the badge's row, right of it.
+	badge, ok := h.tt.Find("默认发件")
+	if !ok {
+		t.Fatalf("no badge: %q", h.tt.Texts())
+	}
+	img, want, found := h.tt.Image(), theme.Dark().SuccessBg.SRGB(), false
+	y := int(badge.Y + badge.H/2)
+	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+400 && !found; x++ {
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 8
+	}
+	if !found {
+		t.Fatalf("no dark SuccessBg chip on the badge's row %d", y)
+	}
+}
+
+func TestReauthBannerElapsed(t *testing.T) {
+	h, acc := quietAccount(t)
+	h.env.IMAP(acc.ID).SetPassword("x")
+	_ = h.env.Svc.SyncNow(context.Background(), acc.ID) // fails: no SyncFinished
+	h.openSettings(accountRoute(acc.ID))
+	h.until("unknown-time banner", func() bool {
+		h.advance(refreshEvery)
+		return h.tt.HasText("登录已过期，已停止同步。")
+	})
+	h.syncedHoursAgo(acc.ID, 3)
+	h.see("登录已过期，3 小时前起停止同步。")
+	h.see("需要重新登录")
+}
+
+func TestDeleteAccountOutline(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响")
+	if h.tt.HasText("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响。") {
+		t.Fatal("row desc keeps the trailing 。")
+	}
+	h.clickRemove()
+	h.see("删除 alice@example.com？") // the dialog keeps the email
+}
+
+// TestSyncRangeLabels: onboarding recommends 2000, settings lists it plain.
+func TestSyncRangeLabels(t *testing.T) {
+	for _, lang := range []string{"zh-CN", "en"} {
+		i18n.SetLanguage(lang)
+		onb, set := i18n.T("onboarding.sync.2000"), rangeOptions()[0].Label
+		if !strings.Contains(onb, "（推荐）") && !strings.Contains(onb, "recommended") || strings.Contains(set, "推荐") || strings.Contains(set, "recommended") || set == "" {
+			t.Errorf("%s: onboarding %q, settings %q", lang, onb, set)
+		}
+	}
+	i18n.SetLanguage("zh-CN")
+}
+
+// The ranges are 2000, 3 months and all, nothing else; the header counts the
+// folders once synced.
+func TestSyncRangeOptionsAndFolders(t *testing.T) {
+	opts := rangeOptions()
+	var got []string
+	for _, o := range opts {
+		got = append(got, o.Label)
+	}
+	if want := "每个文件夹最近 2000 封|最近 3 个月|全部"; strings.Join(got, "|") != want {
+		t.Fatalf("options %q", got)
+	}
+	// A limit set outside the app shows as it is, as an option of its own.
+	if o := rangeOptions(core.SyncRange{Limit: 500}, core.SyncRange{Months: 3}); len(o) != 4 || o[3].Label != "每个文件夹最近 500 封" {
+		t.Fatalf("options with 500: %+v", o)
+	}
+	h, acc := withAccount(t)
+	h.syncNow(acc)
+	h.openSettings(accountRoute(acc.ID))
+	h.waitMail("the header counts the folders", func() bool { return h.tt.HasText("其他 IMAP 邮箱 · 4 个文件夹") })
+}
+
+// A signature page that never answers the flush holds the close for
+// signatureFlushWait, then the window asks.
+func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigMute()
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.drain()
+	if closed || h.app.closeAsk {
+		t.Fatalf("settled before the flush: closed %v, ask %v", closed, h.app.closeAsk)
+	}
+	h.advance(signatureFlushWait)
+	h.until("asks", func() bool { return h.app.closeAsk })
+	if closed {
+		t.Fatal("closed with the signature unsaved")
+	}
+	h.see("签名没有保存成功")
+	// A save that lands late settles the close it held.
+	h.plat.sigAnswer(true)
+	h.until("closed after the late save", func() bool { return closed })
+}
+
+// A signature page that never ran holds no edit: closing neither waits
+// nor asks.
+func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.plat.sigMute()
+	h.plat.sigDead()
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.until("closed", func() bool { return closed })
+	if h.app.closeAsk {
+		t.Fatal("asked")
+	}
+}
+
+// Closing the App closes the signature page.
+func TestAppCloseClosesSignatureView(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.app.Close()
+	h.called("CloseSignatureView")
+}
+
+// The signature page saves an account's edit as that account when native
+// switches it to another; the other is untouched.
+func TestSignatureSwitchKeepsAccounts(t *testing.T) {
+	var a, b core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		a = e.AddAccount(t, "alice@example.com")
+		b = e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings(accountRoute(a.ID))
+	h.until("shows a", func() bool { return h.plat.sigShown() == a.ID })
+	h.plat.sigType("<p>Alice</p>")
+	h.openSettings(accountRoute(b.ID))
+	h.until("shows b", func() bool { return h.plat.sigShown() == b.ID })
+	if got := h.account(a.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
+		t.Fatalf("a's signature %q", got)
+	}
+	if got := h.account(b.ID).Signature; got != "" {
+		t.Fatalf("b's signature %q", got)
+	}
+	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
+		t.Fatalf("%d signature views, want one", n)
+	}
+}
+
+// 隐私与安全 lists the trusted senders; 移除 stops trusting one.
+func TestSettingsTrustedSenders(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("privacy")
+	h.see("还没有信任的发件人")
+	if err := h.env.Svc.TrustImageSender(context.Background(), "Bob <bob@example.com>"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("bob@example.com")
+	h.click("移除 bob@example.com") // the button names whom it removes
+	h.until("untrusted", func() bool {
+		st, _ := h.env.Svc.GetSettings(context.Background())
+		return len(st.TrustedImageSenders) == 0
+	})
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("还没有信任的发件人")
+}
+
+func TestMailboxRoleOptions(t *testing.T) {
+	b := &mailbox{folders: []core.Folder{{ID: 1, Name: "INBOX", Role: "inbox"}, {ID: 2, Name: "Sent", Role: "sent"},
+		{ID: 3, Name: "Trash", Role: "trash"}, {ID: 4, Name: "Archive", Role: "archive"}, {ID: 5, Name: "Bin"}},
+		roles: [5]int64{0, 2, 0, 3, 4}}
+	labels := func(i int) string {
+		var out []string
+		for _, o := range roleOptions(b, i) {
+			out = append(out, o.Label)
+		}
+		return strings.Join(out, "|")
+	}
+	for i, want := range []string{
+		"不使用|Bin",  // drafts: none yet; never another role's folder
+		"Sent|Bin", // sent: no 不使用 once set
+		"不使用|Bin",  // junk
+		"Trash|Bin",
+		"Archive|Bin|不使用", // archive keeps 不使用
+	} {
+		if got := labels(i); got != want {
+			t.Errorf("%s: %q, want %q", mailboxRoles[i], got, want)
+		}
+	}
+}
+
+func TestSettingsMailboxPurge(t *testing.T) {
+	h, acc := withAccount(t)
+	h.syncNow(acc)
+	h.openSettings(accountRoute(acc.ID))
+	h.see("邮箱行为")
+	h.see("超过这个时间的已删除邮件会被永久删除")
+	h.click("永不") // junk's purge comes first
+	h.click("一周后")
+	h.until("the junk purge saved", func() bool {
+		p, err := h.env.Svc.Purges(context.Background(), acc.ID)
+		return err == nil && p["junk"].Days == 7 && p["trash"].Days == 0
+	})
 }

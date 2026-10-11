@@ -50,7 +50,7 @@ func TestThemeTokens(t *testing.T) {
 		t.Errorf("Dark() = %+v", d)
 	}
 
-	st := core.Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 15}
+	st := core.Settings{Theme: "system", Density: "compact", FontSize: 14, BodyFontSize: 15}
 	if FromSettings(st, false).Dark || !FromSettings(st, true).Dark {
 		t.Error("system theme does not follow the system")
 	}
@@ -60,7 +60,7 @@ func TestThemeTokens(t *testing.T) {
 	}
 	st.Theme = "light"
 	got := FromSettings(st, true)
-	if got.Dark || got.FontSize != 13 || got.BodyFontSize != 15 || got.Scale != 1 {
+	if got.Dark || got.FontSize != 14 || got.BodyFontSize != 15 || got.Scale != 1 {
 		t.Errorf("light compact = dark %v, sizes %v/%v, scale %v", got.Dark, got.FontSize, got.BodyFontSize, got.Scale)
 	}
 	st.Density = "comfortable"
@@ -109,7 +109,7 @@ func TestSystemFonts(t *testing.T) {
 func TestSpaceFollowsDensity(t *testing.T) {
 	for density, want := range map[string]float32{"compact": 32, "comfortable": 40} {
 		var got float32
-		tok := FromSettings(core.Settings{Theme: "light", Density: density, FontSize: 13, BodyFontSize: 14}, false)
+		tok := FromSettings(core.Settings{Theme: "light", Density: density, FontSize: 14, BodyFontSize: 14}, false)
 		ui.NewTester(func(c *ui.Context) {
 			Apply(c, tok)
 			got = c.Theme().Space(8)
@@ -126,11 +126,11 @@ func TestRadiusAndTextScale(t *testing.T) {
 	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
-	if x := tok.Text; [6]float32{x.Xs, x.Sm, x.Base, x.Lg, x.Xl, x.X2l} != [6]float32{13, 14, 15, 17, 20, 22} {
+	if x := tok.Text; [7]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Xl, x.X2l} != [7]float32{12, 13, 14, 15, 16, 19, 21} {
 		t.Errorf("Text = %+v", x)
 	}
-	if Light().Text.Base != 13 {
-		t.Errorf("Light().Text.Base = %v, want 13", Light().Text.Base)
+	if Light().Text.Body != 14 {
+		t.Errorf("Light().Text.Body = %v, want 14", Light().Text.Body)
 	}
 	var th *ui.Theme
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
@@ -164,5 +164,55 @@ func TestShadowsAsTailwind(t *testing.T) {
 	}
 	if d := Dark(); d.FloatInset != p.White.Color().Alpha(0.2) {
 		t.Errorf("dark FloatInset %v", d.FloatInset)
+	}
+}
+
+func TestTextScaleMatchesTokens(t *testing.T) {
+	tok := Light()
+	x := tok.Text
+	if got := [9]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Title, x.Xl, x.X2l, x.Display}; got != [9]float32{11, 12, 13, 14, 15, 16, 18, 20, 29} {
+		t.Errorf("Text at 14 = %+v", x)
+	}
+	if got := mygoTheme(tok).FontSize; got != 14 {
+		t.Errorf("mygo FontSize = %v, want 14", got)
+	}
+}
+
+func TestHighlightToken(t *testing.T) {
+	l, d := Light(), Dark()
+	if l.Highlight != p.Yellow200.Color() || l.HighlightText != p.Neutral950.Color() || l.Highlight != (ui.Color{R: 0xff, G: 0xf0, B: 0x85, A: 255}) {
+		t.Errorf("light highlight = %v on %v", l.Highlight, l.HighlightText)
+	}
+	if d.Highlight != p.Yellow900.Color() || d.HighlightText != p.Yellow100.Color() {
+		t.Errorf("dark highlight = %v on %v", d.Highlight, d.HighlightText)
+	}
+}
+
+// TestDarkStatus: the dark status tints are Tailwind's -950 fill, -800 edge, -300 text.
+func TestDarkStatus(t *testing.T) {
+	d := Dark()
+	for name, ok := range map[string]bool{
+		"success": d.SuccessBg == p.Green950.Color() && d.SuccessBorder == p.Green800.Color() && d.SuccessText == p.Green300.Color(),
+		"warning": d.WarningBg == p.Amber950.Color() && d.WarningBorder == p.Amber800.Color() && d.WarningText == p.Amber300.Color(),
+		"danger":  d.DangerBg == p.Red950.Color() && d.DangerBorder == p.Red800.Color() && d.DangerText == p.Red300.Color(),
+		"ins/del": d.InsBg == p.Green950.Color() && d.InsText == p.Green300.Color() && d.DelBg == p.Red950.Color() && d.DelText == p.Red300.Color(),
+	} {
+		if !ok {
+			t.Errorf("dark %s tokens wrong", name)
+		}
+	}
+}
+
+// TestLine: each text step has its line height at any font size, and a
+// size between steps has Body's.
+func TestLine(t *testing.T) {
+	for _, font := range []int{13, 14, 16} {
+		s := FromSettings(core.Settings{FontSize: font}, false).Text
+		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm, s.Base: LineBase, s.Body: LineBody, s.Lg: LineLg,
+			s.Title: LineTitle, s.Xl: LineXl, s.X2l: LineX2l, s.Display: LineDisplay, s.Body + 0.5: LineBody} {
+			if got := s.Line(size); got != want {
+				t.Errorf("font %d: Line(%v) = %v, want %v", font, size, got, want)
+			}
+		}
 	}
 }

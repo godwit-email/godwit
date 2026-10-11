@@ -213,15 +213,21 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: true,
 			QuickReplies: true, Summary: true, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", LocalAPI: true, SidebarWidth: 320}
+			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", LocalAPI: true, SidebarWidth: 320,
+			TrustedImageSenders: []string{"bob@example.com"}} // only TrustImageSender sets it; SetSettings keeps it
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
 				t.Errorf("field %s keeps its default; change it", sv.Type().Field(i).Name)
 			}
 		}
+		require.NoError(t, api.TrustImageSender(ctx, "Bob <bob@example.com>"))
 		out["set"] = res(api.SetSettings(ctx, st))
 		out["after"] = res(api.GetSettings(ctx))
+		require.NoError(t, api.UntrustImageSender(ctx, "bob@example.com"))
+		untrusted, err := api.GetSettings(ctx)
+		require.NoError(t, err)
+		out["untrusted"] = untrusted.TrustedImageSenders
 		bad := st
 		bad.Theme = "neon"
 		out["invalid"] = res(api.SetSettings(ctx, bad))
@@ -252,6 +258,9 @@ func TestModelService(t *testing.T) {
 		out["scheme"] = res(api.CheckModelService(ctx, 0, in))
 		in.BaseURL = srv.URL
 		out["missing"] = res(api.CheckModelService(ctx, 999, in))
+		judge := core.ModelServiceInput{Name: "ts", Provider: core.ProviderTypeSafe, JudgeFormat: "systemone", BaseURL: srv.URL,
+			KeyAction: core.KeyReplace, APIKey: "good-key"}
+		out["judgeOnly"] = res(api.CheckModelService(ctx, 0, judge))
 		return out
 	})
 }
@@ -327,6 +336,7 @@ func TestAskApproval(t *testing.T) {
 func TestEvents(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		acc := env.AddAccount(t, "alice@example.com")
+		require.NoError(t, env.Svc.SyncNow(t.Context(), acc.ID)) // the first sync is not new mail
 		ch, unsub := api.Subscribe()
 		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plans", "Meet on Friday.",
 			coretest.MessageID("m1@contract"), coretest.Date(day1)))

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // plaintext lets the onboarding reach the loopback fake servers, which speak
@@ -59,8 +60,13 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	h.fill("密码", "secret")
 	h.click("连接")
 	h.see("连接成功")
-	if o := h.app.pages[PageOnboarding].(*onboarding); !o.report.OK() {
+	h.see("new@example.com · 4 个文件夹") // INBOX, Sent, Trash, Archive
+	o := h.app.pages[PageOnboarding].(*onboarding)
+	if !o.report.OK() {
 		t.Fatalf("report %+v", o.report)
+	}
+	if text, detail, _ := o.checkRow(o.report.Steps[1]); text != "IMAP 登录成功" || detail != "4 个文件夹" {
+		t.Fatalf("imap row %q, %q", text, detail)
 	}
 	h.fill("发件人名称", "New Person")
 	h.click("开始使用")
@@ -238,7 +244,7 @@ func TestAddAccountSheet(t *testing.T) {
 			added = a
 		}
 	}
-	if want := "account:" + strconv.FormatInt(added.ID, 10); added.ID == 0 || h.app.route.Settings != want || added.Name != "Second" || added.SyncLimit != 2000 {
+	if want := "account:" + strconv.FormatInt(added.ID, 10); added.ID == 0 || h.app.route.Settings != want || added.Name != "Second" || added.Sync != (core.SyncRange{Limit: 2000}) {
 		t.Fatalf("route %+v, added %+v", h.app.route, added)
 	}
 }
@@ -283,30 +289,35 @@ func TestOnboardingSaveDisablesEdits(t *testing.T) {
 	}
 }
 
-func TestOnboardingSyncLimitRetry(t *testing.T) {
+// The range chosen is saved with the account, in one write: a sync started
+// by the add never sees the default first.
+func TestOnboardingSyncRangeRetry(t *testing.T) {
 	plaintext(t)
 	h := newHarness(t)
 	o := h.toDone("new@example.com")
-	o.syncLimit = 10000
+	o.sync = core.SyncRange{Months: 3}
 	adds, fails := 0, 1
-	add, update := o.add, o.update
-	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) { adds++; return add(ctx, in) }
-	o.update = func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
+	add := o.add
+	o.add = func(ctx context.Context, in core.AccountInput) (core.Account, error) {
+		adds++
+		if in.Sync == nil || *in.Sync != (core.SyncRange{Months: 3}) {
+			t.Errorf("added with %+v", in.Sync)
+		}
 		if fails > 0 {
 			fails--
 			return core.Account{}, errors.New("boom")
 		}
-		return update(ctx, id, p)
+		return add(ctx, in)
 	}
 	h.click("开始使用")
 	h.see("出错了：boom")
 	if h.app.route.Page != PageOnboarding || o.step != stepDone {
-		t.Fatalf("finished after a failed update: route %+v, step %d", h.app.route, o.step)
+		t.Fatalf("finished after a failed add: route %+v, step %d", h.app.route, o.step)
 	}
 	h.click("重试")
 	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
 	accs, err := h.env.Svc.ListAccounts(context.Background())
-	if err != nil || len(accs) != 1 || accs[0].SyncLimit != 10000 || adds != 1 {
+	if err != nil || len(accs) != 1 || accs[0].Sync != (core.SyncRange{Months: 3}) || adds != 2 {
 		t.Fatalf("accounts %+v, %v, %d adds", accs, err, adds)
 	}
 }
@@ -331,5 +342,82 @@ func TestOnboardingSettingsErrors(t *testing.T) {
 		if strings.Contains(s, "required") || strings.Contains(s, "range") {
 			t.Fatalf("raw core error shown: %q", s)
 		}
+	}
+}
+
+func TestOnboardingDetectedBadgeInInput(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.fill("邮箱地址", "x@qq.com")
+	h.advance(debounce)
+	h.see("识别为 QQ 邮箱")
+	in, ok1 := h.tt.Find("邮箱地址")
+	badge, ok2 := h.tt.Find("识别为 QQ 邮箱")
+	if !ok1 || !ok2 {
+		t.Fatalf("input %v, badge %v", ok1, ok2)
+	}
+	if in.H != 40 {
+		t.Fatalf("email input is %v high, want 40", in.H)
+	}
+	if badge.X < in.X+in.W || badge.Y < in.Y || badge.Y+badge.H > in.Y+in.H {
+		t.Fatalf("badge %v is not trailing the input %v", badge, in)
+	}
+	// The row around them draws the box: its right border sits just past the badge.
+	img, want, found := h.tt.Image(), theme.Light().Ring.SRGB(), false // focused after the fill
+	y := int(badge.Y + badge.H/2)
+	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+24 && !found; x++ { // the badge's and the box's padding
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("no input border right of the badge")
+	}
+}
+
+func TestOnboardingDoneBadgeUsesSuccessTokens(t *testing.T) {
+	plaintext(t)
+	h := newHarness(t)
+	h.toDone("done@example.com")
+	title, ok := h.tt.Find("连接成功")
+	if !ok {
+		t.Fatal("no done title")
+	}
+	img, want := h.tt.Image(), theme.Light().SuccessBg.SRGB()
+	x, found := int(title.X)+theme.DoneBadge/2, false
+	for y := int(title.Y) - 60; y < int(title.Y) && !found; y++ {
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("no SuccessBg badge above the done title")
+	}
+}
+
+func TestOnboardingManualLabels(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	if _, open := h.tt.Find("IMAP 服务器"); !open {
+		h.click("手动设置服务器")
+	}
+	h.see("IMAP 服务器")
+	if _, ok := h.tt.Find("端口"); !ok {
+		t.Fatalf("no bare 端口 label: %q", h.tt.Texts())
+	}
+}
+
+func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.click("邮箱地址")
+	in, _ := h.tt.Find("邮箱地址")
+	img, want := h.tt.Image(), theme.Light().Ring.SRGB()
+	y, found := int(in.Y+in.H/2), false
+	for x := int(in.X) - 16; x < int(in.X) && !found; x++ { // the row's left border, left of its padding
+		got := img.RGBAAt(x, y)
+		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	}
+	if !found {
+		t.Fatal("focused email row has no ring-coloured border")
 	}
 }

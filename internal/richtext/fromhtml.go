@@ -20,8 +20,8 @@ func FromMailHTML(safe string, lim Limits) (Doc, bool) {
 
 // FromComposeHTML converts compose content (mail.SanitizeCompose output or a
 // draft's editable part): links come from href, and only paragraphs, bold,
-// italic, links, lists and quotes stay; everything else becomes paragraph
-// text.
+// italic, links, lists, quotes and data: images (a draft's signature images,
+// for showing) stay; everything else becomes paragraph text.
 func FromComposeHTML(safe string) Doc {
 	c := &conv{lim: DefaultLimits, compose: true}
 	c.run(safe)
@@ -252,11 +252,11 @@ func (c *conv) styleAttrs(n *html.Node, s *Inline) {
 var imageData = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp)[;,]`)
 
 func (c *conv) image(n *html.Node, x ctx) {
-	if c.compose {
-		return
-	}
 	src, alt := strings.TrimSpace(attr(n, "src")), attr(n, "alt")
 	l := strings.ToLower(src)
+	if c.compose && !imageData.MatchString(l) { // a draft shows only its signature images, as data:
+		return
+	}
 	if !imageData.MatchString(l) && !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
 		c.text(alt, x)
 		return

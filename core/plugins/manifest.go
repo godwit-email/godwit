@@ -21,6 +21,7 @@ import (
 type Manifest struct {
 	Name        string        `json:"name"`
 	Version     string        `json:"version"`
+	Description Text          `json:"description"` // one line, shown under the name in settings
 	Main        string        `json:"main"`
 	Permissions Permissions   `json:"permissions"`
 	Config      []ConfigField `json:"config"`

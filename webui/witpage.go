@@ -48,6 +48,9 @@ var (
 	// WitState tells the Wit page its model label, copy or theme changed
 	// (the settings did); the conversation and its stream stay.
 	WitState = mygo.NewEvent[WitPageState]("witState")
+	// WitAsk hands the Wit page a question native collected (a search that
+	// found nothing): the page asks it once, in the conversation it shows.
+	WitAsk = mygo.NewEvent[string]("witAsk")
 )
 
 // WitPageDeps is what WitPage needs from the platform. The native callbacks
@@ -58,6 +61,8 @@ type WitPageDeps struct {
 	// Open and State send WitOpen and WitState to the page.
 	Open  func(WitOpenMsg)
 	State func(WitPageState)
+	// Ask sends WitAsk to the page.
+	Ask func(query string)
 	// OpenMessage opens message id in the reader; OpenModels the model
 	// settings; Navigate goes back (-1) or forward (1).
 	OpenMessage func(id int64)
@@ -141,17 +146,30 @@ func (w *Wit) open(id int64, created bool) int64 {
 	return m.Version
 }
 
+// Handoff gives the page a question to ask (WitAsk): the page starts the run
+// through WitPage.Ask, so it follows it and Stop works. Native navigates to a
+// new conversation first.
+func (w *Wit) Handoff(query string) {
+	if strings.TrimSpace(query) != "" {
+		w.d.Ask(query)
+	}
+}
+
 // SettingsChanged sends the page its state for st (WitState).
 func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	model := st.DefaultModel
+	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(st.DefaultModel), Text: witText(), Theme: ThemeOf(st)}
+}
+
+// modelLabel is a default model's label: its name without the provider.
+func modelLabel(model string) string {
 	if _, m, ok := strings.Cut(model, "/"); ok {
-		model = m
+		return m
 	}
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: model, Text: witText(), Theme: ThemeOf(st)}
+	return model
 }
 
 // Load is the page's state: the snapshot, the model, the copy and the theme.
@@ -248,11 +266,12 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 	return h, keyed(err)
 }
 
-// Ask asks input in conv, an ask conversation; 0 makes one first, which
+// Ask asks input in conv, an ask conversation, with the mail the user quoted
+// (message IDs; core AskWith); conv 0 makes one first, which
 // ConversationCreated hears of. The page follows conv from before the run
 // starts, unless a newer selection came meanwhile. Only Stop cancels the
 // run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string) (RunStart, error) {
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64) (RunStart, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -280,7 +299,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string) (RunStart, 
 	if _, err := p.w.followConv(t, svc, conv, sel); err != nil && !errors.Is(err, errSuperseded) {
 		return RunStart{}, keyed(err)
 	}
-	ch, err := svc.Ask(context.WithoutCancel(ctx), conv, input)
+	ch, err := svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
 	if made { // titled by now, unless Ask failed
 		p.w.created(conv, version)
 	}
@@ -357,6 +376,23 @@ func (p *WitPage) DecideAll(ctx context.Context, run int64, accept bool) error {
 	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc *core.Service) error {
 		return svc.ResolveAll(context.WithoutCancel(ctx), run, accept)
 	})
+}
+
+// DecideSession accepts approval and allows its tool for the rest of the
+// conversation (本次对话都允许; core ResolveApprovalForConversation). As Decide.
+func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+		return svc.ResolveApprovalForConversation(context.WithoutCancel(ctx), approval)
+	})
+}
+
+// SearchMail is the quote picker's search (core Search, every account).
+func (p *WitPage) SearchMail(ctx context.Context, query string) ([]MailHit, error) {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	return searchMail(ctx, svc, query)
 }
 
 // decide runs act once an approval of the followed conversation is, one

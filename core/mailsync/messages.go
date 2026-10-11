@@ -38,8 +38,8 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			snippet, body_text, body_html, body_truncated, has_attachments, entered_at)
+			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
 		Args: args,
 	})
 	msgAt := len(stmts) - 1
@@ -71,8 +71,13 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		r.gone(plan.moved, nil)
 		r.merged(tid, plan.others)
 	}
-	r.received = append(r.received, res[msgAt].LastInsertID)
-	r.threads = append(r.threads, tid)
+	if arrival { // only new mail is announced as received; older mail and backfills only change the list
+		r.received = append(r.received, res[msgAt].LastInsertID)
+		r.threads = append(r.threads, tid)
+	} else {
+		r.changed = append(r.changed, res[msgAt].LastInsertID)
+		r.changedThreads = append(r.changedThreads, tid)
+	}
 	return nil
 }
 

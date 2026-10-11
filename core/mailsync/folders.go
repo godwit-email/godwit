@@ -15,7 +15,8 @@ type folder struct {
 	id                   int64
 	name                 string
 	uidValidity, lastUID uint32
-	synced               bool // a first sync at uidValidity completed
+	synced               bool   // a first sync at uidValidity completed
+	filled               *int64 // the cutoff a range backfill completed down to
 }
 
 var specialUse = map[imap.MailboxAttr]string{
@@ -24,10 +25,10 @@ var specialUse = map[imap.MailboxAttr]string{
 }
 
 var roleNames = map[string]string{
-	"sent": "sent", "sent items": "sent", "已发送": "sent",
-	"trash": "trash", "deleted items": "trash", "已删除": "trash",
+	"sent": "sent", "sent items": "sent", "sent messages": "sent", "已发送": "sent",
+	"trash": "trash", "deleted items": "trash", "deleted messages": "trash", "已删除": "trash",
 	"drafts": "drafts", "草稿": "drafts",
-	"junk": "junk", "spam": "junk", "垃圾邮件": "junk",
+	"junk": "junk", "junk email": "junk", "spam": "junk", "垃圾邮件": "junk",
 	"archive": "archive", "归档": "archive",
 }
 
@@ -48,6 +49,22 @@ func role(d *imap.ListData) string {
 	return roleNames[strings.ToLower(name)]
 }
 
+func selectable(d *imap.ListData) bool {
+	return !slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) && !slices.Contains(d.Attrs, imap.MailboxAttrNonExistent)
+}
+
+// CountFolders is how many selectable folders LIST returns: those a sync mirrors.
+func CountFolders(c *imapclient.Client) (int, error) {
+	list, err := c.List("", "*", nil).Collect()
+	n := 0
+	for _, d := range list {
+		if selectable(d) {
+			n++
+		}
+	}
+	return n, err
+}
+
 // syncFolders mirrors the server's selectable folders into the folders table and
 // returns them in LIST order. Folders gone from the server are deleted with the
 // messages in them; a message only moved there locally returns to its server folder.
@@ -59,12 +76,12 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	var names []string
 	var stmts []sqlite.Statement
 	for _, d := range list {
-		if slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) || slices.Contains(d.Attrs, imap.MailboxAttrNonExistent) {
+		if !selectable(d) {
 			continue
 		}
 		names = append(names, d.Mailbox)
 		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO folders(account_id, name, role) VALUES (?, ?, ?)
+			SQL: `INSERT INTO folders(account_id, name, role, role_since) VALUES (?, ?, ?, unixepoch())
 				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role`,
 			Args: []any{accountID, d.Mailbox, role(d)},
 		})
@@ -79,7 +96,7 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	}
 	stmts = append(stmts,
 		// Moved locally into a vanished folder but still elsewhere on the server: back to where it is.
-		sqlite.Statement{SQL: "UPDATE messages SET folder_id = server_folder_id WHERE folder_id IN " + gone +
+		sqlite.Statement{SQL: "UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch() WHERE folder_id IN " + gone +
 			" AND server_folder_id NOT IN " + gone, Args: twice},
 		// On the server only in a vanished folder: gone, wherever it is shown locally.
 		sqlite.Statement{SQL: "DELETE FROM messages WHERE server_folder_id IN " + gone, Args: staleArgs},
@@ -88,20 +105,31 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		return nil, err
 	}
 	r.gone(ids, tids)
-	rows, err := db.Query(ctx, "SELECT id, name, uidvalidity, last_uid, synced FROM folders WHERE account_id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
 	}
 	byName := map[string]*folder{}
 	for _, r := range rows.Values {
-		byName[store.Str(r[1])] = &folder{id: store.Int(r[0]), name: store.Str(r[1]),
-			uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
+		byName[store.Str(r[1])] = scanFolder(r)
 	}
 	out := make([]*folder, 0, len(names))
 	for _, n := range names {
 		out = append(out, byName[n])
 	}
 	return out, nil
+}
+
+const folderCols = "id, name, uidvalidity, last_uid, synced, filled_since"
+
+func scanFolder(r []any) *folder {
+	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]),
+		uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
+	if r[5] != nil {
+		v := store.Int(r[5])
+		f.filled = &v
+	}
+	return f
 }
 
 // tidyThreads deletes conversations left without messages (their thread_refs
@@ -130,15 +158,40 @@ func anys[T any](s []T) []any {
 	return out
 }
 
-// SentFolder returns the name of the server's Sent folder, found the way sync
-// assigns roles, or "" when the server has none.
-func SentFolder(c *imapclient.Client) (string, error) {
+// Roles are the roles a user can give a folder (folders.role_override).
+var Roles = []string{"drafts", "sent", "junk", "trash", "archive"}
+
+// RoleFolder is the account's folder of role, the one place roles resolve: the
+// folder the user gave the role, else the lowest id detected with it, unless the
+// user gave that folder another role or none. 0 when there is none.
+func RoleFolder(ctx context.Context, db *store.DB, accountID int64, role string) (id int64, name string, err error) {
+	rows, err := db.Query(ctx, `SELECT id, name FROM folders WHERE account_id = ?
+		AND (role_override = ? OR (role_override = '' AND role = ?)) ORDER BY role_override = ? DESC, id LIMIT 1`,
+		accountID, role, role, role)
+	if err != nil || len(rows.Values) == 0 {
+		return 0, "", err
+	}
+	return store.Int(rows.Values[0][0]), store.Str(rows.Values[0][1]), nil
+}
+
+// SentFolder returns the name of the account's Sent folder (RoleFolder), or ""
+// when it has none. Before the first sync stored any folder, it is found from
+// LIST the way sync assigns roles.
+func SentFolder(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) (string, error) {
+	rows, err := db.Query(ctx, "SELECT count(*) FROM folders WHERE account_id = ?", accountID)
+	if err != nil {
+		return "", err
+	}
+	if store.Int(rows.Values[0][0]) > 0 {
+		_, name, err := RoleFolder(ctx, db, accountID, "sent")
+		return name, err
+	}
 	list, err := c.List("", "*", nil).Collect()
 	if err != nil {
 		return "", err
 	}
 	for _, d := range list {
-		if role(d) == "sent" && !slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) && !slices.Contains(d.Attrs, imap.MailboxAttrNonExistent) {
+		if role(d) == "sent" && selectable(d) {
 			return d.Mailbox, nil
 		}
 	}

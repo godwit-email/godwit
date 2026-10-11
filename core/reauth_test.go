@@ -195,6 +195,7 @@ func TestUpdateAccountServersChecked(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 	a, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
+	a.Folders = e.acc.Folders // synced meanwhile
 	assert.Equal(t, e.acc, a, "nothing saved")
 
 	srv.IMAPPort = e.acc.IMAPPort
@@ -236,14 +237,14 @@ func TestUpdateAccountDefault(t *testing.T) {
 	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{IsDefault: &no}) // not the default: nothing to do
 	assert.NoError(t, err)
 
-	for _, bad := range []int{0, 100001} {
-		_, err = e.s.UpdateAccount(bg, b.ID, AccountPatch{SyncLimit: &bad})
+	for _, bad := range []int{-1, 100001} {
+		_, err = e.s.UpdateAccount(bg, b.ID, AccountPatch{Sync: &SyncRange{Limit: bad}})
 		assert.Error(t, err)
 	}
 	lim, sig := 500, "-- b"
-	got, err = e.s.UpdateAccount(bg, b.ID, AccountPatch{SyncLimit: &lim, Signature: &sig})
+	got, err = e.s.UpdateAccount(bg, b.ID, AccountPatch{Sync: &SyncRange{Limit: lim}, Signature: &sig})
 	require.NoError(t, err)
-	assert.Equal(t, 500, got.SyncLimit)
+	assert.Equal(t, 500, got.Sync.Limit)
 	assert.Equal(t, "-- b", got.Signature)
 	_, err = e.s.UpdateAccount(bg, 999, AccountPatch{Signature: &sig})
 	assert.Error(t, err)
@@ -337,7 +338,7 @@ func TestRefreshDeadline(t *testing.T) {
 func TestRaiseSyncLimitBackfills(t *testing.T) {
 	e, _ := newWorkerEnv(t)
 	lim := 2
-	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
 	require.NoError(t, err)
 	for i := range 5 {
 		e.put(t, "Archive", msg(fmt.Sprintf("a%d@x", i))) // not INBOX: no IDLE wake-up
@@ -349,7 +350,7 @@ func TestRaiseSyncLimitBackfills(t *testing.T) {
 	assert.Equal(t, e.idOf(t, "a4@x"), store.Int(before[1][0]))
 
 	lim = 5
-	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return len(e.rows(t, archive, e.folderID(t, "Archive"))) == 5 },
 		5*time.Second, 20*time.Millisecond)
@@ -362,7 +363,7 @@ func TestRaiseSyncLimitBackfills(t *testing.T) {
 func TestBackfillResumesAfterDrop(t *testing.T) {
 	e := newSyncEnv(t)
 	lim := 2
-	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
 	require.NoError(t, err)
 	for i := range 60 {
 		e.put(t, "Archive", msg(fmt.Sprintf("a%02d@x", i)))
@@ -373,7 +374,7 @@ func TestBackfillResumesAfterDrop(t *testing.T) {
 	require.Len(t, before, 2)
 
 	lim = 60 // the backfill of 58 takes two text batches
-	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{SyncLimit: &lim})
+	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
 	require.NoError(t, err)
 	e.im.DropFetchAfter(3) // the round's 4th FETCH: the second text batch (checked below)
 	require.Error(t, e.s.SyncNow(bg, e.acc.ID))

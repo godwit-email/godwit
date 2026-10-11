@@ -18,6 +18,13 @@ const spec = `(?:${atom}(?:\\.${atom})*|${quoted})@${atom}(?:\\.${atom})*`;
 const name = String.raw`(?:"(?:[^"\\]|\\.)*"|[^"(),:;<>@[\\\]]*)`;
 const address = new RegExp(`^(?:${spec}|${name}\\s*<${spec}>)$`);
 
+/** What a chip shows: the display name of `Name <addr>` (unquoted), else the entry as typed. */
+export function display(s: string): string {
+  const m = s.trim().match(/^(.*?)\s*<[^<>]*>$/);
+  const n = m?.[1].replace(/^"((?:[^"\\]|\\.)*)"$/, "$1").replace(/\\(.)/g, "$1");
+  return n?.trim() || s.trim();
+}
+
 /** The entries that are not an address (`addr@domain` or `Name <addr@domain>`). */
 export function invalid(list: string[]): string[] {
   return list.filter((s) => !address.test(s.trim()));

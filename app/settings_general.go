@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -177,108 +178,104 @@ func sizeOptions(sizes []int, def, cur int) []kit.Option[int] {
 func (p *settingsPage) generalView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what handlers changed while building
-	th := c.Theme()
 	st := &p.st
-	sel := func(label, help string, control func() ui.Element) {
-		settingRow(c, label, help, func() { control().Width(theme.ControlWidth).Label(label) })
+	sel := func(label, desc string, control func() ui.Element) func() {
+		return func() { settingRow(c, label, desc, func() { control() }) }
+	}
+	sw := func(on *bool, label, help string) func() {
+		return func() { kit.SwitchRow(c, on, label, help) }
 	}
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
-	ui.Column(c).Children(func() {
-		settingsSection(c, i18n.T("settings.appearance"), "", func() {
-			ui.Row(c).Gap(th.Space(3)).Children(func() {
-				for _, th := range []string{"system", "light", "dark"} {
-					p.themeTile(c, th)
-				}
-			})
-			sel(i18n.T("settings.density"), "", func() ui.Element {
-				return kit.Select(c, &st.Density, []kit.Option[string]{
-					{Value: "compact", Label: i18n.T("settings.density.compact")},
-					{Value: "comfortable", Label: i18n.T("settings.density.comfortable")},
+	settingsSection(c, i18n.T("settings.appearance"), "",
+		func() {
+			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() {
+				ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
+					for _, th := range []string{"system", "light", "dark"} {
+						p.themeTile(c, th)
+					}
 				})
 			})
-			sel(i18n.T("settings.font_size"), "", func() ui.Element {
-				return kit.Select(c, &st.FontSize, sizeOptions([]int{12, 13, 14, 15, 16}, 13, st.FontSize))
+		},
+		sel(i18n.T("settings.density"), "", func() ui.Element {
+			l := i18n.T("settings.density")
+			return settingSelect(c, l, &st.Density, []kit.Option[string]{
+				{Value: "compact", Label: i18n.T("settings.density.compact")},
+				{Value: "comfortable", Label: i18n.T("settings.density.comfortable")},
 			})
-			sel(i18n.T("settings.body_font_size"), i18n.T("settings.body_font_size.help"), func() ui.Element {
-				return kit.Select(c, &st.BodyFontSize, sizeOptions([]int{13, 14, 16, 18}, 14, st.BodyFontSize))
+		}),
+		sel(i18n.T("settings.font_size"), "", func() ui.Element {
+			return settingSelect(c, i18n.T("settings.font_size"), &st.FontSize, sizeOptions([]int{13, 14, 15, 16}, 14, st.FontSize))
+		}),
+		sel(i18n.T("settings.body_font_size"), i18n.T("settings.body_font_size.help"), func() ui.Element {
+			opts := append([]kit.Option[int]{{Value: 0, Label: i18n.T("settings.body_font_size.ui")}}, sizeOptions([]int{16, 18}, 0, cmp.Or(st.BodyFontSize, 16))...)
+			return settingSelect(c, i18n.T("settings.body_font_size"), &st.BodyFontSize, opts)
+		}))
+	settingsSection(c, i18n.T("settings.language"), "",
+		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
+			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
+				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
+				{Value: "zh-CN", Label: "简体中文"},
+				{Value: "en", Label: "English"},
 			})
-		})
-		settingsSection(c, i18n.T("settings.language"), "", func() {
-			sel(i18n.T("settings.ui_language"), "", func() ui.Element {
-				return kit.Select(c, &st.UILanguage, []kit.Option[string]{
-					{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
-					{Value: "zh-CN", Label: "简体中文"},
-					{Value: "en", Label: "English"},
-				})
+		}),
+		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
+			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
+			for _, l := range languages {
+				opts = append(opts, kit.Option[string]{Value: l.tag, Label: l.name})
+			}
+			return settingSelect(c, i18n.T("settings.reading_language"), &st.ReadingLanguage, opts)
+		}),
+		sel(i18n.T("settings.reply_language"), i18n.T("settings.reply_language.help"), func() ui.Element {
+			return settingSelect(c, i18n.T("settings.reply_language"), &st.ReplyLanguage, []kit.Option[string]{
+				{Value: "match", Label: i18n.T("settings.reply_language.match")},
+				{Value: "reading", Label: i18n.T("settings.reply_language.reading")},
 			})
-			sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
-				opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
-				for _, l := range languages {
-					opts = append(opts, kit.Option[string]{Value: l.tag, Label: l.name})
-				}
-				return kit.Select(c, &st.ReadingLanguage, opts)
-			})
-			sel(i18n.T("settings.reply_language"), i18n.T("settings.reply_language.help"), func() ui.Element {
-				return kit.Select(c, &st.ReplyLanguage, []kit.Option[string]{
-					{Value: "match", Label: i18n.T("settings.reply_language.match")},
-					{Value: "reading", Label: i18n.T("settings.reply_language.reading")},
-				})
-			})
+		}),
+		func() {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
 		})
-		settingsSection(c, i18n.T("settings.startup"), "", func() {
-			kit.SwitchRow(c, &st.LaunchAtLogin, i18n.T("settings.launch_at_login"), "")
-			kit.SwitchRow(c, &st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help"))
-			kit.SwitchRow(c, &st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), "")
-		})
-		settingsSection(c, i18n.T("settings.notifications"), "", func() {
-			kit.SwitchRow(c, &st.NotifyNewMail, i18n.T("settings.notify_new_mail"), "")
-			kit.SwitchRow(c, &st.NotifyPreview, i18n.T("settings.notify_preview"), i18n.T("settings.notify_preview.help"))
-		})
-		settingsSection(c, i18n.T("settings.ai"), "", func() {
-			kit.SwitchRow(c, &st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help"))
-			kit.SwitchRow(c, &st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help"))
-		})
-		settingsSection(c, i18n.T("settings.mail"), "", func() {
-			kit.SwitchRow(c, &st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help"))
-		})
-	})
+	settingsSection(c, i18n.T("settings.startup"), "",
+		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
+		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
+		sw(&st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), ""))
+	settingsSection(c, i18n.T("settings.notifications"), "",
+		sw(&st.NotifyNewMail, i18n.T("settings.notify_new_mail"), ""),
+		sw(&st.NotifyPreview, i18n.T("settings.notify_preview"), i18n.T("settings.notify_preview.help")))
+	settingsSection(c, i18n.T("settings.ai"), "",
+		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
+		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
+	settingsSection(c, i18n.T("settings.mail"), "",
+		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")))
 }
 
-// themeTile is a small picture of the window in a theme; "system" shows
-// both halves.
+// themeTile is a small picture of the window in a theme: rail, sidebar and
+// content; "system" is the light window on a light/dark diagonal. The name is
+// only its tooltip and label.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
-	preview := func(tok theme.Tokens, w float32) {
-		side, long, short := w/4, w/3, w/5
-		ui.Row(c).Size(w, theme.ThemeTileHeight).AlignItems(ui.Stretch).Background(tok.Window).Children(func() {
-			ui.Box(c).Width(min(theme.TileRail, side))
-			ui.Box(c).Width(side).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
-			ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
-				ui.Box(c).Height(theme.TileLine).Width(long).Radius(t.Radius.Full).Background(tok.Border)
-				ui.Box(c).Height(theme.TileLine).Width(short).Radius(t.Radius.Full).Background(tok.Border)
-			})
-		})
+	tok := theme.Light()
+	if th == "dark" {
+		tok = theme.Dark()
 	}
-	kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Gap(c.Theme().Space(1.5)).AlignItems(ui.Start).Children(func() {
-		frame := ui.Row(c).Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Lg).Clip().Border(theme.Hairline, t.Border)
-		if on {
-			frame.Border(theme.SelectedBorder, t.Primary)
-		}
-		frame.Children(func() {
-			switch th {
-			case "system":
-				preview(theme.Light(), theme.ThemeTileWidth/2)
-				preview(theme.Dark(), theme.ThemeTileWidth/2)
-			case "dark":
-				preview(theme.Dark(), theme.ThemeTileWidth)
-			default:
-				preview(theme.Light(), theme.ThemeTileWidth)
-			}
+	label := i18n.T("settings.theme." + th)
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border).Background(tok.Window)
+	if on {
+		b.Border(theme.SelectedBorder, t.Primary)
+	}
+	if th == "system" {
+		b.LinearGradient(ui.LinearGradient{From: tok.Window, To: theme.Dark().Window, Angle: 135, Start: 0.5, End: 0.5})
+	}
+	b.AlignItems(ui.Stretch).Children(func() {
+		ui.Box(c).Width(theme.TileRail).Shrink(0)
+		ui.Box(c).Width(theme.TileSide).Shrink(0).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
+		ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
+			ui.Box(c).Height(theme.TileLine).WidthPercent(70).Radius(t.Radius.Xs).Background(tok.Border)
+			ui.Box(c).Height(theme.TileLine).WidthPercent(45).Radius(t.Radius.Xs).Background(tok.Border)
 		})
-		ui.Text(c, i18n.T("settings.theme."+th)).FontSize(t.Text.Sm)
 	})
+	kit.TooltipLabelled(c, b, label)
 }
 
 // noTranslate picks the languages that need no translation.
@@ -294,8 +291,14 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	anchor := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline}).Width(theme.ControlWidth).Label(i18n.T("settings.no_translate")).
-		OnClick(func() { p.noTrans = !p.noTrans })
+	t := theme.Of(c)
+	anchor := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.noTrans = !p.noTrans }}).Label(i18n.T("settings.no_translate")).
+		Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background).
+		MinWidth(theme.SettingsSelectMin).MaxWidth(theme.SettingsSelectMax)
+	anchor.Children(func() {
+		ui.Text(c, label).Grow(1)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+	})
 	kit.Popover(c, anchor, &p.noTrans, func() {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {
 			for _, l := range languages {

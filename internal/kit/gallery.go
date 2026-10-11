@@ -26,7 +26,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 	row := func(children func()) { ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(children) }
 	section := func(name string, body func()) {
 		ui.Column(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			ui.Text(c, name).FontSize(t.Text.Lg).FontWeight(600).Label("section:" + name)
+			Text(c, name, t.Text.Lg).FontWeight(600).Label("section:" + name)
 			body()
 		})
 	}

@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -73,10 +75,12 @@ type msgBody struct {
 	// The remote images: allow is the user's 加载图片, which every page
 	// made for the message is told (Platform.AllowImages); remote that the
 	// page's body has them (BodyBuilt), which hides the notice; allowErr
-	// that reading it so failed (BodyFailed), which offers a retry.
+	// that reading it so failed (BodyFailed), which offers a retry;
+	// trusted that core loads them at once (ImagesTrusted): no notice.
 	allow    bool
 	remote   bool
 	allowErr error
+	trusted  bool
 }
 
 func newReader(p *mailPage) *reader {
@@ -233,8 +237,12 @@ func (r *reader) loadBody(id int64) {
 	}
 	b.loading, b.err = true, nil
 	var m core.Message
+	var trusted bool
 	a.do(func(ctx context.Context) (err error) {
-		m, err = get(ctx, id, false)
+		if m, err = get(ctx, id, false); err != nil {
+			return err
+		}
+		trusted, err = a.svc.ImagesTrusted(ctx, id)
 		return err
 	}, func(err error) {
 		if gen != r.gen {
@@ -245,7 +253,7 @@ func (r *reader) loadBody(id int64) {
 			b.err = err
 			return
 		}
-		b.msg, b.ready = m, true
+		b.msg, b.ready, b.trusted = m, true, trusted
 		r.openView(id)
 	})
 }
@@ -336,7 +344,7 @@ func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int6
 	return 0, fmt.Errorf("folder %d not found", folderID)
 }
 
-// last is the newest message shown: the one replies and the More menu act on.
+// last is the newest message shown: the one replies and the AI buttons act on.
 func (r *reader) last() (core.MessageSummary, bool) {
 	if len(r.msgs) == 0 {
 		return core.MessageSummary{}, false
@@ -364,10 +372,11 @@ func (r *reader) items() []mailItem {
 	return []mailItem{{ID: r.key[0], Thread: true, Count: len(r.msgs)}}
 }
 
-// act applies a list action to what is shown; archiving and deleting close it.
+// act applies a list action to what is shown; archiving, deleting and
+// moving to junk close it.
 func (r *reader) act(op string) {
 	r.p.batch(op, r.items())
-	if op == "archive" || op == "delete" {
+	if op == "archive" || op == "delete" || op == "junk" {
 		rt := &r.p.a.route
 		rt.ThreadID, rt.MessageID = 0, 0
 		r.sync(false)
@@ -442,23 +451,6 @@ func fileURL(path string) string {
 		p = "/" + p // C:/… on Windows
 	}
 	return (&url.URL{Scheme: "file", Path: p}).String()
-}
-
-// exportEML saves the message's raw source where the user chooses.
-func (r *reader) exportEML(m core.MessageSummary) {
-	a := r.p.a
-	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		path, err := plat.SaveFile(fileName(m.Subject, "message") + ".eml")
-		if err != nil || path == "" {
-			return err
-		}
-		raw, err := a.svc.GetRawMessage(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(path, raw, 0o600)
-	}, a.toastErr)
 }
 
 // fileName makes s a file name: separators and control characters become
@@ -542,57 +534,55 @@ func copyFile(src, dst string) error {
 func (r *reader) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	col := ui.Column(c).Grow(1).Shrink(1)
-	if r.key[0] == 0 || !r.loaded || len(r.msgs) == 0 {
+	if r.key[0] == 0 { // nothing chosen: the bird
+		col.Center().Children(func() {
+			ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+		})
+		return
+	}
+	if !r.loaded || len(r.msgs) == 0 {
 		return
 	}
 	col.Children(func() {
 		r.toolbar(c)
 		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).Children(func() {
-			ui.Column(c).MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(5), th.Space(7)).Gap(th.Space(3.5)).Children(func() {
-				subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-				ui.Text(c, subject).FontSize(t.Text.X2l).FontWeight(600)
-				for _, m := range r.msgs {
-					if r.open[m.ID] {
-						r.message(c, m)
-					} else {
-						r.folded(c, m)
+			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(3.5)).Children(func() {
+					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
+					kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+					for _, m := range r.msgs {
+						if r.open[m.ID] {
+							r.message(c, m)
+						} else {
+							r.folded(c, m)
+						}
 					}
-				}
+				})
 			})
 		})
 	})
 }
 
-// toolbar: reply, reply all, forward, archive, delete; star, mark unread
-// and More at the end.
+// toolbar: the reply group and the archive group as icon buttons, then
+// the AI buttons.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	out := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
-	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
-	ui.Row(c).Wrap().Gap(th.Space(1)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
-		kit.Button(c, i18n.T("reader.reply"), out).OnClick(func() { r.draft("reply") })
-		kit.IconButton(c, "reply-all", i18n.T("reader.reply_all"), ghost).OnClick(func() { r.draft("reply_all") })
-		kit.Button(c, i18n.T("reader.forward"), out).OnClick(func() { r.draft("forward") })
-		kit.Button(c, i18n.T("mail.action.archive"), out).OnClick(func() { r.act("archive") })
-		kit.Button(c, i18n.T("mail.action.delete"), out).OnClick(func() { r.act("delete") })
-		ui.Spacer(c)
-		r.aiTools(c)
-		starred := !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) })
-		if starred {
-			kit.IconButton(c, "star", i18n.T("reader.unstar"), ghost).OnClick(func() { r.act("unstar") })
-		} else {
-			kit.IconButton(c, "star", i18n.T("mail.action.star"), ghost).OnClick(func() { r.act("star") })
+	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+		kit.ButtonGroup(c,
+			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
+			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
+			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
+		)
+		file := []kit.GroupItem{
+			{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
+			{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
 		}
-		kit.IconButton(c, "mail", i18n.T("mail.action.unread"), ghost).OnClick(func() { r.act("unread") })
-		m, _ := r.last()
-		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), ghost).Menu(func(menu *ui.Menu) {
-			if menu.Item(i18n.T("reader.view_in_browser")).Chosen() {
-				r.viewInBrowser(m.ID)
-			}
-			if menu.Item(i18n.T("reader.export_eml")).Chosen() {
-				r.exportEML(m)
-			}
-		})
+		if !r.p.inJunk() {
+			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
+		}
+		kit.ButtonGroup(c, file...)
+		ui.Spacer(c)
+		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
 }
 
@@ -603,7 +593,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
-		ui.Text(c, listTime(r.p.a.clock.Now(), m.Date)).FontSize(t.Text.Sm).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 	})
 }
 
@@ -658,8 +648,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
 					}
 				})
-				when := m.Date.In(r.p.a.clock.Now().Location()).Format("2006-01-02 15:04")
-				ui.Text(c, i18n.Tf("reader.to", r.recipients(m), when)).FontSize(t.Text.Sm).TextColor(t.Muted)
+				when := senderDate(r.p.a.clock.Now(), m.Date)
+				kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 			})
 		})
 		r.aiArea(c, m)
@@ -676,20 +666,24 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			return
 		}
 		switch {
-		case b.msg.RemoteImagesBlocked == 0 || b.remote:
+		case b.msg.RemoteImagesBlocked == 0 || b.remote || b.trusted:
 		case b.allowErr != nil:
 			kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { r.allowImages(m.ID) })
 			})
-		default: // until the page has them
-			kit.Alert(c, kit.Warning, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), func() {
+		default: // until the page has them; a slimmer notice than an Alert, at Base
+			ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
+				Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+				kit.Text(c, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
 				if b.allow {
 					kit.Spinner(c)
 					return
 				}
-				kit.Button(c, i18n.T("reader.load_images"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.allowImages(m.ID) })
+				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
+				if addr != "" && !b.msg.InJunk { // core never trusts junk
+					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
+				}
 			})
 		}
 		// The translation shows in the body's place: the page is not
@@ -699,7 +693,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		}
 		if b.cut {
 			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
-				ui.Text(c, i18n.T("reader.truncated")).FontSize(t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("reader.truncated"), t.Text.Sm).TextColor(t.Muted)
 				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 					OnClick(func() { r.viewInBrowser(m.ID) })
 			})
@@ -720,11 +714,11 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-						ui.Text(c, fileKind(att)).FontSize(t.Text.Xs).TextColor(t.Muted)
+						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 					})
 					ui.Column(c).Shrink(1).Children(func() {
 						ui.Text(c, att.Filename).SingleLine()
-						ui.Text(c, byteSize(att.Size)).FontSize(t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 					})
 				})
 				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -767,6 +761,27 @@ func (r *reader) allowImages(id int64) {
 	if b.view != nil {
 		r.p.a.plat.AllowImages(id)
 	}
+}
+
+// trustSender trusts addr's remote images from now on (始终信任此发件人)
+// and loads them in its messages shown. Core gets the From as sent: a quoted
+// local part parses there, its bare address does not.
+func (r *reader) trustSender(from, addr string) {
+	a, gen := r.p.a, r.gen
+	a.do(func(ctx context.Context) error { return a.svc.TrustImageSender(ctx, from) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		if gen != r.gen {
+			return
+		}
+		for id, b := range r.bodies {
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.msg.InJunk { // as core: never junk
+				r.allowImages(id)
+			}
+		}
+	})
 }
 
 // The calls of a body's page (view), on the UI thread. Each acts only
@@ -831,4 +846,21 @@ func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
 	if b := a.mail.reader.shown(view, message); b != nil && b.allow {
 		b.allowErr = err
 	}
+}
+
+// senderDate is a message's time in the sender line: today or yesterday,
+// the weekday this week, with the hour; else month and day.
+func senderDate(now, t time.Time) string {
+	t = t.In(now.Location())
+	clock := t.Format("15:04")
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	weekStart := today.AddDate(0, 0, -(int(now.Weekday())+6)%7)
+	switch {
+	case !t.Before(today):
+		return i18n.T("reader.today") + " " + clock
+	case t.Before(weekStart) && t.Before(today.AddDate(0, 0, -1)): // as listTime: older than yesterday and this week
+		return i18n.Tf("reader.date", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day())
+	}
+	return listTime(now, t) + " " + clock
 }

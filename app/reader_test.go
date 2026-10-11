@@ -8,10 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
@@ -183,25 +186,17 @@ func (h *harness) scrollTo(label string) {
 	h.t.Fatalf("%q never came into view", label)
 }
 
-// more chooses an item of the reader's More menu.
-func (h *harness) more(item string) {
-	h.t.Helper()
-	h.click("更多")
-	if err := h.tt.ChooseMenuItem(item); err != nil {
-		h.t.Fatalf("%v; menu %q", err, h.tt.Menu())
-	}
-	h.drain()
-	h.tt.Frame()
-}
-
+// View in browser is offered only for a body cut short: the notice's button.
 func TestViewInBrowserHasCSP(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.plat.tempDir = t.TempDir()
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Page", "text",
 		coretest.HTML(`<p>Shown in a browser</p><script>alert(1)</script><img src="https://tracker.example/p.gif">`)))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.more("在浏览器中查看原文")
+	v := h.seeBody(m.ID)
+	h.app.BodyBuilt(v, m.ID, true, false)
+	h.tt.Frame()
+	h.click("在浏览器中查看")
 	u, err := url.Parse(h.callArg("OpenURL"))
 	if err != nil || u.Scheme != "file" {
 		t.Fatalf("opened %v (%v)", u, err)
@@ -221,29 +216,6 @@ func TestViewInBrowserHasCSP(t *testing.T) {
 	csp := `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">`
 	if !strings.Contains(s, csp) || strings.Contains(strings.ToLower(s), "<script") || !strings.Contains(s, "Shown in a browser") {
 		t.Fatalf("file:\n%s", s)
-	}
-}
-
-func TestExportEML(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
-	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Keep: this/that", "raw body"))
-	h.plat.savePath = filepath.Join(t.TempDir(), "out.eml")
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.more("导出原始邮件 (.eml)")
-	if name := h.callArg("SaveFile"); name != "Keep_ this_that.eml" {
-		t.Errorf("default name %q", name)
-	}
-	raw, err := h.env.Svc.GetRawMessage(context.Background(), m.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.until("the file written", func() bool {
-		got, err := os.ReadFile(h.plat.savePath)
-		return err == nil && bytes.Equal(got, raw)
-	})
-	if h.hasCall("OpenURL") || h.hasCall("OpenPath") {
-		t.Fatalf("export opened something: %q", h.plat.Calls())
 	}
 }
 
@@ -435,5 +407,102 @@ func TestReplyAfterSwitchingMailOpensWindow(t *testing.T) {
 	h.openThread(other.ThreadID)
 	if d := h.draft(h.composeOpened(0)); d.Mode != "reply" || d.SourceMessageID != m.ID {
 		t.Fatalf("draft %+v", d)
+	}
+}
+
+func TestRelativeSenderDate(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) // a Wednesday
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "今天 09:41"},
+		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "昨天 18:05"},
+		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "周一 07:30"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "10 月 2 日"},
+	} {
+		if got := senderDate(now, c.t); got != c.want {
+			t.Errorf("senderDate(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+}
+
+// TestReaderToolbarAt16: the toolbar's buttons fit the window, unclipped and
+// apart, at font 13 and 16.
+func TestReaderToolbarAt16(t *testing.T) {
+	for _, font := range []int{13, 16} {
+		t.Run(strconv.Itoa(font), func(t *testing.T) {
+			h, acc, _ := aiHarness(t, true, noQuick)
+			h.setSettings(func(s *core.Settings) { s.FontSize = font })
+			m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "body"))
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			var prev ui.Rect
+			for i, label := range []string{"回复", "全部回复", "转发", "归档", "删除", "总结", "翻译"} {
+				r, ok := h.tt.Find(label)
+				if !ok {
+					t.Fatalf("no %q", label)
+				}
+				if r.X < 0 || r.X+r.W > 1280 || r.Y < 0 {
+					t.Errorf("font %d: %q clipped: %+v", font, label, r)
+				}
+				if i > 0 && r.Y == prev.Y && r.X < prev.X+prev.W {
+					t.Errorf("font %d: %q overlaps the one before: %+v over %+v", font, label, r, prev)
+				}
+				prev = r
+			}
+		})
+	}
+}
+
+func TestReaderJunk(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Win", "a prize"))
+	h.waitMail("the junk folder", func() bool {
+		return slices.ContainsFunc(h.app.mail.folders[accs[0].ID], func(f core.Folder) bool { return f.Role == "junk" })
+	})
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("移到垃圾邮件")
+	h.until("in junk", func() bool { return h.countIn(h.folderOf(accs[0], "junk")) == 1 })
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v", r)
+	}
+}
+
+// An account without a junk folder is skipped and named; nothing moves.
+func TestReaderJunkWithoutFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Win", "a prize"))
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("移到垃圾邮件")
+	h.see("alice@example.com 没有垃圾邮件文件夹，已跳过")
+	if h.countIn(h.folderOf(accs[0], "inbox")) != 1 {
+		t.Fatal("the message moved")
+	}
+}
+
+// Inside a junk folder 移到垃圾邮件 is not offered; elsewhere it is.
+func TestJunkActionNotInJunk(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "x"))
+	h.openThread(m.ThreadID)
+	h.see("移到垃圾邮件")
+	f := h.folderOf(acc, "junk")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the junk folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.openThread(m.ThreadID)
+	h.see("回复")
+	if h.tt.HasText("移到垃圾邮件") {
+		t.Fatal("移到垃圾邮件 inside Junk")
 	}
 }

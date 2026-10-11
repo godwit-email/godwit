@@ -33,8 +33,8 @@ export interface FieldsHandle {
 const none: Record<AddressKey, string> = { to: "", cc: "", bcc: "", replyTo: "" };
 
 /**
- * The header fields: From, To; Cc, Bcc and Reply-To behind 抄送 · 密送 unless one has a value;
- * the invalid addresses; Subject. `frozen` (an operation running) makes them all read-only.
+ * The header fields: To; Cc, Bcc and Reply-To behind 抄送 · 密送 unless one has a value;
+ * the invalid addresses; Subject; From. `frozen` (an operation running) makes them all read-only.
  */
 export function Fields({
   ref,
@@ -83,10 +83,10 @@ export function Fields({
   }));
 
   const row = (k: string, label: string, control: ReactNode) => (
-    <div key={k} className="flex items-center gap-3 border-b px-5 py-1.5 text-md">
+    <div key={k} className="mx-4 flex items-center gap-3 border-b py-2 text-md">
       <Label
         htmlFor={`${id}${k}`}
-        className="w-14 shrink-0 font-normal text-md text-muted-foreground leading-normal"
+        className="w-12 shrink-0 font-normal text-md text-muted-foreground leading-5"
       >
         {label}
       </Label>
@@ -122,32 +122,6 @@ export function Fields({
 
   return (
     <div className="flex flex-col">
-      {row(
-        "from",
-        t("compose.from"),
-        <Select
-          value={from}
-          disabled={frozen}
-          onValueChange={(v) => v !== null && onFrom(v)}
-          items={accounts.map((a) => ({ value: a.id, label: a.email }))}
-        >
-          <SelectTrigger
-            id={`${id}from`}
-            aria-label={t("compose.from.select")}
-            size="sm"
-            className="-ml-2.5 border-transparent text-md hover:bg-muted dark:bg-transparent"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>,
-      )}
       {address(
         "to",
         "compose.to",
@@ -172,7 +146,7 @@ export function Fields({
         </>
       )}
       {bad.length > 0 && (
-        <p className="border-b px-5 py-2 text-base text-destructive">
+        <p className="mx-4 border-b py-2 text-base text-destructive">
           {t("compose.invalid", bad.join(", "))}
         </p>
       )}
@@ -181,12 +155,38 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-7 flex-1 rounded-none border-0 bg-transparent px-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
+          className="h-5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}
           onChange={(e) => !frozen && onChange({ subject: e.target.value })}
         />,
+      )}
+      {row(
+        "from",
+        t("compose.from"),
+        <Select
+          value={from}
+          disabled={frozen}
+          onValueChange={(v) => v !== null && onFrom(v)}
+          items={accounts.map((a) => ({ value: a.id, label: a.email }))}
+        >
+          <SelectTrigger
+            id={`${id}from`}
+            aria-label={t("compose.from.select")}
+            size="sm"
+            className="gap-0 border-0 py-0 pr-0 pl-1 text-md data-[size=sm]:h-5 dark:bg-transparent dark:hover:bg-transparent [&_svg]:size-4 [&_svg]:text-foreground"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {accounts.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                {a.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>,
       )}
     </div>
   );

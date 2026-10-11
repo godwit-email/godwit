@@ -56,7 +56,7 @@ func TestPageRolesComposeFromPage(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoDraft)
 	_, err = f.page.WitInfo(ctx)
 	assert.ErrorIs(t, err, ErrNoDraft)
-	_, err = f.page.Ask(ctx, "hi")
+	_, err = f.page.Ask(ctx, "hi", nil)
 	assert.ErrorIs(t, err, ErrNoDraft)
 	_, err = f.page.Skill(ctx, "shorter", "")
 	assert.ErrorIs(t, err, ErrNoDraft)
@@ -68,6 +68,10 @@ func TestPageRolesComposeFromPage(t *testing.T) {
 	_, err = f.page.Undo(ctx)
 	assert.ErrorIs(t, err, ErrNoDraft)
 	assert.ErrorIs(t, f.page.OpenLink(ctx, "https://example.com"), ErrNoDraft)
+	opened := false
+	f.page.d.OpenModels = func() { opened = true }
+	assert.ErrorIs(t, f.page.OpenModels(ctx), ErrNoDraft)
+	assert.False(t, opened, "another page cannot open the model settings")
 
 	cs, err := f.e.Svc.ListConversations(t.Context(), "assist")
 	require.NoError(t, err)

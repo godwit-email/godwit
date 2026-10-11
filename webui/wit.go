@@ -25,12 +25,16 @@ type WitInfo struct {
 	Languages []Language `json:"languages"`
 	// Chips name what Wit knows of the draft.
 	Chips []string `json:"chips"`
+	// Model is the default model's label, as the input's chip.
+	Model string `json:"model"`
 }
 
 // Skill is a 调整 menu item.
 type Skill struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
+	// Hint is what the skill changes, shown beside its label.
+	Hint string `json:"hint"`
 }
 
 // Language is a 翻译 menu item.
@@ -143,9 +147,9 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	if err != nil {
 		return WitInfo{}, err
 	}
-	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}}
+	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}, Model: modelLabel(st.DefaultModel)}
 	for _, id := range adjustSkills {
-		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id)})
+		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
 	read := svc.ReadingLanguage(ctx)
 	info.Languages = []Language{{read, langName(read)}}
@@ -227,12 +231,48 @@ func openConversation(ctx context.Context, svc *core.Service, draftID int64) (in
 
 func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
 
-// Ask asks Wit about the calling window's draft (core Assist) and returns the
-// run's ID; its events go to the window on WitStream.
-func (p *ComposePage) Ask(ctx context.Context, input string) (int64, error) {
+// Ask asks Wit about the calling window's draft, with the mail the user
+// quoted (message IDs; core AssistWith), and returns the run's ID; its
+// events go to the window on WitStream.
+func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64) (int64, error) {
 	return p.start(ctx, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
-		return svc.Assist(ctx, id, input)
+		return svc.AssistWith(ctx, id, input, quoted)
 	})
+}
+
+// SearchMail is the quote picker's search (core Search, every account).
+func (p *ComposePage) SearchMail(ctx context.Context, query string) ([]MailHit, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	s.mu.Unlock()
+	return searchMail(ctx, svc, query)
+}
+
+// MailHit is a message the quote picker offers.
+type MailHit struct {
+	ID      int64  `json:"id"`
+	Subject string `json:"subject"`
+	From    string `json:"from"`
+	// Date is in Unix milliseconds; 0 for none.
+	Date int64 `json:"date"`
+}
+
+// quoteHits caps the quote picker's results.
+const quoteHits = 8
+
+func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit, error) {
+	ms, err := svc.Search(ctx, 0, query, quoteHits)
+	out := make([]MailHit, 0, len(ms))
+	for _, m := range ms {
+		h := MailHit{ID: m.ID, Subject: m.Subject, From: m.From}
+		if !m.Date.IsZero() {
+			h.Date = m.Date.UnixMilli()
+		}
+		out = append(out, h)
+	}
+	return out, keyed(err)
 }
 
 // Skill runs skill id on the calling window's draft (core AssistSkill);
@@ -485,7 +525,11 @@ func bodyChange(ctx context.Context, svc *core.Service, s *session, err error) (
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: changeOf(d), Body: s.adopt(d)}, nil
+	ch, err := changeOf(ctx, svc, d)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	return BodyChange{Change: ch, Body: s.adopt(d)}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's
@@ -551,6 +595,19 @@ func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, 
 		run = c.Runs[len(c.Runs)-1].ID
 	}
 	return RunStart{Run: run, Revision: d.Revision}, nil
+}
+
+// OpenModels opens the model settings (the input's model chip).
+func (p *ComposePage) OpenModels(ctx context.Context) error {
+	_, _, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	s.mu.Unlock()
+	if p.d.OpenModels != nil {
+		p.d.OpenModels()
+	}
+	return nil
 }
 
 // OpenLink opens a link from Wit's answer: an http or https one in the

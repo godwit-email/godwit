@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -35,7 +36,7 @@ type WitMessage struct {
 
 // witMessages groups c's messages into questions and answers, as
 // app/wit_run.go's witMsgs. An answer cites the mail the runs that added
-// it read, numbered in the conversation (cited).
+// it read, with their numbers in the conversation (cited).
 func witMessages(c core.Conversation) []WitMessage {
 	out := []WitMessage{}
 	var spans [][2]int // out[i] is c.Messages[from:to]
@@ -89,18 +90,17 @@ func witMessages(c core.Conversation) []WitMessage {
 	return out
 }
 
-// cited is each cited message once, numbered from 1 as it first came;
-// suspect once any citation of it is.
+// cited is each cited message once, with core's number; suspect once any
+// citation of it is.
 func cited(cs []core.Citation) []Citation {
 	var out []Citation
 	for _, c := range cs {
 		if i := slices.IndexFunc(out, func(x Citation) bool { return x.MessageID == c.MessageID }); i >= 0 {
 			out[i].Suspect = out[i].Suspect || c.Suspect
+			out[i].Quote = cmp.Or(out[i].Quote, c.Quote)
 			continue
 		}
-		ct := citationOf(c)
-		ct.N = len(out) + 1
-		out = append(out, ct)
+		out = append(out, citationOf(c))
 	}
 	return out
 }

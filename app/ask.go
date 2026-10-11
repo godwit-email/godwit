@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -75,7 +76,7 @@ func (p *askPage) Title() (string, string) {
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Text(c, i18n.T("ask.heading")).FontSize(t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+	kit.Text(c, i18n.T("ask.heading"), t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
@@ -84,7 +85,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	if len(p.convs) == 0 {
 		return
 	}
-	ui.Text(c, i18n.T("ask.recent")).FontSize(t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2), th.Space(1.5), th.Space(2))
+	kit.Text(c, i18n.T("ask.recent"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2), th.Space(1.5), th.Space(2))
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			for _, conv := range p.convs {
@@ -192,4 +193,18 @@ func (a *App) ConversationCreated(id, version int64) {
 // Call it before Start.
 func (a *App) SetWitPage(view ui.NativeWebView, open, created func(conv int64) (version int64)) {
 	a.witView, a.witOpen, a.witCreated = view, open, created
+}
+
+// SetWitAsk gives the App the hand-off of a question to the Wit page (the
+// page starts the run itself, so it follows it and Stop works). Call it
+// before Start.
+func (a *App) SetWitAsk(ask func(query string)) { a.witAsk = ask }
+
+// askWit shows the Wit page with query asked in a new conversation. Without
+// a default model it only navigates: the page says how to add one.
+func (a *App) askWit(query string) {
+	a.navigate(Route{Page: PageWit})
+	if a.settings.DefaultModel != "" && a.witAsk != nil && strings.TrimSpace(query) != "" {
+		a.witAsk(query)
+	}
 }

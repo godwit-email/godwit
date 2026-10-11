@@ -17,7 +17,6 @@ vi.mock("@/mygo", () => ({
     addAttachments: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
-    discard: vi.fn(),
   },
   events: {
     closing: {
@@ -91,9 +90,6 @@ const text = {
   "compose.send_anyway": "仍然发送",
   "compose.send": "发送",
   "compose.sending.locked": "正在发送，暂时不能修改草稿",
-  "compose.discard": "丢弃草稿",
-  "compose.discard.title": "丢弃这封草稿？",
-  "compose.discard.confirm": "丢弃",
   "compose.attach.failed": "未能添加：%s",
   "error.stale_draft": "草稿在别处被修改。",
   "error.unknown": "出错了：%s",
@@ -116,12 +112,13 @@ const state = {
   body: "正文",
   quote: "> 原文",
   signature: "-- me",
+  signatureImages: [],
   attachments: [],
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
   text,
-  wit: { enabled: false, skills: [], languages: [], chips: [] },
+  wit: { enabled: false, skills: [], languages: [], chips: [], model: "" },
 };
 const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };
 
@@ -131,7 +128,6 @@ beforeEach(() => {
   vi.mocked(api.save).mockResolvedValue({ revision: 8, conflict: false });
   vi.mocked(api.closed).mockResolvedValue();
   vi.mocked(api.send).mockResolvedValue({ ...noWarnings, sent: true });
-  vi.mocked(api.discard).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
@@ -218,6 +214,24 @@ test("a composition in progress at closing is committed, then flushed", async ()
   expect(api.closed).toHaveBeenCalledWith(5, true);
 });
 
+test("an edit as soon as the body shows reaches the saver", async () => {
+  // A slow first render: React yields between the commit that shows the body and its passive
+  // effects, and a timer task (here the poll) runs in between.
+  let now = performance.now();
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 10));
+  render(<ComposePage />);
+  const el = await new Promise<HTMLElement>(function poll(done) {
+    const found = screen.queryByRole("textbox", { name: "正文" });
+    if (found) done(found);
+    else setTimeout(() => poll(done), 0);
+  });
+  clock.mockRestore();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  await act(async () => h.closing?.(3));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
+  expect(api.closed).toHaveBeenCalledWith(3, true);
+});
+
 test("a compositionend fired synchronously by the blur still flushes and answers", async () => {
   render(<ComposePage />);
   const el = await body();
@@ -290,20 +304,6 @@ describe("autosave", () => {
     await u.type(await body(), "!");
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByRole("alert")).toHaveTextContent("草稿在别处被修改");
-  });
-
-  test("a failed discard keeps the page editable and saving", async () => {
-    vi.mocked(api.discard).mockRejectedValue(new Error("disk full"));
-    const u = setup();
-    render(<ComposePage />);
-    const el = await body();
-    await u.click(screen.getByRole("button", { name: "丢弃草稿" }));
-    await u.click(await screen.findByRole("button", { name: "丢弃" }));
-    expect(api.discard).toHaveBeenCalledTimes(1);
-    await u.type(el, "!");
-    expect(el).toHaveValue("正文!");
-    await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!", revision: 7 }));
   });
 
   test("first save carries the loaded revision, later ones the previous result's", async () => {
@@ -542,6 +542,7 @@ test("account switch keeps body", async () => {
     attachments: [],
     conflict: false,
     signature: "-- work",
+    signatureImages: ["data:image/png;base64,AAAA"],
     updatedAt: new Date(2026, 9, 10, 11, 42).getTime(),
   });
   render(<ComposePage />);
@@ -552,7 +553,8 @@ test("account switch keeps body", async () => {
   await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
-  expect(await screen.findByText("-- work")).toBeInTheDocument();
+  const sig = await screen.findByText("-- work");
+  expect(sig.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   expect(el).toHaveValue("正文!");
   expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:42")).toBeInTheDocument();
 });
@@ -563,6 +565,7 @@ test("an account switch that conflicts reverts the select", async () => {
     attachments: [],
     conflict: true,
     signature: "",
+    signatureImages: [],
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -583,6 +586,7 @@ test("attachments: add reports oversize, × removes", async () => {
     attachments: [a],
     conflict: false,
     signature: "-- me",
+    signatureImages: [],
     tooLarge: ["big.zip"],
     failed: ["bad.bin"],
     updatedAt: new Date(2026, 9, 10, 11, 43).getTime(),
@@ -592,6 +596,7 @@ test("attachments: add reports oversize, × removes", async () => {
     attachments: [],
     conflict: false,
     signature: "-- me",
+    signatureImages: [],
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -623,6 +628,7 @@ test("keep mine after conflict", async () => {
     ...state,
     body: "别处",
     signature: "-- new",
+    signatureImages: [],
     revision: 30,
   });
   vi.mocked(api.save).mockResolvedValue({ revision: 31, conflict: false });
@@ -668,13 +674,18 @@ test("a failed read of the latest offers 重试", async () => {
   expect(await body()).toHaveValue("最新");
 });
 
-test("discard asks then discards", async () => {
+test("the bottom bar holds the format toolbar and 发送 only: no discard, no note", async () => {
   render(<ComposePage />);
   await body();
-  await userEvent.click(screen.getByRole("button", { name: "丢弃草稿" }));
-  expect(api.discard).not.toHaveBeenCalled();
-  await userEvent.click(await screen.findByRole("button", { name: "丢弃" }));
-  expect(api.discard).toHaveBeenCalledTimes(1);
+  const bar = document.querySelector("[data-bar]") as HTMLElement;
+  expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
+  expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
+  expect(bar).not.toHaveTextContent("只能写草稿");
+  // a narrow window wraps it, the toolbar first and 发送 kept at the end (ml-auto)
+  expect(bar).toHaveClass("flex-wrap");
+  const send = within(bar).getByRole("button", { name: "发送" });
+  expect(send).toHaveClass("ml-auto");
+  expect(bar.lastElementChild).toBe(send);
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {
@@ -706,6 +717,7 @@ test("a conflict stopping the adding part way still lists the files added", asyn
     attachments: [a],
     conflict: true,
     signature: "-- me",
+    signatureImages: [],
     updatedAt: 0,
     tooLarge: [],
     failed: [],

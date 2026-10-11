@@ -25,9 +25,11 @@ var sentinels = []struct {
 	{"too_large", core.ErrTooLarge},
 	{"not_on_server_yet", core.ErrNotOnServerYet},
 	{"stale_draft", core.ErrStaleDraft},
+	{"not_synced", core.ErrNotSynced},
 	{"run_active", core.ErrRunActive},
 	{"keychain_unavailable", core.ErrKeychainUnavailable},
 	{"wrong_account", core.ErrWrongAccount},
+	{"account_not_found", core.ErrAccountNotFound},
 	{"provider_mismatch", core.ErrProviderMismatch},
 	{"needs_grant", core.ErrNeedsGrant},
 	{"plugin_not_found", core.ErrPluginNotFound},
@@ -39,12 +41,16 @@ var sentinels = []struct {
 	{"base_url_invalid", core.ErrBaseURLInvalid},
 	{"base_url_scheme", core.ErrBaseURLScheme},
 	{"no_model_list", ai.ErrNoModelList},
+	{"model_forbidden", ai.ErrModelForbidden},
 	{"key_needs_confirm", core.ErrKeyNeedsConfirm},
 	{"unknown_flow", core.ErrUnknownFlow},
 	{"invalid_state", core.ErrInvalidState},
 	{"skill_disabled", core.ErrSkillDisabled},
 	{"skill_not_found", core.ErrSkillNotFound},
 	{"closed", core.ErrClosed},
+	{"signature_image", core.ErrSignatureImage},
+	{"signature_image_count", core.ErrSignatureImageCount},
+	{"not_grantable", core.ErrNotGrantable},
 	{"canceled", context.Canceled},
 	{"deadline", context.DeadlineExceeded},
 	{"auth_failed", conn.ErrAuthFailed}, // also a failed account check's cause
@@ -86,6 +92,9 @@ func NewCodec() *rpc.Codec {
 			return core.EgressApprovalRequired{Plugin: e.Plugin, Hosts: e.Hosts}
 		},
 		rpc.DecodeDetail[core.EgressApprovalRequired])
+	rpc.RegisterType(c, "no_role_folder",
+		func(e *core.ErrNoRoleFolder) any { return *e },
+		rpc.DecodeDetail[core.ErrNoRoleFolder])
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg} },
 		rpc.DecodeDetail[ai.Error])

@@ -231,7 +231,8 @@ func TestMoveNotReimportedBeforePush(t *testing.T) {
 	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 	e.im.Restart()
 
-	require.NoError(t, mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)) // pull before push
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)
+	require.NoError(t, ferr) // pull before push
 	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, folder_id FROM messages"))
 
 	e.sync(t)
@@ -299,7 +300,8 @@ func TestRemoteFlagsDoNotOverwritePending(t *testing.T) {
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsDel, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close())
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
 
-	require.NoError(t, mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)) // pull before push
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)
+	require.NoError(t, ferr) // pull before push
 	assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]), "local change wins until pushed")
 
 	e.sync(t)
@@ -435,7 +437,8 @@ func TestFetchKeepsConcurrentLocalFlags(t *testing.T) {
 		require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
 	}
 	t.Cleanup(func() { mailsync.BeforeFlagsWrite = nil })
-	require.NoError(t, mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus))
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)
+	require.NoError(t, ferr)
 	assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
 	e.sync(t)
 	assert.Equal(t, `\Flagged \Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
@@ -468,4 +471,31 @@ func TestUnclaimableMoveEndsInConflict(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []string{"conflict", "conflict"}, e.opStates(t))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE subject = 'anon'"))
+}
+
+func TestMoveToJunk(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "junk"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "Junk")}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Junk"))
+	assert.Equal(t, []string{}, e.onServer(t, "INBOX"))
+}
+
+func TestMoveToRoleWithoutFolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	err := e.s.MoveToRole(bg, []int64{id}, "junk")
+	var nf *ErrNoRoleFolder
+	require.ErrorAs(t, err, &nf)
+	assert.Equal(t, "junk", nf.Role)
+	assert.Error(t, e.s.MoveToRole(bg, []int64{id}, "inbox"), "only trash, junk and archive")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
 }

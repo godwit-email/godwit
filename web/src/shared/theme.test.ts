@@ -23,7 +23,7 @@ const theme = (mode: Theme["mode"]): Theme => ({
   mode,
   light: { "--background": "rgb(255 255 255 / 1)" },
   dark: { "--background": "rgb(10 10 10 / 1)" },
-  fontSize: 13,
+  fontSize: 14,
   bodyFontSize: 14,
 });
 const bg = (el: HTMLElement) => el.style.getPropertyValue("--background");
@@ -37,7 +37,7 @@ describe("applyTheme", () => {
     const stop = applyTheme(theme("system"), root);
     expect(bg(root)).toBe("rgb(10 10 10 / 1)");
     expect(root.classList.contains("dark")).toBe(true);
-    expect(root.style.fontSize).toBe("13px");
+    expect(root.style.fontSize).toBe("14px");
     m.set(false);
     expect(bg(root)).toBe("rgb(255 255 255 / 1)");
     expect(root.classList.contains("dark")).toBe(false);
@@ -62,7 +62,7 @@ describe("applyTheme", () => {
         mode: "system",
         light: { "--a": "1" },
         dark: { "--b": "2" },
-        fontSize: 13,
+        fontSize: 14,
         bodyFontSize: 14,
       },
       root,

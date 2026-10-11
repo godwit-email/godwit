@@ -1,6 +1,7 @@
 package kit
 
 import (
+	"image/color"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity
 
 func themedDensity(density string, body func(c *ui.Context)) func(c *ui.Context) {
 	return func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: density, FontSize: 13, BodyFontSize: 14}, c.Theme().Dark))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "system", Density: density, FontSize: 14, BodyFontSize: 14}, c.Theme().Dark))
 		body(c)
 	}
 }
@@ -165,7 +166,7 @@ func TestKitDensityScales(t *testing.T) {
 		Input(c, &s, InputOpts{}).Label("Name")
 		Card(c, func() {}).Label("Box")
 	}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
 	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")
 	st.Density = "comfortable"
 	roomy := heights(t, st, body, "Archive", "Letter", "Name", "Box")
@@ -187,7 +188,7 @@ func TestKitFontSizeFollows(t *testing.T) {
 		Kbd(c, "KbdText")
 	}
 	names := []string{"BadgeText", "AlertText", "HelpText", "KbdText"}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 13, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
 	small := heights(t, st, body, names...)
 	st.FontSize = 18
 	big := heights(t, st, body, names...)
@@ -545,6 +546,8 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt := ui.NewTester(themed(func(c *ui.Context) { Gallery(c, &g) }), 1200, 8000)
 		tt.SetDark(dark)
 		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
 			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
 			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast"} {
@@ -612,7 +615,7 @@ func TestKitOverlayEnters(t *testing.T) {
 	}
 }
 
-// TestKitToastTopCenter: toasts show at the top center, the newest first.
+// TestKitToastTopCenter: toasts show at the top center, the oldest first.
 func TestKitToastTopCenter(t *testing.T) {
 	n := 0
 	tt := ui.NewTester(themed(func(c *ui.Context) {
@@ -627,8 +630,8 @@ func TestKitToastTopCenter(t *testing.T) {
 	if !ok1 || !ok2 {
 		t.Fatalf("toasts not shown: %q", tt.Texts())
 	}
-	if newer.Y >= older.Y || newer.Y > 120 {
-		t.Errorf("newer at %v, older at %v: want the newest on top, at the top", newer, older)
+	if older.Y >= newer.Y || older.Y > 120 {
+		t.Errorf("newer at %v, older at %v: want the oldest on top, at the top", newer, older)
 	}
 	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
 		t.Errorf("newer centered at x=%v, want near 400", mid)
@@ -831,4 +834,269 @@ func TestKitFloatDarkInnerEdge(t *testing.T) {
 	if inner.R > mid.R+1 {
 		t.Errorf("the edge is wider than a hairline: %v", inner)
 	}
+}
+
+func TestEmptyLayout(t *testing.T) {
+	for _, dashed := range []bool{false, true} {
+		var tk theme.Tokens
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			tk = theme.Of(c)
+			Empty(c, EmptyOpts{Icon: "inbox", Title: "No mail", Desc: "Nothing here yet", Dashed: dashed, Actions: func() {
+				Button(c, "Compose", ButtonOpts{})
+			}}).Label("empty").Width(400)
+		}), 500, 400)
+		for _, s := range []string{"No mail", "Nothing here yet", "Compose"} {
+			if !tt.HasText(s) {
+				t.Errorf("dashed=%v: missing %q in %q", dashed, s, tt.Texts())
+			}
+		}
+		r, ok := tt.Find("empty")
+		if !ok {
+			t.Fatal("no empty")
+		}
+		img, border := tt.Image(), 0
+		for x := int(r.X + r.W/4); x < int(r.X+3*r.W/4); x++ {
+			p := img.RGBAAt(x, int(r.Y))
+			if p.R == tk.Border.R && p.G == tk.Border.G && p.B == tk.Border.B {
+				border++
+			}
+		}
+		half := int(r.W / 2)
+		if dashed && (border == 0 || border > half*3/4) {
+			t.Errorf("dashed top edge has %d/%d border pixels, want a broken line", border, half)
+		}
+		if !dashed && border != 0 {
+			t.Errorf("undashed Empty draws a border (%d pixels)", border)
+		}
+		if dashed {
+			_ = tt.Click("Compose")
+		}
+	}
+}
+
+func TestButtonGroupTooltips(t *testing.T) {
+	var got []string
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ButtonGroup(c,
+			GroupItem{Icon: "archive", Tip: "Archive", OnClick: func() { got = append(got, "a") }},
+			GroupItem{Icon: "trash-2", Tip: "Delete", OnClick: func() { got = append(got, "d") }, Disabled: true},
+		)
+	}), 300, 100)
+	r, ok := tt.Find("Archive")
+	if !ok {
+		t.Fatal("no Archive item")
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	time.Sleep(900 * time.Millisecond)
+	tt.Frame()
+	n := 0
+	for _, x := range tt.Texts() {
+		if x == "Archive" {
+			n++
+		}
+	}
+	if n < 2 {
+		t.Fatalf("tip not shown after hover: %q", tt.Texts())
+	}
+	_ = tt.Click("Archive")
+	_ = tt.Click("Delete")
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("actions ran %v, want only a", got)
+	}
+}
+
+func TestTabsUnderline(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		TabsUnderline(c, &sel, "One", "Two")
+	}), 300, 100)
+	if err := tt.Click("Two"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	time.Sleep(2 * theme.MotionFast)
+	tt.Frame()
+	if sel != 1 {
+		t.Fatalf("sel = %d", sel)
+	}
+	r, _ := tt.Find("Two")
+	one, _ := tt.Find("One")
+	if one.H != r.H {
+		t.Errorf("tab heights differ: %v vs %v", one.H, r.H)
+	}
+	// the 32-high tab's bottom 2 px are Primary under the selected tab
+	p := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)+15)
+	if p.R != tk.Primary.R || p.G != tk.Primary.G {
+		t.Errorf("selected underline pixel %v, want primary %v", p, tk.Primary)
+	}
+}
+
+func TestToastCap(t *testing.T) {
+	n := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		for ; n < 4; n++ {
+			c.AddToast(ui.Toast{ID: string(rune('a' + n)), Title: []string{"first", "second", "third", "fourth"}[n], Timeout: -1})
+		}
+		ToastHost(c, "Close")
+	}), 800, 600)
+	tt.Frame()
+	tt.Frame()
+	if tt.HasText("first") || !tt.HasText("second") || !tt.HasText("fourth") {
+		t.Errorf("toasts = %q, want the oldest dropped", tt.Texts())
+	}
+}
+
+func TestDestructiveOutline(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		var tk theme.Tokens
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			tk = theme.Of(c)
+			Button(c, "Delete", ButtonOpts{Variant: DestructiveOutline})
+		}), 200, 100)
+		tt.SetDark(dark)
+		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
+		r, _ := tt.Find("Delete")
+		same := func(p color.RGBA, c ui.Color) bool { return p.R == c.R && p.G == c.G && p.B == c.B }
+		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.Background) {
+			t.Errorf("dark=%v rest bg %v, want %v", dark, p, tk.Background)
+		}
+		tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		tt.Frame()
+		time.Sleep(2 * theme.MotionFast)
+		tt.Frame()
+		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
+			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
+		}
+	}
+}
+
+func TestAlertAction(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, kind := range []AlertKind{Warning, Info} {
+			var tk theme.Tokens
+			n := 0
+			tt := ui.NewTester(themed(func(c *ui.Context) {
+				tk = theme.Of(c)
+				AlertAction(c, kind, "Fix", func() { n++ })
+			}), 200, 100)
+			tt.SetDark(dark)
+			tt.Frame()
+			time.Sleep(2 * theme.MotionFast)
+			tt.Frame()
+			r, ok := tt.Find("Fix")
+			if !ok {
+				t.Fatal("no button")
+			}
+			want := tk.WarningText
+			if kind == Info {
+				want = tk.Primary
+			}
+			p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2))
+			if p.R != want.R || p.G != want.G || p.B != want.B {
+				t.Errorf("dark=%v kind=%v fill %v, want %v", dark, kind, p, want)
+			}
+			if err := tt.Click("Fix"); err != nil || n != 1 {
+				t.Errorf("click err=%v n=%d", err, n)
+			}
+		}
+	}
+}
+
+func TestSelectWith(t *testing.T) {
+	width := func(o SelectOpts, label string) float32 {
+		v := 1
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			SelectWith(c, o, &v, []Option[int]{{1, label}}).Label("sel")
+		}), 600, 100)
+		r, ok := tt.Find("sel")
+		if !ok {
+			t.Fatal("no select")
+		}
+		return r.W
+	}
+	if w := width(SelectOpts{MinWidth: 300}, "a"); w < 300 {
+		t.Errorf("min width: %v", w)
+	}
+	if w := width(SelectOpts{MaxWidth: 150}, "a very long option label that would be wider than the cap"); w > 150 {
+		t.Errorf("max width: %v", w)
+	}
+	// Flat drops the shadow: the pixel under the trigger is the page's
+	below := func(flat bool) uint8 {
+		v := 1
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Padding(20).Children(func() {
+				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{1, "a"}}).Label("sel")
+			})
+		}), 300, 100)
+		r, _ := tt.Find("sel")
+		return tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H)+1).R
+	}
+	if f, s := below(true), below(false); f <= s {
+		t.Errorf("flat pixel %d not lighter than shadowed %d", f, s)
+	}
+}
+
+func TestDialogWideWidth(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		DialogWide(c, &open, "T", "desc", func() { ui.Text(c, "body") }, func() { DialogBar(c, false, func() { ui.Text(c, "foot") }) })
+	}), 900, 600)
+	time.Sleep(2 * theme.MotionBase)
+	tt.Frame()
+	img, first, last := tt.Image(), -1, -1
+	y := 76 // the panel hangs 56 from the top, below its corners; its padding is white
+	for x := 0; x < 900; x++ {
+		if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
+			if first < 0 {
+				first = x
+			}
+			last = x
+		}
+	}
+	if w := last - first + 1; w < 636 || w > 640 {
+		t.Errorf("DialogWide is %d wide, want 640", w)
+	}
+}
+
+// A disabled button paints the design's disabled colours, not mygo's
+// half-opacity dimming: a Default one on Hover, an Outline one's text Idle.
+func TestKitButtonDisabledColors(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Gap(8).Padding(8).Children(func() {
+			Button(c, "Add", ButtonOpts{Disabled: true})
+			Button(c, "Test", ButtonOpts{Variant: Outline, Disabled: true})
+		})
+	}), 300, 200)
+	tt.Frame()
+	tok := theme.Light()
+	img := tt.Image()
+	at := func(label string, f func(r ui.Rect) (int, int)) color.RGBA {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("%s not found", label)
+		}
+		x, y := f(r)
+		return img.RGBAAt(x, y)
+	}
+	same := func(name string, got color.RGBA, want ui.Color) {
+		if got.R != want.R || got.G != want.G || got.B != want.B {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+	}
+	same("disabled Default background", at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Hover)
+	// The darkest pixel of the Outline label is its text colour.
+	r, _ := tt.Find("Test")
+	dark := color.RGBA{255, 255, 255, 255}
+	for x := int(r.X); x < int(r.X+r.W); x++ {
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			if c := img.RGBAAt(x, y); int(c.R)+int(c.G)+int(c.B) < int(dark.R)+int(dark.G)+int(dark.B) {
+				dark = c
+			}
+		}
+	}
+	same("disabled Outline text", dark, tok.Idle)
 }

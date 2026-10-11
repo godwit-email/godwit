@@ -44,7 +44,10 @@ type Message struct {
 	HTML, Text          string
 	Truncated           bool
 	RemoteImagesBlocked int
-	Attachments         []AttachmentInfo
+	// InJunk: the folder is junk, detected or given (even where another
+	// folder holds the role), so its sender's images are never trusted.
+	InJunk      bool
+	Attachments []AttachmentInfo
 }
 
 // AttachmentInfo describes one attachment; its bytes are fetched lazily.
@@ -143,26 +146,70 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 	return page, nil
 }
 
+// SearchQuery is a search: free text ANDed with the filters set. Zero
+// fields filter nothing; AccountID 0 is every account.
+type SearchQuery struct {
+	AccountID      int64
+	Text           string
+	From           string    // a substring of the From header, any case
+	Since, Until   time.Time // the date from Since, before Until
+	HasAttachments bool
+}
+
+// Filtered reports whether a filter beyond the account is set: such a query
+// needs no text.
+func (q SearchQuery) Filtered() bool {
+	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments
+}
+
 // Search finds synced messages; accountID 0 searches every account.
 func (s *Service) Search(ctx context.Context, accountID int64, query string, limit int) ([]MessageSummary, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
+	return s.SearchWith(ctx, SearchQuery{AccountID: accountID, Text: query}, limit)
+}
+
+// likeArg is a LIKE pattern matching s anywhere, its wildcards literal.
+func likeArg(s string) string {
+	return "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s) + "%"
+}
+
+// SearchWith finds synced messages matching q, newest first. A query with
+// neither text nor a filter finds nothing.
+func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]MessageSummary, error) {
+	query := strings.TrimSpace(q.Text)
+	if query == "" && !q.Filtered() {
 		return nil, nil
 	}
-	var cond string
-	var args []any
-	if utf8.RuneCountInString(query) < 3 {
+	cond, args := "1", []any(nil)
+	switch {
+	case query == "":
+	case utf8.RuneCountInString(query) < 3:
 		// ponytail: full scan; use a bigram index when mailboxes get large.
-		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(query) + "%"
+		like := likeArg(query)
 		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\')`
 		args = []any{like, like, like}
-	} else {
+	default:
 		cond = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)"
 		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`}
 	}
-	if accountID != 0 {
+	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
-		args = append(args, accountID)
+		args = append(args, q.AccountID)
+	}
+	// shortcut: filters without text scan every message (no (account_id, date) index); add one if 100k-mail stores get slow.
+	if from := strings.TrimSpace(q.From); from != "" {
+		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
+		args = append(args, likeArg(from))
+	}
+	if !q.Since.IsZero() {
+		cond += " AND m.date >= ?"
+		args = append(args, q.Since.Unix())
+	}
+	if !q.Until.IsZero() {
+		cond += " AND m.date < ?"
+		args = append(args, q.Until.Unix())
+	}
+	if q.HasAttachments {
+		cond += " AND m.has_attachments = 1" // as the list's paperclip: inline parts count
 	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
 		append(args, clampLimit(limit))...)
@@ -189,7 +236,7 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 // GetMessage returns the message with sanitized HTML. Inline images are
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -197,7 +244,7 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		return Message{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0}
+	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0, InJunk: store.Int(r[15]) != 0}
 	raw := store.Str(r[13])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
@@ -244,14 +291,14 @@ func displayName(from string) string {
 // Op is a queued local change that has not reached the server yet, or could not.
 type Op struct {
 	ID          int64
-	Kind, State string // Kind: flags or move. State: pending, awaiting_claim, conflict or failed
+	Kind, State string // Kind: flags, move or purge. State: pending, awaiting_claim, conflict or failed
 	Attempts    int
 	LastError   string
 }
 
-// PendingOps lists the account's ops that are not done, oldest first.
+// PendingOps lists the account's ops that are not done (or cancelled), oldest first.
 func (s *Service) PendingOps(ctx context.Context, accountID int64) ([]Op, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state != 'done' ORDER BY id", accountID)
+	rows, err := s.db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state NOT IN ('done', 'cancelled') ORDER BY id", accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -411,20 +458,40 @@ func (s *Service) Move(ctx context.Context, ids []int64, folderID int64) error {
 
 // Delete moves the messages to their account's Trash; ones already there stay.
 func (s *Service) Delete(ctx context.Context, ids []int64) error {
+	return s.MoveToRole(ctx, ids, "trash")
+}
+
+// ErrNoRoleFolder is MoveToRole's error for an account without a folder of Role.
+type ErrNoRoleFolder struct{ Role string }
+
+func (e *ErrNoRoleFolder) Error() string { return "the account has no " + e.Role + " folder" }
+
+// MoveToRole moves the messages to their account's folder of role (trash,
+// junk or archive); ones already there stay.
+func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) error {
+	if role != "trash" && role != "junk" && role != "archive" {
+		return fmt.Errorf("invalid role %q", role)
+	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	acc, ts, err := s.targets(ctx, ids)
 	if err != nil || len(ts) == 0 {
 		return err
 	}
-	rows, err := s.db.Query(ctx, "SELECT id FROM folders WHERE account_id = ? AND role = 'trash' ORDER BY id LIMIT 1", acc)
+	folder, err := s.roleFolder(ctx, acc, role)
 	if err != nil {
 		return err
 	}
-	if len(rows.Values) == 0 {
-		return errors.New("the account has no Trash folder")
+	return s.move(ctx, acc, ts, folder)
+}
+
+// roleFolder is the account's folder of role (mailsync.RoleFolder).
+func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64, error) {
+	id, _, err := mailsync.RoleFolder(ctx, s.db, acc, role)
+	if err == nil && id == 0 {
+		err = &ErrNoRoleFolder{Role: role}
 	}
-	return s.move(ctx, acc, ts, store.Int(rows.Values[0][0]))
+	return id, err
 }
 
 // move sets the desired folder of the messages not already in folderID and queues
@@ -438,7 +505,9 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, folder
 		}
 		moved = append(moved, m)
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ? WHERE id = ?", Args: []any{folderID, m.id}},
+			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ?, entered_at = unixepoch() WHERE id = ?", Args: []any{folderID, m.id}},
+			// A rescue beats a purge queued before it (the move would otherwise wait for it).
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}},
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
 				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
 	}

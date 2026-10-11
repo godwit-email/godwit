@@ -44,3 +44,16 @@ func Plural(key string, n int) string {
 	}
 	return Tf(key+".other", n)
 }
+
+// Keys are every key of the current language's catalog.
+func Keys() []string {
+	m := en
+	if Language() == "zh-CN" {
+		m = zh
+	}
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}

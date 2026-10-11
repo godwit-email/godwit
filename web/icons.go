@@ -25,8 +25,11 @@ var RemixIcons = map[string]string{
 	"download":                "node_modules/remixicon/icons/System/download-line.svg",
 	"ellipsis":                "node_modules/remixicon/icons/System/more-line.svg",
 	"external-link":           "node_modules/remixicon/icons/System/external-link-line.svg",
+	"eye-off":                 "node_modules/remixicon/icons/System/eye-off-line.svg",
+	"eye":                     "node_modules/remixicon/icons/System/eye-line.svg",
 	"file-pen-fill":           "node_modules/remixicon/icons/Document/draft-fill.svg",
 	"file-pen":                "node_modules/remixicon/icons/Document/draft-line.svg",
+	"file-text":               "node_modules/remixicon/icons/Document/file-text-line.svg",
 	"folder-fill":             "node_modules/remixicon/icons/Document/folder-open-fill.svg",
 	"folder":                  "node_modules/remixicon/icons/Document/folder-3-line.svg",
 	"forward":                 "node_modules/remixicon/icons/System/share-forward-line.svg",
@@ -42,9 +45,11 @@ var RemixIcons = map[string]string{
 	"list-ordered":            "node_modules/remixicon/icons/Editor/list-ordered.svg",
 	"list":                    "node_modules/remixicon/icons/Editor/list-unordered.svg",
 	"loader":                  "node_modules/remixicon/icons/System/loader-4-line.svg",
+	"lock":                    "node_modules/remixicon/icons/System/lock-line.svg",
 	"mail-fill":               "node_modules/remixicon/icons/Business/mail-fill.svg",
 	"mail-open":               "node_modules/remixicon/icons/Business/mail-open-line.svg",
 	"mail":                    "node_modules/remixicon/icons/Business/mail-line.svg",
+	"monitor":                 "node_modules/remixicon/icons/Device/computer-line.svg",
 	"outbox-fill":             "node_modules/remixicon/icons/Business/inbox-unarchive-fill.svg",
 	"outbox":                  "node_modules/remixicon/icons/Business/inbox-unarchive-line.svg",
 	"panel-left":              "node_modules/remixicon/icons/Design/layout-left-line.svg",
@@ -59,7 +64,6 @@ var RemixIcons = map[string]string{
 	"search":                  "node_modules/remixicon/icons/System/search-line.svg",
 	"send-fill":               "node_modules/remixicon/icons/Business/send-plane-fill.svg",
 	"send":                    "node_modules/remixicon/icons/Business/send-plane-line.svg",
-	"server":                  "node_modules/remixicon/icons/Device/server-line.svg",
 	"settings-fill":           "node_modules/remixicon/icons/System/settings-3-fill.svg",
 	"settings":                "node_modules/remixicon/icons/System/settings-3-line.svg",
 	"shield-fill":             "node_modules/remixicon/icons/System/shield-fill.svg",
@@ -110,9 +114,10 @@ var RemixIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Development/puzzle-line.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-fill.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-line.svg
-//go:embed node_modules/remixicon/icons/Device/server-line.svg
+//go:embed node_modules/remixicon/icons/Device/computer-line.svg
 //go:embed node_modules/remixicon/icons/Document/draft-fill.svg
 //go:embed node_modules/remixicon/icons/Document/draft-line.svg
+//go:embed node_modules/remixicon/icons/Document/file-text-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-copy-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-open-fill.svg
@@ -139,6 +144,8 @@ var RemixIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/delete-bin-line.svg
 //go:embed node_modules/remixicon/icons/System/download-line.svg
 //go:embed node_modules/remixicon/icons/System/external-link-line.svg
+//go:embed node_modules/remixicon/icons/System/eye-line.svg
+//go:embed node_modules/remixicon/icons/System/eye-off-line.svg
 //go:embed node_modules/remixicon/icons/System/information-fill.svg
 //go:embed node_modules/remixicon/icons/System/information-line.svg
 //go:embed node_modules/remixicon/icons/System/loader-4-line.svg
@@ -151,6 +158,7 @@ var RemixIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/shield-fill.svg
 //go:embed node_modules/remixicon/icons/System/shield-line.svg
 //go:embed node_modules/remixicon/icons/System/spam-2-fill.svg
+//go:embed node_modules/remixicon/icons/System/lock-line.svg
 //go:embed node_modules/remixicon/icons/System/spam-2-line.svg
 //go:embed node_modules/remixicon/icons/System/star-fill.svg
 //go:embed node_modules/remixicon/icons/System/star-line.svg

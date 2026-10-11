@@ -34,6 +34,7 @@ type platform struct {
 	wit     *webui.Wit
 	roles   *webui.Pages                 // the embedded pages' roles
 	reader  *webui.Reader                // the reader pages' messages
+	sig     *webui.Signature             // the signature page's account and flushes
 	bodies  map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
 
 	dataDir string
@@ -123,6 +124,7 @@ func (p *platform) ShowWindow() {
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
+func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 
 // NewBodyView makes a reader page in the main window, kept on its entry
 // (lockPage), registered as "reader" and bound to message before it
@@ -153,6 +155,45 @@ func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) 
 		return nil, nil, err
 	}
 	return v, closeView, nil
+}
+
+// NewSignatureView makes the signature page in the main window, kept on
+// its entry and registered as "signature" before it loads. show tells it
+// the account (also kept for a page that loads later); flush's done runs
+// on the window's UI thread once the page answers (at once while the page
+// never ran); close undoes it all.
+func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), func(), error) {
+	v, err := p.win.NewWebView(mygo.WebViewOptions{})
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	page := v.Page()
+	closeView := func() {
+		p.sig.Close()
+		p.roles.Unregister(page)
+		v.Destroy()
+	}
+	err = loadAfterSetup(func() {
+		lockPage(page)
+		p.roles.Register(page, "signature")
+	}, func() error { return page.LoadURL("/signature.html") }, closeView)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	show := func(account int64) {
+		p.sig.Show(account)
+		if err := webui.SignatureAccount.EmitPage(page, account); err != nil {
+			log.Printf("the account to the signature page: %v", err)
+		}
+	}
+	flush := func(done func(bool)) {
+		p.sig.Flush(func(tok int64) {
+			if err := webui.SignatureFlush.EmitPage(page, tok); err != nil {
+				log.Printf("a flush to the signature page: %v", err)
+			}
+		}, func(ok bool) { p.win.Update(func() { done(ok) }) })
+	}
+	return v, show, flush, closeView, nil
 }
 
 // bodyView is the web view of the reader page page, while it is open as
@@ -191,6 +232,13 @@ func (p *platform) SettingsChanged(st core.Settings) {
 	}
 	if p.wit != nil {
 		p.wit.SettingsChanged(st)
+	}
+	if p.sig != nil {
+		p.sig.SettingsChanged(func(text map[string]string) {
+			if err := webui.SignatureText.Broadcast(text); err != nil {
+				log.Printf("the copy to the signature page: %v", err)
+			}
+		})
 	}
 }
 func (*platform) TempDir() string {
@@ -321,6 +369,21 @@ func pickFiles(_ context.Context, winID int) ([]string, error) {
 		return nil, errors.New("no window to attach the file dialog to")
 	}
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})
+}
+
+// pickImage asks for one signature image in a dialog on the calling page's
+// window; "" for none.
+func pickImage(ctx context.Context) (string, error) {
+	w := mygo.CallerWindow(ctx)
+	if w == nil || w.IsDestroyed() {
+		return "", errors.New("no window to attach the image dialog to")
+	}
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w,
+		Filters: []mygo.FileFilter{{Name: "Images", Extensions: []string{"png", "jpg", "jpeg", "gif", "webp"}}}})
+	if err != nil || len(paths) == 0 {
+		return "", err
+	}
+	return paths[0], nil
 }
 
 // composeWindow is webui.Window on mygo.

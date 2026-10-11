@@ -22,7 +22,7 @@ const inlineNew = `<p>Hello <b>Lena</b>, see <a href="https://cal.example/x">the
 func (f *fixture) propose(t *testing.T, llm *coretest.LLM, html string) Approval {
 	t.Helper()
 	llm.Script(proposeTurn("c1", html), coretest.Turn{Text: []string{"改好了。"}})
-	_, err := f.page.Ask(f.ctx(1), "改一下")
+	_, err := f.page.Ask(f.ctx(1), "改一下", nil)
 	require.NoError(t, err)
 	ev := f.waitKind(t, 1, "interrupted")
 	require.Len(t, ev.Approvals, 1)
@@ -127,6 +127,18 @@ func TestComposeReviewRewriteCompare(t *testing.T) {
 	assert.Equal(t, "<p>One two three four.</p>", bc.Body)
 }
 
+// A rewrite that changes a block's shape still says how much changed.
+func TestComposeReviewRewriteShapeRatio(t *testing.T) {
+	f, _, llm := witFixture(t, "<p>One two three four.</p>")
+	a := f.propose(t, llm, "<ul><li>One two three five.</li></ul>")
+	r, err := f.page.Review(f.ctx(1), a.ID)
+	require.NoError(t, err)
+	assert.False(t, r.Inline)
+	assert.Empty(t, r.Blocks, "a shape change is not reviewed word by word")
+	assert.True(t, r.Exact)
+	assert.InDelta(t, 0.2, r.Ratio, 0.01)
+}
+
 func TestComposeFinishPartialStale(t *testing.T) {
 	f, d, llm := witFixture(t, inlineOld)
 	a := f.propose(t, llm, inlineNew)
@@ -145,7 +157,7 @@ func TestComposeFinishPartialStale(t *testing.T) {
 func TestComposeUndo(t *testing.T) {
 	f, d, llm := witFixture(t, "")
 	llm.Script(proposeTurn("", "<p>Thanks, Lena!</p>"), coretest.Turn{Text: []string{"写好了"}})
-	_, err := f.page.Ask(f.ctx(1), "写一封感谢信")
+	_, err := f.page.Ask(f.ctx(1), "写一封感谢信", nil)
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	before := f.stored(t, d.ID)

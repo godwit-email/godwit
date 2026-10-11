@@ -30,9 +30,11 @@ type ComposeState struct {
 	Subject string   `json:"subject"`
 	// Body is the editable part as sanitized HTML.
 	Body string `json:"body"`
-	// Quote and Signature are read-only plain text.
-	Quote     string `json:"quote"`
-	Signature string `json:"signature"`
+	// Quote and Signature are read-only plain text; SignatureImages are the
+	// signature's images as data: URLs, shown after its text.
+	Quote           string   `json:"quote"`
+	Signature       string   `json:"signature"`
+	SignatureImages []string `json:"signatureImages"`
 	// Attachments are the draft's files.
 	Attachments []Attachment `json:"attachments"`
 	// Revision is what the next save must pass; Theme styles the page.
@@ -75,8 +77,10 @@ type Change struct {
 	Attachments []Attachment `json:"attachments"`
 	// Conflict means the draft changed elsewhere: nothing was done.
 	Conflict bool `json:"conflict"`
-	// Signature is the draft's signature as plain text.
-	Signature string `json:"signature"`
+	// Signature is the draft's signature as plain text, SignatureImages its
+	// images as data: URLs.
+	Signature       string   `json:"signature"`
+	SignatureImages []string `json:"signatureImages"`
 	// UpdatedAt is when the draft was last stored, in Unix milliseconds.
 	UpdatedAt int64 `json:"updatedAt"`
 }

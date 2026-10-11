@@ -270,3 +270,41 @@ func TestMigration12(t *testing.T) {
 	_, err = db.Execute(ctx, "UPDATE model_services SET slug = 'x' WHERE name = 'b'")
 	assert.Error(t, err, "slugs are unique")
 }
+
+func TestMigration17(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:16]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, sql := range []string{
+		"INSERT INTO accounts(email) VALUES ('a@x')",
+		"INSERT INTO folders(account_id, name, role) VALUES (1, 'Trash', 'trash')",
+		"INSERT INTO messages(account_id, folder_id, date) VALUES (1, 1, 0)",
+	} {
+		_, err = db.Execute(ctx, sql)
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT m.entered_at, f.role_since, unixepoch() FROM messages m JOIN folders f ON f.id = m.folder_id")
+	require.NoError(t, err)
+	now := store.Int(rows.Values[0][2])
+	assert.InDelta(t, now, store.Int(rows.Values[0][0]), 5, "mail already there counts from the upgrade, never as old")
+	assert.InDelta(t, now, store.Int(rows.Values[0][1]), 5)
+
+	_, err = db.Execute(ctx, "UPDATE folders SET role_since = 0")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "UPDATE folders SET role = 'trash'")
+	require.NoError(t, err)
+	rows, _ = db.Query(ctx, "SELECT role_since FROM folders")
+	assert.Zero(t, store.Int(rows.Values[0][0]), "an unchanged role keeps its clock")
+	_, err = db.Execute(ctx, "UPDATE folders SET role_override = 'junk'")
+	require.NoError(t, err)
+	rows, _ = db.Query(ctx, "SELECT role_since FROM folders")
+	assert.InDelta(t, now, store.Int(rows.Values[0][0]), 5, "a role change restarts it")
+}

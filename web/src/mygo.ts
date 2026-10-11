@@ -25,6 +25,8 @@ export interface Approval {
   destinations: string[];
   /** Args is the call's arguments, JSON text ("" for none). */
   args: string;
+  /** SessionAllow: 本次对话都允许 can decide it (WitPage.DecideSession). */
+  sessionAllow: boolean;
 }
 
 /** AttachResult is the outcome of adding files: a partial success is no error. */
@@ -34,8 +36,12 @@ export interface AttachResult {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
   /**
@@ -64,8 +70,12 @@ export interface BodyChange {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
   /** Body is the editable HTML as stored. */
@@ -79,13 +89,17 @@ export interface Change {
   attachments: Attachment[];
   /** Conflict means the draft changed elsewhere: nothing was done. */
   conflict: boolean;
-  /** Signature is the draft's signature as plain text. */
+  /**
+   * Signature is the draft's signature as plain text, SignatureImages its
+   * images as data: URLs.
+   */
   signature: string;
+  signatureImages: string[];
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
 }
 
-/** Citation is a message Wit read, numbered N from 1 in the conversation. */
+/** Citation is a message Wit read, numbered N from 1 in the conversation (core.Citation.N). */
 export interface Citation {
   n: number;
   messageId: number;
@@ -95,6 +109,8 @@ export interface Citation {
   date: number;
   /** Suspect means it seems to hold instructions (wit.suspect). */
   suspect: boolean;
+  /** Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text. */
+  quote: string;
 }
 
 /**
@@ -130,9 +146,13 @@ export interface ComposeState {
   subject: string;
   /** Body is the editable part as sanitized HTML. */
   body: string;
-  /** Quote and Signature are read-only plain text. */
+  /**
+   * Quote and Signature are read-only plain text; SignatureImages are the
+   * signature's images as data: URLs, shown after its text.
+   */
   quote: string;
   signature: string;
+  signatureImages: string[];
   /** Attachments are the draft's files. */
   attachments: Attachment[];
   /** Revision is what the next save must pass; Theme styles the page. */
@@ -150,6 +170,15 @@ export interface ComposeState {
 export interface Language {
   tag: string;
   name: string;
+}
+
+/** MailHit is a message the quote picker offers. */
+export interface MailHit {
+  id: number;
+  subject: string;
+  from: string;
+  /** Date is in Unix milliseconds; 0 for none. */
+  date: number;
 }
 
 /** ReaderBody is a message's body as the reader page shows it. */
@@ -194,12 +223,12 @@ export interface Review {
   inline: boolean;
   /**
    * Ratio is the share of words changed; Exact means the diff completed
-   * within its budget with the block shapes kept (else wit.compose.rewrite_plain).
+   * within its budget, so Ratio is known (else wit.compose.rewrite_plain).
    */
   ratio: number;
   exact: boolean;
   /**
-   * Blocks are the new text with the changes marked, when Exact; Changes
+   * Blocks are the new text with the changes marked, when the block shapes are kept (Inline); Changes
    * is how many changes they hold, the length Finish wants.
    */
   blocks: ReviewBlock[];
@@ -290,10 +319,22 @@ export interface SendWarning {
   message: string;
 }
 
+/**
+ * SignatureState is what the signature page needs besides a signature:
+ * the account shown (0 before native showed one), its copy and theme.
+ */
+export interface SignatureState {
+  account: number;
+  text: Record<string, string>;
+  theme: Theme;
+}
+
 /** Skill is a 调整 menu item. */
 export interface Skill {
   id: string;
   label: string;
+  /** Hint is what the skill changes, shown beside its label. */
+  hint: string;
 }
 
 /**
@@ -370,6 +411,8 @@ export interface WitInfo {
   languages: Language[];
   /** Chips name what Wit knows of the draft. */
   chips: string[];
+  /** Model is the default model's label, as the input's chip. */
+  model: string;
 }
 
 /**
@@ -444,11 +487,12 @@ export const ComposePage = {
     return call("ComposePage.AddAttachments", revision);
   },
   /**
-   * Ask asks Wit about the calling window's draft (core Assist) and returns the
-   * run's ID; its events go to the window on WitStream.
+   * Ask asks Wit about the calling window's draft, with the mail the user
+   * quoted (message IDs; core AssistWith), and returns the run's ID; its
+   * events go to the window on WitStream.
    */
-  ask(input: string): Promise<number> {
-    return call("ComposePage.Ask", input);
+  ask(input: string, quoted: number[]): Promise<number> {
+    return call("ComposePage.Ask", input, quoted);
   },
   /**
    * Closed is the page's final flush for the close attempt gen, the payload
@@ -472,10 +516,6 @@ export const ComposePage = {
    */
   decideAll(run: number, accept: boolean): Promise<BodyChange> {
     return call("ComposePage.DecideAll", run, accept);
-  },
-  /** Discard deletes the calling window's draft; the window closes (OnDone). */
-  discard(): Promise<void> {
-    return call("ComposePage.Discard");
   },
   /**
    * Finish settles approval, an inline draft edit, with a decision per change
@@ -518,6 +558,10 @@ export const ComposePage = {
   openLink(link: string): Promise<void> {
     return call("ComposePage.OpenLink", link);
   },
+  /** OpenModels opens the model settings (the input's model chip). */
+  openModels(): Promise<void> {
+    return call("ComposePage.OpenModels");
+  },
   /**
    * RemoveAttachment removes attachment id from the calling window's draft,
    * if the draft is at revision (else Conflict).
@@ -548,6 +592,10 @@ export const ComposePage = {
    */
   save(e: ComposeEdit): Promise<SaveResult> {
     return call("ComposePage.Save", e);
+  },
+  /** SearchMail is the quote picker's search (core Search, every account). */
+  searchMail(query: string): Promise<MailHit[]> {
+    return call("ComposePage.SearchMail", query);
   },
   /**
    * Send sends exactly revision of the calling window's draft, else Conflict.
@@ -596,13 +644,14 @@ export const ComposePage = {
  */
 export const WitPage = {
   /**
-   * Ask asks input in conv, an ask conversation; 0 makes one first, which
+   * Ask asks input in conv, an ask conversation, with the mail the user quoted
+   * (message IDs; core AskWith); conv 0 makes one first, which
    * ConversationCreated hears of. The page follows conv from before the run
    * starts, unless a newer selection came meanwhile. Only Stop cancels the
    * run: a page reload does not.
    */
-  ask(conv: number, input: string): Promise<RunStart> {
-    return call("WitPage.Ask", conv, input);
+  ask(conv: number, input: string, quoted: number[]): Promise<RunStart> {
+    return call("WitPage.Ask", conv, input, quoted);
   },
   /**
    * Decide accepts or rejects approval, one of the conversation the page
@@ -617,6 +666,13 @@ export const WitPage = {
    */
   decideAll(run: number, accept: boolean): Promise<void> {
     return call("WitPage.DecideAll", run, accept);
+  },
+  /**
+   * DecideSession accepts approval and allows its tool for the rest of the
+   * conversation (本次对话都允许; core ResolveApprovalForConversation). As Decide.
+   */
+  decideSession(approval: number): Promise<void> {
+    return call("WitPage.DecideSession", approval);
   },
   /**
    * Follow makes the page follow conv, an ask conversation (0: none), and
@@ -649,6 +705,10 @@ export const WitPage = {
   /** OpenModels opens the model settings. */
   openModels(): Promise<void> {
     return call("WitPage.OpenModels");
+  },
+  /** SearchMail is the quote picker's search (core Search, every account). */
+  searchMail(query: string): Promise<MailHit[]> {
+    return call("WitPage.SearchMail", query);
   },
   /**
    * Stop cancels run: one the page's Ask started (a Stop pressed before Ask
@@ -710,6 +770,41 @@ export const ReaderPage = {
   },
 } as const;
 
+/** SignaturePage is what the signature page calls (mygo.Bind). */
+export const SignaturePage = {
+  /**
+   * Load is account's signature as the editor's HTML: sanitized, a plain
+   * one escaped into a paragraph, its images as data: URLs.
+   */
+  load(account: number): Promise<string> {
+    return call("SignaturePage.Load", account);
+  },
+  /**
+   * PickImage asks for an image to insert and returns it as a data: URL, ""
+   * for none picked: a png, jpeg, gif or webp (by its content) of at most
+   * 512 KB, else core.ErrSignatureImage.
+   */
+  pickImage(): Promise<string> {
+    return call("SignaturePage.PickImage");
+  },
+  /**
+   * Save stores html as account's signature, marked as editor HTML ("" for
+   * none); drafts sanitize it as they take it. Its data: images become the
+   * account's signature images (core.ErrSignatureImage, ErrSignatureImageCount).
+   */
+  save(account: number, html: string): Promise<void> {
+    return call("SignaturePage.Save", account, html);
+  },
+  /** Saved answers the flush token: ok is whether the page's save succeeded. */
+  saved(token: number, ok: boolean): Promise<void> {
+    return call("SignaturePage.Saved", token, ok);
+  },
+  /** State is the account shown, the page's copy and the theme. */
+  state(): Promise<SignatureState> {
+    return call("SignaturePage.State");
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -722,6 +817,18 @@ export const events = {
   wit: event<WitEvent>("wit"),
   /** ReaderReload tells a reader page its body changed (加载图片, a retry). */
   readerBody: event<ReaderBody>("readerBody"),
+  /**
+   * SignatureAccount tells the signature page which account to show: it
+   * saves the shown one's pending edit first.
+   */
+  signatureAccount: event<number>("signatureAccount"),
+  /**
+   * SignatureFlush asks the signature page to save now; it answers with
+   * SignaturePage.Saved and the same token.
+   */
+  signatureFlush: event<number>("signatureFlush"),
+  /** SignatureText carries the page's copy again after a language change. */
+  signatureText: event<Record<string, string>>("signatureText"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close
@@ -737,4 +844,9 @@ export const events = {
    * (the settings did); the conversation and its stream stay.
    */
   witState: event<WitPageState>("witState"),
+  /**
+   * WitAsk hands the Wit page a question native collected (a search that
+   * found nothing): the page asks it once, in the conversation it shows.
+   */
+  witAsk: event<string>("witAsk"),
 } as const;

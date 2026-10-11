@@ -23,7 +23,7 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 13, BodyFontSize: 14, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 3, ReplyLanguage: "match",
 		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}, got)
 }
 
@@ -55,7 +55,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	got, err = s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "light", got.Theme)
-	assert.Equal(t, 13, got.FontSize)
+	assert.Equal(t, 14, got.FontSize)
 }
 
 func TestSettingsValidation(t *testing.T) {
@@ -117,4 +117,48 @@ func TestSettingsValidateModelRefs(t *testing.T) {
 		_, err = s.SetSettings(t.Context(), in)
 		assert.Error(t, err, "small %q", bad)
 	}
+}
+
+func TestSettingsFontMigration(t *testing.T) {
+	for stored, want := range map[string][2]int{
+		`{"FontSize":13,"BodyFontSize":15}`: {14, 15},
+		`{"Theme":"light"}`:                 {14, 0},
+		`{"FontSize":32}`:                   {32, 0},
+		`{"FontSize":16}`:                   {17, 0},
+		`{"FontSize":13,"BodyFontSize":15,"SettingsVersion":2}`: {13, 15},
+		`{"FontSize":14,"BodyFontSize":14,"SettingsVersion":2}`: {14, 0},
+		`{"FontSize":13,"BodyFontSize":14}`:                     {14, 0},
+		`{"FontSize":16,"BodyFontSize":14,"SettingsVersion":3}`: {16, 14},
+	} {
+		s := settingsService(t, t.TempDir(), "")
+		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
+		require.NoError(t, err)
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, want, [2]int{got.FontSize, got.BodyFontSize}, stored)
+		assert.Equal(t, 3, got.SettingsVersion, stored)
+	}
+}
+
+func TestSettingsVersionStamped(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	in, _ := s.GetSettings(t.Context())
+	in.FontSize, in.SettingsVersion = 15, 0
+	_, err := s.SetSettings(t.Context(), in)
+	require.NoError(t, err)
+	for range 2 { // load -> save -> load is stable
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, 15, got.FontSize)
+		_, err = s.SetSettings(t.Context(), got)
+		require.NoError(t, err)
+	}
+}
+
+func TestSettingsTypeMismatchErrors(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", `{"FontSize":14,"Theme":5}`)
+	require.NoError(t, err)
+	_, err = s.GetSettings(t.Context())
+	assert.ErrorContains(t, err, "stored settings")
 }

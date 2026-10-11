@@ -30,8 +30,9 @@ import (
 var sentinels = map[string]error{
 	"ErrUseAssist": core.ErrUseAssist, "ErrStaleApproval": core.ErrStaleApproval,
 	"ErrTooLarge": core.ErrTooLarge, "ErrNotOnServerYet": core.ErrNotOnServerYet,
-	"ErrStaleDraft": core.ErrStaleDraft, "ErrRunActive": core.ErrRunActive,
+	"ErrStaleDraft": core.ErrStaleDraft, "ErrRunActive": core.ErrRunActive, "ErrNotSynced": core.ErrNotSynced,
 	"ErrKeychainUnavailable": core.ErrKeychainUnavailable, "ErrWrongAccount": core.ErrWrongAccount,
+	"ErrAccountNotFound":  core.ErrAccountNotFound,
 	"ErrProviderMismatch": core.ErrProviderMismatch, "ErrNeedsGrant": core.ErrNeedsGrant,
 	"ErrPluginNotFound": core.ErrPluginNotFound, "ErrMCPNotFound": core.ErrMCPNotFound,
 	"ErrAINotConfigured": core.ErrAINotConfigured, "ErrModelServiceNotFound": core.ErrModelServiceNotFound,
@@ -40,8 +41,10 @@ var sentinels = map[string]error{
 	"ErrKeyNeedsConfirm": core.ErrKeyNeedsConfirm, "ErrUnknownFlow": core.ErrUnknownFlow,
 	"ErrInvalidState": core.ErrInvalidState, "ErrSkillDisabled": core.ErrSkillDisabled,
 	"ErrSkillNotFound": core.ErrSkillNotFound, "ErrClosed": core.ErrClosed,
+	"ErrSignatureImage": core.ErrSignatureImage, "ErrSignatureImageCount": core.ErrSignatureImageCount,
+	"ErrNotGrantable":  core.ErrNotGrantable,
 	"context.Canceled": context.Canceled, "context.DeadlineExceeded": context.DeadlineExceeded,
-	"ai.ErrNoModelList": ai.ErrNoModelList, "conn.ErrAuthFailed": conn.ErrAuthFailed,
+	"ai.ErrNoModelList": ai.ErrNoModelList, "ai.ErrModelForbidden": ai.ErrModelForbidden, "conn.ErrAuthFailed": conn.ErrAuthFailed,
 	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
 	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
 }
@@ -93,6 +96,11 @@ func TestErrorRoundTrip(t *testing.T) {
 	var sb *core.SendBlockedError
 	require.ErrorAs(t, got, &sb)
 	assert.Equal(t, core.SendBlockedError{Plugin: "p", Message: "no"}, *sb)
+
+	_, _, got = wire(t, c, &core.ErrNoRoleFolder{Role: "junk"}, nil)
+	var nf *core.ErrNoRoleFolder
+	require.ErrorAs(t, got, &nf)
+	assert.Equal(t, "junk", nf.Role)
 
 	_, _, got = wire(t, c, &core.EgressApprovalRequired{Plugin: "p", Hosts: []string{"a.example", "b.example"}}, nil)
 	var ea *core.EgressApprovalRequired
@@ -205,17 +213,20 @@ func TestWireCodesPinned(t *testing.T) {
 	c := rpcbind.NewCodec()
 	pinned := map[string]error{
 		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge,
-		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive,
+		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "not_synced": core.ErrNotSynced,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
+		"account_not_found": core.ErrAccountNotFound,
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
 		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,
 		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
 		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
 		"base_url_invalid": core.ErrBaseURLInvalid, "base_url_scheme": core.ErrBaseURLScheme,
-		"no_model_list": ai.ErrNoModelList, "key_needs_confirm": core.ErrKeyNeedsConfirm,
+		"no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
 		"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState,
 		"skill_disabled": core.ErrSkillDisabled, "skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed,
-		"canceled": context.Canceled, "deadline": context.DeadlineExceeded,
+		"signature_image": core.ErrSignatureImage, "signature_image_count": core.ErrSignatureImageCount,
+		"not_grantable": core.ErrNotGrantable,
+		"canceled":      context.Canceled, "deadline": context.DeadlineExceeded,
 		"auth_failed": conn.ErrAuthFailed, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 		"flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 		"check_failed":             &core.CheckError{},
@@ -223,8 +234,9 @@ func TestWireCodesPinned(t *testing.T) {
 		"send_blocked":             &core.SendBlockedError{},
 		"egress_approval_required": &core.EgressApprovalRequired{},
 		"ai_error":                 &ai.Error{Code: ai.CodeCanceled},
+		"no_role_folder":           &core.ErrNoRoleFolder{Role: "junk"},
 	}
-	assert.Len(t, pinned, len(sentinels)+5, "every registration is pinned")
+	assert.Len(t, pinned, len(sentinels)+6, "every registration is pinned")
 	for code, err := range pinned {
 		we := c.Encode(err, nil)
 		assert.Equal(t, rpc.CodeApp, we.Code, code)
@@ -236,7 +248,7 @@ func TestWireCodesPinned(t *testing.T) {
 // or partial business error.
 func TestBadErrorData(t *testing.T) {
 	c := rpcbind.NewCodec()
-	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error"} {
+	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error", "no_role_folder"} {
 		for name, detail := range map[string]string{"missing": ``, "wrong type": `{"Plugin":1,"Steps":1,"Code":1}`, "partial": `{}`} {
 			got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "m", Data: &rpc.WireErrorData{Code: code, Detail: json.RawMessage(detail)}})
 			assert.ErrorIs(t, got, rpc.ErrBadErrorData, "%s %s", code, name)

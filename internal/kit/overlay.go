@@ -7,13 +7,56 @@ import (
 
 // Dialog is a 560-wide modal panel; Escape and a click outside close it.
 func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
+	dialog(c, open, theme.SheetWidth, title, body, footer)
+}
+
+// DialogWide is a 640-wide panel anchored near the top, the model service
+// dialog's look: a title and description, a scrolling body, and footer below
+// it (DialogBar). Escape and a click outside close it.
+func DialogWide(c *ui.Context, open *bool, title, desc string, body, footer func()) {
+	t, th := theme.Of(c), c.Theme()
+	k := enter(c, open, theme.MotionBase)
+	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
+		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(14), 0, 0, 0)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.DialogWideMax).Radius(t.Radius.X2l).Clip().Background(t.Background)
+		if t.Dark { // the light design has no edge; dark needs one against the backdrop
+			panel.Border(theme.Hairline, t.Border)
+		}
+		Elevate(c, panel, theme.ShadowLg)
+		ui.Column(c).Padding(th.Space(6), th.Space(6), 0, th.Space(6)).Gap(th.Space(1)).Children(func() {
+			Text(c, title, t.Text.Xl).FontWeight(600).LineHeight(theme.LineFor(title))
+			if desc != "" {
+				ui.Text(c, desc).LineHeight(theme.LineFor(desc)).TextColor(t.Muted)
+			}
+		})
+		ui.Scroll(c).Shrink(1).Children(func() {
+			ui.Column(c).Padding(th.Space(4), th.Space(6)).Gap(th.Space(4)).Children(body)
+		})
+		if footer != nil {
+			footer()
+		}
+	})
+}
+
+// DialogBar is DialogWide's footer row over a hairline; danger tints it for
+// a confirmation.
+func DialogBar(c *ui.Context, danger bool, children func()) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	bar := ui.Row(c).Shrink(0).Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(4), th.Space(6)).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+	if danger {
+		bar.BorderColor(t.DangerBorder).Background(t.DangerBg)
+	}
+	return bar.Children(children)
+}
+
+func dialog(c *ui.Context, open *bool, width float32, title string, body, footer func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionBase)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ink(t).Alpha(0.4 * k))
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
-		ui.Text(c, title).FontSize(t.Text.Title).FontWeight(600)
+		Text(c, title, t.Text.Title).FontWeight(600)
 		body()
 		if footer != nil {
 			ui.Row(c).Gap(th.Space(2)).Justify(ui.End).Children(footer)
@@ -30,13 +73,15 @@ func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
 		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.X2l).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowLg)
-		ui.Row(c).Padding(th.Space(5), th.Space(6), 0, th.Space(6)).Children(func() {
-			ui.Text(c, title).FontSize(t.Text.Lg).FontWeight(600)
+		// The content is the form column (FormMaxWidth, padded 24) centred in the sheet.
+		inset := th.Space(6) + (theme.SheetWidth-2*theme.Hairline-theme.FormMaxWidth)/2
+		ui.Row(c).Padding(th.Space(5), inset, 0, inset).Children(func() {
+			Text(c, title, t.Text.Lg).FontWeight(600)
 			ui.Spacer(c)
 			IconButton(c, "x", closeLabel, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
 		})
 		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(th.Space(4), th.Space(6), th.Space(6), th.Space(6)).Gap(th.Space(5.5)).Children(body)
+			ui.Column(c).Padding(th.Space(4), inset, th.Space(6), inset).Gap(th.Space(5.5)).Children(body)
 		})
 	})
 }
@@ -55,6 +100,9 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 // Tooltip shows text by anchor on keyboard focus at once and on hover after a
 // pause, and describes anchor to assistive technology.
 func Tooltip(c *ui.Context, anchor ui.Element, text string) { tooltip(c, anchor, text, true) }
+
+// TooltipLabelled is Tooltip for an anchor whose Label already says text.
+func TooltipLabelled(c *ui.Context, anchor ui.Element, text string) { tooltip(c, anchor, text, false) }
 
 // tooltip is Tooltip; describe is false where anchor's Label already says text.
 func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {

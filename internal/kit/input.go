@@ -10,6 +10,7 @@ type InputOpts struct {
 	Placeholder             string
 	Password, Mono, Invalid bool
 	Bare                    bool // raw Base geometry: the row around it draws the box
+	Flat                    bool // no shadow
 }
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
@@ -17,10 +18,12 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	e.Placeholder(o.Placeholder)
 	if !o.Bare {
 		e.PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background)
-		Elevate(c, e, theme.ShadowXs)
+		if !o.Flat {
+			Elevate(c, e, theme.ShadowXs)
+		}
 	}
 	if o.Mono {
-		e.Font(theme.Mono).FontSize(t.Text.Base)
+		e.Font(theme.Mono).FontSize(t.Text.Sm)
 	}
 	if o.Password {
 		e.Password()
@@ -57,9 +60,9 @@ func Field(c *ui.Context, label, help, errText string, control func()) {
 		control()
 		switch {
 		case errText != "":
-			ui.Text(c, errText).FontSize(t.Text.Sm).TextColor(t.Danger)
+			Text(c, errText, t.Text.Sm).TextColor(t.Danger)
 		case help != "":
-			ui.Text(c, help).FontSize(t.Text.Sm).TextColor(t.Muted)
+			Text(c, help, t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }

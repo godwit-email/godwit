@@ -91,6 +91,21 @@ test("× removes", async () => {
   expect(chips()).toEqual(["移除 c@d.e"]);
 });
 
+test("a chip shows the display name; the address is in its tooltip", async () => {
+  setup({ to: ["Lena Fischer <lena@partner.example>", '"Doe, J." <j@x.io>', "a@b.c"] });
+  const names = screen.getAllByTestId("chip").map((c) => c.firstChild?.textContent);
+  expect(names).toEqual(["Lena Fischer", "Doe, J.", "a@b.c"]);
+  await userEvent.hover(screen.getByText("Lena Fischer"));
+  expect(await screen.findByText("Lena Fischer <lena@partner.example>")).toBeInTheDocument();
+});
+
+test("a chip is labelled with name and address; an invalid one shows the entry as typed", () => {
+  setup({ to: ["Lena Fischer <lena@partner.example>", "Bob <bob>"] });
+  const [ok, bad] = screen.getAllByTestId("chip");
+  expect(ok).toHaveAccessibleName("Lena Fischer <lena@partner.example>");
+  expect(bad.firstChild?.textContent).toBe("Bob <bob>");
+});
+
 test("Cc, Bcc and Reply-To hidden until 抄送 · 密送", async () => {
   setup();
   expect(screen.queryByRole("textbox", { name: "抄送" })).not.toBeInTheDocument();
@@ -164,4 +179,23 @@ test("while an IME composes, neither a comma nor leaving commits", () => {
   fireEvent.compositionEnd(to);
   fireEvent.change(to, { target: { value: "你@x.io," } });
   expect(chips()).toEqual(["移除 你@x.io"]);
+});
+
+test("rows read 收件人, 抄送 · 密送's, 主题, then 发件人", () => {
+  const { container } = render(
+    <Fields
+      accounts={accounts}
+      from={1}
+      onFrom={vi.fn()}
+      to={[]}
+      cc={["c@x.com"]}
+      bcc={[]}
+      replyTo=""
+      subject=""
+      onChange={vi.fn()}
+      t={t}
+    />,
+  );
+  const labels = [...container.querySelectorAll("label")].map((l) => l.textContent);
+  expect(labels).toEqual(["收件人", "抄送", "密送", "回复地址", "主题", "发件人"]);
 });

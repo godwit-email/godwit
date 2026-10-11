@@ -5,16 +5,14 @@ import { Input } from "@/components/ui/input";
 import type { T } from "@/shared/i18n";
 
 /**
- * ⌘K's popover under the selection: what to change (Enter or 生成 ↵ submits the trimmed text; an
- * empty one does nothing), Esc closes. A pointer down outside closes it too.
+ * ⌘K's popover, under the selection's block at the body's width: what to change (Enter or 生成 ↵ submits the trimmed text; an
+ * empty one does nothing), Esc closes. A pointer down or focus leaving it closes it too.
  */
 export function CmdK({
-  at,
   onSubmit,
   onClose,
   t,
 }: {
-  at: { left: number; top: number };
   onSubmit(instruction: string): void;
   onClose(): void;
   t: T;
@@ -32,12 +30,15 @@ export function CmdK({
   return (
     <form
       ref={box}
-      style={{ left: at.left, top: at.top }}
-      className="fixed z-50 flex w-96 flex-col gap-2 rounded-lg border bg-popover p-2 shadow-md"
+      className="flex flex-col gap-1.5 rounded-xl border bg-popover px-2.5 py-2 text-md leading-normal shadow-md"
       onSubmit={(e) => {
         e.preventDefault();
         const s = text.trim();
         if (s) onSubmit(s);
+      }}
+      onBlur={(e) => {
+        // Focus leaving the popover (Tab) closes it, and with it the held selection.
+        if (e.relatedTarget && !box.current?.contains(e.relatedTarget)) onClose(); // not a window switch
       }}
       onKeyDown={(e) => {
         // Enter that commits an IME composition is not a submit.
@@ -50,21 +51,22 @@ export function CmdK({
       }}
     >
       <div className="flex items-center gap-2">
-        <RiSparkling2Line className="size-4 shrink-0 text-primary" />
+        <RiSparkling2Line className="size-3.5 shrink-0" />
         <Input
           autoFocus
           aria-label={t("wit.compose.cmdk.input")}
           placeholder={t("wit.compose.cmdk.input")}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          className="h-auto rounded-none border-0 bg-transparent p-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
         />
       </div>
       <div className="flex items-center gap-2">
         <span className="flex-1 text-muted-foreground text-sm">{t("wit.compose.cmdk")}</span>
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>
+        <Button type="button" size="xs" variant="outline" onClick={onClose}>
           {t("wit.compose.cmdk.esc")}
         </Button>
-        <Button type="submit" size="sm">
+        <Button type="submit" size="xs" className="px-2.5">
           {t("wit.compose.cmdk.go")}
         </Button>
       </div>

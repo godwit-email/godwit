@@ -7,7 +7,7 @@ const t = makeT({
   "link.title": "打开这个链接？",
   "link.open": "打开",
   "link.copy": "复制链接",
-  "link.copied": "已复制链接",
+  "link.copied": "链接已复制",
   "common.cancel": "取消",
 });
 
@@ -19,6 +19,44 @@ const md = [
   "<b>bold</b>",
   "[a](javascript:alert(1)) [f](file:///etc) [b](https://ok.org/p) [m](mailto:x@y.z)",
 ].join("\n\n");
+
+describe("answer layout", () => {
+  it("the page size sets the reading leading; tables get the bordered style", async () => {
+    const { container } = render(
+      <Response text={"| a | b |\n|---|---|\n| 1 | 2 |"} size="page" onLink={() => {}} t={t} />,
+    );
+    await screen.findByText("1");
+    expect(container.firstElementChild).toHaveClass("text-md", "leading-[1.75]");
+    // one border, the table's own box: no outer frame around it
+    const table = container.querySelector("table");
+    expect(table?.parentElement).toHaveClass("border", "rounded-lg");
+    expect(container.querySelectorAll(".border")).toHaveLength(1);
+    expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
+  });
+
+  it("[n] opens what cite(n) gives; one it has none for, code and no cite stay text", async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    const cite = vi.fn((n: number) => (n === 1 ? open : undefined));
+    const text = "see [1] and [9], `[1]`";
+    const { unmount } = render(<Response text={text} onLink={() => {}} t={t} cite={cite} />);
+    await user.click(await screen.findByRole("link", { name: "[1]" }));
+    expect(open).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("link")).toHaveLength(1); // not [9], not the code's
+    expect(screen.getByText("[1]", { selector: "code" })).toBeInTheDocument();
+    unmount();
+    render(<Response text={text} onLink={() => {}} t={t} />);
+    await screen.findByText(/see/);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("a model-written #cite- link shows as [n], whatever its text", async () => {
+    const cite = (n: number) => (n === 1 ? () => {} : undefined);
+    render(<Response text="[open your bank](#cite-1)" onLink={() => {}} t={t} cite={cite} />);
+    expect(await screen.findByRole("link", { name: "[1]" })).toBeInTheDocument();
+    expect(screen.queryByText("open your bank")).toBeNull();
+  });
+});
 
 describe("answer hardening", () => {
   it("renders no image, script or raw element; only http(s)/mailto links", async () => {

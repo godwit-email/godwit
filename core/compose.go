@@ -111,16 +111,46 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
 		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTML(orig) + "</blockquote>"
 	}
-	d.HTML += signatureHTML(acc.Signature)
+	cids, err := s.signatureCIDs(ctx, accountID)
+	if err != nil {
+		return Draft{}, err
+	}
+	d.HTML += signatureHTML(acc.Signature, cids)
 	return d, nil
 }
 
-// signatureHTML is the marked signature block that ends a draft body, "" for none.
-func signatureHTML(sig string) string {
+// SignatureHTMLPrefix marks a stored signature as the settings editor's HTML;
+// any other signature (the CLI's, the Local API's, an older one) is plain text.
+const SignatureHTMLPrefix = "<!--godwit:html-->"
+
+// SignatureEditorHTML is sig as safe compose HTML, without the draft marker
+// or the "-- " delimiter: a marked one sanitized (user markers stripped, the
+// images in cids kept), a plain one escaped into a paragraph; "" for none.
+func SignatureEditorHTML(sig string, cids map[string]bool) string {
+	if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
+		return mail.SanitizeDraft(mail.StripMarkers(rest), cids)
+	}
 	if sig == "" {
 		return ""
 	}
-	return `<div data-godwit="signature"><p>-- <br>` + strings.ReplaceAll(html.EscapeString(sig), "\n", "<br>") + "</p></div>"
+	return "<p>" + escapeLines(sig) + "</p>"
+}
+
+func escapeLines(s string) string { return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") }
+
+// signatureHTML is the marked signature block that ends a draft body, "" for
+// none; cids are the account's signature images.
+func signatureHTML(sig string, cids map[string]bool) string {
+	if !strings.HasPrefix(sig, SignatureHTMLPrefix) {
+		if sig == "" {
+			return ""
+		}
+		return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+	}
+	if body := SignatureEditorHTML(sig, cids); body != "" {
+		return `<div data-godwit="signature"><p>-- </p>` + body + "</div>" // the delimiter a plain one has; the body is blocks
+	}
+	return ""
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
@@ -164,10 +194,24 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 // HTML is sanitized for composing (no scripts, handlers or remote resources).
 // Attachments are changed with AddAttachment and RemoveAttachment.
 func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
-	d.HTML = mail.SanitizeCompose(d.HTML) // stored safe, so every read of a draft is safe
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	acc := d.AccountID
+	if d.ID != 0 { // the stored account's images, whatever d says
+		rows, err := s.db.Query(ctx, "SELECT account_id FROM drafts WHERE id = ?", d.ID)
+		if err != nil {
+			return Draft{}, err
+		}
+		if len(rows.Values) > 0 {
+			acc = store.Int(rows.Values[0][0])
+		}
+	}
+	html, err := s.sanitizeDraft(ctx, acc, d.HTML) // stored safe, so every read of a draft is safe
+	if err != nil {
+		return Draft{}, err
+	}
+	d.HTML = html
 	now := time.Now().Unix()
 	if d.ID == 0 {
 		if !draftModes[d.Mode] {
@@ -238,7 +282,10 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), HTML: mail.SanitizeCompose(store.Str(r[8])), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
+	if d.HTML, err = s.sanitizeDraft(ctx, d.AccountID, store.Str(r[8])); err != nil {
+		return Draft{}, err
+	}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
 	if err != nil {
 		return Draft{}, err
@@ -494,7 +541,20 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
+	// Only the draft's own account's images: another's cid was dropped by GetDraft.
+	imgs, err := s.signatureImages(ctx, d.AccountID, true)
+	if err != nil {
+		return err
+	}
+	var related []mail.Attachment
 	total := int64(len(d.HTML))
+	for _, id := range mail.CIDs(d.HTML) {
+		if a, ok := imgs[id]; ok {
+			delete(imgs, id) // each once
+			related = append(related, a)
+			total += int64(a.Size)
+		}
+	}
 	for _, a := range d.Attachments {
 		total += int64(a.Size)
 	}
@@ -506,7 +566,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		return err
 	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,
-		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML}
+		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML, Related: related}
 	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
 		rows, err := s.db.Query(ctx, "SELECT message_id, refs FROM messages WHERE id = ?", d.SourceMessageID)
 		if err != nil {

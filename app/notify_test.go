@@ -21,6 +21,9 @@ func notifyHarness(t *testing.T, set func(*core.Settings)) (*harness, core.Accou
 	var acc core.Account
 	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
 		acc = e.AddAccount(t, "alice@example.com")
+		if err := e.Svc.SyncNow(context.Background(), acc.ID); err != nil { // the first sync is not new mail
+			t.Fatal(err)
+		}
 		if set != nil {
 			st, err := e.Svc.GetSettings(context.Background())
 			if err != nil {

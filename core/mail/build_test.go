@@ -1,9 +1,12 @@
 package mail_test
 
 import (
+	"bytes"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/emersion/go-message"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,4 +58,69 @@ func TestHTMLToText(t *testing.T) {
 	got := mail.HTMLToText(`<p>a &amp; b</p><ul><li>x</li><li>y</li></ul><a href="http://e.com">link</a><br>end`)
 	assert.Equal(t, "a & b\n- x\n- y\nlink (http://e.com)\nend", got)
 	assert.Equal(t, "hi (http://d.com)", mail.HTMLToText(`<a data-href="http://d.com">hi</a>`))
+}
+
+// part is a parsed MIME tree: its media type, Content-ID, and children.
+type part struct {
+	ct, cid string
+	kids    []part
+}
+
+func tree(t *testing.T, e *message.Entity) part {
+	ct, _, err := e.Header.ContentType()
+	require.NoError(t, err)
+	p := part{ct: ct, cid: e.Header.Get("Content-ID")}
+	if mr := e.MultipartReader(); mr != nil {
+		for {
+			k, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			p.kids = append(p.kids, tree(t, k))
+		}
+	}
+	return p
+}
+
+func TestBuildRelatedSignatureImages(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\n0000")
+	o := mail.Outgoing{From: "me@x.com", To: []string{"a@y.com"},
+		HTML: `<p>hi</p><img src="cid:sig-aa@godwit"><img src="cid:sig-zz@godwit">`,
+		Related: []mail.Attachment{
+			{ContentID: "sig-aa@godwit", ContentType: "image/png", Data: png},
+			{ContentID: "sig-unused@godwit", ContentType: "image/png", Data: png},
+		}}
+	alt := part{ct: "multipart/alternative", kids: []part{{ct: "text/plain"}, {ct: "text/html"}}}
+	related := part{ct: "multipart/related", kids: []part{alt, {ct: "image/png", cid: "<sig-aa@godwit>"}}}
+
+	raw, _, err := mail.Build(o, time.Now())
+	require.NoError(t, err)
+	e, err := message.Read(bytes.NewReader(raw))
+	require.NoError(t, err)
+	assert.Equal(t, related, tree(t, e))
+	_, params, err := e.Header.ContentType()
+	require.NoError(t, err)
+	assert.Equal(t, "multipart/alternative", params["type"], "RFC 2387: related names its root's type")
+	p, err := mail.Parse(raw)
+	require.NoError(t, err)
+	assert.Contains(t, p.HTML, `src="cid:sig-aa@godwit"`)
+	assert.NotContains(t, p.HTML, "sig-zz", "a cid that is not the account's is stripped")
+	assert.NotContains(t, string(raw), "sig-unused", "an unreferenced image is not sent")
+
+	o.Attachments = []mail.Attachment{{Filename: "a.txt", ContentType: "text/plain", Data: []byte("x")}}
+	raw, _, err = mail.Build(o, time.Now())
+	require.NoError(t, err)
+	e, err = message.Read(bytes.NewReader(raw))
+	require.NoError(t, err)
+	assert.Equal(t, part{ct: "multipart/mixed", kids: []part{related, {ct: "text/plain"}}}, tree(t, e))
+}
+
+func TestBuildWithoutImagesIsNotRelated(t *testing.T) {
+	raw, _, err := mail.Build(mail.Outgoing{From: "me@x.com", To: []string{"a@y.com"}, HTML: `<p>hi</p><img src="cid:sig-aa@godwit">`}, time.Now())
+	require.NoError(t, err)
+	e, err := message.Read(bytes.NewReader(raw))
+	require.NoError(t, err)
+	assert.Equal(t, part{ct: "multipart/alternative", kids: []part{{ct: "text/plain"}, {ct: "text/html"}}}, tree(t, e))
+	assert.NotContains(t, string(raw), "cid:")
 }

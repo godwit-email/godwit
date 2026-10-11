@@ -1,0 +1,336 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"testing"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/i18n"
+)
+
+// draftsHarness has an account with saved drafts (subject, body "body of
+// <subject>", to bob) and the drafts folder open.
+func draftsHarness(t *testing.T, subjects ...string) (*harness, []core.Draft) {
+	t.Helper()
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+	var out []core.Draft
+	for _, subj := range subjects {
+		d, err := h.env.Svc.NewDraft(context.Background(), accs[0].ID, "new", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.Subject, d.To, d.HTML = subj, []string{"bob@example.com"}, "<p>body of "+subj+"</p>"
+		if d, err = h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, d)
+	}
+	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
+	h.click("草稿")
+	h.see(subjects[0])
+	return h, out
+}
+
+func (h *harness) noCompose() {
+	h.t.Helper()
+	if id, ok := h.lastCompose(); ok {
+		h.t.Fatalf("a compose window opened for draft %d", id)
+	}
+}
+
+func TestDraftSelectShowsPane(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.see("草稿 · alice@example.com")
+	if h.tt.HasText("继续编辑") {
+		t.Fatal("a pane with nothing selected")
+	}
+	h.click("Draft hello")
+	h.see("继续编辑")
+	h.see("删除草稿")
+	h.see("body of Draft hello")
+	h.see("草稿已保存 · " + ds[0].UpdatedAt.In(h.clock.Now().Location()).Format("15:04"))
+	h.see("bob@example.com")
+	h.noCompose()
+}
+
+func TestDraftEditingChipFollowsWindow(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	if h.tt.HasText("编辑中") {
+		t.Fatal("chip without a window")
+	}
+	h.plat.setComposeOpen(ds[0].ID, true)
+	h.advance(1)
+	if h.tt.HasText("编辑中") {
+		t.Fatal("chip before ComposeWindowsChanged")
+	}
+	h.app.ComposeWindowsChanged()
+	h.see("编辑中")
+	h.click("Draft hello")
+	h.see("正在撰写窗口里编辑")
+	h.plat.setComposeOpen(ds[0].ID, false)
+	h.app.ComposeWindowsChanged()
+	h.until("the chip gone", func() bool { return !h.tt.HasText("编辑中") && !h.tt.HasText("正在撰写窗口里编辑") })
+}
+
+// A window opened since the pane drew refuses the send at click, and says why.
+func TestDraftPaneSendRefusedSays(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true)
+	h.post(func() { h.app.mail.sendDraft(ds[0]) }) // the click, before the pane redraws
+	h.until("the toast beside the button's tip", func() bool {
+		n := 0
+		for _, s := range h.tt.Texts() {
+			if s == "正在撰写窗口里编辑，先在那里发送" {
+				n++
+			}
+		}
+		return n == 2
+	})
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a window owns it")
+	}
+}
+
+// A draft deleted as empty when its window closed leaves the pane.
+func TestEmptyDraftClosedLeavesPane(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello", "Draft bye")
+	h.click("Draft bye")
+	h.see("继续编辑")
+	if err := h.env.Svc.DeleteDraft(context.Background(), ds[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	h.app.ComposeWindowsChanged()
+	h.until("the pane gone", func() bool { return !h.tt.HasText("继续编辑") && !h.tt.HasText("Draft bye") })
+	h.see("Draft hello")
+}
+
+func TestDraftPaneDeleteClosesWindow(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.click("删除草稿")
+	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
+	h.until("the draft gone", func() bool { return !h.tt.HasText("Draft hello") })
+}
+
+func TestDraftDoubleClickOpensCompose(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.noCompose()
+	h.click("Draft hello")
+	if id := h.composeOpened(0); id != ds[0].ID {
+		t.Fatalf("opened %d, want %d", id, ds[0].ID)
+	}
+}
+
+func (h *harness) opens(id int64) int {
+	return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != fmt.Sprint("OpenCompose ", id) }))
+}
+
+// Enter on the chosen row (not on a button) opens it.
+func TestDraftEnterOpensCompose(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.noCompose()
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("Enter opens it", func() bool { return h.opens(ds[0].ID) == 1 })
+}
+
+func TestDraftContinueOpensCompose(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.click("继续编辑")
+	h.until("opened", func() bool { return h.opens(ds[0].ID) == 1 })
+}
+
+// The selection clears when its draft leaves the list.
+func TestDraftSelectionClearsWhenGone(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.see("继续编辑")
+	if err := h.env.Svc.DeleteDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	h.app.ComposeWindowsChanged()
+	h.until("cleared", func() bool { return h.app.mail.draftSel == 0 })
+}
+
+// TestDraftPaneLabelsNoClip: each label fits its column at font 16 in English, on one line and ends before its value.
+func TestDraftPaneLabelsNoClip(t *testing.T) {
+	h, _ := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.see("继续编辑")
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	i18n.SetLanguage("en")
+	h.setSettings(func(s *core.Settings) { s.FontSize = 16 })
+	for _, label := range []string{"To", "Subject", "From"} {
+		h.see(label)
+	}
+	// The column never shrinks (Shrink(0)), so a label can only fail by wrapping:
+	// every label must be one line, as tall as the one-word "To".
+	one, ok := h.tt.Find("To")
+	if !ok {
+		t.Fatal("no To label")
+	}
+	for _, label := range []string{"Subject", "From"} {
+		lab, ok := h.tt.Find(label)
+		if !ok {
+			t.Fatalf("%s: no box", label)
+		}
+		if lab.H > one.H {
+			t.Errorf("%s label wraps: height %v, one line %v", label, lab.H, one.H)
+		}
+	}
+}
+
+func TestDraftPaneShowsSignatureImages(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg=="
+	sig := core.SignatureHTMLPrefix + `<p>Alice</p><img src="data:image/png;base64,` + png + `">`
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), accs[0].ID, core.AccountPatch{Signature: &sig}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := h.env.Svc.NewDraft(context.Background(), accs[0].ID, "new", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Subject = "With logo"
+	if d, err = h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
+	h.click("草稿")
+	h.see("With logo")
+	for _, b := range h.app.pages[PageMail].(*mailPage).draftView[d.ID].doc.Blocks {
+		if b.Image != nil && b.Image.Src == "data:image/png;base64,"+png {
+			return
+		}
+	}
+	t.Fatal("the pane does not show the signature image")
+}
+
+func (h *harness) draftGone(id int64) {
+	h.t.Helper()
+	h.until("the draft queued", func() bool {
+		_, err := h.env.Svc.GetDraft(context.Background(), id)
+		return err != nil
+	})
+}
+
+func TestDraftPaneSend(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.click("发送")
+	h.draftGone(ds[0].ID)
+	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
+	h.until("the pane gone", func() bool { return !h.tt.HasText("继续编辑") })
+}
+
+func TestDraftPaneSendWarnsThenAcknowledged(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("发送前检查：check before sending: Draft hello")
+	h.see("来自插件 send-warn（message.beforeSend）")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent before the warning was acknowledged")
+	}
+	h.click("仍然发送")
+	h.draftGone(ds[0].ID)
+	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
+}
+
+func TestDraftPaneSendWarningCancelled(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("仍然发送")
+	h.click("取消")
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("a cancelled send went out")
+	}
+}
+
+// Leaving the drafts view drops the warnings dialog: back there, it is gone.
+func TestDraftPaneSendWarningLeft(t *testing.T) {
+	h, _ := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-warn")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("仍然发送")
+	drafts := h.app.route
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
+	h.drain()
+	h.tt.Frame()
+	h.post(func() { h.app.navigate(drafts) })
+	h.click("Draft hello")
+	h.see("继续编辑")
+	if h.tt.HasText("仍然发送") {
+		t.Fatal("the warnings dialog came back")
+	}
+}
+
+func TestDraftPaneSendBlocked(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.env.InstallPlugin(t, "send-block")
+	h.click("Draft hello")
+	h.click("发送")
+	h.see("阻止了发送")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("a blocked draft was sent")
+	}
+}
+
+// A draft saved elsewhere since the pane loaded is not sent.
+func TestDraftPaneSendStaleReloads(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	d := ds[0]
+	d.Subject = "Edited elsewhere"
+	if _, err := h.env.Svc.SaveDraft(context.Background(), d); err != nil {
+		t.Fatal(err)
+	}
+	h.click("发送")
+	h.see("Edited elsewhere")
+	if _, err := h.env.Svc.GetDraft(context.Background(), d.ID); err != nil {
+		t.Fatal("a stale draft was sent")
+	}
+}
+
+func TestDraftPaneSendDisabledWhileEditing(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true)
+	h.app.ComposeWindowsChanged()
+	h.click("Draft hello")
+	h.see("正在撰写窗口里编辑，先在那里发送")
+	h.click("正在撰写窗口里编辑，先在那里发送")
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a compose window has it")
+	}
+}
+
+// A window opened after the pane was drawn still refuses the send.
+func TestDraftPaneSendRechecksAtClick(t *testing.T) {
+	h, ds := draftsHarness(t, "Draft hello")
+	h.click("Draft hello")
+	h.plat.setComposeOpen(ds[0].ID, true) // no ComposeWindowsChanged: the pane is stale
+	h.click("发送")
+	h.see("编辑中") // the refused click refreshed the pane
+	if _, err := h.env.Svc.GetDraft(context.Background(), ds[0].ID); err != nil {
+		t.Fatal("sent while a compose window has it")
+	}
+}

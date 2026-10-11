@@ -43,3 +43,25 @@ func Untrusted(source, content string, suspect bool) string {
 func SuspectInjection(text string) bool {
 	return injectionHint.MatchString(strings.ReplaceAll(text, "\r", ""))
 }
+
+// InjectionQuote is the text from SuspectInjection's first match to the end of its line,
+// its whitespace collapsed, at most quoteRunes runes ("…" when cut); "" when text is not suspect.
+// It is mail text: the UI shows it as plain text only.
+func InjectionQuote(text string) string {
+	text = strings.ReplaceAll(text, "\r", "")
+	loc := injectionHint.FindStringIndex(text)
+	if loc == nil {
+		return ""
+	}
+	end := len(text)
+	if i := strings.IndexByte(text[loc[1]:], '\n'); i >= 0 {
+		end = loc[1] + i
+	}
+	r := []rune(strings.Join(strings.Fields(text[loc[0]:end]), " "))
+	if len(r) > quoteRunes {
+		return string(r[:quoteRunes-1]) + "…"
+	}
+	return string(r)
+}
+
+const quoteRunes = 40

@@ -109,10 +109,13 @@ type Event struct {
 // Request is one run. State is the previous run's opaque state (empty = new
 // conversation); Responses answer the calls that interrupted it.
 type Request struct {
-	Model     ResolvedModel
-	System    string
-	State     []byte
-	Prompt    string
+	Model  ResolvedModel
+	System string
+	State  []byte
+	Prompt string
+	// Context goes to the model before Prompt, in the same user turn, and
+	// stays in the state; Messages never show it (quoted mail, for example).
+	Context   string
 	Tools     []ToolSpec
 	Responses []ToolResult
 	MaxTurns  int

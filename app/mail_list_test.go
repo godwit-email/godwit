@@ -131,7 +131,7 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	}
 	// Folders by role: inbox, sent, archive, trash (the fake server has no drafts or junk).
 	var ys []float32
-	for _, name := range []string{"收件箱", "已发送", "归档", "废纸篓"} {
+	for _, name := range []string{"收件箱", "已发送", "归档", "已删除"} {
 		r, ok := h.tt.Find(name)
 		if !ok {
 			t.Fatalf("no folder %s: %q", name, h.tt.Texts())
@@ -198,8 +198,9 @@ func TestListTime(t *testing.T) {
 		{now.Add(-time.Hour), "08:00"},
 		{now.Add(-10 * time.Hour), "昨天"},
 		{now.AddDate(0, 0, -4), "周一"},
-		{now.AddDate(0, 0, -5), "10/4"}, // last week's Sunday
-		{now.AddDate(0, 0, -7), "10/2"},
+		{now.AddDate(0, 0, -5), "10/04"}, // last week's Sunday
+		{now.AddDate(0, 0, -7), "10/02"},
+		{now.AddDate(0, 0, -11), "9/28"},
 	} {
 		if got := listTime(now, c.t); got != c.want {
 			t.Errorf("listTime(%v) = %q, want %q", c.t, got, c.want)
@@ -270,9 +271,13 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	}
 	h.scrollLoad(100)
 	h.scrollLoad(120)
-	h.app.mail.main.list.ScrollTo(60, ui.Start)
-	h.until("row 60 on top", func() bool { top, _ := h.app.mail.main.list.Visible(); return top == 60 })
-	anchor := h.items()[60].ID
+	// the list counts date headings too: row 60 is the entry after its own
+	es := h.app.mail.entries(h.items())
+	at := slices.IndexFunc(es, func(e listEntry) bool { return e.head == "" && e.row == 60 })
+	h.app.mail.main.list.ScrollTo(at, ui.Start)
+	h.until("row 60 on top", func() bool { top, _ := h.app.mail.main.list.Visible(); return top > at-4 && top <= at }) // the pinned heading may cover a line
+	top0, _ := h.app.mail.main.list.Visible()
+	anchor := h.items()[rowOf(es, top0)].ID
 
 	// The next refresh stops once it has read the list, until the new mail is in.
 	entered, release := make(chan struct{}), make(chan struct{})
@@ -318,7 +323,8 @@ func TestRefreshKeepsLoadedRange(t *testing.T) {
 	if h.app.route.ThreadID != first.ID || !h.app.mail.main.sel.Has(first.key()) || h.app.mail.main.sel.Len() != 1 {
 		t.Fatalf("the choice moved: route %+v", h.app.route)
 	}
-	if top, _ := h.app.mail.main.list.Visible(); h.items()[top].ID != anchor {
+	top, _ := h.app.mail.main.list.Visible()
+	if top = rowOf(h.app.mail.entries(h.items()), top); h.items()[top].ID != anchor {
 		t.Fatalf("the anchor moved: row %d is %q", top, h.items()[top].Subject)
 	}
 }
@@ -353,7 +359,7 @@ func TestSearch(t *testing.T) {
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.tt.Key(ui.Cmd, ui.KeyF)
-	h.see("只搜索已同步的邮件")
+	h.see("只搜索已同步到本机的邮件")
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("the search result", func() bool { return h.app.mail.searched && len(h.app.mail.results) == 1 })
@@ -362,11 +368,33 @@ func TestSearch(t *testing.T) {
 	}
 	h.tt.Key(0, ui.KeyEscape)
 	h.see("Lunch")
-	if h.app.mail.searched || h.tt.HasText("只搜索已同步的邮件") {
+	if h.app.mail.searched || h.tt.HasText("只搜索已同步到本机的邮件") {
 		t.Fatal("Escape did not leave the search")
 	}
 	h.click("搜索")
-	h.see("只搜索已同步的邮件")
+	h.see("只搜索已同步到本机的邮件")
+}
+
+// The empty search says which range was searched: the account's, the one
+// all searched accounts share, else none; all mail needs no parenthesis.
+func TestSearchedDescFollowsRange(t *testing.T) {
+	p := &mailPage{a: &App{accounts: []core.Account{{ID: 1, Sync: core.SyncRange{Limit: 2000}}}}}
+	if got := p.searchedDesc(); got != "只搜索了已同步到本机的邮件（每个文件夹最近 2000 封）。换个关键词，或者让 Wit 帮你找。" {
+		t.Fatalf("2000: %q", got)
+	}
+	p.a.accounts = append(p.a.accounts, core.Account{ID: 2, Sync: core.SyncRange{Months: 3}})
+	plain := "只搜索了已同步到本机的邮件。换个关键词，或者让 Wit 帮你找。"
+	if got := p.searchedDesc(); got != plain {
+		t.Fatalf("mixed: %q", got)
+	}
+	p.sf.accSet, p.sf.acc = true, 2
+	if got := p.searchedDesc(); got != "只搜索了已同步到本机的邮件（最近 3 个月）。换个关键词，或者让 Wit 帮你找。" {
+		t.Fatalf("months: %q", got)
+	}
+	p.a.accounts[1].Sync = core.SyncRange{}
+	if got := p.searchedDesc(); got != plain {
+		t.Fatalf("all: %q", got)
+	}
 }
 
 func TestKeyboardArchiveDelete(t *testing.T) {
@@ -397,6 +425,46 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	if n := h.countIn(h.folderOf(accs[0], "trash")); n != 1 {
 		t.Fatalf("%d in Trash", n)
 	}
+}
+
+// The row menu offers read or unread, star or unstar, by the row's state,
+// as S and U toggle.
+func TestRowMenuByState(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(h.clock.Now(), 1)))
+	h.syncNow(accs[0])
+	h.waitMail("the thread", func() bool { return len(h.items()) == 1 })
+	choose := func(want, not, item string) {
+		t.Helper()
+		if err := h.tt.RightClick("first"); err != nil {
+			t.Fatal(err)
+		}
+		menu := strings.Join(h.tt.Menu(), "|")
+		if !strings.Contains(menu, want) || strings.Contains(menu, not) {
+			t.Fatalf("menu %q: want %q, not %q", menu, want, not)
+		}
+		if err := h.tt.ChooseMenuItem(item); err != nil {
+			t.Fatal(err)
+		}
+		h.tt.Frame()
+	}
+	choose("标为已读|加星", "标为未读", "标为已读")
+	h.waitMail("read", func() bool { return h.items()[0].Unread == 0 })
+	choose("标为未读|加星", "取消星标", "加星")
+	h.waitMail("starred", func() bool { return h.items()[0].Flagged == 1 })
+	choose("取消星标", "加星", "取消星标")
+	h.waitMail("unstarred", func() bool { return h.items()[0].Flagged == 0 })
+	choose("标为未读", "标为已读", "标为未读")
+	h.waitMail("unread", func() bool { return h.items()[0].Unread == 1 })
+	h.click("first") // reads it; the list has the focus
+	h.waitMail("read by the reader", func() bool { return h.items()[0].Unread == 0 })
+	h.click("first")
+	h.tt.Key(0, ui.KeyS)
+	h.waitMail("starred by S", func() bool { return h.items()[0].Flagged == 1 })
+	h.tt.Key(0, ui.KeyS)
+	h.waitMail("unstarred by S", func() bool { return h.items()[0].Flagged == 0 })
+	h.tt.Key(0, ui.KeyU)
+	h.waitMail("unread by U", func() bool { return h.items()[0].Unread == 1 })
 }
 
 func TestBatchAcrossAccounts(t *testing.T) {
@@ -468,6 +536,7 @@ func TestDraftsListRoute(t *testing.T) {
 	h.tt.Frame()
 	h.until("the draft deleted", func() bool { return !h.tt.HasText("Draft bye") })
 	h.click("Draft hello")
+	h.click("继续编辑")
 	if id := h.composeOpened(0); id != keep.ID {
 		t.Fatalf("opened draft %d, want %d", id, keep.ID)
 	}
@@ -494,7 +563,10 @@ func TestRowUnreadCount(t *testing.T) {
 	}
 	h.waitMail("two unread of three", func() bool { return h.items()[0].Unread == 2 })
 	h.until("the dot labeled 2 unread", func() bool { _, ok := h.tt.Find("2 未读"); return ok })
-	h.see("3")
+	// The row no longer shows the thread's size (07a4d40); a bare see("3") matched the sidebar's stale unread count.
+	if n := h.items()[0].Count; n != 3 {
+		t.Fatalf("the row holds %d messages, want 3", n)
+	}
 }
 
 func TestSearchDropsStaleResults(t *testing.T) {
@@ -571,7 +643,8 @@ func TestSelectionKeepsToMode(t *testing.T) {
 	h.typeText("note")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("both found", func() bool { return p.searched && len(p.results) == 2 })
-	if got := p.chosen(p.shown()); len(got) != 0 {
+	// only the mail open stays chosen, by its own key, not the thread list's
+	if got := p.chosen(p.shown()); len(got) != 1 || got[0].Subject != "note alpha" {
 		t.Fatalf("search results chosen by the thread list's choice: %+v", got)
 	}
 	h.tt.Key(0, ui.KeyEscape)
@@ -635,6 +708,7 @@ func TestLocalDraftsEntry(t *testing.T) {
 	h.click("草稿")
 	h.see("local only")
 	h.click("local only")
+	h.click("继续编辑")
 	if id := h.composeOpened(0); id != d.ID {
 		t.Fatalf("opened draft %d, want %d", id, d.ID)
 	}
@@ -660,5 +734,75 @@ func TestAccountFoldPersists(t *testing.T) {
 	h.click("alice@example.com")
 	if n := count(); n != 2 {
 		t.Fatalf("%d 已发送 folders after unfolding alice, want 2", n)
+	}
+}
+
+// An empty folder, synced, has nothing older: no error row, and it is done.
+func TestLoadOlderEmptyFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.syncNow(accs[0])
+	f := h.folderOf(accs[0], "trash")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] || h.app.mail.older.err != nil })
+	if err := h.app.mail.older.err; err != nil {
+		t.Fatalf("older error %v in an empty folder", err)
+	}
+	h.advance(refreshEvery)
+	if slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载") }) {
+		t.Fatalf("an error row: %q", h.tt.Texts())
+	}
+}
+
+// Leaving the Mail page cancels a fetch of older mail under way.
+func TestLoadOlderCancelledLeavingMail(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	cancelled := false
+	h.post(func() {
+		o := &h.app.mail.older
+		o.busy, o.cancel = true, func() { cancelled = true }
+		h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+	})
+	h.drain()
+	if !cancelled || h.app.mail.older.busy {
+		t.Fatalf("still fetching after leaving: cancelled %v, %+v", cancelled, h.app.mail.older)
+	}
+}
+
+// A folder list at its local end fetches older mail past the sync range, with
+// an inline error and 重试, and stops once the server has nothing older.
+func TestLoadOlderInFolder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	r := core.SyncRange{Limit: 1}
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), acc.ID, core.AccountPatch{Sync: &r}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		h.put(acc, "Archive", coretest.Msg("bob@example.com", "alice@example.com", fmt.Sprintf("Old %d", i), "x"))
+	}
+	h.syncNow(acc)
+	f := h.folderOf(acc, "archive")
+	h.env.IMAP(acc.ID).SetPassword("x")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.waitMail("the inline error", func() bool {
+		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载更早的邮件") })
+	})
+	if len(h.items()) != 1 {
+		t.Fatalf("items %d", len(h.items()))
+	}
+	h.env.IMAP(acc.ID).SetPassword("secret")
+	h.click("重试")
+	h.waitMail("the older mail", func() bool { return len(h.items()) == 3 })
+	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] && !h.app.mail.older.busy })
+	h.advance(refreshEvery)
+	if h.tt.HasText("正在加载更早的邮件…") || slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载") }) {
+		t.Fatalf("a row after the end: %q", h.tt.Texts())
+	}
+
+	// Another view drops a fetch under way; the unified inbox never fetches.
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
+	h.advance(refreshEvery)
+	if h.app.mail.older.busy || h.app.mail.olderFolder() != 0 {
+		t.Fatalf("unified inbox fetches: %+v", h.app.mail.older)
 	}
 }

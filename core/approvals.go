@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -51,6 +52,105 @@ type Approval struct {
 	Args                      json.RawMessage
 	Summary, State, Error     string
 	Destinations              []string
+	// SessionAllow: 本次对话都允许 can approve it (ResolveApprovalForConversation).
+	SessionAllow bool
+}
+
+// ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
+var ErrNotGrantable = errors.New("this tool cannot be allowed for the whole conversation")
+
+// sessionTools are the tools 本次对话都允许 can grant: built-in ones that
+// write only locally, with no destinations. Never an external (plugin or
+// MCP) tool, and never a send: no tool sends. A grant is keyed by
+// conversation, tool and extension binding (empty for built-ins), not by
+// model: it still holds after the conversation switches models.
+var sessionTools = []string{"create_draft"}
+
+// decisionSession is the audit decision of a call a session grant approved.
+const decisionSession = "auto:session"
+
+// grantKey is a session grant: a tool, as bound, in one conversation. Grants
+// live in memory (本次): they end with the app or the conversation.
+type grantKey struct {
+	conv          int64
+	tool, binding string
+}
+
+func sessionGrantable(a approvalRow) bool {
+	return slices.Contains(sessionTools, a.Tool) && a.source == gateway.SourceWit && len(a.Destinations) == 0
+}
+
+func (a approvalRow) grant() grantKey {
+	return grantKey{conv: a.ConversationID, tool: a.Tool, binding: a.binding}
+}
+
+// granted reports whether a session grant approves pending approval id.
+func (s *Service) granted(ctx context.Context, id int64) bool {
+	a, err := s.approvalRow(ctx, id)
+	if err != nil || !sessionGrantable(a) {
+		return false
+	}
+	_, ok := s.sessionGrants.Load(a.grant())
+	return ok
+}
+
+// dropGrants ends conversation conv's session grants.
+func (s *Service) dropGrants(conv int64) {
+	s.sessionGrants.Range(func(k, _ any) bool {
+		if k.(grantKey).conv == conv {
+			s.sessionGrants.Delete(k)
+		}
+		return true
+	})
+}
+
+// ResolveApprovalForConversation accepts pending approval id and allows its
+// tool for the rest of its conversation (本次对话都允许): the run's other
+// pending calls of the tool are accepted too, and later ones as soon as they
+// come (applyInitial), audited auto:session. The tool and the conversation
+// come from the approval. Only sessionTools qualify, else ErrNotGrantable.
+func (s *Service) ResolveApprovalForConversation(ctx context.Context, id int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	a, err := s.approvalRow(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !sessionGrantable(a) {
+		return ErrNotGrantable
+	}
+	if a.State != "pending" {
+		return ErrInvalidState
+	}
+	// Granted before the decision: the run it resumes may call the tool again at once.
+	// A click that loses to another leaves the grant unless the approval
+	// ended rejected: on a double click the winner, which found the grant
+	// stored, relies on it.
+	_, had := s.sessionGrants.LoadOrStore(a.grant(), true)
+	if err := s.decide(ctx, id, true, nil, true); err != nil {
+		if errors.Is(err, ErrInvalidState) && !had {
+			if cur, rerr := s.approvalRow(ctx, id); rerr != nil || cur.State == "rejected" {
+				s.sessionGrants.Delete(a.grant())
+			}
+		}
+		return s.cleanError(err)
+	}
+	others, err := s.approvalRows(ctx, "a.run_id = ? AND a.state = 'pending' AND a.tool = ?", a.RunID, a.Tool)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, o := range others {
+		if sessionGrantable(o) && o.grant() == a.grant() {
+			if err := s.decideAs(ctx, o.ID, true, nil, true, decisionSession); !errors.Is(err, ErrInvalidState) {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return s.cleanError(errors.Join(errs...))
 }
 
 // ErrStaleApproval: what an external approval was bound to (plugin code,
@@ -149,6 +249,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 		if a.State != "done" {
 			a.Error = a.result
 		}
+		a.SessionAllow = sessionGrantable(a)
 		out = append(out, a)
 	}
 	return out, nil
@@ -215,6 +316,11 @@ func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) er
 // set (an edited proposal) instead of the recorded arguments. With resume
 // false the caller resumes the run (resumeRun) afterwards.
 func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.RawMessage, resume bool) error {
+	return s.decideAs(ctx, id, accept, args, resume, "executed")
+}
+
+// decideAs is decide auditing an accepted call that is applied as decision.
+func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json.RawMessage, resume bool, decision string) error {
 	a, err := s.approvalRow(ctx, id)
 	if err != nil {
 		return err
@@ -247,7 +353,7 @@ func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.R
 		return errors.New("simulated crash")
 	}
 	ctx = context.WithoutCancel(ctx) // claimed: always reach an end state
-	err = s.execute(ctx, a, ex, args)
+	err = s.execute(ctx, a, ex, args, decision)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 	if resume {
 		err = errors.Join(err, s.resumeRun(ctx, a.RunID))
@@ -268,8 +374,9 @@ func (s *Service) resumeRun(ctx context.Context, runID int64) error {
 }
 
 // execute ends a claimed approval: rejected when ex is nil, else applied with
-// args, if set, in place of the recorded arguments (which done then records).
-func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args json.RawMessage) error {
+// args, if set, in place of the recorded arguments (which done then records),
+// audited as decision.
+func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args json.RawMessage, decision string) error {
 	var edited any // NULL keeps the recorded arguments
 	finish := func(state, result string, undo any, decision string, stmts ...sqlite.Statement) error {
 		if state != "done" {
@@ -317,7 +424,7 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		stmts = append([]sqlite.Statement{{SQL: "UPDATE approvals SET state = NULL WHERE id = ? AND (SELECT revision FROM drafts WHERE id = ?) IS NOT ?",
 			Args: []any{a.ID, a.targetID, a.targetVersion}}}, stmts...)
 	}
-	if err := finish("done", string(res), undoText, "executed", stmts...); err != nil {
+	if err := finish("done", string(res), undoText, decision, stmts...); err != nil {
 		return errors.Join(err, finish("failed", msgNotSaved, nil, "failed"))
 	}
 	return nil

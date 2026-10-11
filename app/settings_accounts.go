@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,12 +24,12 @@ const accountSaveDelay = 600 * time.Millisecond
 // edit keeps what the user typed; otherwise it follows the account, though
 // not to a snapshot read before its last confirmed save.
 type accountForm struct {
-	name, alias, sig string
-	limit, okLimit   int          // the sync range shown, and the account's
-	ok               core.Account // the values last confirmed
-	okAt             uint64       // a.loadGen when ok was confirmed; older loads are stale
-	edits            [3]fieldEdit // name, alias, signature
-	limitBusy        int          // sync-range writes in flight
+	name, alias  string
+	sync, okSync core.SyncRange // the sync range shown, and the account's
+	ok           core.Account   // the values last confirmed
+	okAt         uint64         // a.loadGen when ok was confirmed; older loads are stale
+	edits        [2]fieldEdit   // name, alias
+	syncBusy     int            // sync-range writes in flight
 }
 
 // fieldEdit is one text field's debounce: typing restarts it, and only the
@@ -39,20 +40,15 @@ type fieldEdit struct {
 	stop    func()
 }
 
-func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias, &f.sig}[i] }
+func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias}[i] }
 
-func accountField(acc core.Account, i int) string {
-	return [...]string{acc.Name, acc.Alias, acc.Signature}[i]
-}
+func accountField(acc core.Account, i int) string { return [...]string{acc.Name, acc.Alias}[i] }
 
 func fieldPatch(i int, v string) core.AccountPatch {
-	switch i {
-	case 0:
+	if i == 0 {
 		return core.AccountPatch{Name: &v}
-	case 1:
-		return core.AccountPatch{Alias: &v}
 	}
-	return core.AccountPatch{Signature: &v}
+	return core.AccountPatch{Alias: &v}
 }
 
 type serverForm struct {
@@ -63,7 +59,7 @@ type serverForm struct {
 func (p *settingsPage) form(acc core.Account) *accountForm {
 	f := p.forms[acc.ID]
 	if f == nil {
-		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sig: acc.Signature, limit: acc.SyncLimit, okLimit: acc.SyncLimit}
+		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sync: acc.Sync, okSync: acc.Sync}
 		p.forms[acc.ID] = f
 	}
 	if p.a.accountsGen > f.okAt {
@@ -74,8 +70,8 @@ func (p *settingsPage) form(acc core.Account) *accountForm {
 		}
 		f.ok = acc
 	}
-	if f.limitBusy == 0 && acc.SyncLimit != f.okLimit {
-		f.limit, f.okLimit = acc.SyncLimit, acc.SyncLimit
+	if f.syncBusy == 0 && acc.Sync != f.okSync {
+		f.sync, f.okSync = acc.Sync, acc.Sync
 	}
 	return f
 }
@@ -115,6 +111,74 @@ func (p *settingsPage) commitEdits() {
 			}
 		}
 	}
+}
+
+// signatureFlushWait is how long closing waits for the signature page's save.
+const signatureFlushWait = 2 * time.Second
+
+// errSignatureUnsaved is why closing asks when the signature page did not save.
+var errSignatureUnsaved = errors.New("the signature was not saved")
+
+// signature has the signature page show account id: made at the first
+// account shown, switched outside the frame (making a web view may run
+// the event loop).
+func (p *settingsPage) signature(id int64) {
+	if p.sigAcc == id || p.sigPosted || p.sigErr != nil {
+		return
+	}
+	p.sigPosted = true
+	p.a.onUI(func() {
+		p.sigPosted = false
+		if p.sigView == nil {
+			if p.sigView, p.sigShow, p.sigFlush, p.sigClose, p.sigErr = p.a.plat.NewSignatureView(); p.sigErr != nil {
+				p.a.logf("the signature page: %v", p.sigErr)
+				return
+			}
+		}
+		p.sigShow(id)
+		p.sigAcc = id
+	})
+}
+
+// flushSignature has the signature page save its edit, then calls then
+// with errSignatureUnsaved if it failed or did not answer within
+// signatureFlushWait. A save that succeeds after that calls then(nil)
+// again: a close that asked only for it goes on.
+func (p *settingsPage) flushSignature(then func(error)) {
+	if p.sigFlush == nil {
+		then(nil)
+		return
+	}
+	timedOut, answered := false, false
+	stop := p.a.after(signatureFlushWait, func() {
+		timedOut = true
+		then(errSignatureUnsaved)
+	})
+	p.sigFlush(func(ok bool) {
+		if answered {
+			return
+		}
+		answered = true
+		switch {
+		case !timedOut:
+			stop()
+			if !ok {
+				then(errSignatureUnsaved)
+			} else {
+				then(nil)
+			}
+		case ok:
+			then(nil)
+		}
+	})
+}
+
+// closeSignature closes the signature page, if made (the App closing).
+func (p *settingsPage) closeSignature() {
+	if p.sigClose != nil {
+		p.sigClose()
+	}
+	p.sigView, p.sigShow, p.sigFlush, p.sigClose = nil, nil, nil, nil
 }
 
 // saveField writes field i as it is now, after the account's earlier
@@ -186,12 +250,12 @@ func (p *settingsPage) makeDefault(id int64) {
 	p.patch(id, core.AccountPatch{IsDefault: &on}, nil)
 }
 
-func (p *settingsPage) setLimit(id int64, f *accountForm) {
-	lim := f.limit
-	f.limitBusy++
-	p.patch(id, core.AccountPatch{SyncLimit: &lim}, func(err error) {
-		if f.limitBusy--; err != nil && f.limitBusy == 0 {
-			f.limit = f.okLimit
+func (p *settingsPage) setSync(id int64, f *accountForm) {
+	r := f.sync
+	f.syncBusy++
+	p.patch(id, core.AccountPatch{Sync: &r}, func(err error) {
+		if f.syncBusy--; err != nil && f.syncBusy == 0 {
+			f.sync = f.okSync
 		}
 	})
 }
@@ -290,108 +354,114 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	f := p.form(acc)
 	prov := accountProvider(a, acc)
 
-	ui.Row(c).Gap(th.Space(3.5)).Children(func() {
-		mark(c, prov, theme.MarkLg)
+	ui.Row(c).Gap(th.Space(4)).Children(func() {
+		mark(c, prov, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Text(c, acc.Email).FontSize(t.Text.X2l).FontWeight(600).SingleLine().Shrink(1)
+			kit.Text(c, acc.Email, t.Text.Display).FontWeight(600).SingleLine()
+			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				meta := providerName(prov)
+				if acc.Folders > 0 { // 0 until the first sync
+					meta += " · " + i18n.Tf("settings.account.folders", acc.Folders)
+				}
+				if acc.StatusDetail != "" {
+					meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
+				}
+				ui.Text(c, meta).TextColor(t.Muted)
 				if acc.IsDefault {
 					kit.Badge(c, i18n.T("settings.account.default"))
 				}
+				text, bg, fg := cmpTr("settings.account.status."+acc.Status, acc.Status), t.WarningBg, t.WarningText
+				if acc.Status == "ok" {
+					bg, fg = t.SuccessBg, t.SuccessText
+					if at, ok := a.syncedAtBy[acc.ID]; ok {
+						text = i18n.Tf("shell.sync.synced", a.ago(at))
+					}
+				}
+				ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(bg).TextColor(fg).Children(func() {
+					kit.Text(c, text, t.Text.Sm)
+				})
 			})
-			meta := providerName(prov)
-			if acc.StatusDetail != "" {
-				meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
-			}
-			ui.Text(c, meta).TextColor(t.Muted)
-		})
-		pill := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.WarningBg).TextColor(t.WarningText)
-		if acc.Status == "ok" {
-			pill.Background(t.Success.Alpha(0.1)).TextColor(t.Success)
-		}
-		pill.Children(func() {
-			ui.Text(c, cmpTr("settings.account.status."+acc.Status, acc.Status)).FontSize(t.Text.Sm)
 		})
 	})
 
 	if acc.Status == "reauth_required" {
-		kit.Alert(c, kit.Warning, i18n.T("settings.account.reauth"), func() { p.authButton(c, acc, prov, true) })
+		msg := i18n.T("settings.account.reauth.unknown")
+		if at, ok := a.syncedAtBy[acc.ID]; ok {
+			msg = i18n.Tf("settings.account.reauth", a.ago(at))
+		}
+		kit.Alert(c, kit.Warning, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
-	ui.Column(c).Children(func() {
-		settingsSection(c, i18n.T("settings.account.basic"), "", func() {
-			ui.Field(c, i18n.T("settings.account.name"), func() {
-				if kit.Input(c, &f.name, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f, 0)
-				}
-			})
-			ui.Field(c, i18n.T("settings.account.alias"), func() {
-				if kit.Input(c, &f.alias, kit.InputOpts{}).Changed() {
-					p.edited(acc.ID, f, 1)
-				}
-			})
+	row := func(label, desc string, control func()) func() {
+		return func() { settingRow(c, label, desc, control) }
+	}
+	input := func(label, desc string, v *string, i int) func() {
+		return row(label, desc, func() {
+			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label).Changed() {
+				p.edited(acc.ID, f, i)
+			}
+		})
+	}
+	settingsSection(c, i18n.T("settings.account.basic"), "",
+		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, 0),
+		input(i18n.T("settings.account.alias"), "", &f.alias, 1),
+		func() {
 			on := acc.IsDefault
-			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), "").Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
+			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help")).Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
 				p.makeDefault(acc.ID)
 			}
 		})
-		settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
-			if kit.TextArea(c, &f.sig, kit.InputOpts{}).Height(th.Space(21)).Label(i18n.T("settings.account.signature.label")).Changed() {
-				p.edited(acc.ID, f, 2)
-			}
-		})
-		settingsSection(c, i18n.T("settings.account.sync"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if st := p.syncState(acc); st != "" {
-					ui.Text(c, st)
-				}
-				if acc.Status == "ok" {
-					ui.Text(c, i18n.Tf("mail.unread_count", a.unread[acc.ID])).TextColor(t.Muted)
-				}
-				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: a.syncing[acc.ID]}).
-					OnClick(func() { p.syncNow(acc.ID) })
-			})
-			ui.Field(c, i18n.T("settings.account.sync.range"), func() {
-				if kit.Select(c, &f.limit, limitOptions(acc.SyncLimit)).Changed() {
-					p.setLimit(acc.ID, f)
-				}
-			})
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				usage := "…"
-				if n, ok := p.usage[acc.ID]; ok {
-					usage = formatBytes(n)
-				}
-				ui.Text(c, i18n.Tf("settings.account.usage", usage)).TextColor(t.Muted)
-				ui.Spacer(c)
-				kit.Button(c, i18n.T("settings.account.clear_cache"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
-					OnClick(func() { p.openDialog("cache", acc) })
-			})
-		})
-		settingsSection(c, i18n.T("settings.account.login"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Text(c, p.authText(acc, prov))
-				ui.Spacer(c)
-				p.authButton(c, acc, prov, false)
-			})
-			ui.Column(c).Gap(th.Space(1)).Children(func() {
-				server := func(proto, host string, port int, sec core.Security) {
-					ui.Row(c).Gap(th.Space(3)).Children(func() {
-						ui.Text(c, proto).Width(th.Space(12)).TextColor(t.Muted)
-						ui.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec))).Shrink(1)
-					})
-				}
-				server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity)
-				server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity)
-			})
-			kit.Button(c, i18n.T("settings.account.edit_servers"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).
-				OnClick(func() { p.openDialog("servers", acc) })
-		})
-		settingsSection(c, i18n.T("settings.account.remove"), i18n.T("settings.account.remove.help"), func() {
-			kit.Button(c, i18n.Tf("settings.account.remove.button", acc.Email), kit.ButtonOpts{Variant: kit.Destructive}).AlignSelf(ui.Start).
-				OnClick(func() { p.openDialog("remove", acc) })
-		})
+	settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
+		p.signature(acc.ID)
+		switch {
+		case p.sigErr != nil:
+			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
+		case p.sigView != nil:
+			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
+		default:
+			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
+		}
 	})
+	desc := p.syncState(acc)
+	if acc.Status == "ok" {
+		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")
+	}
+	usage := "…"
+	if n, ok := p.usage[acc.ID]; ok {
+		usage = formatBytes(n)
+	}
+	settingsSection(c, i18n.T("settings.account.sync"), "",
+		row(i18n.T("settings.account.sync.status"), desc, func() {
+			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
+		}),
+		row(i18n.T("settings.account.sync.range"), "", func() {
+			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync)).Changed() {
+				p.setSync(acc.ID, f)
+			}
+		}),
+		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
+			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, usage).TextColor(t.Muted)
+				settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
+			})
+		}))
+	p.mailboxSection(c, acc.ID)
+	server := func(proto, host string, port int, sec core.Security) func() {
+		return row(proto, "", func() {
+			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+		})
+	}
+	settingsSection(c, i18n.T("settings.account.login"), "",
+		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
+		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity),
+		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity),
+		row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
+			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+		}))
+	settingsSection(c, i18n.T("settings.account.remove"), "",
+		row(i18n.T("settings.account.remove.row"), strings.TrimRight(i18n.T("settings.account.remove.help"), "。."), func() {
+			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.account.remove.aria", acc.Email)).OnClick(func() { p.openDialog("remove", acc) })
+		}))
 }
 
 // cmpTr is key's message, or fallback when the catalog has none.
@@ -402,13 +472,31 @@ func cmpTr(key, fallback string) string {
 	return fallback
 }
 
-func limitOptions(cur int) []kit.Option[int] {
-	var opts []kit.Option[int]
-	for _, n := range syncLimits {
-		opts = append(opts, kit.Option[int]{Value: n, Label: i18n.T("onboarding.sync." + strconv.Itoa(n))})
+// syncRanges are the ranges offered: 2000 per folder, 3 months and all.
+var syncRanges = []core.SyncRange{{Limit: 2000}, {Months: 3}, {}}
+
+// rangeLabel names r as settings lists it (2000 without （推荐）).
+func rangeLabel(r core.SyncRange) string {
+	switch {
+	case r.Limit == 2000:
+		return i18n.T("settings.account.sync.2000")
+	case r.Limit > 0: // set outside the app: shown as it is
+		return i18n.Tf("settings.account.sync.limit", r.Limit)
+	case r.Months > 0:
+		return i18n.Tf("settings.account.sync.months", r.Months)
 	}
-	if cur > 0 && !slices.Contains(syncLimits, cur) {
-		opts = append(opts, kit.Option[int]{Value: cur, Label: i18n.Tf("settings.account.sync.limit", cur)})
+	return i18n.T("settings.account.sync.all")
+}
+
+// rangeOptions are syncRanges, labelled as settings lists them, and also
+// the range of cur when it is none of them.
+func rangeOptions(cur ...core.SyncRange) []kit.Option[core.SyncRange] {
+	var opts []kit.Option[core.SyncRange]
+	for _, r := range slices.Concat(syncRanges, cur) {
+		if slices.ContainsFunc(opts, func(o kit.Option[core.SyncRange]) bool { return o.Value == r }) {
+			continue
+		}
+		opts = append(opts, kit.Option[core.SyncRange]{Value: r, Label: rangeLabel(r)})
 	}
 	return opts
 }
@@ -422,8 +510,9 @@ func (p *settingsPage) syncState(acc core.Account) string {
 		return i18n.T("shell.sync.syncing")
 	case a.syncErr[acc.ID] != "":
 		return i18n.T("shell.sync.failed")
-	case !a.syncedAt.IsZero():
-		return a.syncedAgo()
+	}
+	if at, ok := a.syncedAtBy[acc.ID]; ok {
+		return i18n.Tf("shell.sync.synced", a.ago(at))
 	}
 	return ""
 }
@@ -442,7 +531,12 @@ func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Provider, banner bool) {
 	o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	if acc.AuthType != "oauth" {
-		kit.Button(c, i18n.Tf("settings.account.login.update", secretName(prov)), o).OnClick(func() { p.openDialog("password", acc) })
+		text, open := i18n.Tf("settings.account.login.update", secretName(prov)), func() { p.openDialog("password", acc) }
+		if banner {
+			kit.AlertAction(c, kit.Warning, text, open)
+		} else {
+			kit.Button(c, text, o).OnClick(open)
+		}
 		return
 	}
 	label := i18n.T("onboarding.relogin")
@@ -451,6 +545,10 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 	}
 	if p.reauth[acc.ID] {
 		label, o.Disabled = i18n.T("settings.account.reauth.waiting"), true
+	}
+	if banner && !o.Disabled {
+		kit.AlertAction(c, kit.Warning, label, func() { p.startReauth(acc) })
+		return
 	}
 	kit.Button(c, label, o).OnClick(func() { p.startReauth(acc) })
 }
@@ -501,13 +599,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	}
 	a := p.a
 	t := theme.Of(c)
-	var acc core.Account
-	for _, x := range a.accounts {
-		if x.ID == p.dlgAcc {
-			acc = x
-		}
-	}
-	if acc.ID == 0 {
+	acc, ok := a.accountByID(p.dlgAcc)
+	if !ok {
 		p.closeDialog()
 		return
 	}
@@ -597,4 +690,139 @@ func (p *settingsPage) serversForm(c *ui.Context) {
 	server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
 	server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
 	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })
+}
+
+// mailbox is an account's 邮箱行为 as read: its folders (roles resolved),
+// and the selects' values, which follow them unless a write is in flight.
+type mailbox struct {
+	folders []core.Folder
+	roles   [5]int64 // per mailboxRoles: the folder holding it, 0 none
+	purge   [2]int   // per mailsync.PurgeRoles: days
+	blocked [2]bool
+	busy    int // writes in flight
+}
+
+// mailboxRoles are the role rows in the design's order.
+var mailboxRoles = []string{"drafts", "sent", "junk", "trash", "archive"}
+
+func (p *settingsPage) readMailbox(id int64) {
+	a := p.a
+	var fs []core.Folder
+	var ps map[string]core.Purge
+	a.query(func(ctx context.Context) (err error) {
+		if fs, err = a.svc.ListFolders(ctx, id); err != nil {
+			return err
+		}
+		ps, err = a.svc.Purges(ctx, id)
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		b := p.boxes[id]
+		if b == nil {
+			b = &mailbox{}
+			p.boxes[id] = b
+		}
+		if b.busy > 0 {
+			return // the write's own read follows
+		}
+		b.folders = fs
+		for i, r := range mailboxRoles {
+			b.roles[i] = 0
+			if j := slices.IndexFunc(fs, func(f core.Folder) bool { return f.Role == r }); j >= 0 {
+				b.roles[i] = fs[j].ID
+			}
+		}
+		for i, r := range []string{"junk", "trash"} {
+			b.purge[i], b.blocked[i] = ps[r].Days, ps[r].Blocked
+		}
+	})
+}
+
+// writeMailbox runs a 邮箱行为 change, then reads the section again; a
+// failure shows as a toast and the selects return to what core has.
+func (p *settingsPage) writeMailbox(id int64, b *mailbox, fn func(ctx context.Context) error) {
+	a := p.a
+	b.busy++
+	a.do(fn, func(err error) {
+		b.busy--
+		a.toastErr(err)
+		p.readMailbox(id)
+	})
+}
+
+// roleOptions are the role's choices as the design lists them: the folder
+// holding it first (or 不使用 when none does), then the other folders but
+// INBOX and those holding another role, which core refuses (a folder holds
+// one role); archive also offers 不使用 once it has a folder.
+func roleOptions(b *mailbox, i int) []kit.Option[int64] {
+	cur, role := b.roles[i], mailboxRoles[i]
+	none := kit.Option[int64]{Value: 0, Label: i18n.T("settings.account.mailbox.none")}
+	var opts []kit.Option[int64]
+	if cur == 0 {
+		opts = append(opts, none)
+	}
+	for _, f := range b.folders {
+		if f.ID == cur {
+			opts = slices.Insert(opts, 0, kit.Option[int64]{Value: f.ID, Label: f.Name})
+			continue
+		}
+		if f.Role != "" && f.Role != role {
+			continue
+		}
+		opts = append(opts, kit.Option[int64]{Value: f.ID, Label: f.Name})
+	}
+	if cur != 0 && role == "archive" {
+		opts = append(opts, none)
+	}
+	return opts
+}
+
+func purgeOptions() []kit.Option[int] {
+	var opts []kit.Option[int]
+	for _, d := range core.PurgeDays {
+		opts = append(opts, kit.Option[int]{Value: d, Label: i18n.T("settings.account.purge." + strconv.Itoa(d))})
+	}
+	return opts
+}
+
+// mailboxSection is 邮箱行为: a select per role, and the junk and trash purges
+// under their roles.
+func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
+	b := p.boxes[id]
+	if b == nil {
+		b = &mailbox{}
+	}
+	role := func(i int) func() {
+		r := mailboxRoles[i]
+		label := i18n.T("mail.folder." + r)
+		return func() {
+			settingRow(c, label, cmpTr("settings.account.mailbox."+r+".help", ""), func() {
+				if settingSelect(c, label, &b.roles[i], roleOptions(b, i)).Changed() {
+					folder := b.roles[i]
+					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetRoleFolder(ctx, id, r, folder) })
+				}
+			})
+		}
+	}
+	purge := func(i int) func() {
+		r := []string{"junk", "trash"}[i]
+		label := i18n.T("settings.account.purge." + r)
+		desc := i18n.T("settings.account.purge." + r + ".help")
+		if b.blocked[i] && b.purge[i] > 0 {
+			desc = i18n.T("settings.account.purge.blocked")
+		}
+		return func() {
+			settingRow(c, label, desc, func() {
+				if settingSelect(c, label, &b.purge[i], purgeOptions()).Changed() {
+					days := b.purge[i]
+					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetPurge(ctx, id, r, days) })
+				}
+			})
+		}
+	}
+	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"),
+		role(0), role(1), role(2), purge(0), role(3), purge(1), role(4))
 }

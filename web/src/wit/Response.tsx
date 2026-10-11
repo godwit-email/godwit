@@ -1,4 +1,5 @@
-import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
+import { cn } from "cn";
+import { type KeyboardEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type Components,
@@ -21,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
 
-type Node = { type: string; value?: string; children?: Node[] };
+type Node = { type: string; value?: string; url?: string; children?: Node[] };
 /** Raw HTML in the Markdown shows as its text: no element is ever made of it. */
 const htmlAsText = () => (tree: Node) => {
   const walk = (n: Node) => {
@@ -30,11 +31,33 @@ const htmlAsText = () => (tree: Node) => {
   };
   walk(tree);
 };
+const CITE = "#cite-";
+/** Each "[n]" in the text (not in a link or code) becomes a link to CITE+n: a source marker. */
+const citeLinks = () => (tree: Node) => {
+  const walk = (n: Node) => {
+    if (n.type === "link" || n.type === "linkReference" || !n.children) return;
+    n.children = n.children.flatMap((c): Node[] => {
+      if (c.type !== "text") {
+        walk(c);
+        return [c];
+      }
+      return (c.value ?? "")
+        .split(/(\[\d+\])/)
+        .filter(Boolean)
+        .map((v) =>
+          /^\[\d+\]$/.test(v)
+            ? { type: "link", url: CITE + v.slice(1, -1), children: [{ type: "text", value: v }] }
+            : { type: "text", value: v },
+        );
+    });
+  };
+  walk(tree);
+};
 
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, citeLinks];
 type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];
 type Schema = { protocols?: Record<string, string[]>; tagNames?: string[] };
 type Plugin = Extract<Pluggable, (...args: never[]) => unknown>;
@@ -78,23 +101,68 @@ function Address({ url }: { url: string }) {
   );
 }
 
-/** An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink). */
+/**
+ * An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink); a
+ * source marker [n] opens what cite(n) gives, if anything (else it is text).
+ */
 export function Response({
   text,
   onLink,
   t,
   streaming = false,
+  size = "panel",
+  cite,
 }: {
   text: string;
   onLink(url: string): void;
   t: T;
   streaming?: boolean;
+  /** "page": the Wit page's reading leading (1.75). */
+  size?: "panel" | "page";
+  cite?(n: number): (() => void) | undefined;
 }) {
   const [link, setLink] = useState<string>();
+  const citeRef = useRef(cite);
+  citeRef.current = cite;
   const components = useMemo<Components>(
     () => ({
       img: () => null,
+      // One border: the table's, rounded, its header on the sidebar colour, rows ruled.
+      table: ({ children }: { children?: ReactNode }) => (
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full border-collapse">{children}</table>
+        </div>
+      ),
+      th: ({ children }: { children?: ReactNode }) => (
+        <th className="bg-sidebar px-3 py-2 text-left font-medium">{children}</th>
+      ),
+      td: ({ children }: { children?: ReactNode }) => <td className="px-3 py-2">{children}</td>,
+      tr: ({ children }: { children?: ReactNode }) => (
+        <tr className="border-muted not-first:border-t">{children}</tr>
+      ),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        if (href?.startsWith(CITE)) {
+          const n = Number(href.slice(CITE.length));
+          const open = citeRef.current?.(n);
+          if (!open) return <span>{children}</span>;
+          // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
+          return (
+            // biome-ignore lint/a11y/useSemanticElements: no href; it opens the cited mail in the app
+            <span
+              role="link"
+              tabIndex={0}
+              className="cursor-pointer underline"
+              onClick={open}
+              onKeyDown={(e: KeyboardEvent) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                open();
+              }}
+            >
+              [{n}]
+            </span>
+          );
+        }
         const url = safeLink(href);
         if (!url) return <span>{children}</span>;
         // No href: nothing opens the address but the confirmation (no middle-click, no "open link").
@@ -121,7 +189,7 @@ export function Response({
   return (
     <>
       <Streamdown
-        className="text-base"
+        className={cn("space-y-2.5 text-md", size === "page" && "leading-[1.75]")}
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={remarkPlugins}

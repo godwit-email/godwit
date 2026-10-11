@@ -50,7 +50,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			ui.Row(c).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5)).Gap(th.Space(1)).Children(func() {
-				ui.Text(c, i18n.T("shell.rail.mail")).FontSize(t.Text.Xl).FontWeight(600)
+				kit.Text(c, i18n.T("shell.rail.mail"), t.Text.Xl).FontWeight(600)
 				ui.Spacer(c)
 				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { p.searchOpen = true })
@@ -84,13 +84,13 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 // navItem is a view in the sidebar, with its icon and count; indent is in spacing steps.
 func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int, indent float32) {
 	t := theme.Of(c)
-	on := p.a.route.Page == PageMail && p.a.route.View == v
+	on := p.a.route.Page == PageMail && p.a.route.View == v && !p.searched // results: no view is shown
 	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, icon, on)
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
 		if count > 0 {
-			ui.Text(c, strconv.Itoa(count)).FontSize(t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(count), t.Text.Sm).TextColor(t.Muted)
 		}
 	})
 }

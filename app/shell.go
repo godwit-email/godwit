@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"maps"
 	"math"
+	"runtime"
 	"slices"
 	"strconv"
 	"time"
@@ -24,6 +25,19 @@ type pageView interface {
 	Content(c *ui.Context)
 	Title() (title, sub string)
 	refresh(hints []events.Event)
+}
+
+// goos is a var so a test can pose as another platform.
+var goos = runtime.GOOS
+
+// chromeMetrics is the top bar's height and the panel's corner radius. Windows
+// draws the design's 40 px strip with 8 px corners; elsewhere the bar is at
+// least TopBarHeight (the window controls only take room beside our bar).
+func chromeMetrics(titleH float32, t theme.Tokens) (barH, radius float32) {
+	if goos == "windows" && titleH > 0 {
+		return titleH, t.Radius.Lg
+	}
+	return max(theme.TopBarHeight, titleH), t.Radius.Xl
 }
 
 const (
@@ -63,6 +77,9 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
+	if r.Page != PageMail {
+		a.mail.stopOlder() // older mail is fetched only while the list shows
+	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
@@ -79,6 +96,8 @@ func (a *App) onEvent(ev events.Event) {
 		delete(a.syncing, ev.AccountID)
 		delete(a.syncErr, ev.AccountID)
 		a.syncedAt = a.clock.Now()
+		a.syncedAtBy[ev.AccountID] = a.syncedAt
+		a.mail.older.notYet = 0
 		a.tick()
 	case events.SyncFailed:
 		delete(a.syncing, ev.AccountID)
@@ -151,10 +170,10 @@ func (a *App) View(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyBracketRight) {
 		a.forward()
 	}
-	barH := max(theme.TopBarHeight, c.TitleBar().Height) // the window controls only take room beside our bar
+	barH, _ := chromeMetrics(c.TitleBar().Height, theme.Of(c))
 	switch {
 	case !a.loaded:
-		ui.Box(c).Height(barH).FillWidth().DragWindow()
+		bareBar(c, barH)
 		if a.loadErr != nil {
 			ui.Column(c).Grow(1).FillWidth().Center().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, humanize(a.loadErr)).TextColor(t.Muted)
@@ -162,7 +181,7 @@ func (a *App) View(c *ui.Context) {
 			})
 		}
 	case a.route.Page == PageOnboarding:
-		ui.Box(c).Height(barH).FillWidth().DragWindow()
+		bareBar(c, barH)
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
 		a.titleBar(c, barH)
@@ -180,7 +199,8 @@ func (a *App) View(c *ui.Context) {
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last: c.SetTheme, which kit.Split calls mid-frame, resets the root's
 	// background to the theme's, which would cover the window's material.
-	c.Root().Background(root)
+	// On the root, which overlays (menus, dialogs, Select lists, toasts) attach to.
+	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Body))
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
@@ -189,12 +209,17 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
 	padL := bar.Left + th.Space(2)
-	ui.Row(c).Height(h).FillWidth().Padding(0, bar.Right+th.Space(4), 0, padL).DragWindow().Children(func() {
+	padR := bar.Right + th.Space(4)
+	if goos == "windows" {
+		padR = bar.Right + th.Space(3) // the design's 150 = 3 caption buttons of 46 + 12
+	}
+	ui.Row(c).Height(h).FillWidth().Padding(0, padR, 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
 			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
 		}
 		lead.Children(func() {
+			winCaption(c)
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 			label := i18n.T("shell.sidebar.collapse")
 			if a.sidebarHidden {
@@ -211,12 +236,30 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 				kit.Separator(c, true).Margin(0, th.Space(2), 0, 0)
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
-					ui.Text(c, sub).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
 				}
 			})
 		}
 		ui.Spacer(c)
 		a.syncStatus(c)
+	})
+}
+
+// bareBar is the title bar of a window with no page chrome: it drags the
+// window and, on Windows, names it.
+func bareBar(c *ui.Context, h float32) {
+	ui.Row(c).Height(h).FillWidth().Padding(0, 0, 0, c.TitleBar().Left+c.Theme().Space(2)).DragWindow().Children(func() { winCaption(c) })
+}
+
+// winCaption is Windows' app icon and name at the title bar's start.
+func winCaption(c *ui.Context) {
+	if goos != "windows" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(2)).Padding(0, th.Space(2), 0, th.Space(1)).Children(func() {
+		ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+		kit.Text(c, "Godwit", t.Text.Sm).SingleLine()
 	})
 }
 
@@ -255,14 +298,17 @@ func (a *App) syncStatus(c *ui.Context) {
 	}
 }
 
-func (a *App) syncedAgo() string {
-	switch d := a.clock.Now().Sub(a.syncedAt); {
+func (a *App) syncedAgo() string { return i18n.Tf("shell.sync.synced", a.ago(a.syncedAt)) }
+
+// ago is how long before now t was: 刚刚, 5 分钟前, 3 小时前.
+func (a *App) ago(t time.Time) string {
+	switch d := a.clock.Now().Sub(t); {
 	case d < time.Minute:
-		return i18n.T("shell.sync.done")
+		return i18n.T("shell.sync.just_now")
 	case d < time.Hour:
-		return i18n.Tf("shell.sync.synced", i18n.Plural("shell.sync.minutes_ago", int(d.Minutes())))
+		return i18n.Plural("shell.sync.minutes_ago", int(d.Minutes()))
 	default:
-		return i18n.Tf("shell.sync.synced", i18n.Plural("shell.sync.hours_ago", int(d.Hours())))
+		return i18n.Plural("shell.sync.hours_ago", int(d.Hours()))
 	}
 }
 
@@ -289,7 +335,8 @@ func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
 func (a *App) panel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(t.Radius.Xl).Clip().Background(t.Background).
+	_, rad := chromeMetrics(c.TitleBar().Height, t)
+	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(rad).Clip().Background(t.Background).
 		Border(theme.Hairline, t.Outline)
 	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
@@ -301,7 +348,7 @@ func (a *App) panel(c *ui.Context) {
 		split := kit.Split(c, &a.sidebarW, func() {
 			// Rounded itself, inside the panel's outline: the GPU renderer does not
 			// round the panel's clip, and the material shows past a square corner.
-			r := t.Radius.Xl - theme.Hairline
+			r := rad - theme.Hairline
 			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(r, 0, 0, r).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
 		}, content).Grow(1)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)

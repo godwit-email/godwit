@@ -150,7 +150,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	sentFolder := func() (string, error) {
 		if !sentLooked {
 			var err error
-			if sent, err = mailsync.SentFolder(c); err != nil {
+			if sent, err = mailsync.SentFolder(ctx, s.db, c, accountID); err != nil {
 				return "", err
 			}
 			sentLooked = true

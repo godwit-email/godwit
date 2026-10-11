@@ -2,6 +2,7 @@ import { BlockquotePlugin, BoldPlugin, ItalicPlugin } from "@platejs/basic-nodes
 import { LinkPlugin } from "@platejs/link/react";
 import { ListPlugin, TaskListPlugin } from "@platejs/list-classic/react";
 import { type AnyPluginConfig, createSlatePlugin, NodeApi } from "platejs";
+import { createPlatePlugin } from "platejs/react";
 import { deserialize, safeHref, toHTML } from "./html";
 
 /**
@@ -10,30 +11,44 @@ import { deserialize, safeHref, toHTML } from "./html";
  * HTML takes fromHTML's path (inert parse, loaders stripped); when that yields nothing, the plain
  * text goes in as paragraphs. Files are not taken.
  */
-const SafePastePlugin = createSlatePlugin({ key: "safePaste" }).overrideEditor(({ editor }) => ({
-  transforms: {
-    insertData(data: DataTransfer) {
-      let html = data.getData("text/html");
-      const fragment = data.getData("application/x-slate-fragment");
-      if (fragment) {
-        try {
-          html = toHTML(JSON.parse(decodeURIComponent(atob(fragment))));
-        } catch {}
-      }
-      const nodes = html ? deserialize(editor, html) : [];
-      if (nodes.some((n) => NodeApi.string(n) !== "")) {
-        editor.tf.insertFragment(nodes);
-        return;
-      }
-      const text = data.getData("text/plain");
-      if (!text) return;
-      text.split(/\r\n|\r|\n/).forEach((line, i) => {
-        if (i) editor.tf.insertBreak();
-        if (line) editor.tf.insertText(line);
-      });
+export const SafePastePlugin = createSlatePlugin({ key: "safePaste" }).overrideEditor(
+  ({ editor }) => ({
+    transforms: {
+      insertData(data: DataTransfer) {
+        let html = data.getData("text/html");
+        const fragment = data.getData("application/x-slate-fragment");
+        if (fragment) {
+          try {
+            html = toHTML(JSON.parse(decodeURIComponent(atob(fragment))));
+          } catch {}
+        }
+        const nodes = html ? deserialize(editor, html) : [];
+        if (nodes.some((n) => NodeApi.string(n) !== "")) {
+          editor.tf.insertFragment(nodes);
+          return;
+        }
+        const text = data.getData("text/plain");
+        if (!text) return;
+        text.split(/\r\n|\r|\n/).forEach((line, i) => {
+          if (i) editor.tf.insertBreak();
+          if (line) editor.tf.insertText(line);
+        });
+      },
     },
-  },
-}));
+  }),
+);
+
+/** Links of the forms safeHref accepts only. */
+export const linkPlugin = LinkPlugin.configure({
+  render: { as: "a" },
+  options: { allowedSchemes: ["http", "https", "mailto"], isUrl: (u: string) => !!safeHref(u) },
+});
+
+/** ⌘K's selection marked while its popover has focus (Editor's `held` decoration); never saved. */
+export const HeldPlugin = createPlatePlugin({
+  key: "held",
+  node: { isLeaf: true, props: { className: "bg-border" } },
+});
 
 /**
  * The native compose page's formats and nothing else: paragraph (core), bold, italic, link,
@@ -42,11 +57,9 @@ const SafePastePlugin = createSlatePlugin({ key: "safePaste" }).overrideEditor((
 export const plugins: AnyPluginConfig[] = [
   BoldPlugin,
   ItalicPlugin,
-  LinkPlugin.configure({
-    render: { as: "a" },
-    options: { allowedSchemes: ["http", "https", "mailto"], isUrl: (u: string) => !!safeHref(u) },
-  }),
+  linkPlugin,
   ListPlugin.configurePlugin(TaskListPlugin, { enabled: false }),
   BlockquotePlugin,
   SafePastePlugin,
+  HeldPlugin,
 ];

@@ -1,6 +1,7 @@
 package mail_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/mail"
@@ -93,4 +94,28 @@ func TestImageMapAreaLinksNotNavigable(t *testing.T) {
 	assert.Contains(t, safe, `data-href="https://x"`)
 	assert.NotContains(t, safe, ` href=`)
 	assert.NotContains(t, safe, `javascript:`)
+}
+
+func TestSanitizeDraftKeepsKnownSignatureImages(t *testing.T) {
+	known := map[string]bool{"sig-aa@godwit": true}
+	in := `<p>x</p><img src="cid:sig-aa@godwit"><img src="cid:sig-bb@godwit"><img src="cid:other"><img src="data:image/png;base64,AAAA"><img src="https://t.example/p">`
+	safe := mail.SanitizeDraft(in, known)
+	assert.Contains(t, safe, `src="cid:sig-aa@godwit"`)
+	assert.Equal(t, 1, strings.Count(safe, "src="), safe)
+	assert.Contains(t, mail.SanitizeDraft(safe, known), `src="cid:sig-aa@godwit"`, "kept on every save")
+	assert.NotContains(t, mail.SanitizeCompose(in), "src=", "no set: every cid dropped")
+}
+
+func TestImageSources(t *testing.T) {
+	in := `<p>a</p><img src="cid:sig-aa@godwit"><img src="cid:sig-bb@godwit">`
+	assert.Equal(t, []string{"sig-aa@godwit", "sig-bb@godwit"}, mail.CIDs(in))
+	out := mail.ReplaceImages(in, func(src string) string {
+		if src == "cid:sig-aa@godwit" {
+			return "data:image/png;base64,AA"
+		}
+		return ""
+	})
+	assert.Contains(t, out, `src="data:image/png;base64,AA"`)
+	assert.Equal(t, 1, strings.Count(out, "src="), out)
+	assert.Contains(t, out, "<p>a</p>")
 }

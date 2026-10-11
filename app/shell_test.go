@@ -244,9 +244,10 @@ func TestTitleBarHeight(t *testing.T) {
 	h, _ := withAccount(t)
 	for _, bar := range []ui.TitleBar{{Height: 28, Left: 78}, {Height: 40, Right: 138}} {
 		h.tt.SetTitleBar(bar)
+		barH, _ := chromeMetrics(bar.Height, theme.Light()) // 44 here, the strip's own height on Windows
 		r, ok := h.tt.Find("后退")
-		if !ok || r.Y+r.H/2 != 22 {
-			t.Errorf("bar %+v: back button at %+v, want centered in a 44-high bar", bar, r)
+		if !ok || r.Y+r.H/2 != barH/2 {
+			t.Errorf("bar %+v: back button at %+v, want centered in a %v-high bar", bar, r, barH)
 		}
 	}
 }
@@ -339,5 +340,22 @@ func TestVibrancyShowsThroughTopBar(t *testing.T) {
 	img := h.tt.Image()
 	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 { // the top bar's middle, above its text
 		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
+	}
+}
+
+func TestWindowsChromeRadius(t *testing.T) {
+	tok := theme.Light()
+	for _, tc := range []struct {
+		goos   string
+		barH   float32
+		radius float32
+	}{{"windows", 40, tok.Radius.Lg}, {"darwin", 44, tok.Radius.Xl}, {"linux", 44, tok.Radius.Xl}} {
+		old := goos
+		goos = tc.goos
+		bar, r := chromeMetrics(40, tok)
+		goos = old
+		if bar != tc.barH || r != tc.radius {
+			t.Errorf("%s: bar %v radius %v, want %v %v", tc.goos, bar, r, tc.barH, tc.radius)
+		}
 	}
 }

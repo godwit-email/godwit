@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/mail"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -21,24 +24,25 @@ import (
 )
 
 const (
-	pageSize = 50
-	maxPage  = 200 // the Service's largest page
+	pageSize    = 50
+	maxPage     = 200 // the Service's largest page
+	searchLimit = 100 // the most results a search reads: a full answer may have more
 )
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
 type mailItem struct {
-	ID                    int64
-	Thread                bool
-	Who, Subject, Snippet string
-	Date                  time.Time
-	Count, Unread         int
-	Attach                bool
-	Msg                   core.MessageSummary // a message row's own summary
+	ID                     int64
+	Thread                 bool
+	Who, Subject, Snippet  string
+	Date                   time.Time
+	Count, Unread, Flagged int
+	Attach                 bool
+	Msg                    core.MessageSummary // a message row's own summary
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
 	return mailItem{ID: t.ID, Thread: true, Who: strings.Join(t.Participants, ", "), Subject: t.Subject, Snippet: t.Snippet,
-		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Attach: t.HasAttachments}
+		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Flagged: t.Flagged, Attach: t.HasAttachments}
 }
 
 func messageItem(m core.MessageSummary) mailItem {
@@ -46,6 +50,9 @@ func messageItem(m core.MessageSummary) mailItem {
 		Count: 1, Attach: m.HasAttachments, Msg: m}
 	if !slices.Contains(m.Flags, `\Seen`) {
 		it.Unread = 1
+	}
+	if slices.Contains(m.Flags, `\Flagged`) {
+		it.Flagged = 1
 	}
 	return it
 }
@@ -72,6 +79,7 @@ type mailPage struct {
 	loading bool   // a page or a refresh is in flight: one at a time
 	stalled bool   // the last page failed: no more pages until a refresh
 	gen     uint64 // bumped per reload; older list results are dropped
+	older   olderLoad
 
 	main   listSel // the list's choice and place
 	found  listSel // the search results', apart: they are other rows
@@ -81,11 +89,16 @@ type mailPage struct {
 	outbox    []outboxEntry           // every account's
 	drafts    []core.Draft            // the drafts folder's account's, when it shows
 	draftList ui.ListState
-	accOpen   map[int64]*bool // account groups unfolded in the sidebar, by account
+	draftSel  int64               // the draft the pane shows; 0 for none
+	draftView map[int64]draftInfo // by draft, made when the drafts load
+	sending   draftSend           // the pane's send in flight, or awaiting warnings' acknowledgement
+	accOpen   map[int64]*bool     // account groups unfolded in the sidebar, by account
 
 	searchOpen, searched bool
 	query                string
 	results              []mailItem
+	hlQuery              string // the query the results answer: what they highlight
+	sf                   searchFilters
 	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
 
 	reader *reader // the thread or message the route names
@@ -145,6 +158,8 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 		return svc.Move(ctx, ids, folder)
 	case "delete":
 		return svc.Delete(ctx, ids)
+	case "junk":
+		return svc.MoveToRole(ctx, ids, "junk")
 	}
 	return fmt.Errorf("unknown mail action %q", op)
 }
@@ -169,9 +184,11 @@ func (p *mailPage) reload() {
 	want, toEnd := len(p.items), p.cursor == "" && len(p.items) > 0
 	if reset {
 		p.view, p.items, p.cursor, p.stalled = v, nil, "", false
+		p.stopOlder()
 		p.main.reset()
 		p.closeSearch()
-		p.draftList = ui.ListState{}
+		p.draftList, p.draftSel = ui.ListState{}, 0
+		p.sending.ask = false // a warnings dialog does not outlive its view
 		want, toEnd = 0, false
 	}
 	if p.searched {
@@ -214,6 +231,11 @@ func (p *mailPage) reload() {
 		case v.Unified == "outbox" || v == (core.View{}):
 		case isDrafts:
 			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
+			for i := range drafts { // shown, never saved: signature images as data: (richtext's only kind)
+				if err == nil {
+					drafts[i].HTML, err = a.svc.InlineSignatureImages(ctx, drafts[i].AccountID, drafts[i].HTML)
+				}
+			}
 		default:
 			items, cursor, err = fetchItems(ctx, a.svc, v, threads, "", want, toEnd)
 		}
@@ -235,6 +257,7 @@ func (p *mailPage) reload() {
 		}
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.items, p.cursor, p.stalled = items, cursor, false
+		p.setDrafts()
 	})
 }
 
@@ -352,13 +375,19 @@ func (p *mailPage) chosen(rows []mailItem) []mailItem {
 			out = append(out, it)
 		}
 	}
-	if len(out) == 0 && l.cur >= 0 && l.cur < len(rows) {
-		out = append(out, rows[l.cur])
+	if i := rowOf(p.entries(rows), l.cur); len(out) == 0 && i >= 0 {
+		out = append(out, rows[i])
 	}
 	return out
 }
 
 func (p *mailPage) folder(id int64) (core.Folder, bool) { return findFolder(p.folders, id) }
+
+// inJunk reports whether the view is a junk folder: 移到垃圾邮件 is not offered there.
+func (p *mailPage) inJunk() bool {
+	f, ok := p.folder(p.view.FolderID)
+	return ok && f.Role == "junk"
+}
 
 // localDrafts is the drafts entry of an account whose server has no drafts
 // folder: drafts are local, so every account has one.
@@ -437,7 +466,7 @@ func (p *mailPage) Title() (string, string) {
 }
 
 // listTime is a row's time: HH:mm today, then yesterday, a weekday within
-// this calendar week (from Monday), else M/D.
+// this calendar week (from Monday), else M/DD.
 func listTime(now, t time.Time) string {
 	t = t.In(now.Location())
 	y, m, d := now.Date()
@@ -450,15 +479,15 @@ func listTime(now, t time.Time) string {
 	case !t.Before(today.AddDate(0, 0, -(int(now.Weekday())+6)%7)): // this week, from Monday
 		return i18n.T(fmt.Sprintf("mail.weekday.%d", t.Weekday()))
 	}
-	return fmt.Sprintf("%d/%d", t.Month(), t.Day())
+	return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
 }
 
 // Content is the list column and the reader beside it.
 func (p *mailPage) Content(c *ui.Context) {
 	t := theme.Of(c)
+	_, isDrafts := draftsOf(p.folders, p.view)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
-			_, isDrafts := draftsOf(p.folders, p.view)
 			switch {
 			case p.view.Unified == "outbox":
 				p.outboxView(c)
@@ -468,20 +497,48 @@ func (p *mailPage) Content(c *ui.Context) {
 				p.listView(c)
 			}
 		})
-		p.reader.view(c)
+		if isDrafts {
+			p.draftPane(c)
+		} else {
+			p.reader.view(c)
+		}
 	})
 }
 
-func (p *mailPage) listHeader(c *ui.Context) {
+// listHeader is the search box, or the first date group's heading (the
+// list carries the later ones) with the all/unread tabs.
+func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
-		ui.Column(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(1.5)).Children(func() {
-			in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder")}).AutoFocus()
-			if in.Submitted() {
-				p.runSearch()
+		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
+			// the design's box is 32 inside its border (a content-box label)
+			box := ui.Row(c).Height(th.Space(8.5)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
+				Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background)
+			if box.FocusWithin() { // the row is the box, so it carries the ring
+				box.Border(theme.Hairline, t.Ring).Shadow(0, 0, 0, theme.RingWidth, th.Focus)
 			}
-			ui.Text(c, i18n.T("mail.search.hint")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			box.Children(func() {
+				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)
+				if in.Submitted() {
+					p.runSearch()
+				}
+				if p.query != "" {
+					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						Size(th.Space(6), th.Space(6)).TextColor(t.Muted).OnClick(p.clearSearch)
+				}
+			})
+			p.filterChips(c)
+			kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted)
 		})
+		if p.searched && len(p.results) > 0 && p.hlQuery != "" {
+			q := p.hlQuery
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
+				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("mail.search.ask_wit_row", q), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
+			})
+		}
 		if c.Shortcut(0, ui.KeyEscape) {
 			p.closeSearch()
 		}
@@ -490,9 +547,8 @@ func (p *mailPage) listHeader(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
 		p.searchOpen = true
 	}
-	ui.Row(c).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
-		title, _ := p.Title()
-		ui.Text(c, title).FontWeight(500).TextColor(t.Muted).SingleLine().Shrink(1)
+	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
+		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
@@ -502,48 +558,181 @@ func (p *mailPage) listHeader(c *ui.Context) {
 	})
 }
 
+// searchHint is the line under the search box: what was found, in which
+// accounts.
+func (p *mailPage) searchHint() string {
+	n := len(p.results)
+	switch {
+	case !p.searched:
+		return i18n.T("mail.search.hint")
+	case n == 0:
+		return i18n.T("mail.search.none")
+	}
+	count := strconv.Itoa(n)
+	if n >= searchLimit {
+		count += "+"
+	}
+	scope := i18n.T("mail.search.all_accounts")
+	if acc := p.searchAccount(); acc != 0 {
+		if a, ok := p.a.accountByID(acc); ok {
+			scope = a.Email
+		}
+	}
+	return i18n.Tf("mail.search.found", count, scope)
+}
+
+// dateGroup names the heading a day's mail sits under: today, yesterday,
+// this calendar week (from Monday) or earlier.
+func dateGroup(now, t time.Time) string {
+	t = t.In(now.Location())
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	switch {
+	case !t.Before(today):
+		return i18n.T("mail.group.today")
+	case !t.Before(today.AddDate(0, 0, -1)):
+		return i18n.T("mail.group.yesterday")
+	case !t.Before(today.AddDate(0, 0, -(int(now.Weekday())+6)%7)):
+		return i18n.T("mail.group.week")
+	}
+	return i18n.T("mail.group.older")
+}
+
+// highlight splits text into spans, the matches of query (a plain substring,
+// each rune compared case-insensitively) marked with the highlight tokens.
+// No query gives no spans.
+func highlight(t theme.Tokens, text, query string) []ui.Span {
+	q := []rune(query)
+	if len(q) == 0 {
+		return nil
+	}
+	var out []ui.Span
+	start := 0
+	for i := 0; i < len(text); {
+		if n := matchAt(text[i:], q); n > 0 {
+			if i > start {
+				out = append(out, ui.Span{Text: text[start:i]})
+			}
+			out = append(out, ui.Span{Text: text[i : i+n], Background: t.Highlight, Color: t.HighlightText})
+			i += n
+			start = i
+			continue
+		}
+		_, w := utf8.DecodeRuneInString(text[i:])
+		i += w
+	}
+	if start < len(text) {
+		out = append(out, ui.Span{Text: text[start:]})
+	}
+	return out
+}
+
+// matchAt is the length in bytes of the start of s that equals q rune for
+// rune, ignoring case; 0 for no match.
+func matchAt(s string, q []rune) int {
+	n := 0
+	for _, want := range q {
+		r, w := utf8.DecodeRuneInString(s[n:])
+		if w == 0 || !foldEq(r, want) {
+			return 0
+		}
+		n += w
+	}
+	return n
+}
+
+func foldEq(a, b rune) bool {
+	for f := unicode.SimpleFold(a); ; f = unicode.SimpleFold(f) {
+		if f == b {
+			return true
+		}
+		if f == a {
+			return a == b
+		}
+	}
+}
+
+// marked is s with the query's matches highlighted; plain text without one.
+func marked(c *ui.Context, s, query string) ui.Element {
+	if sp := highlight(theme.Of(c), s, query); sp != nil {
+		return ui.RichText(c, sp...)
+	}
+	return ui.Text(c, s)
+}
+
 func (p *mailPage) listView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	p.listHeader(c)
 	rows := p.shown()
 	ls := p.ls()
-	ls.list.Key = func(i int) any { return rows[i].key() }
+	es := p.entries(rows)
+	head := ""
+	if len(rows) > 0 && !p.searched {
+		head = dateGroup(p.a.clock.Now(), rows[0].Date)
+	}
+	p.listHeader(c, head)
+	ls.list.Key = func(i int) any {
+		if e := es[i]; e.head != "" {
+			return "h:" + e.head
+		}
+		return rows[es[i].row].key()
+	}
+	ls.list.Header = nil
+	if !p.searched {
+		ls.list.Header = func(i int) bool { return es[i].head != "" }
+	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := kit.List(c, &ls.list, len(rows), func(i int) {
-		it := rows[i]
-		p.row(c, it).ContextMenu(func(m *ui.Menu) {
-			for _, k := range []string{"read", "unread", "star", "", "archive", "delete"} {
+	l := kit.List(c, &ls.list, len(es), func(i int) {
+		if es[i].head != "" { // a date heading: no row, never chosen
+			kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).TextColor(t.Muted).Background(t.Background).
+				Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
+			return
+		}
+		it := rows[es[i].row]
+		p.item(c, it).ContextMenu(func(m *ui.Menu) {
+			on := []mailItem{it}
+			if ls.sel.Has(it.key()) {
+				on = p.chosen(rows)
+			}
+			// as S and U: read/star when any of them is unread/unstarred
+			read, star := "unread", "unstar"
+			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Unread > 0 }) {
+				read = "read"
+			}
+			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Flagged < r.Count }) {
+				star = "star"
+			}
+			for _, k := range []string{read, star, "", "archive", "delete", "junk"} {
+				if k == "junk" && p.inJunk() {
+					continue // already there
+				}
 				if k == "" {
 					m.Separator()
 				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
-					act, target = k, []mailItem{it}
-					if ls.sel.Has(it.key()) {
-						target = p.chosen(rows)
-					}
+					act, target = k, on
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart
+	}).Grow(1).Padding(0, th.Space(2))
 	l.Children(func() {
 		if len(rows) == 0 && p.loading { // the first load: placeholder rows
 			for range 6 {
 				ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-					kit.Skeleton(c, 0, t.Text.Base)
+					kit.Skeleton(c, 0, t.Text.Body)
 					kit.Skeleton(c, theme.SkeletonShort, t.Text.Sm)
 				})
 			}
 		}
 		if len(rows) == 0 && !p.loading {
-			empty := i18n.T("mail.empty")
 			if p.searched {
-				empty = i18n.T("mail.search.empty")
+				p.noResults(c)
+			} else {
+				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
 			}
-			ui.Text(c, empty).TextColor(t.Muted).Padding(th.Space(3))
 		}
 	})
 	if l.Changed() {
-		p.open(rows, ls.cur)
+		p.open(rows, rowOf(es, ls.cur))
 	}
 	for _, k := range []struct {
 		mods ui.Modifiers
@@ -557,9 +746,241 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
-	if _, last := ls.list.Visible(); last >= len(rows)-5 {
-		p.loadMore()
+	if p.older.busy || p.older.err != nil {
+		p.olderRow(c)
 	}
+	if _, last := ls.list.Visible(); last >= len(es)-5 {
+		p.loadMore()
+		p.loadOlder()
+	}
+}
+
+// olderLoad is a folder list's fetch of the older mail past the sync range,
+// once the list shows all it stores: one at a time, stopped when the view
+// changes. The unified views and search don't fetch: their rows mix folders.
+type olderLoad struct {
+	gen    uint64 // bumped per fetch and on leaving; older answers are dropped
+	folder int64
+	busy   bool
+	err    error
+	cancel context.CancelFunc
+	done   map[int64]bool // folders whose server has nothing older, this session
+	notYet int64          // a folder whose first sync is under way: its next SyncFinished asks again
+}
+
+// olderFolder is the folder whose older mail the list may fetch, or 0.
+func (p *mailPage) olderFolder() int64 {
+	if _, drafts := draftsOf(p.folders, p.view); drafts || p.view.FolderID == 0 {
+		return 0
+	}
+	return p.view.FolderID
+}
+
+// loadOlder fetches the next page of older mail from the server when the
+// list reached its end locally, unless one is under way, failed (重试 asks
+// again) or the server has nothing older.
+func (p *mailPage) loadOlder() {
+	f, o := p.olderFolder(), &p.older
+	if f == 0 || p.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.busy || o.err != nil || o.done[f] || o.notYet == f {
+		return
+	}
+	a := p.a
+	ctx, cancel := context.WithCancel(a.ctx)
+	o.gen++
+	gen := o.gen
+	o.folder, o.busy, o.cancel = f, true, cancel
+	var more bool
+	a.do(func(context.Context) (err error) {
+		more, err = a.svc.LoadOlder(ctx, f)
+		return err
+	}, func(err error) {
+		cancel()
+		if gen != o.gen {
+			return
+		}
+		o.busy, o.cancel = false, nil
+		switch {
+		case errors.Is(err, core.ErrNotSynced): // not an error: the sync fills it first
+			o.notYet = f
+			return
+		case err != nil:
+			o.err = err
+		case !more:
+			if o.done == nil {
+				o.done = map[int64]bool{}
+			}
+			o.done[f] = true
+		}
+		p.reload() // the list shows what came in
+	})
+}
+
+// stopOlder cancels the fetch of older mail; leaving the folder drops its error.
+func (p *mailPage) stopOlder() {
+	o := &p.older
+	if o.cancel != nil {
+		o.cancel()
+	}
+	o.gen++
+	o.busy, o.err, o.cancel = false, nil, nil
+}
+
+// olderRow is the row under the list while older mail loads, or the error
+// with 重试.
+func (p *mailPage) olderRow(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Height(theme.OlderRowHeight).Padding(0, th.Space(4)).Gap(th.Space(2)).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+		if p.older.busy {
+			kit.Spinner(c)
+			kit.Text(c, i18n.T("mail.older.loading"), t.Text.Sm).TextColor(t.Muted)
+			return
+		}
+		kit.Text(c, i18n.Tf("mail.older.failed", humanize(p.older.err)), t.Text.Sm).TextColor(t.Muted).Shrink(1).SingleLine()
+		kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() {
+			p.older.err = nil
+			p.loadOlder()
+		})
+	})
+}
+
+// listEntry is a line of the list: a date heading (head), or the row
+// rows[row].
+type listEntry struct {
+	head string
+	row  int
+}
+
+// entries are the list's lines: each group of rows under its date heading
+// (but the first, whose heading the list header shows), a search's results
+// as they are. The list's own choice (cur) counts these.
+func (p *mailPage) entries(rows []mailItem) []listEntry {
+	var out []listEntry
+	now, last := p.a.clock.Now(), ""
+	for i, it := range rows {
+		if !p.searched {
+			if g := dateGroup(now, it.Date); g != last {
+				if i > 0 {
+					out = append(out, listEntry{head: g})
+				}
+				last = g
+			}
+		}
+		out = append(out, listEntry{row: i})
+	}
+	return out
+}
+
+// rowOf is the row entry cur is, -1 for none or a heading.
+func rowOf(es []listEntry, cur int) int {
+	if cur < 0 || cur >= len(es) || es[cur].head != "" {
+		return -1
+	}
+	return es[cur].row
+}
+
+// item is a row of the list: a search result, or a thread or message.
+func (p *mailPage) item(c *ui.Context, it mailItem) ui.Element {
+	if p.searched {
+		return p.resultRow(c, it)
+	}
+	return p.row(c, it)
+}
+
+// folderLine is "folder · account" of a result.
+func (p *mailPage) folderLine(it mailItem) string {
+	f, ok := p.folder(it.Msg.FolderID)
+	if !ok {
+		return ""
+	}
+	if acc, ok := p.a.accountByID(f.AccountID); ok {
+		return folderName(f) + " · " + acc.Email
+	}
+	return folderName(f)
+}
+
+// resultWho is the sender of a result; of mail sent, who it went to.
+func (p *mailPage) resultWho(it mailItem) string {
+	if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "sent" && len(it.Msg.To) > 0 {
+		return i18n.Tf("mail.search.sent_to", displayName(it.Msg.To[0]))
+	}
+	return it.Who
+}
+
+// resultRow is a search result: no unread gutter, the subject and the start
+// of the text with the matches marked, and the folder it is in.
+func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	q := p.hlQuery
+	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
+			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
+			if it.Attach {
+				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+			}
+			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Sm).TextColor(t.Muted)
+		})
+		subject := it.Subject
+		if subject == "" {
+			subject = i18n.T("mail.no_subject")
+		}
+		marked(c, subject, q).SingleLine()
+		if it.Snippet != "" {
+			marked(c, it.Snippet, q).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm)).TextColor(t.Muted).SingleLine()
+		}
+		if line := p.folderLine(it); line != "" {
+			kit.Text(c, line, t.Text.Sm).TextColor(t.Muted).SingleLine()
+		}
+	})
+}
+
+// openAccountSettings opens an account's settings (the first account's for
+// a unified view).
+func (a *App) openAccountSettings(acc int64) func() {
+	return func() {
+		if acc == 0 && len(a.accounts) > 0 {
+			acc = a.accounts[0].ID
+		}
+		r := Route{Page: PageSettings}
+		if acc != 0 {
+			r.Settings = "account:" + strconv.FormatInt(acc, 10)
+		}
+		a.navigate(r)
+	}
+}
+
+// noResults is the list of a search that found nothing: it offers Wit and a
+// wider sync.
+func (p *mailPage) noResults(c *ui.Context) {
+	q, th := p.hlQuery, c.Theme()
+	title := i18n.Tf("mail.search.empty_title", q)
+	if q == "" { // filters alone: nothing to hand Wit
+		title = i18n.T("mail.search.empty_filtered")
+	}
+	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: p.searchedDesc(), Actions: func() {
+		if q != "" {
+			kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
+		}
+		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.searchAccount()))
+	}}).Margin(th.Space(8), th.Space(1))
+}
+
+// searchedDesc says what a search covered: the searched accounts' sync range
+// when they share one that is not all mail.
+func (p *mailPage) searchedDesc() string {
+	acc, ranges := p.searchAccount(), map[core.SyncRange]bool{}
+	for _, a := range p.a.accounts {
+		if acc == 0 || a.ID == acc {
+			ranges[a.Sync] = true
+		}
+	}
+	if len(ranges) == 1 {
+		for r := range ranges {
+			if r != (core.SyncRange{}) {
+				return i18n.Tf("mail.search.empty_desc_range", rangeLabel(r))
+			}
+		}
+	}
+	return i18n.T("mail.search.empty_desc")
 }
 
 // row is one thread or message: who, when, the subject and the start of the
@@ -582,10 +1003,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
-			if it.Count > 1 {
-				ui.Text(c, strconv.Itoa(it.Count)).FontSize(small).TextColor(t.Muted)
-			}
-			ui.Text(c, listTime(p.a.clock.Now(), it.Date)).FontSize(small).TextColor(t.Muted)
+			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
 		})
 		subject := it.Subject
 		if subject == "" {
@@ -593,13 +1011,13 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		ui.Text(c, subject).FontWeight(weight).SingleLine()
 		if it.Snippet != "" {
-			ui.Text(c, it.Snippet).TextColor(t.Muted).SingleLine()
+			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
 	})
 }
 
-// runSearch searches the synced mail of the view's account, every
-// account's in a unified view.
+// runSearch searches the synced mail of the view's account (every
+// account's in a unified view) or the account chip's, with the filters.
 func (p *mailPage) runSearch() {
 	p.found.reset() // new results, a new choice
 	p.search()
@@ -609,16 +1027,16 @@ func (p *mailPage) runSearch() {
 // once the search is left.
 func (p *mailPage) search() {
 	p.searchGen++
-	q := strings.TrimSpace(p.query)
-	if q == "" {
+	sq := p.searchQuery()
+	if sq.Text == "" && !sq.Filtered() {
 		p.searched, p.results = false, nil
 		return
 	}
 	a := p.a
-	acc, gen := p.viewAccount(p.view), p.searchGen
+	q, gen := sq.Text, p.searchGen
 	var found []core.MessageSummary
 	a.do(func(ctx context.Context) (err error) {
-		found, err = a.svc.Search(ctx, acc, q, 100)
+		found, err = a.svc.SearchWith(ctx, sq, searchLimit)
 		return err
 	}, func(err error) {
 		if gen != p.searchGen {
@@ -628,36 +1046,51 @@ func (p *mailPage) search() {
 			a.toastErr(err)
 			return
 		}
-		p.results = nil
-		for _, m := range found {
-			p.results = append(p.results, messageItem(m))
+		p.results, p.hlQuery = nil, q
+		r := p.a.route
+		for i, m := range found {
+			it := messageItem(m)
+			if p.found.cur < 0 && (m.ID == r.MessageID || r.MessageID == 0 && m.ThreadID == r.ThreadID && r.ThreadID != 0) {
+				p.found.cur = i // the mail open stays chosen among the results
+				p.found.sel.Add(it.key())
+			}
+			p.results = append(p.results, it)
 		}
 		p.searched = true
 	})
 }
 
+// clearSearch empties the box; the search stays open, the filters set
+// still apply.
+func (p *mailPage) clearSearch() {
+	p.query = ""
+	p.runSearch()
+}
+
 func (p *mailPage) closeSearch() {
 	p.searchGen++
 	p.searchOpen, p.searched, p.query, p.results = false, false, "", nil
+	p.sf = searchFilters{}
 	p.found.reset()
 }
 
 // batch applies act to rows: threads become their messages (GetThread),
 // grouped by account, one call per account. Archiving and deleting take
-// only the messages in the view; an account without an archive folder is
-// skipped and named.
+// only the messages in the view; an account without an archive (junk)
+// folder is skipped and named.
 func (p *mailPage) batch(act string, rows []mailItem) {
 	if len(rows) == 0 {
 		return
 	}
 	a := p.a
-	acctOf, role, archive := map[int64]int64{}, map[int64]string{}, map[int64]int64{}
+	acctOf, role, archive, junk := map[int64]int64{}, map[int64]string{}, map[int64]int64{}, map[int64]bool{}
 	for acc, fs := range p.folders {
 		for _, f := range fs {
 			acctOf[f.ID], role[f.ID] = acc, f.Role
 			if f.Role == "archive" && archive[acc] == 0 {
 				archive[acc] = f.ID
 			}
+			junk[acc] = junk[acc] || f.Role == "junk"
 		}
 	}
 	names := map[int64]string{}
@@ -708,7 +1141,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 		}
 		for _, m := range msgs {
-			if (op == "archive" || op == "delete") && !inView(m) {
+			if (op == "archive" || op == "delete" || op == "junk") && !inView(m) {
 				continue
 			}
 			acc, ok := acctOf[m.FolderID]
@@ -727,15 +1160,15 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
 			}
 			if len(skipped) > 0 {
-				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_archive", strings.Join(skipped, i18n.T("mail.list_sep"))))
+				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_"+op, strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
-			if op == "archive" || op == "delete" {
+			if op == "archive" || op == "delete" || op == "junk" {
 				l.sel.Clear()
 			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
-			if op == "archive" && archive[acc] == 0 {
+			if op == "archive" && archive[acc] == 0 || op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
 				continue
 			}

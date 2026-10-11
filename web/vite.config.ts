@@ -35,6 +35,7 @@ export default defineConfig({
         compose: fileURLToPath(new URL("compose.html", import.meta.url)),
         wit: fileURLToPath(new URL("wit.html", import.meta.url)),
         reader: fileURLToPath(new URL("reader.html", import.meta.url)),
+        signature: fileURLToPath(new URL("signature.html", import.meta.url)),
       },
     },
   },
