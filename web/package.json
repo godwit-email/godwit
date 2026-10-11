@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "preview": "vite --port 5173",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
