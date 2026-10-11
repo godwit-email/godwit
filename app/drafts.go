@@ -11,8 +11,8 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// draftsView lists the account's local drafts: a click opens one in the
-// composer, its menu deletes it.
+// draftsView lists the account's local drafts: a click opens one in a
+// compose window, its menu deletes it.
 func (p *mailPage) draftsView(c *ui.Context) {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Sm
@@ -29,7 +29,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 		if to == "" {
 			to = i18n.T("mail.no_recipient")
 		}
-		kit.Pressable(c, kit.PressableOpts{OnClick: func() { p.a.navigate(Route{Page: PageCompose, DraftID: d.ID}) }}).Padding(th.Space(2.5)).Children(func() {
+		kit.Pressable(c, kit.PressableOpts{OnClick: func() { p.a.plat.OpenCompose(d.ID) }}).Padding(th.Space(2.5)).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 				ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 					ui.Text(c, to).SingleLine().Grow(1).Shrink(1)

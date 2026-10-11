@@ -11,6 +11,22 @@ export interface Account {
   email: string;
 }
 
+/** Approval is a call waiting for the user, or decided. */
+export interface Approval {
+  id: number;
+  run: number;
+  /** CallID is the tool call it answers ("skill" for a skill's edit). */
+  callId: string;
+  tool: string;
+  summary: string;
+  /** State is pending, executing, done, failed, rejected or stale. */
+  state: string;
+  error: string;
+  destinations: string[];
+  /** Args is the call's arguments, JSON text ("" for none). */
+  args: string;
+}
+
 /** AttachResult is the outcome of adding files: a partial success is no error. */
 export interface AttachResult {
   /** Revision and Attachments are the draft's after the change. */
@@ -38,6 +54,24 @@ export interface Attachment {
   size: number;
 }
 
+/**
+ * BodyChange is the draft after a Wit action, read again: Body is its
+ * editable HTML as stored, which the page adopts with the Change at once.
+ */
+export interface BodyChange {
+  /** Revision and Attachments are the draft's after the change. */
+  revision: number;
+  attachments: Attachment[];
+  /** Conflict means the draft changed elsewhere: nothing was done. */
+  conflict: boolean;
+  /** Signature is the draft's signature as plain text. */
+  signature: string;
+  /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
+  updatedAt: number;
+  /** Body is the editable HTML as stored. */
+  body: string;
+}
+
 /** Change is the outcome of an account switch or an attachment change. */
 export interface Change {
   /** Revision and Attachments are the draft's after the change. */
@@ -49,6 +83,18 @@ export interface Change {
   signature: string;
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
+}
+
+/** Citation is a message Wit read, numbered N from 1 in the conversation. */
+export interface Citation {
+  n: number;
+  messageId: number;
+  subject: string;
+  from: string;
+  /** Date is in Unix milliseconds, 0 for none. */
+  date: number;
+  /** Suspect means it seems to hold instructions (wit.suspect). */
+  suspect: boolean;
 }
 
 /**
@@ -96,6 +142,91 @@ export interface ComposeState {
   updatedAt: number;
   /** Text is the page's copy: i18n key → text in the UI language. */
   text: Record<string, string>;
+  /** Wit is what the Wit panel offers, as WitInfo. */
+  wit: WitInfo;
+}
+
+/** Language is a 翻译 menu item. */
+export interface Language {
+  tag: string;
+  name: string;
+}
+
+/** Review is a pending draft edit as the compose page reviews it. */
+export interface Review {
+  approval: number;
+  tool: string;
+  /**
+   * Inline means the changes are shown and decided word by word (Finish);
+   * else it is a rewrite, decided as a whole (Decide).
+   */
+  inline: boolean;
+  /**
+   * Ratio is the share of words changed; Exact means the diff completed
+   * within its budget with the block shapes kept (else wit.compose.rewrite_plain).
+   */
+  ratio: number;
+  exact: boolean;
+  /**
+   * Blocks are the new text with the changes marked, when Exact; Changes
+   * is how many changes they hold, the length Finish wants.
+   */
+  blocks: ReviewBlock[];
+  changes: number;
+  /** Old and New are the editable HTML before and after, for the compare. */
+  old: string;
+  new: string;
+}
+
+/** ReviewBlock is a block of the review. */
+export interface ReviewBlock {
+  /**
+   * Kind is paragraph, heading, quote, listItem or pre; Level and Ordered
+   * as in the editor (heading level, quote or list depth; an <ol> item).
+   */
+  kind: string;
+  level: number;
+  ordered: boolean;
+  /**
+   * Added and Removed mark a whole block added or removed: change Whole
+   * (else -1), even when it is empty.
+   */
+  added: boolean;
+  removed: boolean;
+  whole: number;
+  ops: ReviewOp[];
+}
+
+/** ReviewOp is a run of words kept, deleted or inserted. */
+export interface ReviewOp {
+  /** Kind is same, del or ins; Change the change it belongs to, -1 for same. */
+  kind: string;
+  change: number;
+  tokens: ReviewToken[];
+  /**
+   * Link, on the last op of a change of only a link's address, is the new
+   * address (wit.compose.link).
+   */
+  link: string;
+}
+
+/** ReviewToken is text in one style. */
+export interface ReviewToken {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  href: string;
+}
+
+/**
+ * RunStart is a ⌘K run started, or Conflict: the draft is not at the
+ * revision, or its text is not the text the page sent. Revision is the
+ * draft's stored revision.
+ */
+export interface RunStart {
+  run: number;
+  revision: number;
+  conflict: boolean;
 }
 
 /** SaveResult is the outcome of a save. */
@@ -126,6 +257,12 @@ export interface SendWarning {
   message: string;
 }
 
+/** Skill is a 调整 menu item. */
+export interface Skill {
+  id: string;
+  label: string;
+}
+
 /**
  * Theme is what a web page needs to look like the native UI: the CSS
  * variables of both appearances (the page picks by Mode, following the
@@ -139,6 +276,89 @@ export interface Theme {
   dark: Record<string, string>;
   /** FontSize is the interface font size in CSS pixels. */
   fontSize: number;
+}
+
+/** WitCall is a tool call; Args is its JSON text. */
+export interface WitCall {
+  id: string;
+  name: string;
+  args: string;
+}
+
+/** WitEvent is one event of a Wit run, as core.WitEvent. */
+export interface WitEvent {
+  /** Conversation and Run are the conversation and the run it belongs to. */
+  conversation: number;
+  run: number;
+  /** Kind is context, text, tool_call, tool_result, interrupted, done or error. */
+  kind: string;
+  /** Text is a text delta. */
+  text: string;
+  /** Call is a tool_call's call; Result a tool_result's result. */
+  call: WitCall | null;
+  result: WitResult | null;
+  /**
+   * Interrupts are the calls an interrupt waits on; a skill's has ID
+   * "skill" and no tool_call before it.
+   */
+  interrupts: WitCall[];
+  /**
+   * Citations are the mail shown to the model (N is 0: the page numbers
+   * them after the history's); Approvals an interrupt's, in call order.
+   */
+  citations: Citation[];
+  approvals: Approval[];
+  /** Error is an error's i18n key; "" for a stop. */
+  error: string;
+}
+
+/** WitHistory is a conversation as the Wit panel shows it. */
+export interface WitHistory {
+  /** Conversation is 0 when the draft has none yet. */
+  conversation: number;
+  messages: WitMessage[];
+  /** Running is the run going on (not one waiting for a decision), else 0. */
+  running: number;
+  /** Approvals are every approval of the conversation, in any state. */
+  approvals: Approval[];
+}
+
+/** WitInfo is what the Wit panel offers for the draft. */
+export interface WitInfo {
+  /** Enabled means a model is configured: the panel shows. */
+  enabled: boolean;
+  /**
+   * Skills are the 调整 menu's; Languages the 翻译 menu's, the reading
+   * language first.
+   */
+  skills: Skill[];
+  languages: Language[];
+  /** Chips name what Wit knows of the draft. */
+  chips: string[];
+}
+
+/**
+ * WitMessage is a question, or the answer to one: everything the model said
+ * and called up to the next question.
+ */
+export interface WitMessage {
+  id: string;
+  /** Role is user or assistant; an answer's Text is Markdown. */
+  role: string;
+  text: string;
+  calls: WitCall[];
+  results: WitResult[];
+  citations: Citation[];
+  /** Runs are the runs that added it (a question: the run it started). */
+  runs: number[];
+}
+
+/** WitResult is a tool call's result: Output JSON text, or Error. */
+export interface WitResult {
+  callId: string;
+  name: string;
+  output: string;
+  error: string;
 }
 
 // ---- Services ----
@@ -163,15 +383,57 @@ export const ComposePage = {
     return call("ComposePage.AddAttachments", revision);
   },
   /**
+   * Ask asks Wit about the calling window's draft (core Assist) and returns the
+   * run's ID; its events go to the window on WitStream.
+   */
+  ask(input: string): Promise<number> {
+    return call("ComposePage.Ask", input);
+  },
+  /**
    * Closed is the page's final flush for the close attempt gen, the payload
    * of the Closing event it answers: saved reports whether it succeeded.
    */
   closed(gen: number, saved: boolean): Promise<void> {
     return call("ComposePage.Closed", gen, saved);
   },
+  /**
+   * Decide accepts or rejects approval, any pending one of the calling
+   * window's draft (a draft edit or a tool's call). The window follows its
+   * conversation first, so the run it resumes streams on WitStream. A draft
+   * changed since the edit was proposed is Conflict.
+   */
+  decide(approval: number, accept: boolean): Promise<BodyChange> {
+    return call("ComposePage.Decide", approval, accept);
+  },
+  /**
+   * DecideAll accepts or rejects every pending approval of run, one of the
+   * calling window's draft (core ResolveAll; 全部允许). As Decide.
+   */
+  decideAll(run: number, accept: boolean): Promise<BodyChange> {
+    return call("ComposePage.DecideAll", run, accept);
+  },
   /** Discard deletes the calling window's draft; the window closes (OnDone). */
   discard(): Promise<void> {
     return call("ComposePage.Discard");
+  },
+  /**
+   * Finish settles approval, an inline draft edit, with a decision per change
+   * (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
+   * decides it; a mix applies the text the decisions make. As Decide.
+   */
+  finish(approval: number, decisions: number[]): Promise<BodyChange> {
+    return call("ComposePage.Finish", approval, decisions);
+  },
+  /**
+   * Follow makes the calling window follow its draft's conversation (a run
+   * going on, else an edit waiting, else the Assist one) and returns its
+   * history as read after subscribing. Events that come during the reads are held back and sent
+   * after: a run seen ending meanwhile shows as ended, read again. A run that
+   * ends later shows as Running: its end reaches the window after the reply,
+   * on the subscription, which goes on.
+   */
+  follow(): Promise<WitHistory> {
+    return call("ComposePage.Follow");
   },
   /**
    * Latest is the draft as stored now, as Load, for resolving a conflict: its
@@ -188,11 +450,36 @@ export const ComposePage = {
     return call("ComposePage.Load");
   },
   /**
+   * OpenLink opens a link from Wit's answer: an http or https one in the
+   * browser; a mailto one as a new draft to its addresses, from the calling
+   * window's account, in a compose window. Any other is ErrBadLink.
+   */
+  openLink(link: string): Promise<void> {
+    return call("ComposePage.OpenLink", link);
+  },
+  /**
    * RemoveAttachment removes attachment id from the calling window's draft,
    * if the draft is at revision (else Conflict).
    */
   removeAttachment(id: number, revision: number): Promise<Change> {
     return call("ComposePage.RemoveAttachment", id, revision);
+  },
+  /**
+   * Review is approval, a draft edit of the calling window's draft waiting
+   * for a decision, as the page reviews it.
+   */
+  review(approval: number): Promise<Review> {
+    return call("ComposePage.Review", approval);
+  },
+  /**
+   * Rewrite rewrites [start, end) of the calling window's draft as
+   * instruction says (⌘K, core RewriteSelection). The page saved revision
+   * and sends its text and the selection in it in UTF-16 offsets (the
+   * plainText contract); a draft not at revision, or with another text, is
+   * Conflict. The run's events go to the window on WitStream.
+   */
+  rewrite(revision: number, text: string, start: number, end: number, instruction: string): Promise<RunStart> {
+    return call("ComposePage.Rewrite", revision, text, start, end, instruction);
   },
   /**
    * Save stores the edit in the calling window's draft, keeping its quote and
@@ -217,6 +504,29 @@ export const ComposePage = {
   setAccount(id: number, revision: number): Promise<Change> {
     return call("ComposePage.SetAccount", id, revision);
   },
+  /**
+   * Skill runs skill id on the calling window's draft (core AssistSkill);
+   * translate-draft writes in language ("" for the reading language). It
+   * returns the run's ID; its events go to the window on WitStream.
+   */
+  skill(id: string, language: string): Promise<number> {
+    return call("ComposePage.Skill", id, language);
+  },
+  /** Stop cancels run, which must be one of the calling window's draft. */
+  stop(run: number): Promise<void> {
+    return call("ComposePage.Stop", run);
+  },
+  /**
+   * Undo takes back the latest edit Wit applied to the calling window's
+   * draft (core UndoLastAssist).
+   */
+  undo(): Promise<BodyChange> {
+    return call("ComposePage.Undo");
+  },
+  /** WitInfo is what the Wit panel offers for the calling window's draft. */
+  witInfo(): Promise<WitInfo> {
+    return call("ComposePage.WitInfo");
+  },
 } as const;
 
 // ---- Events ----
@@ -231,4 +541,10 @@ export const events = {
   closing: event<number>("closing"),
   /** ThemeChanged carries the theme to every page when the settings change. */
   theme: event<Theme>("theme"),
+  /**
+   * WitStream carries the Wit events of a compose window's draft, emitted to
+   * that window only. A window follows one conversation at a time: a run or
+   * Follow in another conversation replaces what it followed.
+   */
+  wit: event<WitEvent>("wit"),
 } as const;

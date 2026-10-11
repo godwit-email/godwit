@@ -27,7 +27,7 @@ func (a *App) openLink(link string) {
 }
 
 // mailto starts a new draft from the reader's account (else the default
-// one) to the link's addresses, and opens it.
+// one) to the link's addresses, and opens it in a compose window.
 func (a *App) mailto(u *url.URL) {
 	addrs, _ := url.PathUnescape(u.Opaque)
 	var to []string
@@ -55,7 +55,7 @@ func (a *App) mailto(u *url.URL) {
 			a.toastErr(err)
 			return
 		}
-		a.navigate(Route{Page: PageCompose, DraftID: id})
+		a.plat.OpenCompose(id)
 	})
 }
 

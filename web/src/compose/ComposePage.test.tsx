@@ -121,6 +121,7 @@ const state = {
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
   text,
+  wit: { enabled: false, skills: [], languages: [], chips: [] },
 };
 const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };
 
@@ -289,6 +290,20 @@ describe("autosave", () => {
     await u.type(await body(), "!");
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByRole("alert")).toHaveTextContent("草稿在别处被修改");
+  });
+
+  test("a failed discard keeps the page editable and saving", async () => {
+    vi.mocked(api.discard).mockRejectedValue(new Error("disk full"));
+    const u = setup();
+    render(<ComposePage />);
+    const el = await body();
+    await u.click(screen.getByRole("button", { name: "丢弃草稿" }));
+    await u.click(await screen.findByRole("button", { name: "丢弃" }));
+    expect(api.discard).toHaveBeenCalledTimes(1);
+    await u.type(el, "!");
+    expect(el).toHaveValue("正文!");
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!", revision: 7 }));
   });
 
   test("first save carries the loaded revision, later ones the previous result's", async () => {
@@ -472,6 +487,17 @@ test("send aborts on failed save", async () => {
   await userEvent.type(el, "?");
   expect(el).toHaveValue("正文!?");
   expect(screen.getByText("未保存")).toBeInTheDocument();
+});
+
+test("clicking 发送 commits a typed address", async () => {
+  render(<ComposePage />);
+  await body();
+  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), {
+    target: { value: "x@y.z" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, ""));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@x.com", "x@y.z"] }));
 });
 
 test("cmd-enter commits pending address", async () => {

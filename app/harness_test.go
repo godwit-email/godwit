@@ -239,7 +239,6 @@ type fakePlatform struct {
 	savePath  string   // SaveFile
 	supported bool     // NotificationsSupported
 	notifyErr error    // Notify
-	clipHTML  string
 	tempDir   string
 
 	localAPIPath string // SetLocalAPI(true)'s answer
@@ -323,12 +322,6 @@ func (p *fakePlatform) DataDir() (string, bool) {
 func (p *fakePlatform) SetTrayUnread(n int)         { p.record("SetTrayUnread", n) }
 func (p *fakePlatform) ShowWindow()                 { p.record("ShowWindow") }
 func (p *fakePlatform) SetThemeSource(theme string) { p.record("SetThemeSource", theme) }
-func (p *fakePlatform) ClipboardHTML() string {
-	p.record("ClipboardHTML")
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.clipHTML
-}
 func (p *fakePlatform) TempDir() string {
 	p.record("TempDir")
 	p.mu.Lock()

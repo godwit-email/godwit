@@ -566,6 +566,8 @@ var en = map[string]string{
 	"wit.placeholder":                  "Ask something, like: who is still waiting for my reply from last week?",
 	"wit.send":                         "Send",
 	"wit.stop":                         "Stop",
+	"wit.loading":                      "Wit is replying…",
+	"wit.scroll_end":                   "Jump to latest",
 	"wit.model":                        "Model service settings",
 	"wit.tools.one":                    "Used %d tool",
 	"wit.tools.other":                  "Used %d tools",

@@ -566,6 +566,8 @@ var zh = map[string]string{
 	"wit.placeholder":                  "问点什么，比如：上周谁还在等我回复？",
 	"wit.send":                         "发送",
 	"wit.stop":                         "停止",
+	"wit.loading":                      "Wit 正在回复…",
+	"wit.scroll_end":                   "回到最新",
 	"wit.model":                        "模型服务设置",
 	"wit.tools.one":                    "调用了 %d 个工具",
 	"wit.tools.other":                  "调用了 %d 个工具",

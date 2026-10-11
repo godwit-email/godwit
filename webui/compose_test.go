@@ -27,6 +27,9 @@ type fixture struct {
 	page *ComposePage
 	pick func() ([]string, error) // what the file dialog returns
 	done []int                    // windows OnDone fired for
+
+	evMu sync.Mutex
+	evs  map[int][]WitEvent // WitStream events emitted, by window
 }
 
 // newFixture is a ready Compose with one account; calls come from f.win.
@@ -41,6 +44,14 @@ func newFixture(t *testing.T, opts ...coretest.Option) *fixture {
 			return w, ok
 		},
 		PickFiles: func(context.Context, int) ([]string, error) { return f.pick() },
+		Emit: func(win int, ev WitEvent) {
+			f.evMu.Lock()
+			defer f.evMu.Unlock()
+			if f.evs == nil {
+				f.evs = map[int][]WitEvent{}
+			}
+			f.evs[win] = append(f.evs[win], ev)
+		},
 	})
 	f.c.OnDone(func(w int) { f.done = append(f.done, w) })
 	return f
@@ -94,7 +105,7 @@ func TestComposeSaveThenLoad(t *testing.T) {
 	st, err := f.page.Load(f.ctx(1))
 	require.NoError(t, err)
 	body := "<p>第一行</p><p></p><p>  第三行</p>"
-	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: body, Subject: "Hi", To: []string{"a@example.com"}, Revision: st.Revision})
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: body, Subject: "Hi", To: []string{"a@example.com"}, ReplyTo: "r@example.com", Revision: st.Revision})
 	require.NoError(t, err)
 	assert.False(t, res.Conflict)
 	got, err := f.page.Load(f.ctx(1))
@@ -102,11 +113,13 @@ func TestComposeSaveThenLoad(t *testing.T) {
 	assert.Equal(t, body, got.Body)
 	assert.Equal(t, "Hi", got.Subject)
 	assert.Equal(t, []string{"a@example.com"}, got.To)
+	assert.Equal(t, "r@example.com", got.ReplyTo)
 	assert.Equal(t, res.Revision, got.Revision)
 	stored, err := f.e.Svc.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Hi", stored.Subject)
 	assert.Equal(t, []string{"a@example.com"}, stored.To)
+	assert.Equal(t, "r@example.com", stored.ReplyTo)
 }
 
 func TestComposeConsecutiveSaves(t *testing.T) {
@@ -241,7 +254,8 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Closed", "Discard", "Latest", "Load", "RemoveAttachment", "Save", "Send", "SetAccount"}, names)
+	assert.Equal(t, []string{"AddAttachments", "Ask", "Closed", "Decide", "DecideAll", "Discard", "Finish", "Follow", "Latest", "Load",
+		"OpenLink", "RemoveAttachment", "Review", "Rewrite", "Save", "Send", "SetAccount", "Skill", "Stop", "Undo", "WitInfo"}, names)
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -637,4 +651,23 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 	}
 	assert.True(t, f.gone(t, empty.ID))
 	assert.Empty(t, f.stored(t, kept.ID).Attachments)
+}
+
+// A discard that fails keeps the window's draft: the error comes back, the
+// window stays, and saving goes on.
+func TestComposeDiscardFailureKeepsDraft(t *testing.T) {
+	f := newFixture(t)
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	ctx, cancel := context.WithCancel(f.ctx(1))
+	cancel()
+	require.Error(t, f.page.Discard(ctx))
+	assert.False(t, f.gone(t, d.ID))
+	assert.Empty(t, f.done)
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>kept</p>", Revision: d.Revision})
+	require.NoError(t, err)
+	assert.False(t, res.Conflict)
+	got, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	assert.Equal(t, "<p>kept</p>", got.Body)
 }

@@ -86,7 +86,6 @@ const (
 	AttachmentWidth   = 260 // an attachment in the reading pane
 	WitMaxWidth       = 760 // the Ask page's conversation column
 	CitationsWidth    = 320 // the Ask page's cited mail column
-	WitPanelWidth     = 360 // the compose page's Wit panel
 )
 
 // BoldWeight is the font weight of bold text in mail bodies and the editor.

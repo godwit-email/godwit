@@ -32,7 +32,6 @@ type Platform interface {
 	SetTrayUnread(n int) // the inboxes' unread total on the tray and the app icon; 0 clears it
 	ShowWindow()         // shows the window, in front
 	SetThemeSource(theme string)
-	ClipboardHTML() string
 	TempDir() string
 	// SetLocalAPI starts (on) or stops the Local API server for request
 	// gen, returning its socket's path while on. Off when it fails. Blocks:
@@ -42,8 +41,8 @@ type Platform interface {
 	DataDir() (dir string, custom bool)
 	// OpenCompose shows draftID in a compose window of its own.
 	OpenCompose(draftID int64)
-	// DraftDeleted is told draft id was deleted, sent or discarded here:
-	// its compose window, if one is open, closes.
+	// DraftDeleted is told draft id was deleted here: its compose window,
+	// if one is open, closes.
 	DraftDeleted(id int64)
 	// SettingsChanged is told the settings after every change.
 	SettingsChanged(st core.Settings)
@@ -101,7 +100,6 @@ type Page int
 
 const (
 	PageMail Page = iota
-	PageCompose
 	PageWit
 	PageSettings
 	PageOnboarding
@@ -110,10 +108,10 @@ const (
 
 // Route is where the App is.
 type Route struct {
-	Page                                         Page
-	View                                         core.View
-	ThreadID, MessageID, DraftID, ConversationID int64
-	Settings                                     string
+	Page                                Page
+	View                                core.View
+	ThreadID, MessageID, ConversationID int64
+	Settings                            string
 }
 
 // App is the interface's state. Every field is read and written on the UI thread.
@@ -165,7 +163,7 @@ type App struct {
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
-	pages          map[Page]pageView // by section; PageCompose belongs to PageMail
+	pages          map[Page]pageView
 	sidebarHidden  bool
 	sidebarW       float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
 	sidebarSave    func()  // stops the pending save of a dragged width
@@ -179,13 +177,11 @@ type App struct {
 	syncedAt time.Time        // the last successful sync; zero before one
 	ticking  bool             // a minute tick redraws the sync age
 
-	addAccount *onboarding                                             // the add-account sheet; nil when closed
-	mail       *mailPage                                               // the Mail section
-	writes     *writeQueue                                             // writes to the Service, ordered per resource
-	drafts     map[int64]*composer                                     // open drafts, and left ones until their saves are done
-	getDraft   func(ctx context.Context, id int64) (core.Draft, error) // reads a draft to open; tests swap it
+	addAccount *onboarding // the add-account sheet; nil when closed
+	mail       *mailPage   // the Mail section
+	writes     *writeQueue // writes to the Service, ordered per resource
 
-	closeAsk    bool   // a draft could not be saved as the window closes: ask
+	closeAsk    bool   // a write failed or is slow as the window closes: ask
 	closeErr    error  // why
 	closeAnyway func() // closes after all
 
@@ -222,8 +218,6 @@ func New(d Deps) *App {
 	}
 	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
-	a.drafts = map[int64]*composer{}
-	a.getDraft = a.svc.GetDraft
 	a.mail = newMailPage(a)
 	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
@@ -363,11 +357,12 @@ const flushWait = 3 * time.Second
 // errFlushSlow is why BeforeClose asks when the writes take longer than flushWait.
 var errFlushSlow = errors.New("still saving")
 
-// BeforeClose saves every draft's last edits and account fields, waits for
-// every write in flight, then calls proceed: before the window closes or
-// the App quits. When a write fails, or they have not finished within
-// flushWait, the window shows and asks whether to close anyway; writes that
-// finish while it asks close after all.
+// BeforeClose saves the settings' account fields, waits for every write in
+// flight, then calls proceed: before the window closes or the App quits
+// (compose windows have flushed their drafts by then, on their own). When
+// a write fails, or they have not finished within flushWait, the window
+// shows and asks whether to close anyway; writes that finish while it asks
+// close after all.
 func (a *App) BeforeClose(proceed func()) {
 	settled := false
 	ask := func(err error) {
@@ -392,9 +387,7 @@ func (a *App) BeforeClose(proceed func()) {
 	}
 	mark := a.writes.Mark() // every write failing from here on counts
 	a.pages[PageSettings].(*settingsPage).commitEdits()
-	a.flushDrafts(func(draftErr error) {
-		a.writes.Idle(func() { settle(errors.Join(append([]error{draftErr}, a.writes.ErrorsSince(mark)...)...)) })
-	})
+	a.writes.Idle(func() { settle(errors.Join(a.writes.ErrorsSince(mark)...)) })
 }
 
 // SetForeground records whether the window is in front.

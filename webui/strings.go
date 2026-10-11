@@ -16,7 +16,25 @@ var composeKeys = []string{
 	"compose.note", "compose.discard", "compose.discard.title", "compose.discard.body",
 	"compose.discard.confirm",
 	"common.cancel", "common.close", "common.retry", "close.unsaved.title",
-	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject",
+	"error.stale_draft", "error.too_large", "error.unknown", "mail.no_subject", "mail.list_sep",
+	// Wit
+	"error.invalid_state", "error.run_active", "error.stale_approval", "error.needs_grant", "error.ai_not_configured",
+	"error.model_not_found", "error.model_auth", "error.keychain", "error.ai.unauthorized", "error.ai.rate_limited",
+	"error.ai.unavailable", "error.ai.bad_response", "error.ai.internal", "error.ai.stale", "error.ai.incomplete",
+	"link.title", "link.open", "link.copy", "link.copied",
+	"wit.input", "wit.placeholder", "wit.send", "wit.stop", "wit.loading", "wit.scroll_end", "wit.tools.one", "wit.tools.other", "wit.suspect",
+	"wit.approval.wants", "wit.approval.to", "wit.approval.cc", "wit.approval.subject", "wit.approval.destinations",
+	"wit.approval.allow", "wit.approval.allow_all", "wit.approval.reject", "wit.approval.send_note",
+	"wit.compose.input", "wit.compose.placeholder", "wit.compose.empty", "wit.compose.writing_banner",
+	"wit.compose.writing", "wit.compose.locked", "wit.compose.pending.one", "wit.compose.pending.other",
+	"wit.compose.accept_all", "wit.compose.reject_all", "wit.compose.accept", "wit.compose.reject",
+	"wit.compose.link", "wit.compose.rewrite", "wit.compose.rewrite_plain", "wit.compose.compare",
+	"wit.compose.back", "wit.compose.original", "wit.compose.new", "wit.compose.review",
+	"wit.compose.review.inline.one", "wit.compose.review.inline.other", "wit.compose.review.rewrite",
+	"wit.compose.review.rewrite_plain", "wit.compose.review_body", "wit.compose.applied", "wit.compose.undo",
+	"wit.compose.cmdk", "wit.compose.cmdk.input", "wit.compose.cmdk.esc", "wit.compose.cmdk.go",
+	"wit.compose.adjust", "wit.compose.translate", "wit.compose.translate_to", "wit.compose.source",
+	"wit.compose.history", "wit.tool.update_draft", "wit.tool.update_selection", "wit.tool.create_draft",
 }
 
 // composeText is composeKeys in the UI language.

@@ -117,7 +117,6 @@ func (p *platform) ShowWindow() {
 	p.win.Focus()
 }
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
-func (*platform) ClipboardHTML() string       { return mygo.Clipboard.ReadHTML() }
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 func (*platform) SettingsChanged(st core.Settings) {

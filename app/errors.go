@@ -28,7 +28,6 @@ var errorKeys = []struct {
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
 	{errFlushSlow, "error.flush_slow"},
-	{errDraftSending, "compose.sending.locked"},
 }
 
 // humanize says what err means to the user; "" for a cancellation, which

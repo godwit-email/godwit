@@ -314,8 +314,7 @@ func TestReaderReplyCreatesDraft(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.see("can you?")
 	h.click("回复")
-	h.until("the composer", func() bool { return h.app.route.Page == PageCompose && h.app.route.DraftID != 0 })
-	d, err := h.env.Svc.GetDraft(context.Background(), h.app.route.DraftID)
+	d, err := h.env.Svc.GetDraft(context.Background(), h.composeOpened(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -499,5 +498,22 @@ func TestSingleMessageHeadDoesNotCollapse(t *testing.T) {
 	h.tt.Frame()
 	if !h.app.mail.reader.open[m.ID] || !h.tt.HasText("only words") {
 		t.Fatal("a click on the only message's head collapsed it")
+	}
+}
+
+// A draft created after the user switched mail still opens: its window
+// does not cover the reader.
+func TestReplyAfterSwitchingMailOpensWindow(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Question", "can you?"))
+	other := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Other", "other body"))
+	h.openThread(m.ThreadID)
+	h.see("can you?")
+	if err := h.tt.Click("回复"); err != nil { // no drain: the draft's callback waits
+		t.Fatal(err)
+	}
+	h.openThread(other.ThreadID)
+	if d := h.draft(h.composeOpened(0)); d.Mode != "reply" || d.SourceMessageID != m.ID {
+		t.Fatalf("draft %+v", d)
 	}
 }

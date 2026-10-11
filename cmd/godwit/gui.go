@@ -65,6 +65,7 @@ func gui(ctx context.Context, dataDir string) int {
 	})
 	// Compose pages reach only their own window's draft; bound before Run.
 	pages := webui.NewCompose()
+	var windows *webui.Windows
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -73,8 +74,16 @@ func gui(ctx context.Context, dataDir string) int {
 			return 0, false
 		},
 		PickFiles: pickFiles,
+		Emit: func(winID int, ev webui.WitEvent) {
+			if w := mygo.WindowByID(winID); w != nil {
+				if err := webui.WitStream.Emit(w, ev); err != nil {
+					log.Printf("wit event to compose window %d: %v", winID, err)
+				}
+			}
+		},
+		OpenURL:     mygo.Shell.OpenExternal,
+		OpenCompose: func(id int64) { windows.Open(id) }, // set below, before any page runs
 	}))
-	var windows *webui.Windows
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
@@ -124,14 +133,10 @@ func gui(ctx context.Context, dataDir string) int {
 			}
 		})
 
-		compose := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.Compose() }
-		mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose}}
-		if mygo.IsDev() { // the web compose window, until it replaces the native page
-			mailMenu = append(mailMenu, &mygo.MenuItem{Label: "写邮件（网页窗口）",
-				Click: func(*mygo.MenuItem, *mygo.Window) { a.ComposeInWindow() }})
-		}
+		compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
 		// The Mail menu stands in for File, which on macOS holds Close (⌘W).
-		mailMenu = append(mailMenu, mygo.Separator(), &mygo.MenuItem{Role: mygo.RoleClose})
+		mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+			mygo.Separator(), {Role: mygo.RoleClose}}
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
 			{Label: i18n.T("shell.rail.mail"), Submenu: mailMenu},
@@ -154,8 +159,8 @@ func gui(ctx context.Context, dataDir string) int {
 		// Closing the window hides it while the App keeps running in the
 		// background; otherwise closing quits. Every quit goes through
 		// quitHook: first the compose windows close, each flushing its page,
-		// then nq saves every draft's last edits (a failed or slow save asks
-		// first) and quits again. Hiding needs no save: the drafts stay open.
+		// then nq waits for the main window's writes (a failed or slow one
+		// asks first) and quits again. Hiding needs no save: nothing closes.
 		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go mygo.App.Quit() }} // mygo's calls are goroutine-safe
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if nq.flushed {
@@ -218,8 +223,8 @@ func quitHook(windows interface {
 	}
 }
 
-// nativeQuit is the main window's part of a quit: it saves every draft's
-// last edits (beforeClose), then quits again; that pass closes the App.
+// nativeQuit is the main window's part of a quit: it waits for the main
+// window's writes (beforeClose), then quits again; that pass closes the App.
 // flushed holds for the current quit attempt only: reset forgets it and
 // starts a new attempt (gen), so a flush still running from an earlier
 // attempt neither marks this one flushed nor quits. Used on the UI thread only.

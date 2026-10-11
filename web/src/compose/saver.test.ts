@@ -426,3 +426,38 @@ test("a queued autosave rechecks the delay against the newest edit", async () =>
   expect(save).toHaveBeenCalledTimes(2);
   expect(save.mock.calls[1][0].body).toBe("c");
 });
+
+test("revision, busy and dirty read the saver's state", async () => {
+  let release!: (r: SaveResult) => void;
+  const save = vi.fn().mockImplementation(() => new Promise((r) => (release = r)));
+  const s = createSaver(save, { revision: 1 });
+  expect([s.revision, s.busy, s.dirty]).toEqual([1, false, false]);
+  s.edit(ed("a"));
+  expect(s.dirty).toBe(true);
+  const f = s.flush();
+  await vi.advanceTimersByTimeAsync(0);
+  expect([s.busy, s.dirty]).toEqual([true, false]);
+  release(ok);
+  await f;
+  expect([s.revision, s.busy, s.dirty]).toEqual([2, false, false]);
+});
+
+test("tells its listeners when it goes idle", async () => {
+  const s = createSaver(vi.fn().mockResolvedValue(ok));
+  let done!: () => void;
+  const p = s.run(
+    () =>
+      new Promise<{ revision: number; conflict: boolean }>(
+        (r) => (done = () => r({ revision: 3, conflict: false })),
+      ),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(s.busy).toBe(true);
+  const idle: boolean[] = [];
+  s.onChange(() => idle.push(!s.busy));
+  done();
+  await p;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(s.busy).toBe(false);
+  expect(idle.at(-1)).toBe(true);
+});

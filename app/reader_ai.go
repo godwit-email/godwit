@@ -292,9 +292,12 @@ func (r *reader) runSkillCard(name string) {
 }
 
 // runAction runs a plugin action on a message. A plugin that may send data
-// out asks first; its result shows in the result card, a draft opens.
+// out asks first; its result shows in the result card. A draft it returns
+// opens in a compose window even when the reader has moved on since: an
+// action is a command, so switching mail does not cancel it as it does the
+// reader's AI work.
 func (r *reader) runAction(id, title string, msgID int64, approve bool) {
-	a, gen, ctx := r.p.a, r.gen, r.aiContext()
+	a, gen, ctx := r.p.a, r.gen, r.p.a.ctx
 	st := r.state(msgID)
 	res := &aiResult{title: title, run: &aiRun{running: true}}
 	st.result = res
@@ -309,7 +312,15 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 	}, func(err error) {
 		run := res.run
 		run.running = false
-		if gen != r.gen || st.result != res {
+		current := gen == r.gen && st.result == res
+		if err == nil && out.DraftID != 0 {
+			if current {
+				st.result = nil
+			}
+			a.plat.OpenCompose(out.DraftID)
+			return
+		}
+		if !current {
 			return
 		}
 		var ask *core.EgressApprovalRequired
@@ -319,9 +330,6 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 			r.egress, r.egressDlg = egressAsk{id: id, title: title, msgID: msgID, plugin: ask.Plugin, hosts: ask.Hosts}, true
 		case err != nil:
 			run.err = err
-		case out.DraftID != 0:
-			st.result = nil
-			a.navigate(Route{Page: PageCompose, DraftID: out.DraftID})
 		case out.Text == "" && out.HTML == "":
 			st.result = nil
 		default:
@@ -330,9 +338,10 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 	})
 }
 
-// quickReply opens a reply draft starting with r in the composer.
+// quickReply opens a reply draft starting with q in a compose window, even
+// when the reader has moved on since.
 func (r *reader) quickReply(msgID int64, q core.QuickReply) {
-	a, gen := r.p.a, r.gen
+	a := r.p.a
 	var id int64
 	a.do(func(ctx context.Context) error {
 		d, err := a.svc.DraftFromQuickReply(ctx, msgID, q)
@@ -343,9 +352,7 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 			a.toastErr(err)
 			return
 		}
-		if gen == r.gen {
-			a.navigate(Route{Page: PageCompose, DraftID: id})
-		}
+		a.plat.OpenCompose(id)
 	})
 }
 
@@ -552,7 +559,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 }
 
 // quickReplies are up to three one-line replies under the newest message;
-// Tab moves between them, a click or Enter opens one in the composer.
+// Tab moves between them, a click or Enter opens one in a compose window.
 func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 	last, _ := r.last()
 	st := r.ai[m.ID]

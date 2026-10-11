@@ -88,8 +88,7 @@ type mailPage struct {
 	results              []mailItem
 	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
 
-	reader *reader   // the thread or message the route names
-	draft  *composer // the draft the route opens; nil elsewhere
+	reader *reader // the thread or message the route names
 
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
 	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
@@ -151,9 +150,6 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 }
 
 func (p *mailPage) refresh([]events.Event) {
-	if r := p.a.route; r.Page == PageCompose && p.draft == nil {
-		p.draft = p.a.composerFor(r.DraftID)
-	}
 	p.reload()
 	p.reader.sync(true)
 }
@@ -240,14 +236,6 @@ func (p *mailPage) reload() {
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.items, p.cursor, p.stalled = items, cursor, false
 	})
-}
-
-// closeDraft saves what is left of the open draft as the route leaves it.
-func (p *mailPage) closeDraft() {
-	if d := p.draft; d != nil {
-		p.draft = nil
-		d.leave()
-	}
 }
 
 // fetchItems reads pages from cursor until it has want items, or to the end
@@ -430,9 +418,6 @@ func unreadSub(n int) string {
 
 // Title names the view the route shows, with its unread count.
 func (p *mailPage) Title() (string, string) {
-	if p.draft != nil {
-		return p.draft.title()
-	}
 	switch v := p.a.route.View; v.Unified {
 	case "inbox":
 		return i18n.T("mail.unified.inbox"), unreadSub(p.inboxUnread())
@@ -470,15 +455,6 @@ func listTime(now, t time.Time) string {
 
 // Content is the list column and the reader beside it.
 func (p *mailPage) Content(c *ui.Context) {
-	if p.draft != nil {
-		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-			p.draft.view(c)
-			if p.draft.loaded && p.a.settings.DefaultModel != "" {
-				p.draft.wit.view(c)
-			}
-		})
-		return
-	}
 	t := theme.Of(c)
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
