@@ -151,6 +151,29 @@ func (f *follow) pump(t Target, ch <-chan core.WitEvent, emit func(Target, WitEv
 	}
 }
 
+// read is f's conversation as read now, events held back meanwhile and
+// sent to t after: a run seen ending meanwhile shows as ended, read again. A
+// run that ends later shows as Running: its end reaches t after the reply,
+// on the subscription, which goes on.
+func (f *follow) read(ctx context.Context, svc *core.Service, t Target, emit func(Target, WitEvent)) (WitHistory, error) {
+	f.hold()
+	defer f.release(t, emit)
+	h, err := history(ctx, svc, f.conv)
+	if followHook != nil {
+		followHook()
+	}
+	if ended := h.Running; err == nil && ended != 0 && f.endedWhileHeld(ended) {
+		h, err = history(ctx, svc, f.conv)
+		if h.Running == ended { // its end is in what is held back; a run started since stays
+			h.Running = 0
+		}
+	}
+	if err != nil {
+		return WitHistory{}, err
+	}
+	return h, nil
+}
+
 // ends reports whether ev ends the run followed: an interrupt whose
 // approvals were all decided at once (a first generation) resumes it.
 func ends(ev core.WitEvent) bool {

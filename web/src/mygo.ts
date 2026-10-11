@@ -221,10 +221,12 @@ export interface ReviewToken {
 /**
  * RunStart is a ⌘K run started, or Conflict: the draft is not at the
  * revision, or its text is not the text the page sent. Revision is the
- * draft's stored revision.
+ * draft's stored revision. For WitPage.Ask, Conversation is the run's
+ * conversation (made for a new one).
  */
 export interface RunStart {
   run: number;
+  conversation: number;
   revision: number;
   conflict: boolean;
 }
@@ -351,6 +353,29 @@ export interface WitMessage {
   citations: Citation[];
   /** Runs are the runs that added it (a question: the run it started). */
   runs: number[];
+}
+
+/**
+ * WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
+ * snapshot at Version.
+ */
+export interface WitOpenMsg {
+  conversation: number;
+  version: number;
+}
+
+/** WitPageState is what the Wit page shows besides the conversation. */
+export interface WitPageState {
+  /**
+   * Conversation is the route's (0: a new one) as of Version, the
+   * snapshot's: the page applies only newer ones (WitOpen).
+   */
+  conversation: number;
+  version: number;
+  /** Model is the default model's label; "" for none. */
+  model: string;
+  text: Record<string, string>;
+  theme: Theme;
 }
 
 /** WitResult is a tool call's result: Output JSON text, or Error. */
@@ -529,6 +554,72 @@ export const ComposePage = {
   },
 } as const;
 
+/**
+ * WitPage is what the Wit page (role "wit", embedded in the main window)
+ * calls (mygo.Bind). It acts on ask conversations only.
+ */
+export const WitPage = {
+  /**
+   * Ask asks input in conv, an ask conversation; 0 makes one first, which
+   * ConversationCreated hears of. The page follows conv from before the run
+   * starts, unless a newer selection came meanwhile. Only Stop cancels the
+   * run: a page reload does not.
+   */
+  ask(conv: number, input: string): Promise<RunStart> {
+    return call("WitPage.Ask", conv, input);
+  },
+  /**
+   * Decide accepts or rejects approval, one of the conversation the page
+   * follows: the run it resumes streams on that subscription.
+   */
+  decide(approval: number, accept: boolean): Promise<void> {
+    return call("WitPage.Decide", approval, accept);
+  },
+  /**
+   * DecideAll accepts or rejects every pending approval of run, one of the
+   * conversation the page follows (全部允许). As Decide.
+   */
+  decideAll(run: number, accept: boolean): Promise<void> {
+    return call("WitPage.DecideAll", run, accept);
+  },
+  /**
+   * Follow makes the page follow conv, an ask conversation (0: none), and
+   * returns its history as read after subscribing (follow.read). The newest
+   * selection wins: an older Follow or Ask no longer subscribes.
+   */
+  follow(conv: number): Promise<WitHistory> {
+    return call("WitPage.Follow", conv);
+  },
+  /** Load is the page's state: the snapshot, the model, the copy and the theme. */
+  load(): Promise<WitPageState> {
+    return call("WitPage.Load");
+  },
+  /** Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively. */
+  navigate(dir: number): Promise<void> {
+    return call("WitPage.Navigate", dir);
+  },
+  /** OpenCited opens cited message id in the reader. */
+  openCited(message: number): Promise<void> {
+    return call("WitPage.OpenCited", message);
+  },
+  /**
+   * OpenLink opens a link from Wit's answer: an http or https one in the
+   * browser; a mailto one as a new draft to its addresses, from the default
+   * account, in a compose window. Any other is ErrBadLink.
+   */
+  openLink(link: string): Promise<void> {
+    return call("WitPage.OpenLink", link);
+  },
+  /** OpenModels opens the model settings. */
+  openModels(): Promise<void> {
+    return call("WitPage.OpenModels");
+  },
+  /** Stop cancels run, one of the conversation the page follows. */
+  stop(run: number): Promise<void> {
+    return call("WitPage.Stop", run);
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -547,4 +638,11 @@ export const events = {
   closing: event<number>("closing"),
   /** ThemeChanged carries the theme to every page when the settings change. */
   theme: event<Theme>("theme"),
+  /** WitOpen tells the Wit page the route's conversation changed. */
+  witOpen: event<WitOpenMsg>("witOpen"),
+  /**
+   * WitState tells the Wit page its model label, copy or theme changed
+   * (the settings did); the conversation and its stream stay.
+   */
+  witState: event<WitPageState>("witState"),
 } as const;

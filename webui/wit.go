@@ -334,22 +334,8 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
-	f.hold()
-	defer f.release(Target{Window: win}, p.d.Emit)
-	h, err := history(ctx, svc, conv)
-	if followHook != nil {
-		followHook()
-	}
-	if ended := h.Running; err == nil && ended != 0 && f.endedWhileHeld(ended) {
-		h, err = history(ctx, svc, conv)
-		if h.Running == ended { // its end is in what is held back; a run started since stays
-			h.Running = 0
-		}
-	}
-	if err != nil {
-		return WitHistory{}, keyed(err)
-	}
-	return h, nil
+	h, err := f.read(ctx, svc, Target{Window: win}, p.d.Emit)
+	return h, keyed(err)
 }
 
 // BodyChange is the draft after a Wit action, read again: Body is its
@@ -362,11 +348,13 @@ type BodyChange struct {
 
 // RunStart is a ⌘K run started, or Conflict: the draft is not at the
 // revision, or its text is not the text the page sent. Revision is the
-// draft's stored revision.
+// draft's stored revision. For WitPage.Ask, Conversation is the run's
+// conversation (made for a new one).
 type RunStart struct {
-	Run      int64 `json:"run"`
-	Revision int64 `json:"revision"`
-	Conflict bool  `json:"conflict"`
+	Run          int64 `json:"run"`
+	Conversation int64 `json:"conversation"`
+	Revision     int64 `json:"revision"`
+	Conflict     bool  `json:"conflict"`
 }
 
 var (
@@ -575,16 +563,25 @@ func (p *ComposePage) OpenLink(ctx context.Context, link string) error {
 	}
 	draftID := s.draftID
 	s.mu.Unlock()
+	return keyed(openLink(ctx, svc, link, func() (int64, error) {
+		d, err := svc.GetDraft(ctx, draftID)
+		return d.AccountID, err
+	}, p.d.OpenURL, p.d.OpenCompose))
+}
+
+// openLink opens link as OpenLink does, a mailto one from account's account.
+func openLink(ctx context.Context, svc *core.Service, link string, account func() (int64, error),
+	openURL func(string) error, openCompose func(int64)) error {
 	u, err := url.Parse(link)
 	if err != nil {
-		return keyed(ErrBadLink)
+		return ErrBadLink
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
-		return keyed(p.d.OpenURL(link))
+		return openURL(link)
 	case "mailto":
 	default:
-		return keyed(ErrBadLink)
+		return ErrBadLink
 	}
 	addrs, _ := url.PathUnescape(u.Opaque)
 	var to []string
@@ -593,18 +590,18 @@ func (p *ComposePage) OpenLink(ctx context.Context, link string) error {
 			to = append(to, a)
 		}
 	}
-	from, err := svc.GetDraft(ctx, draftID)
+	acc, err := account()
 	if err != nil {
-		return keyed(err)
+		return err
 	}
-	d, err := svc.NewDraft(ctx, from.AccountID, "new", 0)
+	d, err := svc.NewDraft(ctx, acc, "new", 0)
 	if err == nil {
 		d.To = to
 		d, err = svc.SaveDraft(ctx, d)
 	}
 	if err != nil {
-		return keyed(err)
+		return err
 	}
-	p.d.OpenCompose(d.ID)
+	openCompose(d.ID)
 	return nil
 }

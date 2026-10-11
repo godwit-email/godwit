@@ -1,9 +1,9 @@
 package app
 
 import (
-	"cmp"
 	"context"
 	"slices"
+	"strconv"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -13,33 +13,27 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// askPage is the Wit section: the conversations in the sidebar, the one of
-// the route (0: a new one) in a Wit panel, and the mail its runs cited.
+// askPage is the Wit section: the conversations in the sidebar and, in the
+// content, the Wit page (an embedded web page) showing the route's one (0:
+// a new one).
 type askPage struct {
 	a       *App
-	wit     *witPanel
 	convs   []core.Conversation
 	listGen uint64
-
-	start func(ctx context.Context, conv int64, input string) (<-chan core.WitEvent, error) // tests swap it
+	version int64 // the Wit page's snapshot as of the last navigation here
 }
 
-func newAskPage(a *App) *askPage {
-	return &askPage{a: a, wit: newWitPanel(a), start: a.svc.Ask}
-}
+func newAskPage(a *App) *askPage { return &askPage{a: a} }
 
-// refresh reads the conversations; navigated to, it opens the route's one.
-// An approvals.changed event of the one shown reads it again.
+// convKey is the write-queue key of a conversation's writes.
+func convKey(id int64) string { return "conv:" + strconv.FormatInt(id, 10) }
+
+// refresh reads the conversations; navigated to, it tells the Wit page the
+// route's one.
 func (p *askPage) refresh(hints []events.Event) {
 	p.load()
-	if hints == nil {
-		p.wit.open(p.a.route.ConversationID)
-		return
-	}
-	if conv := p.wit.conv; conv != 0 && slices.ContainsFunc(hints, func(e events.Event) bool {
-		return e.Type == events.ApprovalsChanged && e.ConversationID == conv
-	}) {
-		p.wit.reconcile()
+	if hints == nil && p.a.witOpen != nil {
+		p.version = p.a.witOpen(p.a.route.ConversationID)
 	}
 }
 
@@ -70,10 +64,11 @@ func (p *askPage) title(id int64) string {
 }
 
 func (p *askPage) Title() (string, string) {
-	if p.wit.conv == 0 {
+	conv := p.a.route.ConversationID
+	if conv == 0 {
 		return "", ""
 	}
-	return p.title(p.wit.conv), i18n.T("ask.permissions")
+	return p.title(conv), i18n.T("ask.permissions")
 }
 
 // Sidebar: New conversation, then the recent ones; a right click deletes one.
@@ -94,7 +89,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			for _, conv := range p.convs {
 				id := conv.ID
-				on := id == p.wit.conv
+				on := id == a.route.ConversationID
 				kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageWit, ConversationID: id}) }}).
 					Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
 					ContextMenu(func(m *ui.Menu) {
@@ -126,96 +121,27 @@ func (p *askPage) remove(id int64) {
 	})
 }
 
-// Content is the Wit panel and, once runs cited mail, the cited mail;
-// without a model, how to add one.
+// Content is the Wit page; without a model, how to add one.
 func (p *askPage) Content(c *ui.Context) {
-	a := p.a
-	if a.settings.DefaultModel == "" {
+	if p.a.settings.DefaultModel == "" {
 		p.noModel(c)
 		return
 	}
-	conv, start, svc := p.wit.conv, p.start, a.svc
-	o := witOptions{
-		Placeholder: i18n.T("wit.placeholder"),
-		MaxWidth:    theme.WitMaxWidth,
-		Start: func(ctx context.Context, input string) (int64, <-chan core.WitEvent, func(), error) {
-			id := conv
-			if id == 0 {
-				c, err := svc.NewConversation(ctx, "ask", 0)
-				if err != nil {
-					return 0, nil, nil, err
-				}
-				id = c.ID
-			}
-			ch, err := start(ctx, id, input)
-			return id, ch, nil, err
-		},
-		Changed: func() {
-			if r := &a.route; r.Page == PageWit && r.ConversationID == 0 {
-				r.ConversationID = p.wit.conv // the conversation the first question made
-			}
-			p.load()
-		},
+	if v := p.a.witView; v != nil {
+		ui.WebView(c, v).Grow(1) // the page pads itself
 	}
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Children(func() { p.wit.View(c, o) })
-		if len(p.wit.cites) > 0 {
-			p.citations(c)
-		}
-	})
 }
 
 func (p *askPage) noModel(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Grow(1).Center().Gap(th.Space(3)).Padding(th.Space(6)).Children(func() {
 		ui.Text(c, i18n.T("ask.no_model")).TextColor(t.Muted).MaxWidth(theme.FormMaxWidth)
-		kit.Button(c, i18n.T("ask.add_model"), kit.ButtonOpts{}).OnClick(func() {
-			p.a.navigate(Route{Page: PageSettings, Settings: "models"})
-		})
+		kit.Button(c, i18n.T("ask.add_model"), kit.ButtonOpts{}).OnClick(p.a.OpenModels)
 	})
 }
 
-// citations lists the mail the runs showed the model, numbered as the
-// answers cite them, with sender and date; suspect mail is marked. A click
-// opens the message.
-func (p *askPage) citations(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Width(theme.CitationsWidth).Gap(th.Space(2.5)).Padding(th.Space(4)).Background(t.Sidebar).
-		BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border).Children(func() {
-		ui.Text(c, i18n.T("ask.citations")).FontWeight(600)
-		now := p.a.clock.Now()
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
-				for i, ct := range p.wit.cited() {
-					border := t.Border
-					if ct.Suspect {
-						border = t.WarningBorder
-					}
-					id := ct.MessageID
-					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { p.openCited(id) }}).Label(ct.Subject).Padding(th.Space(2.5), th.Space(3)).
-						Border(theme.Hairline, border).Children(func() {
-						ui.Column(c).Gap(th.Space(1)).Grow(1).Shrink(1).Children(func() {
-							ui.Row(c).Gap(th.Space(2)).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
-								ui.Text(c, citeRef(i+1)+" "+ct.From).SingleLine().Grow(1).Shrink(1)
-								if !ct.Date.IsZero() {
-									ui.Text(c, listTime(now, ct.Date)).Shrink(0)
-								}
-							})
-							ui.Text(c, cmp.Or(ct.Subject, i18n.T("mail.no_subject")))
-							if ct.Suspect {
-								ui.Text(c, i18n.T("ask.citation.suspect")).FontSize(t.Text.Sm).TextColor(t.WarningText)
-							}
-						})
-					})
-				}
-			})
-		})
-	})
-}
-
-// openCited opens a cited message in the reader.
-func (p *askPage) openCited(id int64) {
-	a := p.a
+// OpenMessage opens message id in the reader (a mail the Wit page cites).
+func (a *App) OpenMessage(id int64) {
 	var m core.Message
 	a.query(func(ctx context.Context) (err error) {
 		m, err = a.svc.GetMessage(ctx, id, false)
@@ -227,4 +153,37 @@ func (p *askPage) openCited(id int64) {
 		}
 		a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: m.ThreadID, MessageID: id})
 	})
+}
+
+// OpenModels opens the model settings (the Wit page's model chip).
+func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "models"}) }
+
+// Navigate goes back (dir < 0) or forward (dir > 0), as ⌘[ and ⌘] do: the
+// Wit page forwards them, as native shortcuts miss keys it has.
+func (a *App) Navigate(dir int) {
+	switch {
+	case dir < 0:
+		a.back()
+	case dir > 0:
+		a.forward()
+	}
+}
+
+// ConversationCreated is told the Wit page's first question made
+// conversation id, under snapshot version: while the route still shows
+// that version's new conversation it takes id in place (back and forward
+// keep it); the sidebar reads the conversations again either way.
+func (a *App) ConversationCreated(id, version int64) {
+	p := a.pages[PageWit].(*askPage)
+	if r := &a.route; r.Page == PageWit && r.ConversationID == 0 && version == p.version {
+		r.ConversationID = id
+	}
+	p.load()
+}
+
+// SetWitPage gives the App the Wit page's web view and open, which tells
+// the page the route's conversation and returns its snapshot version.
+// Call it before Start.
+func (a *App) SetWitPage(view ui.NativeWebView, open func(conv int64) (version int64)) {
+	a.witView, a.witOpen = view, open
 }
