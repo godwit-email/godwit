@@ -853,12 +853,14 @@ func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
 func senderDate(now, t time.Time) string {
 	t = t.In(now.Location())
 	clock := t.Format("15:04")
-	day := listTime(now, t)
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	weekStart := today.AddDate(0, 0, -(int(now.Weekday())+6)%7)
 	switch {
-	case day == clock:
+	case !t.Before(today):
 		return i18n.T("reader.today") + " " + clock
-	case !strings.Contains(day, "/"): // yesterday or a weekday; older is "M/D"
-		return day + " " + clock
+	case t.Before(weekStart) && t.Before(today.AddDate(0, 0, -1)): // as listTime: older than yesterday and this week
+		return i18n.Tf("reader.date", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day())
 	}
-	return i18n.Tf("reader.date", int(t.Month()), t.Day())
+	return listTime(now, t) + " " + clock
 }

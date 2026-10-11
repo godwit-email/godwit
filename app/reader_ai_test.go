@@ -432,9 +432,7 @@ func TestCardCopy(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Invoice 42", "pay me"))
 	h.openThread(m.ThreadID)
 	h.see("Invoice · 来自插件 card-demo")
-	if n := h.countTexts("bob@example.com"); n < 3 { // the card shows its first field, the value, without its label
-		t.Fatalf("card value missing: %q", h.tt.Texts())
-	}
+	h.see("From") // the first field keeps its label over its value
 	h.click("Copy")
 	if got := h.tt.Clipboard(); got != "INV-1" {
 		t.Fatalf("clipboard %q", got)
@@ -715,5 +713,13 @@ func TestSummaryHeaderSplit(t *testing.T) {
 	h.see("summarize · m1")
 	if h.tt.HasText("总结 · summarize") {
 		t.Fatalf("one string: %q", h.tt.Texts())
+	}
+}
+
+func TestCardCode(t *testing.T) {
+	for v, want := range map[string]bool{"482913": true, "CA1234": true, "Shop <shop@x.com>": false, "a very long value": false, "averyveryveryverylongcode": false} {
+		if cardCode(v) != want {
+			t.Errorf("cardCode(%q) = %v", v, !want)
+		}
 	}
 }

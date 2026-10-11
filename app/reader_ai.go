@@ -6,6 +6,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -541,8 +543,12 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 				ui.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)).FontSize(t.Text.Sm).TextColor(t.Muted)
 				for i, f := range card.Fields {
-					if i == 0 { // the prominent value
-						ui.Text(c, f.Value).Font(theme.Mono).FontSize(t.Text.X2l).LetterSpacing(theme.CardTracking)
+					if i == 0 { // the prominent field: its label over its value, mono only for a short code
+						ui.Text(c, f.Label).FontSize(t.Text.Sm).TextColor(t.Muted)
+						v := ui.Text(c, f.Value).Shrink(1)
+						if cardCode(f.Value) {
+							v.Font(theme.Mono).FontSize(t.Text.X2l).LetterSpacing(theme.CardTracking)
+						}
 						continue
 					}
 					ui.Text(c, f.Label+": "+f.Value).FontSize(t.Text.Sm).TextColor(t.Muted)
@@ -628,4 +634,10 @@ func (r *reader) egressDialog(c *ui.Context) {
 			r.runAction(ask.id, ask.title, ask.msgID, true)
 		}
 	})
+}
+
+// cardCode reports whether a card value is short and code-like (an OTP,
+// a flight number): at most 12 runes, no whitespace.
+func cardCode(v string) bool {
+	return utf8.RuneCountInString(v) <= 12 && !strings.ContainsFunc(v, unicode.IsSpace)
 }
