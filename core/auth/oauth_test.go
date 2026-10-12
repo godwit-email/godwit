@@ -185,7 +185,7 @@ func TestCallbackPageEchoesNothing(t *testing.T) {
 	require.NotEmpty(t, q.Get("code"))
 	assert.NotContains(t, cb.Body, q.Get("code"))
 	assert.NotContains(t, cb.Body, q.Get("state"))
-	assert.Contains(t, cb.Body, "登录完成，可以关闭此页面回到 Godwit。")
+	assert.Contains(t, cb.Body, "登录完成")
 
 	srv.Deny(true)
 	f = startFlow(t, srv)
@@ -194,7 +194,7 @@ func TestCallbackPageEchoesNothing(t *testing.T) {
 	require.Error(t, recv(t, ch).err)
 	assert.NotContains(t, cb.Body, "access_denied")
 	assert.NotContains(t, cb.Body, must(url.Parse(cb.URL)).Query().Get("state"))
-	assert.Contains(t, cb.Body, "登录没有完成，请回到 Godwit 重试。")
+	assert.Contains(t, cb.Body, "登录没有完成")
 }
 
 func TestFlowNotConfigured(t *testing.T) {

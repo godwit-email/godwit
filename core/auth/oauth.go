@@ -129,13 +129,20 @@ func (f *Flow) finish(g Grant, err error) {
 }
 
 // pageHead drops the code and state from the address bar once the page is shown.
-const pageHead = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Godwit</title>` +
-	`<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px/1.6 system-ui,sans-serif}</style>` +
-	`<script>history.replaceState(null, "", "/")</script>`
+// Colors and radius copy web/src/shared/styles.css; this page is served outside the app.
+const pageHead = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width">` +
+	`<meta name="color-scheme" content="light dark"><title>Godwit</title><style>` +
+	`:root{--bg:oklch(1 0 0);--fg:oklch(.145 0 0);--muted:oklch(.556 0 0);--ok:oklch(.627 .194 149.214);--bad:oklch(.577 .245 27.325)}` +
+	`@media (prefers-color-scheme:dark){:root{--bg:oklch(.145 0 0);--fg:oklch(.985 0 0);--muted:oklch(.708 0 0)}}` +
+	`body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;text-align:center}` +
+	`svg{width:48px;height:48px}h1{margin:16px 0 4px;font-size:20px;font-weight:600}p{margin:0;color:var(--muted)}` +
+	`</style><script>history.replaceState(null, "", "/")</script><main>`
 
 const (
-	pageOK   = pageHead + `<p>登录完成，可以关闭此页面回到 Godwit。</p></html>`
-	pageFail = pageHead + `<p>登录没有完成，请回到 Godwit 重试。</p></html>`
+	pageOK = pageHead + `<svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></svg>` +
+		`<h1>登录完成</h1><p>可以关闭此页面，回到 Godwit。</p></main></html>`
+	pageFail = pageHead + `<svg viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v6M12 16.5v.5"/></svg>` +
+		`<h1>登录没有完成</h1><p>请回到 Godwit 重试。</p></main></html>`
 )
 
 // callback answers the browser with a fixed page that echoes nothing. A request
