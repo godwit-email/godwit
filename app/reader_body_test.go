@@ -315,6 +315,7 @@ func TestReaderRemoteImages(t *testing.T) {
 	}))
 	defer srv.Close()
 	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "ask")
 	acc, base := accs[0], h.clock.Now()
 	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "News", "first", coretest.MessageID("n1@x"), at(base, 2)))
 	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Re: News", "text", coretest.MessageID("n2@x"), coretest.InReplyTo("n1@x"), at(base, 1),
@@ -472,6 +473,7 @@ func TestReaderCloseClosesViews(t *testing.T) {
 // the sender's next message loads them at once, without the notice.
 func TestReaderTrustSender(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
 	acc := accs[0]
 	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
 	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
@@ -496,6 +498,7 @@ func TestReaderTrustSender(t *testing.T) {
 // A quoted local part: core gets the From as sent, which parses.
 func TestReaderTrustQuotedSender(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
 	acc := accs[0]
 	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
 	m := h.deliverOne(acc, coretest.Msg(`Bob <"bob smith"@example.com>`, acc.Email, "News", "text", img))
@@ -508,6 +511,7 @@ func TestReaderTrustQuotedSender(t *testing.T) {
 // Trusting a sender loads its images in the thread, but not in a copy in Junk.
 func TestReaderTrustSkipsJunk(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
 	acc := accs[0]
 	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
 		t.Fatal(err)
@@ -532,5 +536,19 @@ func TestReaderTrustSkipsJunk(t *testing.T) {
 		if x.ID != m.ID && h.countCalls(fmt.Sprint("AllowImages ", x.ID)) != 0 {
 			t.Fatal("the Junk copy's images loaded")
 		}
+	}
+}
+
+// remoteImages sets when remote images load (Settings.RemoteImages): the
+// tests of the notice and 始终信任 need "ask" or "trusted", not the default.
+func remoteImages(t *testing.T, h *harness, mode string) {
+	t.Helper()
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.RemoteImages = mode
+	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -53,6 +53,7 @@ type settingsPage struct {
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
+	imgSize     int64 // the remote image cache's bytes; -1 until read
 
 	// The signature page, made once (NewSignatureView), and the account it
 	// shows; sigPosted is a switch queued.
@@ -71,7 +72,7 @@ type settingsPage struct {
 }
 
 func newSettingsPage(a *App) *settingsPage {
-	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{},
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{},
 		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability}, ext: &extView{a: a, tab: 1}}
 }
 
@@ -114,6 +115,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
 			func(error) { p.keychain, p.keychainSet = err, true })
+		p.readImageCache()
 	}
 }
 
@@ -360,7 +362,55 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.local_api"), "", rows...)
+	p.remoteImagesView(c)
 	p.trustedView(c)
+}
+
+// readImageCache reads the remote image cache's size for the privacy page.
+func (p *settingsPage) readImageCache() {
+	a := p.a
+	var n int64
+	a.query(func(ctx context.Context) error { n = a.svc.ImageCacheSize(); return nil }, func(error) { p.imgSize = n })
+}
+
+// remoteImagesView is when remote images load (RemoteImages) and the cache
+// of the ones loaded, which can be cleared.
+func (p *settingsPage) remoteImagesView(c *ui.Context) {
+	t, th, a := theme.Of(c), c.Theme(), p.a
+	size := "…"
+	if p.imgSize >= 0 {
+		size = formatBytes(p.imgSize)
+	}
+	settingsSection(c, i18n.T("settings.remote_images"), i18n.T("settings.remote_images.sub"),
+		func() {
+			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() {
+				mode := p.st.RemoteImages
+				if mode == "" {
+					mode = "auto"
+				}
+				settingSelect(c, i18n.T("settings.remote_images.mode"), &mode, []kit.Option[string]{
+					{Value: "auto", Label: i18n.T("settings.remote_images.auto")},
+					{Value: "trusted", Label: i18n.T("settings.remote_images.trusted")},
+					{Value: "ask", Label: i18n.T("settings.remote_images.ask")},
+				})
+				p.st.RemoteImages = mode
+			})
+		},
+		func() {
+			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() {
+				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, size).TextColor(t.Muted)
+					if settingButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
+						a.do(func(context.Context) error { return a.svc.ClearImageCache() }, func(err error) {
+							if err != nil {
+								a.toastErr(err)
+							}
+							p.readImageCache()
+						})
+					}
+				})
+			})
+		})
 }
 
 // trustedView lists the senders whose remote images load at once, each

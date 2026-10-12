@@ -49,15 +49,15 @@ const page = `<!doctype html><html><head><meta charset="utf-8">
 <body><div id="out"></div><div id="host"></div>
 <script>
 const log=(k,v)=>fetch('probe://app/log?k='+encodeURIComponent(k)+'&v='+encodeURIComponent(v)).catch(()=>{});
-const FRAME_CSP="default-src 'none'; style-src 'unsafe-inline'; img-src godwit-img:";
+const FRAME_CSP="default-src 'none'; style-src 'unsafe-inline'; img-src data: godwit-img:";
 function inner(tag){
-  let h='<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+FRAME_CSP+'"><style>body{margin:0}img{display:block;width:60px;height:40px}.bg{width:60px;height:40px;background-image:url(godwit-img://m/'+tag+'-bg)}</style></head><body>';
+  let h='<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+FRAME_CSP+'"><style>body{margin:0}img{display:block;width:60px;height:40px}.bg{width:60px;height:40px;background-image:url(godwit-img://m12/'+tag+'-bg)}</style></head><body>';
   h+='<div id="eager">';
-  for(let i=0;i<3;i++)h+='<img src="godwit-img://m/'+tag+'-e'+i+'">';
+  for(let i=0;i<3;i++)h+='<img src="godwit-img://m12/'+tag+'-e'+i+'">';
   h+='</div><div class="bg" id="bg"></div>';
   h+='<img id="blocked" src="https://example.com/'+tag+'.png"><img id="dataimg" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">';
   h+='<div style="height:3000px"></div><div id="lazy">';
-  for(let i=0;i<40;i++)h+='<img loading="lazy" src="godwit-img://m/'+tag+'-l'+i+'">';
+  for(let i=0;i<40;i++)h+='<img loading="lazy" src="godwit-img://m12/'+tag+'-l'+i+'">';
   h+='</div></body></html>';return h;
 }
 const variants={A:'allow-same-origin',B:'allow-same-origin allow-scripts'};
