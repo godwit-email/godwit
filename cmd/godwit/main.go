@@ -2,7 +2,7 @@
 // command-line client of its Local API (see run).
 //
 // Release builds take the version Settings › About and --version show from
-// mygo.json, which `mygo build` packages with the app.
+// mygo.config.ts, which `mygo build` packages with the app.
 package main
 
 import (

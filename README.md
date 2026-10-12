@@ -32,8 +32,6 @@ Download the latest build from [Releases](https://github.com/godwit-email/godwit
   ```sh
   brew install godwit-email/tap/godwit
   ```
-
-  Builds are not notarized yet, so the first time, right-click Godwit in Applications and choose **Open**.
 - **Windows**: `Godwit Setup <version> <arch>.exe`. It installs for the current user, without admin rights.
 - **Linux**: the `.deb`, or install for the current user (no root) with:
 

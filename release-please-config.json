@@ -9,7 +9,7 @@
       "bump-minor-pre-major": true,
       "draft": true,
       "force-tag-creation": true,
-      "extra-files": [{ "type": "json", "path": "mygo.json", "jsonpath": "$.version" }]
+      "extra-files": [{ "type": "generic", "path": "mygo.config.ts" }]
     }
   }
 }
