@@ -1,6 +1,5 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-as": "0.0.0",
   "packages": {
     ".": {
       "release-type": "go",
@@ -9,7 +8,13 @@
       "bump-minor-pre-major": true,
       "draft": true,
       "force-tag-creation": true,
-      "extra-files": [{ "type": "generic", "path": "mygo.config.ts" }]
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "mygo.config.ts"
+        }
+      ],
+      "include-commit-authors": true
     }
   }
 }
