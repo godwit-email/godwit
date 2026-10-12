@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"testing"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 )
@@ -43,7 +44,13 @@ func (db *DB) init(ctx context.Context) error {
 	if cur > len(Migrations) {
 		return fmt.Errorf("%w (have %d, know %d)", ErrNewerDatabase, cur, len(Migrations))
 	}
-	for _, p := range []string{"PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL"} {
+	// Tests open a new database per case; FULL would fsync every migration.
+	var pragmas []string
+	if testing.Testing() {
+		pragmas = append(pragmas, "PRAGMA synchronous = OFF")
+	}
+	pragmas = append(pragmas, "PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL")
+	for _, p := range pragmas {
 		if _, err := db.Query(ctx, p); err != nil {
 			return err
 		}
