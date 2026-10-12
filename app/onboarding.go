@@ -818,14 +818,15 @@ func (o *onboarding) checkView(c *ui.Context) {
 			}
 			row.Children(func() {
 				dot := ui.Box(c).Size(theme.StepDot, theme.StepDot).Radius(t.Radius.Full).Center().FontSize(t.Text.Sm)
-				// the design's text glyphs: taller than the check and x icons
+				// the design's text glyphs, taller than the check and x icons; "…" sits on the
+				// baseline, so pending is the ellipsis icon, centered
 				switch status {
 				case 1:
 					dot.Background(t.SuccessBg).TextColor(t.SuccessText).Children(func() { ui.Text(c, "✓") })
 				case 2:
 					dot.Background(t.DangerBg).TextColor(t.DangerText).Children(func() { ui.Text(c, "✕") })
 				default:
-					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Text(c, "…") })
+					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Icon(c, icons.Get("ellipsis")).Size(theme.IconXs, theme.IconXs) })
 				}
 				ui.Column(c).Gap(th.Space(0.5)).Grow(1).Shrink(1).Children(func() {
 					lineText(c, text, t.Text.Body)
