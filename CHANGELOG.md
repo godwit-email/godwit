@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0](https://github.com/godwit-email/godwit/compare/v0.0.0...v0.1.0) (2026-10-12)
+
+
+### Features
+
+* **notify:** show sender, subject and snippet in new-mail notifications ([#37](https://github.com/godwit-email/godwit/issues/37)) ([7930e0b](https://github.com/godwit-email/godwit/commit/7930e0b98591843013cf704265259235bdaef557))
+* onboarding and dialog polish (confetti, unified dialog, theme at launch) ([#38](https://github.com/godwit-email/godwit/issues/38)) ([f2a38bd](https://github.com/godwit-email/godwit/commit/f2a38bdc0a16df41a19680f093b1c245acd6d022))
+* **reader:** mail styles that follow the theme, links that open; sidebar and list polish ([#40](https://github.com/godwit-email/godwit/issues/40)) ([4c217a0](https://github.com/godwit-email/godwit/commit/4c217a08f7a2ba9511398c4ef801ce96a4a4ea41))
+* remote mail images through a privacy proxy, disk cache and prefetch ([#39](https://github.com/godwit-email/godwit/issues/39)) ([aecf8dc](https://github.com/godwit-email/godwit/commit/aecf8dcf5589eaa09ddf47c4607f65632210ff28))
+
+
+### Bug Fixes
+
+* **auth:** sign in to Outlook through the consumers endpoint ([#35](https://github.com/godwit-email/godwit/issues/35)) ([153a9b3](https://github.com/godwit-email/godwit/commit/153a9b3405eb626a6d64719b0002c2f9047b7b55))
+* **release:** install web dependencies before building ([#29](https://github.com/godwit-email/godwit/issues/29)) ([cf80638](https://github.com/godwit-email/godwit/commit/cf8063827f5073dfb247f917a901a080dcad8c83))
+* **site:** match demo window chrome to the browser platform ([#32](https://github.com/godwit-email/godwit/issues/32)) ([ca3b281](https://github.com/godwit-email/godwit/commit/ca3b281885ebc0d204f688ebbe7ab67a87e231de))
+
 ## 0.0.0 (2026-10-12)
 
 
