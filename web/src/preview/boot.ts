@@ -151,7 +151,6 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       installFake({
         "ReaderPage.Load": async () => body,
         "ReaderPage.Height": nothing,
-        "ReaderPage.Image": async () => "",
         "ReaderPage.Navigate": nothing,
         "ReaderPage.OpenLink": nothing,
         "ReaderPage.Search": nothing,

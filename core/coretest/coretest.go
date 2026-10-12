@@ -28,6 +28,7 @@ import (
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/zalando/go-keyring"
 )
@@ -80,7 +81,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	claimEnv(t)                    // MockInit empties the keychain of any Env still running
 	keyring.MockInit()
 	dir := t.TempDir()
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN"})
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imagefetch.NewClient(true)})
 	if err != nil {
 		t.Fatal(err)
 	}

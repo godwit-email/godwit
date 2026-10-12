@@ -117,12 +117,11 @@ function Failed({
 /**
  * A body in a sandboxed iframe (no scripts; the srcdoc's own CSP first). The page wires it on each
  * load: its height (to Go and to the iframe, so nothing is clipped), wheels and ⌘[ ⌘] to Go, links
- * to OpenLink, and with Remote each http(s) image through Image.
+ * to OpenLink. Remote images are godwit-img: URLs the frame loads itself, from Go's image proxy.
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const srcdoc = useMemo(() => buildSrcdoc(body, theme), [body, theme]);
   const frame = useRef<HTMLIFrameElement>(null);
-  const remote = body.remote;
   const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...body.text }), [body.text]);
 
   // One forwarder for both windows, so a frame's wheels are summed once.
@@ -132,7 +131,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
     return () => removeEventListener("wheel", wheel);
   }, [wheel]);
 
-  const wire = useCallback((f: HTMLIFrameElement) => attach(f, remote, wheel), [remote, wheel]);
+  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel), [wheel]);
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
@@ -169,11 +168,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 }
 
 /** Wires a loaded body document; returns the unwiring. */
-function attach(
-  frame: HTMLIFrameElement,
-  remote: boolean,
-  wheel: (e: WheelEvent) => void,
-): () => void {
+function attach(frame: HTMLIFrameElement, wheel: (e: WheelEvent) => void): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
@@ -270,19 +265,6 @@ function attach(
       () => api.search(),
     ),
   );
-
-  // Remote images (allowed): no request leaves (the frame's CSP blocks it anyway); Go fetches
-  // each as a data: URL. A failure leaves the alt.
-  if (remote) {
-    for (const img of [...doc.images]) {
-      const src = img.getAttribute("src") ?? "";
-      if (!/^https?:/i.test(src)) continue;
-      img.setAttribute("src", "");
-      api.image(src).then((d) => {
-        if (live && d.startsWith("data:")) img.setAttribute("src", d);
-      }, ignore);
-    }
-  }
 
   return () => {
     live = false;

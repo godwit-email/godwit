@@ -7,30 +7,23 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
 var (
-	// ErrImageRefused is returned for an image of a message whose remote
-	// images the user has not allowed (加载图片), or one not in its body.
-	ErrImageRefused = errors.New("that image may not be loaded")
-	// ErrImageDeadline is returned once a message's images ran out of time.
-	ErrImageDeadline = errors.New("the message's images took too long")
 	// ErrBadHeight is returned for a negative or absurd height.
 	ErrBadHeight = errors.New("the height is out of range")
 	// ErrBadWheel is returned for a wheel delta that is not a number.
 	ErrBadWheel = errors.New("the wheel delta is not a number")
 )
-
-// imageDeadline is how long a message's remote images may take, all of
-// them, from 加载图片; each request also has imagefetch.Timeout.
-const imageDeadline = 60 * time.Second
 
 // maxBodyHeight bounds a reported height, in CSS pixels.
 const maxBodyHeight = 1 << 20
@@ -46,8 +39,9 @@ type ReaderBody struct {
 	// the limits; "" when the mail has no HTML, which Plain then holds.
 	HTML  string `json:"html"`
 	Plain string `json:"plain"`
-	// Remote is that the user allowed the remote images (加载图片): the page
-	// gets each http(s) src of HTML through Image.
+	// Remote is that the message's remote images may load (the setting, or
+	// the user's 加载图片): HTML holds them as godwit-img: URLs, which the
+	// image proxy (ImageHandler) serves.
 	Remote bool `json:"remote"`
 	// Blocked is the remote images left out while not Remote.
 	Blocked int `json:"blocked"`
@@ -101,9 +95,7 @@ type Reader struct {
 	d     ReaderDeps
 
 	// Test seams.
-	allowLoopback bool
-	imageDeadline time.Duration
-	getMessage    func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
+	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -117,30 +109,17 @@ type bodyOf struct {
 	pages   int // bound to it
 	allowed bool
 	version int64
-	body    *ReaderBody     // the body of version, once built
-	remote  map[string]bool // its http(s) image sources
-	budget  *imagefetch.Budget
-
-	// The remote images, from Allow: imgs share ctx, which ends at the
-	// deadline, the next Allow or the last Unbind, and at most
-	// imagefetch.Workers fetch at once.
-	ctx    context.Context
-	stop   context.CancelFunc
-	client *http.Client
-	sem    chan struct{}
-	imgs   map[string]*fetched
-}
-
-// fetched is one remote image: url or err once done is closed.
-type fetched struct {
-	done chan struct{}
-	url  string
-	err  error
+	body    *ReaderBody       // the body of version, once built
+	tokens  map[string]string // its image tokens (godwit-img: paths) → remote URLs
+	// The pixels the images served for it take, from the message-wide budget:
+	// the page decodes every image at once. charged is the tokens counted.
+	pixels  *imagefetch.Budget
+	charged map[string]bool
 }
 
 // NewReader keeps the reader pages of pages; SetService opens it up.
 func NewReader(pages *Pages, d ReaderDeps) *Reader {
-	return &Reader{pages: pages, d: d, imageDeadline: imageDeadline, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
+	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
 		getMessage: func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
 			return svc.GetMessage(ctx, id, remote)
 		}}
@@ -178,7 +157,7 @@ func (r *Reader) Bound(key any) (message int64, ok bool) {
 }
 
 // Unbind forgets the page with key; the last page of a message takes its
-// state along (allowed images, fetches in flight).
+// state along (allowed images, tokens).
 func (r *Reader) Unbind(key any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -193,9 +172,6 @@ func (r *Reader) unbind(key any) {
 	delete(r.bound, key)
 	st := r.msgs[m]
 	if st.pages--; st.pages == 0 {
-		if st.stop != nil {
-			st.stop()
-		}
 		delete(r.msgs, m)
 	}
 }
@@ -214,11 +190,8 @@ func (r *Reader) Allow(message int64) {
 	}
 	r.version++
 	v := r.version
-	if st.stop != nil {
-		st.stop()
-	}
-	st.version, st.body, st.remote, st.budget = v, nil, nil, nil
-	r.allow(st)
+	st.version, st.body, st.tokens, st.allowed = v, nil, nil, true
+	st.pixels, st.charged = nil, nil
 	r.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -252,14 +225,6 @@ func (r *Reader) Allow(message int64) {
 	}()
 }
 
-// allow starts st's remote images: a fresh deadline, client and fetches.
-// The caller holds r.mu.
-func (r *Reader) allow(st *bodyOf) {
-	st.allowed = true
-	st.ctx, st.stop = context.WithTimeout(context.Background(), r.imageDeadline)
-	st.client, st.sem, st.imgs = imagefetch.NewClient(r.allowLoopback), make(chan struct{}, imagefetch.Workers), map[string]*fetched{}
-}
-
 // build reads message's body for version v and keeps it, if v is still
 // the message's version.
 func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64, allowed bool) (ReaderBody, error) {
@@ -273,10 +238,10 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	}
 	b := ReaderBody{Message: message, Version: v, Remote: allowed, Blocked: m.RemoteImagesBlocked, Cut: m.Truncated,
 		Theme: ThemeOf(st), Text: readerText()}
-	budget := imagefetch.NewBudget()
-	remote := map[string]bool{}
+	var tokens map[string]string
+	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
-		b.HTML, remote = prepareBody(m.HTML, budget)
+		b.HTML, tokens = prepareBody(m.HTML, budget, message, svc.ImageCache().Dims)
 	} else {
 		b.Plain = m.Text
 	}
@@ -284,7 +249,8 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	defer r.mu.Unlock()
 	if s := r.msgs[message]; s != nil && s.version == v {
 		if s.body == nil {
-			s.body, s.remote, s.budget = &b, remote, budget
+			s.body, s.tokens = &b, tokens
+			s.pixels, s.charged = budget, map[string]bool{}
 		}
 		for k, m := range r.bound {
 			if m == message {
@@ -350,15 +316,15 @@ func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
 	}
 	v, allowed := st.version, st.allowed
 	p.r.mu.Unlock()
-	if !allowed { // a trusted sender's images load at once (core decides)
-		trusted, err := svc.ImagesTrusted(ctx, message)
+	if !allowed { // the setting may let them load at once (core decides)
+		ok, err := svc.ImagesAllowed(ctx, message)
 		if err != nil {
 			return ReaderBody{}, err
 		}
-		if trusted {
+		if ok {
 			p.r.mu.Lock()
-			if p.r.msgs[message] == st && st.version == v && !st.allowed {
-				p.r.allow(st)
+			if p.r.msgs[message] == st && st.version == v {
+				st.allowed = true
 			}
 			allowed = st.allowed
 			p.r.mu.Unlock()
@@ -439,70 +405,73 @@ func (p *ReaderPage) Search(ctx context.Context) error {
 	return nil
 }
 
-// Image is the remote image at url as a data: URL. It is refused
-// (ErrImageRefused) unless the user allowed the caller's message's images
-// and url is an image of its body as last built. The message's images
-// share its budget (with its inline ones), at most imagefetch.Workers at
-// once, and its deadline; each url is fetched once.
-func (p *ReaderPage) Image(ctx context.Context, src string) (string, error) {
-	message, _, err := p.r.caller(ctx)
-	if err != nil {
-		return "", err
-	}
-	p.r.mu.Lock()
-	st := p.r.msgs[message]
-	if st == nil { // unbound since
-		p.r.mu.Unlock()
-		return "", ErrWrongPage
-	}
-	if !st.allowed || st.body == nil || !st.body.Remote || !st.remote[src] {
-		p.r.mu.Unlock()
-		return "", ErrImageRefused
-	}
-	f := st.imgs[src]
-	if f == nil {
-		if st.ctx.Err() != nil {
-			p.r.mu.Unlock()
-			return "", ErrImageDeadline
+// ImageScheme is the URL scheme of a message's remote images in its body,
+// served by ImageHandler: godwit-img://m<message>/<token>.
+const ImageScheme = "godwit-img"
+
+// ImageHandler is the image proxy the pages load remote images from. It
+// serves the image of a token of a message a page shows and whose images may
+// load (Remote), from the cache: downloaded once through core's client (public
+// hosts only, no cookies, no Referer), kept on disk, shared by messages.
+func (r *Reader) ImageHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		message, token, ok := parseImageURL(req.URL)
+		if !ok {
+			http.NotFound(w, req)
+			return
 		}
-		f = &fetched{done: make(chan struct{})}
-		st.imgs[src] = f
-		go f.fetch(st.ctx, st.client, st.sem, st.budget, src)
-	}
-	p.r.mu.Unlock()
-	select {
-	case <-f.done:
-		return f.url, f.err
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+		r.mu.Lock()
+		var src string
+		if st := r.msgs[message]; st != nil && st.allowed {
+			src = st.tokens[token]
+		}
+		svc := r.svc
+		r.mu.Unlock()
+		if src == "" || svc == nil {
+			http.NotFound(w, req)
+			return
+		}
+		img, err := svc.ImageCache().Get(req.Context(), src)
+		if err != nil {
+			http.Error(w, "image unavailable", http.StatusBadGateway)
+			return
+		}
+		if !r.chargePixels(message, token, img) {
+			http.Error(w, "the message's images have too many pixels", http.StatusForbidden)
+			return
+		}
+		h := w.Header()
+		h.Set("Content-Type", "image/"+img.Format)
+		h.Set("Content-Length", strconv.Itoa(len(img.Data)))
+		h.Set("Cache-Control", "no-store") // every body load comes through the checks above; the disk cache is the cache
+		h.Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(img.Data)
+	})
 }
 
-// fetch downloads and checks src once a worker is free, within budget.
-func (f *fetched) fetch(ctx context.Context, c *http.Client, sem chan struct{}, budget *imagefetch.Budget, src string) {
-	defer close(f.done)
-	select {
-	case sem <- struct{}{}:
-		defer func() { <-sem }()
-	case <-ctx.Done():
-		f.err = ErrImageDeadline
-		return
+// chargePixels takes img's pixels from message's budget, once per token; false
+// when the message is gone or has none left.
+func (r *Reader) chargePixels(message int64, token string, img imagecache.Image) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.msgs[message]
+	if st == nil || st.pixels == nil {
+		return false
 	}
-	if f.err = budget.Take(); f.err != nil {
-		return
+	if st.charged[token] {
+		return true
 	}
-	data, err := budget.Download(ctx, c, src)
-	if err != nil {
-		if ctx.Err() != nil {
-			err = errors.Join(ErrImageDeadline, err)
-		}
-		f.err = err
-		return
+	if st.pixels.TakePixels(int64(img.Width)*int64(img.Height)) != nil {
+		return false
 	}
-	format, _, err := budget.Check(data)
-	if err != nil {
-		f.err = err
-		return
-	}
-	f.url = imagefetch.Encode(format, data)
+	st.charged[token] = true
+	return true
+}
+
+// parseImageURL is the message and token of a godwit-img: URL.
+func parseImageURL(u *url.URL) (message int64, token string, ok bool) {
+	h, found := strings.CutPrefix(u.Host, "m")
+	message, err := strconv.ParseInt(h, 10, 64)
+	token = strings.TrimPrefix(u.Path, "/")
+	return message, token, found && err == nil && token != "" && !strings.Contains(token, "/")
 }

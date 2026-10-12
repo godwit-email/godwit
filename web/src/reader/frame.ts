@@ -1,10 +1,11 @@
 import type { ReaderBody, Theme } from "@/mygo";
 
 /**
- * The body iframe's own CSP, the first element of its head: nothing loads but inline styles and
- * data: images, on top of the page's CSP (spec §E3).
+ * The body iframe's own CSP, the first element of its head: nothing loads but inline styles,
+ * data: images and the godwit-img: images Go's image proxy serves (a remote image never reaches
+ * the network from the page), on top of the page's CSP (spec §E3).
  */
-export const FRAME_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+export const FRAME_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data: godwit-img:";
 
 const escapeText = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 

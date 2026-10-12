@@ -23,7 +23,7 @@ const body = (over: Partial<ReaderBody> = {}): ReaderBody => ({
 });
 const parse = (s: string) => new DOMParser().parseFromString(s, "text/html");
 
-test("iframe csp first: the head's first element is the CSP meta, img-src data: only", () => {
+test("iframe csp first: the head's first element is the CSP meta, img-src data: and godwit-img: only", () => {
   const s = buildSrcdoc(body(), theme());
   expect(s.startsWith("<!doctype html>")).toBe(true);
   const head = parse(s).head;
@@ -31,7 +31,8 @@ test("iframe csp first: the head's first element is the CSP meta, img-src data: 
   expect(first?.tagName).toBe("META");
   expect(first?.getAttribute("http-equiv")).toBe("Content-Security-Policy");
   expect(first?.getAttribute("content")).toBe(FRAME_CSP);
-  expect(FRAME_CSP).toContain("img-src data:");
+  expect(FRAME_CSP).toContain("img-src data: godwit-img:");
+  expect(FRAME_CSP).not.toMatch(/https?:|\*/); // nothing reaches the network
   expect(FRAME_CSP).toContain("default-src 'none'");
   // The CSP precedes every byte of the mail.
   expect(s.indexOf(FRAME_CSP)).toBeLessThan(s.indexOf("Hello"));

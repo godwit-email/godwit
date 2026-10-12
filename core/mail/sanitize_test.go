@@ -119,3 +119,37 @@ func TestImageSources(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(out, "src="), out)
 	assert.Contains(t, out, "<p>a</p>")
 }
+
+func TestSanitizeBackgroundImage(t *testing.T) {
+	src := `<table style="color:red; background: #fff url('https://cdn.example/bg.png') no-repeat"><tr><td style="background-image:url(//cdn.example/a.jpg)">x</td></tr></table>` +
+		`<div style="background:url(data:image/png;base64,AAAA)" data-bg="https://evil.example/x.png">y</div>` +
+		`<p style="background-image:url(javascript:1)">z</p>`
+	safe, blocked := mail.Sanitize(src, nil, true)
+	assert.Contains(t, safe, `data-bg="https://cdn.example/bg.png"`)
+	assert.Contains(t, safe, `data-bg="https://cdn.example/a.jpg"`)
+	assert.Contains(t, safe, "color: red")
+	assert.NotContains(t, safe, "url(")
+	assert.NotContains(t, safe, "evil.example") // a data-bg of the mail's own is not trusted
+	assert.NotContains(t, safe, "javascript")
+	assert.Equal(t, 4, blocked)
+
+	safe, _ = mail.Sanitize(src, nil, false)
+	assert.NotContains(t, safe, "data-bg")
+	assert.NotContains(t, mail.SanitizeCompose(src), "data-bg")
+}
+
+func TestSanitizeDropsTrackingPixels(t *testing.T) {
+	src := `<p>hi</p><img src="https://t.example/a.gif" width="1" height="1">` +
+		`<img src="https://t.example/b.gif" style="width:1px;height:1px">` +
+		`<img src="https://t.example/c.gif" width="0">` +
+		`<img src="https://www.tiktok.com/edm/catcher?x=1" width="300">` +
+		`<img src="https://t.example/logo.png" width="120" height="40">` +
+		`<img src="https://t.example/rule.gif" width="600" height="1">`
+	safe, blocked := mail.Sanitize(src, nil, true)
+	assert.Equal(t, 2, blocked)
+	assert.Contains(t, safe, "logo.png")
+	assert.Contains(t, safe, "rule.gif")
+	for _, gone := range []string{"a.gif", "b.gif", "c.gif", "catcher"} {
+		assert.NotContains(t, safe, gone)
+	}
+}

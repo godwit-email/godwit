@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +40,7 @@ func newSyncEnv(t *testing.T, opts ...testmail.Option) *syncEnv {
 	t.Helper()
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir})
+	s, err := New(bg, Options{DataDir: dir, ImageClient: imagefetch.NewClient(true)})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	smtpAddr, _ := testmail.StartSMTP(t)

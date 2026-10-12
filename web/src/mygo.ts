@@ -197,8 +197,9 @@ export interface ReaderBody {
   html: string;
   plain: string;
   /**
-   * Remote is that the user allowed the remote images (加载图片): the page
-   * gets each http(s) src of HTML through Image.
+   * Remote is that the message's remote images may load (the setting, or
+   * the user's 加载图片): HTML holds them as godwit-img: URLs, which the
+   * image proxy (ImageHandler) serves.
    */
   remote: boolean;
   /** Blocked is the remote images left out while not Remote. */
@@ -727,16 +728,6 @@ export const ReaderPage = {
   /** Height is the body's height in CSS pixels, for the native layout. */
   height(px: number): Promise<void> {
     return call("ReaderPage.Height", px);
-  },
-  /**
-   * Image is the remote image at url as a data: URL. It is refused
-   * (ErrImageRefused) unless the user allowed the caller's message's images
-   * and url is an image of its body as last built. The message's images
-   * share its budget (with its inline ones), at most imagefetch.Workers at
-   * once, and its deadline; each url is fetched once.
-   */
-  image(src: string): Promise<string> {
-    return call("ReaderPage.Image", src);
   },
   /** Load is the caller's message's body, as of its version. */
   load(): Promise<ReaderBody> {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ import (
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/imagecache"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
 // ErrClosed is returned by calls made after Close.
@@ -33,6 +36,9 @@ type Options struct {
 	AutoSync bool // run a background sync worker per account
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
+	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
+	// (public hosts only). Tests give one that reaches loopback.
+	ImageClient *http.Client
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -43,6 +49,7 @@ type Service struct {
 	dataDir   string
 	opts      Options
 	installID string // namespaces this data directory's keychain entries
+	images    *imagecache.Cache
 
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
@@ -132,6 +139,13 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock}
+	if opts.ImageClient == nil {
+		s.opts.ImageClient = imagefetch.NewClient(false)
+	}
+	if err := s.openImageCache(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("image cache: %w", err)
+	}
 	s.registerAskTools()
 	s.registerAssistTools()
 	if err := s.backfillSlugs(ctx); err != nil {
@@ -159,6 +173,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s.startJanitor()
+	s.startImagePrefetch()
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
 		s.Close()
@@ -205,6 +220,7 @@ func (s *Service) Close() error {
 		s.workersMu.Lock()
 		s.workers = nil
 		s.workersMu.Unlock()
+		s.images.Close() // no download outlives the Service
 		s.closeErr = s.db.Close()
 	})
 	return s.closeErr
@@ -295,10 +311,14 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			}
 		}
 	}
+	imagesDir, err := filepath.Abs(filepath.Join(s.dataDir, "cache", "images"))
+	if err != nil {
+		return err
+	}
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(s.dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			return err != nil || keep[p]
+			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err

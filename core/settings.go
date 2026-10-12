@@ -39,6 +39,10 @@ type Settings struct {
 	// images load at once (始终信任此发件人). Only TrustImageSender and
 	// UntrustImageSender change it; SetSettings keeps the stored list.
 	TrustedImageSenders []string
+	// RemoteImages is when a message's remote images load, through the image
+	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
+	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
+	RemoteImages string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize).
@@ -48,7 +52,7 @@ type Settings struct {
 const settingsVersion = 3
 
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match",
+	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true}
 }
 
@@ -68,6 +72,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid theme %q", st.Theme)
 	case !in(st.Density, "compact", "comfortable"):
 		return fmt.Errorf("invalid density %q", st.Density)
+	case !in(st.RemoteImages, "", "auto", "trusted", "ask"):
+		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
 	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):
@@ -230,12 +236,13 @@ func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string
 }
 
 // inJunk is whether folder f is junk, detected or given by the user, even
-// where another folder holds the role: ImagesTrusted and Message.InJunk agree.
+// where another folder holds the role: ImagesAllowed and Message.InJunk agree.
 const inJunk = "'junk' IN (f.role, f.role_override)"
 
-// ImagesTrusted is whether message's remote images load at once: its From
-// address is trusted and it is not in a junk folder (From is unauthenticated).
-func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error) {
+// ImagesAllowed is whether message's remote images load without asking, by
+// the RemoteImages setting: never in a junk folder (From is unauthenticated);
+// "auto" otherwise; "trusted" for the trusted From addresses; "ask" never.
+func (s *Service) ImagesAllowed(ctx context.Context, message int64) (bool, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return false, err
@@ -245,13 +252,16 @@ func (s *Service) ImagesTrusted(ctx context.Context, message int64) (bool, error
 	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
 		return false, err
 	}
-	a, err := mail.ParseAddress(store.Str(rows.Values[0][0]))
-	if err != nil {
-		return false, nil
-	}
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return false, err
 	}
-	return slices.Contains(st.TrustedImageSenders, strings.ToLower(a.Address)), nil
+	switch st.RemoteImages {
+	case "", "auto":
+		return true, nil
+	case "trusted":
+		a, err := mail.ParseAddress(store.Str(rows.Values[0][0]))
+		return err == nil && slices.Contains(st.TrustedImageSenders, strings.ToLower(a.Address)), nil
+	}
+	return false, nil
 }
