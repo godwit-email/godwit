@@ -154,6 +154,9 @@ func (a *App) OpenMessage(id int64) {
 	})
 }
 
+// OpenSettings opens the settings, as the app menu's Settings… does.
+func (a *App) OpenSettings() { a.navigate(Route{Page: PageSettings}) }
+
 // OpenModels opens the model settings (the Wit page's model chip).
 func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "models"}) }
 

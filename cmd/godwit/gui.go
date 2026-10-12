@@ -257,8 +257,22 @@ func gui(ctx context.Context, dataDir string) int {
 		// The Mail menu stands in for File, which on macOS holds Close (⌘W).
 		mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
 			mygo.Separator(), {Role: mygo.RoleClose}}
+		appMenu := []*mygo.MenuItem{
+			{Role: mygo.RoleAbout},
+			mygo.Separator(),
+			{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
+			updater.MenuItem(),
+			mygo.Separator(),
+			{Role: mygo.RoleServices},
+			mygo.Separator(),
+			{Role: mygo.RoleHide},
+			{Role: mygo.RoleHideOthers},
+			{Role: mygo.RoleUnhide},
+			mygo.Separator(),
+			{Role: mygo.RoleQuit},
+		}
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Role: mygo.RoleAppMenu},
+			{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
 			{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
