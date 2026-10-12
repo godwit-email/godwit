@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/godwit-email/godwit/assets"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"golang.org/x/oauth2"
 )
 
@@ -128,10 +130,25 @@ func (f *Flow) finish(g Grant, err error) {
 	f.finishOnce.Do(func() { f.grant, f.err = g, err; close(f.done) })
 }
 
-const (
-	pageOK   = `<!doctype html><html lang="zh"><meta charset="utf-8"><title>Godwit</title><p>登录完成，可以关闭此页面回到 Godwit。</p></html>`
-	pageFail = `<!doctype html><html lang="zh"><meta charset="utf-8"><title>Godwit</title><p>登录没有完成，请回到 Godwit 重试。</p></html>`
-)
+// pageHead drops the code and state from the address bar once the page is shown.
+// Colors copy web/src/shared/styles.css; this page is served outside the app.
+const pageHead = `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="viewport" content="width=device-width">` +
+	`<meta name="color-scheme" content="light dark"><title>Godwit</title><style>` +
+	`:root{--bg:oklch(1 0 0);--fg:oklch(.145 0 0);--muted:oklch(.556 0 0)}` +
+	`@media (prefers-color-scheme:dark){:root{--bg:oklch(.145 0 0);--fg:oklch(.985 0 0);--muted:oklch(.708 0 0)}}` +
+	`body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,sans-serif;text-align:center}` +
+	`svg{width:96px;height:96px;margin:-24px 0}h1{margin:16px 0 4px;font-size:20px;font-weight:600}p{margin:0;color:var(--muted)}` +
+	`</style><script>history.replaceState(null, "", "/")</script><main>`
+
+// callbackPage is the page for ok or not, in the app's language.
+func callbackPage(ok bool) string {
+	k := "oauth.page.fail"
+	if ok {
+		k = "oauth.page.ok"
+	}
+	return fmt.Sprintf(pageHead, i18n.Language()) + string(assets.Logo) +
+		"<h1>" + i18n.T(k+".title") + "</h1><p>" + i18n.T(k+".body") + "</p></main></html>"
+}
 
 // callback answers the browser with a fixed page that echoes nothing. A request
 // without the flow's state is refused and the flow keeps waiting.
@@ -159,11 +176,10 @@ func page(w http.ResponseWriter, ok bool) {
 	h.Set("Referrer-Policy", "no-referrer")
 	if ok {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, pageOK)
-		return
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
 	}
-	w.WriteHeader(http.StatusBadRequest)
-	fmt.Fprint(w, pageFail)
+	fmt.Fprint(w, callbackPage(ok))
 }
 
 func (f *Flow) exchange(q url.Values) (Grant, error) {

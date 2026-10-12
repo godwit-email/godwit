@@ -301,6 +301,9 @@ func (p *settingsPage) startReauth(acc core.Account) {
 		_, err = oauth.Await(ctx, flow)
 		return err
 	}, func(err error) {
+		if !errors.Is(err, context.Canceled) {
+			a.plat.ShowWindow() // the user is in the browser; bring them back
+		}
 		if err != nil {
 			delete(p.reauth, id)
 			a.toastErr(err)
