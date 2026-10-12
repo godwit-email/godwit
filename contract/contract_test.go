@@ -357,6 +357,7 @@ func TestNormalizeMessageIDs(t *testing.T) {
 func TestRemoteStreamErrorSurvivesCancel(t *testing.T) {
 	client, server := net.Pipe()
 	t.Cleanup(func() { client.Close(); server.Close() })
+	queued := make(chan func() int, 1) // the typed channel's length, once the test took the first event
 	go func() {
 		r := bufio.NewReader(server)
 		next := func() (id json.RawMessage) {
@@ -370,8 +371,20 @@ func TestRemoteStreamErrorSurvivesCancel(t *testing.T) {
 		}
 		send := func(v any) { b, _ := json.Marshal(v); server.Write(append(b, '\n')) }
 		send(map[string]any{"jsonrpc": "2.0", "id": next(), "result": map[string]any{"stream": 7}}) // Subscribe
-		for range rpc.StreamBuffer + 44 {                                                           // fills the typed channel
+		event := func() {
 			send(map[string]any{"jsonrpc": "2.0", "method": "$/stream", "params": []any{7, map[string]any{"Type": "message.received"}}})
+		}
+		// In two batches, so the raw stream never overflows however late the
+		// forwarder runs: the first fits it; the second comes once the forwarder
+		// has moved the first, and fills the typed channel, blocking the forwarder.
+		for range rpc.StreamBuffer {
+			event()
+		}
+		for n := <-queued; n() < rpc.StreamBuffer-1; {
+			time.Sleep(time.Millisecond)
+		}
+		for range 45 {
+			event()
 		}
 		send(map[string]any{"jsonrpc": "2.0", "method": "$/stream.end", "params": []any{7, map[string]any{"code": -32000, "message": "transport broke"}}})
 		send(map[string]any{"jsonrpc": "2.0", "id": next(), "result": nil}) // ping: the end is processed by now
@@ -381,6 +394,7 @@ func TestRemoteStreamErrorSurvivesCancel(t *testing.T) {
 	r := &contract.Remote{C: rpc.NewClient(client)}
 	ch, cancel := r.Subscribe()
 	ev := <-ch
+	queued <- func() int { return len(ch) }
 	require.Equal(t, "message.received", ev.Type, "the business event arrived")
 	require.NoError(t, r.C.Call(t.Context(), "ping", nil))
 	cancel()
