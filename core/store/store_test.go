@@ -49,6 +49,8 @@ func TestOpenMigrates(t *testing.T) {
 	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
 	rows, _ = db.Query(ctx, "PRAGMA foreign_keys")
 	assert.Equal(t, int64(1), store.Int(rows.Values[0][0]))
+	rows, _ = db.Query(ctx, "PRAGMA synchronous")
+	assert.Equal(t, int64(0), store.Int(rows.Values[0][0]))
 	db.Close()
 	db, err = store.Open(ctx, path) // 重新打开不重复迁移
 	require.NoError(t, err)

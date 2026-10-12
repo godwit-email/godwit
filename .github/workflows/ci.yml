@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: read
+  actions: write # save the Go build cache
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Keep the workflow/check names present; skip the expensive client jobs
@@ -54,8 +59,22 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Exclude Go temp from Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:TEMP
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - id: go-cache
+        shell: bash
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache.outputs.dir }}
+          # Job id so test and package do not overwrite one immutable entry.
+          key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ github.job }}-
       - run: mise run web:install
       - name: gofmt
         if: runner.os != 'Windows'
@@ -73,6 +92,27 @@ jobs:
       - name: test (race)
         if: runner.os != 'Windows'
         run: go test -race -count=1 ./...
+
+  package:
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - id: go-cache
+        shell: bash
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache.outputs.dir }}
+          key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ github.job }}-
       - name: build (every platform must package)
         run: mise run build
       - name: generated client matches the Go code
