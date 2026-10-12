@@ -74,7 +74,9 @@ test("the body sits in #godwit-body; html mail is transparent, in the theme's te
 const render = (over: Partial<ReaderBody>, mode: Theme["mode"], systemDark = false) =>
   parse(buildSrcdoc(body(over), theme({ mode }), systemDark));
 const cls = (d: Document) => d.getElementById("godwit-body")?.className;
-const aware = { html: "<style data-dark>#godwit-body.godwit-dark .a{color:red}</style><p>x</p>" };
+const aware = {
+  html: '<style data-dark="">#godwit-body.godwit-dark .a{color:red}</style><p>x</p>',
+};
 
 test("html mail follows the theme: light, dark with its own dark styles, dark inverted without", () => {
   expect(cls(render({}, "light"))).toBe("godwit-light");

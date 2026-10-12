@@ -128,6 +128,21 @@ func cleanNames(n *html.Node) {
 	}
 }
 
+// openable reports whether the reader can open href: http, https or mailto,
+// as url.Parse reads it, as the reader's opener does (webui.ReaderPage.OpenLink);
+// a link it would refuse (a bad port) is no link.
+func openable(href string) bool {
+	u, err := url.Parse(href)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "mailto":
+		return true
+	}
+	return false
+}
+
 // nodeText is the text directly inside n (a <style>'s sheet).
 func nodeText(n *html.Node) string {
 	var b strings.Builder
@@ -187,8 +202,8 @@ func prepare(src string, received bool) (string, int, []string) {
 			delAttr(n, "data-href") // only ours below; the policy lets it through
 			cleanNames(n)
 			if href, ok := attr(n, "href"); ok && (n.DataAtom == atom.A || n.DataAtom == atom.Area) {
-				if l := strings.ToLower(strings.TrimSpace(href)); strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "mailto:") {
-					setAttr(n, "data-href", strings.TrimSpace(href))
+				if href = strings.TrimSpace(href); openable(href) {
+					setAttr(n, "data-href", href)
 				}
 				delAttr(n, "href")
 			}
@@ -306,7 +321,9 @@ func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe s
 	if css, dark := sanitizeCSS(sheets); css != "" {
 		open := "<style>"
 		if dark {
-			open = "<style data-dark>" // the reader keeps the mail's own dark styles, not its own inversion
+			// The reader keeps the mail's own dark styles, not its own inversion. As
+			// html.Render writes it, so a body written again (the image proxy's) starts the same.
+			open = `<style data-dark="">`
 		}
 		safe = open + css + "</style>" + safe
 	}

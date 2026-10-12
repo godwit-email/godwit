@@ -58,7 +58,7 @@ export const isDark = (t: Theme, systemDark: boolean) =>
   t.mode === "dark" || (t.mode === "system" && systemDark);
 
 // Go marks a stylesheet that has styles for the dark scheme (core/mail).
-const hasDarkStyles = (b: ReaderBody) => b.html.startsWith("<style data-dark>");
+const hasDarkStyles = (b: ReaderBody) => b.html.startsWith('<style data-dark="">');
 
 /**
  * The colour scheme of a body's document, also set on its iframe element (a scheme differing from

@@ -154,12 +154,13 @@ func TestSanitizeDropsTrackingPixels(t *testing.T) {
 	}
 }
 
-// A link bluemonday could not parse (a space, a {placeholder}) still opens,
-// and a data-href in the mail itself is not taken for ours.
+// A link bluemonday could not parse (a space, a {placeholder}) still opens;
+// one the opener's url.Parse refuses (a bad port) is no link; and a data-href
+// in the mail itself is not taken for ours.
 func TestSanitizeKeepsUnparseableLinks(t *testing.T) {
 	safe, _ := mail.Sanitize(`<a href="https://x.com/a b|c{d}">1</a><a href="https://x.com:abc/">2</a><span data-href="https://evil">3</span><a data-href="https://evil" href="javascript:1">4</a>`, nil, false)
 	assert.Contains(t, safe, `data-href="https://x.com/a b|c{d}"`)
-	assert.Contains(t, safe, `data-href="https://x.com:abc/"`)
+	assert.NotContains(t, safe, "x.com:abc", "the opener could not open it")
 	assert.NotContains(t, safe, "evil")
 }
 
@@ -198,8 +199,8 @@ body.dark .y { color: green }
 // A mail's <style> is kept as scoped, whitelisted rules in front of its body.
 func TestSanitizeStyleBlock(t *testing.T) {
 	safe, _ := mail.Sanitize(styled, nil, false)
-	css, rest, _ := strings.Cut(strings.TrimPrefix(safe, "<style data-dark>"), "</style>")
-	assert.True(t, strings.HasPrefix(safe, "<style data-dark>"), "it has styles of its own for the dark scheme")
+	css, rest, _ := strings.Cut(strings.TrimPrefix(safe, `<style data-dark="">`), "</style>")
+	assert.True(t, strings.HasPrefix(safe, `<style data-dark="">`), "it has styles of its own for the dark scheme")
 	assert.Contains(t, rest, `class="card wd360"`)
 	assert.NotContains(t, rest, `id=`, "the reader's own id is not the mail's")
 	for _, want := range []string{

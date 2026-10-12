@@ -20,6 +20,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 	"github.com/stretchr/testify/assert"
@@ -537,6 +538,16 @@ func attr(n *html.Node, key string) string {
 }
 
 // TestReaderBodyWhole: a body over the old structural limits comes back
+// TestReaderBodyKeepsDarkMark: a body written again for the image proxy still
+// starts with the sanitizer's mark of dark styles, as the reader looks for it
+// (web/src/reader/frame.ts): else it inverts a mail that styles its own dark.
+func TestReaderBodyKeepsDarkMark(t *testing.T) {
+	safe, _ := mail.Sanitize(`<style>@media (prefers-color-scheme: dark) { .a { color: #eee } }</style><p class="a">x</p><img src="https://img.example/a.png">`, nil, true)
+	out, tokens := prepareBody(safe, imagefetch.NewBudget(), 1, noDims)
+	require.Len(t, tokens, 1, "the image went through the proxy: the body was written again")
+	assert.True(t, strings.HasPrefix(out, `<style data-dark="">`), out)
+}
+
 // whole; only the Service's storage truncation (Message.Truncated) cuts.
 func TestReaderBodyWhole(t *testing.T) {
 	t.Run("paragraphs", func(t *testing.T) {
