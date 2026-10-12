@@ -230,7 +230,8 @@ func Download(ctx context.Context, c *http.Client, src string) ([]byte, error) {
 		return nil, ErrScheme
 	}
 	req.Header.Set("User-Agent", UserAgent)
-	req.Header.Set("Accept", "image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.5" // the formats Dims reads: no AVIF)
+	// Only the formats Dims reads: a CDN must not pick AVIF for us.
+	req.Header.Set("Accept", "image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.5")
 	resp, err := c.Do(req)
 	if err != nil {
 		return nil, err
