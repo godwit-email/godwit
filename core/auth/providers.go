@@ -40,10 +40,11 @@ func table() []Provider {
 			HelpURL: "https://support.google.com/accounts/answer/185833"},
 		{ID: "outlook", Name: "Outlook", Domains: []string{"outlook.com", "hotmail.com", "live.com", "msn.com", "hotmail.co.uk", "outlook.jp"},
 			IMAP: tls("outlook.office365.com"), SMTP: Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, Login: "oauth",
+			// consumers: common rejects personal accounts for our (unverified) app despite its audience.
 			OAuth: &OAuthConfig{
 				ClientID: MicrosoftClientID,
-				AuthURL:  "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-				TokenURL: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+				AuthURL:  "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
+				TokenURL: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
 				Scopes: []string{"openid", "email", "offline_access",
 					"https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send"},
 			}},
