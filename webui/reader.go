@@ -94,7 +94,7 @@ type Reader struct {
 	d     ReaderDeps
 
 	// Test seams.
-	getMessage    func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
+	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
 
 	mu      sync.Mutex
 	svc     *core.Service

@@ -427,7 +427,7 @@ var en = map[string]string{
 	"settings.local_api.mcp":                       "MCP client configuration",
 	"settings.local_api.copy":                      "Copy configuration",
 	"settings.remote_images":                       "Remote images",
-	"settings.remote_images.sub":                   "Godwit downloads a message’s images for you, without cookies or a referrer, so senders learn neither your IP address nor when you read",
+	"settings.remote_images.sub":                   "Godwit downloads a message’s images for you, without cookies or a referrer, so senders cannot tell when you read it (they still see this computer’s IP address when an image is fetched)",
 	"settings.remote_images.mode":                  "Load remote images",
 	"settings.remote_images.mode.help":             "Images in Junk never load by themselves",
 	"settings.remote_images.auto":                  "Automatically",
