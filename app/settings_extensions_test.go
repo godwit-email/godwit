@@ -50,9 +50,13 @@ func (h *harness) pluginConfig(name string) map[string]core.ConfigValue {
 
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
-	p := h.openSettings("extensions")
+	h.openSettings("extensions")
 	h.see("插件 · 0") // plugins come first
-	h.click(i18n.Tf("settings.ext.tab.skills", len(p.ext.skills)))
+	skills, err := h.env.Svc.ListSkills(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.click(i18n.Tf("settings.ext.tab.skills", len(skills))) // the page may not have loaded them yet
 	h.see("summarize")
 	h.see("内置")
 	h.click("启用 summarize")
