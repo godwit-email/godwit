@@ -270,7 +270,7 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, queueWait+imagefetch.Timeout)
 	defer cancel()
-	host, release := c.host(u.Host)
+	host, release := c.host(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."))
 	defer release()
 	for _, sem := range []chan struct{}{host, c.global} {
 		select {

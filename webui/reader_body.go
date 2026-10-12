@@ -66,9 +66,19 @@ type preparer struct {
 	changed bool
 }
 
-// proxy is the godwit-img: URL of the remote image src.
+// proxy is the godwit-img: URL of the remote image src, or "" when the
+// message has used up its image count (and, for cached images, pixels): the
+// page loads every image at once, so a message cannot hold unbounded ones.
 func (p *preparer) proxy(src string) string {
 	token := imagecache.Key(src)
+	if _, seen := p.tokens[token]; !seen {
+		if p.budget.Take() != nil {
+			return ""
+		}
+		if w, h, ok := p.dims(src); ok && p.budget.TakePixels(int64(w)*int64(h)) != nil {
+			return ""
+		}
+	}
 	p.tokens[token] = src
 	p.changed = true
 	return (&url.URL{Scheme: ImageScheme, Host: "m" + strconv.FormatInt(p.message, 10), Path: "/" + token}).String()
@@ -84,8 +94,13 @@ func (p *preparer) image(img *html.Node) {
 	src := img.Attr[i].Val
 	switch lower := strings.ToLower(src); {
 	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
-		img.Attr[i].Val = p.proxy(src)
-		p.reserve(img, src)
+		if u := p.proxy(src); u != "" {
+			img.Attr[i].Val = u
+			p.reserve(img, src)
+			return
+		}
+		img.Attr = append(img.Attr[:i], img.Attr[i+1:]...)
+		p.changed = true
 	case strings.HasPrefix(lower, "data:"):
 		if p.inlineImage(src) == nil {
 			return
@@ -122,7 +137,11 @@ func (p *preparer) background(n *html.Node) {
 	if l := strings.ToLower(src); !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
 		return
 	}
-	decl := "background-image:url(" + p.proxy(src) + ")"
+	u := p.proxy(src)
+	if u == "" {
+		return
+	}
+	decl := "background-image:url(" + u + ")"
 	if st := attrIndex(n, "style"); st >= 0 {
 		n.Attr[st].Val = strings.TrimRight(strings.TrimSpace(n.Attr[st].Val), ";") + ";" + decl
 		return

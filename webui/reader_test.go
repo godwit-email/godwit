@@ -522,7 +522,7 @@ func TestReaderInlineImageBudgets(t *testing.T) {
 
 	f.r.Allow(7)
 	b = f.waitEmitted(t, k)
-	assert.Contains(t, b.HTML, proxied(7, srv.URL+"/r.png"), "remote images do not count against the inline budget")
+	assert.NotContains(t, b.HTML, "godwit-img", "remote images share the message's image count: the inline ones used it up")
 	assert.Zero(t, srv.hits())
 }
 
@@ -652,4 +652,14 @@ func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/new.png")+`" alt="n"/>`)
 	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, "https://cdn.example/bg.jpg")+`)"`)
 	assert.NotContains(t, out, "javascript")
+}
+
+func TestPrepareBodyCapsRemoteImages(t *testing.T) {
+	var in strings.Builder
+	for i := range imagefetch.MaxImages + 5 {
+		fmt.Fprintf(&in, `<img src="https://cdn.example/%d.png" alt="i%d"><img src="https://cdn.example/0.png">`, i, i)
+	}
+	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 3, noDims)
+	assert.Len(t, tokens, imagefetch.MaxImages, "the same URL again costs nothing; the ones past the count lose their src")
+	assert.Equal(t, 5, strings.Count(out, "<img alt="), "five images lost their src")
 }
