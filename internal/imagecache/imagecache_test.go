@@ -142,3 +142,31 @@ func TestRefusesLoopbackAndNonHTTP(t *testing.T) {
 		t.Error("file: fetched")
 	}
 }
+
+func TestClearDuringDownloadStoresNothing(t *testing.T) {
+	pic := pngOf(t, 4, 3)
+	started, release := make(chan struct{}), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.Write(pic)
+	}))
+	defer srv.Close()
+	c := open(t, t.TempDir(), 0)
+	done := make(chan error)
+	go func() { _, err := c.Get(t.Context(), srv.URL+"/a.png"); done <- err }()
+	<-started
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if c.Cached(srv.URL+"/a.png") || c.Size() != 0 {
+		t.Error("a download that began before Clear was stored")
+	}
+	if des, _ := os.ReadDir(c.dir); len(des) != 0 {
+		t.Errorf("%d files left", len(des))
+	}
+}

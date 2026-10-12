@@ -50,6 +50,7 @@ type Cache struct {
 	mu     sync.Mutex
 	files  map[string]*entry // by key
 	total  int64
+	gen    int // bumped by Clear: a download that began before it is not stored
 	flight map[string]*call
 	failed map[string]failure
 	hosts  map[string]chan struct{}
@@ -166,6 +167,7 @@ func (c *Cache) Clear() error {
 		delete(c.files, k)
 	}
 	clear(c.failed)
+	c.gen++
 	return errors.Join(errs...)
 }
 
@@ -201,7 +203,7 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	if cl == nil {
 		cl = &call{done: make(chan struct{})}
 		c.flight[key] = cl
-		go c.download(key, src, cl)
+		go c.download(key, src, cl, c.gen)
 	}
 	c.mu.Unlock()
 	select {
@@ -212,8 +214,8 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	}
 }
 
-func (c *Cache) download(key, src string, cl *call) {
-	cl.img, cl.err = c.fetch(key, src)
+func (c *Cache) download(key, src string, cl *call, gen int) {
+	cl.img, cl.err = c.fetch(key, src, gen)
 	c.mu.Lock()
 	delete(c.flight, key)
 	if cl.err != nil {
@@ -223,7 +225,7 @@ func (c *Cache) download(key, src string, cl *call) {
 	close(cl.done)
 }
 
-func (c *Cache) fetch(key, src string) (Image, error) {
+func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	u, err := url.Parse(src)
 	if err != nil || !imagefetch.IsHTTP(u) {
 		return Image{}, imagefetch.ErrScheme
@@ -246,7 +248,7 @@ func (c *Cache) fetch(key, src string) (Image, error) {
 		return Image{}, err
 	}
 	img := Image{Data: data, Format: format, Width: w, Height: h}
-	return img, c.put(key, img)
+	return img, c.put(key, img, gen)
 }
 
 func (c *Cache) host(h string) chan struct{} {
@@ -260,29 +262,30 @@ func (c *Cache) host(h string) chan struct{} {
 	return sem
 }
 
-// put writes img for key, atomically, and evicts what is over the limit. An
-// image the disk could not take is still served: the error is not the
-// download's.
-func (c *Cache) put(key string, img Image) error {
+// put writes img for key, atomically, and evicts what is over the limit,
+// unless the cache was cleared since gen. An image the disk could not take is
+// still served: the error is not the download's.
+func (c *Cache) put(key string, img Image, gen int) error {
 	name := fmt.Sprintf("%s-%s-%dx%d", key, img.Format, img.Width, img.Height)
 	tmp, err := os.CreateTemp(c.dir, "tmp-")
-	if err == nil {
-		_, err = tmp.Write(img.Data)
-		if cerr := tmp.Close(); err == nil {
-			err = cerr
-		}
-		if err == nil {
-			err = os.Rename(tmp.Name(), filepath.Join(c.dir, name))
-		}
-		if err != nil {
-			os.Remove(tmp.Name())
-		}
-	}
 	if err != nil {
 		return nil
 	}
+	_, err = tmp.Write(img.Data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err == nil && c.gen == gen {
+		err = os.Rename(tmp.Name(), filepath.Join(c.dir, name))
+	} else {
+		err = errors.New("not stored")
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+		return nil
+	}
 	if old := c.files[key]; old != nil {
 		c.total -= old.size
 	}

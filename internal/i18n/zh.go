@@ -427,7 +427,7 @@ var zh = map[string]string{
 	"settings.local_api.mcp":                       "MCP 客户端配置",
 	"settings.local_api.copy":                      "复制配置",
 	"settings.remote_images":                       "远程图片",
-	"settings.remote_images.sub":                   "邮件里的图片由 Godwit 代为下载，不带 Cookie 和来源，发件人无法得知你何时读信（下载图片时对方仍能看到本机 IP）",
+	"settings.remote_images.sub":                   "邮件里的图片由 Godwit 代为下载，不带 Cookie 和来源，邮件到达时已提前下载的图片，发件人无法得知你何时读信（下载图片时对方仍能看到本机 IP）",
 	"settings.remote_images.mode":                  "加载远程图片",
 	"settings.remote_images.mode.help":             "垃圾邮件里的图片不会自动加载",
 	"settings.remote_images.auto":                  "自动",
