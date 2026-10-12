@@ -72,11 +72,11 @@ func (p *askPage) Title() (string, string) {
 	return p.title(conv), i18n.T("ask.permissions")
 }
 
-// Sidebar: New conversation, then the recent ones; a right click deletes one.
+// Sidebar: the page switch, New conversation, then the recent ones; a right click deletes one.
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	kit.Text(c, i18n.T("ask.heading"), t.Text.Xl).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+	ui.Row(c).Padding(0, 0, th.Space(3), 0).Children(func() { a.pageSwitch(c) })
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
@@ -122,14 +122,14 @@ func (p *askPage) remove(id int64) {
 	})
 }
 
-// Content is the Wit page; without a model, how to add one.
+// Content is the Wit page; without a model, how to add one, on a panel.
 func (p *askPage) Content(c *ui.Context) {
 	if p.a.settings.DefaultModel == "" {
-		p.noModel(c)
+		kit.Panel(c, panelRadius(c)).Grow(1).Children(func() { p.noModel(c) })
 		return
 	}
 	if v := p.a.witView; v != nil {
-		ui.WebView(c, v).Grow(1) // the page pads itself
+		ui.WebView(c, v).Grow(1) // transparent: the page draws its own panels
 	}
 }
 

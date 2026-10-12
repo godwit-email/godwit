@@ -87,26 +87,46 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	return b
 }
 
-// RailButton is a square icon button of the icon rail; selected, it does not click.
-func RailButton(c *ui.Context, icon, label string, selected bool, onClick func()) ui.Element {
+// NavItem is a page a NavSwitch goes to.
+type NavItem struct {
+	Icon, Label string
+	Selected    bool // the page shown: raised, and it does not click
+	OnClick     func()
+}
+
+// NavSwitch is a segmented row of page links on the window material: the
+// page shown raised on the background in the fill icon, the others muted.
+func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Row(c).Padding(th.Space(0.5)).Gap(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.HoverTint).Children(func() {
+		for _, it := range items {
+			b := ui.ButtonBase(c).Height(th.Space(7)).Padding(0, th.Space(2.5), 0, th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md).
+				FontSize(t.Text.Base).TextColor(t.Muted).Label(it.Label).Transition(colors(theme.MotionFast))
+			svg := icons.Get(it.Icon)
+			switch {
+			case it.Selected:
+				Elevate(c, b.Background(t.Background).TextColor(t.Foreground), theme.ShadowXs)
+				svg = icons.Fill(it.Icon)
+			case b.Hovered():
+				b.TextColor(t.Foreground)
+			}
+			if it.OnClick != nil && !it.Selected {
+				b.OnClick(it.OnClick)
+			}
+			b.Children(func() {
+				ui.Icon(c, svg).Size(theme.Icon, theme.Icon)
+				ui.Text(c, it.Label)
+			})
+		}
+	})
+}
+
+// Panel is a region of a page on the window material, as the mail list or
+// the reading pane: a white card in the border's hairline with ShadowXs,
+// corners of radius. Give it its size and Children.
+func Panel(c *ui.Context, radius float32) ui.Element {
 	t := theme.Of(c)
-	b := ui.ButtonBase(c).Size(theme.RailButton, theme.RailButton).Radius(t.Radius.Lg).Center().Label(label).Transition(colors(theme.MotionFast))
-	tooltip(c, b, label, false)
-	b.TextColor(t.Muted)
-	switch {
-	case selected:
-		b.Background(t.RailSelected).TextColor(t.Foreground)
-	case b.Hovered():
-		b.Background(t.HoverTint).TextColor(t.Foreground)
-	}
-	if onClick != nil && !selected {
-		b.OnClick(onClick)
-	}
-	svg := icons.Get(icon)
-	if selected {
-		svg = icons.Fill(icon)
-	}
-	return b.Children(func() { ui.Icon(c, svg).Size(theme.IconLg, theme.IconLg) })
+	return Elevate(c, ui.Column(c).Radius(radius).Clip().Background(t.Background).Border(theme.Hairline, t.Border), theme.ShadowXs)
 }
 
 // CardHeader is a Card's title with an optional description under it.

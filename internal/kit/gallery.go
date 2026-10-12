@@ -179,10 +179,14 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					}
 				})
 			})
-			section("RailButton", func() {
+			section("NavSwitch", func() {
 				row(func() {
-					RailButton(c, "mail", "Rail on", true, nil)
-					RailButton(c, "mail", "Rail off", false, nil)
+					NavSwitch(c, NavItem{Icon: "mail", Label: "Mail", Selected: true}, NavItem{Icon: "sparkles", Label: "Wit"})
+				})
+			})
+			section("Panel", func() {
+				row(func() {
+					Panel(c, t.Radius.Xl).Size(theme.ListWidth, theme.ImagePlaceholder)
 				})
 			})
 			section("Pressable", func() {

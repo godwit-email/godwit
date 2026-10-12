@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func TestThemeThumbTooltip(t *testing.T) {
 	if !ok {
 		t.Fatal("no dark thumbnail")
 	}
-	if r.W != 76 || r.H != 48 {
+	if math.Abs(float64(r.W-76)) > 0.01 || math.Abs(float64(r.H-48)) > 0.01 { // float layout: the card's title line is fractional
 		t.Errorf("thumbnail %vx%v, want 76x48", r.W, r.H)
 	}
 	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)

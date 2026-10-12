@@ -19,6 +19,7 @@ import (
 	"github.com/godwit-email/godwit/assets"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/godwit-email/godwit/webui"
@@ -310,13 +311,14 @@ func trayIcon(box trayBox) ([]byte, error) {
 
 // composeWindowOptions is a compose window on goos: the compose page of the
 // frontend, the dev server's under `go tool mygo dev`, else web/dist's. On
-// macOS its title bar is transparent, the traffic lights over the page's
-// top bar; Title still names it in the Window menu.
+// macOS its title bar is hidden, the traffic lights centered in the page's
+// top bar as the main window's are; Title still names it in the Window menu.
 func composeWindowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
 		StateKey: "compose", Title: "新邮件"}
 	if goos == "darwin" {
-		o.TitleBarStyle = mygo.TitleBarHiddenInset
+		o.TitleBarStyle = mygo.TitleBarHidden
+		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
 	}
 	return o
 }

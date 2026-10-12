@@ -411,14 +411,12 @@ func (o *onboarding) finish(again bool) {
 	})
 }
 
-// Content is the first-run window: the privacy promises on the left, the
-// steps on the right.
+// Content is the first-run window: the privacy promises on the window's
+// material on the left, the steps on a panel on the right.
 func (o *onboarding) Content(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	_, rad := chromeMetrics(c.TitleBar().Height, t) // Windows rounds 8, as the main window
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Radius(rad).Clip().Background(t.Background).Border(theme.Hairline, t.Outline)
-	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
-		ui.Column(c).Width(theme.AsideWidth).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Radius(rad-theme.Hairline, 0, 0, rad-theme.Hairline).Background(t.Sidebar).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Gap(th.Space(2)).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Children(func() {
+		ui.Column(c).Width(theme.AsideWidth).Shrink(0).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, logo).Size(theme.BrandLogo, theme.BrandLogo)
 				kit.Text(c, i18n.T("onboarding.brand"), t.Text.X2l).FontWeight(600)
@@ -441,9 +439,11 @@ func (o *onboarding) Content(c *ui.Context) {
 			ui.Spacer(c)
 			lineText(c, i18n.T("onboarding.license"), t.Text.Sm).TextColor(t.Muted)
 		})
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(theme.FormMaxWidth).Padding(th.Space(14), th.Space(8)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
+		kit.Panel(c, panelRadius(c)).Grow(1).Shrink(1).Children(func() { // Windows rounds 8, as the main window
+			ui.Scroll(c).Grow(1).Children(func() {
+				ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Column(c).FillWidth().MaxWidth(theme.FormMaxWidth).Padding(th.Space(14), th.Space(8)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
+				})
 			})
 		})
 	})

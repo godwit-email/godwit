@@ -348,7 +348,7 @@ func TestKitSelectedDoesNotClick(t *testing.T) {
 			ui.Column(c).Children(func() {
 				Pressable(c, PressableOpts{Selected: sel, OnClick: func() { got = append(got, "p-"+tag) }}).Label("p-" + tag).Height(30).Children(func() { ui.Text(c, "pp") })
 				SidebarItem(c, SidebarItemOpts{Selected: sel, OnClick: func() { got = append(got, "s-"+tag) }}).Label("s-" + tag).Height(30).Children(func() { ui.Text(c, "ss") })
-				RailButton(c, "mail", "r-"+tag, sel, func() { got = append(got, "r-"+tag) })
+				NavSwitch(c, NavItem{Icon: "mail", Label: "r-" + tag, Selected: sel, OnClick: func() { got = append(got, "r-"+tag) }})
 			})
 		}), 300, 300)
 		for _, l := range []string{"p-", "s-", "r-"} {
@@ -550,7 +550,7 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt.Frame()
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
 			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
-			"StatusDot", "SidebarItem", "RailButton", "Pressable", "Toast"} {
+			"StatusDot", "SidebarItem", "NavSwitch", "Panel", "Pressable", "Toast"} {
 			if _, ok := tt.Find("section:" + s); !ok {
 				t.Errorf("dark=%v: no heading %q", dark, s)
 			}
@@ -665,36 +665,37 @@ func TestKitToastTinted(t *testing.T) {
 	}
 }
 
-// TestKitSplitQuietDivider: a hovered divider is the ring's gray, and the
-// panes keep the frame's theme (their default button is the primary color).
-func TestKitSplitQuietDivider(t *testing.T) {
+// TestKitResizerPill: at rest the gap is clear; hovered, its middle is the
+// grip's line, the foreground at 20%; dragging it moves *size.
+func TestKitResizerPill(t *testing.T) {
 	size := float32(160)
-	var tk theme.Tokens
+	changed := false
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		tk = theme.Of(c)
-		Split(c, &size, func() {
-			Button(c, "Left", ButtonOpts{})
-		}, func() { ui.Text(c, "right") }).Fill()
+		ui.Row(c).Fill().Children(func() {
+			if ch, _ := Resizer(c, &size, 8, "Resize", nil, func() { ui.Text(c, "left") }, func() { ui.Text(c, "right") }); ch {
+				changed = true
+			}
+		})
 	}), 400, 200)
 	tt.Frame()
-	d, ok := tt.Find("Divider")
+	g, ok := tt.Find("Resize")
 	if !ok {
-		t.Fatal("no divider")
+		t.Fatal("no grip")
 	}
-	x, y := d.X+d.W/2, d.Y+d.H/2
+	x, y := g.X+g.W/2, g.Y+g.H/2
+	rest := tt.Image().RGBAAt(int(x), int(y))
 	tt.Move(x, y)
-	for i := 0; i < 20; i++ {
-		time.Sleep(10 * time.Millisecond)
-		tt.Frame()
+	tt.Frame()
+	if px := tt.Image().RGBAAt(int(x), int(y)); int(px.R)+int(px.G)+int(px.B) > int(rest.R)+int(rest.G)+int(rest.B)-3*20 {
+		t.Errorf("hovered grip %v, at rest %v: want the darker line", px, rest)
 	}
-	px := tt.Image().RGBAAt(int(x), int(y))
-	if want := tk.DividerHover; px.R != want.R || px.G != want.G || px.B != want.B {
-		t.Errorf("hovered divider %v, want DividerHover %v", px, want)
-	}
-	b, _ := tt.Find("Left")
-	px = tt.Image().RGBAAt(int(b.X)+2, int(b.Y+b.H/2))
-	if want := tk.Primary; px.R != want.R || px.G != want.G || px.B != want.B {
-		t.Errorf("left pane's button %v, want the primary %v", px, want)
+	tt.Press(x, y)
+	tt.Move(x+20, y)
+	tt.Move(x+40, y)
+	tt.Release(x+40, y)
+	tt.Frame()
+	if !changed || size < 199 || size > 201 {
+		t.Errorf("dragged 40: size %v (changed %v), want 200", size, changed)
 	}
 }
 
@@ -756,11 +757,11 @@ func TestKitListSelectedGray(t *testing.T) {
 	}
 }
 
-// TestKitRailButtonFillsSelected: a selected rail button shows its icon's
-// fill style, which inks much more of the button than the line style.
-func TestKitRailButtonFillsSelected(t *testing.T) {
+// TestKitNavSwitchFillsSelected: the page shown in a NavSwitch has its
+// icon's fill style, which inks much more of the button than the line style.
+func TestKitNavSwitchFillsSelected(t *testing.T) {
 	ink := func(sel bool) int {
-		tt := ui.NewTester(themed(func(c *ui.Context) { RailButton(c, "mail", "r", sel, nil) }), 100, 100)
+		tt := ui.NewTester(themed(func(c *ui.Context) { NavSwitch(c, NavItem{Icon: "mail", Label: "r", Selected: sel}) }), 100, 100)
 		r, ok := tt.Find("r")
 		if !ok {
 			t.Fatal("no button")

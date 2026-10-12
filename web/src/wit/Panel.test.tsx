@@ -206,6 +206,32 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "调整" })).toBeNull();
   });
 
+  it("both layouts are cards, the conversation fading out under a solid input area", async () => {
+    const fadeOver = (box: HTMLElement, card: Element | null) => {
+      const fade = card?.querySelector("[aria-hidden].bg-linear-to-b");
+      expect(fade).toHaveClass("pointer-events-none", "absolute", "bottom-full", "h-8");
+      expect(fade?.parentElement).toHaveClass("relative", "bg-background");
+      expect(fade?.parentElement).toContainElement(box);
+    };
+    const { unmount } = await setup();
+    const aside = input().closest("aside");
+    expect(aside).toHaveClass(
+      "h-full",
+      "w-full",
+      "rounded-xl",
+      "border",
+      "bg-background",
+      "overflow-hidden",
+    );
+    expect(aside).not.toHaveClass("border-l");
+    fadeOver(input(), aside);
+    unmount();
+    await setup({ page: true });
+    const card = input("向 Wit 提问").closest(".rounded-xl.border");
+    expect(card).toHaveClass("flex-1", "overflow-hidden", "bg-background");
+    fadeOver(input("向 Wit 提问"), card);
+  });
+
   it("the 调整 menu shows each skill's hint", async () => {
     const user = userEvent.setup();
     await setup();
@@ -761,6 +787,8 @@ describe("Panel", () => {
     const under = lists.find((l) => !l.closest("aside"));
     expect(column?.closest("aside")?.className).toContain("@4xl:flex");
     expect(column?.closest("aside")?.className).toContain("hidden");
+    expect(column?.closest("aside")).toHaveClass("w-80", "rounded-xl", "border", "bg-background");
+    expect(column?.closest("aside")).not.toHaveClass("border-l", "bg-sidebar");
     expect(under?.className).toContain("@4xl:hidden");
     expect(under?.closest("[data-role=assistant]")).not.toBeNull();
     expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();

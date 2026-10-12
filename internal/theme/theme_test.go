@@ -40,12 +40,12 @@ func TestThemeTokens(t *testing.T) {
 	if l.DividerHover != p.Neutral300.Color() || Dark().DividerHover != p.Neutral700.Color() {
 		t.Errorf("DividerHover %v / %v", l.DividerHover, Dark().DividerHover)
 	}
-	if l.RailSelected != p.Neutral950.Color().Alpha(0.04) || l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
-		t.Errorf("Light() rail tints %v %v", l.RailSelected, l.HoverTint)
+	if l.HoverTint != p.Neutral950.Color().Alpha(0.04) {
+		t.Errorf("Light() HoverTint %v", l.HoverTint)
 	}
 	d := Dark()
 	if !d.Dark || d.Background != p.Neutral950.Color() || d.Window != p.Mid(p.Neutral900, p.Neutral800).Color() ||
-		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.RailSelected != p.White.Color().Alpha(0.1) || d.HoverTint != p.White.Color().Alpha(0.08) ||
+		d.Primary != p.Neutral200.Color() || d.PrimaryText != p.Neutral900.Color() || d.HoverTint != p.White.Color().Alpha(0.08) ||
 		d.Border != p.White.Color().Alpha(0.1) || d.Input != p.White.Color().Alpha(0.15) || d.Ring != p.Neutral500.Color() {
 		t.Errorf("Dark() = %+v", d)
 	}

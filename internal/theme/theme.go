@@ -22,10 +22,10 @@ import (
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
-	PrimaryText, SidebarSelected, RailSelected, Hover, Success      ui.Color
-	// HoverTint, like RailSelected, is a tint of the foreground for what
-	// sits on the window's material (the rail, the top bar's ghost buttons),
-	// which a solid gray would cover; over white it is Hover's gray.
+	PrimaryText, SidebarSelected, Hover, Success                    ui.Color
+	// HoverTint is a tint of the foreground for what sits on the window's
+	// material (the page switch's track, the top bar's ghost buttons), which
+	// a solid gray would cover; over white it is Hover's gray.
 	HoverTint                                                       ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
@@ -33,8 +33,8 @@ type Tokens struct {
 	Attention, Unread, Input, Ring                                  ui.Color
 	// Idle is the grey of a status dot with nothing to report (neutral-400).
 	Idle ui.Color
-	// Outline is the faint edge of a panel over the window material: the
-	// foreground at 5%, lighter than Border, which divides inside it.
+	// Outline is the faint edge of a mark's tile: the foreground at 5%,
+	// lighter than Border.
 	Outline ui.Color
 	// FloatInset is the color of a floating input's inner edge in the dark
 	// appearance: white at 20%, drawn inset with no offset or spread and a
@@ -124,26 +124,30 @@ func (s TextScale) Line(size float32) float32 {
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline           = 1   // dividers
-	RailWidth          = 56  // the icon rail
-	SidebarWidth       = 248 // the page sidebars, until the user drags them
-	SidebarMinWidth    = 240 // the narrowest and widest a drag makes them
-	SidebarMaxWidth    = 480
-	ListWidth          = 340  // the mail list column
-	TopBarHeight       = 44   // the top bar's least height
-	SheetWidth         = 560  // dialogs and the add-account sheet
-	DialogWideWidth    = 640  // DialogWide
-	DialogWideMax      = 788  // DialogWide's tallest
-	SheetMaxHeight     = 760  // the add-account sheet
-	AsideWidth         = 440  // onboarding's left panel
-	FormMaxWidth       = 520  // onboarding's form column
-	ContentMaxWidth    = 1040 // settings pages
-	ControlWidth       = 220  // settings' wide buttons
-	SettingsMaxWidth   = 760  // a settings page's column
-	SettingsSelectMin  = 200  // a select in a settings row
-	SettingsSelectMax  = 280
-	UsageSelectMin     = 240 // a select in the model services' 用途 card
-	SettingsInputWidth = 260 // an input in a settings row
+	Hairline        = 1   // dividers
+	SidebarWidth    = 248 // the page sidebars, until the user drags them
+	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
+	SidebarMaxWidth = 480
+	// SidebarCollapsePull is how far past SidebarMinWidth a drag goes on
+	// before it folds the sidebar away.
+	SidebarCollapsePull = 80
+	ListWidth           = 340 // the mail list column, until the user drags it
+	ListMinWidth        = 280 // the narrowest and widest a drag makes it
+	ListMaxWidth        = 560
+	TopBarHeight        = 44   // the top bar's least height
+	SheetWidth          = 560  // dialogs and the add-account sheet
+	DialogWideWidth     = 640  // DialogWide
+	DialogWideMax       = 788  // DialogWide's tallest
+	SheetMaxHeight      = 760  // the add-account sheet
+	AsideWidth          = 440  // onboarding's left panel
+	FormMaxWidth        = 520  // onboarding's form column
+	ContentMaxWidth     = 1040 // settings pages
+	ControlWidth        = 220  // settings' wide buttons
+	SettingsMaxWidth    = 760  // a settings page's column
+	SettingsSelectMin   = 200  // a select in a settings row
+	SettingsSelectMax   = 280
+	UsageSelectMin      = 240 // a select in the model services' 用途 card
+	SettingsInputWidth  = 260 // an input in a settings row
 	// SignatureEditorHeight is the signature page: its toolbar (4+28+4 and a
 	// hairline) over the editor's least 96 and its 10/10 padding; the editor
 	// scrolls inside.
@@ -154,10 +158,12 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	ToastMaxWidth         = 420
-	ToastMax              = 3   // toasts shown at once
-	TitleButtonHeight     = 24  // buttons in the top bar
-	PopupOffset           = 4   // room between a popup and its anchor
-	SelectedBorder        = 2   // the border of a chosen tile
+	ToastMax              = 3  // toasts shown at once
+	TitleButtonHeight     = 24 // buttons in the top bar
+	PopupOffset           = 4  // room between a popup and its anchor
+	SelectedBorder        = 2  // the border of a chosen tile
+	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
+	GripHeight            = 56
 	RingWidth             = 2   // a focused box's ring, outside its border
 	QuoteBar              = 2   // the bar left of a quote in a mail body
 	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
@@ -180,7 +186,6 @@ const (
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
-	RailButton                                       = 40             // the icon rail's buttons
 	CloseButton                                      = 20             // a toast's close button
 	Control                                          = 16             // check boxes and radio buttons
 	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
@@ -264,7 +269,7 @@ func Light() Tokens {
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
-		SidebarSelected: p.Neutral100.Color(), RailSelected: p.Neutral950.Color().Alpha(0.04), HoverTint: p.Neutral950.Color().Alpha(0.04),
+		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover: p.Neutral100.Color(),
 	})
 }
@@ -277,7 +282,7 @@ func Dark() Tokens {
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
 		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
-		SidebarSelected: p.Neutral800.Color(), RailSelected: p.White.Color().Alpha(0.1), HoverTint: p.White.Color().Alpha(0.08),
+		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),
 	})
 }

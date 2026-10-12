@@ -226,7 +226,7 @@ func TestSearchSidebarUnselected(t *testing.T) {
 		h.tt.Move(1000, 700)
 		h.tt.Frame()
 		img, want := h.tt.Image(), theme.Light().SidebarSelected.SRGB()
-		x := theme.RailWidth + theme.SidebarWidth/2
+		x := theme.SidebarWidth / 2
 		for y := range img.Bounds().Dy() {
 			if got := img.RGBAAt(x, y); got.R == want.R && got.G == want.G && got.B == want.B {
 				return true

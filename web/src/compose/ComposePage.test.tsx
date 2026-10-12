@@ -144,6 +144,17 @@ test("loads the draft", async () => {
   expect(currentWindow.setTitle).toHaveBeenLastCalledWith("你好");
 });
 
+test("the editor is a card on the window's material, under a borderless title bar", async () => {
+  render(<ComposePage />);
+  const section = (await body()).closest("section");
+  const main = screen.getByRole("main");
+  expect(main).toHaveClass("bg-window");
+  expect(main.querySelector("header")).not.toHaveClass("border-b");
+  expect(section).toHaveClass("overflow-hidden", "rounded-xl", "border", "bg-background");
+  // in a resizable panel of the row inset on the material; the grip is the 8 px gap
+  expect(section?.closest("[data-group]")).toHaveClass("px-2", "pb-2");
+});
+
 test("flushes on closing", async () => {
   render(<ComposePage />);
   await userEvent.type(await body(), "!");

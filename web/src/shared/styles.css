@@ -39,6 +39,8 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  /* The window's material colour (webui.ThemeVars): what the content cards float on. */
+  --color-window: var(--window);
   /* With the native --radius (8px, from applyTheme) sm…4xl are 4/6/8/12/16/24/32 (Tailwind v4's). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -158,10 +160,11 @@ kbd {
 }
 
 /* The compose window's top bar: drags the window (mygo), clear of macOS's traffic lights. */
+/* The main window's top bar: 44 high, the title 20 past the traffic lights. */
 .compose-titlebar {
   --app-region: drag;
-  min-height: var(--mygo-titlebar-height, 44px);
-  padding-left: max(20px, var(--mygo-titlebar-inset-left, 0px));
+  min-height: max(44px, var(--mygo-titlebar-height, 44px));
+  padding-left: calc(var(--mygo-titlebar-inset-left, 0px) + 20px);
 }
 .compose-titlebar :is(button, input, a, select) {
   --app-region: no-drag;

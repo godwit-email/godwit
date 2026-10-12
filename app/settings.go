@@ -192,25 +192,27 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
-				switch {
-				case acc != nil:
-					p.accountView(c, *acc)
-				case sec == "general":
-					p.generalView(c)
-				case sec == "privacy":
-					p.privacyView(c)
-				case sec == "models":
-					p.models.view(c)
-				case sec == "extensions":
-					p.ext.view(c)
-				case sec == "about":
-					p.aboutView(c)
-				default:
-					pageHeading(c, i18n.T("settings."+sec), "")
-				}
+	kit.Panel(c, panelRadius(c)).Grow(1).Children(func() {
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
+					switch {
+					case acc != nil:
+						p.accountView(c, *acc)
+					case sec == "general":
+						p.generalView(c)
+					case sec == "privacy":
+						p.privacyView(c)
+					case sec == "models":
+						p.models.view(c)
+					case sec == "extensions":
+						p.ext.view(c)
+					case sec == "about":
+						p.aboutView(c)
+					default:
+						pageHeading(c, i18n.T("settings."+sec), "")
+					}
+				})
 			})
 		})
 	})
@@ -259,11 +261,16 @@ func settingsCard(c *ui.Context, rows ...func()) {
 	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
 		for i, row := range rows {
 			if i > 0 {
-				ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(t.Border)
+				hairline(c)
 			}
 			row()
 		}
 	})
+}
+
+// hairline divides the rows of a settings card.
+func hairline(c *ui.Context) {
+	ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(theme.Of(c).Border)
 }
 
 // settingRow is a labelled control: label (500) and description on the
