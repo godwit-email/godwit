@@ -61,7 +61,8 @@ func (s *Service) startImagePrefetch() {
 }
 
 // prefetchImages caches message's remote images, within prefetchImages
-// images and prefetchBytes bytes.
+// images and about prefetchBytes bytes: the last image may pass it, by at
+// most one image (imagefetch.MaxImageBytes), as its size is known only once fetched.
 func (s *Service) prefetchImages(ctx context.Context, message int64) {
 	if ok, err := s.ImagesAllowed(ctx, message); err != nil || !ok {
 		return
@@ -77,7 +78,7 @@ func (s *Service) prefetchImages(ctx context.Context, message int64) {
 	}
 	var total int64
 	for _, u := range urls {
-		if total > prefetchBytes || ctx.Err() != nil {
+		if total >= prefetchBytes || ctx.Err() != nil {
 			return
 		}
 		if img, err := s.images.Get(ctx, u); err == nil {

@@ -6,6 +6,8 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -43,6 +45,12 @@ func TestPrefetchImagesOnArrival(t *testing.T) {
 	assert.False(t, cache.Cached(srv.URL+"/junk.png"), "nothing from Junk")
 	assert.EqualValues(t, 2, hits.Load())
 	assert.Positive(t, e.s.ImageCacheSize())
+	require.NoError(t, e.s.cleanOrphans(bg)) // a restart's sweep keeps the image cache
+	assert.True(t, cache.Cached(srv.URL+"/a.png"))
+	_, err := os.Stat(filepath.Join(e.dir, "cache", "images"))
+	require.NoError(t, err)
+	files, _ := os.ReadDir(filepath.Join(e.dir, "cache", "images"))
+	assert.Len(t, files, 2)
 	require.NoError(t, e.s.ClearImageCache())
 	assert.Zero(t, e.s.ImageCacheSize())
 

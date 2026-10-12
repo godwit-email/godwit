@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -309,10 +310,14 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			}
 		}
 	}
+	imagesDir, err := filepath.Abs(filepath.Join(s.dataDir, "cache", "images"))
+	if err != nil {
+		return err
+	}
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(s.dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			return err != nil || keep[p]
+			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
