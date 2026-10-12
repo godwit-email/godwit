@@ -6,6 +6,7 @@
       "package-name": "godwit",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
+      "exclude-paths": ["site"],
       "draft": true,
       "force-tag-creation": true,
       "extra-files": [

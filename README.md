@@ -81,6 +81,8 @@ Client CI always runs a lightweight changes check, but skips the desktop matrix 
 
 Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog. Merging its release PR builds every platform and uploads the installers and updates to the R2 bucket behind dl.godwit.email; each platform's update manifest goes up last, and installed apps update from it as soon as it is there.
 
+Commits whose changed files are all under `site/` are excluded from the application's version calculation and changelog by release-please's `exclude-paths`. Mixed changes, including a site change together with the root `README.md`, still participate in application releases.
+
 ## License
 
 [Apache-2.0](LICENSE)
