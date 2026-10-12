@@ -670,3 +670,20 @@ func TestPrepareBodyKeepsCSSSizedImages(t *testing.T) {
 	assert.NotContains(t, out, `width="40"`)
 	assert.NotContains(t, out, `height="30"`)
 }
+
+func TestReaderImagePixelsAreChargedPerMessage(t *testing.T) {
+	pic := pngOf(t, 6000, 6000) // 36 MP; three exceed the 100 MP message budget
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="` + srv.URL + `/1.png"><img src="` + srv.URL + `/2.png"><img src="` + srv.URL + `/3.png">`}
+	})
+	k := f.page(5)
+	f.r.Allow(5)
+	f.waitEmitted(t, k)
+	codes := []int{}
+	for _, n := range []string{"1", "2", "3", "1"} {
+		codes = append(codes, f.image(t, 5, srv.URL+"/"+n+".png").Code)
+	}
+	assert.Equal(t, []int{200, 200, http.StatusForbidden, 200}, codes, "the third pushes past 100 MP; one already charged is served again")
+}

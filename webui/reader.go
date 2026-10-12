@@ -14,6 +14,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
@@ -110,6 +111,10 @@ type bodyOf struct {
 	version int64
 	body    *ReaderBody       // the body of version, once built
 	tokens  map[string]string // its image tokens (godwit-img: paths) → remote URLs
+	// The pixels the images served for it take, from the message-wide budget:
+	// the page decodes every image at once. charged is the tokens counted.
+	pixels  *imagefetch.Budget
+	charged map[string]bool
 }
 
 // NewReader keeps the reader pages of pages; SetService opens it up.
@@ -186,6 +191,7 @@ func (r *Reader) Allow(message int64) {
 	r.version++
 	v := r.version
 	st.version, st.body, st.tokens, st.allowed = v, nil, nil, true
+	st.pixels, st.charged = imagefetch.NewBudget(), map[string]bool{}
 	r.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -243,6 +249,9 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	if s := r.msgs[message]; s != nil && s.version == v {
 		if s.body == nil {
 			s.body, s.tokens = &b, tokens
+			if s.pixels == nil {
+				s.pixels, s.charged = imagefetch.NewBudget(), map[string]bool{}
+			}
 		}
 		for k, m := range r.bound {
 			if m == message {
@@ -428,6 +437,10 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.Error(w, "image unavailable", http.StatusBadGateway)
 			return
 		}
+		if !r.chargePixels(message, token, img) {
+			http.Error(w, "the message's images have too many pixels", http.StatusForbidden)
+			return
+		}
 		h := w.Header()
 		h.Set("Content-Type", "image/"+img.Format)
 		h.Set("Content-Length", strconv.Itoa(len(img.Data)))
@@ -435,6 +448,25 @@ func (r *Reader) ImageHandler() http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(img.Data)
 	})
+}
+
+// chargePixels takes img's pixels from message's budget, once per token; false
+// when the message is gone or has none left.
+func (r *Reader) chargePixels(message int64, token string, img imagecache.Image) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.msgs[message]
+	if st == nil || st.pixels == nil {
+		return false
+	}
+	if st.charged[token] {
+		return true
+	}
+	if st.pixels.TakePixels(int64(img.Width)*int64(img.Height)) != nil {
+		return false
+	}
+	st.charged[token] = true
+	return true
 }
 
 // parseImageURL is the message and token of a godwit-img: URL.
