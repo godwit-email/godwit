@@ -1,8 +1,8 @@
-// Package imagefetch fetches and checks a message's images within one
-// budget: the native reader's loader and the reader page's Image share it.
-// Remote images come through a client of its own (public hosts only, no
-// cookies, no Referer); every image, remote or inline, must be a PNG, JPEG,
-// GIF or WebP within the per-image and per-message limits.
+// Package imagefetch fetches and checks images: the reader's image proxy
+// and prefetch download remote ones through a client of its own (public
+// hosts only, no cookies, no Referer, a generic User-Agent), and a message's
+// inline ones count against one Budget. Every image must be a PNG, JPEG,
+// GIF or WebP within the per-image limits.
 package imagefetch
 
 import (
@@ -33,7 +33,6 @@ const (
 	MaxImages      = 50       // images, remote and inline
 	MaxImageBytes  = 5 << 20  // one image
 	MaxTotalBytes  = 20 << 20 // all images together
-	Workers        = 4        // downloads and decodes at once
 	MaxPixels      = 40_000_000
 	MaxTotalPixels = 100_000_000 // all images together, decoded
 	Timeout        = 15 * time.Second
@@ -75,7 +74,7 @@ func NewClient(allowLoopback bool) *http.Client {
 		}
 		return nil
 	}}
-	tr := &http.Transport{Proxy: nil, DialContext: d.DialContext, DisableKeepAlives: true,
+	tr := &http.Transport{Proxy: nil, DialContext: d.DialContext, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
 		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}
 	return &http.Client{Transport: tr, Timeout: Timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > MaxRedirects {
@@ -124,9 +123,6 @@ func (b *Budget) Take() error {
 	return nil
 }
 
-// BytesLeft is what the bytes' budget has left.
-func (b *Budget) BytesLeft() int64 { return b.bytes.Load() }
-
 // TakePixels takes px decoded pixels; ErrTotalPixels when fewer are left.
 func (b *Budget) TakePixels(px int64) error {
 	for {
@@ -139,9 +135,6 @@ func (b *Budget) TakePixels(px int64) error {
 		}
 	}
 }
-
-// GivePixels gives back pixels taken for an image not shown after all.
-func (b *Budget) GivePixels(px int64) { b.pixels.Add(px) }
 
 // TakeBytes takes n bytes; ErrTotalTooLarge when fewer are left.
 func (b *Budget) TakeBytes(n int64) error {
@@ -173,42 +166,27 @@ func (b *Budget) TakeInline(size, px int64) error {
 	return nil
 }
 
-// Config is data's format and pixels, read from its header: a PNG, JPEG,
-// GIF or WebP image (by content) of at most MaxPixels.
-func Config(data []byte) (format string, px int64, err error) {
+// Dims is data's format and size, read from its header: a PNG, JPEG, GIF
+// or WebP image (by content) of at most MaxPixels.
+func Dims(data []byte) (format string, width, height int, err error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || !Formats[format] {
-		return "", 0, ErrFormat
+		return "", 0, 0, ErrFormat
 	}
-	px = int64(cfg.Width) * int64(cfg.Height)
-	if px > MaxPixels {
-		return "", 0, ErrPixels
+	if int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
+		return "", 0, 0, ErrPixels
 	}
-	return format, px, nil
+	return format, cfg.Width, cfg.Height, nil
 }
 
-// Check is Config, with the pixels taken from the budget.
-func (b *Budget) Check(data []byte) (format string, px int64, err error) {
-	format, px, err = Config(data)
-	if err == nil {
-		err = b.TakePixels(px)
-	}
-	if err != nil {
-		return "", 0, err
-	}
-	return format, px, nil
+// Config is Dims, with the pixels.
+func Config(data []byte) (format string, px int64, err error) {
+	format, w, h, err := Dims(data)
+	return format, int64(w) * int64(h), err
 }
 
-// Download gets src (http or https) with c, at most MaxImageBytes of it,
-// reserving the bytes from the budget as they are read: once it is gone
-// no request goes out and reads in flight stop.
-func (b *Budget) Download(ctx context.Context, c *http.Client, src string) ([]byte, error) {
-	held := reserve(&b.bytes, readChunk) // the first read's share: none left, no request
-	if held == 0 {
-		return nil, ErrTotalTooLarge
-	}
-	body := &budgetReader{left: &b.bytes, held: held}
-	defer body.release()
+// Download gets src (http or https) with c: at most MaxImageBytes of it.
+func Download(ctx context.Context, c *http.Client, src string) ([]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
@@ -218,18 +196,19 @@ func (b *Budget) Download(ctx context.Context, c *http.Client, src string) ([]by
 	if !IsHTTP(req.URL) {
 		return nil, ErrScheme
 	}
+	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("Accept", "image/avif,image/webp,image/png,image/jpeg,image/gif,*/*;q=0.5")
 	resp, err := c.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	// Cancel before Close: closing a body not read to the end would read
-	// up to 256 KiB more of it, past the budget, to reuse the connection.
+	// up to 256 KiB more of it to reuse the connection.
 	defer func() { cancel(); resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("image: %s", resp.Status)
 	}
-	body.r = resp.Body
-	data, err := io.ReadAll(io.LimitReader(body, MaxImageBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxImageBytes+1))
 	switch {
 	case err != nil:
 		return nil, err
@@ -239,47 +218,20 @@ func (b *Budget) Download(ctx context.Context, c *http.Client, src string) ([]by
 	return data, nil
 }
 
-// readChunk is the most a read reserves of the budget at once.
-const readChunk = 32 << 10
-
-// reserve takes up to want bytes of left in one step; 0 when none is left.
-func reserve(left *atomic.Int64, want int64) int64 {
-	for {
-		l := left.Load()
-		if l <= 0 {
-			return 0
-		}
-		n := min(want, l)
-		if left.CompareAndSwap(l, l-n) {
-			return n
-		}
+// Fetch downloads src and checks it: its bytes, format and size in pixels.
+func Fetch(ctx context.Context, c *http.Client, src string) (data []byte, format string, width, height int, err error) {
+	if data, err = Download(ctx, c, src); err != nil {
+		return nil, "", 0, 0, err
 	}
-}
-
-// budgetReader reads only bytes reserved from left beforehand, so readers
-// at the same time never overrun it together; release gives back what
-// was reserved and not read.
-type budgetReader struct {
-	r    io.Reader
-	left *atomic.Int64
-	held int64 // reserved, not read yet
-}
-
-func (b *budgetReader) Read(p []byte) (int, error) {
-	if b.held == 0 {
-		if b.held = reserve(b.left, min(int64(len(p)), readChunk)); b.held == 0 {
-			return 0, ErrTotalTooLarge
-		}
+	format, width, height, err = Dims(data)
+	if err != nil {
+		return nil, "", 0, 0, err
 	}
-	n, err := b.r.Read(p[:min(int64(len(p)), b.held)])
-	b.held -= int64(n)
-	return n, err
+	return data, format, width, height, nil
 }
 
-func (b *budgetReader) release() {
-	b.left.Add(b.held)
-	b.held = 0
-}
+// UserAgent is what the proxy sends: no browser, no app version.
+const UserAgent = "Mozilla/5.0 (compatible; ImageProxy)"
 
 // DataURL decodes a data: URL's bytes, at most MaxImageBytes of them.
 func DataURL(src string) ([]byte, error) {
