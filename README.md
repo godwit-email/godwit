@@ -77,6 +77,8 @@ Layout:
 
 The homepage's demo window and main download button share browser-platform detection. macOS shows traffic lights; Windows shows the app caption and right-hand window controls; Linux also uses right-hand controls. The window controls are decorative, not actions that close or resize the website.
 
+Client CI always runs a lightweight changes check, but skips the desktop matrix and embedded-web checks when all changed paths are under `site/`. The separate Site workflow checks the website and deploys it from main. Shared configuration changes, such as `mise.toml`, and mixed site/client changes still run client CI.
+
 Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog. Merging its release PR builds every platform and uploads the installers and updates to the R2 bucket behind dl.godwit.email; each platform's update manifest goes up last, and installed apps update from it as soon as it is there.
 
 ## License
