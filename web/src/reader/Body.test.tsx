@@ -20,7 +20,6 @@ vi.mock("@/mygo", () => ({
     height: vi.fn(async () => {}),
     wheel: vi.fn(async () => {}),
     openLink: vi.fn(async () => {}),
-    image: vi.fn(),
     navigate: vi.fn(async () => {}),
     search: vi.fn(async () => {}),
   },
@@ -307,27 +306,13 @@ test("wheel in the iframe goes to Go once per frame", async () => {
   expect(api.wheel).toHaveBeenCalledExactlyOnceWith(60);
 });
 
-test("remote images swapped after allow; a failure leaves the alt", async () => {
-  vi.mocked(api.image).mockImplementation(async (src) => {
-    if (src.includes("bad")) throw new Error("refused");
-    return `data:image/png;base64,${src.length}`;
-  });
+test("remote images are godwit-img: URLs left to the frame: the page asks Go for nothing", async () => {
   const html =
-    '<img src="https://x.example/a.png?q=1&amp;r=2" alt="a"><img src="http://bad.example/b.gif" alt="b"><img src="data:image/gif;base64,R0" alt="c">';
+    '<img src="godwit-img://m1/abc" alt="a"><div style="background-image:url(godwit-img://m1/def)">x</div>';
   const { doc } = await start(body(1, html, { remote: true }));
-  const imgs = [...doc.querySelectorAll("img")];
-  await waitFor(() => expect(imgs[0].getAttribute("src")).toMatch(/^data:image\/png/));
-  expect(api.image).toHaveBeenCalledTimes(2);
-  expect(api.image).toHaveBeenCalledWith("https://x.example/a.png?q=1&r=2");
-  expect(api.image).toHaveBeenCalledWith("http://bad.example/b.gif");
-  expect(imgs[1].getAttribute("src")).toBe("");
-  expect(imgs[1].getAttribute("alt")).toBe("b");
-  expect(imgs[2].getAttribute("src")).toBe("data:image/gif;base64,R0");
-});
-
-test("without allow, no image is asked for", async () => {
-  await start(body(1, '<img src="https://x.example/a.png" alt="a">'));
-  expect(api.image).not.toHaveBeenCalled();
+  expect(doc.querySelector("img")?.getAttribute("src")).toBe("godwit-img://m1/abc");
+  expect(doc.querySelector("[style]")?.getAttribute("style")).toContain("godwit-img://m1/def");
+  expect(Object.keys(api)).not.toContain("image");
 });
 
 test("a theme event rebuilds plain text in the new theme", async () => {

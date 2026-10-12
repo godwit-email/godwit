@@ -173,6 +173,10 @@ func gui(ctx context.Context, dataDir string) int {
 		},
 	})
 	mygo.Bind(webui.NewReaderPage(reader))
+	// The image proxy: remote images of a body load from godwit-img: URLs.
+	if err := mygo.Protocol.Handle(webui.ImageScheme, reader.ImageHandler()); err != nil {
+		log.Printf("image proxy: %v", err)
+	}
 	// The signature page, embedded in the account settings
 	// (platform.NewSignatureView).
 	sig := webui.NewSignature(roles, pickImage)
