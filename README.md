@@ -75,6 +75,8 @@ Layout:
 | `docs/` | design specs and plans |
 | `site/` | [godwit.email](https://godwit.email), a Cloudflare Worker (`mise run site:dev`) |
 
+The homepage's demo window and main download button share browser-platform detection. macOS shows traffic lights; Windows shows the app caption and right-hand window controls; Linux also uses right-hand controls. The window controls are decorative, not actions that close or resize the website.
+
 Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog. Merging its release PR builds every platform and uploads the installers and updates to the R2 bucket behind dl.godwit.email; each platform's update manifest goes up last, and installed apps update from it as soon as it is there.
 
 ## License

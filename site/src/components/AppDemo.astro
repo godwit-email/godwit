@@ -4,6 +4,7 @@
 // them out. Messages, summaries, translations, quick replies, plugin cards
 // and Wit answer as they do in the app, from canned data (demo.ts).
 import type { Demo } from "../demo";
+import logo from "../assets/logo.svg?raw";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -20,15 +21,22 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 	data-demo
 	role="region"
 	aria-label={demo.label}
-	class="relative mx-auto flex w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-window text-app text-foreground shadow-window select-none lg:h-[660px]"
+	class="group/demo relative mx-auto flex w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-window text-app text-foreground shadow-window select-none data-[platform=windows]:rounded-lg lg:h-[660px]"
 >
-	<!-- The title bar: traffic lights, the sidebar's buttons, the list's title, the sync state. -->
-	<div class="flex h-11 shrink-0 items-center gap-2 px-4">
-		<div class="flex items-center gap-2 lg:w-[220px]" aria-hidden="true">
-			<span class="size-3 rounded-full bg-[#ff5f57]"></span>
-			<span class="size-3 rounded-full bg-[#febc2e]"></span>
-			<span class="size-3 rounded-full bg-[#28c840]"></span>
-			<span class="ml-4 hidden items-center gap-3 text-muted-foreground lg:flex">
+	<!-- The download button's platform detection also sets data-platform here.
+	     Hide OS-specific controls until detected, so Windows never flashes traffic lights. -->
+	<div class="flex h-11 shrink-0 items-center gap-2 px-4 group-data-[platform=windows]/demo:h-10">
+		<div class="flex shrink-0 items-center gap-4 lg:w-[220px]" aria-hidden="true">
+			<span data-traffic-lights class="hidden items-center gap-2 group-data-[platform=darwin]/demo:flex">
+				<span class="size-3 rounded-full bg-[#ff5f57]"></span>
+				<span class="size-3 rounded-full bg-[#febc2e]"></span>
+				<span class="size-3 rounded-full bg-[#28c840]"></span>
+			</span>
+			<span class="hidden items-center gap-2 group-data-[platform=windows]/demo:flex">
+				<Fragment set:html={logo.replace("<svg ", '<svg aria-hidden="true" class="size-4 shrink-0" ')} />
+				<span class="hidden text-app-sm sm:inline">Godwit</span>
+			</span>
+			<span class="hidden items-center gap-3 text-muted-foreground lg:flex">
 				<Icon name="panel-left" />
 				<Icon name="arrow-left" />
 				<Icon name="arrow-right" class="size-4 opacity-50" />
@@ -46,8 +54,20 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 			<span class="text-app-md font-semibold">{demo.inboxTitle}</span>
 			<span class="text-app-sm text-muted-foreground"><span data-unread-count>{unread}</span> {demo.unreadCount}</span>
 		</div>
-		<div data-title class="ml-auto flex items-center gap-1.5 text-app-sm text-muted-foreground">
+		<div data-title class="ml-auto flex shrink-0 items-center gap-1.5 text-app-sm text-muted-foreground max-sm:group-data-[platform=windows]/demo:hidden max-sm:group-data-[platform=linux]/demo:hidden">
 			<span class="size-1.5 rounded-full bg-green-500"></span>{demo.synced}
+		</div>
+		<!-- Decorative window controls: this is a website demo, not a desktop window. -->
+		<div data-window-controls aria-hidden="true" class="-mr-4 hidden h-full shrink-0 items-center group-data-[platform=windows]/demo:flex group-data-[platform=linux]/demo:flex max-sm:ml-auto">
+			<span class="grid h-full w-8 place-items-center sm:w-[46px]">
+				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="M0 5.5h10" /></svg>
+			</span>
+			<span class="grid h-full w-8 place-items-center sm:w-[46px]">
+				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x="0.5" y="0.5" width="9" height="9" /></svg>
+			</span>
+			<span class="grid h-full w-8 place-items-center sm:w-[46px]">
+				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><path d="m0.5 0.5 9 9m0-9-9 9" /></svg>
+			</span>
 		</div>
 	</div>
 
