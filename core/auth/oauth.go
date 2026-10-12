@@ -128,9 +128,14 @@ func (f *Flow) finish(g Grant, err error) {
 	f.finishOnce.Do(func() { f.grant, f.err = g, err; close(f.done) })
 }
 
+// pageHead drops the code and state from the address bar once the page is shown.
+const pageHead = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>Godwit</title>` +
+	`<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:16px/1.6 system-ui,sans-serif}</style>` +
+	`<script>history.replaceState(null, "", "/")</script>`
+
 const (
-	pageOK   = `<!doctype html><html lang="zh"><meta charset="utf-8"><title>Godwit</title><p>登录完成，可以关闭此页面回到 Godwit。</p></html>`
-	pageFail = `<!doctype html><html lang="zh"><meta charset="utf-8"><title>Godwit</title><p>登录没有完成，请回到 Godwit 重试。</p></html>`
+	pageOK   = pageHead + `<p>登录完成，可以关闭此页面回到 Godwit。</p></html>`
+	pageFail = pageHead + `<p>登录没有完成，请回到 Godwit 重试。</p></html>`
 )
 
 // callback answers the browser with a fixed page that echoes nothing. A request
