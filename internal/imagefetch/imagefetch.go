@@ -94,11 +94,15 @@ func NewClient(allowLoopback bool) *http.Client {
 // deprecated IPv6 site-local, local-use NAT64, 6to4.
 var notGlobal = func() (out []netip.Prefix) {
 	for _, p := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
-		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "fec0::/10", "64:ff9b:1::/48", "2001:2::/48", "2002::/16"} {
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "fec0::/10", "64:ff9b:1::/48", "2001:2::/48", "2002::/16", "2001::/23", "3fff::/20"} {
 		out = append(out, netip.MustParsePrefix(p))
 	}
 	return out
 }()
+
+// globalUnicast6 is the one IPv6 block assigned for global use; everything
+// outside it (SRv6 SIDs 5f00::/16, unassigned space, ...) is refused.
+var globalUnicast6 = netip.MustParsePrefix("2000::/3")
 
 var nat64 = netip.MustParsePrefix("64:ff9b::/96")
 
@@ -111,6 +115,9 @@ func PublicIP(ip netip.Addr) bool {
 	}
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	if ip.Is6() && !globalUnicast6.Contains(ip) { // IPv6 is allowed only inside 2000::/3
 		return false
 	}
 	for _, p := range notGlobal {

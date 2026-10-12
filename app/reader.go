@@ -681,7 +681,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					return
 				}
 				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-				if addr != "" && !b.msg.InJunk { // core never trusts junk
+				if addr != "" && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
 					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
 				}
 			})

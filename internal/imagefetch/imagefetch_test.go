@@ -28,7 +28,7 @@ func TestPublicIP(t *testing.T) {
 		"8.8.8.8": true, "2606:4700::1111": true,
 		"127.0.0.1": false, "10.0.0.1": false, "192.168.1.1": false, "169.254.1.1": false,
 		"0.0.0.0": false, "::1": false, "fe80::1": false, "224.0.0.1": false,
-		"100.64.0.1": false, "100.127.255.254": false, "100.128.0.1": true, "198.18.0.1": false, "240.0.0.1": false, "0.1.2.3": false, "fd00::1": false, "2001:db8::1": false, "fec0::1": false, "2001:2::1": false, "2002:a00:1::1": false, "64:ff9b:1::a00:1": false, "64:ff9b::a00:1": false, "64:ff9b::808:808": true,
+		"100.64.0.1": false, "100.127.255.254": false, "100.128.0.1": true, "198.18.0.1": false, "240.0.0.1": false, "0.1.2.3": false, "fd00::1": false, "2001:db8::1": false, "fec0::1": false, "2001:2::1": false, "2002:a00:1::1": false, "5f00::1": false, "2001:10::1": false, "3fff::1": false, "4000::1": false, "64:ff9b:1::a00:1": false, "64:ff9b::a00:1": false, "64:ff9b::808:808": true,
 	} {
 		if got := PublicIP(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("PublicIP(%s) = %v", addr, got)
