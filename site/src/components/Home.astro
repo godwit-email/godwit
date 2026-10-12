@@ -227,16 +227,14 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 		</footer>
 
 		<script>
-			// The main download button: this computer's platform. Browsers don't say
-			// which Mac chip they run on, so Macs get Apple silicon, the other is a
-			// click away; Windows says x64 even on ARM, where the x64 build runs too.
+			import { platformForUserAgent } from "../platform";
+
+			const { os, arch } = platformForUserAgent(navigator.userAgent);
 			const primary = document.querySelector<HTMLAnchorElement>("[data-primary]")!;
 			const labels = JSON.parse(primary.dataset.labels!) as Record<string, string>;
-			const ua = navigator.userAgent;
-			const os = /Windows/.test(ua) ? "windows" : /Linux|X11/.test(ua) && !/Android/.test(ua) ? "linux" : "darwin";
-			const arm = os === "darwin" || /aarch64|arm64/i.test(ua);
-			primary.href = `/download/${os}-${arm ? "arm64" : "amd64"}`;
+			primary.href = `/download/${os}-${arch}`;
 			primary.querySelector("span")!.textContent = labels[os];
+			for (const demo of document.querySelectorAll<HTMLElement>("[data-demo]")) demo.dataset.platform = os;
 
 			for (const b of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
 				b.addEventListener("click", () => {
