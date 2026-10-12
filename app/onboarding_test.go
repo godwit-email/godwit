@@ -205,6 +205,7 @@ func TestOnboardingOAuth(t *testing.T) {
 		return n == 2
 	})
 	fo.finish("f2", "me@outlook.com")
+	h.until("the window in front", func() bool { return h.hasCall("ShowWindow") })
 	o := h.app.addAccount
 	h.until("the check", func() bool { return o.step == stepChecking })
 	h.see("me@outlook.com")

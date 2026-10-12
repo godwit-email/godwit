@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -261,6 +262,9 @@ func (o *onboarding) startOAuth() {
 		}, func(err error) {
 			if gen != o.gen {
 				return
+			}
+			if !errors.Is(err, context.Canceled) {
+				a.plat.ShowWindow() // the user is in the browser; bring them back
 			}
 			if err != nil {
 				o.oauthErr = err
