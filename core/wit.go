@@ -22,7 +22,7 @@ import (
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft"}
+var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft"}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
@@ -197,6 +197,8 @@ func (s *Service) registerAskTools() {
 			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult}}, "query"),
 		s.searchMail)
 	read("get_message", "Read one message by its message_id.", object(map[string]any{"id": intProp}, "id"), s.getMessage)
+	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
+		object(map[string]any{"id": intProp}, "id"), s.readAttachment)
 	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
 	// No Egress: the judge is a model service, so its traffic is model traffic,
 	// as for the run itself (review #17).
