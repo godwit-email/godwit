@@ -40,9 +40,16 @@ jobs:
           - { name: Windows, os: ubuntu-latest, platform: "windows/amd64,windows/arm64" }
           - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
     steps:
+      # A manual run names its tag: build only an existing release, and its tag,
+      # never a branch of the same name, before any secret is in reach.
+      - name: The tag must be a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName | grep -qx -- "$TAG"
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || needs.release-please.outputs.tag }}
+          ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
       - uses: jdx/mise-action@v2
       - run: mise run web:install # generating the client compiles Go, which embeds files from web/node_modules
       - name: Install NSIS, for the Windows installers
