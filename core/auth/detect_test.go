@@ -55,6 +55,7 @@ func TestDetect(t *testing.T) {
 		{"a@yeah.net", "netease126", "domain", "imap.yeah.net"},
 		{"a@ymail.com", "yahoo", "domain", "imap.mail.yahoo.com"},
 		{"a@aol.com", "aol", "domain", "imap.aol.com"},
+		{"a@live.cn", "outlook", "domain", "outlook.office365.com"},
 		{"a@corp.example", "gmail", "mx", "imap.gmail.com"},
 		{"a@biz.example", "exmail", "mx", "imap.exmail.qq.com"},
 		{"a@fs.example", "feishu", "mx", "imap.feishu.cn"},
