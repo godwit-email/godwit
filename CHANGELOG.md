@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/godwit-email/godwit/compare/v0.1.0...v0.2.0) (2026-10-12)
+
+
+### Features
+
+* **menu:** add Settings… and Check for Updates… to the macOS app menu ([#43](https://github.com/godwit-email/godwit/issues/43)) ([eb175a4](https://github.com/godwit-email/godwit/commit/eb175a4575b153c944ad32526926ba157093efa4))
+
+
+### Bug Fixes
+
+* show Apache-2.0 where the app states its license ([#44](https://github.com/godwit-email/godwit/issues/44)) ([15e0b64](https://github.com/godwit-email/godwit/commit/15e0b64ada558f5af09338f995135169abfefc8d))
+
 ## [0.1.0](https://github.com/godwit-email/godwit/compare/v0.0.0...v0.1.0) (2026-10-12)
 
 
