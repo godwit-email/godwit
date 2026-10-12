@@ -117,7 +117,7 @@ func TestFetch(t *testing.T) {
 	if err != nil || !bytes.Equal(data, pic) || format != "png" || w != 2 || h != 3 {
 		t.Fatalf("fetch: %q %dx%d %v", format, w, h, err)
 	}
-	if hdr.Get("Cookie") != "" || hdr.Get("Referer") != "" || hdr.Get("User-Agent") != UserAgent {
+	if hdr.Get("Cookie") != "" || hdr.Get("Referer") != "" || hdr.Get("User-Agent") != UserAgent || strings.Contains(hdr.Get("Accept"), "avif") {
 		t.Errorf("headers %v", hdr)
 	}
 	if _, _, _, _, err := Fetch(t.Context(), c, srv.URL+"/page"); !errors.Is(err, ErrFormat) {
