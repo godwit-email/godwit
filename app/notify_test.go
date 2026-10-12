@@ -73,7 +73,7 @@ func (h *harness) notesAfter(want int) []Notification {
 
 func TestNotifyCoalesces(t *testing.T) {
 	t.Run("three in a second", func(t *testing.T) {
-		h, acc := notifyHarness(t, nil)
+		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arrive(acc, "One", "Two", "Three")
 		notes := h.notesAfter(1)
 		if len(notes) != 1 {
@@ -84,7 +84,7 @@ func TestNotifyCoalesces(t *testing.T) {
 		}
 	})
 	t.Run("preview off", func(t *testing.T) {
-		h, acc := notifyHarness(t, nil)
+		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arrive(acc, "Secret plans")
 		notes := h.notesAfter(1)
 		if len(notes) != 1 || notes[0].Title != "Godwit" || notes[0].Body != "新邮件" {
@@ -100,7 +100,7 @@ func TestNotifyCoalesces(t *testing.T) {
 		}
 	})
 	t.Run("inbox only", func(t *testing.T) {
-		h, acc := notifyHarness(t, nil)
+		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arriveIn(acc, "Archive", "Filed away")
 		if notes := h.notesAfter(0); len(notes) != 0 {
 			t.Fatalf("notes %+v for mail outside the inbox", notes)
@@ -138,7 +138,7 @@ func TestNotifyCoalesces(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
 		h.arrive(acc, "Lunch")
 		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Body != "Lunch" || notes[0].MessageID == 0 {
+		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Subtitle != "Lunch" || !strings.Contains(notes[0].Body, "body of Lunch") || notes[0].MessageID == 0 {
 			t.Fatalf("notes %+v", notes)
 		}
 	})

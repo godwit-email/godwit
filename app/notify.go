@@ -45,7 +45,7 @@ func (a *App) mailArrived(ev events.Event) {
 
 // notify shows one notification for what arrived in the account's inboxes,
 // unless the settings turn it off or the window is in front. With preview on
-// one message shows its sender and subject, more their account and number;
+// one message shows its sender, subject and snippet, more their account and number;
 // with preview off it says only "Godwit" and how many.
 func (a *App) notify(acc int64, got *arrivals) {
 	st := a.settings
@@ -75,7 +75,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 			m := msgs[0]
 			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: one}
 			if st.NotifyPreview {
-				n.Title, n.Body = displayName(m.From), m.Subject
+				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
 			}
 		default:
 			n = Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: "Godwit", Body: fmt.Sprintf(several, len(msgs))}

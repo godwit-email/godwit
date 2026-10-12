@@ -403,7 +403,7 @@ var zh = map[string]string{
 	"settings.notifications":                       "通知",
 	"settings.notify_new_mail":                     "新邮件通知",
 	"settings.notify_preview":                      "通知里显示邮件预览",
-	"settings.notify_preview.help":                 "关闭后只显示发件人",
+	"settings.notify_preview.help":                 "关闭后只提示有新邮件",
 	"settings.ai":                                  "AI",
 	"settings.summary":                             "邮件总结",
 	"settings.summary.help":                        "打开邮件时自动总结，需要先设置模型服务",

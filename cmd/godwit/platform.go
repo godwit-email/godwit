@@ -101,7 +101,7 @@ func (*platform) SaveFile(defaultName string) (string, error) {
 	return mygo.Dialog.Save(mygo.SaveDialogOptions{DefaultPath: defaultName, CreateDirectories: true})
 }
 func (*platform) Notify(n app.Notification) error {
-	return mygo.NewNotification(mygo.NotificationOptions{ID: n.ID, Title: n.Title, Body: n.Body}).Show()
+	return mygo.NewNotification(mygo.NotificationOptions{ID: n.ID, Title: n.Title, Subtitle: n.Subtitle, Body: n.Body}).Show()
 }
 func (*platform) NotificationsSupported() bool { return mygo.NotificationsSupported() }
 func (*platform) SetOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
