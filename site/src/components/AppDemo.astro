@@ -1,0 +1,535 @@
+---
+// The app's main window in HTML, in the app's tokens: the sidebar, the
+// message list and the reader on the window material, as app/shell.go lays
+// them out. Messages, summaries, translations, quick replies, plugin cards
+// and Wit answer as they do in the app, from canned data (demo.ts).
+import type { Demo } from "../demo";
+import Icon from "./Icon.astro";
+
+interface Props {
+	demo: Demo;
+}
+
+const { demo } = Astro.props;
+const unread = demo.messages.filter((m) => m.unread).length;
+const iconButton = "grid size-7 place-items-center rounded-md text-foreground/80";
+const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-medium transition-colors hover:bg-accent aria-pressed:border-foreground/60 aria-pressed:bg-accent";
+---
+
+<div
+	data-demo
+	role="region"
+	aria-label={demo.label}
+	class="relative mx-auto flex w-full max-w-[1180px] flex-col overflow-hidden rounded-2xl bg-window text-app text-foreground shadow-window select-none lg:h-[660px]"
+>
+	<!-- The title bar: traffic lights, the sidebar's buttons, the list's title, the sync state. -->
+	<div class="flex h-11 shrink-0 items-center gap-2 px-4">
+		<div class="flex items-center gap-2 lg:w-[220px]" aria-hidden="true">
+			<span class="size-3 rounded-full bg-[#ff5f57]"></span>
+			<span class="size-3 rounded-full bg-[#febc2e]"></span>
+			<span class="size-3 rounded-full bg-[#28c840]"></span>
+			<span class="ml-4 hidden items-center gap-3 text-muted-foreground lg:flex">
+				<Icon name="panel-left" />
+				<Icon name="arrow-left" />
+				<Icon name="arrow-right" class="size-4 opacity-50" />
+			</span>
+		</div>
+		<div class="flex items-center gap-2 lg:hidden" role="tablist">
+			<button type="button" role="tab" data-tab="mail" aria-selected="true" class="rounded-md px-2 py-0.5 font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-float">
+				{demo.mail}
+			</button>
+			<button type="button" role="tab" data-tab="wit" aria-selected="false" class="rounded-md px-2 py-0.5 font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-float">
+				{demo.wit}
+			</button>
+		</div>
+		<div data-title class="hidden items-baseline gap-2 md:flex">
+			<span class="text-app-md font-semibold">{demo.inboxTitle}</span>
+			<span class="text-app-sm text-muted-foreground"><span data-unread-count>{unread}</span> {demo.unreadCount}</span>
+		</div>
+		<div data-title class="ml-auto flex items-center gap-1.5 text-app-sm text-muted-foreground">
+			<span class="size-1.5 rounded-full bg-green-500"></span>{demo.synced}
+		</div>
+	</div>
+
+	<div class="flex min-h-0 flex-1 gap-2 px-2 pb-2">
+		<!-- The sidebar, on the window material. -->
+		<nav class="hidden w-[228px] shrink-0 flex-col gap-0.5 px-2 lg:flex" aria-label={demo.mail}>
+			<div class="mb-3 flex items-center justify-between">
+				<div class="flex rounded-lg bg-black/5 p-0.5 dark:bg-white/5" role="tablist">
+					<button type="button" role="tab" data-tab="mail" aria-selected="true" class="group flex items-center gap-1.5 rounded-md px-2 py-1 font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-float">
+						<Icon name="mail-fill" class="size-4" />{demo.mail}
+					</button>
+					<button type="button" role="tab" data-tab="wit" aria-selected="false" class="flex items-center gap-1.5 rounded-md px-2 py-1 font-medium text-muted-foreground aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-float">
+						<Icon name="sparkles" class="size-4" />{demo.wit}
+					</button>
+				</div>
+				<span class={iconButton} aria-hidden="true"><Icon name="search" /></span>
+			</div>
+			<div class="flex h-8 items-center gap-2.5 rounded-lg px-2"><Icon name="square-pen" />{demo.compose}</div>
+			<div class="mt-2 flex h-8 items-center gap-2.5 rounded-lg bg-black/5 px-2 font-medium dark:bg-white/8">
+				<Icon name="inbox-fill" />{demo.allInboxes}<span data-unread-count class="ml-auto text-app-sm text-muted-foreground">{unread}</span>
+			</div>
+			<div class="flex h-8 items-center gap-2.5 rounded-lg px-2"><Icon name="star" />{demo.starred}</div>
+			{
+				demo.accounts.map((a, i) => (
+					<>
+						<div class="mt-3 flex h-7 items-center gap-1.5 px-2 text-app-sm text-muted-foreground">
+							<Icon name="chevron-down" class="size-3.5" />
+							{a.name}
+						</div>
+						{i === 0 &&
+							demo.folders.map((f, j) => (
+								<div class="flex h-8 items-center gap-2.5 rounded-lg pr-2 pl-6">
+									<Icon name={(["inbox", "file-pen", "send", "archive", "trash-2"] as const)[j]} class="size-4 text-muted-foreground" />
+									{f}
+									{j === 0 && a.unread && (
+										<span data-unread-count class="ml-auto text-app-sm text-muted-foreground">
+											{a.unread}
+										</span>
+									)}
+								</div>
+							))}
+					</>
+				))
+			}
+			<div class="mt-1 flex h-7 items-center gap-1.5 px-2 text-app-sm text-muted-foreground">+ {demo.addAccount}</div>
+			<div class="mt-auto flex h-8 items-center gap-2.5 px-2"><Icon name="sliders-horizontal" />{demo.settings}</div>
+		</nav>
+
+		<!-- Mail: the list and the reader, two cards. -->
+		<div data-view="mail" class="flex min-w-0 flex-1 flex-col gap-2 md:flex-row">
+			<div class="flex shrink-0 flex-col overflow-hidden rounded-xl bg-background shadow-float max-md:h-[212px] md:w-[300px]">
+				<div class="flex items-center justify-between px-3 pt-3 pb-1">
+					<span class="text-app-sm text-muted-foreground">{demo.messages[0].group}</span>
+					<span class="flex rounded-md bg-muted p-0.5 text-app-sm" aria-hidden="true">
+						<span class="rounded-[5px] bg-background px-2 py-0.5 shadow-float">{demo.all}</span>
+						<span class="px-2 py-0.5 text-muted-foreground">{demo.unread}</span>
+					</span>
+				</div>
+				<ul class="min-h-0 flex-1 overflow-y-auto px-2 pb-2" role="listbox" aria-label={demo.inboxTitle}>
+					{
+						demo.messages.map((m, i) => (
+							<>
+								{i > 0 && m.group !== demo.messages[i - 1].group && <li class="px-1 pt-3 pb-1 text-app-sm text-muted-foreground" role="presentation">{m.group}</li>}
+								<li role="presentation">
+									<button
+										type="button"
+										role="option"
+										data-msg={m.id}
+										data-unread={m.unread ? "" : undefined}
+										aria-selected={m.id === demo.selected ? "true" : "false"}
+										class="group relative block w-full rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent/60 aria-selected:bg-accent"
+									>
+										<span class="absolute top-[13px] left-[3px] hidden size-1.5 rounded-full bg-blue-500 group-data-unread:block" />
+										<span class="flex items-baseline gap-2">
+											<span class="truncate group-data-unread:font-semibold">{m.from}</span>
+											<span class="ml-auto flex shrink-0 items-center gap-1 text-app-sm text-muted-foreground">
+												{m.attachment && <Icon name="paperclip" class="size-3" />}
+												{m.time}
+											</span>
+										</span>
+										<span class="block truncate group-data-unread:font-semibold">{m.subject}</span>
+										<span class="block truncate text-muted-foreground">{m.preview}</span>
+									</button>
+								</li>
+							</>
+						))
+					}
+				</ul>
+			</div>
+
+			<div class="relative min-w-0 overflow-hidden rounded-xl bg-background shadow-float max-lg:h-[460px] md:flex-1">
+				{
+					demo.messages.map((m) => (
+						<article data-reader={m.id} hidden={m.id !== demo.selected} class="flex h-full flex-col">
+							<div class="flex h-12 shrink-0 items-center gap-1 border-b px-4">
+								<span class="flex items-center gap-0.5 rounded-lg border p-0.5" aria-hidden="true">
+									<span class={iconButton}><Icon name="reply" /></span>
+									<span class={iconButton}><Icon name="reply-all" /></span>
+									<span class={iconButton}><Icon name="forward" /></span>
+								</span>
+								<span class="ml-1 hidden items-center gap-0.5 rounded-lg border p-0.5 sm:flex" aria-hidden="true">
+									<span class={iconButton}><Icon name="archive" /></span>
+									<span class={iconButton}><Icon name="trash-2" /></span>
+									<span class={iconButton}><Icon name="spam" /></span>
+								</span>
+								<span class="ml-auto flex items-center gap-1.5">
+									{m.summary && (
+										<button type="button" data-act="summary" aria-pressed="true" class={pill}>
+											<Icon name="file-text" class="size-3.5" />
+											{demo.summarize}
+										</button>
+									)}
+									{m.translated && (
+										<button type="button" data-act="translate" aria-pressed="false" class={pill}>
+											<Icon name="languages" class="size-3.5" />
+											{demo.translate}
+										</button>
+									)}
+									<span class="hidden h-7 items-center gap-1 rounded-lg border px-2.5 font-medium xl:inline-flex" aria-hidden="true">
+										{demo.moreSkill}
+										<Icon name="chevron-down" class="size-3.5" />
+									</span>
+								</span>
+							</div>
+							<div class="min-h-0 flex-1 overflow-y-auto px-7 py-5 select-text">
+								<h3 class="text-lg font-semibold tracking-tight">{m.subject}</h3>
+								<div class="mt-3 flex items-center gap-3">
+									<span class="grid size-8 place-items-center rounded-full border text-app font-medium">{m.from[0]}</span>
+									<span class="leading-tight">
+										<span class="font-medium">{m.from}</span> <span class="text-muted-foreground">&lt;{m.email}&gt;</span>
+										<span class="block text-app-sm text-muted-foreground">{m.sent}</span>
+									</span>
+								</div>
+
+								{m.summary && (
+									<section data-part="summary" class="mt-4 rounded-xl border bg-sidebar px-3.5 py-3">
+										<div class="flex items-center gap-2">
+											<Icon name="sparkles" class="size-3.5" />
+											<span class="font-semibold">{demo.summaryTitle}</span>
+											<span class="text-app-sm text-muted-foreground">{demo.summaryMeta}</span>
+										</div>
+										<ul data-stream class="mt-2 list-disc space-y-1 pl-[18px] leading-relaxed">
+											{m.summary.map((s) => (
+												<li>{s}</li>
+											))}
+										</ul>
+									</section>
+								)}
+
+								{m.card?.kind === "flight" && (
+									<div class="mt-4 flex items-center gap-4 rounded-xl border px-3.5 py-3 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+										<div class="min-w-0 flex-1">
+											<div class="text-app-sm text-muted-foreground">{m.card.meta}</div>
+											<div class="my-1 font-mono text-[22px] tracking-[3px]">
+												{m.card.from} → {m.card.to}
+											</div>
+											<div class="text-app-sm text-muted-foreground">{m.card.hint}</div>
+										</div>
+										<span class="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary px-3 font-medium text-primary-foreground">{m.card.action}</span>
+									</div>
+								)}
+								{m.card?.kind === "otp" && (
+									<div class="mt-4 flex items-center gap-4 rounded-xl border px-3.5 py-3 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+										<div class="min-w-0 flex-1">
+											<div class="text-app-sm text-muted-foreground">{m.card.meta}</div>
+											<div class="my-1 font-mono text-[22px] tracking-[3px]">{m.card.code}</div>
+											<div class="text-app-sm text-muted-foreground">{m.card.hint}</div>
+										</div>
+										<button
+											type="button"
+											data-act="copy"
+											data-code={m.card.code}
+											data-done={m.card.done}
+											class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 font-medium text-primary-foreground transition-opacity hover:opacity-90"
+										>
+											<Icon name="copy" class="size-3.5" />
+											<span>{m.card.action}</span>
+										</button>
+									</div>
+								)}
+								{m.blocked && (
+									<div data-part="blocked" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-warning-text">
+										{m.blocked.text}
+										<button type="button" data-act="dismiss" class="underline underline-offset-2">
+											{m.blocked.load}
+										</button>
+										<button type="button" data-act="dismiss" class="underline underline-offset-2">
+											{m.blocked.trust}
+										</button>
+									</div>
+								)}
+
+								{m.translated && (
+									<div data-part="translated-note" hidden class="mt-4 flex items-center gap-2 text-app-sm text-muted-foreground">
+										<Icon name="languages" class="size-3.5" />
+										{demo.translated}
+										<button type="button" data-act="original" class="text-foreground underline underline-offset-2">
+											{demo.showOriginal}
+										</button>
+									</div>
+								)}
+								{m.translated && (
+									<div data-part="translating" hidden class="mt-4 flex items-center gap-2 text-muted-foreground">
+										<Icon name="languages" class="size-3.5 animate-pulse" />
+										{demo.translating}
+									</div>
+								)}
+								<div data-part="original" class="mt-4 space-y-2.5 text-app-md leading-[1.75]">
+									{m.body.map((p) => (
+										<p>{p}</p>
+									))}
+								</div>
+								{m.translated && (
+									<div data-part="translated" hidden class="mt-3 space-y-2.5 text-app-md leading-[1.75]">
+										{m.translated.map((p) => (
+											<p>{p}</p>
+										))}
+									</div>
+								)}
+
+								{m.attachment && (
+									<div class="mt-4 flex w-[260px] items-center gap-3 rounded-lg border px-2.5 py-2">
+										<span class="grid h-[34px] w-7 place-items-center rounded-sm bg-muted text-[10px] text-muted-foreground">PDF</span>
+										<span class="leading-tight">
+											<span class="block">{m.attachment.name}</span>
+											<span class="text-app-sm text-muted-foreground">{m.attachment.size}</span>
+										</span>
+										<Icon name="download" class="ml-auto size-4 text-muted-foreground" />
+									</div>
+								)}
+
+								{m.quick && (
+									<section class="mt-5 border-t border-accent pt-4">
+										<div class="mb-2 flex items-center gap-1.5 text-app-sm text-muted-foreground">
+											<Icon name="sparkles" class="size-3.5" />
+											{demo.quickTitle}
+										</div>
+										<div class="space-y-2">
+											{m.quick.map((q, i) => (
+												<button type="button" data-act="quick" class="flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-accent">
+													<span class="shrink-0 rounded-sm bg-muted px-1.5 text-app-sm text-foreground/75">{q.kind}</span>
+													<span class="truncate">{q.text}</span>
+													{i === 0 && <span class="ml-auto shrink-0 font-mono text-app-sm text-muted-foreground/70">Tab</span>}
+												</button>
+											))}
+										</div>
+									</section>
+								)}
+							</div>
+						</article>
+					))
+				}
+			</div>
+		</div>
+
+		<!-- Wit: the chat, one card where the list and the reader were. -->
+		<div data-view="wit" hidden class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background shadow-float max-lg:h-[680px] max-md:h-[560px]">
+			<div data-chat class="mx-auto flex min-h-0 w-full max-w-[680px] flex-1 flex-col gap-4 overflow-y-auto px-6 py-8 select-text">
+				<div class="text-center">
+					<Icon name="sparkles" class="mx-auto size-6" />
+					<h3 class="mt-2 text-lg font-semibold">{demo.witTitle}</h3>
+					<p class="mt-1 text-muted-foreground">{demo.witSub}</p>
+				</div>
+			</div>
+			<div class="mx-auto w-full max-w-[680px] px-6 pb-6">
+				<div class="mb-3 flex flex-wrap gap-2" data-asks>
+					{
+						demo.witAsks.map((a, i) => (
+							<button type="button" data-ask={i} class="rounded-full border px-3 py-1.5 text-left transition-colors hover:bg-accent">
+								{a.q}
+							</button>
+						))
+					}
+				</div>
+				<div class="flex items-center gap-2 rounded-xl border px-3.5 py-3 text-muted-foreground">
+					{demo.witPlaceholder}
+					<span class="ml-auto grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground"><Icon name="send-fill" class="size-3.5" /></span>
+				</div>
+			</div>
+			{
+				demo.witAsks.map((a, i) => (
+					<template data-answer={i}>
+						<div class="ml-auto max-w-[80%] rounded-xl bg-muted px-3.5 py-2">{a.q}</div>
+						<div data-thinking class="flex items-center gap-2 text-muted-foreground">
+							<Icon name="sparkles" class="size-3.5 animate-pulse" />
+							{demo.witThinking}
+						</div>
+						<div data-reply hidden class="space-y-1.5 leading-relaxed">
+							{a.a.map((line) => (
+								<p>{line}</p>
+							))}
+							{a.open && (
+								<p>
+									<button type="button" data-open={a.open} class="inline-flex items-center gap-1 font-medium underline underline-offset-2">
+										{a.openLabel}
+										<Icon name="arrow-right" class="size-3.5" />
+									</button>
+								</p>
+							)}
+						</div>
+					</template>
+				))
+			}
+		</div>
+	</div>
+
+	<div data-toast hidden role="status" class="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-lg bg-primary px-3.5 py-2 text-primary-foreground shadow-lg">
+		{demo.quickSent}
+	</div>
+</div>
+
+<script>
+	// Each demo window: which message is open, what its reader shows, and Wit,
+	// moving as the app does (theme.MotionBase, 200 ms; MotionOffset, 4 px).
+	import { animate, inView, stagger } from "motion";
+	import { spring } from "../motion";
+
+	const still = !document.documentElement.classList.contains("motion");
+	const base = { duration: 0.2, ease: [0.2, 0, 0, 1] } as const;
+
+	// What the model writes comes in line by line, as it streams in the app.
+	const stream = (el: Element) => {
+		if (!still) animate([...el.children], { opacity: [0, 1], y: [4, 0] }, { duration: 0.32, ease: [0.2, 0, 0, 1], delay: stagger(0.14) });
+	};
+	const enter = (el: Element) => {
+		if (!still) animate(el, { opacity: [0, 1], y: [4, 0] }, base);
+	};
+
+	for (const root of document.querySelectorAll<HTMLElement>("[data-demo]")) {
+		const all = (sel: string) => [...root.querySelectorAll<HTMLElement>(sel)];
+		const toast = root.querySelector<HTMLElement>("[data-toast]")!;
+		let toastTimer = 0;
+
+		const summaryOf = (reader: Element) => reader.querySelector('[data-part="summary"]:not([hidden]) [data-stream]');
+
+		const open = (id: string) => {
+			for (const b of all("[data-msg]")) {
+				const on = b.dataset.msg === id;
+				b.setAttribute("aria-selected", String(on));
+				if (on && "unread" in b.dataset) {
+					const dot = b.querySelector("span")!;
+					const read = () => delete b.dataset.unread;
+					if (still) read();
+					else animate(dot, { scale: [1, 0], opacity: [1, 0] }, base).then(read);
+					const left = all("[data-msg][data-unread]").filter((m) => m !== b).length;
+					for (const c of all("[data-unread-count]")) {
+						c.textContent = String(left);
+						if (!still) animate(c, { y: [-4, 0], opacity: [0, 1] }, base);
+					}
+				}
+			}
+			for (const r of all("[data-reader]")) {
+				const was = r.hidden;
+				r.hidden = r.dataset.reader !== id;
+				if (was && !r.hidden) {
+					enter(r);
+					const s = summaryOf(r);
+					if (s) stream(s);
+				}
+			}
+		};
+
+		const tab = (name: string) => {
+			for (const t of all("[data-tab]")) t.setAttribute("aria-selected", String(t.dataset.tab === name));
+			for (const v of all("[data-view]")) {
+				const was = v.hidden;
+				v.hidden = v.dataset.view !== name;
+				if (was && !v.hidden) enter(v);
+			}
+			for (const t of all("[data-title]")) t.style.visibility = name === "mail" ? "" : "hidden";
+		};
+
+		// The open message's summary streams in once the window is on screen.
+		inView(
+			root,
+			() => {
+				const s = summaryOf(root.querySelector("[data-reader]:not([hidden])")!);
+				if (s) stream(s);
+			},
+			{ amount: 0.5 },
+		);
+
+		root.addEventListener("click", (e) => {
+			const target = e.target as HTMLElement;
+			const msg = target.closest<HTMLElement>("[data-msg]");
+			if (msg) return open(msg.dataset.msg!);
+			const t = target.closest<HTMLElement>("[data-tab]");
+			if (t) return tab(t.dataset.tab!);
+			const go = target.closest<HTMLElement>("[data-open]");
+			if (go) {
+				tab("mail");
+				return open(go.dataset.open!);
+			}
+			const ask = target.closest<HTMLButtonElement>("[data-ask]");
+			if (ask) {
+				const chat = root.querySelector<HTMLElement>("[data-chat]")!;
+				const turn = root.querySelector<HTMLTemplateElement>(`template[data-answer="${ask.dataset.ask}"]`)!.content.cloneNode(true) as DocumentFragment;
+				const [question, thinking, reply] = [...turn.children] as HTMLElement[];
+				chat.append(turn);
+				if (!still) {
+					animate(question, { opacity: [0, 1], y: [8, 0], scale: [0.98, 1] }, spring);
+					animate(thinking, { opacity: [0, 1] }, { ...base, delay: 0.15 });
+					animate(ask, { opacity: 0, scale: 0.96 }, base).then(() => ask.remove());
+				} else ask.remove();
+				chat.scrollTo({ top: chat.scrollHeight, behavior: still ? "auto" : "smooth" });
+				setTimeout(() => {
+					thinking.remove();
+					reply.hidden = false;
+					stream(reply);
+					chat.scrollTo({ top: chat.scrollHeight, behavior: still ? "auto" : "smooth" });
+				}, 900);
+				return;
+			}
+
+			const act = target.closest<HTMLElement>("[data-act]");
+			const reader = act?.closest<HTMLElement>("[data-reader]");
+			if (!act || !reader) return;
+			const part = (name: string) => reader.querySelector<HTMLElement>(`[data-part="${name}"]`)!;
+			const translate = reader.querySelector<HTMLElement>('[data-act="translate"]');
+			switch (act.dataset.act) {
+				case "summary": {
+					const on = act.getAttribute("aria-pressed") !== "true";
+					act.setAttribute("aria-pressed", String(on));
+					const summary = part("summary");
+					if (on) {
+						summary.hidden = false;
+						enter(summary);
+						stream(summary.querySelector("[data-stream]")!);
+					} else if (still) summary.hidden = true;
+					else animate(summary, { opacity: 0, y: -4 }, base).then(() => (summary.hidden = true));
+					break;
+				}
+				case "translate": {
+					if (translate!.getAttribute("aria-pressed") === "true") break;
+					translate!.setAttribute("aria-pressed", "true");
+					part("original").hidden = true;
+					part("translating").hidden = false;
+					enter(part("translating"));
+					setTimeout(() => {
+						part("translating").hidden = true;
+						part("translated-note").hidden = false;
+						part("translated").hidden = false;
+						enter(part("translated-note"));
+						stream(part("translated"));
+					}, 700);
+					break;
+				}
+				case "original":
+					translate!.setAttribute("aria-pressed", "false");
+					part("translated-note").hidden = true;
+					part("translated").hidden = true;
+					part("original").hidden = false;
+					enter(part("original"));
+					break;
+				case "dismiss": {
+					const blocked = part("blocked");
+					if (still) blocked.hidden = true;
+					else animate(blocked, { opacity: 0, height: 0, marginTop: 0, paddingTop: 0, paddingBottom: 0 }, base).then(() => (blocked.hidden = true));
+					break;
+				}
+				case "copy": {
+					navigator.clipboard?.writeText(act.dataset.code!).catch(() => {});
+					const label = act.querySelector("span")!;
+					const was = label.textContent;
+					label.textContent = act.dataset.done!;
+					enter(label);
+					setTimeout(() => {
+						label.textContent = was;
+						enter(label);
+					}, 1500);
+					break;
+				}
+				case "quick":
+					clearTimeout(toastTimer);
+					toast.hidden = false;
+					if (!still) animate(toast, { opacity: [0, 1], y: [12, 0], scale: [0.96, 1] }, spring);
+					toastTimer = window.setTimeout(() => {
+						if (still) toast.hidden = true;
+						else animate(toast, { opacity: 0, y: 8 }, base).then(() => (toast.hidden = true));
+					}, 2200);
+					break;
+			}
+		});
+	}
+</script>

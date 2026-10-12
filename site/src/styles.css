@@ -1,0 +1,116 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* The app's tokens: the values webui.ThemeVars hands the app's web pages for
+   theme.Light() and theme.Dark() (internal/theme), so the demo window is drawn
+   in the app's own colours. The page follows the system's appearance. */
+:root {
+	--background: rgb(255 255 255);
+	--foreground: rgb(10 10 10);
+	--muted: rgb(245 245 245);
+	--muted-foreground: rgb(115 115 115);
+	--accent: rgb(245 245 245);
+	--primary: rgb(23 23 23);
+	--primary-foreground: rgb(255 255 255);
+	--border: rgb(229 229 229);
+	--input: rgb(229 229 229);
+	--ring: rgb(161 161 161);
+	--sidebar: rgb(250 250 250);
+	--window: rgb(237 237 237);
+	--warning-bg: rgb(255 251 235);
+	--warning-border: rgb(255 210 48);
+	--warning-text: rgb(151 60 0);
+	--shadow-float: 0 0 0 1px rgb(0 0 0 / 0.039), 0 2px 8px 0 rgb(0 0 0 / 0.039), 0 4px 80px 8px rgb(0 0 0 / 0.024);
+	--shadow-window: 0 0 0 1px rgb(0 0 0 / 0.08), 0 24px 64px -16px rgb(0 0 0 / 0.18);
+	--radius: 8px;
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--background: rgb(10 10 10);
+		--foreground: rgb(250 250 250);
+		--muted: rgb(38 38 38);
+		--muted-foreground: rgb(161 161 161);
+		--accent: rgb(38 38 38);
+		--primary: rgb(229 229 229);
+		--primary-foreground: rgb(23 23 23);
+		--border: rgb(255 255 255 / 0.102);
+		--input: rgb(255 255 255 / 0.149);
+		--ring: rgb(115 115 115);
+		--sidebar: rgb(23 23 23);
+		--window: rgb(30 30 30);
+		--warning-bg: rgb(70 25 1);
+		--warning-border: rgb(151 60 0);
+		--warning-text: rgb(255 210 48);
+		--shadow-float: inset 0 0 1px rgb(255 255 255 / 0.2);
+		--shadow-window: 0 0 0 1px rgb(255 255 255 / 0.1), 0 24px 64px -16px rgb(0 0 0 / 0.6);
+		color-scheme: dark;
+	}
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-sidebar: var(--sidebar);
+	--color-window: var(--window);
+	--color-warning-bg: var(--warning-bg);
+	--color-warning-border: var(--warning-border);
+	--color-warning-text: var(--warning-text);
+	--shadow-float: var(--shadow-float);
+	--shadow-window: var(--shadow-window);
+	/* The native radii: sm…2xl are 4/6/8/12/16. */
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--radius-2xl: calc(var(--radius) + 8px);
+}
+
+/* The app's type: Geist, the system's CJK font after it; the native text
+   steps (Xs 11, Sm 12, Base 13, Md 14) for the demo window. */
+@theme {
+	--font-sans: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+	--font-mono: "Geist Mono Variable", ui-monospace, monospace;
+	--text-app-xs: 11px;
+	--text-app-sm: 12px;
+	--text-app: 13px;
+	--text-app-md: 14px;
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+	html {
+		@apply bg-background font-sans text-foreground antialiased;
+	}
+	::selection {
+		@apply bg-foreground text-background;
+	}
+}
+
+/* What motion.ts brings in starts hidden, but only once the head has set
+   html.motion. Should the script never run, it all shows after 2.5 s; once
+   it runs (html.motion-ready) the fallback is off, as an animation's opacity
+   would outrank the inline one Motion animates. */
+@keyframes reveal-fallback {
+	to {
+		opacity: 1;
+	}
+}
+.motion :is([data-hero] > *, [data-demo], [data-reveal], [data-reveal-group] > *) {
+	opacity: 0;
+}
+.motion:not(.motion-ready) :is([data-hero] > *, [data-demo], [data-reveal], [data-reveal-group] > *) {
+	animation: reveal-fallback 0s 2.5s forwards;
+}

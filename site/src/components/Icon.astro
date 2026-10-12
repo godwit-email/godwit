@@ -1,0 +1,63 @@
+---
+// The app's icons: Remix Icon 4.8.0, named as in web/icons.go, inlined at
+// build time and tinted with the text colour.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const files = {
+	archive: "Business/archive-line",
+	"arrow-left": "Arrows/arrow-left-line",
+	"arrow-right": "Arrows/arrow-right-line",
+	check: "System/check-line",
+	"chevron-down": "Arrows/arrow-down-s-line",
+	copy: "Document/file-copy-line",
+	download: "System/download-line",
+	"external-link": "System/external-link-line",
+	"file-pen": "Document/draft-line",
+	forward: "System/share-forward-line",
+	github: "Logos/github-fill",
+	inbox: "Business/inbox-line",
+	"inbox-fill": "Business/inbox-fill",
+	languages: "Editor/translate-2",
+	lock: "System/lock-line",
+	mail: "Business/mail-line",
+	"mail-fill": "Business/mail-fill",
+	monitor: "Device/computer-line",
+	"panel-left": "Design/layout-left-line",
+	paperclip: "Editor/attachment-2",
+	puzzle: "Development/puzzle-line",
+	"reply-all": "Business/reply-all-line",
+	reply: "Business/reply-line",
+	search: "System/search-line",
+	send: "Business/send-plane-line",
+	"send-fill": "Business/send-plane-fill",
+	shield: "System/shield-line",
+	"sliders-horizontal": "Media/equalizer-3-line",
+	spam: "System/spam-2-line",
+	sparkles: "Weather/sparkling-line",
+	"square-pen": "Design/edit-box-line",
+	star: "System/star-line",
+	terminal: "Development/terminal-box-line",
+	"trash-2": "System/delete-bin-line",
+	"file-text": "Document/file-text-line",
+	cpu: "Device/cpu-line",
+	robot: "User & Faces/robot-2-line",
+	globe: "Business/global-line",
+	image: "Media/image-line",
+	x: "System/close-line",
+} as const;
+
+interface Props {
+	name: keyof typeof files;
+	class?: string;
+}
+
+const { name, class: className = "size-4" } = Astro.props;
+// The build runs in site/, and the bundled page no longer sits next to its source.
+const svg = readFileSync(join(process.cwd(), "node_modules/remixicon/icons", `${files[name]}.svg`), "utf8").replace(
+	"<svg ",
+	`<svg aria-hidden="true" class="${className} shrink-0" fill="currentColor" `,
+);
+---
+
+<Fragment set:html={svg} />

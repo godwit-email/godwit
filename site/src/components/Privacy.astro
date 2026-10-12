@@ -1,0 +1,117 @@
+---
+// Where your mail goes: what stays on this computer, and every connection
+// Godwit makes, as a list in the app's settings style. The model row switches
+// between a cloud service and a local one.
+import type { Strings } from "../i18n";
+import Icon from "./Icon.astro";
+
+interface Props {
+	p: Strings["privacy"];
+}
+
+const { p } = Astro.props;
+const localIcons = ["monitor", "lock"] as const;
+const restIcons = ["puzzle", "image", "download"] as const;
+const row = "grid grid-cols-[28px_1fr] gap-x-3 gap-y-0.5 px-4 py-3.5 sm:grid-cols-[28px_minmax(0,11rem)_1fr] sm:items-baseline";
+const tile = "row-span-2 grid size-7 place-items-center self-start rounded-md border bg-sidebar sm:row-span-1";
+const host = "col-start-2 font-mono text-[12px] text-muted-foreground sm:col-start-3 sm:row-start-1";
+const what = "col-start-2 text-sm leading-relaxed text-muted-foreground sm:col-start-3";
+---
+
+<!-- The box reaches out by its own padding, so its text lines up with the page's. -->
+<section class="mx-auto mt-28 max-w-6xl px-6">
+	<div class="-mx-6 grid gap-10 bg-window px-6 py-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-12 lg:py-14 xl:-mx-12 xl:rounded-2xl xl:px-12">
+		<div data-reveal>
+			<h2 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{p.title}</h2>
+			<p class="mt-4 leading-relaxed text-muted-foreground">{p.sub}</p>
+			<div class="mt-10 space-y-6">
+				{
+					p.local.map((f, i) => (
+						<div class="flex gap-3">
+							<Icon name={localIcons[i]} class="mt-0.5 size-[18px]" />
+							<div>
+								<h3 class="font-semibold">{f.title}</h3>
+								<p class="mt-1 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
+							</div>
+						</div>
+					))
+				}
+			</div>
+		</div>
+
+		<div data-connections data-reveal class="self-start overflow-hidden rounded-xl bg-background shadow-float">
+			<div class="flex items-center gap-2 border-b px-4 py-3 text-sm font-medium">
+				<Icon name="globe" class="size-4 text-muted-foreground" />
+				{p.listTitle}
+			</div>
+			<ul data-reveal-group class="divide-y text-[14px]">
+				<li class={row}>
+					<span class={tile}><Icon name="mail" class="size-3.5" /></span>
+					<span class="font-medium">{p.mail.name}</span>
+					<span class={host}>{p.mail.host}</span>
+					<span class={what}>{p.mail.what}</span>
+				</li>
+
+				<li class={row} data-model="cloud">
+					<span class={tile}><Icon name="sparkles" class="size-3.5" /></span>
+					<span class="flex flex-wrap items-center gap-2 font-medium">
+						{p.model.name}
+						<span class="flex rounded-md bg-muted p-0.5 text-xs font-normal" role="radiogroup" aria-label={p.model.name}>
+							<button type="button" role="radio" data-set="cloud" aria-checked="true" class="rounded-[5px] px-2 py-0.5 text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-float">
+								{p.model.cloud}
+							</button>
+							<button type="button" role="radio" data-set="local" aria-checked="false" class="rounded-[5px] px-2 py-0.5 text-muted-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-float">
+								{p.model.local}
+							</button>
+						</span>
+					</span>
+					<span class={host}>
+						<span data-when="cloud">{p.model.cloudHost}</span>
+						<span data-when="local" hidden>{p.model.localHost}</span>
+					</span>
+					<span class={what}>
+						<span data-when="cloud">{p.model.cloudWhat}</span>
+						<span data-when="local" hidden class="text-foreground">{p.model.localWhat}</span>
+					</span>
+				</li>
+
+				{
+					p.rest.map((c, i) => (
+						<li class={row}>
+							<span class={tile}>
+								<Icon name={restIcons[i]} class="size-3.5" />
+							</span>
+							<span class="font-medium">{c.name}</span>
+							<span class={host}>{c.host}</span>
+							<span class={what}>{c.what}</span>
+						</li>
+					))
+				}
+
+				<li class:list={[row, "bg-sidebar"]}>
+					<span class={tile}><Icon name="x" class="size-3.5" /></span>
+					<span class="font-medium text-muted-foreground line-through decoration-muted-foreground/60">{p.none.name}</span>
+					<span class:list={[host, "font-sans font-semibold text-foreground"]}>{p.none.host}</span>
+					<span class={what}>{p.none.what}</span>
+				</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<script>
+	import { animate } from "motion";
+
+	for (const row of document.querySelectorAll<HTMLElement>("[data-model]")) {
+		row.addEventListener("click", (e) => {
+			const set = (e.target as HTMLElement).closest<HTMLElement>("[data-set]")?.dataset.set;
+			if (!set) return;
+			row.dataset.model = set;
+			for (const b of row.querySelectorAll<HTMLElement>("[data-set]")) b.setAttribute("aria-checked", String(b.dataset.set === set));
+			for (const s of row.querySelectorAll<HTMLElement>("[data-when]")) {
+				s.hidden = s.dataset.when !== set;
+				if (!s.hidden) animate(s, { opacity: [0, 1] }, { duration: 0.2 });
+			}
+		});
+	}
+</script>
