@@ -269,3 +269,17 @@ func TestFailureDuringClearIsNotRemembered(t *testing.T) {
 		t.Errorf("%d requests: the failure of a download begun before Clear was remembered", hits.Load())
 	}
 }
+
+func TestGetAfterCloseFailsEvenWhenCached(t *testing.T) {
+	pic := pngOf(t, 4, 3)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(pic) }))
+	defer srv.Close()
+	c := open(t, t.TempDir(), 0)
+	if _, err := c.Get(t.Context(), srv.URL+"/a.png"); err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if _, err := c.Get(t.Context(), srv.URL+"/a.png"); err != ErrClosed {
+		t.Errorf("cached, after Close: %v", err)
+	}
+}

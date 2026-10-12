@@ -67,15 +67,13 @@ type preparer struct {
 }
 
 // proxy is the godwit-img: URL of the remote image src, or "" when the
-// message has used up its image count (and, for cached images, pixels): the
-// page loads every image at once, so a message cannot hold unbounded ones.
+// message has used up its image count: the page loads every image at once, so
+// a message cannot hold unbounded ones. Their pixels are charged to the same
+// budget by the proxy, once their size is known (Reader.chargePixels).
 func (p *preparer) proxy(src string) string {
 	token := imagecache.Key(src)
 	if _, seen := p.tokens[token]; !seen {
 		if p.budget.Take() != nil {
-			return ""
-		}
-		if w, h, ok := p.dims(src); ok && p.budget.TakePixels(int64(w)*int64(h)) != nil {
 			return ""
 		}
 	}

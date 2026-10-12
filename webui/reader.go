@@ -191,7 +191,7 @@ func (r *Reader) Allow(message int64) {
 	r.version++
 	v := r.version
 	st.version, st.body, st.tokens, st.allowed = v, nil, nil, true
-	st.pixels, st.charged = imagefetch.NewBudget(), map[string]bool{}
+	st.pixels, st.charged = nil, nil
 	r.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -239,8 +239,9 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	b := ReaderBody{Message: message, Version: v, Remote: allowed, Blocked: m.RemoteImagesBlocked, Cut: m.Truncated,
 		Theme: ThemeOf(st), Text: readerText()}
 	var tokens map[string]string
+	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
-		b.HTML, tokens = prepareBody(m.HTML, imagefetch.NewBudget(), message, svc.ImageCache().Dims)
+		b.HTML, tokens = prepareBody(m.HTML, budget, message, svc.ImageCache().Dims)
 	} else {
 		b.Plain = m.Text
 	}
@@ -249,9 +250,7 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	if s := r.msgs[message]; s != nil && s.version == v {
 		if s.body == nil {
 			s.body, s.tokens = &b, tokens
-			if s.pixels == nil {
-				s.pixels, s.charged = imagefetch.NewBudget(), map[string]bool{}
-			}
+			s.pixels, s.charged = budget, map[string]bool{}
 		}
 		for k, m := range r.bound {
 			if m == message {

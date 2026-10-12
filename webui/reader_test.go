@@ -687,3 +687,17 @@ func TestReaderImagePixelsAreChargedPerMessage(t *testing.T) {
 	}
 	assert.Equal(t, []int{200, 200, http.StatusForbidden, 200}, codes, "the third pushes past 100 MP; one already charged is served again")
 }
+
+func TestReaderInlinePixelsCarryIntoTheProxyBudget(t *testing.T) {
+	inline := dataPNG(pngHeader(6000, 6000)) // 36 MP each
+	pic := pngOf(t, 6000, 6000)
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="` + inline + `"><img src="` + inline + `"><img src="` + srv.URL + `/r.png">`}
+	})
+	k := f.page(6)
+	f.r.Allow(6)
+	f.waitEmitted(t, k)
+	assert.Equal(t, http.StatusForbidden, f.image(t, 6, srv.URL+"/r.png").Code, "72 MP inline + 36 MP remote is over 100 MP")
+}

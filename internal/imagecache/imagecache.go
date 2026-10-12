@@ -211,18 +211,26 @@ func (c *Cache) Clear() error {
 func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	key := Key(src)
 	c.mu.Lock()
+	if c.ctx.Err() != nil {
+		c.mu.Unlock()
+		return Image{}, ErrClosed
+	}
 	if e := c.files[key]; e != nil {
 		e.used = time.Now()
 		name := e.name
+		c.wg.Add(1) // Close waits for the disk work below
 		c.mu.Unlock()
 		data, err := os.ReadFile(filepath.Join(c.dir, name))
 		if err == nil {
 			now := time.Now()
 			_ = os.Chtimes(filepath.Join(c.dir, name), now, now)
+			c.wg.Done()
 			return Image{Data: data, Format: e.format, Width: e.width, Height: e.height}, nil
 		}
 		// Forget the file only once it is gone (or deleted); else it stays counted.
-		if rerr := os.Remove(filepath.Join(c.dir, name)); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		rerr := os.Remove(filepath.Join(c.dir, name))
+		c.wg.Done()
+		if rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 			return Image{}, err
 		}
 		c.mu.Lock()
@@ -240,10 +248,6 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	}
 	cl := c.flight[key]
 	if cl == nil {
-		if c.ctx.Err() != nil {
-			c.mu.Unlock()
-			return Image{}, ErrClosed
-		}
 		cl = &call{done: make(chan struct{}), gen: c.gen}
 		c.flight[key] = cl
 		c.wg.Add(1)
