@@ -260,7 +260,7 @@ func gui(ctx context.Context, dataDir string) int {
 		appMenu := []*mygo.MenuItem{
 			{Role: mygo.RoleAbout},
 			mygo.Separator(),
-			{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { a.OpenSettings() }},
+			{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
 			updater.MenuItem(),
 			mygo.Separator(),
 			{Role: mygo.RoleServices},
