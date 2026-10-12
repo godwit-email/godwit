@@ -20,6 +20,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,11 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		},
 		OnFailed: func(k any, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
 	})
-	f.r.allowLoopback = true
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.RemoteImages = "ask" // the tests of the policy say otherwise
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
 	f.r.SetService(f.e.Svc)
 	f.p = NewReaderPage(f.r)
 	return f
@@ -169,6 +174,26 @@ func pngHeader(w, h uint32) []byte {
 
 func dataPNG(b []byte) string { return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b) }
 
+// image is the proxy's answer for src, an image of message.
+func (f *readerFixture) image(t *testing.T, message int64, src string) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.imageAt(t, fmt.Sprintf("godwit-img://m%d/%s", message, imagecache.Key(src)))
+}
+
+func (f *readerFixture) imageAt(t *testing.T, u string) *httptest.ResponseRecorder {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	f.r.ImageHandler().ServeHTTP(rec, req)
+	return rec
+}
+
+// proxied is src as the body holds it.
+func proxied(message int64, src string) string {
+	return fmt.Sprintf("godwit-img://m%d/%s", message, imagecache.Key(src))
+}
+
 // remoteMail is a message with text and one remote image at src.
 func (f *readerFixture) remoteMail(t *testing.T, text, src string) core.MessageSummary {
 	return f.deliverOne(t, coretest.Msg("bob@example.com", f.acc.Email, "News: "+text, text,
@@ -222,9 +247,10 @@ func TestReaderPageScoped(t *testing.T) {
 	f.r.Allow(n.ID)
 	f.waitEmitted(t, km)
 	f.waitEmitted(t, kn)
-	_, err = f.p.Image(pageCtx(km), srv.URL+"/n.png")
-	assert.ErrorIs(t, err, ErrImageRefused, "M's page asks for N's image")
-	assert.Zero(t, srv.hits())
+	assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, srv.URL+"/n.png").Code, "N's image under M")
+	assert.Equal(t, http.StatusOK, f.image(t, m.ID, srv.URL+"/m.png").Code)
+	assert.Equal(t, http.StatusOK, f.image(t, n.ID, srv.URL+"/n.png").Code)
+	assert.Equal(t, 2, srv.hits())
 
 	wit := new(int)
 	f.pages.Register(wit, "wit")
@@ -235,15 +261,13 @@ func TestReaderPageScoped(t *testing.T) {
 	} {
 		_, err := f.p.Load(ctx)
 		assert.ErrorIs(t, err, ErrWrongPage, name)
-		_, err = f.p.Image(ctx, srv.URL+"/m.png")
-		assert.ErrorIs(t, err, ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Height(ctx, 10), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Wheel(ctx, 10), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://x.example/"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
 	}
-	assert.Zero(t, srv.hits())
+	assert.Equal(t, 2, srv.hits())
 
 	got, ok := f.r.Bound(km)
 	assert.True(t, ok)
@@ -326,12 +350,13 @@ func TestReaderImageRefusedUntilAllowed(t *testing.T) {
 	pic := pngOf(t, 2, 2)
 	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
 	f := newReaderFixture(t)
-	m := f.remoteMail(t, "hi", srv.URL+"/pixel.png")
+	src := srv.URL + "/pixel.png"
+	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
-	_, err := f.p.Load(pageCtx(k))
+	b, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
-	_, err = f.p.Image(pageCtx(k), srv.URL+"/pixel.png")
-	assert.ErrorIs(t, err, ErrImageRefused)
+	assert.NotContains(t, b.HTML, "godwit-img")
+	assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, src).Code)
 	assert.Zero(t, srv.hits())
 }
 
@@ -345,13 +370,16 @@ func TestReaderImageAfterAllow(t *testing.T) {
 	f.r.Allow(m.ID)
 	b := f.waitEmitted(t, k)
 	require.True(t, b.Remote)
-	got, err := f.p.Image(pageCtx(k), src)
-	require.NoError(t, err)
-	assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(pic), got)
-	again, err := f.p.Image(pageCtx(k), src)
-	require.NoError(t, err)
-	assert.Equal(t, got, again)
-	require.Equal(t, 1, srv.hits(), "one request for the image")
+	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, src)+`"`)
+	assert.NotContains(t, b.HTML, srv.URL, "the page never sees the remote address")
+	for range 2 {
+		rec := f.image(t, m.ID, src)
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, pic, rec.Body.Bytes())
+		assert.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+		assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	}
+	require.Equal(t, 1, srv.hits(), "one request for the image: the second is from the cache")
 	for _, h := range []string{"Cookie", "Referer"} {
 		assert.Empty(t, srv.hdrs[0].Get(h), h)
 	}
@@ -366,10 +394,56 @@ func TestReaderImageRefusedNotInBody(t *testing.T) {
 	f.r.Allow(m.ID)
 	f.waitEmitted(t, k)
 	for _, u := range []string{srv.URL + "/other.png", "http://127.0.0.1:1/x.png", "file:///etc/passwd"} {
-		_, err := f.p.Image(pageCtx(k), u)
-		assert.ErrorIs(t, err, ErrImageRefused, u)
+		assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, u).Code, u)
+	}
+	for _, u := range []string{"godwit-img://m999/" + imagecache.Key(srv.URL+"/pixel.png"), "godwit-img://x/y", "godwit-img://m1/", "godwit-img://m1/a/b"} {
+		assert.Equal(t, http.StatusNotFound, f.imageAt(t, u).Code, u)
 	}
 	assert.Zero(t, srv.hits())
+}
+
+func TestReaderImageFailureIs502(t *testing.T) {
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>")) })
+	f := newReaderFixture(t)
+	src := srv.URL + "/page.png"
+	m := f.remoteMail(t, "hi", src)
+	k := f.page(m.ID)
+	f.r.Allow(m.ID)
+	f.waitEmitted(t, k)
+	assert.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "not an image")
+}
+
+func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
+	f := newReaderFixture(t)
+	setMode := func(mode string) {
+		st, err := f.e.Svc.GetSettings(t.Context())
+		require.NoError(t, err)
+		st.RemoteImages = mode
+		_, err = f.e.Svc.SetSettings(t.Context(), st)
+		require.NoError(t, err)
+	}
+	load := func(text, src string) ReaderBody {
+		m := f.remoteMail(t, text, src)
+		b, err := f.p.Load(pageCtx(f.page(m.ID)))
+		require.NoError(t, err)
+		return b
+	}
+	setMode("auto")
+	src := srv.URL + "/a.png"
+	b := load("auto", src)
+	assert.True(t, b.Remote, "automatic: no asking")
+	assert.Contains(t, b.HTML, "godwit-img://")
+	assert.Equal(t, http.StatusOK, f.image(t, b.Message, src).Code)
+
+	setMode("trusted")
+	assert.False(t, load("trusted", srv.URL+"/b.png").Remote, "trusted only: not this sender yet")
+	require.NoError(t, f.e.Svc.TrustImageSender(t.Context(), "Bob@Example.com"))
+	assert.True(t, load("trusted 2", srv.URL+"/c.png").Remote)
+	require.NoError(t, f.e.Svc.UntrustImageSender(t.Context(), "bob@example.com"))
+	setMode("ask")
+	assert.False(t, load("ask", srv.URL+"/d.png").Remote)
 }
 
 func TestReaderAllowReloads(t *testing.T) {
@@ -384,7 +458,7 @@ func TestReaderAllowReloads(t *testing.T) {
 	assert.True(t, b.Remote)
 	assert.Greater(t, b.Version, before.Version)
 	assert.Equal(t, m.ID, b.Message)
-	assert.Contains(t, b.HTML, `src="https://img.example/m.png"`)
+	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, "https://img.example/m.png")+`"`)
 	after, err := f.p.Load(pageCtx(km))
 	require.NoError(t, err)
 	assert.Equal(t, b.Version, after.Version)
@@ -447,9 +521,8 @@ func TestReaderInlineImageBudgets(t *testing.T) {
 	assert.NotEmpty(t, srcOf["n49"])
 
 	f.r.Allow(7)
-	f.waitEmitted(t, k)
-	_, err = f.p.Image(pageCtx(k), srv.URL+"/r.png")
-	assert.ErrorIs(t, err, imagefetch.ErrTooMany, "inline images used up the count")
+	b = f.waitEmitted(t, k)
+	assert.Contains(t, b.HTML, proxied(7, srv.URL+"/r.png"), "remote images do not count against the inline budget")
 	assert.Zero(t, srv.hits())
 }
 
@@ -467,17 +540,17 @@ func attr(n *html.Node, key string) string {
 func TestReaderBodyWhole(t *testing.T) {
 	t.Run("paragraphs", func(t *testing.T) {
 		in := strings.Repeat("<p>x</p>", 6000) + "<p>tail</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget())
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("cells", func(t *testing.T) {
 		in := "<table><tbody><tr>" + strings.Repeat("<td>c</td>", 3000) + "</tr></tbody></table><p>after</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget())
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("depth and inlines", func(t *testing.T) {
 		in := strings.Repeat("<div>", 30) + strings.Repeat("<b>x</b>", 25000) + strings.Repeat("</div>", 30) + "<p>after</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget())
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("reported", func(t *testing.T) {
@@ -500,32 +573,6 @@ func TestReaderBodyWhole(t *testing.T) {
 		assert.Equal(t, map[int64]bool{1: false, 2: true, 3: false}, f.cuts)
 		f.mu.Unlock()
 	})
-}
-
-func TestReaderImageMessageDeadline(t *testing.T) {
-	var started atomic.Int64
-	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) {
-		started.Add(1)
-		select {
-		case <-r.Context().Done():
-		case <-time.After(10 * time.Second):
-		}
-	})
-	f := newReaderFixture(t)
-	f.r.imageDeadline = 300 * time.Millisecond
-	f.fakeMessage(func(int64, bool) core.Message {
-		return core.Message{HTML: `<img src="` + srv.URL + `/a.png"><img src="` + srv.URL + `/b.png">`}
-	})
-	k := f.page(1)
-	f.r.Allow(1)
-	f.waitEmitted(t, k)
-	start := time.Now()
-	_, err := f.p.Image(pageCtx(k), srv.URL+"/a.png")
-	assert.Error(t, err)
-	assert.Less(t, time.Since(start), 5*time.Second, "stopped by the message's deadline, not the request's")
-	_, err = f.p.Image(pageCtx(k), srv.URL+"/b.png")
-	assert.ErrorIs(t, err, ErrImageDeadline)
-	assert.EqualValues(t, 1, started.Load(), "no request after the deadline")
 }
 
 // TestReaderInlineImageBytes: inline images take their bytes from the
@@ -553,9 +600,9 @@ func TestReaderInlineImageBytes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`), "the fifth inline image is over the bytes")
 	f.r.Allow(1)
-	f.waitEmitted(t, k)
-	_, err = f.p.Image(pageCtx(k), srv.URL+"/r.png")
-	assert.ErrorIs(t, err, imagefetch.ErrTotalTooLarge, "2 MiB left for a 3 MiB remote image")
+	b = f.waitEmitted(t, k)
+	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`))
+	assert.Equal(t, http.StatusOK, f.image(t, 1, srv.URL+"/r.png").Code, "a 3 MiB remote image is no longer cut by the inline budget")
 }
 
 // TestReaderEmitFollowsBinding: a body goes only to pages bound to its
@@ -588,24 +635,21 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 	assert.Zero(t, wrong.Load(), "a page got another message's body")
 }
 
-func TestReaderTrustedSenderLoadsImages(t *testing.T) {
-	pic := pngOf(t, 2, 2)
-	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
-	f := newReaderFixture(t)
-	src := srv.URL + "/pixel.png"
-	m := f.remoteMail(t, "hi", src)
-	require.NoError(t, f.e.Svc.TrustImageSender(t.Context(), "Bob@Example.com"))
-	k := f.page(m.ID)
-	b, err := f.p.Load(pageCtx(k))
-	require.NoError(t, err)
-	assert.True(t, b.Remote, "a trusted sender's images load at once")
-	got, err := f.p.Image(pageCtx(k), src)
-	require.NoError(t, err)
-	assert.Equal(t, dataPNG(pic), got)
+func noDims(string) (int, int, bool) { return 0, 0, false }
 
-	require.NoError(t, f.e.Svc.UntrustImageSender(t.Context(), "bob@example.com"))
-	k2 := f.page(f.remoteMail(t, "again", srv.URL+"/other.png").ID)
-	b, err = f.p.Load(pageCtx(k2))
-	require.NoError(t, err)
-	assert.False(t, b.Remote, "removed: blocked again")
+func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
+	dims := func(src string) (int, int, bool) { return 40, 30, src == "https://cdn.example/known.png" }
+	in := `<img src="https://cdn.example/known.png" alt="a"><img src="https://cdn.example/sized.png" width="9">` +
+		`<img src="https://cdn.example/new.png" alt="n"><img src="https://cdn.example/styled.png" style="width:50%">` +
+		`<table data-bg="https://cdn.example/bg.jpg" style="color: red"><tbody><tr><td data-bg="javascript:1">x</td></tr></tbody></table>`
+	out, tokens := prepareBody(in, imagefetch.NewBudget(), 12, dims)
+	assert.NotContains(t, out, "cdn.example")
+	assert.NotContains(t, out, "data-bg")
+	assert.Len(t, tokens, 5)
+	assert.Equal(t, "https://cdn.example/bg.jpg", tokens[imagecache.Key("https://cdn.example/bg.jpg")])
+	assert.Contains(t, out, `<img src="`+proxied(12, "https://cdn.example/known.png")+`" alt="a" width="40" height="30"/>`, "the cached size reserves the space")
+	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/sized.png")+`" width="9"/>`, "a declared size stays")
+	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/new.png")+`" alt="n"/>`)
+	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, "https://cdn.example/bg.jpg")+`)"`)
+	assert.NotContains(t, out, "javascript")
 }
