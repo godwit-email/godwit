@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -72,6 +73,7 @@ type call struct {
 	done chan struct{}
 	img  Image
 	err  error
+	gen  int // the cache's generation when it began
 }
 
 type failure struct {
@@ -237,7 +239,7 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 			c.mu.Unlock()
 			return Image{}, ErrClosed
 		}
-		cl = &call{done: make(chan struct{})}
+		cl = &call{done: make(chan struct{}), gen: c.gen}
 		c.flight[key] = cl
 		c.wg.Add(1)
 		go c.download(key, src, cl, c.gen)
@@ -256,7 +258,7 @@ func (c *Cache) download(key, src string, cl *call, gen int) {
 	cl.img, cl.err = c.fetch(key, src, gen)
 	c.mu.Lock()
 	delete(c.flight, key)
-	if cl.err != nil && c.ctx.Err() == nil {
+	if cl.err != nil && c.ctx.Err() == nil && cl.gen == c.gen {
 		c.rememberFailure(key, cl.err)
 	}
 	c.mu.Unlock()
@@ -270,7 +272,7 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, queueWait+imagefetch.Timeout)
 	defer cancel()
-	host, release := c.host(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."))
+	host, release := c.host(hostKey(u))
 	defer release()
 	for _, sem := range []chan struct{}{host, c.global} {
 		select {
@@ -288,6 +290,16 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	}
 	img := Image{Data: data, Format: format, Width: w, Height: h}
 	return img, c.put(key, img, gen)
+}
+
+// hostKey names u's host for the limiter: lower case, no trailing dot, an IP
+// literal in its canonical form.
+func hostKey(u *url.URL) string {
+	h := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if ip, err := netip.ParseAddr(h); err == nil {
+		return ip.Unmap().String()
+	}
+	return h
 }
 
 // hostSem limits the downloads from one host; n counts those using it.

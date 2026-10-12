@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -224,5 +225,47 @@ func TestHostLimiterEntriesGoAway(t *testing.T) {
 	defer c.mu.Unlock()
 	if len(c.hosts) != 0 {
 		t.Errorf("%d entries left", len(c.hosts))
+	}
+}
+
+func TestHostKeyCanonical(t *testing.T) {
+	for in, want := range map[string]string{
+		"http://EXAMPLE.com:8080/x": "example.com", "http://example.com./x": "example.com",
+		"http://[2606:4700:0000::1111]/x": "2606:4700::1111", "http://[2606:4700::1111]/x": "2606:4700::1111",
+		"http://[::ffff:1.2.3.4]/x": "1.2.3.4",
+	} {
+		u, err := url.Parse(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := hostKey(u); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFailureDuringClearIsNotRemembered(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		w.Write([]byte("<html>"))
+	}))
+	defer srv.Close()
+	c := open(t, t.TempDir(), 0)
+	done := make(chan struct{})
+	go func() { c.Get(t.Context(), srv.URL+"/a.png"); close(done) }()
+	<-started
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	<-done
+	c.Get(t.Context(), srv.URL+"/a.png")
+	if hits.Load() != 2 {
+		t.Errorf("%d requests: the failure of a download begun before Clear was remembered", hits.Load())
 	}
 }
