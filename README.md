@@ -21,22 +21,22 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
   - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts). Plugins can read mail and write drafts; none can send.
   - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
 - **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on **Settings › Local API** and copy the client configuration from there.
-- **Updates itself** from GitHub Releases.
+- **Updates itself** from dl.godwit.email.
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/godwit-email/godwit/releases/latest):
+Download the latest build from [godwit.email](https://godwit.email/#download):
 
 - **macOS**: the `.dmg`, or with [Homebrew](https://brew.sh):
 
   ```sh
   brew install godwit-email/tap/godwit
   ```
-- **Windows**: `Godwit Setup <version> <arch>.exe`. It installs for the current user, without admin rights.
+- **Windows**: the installer. It installs for the current user, without admin rights.
 - **Linux**: the `.deb`, or install for the current user (no root) with:
 
   ```sh
-  curl -fsSL https://github.com/godwit-email/godwit/releases/latest/download/install.sh | sh
+  curl -fsSL https://dl.godwit.email/install.sh | sh
   ```
 
 ## Command line
@@ -73,8 +73,9 @@ Layout:
 | `mcpserver/`, `rpc/` | the MCP server and the Local API |
 | `sdk/` | plugin types |
 | `docs/` | design specs and plans |
+| `site/` | [godwit.email](https://godwit.email), a Cloudflare Worker (`mise run site:dev`) |
 
-Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog.
+Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog. Merging its release PR builds every platform and uploads the installers and updates to the R2 bucket behind dl.godwit.email; each platform's update manifest goes up last, and installed apps update from it as soon as it is there.
 
 ## License
 

@@ -37,3 +37,17 @@ run = "bun run components"
 dir = "web"
 depends = ["web:install"]
 run = 'bun run typecheck && bun run lint && bun run test && bun run components && test -z "$(git status --porcelain -- .)"'
+
+[tasks."site:install"]
+dir = "site"
+run = "bun install --frozen-lockfile"
+
+[tasks."site:dev"]
+dir = "site"
+depends = ["site:install"]
+run = "bun run dev"
+
+[tasks."site:check"]
+dir = "site"
+depends = ["site:install"]
+run = "bun run typecheck && bun run test && bun run build"

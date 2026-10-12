@@ -1,0 +1,255 @@
+---
+import "../styles.css";
+import logo from "../assets/logo.svg?raw";
+import { demos } from "../demo";
+import { strings } from "../i18n";
+import { type Lang, locales, names, paths } from "../locales";
+import AppDemo from "./AppDemo.astro";
+import Icon from "./Icon.astro";
+import Privacy from "./Privacy.astro";
+
+interface Props {
+	lang: Lang;
+}
+
+const { lang } = Astro.props;
+const s = strings[lang];
+// Each language at its fixed path; / is any of them, by the browser's languages (src/worker.ts).
+const self = paths[lang];
+const featureIcons = ["mail", "sparkles", "file-text", "cpu", "puzzle", "robot"] as const;
+const platforms = [
+	{ name: "macOS", icon: "monitor", note: s.macNote, builds: [{ label: s.appleSilicon, target: "darwin-arm64" }, { label: s.intel, target: "darwin-amd64" }] },
+	{ name: "Windows", icon: "monitor", note: s.windowsNote, builds: [{ label: s.x64, target: "windows-amd64" }, { label: s.arm64, target: "windows-arm64" }] },
+	{ name: "Linux", icon: "terminal", note: s.linuxNote, builds: [{ label: s.x64, target: "linux-amd64" }, { label: s.arm64, target: "linux-arm64" }] },
+] as const;
+const commands = [
+	{ label: s.homebrew, cmd: "brew install godwit-email/tap/godwit" },
+	{ label: s.installScript, cmd: "curl -fsSL https://dl.godwit.email/install.sh | sh" },
+];
+const github = "https://github.com/godwit-email/godwit";
+const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ');
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{s.title}</title>
+		<meta name="description" content={s.description} />
+		<link rel="icon" href="/icon.png" type="image/png" />
+		<link rel="apple-touch-icon" href="/icon.png" />
+		<link rel="canonical" href={new URL(self, Astro.site)} />
+		{locales.map((l) => <link rel="alternate" hreflang={l} href={new URL(paths[l], Astro.site)} />)}
+		<link rel="alternate" hreflang="x-default" href={new URL("/", Astro.site)} />
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Godwit" />
+		<meta property="og:url" content={new URL(self, Astro.site)} />
+		<meta property="og:title" content={s.title} />
+		<meta property="og:description" content={s.description} />
+		<meta property="og:image" content={new URL(`/og${self.slice(0, -1)}.png`, Astro.site)} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={s.headline.join(lang === "en" ? " " : "")} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="theme-color" content="#ededed" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)" />
+		<!-- Before first paint: motion.ts may hide what it brings in. -->
+		<script is:inline>
+			if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion");
+		</script>
+	</head>
+	<body class="bg-background">
+		<header class="mx-auto flex h-16 max-w-6xl items-center px-6">
+			<!-- Hovering or focusing the mark: the bird takes off, and a card says where the name comes from. -->
+			<div class="group relative">
+				<a href={self} aria-describedby="name-origin" class="flex items-center gap-2.5 font-semibold tracking-tight">
+					<span class="size-6 transition-transform duration-500 ease-out group-focus-within:translate-x-1 group-focus-within:-translate-y-1 group-focus-within:-rotate-6 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:-rotate-6" set:html={mark} />
+					Godwit
+				</a>
+				<div
+					id="name-origin"
+					role="tooltip"
+					class="pointer-events-none invisible absolute top-full left-0 z-10 w-64 translate-y-1 pt-2 opacity-0 transition duration-200 ease-out group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-150"
+				>
+					<div class="rounded-xl bg-background p-3.5 text-sm leading-relaxed text-muted-foreground shadow-float">
+						<div class="mb-1 font-medium text-foreground italic">Limosa lapponica</div>
+						{s.name}
+					</div>
+				</div>
+			</div>
+			<nav class="ml-auto flex items-center gap-1 text-sm">
+				<a href="#download" class="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground">{s.download}</a>
+				{
+					locales
+						.filter((l) => l !== lang)
+						.map((l) => (
+							<a href={paths[l]} hreflang={l} lang={l} class="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground">
+								{names[l]}
+							</a>
+						))
+				}
+				<a href={github} class="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground" aria-label={s.github}>
+					<Icon name="github" class="size-5" />
+				</a>
+			</nav>
+		</header>
+
+		<main>
+			<section data-hero class="mx-auto max-w-4xl px-6 pt-16 pb-14 text-center sm:pt-24">
+				<!-- The newest release: src/worker.ts fills these in and unhides them once there is one. -->
+				<a
+					data-release
+					data-release-link
+					hidden
+					href={`${github}/releases/latest`}
+					class="mb-7 inline-flex items-center gap-2 rounded-full border py-1 pr-2.5 pl-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				>
+					<span class="size-1.5 rounded-full bg-green-500"></span>
+					<span><span data-version class="font-medium text-foreground"></span> {s.release.out}</span>
+					<span class="text-border">|</span>
+					<span class="inline-flex items-center gap-1">{s.release.whatsNew}<Icon name="arrow-right" class="size-3.5" /></span>
+				</a>
+				<h1 class="text-4xl font-semibold tracking-tight sm:text-6xl">{s.headline.map((p) => <span class="inline-block">{p}</span>)}</h1>
+				<p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">{s.sub}</p>
+				<div class="mt-9 flex flex-wrap items-center justify-center gap-3">
+					<a
+						data-press
+						data-primary
+						href="/download/darwin-arm64"
+						data-labels={JSON.stringify({ darwin: s.downloadMac, windows: s.downloadWindows, linux: s.downloadLinux })}
+						class="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 font-medium text-primary-foreground transition-opacity hover:opacity-90"
+					>
+						<Icon name="download" />
+						<span>{s.downloadMac}</span>
+					</a>
+					<a href="#download" data-press class="inline-flex h-11 items-center rounded-lg border px-5 font-medium transition-colors hover:bg-accent">{s.otherPlatforms}</a>
+				</div>
+			</section>
+
+			<section class="px-3 sm:px-6">
+				<AppDemo demo={demos[lang]} />
+				<p data-reveal class="mt-4 text-center text-sm text-muted-foreground">{demos[lang].hint}</p>
+			</section>
+
+			<section class="mx-auto max-w-6xl px-6 pt-28">
+				<h2 data-reveal class="mx-auto max-w-2xl text-center text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{s.featuresTitle}</h2>
+				<div data-reveal-group class="mt-14 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+					{
+						s.features.map((f, i) => (
+							<div>
+								<span class="grid size-9 place-items-center rounded-lg border bg-sidebar">
+									<Icon name={featureIcons[i]} class="size-[18px]" />
+								</span>
+								<h3 class="mt-4 font-semibold">{f.title}</h3>
+								<p class="mt-2 leading-relaxed text-muted-foreground">{f.body}</p>
+							</div>
+						))
+					}
+				</div>
+			</section>
+
+			<Privacy p={s.privacy} />
+
+			<section id="download" class="mx-auto max-w-6xl scroll-mt-8 px-6 pt-28 pb-24">
+				<div data-reveal>
+					<h2 class="text-center text-3xl font-semibold tracking-tight sm:text-4xl">{s.downloadTitle}</h2>
+					<p class="mt-4 text-center text-muted-foreground">{s.downloadSub}</p>
+					<p data-release hidden class="mt-2 text-center text-sm text-muted-foreground">
+						{s.release.latest} <span data-version class="font-medium text-foreground"></span><span data-release-date-wrap>{s.release.on}<span data-release-date></span></span>{" · "}
+						<a data-release-link href={`${github}/releases/latest`} class="underline underline-offset-4 hover:text-foreground">{s.release.notes}</a>
+					</p>
+				</div>
+				<div data-reveal-group class="mt-12 grid gap-4 md:grid-cols-3">
+					{
+						platforms.map((p) => (
+							<div class="flex flex-col rounded-xl border p-6">
+								<div class="flex items-center gap-2 font-semibold">
+									<Icon name={p.icon} class="size-[18px]" />
+									{p.name}
+								</div>
+								<p class="mt-2 flex-1 text-sm text-muted-foreground">{p.note}</p>
+								<div class="mt-5 grid grid-cols-2 gap-2">
+									{p.builds.map((b, i) => (
+										<a
+											data-press
+											href={`/download/${b.target}`}
+											class:list={[
+												"inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition",
+												i === 0 ? "bg-primary text-primary-foreground hover:opacity-90" : "border hover:bg-accent",
+											]}
+										>
+											<Icon name="download" class="size-3.5" />
+											{b.label}
+										</a>
+									))}
+								</div>
+							</div>
+						))
+					}
+				</div>
+				<div data-reveal-group class="mt-4 grid gap-4 md:grid-cols-2">
+					{
+						commands.map((c) => (
+							<div class="rounded-xl border p-5">
+								<div class="text-sm text-muted-foreground">{c.label}</div>
+								<div class="mt-2 flex items-center gap-2 rounded-lg bg-sidebar py-1.5 pr-1.5 pl-3">
+									<code class="min-w-0 flex-1 truncate font-mono text-[13px]">{c.cmd}</code>
+									<button
+										data-press
+										type="button"
+										data-copy={c.cmd}
+										data-done={s.copied}
+										class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+									>
+										<Icon name="copy" class="size-3.5" />
+										<span>{s.copy}</span>
+									</button>
+								</div>
+							</div>
+						))
+					}
+				</div>
+			</section>
+		</main>
+
+		<footer class="border-t">
+			<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-8 text-sm text-muted-foreground">
+				<span class="flex items-center gap-2">
+					<span class="size-4" set:html={mark} />© 2026 The Godwit Authors
+				</span>
+				<a href={`${github}/blob/main/LICENSE`} class="hover:text-foreground">{s.license}</a>
+				<a href={github} class="ml-auto inline-flex items-center gap-1.5 hover:text-foreground">
+					<Icon name="github" />
+					{s.github}
+				</a>
+			</div>
+		</footer>
+
+		<script>
+			// The main download button: this computer's platform. Browsers don't say
+			// which Mac chip they run on, so Macs get Apple silicon, the other is a
+			// click away; Windows says x64 even on ARM, where the x64 build runs too.
+			const primary = document.querySelector<HTMLAnchorElement>("[data-primary]")!;
+			const labels = JSON.parse(primary.dataset.labels!) as Record<string, string>;
+			const ua = navigator.userAgent;
+			const os = /Windows/.test(ua) ? "windows" : /Linux|X11/.test(ua) && !/Android/.test(ua) ? "linux" : "darwin";
+			const arm = os === "darwin" || /aarch64|arm64/i.test(ua);
+			primary.href = `/download/${os}-${arm ? "arm64" : "amd64"}`;
+			primary.querySelector("span")!.textContent = labels[os];
+
+			for (const b of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
+				b.addEventListener("click", () => {
+					navigator.clipboard?.writeText(b.dataset.copy!).catch(() => {});
+					const label = b.querySelector("span")!;
+					const was = label.textContent;
+					label.textContent = b.dataset.done!;
+					setTimeout(() => (label.textContent = was), 1500);
+				});
+			}
+		</script>
+		<script>
+			import "../motion";
+		</script>
+	</body>
+</html>

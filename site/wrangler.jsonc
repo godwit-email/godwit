@@ -1,0 +1,18 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "godwit-site",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-10-01",
+	"workers_dev": false,
+	"routes": [{ "pattern": "godwit.email", "custom_domain": true }],
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		"not_found_handling": "404-page",
+		// The home pages get the newest release written in, and / the browser's language; /download redirects.
+		"run_worker_first": ["/", "/zh-hans/", "/en/", "/download/*"]
+	},
+	// The bucket of updates.s3 in mygo.config.ts; dl.godwit.email serves it.
+	"r2_buckets": [{ "binding": "DL", "bucket_name": "godwit-downloads" }],
+	"observability": { "enabled": true }
+}

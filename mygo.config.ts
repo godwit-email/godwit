@@ -23,8 +23,16 @@ export default {
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },
+  // Installers and updates live in the R2 bucket that dl.godwit.email serves;
+  // installed apps check update-<platform>.json there. `mygo build -upload`
+  // puts them in with the R2 token in AWS_ACCESS_KEY_ID and
+  // AWS_SECRET_ACCESS_KEY, the manifests last.
   updates: {
     publicKey: "CxE4iKi5zjKGP5eXJEzffin11gMKBzHmLVr5RhAyGqk=",
-    github: "godwit-email/godwit",
+    url: "https://dl.godwit.email",
+    s3: {
+      bucket: "godwit-downloads", // Godwit's alone: its files sit at the root, as dl.godwit.email/install.sh
+      endpoint: "https://9c578ed9cad837fb4a2564db7b36b483.r2.cloudflarestorage.com",
+    },
   },
 };

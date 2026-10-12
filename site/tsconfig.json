@@ -1,0 +1,14 @@
+{
+	"compilerOptions": {
+		"target": "es2024",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"lib": ["es2024"],
+		"types": ["@cloudflare/workers-types", "@types/bun"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true
+	},
+	"include": ["src/*.ts"],
+	"exclude": ["src/motion.ts"]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "godwit-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "bun run build && wrangler dev",
+    "deploy": "bun run build && wrangler deploy",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261012.1",
+    "@expo-google-fonts/noto-sans-sc": "0.4.4",
+    "@fontsource-variable/geist": "5.3.0",
+    "@fontsource-variable/geist-mono": "5.3.0",
+    "@resvg/resvg-js": "2.6.2",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "1.4.2",
+    "astro": "7.3.8",
+    "geist": "1.7.2",
+    "motion": "14.1.0",
+    "remixicon": "4.8.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  }
+}
