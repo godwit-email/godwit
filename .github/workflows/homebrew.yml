@@ -1,0 +1,84 @@
+name: Homebrew
+
+# Publishing a release (by hand: a release created with GITHUB_TOKEN starts no
+# workflow) writes the cask for its macOS disk images to the tap.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release to write the cask for, e.g. v0.0.0
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  cask:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write the cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.dmg' --dir dmg
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name | endswith(".dmg")) | [.name, .url] | @tsv' > urls.tsv
+          entry() { # entry ARCH: the url and sha256 of the disk image for ARCH
+            IFS=$'\t' read -r name url < <(grep -E "[ .]$1\.dmg"$'\t' urls.tsv)
+            test -n "$url" || { echo "no $1 disk image in $TAG" >&2; exit 1; }
+            printf '    url "%s"\n    sha256 "%s"\n' "$url" "$(sha256sum "dmg/$name" | cut -d' ' -f1)"
+          }
+          arm=$(entry arm64); intel=$(entry amd64)
+          mkdir -p tap/Casks
+          cat > tap/Casks/godwit.rb <<CASK
+          cask "godwit" do
+            version "${TAG#v}"
+
+            on_arm do
+          $arm
+            end
+            on_intel do
+          $intel
+            end
+
+            name "Godwit"
+            desc "AI-native email client"
+            homepage "https://github.com/godwit-email/godwit"
+
+            auto_updates true
+            depends_on macos: ">= :monterey"
+
+            app "Godwit.app"
+
+            zap trash: [
+              "~/Library/Application Support/Godwit",
+              "~/Library/Preferences/email.godwit.app.plist",
+            ]
+          end
+          CASK
+          cat tap/Casks/godwit.rb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cask
+          path: tap/Casks/godwit.rb
+      - name: Push it to godwit-email/homebrew-tap
+        env:
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }} # write access to the tap only
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          key="$RUNNER_TEMP/tap_key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key" && chmod 600 "$key"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$RUNNER_TEMP/known_hosts" # api.github.com/meta
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+          git clone -q git@github.com:godwit-email/homebrew-tap.git clone
+          cp tap/Casks/godwit.rb clone/Casks/godwit.rb
+          cd clone
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/godwit.rb
+          git diff --cached --quiet && exit 0
+          git commit -q -m "godwit ${TAG#v}"
+          git push -q
