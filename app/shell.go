@@ -333,14 +333,14 @@ func (a *App) body(c *ui.Context) {
 		}
 		a.sidebarW = a.sidebarWidth()
 		before := a.sidebarW
-		changed, dragging := kit.Resizer(c, &a.sidebarW, th.Space(2), i18n.T("shell.resize"), nil, func() {
+		changed, dragging := kit.Resizer(c, &a.sidebarW, theme.GripWidth, true, i18n.T("shell.resize"), nil, func() {
 			top := th.Space(3)
 			if a.route.Page == PageMail || a.route.Page == PageWit {
 				top = 0 // the page switch sits right under the title bar
 			}
-			ui.Column(c).Fill().Padding(top, th.Space(3), th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
+			ui.Column(c).Fill().Padding(top, 0, th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
 				ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
-				a.sidebarFoot(c)
+				ui.Column(c).Gap(th.Space(0.5)).Padding(0, sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })
 			})
 		}, content)
 		a.collapsePull(before, dragging)
@@ -357,7 +357,7 @@ func (a *App) body(c *ui.Context) {
 func (a *App) edgeGrip(c *ui.Context, content func()) {
 	var pulled float32 // the grip's first pane stays empty: the drag only counts
 	open := func() { a.sidebarHidden = false }
-	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), i18n.T("shell.resize"), open, func() {}, content)
+	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), false, i18n.T("shell.resize"), open, func() {}, content)
 	if changed && !dragging && pulled > 0 {
 		a.sidebarHidden = false
 		return
@@ -414,6 +414,19 @@ func (a *App) pageSwitch(c *ui.Context) ui.Element {
 	return kit.NavSwitch(c,
 		kit.NavItem{Icon: "mail", Label: i18n.T("shell.nav.mail"), Selected: a.route.Page == PageMail, OnClick: func() { a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) }},
 		kit.NavItem{Icon: "sparkles", Label: i18n.T("shell.nav.wit"), Selected: a.route.Page == PageWit, OnClick: func() { a.navigate(Route{Page: PageWit}) }})
+}
+
+// sidebarInset is the sidebar's right inset. The sidebar itself has none:
+// each of its parts keeps this much, and sidebarScroll's list keeps it inside
+// the scroll area, which so reaches the sidebar's edge, where its scroll bar
+// runs, clear of the items' counts.
+func sidebarInset(c *ui.Context) float32 { return c.Theme().Space(3) }
+
+// sidebarScroll scrolls a page's sidebar list (sidebarInset).
+func sidebarScroll(c *ui.Context, children func()) {
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).Gap(c.Theme().Space(0.5)).Padding(0, sidebarInset(c), 0, 0).Children(children)
+	})
 }
 
 // sidebarFoot is pinned under the page's sidebar: Settings (and, in dev

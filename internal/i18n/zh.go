@@ -7,6 +7,7 @@ var zh = map[string]string{
 	"shell.nav.settings":           "设置",
 	"shell.nav.back_to":            "返回%s",
 	"shell.sidebar.collapse":       "收起侧栏",
+	"mail.resize_list":             "调整列表宽度",
 	"shell.resize":                 "调整大小",
 	"shell.back":                   "后退",
 	"shell.forward":                "前进",

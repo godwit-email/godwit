@@ -76,8 +76,8 @@ func (p *askPage) Title() (string, string) {
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Padding(0, 0, th.Space(3), 0).Children(func() { a.pageSwitch(c) })
-	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5))
+	ui.Row(c).Padding(0, sidebarInset(c), th.Space(3), 0).Children(func() { a.pageSwitch(c) })
+	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).Margin(0, sidebarInset(c), 0, 0)
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
 		ui.Text(c, i18n.T("ask.new"))
@@ -85,21 +85,19 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	if len(p.convs) == 0 {
 		return
 	}
-	kit.Text(c, i18n.T("ask.recent"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2), th.Space(1.5), th.Space(2))
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			for _, conv := range p.convs {
-				id := conv.ID
-				on := id == a.route.ConversationID
-				kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageWit, ConversationID: id}) }}).
-					Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
-					ContextMenu(func(m *ui.Menu) {
-						if m.Item(i18n.T("ask.delete")).Chosen() {
-							p.remove(id)
-						}
-					})
-			}
-		})
+	kit.Text(c, i18n.T("ask.recent"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2)+sidebarInset(c), th.Space(1.5), th.Space(2))
+	sidebarScroll(c, func() {
+		for _, conv := range p.convs {
+			id := conv.ID
+			on := id == a.route.ConversationID
+			kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageWit, ConversationID: id}) }}).
+				Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
+				ContextMenu(func(m *ui.Menu) {
+					if m.Item(i18n.T("ask.delete")).Chosen() {
+						p.remove(id)
+					}
+				})
+		}
 	})
 }
 

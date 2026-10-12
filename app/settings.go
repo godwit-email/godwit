@@ -144,50 +144,48 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	item := func(sec string) ui.Element {
 		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
 	}
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-			p.searchField(c)
-			hit := p.matching(p.query)
-			if hit.accounts {
-				group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
+	sidebarScroll(c, func() {
+		kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+		p.searchField(c)
+		hit := p.matching(p.query)
+		if hit.accounts {
+			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
+		}
+		for _, acc := range a.accounts {
+			if !hit.accounts {
+				break
 			}
-			for _, acc := range a.accounts {
-				if !hit.accounts {
-					break
+			if hit.email != "" && !strings.Contains(strings.ToLower(acc.Email), hit.email) {
+				continue
+			}
+			item(accountRoute(acc.ID)).Children(func() {
+				mark(c, accountProvider(a, acc), theme.MarkSm)
+				ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
+				if acc.Status == "ok" {
+					kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
+				} else {
+					kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.attention"))
 				}
-				if hit.email != "" && !strings.Contains(strings.ToLower(acc.Email), hit.email) {
-					continue
-				}
-				item(accountRoute(acc.ID)).Children(func() {
-					mark(c, accountProvider(a, acc), theme.MarkSm)
-					ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
-					if acc.Status == "ok" {
-						kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
-					} else {
-						kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.attention"))
-					}
+			})
+		}
+		if hit.accounts {
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {
+				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() { // the accounts' marks' column
+					ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
 				})
-			}
-			if hit.accounts {
-				kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {
-					ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() { // the accounts' marks' column
-						ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
-					})
-					ui.Text(c, i18n.T("settings.add_account"))
-				})
-			}
-			if len(hit.apps) > 0 {
-				group(i18n.T("settings.app"), th.Space(3), th.Space(1))
-			}
-			for _, sec := range hit.apps {
-				b := item(sec)
-				b.Children(func() {
-					kit.SidebarIcon(c, b, sectionIcons[sec], sec == cur)
-					ui.Text(c, i18n.T("settings."+sec))
-				})
-			}
-		})
+				ui.Text(c, i18n.T("settings.add_account"))
+			})
+		}
+		if len(hit.apps) > 0 {
+			group(i18n.T("settings.app"), th.Space(3), th.Space(1))
+		}
+		for _, sec := range hit.apps {
+			b := item(sec)
+			b.Children(func() {
+				kit.SidebarIcon(c, b, sectionIcons[sec], sec == cur)
+				ui.Text(c, i18n.T("settings."+sec))
+			})
+		}
 	})
 }
 
