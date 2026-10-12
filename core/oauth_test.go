@@ -8,7 +8,9 @@ import (
 )
 
 func TestOutlookNotConfigured(t *testing.T) {
-	require.Empty(t, auth.MicrosoftClientID, "builds without a client ID cannot sign in to Outlook")
+	old := auth.MicrosoftClientID
+	auth.MicrosoftClientID = "" // builds without a client ID cannot sign in to Outlook
+	defer func() { auth.MicrosoftClientID = old }()
 	s := newTestService(t)
 	_, _, err := s.BeginOAuth(ctx, "outlook", "alice@outlook.com")
 	require.ErrorIs(t, err, auth.ErrOAuthNotConfigured)

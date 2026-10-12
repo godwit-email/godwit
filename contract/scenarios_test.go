@@ -429,7 +429,9 @@ func TestOAuth(t *testing.T) {
 }
 
 func TestOAuthNotConfigured(t *testing.T) {
-	require.Empty(t, auth.MicrosoftClientID)
+	old := auth.MicrosoftClientID
+	auth.MicrosoftClientID = "" // before any Env starts, so no goroutine races it
+	defer func() { auth.MicrosoftClientID = old }()
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		return res2(api.BeginOAuth(t.Context(), "outlook", ""))
 	})

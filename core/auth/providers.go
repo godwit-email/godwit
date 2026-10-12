@@ -24,8 +24,9 @@ type Provider struct {
 	OAuth      *OAuthConfig
 }
 
-// MicrosoftClientID is read when the outlook provider is built.
-var MicrosoftClientID = ""
+// MicrosoftClientID is Godwit's public client in Microsoft Entra (no secret;
+// PKCE with a loopback redirect). It is read when the outlook provider is built.
+var MicrosoftClientID = "13d71f3b-e47d-4cf4-a28d-25f01bae45d4"
 
 const neteaseHelp = "https://help.mail.163.com/" // the 163 FAQ article URL answers 400; homepage instead
 

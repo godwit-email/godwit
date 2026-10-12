@@ -12,7 +12,7 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
 
 ## Features
 
-- **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, full-text search, and HTML compose with reply, forward, CC/BCC and drafts. Setup is detected for Gmail, iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Feishu and DingTalk Mail, and any other IMAP server.
+- **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, full-text search, and HTML compose with reply, forward, CC/BCC and drafts. Setup is detected for Gmail, Outlook (sign in with Microsoft), iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Feishu and DingTalk Mail, and any other IMAP server.
 - **Wit**: an agent that answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It never sends without your approval.
 - **AI actions**: summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft.
 - **Your models**: any OpenAI-compatible (Chat Completions or Responses) or Anthropic-compatible service, including local ones like Ollama and LM Studio. API keys stay in the system keychain.
