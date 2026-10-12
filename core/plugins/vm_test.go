@@ -554,5 +554,11 @@ func TestGoResultCycleRejectedPromptly(t *testing.T) {
 	start := time.Now()
 	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return fan, nil })
 	assert.ErrorIs(t, err, ErrTooLarge)
-	assert.Less(t, time.Since(start), 2*time.Second)
+	// The linear walk to the 1 MiB budget takes ~50ms (~0.5s under -race, which
+	// is ~10x slower and slower still on CI); 2^60 visits would never finish.
+	limit := 2 * time.Second
+	if raceEnabled {
+		limit = 20 * time.Second
+	}
+	assert.Less(t, time.Since(start), limit)
 }

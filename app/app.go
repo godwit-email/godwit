@@ -70,8 +70,8 @@ type Platform interface {
 
 // Notification is a system notification about a message.
 type Notification struct {
-	ID, Title, Body string
-	MessageID       int64
+	ID, Title, Subtitle, Body string
+	MessageID                 int64
 }
 
 // OAuthFlow signs in with an OAuth provider; the default wraps the Service.

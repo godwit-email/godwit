@@ -407,7 +407,7 @@ var en = map[string]string{
 	"settings.notifications":                       "Notifications",
 	"settings.notify_new_mail":                     "Notify about new mail",
 	"settings.notify_preview":                      "Show a preview in notifications",
-	"settings.notify_preview.help":                 "Off, notifications show only the sender",
+	"settings.notify_preview.help":                 "Off, notifications say only that new mail arrived",
 	"settings.ai":                                  "AI",
 	"settings.summary":                             "Mail summaries",
 	"settings.summary.help":                        "Summarize mail as you open it; needs a model service",

@@ -246,7 +246,7 @@ func TestSettingsRapidTogglesOrdered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.LaunchAtLogin || !st.UnreadInMenuBar || !st.NotifyPreview {
+	if st.LaunchAtLogin || !st.UnreadInMenuBar || st.NotifyPreview { // preview starts on
 		t.Fatalf("saved %+v", st)
 	}
 	if ui := h.app.settings; ui.LaunchAtLogin != st.LaunchAtLogin || ui.UnreadInMenuBar != st.UnreadInMenuBar || ui.NotifyPreview != st.NotifyPreview {

@@ -49,7 +49,7 @@ const settingsVersion = 3
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, ThreadView: true}
+		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
