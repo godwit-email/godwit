@@ -86,6 +86,11 @@ func DialogShown() bool {
 	return s
 }
 
+// BackdropBlur turns the dialogs' backdrop blur on. Tests turn it off: the
+// CPU renderer the Tester draws with blurs pixel by pixel, which under -race
+// runs every dialog test many times slower.
+var BackdropBlur = true
+
 // scrim is a dialog's backdrop: what is behind it blurred, then tinted.
 type scrim struct {
 	blur float32
@@ -93,7 +98,9 @@ type scrim struct {
 }
 
 func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
+	if BackdropBlur {
+		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
+	}
 	p.Fill(box, s.tint, 0)
 }
 

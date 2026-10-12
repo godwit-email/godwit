@@ -2,6 +2,7 @@ package kit
 
 import (
 	"image/color"
+	"os"
 	"testing"
 	"time"
 
@@ -1103,4 +1104,30 @@ func TestKitButtonDisabledColors(t *testing.T) {
 		}
 	}
 	same("disabled Outline text", dark, tok.Idle)
+}
+
+func TestMain(m *testing.M) {
+	BackdropBlur = false // the CPU renderer's blur is slow; TestDialogBackdropBlurs turns it on
+	os.Exit(m.Run())
+}
+
+// TestDialogBackdropBlurs: behind a dialog, a hard edge in the window blurs.
+func TestDialogBackdropBlurs(t *testing.T) {
+	BackdropBlur = true
+	t.Cleanup(func() { BackdropBlur = false })
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		t := theme.Of(c)
+		ui.Row(c).Fill().Children(func() {
+			ui.Box(c).Width(200).FillHeight().Background(t.Foreground)
+			ui.Box(c).Grow(1).FillHeight().Background(t.Background)
+		})
+		Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
+	}), 800, 600)
+	time.Sleep(2 * theme.MotionBase)
+	tt.Frame()
+	// Just right of the black column, low in the window, well below the panel.
+	if p := tt.Image().RGBAAt(201, 500); p.R > 220 {
+		t.Errorf("edge pixel %v is not blurred", p)
+	}
 }
