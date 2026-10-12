@@ -6,7 +6,7 @@ const env = process.env;
 export default {
   name: "Godwit",
   identifier: "email.godwit.app",
-  version: "0.1.0", // x-release-please-version
+  version: "0.2.0", // x-release-please-version
   copyright: "© 2026 The Godwit Authors",
   icon: "assets/icon.png",
   main: "./cmd/godwit",
