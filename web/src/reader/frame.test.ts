@@ -85,7 +85,11 @@ test("html mail follows the theme: light, dark with its own dark styles, dark in
   expect(cls(render({}, "dark"))).toBe("godwit-dark godwit-invert");
   const css = render({}, "dark").querySelector("style")?.textContent ?? "";
   expect(css).toMatch(/\.godwit-invert\{filter:invert\(1\)/);
-  expect(css).toMatch(/\.godwit-invert img[^{]*\{filter:invert\(1\)/);
+  expect(css).toMatch(/\.godwit-invert img\{filter:invert\(1\)/);
+  // a background image is inverted back on its own layer, not with its element's content
+  expect(css).toContain('[style*="--godwit-bg"]::before{');
+  expect(css).toMatch(/::before\{[^}]*background-image:var\(--godwit-bg\)[^}]*filter:invert\(1\)/);
+  expect(css).not.toMatch(/\[style\*="--godwit-bg"\]\{[^}]*filter/);
   expect(css).toContain("oklch(0.985 0 0)");
 });
 

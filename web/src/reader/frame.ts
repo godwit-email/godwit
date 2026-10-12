@@ -32,6 +32,8 @@ const base = (px: number, line: string) =>
 // with no dark styles of its own, which is drawn as itself and inverted (images back again), so it
 // reads as dark, not as a sheet. The defaults are :where, so the mail's own colours win.
 const INVERT = "invert(1) hue-rotate(180deg)";
+// An element with a background image from Go's image proxy (webui: --godwit-bg).
+const BG = '#godwit-body.godwit-invert [style*="--godwit-bg"]';
 const link = (c: string) => `text-decoration:underline;color:${c}`;
 
 const htmlCSS = (t: Theme, scheme: string) => {
@@ -44,7 +46,13 @@ const htmlCSS = (t: Theme, scheme: string) => {
     `:where([data-href]){${link("#0b57d0")}}` +
     `:where(#godwit-body.godwit-dark:not(.godwit-invert) [data-href]){${link("#8ab4f8")}}` +
     `#godwit-body.godwit-invert{filter:${INVERT}}` +
-    `#godwit-body.godwit-invert img,#godwit-body.godwit-invert [style*="godwit-img"]{filter:${INVERT}}` +
+    `#godwit-body.godwit-invert img{filter:${INVERT}}` +
+    // A background image is drawn again on the element's own ::before, under its content, and only
+    // that layer is inverted back: inverting the element would invert its text back too.
+    `${BG}{position:relative;isolation:isolate;background-image:none!important}` +
+    `${BG}::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;` +
+    "background-image:var(--godwit-bg);background-size:inherit;background-position:inherit;" +
+    `background-repeat:inherit;border-radius:inherit;filter:${INVERT}}` +
     "#godwit-body img{max-width:100%!important}" +
     // keeps the ratio of an image shrunk to the width; one with a height of its own (an icon) keeps it
     ":where(#godwit-body img:not([height])){height:auto}" +

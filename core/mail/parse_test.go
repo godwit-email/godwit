@@ -116,6 +116,9 @@ func TestSnippet(t *testing.T) {
 	// a preheader's padding is gone; an emoji's joiner stays
 	assert.Equal(t, "您在 TikTok 上關注了他們。 more", mail.Snippet("您在 TikTok 上關注了他們。"+strings.Repeat("\u034f\u00a0\u200c ", 80)+"more"))
 	assert.Equal(t, "\U0001F468\u200d\U0001F469", mail.Snippet("\u200b\U0001F468\u200d\U0001F469\ufeff"))
+	// a control inside a word is no word break: a soft hyphen goes, a Persian non-joiner stays
+	assert.Equal(t, "incredible", mail.Snippet("in\u00adcredible"))
+	assert.Equal(t, "می\u200cخواهم", mail.Snippet("می\u200cخواهم"))
 	assert.Len(t, []rune(mail.Snippet(strings.Repeat("好", 300))), 200)
 }
 

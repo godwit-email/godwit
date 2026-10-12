@@ -305,14 +305,23 @@ func ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attac
 // Snippet returns the first 200 characters with whitespace collapsed and the
 // invisible characters gone: mail pads its preview text with zero-width and
 // joiner characters between spaces (a preheader), which would fill the line
-// with nothing to see.
+// with nothing to see. They are dropped, not made spaces, so none splits a
+// word (a soft hyphen); the joiners only at a word's ends, as inside one they
+// shape it (Persian's non-joiner, an emoji's joiner).
 func Snippet(text string) string {
-	s := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+	words := strings.Fields(strings.Map(func(r rune) rune {
 		if invisible(r) {
-			return ' '
+			return -1
 		}
 		return r
-	}, text)), " ")
+	}, text))
+	kept := words[:0]
+	for _, w := range words {
+		if w = strings.Trim(w, "\u200c\u200d"); w != "" {
+			kept = append(kept, w)
+		}
+	}
+	s := strings.Join(kept, " ")
 	if r := []rune(s); len(r) > 200 {
 		s = string(r[:200])
 	}
@@ -320,11 +329,11 @@ func Snippet(text string) string {
 }
 
 // invisible reports whether r shows nothing: a format character (zero-width
-// space and non-joiner, soft hyphen, byte order mark…) but the joiner that
-// builds emoji, the combining grapheme joiner, and the Hangul fillers.
+// space, soft hyphen, byte order mark…) but the joiners, which Snippet keeps
+// inside a word, the combining grapheme joiner, and the Hangul fillers.
 func invisible(r rune) bool {
 	switch r {
-	case '\u200d':
+	case '\u200c', '\u200d':
 		return false
 	case '\u034f', '\u115f', '\u1160', '\u3164', '\uffa0':
 		return true
