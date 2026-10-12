@@ -114,13 +114,33 @@ function Failed({
   );
 }
 
+/** Whether the page's appearance is dark, following it. */
+function useSystemDark(): boolean {
+  const query = "(prefers-color-scheme: dark)";
+  const [dark, setDark] = useState(
+    () => typeof matchMedia === "function" && matchMedia(query).matches,
+  );
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const mql = matchMedia(query);
+    const update = () => setDark(mql.matches);
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+  return dark;
+}
+
 /**
- * A body in a sandboxed iframe (no scripts; the srcdoc's own CSP first). The page wires it on each
+ * A body in a sandboxed iframe (the srcdoc's own CSP first, which allows no script: Go strips them
+ * too). allow-scripts is for WebKit, which does not fire a listener on a document whose frame may
+ * not run scripts, even one the page added: without it no click, wheel or key reached the page
+ * (and loading="lazy" is ignored). The page wires it on each
  * load: its height (to Go and to the iframe, so nothing is clipped), wheels and ⌘[ ⌘] to Go, links
  * to OpenLink. Remote images are godwit-img: URLs the frame loads itself, from Go's image proxy.
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
-  const srcdoc = useMemo(() => buildSrcdoc(body, theme), [body, theme]);
+  const systemDark = useSystemDark();
+  const srcdoc = useMemo(() => buildSrcdoc(body, theme, systemDark), [body, theme, systemDark]);
   const frame = useRef<HTMLIFrameElement>(null);
   const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...body.text }), [body.text]);
 
@@ -154,14 +174,14 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
     <iframe
       ref={frame}
       title={t("reader.body")}
-      sandbox="allow-same-origin"
+      sandbox="allow-same-origin allow-scripts"
       scrolling="no"
       srcDoc={srcdoc}
       style={{
         border: 0,
         width: "100%",
         display: "block",
-        colorScheme: frameScheme(body, theme),
+        colorScheme: frameScheme(body, theme, systemDark),
       }}
     />
   );

@@ -55,16 +55,53 @@ test("hostile body stays inert: the parent adds no script, handler, javascript: 
   expect(doc.querySelectorAll("script, iframe, object, embed, form, base, link")).toHaveLength(0);
 });
 
-test("the body sits in #godwit-body; html mail is a white sheet with dark text and fitted images", () => {
-  const doc = parse(buildSrcdoc(body(), theme({ mode: "dark" })));
-  expect(doc.getElementById("godwit-body")?.innerHTML).toContain("Hello");
+test("the body sits in #godwit-body; html mail is transparent, in the theme's text, with fitted images", () => {
+  const doc = parse(buildSrcdoc(body(), theme({ mode: "light" })));
+  const wrap = doc.getElementById("godwit-body");
+  expect(wrap?.innerHTML).toContain("Hello");
+  expect(wrap?.className).toBe("godwit-light");
   const css = doc.querySelector("style")?.textContent ?? "";
-  expect(css).toContain("#fff");
-  expect(css).toContain("#0a0a0a");
+  expect(css).toMatch(/html,body\{[^}]*background:transparent/);
+  expect(css).not.toContain("#fff");
+  expect(css).toContain("oklch(0.145 0 0)");
   expect(css).toMatch(/img\{[^}]*max-width:100%/);
   expect(css).toContain("break-word");
-  expect(css).not.toContain("invert");
-  expect(css).not.toContain("0.985"); // not the dark theme's text
+  expect(css).toContain("px/normal "); // not the reading height: a mail's buttons and footers have none of their own
+  // an image with a height attribute keeps it: height:auto would show it at its natural size
+  expect(css).toContain("img:not([height])){height:auto}");
+});
+
+const render = (over: Partial<ReaderBody>, mode: Theme["mode"], systemDark = false) =>
+  parse(buildSrcdoc(body(over), theme({ mode }), systemDark));
+const cls = (d: Document) => d.getElementById("godwit-body")?.className;
+const aware = { html: "<style data-dark>#godwit-body.godwit-dark .a{color:red}</style><p>x</p>" };
+
+test("html mail follows the theme: light, dark with its own dark styles, dark inverted without", () => {
+  expect(cls(render({}, "light"))).toBe("godwit-light");
+  expect(cls(render(aware, "light"))).toBe("godwit-light");
+  expect(cls(render(aware, "dark"))).toBe("godwit-dark");
+  expect(cls(render({}, "dark"))).toBe("godwit-dark godwit-invert");
+  const css = render({}, "dark").querySelector("style")?.textContent ?? "";
+  expect(css).toMatch(/\.godwit-invert\{filter:invert\(1\)/);
+  expect(css).toMatch(/\.godwit-invert img[^{]*\{filter:invert\(1\)/);
+  expect(css).toContain("oklch(0.985 0 0)");
+});
+
+test("html mail in system mode follows the page's appearance", () => {
+  expect(cls(render(aware, "system", false))).toBe("godwit-light");
+  expect(cls(render(aware, "system", true))).toBe("godwit-dark");
+  expect(cls(render({}, "system", true))).toBe("godwit-dark godwit-invert");
+});
+
+test("the document's colour scheme: dark only for html mail with dark styles in the dark", () => {
+  const scheme = (b: Partial<ReaderBody>, mode: Theme["mode"], sys = false) =>
+    frameScheme(body(b), theme({ mode }), sys);
+  expect(scheme({}, "dark")).toBe("light");
+  expect(scheme(aware, "dark")).toBe("dark");
+  expect(scheme(aware, "light")).toBe("light");
+  expect(scheme(aware, "system", true)).toBe("dark");
+  expect(scheme({}, "system", true)).toBe("light");
+  expect(render(aware, "dark").querySelector("style")?.textContent).toContain("color-scheme:dark");
 });
 
 test("plain text uses theme and body size, escaped and pre-wrapped", () => {
@@ -75,7 +112,7 @@ test("plain text uses theme and body size, escaped and pre-wrapped", () => {
   expect(wrap?.children).toHaveLength(0);
   const css = doc.querySelector("style")?.textContent ?? "";
   expect(css).toContain("pre-wrap");
-  expect(css).toContain("15px");
+  expect(css).toContain("15px/1.5 ");
   expect(css).toContain("oklch(0.985 0 0)");
   expect(css).not.toContain("#0a0a0a");
 });
@@ -89,7 +126,7 @@ test("plain text in system mode follows the appearance", () => {
   expect(css).toMatch(/@media \(prefers-color-scheme: ?dark\)\{[^}]*\{[^}]*oklch\(0\.985 0 0\)/);
 });
 
-test("plain text is transparent in the theme's colour scheme; html mail stays a light sheet", () => {
+test("plain text is transparent in the theme's colour scheme", () => {
   const plain = body({ html: "", plain: "x" });
   const css = (m: string) =>
     parse(buildSrcdoc(plain, theme({ mode: m }))).querySelector("style")?.textContent ?? "";
@@ -100,5 +137,4 @@ test("plain text is transparent in the theme's colour scheme; html mail stays a 
   expect(css("dark")).not.toContain("#fff");
   expect(frameScheme(plain, theme({ mode: "dark" }))).toBe("dark");
   expect(frameScheme(plain, theme({ mode: "system" }))).toBe("light dark");
-  expect(frameScheme(body(), theme({ mode: "dark" }))).toBe("light");
 });

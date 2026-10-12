@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.23.0
+	github.com/aymerick/douceur v0.2.0
 	github.com/dop251/goja v0.0.0-20260923012348-67663e7a3b97
 	github.com/egoist/mygo v0.4.5
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
@@ -15,6 +16,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/godwit-email/markitdown-go v0.0.0
 	github.com/google/jsonschema-go v0.4.3
+	github.com/gorilla/css v1.0.1
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/openai/openai-go v1.8.2
@@ -29,7 +31,6 @@ require (
 )
 
 require (
-	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
@@ -46,7 +47,6 @@ require (
 	github.com/google/dotprompt/go v0.0.0-20260708220100-73beb993ac95 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/css v1.0.1 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
