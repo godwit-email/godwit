@@ -221,7 +221,7 @@ func TestShots(t *testing.T) {
 	// openLena opens the proposal thread and waits for its summary and quick
 	// replies (the fake model answers in the order scripted).
 	openLena := func(s *shotEnv) {
-		writeSkill(t, s.env, "brief") // the design's 更多 skill ▾
+		writeSkill(t, s.env, "brief") // the design's 更多 skill
 		s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
 		s.click("Q4 partnership proposal")
 		s.see("需要你在周五前确认")

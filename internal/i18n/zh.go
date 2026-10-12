@@ -629,7 +629,7 @@ var zh = map[string]string{
 	"reader.save_as":                               "另存为…",
 	"reader.ai.translate":                          "翻译",
 	"reader.ai.summarize":                          "总结",
-	"reader.ai.more_skills":                        "更多 skill ▾",
+	"reader.ai.more_skills":                        "更多 skill",
 	"reader.ai.summary":                            "总结",
 	"reader.ai.summary.meta":                       "%s · %s",
 	"reader.today":                                 "今天",

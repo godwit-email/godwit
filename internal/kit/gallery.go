@@ -7,12 +7,12 @@ import (
 
 // GalleryState holds the values the gallery's controls edit.
 type GalleryState struct {
-	Switch, Switch2, Check              bool
-	Radio, Select, Tabs                 int
-	Toggle                              int
-	Input, Password, Mono, Bare, Area   string
-	InvalidIn, HelpIn, ErrorIn          string
-	Dialog, Sheet, Popover, Collapsible bool
+	Switch, Switch2, Check                bool
+	Radio, Select, Tabs                   int
+	Toggle                                int
+	Input, Password, Mono, Bare, Area     string
+	InvalidIn, HelpIn, ErrorIn            string
+	Dialog, Confirm, Popover, Collapsible bool
 }
 
 var galleryVariants = []struct {
@@ -105,13 +105,16 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				if Button(c, "Open Dialog", ButtonOpts{Variant: Outline}).Clicked() {
 					g.Dialog = true
 				}
-				Dialog(c, &g.Dialog, "Dialog title", func() { ui.Text(c, "Dialog sample text") }, nil)
+				Dialog(c, &g.Dialog, "Dialog title", DialogOpts{Desc: "Dialog description", Close: "Close dialog"}, func() { ui.Text(c, "Dialog sample text") }, nil)
 			})
-			section("Sheet", func() {
-				if Button(c, "Open Sheet", ButtonOpts{Variant: Outline}).Clicked() {
-					g.Sheet = true
+			section("Confirm", func() {
+				if Button(c, "Open Confirm", ButtonOpts{Variant: Outline}).Clicked() {
+					g.Confirm = true
 				}
-				Sheet(c, &g.Sheet, "Sheet title", "Close sheet", func() { ui.Text(c, "Sheet sample text") })
+				Dialog(c, &g.Confirm, "Confirm title", DialogOpts{Size: DialogSm, Desc: "Confirm sample text", Close: "Close confirm"}, nil, func() {
+					Button(c, "Cancel", ButtonOpts{Variant: Outline}).OnClick(func() { g.Confirm = false })
+					Button(c, "Delete", ButtonOpts{Variant: Destructive}).OnClick(func() { g.Confirm = false })
+				})
 			})
 			section("Popover", func() {
 				b := Button(c, "Open Popover", ButtonOpts{Variant: Outline})

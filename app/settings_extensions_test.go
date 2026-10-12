@@ -13,11 +13,13 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
 func TestMain(m *testing.M) {
 	coretest.ServeMCPIfChild()
+	kit.BackdropBlur = false // slow on the Tester's CPU renderer; kit's own test covers it
 	os.Exit(m.Run())
 }
 

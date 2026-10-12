@@ -629,7 +629,7 @@ var en = map[string]string{
 	"reader.save_as":                               "Save as…",
 	"reader.ai.translate":                          "Translate",
 	"reader.ai.summarize":                          "Summary",
-	"reader.ai.more_skills":                        "More skills ▾",
+	"reader.ai.more_skills":                        "More skills",
 	"reader.ai.summary":                            "Summary",
 	"reader.ai.summary.meta":                       "%s · %s",
 	"reader.today":                                 "Today",

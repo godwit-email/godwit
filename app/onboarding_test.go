@@ -229,7 +229,21 @@ func TestAddAccountSheet(t *testing.T) {
 	h.fill("密码", "secret")
 	h.click("连接")
 	h.see("连接成功")
-	h.fill("发件人名称", "Second")
+	o := h.app.addAccount
+	b := o.confetti
+	if b == nil {
+		t.Fatal("no confetti on success")
+	}
+	h.tt.Frame()
+	if o.confetti != b || !b.launched {
+		t.Fatalf("confetti %p (launched %v), want %p launched", o.confetti, b.launched, b)
+	}
+	h.advance(confettiLife)
+	h.tt.Frame()
+	if o.confetti != nil {
+		t.Fatal("confetti still in the air after its life")
+	}
+	h.fill("发件人名称", "Second") // the pieces never covered the form
 	h.click("完成")
 	h.until("the new account's settings", func() bool { return h.app.route.Page == PageSettings })
 	if h.app.addAccount != nil {

@@ -208,6 +208,8 @@ func gui(ctx context.Context, dataDir string) int {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 		} else {
 			uiLang = cmp.Or(st.UILanguage, lang)
+			// Before the window opens: its material and controls follow this, not the system's.
+			mygo.Theme.SetSource(mygo.ThemeSource(st.Theme))
 		}
 		i18n.SetLanguage(uiLang)
 

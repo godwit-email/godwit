@@ -1,89 +1,107 @@
 package kit
 
 import (
+	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Dialog is a 560-wide modal panel; Escape and a click outside close it.
-func Dialog(c *ui.Context, open *bool, title string, body, footer func()) {
-	dialog(c, open, theme.SheetWidth, title, body, footer)
+// DialogSize is a dialog's width: DialogMd for a form, DialogSm for a
+// confirmation, DialogLg for a larger form.
+type DialogSize uint8
+
+const (
+	DialogMd DialogSize = iota
+	DialogSm
+	DialogLg
+)
+
+// DialogOpts are a dialog's size, the muted line under its title, the label
+// of its close button, and Danger, which tints the footer for a confirmation.
+type DialogOpts struct {
+	Size        DialogSize
+	Desc, Close string
+	Danger      bool
 }
 
-// DialogWide is a 640-wide panel anchored near the top, the model service
-// dialog's look: a title and description, a scrolling body, and footer below
-// it (DialogBar). Escape and a click outside close it.
-func DialogWide(c *ui.Context, open *bool, title, desc string, body, footer func()) {
+// Dialog is a modal panel anchored near the top: a header with the title, the
+// description and a close button, a scrolling body, and a footer bar holding
+// footer's buttons at the end. body and footer may be nil. Escape, a click
+// outside and the close button close it.
+func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionBase)
-	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(14), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.DialogWideMax).Radius(t.Radius.X2l).Clip().Background(t.Background)
-		if t.Dark { // the light design has no edge; dark needs one against the backdrop
-			panel.Border(theme.Hairline, t.Border)
-		}
-		Elevate(c, panel, theme.ShadowLg)
-		ui.Column(c).Padding(th.Space(6), th.Space(6), 0, th.Space(6)).Gap(th.Space(1)).Children(func() {
-			Text(c, title, t.Text.Xl).FontWeight(600).LineHeight(theme.LineFor(title))
-			if desc != "" {
-				ui.Text(c, desc).LineHeight(theme.LineFor(desc)).TextColor(t.Muted)
-			}
-		})
-		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(th.Space(4), th.Space(6)).Gap(th.Space(4)).Children(body)
-		})
-		if footer != nil {
-			footer()
-		}
-	})
-}
-
-// DialogBar is DialogWide's footer row over a hairline; danger tints it for
-// a confirmation.
-func DialogBar(c *ui.Context, danger bool, children func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	bar := ui.Row(c).Shrink(0).Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(4), th.Space(6)).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
-	if danger {
-		bar.BorderColor(t.DangerBorder).Background(t.DangerBg)
+	width, maxH := float32(theme.SheetWidth), float32(theme.SheetMaxHeight)
+	switch o.Size {
+	case DialogSm:
+		width = theme.DialogSmWidth
+	case DialogLg:
+		width, maxH = theme.DialogWideWidth, theme.DialogWideMax
 	}
-	return bar.Children(children)
-}
-
-func dialog(c *ui.Context, open *bool, width float32, title string, body, footer func()) {
-	t, th := theme.Of(c), c.Theme()
-	k := enter(c, open, theme.MotionBase)
+	dim := float32(0.1)
+	if t.Dark { // a tenth barely darkens the dark window
+		dim = 0.4
+	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink(t).Alpha(0.4 * k))
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).Radius(t.Radius.X2l).Padding(th.Space(6)).Gap(th.Space(4)).Background(t.Background).Border(theme.Hairline, t.Border)
-		Elevate(c, panel, theme.ShadowLg)
-		Text(c, title, t.Text.Title).FontWeight(600)
-		body()
+		dialogShown = true
+		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.Hairline, t.Border)
+		Elevate(c, panel, theme.ShadowSm)
+		ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4)).Children(func() {
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+				Text(c, title, t.Text.Title).FontWeight(600).LineHeight(theme.LineFor(title))
+				if o.Desc != "" {
+					ui.Text(c, o.Desc).LineHeight(theme.LineFor(o.Desc)).TextColor(t.Muted)
+				}
+			})
+			// Into the corner: the button's own padding keeps the glyph in line with the title.
+			IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).Margin(-th.Space(2), -th.Space(2), 0, 0).OnClick(func() { *open = false })
+		})
+		if body != nil {
+			ui.Scroll(c).Shrink(1).Children(func() {
+				ui.Column(c).Padding(0, th.Space(4), th.Space(4), th.Space(4)).Gap(th.Space(4)).Children(body)
+			})
+		}
 		if footer != nil {
-			ui.Row(c).Gap(th.Space(2)).Justify(ui.End).Children(footer)
+			bar := ui.Row(c).Shrink(0).Gap(th.Space(2)).AlignItems(ui.Center).Justify(ui.End).Padding(th.Space(3), th.Space(4)).
+				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Background(t.Sidebar)
+			if o.Danger {
+				bar.BorderColor(t.DangerBorder).Background(t.DangerBg)
+			}
+			bar.Children(footer)
 		}
 	})
 }
 
-// Sheet is a top-anchored panel, the add-account sheet's look: a title and a
-// close button over a scrolling body.
-func Sheet(c *ui.Context, open *bool, title, closeLabel string, body func()) {
-	t, th := theme.Of(c), c.Theme()
-	k := enter(c, open, theme.MotionBase)
-	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ink(t).Alpha(0.28*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.SheetWidth).MaxHeight(theme.SheetMaxHeight).Radius(t.Radius.X2l).Clip().Background(t.Background).Border(theme.Hairline, t.Border)
-		Elevate(c, panel, theme.ShadowLg)
-		// The content is the form column (FormMaxWidth, padded 24) centred in the sheet.
-		inset := th.Space(6) + (theme.SheetWidth-2*theme.Hairline-theme.FormMaxWidth)/2
-		ui.Row(c).Padding(th.Space(5), inset, 0, inset).Children(func() {
-			Text(c, title, t.Text.Lg).FontWeight(600)
-			ui.Spacer(c)
-			IconButton(c, "x", closeLabel, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
-		})
-		ui.Scroll(c).Shrink(1).Children(func() {
-			ui.Column(c).Padding(th.Space(4), inset, th.Space(6), inset).Gap(th.Space(5.5)).Children(body)
-		})
-	})
+// dialogShown is whether a Dialog was built since DialogShown last said. UI thread only.
+var dialogShown bool
+
+// DialogShown reports whether a Dialog was built since it was last called,
+// and forgets it. A window on a transparent material paints itself opaque
+// under one: the backdrop's blur covers only what is opaque, and sharp text
+// on the material would show through it.
+func DialogShown() bool {
+	s := dialogShown
+	dialogShown = false
+	return s
+}
+
+// BackdropBlur turns the dialogs' backdrop blur on. Tests turn it off: the
+// CPU renderer the Tester draws with blurs pixel by pixel, which under -race
+// runs every dialog test many times slower.
+var BackdropBlur = true
+
+// scrim is a dialog's backdrop: what is behind it blurred, then tinted.
+type scrim struct {
+	blur float32
+	tint ui.Color
+}
+
+func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
+	if BackdropBlur {
+		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
+	}
+	p.Fill(box, s.tint, 0)
 }
 
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
