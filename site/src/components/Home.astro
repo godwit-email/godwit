@@ -58,6 +58,14 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 		<script is:inline>
 			if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("motion");
 		</script>
+		<!-- Website-only analytics; the domain filter keeps local previews out of the stats. -->
+		<script
+			is:inline
+			defer
+			src="https://u.baran.wang/script.js"
+			data-website-id="b1bc7048-78d5-4b52-927e-bd85528aaab1"
+			data-domains="godwit.email"
+		></script>
 	</head>
 	<body class="bg-background">
 		<header class="mx-auto flex h-16 max-w-6xl items-center px-6">
