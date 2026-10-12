@@ -97,6 +97,18 @@ func loginErr(ctx context.Context, proto string, err error) error {
 	return fmt.Errorf("%s: %w", proto, ErrAuthFailed)
 }
 
+// connectErr is ctxErr for a failure before login. The reader may already have
+// met the reply to LOGIN, so a protocol error here can echo the password; like
+// loginErr it keeps only errors that carry no server text.
+func connectErr(ctx context.Context, err error) error {
+	err = ctxErr(ctx, err)
+	var ne net.Error
+	if errors.As(err, &ne) || isTLS(err) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) || ctx.Err() != nil {
+		return err
+	}
+	return errors.New("unexpected server response")
+}
+
 // ctxErr prefers the context's error over the "use of closed connection" it caused.
 func ctxErr(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
@@ -148,7 +160,7 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 			}
 		}
 	} else {
-		err = fmt.Errorf("imap connect %s: %w", e.addr(), ctxErr(cctx, err))
+		err = fmt.Errorf("imap connect %s: %w", e.addr(), connectErr(cctx, err))
 	}
 	if err != nil {
 		nc.Close()
