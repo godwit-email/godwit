@@ -183,7 +183,8 @@ func (m *modelsView) dialog(c *ui.Context) {
 	if f.id != 0 {
 		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+f.baseURL
 	}
-	kit.DialogWide(c, &m.open, title, desc, func() { m.formView(c, f) }, func() { m.footer(c, f) })
+	opts := kit.DialogOpts{Size: kit.DialogLg, Desc: desc, Danger: f.confirmDel, Close: i18n.T("common.close")}
+	kit.Dialog(c, &m.open, title, opts, func() { m.formView(c, f) }, func() { m.footer(c, f) })
 	if !m.open { // closed by Escape or a click outside
 		m.close()
 	}
@@ -192,37 +193,35 @@ func (m *modelsView) dialog(c *ui.Context) {
 func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 	t := theme.Of(c)
 	if f.confirmDel {
-		kit.DialogBar(c, true, func() {
+		ui.Row(c).Grow(1).Gap(c.Theme().Space(2)).AlignItems(ui.Center).Label(i18n.T("settings.models.del_title")).Children(func() {
 			ui.Text(c, i18n.Tf("settings.models.del_confirm", f.name)).TextColor(t.DangerText).Grow(1).Shrink(1)
 			footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { f.confirmDel = false })
 			footButton(c, i18n.T("common.delete"), kit.Default, f.busy).Background(t.Danger).TextColor(t.OnSolid).OnClick(func() { m.remove(f) })
-		}).Label(i18n.T("settings.models.del_title"))
+		})
 		return
 	}
-	kit.DialogBar(c, false, func() {
-		if f.id != 0 {
-			footButton(c, i18n.T("settings.models.remove"), kit.Ghost, f.busy).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
-		}
-		kit.Text(c, f.hint(), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-		label := i18n.T("settings.models.test")
-		if f.testing() {
-			label = i18n.T("settings.models.test.busy")
-		}
-		// Blocked buttons are disabled in the design's blocked colors, which mygo then paints at half opacity.
-		test := footButton(c, label, kit.Outline, f.cantTest()).OnClick(func() { m.test(f) })
-		if f.cantTest() {
-			test.TextColor(t.Idle).Background(t.Background)
-		}
-		footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(m.close)
-		save := i18n.T("common.save")
-		if f.id == 0 {
-			save = i18n.T("settings.models.confirm_add")
-		}
-		b := footButton(c, save, kit.Default, f.busy || f.blocked()).PaddingX(c.Theme().Space(4)).Description(f.hint()).OnClick(func() { m.save(f) })
-		if f.blocked() {
-			b.Background(t.Hover).TextColor(t.Muted)
-		}
-	})
+	if f.id != 0 {
+		footButton(c, i18n.T("settings.models.remove"), kit.Ghost, f.busy).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
+	}
+	kit.Text(c, f.hint(), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+	label := i18n.T("settings.models.test")
+	if f.testing() {
+		label = i18n.T("settings.models.test.busy")
+	}
+	// Blocked buttons are disabled in the design's blocked colors, which mygo then paints at half opacity.
+	test := footButton(c, label, kit.Outline, f.cantTest()).OnClick(func() { m.test(f) })
+	if f.cantTest() {
+		test.TextColor(t.Idle).Background(t.Background)
+	}
+	footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(m.close)
+	save := i18n.T("common.save")
+	if f.id == 0 {
+		save = i18n.T("settings.models.confirm_add")
+	}
+	b := footButton(c, save, kit.Default, f.busy || f.blocked()).PaddingX(c.Theme().Space(4)).Description(f.hint()).OnClick(func() { m.save(f) })
+	if f.blocked() {
+		b.Background(t.Hover).TextColor(t.Muted)
+	}
 }
 
 // footButton is a dialog footer's button: 12 across, flat.

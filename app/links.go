@@ -79,7 +79,7 @@ func (a *App) linkDialog(c *ui.Context) {
 		return
 	}
 	link := a.link
-	kit.Dialog(c, &a.linkOpen, i18n.T("link.title"), func() {
+	kit.Dialog(c, &a.linkOpen, i18n.T("link.title"), kit.DialogOpts{Size: kit.DialogSm, Close: i18n.T("common.close")}, func() {
 		ui.RichText(c, linkSpans(link)...)
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {

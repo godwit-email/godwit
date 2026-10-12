@@ -710,7 +710,6 @@ func (e *extView) confirmView(c *ui.Context) {
 		return
 	}
 	a := e.a
-	t := theme.Of(c)
 	var title, body, label string
 	var run func()
 	switch e.confirm {
@@ -741,7 +740,7 @@ func (e *extView) confirmView(c *ui.Context) {
 		run = func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RemoveMCPServer(ctx, id) }, nil) }
 	}
 	dismiss := func() { e.confirm, e.open = "", false }
-	kit.Dialog(c, &e.open, title, func() { ui.Text(c, body).TextColor(t.Muted) }, func() {
+	kit.Dialog(c, &e.open, title, kit.DialogOpts{Size: kit.DialogSm, Desc: body, Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(dismiss)
 		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() { dismiss(); run() })
 	})

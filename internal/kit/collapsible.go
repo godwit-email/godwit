@@ -17,7 +17,7 @@ func Collapsible(c *ui.Context, open *bool, trigger, panel func()) ui.Element {
 		tr.Background(t.Hover)
 	}
 	tr.Children(func() {
-		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconXs, theme.IconXs).Rotate(90 * parts.Progress())
+		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).Rotate(90 * parts.Progress())
 		trigger()
 	})
 	parts.Panel(panel)

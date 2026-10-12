@@ -392,3 +392,27 @@ func TestWindowsChromeRadius(t *testing.T) {
 		}
 	}
 }
+
+// TestDialogCoversMaterial: on a window material, the window paints itself
+// opaque while a dialog shows, so that the backdrop's blur covers the
+// sidebar's text, and lets the material show again once it closes.
+func TestDialogCoversMaterial(t *testing.T) {
+	h, _ := withAccount(t)
+	h.app.vibrancy = true
+	h.tt.SetVibrancy(true)
+	h.tt.Frame()
+	edge := func() uint8 { return h.tt.Image().RGBAAt(2, 400).A } // the window's left inset
+	if a := edge(); a == 255 {
+		t.Fatalf("material covered with no dialog: alpha %d", a)
+	}
+	h.app.link, h.app.linkOpen = "https://example.com/", true
+	h.tt.Frame()
+	if a := edge(); a != 255 {
+		t.Errorf("material shows under the dialog: alpha %d", a)
+	}
+	h.tt.Key(0, ui.KeyEscape)
+	h.tt.Frame()
+	if a := edge(); a == 255 {
+		t.Errorf("material still covered after closing: alpha %d", a)
+	}
+}

@@ -313,7 +313,7 @@ func TestMenuSourcesIndependent(t *testing.T) {
 	}
 	h.openThread(m.ThreadID)
 	h.see("skills went away") // a toast
-	h.click("更多 skill ▾")
+	h.click("更多 skill")
 	menu := h.tt.Menu()
 	h.tt.CloseMenu()
 	if !slices.Contains(menu, "Ping") || slices.Contains(menu, "brief") {
@@ -322,7 +322,7 @@ func TestMenuSourcesIndependent(t *testing.T) {
 	h.openThread(other.ThreadID) // read again on the next visit
 	h.seeBody(other.ID)
 	h.until("the skills read", func() bool { return r.skills.done })
-	h.click("更多 skill ▾")
+	h.click("更多 skill")
 	menu = h.tt.Menu()
 	h.tt.CloseMenu()
 	if !slices.Contains(menu, "Ping") || !slices.Contains(menu, "brief") {
@@ -385,7 +385,7 @@ func writeSkill(t *testing.T, e *coretest.Env, name string) {
 // skillMenu chooses item from the reader's skill menu.
 func (h *harness) skillMenu(item string) {
 	h.t.Helper()
-	h.click("更多 skill ▾")
+	h.click("更多 skill")
 	if err := h.tt.ChooseMenuItem(item); err != nil {
 		h.t.Fatalf("%v; menu %q", err, h.tt.Menu())
 	}
@@ -399,8 +399,8 @@ func TestSkillMenuRuns(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see("更多 skill ▾")
-	h.click("更多 skill ▾")
+	h.see("更多 skill")
+	h.click("更多 skill")
 	menu := strings.Join(h.tt.Menu(), "|")
 	h.tt.CloseMenu()
 	if strings.Contains(menu, "summarize") || strings.Contains(menu, "translate") || strings.Contains(menu, "proofread") {
@@ -601,7 +601,7 @@ func TestSmallModelOnlyReaderAI(t *testing.T) {
 	h.see("summarize · m1")
 	h.see("翻译")
 	h.see("Reply one")
-	if h.tt.HasText("更多 skill ▾") {
+	if h.tt.HasText("更多 skill") {
 		t.Fatal("the skill menu shows without a default model")
 	}
 }
@@ -698,7 +698,7 @@ func TestActionDraftOpensWindow(t *testing.T) {
 	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.click("更多 skill ▾")
+	h.click("更多 skill")
 	if err := h.tt.ChooseMenuItem("Draft it"); err != nil { // no drain: the action's callback waits
 		t.Fatalf("%v; menu %q", err, h.tt.Menu())
 	}

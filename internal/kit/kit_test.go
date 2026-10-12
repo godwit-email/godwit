@@ -105,7 +105,7 @@ func TestKitSelectChooses(t *testing.T) {
 func TestKitDialogEscapeCloses(t *testing.T) {
 	open := true
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		Dialog(c, &open, "Rename", func() { ui.Text(c, "Body") }, func() { Button(c, "OK", ButtonOpts{}) })
+		Dialog(c, &open, "Rename", DialogOpts{Close: "Close"}, func() { ui.Text(c, "Body") }, func() { Button(c, "OK", ButtonOpts{}) })
 	}), 800, 600)
 	if !tt.HasText("Rename") || !tt.HasText("Body") || !tt.HasText("OK") {
 		t.Fatalf("open dialog shows %q", tt.Texts())
@@ -491,13 +491,13 @@ func TestKitCollapsibleToggles(t *testing.T) {
 	}
 }
 
-func TestKitSheetCloses(t *testing.T) {
+func TestKitDialogCloseButton(t *testing.T) {
 	open := true
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		Sheet(c, &open, "Add", "Close", func() { ui.Text(c, "inside") })
+		Dialog(c, &open, "Add", DialogOpts{Desc: "desc", Close: "Close"}, func() { ui.Text(c, "inside") }, nil)
 	}), 800, 600)
-	if !tt.HasText("inside") || !tt.HasText("Add") {
-		t.Fatalf("open sheet shows %q", tt.Texts())
+	if !tt.HasText("inside") || !tt.HasText("Add") || !tt.HasText("desc") {
+		t.Fatalf("open dialog shows %q", tt.Texts())
 	}
 	if err := tt.Click("Close"); err != nil {
 		t.Fatal(err)
@@ -549,13 +549,13 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		time.Sleep(2 * theme.MotionFast)
 		tt.Frame()
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
-			"Dialog", "Sheet", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
+			"Dialog", "Confirm", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
 			"StatusDot", "SidebarItem", "NavSwitch", "Panel", "Pressable", "Toast"} {
 			if _, ok := tt.Find("section:" + s); !ok {
 				t.Errorf("dark=%v: no heading %q", dark, s)
 			}
 		}
-		for _, o := range [][2]string{{"Open Dialog", "Dialog sample text"}, {"Open Sheet", "Sheet sample text"}, {"Open Popover", "Popover sample text"}} {
+		for _, o := range [][2]string{{"Open Dialog", "Dialog sample text"}, {"Open Confirm", "Confirm sample text"}, {"Open Popover", "Popover sample text"}} {
 			if err := tt.Click(o[0]); err != nil {
 				t.Fatal(err)
 			}
@@ -599,7 +599,7 @@ func TestKitOverlayEnters(t *testing.T) {
 	for _, reduce := range []bool{false, true} {
 		open := false
 		tt := ui.NewTester(themed(func(c *ui.Context) {
-			Dialog(c, &open, "Title", func() { ui.Text(c, "inside") }, nil)
+			Dialog(c, &open, "Title", DialogOpts{Close: "Close"}, func() { ui.Text(c, "inside") }, nil)
 		}), 400, 300)
 		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
 		tt.Frame()
@@ -1041,25 +1041,28 @@ func TestSelectWith(t *testing.T) {
 	}
 }
 
-func TestDialogWideWidth(t *testing.T) {
-	open := true
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		DialogWide(c, &open, "T", "desc", func() { ui.Text(c, "body") }, func() { DialogBar(c, false, func() { ui.Text(c, "foot") }) })
-	}), 900, 600)
-	time.Sleep(2 * theme.MotionBase)
-	tt.Frame()
-	img, first, last := tt.Image(), -1, -1
-	y := 76 // the panel hangs 56 from the top, below its corners; its padding is white
-	for x := 0; x < 900; x++ {
-		if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
-			if first < 0 {
-				first = x
+// TestDialogWidths: each size is its width, hanging 64 from the top.
+func TestDialogWidths(t *testing.T) {
+	for size, want := range map[DialogSize]int{DialogSm: theme.DialogSmWidth, DialogMd: theme.SheetWidth, DialogLg: theme.DialogWideWidth} {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "T", DialogOpts{Size: size, Close: "Close"}, func() { ui.Text(c, "body") }, func() { ui.Text(c, "foot") })
+		}), 900, 600)
+		time.Sleep(2 * theme.MotionBase)
+		tt.Frame()
+		img, first, last := tt.Image(), -1, -1
+		y := 84 // below the panel's corners, in its white header
+		for x := 0; x < 900; x++ {
+			if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
+				if first < 0 {
+					first = x
+				}
+				last = x
 			}
-			last = x
 		}
-	}
-	if w := last - first + 1; w < 636 || w > 640 {
-		t.Errorf("DialogWide is %d wide, want 640", w)
+		if w := last - first + 1; w < want-4 || w > want {
+			t.Errorf("size %d is %d wide, want %d", size, w, want)
+		}
 	}
 }
 

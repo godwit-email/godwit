@@ -377,7 +377,8 @@ func (r *reader) aiTools(c *ui.Context) {
 	t := theme.Of(c)
 	// aiButton is bordered, flat (no Outline shadow), at the AI height; on,
 	// it takes the Primary border and a Hover fill.
-	aiButton := func(icon, label string, on bool) ui.Element {
+	// aiButton shows icon before label; a menu's shows a chevron after it.
+	aiButton := func(icon, label string, on, menu bool) ui.Element {
 		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border)
 		if on {
 			b.Border(theme.Hairline, t.Primary).Background(t.Hover)
@@ -387,13 +388,16 @@ func (r *reader) aiTools(c *ui.Context) {
 				ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
 			}
 			ui.Text(c, label)
+			if menu {
+				ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+			}
 		})
 	}
 	if r.taskReady("summarize") {
-		aiButton("file-text", i18n.T("reader.ai.summarize"), r.summaryShown(st) && st.summary != nil).OnClick(r.toggleSummary)
+		aiButton("file-text", i18n.T("reader.ai.summarize"), r.summaryShown(st) && st.summary != nil, false).OnClick(r.toggleSummary)
 	}
 	if r.taskReady("translate") {
-		aiButton("languages", i18n.T("reader.ai.translate"), r.trShown(st)).OnClick(func() { r.toggleTranslate(m.ID) })
+		aiButton("languages", i18n.T("reader.ai.translate"), r.trShown(st), false).OnClick(func() { r.toggleTranslate(m.ID) })
 	}
 	var skills []core.SkillInfo
 	if r.aiReady() {
@@ -403,7 +407,7 @@ func (r *reader) aiTools(c *ui.Context) {
 	if len(skills) == 0 && len(actions) == 0 {
 		return
 	}
-	aiButton("", i18n.T("reader.ai.more_skills"), false).Menu(func(menu *ui.Menu) {
+	aiButton("", i18n.T("reader.ai.more_skills"), false, true).Menu(func(menu *ui.Menu) {
 		for _, sk := range skills {
 			if menu.Item(sk.Name).Chosen() {
 				r.runSkillCard(sk.Name)
@@ -627,9 +631,9 @@ func (r *reader) egressDialog(c *ui.Context) {
 	}
 	ask := r.egress
 	t, th := theme.Of(c), c.Theme()
-	kit.Dialog(c, &r.egressDlg, i18n.T("reader.egress.title"), func() {
+	opts := kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.Tf("reader.egress.body", ask.plugin), Close: i18n.T("common.close")}
+	kit.Dialog(c, &r.egressDlg, i18n.T("reader.egress.title"), opts, func() {
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			ui.Text(c, i18n.Tf("reader.egress.body", ask.plugin))
 			for _, h := range ask.hosts {
 				kit.Text(c, h, t.Text.Sm).Font(theme.Mono)
 			}

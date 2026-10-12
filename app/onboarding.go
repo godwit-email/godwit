@@ -457,9 +457,15 @@ func (o *onboarding) Content(c *ui.Context) {
 	})
 }
 
-// sheetView is the 560-wide add-account sheet; closing it cancels the sign-in.
+// sheetView is the add-account dialog; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
-	kit.Sheet(c, &o.open, i18n.T("onboarding.sheet.title"), i18n.T("common.close"), func() { o.body(c) })
+	opts := kit.DialogOpts{Close: i18n.T("common.close")}
+	if o.step == stepPick { // the dialog's header says what the pick step's heading would
+		opts.Desc = i18n.T("onboarding.pick.sub")
+	}
+	kit.Dialog(c, &o.open, i18n.T("onboarding.sheet.title"), opts, func() {
+		ui.Column(c).Gap(c.Theme().Space(5.5)).Children(func() { o.body(c) })
+	}, nil)
 	if !o.open {
 		o.a.closeAddAccount()
 	}
@@ -532,7 +538,9 @@ func primary(c *ui.Context, label string, disabled bool) ui.Element {
 
 func (o *onboarding) pickView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
+	if !o.sheet {
+		heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
+	}
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 		box := ui.Row(c).Height(inputHeight(c)).AlignItems(ui.Center).Gap(th.Space(2)).PaddingX(th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background)
 		if box.FocusWithin() { // the row is the box, so it carries the ring a bare input would
@@ -667,34 +675,31 @@ var securities = []kit.Option[core.Security]{
 func (o *onboarding) manualView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(2.5)).Children(func() {
-		tri := "▶\uFE0E "
-		if o.manual {
-			tri = "▼\uFE0E "
-		}
 		label := i18n.T("onboarding.manual")
-		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.manual = !o.manual }}).Label(label).Expanded(o.manual).AlignSelf(ui.Start).Children(func() {
-			lineText(c, tri+label, t.Text.Base).TextColor(t.Muted)
+		// Pulled left by its padding, so the chevron lines up with the fields.
+		kit.Collapsible(c, &o.manual, func() { lineText(c, label, t.Text.Base) }, func() { o.serversForm(c) }).AlignSelf(ui.Start).Margin(0, 0, 0, -th.Space(2))
+	})
+}
+
+// serversForm is manualView's fields.
+func (o *onboarding) serversForm(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	opts := make([]kit.Option[core.Security], len(securities))
+	for i, s := range securities {
+		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
+	}
+	server := func(proto string, host, port *string, sec *core.Security) {
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
+			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) }).FontSize(t.Text.Sm).TextColor(t.Muted)
 		})
-		if !o.manual {
-			return
-		}
-		opts := make([]kit.Option[core.Security], len(securities))
-		for i, s := range securities {
-			opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
-		}
-		server := func(proto string, host, port *string, sec *core.Security) {
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-				ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1).FontSize(t.Text.Sm).TextColor(t.Muted)
-				ui.Field(c, i18n.T("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth).FontSize(t.Text.Sm).TextColor(t.Muted)
-				ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) }).FontSize(t.Text.Sm).TextColor(t.Muted)
-			})
-		}
-		ui.Column(c).Gap(th.Space(3)).Children(func() {
-			server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
-			server("smtp", &o.smtpHost, &o.smtpPort, &o.smtpSec)
-			ui.Field(c, i18n.T("onboarding.username"), func() {
-				kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
-			})
+	}
+	ui.Column(c).Gap(th.Space(3)).Children(func() {
+		server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
+		server("smtp", &o.smtpHost, &o.smtpPort, &o.smtpSec)
+		ui.Field(c, i18n.T("onboarding.username"), func() {
+			kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
 		})
 	})
 }

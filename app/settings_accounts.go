@@ -598,7 +598,6 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		return
 	}
 	a := p.a
-	t := theme.Of(c)
 	acc, ok := a.accountByID(p.dlgAcc)
 	if !ok {
 		p.closeDialog()
@@ -606,8 +605,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	}
 	id := acc.ID
 	prov := accountProvider(a, acc)
-	var title string
+	var title, desc string
 	var body, confirm func()
+	size := kit.DialogSm
 	label, variant := i18n.T("common.save"), kit.Default
 	switch p.dialog {
 	case "password":
@@ -624,7 +624,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 				})
 		}
 	case "servers":
-		title = i18n.T("settings.account.servers")
+		title, size = i18n.T("settings.account.servers"), kit.DialogMd
 		body = func() { p.serversForm(c) }
 		sf, update := p.servers, p.update
 		confirm = func() {
@@ -640,7 +640,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 	case "remove":
 		title = i18n.Tf("settings.account.remove.title", acc.Email)
-		body = func() { ui.Text(c, i18n.T("settings.account.remove.help")).TextColor(t.Muted) }
+		desc = i18n.T("settings.account.remove.help")
 		label, variant = i18n.T("common.delete"), kit.Destructive
 		confirm = func() {
 			if f := p.forms[id]; f != nil {
@@ -656,18 +656,22 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 	case "cache":
 		title = i18n.T("settings.account.clear_cache.title")
-		body = func() { ui.Text(c, i18n.T("settings.account.clear_cache.body")).TextColor(t.Muted) }
+		desc = i18n.T("settings.account.clear_cache.body")
 		label = i18n.T("settings.account.clear_cache.confirm")
 		confirm = func() {
 			p.act(id, func(ctx context.Context) error { return a.svc.ClearAttachmentCache(ctx, id) }, func(bool) { p.readUsage(id) })
 		}
 	}
-	kit.Dialog(c, &p.open, title, func() {
-		body()
-		if p.dlgErr != nil {
+	content := body
+	if p.dlgErr != nil {
+		content = func() {
+			if body != nil {
+				body()
+			}
 			kit.Alert(c, kit.Danger, humanize(p.dlgErr), nil)
 		}
-	}, func() {
+	}
+	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
 		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || p.dialog == "password" && p.secret == ""}).OnClick(confirm)
 	})

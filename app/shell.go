@@ -163,6 +163,7 @@ func (a *App) View(c *ui.Context) {
 		c.AddToast(ts)
 	}
 	a.toasts = nil
+	kit.DialogShown() // forget another window's
 
 	if c.Shortcut(ui.Cmd, ui.KeyBracketLeft) {
 		a.back()
@@ -197,6 +198,9 @@ func (a *App) View(c *ui.Context) {
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,
 	// which would cover the window's material.
+	if kit.DialogShown() {
+		root = t.Window
+	}
 	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Body))
 }
 
@@ -495,10 +499,7 @@ func (a *App) saveWidths() {
 // closeDialog asks, when a draft could not be saved before closing, whether
 // to close anyway and lose its last edits.
 func (a *App) closeDialog(c *ui.Context) {
-	t := theme.Of(c)
-	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), func() {
-		ui.Text(c, humanize(a.closeErr)).TextColor(t.Muted)
-	}, func() {
+	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Desc: humanize(a.closeErr), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { a.closeAsk = false })
 		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 			a.closeAsk = false

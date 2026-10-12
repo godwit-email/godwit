@@ -261,7 +261,7 @@ func (p *mailPage) sendDialog(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	s := p.sending
-	kit.Dialog(c, &p.sending.ask, i18n.T("compose.send"), func() {
+	kit.Dialog(c, &p.sending.ask, i18n.T("compose.send"), kit.DialogOpts{Close: i18n.T("common.close")}, func() {
 		ui.Column(c).Gap(th.Space(3)).Children(func() {
 			for _, w := range s.warnings.Warnings {
 				ui.Column(c).Children(func() {
