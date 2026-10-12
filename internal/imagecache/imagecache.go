@@ -215,12 +215,17 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 		e.used = time.Now()
 		name := e.name
 		c.mu.Unlock()
-		if data, err := os.ReadFile(filepath.Join(c.dir, name)); err == nil {
+		data, err := os.ReadFile(filepath.Join(c.dir, name))
+		if err == nil {
 			now := time.Now()
 			_ = os.Chtimes(filepath.Join(c.dir, name), now, now)
 			return Image{Data: data, Format: e.format, Width: e.width, Height: e.height}, nil
 		}
-		c.mu.Lock() // gone from disk: forget it and download again
+		// Forget the file only once it is gone (or deleted); else it stays counted.
+		if rerr := os.Remove(filepath.Join(c.dir, name)); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return Image{}, err
+		}
+		c.mu.Lock()
 		if c.files[key] == e {
 			c.total -= e.size
 			delete(c.files, key)

@@ -663,3 +663,10 @@ func TestPrepareBodyCapsRemoteImages(t *testing.T) {
 	assert.Len(t, tokens, imagefetch.MaxImages, "the same URL again costs nothing; the ones past the count lose their src")
 	assert.Equal(t, 5, strings.Count(out, "<img alt="), "five images lost their src")
 }
+
+func TestPrepareBodyKeepsCSSSizedImages(t *testing.T) {
+	dims := func(string) (int, int, bool) { return 40, 30, true }
+	out, _ := prepareBody(`<img src="https://a.example/h.png" style="height:50px"><img src="https://a.example/w.png" style="width:50%">`, imagefetch.NewBudget(), 1, dims)
+	assert.NotContains(t, out, `width="40"`)
+	assert.NotContains(t, out, `height="30"`)
+}

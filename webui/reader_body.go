@@ -117,8 +117,10 @@ func (p *preparer) reserve(img *html.Node, src string) {
 	if attrIndex(img, "width") >= 0 || attrIndex(img, "height") >= 0 {
 		return
 	}
-	if st := attrIndex(img, "style"); st >= 0 && strings.Contains(strings.ToLower(img.Attr[st].Val), "width") {
-		return
+	if st := attrIndex(img, "style"); st >= 0 {
+		if v := strings.ToLower(img.Attr[st].Val); strings.Contains(v, "width") || strings.Contains(v, "height") {
+			return
+		}
 	}
 	if w, h, ok := p.dims(src); ok {
 		img.Attr = append(img.Attr, html.Attribute{Key: "width", Val: strconv.Itoa(w)}, html.Attribute{Key: "height", Val: strconv.Itoa(h)})
