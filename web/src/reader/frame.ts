@@ -54,8 +54,9 @@ const htmlCSS = (t: Theme, scheme: string) => {
     "background-image:var(--godwit-bg);background-size:inherit;background-position:inherit;" +
     `background-repeat:inherit;border-radius:inherit;filter:${INVERT}}` +
     "#godwit-body img{max-width:100%!important}" +
-    // keeps the ratio of an image shrunk to the width; one with a height of its own (an icon) keeps it
-    ":where(#godwit-body img:not([height])){height:auto}" +
+    // keeps the ratio of an image shrunk to the width (its width and height attributes give the
+    // ratio); one with only a height (an icon sized by it) keeps that height
+    ":where(#godwit-body img:not([height]:not([width]))){height:auto}" +
     "#godwit-body table{max-width:100%}" +
     ":where(#godwit-body td,#godwit-body th){word-break:break-word}"
   );

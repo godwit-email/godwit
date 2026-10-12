@@ -67,8 +67,9 @@ test("the body sits in #godwit-body; html mail is transparent, in the theme's te
   expect(css).toMatch(/img\{[^}]*max-width:100%/);
   expect(css).toContain("break-word");
   expect(css).toContain("px/normal "); // not the reading height: a mail's buttons and footers have none of their own
-  // an image with a height attribute keeps it: height:auto would show it at its natural size
-  expect(css).toContain("img:not([height])){height:auto}");
+  // an image with only a height attribute keeps it (height:auto would show it at its natural
+  // size); one with a width too shrinks in ratio
+  expect(css).toContain("img:not([height]:not([width]))){height:auto}");
 });
 
 const render = (over: Partial<ReaderBody>, mode: Theme["mode"], systemDark = false) =>
