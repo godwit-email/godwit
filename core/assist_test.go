@@ -144,7 +144,7 @@ func TestAssistInitialAppliesDirectly(t *testing.T) {
 	e.waitRunOf(t, a.RunID, "done")
 	reqs := e.srv.Requests()
 	require.Len(t, reqs, 2, "the run goes on with the result")
-	assert.Equal(t, []string{"get_message", "search_mail", "update_draft"}, toolNames(t, reqs[0]))
+	assert.Equal(t, []string{"get_message", "read_attachment", "search_mail", "update_draft"}, toolNames(t, reqs[0]))
 }
 
 func TestAssistProposesEdit(t *testing.T) {

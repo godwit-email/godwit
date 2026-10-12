@@ -51,12 +51,12 @@ func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
 	if raw := store.Str(r[12]); raw != "" {
 		m.HTML, _ = gomail.Sanitize(raw, nil, false)
 	}
-	ar, err := s.db.Query(ctx, "SELECT filename, content_type, size FROM attachments WHERE message_id = ? ORDER BY id", id)
+	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
 		return Message{}, err
 	}
 	for _, a := range ar.Values {
-		m.Attachments = append(m.Attachments, AttachmentInfo{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Size: int(store.Int(a[2]))})
+		m.Attachments = append(m.Attachments, AttachmentInfo{ID: store.Int(a[0]), Filename: store.Str(a[1]), ContentType: store.Str(a[2]), Size: int(store.Int(a[3]))})
 	}
 	return m, nil
 }
@@ -95,7 +95,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		}
 		var att []string
 		for _, a := range m.Attachments {
-			att = append(att, fmt.Sprintf("%s (%s, %d bytes)", a.Filename, a.ContentType, a.Size))
+			att = append(att, fmt.Sprintf("%s (attachment %d, %s, %d bytes)", a.Filename, a.ID, a.ContentType, a.Size))
 		}
 		head := mailHeader(m.MessageSummary)
 		if len(att) > 0 {
