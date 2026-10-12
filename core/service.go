@@ -220,6 +220,7 @@ func (s *Service) Close() error {
 		s.workersMu.Lock()
 		s.workers = nil
 		s.workersMu.Unlock()
+		s.images.Close() // no download outlives the Service
 		s.closeErr = s.db.Close()
 	})
 	return s.closeErr

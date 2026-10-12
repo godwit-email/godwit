@@ -2,6 +2,8 @@ package imagecache
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
@@ -168,5 +170,40 @@ func TestClearDuringDownloadStoresNothing(t *testing.T) {
 	}
 	if des, _ := os.ReadDir(c.dir); len(des) != 0 {
 		t.Errorf("%d files left", len(des))
+	}
+}
+
+func TestCloseCancelsDownloads(t *testing.T) {
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	c := open(t, t.TempDir(), 0)
+	go c.Get(context.Background(), srv.URL+"/a.png")
+	<-started
+	done := make(chan struct{})
+	go func() { c.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited for a slow download")
+	}
+	if _, err := c.Get(t.Context(), srv.URL+"/b.png"); err != ErrClosed {
+		t.Errorf("after Close: %v", err)
+	}
+}
+
+func TestFailedMemoryIsBounded(t *testing.T) {
+	c := open(t, t.TempDir(), 0)
+	c.mu.Lock()
+	for i := range 3 * maxFailed {
+		c.rememberFailure(strconv.Itoa(i), errors.New("x"))
+	}
+	n := len(c.failed)
+	c.mu.Unlock()
+	if n > maxFailed {
+		t.Errorf("%d failures remembered", n)
 	}
 }

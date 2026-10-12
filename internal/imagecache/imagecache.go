@@ -46,6 +46,9 @@ type Cache struct {
 	max    int64
 	client *http.Client
 	global chan struct{}
+	ctx    context.Context // ends at Close, with the downloads in flight
+	stop   context.CancelFunc
+	wg     sync.WaitGroup
 
 	mu     sync.Mutex
 	files  map[string]*entry // by key
@@ -76,6 +79,34 @@ type failure struct {
 	at  time.Time
 }
 
+// ErrClosed is returned by Get after Close.
+var ErrClosed = errors.New("image cache is closed")
+
+// maxFailed bounds the memory of failed URLs.
+const maxFailed = 1000
+
+// rememberFailure notes that key failed, dropping the notes that expired
+// (and all of them when still too many). The caller holds c.mu.
+func (c *Cache) rememberFailure(key string, err error) {
+	for k, f := range c.failed {
+		if time.Since(f.at) >= failedTTL {
+			delete(c.failed, k)
+		}
+	}
+	if len(c.failed) >= maxFailed {
+		clear(c.failed)
+	}
+	c.failed[key] = failure{err, time.Now()}
+}
+
+// Close cancels the downloads in flight and waits for them; Get fails after.
+func (c *Cache) Close() {
+	c.mu.Lock()
+	c.stop()
+	c.mu.Unlock()
+	c.wg.Wait()
+}
+
 // Key is the cache key of a URL: 32 hex digits of its SHA-256.
 func Key(src string) string {
 	h := sha256.Sum256([]byte(src))
@@ -93,6 +124,7 @@ func Open(dir string, max int64, client *http.Client) (*Cache, error) {
 	}
 	c := &Cache{dir: dir, max: max, client: client, global: make(chan struct{}, GlobalJobs),
 		files: map[string]*entry{}, flight: map[string]*call{}, failed: map[string]failure{}, hosts: map[string]chan struct{}{}}
+	c.ctx, c.stop = context.WithCancel(context.Background())
 	des, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -201,8 +233,13 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	}
 	cl := c.flight[key]
 	if cl == nil {
+		if c.ctx.Err() != nil {
+			c.mu.Unlock()
+			return Image{}, ErrClosed
+		}
 		cl = &call{done: make(chan struct{})}
 		c.flight[key] = cl
+		c.wg.Add(1)
 		go c.download(key, src, cl, c.gen)
 	}
 	c.mu.Unlock()
@@ -215,11 +252,12 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 }
 
 func (c *Cache) download(key, src string, cl *call, gen int) {
+	defer c.wg.Done()
 	cl.img, cl.err = c.fetch(key, src, gen)
 	c.mu.Lock()
 	delete(c.flight, key)
-	if cl.err != nil {
-		c.failed[key] = failure{cl.err, time.Now()}
+	if cl.err != nil && c.ctx.Err() == nil {
+		c.rememberFailure(key, cl.err)
 	}
 	c.mu.Unlock()
 	close(cl.done)
@@ -230,7 +268,7 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	if err != nil || !imagefetch.IsHTTP(u) {
 		return Image{}, imagefetch.ErrScheme
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), queueWait+imagefetch.Timeout)
+	ctx, cancel := context.WithTimeout(c.ctx, queueWait+imagefetch.Timeout)
 	defer cancel()
 	host := c.host(u.Host)
 	for _, sem := range []chan struct{}{host, c.global} {
