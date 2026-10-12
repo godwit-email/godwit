@@ -302,11 +302,32 @@ func ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attac
 	return
 }
 
-// Snippet returns the first 200 characters with whitespace collapsed.
+// Snippet returns the first 200 characters with whitespace collapsed and the
+// invisible characters gone: mail pads its preview text with zero-width and
+// joiner characters between spaces (a preheader), which would fill the line
+// with nothing to see.
 func Snippet(text string) string {
-	s := strings.Join(strings.Fields(text), " ")
+	s := strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if invisible(r) {
+			return ' '
+		}
+		return r
+	}, text)), " ")
 	if r := []rune(s); len(r) > 200 {
 		s = string(r[:200])
 	}
 	return s
+}
+
+// invisible reports whether r shows nothing: a format character (zero-width
+// space and non-joiner, soft hyphen, byte order mark…) but the joiner that
+// builds emoji, the combining grapheme joiner, and the Hangul fillers.
+func invisible(r rune) bool {
+	switch r {
+	case '\u200d':
+		return false
+	case '\u034f', '\u115f', '\u1160', '\u3164', '\uffa0':
+		return true
+	}
+	return unicode.Is(unicode.Cf, r)
 }

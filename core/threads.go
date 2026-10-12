@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -86,7 +87,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	for _, r := range ms.Values {
 		t := &page.Items[idx[store.Int(r[0])]]
 		if t.Count == 0 {
-			t.Snippet = store.Str(r[2]) // newest first
+			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
 		}
 		t.Count++
 		if !strings.Contains(store.Str(r[3]), `\Seen`) {
