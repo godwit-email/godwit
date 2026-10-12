@@ -88,11 +88,30 @@ func NewClient(allowLoopback bool) *http.Client {
 	}}
 }
 
-// PublicIP is false for loopback, private, link-local, unspecified and
-// multicast addresses.
+// notGlobal are ranges that are not public hosts although IsPrivate and the
+// like do not name them: this network, shared (CGNAT / overlay) space,
+// IETF protocol, benchmarking and documentation ranges, reserved space.
+var notGlobal = func() (out []netip.Prefix) {
+	for _, p := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32"} {
+		out = append(out, netip.MustParsePrefix(p))
+	}
+	return out
+}()
+
+// PublicIP is false for loopback, private, link-local, unspecified, multicast
+// and other non-global addresses (shared 100.64.0.0/10 included).
 func PublicIP(ip netip.Addr) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified())
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	for _, p := range notGlobal {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // IsHTTP reports an http or https URL.

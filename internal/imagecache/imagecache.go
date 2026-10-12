@@ -311,7 +311,9 @@ func (c *Cache) evict() {
 			return
 		}
 		e := c.files[k]
-		os.Remove(filepath.Join(c.dir, e.name))
+		if err := os.Remove(filepath.Join(c.dir, e.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			continue // still on disk: keep it counted, try the next
+		}
 		c.total -= e.size
 		delete(c.files, k)
 	}

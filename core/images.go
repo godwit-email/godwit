@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -42,19 +43,51 @@ func (s *Service) startImagePrefetch() {
 		return
 	}
 	ch, unsub := s.bus.Subscribe()
+	// The bus is lossy and a download can take long: a reader moves the
+	// arrivals into a queue at once, a worker fetches from it.
+	var mu sync.Mutex
+	var queue []int64
+	wake := make(chan struct{}, 1)
 	go func() {
-		defer end()
 		defer unsub()
 		for {
 			select {
-			case ev := <-ch:
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
 				if ev.Type == events.MessageReceived {
-					for _, id := range ev.MessageIDs {
-						s.prefetchImages(ctx, id)
+					mu.Lock()
+					queue = append(queue, ev.MessageIDs...)
+					mu.Unlock()
+					select {
+					case wake <- struct{}{}:
+					default:
 					}
 				}
 			case <-ctx.Done():
 				return
+			}
+		}
+	}()
+	go func() {
+		defer end()
+		for {
+			select {
+			case <-wake:
+			case <-ctx.Done():
+				return
+			}
+			for ctx.Err() == nil {
+				mu.Lock()
+				if len(queue) == 0 {
+					mu.Unlock()
+					break
+				}
+				id := queue[0]
+				queue = queue[1:]
+				mu.Unlock()
+				s.prefetchImages(ctx, id)
 			}
 		}
 	}()
