@@ -27,7 +27,13 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
 
 Download the latest build from [Releases](https://github.com/godwit-email/godwit/releases/latest):
 
-- **macOS**: the `.dmg`. Builds are not notarized yet, so the first time, right-click Godwit in Applications and choose **Open**.
+- **macOS**: the `.dmg`, or with [Homebrew](https://brew.sh):
+
+  ```sh
+  brew install godwit-email/tap/godwit
+  ```
+
+  Builds are not notarized yet, so the first time, right-click Godwit in Applications and choose **Open**.
 - **Windows**: `Godwit Setup <version> <arch>.exe`. It installs for the current user, without admin rights.
 - **Linux**: the `.deb`, or install for the current user (no root) with:
 
