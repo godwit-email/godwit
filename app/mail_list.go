@@ -482,12 +482,14 @@ func listTime(now, t time.Time) string {
 	return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
 }
 
-// Content is the list column and the reader beside it.
+// Content is the list column and the reader beside it, each a panel, the
+// gap between them a grip that sets the list's width.
 func (p *mailPage) Content(c *ui.Context) {
-	t := theme.Of(c)
+	a, th, r := p.a, c.Theme(), panelRadius(c)
 	_, isDrafts := draftsOf(p.folders, p.view)
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(theme.ListWidth).BorderWidth(0, theme.Hairline, 0, 0).BorderColor(t.Border).Children(func() {
+	a.listW = a.listWidth()
+	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), i18n.T("shell.resize"), nil, func() {
+		kit.Panel(c, r).Grow(1).Children(func() {
 			switch {
 			case p.view.Unified == "outbox":
 				p.outboxView(c)
@@ -497,12 +499,19 @@ func (p *mailPage) Content(c *ui.Context) {
 				p.listView(c)
 			}
 		})
-		if isDrafts {
-			p.draftPane(c)
-		} else {
-			p.reader.view(c)
-		}
+	}, func() {
+		kit.Panel(c, r).Grow(1).Children(func() {
+			if isDrafts {
+				p.draftPane(c)
+			} else {
+				p.reader.view(c)
+			}
+		})
 	})
+	a.listW = min(max(a.listW, theme.ListMinWidth), theme.ListMaxWidth)
+	if changed {
+		a.saveWidths()
+	}
 }
 
 // listHeader is the search box, or the first date group's heading (the
@@ -665,9 +674,13 @@ func (p *mailPage) listView(c *ui.Context) {
 	rows := p.shown()
 	ls := p.ls()
 	es := p.entries(rows)
+	// The header names the date group at the top of the list, as the list
+	// scrolled last frame; that group's own heading, pinned under it, is
+	// drawn clear so the name shows once.
 	head := ""
 	if len(rows) > 0 && !p.searched {
-		head = dateGroup(p.a.clock.Now(), rows[0].Date)
+		first, _ := ls.list.Visible()
+		head = topGroup(p.a.clock.Now(), rows, es, first)
 	}
 	p.listHeader(c, head)
 	ls.list.Key = func(i int) any {
@@ -684,8 +697,13 @@ func (p *mailPage) listView(c *ui.Context) {
 	act, target := "", []mailItem(nil)
 	l := kit.List(c, &ls.list, len(es), func(i int) {
 		if es[i].head != "" { // a date heading: no row, never chosen
-			kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).TextColor(t.Muted).Background(t.Background).
-				Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(5))
+			// left as the header's name: the list's own Space(2) and Space(2) more
+			h := kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))
+			if es[i].head == head { // the header names it: clear, the same size
+				h.TextColor(ui.Transparent)
+			} else {
+				h.TextColor(t.Muted).Background(t.Background)
+			}
 			return
 		}
 		it := rows[es[i].row]
@@ -868,6 +886,19 @@ func (p *mailPage) entries(rows []mailItem) []listEntry {
 		out = append(out, listEntry{row: i})
 	}
 	return out
+}
+
+// topGroup is the date group of entry first, the list's top: its heading's,
+// or its row's; the first row's when first is out of range.
+func topGroup(now time.Time, rows []mailItem, es []listEntry, first int) string {
+	e := listEntry{row: 0}
+	if first > 0 && first < len(es) {
+		e = es[first]
+	}
+	if e.head != "" {
+		return e.head
+	}
+	return dateGroup(now, rows[e.row].Date)
 }
 
 // rowOf is the row entry cur is, -1 for none or a heading.

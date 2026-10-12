@@ -1,9 +1,11 @@
 import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import {
   type Approval,
@@ -289,6 +291,11 @@ function Compose({
   const ended = useRef(new Set<number>()); // runs seen ending
   const trRef = useRef<WitTransport>(undefined);
   const witResume = useResume(wit?.tr);
+  // The Wit panel's width as last dragged, kept per layout (with and without the panel).
+  const layout = useDefaultLayout({
+    id: "compose",
+    panelIds: wit ? ["editor", "wit"] : ["editor"],
+  });
   const toasted = useRef(false); // the lock's toast, once per lock
   const bodyRef = useRef<HTMLDivElement>(null);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
@@ -693,7 +700,7 @@ function Compose({
   return (
     <main
       aria-label={title}
-      className="flex h-screen flex-col"
+      className="flex h-screen flex-col bg-window"
       onCompositionStart={() => {
         let end = () => {};
         const ended = new Promise<void>((r) => (end = r));
@@ -719,199 +726,212 @@ function Compose({
         void send();
       }}
     >
-      <header className="compose-titlebar flex shrink-0 items-center gap-2 border-b pr-4">
+      <header className="compose-titlebar flex shrink-0 items-center gap-2 pr-4">
         <h1 className="min-w-0 truncate font-semibold text-md">{title}</h1>
         <p className="shrink-0 text-muted-foreground text-sm">
           {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
         </p>
       </header>
-      {/* A row: the compose column, the Wit panel beside it. */}
-      <div className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-            <Fields
-              key={fieldsKey}
-              ref={fieldsRef}
-              frozen={locked}
-              accounts={state.accounts}
-              from={from}
-              onFrom={onFrom}
-              to={f.to}
-              cc={f.cc}
-              bcc={f.bcc}
-              replyTo={f.replyTo}
-              subject={f.subject}
-              onChange={(e: FieldsEdit) => edit(e)}
-              t={t}
-            />
-            {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}
-            <div ref={bodyRef} className="flex flex-col">
-              {reloadErr && (
-                <Alert
-                  variant="destructive"
-                  className="mx-4 mt-2 w-auto border-0 bg-destructive/10"
-                >
-                  <AlertDescription>{reloadErr}</AlertDescription>
-                  <AlertAction>
-                    <Button variant="ghost" size="sm" onClick={() => void reload()}>
-                      {t("common.retry")}
+      {/* A row of cards on the window's material: the compose column, the Wit panel beside it,
+          the gap between them a grip that sets the panel's width. */}
+      <ResizablePanelGroup
+        orientation="horizontal"
+        className="min-h-0 flex-1 px-2 pb-2"
+        defaultLayout={layout.defaultLayout}
+        onLayoutChanged={layout.onLayoutChanged}
+      >
+        <ResizablePanel id="editor" minSize={320}>
+          <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-(--shadow-xs)">
+            <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+              <Fields
+                key={fieldsKey}
+                ref={fieldsRef}
+                frozen={locked}
+                accounts={state.accounts}
+                from={from}
+                onFrom={onFrom}
+                to={f.to}
+                cc={f.cc}
+                bcc={f.bcc}
+                replyTo={f.replyTo}
+                subject={f.subject}
+                onChange={(e: FieldsEdit) => edit(e)}
+                t={t}
+              />
+              {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}
+              <div ref={bodyRef} className="flex flex-col">
+                {reloadErr && (
+                  <Alert
+                    variant="destructive"
+                    className="mx-4 mt-2 w-auto border-0 bg-destructive/10"
+                  >
+                    <AlertDescription>{reloadErr}</AlertDescription>
+                    <AlertAction>
+                      <Button variant="ghost" size="sm" onClick={() => void reload()}>
+                        {t("common.retry")}
+                      </Button>
+                    </AlertAction>
+                  </Alert>
+                )}
+                {running && (
+                  <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+                    <RiSparkling2Line className="size-3.5 shrink-0" />
+                    <span className="flex-1">{t("wit.compose.writing_banner")}</span>
+                    <Button variant="outline" size="sm" className="text-base" onClick={stop}>
+                      {t("wit.stop")}
                     </Button>
-                  </AlertAction>
-                </Alert>
-              )}
-              {running && (
-                <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
-                  <RiSparkling2Line className="size-3.5 shrink-0" />
-                  <span className="flex-1">{t("wit.compose.writing_banner")}</span>
-                  <Button variant="outline" size="sm" className="text-base" onClick={stop}>
-                    {t("wit.stop")}
-                  </Button>
-                </div>
-              )}
-              {applied && !witLocked && !locked && (
-                <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
-                  <span>{t("wit.compose.applied")}</span>
-                  <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
-                    {t("wit.compose.undo")}
-                  </Button>
-                </div>
-              )}
-              {reviewing ? (
-                <Review
-                  key={reviewing.approval}
-                  review={reviewing}
-                  busy={deciding}
-                  onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
-                  onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
-                  after={tail}
+                  </div>
+                )}
+                {applied && !witLocked && !locked && (
+                  <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
+                    <span>{t("wit.compose.applied")}</span>
+                    <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
+                      {t("wit.compose.undo")}
+                    </Button>
+                  </div>
+                )}
+                {reviewing ? (
+                  <Review
+                    key={reviewing.approval}
+                    review={reviewing}
+                    busy={deciding}
+                    onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
+                    onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
+                    after={tail}
+                    t={t}
+                  />
+                ) : (
+                  // biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it
+                  <div
+                    data-locked={running || undefined}
+                    className={`${BODY} data-locked:bg-sidebar`}
+                    onMouseDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      e.preventDefault();
+                      e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
+                    }}
+                  >
+                    {writing ? (
+                      <Static html={streamed} label={t("compose.body")} caret />
+                    ) : (
+                      <Editor
+                        key={`${state.draftId}:${initial.n}`}
+                        initial={initial.body}
+                        readOnly={locked || witLocked}
+                        placeholder={wit ? t("wit.compose.empty") : ""}
+                        onChange={(body) => edit({ body })}
+                        onComposing={() => {}} // <main> tracks compositions, the fields' too
+                        t={t}
+                        onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
+                        toolbarSlot={toolbarSlot}
+                        attach={attach}
+                        popover={
+                          cmdk &&
+                          !locked &&
+                          !witLocked && (
+                            <CmdK
+                              onSubmit={(instruction) => void rewrite(cmdk, instruction)}
+                              onClose={closeCmdK}
+                              t={t}
+                            />
+                          )
+                        }
+                      />
+                    )}
+                    {tail}
+                  </div>
+                )}
+              </div>
+              <div className="mx-4 mb-4 flex flex-col gap-4 *:empty:hidden">
+                <Attachments
+                  items={attachments}
+                  tooLarge={tooLarge}
+                  failed={failed}
+                  frozen={locked}
+                  onRemove={(id) =>
+                    change((rev) =>
+                      api
+                        .removeAttachment(id, rev)
+                        .then((c) => ({ ...c, tooLarge: [], failed: [] })),
+                    )
+                  }
                   t={t}
                 />
-              ) : (
-                // biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it
-                <div
-                  data-locked={running || undefined}
-                  className={`${BODY} data-locked:bg-sidebar`}
-                  onMouseDown={(e) => {
-                    if (e.target !== e.currentTarget) return;
-                    e.preventDefault();
-                    e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
-                  }}
-                >
-                  {writing ? (
-                    <Static html={streamed} label={t("compose.body")} caret />
-                  ) : (
-                    <Editor
-                      key={`${state.draftId}:${initial.n}`}
-                      initial={initial.body}
-                      readOnly={locked || witLocked}
-                      placeholder={wit ? t("wit.compose.empty") : ""}
-                      onChange={(body) => edit({ body })}
-                      onComposing={() => {}} // <main> tracks compositions, the fields' too
-                      t={t}
-                      onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
-                      toolbarSlot={toolbarSlot}
-                      attach={attach}
-                      popover={
-                        cmdk &&
-                        !locked &&
-                        !witLocked && (
-                          <CmdK
-                            onSubmit={(instruction) => void rewrite(cmdk, instruction)}
-                            onClose={closeCmdK}
-                            t={t}
-                          />
-                        )
-                      }
-                    />
-                  )}
-                  {tail}
-                </div>
-              )}
+                <Notices
+                  warnings={warnings.list}
+                  blocked={blocked}
+                  conflict={sv?.status === "conflict"}
+                  latestFailed={latestFailed}
+                  frozen={locked}
+                  onSendAnyway={() => send(warnings.digest)}
+                  onKeepMine={() => resolve(true)}
+                  onUseLatest={() => resolve(false)}
+                  onRetry={() => retry.current()}
+                  t={t}
+                />
+              </div>
             </div>
-            <div className="mx-4 mb-4 flex flex-col gap-4 *:empty:hidden">
-              <Attachments
-                items={attachments}
-                tooLarge={tooLarge}
-                failed={failed}
-                frozen={locked}
-                onRemove={(id) =>
-                  change((rev) =>
-                    api.removeAttachment(id, rev).then((c) => ({ ...c, tooLarge: [], failed: [] })),
-                  )
-                }
-                t={t}
-              />
-              <Notices
-                warnings={warnings.list}
-                blocked={blocked}
-                conflict={sv?.status === "conflict"}
-                latestFailed={latestFailed}
-                frozen={locked}
-                onSendAnyway={() => send(warnings.digest)}
-                onKeepMine={() => resolve(true)}
-                onUseLatest={() => resolve(false)}
-                onRetry={() => retry.current()}
-                t={t}
-              />
+            {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
+            <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
+              <div ref={setToolbarSlot} className="contents">
+                {!showEditor && <IdleToolbar t={t} attach={attach} />}
+              </div>
+              <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
             </div>
-          </div>
-          {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
-          <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
-            <div ref={setToolbarSlot} className="contents">
-              {!showEditor && <IdleToolbar t={t} attach={attach} />}
-            </div>
-            <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
-          </div>
-        </section>
+          </section>
+        </ResizablePanel>
+        {wit && <ResizableHandle label={t("shell.resize")} />}
         {wit && (
-          <WitPanel
-            info={state.wit}
-            history={wit.history}
-            key={wit.n}
-            locked={locked || witLocked}
-            review={
-              reviewing
-                ? {
-                    approval: reviewing.approval,
-                    summary: reviewSummary(reviewing, t),
-                    actions: (
-                      <>
-                        <Button
-                          size="sm"
-                          className="px-3 font-normal text-base"
-                          disabled={deciding}
-                          onClick={() => decide((id) => api.decide(id, true), true)}
-                        >
-                          {t("wit.compose.accept_all")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="font-normal text-base"
-                          disabled={deciding}
-                          onClick={() => decide((id) => api.decide(id, false), false)}
-                        >
-                          {t("wit.compose.reject_all")}
-                        </Button>
-                      </>
-                    ),
-                  }
-                : undefined
-            }
-            resume={witResume.resume}
-            onLink={(url) => api.openLink(url)}
-            onRunning={setPanelRunning}
-            onDecide={decideTool}
-            onSearch={(q) => api.searchMail(q)}
-            model={state.wit.model}
-            onModels={() =>
-              void api.openModels().catch((e) => toast.error(witError(message(e), t)))
-            }
-            transport={wit.tr}
-            t={t}
-          />
+          <ResizablePanel id="wit" defaultSize={320} minSize={280} maxSize="50%">
+            <WitPanel
+              info={state.wit}
+              history={wit.history}
+              key={wit.n}
+              locked={locked || witLocked}
+              review={
+                reviewing
+                  ? {
+                      approval: reviewing.approval,
+                      summary: reviewSummary(reviewing, t),
+                      actions: (
+                        <>
+                          <Button
+                            size="sm"
+                            className="px-3 font-normal text-base"
+                            disabled={deciding}
+                            onClick={() => decide((id) => api.decide(id, true), true)}
+                          >
+                            {t("wit.compose.accept_all")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="font-normal text-base"
+                            disabled={deciding}
+                            onClick={() => decide((id) => api.decide(id, false), false)}
+                          >
+                            {t("wit.compose.reject_all")}
+                          </Button>
+                        </>
+                      ),
+                    }
+                  : undefined
+              }
+              resume={witResume.resume}
+              onLink={(url) => api.openLink(url)}
+              onRunning={setPanelRunning}
+              onDecide={decideTool}
+              onSearch={(q) => api.searchMail(q)}
+              model={state.wit.model}
+              onModels={() =>
+                void api.openModels().catch((e) => toast.error(witError(message(e), t)))
+              }
+              transport={wit.tr}
+              t={t}
+            />
+          </ResizablePanel>
         )}
-      </div>
+      </ResizablePanelGroup>
     </main>
   );
 }

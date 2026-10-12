@@ -189,6 +189,27 @@ func TestThreadListShowsThreads(t *testing.T) {
 	}
 }
 
+// TestTopGroup: the list header names the group at the top of the list, so
+// scrolled past today's rows it reads 昨天, not 今天.
+func TestTopGroup(t *testing.T) {
+	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.Local)
+	var rows []mailItem
+	for _, d := range []time.Time{now.Add(-time.Hour), now.Add(-2 * time.Hour), now.Add(-20 * time.Hour), now.Add(-21 * time.Hour)} {
+		var it mailItem
+		it.Date = d
+		rows = append(rows, it)
+	}
+	es := (&mailPage{a: &App{clock: newFakeClock()}}).entries(rows) // 今天 ×2, 昨天 heading, 昨天 ×2
+	for _, c := range []struct {
+		first int
+		want  string
+	}{{0, "今天"}, {1, "今天"}, {2, "昨天"}, {3, "昨天"}, {99, "今天"}} {
+		if got := topGroup(now, rows, es, c.first); got != c.want {
+			t.Errorf("topGroup(first %d) = %q, want %q", c.first, got, c.want)
+		}
+	}
+}
+
 func TestListTime(t *testing.T) {
 	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.Local) // a Friday
 	for _, c := range []struct {

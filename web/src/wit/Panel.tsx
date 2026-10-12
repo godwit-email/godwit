@@ -688,7 +688,7 @@ export function Panel({
             {running && last?.role !== "assistant" && working}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        <MessageScrollerButton>
+        <MessageScrollerButton className="z-10">
           <RiArrowDownLine />
           <span className="sr-only">{t("wit.scroll_end")}</span>
         </MessageScrollerButton>
@@ -801,20 +801,32 @@ export function Panel({
     </InputGroup>
   );
 
+  // the conversation fades out under the input area, which is solid to the card's bottom edge
+  const fade = (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-linear-to-b from-transparent to-background"
+    />
+  );
+  // a card on the window's material: the native layout's content cards
+  const card = "rounded-xl border bg-background shadow-(--shadow-xs)";
   if (page) {
     const cites = citesOf(...chat.messages);
     return (
-      <div className="@container flex h-full min-h-0">
-        <div className="flex min-w-0 flex-1 flex-col">
+      <div className="@container flex h-full min-h-0 gap-2">
+        <div className={cn("flex min-w-0 flex-1 flex-col overflow-hidden", card)}>
           {conversation}
-          <div className="mx-auto flex w-full max-w-202 flex-col gap-2 p-6">
-            {error}
-            {input}
+          <div className="relative bg-background">
+            {fade}
+            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 p-6">
+              {error}
+              {input}
+            </div>
           </div>
         </div>
         {cites.length > 0 && onCite && (
-          // wide: the column, 320 inside its padding (narrow: under each answer, Answer)
-          <aside className="hidden w-88 shrink-0 flex-col overflow-auto border-l bg-sidebar p-4 @4xl:flex">
+          // wide: a card of 320 (narrow: under each answer, Answer)
+          <aside className={cn("hidden w-80 shrink-0 flex-col overflow-auto p-4 @4xl:flex", card)}>
             <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
           </aside>
         )}
@@ -833,9 +845,9 @@ export function Panel({
       <RiArrowDownSLine className="size-3 text-muted-foreground" />
     </Button>
   );
-  // 320 and the border, as the design's panel
+  // a card filling its resizable panel (320 by default) beside the editor's
   return (
-    <aside className="flex w-80.25 shrink-0 flex-col border-l">
+    <aside className={cn("flex h-full w-full flex-col overflow-hidden", card)}>
       {info && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
@@ -850,8 +862,9 @@ export function Panel({
         </div>
       )}
       {conversation}
-      {error && <div className="px-4 pb-2">{error}</div>}
-      <div className="px-4 pb-3">
+      <div className="relative bg-background px-4 pb-3">
+        {fade}
+        {error && <div className="pb-2">{error}</div>}
         {info && (
           <div data-tray className="mx-1 -mb-4 flex gap-1 rounded-t-2xl bg-muted px-1 pt-1 pb-5">
             <DropdownMenu>

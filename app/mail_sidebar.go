@@ -42,15 +42,15 @@ func folderName(f core.Folder) string {
 	return f.Name
 }
 
-// Sidebar: Compose; the unified views; each account's folders under its
+// Sidebar: the page switch and search; Compose; the unified views; each account's folders under its
 // foldable header; the outbox while it holds mail; Add account.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			ui.Row(c).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5)).Gap(th.Space(1)).Children(func() {
-				kit.Text(c, i18n.T("shell.rail.mail"), t.Text.Xl).FontWeight(600)
+			ui.Row(c).Padding(0, th.Space(1.5), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
+				a.pageSwitch(c)
 				ui.Spacer(c)
 				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { p.searchOpen = true })

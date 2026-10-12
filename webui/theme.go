@@ -37,7 +37,8 @@ func ThemeOf(st core.Settings) Theme {
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
 // (--ins-* and --del-*), the warning colours (--warning-*) and the floating
 // input's shadow (--shadow-float: ShadowFloat in the light appearance, the
-// FloatInset inner edge in the dark). --radius is Radius.Lg; styles.css
+// FloatInset inner edge in the dark), the window material's colour (--window)
+// and a card's shadow (--shadow-xs: ShadowXs, black in both). --radius is Radius.Lg; styles.css
 // derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
 func ThemeVars(t theme.Tokens) map[string]string {
 	return map[string]string{
@@ -57,6 +58,7 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--sidebar":    css(t.Sidebar),
 		"--warning-bg": css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
 		"--shadow-float": floatShadow(t),
+		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
 	}
 }
 
@@ -66,8 +68,13 @@ func floatShadow(t theme.Tokens) string {
 	if t.Dark {
 		return fmt.Sprintf("inset 0 0 %dpx %s", theme.FloatInsetBlur, css(t.FloatInset))
 	}
-	ls := make([]string, len(theme.ShadowFloat))
-	for i, l := range theme.ShadowFloat {
+	return shadow(theme.ShadowFloat)
+}
+
+// shadow writes e as a CSS box-shadow of black layers.
+func shadow(e theme.Elevation) string {
+	ls := make([]string, len(e))
+	for i, l := range e {
 		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(0 0 0 / %.3f)", l.Y, l.Blur, l.Spread, l.Alpha)
 	}
 	return strings.Join(ls, ", ")

@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -282,7 +283,7 @@ func withAccountHarness(t *testing.T, mk func(*testing.T, ...func(*coretest.Env)
 // dragDivider drags the sidebars' divider by dx and lets the drag go.
 func (h *harness) dragDivider(dx float32) {
 	h.t.Helper()
-	r, ok := h.tt.Find("Divider")
+	r, ok := h.tt.Find(i18n.T("shell.resize"))
 	if !ok {
 		h.t.Fatalf("no divider; texts %q", h.tt.Texts())
 	}
@@ -300,14 +301,14 @@ func (h *harness) dragDivider(dx float32) {
 func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	h, _ := withAccount(t)
 	h.see("全部收件箱")
-	start, _ := h.tt.Find("Divider")
+	start, _ := h.tt.Find(i18n.T("shell.resize"))
 	h.dragDivider(100)
-	moved, _ := h.tt.Find("Divider")
+	moved, _ := h.tt.Find(i18n.T("shell.resize"))
 	if d := moved.X - start.X; d < 99 || d > 101 {
 		t.Fatalf("divider moved %v, want 100", d)
 	}
 	h.openSettings("general")
-	if r, _ := h.tt.Find("Divider"); r.X != moved.X {
+	if r, _ := h.tt.Find(i18n.T("shell.resize")); r.X != moved.X {
 		t.Errorf("settings' divider at %v, mail's at %v: want one width", r.X, moved.X)
 	}
 	h.advance(sidebarSaveDelay)
@@ -320,20 +321,52 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	if h.app.sidebarW != theme.SidebarMaxWidth {
 		t.Errorf("dragged far right: %v, want %v", h.app.sidebarW, float32(theme.SidebarMaxWidth))
 	}
+	h.dragDivider(-(theme.SidebarMaxWidth - theme.SidebarMinWidth + theme.SidebarCollapsePull/2))
+	if h.app.sidebarW != theme.SidebarMinWidth || h.app.sidebarHidden {
+		t.Errorf("dragged just past the least: %v (hidden %v), want %v shown", h.app.sidebarW, h.app.sidebarHidden, float32(theme.SidebarMinWidth))
+	}
 	h.dragDivider(-1000)
-	if h.app.sidebarW != theme.SidebarMinWidth {
-		t.Errorf("dragged far left: %v, want %v", h.app.sidebarW, float32(theme.SidebarMinWidth))
+	if !h.app.sidebarHidden || h.app.sidebarW != theme.SidebarMinWidth {
+		t.Errorf("dragged far left: hidden %v at %v, want folded away, back at the drag's start %v", h.app.sidebarHidden, h.app.sidebarW, float32(theme.SidebarMinWidth))
+	}
+	// Folded, the window's left edge has the same grip: a short pull is not
+	// enough, a longer one brings the sidebar back.
+	pull := func(dx float32) {
+		r, ok := h.tt.Find(i18n.T("shell.resize")) // the edge grip comes before the list's
+		if !ok {
+			t.Fatal("no edge grip while the sidebar is folded")
+		}
+		x, y := r.X+r.W/2, r.Y+r.H/2
+		h.tt.Press(x, y)
+		h.tt.Move(x+dx/2, y)
+		h.tt.Move(x+dx, y)
+		h.tt.Release(x+dx, y)
+		h.drain()
+		h.tt.Frame()
+	}
+	pull(theme.SidebarCollapsePull / 2)
+	if !h.app.sidebarHidden {
+		t.Error("a short pull opened the sidebar")
+	}
+	pull(theme.SidebarCollapsePull * 2)
+	if h.app.sidebarHidden {
+		t.Error("a long pull left the sidebar folded")
+	}
+	h.app.sidebarHidden = true
+	h.tt.Frame()
+	pull(0) // a click
+	if h.app.sidebarHidden {
+		t.Error("a click on the edge grip left the sidebar folded")
 	}
 }
 
 // TestVibrancyShowsThroughTopBar: with the window's material on, the top
-// bar is drawn transparent, the sidebar's divider (kit.Split, which sets
-// the theme mid-frame) notwithstanding.
+// bar is drawn transparent, with the sidebar beside the content.
 func TestVibrancyShowsThroughTopBar(t *testing.T) {
 	h, _ := withAccount(t)
 	h.app.vibrancy = true
 	h.see("全部收件箱")
-	if _, ok := h.tt.Find("Divider"); !ok {
+	if _, ok := h.tt.Find(i18n.T("shell.resize")); !ok {
 		t.Fatal("no sidebar divider: the mail page should split")
 	}
 	h.tt.Frame()

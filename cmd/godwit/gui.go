@@ -221,7 +221,7 @@ func gui(ctx context.Context, dataDir string) int {
 		plat.win = win
 		// The Wit page is registered before it loads (loadAfterSetup):
 		// its first call finds its role.
-		if v, err := win.NewWebView(mygo.WebViewOptions{}); err != nil {
+		if v, err := win.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
 			log.Printf("the Wit page: %v", err) // the Ask page shows no content
 		} else if err := loadAfterSetup(func() {
 			lockPage(v.Page())
@@ -251,7 +251,7 @@ func gui(ctx context.Context, dataDir string) int {
 			mygo.Separator(), {Role: mygo.RoleClose}}
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Role: mygo.RoleAppMenu},
-			{Label: i18n.T("shell.rail.mail"), Submenu: mailMenu},
+			{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
 			{Role: mygo.RoleEditMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))

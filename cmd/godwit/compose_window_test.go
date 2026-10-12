@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // fakeWindows is the compose windows as the quit hook sees them.
@@ -138,7 +139,10 @@ func TestComposeWindowOptions(t *testing.T) {
 		}
 		want := mygo.TitleBarStyle("") // the page draws no window controls of Windows or Linux
 		if goos == "darwin" {
-			want = mygo.TitleBarHiddenInset // transparent, the traffic lights over the page's top bar
+			want = mygo.TitleBarHidden // the traffic lights over the page's top bar
+			if p := o.TrafficLightPosition; p == nil || p.X != trafficLightInset || p.Y != (theme.TopBarHeight-trafficLightSize)/2 {
+				t.Errorf("darwin: traffic lights at %+v, want centered in the top bar as the main window's", p)
+			}
 		}
 		if o.TitleBarStyle != want {
 			t.Errorf("%s: title bar %q, want %q", goos, o.TitleBarStyle, want)

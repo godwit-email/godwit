@@ -74,6 +74,8 @@ func TestSettingsValidation(t *testing.T) {
 		"notrans":  func(x *Settings) { x.NoTranslate = []string{"en", "x y"} },
 		"narrow":   func(x *Settings) { x.SidebarWidth = 239 },
 		"wide":     func(x *Settings) { x.SidebarWidth = 481 },
+		"list":     func(x *Settings) { x.ListWidth = 279 },
+		"listwide": func(x *Settings) { x.ListWidth = 561 },
 	} {
 		in := base
 		mod(&in)

@@ -2,10 +2,12 @@ package i18n
 
 var zh = map[string]string{
 	// shell
-	"shell.rail.mail":              "邮件",
-	"shell.rail.wit":               "Wit",
-	"shell.rail.settings":          "设置",
+	"shell.nav.mail":               "邮件",
+	"shell.nav.wit":                "Wit",
+	"shell.nav.settings":           "设置",
+	"shell.nav.back_to":            "返回%s",
 	"shell.sidebar.collapse":       "收起侧栏",
+	"shell.resize":                 "调整大小",
 	"shell.back":                   "后退",
 	"shell.forward":                "前进",
 	"shell.sync.syncing":           "同步中…",
@@ -721,7 +723,6 @@ var zh = map[string]string{
 	"app.open_failed.other":      "数据库无法打开",
 
 	// ask and the Wit panel
-	"ask.heading":                      "Wit",
 	"ask.new":                          "新对话",
 	"ask.recent":                       "最近",
 	"ask.untitled":                     "未命名对话",

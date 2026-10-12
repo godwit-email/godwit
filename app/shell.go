@@ -30,7 +30,7 @@ type pageView interface {
 // goos is a var so a test can pose as another platform.
 var goos = runtime.GOOS
 
-// chromeMetrics is the top bar's height and the panel's corner radius. Windows
+// chromeMetrics is the top bar's height and the panels' corner radius. Windows
 // draws the design's 40 px strip with 8 px corners; elsewhere the bar is at
 // least TopBarHeight (the window controls only take room beside our bar).
 func chromeMetrics(titleH float32, t theme.Tokens) (barH, radius float32) {
@@ -150,8 +150,8 @@ func (a *App) toastErr(err error) {
 	}
 }
 
-// View builds the window: the title bar, the rail, and the page's sidebar
-// and content as one panel. First run shows only the onboarding page.
+// View builds the window: the title bar, then the page's sidebar on the
+// window material beside its content. First run shows only the onboarding page.
 func (a *App) View(c *ui.Context) {
 	theme.Apply(c, theme.FromSettings(a.settings, c.Theme().Dark))
 	t, th := theme.Of(c), c.Theme()
@@ -185,10 +185,7 @@ func (a *App) View(c *ui.Context) {
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
 		a.titleBar(c, barH)
-		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-			a.rail(c)
-			a.panel(c)
-		})
+		a.body(c)
 	}
 	if a.addAccount != nil {
 		a.addAccount.sheetView(c)
@@ -197,14 +194,15 @@ func (a *App) View(c *ui.Context) {
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
-	// Last: c.SetTheme, which kit.Split calls mid-frame, resets the root's
-	// background to the theme's, which would cover the window's material.
-	// On the root, which overlays (menus, dialogs, Select lists, toasts) attach to.
+	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
+	// attach to: a c.SetTheme mid-frame resets its background to the theme's,
+	// which would cover the window's material.
 	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Body))
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
-// window. The page's title starts where the panel does.
+// window. The page's title lines up with the content's text; settings shows
+// neither a title nor the sync status (its sidebar names the page).
 func (a *App) titleBar(c *ui.Context, h float32) {
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
@@ -216,7 +214,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	ui.Row(c).Height(h).FillWidth().Padding(0, padR, 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		if !a.sidebarHidden {
-			lead.MinWidth(max(0, theme.RailWidth+a.sidebarWidth()-padL))
+			lead.MinWidth(max(0, a.contentLeft(c)-padL))
 		}
 		lead.Children(func() {
 			winCaption(c)
@@ -231,9 +229,11 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			ghost.Disabled = len(a.ahead) == 0
 			kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
 		})
+		if a.route.Page == PageSettings {
+			return
+		}
 		if title, sub := a.page().Title(); title != "" {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				kit.Separator(c, true).Margin(0, th.Space(2), 0, 0)
+			ui.Row(c).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(4)).Children(func() {
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
@@ -312,50 +312,142 @@ func (a *App) ago(t time.Time) string {
 	}
 }
 
-// rail is the icon bar: Mail and Wit at the top, Settings at the bottom.
-func (a *App) rail(c *ui.Context) {
+// body is the page's sidebar, on the window material, beside its content,
+// inset from the window's edges; the content draws its own panels.
+func (a *App) body(c *ui.Context) {
 	th := c.Theme()
-	ui.Column(c).Width(theme.RailWidth).AlignItems(ui.Center).Gap(th.Space(1.5)).Padding(th.Space(1), 0, th.Space(3), 0).Children(func() {
-		a.railItem(c, "mail", i18n.T("shell.rail.mail"), Route{Page: PageMail, View: core.View{Unified: "inbox"}})
-		a.railItem(c, "sparkles", i18n.T("shell.rail.wit"), Route{Page: PageWit})
-		ui.Spacer(c)
-		if a.dev {
-			a.railItem(c, "component", "Kit", Route{Page: PageKit})
-		}
-		a.railItem(c, "sliders-horizontal", i18n.T("shell.rail.settings"), Route{Page: PageSettings})
-	})
-}
-
-func (a *App) railItem(c *ui.Context, icon, label string, r Route) {
-	kit.RailButton(c, icon, label, a.route.Page == r.Page, func() { a.navigate(r) })
-}
-
-// panel is the page's sidebar and content as one rounded block, inset from
-// the window's right and bottom edges as onboarding's panel is.
-func (a *App) panel(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
 	p := a.page()
-	_, rad := chromeMetrics(c.TitleBar().Height, t)
-	panel := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Margin(0, th.Space(2), th.Space(2), 0).Radius(rad).Clip().Background(t.Background).
-		Border(theme.Hairline, t.Outline)
-	kit.Elevate(c, panel, theme.ShadowXs).Children(func() {
+	padL := th.Space(2)
+	if a.sidebarHidden {
+		padL = 0 // the edge grip takes the inset
+	}
+	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(0, th.Space(2), th.Space(2), padL).Children(func() {
 		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
 		if a.sidebarHidden {
-			content()
+			a.edgeGrip(c, content)
 			return
 		}
 		a.sidebarW = a.sidebarWidth()
-		split := kit.Split(c, &a.sidebarW, func() {
-			// Rounded itself, inside the panel's outline: the GPU renderer does not
-			// round the panel's clip, and the material shows past a square corner.
-			r := rad - theme.Hairline
-			ui.Column(c).Fill().Padding(th.Space(3)).Gap(th.Space(0.5)).Radius(r, 0, 0, r).Background(t.Sidebar).Children(func() { p.Sidebar(c) })
-		}, content).Grow(1)
+		before := a.sidebarW
+		changed, dragging := kit.Resizer(c, &a.sidebarW, th.Space(2), i18n.T("shell.resize"), nil, func() {
+			top := th.Space(3)
+			if a.route.Page == PageMail || a.route.Page == PageWit {
+				top = 0 // the page switch sits right under the title bar
+			}
+			ui.Column(c).Fill().Padding(top, th.Space(3), th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
+				ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
+				a.sidebarFoot(c)
+			})
+		}, content)
+		a.collapsePull(before, dragging)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
-		if split.Changed() {
-			a.saveSidebarWidth()
+		if changed {
+			a.saveWidths()
 		}
 	})
+}
+
+// edgeGrip is the folded sidebar's way back: the same grip in the window's
+// left inset, beside content; dragging it SidebarCollapsePull to the right
+// (or a click, or, focused, the right arrow) brings the sidebar back at its width.
+func (a *App) edgeGrip(c *ui.Context, content func()) {
+	var pulled float32 // the grip's first pane stays empty: the drag only counts
+	open := func() { a.sidebarHidden = false }
+	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), i18n.T("shell.resize"), open, func() {}, content)
+	if changed && !dragging && pulled > 0 {
+		a.sidebarHidden = false
+		return
+	}
+	if !dragging {
+		a.sidebarPull = 0
+		return
+	}
+	if a.sidebarPull = max(0, a.sidebarPull+pulled); a.sidebarPull >= theme.SidebarCollapsePull {
+		a.sidebarHidden, a.sidebarPull = false, 0
+	}
+}
+
+// collapsePull folds the sidebar away when a drag goes on past its least
+// width by SidebarCollapsePull, back at the width the drag started from
+// (before is the width this frame started with).
+func (a *App) collapsePull(before float32, dragging bool) {
+	if !dragging {
+		a.sidebarPull, a.sidebarDragFrom = 0, 0
+		return
+	}
+	if a.sidebarDragFrom == 0 {
+		a.sidebarDragFrom = before
+	}
+	// Past the least width the sidebar stays at it while the pull grows; a
+	// move back right takes the pull back first.
+	if a.sidebarPull > 0 || a.sidebarW < theme.SidebarMinWidth {
+		if pull := a.sidebarPull + theme.SidebarMinWidth - a.sidebarW; pull >= 0 {
+			a.sidebarPull, a.sidebarW = pull, theme.SidebarMinWidth
+		} else {
+			a.sidebarPull, a.sidebarW = 0, theme.SidebarMinWidth-pull
+		}
+	}
+	if a.sidebarPull >= theme.SidebarCollapsePull {
+		a.sidebarHidden = true
+		a.sidebarW, a.sidebarPull, a.sidebarDragFrom = a.sidebarDragFrom, 0, 0
+	}
+}
+
+// contentLeft is where the content's panels start, from the window's left edge.
+func (a *App) contentLeft(c *ui.Context) float32 {
+	th := c.Theme()
+	return th.Space(2) + a.sidebarWidth() + th.Space(2)
+}
+
+// panelRadius is the corner radius of the content's panels (kit.Panel).
+func panelRadius(c *ui.Context) float32 {
+	_, r := chromeMetrics(c.TitleBar().Height, theme.Of(c))
+	return r
+}
+
+// pageSwitch is the Mail / Wit switch at the top of their sidebars.
+func (a *App) pageSwitch(c *ui.Context) ui.Element {
+	return kit.NavSwitch(c,
+		kit.NavItem{Icon: "mail", Label: i18n.T("shell.nav.mail"), Selected: a.route.Page == PageMail, OnClick: func() { a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) }},
+		kit.NavItem{Icon: "sparkles", Label: i18n.T("shell.nav.wit"), Selected: a.route.Page == PageWit, OnClick: func() { a.navigate(Route{Page: PageWit}) }})
+}
+
+// sidebarFoot is pinned under the page's sidebar: Settings (and, in dev
+// builds, the Kit); in settings, the way back to the page it was opened from,
+// in the same spot.
+func (a *App) sidebarFoot(c *ui.Context) {
+	th := c.Theme()
+	item := func(icon, label string, r Route) {
+		b := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(r) }}).Gap(th.Space(2.5))
+		b.Children(func() {
+			kit.SidebarIcon(c, b, icon, false)
+			ui.Text(c, label)
+		})
+	}
+	if a.route.Page == PageSettings {
+		r := a.leaveSettings()
+		name := i18n.T("shell.nav.mail")
+		if r.Page == PageWit {
+			name = i18n.T("shell.nav.wit")
+		}
+		item("arrow-left", i18n.Tf("shell.nav.back_to", name), r)
+		return
+	}
+	if a.dev {
+		item("component", "Kit", Route{Page: PageKit})
+	}
+	item("sliders-horizontal", i18n.T("shell.nav.settings"), Route{Page: PageSettings})
+}
+
+// leaveSettings is where settings' way back goes: the last page before
+// settings in the history, else the inbox.
+func (a *App) leaveSettings() Route {
+	for i := len(a.history) - 1; i >= 0; i-- {
+		if r := a.history[i]; r.Page == PageMail || r.Page == PageWit {
+			return r
+		}
+	}
+	return Route{Page: PageMail, View: core.View{Unified: "inbox"}}
 }
 
 // sidebarWidth is the page sidebars' width: as dragged, else as saved, else
@@ -367,19 +459,34 @@ func (a *App) sidebarWidth() float32 {
 	return float32(cmp.Or(a.settings.SidebarWidth, theme.SidebarWidth))
 }
 
+// listWidth is the mail list's width: as dragged, else as saved, else the default.
+func (a *App) listWidth() float32 {
+	if a.listW != 0 {
+		return a.listW
+	}
+	return float32(cmp.Or(a.settings.ListWidth, theme.ListWidth))
+}
+
 // sidebarSaveDelay is how long a drag rests before its width is saved.
 const sidebarSaveDelay = 400 * time.Millisecond
 
-// saveSidebarWidth saves the dragged width once the drag rests, not every frame.
-func (a *App) saveSidebarWidth() {
+// saveWidths saves the dragged widths (the sidebars', the mail list's) once
+// the drag rests, not every frame.
+func (a *App) saveWidths() {
 	if a.sidebarSave != nil {
 		a.sidebarSave()
 	}
 	a.sidebarSave = a.after(sidebarSaveDelay, func() {
 		a.sidebarSave = nil
-		if w := int(math.Round(float64(a.sidebarW))); w != a.settings.SidebarWidth {
-			st := a.settings
-			st.SidebarWidth = w
+		st := a.settings
+		round := func(w float32, saved int) int {
+			if w == 0 {
+				return saved // not dragged yet
+			}
+			return int(math.Round(float64(w)))
+		}
+		st.SidebarWidth, st.ListWidth = round(a.sidebarW, st.SidebarWidth), round(a.listW, st.ListWidth)
+		if st.SidebarWidth != a.settings.SidebarWidth || st.ListWidth != a.settings.ListWidth {
 			a.changeSettings(st)
 		}
 	})

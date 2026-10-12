@@ -197,7 +197,7 @@ func TestSettingsGeneralApplies(t *testing.T) {
 	h.see("外观")
 	h.click("深色")
 	h.called("SetThemeSource dark")
-	px := h.tt.Image().RGBAAt(theme.RailWidth/2, 400) // the rail shows the window's color
+	px := h.tt.Image().RGBAAt(2, 400) // the window's left inset shows its color
 	if int(px.R)+int(px.G)+int(px.B) > 3*96 {
 		t.Fatalf("window pixel %v is not dark", px)
 	}

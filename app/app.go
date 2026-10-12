@@ -185,8 +185,12 @@ type App struct {
 	dev            bool
 	pages          map[Page]pageView
 	sidebarHidden  bool
-	sidebarW       float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
-	sidebarSave    func()  // stops the pending save of a dragged width
+	// sidebarPull is how far a drag has gone past the sidebar's least width,
+	// and sidebarDragFrom the width the drag started from (0: no drag).
+	sidebarPull, sidebarDragFrom float32
+	sidebarW                     float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
+	listW                        float32 // the mail list's width as dragged; 0 until the mail page shows
+	sidebarSave                  func()  // stops the pending save of a dragged width
 
 	dirty             []events.Event // events since the last refresh
 	refreshStop       func()         // the pending throttled refresh; nil when none

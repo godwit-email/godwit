@@ -2,10 +2,12 @@ package i18n
 
 var en = map[string]string{
 	// shell
-	"shell.rail.mail":              "Mail",
-	"shell.rail.wit":               "Wit",
-	"shell.rail.settings":          "Settings",
+	"shell.nav.mail":               "Mail",
+	"shell.nav.wit":                "Wit",
+	"shell.nav.settings":           "Settings",
+	"shell.nav.back_to":            "Back to %s",
 	"shell.sidebar.collapse":       "Collapse sidebar",
+	"shell.resize":                 "Resize",
 	"shell.back":                   "Back",
 	"shell.forward":                "Forward",
 	"shell.sync.syncing":           "Syncing…",
@@ -721,7 +723,6 @@ var en = map[string]string{
 	"app.open_failed.other":      "the database could not be opened",
 
 	// ask and the Wit panel
-	"ask.heading":                      "Wit",
 	"ask.new":                          "New conversation",
 	"ask.recent":                       "Recent",
 	"ask.untitled":                     "Untitled conversation",

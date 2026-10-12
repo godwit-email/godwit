@@ -100,6 +100,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     entry: () => import("@/wit-page/main"),
     setup() {
       const conv = state === "empty" ? 0 : 1;
+      // the page is clear over the native window's material (wit.html's body): show its colour
+      document.body.style.background = "var(--window)";
       installFake({
         "WitPage.Load": async () => fx.witPage(mode, conv),
         "WitPage.Follow": async () => (conv ? fx.witConversation() : fx.witEmpty()),
