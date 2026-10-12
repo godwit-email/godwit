@@ -36,18 +36,38 @@ var cssAllowed = func() map[string]bool {
 	return m
 }()
 
+// styleSheet is a <style> element's sheet, and its media attribute.
+type styleSheet struct{ text, media string }
+
 // sanitizeCSS is the safe, scoped form of the stylesheets, "" when nothing
 // stays, and whether the mail has styles of its own for the dark scheme. A
-// block that does not parse is left out; the others are kept.
-func sanitizeCSS(sheets []string) (out string, darkAware bool) {
+// block that does not parse is left out, as is one whose media cannot be
+// kept: its rules would hold where it does not; the others are kept.
+func sanitizeCSS(sheets []styleSheet) (out string, darkAware bool) {
 	var b strings.Builder
 	rules := 0
-	for _, text := range sheets {
+	for _, sh := range sheets {
+		text := sh.text
 		if len(text) > maxCSSBytes {
 			text = text[:maxCSSBytes]
 		}
 		sheet, err := parser.Parse(text)
 		if err != nil {
+			continue
+		}
+		if m := strings.TrimSpace(sh.media); m != "" && !strings.EqualFold(m, "all") {
+			// as one @media around the sheet: its own @media, nested, go
+			prelude, scheme, ok := mediaQuery(m)
+			if !ok {
+				continue
+			}
+			var inner strings.Builder
+			for _, r := range sheet.Rules {
+				writeRule(&inner, r, scheme, 1, &rules, &darkAware)
+			}
+			if inner.Len() > 0 {
+				b.WriteString("@media " + prelude + "{" + inner.String() + "}\n")
+			}
 			continue
 		}
 		for _, r := range sheet.Rules {

@@ -174,7 +174,7 @@ func render(parent *html.Node) string {
 // received mail the links move to data-href here: bluemonday drops an href it
 // cannot parse (a space, a {placeholder}, a bad port), which would leave the
 // link dead.
-func prepare(src string, received bool) (string, int, []string) {
+func prepare(src string, received bool) (string, int, []styleSheet) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
 		return "", 0, nil
@@ -182,7 +182,7 @@ func prepare(src string, received bool) (string, int, []string) {
 	blocked := 0
 	var body *html.Node
 	var pixels, styles []*html.Node
-	var sheets []string
+	var sheets []styleSheet
 	walkNodes(doc, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
@@ -192,7 +192,8 @@ func prepare(src string, received bool) (string, int, []string) {
 		}
 		if n.DataAtom == atom.Style {
 			if received { // kept by sanitizeCSS, in what Sanitize returns
-				sheets = append(sheets, nodeText(n))
+				media, _ := attr(n, "media") // the sheet holds only where it does
+				sheets = append(sheets, styleSheet{text: nodeText(n), media: media})
 			}
 			styles = append(styles, n)
 			return
@@ -245,7 +246,7 @@ func prepare(src string, received bool) (string, int, []string) {
 	}
 	if received { // the page's own background sits on <body>, which only its children survive: wrap them
 		w := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
-		for _, k := range []string{"style", "bgcolor"} {
+		for _, k := range []string{"style", "bgcolor", bgAttr} { // bgAttr: the body's own background image
 			if v, ok := attr(body, k); ok {
 				setAttr(w, k, v)
 			}

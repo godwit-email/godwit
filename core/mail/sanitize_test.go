@@ -307,3 +307,23 @@ func TestSanitizeBackgroundShorthand(t *testing.T) {
 	assert.Contains(t, safe, `data-bg="https://c.example/h.png"`)
 	assert.NotContains(t, safe, "background-image")
 }
+
+// A <style> with a media attribute holds only there: its rules keep the
+// condition (a scheme's as the reader's class), or go when it cannot be kept.
+func TestSanitizeStyleMedia(t *testing.T) {
+	safe, _ := mail.Sanitize(`<style media="(prefers-color-scheme: dark)">.a { color: #eee }</style>`+
+		`<style media="screen and (max-width: 600px)">.b { width: 100% }</style>`+
+		`<style media="url(x)">.c { color: red }</style><p class="a b c">x</p>`, nil, false)
+	css, _, _ := strings.Cut(strings.TrimPrefix(safe, `<style data-dark="">`), "</style>")
+	assert.True(t, strings.HasPrefix(safe, `<style data-dark="">`), "dark-aware: its dark sheet is")
+	assert.Contains(t, css, "@media (min-width:0px){#godwit-body.godwit-dark .a{color:#eee;}")
+	assert.Contains(t, css, "@media screen and (max-width: 600px){#godwit-body .b{width:100%;}")
+	assert.NotContains(t, css, ".c", "a media it cannot keep: the sheet goes")
+}
+
+// A body's own background image comes along with its wrapper.
+func TestSanitizeBodyBackgroundImage(t *testing.T) {
+	safe, _ := mail.Sanitize(`<html><body style="background:#eee url(https://c.example/bg.png) repeat-x"><p>x</p></body></html>`, nil, true)
+	assert.Contains(t, safe, `data-bg="https://c.example/bg.png"`)
+	assert.Contains(t, safe, "background: #eee repeat-x")
+}
