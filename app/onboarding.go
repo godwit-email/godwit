@@ -66,6 +66,7 @@ type onboarding struct {
 	oauthErr             error
 	report               core.CheckReport
 	checking, adding     bool
+	confetti             *burst // thrown as the check passes, dropped once it lands
 	invalid, invalidNext string // the form's own settings-step failure, in words
 	name                 string
 	sync                 core.SyncRange
@@ -324,6 +325,13 @@ func (o *onboarding) connect() {
 		o.report = r
 		if r.OK() {
 			o.goTo(stepDone)
+			b := newBurst()
+			o.confetti = b
+			o.a.after(confettiLife, func() {
+				if o.confetti == b {
+					o.confetti = nil
+				}
+			})
 		}
 	})
 }
@@ -847,9 +855,16 @@ func (o *onboarding) checkView(c *ui.Context) {
 func (o *onboarding) doneView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().FontSize(t.Text.Xl).Children(func() {
+		badge := ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().FontSize(t.Text.Xl).Children(func() {
 			ui.Text(c, "✓")
 		})
+		if c.Preferences().ReduceMotion {
+			o.confetti = nil
+		}
+		if b := o.confetti; b != nil && badge.Bounds().W > 0 { // from the badge's centre, once it was laid out
+			x, y := badge.LocalToWindow(theme.DoneBadge/2, theme.DoneBadge/2)
+			ui.Overlay(c, func() { b.build(c, x, y) })
+		}
 		lineText(c, i18n.T("onboarding.done.title"), t.Text.X2l).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 		line := strings.TrimSpace(o.email)
 		if f := o.foldersText(); f != "" {
