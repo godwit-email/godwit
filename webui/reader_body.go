@@ -141,7 +141,9 @@ func (p *preparer) background(n *html.Node) {
 	if u == "" {
 		return
 	}
-	decl := "background-image:url(" + u + ")"
+	// --godwit-bg: the reader draws it again, inverted back, on its own layer
+	// when it inverts a light-only mail in the dark (web/src/reader/frame.ts).
+	decl := "background-image:url(" + u + ");--godwit-bg:url(" + u + ")"
 	if st := attrIndex(n, "style"); st >= 0 {
 		n.Attr[st].Val = strings.TrimRight(strings.TrimSpace(n.Attr[st].Val), ";") + ";" + decl
 		return

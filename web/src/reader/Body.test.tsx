@@ -111,9 +111,9 @@ async function start(b: ReaderBody) {
   return loaded();
 }
 
-test("the iframe is sandboxed with allow-same-origin only, borderless and unscrolled", async () => {
+test("the iframe is sandboxed (scripts allowed for WebKit's listeners; the CSP forbids them), borderless and unscrolled", async () => {
   const { frame } = await start(body(1, "<p>x</p>"));
-  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin allow-scripts");
   expect(frame.getAttribute("scrolling")).toBe("no");
   expect(frame.style.border).toMatch(/^0/);
   expect(frame.style.width).toBe("100%");

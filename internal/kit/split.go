@@ -12,11 +12,19 @@ import (
 // down the gap's middle, and hovering that names it (label) beside it. It
 // reports whether *size changed, and whether the grip is being dragged; the
 // caller clamps *size. onClick, if any, is what a click on the grip does.
-func Resizer(c *ui.Context, size *float32, gap float32, label string, onClick func(), first, second func()) (changed, dragging bool) {
+// With over, the panels touch (they differ enough to need no gap, as a
+// sidebar and the content beside it): the grip, gap wide, rides second's
+// edge (its Hairline border) down the middle, reaching as little into either.
+// Gap is then GripWidth: first's scroll bar keeps further from its edge than
+// the grip reaches, so the grip runs beside it, not over it.
+func Resizer(c *ui.Context, size *float32, gap float32, over bool, label string, onClick func(), first, second func()) (changed, dragging bool) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(*size).Shrink(0).Clip().Children(first)
 		grip := ui.Box(c).Width(gap).Shrink(0).Center().Focusable().Role(ui.RoleSplitter).Label(label).Cursor(ui.CursorResizeEW)
+		if over {
+			grip.Absolute().Left(*size + float32(theme.Hairline)/2 - gap/2).Top(0).Bottom(0)
+		}
 		move := func(d float32) {
 			if d != 0 {
 				*size += d

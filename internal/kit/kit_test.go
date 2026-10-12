@@ -673,7 +673,7 @@ func TestKitResizerPill(t *testing.T) {
 	changed := false
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Row(c).Fill().Children(func() {
-			if ch, _ := Resizer(c, &size, 8, "Resize", nil, func() { ui.Text(c, "left") }, func() { ui.Text(c, "right") }); ch {
+			if ch, _ := Resizer(c, &size, 8, false, "Resize", nil, func() { ui.Text(c, "left") }, func() { ui.Text(c, "right") }); ch {
 				changed = true
 			}
 		})
@@ -697,6 +697,41 @@ func TestKitResizerPill(t *testing.T) {
 	tt.Frame()
 	if !changed || size < 199 || size > 201 {
 		t.Errorf("dragged 40: size %v (changed %v), want 200", size, changed)
+	}
+}
+
+// TestKitResizerOver: over, the panels touch and the grip rides second's
+// edge, 1 into each, taking the pointer there.
+func TestKitResizerOver(t *testing.T) {
+	size := float32(160)
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Row(c).Fill().Children(func() {
+			Resizer(c, &size, 3, true, "Resize", nil, func() { ui.Box(c).Fill().Label("first") }, func() { ui.Box(c).Fill().Label("second") })
+		})
+	}), 400, 200)
+	tt.Frame()
+	first, _ := tt.Find("first")
+	grip, _ := tt.Find("Resize")
+	second, _ := tt.Find("second")
+	if first.X != 0 || second.X != 160 || grip.X != 159 {
+		t.Errorf("first %v, grip %v, second %v: want them touching at 160, the grip from 159, on second's border", first, grip, second)
+	}
+	tt.Press(160, 100)
+	tt.Move(180, 100)
+	tt.Release(180, 100)
+	tt.Frame()
+	if size < 179 || size > 181 {
+		t.Errorf("dragged 20 by first's edge: size %v, want 180", size)
+	}
+	if _, ok := tt.Find("Resize"); !ok {
+		t.Fatal("grip gone")
+	}
+	tt.Press(190, 100) // second's, past the grip
+	tt.Move(205, 100)
+	tt.Release(205, 100)
+	tt.Frame()
+	if size < 179 || size > 181 {
+		t.Errorf("a drag in second moved the grip: size %v", size)
 	}
 }
 

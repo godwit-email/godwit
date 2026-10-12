@@ -47,36 +47,34 @@ func folderName(f core.Folder) string {
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			ui.Row(c).Padding(0, th.Space(1.5), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
-				a.pageSwitch(c)
-				ui.Spacer(c)
-				kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { p.searchOpen = true })
-			})
-			compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))
-			compose.Children(func() {
-				kit.SidebarIcon(c, compose, "square-pen", false)
-				ui.Text(c, i18n.T("mail.compose"))
-			})
-			ui.Box(c).Height(th.Space(2))
-			p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
-			p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
-			ui.Box(c).Height(th.Space(2.5))
-			for _, acc := range a.accounts {
-				p.account(c, acc)
-			}
-			if n := len(p.outbox); n > 0 {
-				p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
-			}
-			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
-				a.navigate(Route{Page: PageSettings})
-				a.openAddAccount()
-			}}).Children(func() {
-				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
-				ui.Text(c, i18n.T("mail.add_account"))
-			})
+	ui.Row(c).Padding(0, th.Space(1.5)+sidebarInset(c), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
+		a.pageSwitch(c)
+		ui.Spacer(c)
+		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+			OnClick(func() { p.searchOpen = true })
+	})
+	sidebarScroll(c, func() {
+		compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))
+		compose.Children(func() {
+			kit.SidebarIcon(c, compose, "square-pen", false)
+			ui.Text(c, i18n.T("mail.compose"))
+		})
+		ui.Box(c).Height(th.Space(2))
+		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
+		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
+		ui.Box(c).Height(th.Space(2.5))
+		for _, acc := range a.accounts {
+			p.account(c, acc)
+		}
+		if n := len(p.outbox); n > 0 {
+			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
+		}
+		kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
+			a.navigate(Route{Page: PageSettings})
+			a.openAddAccount()
+		}}).Children(func() {
+			ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
+			ui.Text(c, i18n.T("mail.add_account"))
 		})
 	})
 }

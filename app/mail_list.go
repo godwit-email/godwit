@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"maps"
 	"net/mail"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -72,6 +75,7 @@ func displayName(from string) string {
 type mailPage struct {
 	a *App
 
+	devPath string    // dev: the HTML file just written, to copy
 	view    core.View // what the list shows
 	threads bool      // items are threads (Settings.ThreadView when loaded)
 	items   []mailItem
@@ -488,7 +492,7 @@ func (p *mailPage) Content(c *ui.Context) {
 	a, th, r := p.a, c.Theme(), panelRadius(c)
 	_, isDrafts := draftsOf(p.folders, p.view)
 	a.listW = a.listWidth()
-	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), i18n.T("shell.resize"), nil, func() {
+	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), false, i18n.T("mail.resize_list"), nil, func() {
 		kit.Panel(c, r).Grow(1).Children(func() {
 			switch {
 			case p.view.Unified == "outbox":
@@ -730,8 +734,19 @@ func (p *mailPage) listView(c *ui.Context) {
 					act, target = k, on
 				}
 			}
+			if p.a.dev { // dev builds: the message's original HTML, for debugging the renderer
+				m.Separator()
+				if m.Item("复制 HTML 路径（dev）").Chosen() {
+					p.devHTML(it)
+				}
+			}
 		})
-	}).Grow(1).Padding(0, th.Space(2))
+	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart: two chosen ones stay two
+	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
+		c.WriteClipboard(p.devPath)
+		p.a.toast(p.devPath)
+		p.devPath = ""
+	}
 	l.Children(func() {
 		if len(rows) == 0 && p.loading { // the first load: placeholder rows
 			for range 6 {
@@ -1219,5 +1234,45 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		if pending == 0 {
 			finish()
 		}
+	})
+}
+
+// devHTML writes the original HTML, as received and unsanitized, of it (a
+// thread's newest message) to a temporary file, for the list to copy its path.
+func (p *mailPage) devHTML(it mailItem) {
+	a := p.a
+	var path string
+	a.do(func(ctx context.Context) error {
+		id := it.ID
+		if it.Thread {
+			t, err := a.svc.GetThread(ctx, it.ID)
+			if err != nil {
+				return err
+			}
+			if len(t.Messages) == 0 {
+				return nil
+			}
+			id = t.Messages[len(t.Messages)-1].ID
+		}
+		raw, err := a.svc.GetRawMessage(ctx, id)
+		if err != nil {
+			return err
+		}
+		parsed, err := gomail.Parse(raw)
+		if err != nil {
+			return err
+		}
+		dir, err := a.tempDir(a.plat.TempDir())
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(dir, fmt.Sprintf("message-%d.html", id))
+		return os.WriteFile(path, []byte(parsed.HTML), 0o600)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		p.devPath = path
 	})
 }

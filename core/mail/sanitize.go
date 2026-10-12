@@ -21,7 +21,7 @@ var remoteURL = regexp.MustCompile(`(?i)^https?://[^\s\\]+$`)
 const cidScheme = "godwit-cid:" // bluemonday drops cid:, so it is swapped for this until the final pass
 
 // Safe CSS values: no parentheses except rgb()/rgba(), so url(), expression() and @import cannot occur.
-var cssValue = regexp.MustCompile(`(?i)^([a-z0-9#%.,\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$`)
+var cssValue = regexp.MustCompile(`(?i)^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$`)
 
 var cssProps = []string{
 	"color", "background-color", "font-family", "font-size", "font-weight", "font-style", "text-align",
@@ -30,6 +30,17 @@ var cssProps = []string{
 	"padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
 	"border", "border-top", "border-right", "border-bottom", "border-left", "border-color", "border-style",
 	"border-width", "border-collapse", "border-spacing", "border-radius",
+	// a background image shows at its natural size without these (a big cover is just its corner)
+	"background-size", "background-repeat", "background-position",
+	// layout: a card is centred at a max-width, buttons keep their width, corners stay round
+	"max-width", "min-width", "max-height", "min-height", "box-sizing", "float",
+	"border-top-left-radius", "border-top-right-radius", "border-bottom-left-radius", "border-bottom-right-radius",
+	"border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
+	"border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
+	"border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+	"overflow", "overflow-x", "overflow-y", "opacity", "letter-spacing", "text-transform", "text-indent",
+	"white-space", "word-break", "list-style-type", "background", "font", "box-shadow", "text-shadow",
+	"table-layout", "clear", "outline", "empty-cells", "direction",
 }
 
 func policy() *bluemonday.Policy {
@@ -92,6 +103,57 @@ func safeRemoteImage(u string) bool {
 	return err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != ""
 }
 
+// cleanNames keeps of n's class names only the plain ones (letters, digits, - and _),
+// and its id when it is one and not the reader's own container.
+func cleanNames(n *html.Node) {
+	plain := func(s string) bool {
+		for _, r := range s {
+			if !(r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+				return false
+			}
+		}
+		return s != ""
+	}
+	if c, ok := attr(n, "class"); ok {
+		var keep []string
+		for _, name := range strings.Fields(c) {
+			if plain(name) {
+				keep = append(keep, name)
+			}
+		}
+		setAttr(n, "class", strings.Join(keep, " "))
+	}
+	if id, ok := attr(n, "id"); ok && (!plain(id) || strings.EqualFold(id, "godwit-body")) {
+		delAttr(n, "id")
+	}
+}
+
+// openable reports whether the reader can open href: http, https or mailto,
+// as url.Parse reads it, as the reader's opener does (webui.ReaderPage.OpenLink);
+// a link it would refuse (a bad port) is no link.
+func openable(href string) bool {
+	u, err := url.Parse(href)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "mailto":
+		return true
+	}
+	return false
+}
+
+// nodeText is the text directly inside n (a <style>'s sheet).
+func nodeText(n *html.Node) string {
+	var b strings.Builder
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.TextNode {
+			b.WriteString(c.Data)
+		}
+	}
+	return b.String()
+}
+
 func walkNodes(n *html.Node, f func(*html.Node)) {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		f(c)
@@ -108,15 +170,19 @@ func render(parent *html.Node) string {
 }
 
 // prepare counts remote resources in the original HTML and swaps cid: for the
-// placeholder scheme, returning the body-only markup for bluemonday.
-func prepare(src string) (string, int) {
+// placeholder scheme, returning the body-only markup for bluemonday. For
+// received mail the links move to data-href here: bluemonday drops an href it
+// cannot parse (a space, a {placeholder}, a bad port), which would leave the
+// link dead.
+func prepare(src string, received bool) (string, int, []styleSheet) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
-		return "", 0
+		return "", 0, nil
 	}
 	blocked := 0
 	var body *html.Node
-	var pixels []*html.Node
+	var pixels, styles []*html.Node
+	var sheets []styleSheet
 	walkNodes(doc, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
@@ -124,11 +190,30 @@ func prepare(src string) (string, int) {
 		if n.DataAtom == atom.Body {
 			body = n
 		}
+		if n.DataAtom == atom.Style {
+			if received { // kept by sanitizeCSS, in what Sanitize returns
+				media, _ := attr(n, "media") // the sheet holds only where it does
+				sheets = append(sheets, styleSheet{text: nodeText(n), media: media})
+			}
+			styles = append(styles, n)
+			return
+		}
 		delAttr(n, bgAttr)
+		if received {
+			delAttr(n, "data-href") // only ours below; the policy lets it through
+			cleanNames(n)
+			if href, ok := attr(n, "href"); ok && (n.DataAtom == atom.A || n.DataAtom == atom.Area) {
+				if href = strings.TrimSpace(href); openable(href) {
+					setAttr(n, "data-href", href)
+				}
+				delAttr(n, "href")
+			}
+		}
 		if s, ok := attr(n, "style"); ok && strings.Contains(strings.ToLower(s), "url(") {
 			blocked++
-			if u := backgroundURL(s); u != "" {
+			if rest, u := splitBackground(s); u != "" {
 				setAttr(n, bgAttr, u)
+				setAttr(n, "style", rest)
 			}
 		}
 		if n.DataAtom != atom.Img {
@@ -153,13 +238,28 @@ func prepare(src string) (string, int) {
 			}
 		}
 	})
-	for _, n := range pixels {
+	for _, n := range append(pixels, styles...) {
 		n.Parent.RemoveChild(n)
 	}
 	if body == nil {
-		return "", blocked
+		return "", blocked, nil
 	}
-	return render(body), blocked
+	if received { // the page's own background sits on <body>, which only its children survive: wrap them
+		w := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
+		for _, k := range []string{"style", "bgcolor", bgAttr} { // bgAttr: the body's own background image
+			if v, ok := attr(body, k); ok {
+				setAttr(w, k, v)
+			}
+		}
+		if len(w.Attr) > 0 {
+			for c := body.FirstChild; c != nil; c = body.FirstChild {
+				body.RemoveChild(c)
+				w.AppendChild(c)
+			}
+			body.AppendChild(w)
+		}
+	}
+	return render(body), blocked, sheets
 }
 
 var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
@@ -214,8 +314,21 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 // data-href (not navigable); remote images are dropped unless loadRemote.
 // blockedRemote counts remote resources found in the original HTML.
 func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int) {
-	prepared, blocked := prepare(src)
-	return finish(policy().Sanitize(prepared), inline, nil, loadRemote, false), blocked
+	prepared, blocked, sheets := prepare(src, true)
+	p := policy()
+	p.AllowAttrs("data-href").OnElements("a", "area")
+	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
+	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false)
+	if css, dark := sanitizeCSS(sheets); css != "" {
+		open := "<style>"
+		if dark {
+			// The reader keeps the mail's own dark styles, not its own inversion. As
+			// html.Render writes it, so a body written again (the image proxy's) starts the same.
+			open = `<style data-dark="">`
+		}
+		safe = open + css + "</style>" + safe
+	}
+	return safe, blocked
 }
 
 // SanitizeCompose cleans pasted content in the composer: same whitelist, no
@@ -226,7 +339,7 @@ func SanitizeCompose(src string) string { return SanitizeDraft(src, nil) }
 // Content-ID in cids (the draft account's signature images); any other cid,
 // data: or remote source is dropped.
 func SanitizeDraft(src string, cids map[string]bool) string {
-	prepared, _ := prepare(src)
+	prepared, _, _ := prepare(src, false)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
 	return finish(p.Sanitize(prepared), nil, cids, false, true)
@@ -350,57 +463,3 @@ func Blank(src string) bool {
 
 // JoinDraft is the draft body of its parts, as SplitDraft returns them.
 func JoinDraft(editable, quote, signature string) string { return editable + quote + signature }
-
-// backgroundURL is the first http(s) url() of the background or
-// background-image declaration of a style attribute, or "".
-func backgroundURL(style string) string {
-	for _, d := range splitDecls(style) {
-		prop, v, ok := strings.Cut(d, ":")
-		if p := strings.ToLower(strings.TrimSpace(prop)); !ok || (p != "background" && p != "background-image") {
-			continue
-		}
-		i := strings.Index(strings.ToLower(v), "url(")
-		if i < 0 {
-			continue
-		}
-		rest := v[i+len("url("):]
-		end := strings.IndexByte(rest, ')')
-		if end < 0 {
-			continue
-		}
-		u := strings.Trim(strings.TrimSpace(rest[:end]), `"'`)
-		if strings.HasPrefix(u, "//") {
-			u = "https:" + u
-		}
-		if remoteURL.MatchString(u) {
-			return u
-		}
-	}
-	return ""
-}
-
-// splitDecls splits a style attribute at the semicolons outside quotes and
-// parentheses (url(data:…;base64,…) holds one).
-func splitDecls(style string) []string {
-	var out []string
-	depth, start := 0, 0
-	var quote byte
-	for i := 0; i < len(style); i++ {
-		switch c := style[i]; {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'':
-			quote = c
-		case c == '(':
-			depth++
-		case c == ')':
-			depth = max(depth-1, 0)
-		case c == ';' && depth == 0:
-			out = append(out, style[start:i])
-			start = i + 1
-		}
-	}
-	return append(out, style[start:])
-}

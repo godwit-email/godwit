@@ -62,7 +62,7 @@ const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snipp
 
 func scanSummary(r []any) MessageSummary {
 	return MessageSummary{ID: store.Int(r[0]), ThreadID: store.Int(r[1]), FolderID: store.Int(r[2]),
-		Subject: store.Str(r[3]), From: store.Str(r[4]), Snippet: store.Str(r[5]),
+		Subject: store.Str(r[3]), From: store.Str(r[4]), Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
 		To: jsonList(store.Str(r[6])), Cc: jsonList(store.Str(r[7])), Date: time.Unix(store.Int(r[8]), 0),
 		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0}
 }

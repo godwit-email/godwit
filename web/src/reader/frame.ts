@@ -15,31 +15,68 @@ const color = (v: string | undefined) => (v && /^[#\w\s(),.%/+-]+$/.test(v) ? v 
 const size = (px: unknown) =>
   typeof px === "number" && Number.isFinite(px) && px > 0 && px < 200 ? px : 14;
 
-const base = (px: number) =>
+// line is the line height: plain text reads at 1.5; HTML mail sets its own, and where it does not
+// (a button, a footer) it gets the browser's normal, as in any mail client, not our reading height.
+const base = (px: number, line: string) =>
   "html,body{margin:0;padding:0}" +
-  `html{font:${px}px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;` +
+  `html{font:${px}px/${line} -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;` +
   "-webkit-text-size-adjust:100%}" +
   // Wide content scrolls sideways in the wrapper; vertically it is fitted (the page reports its height).
   "#godwit-body{overflow-x:auto;overflow-y:hidden;overflow-wrap:break-word;word-break:break-word}" +
   ":where([data-href]){cursor:pointer}" +
   "[data-href]:focus-visible{outline:2px solid #0b57d0;outline-offset:1px;border-radius:2px}";
 
-// HTML mail: a white sheet in either appearance, never inverted.
-const htmlCSS =
-  "html{background:#fff;color:#0a0a0a;color-scheme:light}" +
-  ":where([data-href]){color:#0b57d0;text-decoration:underline}" +
-  "#godwit-body img{max-width:100%!important}" +
-  ":where(#godwit-body img){height:auto}" +
-  "#godwit-body table{max-width:100%}" +
-  ":where(#godwit-body td,#godwit-body th){word-break:break-word}";
+// HTML mail follows the theme: transparent over the app's background, its own colours kept. The
+// classes on #godwit-body say which: godwit-dark in the dark theme (the mail's own (prefers-color-
+// scheme) styles are scoped to it and godwit-light by Go), and godwit-invert in the dark for a mail
+// with no dark styles of its own, which is drawn as itself and inverted (images back again), so it
+// reads as dark, not as a sheet. The defaults are :where, so the mail's own colours win.
+const INVERT = "invert(1) hue-rotate(180deg)";
+// An element with a background image from Go's image proxy (webui: --godwit-bg).
+const BG = '#godwit-body.godwit-invert [style*="--godwit-bg"]';
+const link = (c: string) => `text-decoration:underline;color:${c}`;
+
+const htmlCSS = (t: Theme, scheme: string) => {
+  const fg = (m: Record<string, string> | undefined) => color(m?.["--foreground"]);
+  return (
+    `html,body{background:transparent}html{color-scheme:${scheme}}` +
+    `:where(#godwit-body){color:${fg(t.light) || "#0a0a0a"}}` +
+    `:where(#godwit-body.godwit-dark){color:${fg(t.dark) || "#fafafa"}}` +
+    ":where(#godwit-body.godwit-invert){color:#0a0a0a}" +
+    `:where([data-href]){${link("#0b57d0")}}` +
+    `:where(#godwit-body.godwit-dark:not(.godwit-invert) [data-href]){${link("#8ab4f8")}}` +
+    `#godwit-body.godwit-invert{filter:${INVERT}}` +
+    `#godwit-body.godwit-invert img{filter:${INVERT}}` +
+    // A background image is drawn again on the element's own ::before, under its content, and only
+    // that layer is inverted back: inverting the element would invert its text back too.
+    `${BG}{position:relative;isolation:isolate;background-image:none!important}` +
+    `${BG}::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;` +
+    "background-image:var(--godwit-bg);background-size:inherit;background-position:inherit;" +
+    `background-repeat:inherit;border-radius:inherit;filter:${INVERT}}` +
+    "#godwit-body img{max-width:100%!important}" +
+    // keeps the ratio of an image shrunk to the width (its width and height attributes give the
+    // ratio); one with only a height (an icon sized by it) keeps that height
+    ":where(#godwit-body img:not([height]:not([width]))){height:auto}" +
+    "#godwit-body table{max-width:100%}" +
+    ":where(#godwit-body td,#godwit-body th){word-break:break-word}"
+  );
+};
+
+/** Whether the theme is the dark one; systemDark is the page's appearance, for "system". */
+export const isDark = (t: Theme, systemDark: boolean) =>
+  t.mode === "dark" || (t.mode === "system" && systemDark);
+
+// Go marks a stylesheet that has styles for the dark scheme (core/mail).
+const hasDarkStyles = (b: ReaderBody) => b.html.startsWith('<style data-dark="">');
 
 /**
  * The colour scheme of a body's document, also set on its iframe element (a scheme differing from
- * the iframe's would give it an opaque canvas): HTML mail is a light sheet; plain text follows the
- * theme's mode ("system": both, by the appearance).
+ * the iframe's would give it an opaque canvas): HTML mail is dark only in the dark theme and with
+ * dark styles of its own (else it is drawn light and inverted); plain text follows the theme's mode
+ * ("system": both, by the appearance).
  */
-export function frameScheme(b: ReaderBody, t: Theme): string {
-  if (b.html !== "") return "light";
+export function frameScheme(b: ReaderBody, t: Theme, systemDark = false): string {
+  if (b.html !== "") return isDark(t, systemDark) && hasDarkStyles(b) ? "dark" : "light";
   return t.mode === "light" || t.mode === "dark" ? t.mode : "light dark";
 }
 
@@ -61,14 +98,24 @@ const plainCSS = (t: Theme, scheme: string) => {
  * sanitized by Go; plain text escaped here) in #godwit-body. The theme gives plain text its colour
  * and both kinds the body font size.
  */
-export function buildSrcdoc(b: ReaderBody, t: Theme): string {
+export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string {
   const html = b.html !== "";
-  const css = base(size(t.bodyFontSize)) + (html ? htmlCSS : plainCSS(t, frameScheme(b, t)));
+  const css =
+    base(size(t.bodyFontSize), html ? "normal" : "1.5") +
+    (html ? htmlCSS(t, frameScheme(b, t, systemDark)) : plainCSS(t, frameScheme(b, t)));
+  const dark = isDark(t, systemDark);
+  const cls = !html
+    ? ""
+    : dark
+      ? hasDarkStyles(b)
+        ? "godwit-dark"
+        : "godwit-dark godwit-invert"
+      : "godwit-light";
   return (
     "<!doctype html><html><head>" +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     '<meta charset="utf-8">' +
     `<style>${css}</style></head>` +
-    `<body><div id="godwit-body">${html ? b.html : escapeText(b.plain)}</div></body></html>`
+    `<body><div id="godwit-body" class="${cls}">${html ? b.html : escapeText(b.plain)}</div></body></html>`
   );
 }

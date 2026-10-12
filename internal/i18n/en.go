@@ -7,6 +7,7 @@ var en = map[string]string{
 	"shell.nav.settings":           "Settings",
 	"shell.nav.back_to":            "Back to %s",
 	"shell.sidebar.collapse":       "Collapse sidebar",
+	"mail.resize_list":             "Resize the list",
 	"shell.resize":                 "Resize",
 	"shell.back":                   "Back",
 	"shell.forward":                "Forward",
