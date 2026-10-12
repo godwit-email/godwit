@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch: # builds and publishes a release whose run failed, e.g. v0.0.0
+    inputs:
+      tag:
+        description: The release tag to build, e.g. v0.0.0
+        required: true
 
 permissions:
   contents: write # the release and its tag
@@ -10,6 +15,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       created: ${{ steps.release.outputs.release_created }}
@@ -23,7 +29,7 @@ jobs:
   # Here, not on the tag: a tag pushed with GITHUB_TOKEN starts no workflow.
   build:
     needs: release-please
-    if: needs.release-please.outputs.created == 'true'
+    if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || inputs.tag != '') }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -36,8 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release-please.outputs.tag }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag }}
       - uses: jdx/mise-action@v2
+      - run: mise run web:install # generating the client compiles Go, which embeds files from web/node_modules
       - name: Install NSIS, for the Windows installers
         if: matrix.name == 'Windows'
         run: sudo apt-get update && sudo apt-get install -y nsis
@@ -81,16 +88,18 @@ jobs:
   # Every platform is on dl.godwit.email: make the release notes public.
   publish:
     needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${{ needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false
+        run: gh release edit "${{ inputs.tag || needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false
 
   # Called, not triggered: a release published with GITHUB_TOKEN starts no workflow.
   homebrew:
     needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     uses: ./.github/workflows/homebrew.yml
     with:
-      tag: ${{ needs.release-please.outputs.tag }}
+      tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
     secrets: inherit
