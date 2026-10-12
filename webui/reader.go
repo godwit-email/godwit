@@ -443,7 +443,7 @@ func (r *Reader) ImageHandler() http.Handler {
 		h := w.Header()
 		h.Set("Content-Type", "image/"+img.Format)
 		h.Set("Content-Length", strconv.Itoa(len(img.Data)))
-		h.Set("Cache-Control", "private, max-age=86400")
+		h.Set("Cache-Control", "no-store") // every body load comes through the checks above; the disk cache is the cache
 		h.Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(img.Data)
 	})

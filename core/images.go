@@ -114,7 +114,8 @@ func (s *Service) prefetchImages(ctx context.Context, message int64) {
 		if total >= prefetchBytes || ctx.Err() != nil {
 			return
 		}
-		if img, err := s.images.Get(ctx, u); err == nil {
+		cached := s.images.Cached(u) // a hit transfers nothing
+		if img, err := s.images.Get(ctx, u); err == nil && !cached {
 			total += int64(len(img.Data))
 		}
 	}

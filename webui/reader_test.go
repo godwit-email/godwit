@@ -378,6 +378,7 @@ func TestReaderImageAfterAllow(t *testing.T) {
 		assert.Equal(t, pic, rec.Body.Bytes())
 		assert.Equal(t, "image/png", rec.Header().Get("Content-Type"))
 		assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), "each body load must pass the checks")
 	}
 	require.Equal(t, 1, srv.hits(), "one request for the image: the second is from the cache")
 	for _, h := range []string{"Cookie", "Referer"} {
