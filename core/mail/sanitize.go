@@ -12,6 +12,12 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
+// bgAttr carries the remote URL of an element's CSS background image: the
+// style allowlist drops url(), so prepare moves it here.
+const bgAttr = "data-bg"
+
+var remoteURL = regexp.MustCompile(`(?i)^https?://[^\s\\]+$`)
+
 const cidScheme = "godwit-cid:" // bluemonday drops cid:, so it is swapped for this until the final pass
 
 // Safe CSS values: no parentheses except rgb()/rgba(), so url(), expression() and @import cannot occur.
@@ -31,6 +37,7 @@ func policy() *bluemonday.Policy {
 	p.AllowElements("table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "div", "span", "font", "center")
 	p.AllowAttrs("colspan", "rowspan", "align", "valign", "width", "height", "bgcolor", "color", "size", "face").Globally()
 	p.AllowAttrs("style").Globally()
+	p.AllowAttrs(bgAttr).Matching(remoteURL).Globally() // set by prepare from a background url()
 	p.AllowStyles(cssProps...).Matching(cssValue).Globally()
 	p.AllowURLSchemes("http", "https", "mailto", strings.TrimSuffix(cidScheme, ":"))
 	p.RequireNoFollowOnLinks(false)
@@ -109,6 +116,7 @@ func prepare(src string) (string, int) {
 	}
 	blocked := 0
 	var body *html.Node
+	var pixels []*html.Node
 	walkNodes(doc, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
@@ -116,10 +124,18 @@ func prepare(src string) (string, int) {
 		if n.DataAtom == atom.Body {
 			body = n
 		}
+		delAttr(n, bgAttr)
 		if s, ok := attr(n, "style"); ok && strings.Contains(strings.ToLower(s), "url(") {
 			blocked++
+			if u := backgroundURL(s); u != "" {
+				setAttr(n, bgAttr, u)
+			}
 		}
 		if n.DataAtom != atom.Img {
+			return
+		}
+		if isTracker(n) {
+			pixels = append(pixels, n)
 			return
 		}
 		if _, ok := attr(n, "srcset"); ok {
@@ -137,6 +153,9 @@ func prepare(src string) (string, int) {
 			}
 		}
 	})
+	for _, n := range pixels {
+		n.Parent.RemoveChild(n)
+	}
 	if body == nil {
 		return "", blocked
 	}
@@ -154,6 +173,9 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 			return
 		}
 		delAttr(n, "srcset")
+		if bg, ok := attr(n, bgAttr); ok && (compose || !loadRemote || !safeRemoteImage(bg)) {
+			delAttr(n, bgAttr)
+		}
 		switch n.DataAtom {
 		case atom.Img:
 			src, _ := attr(n, "src")
@@ -302,3 +324,57 @@ func Blank(src string) bool {
 
 // JoinDraft is the draft body of its parts, as SplitDraft returns them.
 func JoinDraft(editable, quote, signature string) string { return editable + quote + signature }
+
+// backgroundURL is the first http(s) url() of the background or
+// background-image declaration of a style attribute, or "".
+func backgroundURL(style string) string {
+	for _, d := range splitDecls(style) {
+		prop, v, ok := strings.Cut(d, ":")
+		if p := strings.ToLower(strings.TrimSpace(prop)); !ok || (p != "background" && p != "background-image") {
+			continue
+		}
+		i := strings.Index(strings.ToLower(v), "url(")
+		if i < 0 {
+			continue
+		}
+		rest := v[i+len("url("):]
+		end := strings.IndexByte(rest, ')')
+		if end < 0 {
+			continue
+		}
+		u := strings.Trim(strings.TrimSpace(rest[:end]), `"'`)
+		if strings.HasPrefix(u, "//") {
+			u = "https:" + u
+		}
+		if remoteURL.MatchString(u) {
+			return u
+		}
+	}
+	return ""
+}
+
+// splitDecls splits a style attribute at the semicolons outside quotes and
+// parentheses (url(data:…;base64,…) holds one).
+func splitDecls(style string) []string {
+	var out []string
+	depth, start := 0, 0
+	var quote byte
+	for i := 0; i < len(style); i++ {
+		switch c := style[i]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			depth = max(depth-1, 0)
+		case c == ';' && depth == 0:
+			out = append(out, style[start:i])
+			start = i + 1
+		}
+	}
+	return append(out, style[start:])
+}
