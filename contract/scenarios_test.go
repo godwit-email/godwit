@@ -211,7 +211,7 @@ func TestSettings(t *testing.T) {
 		st := core.Settings{Theme: "dark", Density: "comfortable", FontSize: 15, BodyFontSize: 17,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
-			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: true,
+			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", LocalAPI: true, SidebarWidth: 320, ListWidth: 400,
 			TrustedImageSenders: []string{"bob@example.com"}} // only TrustImageSender sets it; SetSettings keeps it
