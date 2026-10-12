@@ -28,6 +28,13 @@ Consequences: the browser loads everything in parallel by itself. The Go proxy b
 8. **Settings UI.** A "Remote images" select, the cache size and a clear button (general settings), zh and en strings.
 9. **Removed.** `ReaderPage.Image`, `ErrImageDeadline`, the per-message `imgs` / `sem` / `budget` / `imageDeadline`, the JS `api.image` loop in `Body.tsx`. The per-message `Budget` stays for inline data: images only.
 
+## Notes from the implementation
+
+- The sanitizer had no background-image support (the style allowlist drops `url()`); `core/mail.Sanitize` now moves a `background` / `background-image` `url(http…)` into `data-bg`, which `prepareBody` turns into an inline `background-image` through the proxy. A `background` shorthand's colour / repeat / position are still dropped with it.
+- douceur's declaration parser loses `url()` values, so a small splitter is used instead.
+- The frame sandbox in the repo is `allow-same-origin` (no `allow-scripts`); it stays.
+- Remote images no longer count against the per-message `Budget` (inline `data:` images still do); their limits are per image (5 MB, 40 MP, 15 s) and the cache's 256 MB.
+
 ## Order
 
 1. Protocol + rewrite + CSP, fetching straight through `imagefetch` (no cache). 2. Disk cache. 3. Policy setting, tracker filter, dims, prefetch, settings UI.
