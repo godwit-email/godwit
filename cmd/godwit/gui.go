@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
@@ -44,6 +45,7 @@ func windowOptions(goos string) mygo.WindowOptions {
 // in an error dialog and exits 2.
 func gui(ctx context.Context, dataDir string) int {
 	mygo.App.SetName("Godwit")
+	mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds
 	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}

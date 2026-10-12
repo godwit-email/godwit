@@ -19,7 +19,7 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Version is the app's version; cmd/godwit sets it with -ldflags.
+// Version is the app's version; cmd/godwit sets it from the packaged app.
 var Version = "dev"
 
 const repoURL = "https://github.com/godwit-email/godwit"

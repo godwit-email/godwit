@@ -1,0 +1,81 @@
+<p align="center"><img src="assets/icon.png" width="128" alt=""></p>
+
+<h1 align="center">Godwit</h1>
+
+<p align="center">An open-source, AI-native email client you can extend.</p>
+
+Godwit is a desktop email client for macOS, Windows and Linux. It works with any IMAP/SMTP account and ships with an AI assistant, Wit, that reads, summarizes, translates and drafts mail with the model you choose. Everything AI in it, the built-in features included, runs through the same extension points open to you: drop in a `SKILL.md` and a button appears.
+
+The name comes from the bar-tailed godwit, which holds the record for the longest non-stop bird flight.
+
+> **Status: 0.0.x, early preview.** Expect rough edges, and keep a copy of anything important on your mail server.
+
+## Features
+
+- **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, full-text search, and HTML compose with reply, forward, CC/BCC and drafts. Setup is detected for Gmail, Outlook (sign in with Microsoft), iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Feishu and DingTalk Mail, and any other IMAP server.
+- **Wit**: an agent that answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It never sends without your approval.
+- **AI actions**: summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft.
+- **Your models**: any OpenAI-compatible (Chat Completions or Responses) or Anthropic-compatible service, including local ones like Ollama and LM Studio. API keys stay in the system keychain.
+- **Extensions**:
+  - **Skills**: a `SKILL.md` ([Agent Skills](https://agentskills.io)) in the data directory's `skills/` folder becomes a Wit skill, or an action button with `godwit-action-*` metadata.
+  - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts). Plugins can read mail and write drafts; none can send.
+  - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
+- **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on **Settings › Local API** and copy the client configuration from there.
+- **Updates itself** from GitHub Releases.
+
+## Install
+
+Download the latest build from [Releases](https://github.com/godwit-email/godwit/releases/latest):
+
+- **macOS**: the `.dmg`, or with [Homebrew](https://brew.sh):
+
+  ```sh
+  brew install godwit-email/tap/godwit
+  ```
+- **Windows**: `Godwit Setup <version> <arch>.exe`. It installs for the current user, without admin rights.
+- **Linux**: the `.deb`, or install for the current user (no root) with:
+
+  ```sh
+  curl -fsSL https://github.com/godwit-email/godwit/releases/latest/download/install.sh | sh
+  ```
+
+## Command line
+
+```
+godwit [--data-dir DIR]                                the desktop app
+godwit --headless [--data-dir DIR]                     serve the Local API without a window
+godwit call [--data-dir DIR] METHOD [JSON_ARGS_ARRAY]  call the running Godwit once
+godwit mcp [--data-dir DIR]                            an MCP server on stdio for agents
+godwit --version
+```
+
+## Development
+
+Godwit is written in Go on [MyGo](https://github.com/egoist/mygo): the main window is native UI, while compose, the Wit page and the message reader are React pages in `web/`. [mise](https://mise.jdx.dev) installs the pinned Go and Bun:
+
+```sh
+mise install
+mise run web:install   # the Go build embeds files from web/node_modules
+mise run dev         # run the app, reloading on changes
+go test ./...        # Go tests
+mise run web:check
+mise run build       # package for this machine into dist/
+```
+
+Layout:
+
+| Path | |
+|---|---|
+| `core/` | the mail engine and service: sync, storage, send, AI, plugins, skills |
+| `app/` | the native UI |
+| `web/`, `webui/` | the web pages and their Go side |
+| `cmd/godwit/` | the executable: GUI, headless, `call`, `mcp` |
+| `mcpserver/`, `rpc/` | the MCP server and the Local API |
+| `sdk/` | plugin types |
+| `docs/` | design specs and plans |
+
+Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org); [release-please](https://github.com/googleapis/release-please) turns them into versions and the changelog.
+
+## License
+
+[Apache-2.0](LICENSE)

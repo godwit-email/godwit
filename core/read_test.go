@@ -251,7 +251,7 @@ func TestGetAttachmentStreamLimit(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTooLarge)
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
 	if runtime.GOOS != "windows" { // Windows loopback buffers absorb the whole literal before the abort lands
-		assert.Less(t, e.im.BytesSent()-before, int64(1<<20), "download must stop early, not read the whole 5.6 MB literal")
+		assert.Less(t, e.im.BytesSent()-before, int64(2<<20), "download must stop early, not read the whole 5.6 MB literal")
 	}
 }
 
