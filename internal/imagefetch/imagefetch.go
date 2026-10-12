@@ -90,10 +90,11 @@ func NewClient(allowLoopback bool) *http.Client {
 
 // notGlobal are ranges that are not public hosts although IsPrivate and the
 // like do not name them: this network, shared (CGNAT / overlay) space,
-// IETF protocol, benchmarking and documentation ranges, reserved space.
+// IETF protocol, benchmarking and documentation ranges, reserved space,
+// deprecated IPv6 site-local.
 var notGlobal = func() (out []netip.Prefix) {
 	for _, p := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15",
-		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32"} {
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "fec0::/10"} {
 		out = append(out, netip.MustParsePrefix(p))
 	}
 	return out

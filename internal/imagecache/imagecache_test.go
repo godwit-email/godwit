@@ -207,3 +207,22 @@ func TestFailedMemoryIsBounded(t *testing.T) {
 		t.Errorf("%d failures remembered", n)
 	}
 }
+
+func TestHostLimiterEntriesGoAway(t *testing.T) {
+	c := open(t, t.TempDir(), 0)
+	_, release := c.host("a.example")
+	_, release2 := c.host("a.example")
+	release()
+	c.mu.Lock()
+	n := len(c.hosts)
+	c.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("%d entries while one download remains", n)
+	}
+	release2()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.hosts) != 0 {
+		t.Errorf("%d entries left", len(c.hosts))
+	}
+}

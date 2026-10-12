@@ -56,7 +56,7 @@ type Cache struct {
 	gen    int // bumped by Clear: a download that began before it is not stored
 	flight map[string]*call
 	failed map[string]failure
-	hosts  map[string]chan struct{}
+	hosts  map[string]*hostSem // hosts with a download in flight
 }
 
 // entry is a cached file: <key>-<format>-<width>x<height>.
@@ -123,7 +123,7 @@ func Open(dir string, max int64, client *http.Client) (*Cache, error) {
 		return nil, err
 	}
 	c := &Cache{dir: dir, max: max, client: client, global: make(chan struct{}, GlobalJobs),
-		files: map[string]*entry{}, flight: map[string]*call{}, failed: map[string]failure{}, hosts: map[string]chan struct{}{}}
+		files: map[string]*entry{}, flight: map[string]*call{}, failed: map[string]failure{}, hosts: map[string]*hostSem{}}
 	c.ctx, c.stop = context.WithCancel(context.Background())
 	des, err := os.ReadDir(dir)
 	if err != nil {
@@ -270,7 +270,8 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, queueWait+imagefetch.Timeout)
 	defer cancel()
-	host := c.host(u.Host)
+	host, release := c.host(u.Host)
+	defer release()
 	for _, sem := range []chan struct{}{host, c.global} {
 		select {
 		case sem <- struct{}{}:
@@ -289,15 +290,30 @@ func (c *Cache) fetch(key, src string, gen int) (Image, error) {
 	return img, c.put(key, img, gen)
 }
 
-func (c *Cache) host(h string) chan struct{} {
+// hostSem limits the downloads from one host; n counts those using it.
+type hostSem struct {
+	ch chan struct{}
+	n  int
+}
+
+// host is the semaphore of h and the func that gives it up: the entry goes
+// with its last download, so hosts a sender invents do not pile up.
+func (c *Cache) host(h string) (chan struct{}, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	sem := c.hosts[h]
-	if sem == nil {
-		sem = make(chan struct{}, HostJobs)
-		c.hosts[h] = sem
+	hs := c.hosts[h]
+	if hs == nil {
+		hs = &hostSem{ch: make(chan struct{}, HostJobs)}
+		c.hosts[h] = hs
 	}
-	return sem
+	hs.n++
+	return hs.ch, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if hs.n--; hs.n == 0 {
+			delete(c.hosts, h)
+		}
+	}
 }
 
 // put writes img for key, atomically, and evicts what is over the limit,
