@@ -250,6 +250,32 @@ func ReplaceImages(src string, f func(s string) string) string {
 	return render(root)
 }
 
+// RemoteImages are the http(s) image sources of a sanitized body (kept by
+// Sanitize with loadRemote): its <img> sources and CSS background images, in
+// order, each once.
+func RemoteImages(safe string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(u string) {
+		if safeRemoteImage(u) && !seen[u] {
+			seen[u] = true
+			out = append(out, u)
+		}
+	}
+	walkNodes(parseBody(safe), func(n *html.Node) {
+		if n.Type != html.ElementNode {
+			return
+		}
+		if n.DataAtom == atom.Img {
+			s, _ := attr(n, "src")
+			add(s)
+		}
+		bg, _ := attr(n, bgAttr)
+		add(bg)
+	})
+	return out
+}
+
 // CIDs are the Content-IDs src's images refer to as cid:, in order.
 func CIDs(src string) []string {
 	var out []string

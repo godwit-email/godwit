@@ -46,7 +46,7 @@ func TestTrustImageSenderCap(t *testing.T) {
 	assert.NoError(t, s.TrustImageSender(ctx, "u0@x.example"), "one already there is fine")
 }
 
-func TestImagesTrusted(t *testing.T) {
+func TestImagesAllowed(t *testing.T) {
 	e := newSyncEnv(t)
 	require.NoError(t, e.im.User.Create("Junk", nil))
 	require.NoError(t, e.im.User.Create("Spam2", nil))
@@ -56,11 +56,25 @@ func TestImagesTrusted(t *testing.T) {
 	e.put(t, "Junk", eml("c@x", "bob@example.com", "alice@example.com", "s", day, "b"))
 	e.sync(t)
 	trusted := func(mid string) bool {
-		ok, err := e.s.ImagesTrusted(bg, e.idOf(t, mid))
+		ok, err := e.s.ImagesAllowed(bg, e.idOf(t, mid))
 		require.NoError(t, err)
 		return ok
 	}
-	assert.False(t, trusted("a@x"), "never trusted by default")
+	mode := func(m string) {
+		st, err := e.s.GetSettings(bg)
+		require.NoError(t, err)
+		st.RemoteImages = m
+		_, err = e.s.SetSettings(bg, st)
+		require.NoError(t, err)
+	}
+	assert.True(t, trusted("a@x"), "automatic by default")
+	assert.False(t, trusted("c@x"), "but never in the junk folder")
+	mode("ask")
+	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
+	assert.False(t, trusted("a@x"), "ask: even a trusted sender")
+	mode("trusted")
+	require.NoError(t, e.s.UntrustImageSender(bg, "bob@example.com"))
+	assert.False(t, trusted("a@x"), "trusted only: not trusted yet")
 	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
 	assert.True(t, trusted("a@x"))
 	assert.False(t, trusted("b@x"), "the From address only, not the name or Reply-To")

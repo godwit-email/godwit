@@ -76,7 +76,7 @@ type msgBody struct {
 	// made for the message is told (Platform.AllowImages); remote that the
 	// page's body has them (BodyBuilt), which hides the notice; allowErr
 	// that reading it so failed (BodyFailed), which offers a retry;
-	// trusted that core loads them at once (ImagesTrusted): no notice.
+	// trusted that core loads them at once (ImagesAllowed): no notice.
 	allow    bool
 	remote   bool
 	allowErr error
@@ -242,7 +242,7 @@ func (r *reader) loadBody(id int64) {
 		if m, err = get(ctx, id, false); err != nil {
 			return err
 		}
-		trusted, err = a.svc.ImagesTrusted(ctx, id)
+		trusted, err = a.svc.ImagesAllowed(ctx, id)
 		return err
 	}, func(err error) {
 		if gen != r.gen {
