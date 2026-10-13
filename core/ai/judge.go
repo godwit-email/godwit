@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -366,30 +367,37 @@ func validateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
 			}
 			v.Score = a.Score
 			for _, p := range a.Probabilities {
-				i, ok := levelIndex(p.Value, len(q.Levels))
+				i, ok := levelIndex(p.Value, q.Levels)
 				if !ok || !prob(p.Probability) {
 					return nil, bad("a probability outside the levels or 0..1")
 				}
 				v.Probabilities = append(v.Probabilities, Probability{Value: i, Label: q.Levels[i].Label, Probability: p.Probability})
 			}
+			slices.SortFunc(v.Probabilities, func(x, y Probability) int { return x.Value.(int) - y.Value.(int) })
 		}
 		out[i] = v
 	}
 	return out, nil
 }
 
-// levelIndex reads a score probability's level: an integer in [0, n).
-func levelIndex(v any, n int) (int, bool) {
-	var f float64
+// levelIndex reads a score probability's level as its index into levels:
+// an index, the index as a string, or the level's label (the Decisions API
+// does not document which it sends).
+func levelIndex(v any, levels []Level) (int, bool) {
+	f := math.NaN()
 	switch v := v.(type) {
 	case int:
 		f = float64(v)
 	case float64:
 		f = v
-	default:
-		return 0, false
+	case string:
+		if i, err := strconv.Atoi(v); err == nil {
+			f = float64(i)
+		} else if i := slices.IndexFunc(levels, func(l Level) bool { return l.Label != "" && l.Label == v }); i >= 0 {
+			f = float64(i)
+		}
 	}
-	if f != math.Trunc(f) || f < 0 || f >= float64(n) {
+	if f != math.Trunc(f) || f < 0 || f >= float64(len(levels)) {
 		return 0, false
 	}
 	return int(f), true

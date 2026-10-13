@@ -575,3 +575,22 @@ func TestJudgeAnswersOpenAIShape(t *testing.T) {
 		}
 	}
 }
+
+// TestScoreProbabilityValues: a score probability's level may come as an
+// index, a numeric string or the level's label; each reads as the index.
+func TestScoreProbabilityValues(t *testing.T) {
+	body := `{"answers":[{"type":"predicate","name":"urgent","probability":1},{"type":"choice","name":"topic","choice":"billing"},` +
+		`{"type":"score","name":"tone","score":1.5,"probabilities":[{"value":0,"probability":0.1},{"value":"1","probability":0.3},{"value":"furious","probability":0.6}]}]}`
+	got, err := judgeFor(t, adapter{name: "decisions"}, body).Ask(context.Background(), "mail", testQs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[{"value":0,"label":"calm","probability":0.1},{"value":1,"label":"annoyed","probability":0.3},{"value":2,"label":"furious","probability":0.6}]`
+	if b, _ := json.Marshal(got[2].Probabilities); string(b) != want {
+		t.Errorf("got  %s\nwant %s", b, want)
+	}
+	bad := strings.Replace(body, `"furious"`, `"livid"`, 1)
+	if _, err := judgeFor(t, adapter{name: "decisions"}, bad).Ask(context.Background(), "mail", testQs); !errors.Is(err, ErrJudgeAnswer) {
+		t.Errorf("unknown level: %v", err)
+	}
+}

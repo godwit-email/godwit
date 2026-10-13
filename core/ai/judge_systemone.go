@@ -2,8 +2,8 @@ package ai
 
 import (
 	"context"
+	"maps"
 	"slices"
-	"strconv"
 )
 
 // systemOne asks TypeSafe System One (research §2), converting to and from
@@ -76,42 +76,19 @@ func probsByValue(choices []ChoiceOption, m map[string]float64) []Probability {
 			delete(m, o.Value)
 		}
 	}
-	for _, k := range slices.Sorted(func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}) {
+	for _, k := range slices.Sorted(maps.Keys(m)) {
 		out = append(out, Probability{Value: k, Probability: m[k]})
 	}
 	return out
 }
 
-// probsByLevel lists a score's probabilities by level index ("0", "1", ...);
-// a key that is no index stays a string, for validation to reject.
+// probsByLevel lists a score's probabilities, keyed by level index ("0",
+// "1", ...); validation reads the index and puts them in order.
 func probsByLevel(m map[string]float64) []Probability {
 	out := make([]Probability, 0, len(m))
 	for k, p := range m {
-		var v any = k
-		if i, err := strconv.Atoi(k); err == nil {
-			v = i
-		}
-		out = append(out, Probability{Value: v, Probability: p})
+		out = append(out, Probability{Value: k, Probability: p})
 	}
-	slices.SortFunc(out, func(a, b Probability) int {
-		ai, aok := a.Value.(int)
-		bi, bok := b.Value.(int)
-		switch {
-		case aok && bok:
-			return ai - bi
-		case aok:
-			return -1
-		case bok:
-			return 1
-		}
-		return 0
-	})
 	return out
 }
 
