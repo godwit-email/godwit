@@ -195,6 +195,7 @@ const (
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
 	CloseButton                                      = 20             // a toast's close button
+	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons
 	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
 	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb

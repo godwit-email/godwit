@@ -825,4 +825,10 @@ var en = map[string]string{
 	"wit.skill.proofread.hint":         "Only typos and grammar",
 	"wit.tool.update_draft":            "Edit the body",
 	"wit.tool.update_selection":        "Edit the selection",
+
+	// labels
+	"mail.labels":      "Labels",
+	"label.tip.auto":   "Labeled by the model",
+	"label.tip.manual": "Labeled by you",
+	"label.more":       "+%d",
 }

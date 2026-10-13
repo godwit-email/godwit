@@ -825,4 +825,10 @@ var zh = map[string]string{
 	"wit.skill.proofread.hint":         "只改错字和语法",
 	"wit.tool.update_draft":            "修改正文",
 	"wit.tool.update_selection":        "修改选中的内容",
+
+	// labels
+	"mail.labels":      "标签",
+	"label.tip.auto":   "由模型标记",
+	"label.tip.manual": "手动标记",
+	"label.more":       "+%d",
 }

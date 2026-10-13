@@ -155,6 +155,7 @@ type App struct {
 	loadErr     error // the newest load's error; nil once a load succeeds
 	loadFailing bool  // loads have failed since the last success: toast once per streak
 	accounts    []core.Account
+	labels      []core.Label    // in the user's order, as the last load read them
 	settings    core.Settings   // what the interface shows: the newest edit while one saves
 	taskModels  map[string]bool // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for
 	taskGen     uint64          // bumped per refreshTasks; only the newest answer counts
@@ -290,6 +291,7 @@ func (a *App) load() {
 	var accs []core.Account
 	var st core.Settings
 	var unread map[int64]int
+	var labels []core.Label
 	inbox := 0
 	fetch, ver := a.fetch, a.settingsVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
@@ -298,6 +300,7 @@ func (a *App) load() {
 		if st, accs, err = fetch(ctx); err != nil {
 			return err
 		}
+		labels, _ = a.svc.ListLabels(ctx) // chips only: a failure keeps the last ones
 		unread = map[int64]int{}
 		for _, acc := range accs {
 			fs, err := a.svc.ListFolders(ctx, acc.ID)
@@ -328,6 +331,9 @@ func (a *App) load() {
 		a.loadFailing = false
 		first := !a.loaded
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		if labels != nil {
+			a.labels = labels
+		}
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st
 		}

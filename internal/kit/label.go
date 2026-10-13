@@ -18,9 +18,6 @@ type LabelChipOpts struct {
 	RemoveLabel     string
 }
 
-// labelChipHeight is the chip's height in DIPs (the label design: 20).
-const labelChipHeight = 20
-
 // LabelChip is a mail label's chip: 20 high, its icon and name in the label's color.
 func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
@@ -37,7 +34,7 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	if o.OnRemove != nil {
 		right = th.Space(0.5)
 	}
-	chip.AlignItems(ui.Center).Gap(th.Space(1)).Height(labelChipHeight).Padding(0, right, 0, th.Space(1.5)).
+	chip.AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).Padding(0, right, 0, th.Space(1.5)).
 		Radius(t.Radius.Sm).TextColor(o.Color.Text).FontSize(t.Text.Sm)
 	if o.Auto {
 		chip.Border(theme.Hairline, o.Color.Edge)
@@ -48,11 +45,11 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 		ui.Icon(c, icons.Get("label-"+o.Icon)).Size(theme.IconXs, theme.IconXs)
 		ui.Text(c, o.Text).SingleLine()
 		if o.OnRemove != nil {
-			x := ui.ButtonBase(c).Label(o.RemoveLabel).Size(th.Space(4), th.Space(4)).Radius(t.Radius.Xs).Justify(ui.Center).AlignItems(ui.Center)
+			x := ui.ButtonBase(c).Label(o.RemoveLabel).Size(theme.LabelChipX, theme.LabelChipX).Radius(t.Radius.Xs).Justify(ui.Center).AlignItems(ui.Center)
 			if x.Clicked() {
 				o.OnRemove()
 			}
-			x.Children(func() { ui.Icon(c, icons.Get("x")).Size(10, 10) })
+			x.Children(func() { ui.Icon(c, icons.Get("x")).Size(theme.LabelChipXIcon, theme.LabelChipXIcon) })
 		}
 	})
 	if o.Tip != "" {
