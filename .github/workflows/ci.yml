@@ -131,25 +131,30 @@ jobs:
       - uses: jdx/mise-action@v2
       - uses: microsoft/setup-WinAppCli@v0.1
       - run: mise run web:install
-      - name: build the Windows executable
-        run: go tool mygo build -platform windows/amd64
+      - name: build the Windows executables
+        run: go tool mygo build -platform windows/amd64,windows/arm64
       - name: pack
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Recurse -Filter *.exe | Where-Object Name -notlike '*Setup*' | Select-Object -First 1
-          if (-not $exe) { Get-ChildItem dist -Recurse; throw 'no app executable in dist' }
-          New-Item -ItemType Directory msix-in | Out-Null
-          Copy-Item "$($exe.DirectoryName)\*" msix-in -Recurse
-          Remove-Item 'msix-in\*Setup*.exe', 'msix-in\*.zip', 'msix-in\update-*.json' -ErrorAction SilentlyContinue # the installer and update files sit beside the app
-          winapp manifest generate --executable "msix-in\$($exe.Name)"
-          Get-ChildItem . -Filter *.appxmanifest | ForEach-Object { Move-Item $_ msix-in }
+          $version = (Select-String -Path mygo.config.ts -Pattern 'version: "(\d+\.\d+\.\d+)"').Matches[0].Groups[1].Value + '.0'
+          $dirs = foreach ($arch in 'amd64', 'arm64') {
+            $dir = "msix-in-$arch"
+            New-Item -ItemType Directory $dir | Out-Null
+            Copy-Item "dist\windows-$arch\*" $dir -Recurse
+            Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
+            winapp manifest generate --executable "$dir\Godwit.exe"
+            $manifest = Get-Item *.appxmanifest
+            (Get-Content $manifest -Raw) -replace '(<Identity[^>]*?Version=")[^"]*', "`${1}$version" | Set-Content "$dir\$($manifest.Name)" -NoNewline
+            Remove-Item $manifest
+            $dir
+          }
           winapp cert generate
-          winapp pack msix-in --cert devcert.pfx
-          Get-ChildItem *.msix
+          winapp pack @dirs --cert devcert.pfx
+          Get-ChildItem *.msix*
       - uses: actions/upload-artifact@v4
         with:
           name: msix
-          path: "*.msix"
+          path: "*.msix*"
 
   web:
     needs: changes

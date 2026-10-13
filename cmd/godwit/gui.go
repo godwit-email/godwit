@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"runtime"
+	"slices"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
@@ -45,7 +46,9 @@ func windowOptions(goos string) mygo.WindowOptions {
 // in an error dialog and exits 2.
 func gui(ctx context.Context, dataDir string) int {
 	mygo.App.SetName("Godwit")
-	mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds
+	if !packaged() { // the Microsoft Store updates the MSIX
+		mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds
+	}
 	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}
@@ -261,7 +264,6 @@ func gui(ctx context.Context, dataDir string) int {
 			{Role: mygo.RoleAbout},
 			mygo.Separator(),
 			{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
-			updater.MenuItem(),
 			mygo.Separator(),
 			{Role: mygo.RoleServices},
 			mygo.Separator(),
@@ -270,6 +272,9 @@ func gui(ctx context.Context, dataDir string) int {
 			{Role: mygo.RoleUnhide},
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
+		}
+		if !packaged() { // the Store updates the MSIX
+			appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
 		}
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
