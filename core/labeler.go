@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -189,4 +190,59 @@ func labelWrites(id int64, at any, labels []Label, yes map[string]bool) []sqlite
 	}
 	return append(stmts, sqlite.Statement{SQL: `UPDATE messages SET labeled_at = unixepoch()
 		WHERE id = ? AND labeled_at IS ? AND folder_id IN (SELECT id FROM folders WHERE role = 'inbox')`, Args: []any{id, at}})
+}
+
+// RescanLabels makes the Inbox mail of the last days (0: all of it) the
+// classifier's targets again: all of it, its model labels dropped, or only
+// mail with no label on. Hand-set labels stay. It returns how many.
+func (s *Service) RescanLabels(ctx context.Context, days int, all bool) (int, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	since := int64(0)
+	if days > 0 {
+		since = time.Now().AddDate(0, 0, -days).Unix()
+	}
+	target := `m.date >= ? AND ` + inboxCond
+	if !all {
+		target += " AND NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.active = 1)"
+	}
+	ids := "SELECT m.id FROM messages m WHERE " + target
+	res, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM message_labels WHERE source = 'auto' AND ? AND message_id IN (" + ids + ")", Args: []any{b2i(all), since}},
+		{SQL: "UPDATE messages SET labeled_at = 0 WHERE id IN (" + ids + ")", Args: []any{since}},
+	})
+	if err != nil {
+		return 0, err
+	}
+	s.bus.Publish(events.Event{Type: events.LabelsChanged})
+	s.wakeLabeler()
+	return int(res[1].Changes), nil
+}
+
+// StopRescan gives up on the rescan targets not classified yet.
+func (s *Service) StopRescan(ctx context.Context) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	_, err = s.db.Execute(ctx, "UPDATE messages SET labeled_at = unixepoch() WHERE labeled_at = 0")
+	return err
+}
+
+// PendingLabels counts the rescan targets not classified yet.
+func (s *Service) PendingLabels(ctx context.Context) (int, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT count(*) FROM messages m WHERE m.labeled_at = 0 AND "+inboxCond)
+	if err != nil {
+		return 0, err
+	}
+	return int(store.Int(rows.Values[0][0])), nil
 }

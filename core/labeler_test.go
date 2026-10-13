@@ -347,3 +347,77 @@ func TestLabelerBackoffIgnoresWake(t *testing.T) {
 	clock.fire(hookBackoff(1))
 	require.Eventually(t, func() bool { return j.count() == 2 }, 5*time.Second, 5*time.Millisecond)
 }
+
+func TestRescanMissing(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	now := time.Now().Unix()
+	a := addMessage(t, s, "a", "a@x", "", "", now)
+	b := addMessage(t, s, "b", "b@x", "", "", now)
+	c := addMessage(t, s, "c", "c@x", "", "", now)
+	for _, id := range []int64{a, b, c} {
+		setLabeledAt(t, s, id, 100)
+	}
+	setRow(t, s, a, otp, "auto", 1)
+	setRow(t, s, b, otp, "manual", 0)
+	n, err := s.RescanLabels(t.Context(), 30, false)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	require.EqualValues(t, 100, labeledAt(t, s, a))
+	require.EqualValues(t, 0, labeledAt(t, s, b))
+	require.EqualValues(t, 0, labeledAt(t, s, c))
+}
+
+func TestRescanAll(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	l := labelIDs(t, s)
+	now := time.Now().Unix()
+	a := addMessage(t, s, "a", "a@x", "", "", now)
+	addMessage(t, s, "b", "b@x", "", "", now)
+	addMessage(t, s, "c", "c@x", "", "", now)
+	setRow(t, s, a, l["otp"], "auto", 1)
+	setRow(t, s, a, l["bill"], "manual", 1)
+	n, err := s.RescanLabels(t.Context(), 30, true)
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+	_, on := labelRow(t, s, a, l["otp"])
+	require.Equal(t, -1, on, "the model's labels are judged again")
+	src, on := labelRow(t, s, a, l["bill"])
+	require.Equal(t, "manual", src)
+	require.Equal(t, 1, on)
+	p, err := s.PendingLabels(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 3, p)
+}
+
+func TestRescanRange(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	old := addMessage(t, s, "old", "a@x", "", "", time.Now().AddDate(0, 0, -40).Unix())
+	setLabeledAt(t, s, old, 100)
+	n, err := s.RescanLabels(t.Context(), 30, true)
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+	require.EqualValues(t, 100, labeledAt(t, s, old))
+	n, err = s.RescanLabels(t.Context(), 0, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.EqualValues(t, 0, labeledAt(t, s, old))
+}
+
+func TestStopRescan(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	now := time.Now().Unix()
+	a := addMessage(t, s, "a", "a@x", "", "", now)
+	setLabeledAt(t, s, a, 100)
+	old := addMessage(t, s, "old", "o@x", "", "", time.Now().AddDate(0, 0, -40).Unix())
+	_, err := s.RescanLabels(t.Context(), 30, true)
+	require.NoError(t, err)
+	fresh := addMessage(t, s, "new", "n@x", "", "", now) // arrives during the rescan
+	require.NoError(t, s.StopRescan(t.Context()))
+	p, err := s.PendingLabels(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 0, p)
+	require.Greater(t, store.Int(labeledAt(t, s, a)), int64(100))
+	require.Nil(t, labeledAt(t, s, old), "outside the range: untouched")
+	require.Nil(t, labeledAt(t, s, fresh), "new mail waits for the classifier, not the stop")
+}
