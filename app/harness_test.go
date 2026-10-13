@@ -493,6 +493,7 @@ func (p *fakePlatform) DataDir() (string, bool) {
 	return p.dataDir, p.customDir
 }
 func (p *fakePlatform) SetTrayUnread(n int)         { p.record("SetTrayUnread", n) }
+func (p *fakePlatform) SetAppUnread(n int)          { p.record("SetAppUnread", n) }
 func (p *fakePlatform) ShowWindow()                 { p.record("ShowWindow") }
 func (p *fakePlatform) SetThemeSource(theme string) { p.record("SetThemeSource", theme) }
 func (p *fakePlatform) TempDir() string {

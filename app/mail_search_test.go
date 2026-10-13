@@ -259,7 +259,10 @@ func TestSearchFilterChips(t *testing.T) {
 	h.waitMail("three threads", func() bool { return len(h.items()) == 3 })
 	n := func(want int) {
 		t.Helper()
-		h.until(fmt.Sprintf("%d results", want), func() bool { return h.app.mail.searched && len(h.app.mail.results) == want })
+		h.until(fmt.Sprintf("%d results", want), func() bool {
+			p := h.app.mail
+			return p.searched && p.hlQuery == p.query && len(p.results) == want
+		})
 	}
 	h.tt.Key(ui.Cmd, ui.KeyF)
 	h.typeText("Invoice")

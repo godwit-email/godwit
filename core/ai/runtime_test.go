@@ -485,8 +485,9 @@ func TestTerminalEventAlwaysDelivered(t *testing.T) {
 		}
 		srv.Script(testllm.Turn{Text: texts, Hang: true})
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		events, wait := newEngine(t).Run(ctx, Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x"})
-		time.Sleep(300 * time.Millisecond) // nobody reads; the buffer fills
+		require.Eventually(t, func() bool { return len(events) >= eventBuffer }, 10*time.Second, 5*time.Millisecond)
 		cancel()
 		done := make(chan Result)
 		go func() { done <- wait() }()

@@ -180,9 +180,16 @@ func (a *App) notificationRoute(ctx context.Context, id string) (Route, bool, er
 	return Route{}, false, nil
 }
 
-// showTrayUnread puts the inboxes' unread total on the tray when the
-// settings ask for it.
-func (a *App) showTrayUnread(inbox int) {
+// showUnread updates the app icon and tray according to their settings.
+func (a *App) showUnread(inbox int) {
+	badge := inbox
+	if !a.settings.UnreadOnAppIcon {
+		badge = 0
+	}
+	if badge != a.appUnread {
+		a.appUnread = badge
+		a.plat.SetAppUnread(badge)
+	}
 	if !a.settings.UnreadInMenuBar {
 		inbox = 0
 	}

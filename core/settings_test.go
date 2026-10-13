@@ -24,7 +24,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 3, ReplyLanguage: "match",
-		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true}, got)
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -34,6 +34,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	defer stop()
 	in, _ := s.GetSettings(t.Context())
 	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-CN", []string{"en", "fr"}, "svc/m"
+	in.UnreadOnAppIcon = false
 	_, err := s.SetSettings(t.Context(), in)
 	require.NoError(t, err)
 	select {
@@ -56,6 +57,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "light", got.Theme)
 	assert.Equal(t, 14, got.FontSize)
+	assert.True(t, got.UnreadOnAppIcon, "older settings default to showing the app badge")
 }
 
 func TestSettingsValidation(t *testing.T) {

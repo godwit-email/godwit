@@ -22,6 +22,7 @@ type Settings struct {
 	UILanguage, ReadingLanguage, ReplyLanguage       string
 	NoTranslate                                      []string
 	LaunchAtLogin, KeepInBackground, UnreadInMenuBar bool
+	UnreadOnAppIcon                                  bool
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
@@ -56,7 +57,7 @@ const settingsVersion = 3
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true}
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
