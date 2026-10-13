@@ -290,8 +290,8 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 	// A copy that turns up later takes this choice, not one stashed before it:
 	// a message with a stash has every hand-set choice in it.
 	stmts = append(stmts, sqlite.Statement{SQL: `INSERT OR REPLACE INTO label_keep(account_id, fp, label_id, active)
-		SELECT m.account_id, ` + messageFP + `, ?, ? FROM messages m WHERE m.id IN (` + placeholders(len(messageIDs)) + `)
-		AND EXISTS (SELECT 1 FROM label_keep k WHERE k.account_id = m.account_id AND k.fp = ` + messageFP + `)`,
+		SELECT m.account_id, m.label_fp, ?, ? FROM messages m WHERE m.id IN (` + placeholders(len(messageIDs)) + `)
+		AND EXISTS (SELECT 1 FROM label_keep k WHERE k.account_id = m.account_id AND k.fp = m.label_fp)`,
 		Args: append([]any{labelID, b2i(on)}, int64Args(messageIDs)...)})
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err
@@ -343,8 +343,3 @@ func int64Args(ids []int64) []any {
 	}
 	return out
 }
-
-// messageFP is a message m's fingerprint in label_keep, as the schema's
-// triggers compute it: its Message-ID, else sender, date, subject, size and
-// the start of its text.
-const messageFP = "CASE WHEN COALESCE(m.message_id, '') != '' THEN m.message_id ELSE 'fp:' || COALESCE(m.from_addr, '') || char(31) || COALESCE(m.date, '') || char(31) || COALESCE(m.subject, '') || char(31) || COALESCE(m.size, '') || char(31) || COALESCE(substr(m.body_text, 1, 512), '') END"

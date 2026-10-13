@@ -223,13 +223,9 @@ func (s *Service) advanceCursor(ctx context.Context, name string, seq int64) err
 func (s *Service) cleanEvents(ctx context.Context) error {
 	s.hooksMu.Lock()
 	defer s.hooksMu.Unlock()
-	cutoff := time.Now().Add(-eventsKeepFor).Unix()
 	_, err := s.db.Execute(ctx, `DELETE FROM events_log WHERE created_at < ?
-		AND seq < COALESCE((SELECT MIN(seq) FROM plugin_cursors), 9223372036854775807)`, cutoff)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.Execute(ctx, "DELETE FROM label_keep WHERE kept_at < ?", cutoff) // labels stashed by mail headers
+		AND seq < COALESCE((SELECT MIN(seq) FROM plugin_cursors), 9223372036854775807)`,
+		time.Now().Add(-eventsKeepFor).Unix())
 	return err
 }
 

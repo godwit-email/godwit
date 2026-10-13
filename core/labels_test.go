@@ -3,7 +3,6 @@ package core
 import (
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -331,8 +330,8 @@ func TestLabelsSurviveResetWithoutMessageID(t *testing.T) {
 // addCopy inserts a cached copy of a message with a Message-ID, as an import does.
 func addCopy(t *testing.T, s *Service, mid string) int64 {
 	t.Helper()
-	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, message_id, subject, from_addr, date)
-		VALUES (1, 1, 1, ?, 's', 'a@x', 1)`, mid)
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, message_id, subject, from_addr, date, label_fp)
+		VALUES (1, 1, 1, ?, 's', 'a@x', 1, ?)`, mid, "fp:"+mid)
 	require.NoError(t, err)
 	return res.LastInsertID
 }
@@ -390,37 +389,37 @@ func TestKeptLabelsTakeNewChoices(t *testing.T) {
 // TestFingerprintTellsBodiesApart: two messages with no Message-ID and the
 // same sender, date and subject but different bodies are not one message.
 func TestFingerprintTellsBodiesApart(t *testing.T) {
-	s := newLabelService(t, "", "zh-CN")
-	otp := labelIDs(t, s)["otp"]
-	add := func(body string) int64 {
-		res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, subject, from_addr, date, body_text, size)
-			VALUES (1, 1, 1, 's', 'a@x', 1, ?, ?)`, body, len(body))
-		require.NoError(t, err)
-		return res.LastInsertID
+	e := newSyncEnv(t)
+	raw := func(body string) string {
+		return "From: bob@example.com\r\nTo: alice@example.com\r\nSubject: same\r\nDate: " + day + "\r\nContent-Type: text/plain\r\n\r\n" + body + "\r\n"
 	}
-	a := add("first body")
-	b := add("another one")
-	require.NoError(t, s.SetLabel(t.Context(), []int64{a}, otp, true))
-	_, err := s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", a)
+	e.put(t, "Archive", raw("first body, padded to one size"))
+	e.put(t, "Archive", raw("other body, padded to one size"))
+	e.sync(t)
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
 	require.NoError(t, err)
-	_, on := labelRow(t, s, b, otp)
-	require.Equal(t, -1, on, "the other message is not this one")
-	c := add("first body") // the same message, refetched
-	_, on = labelRow(t, s, c, otp)
-	require.Equal(t, 1, on)
+	ids := e.rows(t, "SELECT id FROM messages WHERE subject = 'same' ORDER BY id")
+	require.Len(t, ids, 2)
+	a, b := store.Int(ids[0][0]), store.Int(ids[1][0])
+	require.NoError(t, e.s.SetLabel(bg, []int64{a}, l.ID, true))
+	_, err = e.s.db.Execute(bg, "DELETE FROM messages WHERE id = ?", a)
+	require.NoError(t, err)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM message_labels WHERE message_id = ?", b), "the other message is not this one")
 }
 
-// TestLabelKeepExpires: stashed labels, with the sender and subject they are
-// keyed by, are cleaned after eventsKeepFor like the event log.
-func TestLabelKeepExpires(t *testing.T) {
-	s := newLabelService(t, "", "zh-CN")
-	otp := labelIDs(t, s)["otp"]
-	old := time.Now().Add(-eventsKeepFor - time.Hour).Unix()
-	_, err := s.db.Execute(t.Context(), `INSERT INTO label_keep(account_id, fp, label_id, active, kept_at)
-		VALUES (1, 'old', ?, 1, ?), (1, 'new', ?, 1, unixepoch())`, otp, old, otp)
+// TestLabelKeepHoldsNoMailText: the stash keys a dropped message by a hash,
+// never by its headers or text.
+func TestLabelKeepHoldsNoMailText(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Archive", "From: bob@example.com\r\nTo: alice@example.com\r\nSubject: secret plans\r\nDate: "+day+"\r\nContent-Type: text/plain\r\n\r\nbody\r\n")
+	e.sync(t)
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
 	require.NoError(t, err)
-	require.NoError(t, s.cleanEvents(t.Context()))
-	rows, err := s.db.Query(t.Context(), "SELECT fp FROM label_keep")
+	id := store.Int(e.rows(t, "SELECT id FROM messages WHERE subject = 'secret plans'")[0][0])
+	require.NoError(t, e.s.SetLabel(bg, []int64{id}, l.ID, true))
+	_, err = e.s.db.Execute(bg, "DELETE FROM messages WHERE id = ?", id)
 	require.NoError(t, err)
-	require.Equal(t, [][]any{{"new"}}, rows.Values)
+	fps := e.rows(t, "SELECT fp FROM label_keep")
+	require.Len(t, fps, 1)
+	assert.Regexp(t, `^[0-9a-f]{64}$`, store.Str(fps[0][0]))
 }
