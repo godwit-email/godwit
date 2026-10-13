@@ -142,7 +142,7 @@ jobs:
             New-Item -ItemType Directory $dir | Out-Null
             Copy-Item "dist\windows-$arch\*" $dir -Recurse
             Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
-            winapp manifest generate --executable "$dir\Godwit.exe"
+            winapp manifest generate --executable "$dir\Godwit.exe" | Out-Host # not into $dirs
             $manifest = Get-Item *.appxmanifest
             (Get-Content $manifest -Raw) -replace '(<Identity[^>]*?Version=")[^"]*', "`${1}$version" | Set-Content "$dir\$($manifest.Name)" -NoNewline
             Remove-Item $manifest
