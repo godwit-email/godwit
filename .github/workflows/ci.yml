@@ -129,6 +129,7 @@ jobs:
     continue-on-error: true
     env:
       MSIX_NAME: BaranWang.Godwit
+      MSIX_DISPLAY_NAME: Godwit # the name reserved in Partner Center; the Store rejects any other
       MSIX_PUBLISHER: CN=07259668-8BC9-4107-94ED-584A42E65ECF
       MSIX_PUBLISHER_DISPLAY_NAME: Baran Wang
     steps:
@@ -151,7 +152,9 @@ jobs:
             Push-Location $dir # the manifest and its Assets are generated next to the app
             winapp manifest generate --executable Godwit.exe --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit --logo-path $logo | Out-Host # not into $dirs
             $manifest = Get-Item *.appxmanifest
-            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
+              -replace '(<DisplayName>)[^<]*', "`${1}$env:MSIX_DISPLAY_NAME" `
+              -replace '(<uap:VisualElements DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
             Pop-Location
             $dir
           }
