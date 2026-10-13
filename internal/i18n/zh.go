@@ -405,6 +405,7 @@ var zh = map[string]string{
 	"settings.keep_in_background":                  "关闭窗口后保持在后台",
 	"settings.keep_in_background.help":             "继续同步和接收通知，可从菜单栏图标打开",
 	"settings.unread_in_menu_bar":                  "在菜单栏显示未读数",
+	"settings.unread_on_app_icon":                  "在应用图标显示未读数",
 	"settings.notifications":                       "通知",
 	"settings.notify_new_mail":                     "新邮件通知",
 	"settings.notify_preview":                      "通知里显示邮件预览",

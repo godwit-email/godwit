@@ -29,7 +29,8 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
-	SetTrayUnread(n int) // the inboxes' unread total on the tray and the app icon; 0 clears it
+	SetTrayUnread(n int) // the inboxes' unread total on the tray; 0 clears it
+	SetAppUnread(n int)  // the inboxes' unread total on the app icon; 0 clears it
 	ShowWindow()         // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
@@ -172,14 +173,16 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
-	foreground bool
-	vibrancy   bool                // Deps.Vibrancy
-	newMail    map[int64]*arrivals // per account, what arrived for its pending notification
-	logf       func(format string, args ...any)
-	noteRoute  func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
-	noteGen    uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst  string                                                    // a click that came before the first load
-	trayUnread int                                                       // what the tray shows
+	foreground  bool
+	vibrancy    bool                // Deps.Vibrancy
+	newMail     map[int64]*arrivals // per account, what arrived for its pending notification
+	logf        func(format string, args ...any)
+	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
+	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
+	noteFirst   string                                                    // a click that came before the first load
+	inboxUnread int                                                       // the inboxes' unread total
+	trayUnread  int                                                       // what the tray shows
+	appUnread   int                                                       // what the app icon shows
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
@@ -333,7 +336,8 @@ func (a *App) load() {
 		}
 		a.syncLocalAPI()
 		a.refreshTasks() // skills or services may have changed too
-		a.showTrayUnread(inbox)
+		a.inboxUnread = inbox
+		a.showUnread(inbox)
 		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {
 			i18n.SetLanguage(tag)
 		}

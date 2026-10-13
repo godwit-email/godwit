@@ -405,6 +405,7 @@ var en = map[string]string{
 	"settings.keep_in_background":                  "Keep running after the window closes",
 	"settings.keep_in_background.help":             "Keeps syncing and notifying; open it again from the menu bar icon",
 	"settings.unread_in_menu_bar":                  "Show the unread count in the menu bar",
+	"settings.unread_on_app_icon":                  "Show the unread count on the app icon",
 	"settings.notifications":                       "Notifications",
 	"settings.notify_new_mail":                     "Notify about new mail",
 	"settings.notify_preview":                      "Show a preview in notifications",
