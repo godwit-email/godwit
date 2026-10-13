@@ -14,10 +14,10 @@ import (
 	gai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/core/status"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 // responsesPlugin speaks the OpenAI Responses API. It resolves any model ID
@@ -72,7 +72,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 		ev := stream.Current()
 		switch ev.Type {
 		case "response.output_text.delta":
-			d := ev.Delta.OfString
+			d := ev.Delta
 			text[ev.OutputIndex] += d
 			if cb != nil && d != "" {
 				if err := cb(ctx, &gai.ModelResponseChunk{Role: gai.RoleModel, Content: []*gai.Part{gai.NewTextPart(d)}}); err != nil {
@@ -82,7 +82,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 		case "response.refusal.delta", "response.refusal.done":
 			refused = true
 		case "response.function_call_arguments.delta":
-			args[ev.ItemID] += ev.Delta.OfString
+			args[ev.ItemID] += ev.Delta
 		case "response.output_item.done":
 			it := ev.Item
 			switch it.Type {
@@ -91,7 +91,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 					refused = refused || c.Type == "refusal"
 				}
 			case "function_call":
-				a := it.Arguments
+				a := it.Arguments.OfString
 				if a == "" {
 					a = args[it.ID]
 				}
@@ -209,7 +209,9 @@ func responsesParams(model string, req *gai.ModelRequest) (responses.ResponseNew
 				if err != nil {
 					return responses.ResponseNewParams{}, status.Errorf(status.ErrInternal, "ai: tool output is not JSON")
 				}
-				items = append(items, responses.ResponseInputItemParamOfFunctionCallOutput(p.ToolResponse.Ref, string(out)))
+				item := responses.ResponseInputItemParamOfFunctionCallOutput(string(out))
+				item.OfFunctionCallOutput.CallID = param.NewOpt(p.ToolResponse.Ref)
+				items = append(items, item)
 			}
 		}
 		flush()

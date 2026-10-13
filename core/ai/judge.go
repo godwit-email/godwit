@@ -169,7 +169,8 @@ func NewJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judg
 	if c == nil {
 		c = NoRedirectClient
 	}
-	h := judgeHTTP{c: c, url: strings.TrimRight(base, "/") + format.Path(), key: key, model: model}
+	base = strings.TrimRight(base, "/")
+	h := judgeHTTP{c: c, base: base, url: base + format.Path(), key: key, model: model}
 	switch format {
 	case FormatDecisions:
 		return judge{h.decisions, 15 * time.Second}, nil
@@ -193,8 +194,8 @@ func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, ba
 }
 
 type judgeHTTP struct {
-	c               *http.Client
-	url, key, model string
+	c                     *http.Client
+	base, url, key, model string // url is base and the format's path
 }
 
 // post sends body and decodes the reply into out, retrying 429, 529 and 5xx.
@@ -215,12 +216,10 @@ func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 		}
 		resp, err := h.c.Do(req)
 		if err != nil {
-			for _, ce := range []error{context.Canceled, context.DeadlineExceeded} {
-				if errors.Is(err, ce) {
-					return fmt.Errorf("judge: %w", ce)
-				}
+			if err := ctxError(err); err != nil {
+				return err
 			}
-			return errors.New("judge: could not reach the model service")
+			return errUnreachable
 		}
 		st := resp.StatusCode
 		if st == http.StatusOK {
@@ -233,19 +232,39 @@ func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 		}
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
-		switch {
-		case st == http.StatusUnauthorized:
-			return ErrModelAuth
-		case st == http.StatusForbidden:
-			return ErrModelForbidden
-		case (st == 429 || st == 529 || st >= 500) && attempt < judgeAttempts:
-			if err := sleep(ctx, backoff(attempt, resp.Header.Get("Retry-After"))); err != nil {
-				return fmt.Errorf("judge: %w", err)
-			}
-		default:
-			return &HTTPError{st}
+		if err := h.retryAfter(ctx, attempt, st, resp.Header); err != nil {
+			return err
 		}
 	}
+}
+
+var errUnreachable = errors.New("judge: could not reach the model service")
+
+// ctxError is err's cancellation or deadline, without err's text; nil if neither.
+func ctxError(err error) error {
+	for _, ce := range []error{context.Canceled, context.DeadlineExceeded} {
+		if errors.Is(err, ce) {
+			return fmt.Errorf("judge: %w", ce)
+		}
+	}
+	return nil
+}
+
+// retryAfter handles a failed status: it waits and returns nil when the
+// attempt may be retried (429, 529, 5xx), else returns the status's error.
+func (h judgeHTTP) retryAfter(ctx context.Context, attempt, st int, hdr http.Header) error {
+	switch {
+	case st == http.StatusUnauthorized:
+		return ErrModelAuth
+	case st == http.StatusForbidden:
+		return ErrModelForbidden
+	case (st == 429 || st == 529 || st >= 500) && attempt < judgeAttempts:
+		if err := sleep(ctx, backoff(attempt, hdr.Get("Retry-After"))); err != nil {
+			return fmt.Errorf("judge: %w", err)
+		}
+		return nil
+	}
+	return &HTTPError{st}
 }
 
 // backoff honors Retry-After seconds, capped at maxRetryAfter.
@@ -381,8 +400,8 @@ func validateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
 }
 
 // levelIndex reads a score probability's level as its index into levels:
-// an index, the index as a string, or the level's label (the Decisions API
-// does not document which it sends).
+// an int (the Decisions API's), a JSON number or a numeric string (System
+// One's keys).
 func levelIndex(v any, levels []Level) (int, bool) {
 	f := math.NaN()
 	switch v := v.(type) {
@@ -392,8 +411,6 @@ func levelIndex(v any, levels []Level) (int, bool) {
 		f = v
 	case string:
 		if i, err := strconv.Atoi(v); err == nil {
-			f = float64(i)
-		} else if i := slices.IndexFunc(levels, func(l Level) bool { return l.Label != "" && l.Label == v }); i >= 0 {
 			f = float64(i)
 		}
 	}

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,12 +98,14 @@ func TestResponsesFakeStream(t *testing.T) {
 
 	// The continuation, built the way a client would, passes validation.
 	rp, fp := rs.ToParam(), fc.ToParam()
+	out := responses.ResponseInputItemParamOfFunctionCallOutput(`{"r":1}`)
+	out.OfFunctionCallOutput.CallID = openai.String(fc.CallID)
 	p.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: responses.ResponseInputParam{
 		responses.ResponseInputItemParamOfMessage("hi", responses.EasyInputMessageRoleUser),
 		{OfReasoning: &rp},
 		responses.ResponseInputItemParamOfMessage("Hello", responses.EasyInputMessageRoleAssistant),
 		{OfFunctionCall: &fp},
-		responses.ResponseInputItemParamOfFunctionCallOutput(fc.CallID, `{"r":1}`),
+		out,
 	}}
 	evs, err = stream(t, s, p)
 	require.NoError(t, err)
