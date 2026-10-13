@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -150,7 +151,13 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 // labelsLoaded drops a label filter whose label is gone, and searches again:
 // kept, it would filter by nothing the chip shows and find nothing.
 func (p *mailPage) labelsLoaded() {
-	if _, ok := p.a.label(p.sf.labelID); ok || p.sf.labelID == 0 {
+	a := p.a
+	gone := func(r Route) bool { return a.goneLabel(r) }
+	a.history, a.ahead = slices.DeleteFunc(a.history, gone), slices.DeleteFunc(a.ahead, gone)
+	if a.goneLabel(a.route) {
+		a.setRoute(a.route) // to the inbox
+	}
+	if _, ok := a.label(p.sf.labelID); ok || p.sf.labelID == 0 {
 		return
 	}
 	p.sf.labelID = 0

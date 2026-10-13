@@ -458,3 +458,16 @@ func TestRescanNeedsModel(t *testing.T) {
 	useLabelJudge(s, &fakeJudge{})
 	require.True(t, s.LabelModelReady(t.Context()))
 }
+
+// TestClassifyWaitsForPresets: before the presets are seeded (a headless first
+// start) nothing is classified, so the seeded labels later apply to that mail.
+func TestClassifyWaitsForPresets(t *testing.T) {
+	s := newLabelService(t, "", "")
+	j := &fakeJudge{}
+	useLabelJudge(s, j)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	n, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+	require.Nil(t, labeledAt(t, s, a))
+}

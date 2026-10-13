@@ -77,6 +77,9 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
+	if a.goneLabel(r) {
+		r = Route{Page: PageMail, View: core.View{Unified: "inbox"}}
+	}
 	if r.Page != PageMail {
 		a.mail.stopOlder() // older mail is fetched only while the list shows
 	}

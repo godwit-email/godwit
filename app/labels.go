@@ -114,3 +114,12 @@ func (p *mailPage) labelNav(c *ui.Context) {
 		ui.Box(c).Height(th.Space(2.5))
 	}
 }
+
+// goneLabel reports a route to the view of a label that no longer exists.
+func (a *App) goneLabel(r Route) bool {
+	if r.Page != PageMail || r.View.LabelID == 0 || !a.loaded {
+		return false
+	}
+	_, ok := a.label(r.View.LabelID)
+	return !ok
+}

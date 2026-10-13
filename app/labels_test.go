@@ -160,3 +160,39 @@ func TestSearchLabelFilterDeleted(t *testing.T) {
 	}
 	h.waitMail("both results again", func() bool { return len(p.results) == 2 && p.sf.labelID == 0 })
 }
+
+// TestLabelViewArchive: archiving from a label view moves the mail, as in
+// any other view.
+func TestLabelViewArchive(t *testing.T) {
+	h, acc, m := labeledMail(t)
+	h.autoLabel(m.ID, "otp")
+	h.app.navigate(Route{Page: PageMail, View: core.View{LabelID: h.labelID("otp")}})
+	p := h.app.mail
+	h.waitMail("the label view", func() bool { return len(p.items) == 1 })
+	p.batch("archive", p.items[:1])
+	archive := h.folderOf(acc, "archive")
+	h.waitMail("the mail archived", func() bool {
+		page, err := h.env.Svc.ListMessages(context.Background(), core.View{FolderID: archive.ID}, "", 10)
+		return err == nil && len(page.Items) == 1
+	})
+}
+
+// TestLabelViewDeleted: a label view whose label is deleted goes to the
+// inbox, and back no longer leads to it.
+func TestLabelViewDeleted(t *testing.T) {
+	h, _, m := labeledMail(t)
+	h.autoLabel(m.ID, "otp")
+	otp := h.labelID("otp")
+	h.app.navigate(Route{Page: PageMail, View: core.View{LabelID: otp}})
+	h.app.navigate(Route{Page: PageSettings, Settings: "labels"})
+	if err := h.env.Svc.DeleteLabel(context.Background(), otp); err != nil {
+		t.Fatal(err)
+	}
+	h.app.navigate(Route{Page: PageMail, View: core.View{LabelID: otp}}) // a stale link
+	h.waitMail("the inbox", func() bool { return h.app.route.View == core.View{Unified: "inbox"} })
+	for _, r := range h.app.history {
+		if r.View.LabelID == otp {
+			t.Errorf("history keeps the deleted label view: %+v", h.app.history)
+		}
+	}
+}

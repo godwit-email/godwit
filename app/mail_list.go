@@ -1165,10 +1165,13 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		names[acc.ID] = acc.Email
 	}
 	v, search := p.view, p.searched
+	var labeled map[int64][]core.AppliedLabel // a label view's messages' labels
 	inView := func(m core.MessageSummary) bool {
 		switch {
 		case search:
 			return true
+		case v.LabelID != 0:
+			return slices.ContainsFunc(labeled[m.ID], func(l core.AppliedLabel) bool { return l.LabelID == v.LabelID })
 		case v.Unified == "inbox":
 			return role[m.FolderID] == "inbox"
 		case v.Unified == "starred":
@@ -1193,6 +1196,16 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 				continue
 			}
 			msgs = append(msgs, th.Messages...)
+		}
+		if v.LabelID != 0 && !search {
+			ids := make([]int64, len(msgs))
+			for i, m := range msgs {
+				ids[i] = m.ID
+			}
+			var err error
+			if labeled, err = a.svc.MessageLabels(ctx, ids); err != nil {
+				return err
+			}
 		}
 		op = act
 		switch act {
