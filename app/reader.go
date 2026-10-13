@@ -281,8 +281,13 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 	}
 	b.stopAvatar()
 	a, gen, seq, get := r.p.a, r.gen, b.avatarGen, r.getAvatar
+	b.avatarAllow, b.avatarDone = manual, false
+	if !manual && a.settingsVer != a.settingsSavedVer {
+		b.avatar, b.avatarBlocked = nil, true
+		return
+	}
 	ctx, stop := context.WithCancel(a.ctx)
-	b.avatarStop, b.avatarAllow, b.avatarDone = stop, manual, false
+	b.avatarStop = stop
 	var image ui.ImageSource
 	var trusted bool
 	a.do(func(context.Context) (err error) {

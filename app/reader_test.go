@@ -247,6 +247,102 @@ func TestReaderAvatarSettingsInvalidation(t *testing.T) {
 	}
 }
 
+func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		fail, manual bool
+	}{{"saved ask", false, false}, {"rollback auto", true, false}, {"explicit permission while saving", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int64
+			h, acc := avatarHarness(t, "ask", func(w http.ResponseWriter, req *http.Request) {
+				hits.Add(1)
+				w.Write(readerAvatarSVG)
+			})
+			// Arrive under ask so the second sender is not prefetched/cached.
+			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "First", "plain"))
+			n := h.deliverOne(acc, coretest.Msg("Carol <carol@example.net>", acc.Email, "Second", "plain"))
+			st := h.app.settings
+			st.RemoteImages = "auto"
+			h.app.changeSettings(st)
+			h.until("auto saved", func() bool { return h.app.settingsVer == h.app.settingsSavedVer })
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			r := h.app.mail.reader
+			h.until("initial avatar", func() bool { return r.bodies[m.ID].avatar != nil })
+			if hits.Load() != 1 {
+				t.Fatalf("initial requests %d", hits.Load())
+			}
+			started, release := make(chan struct{}), make(chan struct{}, 1)
+			t.Cleanup(func() { close(release) })
+			save := h.app.saveSettings
+			h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+				close(started)
+				select {
+				case <-ctx.Done():
+					return core.Settings{}, ctx.Err()
+				case <-release:
+				}
+				if tc.fail {
+					return core.Settings{}, errors.New("blocked save failed")
+				}
+				return save(ctx, st)
+			}
+			st.RemoteImages = "ask"
+			h.app.changeSettings(st)
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("save did not start")
+			}
+			persisted, err := h.env.Svc.GetSettings(t.Context())
+			if err != nil || persisted.RemoteImages != "auto" {
+				t.Fatalf("persisted policy %q, %v", persisted.RemoteImages, err)
+			}
+			r.toggle(m.ID)
+			r.toggle(m.ID)
+			h.seeBody(m.ID)
+			b := r.bodies[m.ID]
+			h.until("reopened avatar attempt", func() bool { return b.avatarDone || b.avatarStop == nil })
+			if b.avatar != nil {
+				t.Error("cached avatar displayed while restrictive setting is unsaved")
+			}
+			h.openThread(n.ThreadID)
+			h.seeBody(n.ID)
+			b = r.bodies[n.ID]
+			h.until("new message avatar attempt", func() bool { return b.avatarDone || b.avatarStop == nil })
+			if b.avatar != nil || hits.Load() != 1 {
+				t.Errorf("unsaved ask allowed new avatar: image %v, requests %d", b.avatar != nil, hits.Load())
+			}
+			if tc.manual {
+				h.click("加载图片")
+				h.until("explicit avatar while saving", func() bool { return b.avatar != nil })
+				if hits.Load() != 2 {
+					t.Errorf("explicit requests %d", hits.Load())
+				}
+			}
+			release <- struct{}{}
+			h.until("settings settled", func() bool { return h.app.settingsVer == h.app.settingsSavedVer })
+			h.advance(refreshEvery)
+			if tc.fail {
+				h.until("rollback restores automatic avatar", func() bool { return b.avatar != nil })
+				if h.app.settings.RemoteImages != "auto" || hits.Load() != 2 {
+					t.Fatalf("rollback policy %q, requests %d", h.app.settings.RemoteImages, hits.Load())
+				}
+			} else if !tc.manual {
+				h.until("saved ask policy applied", func() bool { return b.avatarDone && b.avatarBlocked })
+				if b.avatar != nil || hits.Load() != 1 {
+					t.Fatal("saved ask automatically loaded avatar")
+				}
+				h.click("加载图片")
+				h.until("manual avatar after save", func() bool { return b.avatar != nil })
+				if hits.Load() != 2 {
+					t.Errorf("manual requests %d", hits.Load())
+				}
+			}
+		})
+	}
+}
+
 func TestReaderAvatarLifecycleCancellation(t *testing.T) {
 	for _, action := range []string{"settings", "account", "close", "body replacement"} {
 		t.Run(action, func(t *testing.T) {
