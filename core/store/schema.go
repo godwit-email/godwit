@@ -267,4 +267,18 @@ var Migrations = [][]string{{
 	// as the signature and drafts refer to it (cid:<cid>).
 	`CREATE TABLE signature_images (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		cid TEXT NOT NULL, content_type TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account_id, cid))`,
+}, {
+	// Mail labels (spec 2026-10-13): slug never changes, so a later sync can use it as
+	// an IMAP keyword. A message_labels row set by hand (source manual) wins over the
+	// classifier; active 0 is a label the user took off. labeled_at: NULL new mail
+	// waiting for the classifier, 0 a rescan's target, else when it was classified.
+	`CREATE TABLE labels (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL, icon TEXT NOT NULL,
+		builtin INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL)`,
+	`CREATE TABLE message_labels (message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+		source TEXT NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(message_id, label_id))`,
+	`CREATE INDEX message_labels_label ON message_labels(label_id, active)`,
+	`ALTER TABLE messages ADD COLUMN labeled_at INTEGER`,
+	`CREATE INDEX messages_labeled ON messages(folder_id, labeled_at)`,
 }}

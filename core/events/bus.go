@@ -15,6 +15,7 @@ const (
 	ApprovalsChanged = "approvals.changed"
 	PluginsChanged   = "plugins.changed"
 	MCPChanged       = "mcp.changed"
+	LabelsChanged    = "labels.changed"
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

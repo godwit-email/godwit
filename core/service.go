@@ -39,6 +39,8 @@ type Options struct {
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
+	// noLabeler leaves the background label classifier off (package tests run it by hand).
+	noLabeler bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -103,6 +105,7 @@ type Service struct {
 	pluginGen   uint64                     // last runningPlugin.gen handed out
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
+	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
 	hookClock   plugins.Clock              // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock              // plugin VM call limits; nil is the real clock
@@ -155,6 +158,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if err := s.captureAliases(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("model service aliases: %w", err)
+	}
+	if err := s.seedLabels(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("labels: %w", err)
 	}
 	if err := s.sweepModelKeys(ctx); err != nil {
 		db.Close()
