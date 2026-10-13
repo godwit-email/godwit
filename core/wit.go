@@ -202,16 +202,16 @@ func (s *Service) registerAskTools() {
 	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
 	// No Egress: the judge is a model service, so its traffic is model traffic,
 	// as for the run itself (review #17).
-	read("classify_mail", "Ask typed questions about many messages at once: yes/no, one choice of a list, or a score on levels. "+
+	read("classify_mail", "Ask typed questions about many messages at once: a predicate (the probability it holds), one choice of a list, or a score on levels. "+
 		"Use it for bulk questions over messages you found (is it a newsletter, which project, how urgent) instead of reading each one. "+
 		"Returns each message's answers and ref; it does not return the mail text.",
 		object(map[string]any{
 			"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1, "maxItems": maxClassifyIDs},
 			"questions": map[string]any{"type": "array", "minItems": 1, "maxItems": plugins.MaxQuestions, "items": object(map[string]any{
 				"name":         map[string]any{"type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$"},
-				"type":         map[string]any{"type": "string", "enum": []string{"yes_no", "choice", "score"}},
+				"type":         map[string]any{"type": "string", "enum": []string{"predicate", "choice", "score"}},
 				"instructions": stringProp,
-				"choices":      optionsProp, "levels": optionsProp,
+				"choices":      choicesProp, "levels": levelsProp,
 			}, "name", "type", "instructions")},
 		}, "ids", "questions"),
 		s.classifyMail)
@@ -294,7 +294,10 @@ const (
 // classifyDeadline bounds a classify_mail call; tests shorten it.
 var classifyDeadline = 2 * time.Minute
 
-var optionsProp = map[string]any{"type": "array", "items": object(map[string]any{"value": stringProp, "description": stringProp}, "value")}
+var (
+	choicesProp = map[string]any{"type": "array", "items": object(map[string]any{"value": stringProp, "description": stringProp}, "value")}
+	levelsProp  = map[string]any{"type": "array", "items": object(map[string]any{"label": stringProp, "description": stringProp}, "label")}
+)
 
 // classifyMail asks the judge the questions about each message alone, with
 // its own body budget so none is starved. Questions come only from the
@@ -320,7 +323,7 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	if plugins.QuestionBytes(in.Questions) > classifyQuestions {
 		return nil, fmt.Errorf("the questions are too long: at most %d KB", classifyQuestions>>10)
 	}
-	qs := judgeQuestions(in.Questions)
+	qs := in.Questions
 	if err := ai.ValidateQuestions(qs); err != nil {
 		return nil, err
 	}
@@ -359,7 +362,7 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 			if as, err := j.Ask(ctx, it.Block, qs); err != nil {
 				res[i]["error"] = err.Error()
 			} else {
-				res[i]["answers"] = judgeAnswers(qs, as)
+				res[i]["answers"] = as
 			}
 		})
 	}

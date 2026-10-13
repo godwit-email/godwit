@@ -208,7 +208,7 @@ func TestResolveJudge(t *testing.T) {
 	st.DefaultModel = "gen/m1"
 	_, err = s.SetSettings(bg, st)
 	require.NoError(t, err)
-	q := []ai.Question{{Name: "q", Instructions: "Is it?", Kind: ai.YesNo}}
+	q := []ai.Question{{Name: "q", Instructions: "Is it?", Type: ai.Predicate}}
 
 	// Unset: the default model answers.
 	srv.Script(testllm.Turn{Text: []string{`{"answers":[{"name":"q","answer":"yes"}]}`}})
@@ -218,7 +218,7 @@ func TestResolveJudge(t *testing.T) {
 	assert.True(t, byGen)
 	as, err := j.Ask(bg, "state", q)
 	require.NoError(t, err)
-	assert.Equal(t, 1.0, as[0].Probability)
+	assert.Equal(t, 1.0, *as[0].Probability)
 
 	st.JudgeService = "ts"
 	_, err = s.SetSettings(bg, st)
@@ -229,7 +229,7 @@ func TestResolveJudge(t *testing.T) {
 	assert.False(t, byGen)
 	as, err = j.Ask(bg, "state", q)
 	require.NoError(t, err)
-	assert.Equal(t, 0.9, as[0].Probability)
+	assert.Equal(t, 0.9, *as[0].Probability)
 
 	// Judge off, then removed: back to the default model.
 	_, err = s.UpdateModelService(bg, ts.ID, ModelServiceInput{Name: "ts", BaseURL: srv.URL, Kind: "openai", Models: []string{"x"}})

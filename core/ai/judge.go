@@ -15,41 +15,65 @@ import (
 	"time"
 )
 
-// QuestionKind is what a judge question asks for.
-type QuestionKind int
+// QuestionType is a question's type. Questions and answers take the OpenAI
+// Decisions API's shape and names; the other formats convert to it.
+type QuestionType string
 
 const (
-	YesNo  QuestionKind = iota // a probability that the answer is yes
-	Choice                     // one value of Question.Choices
-	Score                      // a 0-based index into Question.Levels
+	Predicate QuestionType = "predicate" // the probability that it holds
+	Choice    QuestionType = "choice"    // one value of Question.Choices
+	Score     QuestionType = "score"     // a 0-based, possibly fractional, index into Question.Levels
+	// Refusal is the type of an answer the judge declined to give.
+	Refusal QuestionType = "refusal"
 )
 
-// Option is a choice value or a score level.
-type Option struct{ Value, Description string }
+// ChoiceOption is one value a choice question may answer.
+type ChoiceOption struct {
+	Value       string `json:"value"`
+	Description string `json:"description,omitempty"`
+}
+
+// Level is one level of a score question.
+type Level struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
 
 // Question is one typed question. Instructions come from the caller, never
-// from mail; mail goes into the state.
+// from mail; mail goes into the input.
 type Question struct {
-	Name, Instructions string
-	Kind               QuestionKind
-	Choices            []Option // Choice: 2–255 unique values
-	Levels             []Option // Score: 2–10, lowest first
+	Name         string         `json:"name"`
+	Type         QuestionType   `json:"type"`
+	Instructions string         `json:"instructions"`
+	Choices      []ChoiceOption `json:"choices,omitempty"` // choice: 2–255 unique values
+	Levels       []Level        `json:"levels,omitempty"`  // score: 2–10, lowest first
 }
 
-// Answer is a validated answer. YesNo sets Probability; Choice sets Choice
-// and, when the service gives it, its Probability; Score sets Score in
-// [0, len(Levels)-1]. Refused answers carry no value.
+// Answer is a validated answer, in the Decisions API's shape: Type is the
+// question's, or Refusal with nothing else set. A predicate sets Probability;
+// a choice sets Choice; a score sets Score in [0, len(Levels)-1]. Choices
+// and scores may add Probabilities and Confidence when the judge gives them.
 type Answer struct {
-	Name        string
-	Choice      string
-	Probability float64
-	Score       float64
-	Refused     bool
+	Type          QuestionType  `json:"type"`
+	Name          string        `json:"name"`
+	Probability   *float64      `json:"probability,omitempty"`
+	Choice        string        `json:"choice,omitempty"`
+	Score         *float64      `json:"score,omitempty"`
+	Probabilities []Probability `json:"probabilities,omitempty"`
+	Confidence    *float64      `json:"confidence,omitempty"`
 }
 
-// Judge answers typed questions about state, which is untrusted data.
+// Probability is the probability of one choice value (Value a string) or
+// one score level (Value its index, Label its label).
+type Probability struct {
+	Value       any     `json:"value"`
+	Label       string  `json:"label,omitempty"`
+	Probability float64 `json:"probability"`
+}
+
+// Judge answers typed questions about input, which is untrusted data.
 type Judge interface {
-	Ask(ctx context.Context, state string, qs []Question) ([]Answer, error)
+	Ask(ctx context.Context, input string, qs []Question) ([]Answer, error)
 }
 
 // JudgeFormat is a judge wire format.
@@ -105,15 +129,9 @@ var sleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// batchFunc asks one batch of at most maxQuestions and returns raw answers.
-type batchFunc func(ctx context.Context, state string, qs []Question) ([]raw, error)
-
-// raw is an adapter's parse before validation, with the kind the service
-// says it answered.
-type raw struct {
-	Answer
-	kind QuestionKind
-}
+// batchFunc asks one batch of at most maxQuestions and returns its answers,
+// converted to the Decisions shape but not yet validated.
+type batchFunc func(ctx context.Context, input string, qs []Question) ([]Answer, error)
 
 // judge validates the questions, splits them into batches under one deadline
 // and validates every answer.
@@ -122,7 +140,7 @@ type judge struct {
 	timeout time.Duration
 }
 
-func (j judge) Ask(ctx context.Context, state string, qs []Question) ([]Answer, error) {
+func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, error) {
 	if err := validateQuestions(qs); err != nil {
 		return nil, err
 	}
@@ -131,11 +149,11 @@ func (j judge) Ask(ctx context.Context, state string, qs []Question) ([]Answer, 
 	out := make([]Answer, 0, len(qs))
 	for len(qs) > 0 {
 		n := min(len(qs), maxQuestions)
-		raw, err := j.ask(ctx, state, qs[:n])
+		got, err := j.ask(ctx, input, qs[:n])
 		if err != nil {
 			return nil, err
 		}
-		as, err := validateAnswers(qs[:n], raw)
+		as, err := validateAnswers(qs[:n], got)
 		if err != nil {
 			return nil, err
 		}
@@ -258,8 +276,8 @@ func validateQuestions(qs []Question) error {
 		if strings.TrimSpace(q.Instructions) == "" {
 			return fmt.Errorf("%w: %q has no instructions", ErrJudgeQuestion, q.Name)
 		}
-		switch q.Kind {
-		case YesNo:
+		switch q.Type {
+		case Predicate:
 		case Choice:
 			if len(q.Choices) < 2 || len(q.Choices) > 255 {
 				return fmt.Errorf("%w: %q needs 2–255 choices", ErrJudgeQuestion, q.Name)
@@ -276,22 +294,24 @@ func validateQuestions(qs []Question) error {
 				return fmt.Errorf("%w: %q needs 2–10 levels", ErrJudgeQuestion, q.Name)
 			}
 			for _, o := range q.Levels {
-				if o.Value == "" && o.Description == "" {
+				if o.Label == "" && o.Description == "" {
 					return fmt.Errorf("%w: %q has an empty level", ErrJudgeQuestion, q.Name)
 				}
 			}
 		default:
-			return fmt.Errorf("%w: %q has an unknown kind", ErrJudgeQuestion, q.Name)
+			return fmt.Errorf("%w: %q has an unknown type", ErrJudgeQuestion, q.Name)
 		}
 	}
 	return nil
 }
 
-// validateAnswers checks raws against qs: exactly one answer per question,
-// the right kind, values in range. Answer values never reach error text.
-func validateAnswers(qs []Question, raws []raw) ([]Answer, error) {
-	byName := map[string]raw{}
-	for _, a := range raws {
+// validateAnswers checks answers against qs: exactly one answer per question,
+// the right type, values in range. Probabilities come out in the Decisions
+// shape: a choice's by value, a score's by level index with its label.
+// Answer values never reach error text.
+func validateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
+	byName := map[string]Answer{}
+	for _, a := range answers {
 		if _, dup := byName[a.Name]; dup {
 			return nil, fmt.Errorf("%w: duplicate answer", ErrJudgeAnswer)
 		}
@@ -306,38 +326,74 @@ func validateAnswers(qs []Question, raws []raw) ([]Answer, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: no answer for %q", ErrJudgeAnswer, q.Name)
 		}
-		if a.Refused {
-			out[i] = Answer{Name: q.Name, Refused: true}
+		if a.Type == Refusal {
+			out[i] = Answer{Type: Refusal, Name: q.Name}
 			continue
 		}
 		bad := func(what string) error { return fmt.Errorf("%w: %q has %s", ErrJudgeAnswer, q.Name, what) }
-		if a.kind != q.Kind {
+		if a.Type != q.Type {
 			return nil, bad("the wrong answer type")
 		}
-		if !prob(a.Probability) {
-			return nil, bad("a probability outside 0..1")
+		if a.Confidence != nil && !prob(*a.Confidence) {
+			return nil, bad("a confidence outside 0..1")
 		}
-		switch q.Kind {
-		case YesNo:
-			out[i] = Answer{Name: q.Name, Probability: a.Probability}
+		v := Answer{Type: q.Type, Name: q.Name, Confidence: a.Confidence}
+		switch q.Type {
+		case Predicate:
+			if a.Probability == nil || !prob(*a.Probability) {
+				return nil, bad("a probability outside 0..1")
+			}
+			v.Probability, v.Confidence = a.Probability, nil
 		case Choice:
 			if !hasValue(q.Choices, a.Choice) {
-				return nil, bad("a label outside the choices")
+				return nil, bad("a value outside the choices")
 			}
-			out[i] = Answer{Name: q.Name, Choice: a.Choice, Probability: a.Probability}
+			v.Choice = a.Choice
+			for _, p := range a.Probabilities {
+				s, ok := p.Value.(string)
+				if !ok || !hasValue(q.Choices, s) || !prob(p.Probability) {
+					return nil, bad("a probability outside the choices or 0..1")
+				}
+				v.Probabilities = append(v.Probabilities, Probability{Value: s, Probability: p.Probability})
+			}
 		case Score:
-			if math.IsNaN(a.Score) || a.Score < 0 || a.Score > float64(len(q.Levels)-1) {
+			if a.Score == nil || math.IsNaN(*a.Score) || *a.Score < 0 || *a.Score > float64(len(q.Levels)-1) {
 				return nil, bad("a score outside the levels")
 			}
-			out[i] = Answer{Name: q.Name, Score: a.Score}
+			v.Score = a.Score
+			for _, p := range a.Probabilities {
+				i, ok := levelIndex(p.Value, len(q.Levels))
+				if !ok || !prob(p.Probability) {
+					return nil, bad("a probability outside the levels or 0..1")
+				}
+				v.Probabilities = append(v.Probabilities, Probability{Value: i, Label: q.Levels[i].Label, Probability: p.Probability})
+			}
 		}
+		out[i] = v
 	}
 	return out, nil
 }
 
+// levelIndex reads a score probability's level: an integer in [0, n).
+func levelIndex(v any, n int) (int, bool) {
+	var f float64
+	switch v := v.(type) {
+	case int:
+		f = float64(v)
+	case float64:
+		f = v
+	default:
+		return 0, false
+	}
+	if f != math.Trunc(f) || f < 0 || f >= float64(n) {
+		return 0, false
+	}
+	return int(f), true
+}
+
 func prob(p float64) bool { return !math.IsNaN(p) && p >= 0 && p <= 1 }
 
-func hasValue(os []Option, v string) bool {
+func hasValue(os []ChoiceOption, v string) bool {
 	for _, o := range os {
 		if o.Value == v {
 			return true
@@ -346,10 +402,5 @@ func hasValue(os []Option, v string) bool {
 	return false
 }
 
-// num is a parsed number; a missing one is NaN, which validation rejects.
-func num(p *float64) float64 {
-	if p == nil {
-		return math.NaN()
-	}
-	return *p
-}
+// ptr is a pointer to v.
+func ptr(v float64) *float64 { return &v }

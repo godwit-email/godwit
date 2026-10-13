@@ -102,7 +102,7 @@ func (h *fakeHost) LLMDecide(_ context.Context, _ string, qs []Question) ([]Answ
 	h.decided = qs
 	h.mu.Unlock()
 	p := 0.75
-	return []Answer{{Name: qs[0].Name, Probability: &p}}, nil
+	return []Answer{{Type: "predicate", Name: qs[0].Name, Probability: &p}}, nil
 }
 func (h *fakeHost) Fetch(_ context.Context, _ Invocation, r FetchRequest) (FetchResponse, error) {
 	h.rec("Fetch")
@@ -189,14 +189,14 @@ func TestLLMCompleteLimits(t *testing.T) {
 func TestLLMDecideLimits(t *testing.T) {
 	h := &fakeHost{}
 	p := mustLoad(t, Permissions{LLM: true}, h, stash)
-	q := `{name: "spam", type: "yes_no", instructions: "Is it spam?"}`
-	assert.Equal(t, map[string]any{"name": "spam", "probability": 0.75},
+	q := `{name: "spam", type: "predicate", instructions: "Is it spam?"}`
+	assert.Equal(t, map[string]any{"type": "predicate", "name": "spam", "probability": 0.75},
 		try(t, p, readOnly, `ctx.llm.decide("mail", [`+q+`]).then(a => a[0])`), "the host's answers mapped back")
-	assert.Equal(t, []Question{{Name: "spam", Type: "yes_no", Instructions: "Is it spam?"}}, h.decided)
+	assert.Equal(t, []Question{{Name: "spam", Type: "predicate", Instructions: "Is it spam?"}}, h.decided)
 
-	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("mail", Array.from({length: 129}, (_, i) => ({name: "q"+i, type: "yes_no", instructions: "x"})))`),
+	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("mail", Array.from({length: 129}, (_, i) => ({name: "q"+i, type: "predicate", instructions: "x"})))`),
 		"at most 128", "rejected, not split")
-	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("x".repeat(65530), [{name: "a", type: "yes_no", instructions: "y".repeat(10)}])`), "too large",
+	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("x".repeat(65530), [{name: "a", type: "predicate", instructions: "y".repeat(10)}])`), "too large",
 		"state and instructions together")
 	assert.Contains(t, try(t, p, readOnly, `ctx.llm.decide("mail", "spam?")`), "questions must be")
 	assert.Equal(t, []string{"LLMDecide"}, h.got())
