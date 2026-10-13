@@ -275,3 +275,32 @@ func TestLabelsSurviveUIDValidityReset(t *testing.T) {
 	assert.Equal(t, [][]any{{on.ID, "manual", int64(1)}, {off.ID, "manual", int64(0)}},
 		e.rows(t, "SELECT label_id, source, active FROM message_labels WHERE message_id = ? ORDER BY label_id", id))
 }
+
+// TestLabelsSurviveResetForEachCopy: two copies of one message (one
+// Message-ID) in a folder both get their hand-set label back.
+func TestLabelsSurviveResetForEachCopy(t *testing.T) {
+	e := newSyncEnv(t)
+	for range 2 {
+		e.put(t, "Archive", eml("twin@x", "bob@example.com", "alice@example.com", "s", day, "body"))
+	}
+	e.sync(t)
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	var ids []int64
+	for _, r := range e.rows(t, "SELECT id FROM messages WHERE message_id = 'twin@x'") {
+		ids = append(ids, store.Int(r[0]))
+	}
+	require.Len(t, ids, 2)
+	require.NoError(t, e.s.SetLabel(bg, ids, l.ID, true))
+
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	for range 2 {
+		e.put(t, "Archive", eml("twin@x", "bob@example.com", "alice@example.com", "s", day, "body"))
+	}
+	e.sync(t)
+
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'twin@x'"))
+	assert.Equal(t, 2, e.count(t, `SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+		WHERE m.message_id = 'twin@x' AND ml.label_id = ? AND ml.source = 'manual' AND ml.active = 1`, l.ID))
+}
