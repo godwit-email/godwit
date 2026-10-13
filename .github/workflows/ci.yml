@@ -154,7 +154,11 @@ jobs:
             $manifest = Get-Item *.appxmanifest
             (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
               -replace '(<DisplayName>)[^<]*', "`${1}$env:MSIX_DISPLAY_NAME" `
-              -replace '(<uap:VisualElements DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+              -replace '(<uap:VisualElements\s+DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+            $text = Get-Content $manifest -Raw # a replace that matches nothing is silent: the Store would reject the package
+            foreach ($want in "<DisplayName>$env:MSIX_DISPLAY_NAME<", ('DisplayName="' + $env:MSIX_DISPLAY_NAME + '"'), "<PublisherDisplayName>$env:MSIX_PUBLISHER_DISPLAY_NAME<") {
+              if (-not $text.Contains($want)) { throw "the manifest lacks $want" }
+            }
             Pop-Location
             $dir
           }
