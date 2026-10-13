@@ -350,6 +350,7 @@ func TestLabelerBackoffIgnoresWake(t *testing.T) {
 
 func TestRescanMissing(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
+	useLabelJudge(s, &fakeJudge{})
 	otp := labelIDs(t, s)["otp"]
 	now := time.Now().Unix()
 	a := addMessage(t, s, "a", "a@x", "", "", now)
@@ -370,6 +371,7 @@ func TestRescanMissing(t *testing.T) {
 
 func TestRescanAll(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
+	useLabelJudge(s, &fakeJudge{})
 	l := labelIDs(t, s)
 	now := time.Now().Unix()
 	a := addMessage(t, s, "a", "a@x", "", "", now)
@@ -392,6 +394,7 @@ func TestRescanAll(t *testing.T) {
 
 func TestRescanRange(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
+	useLabelJudge(s, &fakeJudge{})
 	old := addMessage(t, s, "old", "a@x", "", "", time.Now().AddDate(0, 0, -40).Unix())
 	setLabeledAt(t, s, old, 100)
 	n, err := s.RescanLabels(t.Context(), 30, true)
@@ -406,6 +409,7 @@ func TestRescanRange(t *testing.T) {
 
 func TestStopRescan(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
+	useLabelJudge(s, &fakeJudge{})
 	now := time.Now().Unix()
 	a := addMessage(t, s, "a", "a@x", "", "", now)
 	setLabeledAt(t, s, a, 100)
@@ -420,4 +424,37 @@ func TestStopRescan(t *testing.T) {
 	require.Greater(t, store.Int(labeledAt(t, s, a)), int64(100))
 	require.Nil(t, labeledAt(t, s, old), "outside the range: untouched")
 	require.Nil(t, labeledAt(t, s, fresh), "new mail waits for the classifier, not the stop")
+}
+
+// TestClassifyUnanswerableIsNo: a message the model cannot answer for (a reply
+// with no valid answer, a request the service rejects) gets no labels and is
+// done, so it does not stop every later message.
+func TestClassifyUnanswerableIsNo(t *testing.T) {
+	for name, e := range map[string]error{"bad answer": ai.ErrJudgeAnswer, "rejected": &ai.HTTPError{Status: 400}} {
+		t.Run(name, func(t *testing.T) {
+			s := newLabelService(t, "", "zh-CN")
+			useLabelJudge(s, &fakeJudge{err: e})
+			a := addMessage(t, s, "a", "a@x", "", "", 1)
+			n, err := s.classifyBatch(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, 1, n)
+			require.Greater(t, store.Int(labeledAt(t, s, a)), int64(0))
+		})
+	}
+}
+
+// TestRescanNeedsModel: with no model to classify with, a rescan is refused
+// before it drops any model labels.
+func TestRescanNeedsModel(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addMessage(t, s, "a", "a@x", "", "", time.Now().Unix())
+	setRow(t, s, a, otp, "auto", 1)
+	_, err := s.RescanLabels(t.Context(), 30, true)
+	require.ErrorIs(t, err, ErrAINotConfigured)
+	_, on := labelRow(t, s, a, otp)
+	require.Equal(t, 1, on)
+	require.False(t, s.LabelModelReady(t.Context()))
+	useLabelJudge(s, &fakeJudge{})
+	require.True(t, s.LabelModelReady(t.Context()))
 }

@@ -28,7 +28,8 @@ var LabelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-
 // ErrLabelExists is a label name already taken, ignoring case and outer spaces.
 var ErrLabelExists = errors.New("a label with this name exists")
 
-const maxLabelName = 32 // runes
+// MaxLabelName is the most runes a label name has.
+const MaxLabelName = 32
 
 // Label is a mail label. Count is the messages it is on, Unread those unread.
 type Label struct {
@@ -115,8 +116,8 @@ func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (La
 	switch {
 	case in.Name == "":
 		return in, errors.New("a label needs a name")
-	case utf8.RuneCountInString(in.Name) > maxLabelName:
-		return in, fmt.Errorf("a label name has at most %d characters", maxLabelName)
+	case utf8.RuneCountInString(in.Name) > MaxLabelName:
+		return in, fmt.Errorf("a label name has at most %d characters", MaxLabelName)
 	case !slices.Contains(LabelColors, in.Color):
 		return in, fmt.Errorf("invalid label color %q", in.Color)
 	case !slices.Contains(LabelIcons, in.Icon):

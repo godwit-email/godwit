@@ -157,7 +157,7 @@ type App struct {
 	accounts    []core.Account
 	labels      []core.Label    // in the user's order, as the last load read them
 	settings    core.Settings   // what the interface shows: the newest edit while one saves
-	taskModels  map[string]bool // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for
+	taskModels  map[string]bool // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
 	taskGen     uint64          // bumped per refreshTasks; only the newest answer counts
 
 	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
@@ -488,6 +488,7 @@ func (a *App) refreshTasks() {
 			_, err := a.svc.TaskModel(ctx, task)
 			got[task] = !errors.Is(err, core.ErrAINotConfigured) && !errors.Is(err, core.ErrModelServiceNotFound) && !errors.Is(err, core.ErrModelNotFound)
 		}
+		got["labels"] = a.svc.LabelModelReady(ctx)
 		return nil
 	}, func(error) {
 		if gen != a.taskGen || maps.Equal(a.taskModels, got) {

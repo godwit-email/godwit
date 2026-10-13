@@ -122,7 +122,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				return done, err
 			}
 			answers, err := judge.Ask(ctx, labelState(m), qs)
-			if err != nil {
+			if err != nil && !unanswerable(err) {
 				return done, err
 			}
 			for _, a := range answers {
@@ -135,6 +135,14 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 		done++
 	}
 	return done, nil
+}
+
+// unanswerable reports an error that would repeat for this message alone: no
+// valid answer, or the service rejecting the request (a content filter). Its
+// labels are no, so one message does not stop the rest.
+func unanswerable(err error) bool {
+	var he *ai.HTTPError
+	return errors.Is(err, ai.ErrJudgeAnswer) || errors.As(err, &he) && he.Status == 400
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has
@@ -201,6 +209,12 @@ func (s *Service) RescanLabels(ctx context.Context, days int, all bool) (int, er
 		return 0, err
 	}
 	defer end()
+	if _, err := s.labelJudge(ctx); err != nil { // nothing would classify the targets
+		if errors.Is(err, errNoLabelModel) {
+			err = ErrAINotConfigured
+		}
+		return 0, err
+	}
 	since := int64(0)
 	if days > 0 {
 		since = time.Now().AddDate(0, 0, -days).Unix()
@@ -220,6 +234,12 @@ func (s *Service) RescanLabels(ctx context.Context, days int, all bool) (int, er
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
 	s.wakeLabeler()
 	return int(res[1].Changes), nil
+}
+
+// LabelModelReady reports whether a model can classify mail.
+func (s *Service) LabelModelReady(ctx context.Context) bool {
+	_, err := s.labelJudge(ctx)
+	return err == nil
 }
 
 // StopRescan gives up on the rescan targets not classified yet.

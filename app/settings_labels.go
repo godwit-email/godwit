@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -64,7 +65,11 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 		},
 		func() {
 			settingRow(c, i18n.T("settings.labels.model"), i18n.T("settings.labels.model.help"), func() {
-				kit.Text(c, i18n.T("settings.labels.model.value"), theme.Of(c).Text.Body).TextColor(theme.Of(c).Muted)
+				value := i18n.T("settings.labels.model.value")
+				if !a.taskModels["labels"] {
+					value = i18n.T("settings.labels.model.none")
+				}
+				kit.Text(c, value, theme.Of(c).Text.Body).TextColor(theme.Of(c).Muted)
 				settingButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
 			})
 		})
@@ -147,9 +152,13 @@ func (v *labelsView) dialog(c *ui.Context) {
 		title, save = i18n.T("settings.labels.dialog.new"), i18n.T("settings.labels.create")
 	}
 	taken := v.taken(v.name)
+	long := utf8.RuneCountInString(strings.TrimSpace(v.name)) > core.MaxLabelName
 	nameErr := ""
-	if taken {
+	switch {
+	case taken:
 		nameErr = i18n.T("settings.labels.name.exists")
+	case long:
+		nameErr = i18n.Tf("settings.labels.name.long", core.MaxLabelName)
 	}
 	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close")}, func() {
 		preview := cmpName(v.name)
@@ -166,7 +175,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 			}
 		})
 		kit.Field(c, i18n.T("settings.labels.name"), "", nameErr, func() {
-			kit.Input(c, &v.name, kit.InputOpts{Placeholder: i18n.T("settings.labels.name.placeholder"), Invalid: taken}).Label(i18n.T("settings.labels.name"))
+			kit.Input(c, &v.name, kit.InputOpts{Placeholder: i18n.T("settings.labels.name.placeholder"), Invalid: nameErr != ""}).Label(i18n.T("settings.labels.name"))
 		})
 		kit.Field(c, i18n.T("settings.labels.desc"), "", "", func() {
 			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder")}).Label(i18n.T("settings.labels.desc"))
@@ -213,7 +222,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 			ui.Spacer(c)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.dlg = false })
-		kit.Button(c, save, kit.ButtonOpts{Disabled: taken || strings.TrimSpace(v.name) == ""}).OnClick(v.save)
+		kit.Button(c, save, kit.ButtonOpts{Disabled: nameErr != "" || strings.TrimSpace(v.name) == ""}).OnClick(v.save)
 	})
 	if !v.confirm {
 		return
@@ -280,9 +289,14 @@ func (v *labelsView) rescan(c *ui.Context) {
 		func() {
 			settingBlock(c, func() {
 				if !v.started {
-					ui.Row(c).Children(func() {
-						ui.Spacer(c)
-						settingButton(c, i18n.T("settings.labels.rescan.start"), kit.Default, false).OnClick(v.start)
+					ready := v.a.taskModels["labels"]
+					ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
+						if ready {
+							ui.Spacer(c)
+						} else {
+							kit.Text(c, i18n.T("settings.labels.rescan.no_model"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+						}
+						settingButton(c, i18n.T("settings.labels.rescan.start"), kit.Default, !ready).OnClick(v.start)
 					})
 					return
 				}

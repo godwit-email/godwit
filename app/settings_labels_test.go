@@ -41,6 +41,14 @@ func (h *harness) typeUnder(label, text string) {
 	h.typeText(text)
 }
 
+// withModel gives the account's Godwit a model, so labels can be classified.
+func (h *harness) withModel() {
+	h.t.Helper()
+	h.env.LLM(h.t)
+	h.settle()
+	h.waitMail("a model for labels", func() bool { return h.app.taskModels["labels"] })
+}
+
 func TestSettingsLabelsList(t *testing.T) {
 	h, _ := withAccount(t)
 	h.labelsPage()
@@ -133,6 +141,7 @@ func TestSettingsLabelsRescan(t *testing.T) {
 		h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, s, s))
 	}
 	h.syncNow(acc)
+	h.withModel()
 	h.labelsPage()
 	h.click("全部重新判断")
 	h.click("开始回扫")
@@ -163,6 +172,7 @@ func TestSettingsLabelsRescanWithAutoOff(t *testing.T) {
 	h, acc := withAccount(t)
 	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "a", "a"))
 	h.syncNow(acc)
+	h.withModel()
 	h.labelsPage()
 	h.click("自动给新邮件打标签")
 	h.until("auto-labeling off", func() bool { return !h.app.settings.AutoLabel })
@@ -177,5 +187,34 @@ func TestSettingsSearchFindsLabels(t *testing.T) {
 		if m := p.matching(q); len(m.apps) != 1 || m.apps[0] != "labels" || m.accounts {
 			t.Errorf("%s: %+v", q, m)
 		}
+	}
+}
+
+func TestSettingsLabelsRescanNeedsModel(t *testing.T) {
+	h, acc := withAccount(t)
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "a", "a"))
+	h.syncNow(acc)
+	h.labelsPage()
+	h.see("还没有能用来分类的模型，先在「模型服务」里添加一个")
+	h.click("开始回扫")
+	h.drain()
+	h.tt.Frame()
+	if h.tt.HasText("正在回扫") {
+		t.Error("a rescan started with no model")
+	}
+}
+
+func TestSettingsLabelsNameTooLong(t *testing.T) {
+	h, _ := withAccount(t)
+	h.labelsPage()
+	h.click("新建标签")
+	h.typeUnder("名称", strings.Repeat("长", 33))
+	h.see("名称最多 32 个字")
+	n := len(h.labels())
+	h.click("创建")
+	h.drain()
+	h.tt.Frame()
+	if len(h.labels()) != n || !h.tt.HasText("名称最多 32 个字") {
+		t.Error("an over-long name was saved or the dialog closed")
 	}
 }
