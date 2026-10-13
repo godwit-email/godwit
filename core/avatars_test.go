@@ -132,6 +132,25 @@ func TestSenderAvatarSources(t *testing.T) {
 	}
 }
 
+// TestSenderAvatarCachedOrganizationFirst: with the organization's icon cached, a
+// sender host is not asked again, as account.tiktok.com, which never answers, was.
+func TestSenderAvatarCachedOrganizationFirst(t *testing.T) {
+	good := avatarPNG(t)
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "example.com" {
+			w.Write(good)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	_, err := f.s.SenderAvatar(t.Context(), addMessage(t, f.s, "a", "bob@example.com", "plain", "", 1), false)
+	require.NoError(t, err)
+	got, err := f.s.SenderAvatar(t.Context(), addMessage(t, f.s, "b", "bob@mail.example.com", "plain", "", 2), false)
+	require.NoError(t, err)
+	assert.Equal(t, "favicon", got.Source)
+	assert.Equal(t, []string{"example.com/apple-touch-icon.png"}, f.hits())
+}
+
 func TestAvatarPolicy(t *testing.T) {
 	for _, tc := range []struct {
 		name, mode                 string
