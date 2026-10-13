@@ -778,7 +778,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
 			// Until the avatar is fetched or refused, a pulse; then the image or the initial.
 			if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
-				kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Full).Shrink(0).Label(name)
+				kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
 			} else {
 				kit.AvatarImage(c, name, b.avatar)
 			}

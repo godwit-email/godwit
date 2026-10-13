@@ -1,6 +1,7 @@
 package kit
 
 import (
+	"hash/fnv"
 	"unicode"
 	"unicode/utf8"
 
@@ -121,22 +122,32 @@ func initial(name string) string {
 	return string(unicode.ToUpper(r))
 }
 
-// Avatar is a circle with the initial of name, labelled name.
+// Avatar is a rounded square with the initial of name, labelled name, in a
+// label color the name picks, so each sender keeps theirs.
 func Avatar(c *ui.Context, name string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(t.Foreground)
+	col := avatarColor(t, name)
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(col.Fill).Center().Label(name).Children(func() {
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(col.Text)
 	})
 }
 
+// avatarColor is one of the label colors but gray, by a hash of name.
+func avatarColor(t theme.Tokens, name string) theme.LabelColor {
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	colors := t.Labels[1:]
+	return colors[h.Sum32()%uint32(len(colors))]
+}
+
 // AvatarImage shows an image in its own colors, with the same labelled
-// circle and size as the initial placeholder.
+// square and size as the initial placeholder.
 func AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element {
 	if image == nil {
 		return Avatar(c, name)
 	}
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Full).Clip().Label(name).Children(func() {
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Clip().Label(name).Children(func() {
 		ui.Image(c, image).Size(th.Space(8), th.Space(8)).Fit(ui.Cover)
 	})
 }

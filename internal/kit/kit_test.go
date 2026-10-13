@@ -1216,3 +1216,18 @@ func TestDialogBackdropBlurs(t *testing.T) {
 		t.Errorf("edge pixel %v is not blurred", p)
 	}
 }
+
+func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
+	tk := theme.Light()
+	seen := map[theme.LabelColor]bool{}
+	for _, name := range []string{"Alice", "Bob", "Carol", "TikTok", "网易邮箱账号安全", "GitHub", "Dave", "Eve"} {
+		col := avatarColor(tk, name)
+		if col != avatarColor(tk, name) || col == tk.Labels[0] {
+			t.Fatalf("%s: %v", name, col)
+		}
+		seen[col] = true
+	}
+	if len(seen) < 3 {
+		t.Errorf("%d colors for 8 names", len(seen))
+	}
+}
