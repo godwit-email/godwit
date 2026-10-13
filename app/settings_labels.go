@@ -73,7 +73,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 
 // list is the labels, one row each, in a List: dragging a row shows
 // where it would go and moves it there (ListState.Reorder). The List is as
-// tall as its rows, so the page scrolls, not the list.
+// tall as its rows, up to half the window.
 func (v *labelsView) list(c *ui.Context) {
 	a, th := v.a, c.Theme()
 	n := len(a.labels)
@@ -81,6 +81,10 @@ func (v *labelsView) list(c *ui.Context) {
 	v.order.Label = func(i int) string { return a.labels[i].Name }
 	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
 	h := float32(n)*th.Space(12) + float32(max(n-1, 0))*theme.Hairline
+	// A drag scrolls only the list under it, never the page: past half the window
+	// the list scrolls itself, so both its edges fit on screen to drag toward.
+	_, wh := c.Size()
+	h = min(h, wh/2)
 	kit.List(c, &v.order, n, func(i int) {
 		ui.Column(c).FillWidth().Material(kit.Frost(c)).Children(func() {
 			if i > 0 {

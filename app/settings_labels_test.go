@@ -128,6 +128,34 @@ func TestSettingsLabelsReorder(t *testing.T) {
 	})
 }
 
+// TestSettingsLabelsReorderScrolls drags a label to the bottom of a list longer than the
+// window allows: holding it at the list's edge scrolls the rest into reach.
+func TestSettingsLabelsReorderScrolls(t *testing.T) {
+	h, _ := withAccount(t)
+	h.resize(1280, 600)
+	h.labelsPage()
+	first, _ := h.tt.Find("编辑「验证码」")
+	second, _ := h.tt.Find("编辑「账单」")
+	row := second.Y - first.Y
+	top := first.Y + first.H/2 - row/2
+	x, y := first.X-row*4, first.Y+first.H/2
+	h.tt.Move(x, y)
+	h.tt.Press(x, y)
+	h.tt.Move(x, y+row/2)
+	end := top + 300 - 4 // the list's bottom edge: half the window
+	h.tt.Move(x, end)
+	for range 60 {
+		h.advance(16 * time.Millisecond)
+		h.tt.Frame()
+	}
+	h.tt.Release(x, end)
+	h.drain()
+	h.until("the label at the end", func() bool {
+		ls := h.labels()
+		return ls[len(ls)-1].Slug == "otp"
+	})
+}
+
 func TestSettingsLabelsAutoSwitch(t *testing.T) {
 	h, _ := withAccount(t)
 	h.labelsPage()
