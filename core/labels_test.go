@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -247,4 +248,30 @@ func TestSeedLabelsWaitsForLanguage(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ls, 7)
 	require.Equal(t, "验证码", ls[0].Name)
+}
+
+// TestLabelsSurviveUIDValidityReset: a folder's UIDVALIDITY change drops its
+// cached messages; the labels set by hand, a removal too, come back with the
+// refetched copies (by Message-ID).
+func TestLabelsSurviveUIDValidityReset(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Archive", eml("kept@x", "bob@example.com", "alice@example.com", "s", day, "body"))
+	e.sync(t)
+	on, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	off, err := e.s.CreateLabel(bg, LabelInput{Name: "Work", Color: "blue", Icon: "briefcase-4"})
+	require.NoError(t, err)
+	old := store.Int(e.rows(t, "SELECT id FROM messages WHERE message_id = 'kept@x'")[0][0])
+	require.NoError(t, e.s.SetLabel(bg, []int64{old}, on.ID, true))
+	require.NoError(t, e.s.SetLabel(bg, []int64{old}, off.ID, false))
+
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	e.put(t, "Archive", eml("kept@x", "bob@example.com", "alice@example.com", "s", day, "body"))
+	e.sync(t)
+
+	id := store.Int(e.rows(t, "SELECT id FROM messages WHERE message_id = 'kept@x'")[0][0])
+	require.NotEqual(t, old, id, "the message was refetched")
+	assert.Equal(t, [][]any{{on.ID, "manual", int64(1)}, {off.ID, "manual", int64(0)}},
+		e.rows(t, "SELECT label_id, source, active FROM message_labels WHERE message_id = ? ORDER BY label_id", id))
 }

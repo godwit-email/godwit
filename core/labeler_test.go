@@ -471,3 +471,22 @@ func TestClassifyWaitsForPresets(t *testing.T) {
 	require.Equal(t, 0, n)
 	require.Nil(t, labeledAt(t, s, a))
 }
+
+// TestClassifyDropsEditedLabel: an answer to a label the user edited while the
+// model answered is dropped, and the message asked again.
+func TestClassifyDropsEditedLabel(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	j := &fakeJudge{p: map[string]float64{"otp": 0.9}}
+	j.during = func() {
+		_, err := s.UpdateLabel(context.Background(), otp, LabelInput{Name: "验证码", Description: "只算短信验证码", Color: "red", Icon: "shield-keyhole"})
+		require.NoError(t, err)
+	}
+	useLabelJudge(s, j)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	_, on := labelRow(t, s, a, otp)
+	require.Equal(t, -1, on)
+	require.Nil(t, labeledAt(t, s, a), "asked again with the new description")
+}

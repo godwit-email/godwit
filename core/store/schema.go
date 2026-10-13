@@ -281,4 +281,15 @@ var Migrations = [][]string{{
 	`CREATE INDEX message_labels_label ON message_labels(label_id, active)`,
 	`ALTER TABLE messages ADD COLUMN labeled_at INTEGER`,
 	`CREATE INDEX messages_labeled ON messages(folder_id, labeled_at)`,
+}, {
+	// Labels set by hand on the messages a UIDVALIDITY reset drops, by Message-ID;
+	// the refetched copy takes them back as it is inserted.
+	`CREATE TABLE label_keep (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, mid TEXT NOT NULL,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL, PRIMARY KEY(account_id, mid, label_id))`,
+	`CREATE TRIGGER messages_label_keep AFTER INSERT ON messages
+		WHEN EXISTS (SELECT 1 FROM label_keep WHERE account_id = new.account_id AND mid = new.message_id) BEGIN
+		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
+			SELECT new.id, label_id, 'manual', active FROM label_keep WHERE account_id = new.account_id AND mid = new.message_id;
+		DELETE FROM label_keep WHERE account_id = new.account_id AND mid = new.message_id;
+	END`,
 }}

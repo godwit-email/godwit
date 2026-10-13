@@ -175,6 +175,10 @@ func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, 
 	stmts := []sqlite.Statement{
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
 			AND message_id IN (SELECT id FROM messages WHERE server_folder_id = ?)`, Args: []any{accountID, f.id}},
+		// Labels set by hand are the user's, not the cache's: kept for the refetched copies.
+		{SQL: `INSERT OR REPLACE INTO label_keep(account_id, mid, label_id, active)
+			SELECT m.account_id, m.message_id, ml.label_id, ml.active FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+			WHERE m.server_folder_id = ? AND ml.source = 'manual' AND m.message_id IS NOT NULL AND m.message_id != ''`, Args: []any{f.id}},
 		{SQL: "DELETE FROM messages WHERE server_folder_id = ?", Args: []any{f.id}},
 		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{uidValidity, f.id}},
 	}

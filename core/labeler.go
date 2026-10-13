@@ -186,23 +186,30 @@ func labelState(m Message) string {
 
 // labelWrites applies the answers to a message read with labeled_at at. Every
 // statement checks the message is still that one in the Inbox (not stopped,
-// moved or rescanned meanwhile) and leaves hand-set rows alone.
+// moved or rescanned meanwhile) and that no label asked about was edited
+// meanwhile (an answer to its old name or description); otherwise nothing is
+// written and the message is asked again. Hand-set rows are left alone.
 func labelWrites(id int64, at any, labels []Label, yes map[string]bool) []sqlite.Statement {
 	guard := "EXISTS (SELECT 1 FROM messages m WHERE m.id = ? AND m.labeled_at IS ? AND " + inboxCond + ")"
+	guardArgs := []any{id, at}
+	for _, l := range labels { // a deleted label is no reason to ask again
+		guard += " AND NOT EXISTS (SELECT 1 FROM labels WHERE id = ? AND (name IS NOT ? OR description IS NOT ?))"
+		guardArgs = append(guardArgs, l.ID, l.Name, l.Description)
+	}
 	var stmts []sqlite.Statement
 	for _, l := range labels {
 		if yes[l.Slug] {
 			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 				SELECT ?, ?, 'auto', 1 WHERE ` + guard + ` AND EXISTS (SELECT 1 FROM labels WHERE id = ?)
 				ON CONFLICT(message_id, label_id) DO UPDATE SET active = 1 WHERE source = 'auto'`,
-				Args: []any{id, l.ID, id, at, l.ID}})
+				Args: append(append([]any{id, l.ID}, guardArgs...), l.ID)})
 		} else {
 			stmts = append(stmts, sqlite.Statement{SQL: `DELETE FROM message_labels
-				WHERE message_id = ? AND label_id = ? AND source = 'auto' AND ` + guard, Args: []any{id, l.ID, id, at}})
+				WHERE message_id = ? AND label_id = ? AND source = 'auto' AND ` + guard, Args: append([]any{id, l.ID}, guardArgs...)})
 		}
 	}
-	return append(stmts, sqlite.Statement{SQL: `UPDATE messages SET labeled_at = unixepoch()
-		WHERE id = ? AND labeled_at IS ? AND folder_id IN (SELECT id FROM folders WHERE role = 'inbox')`, Args: []any{id, at}})
+	return append(stmts, sqlite.Statement{SQL: `UPDATE messages SET labeled_at = unixepoch() WHERE id = ? AND ` + guard,
+		Args: append([]any{id}, guardArgs...)})
 }
 
 // RescanLabels makes the Inbox mail of the last days (0: all of it) the
