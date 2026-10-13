@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -31,8 +30,7 @@ type labelsView struct {
 	editID                  int64 // 0: a new label
 	name, desc, color, icon string
 
-	drag     map[int64]*ui.Point // each row's drag offset
-	dragging map[int64]bool      // the rows dragged last frame
+	order ui.ListState // the labels' list, its rows dragged to reorder them
 
 	days    int // the rescan range, a rescanDays value
 	mode    int // 0 unlabeled only, 1 judge all again
@@ -43,7 +41,7 @@ type labelsView struct {
 }
 
 func newLabelsView(a *App) *labelsView {
-	return &labelsView{a: a, days: 30, drag: map[int64]*ui.Point{}, dragging: map[int64]bool{}}
+	return &labelsView{a: a, days: 30}
 }
 
 func (v *labelsView) view(c *ui.Context, p *settingsPage) {
@@ -51,11 +49,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	pageHeading(c, i18n.T("settings.labels"), i18n.T("settings.labels.sub"), func() {
 		settingButton(c, i18n.T("settings.labels.new"), kit.Outline, false).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
 	})
-	rows := make([]func(), len(a.labels))
-	for i, l := range a.labels {
-		rows[i] = func() { v.row(c, i, l) }
-	}
-	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), rows...)
+	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), func() { v.list(c) })
 
 	p.syncSettings()
 	defer p.syncSettings()
@@ -77,27 +71,30 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	v.dialog(c)
 }
 
-// row is a label: grip, chip, description, built-in mark, count, edit. The
-// row drags up and down; let go, it moves that many rows.
-func (v *labelsView) row(c *ui.Context, i int, l core.Label) {
-	a := v.a
+// list is the labels, one row each, in a List: dragging a row shows
+// where it would go and moves it there (ListState.Reorder). The List is as
+// tall as its rows, so the page scrolls, not the list.
+func (v *labelsView) list(c *ui.Context) {
+	a, th := v.a, c.Theme()
+	n := len(a.labels)
+	v.order.Key = func(i int) any { return a.labels[i].ID }
+	v.order.Label = func(i int) string { return a.labels[i].Name }
+	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
+	h := float32(n)*th.Space(12) + float32(max(n-1, 0))*theme.Hairline
+	kit.List(c, &v.order, n, func(i int) {
+		ui.Column(c).FillWidth().Material(kit.Frost(c)).Children(func() {
+			if i > 0 {
+				hairline(c)
+			}
+			v.row(c, a.labels[i])
+		})
+	}).FillWidth().Height(h)
+}
+
+// row is a label: grip, chip, description, built-in mark, count, edit.
+func (v *labelsView) row(c *ui.Context, l core.Label) {
 	t, th := theme.Of(c), c.Theme()
-	off := v.drag[l.ID]
-	if off == nil {
-		off = &ui.Point{}
-		v.drag[l.ID] = off
-	}
-	row := ui.Row(c.Key(l.ID)).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Background(t.Background).
-		Draggable(off, ui.DraggableOptions{Axis: ui.Vertical})
-	if was := v.dragging[l.ID]; was && !row.Dragging() {
-		step := float64(th.Space(12) + theme.Hairline)
-		to := min(max(i+int(math.Round(float64(off.Y)/step)), 0), len(a.labels)-1)
-		*off = ui.Point{}
-		if to != i {
-			v.move(i, to)
-		}
-	}
-	v.dragging[l.ID] = row.Dragging()
+	row := ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).Height(th.Space(12)).AlignItems(ui.Center)
 	row.Children(func() {
 		ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle)
 		ui.Row(c).Width(th.Space(28)).Children(func() {
@@ -117,9 +114,16 @@ func (v *labelsView) row(c *ui.Context, i int, l core.Label) {
 	})
 }
 
-// move puts the label at i at to, the others in order.
+// move puts the label at i before the one at to (len for the end), the
+// others in order.
 func (v *labelsView) move(i, to int) {
 	a := v.a
+	if to > i {
+		to-- // i is taken out first
+	}
+	if to == i {
+		return
+	}
 	ids := make([]int64, len(a.labels))
 	for k, l := range a.labels {
 		ids[k] = l.ID
