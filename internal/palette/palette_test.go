@@ -11,6 +11,9 @@ func TestPaletteValues(t *testing.T) {
 		{"red-600", Red600, OKLCH{0.577, 0.245, 27.325}},
 		{"amber-50", Amber50, OKLCH{0.987, 0.022, 95.277}},
 		{"white", White, OKLCH{1, 0, 0}},
+		{"orange-500", Orange500, OKLCH{0.705, 0.213, 47.604}},
+		{"violet-700", Violet700, OKLCH{0.491, 0.27, 292.581}},
+		{"pink-950", Pink950, OKLCH{0.284, 0.109, 3.907}},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)

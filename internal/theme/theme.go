@@ -54,6 +54,9 @@ type Tokens struct {
 	// Highlight marks matched text (search hits) in either appearance, with
 	// HighlightText on it.
 	Highlight, HighlightText ui.Color
+	// Labels are the mail labels' colors in LabelNames' order; Label looks
+	// one up by name. An array keeps Tokens comparable.
+	Labels [8]LabelColor
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -247,6 +250,52 @@ func sized(t Tokens) Tokens {
 	return t
 }
 
+// LabelColor is one label color: Dot on the color picker, Fill under a label
+// set by hand, Edge around one the model set, Text for its name and icon.
+type LabelColor struct{ Dot, Fill, Edge, Text ui.Color }
+
+// labelSteps are the label colors' Tailwind steps: 500, 100, 200, 700, 950, 800, 300.
+var labelSteps = map[string][7]p.OKLCH{
+	"red":    {p.Red500, p.Red100, p.Red200, p.Red700, p.Red950, p.Red800, p.Red300},
+	"orange": {p.Orange500, p.Orange100, p.Orange200, p.Orange700, p.Orange950, p.Orange800, p.Orange300},
+	"amber":  {p.Amber500, p.Amber100, p.Amber200, p.Amber700, p.Amber950, p.Amber800, p.Amber300},
+	"green":  {p.Green500, p.Green100, p.Green200, p.Green700, p.Green950, p.Green800, p.Green300},
+	"blue":   {p.Blue500, p.Blue100, p.Blue200, p.Blue700, p.Blue950, p.Blue800, p.Blue300},
+	"violet": {p.Violet500, p.Violet100, p.Violet200, p.Violet700, p.Violet950, p.Violet800, p.Violet300},
+	"pink":   {p.Pink500, p.Pink100, p.Pink200, p.Pink700, p.Pink950, p.Pink800, p.Pink300},
+}
+
+// LabelNames are the label colors' names, in the picker's order.
+var LabelNames = [8]string{"gray", "red", "orange", "amber", "green", "blue", "violet", "pink"}
+
+// Label is the label color of a name; an unknown name is gray.
+func (t Tokens) Label(name string) LabelColor {
+	for i, n := range LabelNames {
+		if n == name {
+			return t.Labels[i]
+		}
+	}
+	return t.Labels[0]
+}
+
+// labels: light -100 fill, -200 edge, -700 text; dark -950, -800, -300.
+// Gray is neutral, its dot the primary.
+func labels(t Tokens) (out [8]LabelColor) {
+	for i, name := range LabelNames {
+		switch s, ok := labelSteps[name]; {
+		case !ok && t.Dark:
+			out[i] = LabelColor{t.Primary, p.Neutral800.Color(), p.Neutral700.Color(), p.Neutral300.Color()}
+		case !ok:
+			out[i] = LabelColor{t.Primary, p.Neutral100.Color(), p.Neutral200.Color(), p.Neutral700.Color()}
+		case t.Dark:
+			out[i] = LabelColor{s[0].Color(), s[4].Color(), s[5].Color(), s[6].Color()}
+		default:
+			out[i] = LabelColor{s[0].Color(), s[1].Color(), s[2].Color(), s[3].Color()}
+		}
+	}
+	return out
+}
+
 // status are the colors both appearances share.
 func status(t Tokens) Tokens {
 	t.Success = p.Green600.Color()
@@ -263,6 +312,7 @@ func status(t Tokens) Tokens {
 		t.InsBg, t.InsText, t.DelBg, t.DelText = p.Green950.Color(), p.Green300.Color(), p.Red950.Color(), p.Red300.Color()
 		t.Highlight, t.HighlightText = p.Yellow900.Color(), p.Yellow100.Color()
 	}
+	t.Labels = labels(t)
 	t.FontSize, t.BodyFontSize, t.Scale = 14, 14, 1
 	return sized(t)
 }
