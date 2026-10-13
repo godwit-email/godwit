@@ -285,6 +285,7 @@ func TestDefaultDataDirHeadless(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("AppData", filepath.Join(home, "AppData"))
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("DISPLAY", "")
 	t.Setenv("WAYLAND_DISPLAY", "")
 	dir, err := defaultDataDir()
@@ -295,8 +296,12 @@ func TestDefaultDataDirHeadless(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir != filepath.Join(cfg, "Godwit") {
-		t.Fatalf("data dir %q, want under %q", dir, cfg)
+	want := filepath.Join(cfg, "Godwit")
+	if runtime.GOOS == "windows" { // outside %APPDATA%, which an MSIX virtualizes
+		want = filepath.Join(home, ".godwit")
+	}
+	if dir != want {
+		t.Fatalf("data dir %q, want %q", dir, want)
 	}
 	if len(mygo.Windows()) != 0 || mygo.App.IsReady() {
 		t.Fatal("asking for the data directory started the App")
