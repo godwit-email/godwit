@@ -16,10 +16,7 @@ export default {
   frontendDist: "web/dist",
   bindings: "web/src/mygo.ts",
   macos: {
-    infoPlist: {
-      CFBundleIconFile: "Icon",
-      CFBundleIconName: "AppIcon",
-    },
+    icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },
