@@ -594,3 +594,16 @@ func TestScoreProbabilityValues(t *testing.T) {
 		t.Errorf("a label for an index: %v", err)
 	}
 }
+
+// TestDecisionsMissingProbability: a probability entry with no probability is
+// no answer (the SDK would read it as 0).
+func TestDecisionsMissingProbability(t *testing.T) {
+	for _, body := range []string{
+		`{"answers":[{"type":"predicate","name":"urgent","probability":1},{"type":"choice","name":"topic","choice":"billing","confidence":1,"probabilities":[{"value":"billing"}]},{"type":"score","name":"tone","score":1,"confidence":1,"probabilities":[]}]}`,
+		`{"answers":[{"type":"predicate","name":"urgent","probability":1},{"type":"choice","name":"topic","choice":"billing","confidence":1,"probabilities":[]},{"type":"score","name":"tone","score":1,"confidence":1,"probabilities":[{"value":1,"label":"annoyed"}]}]}`,
+	} {
+		if _, err := judgeFor(t, adapter{name: "decisions"}, body).Ask(context.Background(), "mail", testQs); !errors.Is(err, ErrJudgeAnswer) {
+			t.Errorf("%s: %v", body, err)
+		}
+	}
+}

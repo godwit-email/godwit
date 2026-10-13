@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,7 +112,7 @@ func decisionAnswer(u openai.DecisionAnswerUnion) Answer {
 			if p.Value.JSON.OfBool.Valid() { // we offer strings only: validation rejects it
 				val = p.Value.OfBool
 			}
-			a.Probabilities = append(a.Probabilities, Probability{Value: val, Probability: p.Probability})
+			a.Probabilities = append(a.Probabilities, Probability{Value: val, Probability: present(p.JSON.Probability.Valid(), p.Probability)})
 		}
 	case openai.DecisionAnswerScore:
 		a.Score, a.Confidence = valid(v.JSON.Score.Valid(), v.Score), valid(v.JSON.Confidence.Valid(), v.Confidence)
@@ -120,7 +121,7 @@ func decisionAnswer(u openai.DecisionAnswerUnion) Answer {
 			if !p.JSON.Value.Valid() { // not an index: the SDK reads it as 0
 				val = nil
 			}
-			a.Probabilities = append(a.Probabilities, Probability{Value: val, Label: p.Label, Probability: p.Probability})
+			a.Probabilities = append(a.Probabilities, Probability{Value: val, Label: p.Label, Probability: present(p.JSON.Probability.Valid(), p.Probability)})
 		}
 	}
 	return a
@@ -131,6 +132,14 @@ func valid(ok bool, v float64) *float64 {
 		return nil
 	}
 	return &v
+}
+
+// present is v, or NaN (which validation rejects) when the reply lacked it.
+func present(ok bool, v float64) float64 {
+	if !ok {
+		return math.NaN()
+	}
+	return v
 }
 
 func optional(s string) param.Opt[string] {
