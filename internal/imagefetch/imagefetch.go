@@ -202,6 +202,10 @@ func (b *Budget) TakeInline(size, px int64) error {
 // Dims is data's format and size, read from its header: a PNG, JPEG, GIF
 // or WebP image (by content) of at most MaxPixels.
 func Dims(data []byte) (format string, width, height int, err error) {
+	// ICO registers a global decoder; keep it outside the ordinary image boundary.
+	if bytes.HasPrefix(data, []byte{0, 0, 1, 0}) {
+		return "", 0, 0, ErrFormat
+	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || !Formats[format] {
 		return "", 0, 0, ErrFormat
