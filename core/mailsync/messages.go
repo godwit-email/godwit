@@ -36,7 +36,7 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	args := append([]any{a.id, f.id, f.id, f.uidValidity, uid}, plan.args...)
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), m.RFC822Size,
-		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, labelFP(p, m.RFC822Size))
+		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, m.RFC822Size)))
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
@@ -237,9 +237,14 @@ var BeforeFlagsWrite func()
 // labelFP identifies a message across its cached copies, for the labels set
 // by hand to outlive them: a SHA-256 of its Message-ID, else of its headers,
 // size and whole text. A hash, so the label stash keeps no mail content.
+// With no Message-ID and only part of the content here (a cut body, or
+// attachments, never fetched), "": no identity is better than a shared one.
 func labelFP(p *mail.Parsed, size int64) string {
 	key := "id\x00" + p.MessageID
 	if p.MessageID == "" {
+		if p.Truncated || len(p.Attachments) > 0 {
+			return ""
+		}
 		key = strings.Join([]string{"mail", p.From, fmt.Sprint(p.Date.Unix()), p.Subject, fmt.Sprint(size), p.Text, p.HTML}, "\x00")
 	}
 	sum := sha256.Sum256([]byte(key))

@@ -456,3 +456,16 @@ func TestLabelDescriptionLimit(t *testing.T) {
 	_, err = s.CreateLabel(t.Context(), LabelInput{Name: "更长", Description: strings.Repeat("字", MaxLabelDescription+1), Color: "red", Icon: "bill"})
 	require.Error(t, err)
 }
+
+// TestNoFingerprintForPartialContent: mail with no Message-ID whose content
+// we hold only in part (attachments are not fetched) gets no fingerprint, so
+// its labels are never handed to another message.
+func TestNoFingerprintForPartialContent(t *testing.T) {
+	e := newSyncEnv(t)
+	_, withFiles, _ := strings.Cut(withAttachments("x@x", "body", 1), "\r\n") // drop the Message-ID line
+	e.put(t, "Archive", withFiles)
+	e.put(t, "Archive", "From: bob@example.com\r\nTo: alice@example.com\r\nSubject: plain\r\nDate: "+day+"\r\nContent-Type: text/plain\r\n\r\nbody\r\n")
+	e.sync(t)
+	assert.Equal(t, [][]any{{nil}}, e.rows(t, "SELECT label_fp FROM messages WHERE has_attachments = 1"))
+	assert.Len(t, store.Str(e.rows(t, "SELECT label_fp FROM messages WHERE subject = 'plain'")[0][0]), 64)
+}
