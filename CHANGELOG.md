@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/godwit-email/godwit/compare/v0.3.0...v1.0.0) (2026-10-13)
+
+
+### Features
+
+* **windows:** pack the Windows build as an MSIX bundle for the Microsoft Store ([#51](https://github.com/godwit-email/godwit/issues/51)) ([ae7ff70](https://github.com/godwit-email/godwit/commit/ae7ff70ff52e05c9a3896e28a9290764fdd4090d))
+
 ## [0.3.0](https://github.com/godwit-email/godwit/compare/v0.2.0...v0.3.0) (2026-10-13)
 
 
