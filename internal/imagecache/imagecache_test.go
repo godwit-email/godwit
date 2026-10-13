@@ -388,6 +388,53 @@ func TestAvatarCacheTTLAndTransientFailure(t *testing.T) {
 	}
 }
 
+func TestAvatarFallbackSafety(t *testing.T) {
+	c := open(t, t.TempDir(), 0)
+	defer c.Close()
+	key, gen := AvatarKey("favicon", "example.com"), c.AvatarGeneration()
+	pic := pngOf(t, 32, 32)
+	if _, err := c.PutAvatar(t.Context(), key, pic, "favicon", gen); err != nil {
+		t.Fatal(err)
+	}
+	c.files[key].written = time.Now().Add(-25 * time.Hour)
+	if img, ok, err := c.FallbackAvatar(t.Context(), key, gen); err != nil || !ok || !bytes.Equal(img.Data, pic) {
+		t.Fatalf("ordinary fallback: %v %v", ok, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, ok, err := c.FallbackAvatar(ctx, key, gen); ok || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled fallback: %v %v", ok, err)
+	}
+	if err := os.WriteFile(filepath.Join(c.dir, c.files[key].name), pngOf(t, 16, 16), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := c.FallbackAvatar(t.Context(), key, gen); ok || err == nil {
+		t.Fatalf("small persisted fallback accepted: %v %v", ok, err)
+	}
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.PutAvatar(t.Context(), key, pic, "favicon", c.AvatarGeneration()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := c.FallbackAvatar(t.Context(), key, gen); ok {
+		t.Fatal("old discovery read a post-clear fallback")
+	}
+	bimi := AvatarKey("bimi", "example.com")
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 32 32"><title>Logo</title><path d="M0 0L32 0L32 32Z"/></svg>`)
+	if _, err := c.PutAvatar(t.Context(), bimi, svg, "bimi", c.AvatarGeneration()); err != nil {
+		t.Fatal(err)
+	}
+	c.files[bimi].written = time.Now().Add(-25 * time.Hour)
+	if _, ok, _ := c.FallbackAvatar(t.Context(), bimi, c.AvatarGeneration()); ok {
+		t.Fatal("BIMI fallback accepted")
+	}
+	c.Close()
+	if _, ok, err := c.FallbackAvatar(t.Context(), key, c.AvatarGeneration()); ok || !errors.Is(err, ErrClosed) {
+		t.Fatalf("closed fallback: %v %v", ok, err)
+	}
+}
+
 func TestAvatarSingleflightClearAndClose(t *testing.T) {
 	for _, action := range []string{"clear", "close"} {
 		t.Run(action, func(t *testing.T) {

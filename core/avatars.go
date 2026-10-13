@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/avatar"
 	"github.com/godwit-email/godwit/internal/imagecache"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
 // Avatar is a sender image; empty Data means there is no permitted image.
@@ -94,7 +95,8 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	if ok, err := allowed(); !ok || err != nil {
 		return Avatar{}, err
 	}
-	img, err := s.images.GetAvatar(ctx, avatar.GravatarURL(email), "gravatar", s.images.AvatarGeneration())
+	gen, src := s.images.AvatarGeneration(), avatar.GravatarURL(email)
+	img, err := s.images.GetAvatar(ctx, src, "gravatar", gen)
 	if err == nil {
 		return result(img, "gravatar")
 	}
@@ -103,6 +105,11 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	}
 	if errors.Is(err, imagecache.ErrClosed) {
 		return Avatar{}, err
+	}
+	if !errors.Is(err, imagefetch.ErrAvatarMiss) {
+		if img, ok, _ := s.images.FallbackAvatar(ctx, imagecache.AvatarKey("gravatar", src), gen); ok {
+			return result(img, "gravatar")
+		}
 	}
 	return Avatar{}, nil
 }

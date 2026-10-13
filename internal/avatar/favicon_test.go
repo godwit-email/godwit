@@ -3,12 +3,15 @@ package avatar
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/png"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -129,6 +132,50 @@ func TestFaviconAppleStopsDiscovery(t *testing.T) {
 	}
 	if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png"}) {
 		t.Fatalf("extra requests: %v", got)
+	}
+}
+
+func TestFaviconFallbackUsesRedirectedOrigin(t *testing.T) {
+	good := faviconPNG(t, 32)
+	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Host == "example.com" && r.URL.Path == "/":
+			http.Redirect(w, r, "https://cdn.example.com/home", http.StatusFound)
+		case r.Host == "cdn.example.com" && r.URL.Path == "/home":
+			w.Write([]byte("<html></html>"))
+		case r.Host == "cdn.example.com" && r.URL.Path == "/favicon.ico":
+			w.Write(good)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	if img, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); !ok || !bytes.Equal(img.Data, good) {
+		t.Fatal("fallback did not use the redirected homepage origin")
+	}
+}
+
+func TestFaviconStaleFallback(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			good := faviconPNG(t, 32)
+			f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
+			key := imagecache.AvatarKey("favicon", "example.com")
+			name := fmt.Sprintf("%s-png-32x32-%d", key, time.Now().Add(-25*time.Hour).Unix())
+			if err := os.WriteFile(filepath.Join(f.dir, name), good, 0600); err != nil {
+				t.Fatal(err)
+			}
+			f.reopen(t)
+			img, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil)
+			if ok != (status != http.StatusNotFound) || ok && !bytes.Equal(img.Data, good) {
+				t.Fatalf("stale fallback: found=%v bytes=%d", ok, len(img.Data))
+			}
+			if _, fresh, _ := f.cache.LookupAvatar(t.Context(), key); fresh {
+				t.Fatal("failed refresh reset the freshness deadline")
+			}
+			if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", func() bool { return false }); ok {
+				t.Fatal("stale avatar bypassed policy")
+			}
+		})
 	}
 }
 

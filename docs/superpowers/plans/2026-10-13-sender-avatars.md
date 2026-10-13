@@ -67,7 +67,7 @@
 
 域名按 net/mail 解析地址后规范化：域名转小写、IDNA 转 ASCII；用 publicsuffix.EffectiveTLDPlusOne 找组织域名。子域与组织域相同则只尝试一次，不把 co.uk 等公共后缀当网站。
 
-依次尝试原始发件域名、组织域名。每个网站使用 HTTPS：先 /apple-touch-icon.png，再首页中声明的 apple-touch-icon／apple-touch-icon-precomposed／icon，最后 /favicon.ico。首页只读前 256 KiB；用现有 x/net/html tokenizer 解析 link，不执行脚本。相对地址以最终首页 URL 为基准；只接受 HTTPS 图标地址，最多尝试 3 个声明地址，单个域名总期限 5 秒，两个网站合计最多 10 秒。
+依次尝试原始发件域名、组织域名。每个网站使用 HTTPS：先 /apple-touch-icon.png，再首页中声明的 apple-touch-icon／apple-touch-icon-precomposed／icon，最后以首页重定向后的 origin 请求 /favicon.ico。首页只读前 256 KiB；用现有 x/net/html tokenizer 解析 link，不执行脚本。相对地址以最终首页 URL 为基准；只接受 HTTPS 图标地址，最多尝试 3 个声明地址，单个域名总期限 5 秒，两个网站合计最多 10 秒。
 
 favicon 不从邮件正文、签名、追踪链接或 display name 猜品牌；公共邮箱不发起网站请求。允许网站图标来自公开 CDN，但每次跳转和实际拨号都必须执行公网地址检查。
 
@@ -163,6 +163,8 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 **Files:** 创建 `internal/avatar/favicon.go`、`internal/avatar/gravatar.go`、`internal/avatar/domains.go` 及对应 `_test.go`；公共邮箱 Domains 由任务 5 的 core 传入，不导入 core/auth，不改账号自动发现行为。
 
 **集成补充:** 修改 `internal/imagecache/imagecache.go` 及测试，将首次创建头像共享下载的调用方 deadline 传给实际下载，与缓存关闭上下文共同生效；普通 Get 的后台下载行为不变。共享调用继承首个期限，超时按瞬时失败处理，可在失败缓存过期后重试。首页瞬时失败仅不写长期未命中，不新增首页失败缓存接口；候选图像 URL 仍使用既有 5 分钟失败缓存。
+
+刷新失败时，favicon 网站与 Gravatar 编排通过 `FallbackAvatar(ctx, key, gen)` 读取并重新校验旧普通头像，不重置写入时间；调用方取消、图片政策禁止、缓存清空或关闭均不可返回旧结果，BIMI 不支持此兜底。
 
 **Interfaces:** `avatar.PersonalDomain(domain string, providerDomains []string) bool`；`avatar.FaviconSites(domain string) []string`；`avatar.FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (imagecache.Image, bool)`；`avatar.GravatarURL(email string) string`。FindFavicon 返回一站的安全图像；core 的 canFetch 回调在缓存读取和每次尚未开始的网站发现／图标候选前重检当前邮件图片政策，nil 仅用于没有邮件政策的独立内部调用；原始域名与组织域的调用顺序由 core 编排，格式校验使用任务 3 的 imagefetch.CheckAvatarImage。
 

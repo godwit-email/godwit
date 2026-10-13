@@ -18,12 +18,13 @@ import (
 
 // FindFavicon checks message policy before cached sources and every discovery or
 // candidate request. canFetch is nil only for callers without a message policy.
-func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (imagecache.Image, bool) {
+func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (img imagecache.Image, found bool) {
 	host = normalizeDomain(host)
 	if host == "" {
 		return imagecache.Image{}, false
 	}
 	gen := cache.AvatarGeneration()
+	callerCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	permitted := func() bool {
@@ -51,6 +52,11 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	}
 	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
 	transient := false
+	defer func() {
+		if !found && (transient || errors.Is(ctx.Err(), context.DeadlineExceeded)) && callerCtx.Err() == nil && (canFetch == nil || canFetch()) {
+			img, found, _ = cache.FallbackAvatar(callerCtx, key, gen)
+		}
+	}()
 	try := func(src string) (imagecache.Image, bool) {
 		if !permitted() {
 			return imagecache.Image{}, false
@@ -76,7 +82,7 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	if !permitted() {
 		return imagecache.Image{}, false
 	}
-	candidates, err := faviconLinks(ctx, imagefetch.NewAvatarClient(client), base)
+	candidates, base, err := faviconLinks(ctx, imagefetch.NewAvatarClient(client), base)
 	if err != nil && !errors.Is(err, imagefetch.ErrAvatarMiss) {
 		transient = true
 	}
@@ -100,28 +106,29 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	return imagecache.Image{}, false
 }
 
-func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]string, error) {
+func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]string, *url.URL, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, base, err
 	}
 	if req.URL.Scheme != "https" || req.URL.User != nil {
-		return nil, imagefetch.ErrScheme
+		return nil, base, imagefetch.ErrScheme
 	}
 	req.Header.Set("User-Agent", imagefetch.UserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, base, err
 	}
 	defer func() { cancel(); resp.Body.Close() }()
+	base = resp.Request.URL
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, imagefetch.ErrAvatarMiss
+		return nil, base, imagefetch.ErrAvatarMiss
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("favicon homepage: %s", resp.Status)
+		return nil, base, fmt.Errorf("favicon homepage: %s", resp.Status)
 	}
 	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
 	z := html.NewTokenizer(bytes.NewReader(data))
@@ -161,7 +168,7 @@ func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]st
 		if !icon || strings.TrimSpace(href) == "" {
 			continue
 		}
-		u, err := resp.Request.URL.Parse(strings.TrimSpace(href))
+		u, err := base.Parse(strings.TrimSpace(href))
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
 			continue
 		}
@@ -172,5 +179,5 @@ func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]st
 			candidates = append(candidates, src)
 		}
 	}
-	return candidates, readErr
+	return candidates, base, readErr
 }

@@ -233,11 +233,22 @@ func avatarSource(key string) string {
 func (c *Cache) LookupAvatar(ctx context.Context, key string) (Image, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lookupAvatar(ctx, key)
+	return c.lookupAvatar(ctx, key, false)
+}
+
+// FallbackAvatar revalidates an ordinary avatar after a failed refresh, without
+// changing its age. BIMI and entries invalidated by Clear are never returned.
+func (c *Cache) FallbackAvatar(ctx context.Context, key string, gen int) (Image, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if avatarSource(key) == "bimi" || gen != c.gen {
+		return Image{}, false, nil
+	}
+	return c.lookupAvatar(ctx, key, true)
 }
 
 // lookupAvatar holds c.mu across bounded file validation so Clear and Close wait.
-func (c *Cache) lookupAvatar(ctx context.Context, key string) (Image, bool, error) {
+func (c *Cache) lookupAvatar(ctx context.Context, key string, allowExpired bool) (Image, bool, error) {
 	if c.ctx.Err() != nil {
 		return Image{}, false, ErrClosed
 	}
@@ -249,7 +260,7 @@ func (c *Cache) lookupAvatar(ctx context.Context, key string) (Image, bool, erro
 		return Image{}, false, imagefetch.ErrFormat
 	}
 	e := c.files[key]
-	if e == nil || e.format == "miss" || time.Since(e.written) >= avatarTTL {
+	if e == nil || e.format == "miss" || !allowExpired && time.Since(e.written) >= avatarTTL {
 		return Image{}, false, nil
 	}
 	f, err := os.Open(filepath.Join(c.dir, e.name))
@@ -421,7 +432,7 @@ func (c *Cache) get(ctx context.Context, key, src, source string, gen int) (Imag
 			c.mu.Unlock()
 			return Image{}, errors.New("image cache cleared during avatar discovery")
 		}
-		if img, ok, err := c.lookupAvatar(ctx, key); ok || errors.Is(err, ErrClosed) || ctx.Err() != nil {
+		if img, ok, err := c.lookupAvatar(ctx, key, false); ok || errors.Is(err, ErrClosed) || ctx.Err() != nil {
 			c.mu.Unlock()
 			return img, err
 		}

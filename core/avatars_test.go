@@ -10,10 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
@@ -431,6 +434,34 @@ func TestSenderAvatarPreservesGravatarAliases(t *testing.T) {
 		"gravatar.com/avatar/3fba33b305fe1c0eeaf728b3b7aa3c668ae460a9807da214c47185d5e2befb98?s=64&d=404&r=g",
 	}
 	assert.Equal(t, want, f.hits(), "each complete address has a distinct request/cache identity")
+}
+
+func TestSenderAvatarStaleGravatar(t *testing.T) {
+	good := avatarPNG(t)
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
+	id := addMessage(t, f.s, "s", "bob@gmail.com", "", "", 1)
+	key := imagecache.AvatarKey("gravatar", "https://gravatar.com/avatar/300db02db75af922c759f08a0efa5a400128eac1f531b802697450b5c6da6e9f?s=64&d=404&r=g")
+	dir := filepath.Join(f.s.dataDir, "cache", "images")
+	name := fmt.Sprintf("%s-png-64x64-%d", key, time.Now().Add(-25*time.Hour).Unix())
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), good, 0600))
+	f.s.images.Close()
+	var err error
+	f.s.images, err = imagecache.Open(dir, 0, f.s.opts.ImageClient)
+	require.NoError(t, err)
+	for range 2 {
+		a, err := f.s.SenderAvatar(t.Context(), id, false)
+		require.NoError(t, err)
+		assert.Equal(t, "gravatar", a.Source)
+		assert.Equal(t, good, a.Data)
+	}
+	assert.Len(t, f.hits(), 1, "failed refresh is throttled without losing the stale avatar")
+	_, fresh, err := f.s.images.LookupAvatar(t.Context(), key)
+	require.NoError(t, err)
+	assert.False(t, fresh, "fallback must not reset the freshness deadline")
+	f.policy(t, "ask", false, false)
+	a, err := f.s.SenderAvatar(t.Context(), id, false)
+	require.NoError(t, err)
+	assert.Empty(t, a.Data, "stale avatar cannot bypass policy")
 }
 
 func TestSenderAvatarDatabaseError(t *testing.T) {
