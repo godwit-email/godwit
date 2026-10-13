@@ -10,7 +10,7 @@
 
 **Spec:** 本文“设计与已确定的行为”；设计和实施步骤保存在同一个计划中。
 
-**状态:** 已合并 Claude Fable 5.1 审阅中经核实的修改；2026-10-13 完成任务 1 的兼容性前置检查，可信服务商名单为空，BIMI 真实验证待做，解析器及任务 2 延后，继续任务 3～6 的 favicon／Gravatar／字母头像流程。来源顺序和自有域名 Gravatar 兜底保持已确定行为。设计、实施步骤、服务商证据均维护在本计划内；BIMI 服务商信任证据须在任务 1 验证，不能以解析测试替代。
+**状态:** 已合并 Claude Fable 5.1 审阅中经核实的修改；任务 3～6 的 favicon／Gravatar／字母头像实现及自动化验证已完成并逐任务审阅，正在最终全分支审阅。可信服务商名单为空，BIMI 真实验证、解析器及任务 2 仍按门禁延后；原生 GUI 和真实站点手工烟测待做。设计、实施步骤、服务商证据均维护在本计划内，不以解析或 fixture 测试替代真实信任证据。
 
 ## Global Constraints
 
@@ -193,17 +193,19 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 ### Task 6: 阅读器显示、文案与最终验证
 
+**实施状态：** 阅读器、文案及自动化验证已完成并通过独立审阅（`a2061e9..d752dc8`）；设置尚未保存时所有自动入口均停止获取，保存成功／回滚后按实际政策恢复。下面原生 GUI／真实站点手工烟测尚未执行，保持未勾选；本地 fixture 和像素测试不能替代该证据。
+
 **Files:** 修改 `app/reader.go`、`internal/kit/display.go`、`app/settings.go`、`internal/i18n/zh.go`、`internal/i18n/en.go`；在 `app/settings_general.go`、`app/app.go`、必要的 `app/shell.go` 设置事件调用方使头像失效（账号删除由 load 的账号列表变化处理，不假设存在 AccountRemoved 事件）；扩展 `internal/kit/kit_test.go`、`app/reader_test.go`、`app/reader_body_test.go`、`app/settings_test.go`。
 
 **Interfaces:** 保留 `kit.Avatar(c, name)`；新增 `kit.AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element`（nil → 原字母头像）。reader 的加载结果按 message ID／gen 保存，解析成安全 UI 图像后再绘制；SVG 用 ui.ParseSVG 返回错误时回退，用 ui.Image 保留品牌色。
 
-- [ ] 写测试：初始字母占位；成功后保持名称标签／既有密度尺寸（32／40 DIP）／布局；解析失败仍字母；旧线程迟到结果丢弃；点击加载图片触发头像重试；禁用网络与垃圾邮件不自动加载、垃圾邮件手动许可可加载；设置中文／英文说明覆盖网站与 Gravatar。
-- [ ] 新增 `TestRemoteImagesAvatarSetting` 检查中英文说明；运行 `go test ./internal/kit ./app -run 'Avatar|ReaderRemoteImages|RemoteImagesAvatarSetting' -count=1`，确认新行为未实现时失败；既有 `TestReaderRemoteImages` 保留通过。
-- [ ] 实现异步加载和旧结果隔离，复用 app 既有 query／取消机制；不在 View 回调调用 DNS、HTTP 或 SVG 解析，不影响打开邮件与回复操作。纯文本或没有正文远程图片的邮件，头像被政策阻止时也提供当前邮件的“加载图片”动作；使用头像被阻止的说明，不增加正文图片计数，复用同一手动许可。
-- [ ] 设置说明中文：`远程图片设置也适用于发件人头像。允许自动加载时，新邮件会提前获取头像；旧邮件、缓存未命中或过期、手动加载时，仍可能在读信时访问发件人网站和 Gravatar，对方可看到本机 IP 并可能推测阅读时间。Gravatar 使用邮箱哈希查询。` 英文提供等义说明，保留现有无 Cookie／Referer 描述，不作全局隐藏阅读时间的承诺。
-- [ ] 运行 `go test ./internal/avatar ./internal/imagefetch ./internal/imagecache ./internal/kit ./core/... ./app ./contract -count=1` 与 `go test -race ./internal/avatar ./internal/imagecache ./core -run 'Avatar|ImageCache' -count=1`；有失败先排查，不扩大成无关重构。
+- [x] 写测试：初始字母占位；成功后保持名称标签／既有密度尺寸（32／40 DIP）／布局；解析失败仍字母；旧线程迟到结果丢弃；点击加载图片触发头像重试；禁用网络与垃圾邮件不自动加载、垃圾邮件手动许可可加载；设置中文／英文说明覆盖网站与 Gravatar。
+- [x] 新增 `TestRemoteImagesAvatarSetting` 检查中英文说明；运行 `go test ./internal/kit ./app -run 'Avatar|ReaderRemoteImages|RemoteImagesAvatarSetting' -count=1`，确认新行为未实现时失败；既有 `TestReaderRemoteImages` 保留通过。
+- [x] 实现异步加载和旧结果隔离，复用 app 既有 query／取消机制；不在 View 回调调用 DNS、HTTP 或 SVG 解析，不影响打开邮件与回复操作。纯文本或没有正文远程图片的邮件，头像被政策阻止时也提供当前邮件的“加载图片”动作；使用头像被阻止的说明，不增加正文图片计数，复用同一手动许可。
+- [x] 设置说明中文：`远程图片设置也适用于发件人头像。允许自动加载时，新邮件会提前获取头像；旧邮件、缓存未命中或过期、手动加载时，仍可能在读信时访问发件人网站和 Gravatar，对方可看到本机 IP 并可能推测阅读时间。Gravatar 使用邮箱哈希查询。` 英文提供等义说明，保留现有无 Cookie／Referer 描述，不作全局隐藏阅读时间的承诺。
+- [x] 运行 `go test ./internal/avatar ./internal/imagefetch ./internal/imagecache ./internal/kit ./core/... ./app ./contract -count=1` 与 `go test -race ./internal/avatar ./internal/imagecache ./core -run 'Avatar|ImageCache' -count=1`；有失败先排查，不扩大成无关重构。
 - [ ] macOS 手工查看可信 BIMI、网站 PNG／ICO／SVG、公共邮箱 Gravatar、全部失败、离线、远程图片禁用、快速切换线程。检查品牌原色、圆形裁切和无布局跳动；使用经授权测试账号，不把真实邮箱提交到随机演示服务。
-- [ ] 仅提交本任务文件，保留共同作者尾部；报告实测支持的服务商及剩余限制。
+- [x] 仅提交本任务文件，保留共同作者尾部；报告实测支持的服务商及剩余限制。
 
 ## 服务商证据记录
 
