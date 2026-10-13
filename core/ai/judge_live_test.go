@@ -33,8 +33,8 @@ func TestJudgeLive(t *testing.T) {
 			defer cancel()
 			start := time.Now()
 			ans, err := j.Ask(ctx, "Your one-time login code is 482913. It expires in 10 minutes.", []Question{
-				{Name: "is_otp", Instructions: "Does this message contain a one-time login code?", Kind: YesNo},
-				{Name: "kind", Instructions: "What kind of email is this?", Kind: Choice, Choices: []Option{
+				{Name: "is_otp", Instructions: "Does this message contain a one-time login code?", Type: Predicate},
+				{Name: "kind", Instructions: "What kind of email is this?", Type: Choice, Choices: []ChoiceOption{
 					{Value: "otp", Description: "a login or verification code"},
 					{Value: "receipt", Description: "a payment receipt"},
 					{Value: "other", Description: "anything else"},
@@ -48,10 +48,10 @@ func TestJudgeLive(t *testing.T) {
 			for _, a := range ans {
 				byName[a.Name] = a
 			}
-			if a := byName["is_otp"]; a.Refused || a.Probability < 0.5 {
+			if a := byName["is_otp"]; a.Type == Refusal || a.Probability == nil || *a.Probability < 0.5 {
 				t.Errorf("is_otp = %+v, want yes", a)
 			}
-			if a := byName["kind"]; a.Refused || a.Choice != "otp" {
+			if a := byName["kind"]; a.Type == Refusal || a.Choice != "otp" {
 				t.Errorf("kind = %+v, want otp", a)
 			}
 		})
