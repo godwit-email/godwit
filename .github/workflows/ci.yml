@@ -119,6 +119,50 @@ jobs:
         shell: bash
         run: git diff --exit-code -- web/src/mygo.ts
 
+  # The Windows build as an MSIX bundle for the Microsoft Store, which re-signs
+  # it; the throwaway dev certificate here only lets winapp sign the bundle.
+  # The identity is the app's, from Partner Center (Product management > App identity).
+  msix:
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    runs-on: windows-latest
+    continue-on-error: true
+    env:
+      MSIX_NAME: BaranWang.Godwit
+      MSIX_PUBLISHER: CN=07259668-8BC9-4107-94ED-584A42E65ECF
+      MSIX_PUBLISHER_DISPLAY_NAME: Baran Wang
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: microsoft/setup-WinAppCli@v0.1
+      - run: mise run web:install
+      - name: build the Windows executables
+        run: go tool mygo build -platform windows/amd64,windows/arm64
+      - name: pack
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path mygo.config.ts -Pattern 'version: "(\d+\.\d+\.\d+)"').Matches[0].Groups[1].Value + '.0'
+          $logo = (Resolve-Path assets\icon.png).Path
+          $dirs = foreach ($arch in 'amd64', 'arm64') {
+            $dir = "msix-in-$arch"
+            New-Item -ItemType Directory $dir | Out-Null
+            Copy-Item "dist\windows-$arch\*" $dir -Recurse
+            Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
+            Push-Location $dir # the manifest and its Assets are generated next to the app
+            winapp manifest generate --executable Godwit.exe --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit --logo-path $logo | Out-Host # not into $dirs
+            $manifest = Get-Item *.appxmanifest
+            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+            Pop-Location
+            $dir
+          }
+          winapp cert generate --publisher $env:MSIX_PUBLISHER
+          winapp pack @dirs --cert devcert.pfx
+          Get-ChildItem *.msix*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msix
+          path: "*.msix*"
+
   web:
     needs: changes
     if: needs.changes.outputs.client == 'true'
