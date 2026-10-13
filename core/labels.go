@@ -73,11 +73,20 @@ func (s *Service) seedLabels(ctx context.Context) error {
 		return nil
 	}
 	zh := strings.HasPrefix(lang, "zh")
+	// A label made before (headless, through the Local API) keeps its name:
+	// the preset of that name is skipped, as CreateLabel would refuse it.
+	have, err := s.db.Query(ctx, "SELECT name FROM labels")
+	if err != nil {
+		return err
+	}
 	var stmts []sqlite.Statement
 	for i, p := range presetLabels {
 		name, desc := p.en, p.enDesc
 		if zh {
 			name, desc = p.zh, p.zhDesc
+		}
+		if slices.ContainsFunc(have.Values, func(r []any) bool { return strings.EqualFold(strings.TrimSpace(store.Str(r[0])), name) }) {
+			continue
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO labels(slug, name, description, color, icon, builtin, position)
 			VALUES (?, ?, ?, ?, ?, 1, ?)`, Args: []any{p.slug, name, desc, p.color, p.icon, i}})

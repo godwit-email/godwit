@@ -423,3 +423,25 @@ func TestLabelKeepHoldsNoMailText(t *testing.T) {
 	require.Len(t, fps, 1)
 	assert.Regexp(t, `^[0-9a-f]{64}$`, store.Str(fps[0][0]))
 }
+
+// TestSeedSkipsTakenNames: a label made before the presets (headless, through
+// the Local API) keeps its name; the preset of that name is not added.
+func TestSeedSkipsTakenNames(t *testing.T) {
+	dir := t.TempDir()
+	s := newLabelService(t, dir, "")
+	_, err := s.CreateLabel(t.Context(), LabelInput{Name: "验证码", Color: "blue", Icon: "key-2"})
+	require.NoError(t, err)
+	s.Close()
+	s = newLabelService(t, dir, "zh-CN")
+	ls, err := s.ListLabels(t.Context())
+	require.NoError(t, err)
+	n := 0
+	for _, l := range ls {
+		if l.Name == "验证码" {
+			n++
+			require.Equal(t, "blue", l.Color, "the user's own label stays")
+		}
+	}
+	require.Equal(t, 1, n)
+	require.Len(t, ls, 7, "six presets and the user's label")
+}
