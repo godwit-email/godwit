@@ -154,6 +154,100 @@ func TestFaviconFallbackUsesRedirectedOrigin(t *testing.T) {
 	}
 }
 
+func TestFaviconCoalescesConcurrentDiscovery(t *testing.T) {
+	good := faviconPNG(t, 32)
+	pages, release := make(chan struct{}, 20), make(chan struct{})
+	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			pages <- struct{}{}
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+			w.Write([]byte(`<link rel="icon" href="/logo.png">`))
+		case "/logo.png":
+			w.Write(good)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	var unblock sync.Once
+	t.Cleanup(func() { unblock.Do(func() { close(release) }) })
+	var callers sync.WaitGroup
+	callers.Add(1)
+	go func() {
+		defer callers.Done()
+		if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); !ok {
+			t.Error("first caller lost favicon")
+		}
+	}()
+	select {
+	case <-pages:
+	case <-time.After(time.Second):
+		t.Fatal("homepage request missing")
+	}
+	for range 10 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			if _, ok := FindFavicon(t.Context(), f.client, f.cache, "EXAMPLE.COM.", nil); !ok {
+				t.Error("shared caller lost favicon")
+			}
+		}()
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	joined, cancelled := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(cancelled)
+		if _, ok := FindFavicon(ctx, f.client, f.cache, "example.com", func() bool { once.Do(func() { close(joined) }); return true }); ok {
+			t.Error("cancelled follower received favicon")
+		}
+	}()
+	<-joined
+	cancel()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Error("cancelled follower waited for the homepage")
+	}
+	var allowed atomic.Bool
+	allowed.Store(true)
+	checked, policyDone := make(chan struct{}), make(chan struct{})
+	var policyOnce sync.Once
+	go func() {
+		defer close(policyDone)
+		if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", func() bool {
+			ok := allowed.Load()
+			policyOnce.Do(func() { close(checked) })
+			return ok
+		}); ok {
+			t.Error("shared favicon bypassed a follower's revoked policy")
+		}
+	}()
+	<-checked
+	allowed.Store(false)
+	select {
+	case <-pages:
+		t.Error("simultaneous duplicate homepage request")
+	case <-time.After(100 * time.Millisecond):
+	}
+	unblock.Do(func() { close(release) })
+	callers.Wait()
+	<-policyDone
+	var homes int
+	for _, path := range f.requests() {
+		if path == "/" {
+			homes++
+		}
+	}
+	if homes != 1 {
+		t.Fatalf("homepage requests = %d, want 1", homes)
+	}
+}
+
 func TestFaviconStaleFallback(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/godwit-email/godwit/internal/imagecache"
@@ -16,14 +17,48 @@ import (
 	"golang.org/x/net/html"
 )
 
+type faviconFlight struct {
+	done  chan struct{}
+	img   imagecache.Image
+	found bool
+}
+
+var faviconFlights sync.Map
+
 // FindFavicon checks message policy before cached sources and every discovery or
 // candidate request. canFetch is nil only for callers without a message policy.
-func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (img imagecache.Image, found bool) {
+func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (imagecache.Image, bool) {
 	host = normalizeDomain(host)
-	if host == "" {
+	if host == "" || ctx.Err() != nil || canFetch != nil && !canFetch() {
 		return imagecache.Image{}, false
 	}
 	gen := cache.AvatarGeneration()
+	key := struct {
+		cache *imagecache.Cache
+		host  string
+		gen   int
+	}{cache, host, gen}
+	v, waiting := faviconFlights.LoadOrStore(key, &faviconFlight{done: make(chan struct{})})
+	flight := v.(*faviconFlight)
+	if !waiting {
+		// The first caller owns discovery so service shutdown still waits for it.
+		defer faviconFlights.Delete(key)
+		defer close(flight.done)
+		flight.img, flight.found = findFavicon(ctx, client, cache, host, canFetch, gen)
+	} else {
+		select {
+		case <-flight.done:
+		case <-ctx.Done():
+			return imagecache.Image{}, false
+		}
+	}
+	if ctx.Err() != nil || gen != cache.AvatarGeneration() || canFetch != nil && !canFetch() {
+		return imagecache.Image{}, false
+	}
+	return flight.img, flight.found
+}
+
+func findFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool, gen int) (img imagecache.Image, found bool) {
 	callerCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
