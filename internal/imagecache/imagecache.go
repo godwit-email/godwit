@@ -344,6 +344,7 @@ func (c *Cache) remove(key string) {
 }
 
 // GetAvatar shares the ordinary cache's jobs, singleflight and lifecycle.
+// The first caller's deadline bounds the shared download; cancellation stops waiting.
 func (c *Cache) GetAvatar(ctx context.Context, src, source string) (Image, error) {
 	key := AvatarKey(source, src)
 	if key == "" {
@@ -453,7 +454,11 @@ func (c *Cache) get(ctx context.Context, key, src, source string) (Image, error)
 		cl = &call{done: make(chan struct{}), gen: c.gen}
 		c.flight[key] = cl
 		c.wg.Add(1)
-		go c.download(key, src, source, cl, c.gen)
+		var deadline time.Time
+		if source != "" {
+			deadline, _ = ctx.Deadline()
+		}
+		go c.download(key, src, source, cl, c.gen, deadline)
 	}
 	c.mu.Unlock()
 	select {
@@ -464,9 +469,9 @@ func (c *Cache) get(ctx context.Context, key, src, source string) (Image, error)
 	}
 }
 
-func (c *Cache) download(key, src, source string, cl *call, gen int) {
+func (c *Cache) download(key, src, source string, cl *call, gen int, deadline time.Time) {
 	defer c.wg.Done()
-	cl.img, cl.err = c.fetch(key, src, source, gen)
+	cl.img, cl.err = c.fetch(key, src, source, gen, deadline)
 	if source != "" && errors.Is(cl.err, imagefetch.ErrAvatarMiss) {
 		c.put(key, Image{Format: "miss"}, gen)
 	}
@@ -479,13 +484,18 @@ func (c *Cache) download(key, src, source string, cl *call, gen int) {
 	close(cl.done)
 }
 
-func (c *Cache) fetch(key, src, source string, gen int) (Image, error) {
+func (c *Cache) fetch(key, src, source string, gen int, deadline time.Time) (Image, error) {
 	u, err := url.Parse(src)
 	if err != nil || !imagefetch.IsHTTP(u) {
 		return Image{}, imagefetch.ErrScheme
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, queueWait+imagefetch.Timeout)
 	defer cancel()
+	if !deadline.IsZero() {
+		var stop context.CancelFunc
+		ctx, stop = context.WithDeadline(ctx, deadline)
+		defer stop()
+	}
 	host, release := c.host(hostKey(u))
 	defer release()
 	for _, sem := range []chan struct{}{host, c.global} {

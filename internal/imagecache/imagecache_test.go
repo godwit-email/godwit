@@ -618,3 +618,82 @@ func TestAvatarFailureDuringClearIsNotRemembered(t *testing.T) {
 		t.Fatal("old flight restored failure after clear")
 	}
 }
+
+func TestAvatarFirstDeadlineCancelsSharedDownload(t *testing.T) {
+	started, canceled := make(chan struct{}), make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer srv.Close()
+	c, err := Open(t.TempDir(), 0, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	defer cancel()
+	first := make(chan error, 1)
+	go func() { _, err := c.GetAvatar(ctx, srv.URL, "favicon"); first <- err }()
+	<-started
+	second := make(chan error, 1)
+	go func() { _, err := c.GetAvatar(t.Context(), srv.URL, "favicon"); second <- err }()
+	if err := <-first; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first caller: %v", err)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("actual download survived first deadline")
+	}
+	select {
+	case err := <-second:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("shared caller: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("shared caller did not inherit first deadline")
+	}
+	if c.AvatarMiss(AvatarKey("favicon", srv.URL)) {
+		t.Fatal("deadline became persistent miss")
+	}
+}
+
+func TestOrdinaryDeadlineLeavesSharedDownloadRunning(t *testing.T) {
+	started, release, canceled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	pic := pngOf(t, 4, 3)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+			w.Write(pic)
+		case <-r.Context().Done():
+			close(canceled)
+		}
+	}))
+	defer srv.Close()
+	c, err := Open(t.TempDir(), 0, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := c.Get(ctx, srv.URL); done <- err }()
+	<-started
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ordinary caller: %v", err)
+	}
+	select {
+	case <-canceled:
+		t.Fatal("ordinary download inherited caller deadline")
+	default:
+	}
+	close(release)
+	img, err := c.Get(t.Context(), srv.URL)
+	if err != nil || !bytes.Equal(img.Data, pic) {
+		t.Fatalf("background download did not finish: %v", err)
+	}
+}

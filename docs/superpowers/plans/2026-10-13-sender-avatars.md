@@ -162,6 +162,8 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 **Files:** 创建 `internal/avatar/favicon.go`、`internal/avatar/gravatar.go`、`internal/avatar/domains.go` 及对应 `_test.go`；公共邮箱 Domains 由任务 5 的 core 传入，不导入 core/auth，不改账号自动发现行为。
 
+**集成补充:** 修改 `internal/imagecache/imagecache.go` 及测试，将首次创建头像共享下载的调用方 deadline 传给实际下载，与缓存关闭上下文共同生效；普通 Get 的后台下载行为不变。共享调用继承首个期限，超时按瞬时失败处理，可在失败缓存过期后重试。首页瞬时失败仅不写长期未命中，不新增首页失败缓存接口；候选图像 URL 仍使用既有 5 分钟失败缓存。
+
 **Interfaces:** `avatar.PersonalDomain(domain string, providerDomains []string) bool`；`avatar.FaviconSites(domain string) []string`；`avatar.FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string) (imagecache.Image, bool)`；`avatar.GravatarURL(email string) string`。FindFavicon 返回一站的安全图像；原始域名与组织域的调用顺序由 core 编排，格式校验使用任务 3 的 imagefetch.CheckAvatarImage。
 
 - [ ] 写测试：公共邮箱精确匹配；自有域名仍可兜底；`mail.example.co.uk` → 原始域名／`example.co.uk`；IDN；同域去重；固定候选顺序；HTML 属性顺序与相对地址；首页重定向后的基准地址；恶意 URL／HTTPS 降级／内网／超过候选数停止；首页读取最多 256 KiB；网站成功结果／确定未命中在重启后不再抓首页，瞬时错误不写长期未命中；所有图标失败返回无图像。
@@ -170,6 +172,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 - [ ] 实现域名函数、有限 HTML tokenizer 发现和顺序下载；先用 LookupAvatar／AvatarMiss 查询网站键，选中图像后用 PutAvatar 保存网站结果。首页使用严格 HTTPS 客户端、HTML Accept、同一通用 UA／无 Referer、流式读取前 256 KiB 后关闭，仅解析已完整读到的 link。首页网络失败不影响最后尝试 /favicon.ico。5 秒每站、原始域名＋组织域合计 10 秒；所有候选确实不可用才记录网站未命中，取消／瞬时失败不记录。Gravatar 使用标准库 SHA-256，无 SDK／密钥。
 - [ ] 重跑测试，确保第一页发现无结果后仍尝试 /favicon.ico、子域失败后尝试组织域。
 - [ ] 验证过小 favicon 不终止候选链：16px 候选后有 32px 候选时选后者，所有候选过小时返回无图像，由 core 继续 Gravatar 兜底。
+- [ ] 用实际 TLS 慢响应验证站点期限会取消已启动图标请求，而不只是停止等待；共享请求采用首个调用方期限，普通正文 Get 行为保持原样。
 - [ ] 仅提交本任务文件，保留共同作者尾部。
 
 ### Task 5: core 串联来源与图片加载政策
