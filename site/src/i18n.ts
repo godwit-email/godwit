@@ -51,6 +51,7 @@ export interface Strings {
 	homebrew: string;
 	installScript: string;
 	license: string;
+	privacyPolicy: string;
 	/** The newest release, which src/worker.ts fills in: "v1.2.0" goes after released/before whatsNew. */
 	release: { out: string; whatsNew: string; latest: string; on: string; notes: string };
 	/** Where the name comes from, the README's sentence. */
@@ -126,6 +127,7 @@ export const strings: Record<Lang, Strings> = {
 		homebrew: "用 Homebrew 安装",
 		installScript: "不用 root，为当前用户安装",
 		license: "以 Apache-2.0 许可证开源",
+		privacyPolicy: "隐私政策",
 		release: { out: "已发布", whatsNew: "查看更新", latest: "最新版本", on: "，发布于 ", notes: "更新日志" },
 		name: "名字来自斑尾塍鹬（bar-tailed godwit），不经停飞行距离最远的鸟。",
 		copy: "复制",
@@ -197,6 +199,7 @@ export const strings: Record<Lang, Strings> = {
 		homebrew: "With Homebrew",
 		installScript: "For the current user, no root",
 		license: "Open source under the Apache-2.0 license",
+		privacyPolicy: "Privacy Policy",
 		release: { out: "is out", whatsNew: "What's new", latest: "Latest version", on: ", released ", notes: "Release notes" },
 		name: "Named for the bar-tailed godwit, which holds the record for the longest non-stop bird flight.",
 		copy: "Copy",
