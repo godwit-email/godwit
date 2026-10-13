@@ -331,6 +331,26 @@ func (c *Cache) AvatarMiss(key string) bool {
 	return true
 }
 
+// AvatarUnreachable reports a discovery for key that failed short of a miss
+// (no connection, a timeout) within the last few minutes, as Get does for URLs.
+func (c *Cache) AvatarUnreachable(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	f, ok := c.failed[key]
+	return ok && time.Since(f.at) < failedTTL
+}
+
+// RememberAvatarUnreachable notes such a failure, unless the cache was cleared since gen.
+func (c *Cache) RememberAvatarUnreachable(key string, gen int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if gen == c.gen {
+		c.rememberFailure(key, errAvatarUnreachable)
+	}
+}
+
+var errAvatarUnreachable = errors.New("avatar source unreachable")
+
 // RememberAvatarMiss stores a definitive miss within the discovery's Clear boundary.
 func (c *Cache) RememberAvatarMiss(key string, gen int) error {
 	if avatarSource(key) == "" {

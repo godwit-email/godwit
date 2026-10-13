@@ -73,6 +73,13 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 		providerDomains = append(providerDomains, provider.Domains...)
 	}
 	if avatar.PersonalDomain(domain, providerDomains) {
+		// Any site's cached icon first: an unreachable sender host (account.tiktok.com)
+		// must not hold up its organization's icon (tiktok.com) on every message.
+		for _, host := range sites {
+			if img, ok, _ := s.images.LookupAvatar(ctx, imagecache.AvatarKey("favicon", host)); ok {
+				return result(img, "favicon")
+			}
+		}
 		var policyErr error
 		canFetch := func() bool {
 			var ok bool

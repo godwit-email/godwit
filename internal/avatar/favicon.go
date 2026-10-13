@@ -102,13 +102,20 @@ func findFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	if cache.AvatarMiss(key) {
 		return imagecache.Image{}, false
 	}
-	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
 	transient := false
 	defer func() {
 		if !found && (transient || errors.Is(ctx.Err(), context.DeadlineExceeded)) && callerCtx.Err() == nil && (canFetch == nil || canFetch()) {
+			// A host that cannot be reached would spend the whole budget on every message.
+			cache.RememberAvatarUnreachable(key, gen)
 			img, found, _ = cache.FallbackAvatar(callerCtx, key, gen)
 		}
 	}()
+	if cache.AvatarUnreachable(key) {
+		// Not remembered again: the rest must run out for the site to be tried again.
+		img, found, _ = cache.FallbackAvatar(callerCtx, key, gen)
+		return img, found
+	}
+	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
 	try := func(src string) (imagecache.Image, bool) {
 		if !permitted() {
 			return imagecache.Image{}, false

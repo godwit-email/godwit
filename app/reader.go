@@ -776,11 +776,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			fold = func() { r.toggle(m.ID) }
 		}
 		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
-			var image ui.ImageSource
-			if b != nil {
-				image = b.avatar
+			// Until the avatar is fetched or refused, a pulse; then the image or the initial.
+			if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
+				kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
+			} else {
+				kit.AvatarImage(c, name, b.avatar)
 			}
-			kit.AvatarImage(c, name, image)
 			ui.Column(c).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(1)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine()

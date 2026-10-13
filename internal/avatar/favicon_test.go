@@ -695,8 +695,8 @@ func TestFaviconCandidateTransientDoesNotCacheSiteMiss(t *testing.T) {
 					t.Fatal("transient candidate became permanent site miss")
 				}
 			}
-			// URL failures are cached briefly; homepage discovery has no transient cache API.
-			if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/declared", "/favicon.ico", "/"}) {
+			// The site's transient failure is remembered briefly, so the second call asks nothing.
+			if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/declared", "/favicon.ico"}) {
 				t.Fatalf("transient caching requests = %v", got)
 			}
 		})
@@ -755,5 +755,35 @@ func TestFaviconClearDuringDiscovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFaviconUnreachableSiteRestsBriefly(t *testing.T) {
+	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	})
+	for range 2 {
+		if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); ok {
+			t.Fatal("unreachable site returned an image")
+		}
+	}
+	n := len(f.requests())
+	if n != 3 {
+		t.Fatalf("requests = %v, want one discovery", f.requests())
+	}
+	if f.cache.AvatarMiss(imagecache.AvatarKey("favicon", "example.com")) {
+		t.Fatal("unreachable site became a persistent miss")
+	}
+	if err := f.cache.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	FindFavicon(t.Context(), f.client, f.cache, "example.com", nil)
+	if len(f.requests()) == n {
+		t.Fatal("Clear did not forget the unreachable site")
 	}
 }

@@ -192,6 +192,26 @@ func TestReaderAvatarDropsStaleResults(t *testing.T) {
 	}
 }
 
+func TestReaderAvatarPulsesUntilDone(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	r := h.app.mail.reader
+	release := make(chan struct{})
+	r.getAvatar = func(context.Context, int64, bool) (core.Avatar, error) {
+		<-release
+		return core.Avatar{}, nil
+	}
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Hi", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.until("avatar started", func() bool { return r.bodies[m.ID].avatarStop != nil })
+	initial := func() bool { h.tt.Frame(); return slices.Contains(h.tt.Texts(), "B") }
+	if initial() {
+		t.Fatal("the initial shows while the avatar loads")
+	}
+	close(release)
+	h.until("the initial after", initial)
+}
+
 func TestReaderAvatarParseFailure(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	r := h.app.mail.reader
