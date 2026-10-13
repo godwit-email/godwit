@@ -140,6 +140,7 @@ jobs:
           if (-not $exe) { Get-ChildItem dist -Recurse; throw 'no app executable in dist' }
           New-Item -ItemType Directory msix-in | Out-Null
           Copy-Item "$($exe.DirectoryName)\*" msix-in -Recurse
+          Remove-Item 'msix-in\*Setup*.exe', 'msix-in\*.zip', 'msix-in\update-*.json' -ErrorAction SilentlyContinue # the installer and update files sit beside the app
           winapp manifest generate --executable "msix-in\$($exe.Name)"
           Get-ChildItem . -Filter *.appxmanifest | ForEach-Object { Move-Item $_ msix-in }
           winapp cert generate
