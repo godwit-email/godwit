@@ -15,7 +15,7 @@ type Generator func(ctx context.Context, system, prompt string) (string, error)
 
 const genJudgeSystem = `You answer typed questions about the text in the user message. ` +
 	`Reply with one JSON object and nothing else: {"answers":[{"name":"<question name>","answer":<value>}]}, one entry per question. ` +
-	`A yes_no answer is "yes" or "no". A choice answer is exactly one of the listed values. ` +
+	`A predicate answer is "yes" or "no". A choice answer is exactly one of the listed values. ` +
 	`A score answer is the integer index of the level, 0 being the lowest. ` +
 	`To decline a question, give {"name":"<question name>","refused":true} instead.`
 
@@ -23,12 +23,12 @@ const genJudgeSystem = `You answer typed questions about the text in the user me
 // configured. Its yes/no probabilities are 0 or 1 and its scores are integer
 // levels; the answers pass the same validation as the judge APIs'.
 func NewGenJudge(gen Generator) Judge {
-	return judge{func(ctx context.Context, state string, qs []Question) ([]raw, error) {
-		return genAsk(ctx, gen, state, qs)
+	return judge{func(ctx context.Context, input string, qs []Question) ([]Answer, error) {
+		return genAsk(ctx, gen, input, qs)
 	}, 60 * time.Second}
 }
 
-func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]raw, error) {
+func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]Answer, error) {
 	type opt struct {
 		Value       string `json:"value,omitempty"`
 		Index       *int   `json:"index,omitempty"`
@@ -43,22 +43,20 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 		Levels       []opt  `json:"levels,omitempty"`
 	}
 	wire := make([]question, len(qs))
-	kinds := map[string]QuestionKind{}
+	types := map[string]QuestionType{}
 	for i, q := range qs {
-		w := question{Name: q.Name, Type: "yes_no", Instructions: q.Instructions}
-		switch q.Kind {
+		w := question{Name: q.Name, Type: string(q.Type), Instructions: q.Instructions}
+		switch q.Type {
 		case Choice:
-			w.Type = "choice"
 			for _, o := range q.Choices {
 				w.Choices = append(w.Choices, opt{Value: o.Value, Description: o.Description})
 			}
 		case Score:
-			w.Type = "score"
-			for j, o := range q.Levels {
-				w.Levels = append(w.Levels, opt{Index: &j, Label: o.Value, Description: o.Description})
+			for j, l := range q.Levels {
+				w.Levels = append(w.Levels, opt{Index: &j, Label: l.Label, Description: l.Description})
 			}
 		}
-		wire[i], kinds[q.Name] = w, q.Kind
+		wire[i], types[q.Name] = w, q.Type
 	}
 	qj, err := json.Marshal(wire)
 	if err != nil {
@@ -66,8 +64,8 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 	}
 	// Always wrapped: Untrusted escapes any wrapper markers inside, so mail
 	// can't fake the boundary. Wit's pre-wrapped blocks just nest, escaped.
-	state = Untrusted("judge", state, SuspectInjection(state))
-	text, err := gen(ctx, genJudgeSystem+"\n\n"+UntrustedSystemNote, state+"\n\nQuestions:\n"+string(qj))
+	input = Untrusted("judge", input, SuspectInjection(input))
+	text, err := gen(ctx, genJudgeSystem+"\n\n"+UntrustedSystemNote, input+"\n\nQuestions:\n"+string(qj))
 	if err != nil {
 		return nil, err
 	}
@@ -96,24 +94,22 @@ func genAsk(ctx context.Context, gen Generator, state string, qs []Question) ([]
 	if !parsed {
 		return nil, fmt.Errorf("%w: no JSON answer", ErrJudgeAnswer)
 	}
-	out := make([]raw, 0, len(resp.Answers))
+	out := make([]Answer, 0, len(resp.Answers))
 	for _, a := range resp.Answers {
-		r := raw{Answer: Answer{Name: a.Name, Refused: a.Refused}, kind: -1}
-		if k, ok := kinds[a.Name]; ok && !a.Refused {
-			r.kind = k
-			switch k {
-			case YesNo:
-				r.Probability = genYesNo(a.Answer)
-			case Choice:
-				if json.Unmarshal(a.Answer, &r.Choice) != nil {
-					r.kind = -1
-				}
-				r.Choice, r.Probability = strings.TrimSpace(r.Choice), 1
-			case Score:
-				r.Score = genScore(a.Answer)
+		v := Answer{Name: a.Name}
+		switch t := types[a.Name]; {
+		case a.Refused:
+			v.Type = Refusal
+		case t == Predicate:
+			v.Type, v.Probability = t, ptr(genYesNo(a.Answer))
+		case t == Choice:
+			if json.Unmarshal(a.Answer, &v.Choice) == nil {
+				v.Type, v.Choice = t, strings.TrimSpace(v.Choice)
 			}
+		case t == Score:
+			v.Type, v.Score = t, ptr(genScore(a.Answer))
 		}
-		out = append(out, r)
+		out = append(out, v)
 	}
 	return out, nil
 }

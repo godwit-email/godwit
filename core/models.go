@@ -669,7 +669,7 @@ func (s *Service) testJudge(ctx context.Context, in ModelServiceInput, key strin
 		return err
 	}
 	_, err = j.Ask(ctx, "Hi Sam, thanks for the notes. See you on Friday!",
-		[]ai.Question{{Name: "greeting", Instructions: "Does the text greet someone?", Kind: ai.YesNo}})
+		[]ai.Question{{Name: "greeting", Instructions: "Does the text greet someone?", Type: ai.Predicate}})
 	return err
 }
 

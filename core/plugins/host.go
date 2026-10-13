@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dop251/goja"
+	"github.com/godwit-email/godwit/core/ai"
 )
 
 // Host is what the core gives a plugin's ctx. Permissions are checked before
@@ -29,7 +30,7 @@ type Host interface {
 	MailCreateDraft(ctx context.Context, d DraftInput) (int64, error)
 	MailUpdateDraft(ctx context.Context, u DraftUpdate) (int64, error)
 	LLMComplete(ctx context.Context, prompt string) (string, error)
-	LLMDecide(ctx context.Context, state string, qs []Question) ([]Answer, error)
+	LLMDecide(ctx context.Context, input string, qs []Question) ([]Answer, error)
 	Fetch(ctx context.Context, inv Invocation, req FetchRequest) (FetchResponse, error)
 	AuditEgress(ctx context.Context, inv Invocation, dest, decision, reason string) error
 }
@@ -39,7 +40,7 @@ const (
 	MaxBodyBytes     = 256 << 10 // each of a message's text and html, as a plugin gets it
 	MaxStorageValue  = 64 << 10
 	MaxStorageTotal  = 1 << 20  // keys and values of one plugin
-	MaxLLMBytes      = 64 << 10 // llm.complete prompt and answer; llm.decide state and question text
+	MaxLLMBytes      = 64 << 10 // llm.complete prompt and answer; llm.decide input and question text
 	MaxQuestions     = 128      // per llm.decide call: rejected beyond, never split
 	MaxFetchBody     = 1 << 20
 	maxSearch        = 50
@@ -58,31 +59,13 @@ var (
 	actionOn   = []string{"message", "thread", "selection", "draft"}
 )
 
-// Question is a typed judge question, as llm.decide and Wit's classify_mail
-// take it. Type is yes_no, choice or score; Choices and Levels are its options.
-type Question struct {
-	Name         string           `json:"name"`
-	Type         string           `json:"type"`
-	Instructions string           `json:"instructions"`
-	Choices      []QuestionOption `json:"choices,omitempty"`
-	Levels       []QuestionOption `json:"levels,omitempty"` // lowest first
-}
-
-type QuestionOption struct {
-	Value       string `json:"value"`
-	Description string `json:"description,omitempty"`
-}
-
-// Answer is a validated answer: yes_no sets Probability, choice sets Choice
-// (and Probability when the judge gives one), score sets Score, an index
-// into Levels. Refused answers carry nothing else.
-type Answer struct {
-	Name        string   `json:"name"`
-	Choice      string   `json:"choice,omitempty"`
-	Probability *float64 `json:"probability,omitempty"`
-	Score       *float64 `json:"score,omitempty"`
-	Refused     bool     `json:"refused,omitempty"`
-}
+// Question and Answer are typed judge questions and answers, as llm.decide
+// and Wit's classify_mail take and give them: the OpenAI Decisions API's
+// shape (predicate, choice, score; a refusal answer), whatever the judge.
+type (
+	Question = ai.Question
+	Answer   = ai.Answer
+)
 
 // ToolInfo is a registered tool; Write defaults to true.
 type ToolInfo struct {
@@ -469,17 +452,17 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		})
 	}), "decide", fn("llm.decide", func(c *CallScope, call goja.FunctionCall) goja.Value {
 		p.need(c, permLLM)
-		var state string
+		var input string
 		var qs []Question
-		arg(c, "llm.decide", call.Argument(0), &state, "state must be a string")
+		arg(c, "llm.decide", call.Argument(0), &input, "input must be a string")
 		arg(c, "llm.decide", call.Argument(1), &qs, "questions must be a list of {name, type, instructions, choices?, levels?}")
 		if len(qs) > MaxQuestions {
 			panic(c.Runtime().NewTypeError("llm.decide: at most 128 questions"))
 		}
-		if len(state)+QuestionBytes(qs) > MaxLLMBytes {
+		if len(input)+QuestionBytes(qs) > MaxLLMBytes {
 			panic(ErrTooLarge)
 		}
-		return async(c, func(ctx context.Context) (any, error) { return p.h.LLMDecide(ctx, state, qs) })
+		return async(c, func(ctx context.Context) (any, error) { return p.h.LLMDecide(ctx, input, qs) })
 	}))
 
 	netObj := object("fetch", fn("net.fetch", func(c *CallScope, call goja.FunctionCall) goja.Value {
@@ -694,8 +677,11 @@ func QuestionBytes(qs []Question) int {
 	n := 0
 	for _, q := range qs {
 		n += len(q.Instructions)
-		for _, o := range slices.Concat(q.Choices, q.Levels) {
+		for _, o := range q.Choices {
 			n += len(o.Value) + len(o.Description)
+		}
+		for _, l := range q.Levels {
+			n += len(l.Label) + len(l.Description)
 		}
 	}
 	return n

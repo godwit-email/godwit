@@ -2,80 +2,149 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
 )
 
-// decisions asks the OpenAI Decisions API (research §1): input plus an array
-// of questions; answers come back as an array echoing name and type.
-func (h judgeHTTP) decisions(ctx context.Context, state string, qs []Question) ([]raw, error) {
-	type opt struct {
-		Value       string `json:"value,omitempty"`
-		Label       string `json:"label,omitempty"`
-		Description string `json:"description,omitempty"`
+// decisions asks the OpenAI Decisions API through the SDK, which owns the
+// wire format. The transport stays the judge's: this client, retries as post
+// makes them (the SDK's own are off), a capped body and errors without text.
+func (h judgeHTTP) decisions(ctx context.Context, input string, qs []Question) ([]Answer, error) {
+	opts := []option.RequestOption{option.WithBaseURL(h.base + "/"), option.WithHTTPClient(h.c), option.WithMaxRetries(0),
+		option.WithMiddleware(capBody)}
+	if h.key != "" {
+		opts = append(opts, option.WithAPIKey(h.key))
 	}
-	type question struct {
-		Type         string `json:"type"`
-		Name         string `json:"name"`
-		Instructions string `json:"instructions"`
-		Choices      []opt  `json:"choices,omitempty"`
-		Levels       []opt  `json:"levels,omitempty"`
+	svc := openai.NewDecisionService(opts...)
+	params := openai.DecisionNewParams{Model: h.model, Input: openai.DecisionNewParamsInputUnion{OfString: param.NewOpt(input)}}
+	for _, q := range qs {
+		params.Questions = append(params.Questions, decisionQuestion(q))
 	}
-	wire := make([]question, len(qs))
-	for i, q := range qs {
-		w := question{Name: q.Name, Instructions: q.Instructions}
-		switch q.Kind {
-		case YesNo:
-			w.Type = "predicate"
-		case Choice:
-			w.Type = "choice"
-			for _, o := range q.Choices {
-				w.Choices = append(w.Choices, opt{Value: o.Value, Description: o.Description})
+	for attempt := 1; ; attempt++ {
+		resp, err := svc.New(ctx, params)
+		if err == nil {
+			out := make([]Answer, len(resp.Answers))
+			for i, a := range resp.Answers {
+				out[i] = decisionAnswer(a)
 			}
-		case Score:
-			w.Type = "score"
-			for _, o := range q.Levels {
-				w.Levels = append(w.Levels, opt{Label: o.Value, Description: o.Description})
-			}
+			return out, nil
 		}
-		wire[i] = w
-	}
-	var resp struct {
-		Answers []struct {
-			Type, Name    string
-			Probability   *float64
-			Choice        string
-			Score         *float64
-			Probabilities []struct {
-				Value       json.RawMessage
-				Probability float64
+		if err := ctxError(err); err != nil {
+			return nil, err
+		}
+		var ae *openai.Error
+		if errors.As(err, &ae) {
+			if err := h.retryAfter(ctx, attempt, ae.StatusCode, ae.Response.Header); err != nil {
+				return nil, err
 			}
+			continue
+		}
+		if ue := (*url.Error)(nil); errors.As(err, &ue) {
+			return nil, errUnreachable
+		}
+		return nil, errors.Join(ErrJudgeAnswer, errors.New("unreadable response"))
+	}
+}
+
+// capBody reads replies as post does: a successful one as JSON whatever its
+// Content-Type, cut at maxJudgeBody (a longer one fails to parse); a failed
+// one's body is dropped for "{}", so the SDK's error has the status alone
+// (a gateway's non-standard error body would break the SDK's parse, and its
+// text never reaches our errors).
+func capBody(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+	resp, err := next(req)
+	if resp == nil {
+		return resp, err
+	}
+	resp.Header.Set("Content-Type", "application/json")
+	if resp.StatusCode/100 != 2 {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		resp.Body = io.NopCloser(strings.NewReader("{}"))
+		return resp, err
+	}
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(resp.Body, maxJudgeBody), resp.Body}
+	return resp, err
+}
+
+func decisionQuestion(q Question) openai.DecisionNewParamsQuestionUnion {
+	name := param.NewOpt(q.Name)
+	switch q.Type {
+	case Choice:
+		c := &openai.DecisionNewParamsQuestionChoice{Name: name, Instructions: q.Instructions}
+		for _, o := range q.Choices {
+			c.Choices = append(c.Choices, openai.DecisionNewParamsQuestionChoiceChoice{
+				Value: openai.DecisionNewParamsQuestionChoiceChoiceValueUnion{OfString: param.NewOpt(o.Value)}, Description: optional(o.Description)})
+		}
+		return openai.DecisionNewParamsQuestionUnion{OfChoice: c}
+	case Score:
+		s := &openai.DecisionNewParamsQuestionScore{Name: name, Instructions: q.Instructions}
+		for _, l := range q.Levels {
+			s.Levels = append(s.Levels, openai.DecisionNewParamsQuestionScoreLevel{Label: l.Label, Description: optional(l.Description)})
+		}
+		return openai.DecisionNewParamsQuestionUnion{OfScore: s}
+	}
+	return openai.DecisionNewParamsQuestionUnion{OfPredicate: &openai.DecisionNewParamsQuestionPredicate{Name: name, Instructions: q.Instructions}}
+}
+
+// decisionAnswer is the SDK's answer as ours, unvalidated. A field the reply
+// lacks stays unset (the SDK reads it as zero), so validation rejects it.
+func decisionAnswer(u openai.DecisionAnswerUnion) Answer {
+	a := Answer{Type: QuestionType(u.Type), Name: u.Name}
+	switch v := u.AsAny().(type) {
+	case openai.DecisionAnswerPredicate:
+		a.Probability = valid(v.JSON.Probability.Valid(), v.Probability)
+	case openai.DecisionAnswerChoice:
+		a.Choice, a.Confidence = v.Choice.OfString, valid(v.JSON.Confidence.Valid(), v.Confidence)
+		for _, p := range v.Probabilities {
+			var val any = p.Value.OfString
+			if p.Value.JSON.OfBool.Valid() { // we offer strings only: validation rejects it
+				val = p.Value.OfBool
+			}
+			a.Probabilities = append(a.Probabilities, Probability{Value: val, Probability: present(p.JSON.Probability.Valid(), p.Probability)})
+		}
+	case openai.DecisionAnswerScore:
+		a.Score, a.Confidence = valid(v.JSON.Score.Valid(), v.Score), valid(v.JSON.Confidence.Valid(), v.Confidence)
+		for _, p := range v.Probabilities {
+			var val any = int(p.Value)
+			if !p.JSON.Value.Valid() { // not an index: the SDK reads it as 0
+				val = nil
+			}
+			a.Probabilities = append(a.Probabilities, Probability{Value: val, Label: p.Label, Probability: present(p.JSON.Probability.Valid(), p.Probability)})
 		}
 	}
-	if err := h.post(ctx, map[string]any{"model": h.model, "input": state, "questions": wire}, &resp); err != nil {
-		return nil, err
+	return a
+}
+
+func valid(ok bool, v float64) *float64 {
+	if !ok {
+		return nil
 	}
-	out := make([]raw, 0, len(resp.Answers))
-	for _, a := range resp.Answers {
-		r := raw{Answer: Answer{Name: a.Name}}
-		switch a.Type {
-		case "refusal":
-			r.Refused = true
-		case "predicate":
-			r.kind, r.Probability = YesNo, num(a.Probability)
-		case "choice":
-			r.kind, r.Choice = Choice, a.Choice
-			for _, p := range a.Probabilities {
-				var v string
-				if json.Unmarshal(p.Value, &v) == nil && v == a.Choice {
-					r.Probability = p.Probability
-				}
-			}
-		case "score":
-			r.kind, r.Score = Score, num(a.Score)
-		default:
-			r.kind = -1
-		}
-		out = append(out, r)
+	return &v
+}
+
+// present is v, or NaN (which validation rejects) when the reply lacked it.
+func present(ok bool, v float64) float64 {
+	if !ok {
+		return math.NaN()
 	}
-	return out, nil
+	return v
+}
+
+func optional(s string) param.Opt[string] {
+	if s == "" {
+		return param.Opt[string]{}
+	}
+	return param.NewOpt(s)
 }

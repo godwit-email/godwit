@@ -159,30 +159,37 @@ export interface Mail {
   updateDraft(update: DraftUpdate): Promise<number>
 }
 
-/** a typed question for llm.decide; name matches ^[a-z][a-z0-9_]{0,40}$ */
-export interface Question {
-  name: string
-  type: "yes_no" | "choice" | "score"
-  instructions: string
-  /** choice: 2 to 255 unique values */
-  choices?: QuestionOption[]
-  /** score: 2 to 10 levels, lowest first */
-  levels?: QuestionOption[]
-}
+/**
+ * a typed question for llm.decide, in the OpenAI Decisions API's shape whatever judge answers;
+ * name matches ^[a-z][a-z0-9_]{0,40}$
+ */
+export type Question =
+  | { name: string; type: "predicate"; instructions: string }
+  /** 2 to 255 unique values */
+  | { name: string; type: "choice"; instructions: string; choices: ChoiceOption[] }
+  /** 2 to 10 levels, lowest first */
+  | { name: string; type: "score"; instructions: string; levels: Level[] }
 
-export interface QuestionOption {
+export interface ChoiceOption {
   value: string
   description?: string
 }
 
-/** yes_no sets probability (of yes); choice sets choice, and probability when known; score sets score, a level index */
-export interface Answer {
-  name: string
-  choice?: string
-  probability?: number
-  score?: number
-  refused?: boolean
+export interface Level {
+  label: string
+  description?: string
 }
+
+/**
+ * an answer in the Decisions API's shape: a predicate gives the probability it holds; a choice
+ * its value, a score a 0-based (possibly fractional) level index, each with probabilities and
+ * confidence when the judge gives them; a refusal nothing else
+ */
+export type Answer =
+  | { type: "predicate"; name: string; probability: number }
+  | { type: "choice"; name: string; choice: string; probabilities?: { value: string; probability: number }[]; confidence?: number }
+  | { type: "score"; name: string; score: number; probabilities?: { value: number; label: string; probability: number }[]; confidence?: number }
+  | { type: "refusal"; name: string }
 
 export interface Ctx {
   on(event: "message.received", handler: (message: ReceivedMessage, info: DeliveryInfo) => MaybePromise<void>): void
@@ -202,8 +209,8 @@ export interface Ctx {
    */
   llm: {
     complete(prompt: string): Promise<string>
-    /** state and all question text at most 64 KB; at most 128 questions; at most 2 calls at once */
-    decide(state: string, questions: Question[]): Promise<Answer[]>
+    /** input and all question text at most 64 KB; at most 128 questions; at most 2 calls at once */
+    decide(input: string, questions: Question[]): Promise<Answer[]>
   }
   /** https only, to hosts declared in permissions.net */
   net: { fetch(url: string, init?: FetchInit): Promise<FetchResponse> }
