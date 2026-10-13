@@ -39,7 +39,7 @@ CREATE TABLE message_labels (
   active INTEGER NOT NULL,            -- 0 = 用户手动去掉
   PRIMARY KEY (message_id, label_id));
 CREATE INDEX message_labels_label ON message_labels(label_id, active);
-ALTER TABLE messages ADD COLUMN labeled_at INTEGER;  -- 分类过的时间；NULL = 待分类
+ALTER TABLE messages ADD COLUMN labeled_at INTEGER;  -- NULL = 新邮件待分类；0 = 回扫目标；> 0 = 分类过的时间
 ```
 
 - 一封邮件「有」某标签 = 有一行 `active=1`。`source` 只决定显示样式。
@@ -51,12 +51,12 @@ ALTER TABLE messages ADD COLUMN labeled_at INTEGER;  -- 分类过的时间；NUL
 
 core 里一个后台 goroutine，和现有的 hooks 调度器同一种写法：同步存入新邮件后唤醒它，另外每 30 秒自己查一次。
 
-**取活**：收件箱（`folders.role = 'inbox'`）里 `labeled_at IS NULL` 的邮件，按日期从新到旧，每批 20 封。设置里「自动给新邮件打标签」关掉时不取。
+**取活**：收件箱（`folders.role = 'inbox'`）里 `labeled_at = 0`（回扫目标，总是取）或 `labeled_at IS NULL`（新邮件，只在「自动给新邮件打标签」开着时取）的邮件，回扫目标优先，再按日期从新到旧，每批 20 封。
 
 **一封邮件的分类**：
 1. 每个标签出一道 `ai.YesNo` 题，题名 = `slug`。说明 = 固定的引导语 + 「这封邮件是否属于『名称』：说明」。凡是这封邮件已有 `source=manual` 行的标签都跳过，不出题。
 2. 用 `s.resolveJudge(ctx)`（`core/models.go`）一次问完：有判断模型用判断模型，没有就用生成模型代答。邮件内容作为 state 传入：发件人、主题、正文的前 4000 字。按 `ai.Judge` 的约定，这部分属于不可信数据。
-3. 概率 ≥ 0.5 的写入 `source=auto, active=1`，低于 0.5 的删掉已有的 auto 行。最后写 `labeled_at = now`。以上在一个事务里完成。
+3. 概率 ≥ 0.5 的写入 `source=auto, active=1`，低于 0.5 的删掉已有的 auto 行。最后写 `labeled_at = now`。以上在一个事务里完成，并且提交前重新确认这封邮件的 `labeled_at` 仍是取活时的值、仍在收件箱里，否则丢弃这次结果（作答期间被停止、移走或重新回扫）。
 
 **失败**：
 - 没有可用模型：不写 `labeled_at`，等以后配好模型再分。
@@ -67,10 +67,10 @@ core 里一个后台 goroutine，和现有的 hooks 调度器同一种写法：�
 
 `Service.RescanLabels(ctx, days int, all bool) (count int, err error)`，范围是 `date >= now - days`、在收件箱里的邮件：
 
-- **只补没有标签的**（`all=false`）：把范围内没有任何 `active=1` 行的邮件的 `labeled_at` 清空。
-- **全部重新判断**（`all=true`）：删掉范围内所有 `source=auto` 的行，再清空这些邮件的 `labeled_at`。`manual` 行不动。
+- **只补没有标签的**（`all=false`）：把范围内没有任何 `active=1` 行的邮件的 `labeled_at` 设为 0。
+- **全部重新判断**（`all=true`）：在同一个事务里删掉范围内所有 `source=auto` 的行，并把这些邮件的 `labeled_at` 设为 0。`manual` 行不动。
 
-清空之后由分类器照常处理，进度 = 范围内 `labeled_at IS NULL` 的邮件数。「停止」把这些邮件的 `labeled_at` 写回现在的时间，没分完的就不再分。
+之后由分类器照常处理，回扫不受「自动给新邮件打标签」开关影响。进度 = `labeled_at = 0` 的邮件数（界面另记开始时的总数，画进度条）。「停止」只把 `labeled_at = 0` 的写成现在的时间，范围外的和新到的邮件不受影响。
 
 ## 5. 手动修改
 
@@ -103,7 +103,7 @@ core 里一个后台 goroutine，和现有的 hooks 调度器同一种写法：�
 - 尺寸：高 20，圆角 4，左右内边距 6，图标和文字间距 4，字号 12，图标 12。
 - 手动标签：浅底填充 + 彩色文字。
 - 自动标签：同样的颜色，但只有描边、没有底色。
-- 悬停提示：自动的显示「由模型标记，点按可修改」，手动的显示「手动标记」。
+- 悬停提示：自动的显示「由模型标记」，手动的显示「手动标记」。在读信页点芯片打开改标签菜单。
 - 可选的 × 按钮（读信页用）。
 
 **列表行**：芯片放在预览文字下面，最多显示 2 个，多出的显示成 `+N`。顺序按标签的 `position`。
