@@ -45,7 +45,7 @@ func newOAuthEnv(t *testing.T, autoSync bool) *oauthAccEnv {
 	setFor(t, &backoffMax, 200*time.Millisecond)
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir, AutoSync: autoSync})
+	s, err := New(bg, Options{DataDir: dir, AutoSync: autoSync, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	ch, unsub := s.Subscribe()

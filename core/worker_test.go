@@ -47,7 +47,7 @@ func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*workerEnv, <-chan eve
 	t.Cleanup(func() { backoffMin, backoffMax = b0, b1 }) // runs after the Close below
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir, AutoSync: true})
+	s, err := New(bg, Options{DataDir: dir, AutoSync: true, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	ch, unsub := s.Subscribe()
@@ -131,7 +131,7 @@ func TestCloseStopsWorkers(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	// New starts a worker for an account that already exists.
 	require.NoError(t, e.s.Close())
-	s, err := New(bg, Options{DataDir: e.dir, AutoSync: true})
+	s, err := New(bg, Options{DataDir: e.dir, AutoSync: true, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	ch, unsub := s.Subscribe()
 	defer unsub()

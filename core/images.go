@@ -33,10 +33,8 @@ func (s *Service) openImageCache() error {
 	return err
 }
 
-// startImagePrefetch fetches the remote images of each new message the
-// settings let load (ImagesAllowed) into the cache, one message at a time,
-// so that opening it is instant and the sender sees the fetch at arrival,
-// not when it is read.
+// startImagePrefetch caches permitted body images and sender avatars at arrival,
+// one message at a time. Reads can still fetch when prefetch is incomplete or stale.
 func (s *Service) startImagePrefetch() {
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil {
@@ -97,10 +95,27 @@ func (s *Service) startImagePrefetch() {
 // images and about prefetchBytes bytes: the last image may pass it, by at
 // most one image (imagefetch.MaxImageBytes), as its size is known only once fetched.
 func (s *Service) prefetchImages(ctx context.Context, message int64) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", message)
+	if err != nil || len(rows.Values) == 0 {
+		return
+	}
+	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
+		return
+	}
+	// Avatar prefetch also covers plaintext and every body's early-return path.
+	_, _ = s.SenderAvatar(ctx, message, false)
+	if ctx.Err() != nil {
+		return
+	}
 	if ok, err := s.ImagesAllowed(ctx, message); err != nil || !ok {
 		return
 	}
-	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", message)
+	rows, err = s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", message)
 	if err != nil || len(rows.Values) == 0 || store.Str(rows.Values[0][0]) == "" {
 		return
 	}

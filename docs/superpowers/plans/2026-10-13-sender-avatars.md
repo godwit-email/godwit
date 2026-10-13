@@ -148,15 +148,15 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 **Interfaces:** `imagefetch.NewAvatarClient(base *http.Client) *http.Client`；`imagefetch.DownloadAvatar(ctx context.Context, client *http.Client, src string) ([]byte, error)`（流式 256 KiB 上限，Accept 包含 SVG 与现有位图／ICO，初始 URL 仅 HTTPS）；`imagefetch.CheckAvatarImage(data []byte, source string) (out []byte, format string, width, height int, err error)`；`(*imagecache.Cache).GetAvatar(ctx context.Context, src, source string) (Image, error)`；`(*imagecache.Cache).PutAvatar(ctx context.Context, key string, data []byte, source string) (Image, error)`；`(*imagecache.Cache).LookupAvatar(ctx context.Context, key string) (Image, bool, error)`（只读未过期的头像条目，不发网络）；`(*imagecache.Cache).AvatarMiss(key string) bool`、`(*imagecache.Cache).RememberAvatarMiss(key string) error`（供网站最终未命中查询／记录）。source 仅 bimi／favicon／gravatar，key 使用 avatar／source 独立键空间；PutAvatar 用于已验证的内嵌 BIMI 或已选中的网站图像，仍执行对应格式校验，不能接受任意正文数据。格式校验放在 imagefetch，保持依赖方向 avatar → imagecache → imagefetch。
 
-- [ ] 写测试：合法 Tiny PS、静态 favicon SVG、PNG／DIB 两种 ICO；尺寸／字节／XML／路径上限；use 循环和外链拒绝；HTML 冒充图像拒绝；初始 HTTP、HTTPS→HTTP 跳转和重定向内网拒绝；普通 `Get`／`Dims` 在导入 ICO 解码包后仍拒绝 SVG／ICO；跨来源键隔离；24 小时刷新／未命中、重启后 TTL／SVG 恢复和 5 分钟瞬时失败缓存；单飞、清除竞态和 Close 取消。
-- [ ] `TestFaviconImageMinSize`：16×16、31×32、32×31 位图／ICO 拒绝，32×32 接受；以真实解码尺寸为准，不放大后再判断；安全 SVG 不受该位图下限影响。缓存中的不合格 favicon 同样不可用；该最小尺寸规则仅适用于 favicon 来源。
-- [ ] 运行 `go test ./internal/avatar ./internal/imagecache ./internal/imagefetch -run 'Avatar|BIMIImage|FaviconImage' -count=1`，确认失败。
-- [ ] 实现 NewAvatarClient 及流式 DownloadAvatar；imagecache 从既有 client 派生头像 client，favicon 首页复用同一严格构造方法。测试用 TLS httptest 及已有 ImageClient 注入，不增加第二个 core.Options 字段。
-- [ ] 用标准库 XML token 读取和白名单限制静态 SVG；使用现有位图解码；ICO 使用独立解码包并在解码前检查目录项偏移／长度／尺寸与资源上限，转为 PNG。不要手写完整 ICO／DIB 解码器，也不要直接调用 MustParseSVG 处理网络内容。
-- [ ] CheckAvatarImage 在 source=favicon 时校验原始位图宽、高均至少 32px，ICO 在转 PNG 前检查实际解码尺寸；读取已有 favicon 缓存时也检查该下限，不返回过小图像。
-- [ ] 复用现有缓存工作流添加头像和未命中入口，有限格式由头像入口校验；限制在读取和解码前生效。按设计的四段头像文件名与 miss 条目持久化写入时间／未命中；parseName 单独识别头像 SVG，不修改正文 Formats；清除、重启和淘汰覆盖头像／未命中，未命中最多 1000 项。LRU 访问时间仍只用于淘汰；普通缓存行为不增加 TTL。
-- [ ] 重跑测试，包括整个原有 imagecache／imagefetch 测试，确认总缓存大小和清除行为包含头像。
-- [ ] 仅提交本任务文件及必要依赖，保留共同作者尾部。
+- [x] 写测试：合法 Tiny PS、静态 favicon SVG、PNG／DIB 两种 ICO；尺寸／字节／XML／路径上限；use 循环和外链拒绝；HTML 冒充图像拒绝；初始 HTTP、HTTPS→HTTP 跳转和重定向内网拒绝；普通 `Get`／`Dims` 在导入 ICO 解码包后仍拒绝 SVG／ICO；跨来源键隔离；24 小时刷新／未命中、重启后 TTL／SVG 恢复和 5 分钟瞬时失败缓存；单飞、清除竞态和 Close 取消。
+- [x] `TestFaviconImageMinSize`：16×16、31×32、32×31 位图／ICO 拒绝，32×32 接受；以真实解码尺寸为准，不放大后再判断；安全 SVG 不受该位图下限影响。缓存中的不合格 favicon 同样不可用；该最小尺寸规则仅适用于 favicon 来源。
+- [x] 运行 `go test ./internal/avatar ./internal/imagecache ./internal/imagefetch -run 'Avatar|BIMIImage|FaviconImage' -count=1`，确认失败。
+- [x] 实现 NewAvatarClient 及流式 DownloadAvatar；imagecache 从既有 client 派生头像 client，favicon 首页复用同一严格构造方法。测试用 TLS httptest 及已有 ImageClient 注入，不增加第二个 core.Options 字段。
+- [x] 用标准库 XML token 读取和白名单限制静态 SVG；使用现有位图解码；ICO 使用独立解码包并在解码前检查目录项偏移／长度／尺寸与资源上限，转为 PNG。不要手写完整 ICO／DIB 解码器，也不要直接调用 MustParseSVG 处理网络内容。
+- [x] CheckAvatarImage 在 source=favicon 时校验原始位图宽、高均至少 32px，ICO 在转 PNG 前检查实际解码尺寸；读取已有 favicon 缓存时也检查该下限，不返回过小图像。
+- [x] 复用现有缓存工作流添加头像和未命中入口，有限格式由头像入口校验；限制在读取和解码前生效。按设计的四段头像文件名与 miss 条目持久化写入时间／未命中；parseName 单独识别头像 SVG，不修改正文 Formats；清除、重启和淘汰覆盖头像／未命中，未命中最多 1000 项。LRU 访问时间仍只用于淘汰；普通缓存行为不增加 TTL。
+- [x] 重跑测试，包括整个原有 imagecache／imagefetch 测试，确认总缓存大小和清除行为包含头像。
+- [x] 仅提交本任务文件及必要依赖，保留共同作者尾部。
 
 ### Task 4: favicon 发现、公共邮箱分流与 Gravatar
 
@@ -166,20 +166,20 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 **Interfaces:** `avatar.PersonalDomain(domain string, providerDomains []string) bool`；`avatar.FaviconSites(domain string) []string`；`avatar.FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string) (imagecache.Image, bool)`；`avatar.GravatarURL(email string) string`。FindFavicon 返回一站的安全图像；原始域名与组织域的调用顺序由 core 编排，格式校验使用任务 3 的 imagefetch.CheckAvatarImage。
 
-- [ ] 写测试：公共邮箱精确匹配；自有域名仍可兜底；`mail.example.co.uk` → 原始域名／`example.co.uk`；IDN；同域去重；固定候选顺序；HTML 属性顺序与相对地址；首页重定向后的基准地址；恶意 URL／HTTPS 降级／内网／超过候选数停止；首页读取最多 256 KiB；网站成功结果／确定未命中在重启后不再抓首页，瞬时错误不写长期未命中；所有图标失败返回无图像。
-- [ ] `TestGravatarURL` 对大小写／前后空白产生同一 SHA-256；保留点和 +tag；断言固定 `s=64&d=404&r=g`，没有原始邮箱、名称、profile 请求。
-- [ ] 运行 `go test ./internal/avatar -run 'PersonalDomain|Favicon|Gravatar' -count=1`，确认失败。
-- [ ] 实现域名函数、有限 HTML tokenizer 发现和顺序下载；先用 LookupAvatar／AvatarMiss 查询网站键，选中图像后用 PutAvatar 保存网站结果。首页使用严格 HTTPS 客户端、HTML Accept、同一通用 UA／无 Referer、流式读取前 256 KiB 后关闭，仅解析已完整读到的 link。首页网络失败不影响最后尝试 /favicon.ico。5 秒每站、原始域名＋组织域合计 10 秒；所有候选确实不可用才记录网站未命中，取消／瞬时失败不记录。Gravatar 使用标准库 SHA-256，无 SDK／密钥。
-- [ ] 重跑测试，确保第一页发现无结果后仍尝试 /favicon.ico、子域失败后尝试组织域。
-- [ ] 验证过小 favicon 不终止候选链：16px 候选后有 32px 候选时选后者，所有候选过小时返回无图像，由 core 继续 Gravatar 兜底。
-- [ ] 用实际 TLS 慢响应验证站点期限会取消已启动图标请求，而不只是停止等待；共享请求采用首个调用方期限，普通正文 Get 行为保持原样。
-- [ ] 仅提交本任务文件，保留共同作者尾部。
+- [x] 写测试：公共邮箱精确匹配；自有域名仍可兜底；`mail.example.co.uk` → 原始域名／`example.co.uk`；IDN；同域去重；固定候选顺序；HTML 属性顺序与相对地址；首页重定向后的基准地址；恶意 URL／HTTPS 降级／内网／超过候选数停止；首页读取最多 256 KiB；网站成功结果／确定未命中在重启后不再抓首页，瞬时错误不写长期未命中；所有图标失败返回无图像。
+- [x] `TestGravatarURL` 对大小写／前后空白产生同一 SHA-256；保留点和 +tag；断言固定 `s=64&d=404&r=g`，没有原始邮箱、名称、profile 请求。
+- [x] 运行 `go test ./internal/avatar -run 'PersonalDomain|Favicon|Gravatar' -count=1`，确认失败。
+- [x] 实现域名函数、有限 HTML tokenizer 发现和顺序下载；先用 LookupAvatar／AvatarMiss 查询网站键，选中图像后用 PutAvatar 保存网站结果。首页使用严格 HTTPS 客户端、HTML Accept、同一通用 UA／无 Referer、流式读取前 256 KiB 后关闭，仅解析已完整读到的 link。首页网络失败不影响最后尝试 /favicon.ico。5 秒每站、原始域名＋组织域合计 10 秒；所有候选确实不可用才记录网站未命中，取消／瞬时失败不记录。Gravatar 使用标准库 SHA-256，无 SDK／密钥。
+- [x] 重跑测试，确保第一页发现无结果后仍尝试 /favicon.ico、子域失败后尝试组织域。
+- [x] 验证过小 favicon 不终止候选链：16px 候选后有 32px 候选时选后者，所有候选过小时返回无图像，由 core 继续 Gravatar 兜底。
+- [x] 用实际 TLS 慢响应验证站点期限会取消已启动图标请求，而不只是停止等待；共享请求采用首个调用方期限，普通正文 Get 行为保持原样。
+- [x] 仅提交本任务文件，保留共同作者尾部。
 
 ### Task 5: core 串联来源与图片加载政策
 
-**Files:** 创建 `core/avatars.go`、`core/avatars_test.go`；修改 `core/images.go`，必要时修改 `core/service.go`、`core/settings.go`；扩展 `core/images_test.go`。
+**Files:** 创建 `core/avatars.go`、`core/avatars_test.go`；修改 `core/images.go`，必要时修改 `core/service.go`、`core/settings.go`；扩展 `core/images_test.go`；修正 `core/sync_test.go` 和 `core/coretest/coretest.go` 的图像客户端 fixture，仅放行本地或明确注入的测试目标，避免新增预取让既有测试请求外网。
 
-**Interfaces:** `core.Avatar{Data []byte; Format, Source string; Width, Height int}`；`(*Service).SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (Avatar, error)`，空 Data 表示正常无头像。allowRemote 是用户对当前邮件点击“加载图片”的许可；自动获取始终检查 ImagesAllowed，垃圾邮件仅在此许可为 true 时可以请求；存储／取消错误才向调用方返回 error，来源缺失或下载失败继续兜底。
+**Interfaces:** `core.Avatar{Data []byte; Format, Source string; Width, Height int}`；`(*Service).SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (Avatar, error)`，空 Data 表示正常无头像。allowRemote 是用户对当前邮件点击“加载图片”的许可；自动获取始终检查 ImagesAllowed，垃圾邮件仅在此许可为 true 时可以请求；core DB 存储／取消错误才向调用方返回 error（临时图像缓存 I/O 沿用既有容错契约），来源缺失或下载失败继续兜底。
 
 - [ ] 写表驱动测试：BIMI 命中不请求其他来源；BIMI 不可信转 favicon；公共邮箱不请求网站；favicon 命中不请求 Gravatar；自有域名双失败后请求 Gravatar；404 → 空；同域认证成功／失败邮件不能共享通过状态。
 - [ ] 覆盖 auto／trusted／ask／垃圾邮件／当前邮件许可、缓存命中后的政策检查、设置切换、内嵌 BIMI 无网络、本地无效地址和服务 Close／账号删除取消；新邮件 HTML／纯文本均预取，正文失败／上限不跳过头像，ask／垃圾邮件不自动预取，预取后读信缓存命中不重发网站发现或图像请求；账号锁忙时普通头像不等待。每项用请求计数断言，不能只检查最后显示结果。

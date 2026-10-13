@@ -30,7 +30,7 @@ func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
 	t.Helper()
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir})
+	s, err := New(bg, Options{DataDir: dir, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	im := testmail.StartIMAP(t)

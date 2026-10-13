@@ -39,7 +39,7 @@ type Settings struct {
 	// images load at once (始终信任此发件人). Only TrustImageSender and
 	// UntrustImageSender change it; SetSettings keeps the stored list.
 	TrustedImageSenders []string
-	// RemoteImages is when a message's remote images load, through the image
+	// RemoteImages is when a message's remote images and sender avatars load, through the image
 	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
 	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
 	RemoteImages string
