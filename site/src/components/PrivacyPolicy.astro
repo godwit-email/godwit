@@ -1,0 +1,95 @@
+---
+// The privacy policy page: src/policy.ts as an article, under the home page's header and footer.
+import "../styles.css";
+import logo from "../assets/logo.svg?raw";
+import { strings } from "../i18n";
+import { type Lang, locales, names, paths } from "../locales";
+import { policy } from "../policy";
+import Icon from "./Icon.astro";
+
+interface Props {
+	lang: Lang;
+}
+
+const { lang } = Astro.props;
+const p = policy[lang];
+const s = strings[lang];
+const self = `${paths[lang]}privacy/`;
+const github = "https://github.com/godwit-email/godwit";
+const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ');
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{p.title}</title>
+		<meta name="description" content={p.description} />
+		<link rel="icon" href="/icon.png" type="image/png" />
+		<link rel="apple-touch-icon" href="/icon.png" />
+		<link rel="canonical" href={new URL(self, Astro.site)} />
+		{locales.map((l) => <link rel="alternate" hreflang={l} href={new URL(`${paths[l]}privacy/`, Astro.site)} />)}
+		<meta name="theme-color" content="#ededed" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)" />
+		<!-- Website-only analytics, as on the home page; the policy says so. -->
+		<script
+			is:inline
+			defer
+			src="https://u.baran.wang/script.js"
+			data-website-id="b1bc7048-78d5-4b52-927e-bd85528aaab1"
+			data-domains="godwit.email"
+		></script>
+	</head>
+	<body class="bg-background">
+		<header class="mx-auto flex h-16 max-w-6xl items-center px-6">
+			<a href={p.home} class="flex items-center gap-2.5 font-semibold tracking-tight">
+				<span class="size-6" set:html={mark} />
+				Godwit
+			</a>
+			<nav class="ml-auto flex items-center gap-1 text-sm">
+				{
+					locales
+						.filter((l) => l !== lang)
+						.map((l) => (
+							<a href={`${paths[l]}privacy/`} hreflang={l} lang={l} class="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:text-foreground">
+								{names[l]}
+							</a>
+						))
+				}
+				<a href={github} class="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground" aria-label={s.github}>
+					<Icon name="github" class="size-5" />
+				</a>
+			</nav>
+		</header>
+
+		<main class="mx-auto max-w-3xl px-6 pt-12 pb-24">
+			<a href={p.home} class="text-sm text-muted-foreground hover:text-foreground">← {p.back}</a>
+			<h1 class="mt-6 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{p.title}</h1>
+			<p class="mt-3 text-sm text-muted-foreground">{p.updated}</p>
+			{
+				p.sections.map((section) => (
+					<section class="mt-10">
+						<h2 class="text-xl font-semibold tracking-tight">{section.title}</h2>
+						{section.body.map((para) => (
+							<p class="mt-3 leading-relaxed text-muted-foreground">{para}</p>
+						))}
+					</section>
+				))
+			}
+		</main>
+
+		<footer class="border-t">
+			<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-8 text-sm text-muted-foreground">
+				<span class="flex items-center gap-2">
+					<span class="size-4" set:html={mark} />© 2026 The Godwit Authors
+				</span>
+				<a href={`${github}/blob/main/LICENSE`} class="hover:text-foreground">{s.license}</a>
+				<a href={github} class="ml-auto inline-flex items-center gap-1.5 hover:text-foreground">
+					<Icon name="github" />
+					{s.github}
+				</a>
+			</div>
+		</footer>
+	</body>
+</html>
