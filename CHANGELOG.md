@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/godwit-email/godwit/compare/v0.2.0...v0.3.0) (2026-10-13)
+
+
+### Features
+
+* add an independent unread app icon badge setting ([#46](https://github.com/godwit-email/godwit/issues/46)) ([1c95257](https://github.com/godwit-email/godwit/commit/1c952577002b0380571770cb99af4775f0a651b5))
+* add sender favicons and Gravatar avatars ([#49](https://github.com/godwit-email/godwit/issues/49)) ([6576633](https://github.com/godwit-email/godwit/commit/6576633dcbaf760669ec68081936871da74c4000))
+* **labels:** email labels, set by the model and by hand ([#48](https://github.com/godwit-email/godwit/issues/48)) ([0a7b4b7](https://github.com/godwit-email/godwit/commit/0a7b4b7d8bf75552b7148bbfefedd9d36fc0a4c4))
+
+
+### Bug Fixes
+
+* **avatars:** cached icons first, a loading pulse, colored initials ([#54](https://github.com/godwit-email/godwit/issues/54)) ([e00dab7](https://github.com/godwit-email/godwit/commit/e00dab705bdbb67cf22c0468ea8473e8df783da6))
+* **labels:** reorder labels with a List (ListState.Reorder) ([#53](https://github.com/godwit-email/godwit/issues/53)) ([26dcbae](https://github.com/godwit-email/godwit/commit/26dcbae24b4541b00b02fa8aa1b3e10281a30468))
+
 ## [0.2.0](https://github.com/godwit-email/godwit/compare/v0.1.0...v0.2.0) (2026-10-12)
 
 
