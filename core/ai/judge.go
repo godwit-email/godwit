@@ -276,6 +276,10 @@ func validateQuestions(qs []Question) error {
 		if strings.TrimSpace(q.Instructions) == "" {
 			return fmt.Errorf("%w: %q has no instructions", ErrJudgeQuestion, q.Name)
 		}
+		// Each type carries only its own options: the Decisions API rejects the others.
+		if q.Type != Choice && len(q.Choices) > 0 || q.Type != Score && len(q.Levels) > 0 {
+			return fmt.Errorf("%w: %q has options its type does not take", ErrJudgeQuestion, q.Name)
+		}
 		switch q.Type {
 		case Predicate:
 		case Choice:

@@ -372,6 +372,10 @@ func TestJudgeRejectsBadQuestions(t *testing.T) {
 		{{Name: "s", Instructions: "?", Type: Score, Levels: levels}},
 		{{Name: "s", Instructions: "?", Type: Score, Levels: levels[:1]}},
 		{{Name: "k", Instructions: "?", Type: "yes_no"}},
+		{{Name: "p", Instructions: "?", Type: Predicate, Choices: []ChoiceOption{{"a", ""}, {"b", ""}}}},
+		{{Name: "p", Instructions: "?", Type: Predicate, Levels: []Level{{"lo", ""}, {"hi", ""}}}},
+		{{Name: "c", Instructions: "?", Type: Choice, Choices: []ChoiceOption{{"a", ""}, {"b", ""}}, Levels: []Level{{"lo", ""}, {"hi", ""}}}},
+		{{Name: "s", Instructions: "?", Type: Score, Levels: []Level{{"lo", ""}, {"hi", ""}}, Choices: []ChoiceOption{{"a", ""}, {"b", ""}}}},
 	} {
 		if _, err := j.Ask(context.Background(), "mail", qs); !errors.Is(err, ErrJudgeQuestion) {
 			t.Errorf("%+v: %v", qs, err)
