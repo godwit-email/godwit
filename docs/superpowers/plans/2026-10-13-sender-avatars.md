@@ -10,7 +10,7 @@
 
 **Spec:** 本文“设计与已确定的行为”；设计和实施步骤保存在同一个计划中。
 
-**状态:** 已合并 Claude Fable 5.1 审阅中经核实的修改；任务 3～6 的 favicon／Gravatar／字母头像实现及自动化验证已完成并逐任务审阅，正在最终全分支审阅。可信服务商名单为空，BIMI 真实验证、解析器及任务 2 仍按门禁延后；原生 GUI 和真实站点手工烟测待做。设计、实施步骤、服务商证据均维护在本计划内，不以解析或 fixture 测试替代真实信任证据。
+**状态:** 已合并 Claude Fable 5.1 审阅中经核实的修改；任务 3～6 的 favicon／Gravatar／字母头像实现及自动化验证已完成并逐任务审阅，最终全分支审阅及一次综合修复复审已通过（`5e09c2f..8411b54`，修复 `08ac57f`），无开放发现；最终 `go test ./... -count=1` 全部通过。可信服务商名单为空，BIMI 真实验证、解析器及任务 2 仍按门禁延后；原生 GUI 和真实站点手工烟测待做。设计、实施步骤、服务商证据均维护在本计划内，不以解析或 fixture 测试替代真实信任证据。
 
 ## Global Constraints
 
@@ -91,7 +91,7 @@ favicon 位图要求原始宽、高均至少 32px；任一边小于 32px 即丢�
 
 头像复用 imagecache 的单飞、并发上限、原子写入、LRU 和关闭逻辑，使用独立键空间，纳入现有 256 MiB 总缓存容量与清除按钮。普通图片缓存键不变；正文入口继续拒绝 SVG／ICO，即使头像缓存中存在对应 URL。头像成功记录 24 小时刷新；404、图标格式被拒绝或网站发现完成且无可用图标等确定未命中持久化 24 小时，网站未命中按规范化 host 记录，避免重复抓首页。任何候选出现超时、429、5xx 等瞬时错误时不记录该网站的长期未命中，仅用现有 5 分钟内存失败缓存。刷新失败时普通头像可显示上次安全图像，但 BIMI 仍须当前邮件认证通过。
 
-持久化落点为现有缓存目录：普通文件名仍为 `<key>-<format>-<w>x<h>`，头像文件名为 `<key>-<format>-<w>x<h>-<writtenUnix>`，未命中为零字节 `<key>-miss-0x0-<writtenUnix>`。`imagecache.AvatarKey(source, identity)` 生成 `avatar_<source>_<32hex>`，identity 为 URL 或规范化网站 host；保留 source 以便重启校验 favicon 下限。未命中记录最多 1000 项，过期或超过上限时删除。parseName 区分普通、头像与未命中，只有头像格式集合包含 SVG，不扩大 imagefetch.Formats；重启恢复写入时间和未命中，mtime 仅作 LRU。清除按钮覆盖全部条目。
+持久化落点为现有缓存目录：普通文件名仍为 `<key>-<format>-<w>x<h>`，头像文件名为 `<key>-<format>-<w>x<h>-<writtenUnix>`，未命中为零字节 `<key>-miss-0x0-<writtenUnix>`。`imagecache.AvatarKey(source, identity)` 生成 `avatar_<source>_<32hex>`，identity 为 URL 或规范化网站 host；保留 source 以便重启校验 favicon 下限。未命中记录最多 1000 项，过期或超过上限时删除。parseName 区分普通、头像与未命中，只有头像格式集合包含 SVG，不扩大 imagefetch.Formats；重启恢复写入时间和未命中，mtime 仅作 LRU。清除按钮覆盖全部条目。favicon 整次发现使用开始时的 AvatarGeneration 快照，URL 下载及网站成功／未命中提交均传同一代次；清除后旧发现不能建立新候选或恢复缓存，已开始的共享传输仍可按既有期限结束。
 
 RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件人；ask 时直到用户对当前邮件点“加载图片”才请求。新邮件到达时在 ImagesAllowed 通过后预取头像；从正文预取的无 HTML 提前返回和正文数量／字节上限路径中独立出来，不能遗漏纯文本邮件，也不能因为正文下载失败而跳过头像。用户点“加载图片”后同时重试头像。内嵌 BIMI 图像不产生外部请求，可在通过信任和格式校验后本地显示；远程来源在禁用状态下连 DNS 发现也不执行。缓存命中不能绕过远程来源的显示政策。
 
@@ -146,7 +146,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 **Keys:** `imagecache.AvatarKey(source, identity string) string` 返回 `avatar_<source>_<32hex>`；GetAvatar 从 URL 生成键，PutAvatar／LookupAvatar／AvatarMiss／RememberAvatarMiss 使用完整键，网站 identity 使用规范化 host。
 
-**Interfaces:** `imagefetch.NewAvatarClient(base *http.Client) *http.Client`；`imagefetch.DownloadAvatar(ctx context.Context, client *http.Client, src string) ([]byte, error)`（流式 256 KiB 上限，Accept 包含 SVG 与现有位图／ICO，初始 URL 仅 HTTPS）；`imagefetch.CheckAvatarImage(data []byte, source string) (out []byte, format string, width, height int, err error)`；`(*imagecache.Cache).GetAvatar(ctx context.Context, src, source string) (Image, error)`；`(*imagecache.Cache).PutAvatar(ctx context.Context, key string, data []byte, source string) (Image, error)`；`(*imagecache.Cache).LookupAvatar(ctx context.Context, key string) (Image, bool, error)`（只读未过期的头像条目，不发网络）；`(*imagecache.Cache).AvatarMiss(key string) bool`、`(*imagecache.Cache).RememberAvatarMiss(key string) error`（供网站最终未命中查询／记录）。source 仅 bimi／favicon／gravatar，key 使用 avatar／source 独立键空间；PutAvatar 用于已验证的内嵌 BIMI 或已选中的网站图像，仍执行对应格式校验，不能接受任意正文数据。格式校验放在 imagefetch，保持依赖方向 avatar → imagecache → imagefetch。
+**Interfaces:** `imagefetch.NewAvatarClient(base *http.Client) *http.Client`；`imagefetch.DownloadAvatar(ctx context.Context, client *http.Client, src string) ([]byte, error)`（流式 256 KiB 上限，Accept 包含 SVG 与现有位图／ICO，初始 URL 仅 HTTPS）；`imagefetch.CheckAvatarImage(data []byte, source string) (out []byte, format string, width, height int, err error)`；`(*imagecache.Cache).AvatarGeneration() int`；`(*imagecache.Cache).GetAvatar(ctx context.Context, src, source string, gen int) (Image, error)`；`(*imagecache.Cache).PutAvatar(ctx context.Context, key string, data []byte, source string, gen int) (Image, error)`；`(*imagecache.Cache).LookupAvatar(ctx context.Context, key string) (Image, bool, error)`（只读未过期的头像条目，不发网络）；`(*imagecache.Cache).AvatarMiss(key string) bool`、`(*imagecache.Cache).RememberAvatarMiss(key string, gen int) error`（供网站最终未命中查询／记录）。source 仅 bimi／favicon／gravatar，key 使用 avatar／source 独立键空间；PutAvatar 用于已验证的内嵌 BIMI 或已选中的网站图像，仍执行对应格式校验，不能接受任意正文数据。格式校验放在 imagefetch，保持依赖方向 avatar → imagecache → imagefetch。
 
 - [x] 写测试：合法 Tiny PS、静态 favicon SVG、PNG／DIB 两种 ICO；尺寸／字节／XML／路径上限；use 循环和外链拒绝；HTML 冒充图像拒绝；初始 HTTP、HTTPS→HTTP 跳转和重定向内网拒绝；普通 `Get`／`Dims` 在导入 ICO 解码包后仍拒绝 SVG／ICO；跨来源键隔离；24 小时刷新／未命中、重启后 TTL／SVG 恢复和 5 分钟瞬时失败缓存；单飞、清除竞态和 Close 取消。
 - [x] `TestFaviconImageMinSize`：16×16、31×32、32×31 位图／ICO 拒绝，32×32 接受；以真实解码尺寸为准，不放大后再判断；安全 SVG 不受该位图下限影响。缓存中的不合格 favicon 同样不可用；该最小尺寸规则仅适用于 favicon 来源。
@@ -193,7 +193,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 ### Task 6: 阅读器显示、文案与最终验证
 
-**实施状态：** 阅读器、文案及自动化验证已完成并通过独立审阅（`a2061e9..d752dc8`）；设置尚未保存时所有自动入口均停止获取，保存成功／回滚后按实际政策恢复。下面原生 GUI／真实站点手工烟测尚未执行，保持未勾选；本地 fixture 和像素测试不能替代该证据。
+**实施状态：** 阅读器、文案及自动化验证已完成并通过独立审阅（`a2061e9..d752dc8`）；设置尚未保存时所有自动入口均停止获取，保存成功／回滚后按实际政策恢复。最终综合修复覆盖同 ID 邮件移入垃圾箱后的自动头像撤销、手动许可保留及旧正文回调隔离。下面原生 GUI／真实站点手工烟测尚未执行，保持未勾选；本地 fixture 和像素测试不能替代该证据。
 
 **Files:** 修改 `app/reader.go`、`internal/kit/display.go`、`app/settings.go`、`internal/i18n/zh.go`、`internal/i18n/en.go`；在 `app/settings_general.go`、`app/app.go`、必要的 `app/shell.go` 设置事件调用方使头像失效（账号删除由 load 的账号列表变化处理，不假设存在 AccountRemoved 事件）；扩展 `internal/kit/kit_test.go`、`app/reader_test.go`、`app/reader_body_test.go`、`app/settings_test.go`。
 
