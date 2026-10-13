@@ -838,4 +838,8 @@ var zh = map[string]string{
 	"reader.labels.manage":    "管理标签…",
 	"reader.labels.auto":      "模型标记",
 	"reader.labels.remove":    "去掉标签「%s」",
+	"mail.filter.label": "标签",
+	"mail.filter.label.name": "按标签筛选",
+	"mail.filter.label.any": "全部标签",
+	"mail.filter.label.item": "只看「%s」",
 }

@@ -838,4 +838,8 @@ var en = map[string]string{
 	"reader.labels.manage":    "Manage labels…",
 	"reader.labels.auto":      "By model",
 	"reader.labels.remove":    "Remove label “%s”",
+	"mail.filter.label": "Label",
+	"mail.filter.label.name": "Filter by label",
+	"mail.filter.label.any": "Any label",
+	"mail.filter.label.item": "Only “%s”",
 }

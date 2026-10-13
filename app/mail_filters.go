@@ -20,9 +20,10 @@ type searchFilters struct {
 	from      string // a substring of the sender
 	span      int    // a searchSpans index; 0 is any time
 	attach    bool
+	labelID   int64  // a label the mail must have; 0 is any
 	fromDraft string // the sender box while its menu is open
 
-	accOpen, fromOpen, spanOpen bool
+	accOpen, fromOpen, spanOpen, labelOpen bool
 }
 
 // searchSpans are the time chip's options, by i18n key. The design names
@@ -57,7 +58,7 @@ func (p *mailPage) searchAccount() int64 {
 // searchQuery is the box's text with the chips' filters.
 func (p *mailPage) searchQuery() core.SearchQuery {
 	return core.SearchQuery{AccountID: p.searchAccount(), Text: strings.TrimSpace(p.query), From: strings.TrimSpace(p.sf.from),
-		Since: spanStart(p.a.clock.Now(), p.sf.span), HasAttachments: p.sf.attach}
+		Since: spanStart(p.a.clock.Now(), p.sf.span), HasAttachments: p.sf.attach, LabelID: p.sf.labelID}
 }
 
 // filterChips is the row of filters under the search box; a change searches
@@ -109,13 +110,47 @@ func (p *mailPage) filterChips(c *ui.Context) {
 		filterChip(c, i18n.T("mail.search.has_attachments"), p.sf.attach, nil, func() {
 			p.setFilter(func(f *searchFilters) { f.attach = !f.attach })
 		}).Checked(p.sf.attach)
+		p.labelFilter(c)
+	})
+}
+
+// labelFilter is the label chip and its menu: any label, or one.
+func (p *mailPage) labelFilter(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	cur, set := p.a.label(p.sf.labelID)
+	set = set && p.sf.labelID != 0
+	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { p.sf.labelOpen = !p.sf.labelOpen }}).
+		Label(i18n.T("mail.filter.label.name")).Expanded(p.sf.labelOpen).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
+	if set {
+		b.Background(t.SidebarSelected)
+	}
+	b.Children(func() {
+		if set {
+			ui.Icon(c, icons.Get("label-"+cur.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(cur.Color).Text)
+			kit.Text(c, cur.Name, t.Text.Sm).SingleLine()
+		} else {
+			kit.Text(c, i18n.T("mail.filter.label"), t.Text.Sm).SingleLine()
+		}
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
+	})
+	kit.Popover(c, b, &p.sf.labelOpen, func() {
+		filterItem(c, i18n.T("mail.filter.label.any"), !set, func() { p.setFilter(func(f *searchFilters) { f.labelID = 0 }) })
+		for _, l := range p.a.labels {
+			id, on := l.ID, set && l.ID == cur.ID
+			kit.Pressable(c.Key(id), kit.PressableOpts{Selected: on, OnClick: func() { p.setFilter(func(f *searchFilters) { f.labelID = id }) }}).
+				Label(i18n.Tf("mail.filter.label.item", l.Name)).Checked(on).MinWidth(theme.FilterMenuMin).Padding(th.Space(1.5), th.Space(2)).
+				Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md).Children(func() {
+				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(l.Color).Text)
+				kit.Text(c, l.Name, t.Text.Sm).SingleLine()
+			})
+		}
 	})
 }
 
 // setFilter changes the filters, closes their menus and searches again.
 func (p *mailPage) setFilter(change func(*searchFilters)) {
 	change(&p.sf)
-	p.sf.accOpen, p.sf.fromOpen, p.sf.spanOpen = false, false, false
+	p.sf.accOpen, p.sf.fromOpen, p.sf.spanOpen, p.sf.labelOpen = false, false, false, false
 	p.runSearch()
 }
 

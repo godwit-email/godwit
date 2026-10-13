@@ -120,3 +120,24 @@ func TestLabelsRefreshOnEvent(t *testing.T) {
 	}
 	h.waitMail("the chip", func() bool { return h.tt.HasText("账单") })
 }
+
+func TestSearchLabelFilter(t *testing.T) {
+	h, acc, m := labeledMail(t)
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Check-in closed", "too late"))
+	h.syncNow(acc)
+	h.autoLabel(m.ID, "otp")
+	p := h.app.mail
+	p.searchOpen = true
+	p.query = "Check-in"
+	p.runSearch()
+	h.until("both results", func() bool { h.tt.Frame(); return p.searched && len(p.results) == 2 })
+	h.click("按标签筛选")
+	h.click("只看「验证码」")
+	h.until("only the labeled mail", func() bool { h.tt.Frame(); return len(p.results) == 1 && p.results[0].ID == m.ID })
+	if p.sf.labelID != h.labelID("otp") {
+		t.Errorf("filter label %d", p.sf.labelID)
+	}
+	h.click("按标签筛选")
+	h.click("全部标签")
+	h.until("both again", func() bool { h.tt.Frame(); return len(p.results) == 2 })
+}
