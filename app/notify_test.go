@@ -288,6 +288,38 @@ func TestTrayUnread(t *testing.T) {
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 }
 
+func TestAppUnreadInitialClear(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		on     bool
+		unread bool
+	}{
+		{"empty inbox", true, false},
+		{"disabled with unread mail", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+				acc := e.AddAccount(t, "alice@example.com")
+				if tc.unread {
+					e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
+				}
+				st, err := e.Svc.GetSettings(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				st.UnreadOnAppIcon = tc.on
+				if _, err := e.Svc.SetSettings(t.Context(), st); err != nil {
+					t.Fatal(err)
+				}
+			})
+			h.until("initial load", func() bool { return h.app.loaded })
+			if !slices.Contains(h.plat.Calls(), "SetAppUnread 0") {
+				t.Fatal("initial load did not clear the native badge")
+			}
+		})
+	}
+}
+
 func TestAppUnread(t *testing.T) {
 	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com", "carol@example.com")
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", accs[0].Email, "One", "1"))
@@ -327,12 +359,13 @@ func TestAppUnreadSettingIndependent(t *testing.T) {
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
 	h.waitMail("badge shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 1") })
 	h.openSettings("general")
+	start := len(h.plat.Calls())
 	h.click("在应用图标显示未读数")
-	h.waitMail("badge cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 0") })
+	h.waitMail("badge cleared", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 0") })
 	h.until("badge preference saved", func() bool { return h.app.writes.keys["settings"] == nil })
 	h.click("在菜单栏显示未读数")
 	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
-	start := len(h.plat.Calls())
+	start = len(h.plat.Calls())
 	h.click("在应用图标显示未读数")
 	h.waitMail("badge restored", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 1") })
 	start = len(h.plat.Calls())

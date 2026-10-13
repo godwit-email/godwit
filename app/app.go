@@ -182,7 +182,7 @@ type App struct {
 	noteFirst   string                                                    // a click that came before the first load
 	inboxUnread int                                                       // the inboxes' unread total
 	trayUnread  int                                                       // what the tray shows
-	appUnread   int                                                       // what the app icon shows
+	appUnread   int                                                       // what the app icon shows; -1 before the first update
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
@@ -230,7 +230,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy}
+	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
 	if a.clock == nil {
 		a.clock = realClock{}
 	}
