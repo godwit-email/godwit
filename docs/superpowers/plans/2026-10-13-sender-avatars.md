@@ -99,7 +99,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 ### 6. UI 与范围
 
-先覆盖 app/reader.go 现有发件人头像，不新增邮件列表列、账号头像或联系人界面。保持 32 DIP 圆形占位、现有名称标签和字母回退；SVG 用 ui.Image 保留原色，不用会统一染色的 ui.Icon。
+先覆盖 app/reader.go 现有发件人头像，不新增邮件列表列、账号头像或联系人界面。保持既有密度尺寸的圆形占位（compact 为 32 DIP，comfortable 为 40 DIP）、现有名称标签和字母回退；SVG 用 ui.Image 保留原色，不用会统一染色的 ui.Icon。
 
 先显示字母，后台加载；不增加阻塞阅读的 spinner 或网络错误提示。来源缺失是正常结果。失败仍可打开邮件；头像结果按 message ID 和 reader.gen 绑定，切换线程丢弃旧结果。复用现有加载图片动作和设置，不新增每个来源的开关。
 
@@ -177,25 +177,27 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 ### Task 5: core 串联来源与图片加载政策
 
+**实施状态：** 普通来源与政策已完成并通过独立审阅（`eee3ac1..a2061e9`）。下列 BIMI 专属断言仍按任务 1 门禁延后，不计为已实现。复审已确认 Local API 排除规则和同站候选政策重检；必要修改涵盖 `rpcbind/bind.go`／测试及 `FindFavicon` 政策回调。
+
 **Files:** 创建 `core/avatars.go`、`core/avatars_test.go`；修改 `core/images.go`，必要时修改 `core/service.go`、`core/settings.go`；扩展 `core/images_test.go`；修正 `core/sync_test.go` 和 `core/coretest/coretest.go` 的图像客户端 fixture，仅放行本地或明确注入的测试目标，避免新增预取让既有测试请求外网。
 
 **Interfaces:** `core.Avatar{Data []byte; Format, Source string; Width, Height int}`；`(*Service).SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (Avatar, error)`，空 Data 表示正常无头像。allowRemote 是用户对当前邮件点击“加载图片”的许可；自动获取始终检查 ImagesAllowed，垃圾邮件仅在此许可为 true 时可以请求；core DB 存储／取消错误才向调用方返回 error（临时图像缓存 I/O 沿用既有容错契约），来源缺失或下载失败继续兜底。
 
-- [ ] 写表驱动测试：BIMI 命中不请求其他来源；BIMI 不可信转 favicon；公共邮箱不请求网站；favicon 命中不请求 Gravatar；自有域名双失败后请求 Gravatar；404 → 空；同域认证成功／失败邮件不能共享通过状态。
-- [ ] 覆盖 auto／trusted／ask／垃圾邮件／当前邮件许可、缓存命中后的政策检查、设置切换、内嵌 BIMI 无网络、本地无效地址和服务 Close／账号删除取消；新邮件 HTML／纯文本均预取，正文失败／上限不跳过头像，ask／垃圾邮件不自动预取，预取后读信缓存命中不重发网站发现或图像请求；账号锁忙时普通头像不等待。每项用请求计数断言，不能只检查最后显示结果。
-- [ ] 运行 `go test ./core -run 'SenderAvatar|AvatarPolicy|AvatarCancellation' -count=1`，确认失败。
-- [ ] 实现固定顺序编排，复用 ImagesAllowed 与当前邮件许可；core 提取 provider Domains 传入 PersonalDomain。有限缓存去重图像，认证决策每封单独检查；服务商规则为空则直接兜底，不创建无用的同步占位。头像获取不写入 MessageSummary、不新增 Local API 或插件公开接口。
-- [ ] 将头像纳入新邮件事件的现有预取工作，独立于正文无 HTML／错误／数量及字节上限的提前返回；用同一政策判定，取消时终止后续工作。预取未完成或缓存过期时阅读器仍可后台加载，隐私说明明确这一限制。
-- [ ] 重跑本任务及原有图片政策测试；验证服务关闭后不会留下头像下载工作。
-- [ ] 仅提交本任务文件，保留共同作者尾部。
+- [x] 写表驱动测试：BIMI 命中不请求其他来源；BIMI 不可信转 favicon；公共邮箱不请求网站；favicon 命中不请求 Gravatar；自有域名双失败后请求 Gravatar；404 → 空；同域认证成功／失败邮件不能共享通过状态。
+- [x] 覆盖 auto／trusted／ask／垃圾邮件／当前邮件许可、缓存命中后的政策检查、设置切换、内嵌 BIMI 无网络、本地无效地址和服务 Close／账号删除取消；新邮件 HTML／纯文本均预取，正文失败／上限不跳过头像，ask／垃圾邮件不自动预取，预取后读信缓存命中不重发网站发现或图像请求；账号锁忙时普通头像不等待。每项用请求计数断言，不能只检查最后显示结果。
+- [x] 运行 `go test ./core -run 'SenderAvatar|AvatarPolicy|AvatarCancellation' -count=1`，确认失败。
+- [x] 实现固定顺序编排，复用 ImagesAllowed 与当前邮件许可；core 提取 provider Domains 传入 PersonalDomain。有限缓存去重图像，认证决策每封单独检查；服务商规则为空则直接兜底，不创建无用的同步占位。头像获取不写入 MessageSummary、不新增 Local API 或插件公开接口。
+- [x] 将头像纳入新邮件事件的现有预取工作，独立于正文无 HTML／错误／数量及字节上限的提前返回；用同一政策判定，取消时终止后续工作。预取未完成或缓存过期时阅读器仍可后台加载，隐私说明明确这一限制。
+- [x] 重跑本任务及原有图片政策测试；验证服务关闭后不会留下头像下载工作。
+- [x] 仅提交本任务文件，保留共同作者尾部。
 
 ### Task 6: 阅读器显示、文案与最终验证
 
-**Files:** 修改 `app/reader.go`、`internal/kit/display.go`、`app/settings.go`、`internal/i18n/zh.go`、`internal/i18n/en.go`；扩展 `internal/kit/kit_test.go`、`app/reader_test.go`、`app/reader_body_test.go`、`app/settings_test.go`。
+**Files:** 修改 `app/reader.go`、`internal/kit/display.go`、`app/settings.go`、`internal/i18n/zh.go`、`internal/i18n/en.go`；在 `app/settings_general.go`、`app/app.go`、必要的 `app/shell.go` 设置事件调用方使头像失效（账号删除由 load 的账号列表变化处理，不假设存在 AccountRemoved 事件）；扩展 `internal/kit/kit_test.go`、`app/reader_test.go`、`app/reader_body_test.go`、`app/settings_test.go`。
 
 **Interfaces:** 保留 `kit.Avatar(c, name)`；新增 `kit.AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element`（nil → 原字母头像）。reader 的加载结果按 message ID／gen 保存，解析成安全 UI 图像后再绘制；SVG 用 ui.ParseSVG 返回错误时回退，用 ui.Image 保留品牌色。
 
-- [ ] 写测试：初始字母占位；成功后保持名称标签／32 DIP／布局；解析失败仍字母；旧线程迟到结果丢弃；点击加载图片触发头像重试；禁用网络与垃圾邮件不自动加载、垃圾邮件手动许可可加载；设置中文／英文说明覆盖网站与 Gravatar。
+- [ ] 写测试：初始字母占位；成功后保持名称标签／既有密度尺寸（32／40 DIP）／布局；解析失败仍字母；旧线程迟到结果丢弃；点击加载图片触发头像重试；禁用网络与垃圾邮件不自动加载、垃圾邮件手动许可可加载；设置中文／英文说明覆盖网站与 Gravatar。
 - [ ] 新增 `TestRemoteImagesAvatarSetting` 检查中英文说明；运行 `go test ./internal/kit ./app -run 'Avatar|ReaderRemoteImages|RemoteImagesAvatarSetting' -count=1`，确认新行为未实现时失败；既有 `TestReaderRemoteImages` 保留通过。
 - [ ] 实现异步加载和旧结果隔离，复用 app 既有 query／取消机制；不在 View 回调调用 DNS、HTTP 或 SVG 解析，不影响打开邮件与回复操作。纯文本或没有正文远程图片的邮件，头像被政策阻止时也提供当前邮件的“加载图片”动作；使用头像被阻止的说明，不增加正文图片计数，复用同一手动许可。
 - [ ] 设置说明中文：`远程图片设置也适用于发件人头像。允许自动加载时，新邮件会提前获取头像；旧邮件、缓存未命中或过期、手动加载时，仍可能在读信时访问发件人网站和 Gravatar，对方可看到本机 IP 并可能推测阅读时间。Gravatar 使用邮箱哈希查询。` 英文提供等义说明，保留现有无 Cookie／Referer 描述，不作全局隐藏阅读时间的承诺。

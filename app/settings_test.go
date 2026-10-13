@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/egoist/mygo/ui"
 	"os"
 	"slices"
 	"strings"
@@ -18,6 +19,31 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
+
+func TestRemoteImagesAvatarSetting(t *testing.T) {
+	defer i18n.SetLanguage("zh-CN")
+	for _, tc := range []struct {
+		lang  string
+		words []string
+	}{
+		{"zh-CN", []string{"发件人头像", "发件人网站和 Gravatar", "本机 IP", "阅读时间", "邮箱哈希", "Cookie"}},
+		{"en", []string{"sender avatars", "sender websites and Gravatar", "IP address", "reading time", "email hash", "cookies"}},
+	} {
+		t.Run(tc.lang, func(t *testing.T) {
+			h, _ := mailHarness(t, nil, "alice@example.com")
+			i18n.SetLanguage(tc.lang)
+			p := h.app.pages[PageSettings].(*settingsPage)
+			p.st = h.app.settings
+			tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c, theme.Light()); p.remoteImagesView(c) }, 1100, 800)
+			text := strings.Join(tt.Texts(), " ")
+			for _, word := range tc.words {
+				if !strings.Contains(text, word) {
+					t.Errorf("%s missing %q in %q", tc.lang, word, text)
+				}
+			}
+		})
+	}
+}
 
 // openSettings shows the settings section sec ("general", "account:<id>"…).
 func (h *harness) openSettings(sec string) *settingsPage {

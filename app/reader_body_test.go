@@ -327,6 +327,10 @@ func TestReaderRemoteImages(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.see("已阻止 1 张远程图片，防止发件人追踪你是否打开了邮件")
+	// The plaintext message now has its own avatar load action; target
+	// this message's existing body-image action by folding the older one.
+	h.app.mail.reader.toggle(msgs[0].ID)
+	h.tt.Frame()
 	if h.hasCall("AllowImages") {
 		t.Fatal("allowed before 加载图片")
 	}

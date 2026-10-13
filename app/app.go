@@ -9,6 +9,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -327,9 +328,19 @@ func (a *App) load() {
 		}
 		a.loadFailing = false
 		first := !a.loaded
+		for _, old := range a.accounts {
+			if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == old.ID }) {
+				a.mail.reader.invalidateAvatars()
+				break
+			}
+		}
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
+			if a.settings.RemoteImages != st.RemoteImages || !slices.Equal(a.settings.TrustedImageSenders, st.TrustedImageSenders) {
+				a.mail.reader.invalidateAvatars()
+			}
 			a.settings, a.settingsOK = st, st
+			a.mail.reader.refreshAvatars()
 		}
 		a.syncLocalAPI()
 		a.refreshTasks() // skills or services may have changed too

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +21,282 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
+
+var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
+
+// avatarHarness maps image requests to a local TLS fixture; the real core,
+// image cache, image validation and reader conversion remain in the path.
+func avatarHarness(t *testing.T, mode string, handler http.HandlerFunc) (*harness, core.Account) {
+	t.Helper()
+	srv := httptest.NewTLSServer(handler)
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := srv.Client().Transport.(*http.Transport).Clone()
+	tr.TLSClientConfig.ServerName = u.Hostname()
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, u.Host)
+	}
+	t.Cleanup(tr.CloseIdleConnections)
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		if err := e.Svc.Close(); err != nil {
+			t.Fatal(err)
+		}
+		e.Svc, err = core.New(t.Context(), core.Options{DataDir: e.DataDir, ImageClient: &http.Client{Transport: tr}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { e.Svc.Close() })
+		st, err := e.Svc.GetSettings(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.RemoteImages = mode
+		if _, err := e.Svc.SetSettings(t.Context(), st); err != nil {
+			t.Fatal(err)
+		}
+		acc = e.AddAccount(t, "alice@example.com")
+	})
+	h.plat.svc = h.env.Svc
+	h.until("mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail })
+	return h, acc
+}
+
+func TestReaderAvatarLoadsWithoutLayoutJump(t *testing.T) {
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	h, acc := avatarHarness(t, "ask", func(w http.ResponseWriter, req *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-release
+		w.Write(readerAvatarSVG)
+	})
+	t.Cleanup(func() { close(release) })
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.see("B")
+	before, ok := h.tt.Find("Bob")
+	if !ok || before.W != 32 || before.H != 32 {
+		t.Fatalf("initial avatar %+v", before)
+	}
+	h.see("已阻止发件人头像")
+	h.click("加载图片")
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("avatar request did not start")
+	}
+	if !h.app.mail.reader.bodies[m.ID].ready {
+		t.Fatal("avatar blocked body loading")
+	}
+	release <- struct{}{}
+	h.until("avatar", func() bool { return h.app.mail.reader.bodies[m.ID].avatar != nil })
+	after, _ := h.tt.Find("Bob")
+	if before != after || slices.Contains(h.tt.Texts(), "B") {
+		t.Fatalf("layout %v -> %v, texts %q", before, after, h.tt.Texts())
+	}
+	if px := h.tt.Image().RGBAAt(int(after.X+16), int(after.Y+16)); px.R < 250 || px.G > 5 || px.B > 5 {
+		t.Fatalf("avatar color %v", px)
+	}
+}
+
+func TestReaderAvatarPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, folder string
+		blocked            bool
+	}{
+		{"disabled", "ask", "INBOX", true}, {"untrusted", "trusted", "INBOX", true}, {"junk", "auto", "Junk", true}, {"automatic", "auto", "INBOX", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int64
+			h, acc := avatarHarness(t, tc.mode, func(w http.ResponseWriter, req *http.Request) { hits.Add(1); w.Write(readerAvatarSVG) })
+			if tc.folder == "Junk" {
+				if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.env.Deliver(t, acc.ID, tc.folder, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+			folders, err := h.env.Svc.ListFolders(t.Context(), acc.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var folder int64
+			for _, f := range folders {
+				if f.Name == tc.folder {
+					folder = f.ID
+				}
+			}
+			page, err := h.env.Svc.ListMessages(t.Context(), core.View{FolderID: folder}, "", 20)
+			if err != nil || len(page.Items) == 0 {
+				t.Fatalf("messages %v %v", page, err)
+			}
+			m := page.Items[0]
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			b := h.app.mail.reader.bodies[m.ID]
+			if tc.blocked {
+				h.see("已阻止发件人头像")
+				if hits.Load() != 0 || b.msg.RemoteImagesBlocked != 0 {
+					t.Fatalf("blocked: hits %d, body count %d", hits.Load(), b.msg.RemoteImagesBlocked)
+				}
+				h.click("加载图片")
+			}
+			h.until("avatar ready", func() bool { return b.avatar != nil })
+			if hits.Load() != 1 {
+				t.Fatalf("requests %d", hits.Load())
+			}
+			if tc.blocked && !b.allow {
+				t.Fatal("manual permission not kept for current message")
+			}
+		})
+	}
+}
+
+func TestReaderAvatarDropsStaleResults(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Old", "old"))
+	n := h.deliverOne(accs[0], coretest.Msg("Carol <carol@example.com>", accs[0].Email, "New", "new"))
+	r := h.app.mail.reader
+	started, release, finished := make(chan struct{}), make(chan struct{}, 1), make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	r.getAvatar = func(ctx context.Context, id int64, manual bool) (core.Avatar, error) {
+		if id == m.ID {
+			close(started)
+			<-release
+			close(finished)
+			return core.Avatar{Data: readerAvatarSVG, Format: "svg"}, nil
+		}
+		return core.Avatar{}, nil
+	}
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("avatar did not start")
+	}
+	old := r.bodies[m.ID]
+	h.openThread(n.ThreadID)
+	h.seeBody(n.ID)
+	release <- struct{}{}
+	<-finished
+	h.queued("old avatar callback", 1)
+	h.drain()
+	if old.avatar != nil || r.bodies[n.ID].avatar != nil {
+		t.Fatal("stale avatar applied")
+	}
+}
+
+func TestReaderAvatarParseFailure(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	r := h.app.mail.reader
+	r.getAvatar = func(context.Context, int64, bool) (core.Avatar, error) {
+		return core.Avatar{Data: []byte("invalid SVG"), Format: "svg"}, nil
+	}
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Bad", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.until("avatar completed", func() bool { b := r.bodies[m.ID]; return b.avatarStop == nil })
+	h.see("B")
+	if r.bodies[m.ID].avatar != nil {
+		t.Fatal("invalid SVG displayed")
+	}
+}
+
+func TestReaderAvatarSettingsInvalidation(t *testing.T) {
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, req *http.Request) { w.Write(readerAvatarSVG) })
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	b := h.app.mail.reader.bodies[m.ID]
+	h.until("initial avatar", func() bool { return b.avatar != nil })
+	st := h.app.settings
+	st.RemoteImages = "ask"
+	h.app.changeSettings(st)
+	if b.avatar != nil {
+		t.Fatal("optimistic setting left avatar displayed")
+	}
+	h.until("setting saved", func() bool { st, _ := h.env.Svc.GetSettings(t.Context()); return st.RemoteImages == "ask" })
+	h.advance(refreshEvery)
+	h.see("已阻止发件人头像")
+	if b.avatar != nil || b.allow {
+		t.Fatal("automatic trust became manual permission")
+	}
+	h.click("加载图片")
+	h.until("explicitly allowed cached avatar", func() bool { return b.avatar != nil })
+	st.RemoteImages = "trusted"
+	h.app.changeSettings(st)
+	if b.avatar != nil {
+		t.Fatal("manual avatar survived changed policy")
+	}
+	h.until("trusted setting saved", func() bool { st, _ := h.env.Svc.GetSettings(t.Context()); return st.RemoteImages == "trusted" })
+	// A failed write rolls back to the actual trusted policy, still blocking.
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		return core.Settings{}, errors.New("disk full")
+	}
+	st.RemoteImages = "auto"
+	h.app.changeSettings(st)
+	h.see("disk full")
+	if b.avatar != nil {
+		t.Fatal("failed settings save exposed avatar")
+	}
+}
+
+func TestReaderAvatarLifecycleCancellation(t *testing.T) {
+	for _, action := range []string{"settings", "account", "close", "body replacement"} {
+		t.Run(action, func(t *testing.T) {
+			h, accs := mailHarness(t, nil, "alice@example.com")
+			m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Avatar", "plain"))
+			r := h.app.mail.reader
+			started, release, cancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			r.getAvatar = func(ctx context.Context, id int64, manual bool) (core.Avatar, error) {
+				close(started)
+				<-ctx.Done()
+				close(cancelled)
+				<-release
+				return core.Avatar{Data: readerAvatarSVG, Format: "svg"}, nil
+			}
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("avatar did not start")
+			}
+			old := r.bodies[m.ID]
+			switch action {
+			case "settings":
+				st := h.app.settings
+				st.RemoteImages = "ask"
+				h.app.changeSettings(st)
+			case "account":
+				if err := h.env.Svc.RemoveAccount(t.Context(), accs[0].ID); err != nil {
+					t.Fatal(err)
+				}
+				h.app.load()
+				h.until("removed account", func() bool { return len(h.app.accounts) == 0 })
+			case "close":
+				h.app.Close()
+			case "body replacement":
+				r.reset(r.key)
+			}
+			select {
+			case <-cancelled:
+			case <-time.After(5 * time.Second):
+				t.Fatal("avatar context not cancelled")
+			}
+			if old.avatar != nil {
+				t.Fatal("stale avatar displayed")
+			}
+		})
+	}
+}
 
 // deliverOne delivers one message to the account's INBOX and returns its summary.
 func (h *harness) deliverOne(acc core.Account, raw []byte) core.MessageSummary {

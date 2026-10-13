@@ -124,8 +124,20 @@ func initial(name string) string {
 // Avatar is a circle with the initial of name, labelled name.
 func Avatar(c *ui.Context, name string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Full).Background(t.Hover).Center().Label(name).Children(func() {
 		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(t.Foreground)
+	})
+}
+
+// AvatarImage shows an image in its own colors, with the same labelled
+// circle and size as the initial placeholder.
+func AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element {
+	if image == nil {
+		return Avatar(c, name)
+	}
+	t, th := theme.Of(c), c.Theme()
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Full).Clip().Label(name).Children(func() {
+		ui.Image(c, image).Size(th.Space(8), th.Space(8)).Fit(ui.Cover)
 	})
 }
 

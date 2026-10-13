@@ -379,7 +379,7 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 	if p.imgSize >= 0 {
 		size = formatBytes(p.imgSize)
 	}
-	settingsSection(c, i18n.T("settings.remote_images"), i18n.T("settings.remote_images.sub"),
+	settingsSection(c, i18n.T("settings.remote_images"), i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
 		func() {
 			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() {
 				mode := p.st.RemoteImages

@@ -1,8 +1,10 @@
 package kit
 
 import (
+	"image"
 	"image/color"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +12,54 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/theme"
 )
+
+func TestKitAvatarImage(t *testing.T) {
+	red := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for y := range 64 {
+		for x := range 64 {
+			red.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	bitmap := ui.NewBitmap(red)
+	svg, err := ui.ParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, density := range []string{"compact", "comfortable"} {
+		var before ui.Rect
+		for _, src := range []ui.ImageSource{nil, bitmap, svg} {
+			tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
+				ui.Column(c).Padding(8).Children(func() { AvatarImage(c, "Alice", src) })
+			}), 100, 100)
+			r, ok := tt.Find("Alice")
+			want := float32(32)
+			if density == "comfortable" {
+				want = 40
+			}
+			if !ok || r.W != want || r.H != want {
+				t.Fatalf("avatar bounds %+v, found %v", r, ok)
+			}
+			if src == nil {
+				before = r
+			} else if r != before {
+				t.Fatalf("%s: layout %v -> %v", density, before, r)
+			}
+			if slices.Contains(tt.Texts(), "A") != (src == nil) {
+				t.Fatalf("fallback texts %q", tt.Texts())
+			}
+			if src != nil {
+				center := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2))
+				corner := tt.Image().RGBAAt(int(r.X), int(r.Y))
+				if center.R < 250 || center.G > 5 || center.B > 5 {
+					t.Errorf("brand color %v", center)
+				}
+				if corner.R > 250 && corner.G < 5 && corner.B < 5 {
+					t.Errorf("corner not clipped: %v", corner)
+				}
+			}
+		}
+	}
+}
 
 // themed runs body under the tokens the settings give, as the app does.
 func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("compact", body) }
