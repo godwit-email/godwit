@@ -66,7 +66,7 @@ func (e *syncEnv) opStates(t *testing.T) []string {
 func (e *syncEnv) reopen(t *testing.T) {
 	t.Helper()
 	require.NoError(t, e.s.Close())
-	s, err := New(bg, Options{DataDir: e.dir})
+	s, err := New(bg, Options{DataDir: e.dir, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	e.s = s

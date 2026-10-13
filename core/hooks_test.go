@@ -177,7 +177,7 @@ func TestHookAtLeastOnceAcrossRestarts(t *testing.T) {
 			t.Fatalf("delivery %d never reached the cursor move", n)
 		}
 		require.NoError(t, e.s.Close())
-		s, err := New(bg, Options{DataDir: e.dir})
+		s, err := New(bg, Options{DataDir: e.dir, ImageClient: loopbackImageClient()})
 		require.NoError(t, err)
 		t.Cleanup(func() { s.Close() })
 		e.s = s

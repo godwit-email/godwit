@@ -81,7 +81,9 @@ func New(t *testing.T, opts ...Option) *Env {
 	claimEnv(t)                    // MockInit empties the keychain of any Env still running
 	keyring.MockInit()
 	dir := t.TempDir()
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imagefetch.NewClient(true)})
+	imageClient := imagefetch.NewClient(true)
+	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -57,6 +57,7 @@ type reader struct {
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
+	getAvatar  func(context.Context, int64, bool) (core.Avatar, error)                        // tests wrap it
 	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
 	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
 	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error)          // tests wrap it
@@ -71,6 +72,7 @@ type msgBody struct {
 	msg     core.Message
 	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
 	loading bool
+	bodyGen uint64 // older reads cannot restore policy after a same-message folder move
 	ready   bool
 	err     error // the last read, or making the page, failed; a retry reads again
 
@@ -87,11 +89,16 @@ type msgBody struct {
 	remote   bool
 	allowErr error
 	trusted  bool
+
+	avatar                                 ui.ImageSource
+	avatarStop                             context.CancelFunc
+	avatarGen                              uint64
+	avatarDone, avatarAllow, avatarBlocked bool
 }
 
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
-		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, runSkill: p.a.svc.RunSkill,
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
 		cardsFn: p.a.svc.PluginCards, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
@@ -121,6 +128,7 @@ func (r *reader) sync(reread bool) {
 // starts at its top.
 func (r *reader) reset(k [2]int64) {
 	for _, b := range r.bodies {
+		b.stopAvatar()
 		b.closeView()
 	}
 	r.stopAI()
@@ -158,20 +166,32 @@ func (r *reader) load() {
 		if k[1] != 0 {
 			msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
-		known := map[int64]bool{} // messages shown before keep their state
+		known := map[int64]int64{} // messages shown before keep their state
 		for _, m := range r.msgs {
-			known[m.ID] = true
+			known[m.ID] = m.FolderID
 		}
 		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
 		for id, b := range r.bodies { // gone from the thread: its page goes too
 			if !slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return m.ID == id }) {
+				b.stopAvatar()
 				b.closeView()
 				delete(r.open, id)
+				delete(r.bodies, id)
 			}
 		}
 		var unread []core.MessageSummary
 		for i, m := range msgs {
-			if known[m.ID] {
+			if folder, ok := known[m.ID]; ok {
+				if b := r.bodies[m.ID]; b != nil && folder != m.FolderID {
+					b.msg.MessageSummary = m
+					b.trusted = false
+					if !b.avatarAllow {
+						b.stopAvatar()
+						b.avatar, b.avatarDone, b.avatarBlocked = nil, false, true
+					}
+					b.loading = false
+					r.loadBody(m.ID)
+				}
 				continue
 			}
 			if !isSeen(m) {
@@ -216,6 +236,9 @@ func (r *reader) expand(id int64) {
 	if b := r.bodies[id]; b == nil || b.err != nil {
 		r.loadBody(id)
 	} else {
+		if !b.avatarDone && b.avatarStop == nil {
+			r.loadAvatar(id, b.avatarAllow)
+		}
 		r.openView(id)
 	}
 }
@@ -251,6 +274,8 @@ func (r *reader) loadBody(id int64) {
 		return
 	}
 	b.loading, b.err = true, nil
+	b.bodyGen++
+	read := b.bodyGen
 	var m core.Message
 	var trusted bool
 	a.do(func(ctx context.Context) (err error) {
@@ -260,7 +285,7 @@ func (r *reader) loadBody(id int64) {
 		trusted, err = a.svc.ImagesAllowed(ctx, id)
 		return err
 	}, func(err error) {
-		if gen != r.gen {
+		if gen != r.gen || r.bodies[id] != b || read != b.bodyGen {
 			return
 		}
 		b.loading = false
@@ -269,8 +294,100 @@ func (r *reader) loadBody(id int64) {
 			return
 		}
 		b.msg, b.ready, b.trusted = m, true, trusted
+		b.avatarBlocked = !trusted
 		r.openView(id)
+		r.loadAvatar(id, b.avatarAllow)
 	})
+}
+
+// loadAvatar does both network work and image conversion off the UI thread.
+// Its result belongs to this body, message and generation, including retries.
+func (r *reader) loadAvatar(id int64, manual bool) {
+	b := r.bodies[id]
+	if b == nil || !b.ready {
+		return
+	}
+	b.stopAvatar()
+	a, gen, seq, get := r.p.a, r.gen, b.avatarGen, r.getAvatar
+	b.avatarAllow, b.avatarDone = manual, false
+	if !manual && a.settingsVer != a.settingsSavedVer {
+		b.avatar, b.avatarBlocked = nil, true
+		return
+	}
+	ctx, stop := context.WithCancel(a.ctx)
+	b.avatarStop = stop
+	var image ui.ImageSource
+	var trusted bool
+	a.do(func(context.Context) (err error) {
+		trusted, err = a.svc.ImagesAllowed(ctx, id)
+		if err != nil || !manual && !trusted {
+			return err
+		}
+		avatar, err := get(ctx, id, manual)
+		if err != nil || len(avatar.Data) == 0 {
+			return err
+		}
+		if avatar.Format == "svg" {
+			var svg *ui.SVG
+			svg, err = ui.ParseSVG(avatar.Data)
+			if err == nil {
+				image = svg
+			}
+		} else {
+			var bitmap *ui.Bitmap
+			bitmap, err = ui.DecodeBitmap(avatar.Data)
+			if err == nil {
+				image = bitmap
+			}
+		}
+		if err == nil && !manual {
+			trusted, err = a.svc.ImagesAllowed(ctx, id)
+			if !trusted {
+				image = nil
+			}
+		}
+		if err == nil {
+			err = ctx.Err()
+		}
+		return err
+	}, func(err error) {
+		defer stop()
+		if gen != r.gen || r.bodies[id] != b || seq != b.avatarGen || ctx.Err() != nil {
+			return
+		}
+		b.avatarStop, b.avatarDone, b.avatarBlocked = nil, true, !trusted && !manual
+		if err == nil {
+			b.avatar = image
+		}
+	})
+}
+
+func (b *msgBody) stopAvatar() {
+	if b.avatarStop != nil {
+		b.avatarStop()
+	}
+	b.avatarStop = nil
+	b.avatarGen++
+}
+
+// invalidateAvatars clears displayed images and in-flight results, preserving
+// manual grants unless the image policy changed or the reader is closing.
+func (r *reader) invalidateAvatars(revokeManual bool) {
+	for _, b := range r.bodies {
+		if b.avatarAllow && !revokeManual {
+			continue
+		}
+		b.stopAvatar()
+		b.avatar, b.avatarDone, b.avatarAllow, b.avatarBlocked = nil, false, false, true
+	}
+}
+
+func (r *reader) refreshAvatars() {
+	for id, b := range r.bodies {
+		if r.open[id] && b.ready && !b.avatarDone && b.avatarStop == nil {
+			r.loadAvatar(id, b.avatarAllow)
+		}
+	}
 }
 
 // openView makes message id's page, if at this moment its body is read,
@@ -312,6 +429,7 @@ func (b *msgBody) closeView() {
 
 // closeViews closes every page (the App closing).
 func (r *reader) closeViews() {
+	r.invalidateAvatars(true)
 	for _, b := range r.bodies {
 		b.closeView()
 	}
@@ -658,7 +776,11 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			fold = func() { r.toggle(m.ID) }
 		}
 		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
-			kit.Avatar(c, name)
+			var image ui.ImageSource
+			if b != nil {
+				image = b.avatar
+			}
+			kit.AvatarImage(c, name, image)
 			ui.Column(c).Shrink(1).Children(func() {
 				ui.Row(c).Gap(th.Space(1)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine()
@@ -683,8 +805,10 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			kit.Spinner(c)
 			return
 		}
+		bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
+		avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
 		switch {
-		case b.msg.RemoteImagesBlocked == 0 || b.remote || b.trusted:
+		case !bodyBlocked && !avatarBlocked:
 		case b.allowErr != nil:
 			kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -693,13 +817,17 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		default: // until the page has them; a slimmer notice than an Alert, at Base
 			ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
 				Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-				kit.Text(c, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked), t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
-				if b.allow {
+				text := i18n.T("reader.avatar_blocked")
+				if bodyBlocked {
+					text = i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
+				}
+				kit.Text(c, text, t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
+				if bodyBlocked && b.allow {
 					kit.Spinner(c)
 					return
 				}
 				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-				if addr != "" && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
+				if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
 					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
 				}
 			})
@@ -771,11 +899,16 @@ func byteSize(n int) string {
 // and every page made for it again while the thread shows; the notice
 // waits for the page's body to have them.
 func (r *reader) allowImages(id int64) {
+	r.loadImages(id, true)
+}
+
+func (r *reader) loadImages(id int64, manual bool) {
 	b := r.bodies[id]
 	if b == nil {
 		return
 	}
 	b.allow, b.allowErr = true, nil
+	r.loadAvatar(id, manual)
 	if b.view != nil {
 		r.p.a.plat.AllowImages(id)
 	}
@@ -795,8 +928,8 @@ func (r *reader) trustSender(from, addr string) {
 			return
 		}
 		for id, b := range r.bodies {
-			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.msg.InJunk { // as core: never junk
-				r.allowImages(id)
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.loading && !b.msg.InJunk { // as core: never junk
+				r.loadImages(id, false)
 			}
 		}
 	})

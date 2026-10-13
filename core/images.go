@@ -33,10 +33,8 @@ func (s *Service) openImageCache() error {
 	return err
 }
 
-// startImagePrefetch fetches the remote images of each new message the
-// settings let load (ImagesAllowed) into the cache, one message at a time,
-// so that opening it is instant and the sender sees the fetch at arrival,
-// not when it is read.
+// startImagePrefetch caches permitted body images and sender avatars at arrival,
+// with independent serial workers. Reads can still fetch when prefetch is incomplete or stale.
 func (s *Service) startImagePrefetch() {
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil {
@@ -44,12 +42,15 @@ func (s *Service) startImagePrefetch() {
 	}
 	ch, unsub := s.bus.Subscribe()
 	// The bus is lossy and a download can take long: a reader moves the
-	// arrivals into a queue at once, a worker fetches from it.
+	// arrivals into queues at once; body and avatar workers drain independently.
 	var mu sync.Mutex
-	var queue []int64
-	wake := make(chan struct{}, 1)
+	var queue [2][]int64
+	wake := [2]chan struct{}{make(chan struct{}, 1), make(chan struct{}, 1)}
+	var workers sync.WaitGroup
+	workers.Add(len(queue) + 1)
 	go func() {
 		defer unsub()
+		defer workers.Done()
 		for {
 			select {
 			case ev, ok := <-ch:
@@ -58,11 +59,15 @@ func (s *Service) startImagePrefetch() {
 				}
 				if ev.Type == events.MessageReceived {
 					mu.Lock()
-					queue = append(queue, ev.MessageIDs...)
+					for i := range queue {
+						queue[i] = append(queue[i], ev.MessageIDs...)
+					}
 					mu.Unlock()
-					select {
-					case wake <- struct{}{}:
-					default:
+					for _, w := range wake {
+						select {
+						case w <- struct{}{}:
+						default:
+						}
 					}
 				}
 			case <-ctx.Done():
@@ -70,26 +75,36 @@ func (s *Service) startImagePrefetch() {
 			}
 		}
 	}()
-	go func() {
-		defer end()
-		for {
-			select {
-			case <-wake:
-			case <-ctx.Done():
-				return
-			}
-			for ctx.Err() == nil {
-				mu.Lock()
-				if len(queue) == 0 {
-					mu.Unlock()
-					break
+	for i := range queue {
+		go func() {
+			defer workers.Done()
+			for {
+				select {
+				case <-wake[i]:
+				case <-ctx.Done():
+					return
 				}
-				id := queue[0]
-				queue = queue[1:]
-				mu.Unlock()
-				s.prefetchImages(ctx, id)
+				for ctx.Err() == nil {
+					mu.Lock()
+					if len(queue[i]) == 0 {
+						mu.Unlock()
+						break
+					}
+					id := queue[i][0]
+					queue[i] = queue[i][1:]
+					mu.Unlock()
+					if i == 0 {
+						s.prefetchImages(ctx, id)
+					} else {
+						_, _ = s.SenderAvatar(ctx, id, false)
+					}
+				}
 			}
-		}
+		}()
+	}
+	go func() {
+		workers.Wait()
+		end()
 	}()
 }
 
@@ -97,10 +112,22 @@ func (s *Service) startImagePrefetch() {
 // images and about prefetchBytes bytes: the last image may pass it, by at
 // most one image (imagefetch.MaxImageBytes), as its size is known only once fetched.
 func (s *Service) prefetchImages(ctx context.Context, message int64) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", message)
+	if err != nil || len(rows.Values) == 0 {
+		return
+	}
+	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
+		return
+	}
 	if ok, err := s.ImagesAllowed(ctx, message); err != nil || !ok {
 		return
 	}
-	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", message)
+	rows, err = s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", message)
 	if err != nil || len(rows.Values) == 0 || store.Str(rows.Values[0][0]) == "" {
 		return
 	}

@@ -13,6 +13,7 @@ require (
 	github.com/emersion/go-smtp v0.25.0
 	github.com/evanw/esbuild v0.28.2
 	github.com/firebase/genkit/go v1.13.1
+	github.com/fyne-io/image v0.1.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/godwit-email/markitdown-go v0.0.0
 	github.com/google/jsonschema-go v0.4.3
@@ -49,6 +50,7 @@ require (
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
+	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0 // indirect
 	github.com/mbleigh/raymond v0.0.0-20250414171441-6b3a58ab9e0a // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect

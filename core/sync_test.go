@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/godwit-email/godwit/internal/imagefetch"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,7 +42,7 @@ func newSyncEnv(t *testing.T, opts ...testmail.Option) *syncEnv {
 	t.Helper()
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir, ImageClient: imagefetch.NewClient(true)})
+	s, err := New(bg, Options{DataDir: dir, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	smtpAddr, _ := testmail.StartSMTP(t)
@@ -48,6 +50,19 @@ func newSyncEnv(t *testing.T, opts ...testmail.Option) *syncEnv {
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
 	return &syncEnv{s: s, im: im, acc: acc, dir: dir}
+}
+
+// loopbackImageClient keeps arrival prefetch from contacting real sender sites.
+func loopbackImageClient() *http.Client {
+	imageClient := imagefetch.NewClient(true)
+	imageClient.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return nil, fmt.Errorf("test images: refusing non-loopback address %s", addr)
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	return imageClient
 }
 
 func (e *syncEnv) put(t *testing.T, folder, raw string) {
