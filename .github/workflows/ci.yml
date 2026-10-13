@@ -119,13 +119,18 @@ jobs:
         shell: bash
         run: git diff --exit-code -- web/src/mygo.ts
 
-  # Trial: can winapp wrap the Windows build in an MSIX? Signed with a throwaway
-  # dev certificate; the Store signs its own, so nothing here ships.
+  # The Windows build as an MSIX bundle for the Microsoft Store, which re-signs
+  # it; the throwaway dev certificate here only lets winapp sign the bundle.
+  # The identity is the app's, from Partner Center (Product management > App identity).
   msix:
     needs: changes
     if: needs.changes.outputs.client == 'true'
     runs-on: windows-latest
     continue-on-error: true
+    env:
+      MSIX_NAME: BaranWang.Godwit
+      MSIX_PUBLISHER: CN=07259668-8BC9-4107-94ED-584A42E65ECF
+      MSIX_PUBLISHER_DISPLAY_NAME: Baran Wang
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
@@ -142,13 +147,13 @@ jobs:
             New-Item -ItemType Directory $dir | Out-Null
             Copy-Item "dist\windows-$arch\*" $dir -Recurse
             Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
-            winapp manifest generate --executable "$dir\Godwit.exe" | Out-Host # not into $dirs
+            winapp manifest generate --executable "$dir\Godwit.exe" --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit | Out-Host # not into $dirs
             $manifest = Get-Item *.appxmanifest
-            (Get-Content $manifest -Raw) -replace '(<Identity[^>]*?Version=")[^"]*', "`${1}$version" | Set-Content "$dir\$($manifest.Name)" -NoNewline
+            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" | Set-Content "$dir\$($manifest.Name)" -NoNewline
             Remove-Item $manifest
             $dir
           }
-          winapp cert generate
+          winapp cert generate --publisher $env:MSIX_PUBLISHER
           winapp pack @dirs --cert devcert.pfx
           Get-ChildItem *.msix*
       - uses: actions/upload-artifact@v4
