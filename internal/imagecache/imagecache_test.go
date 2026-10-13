@@ -457,10 +457,11 @@ func TestAvatarSingleflightClearAndClose(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
+			gen := c.AvatarGeneration()
 			var wg sync.WaitGroup
 			for range 6 {
 				wg.Add(1)
-				go func() { defer wg.Done(); c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()) }()
+				go func() { defer wg.Done(); c.GetAvatar(t.Context(), srv.URL, "favicon", gen) }()
 			}
 			<-started
 			if action == "clear" {
@@ -481,6 +482,66 @@ func TestAvatarSingleflightClearAndClose(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAvatarClearDoesNotJoinPreviousFlight(t *testing.T) {
+	started, second, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var hits atomic.Int64
+	oldPic, newPic := pngOf(t, 32, 32), pngOf(t, 40, 40)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			close(started)
+			select {
+			case <-release:
+				w.Write(oldPic)
+			case <-r.Context().Done():
+			}
+			return
+		}
+		close(second)
+		w.Write(newPic)
+	}))
+	defer srv.Close()
+	c, err := Open(t.TempDir(), 0, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	oldGen := c.AvatarGeneration()
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := c.GetAvatar(t.Context(), srv.URL, "favicon", oldGen)
+		oldDone <- err
+	}()
+	<-started
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	newGen := c.AvatarGeneration()
+	newDone := make(chan Image, 1)
+	newErr := make(chan error, 1)
+	go func() {
+		img, err := c.GetAvatar(t.Context(), srv.URL, "favicon", newGen)
+		newDone <- img
+		newErr <- err
+	}()
+	select {
+	case <-second:
+	case <-time.After(2 * time.Second):
+		t.Fatal("new generation joined the pre-clear flight")
+	}
+	close(release)
+	if err := <-oldDone; err != nil {
+		t.Fatalf("old flight: %v", err)
+	}
+	img := <-newDone
+	if err := <-newErr; err != nil || !bytes.Equal(img.Data, newPic) {
+		t.Fatalf("new flight returned pre-clear bytes: %v", err)
+	}
+	stored, ok, err := c.LookupAvatar(t.Context(), AvatarKey("favicon", srv.URL))
+	if err != nil || !ok || !bytes.Equal(stored.Data, newPic) {
+		t.Fatalf("stored post-clear avatar: ok=%v err=%v", ok, err)
 	}
 }
 

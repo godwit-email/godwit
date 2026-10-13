@@ -473,6 +473,12 @@ func (c *Cache) get(ctx context.Context, key, src, source string, gen int) (Imag
 		delete(c.failed, key)
 	}
 	cl := c.flight[key]
+	// Clear leaves the download running for the callers that started it. A newer
+	// generation must not join it: those bytes predate the clear, and favicon
+	// discovery would store them again under the new generation.
+	if cl != nil && source != "" && cl.gen != gen {
+		cl = nil
+	}
 	if cl == nil {
 		cl = &call{done: make(chan struct{}), gen: c.gen}
 		c.flight[key] = cl
@@ -499,7 +505,10 @@ func (c *Cache) download(key, src, source string, cl *call, gen int, deadline ti
 		c.put(key, Image{Format: "miss"}, gen)
 	}
 	c.mu.Lock()
-	delete(c.flight, key)
+	// A newer generation may have replaced this flight.
+	if c.flight[key] == cl {
+		delete(c.flight, key)
+	}
 	if cl.err != nil && c.ctx.Err() == nil && cl.gen == c.gen {
 		c.rememberFailure(key, cl.err)
 	}
