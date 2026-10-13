@@ -827,8 +827,15 @@ var en = map[string]string{
 	"wit.tool.update_selection":        "Edit the selection",
 
 	// labels
-	"mail.labels":      "Labels",
-	"label.tip.auto":   "Labeled by the model",
-	"label.tip.manual": "Labeled by you",
-	"label.more":       "+%d",
+	"mail.labels":             "Labels",
+	"label.tip.auto":          "Labeled by the model",
+	"label.tip.manual":        "Labeled by you",
+	"label.more":              "+%d",
+	"reader.labels.add":       "Label",
+	"reader.labels.add.label": "Add label",
+	"reader.labels.search":    "Search or create a label",
+	"reader.labels.create":    "Create “%s”",
+	"reader.labels.manage":    "Manage labels…",
+	"reader.labels.auto":      "By model",
+	"reader.labels.remove":    "Remove label “%s”",
 }

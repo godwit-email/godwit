@@ -37,9 +37,15 @@ type reader struct {
 	loaded  bool
 	subject string
 	msgs    []core.MessageSummary // oldest first
-	open    map[int64]bool        // messages shown in full
-	bodies  map[int64]*msgBody
-	scroll  ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
+	// threadIDs are every message of the thread, msgs or not (a route to one
+	// message shows only it): what label changes apply to.
+	threadIDs  []int64
+	labels     []core.AppliedLabel // the thread's
+	labelMenu  bool
+	labelQuery string
+	open       map[int64]bool // messages shown in full
+	bodies     map[int64]*msgBody
+	scroll     ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
 	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	aiCtx     context.Context          // the AI work of the key shown; nil until some starts
@@ -119,6 +125,7 @@ func (r *reader) reset(k [2]int64) {
 	}
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
+	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
 	r.open, r.bodies = map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -128,8 +135,12 @@ func (r *reader) load() {
 	r.readGen++
 	a, gen, read, k, get := r.p.a, r.gen, r.readGen, r.key, r.getThread
 	var th core.Thread
+	var labels map[int64][]core.AppliedLabel
 	a.do(func(ctx context.Context) (err error) {
-		th, err = get(ctx, k[0])
+		if th, err = get(ctx, k[0]); err != nil {
+			return err
+		}
+		labels, err = a.svc.ThreadLabels(ctx, []int64{k[0]})
 		return err
 	}, func(err error) {
 		if gen != r.gen || read != r.readGen {
@@ -138,6 +149,10 @@ func (r *reader) load() {
 		if err != nil {
 			a.toastErr(err)
 			return
+		}
+		r.threadIDs, r.labels = nil, labels[k[0]]
+		for _, m := range th.Messages { // before the cut below, which reuses the array
+			r.threadIDs = append(r.threadIDs, m.ID)
 		}
 		msgs := th.Messages
 		if k[1] != 0 {
@@ -549,7 +564,10 @@ func (r *reader) view(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-					kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
+						kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+						r.labelRow(c)
+					})
 					for _, m := range r.msgs {
 						if r.open[m.ID] {
 							r.message(c, m)

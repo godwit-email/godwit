@@ -827,8 +827,15 @@ var zh = map[string]string{
 	"wit.tool.update_selection":        "修改选中的内容",
 
 	// labels
-	"mail.labels":      "标签",
-	"label.tip.auto":   "由模型标记",
-	"label.tip.manual": "手动标记",
-	"label.more":       "+%d",
+	"mail.labels":             "标签",
+	"label.tip.auto":          "由模型标记",
+	"label.tip.manual":        "手动标记",
+	"label.more":              "+%d",
+	"reader.labels.add":       "标签",
+	"reader.labels.add.label": "添加标签",
+	"reader.labels.search":    "搜索或新建标签",
+	"reader.labels.create":    "新建「%s」",
+	"reader.labels.manage":    "管理标签…",
+	"reader.labels.auto":      "模型标记",
+	"reader.labels.remove":    "去掉标签「%s」",
 }
