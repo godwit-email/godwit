@@ -74,7 +74,7 @@ core 里一个后台 goroutine，和现有的 hooks 调度器同一种写法：�
 
 ## 5. 手动修改
 
-`Service.SetMessageLabel(ctx, messageID, labelID int64, on bool)` 写入 `source=manual` 和对应的 `active`。读信页的勾选菜单、芯片上的 × 都调用它。
+`Service.SetLabel(ctx, messageIDs []int64, labelID int64, on bool)` 给每封邮件写入 `source=manual` 和对应的 `active`。读信页显示的是会话，勾选菜单和芯片上的 × 都对会话里的全部邮件调用它；会话的标签是其中各封邮件标签的并集，只要有一封是手动打上的就按手动显示。
 
 ## 6. 界面
 
