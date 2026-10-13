@@ -881,3 +881,115 @@ func TestJunkActionNotInJunk(t *testing.T) {
 		t.Fatal("移到垃圾邮件 inside Junk")
 	}
 }
+
+func TestReaderAvatarMoveToJunk(t *testing.T) {
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, r *http.Request) { w.Write(readerAvatarSVG) })
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(acc)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	r := h.app.mail.reader
+	h.until("initial avatar", func() bool { return r.bodies[m.ID].avatar != nil })
+	h.advance(refreshEvery)
+	h.until("settled avatar", func() bool { return r.bodies[m.ID].avatar != nil })
+	if err := h.env.Svc.MoveToRole(t.Context(), []int64{m.ID}, "junk"); err != nil {
+		t.Fatal(err)
+	}
+	h.app.refresh(nil)
+	h.until("moved message summary", func() bool { return len(r.msgs) == 1 && r.msgs[0].FolderID != m.FolderID })
+	allowed, err := h.env.Svc.ImagesAllowed(t.Context(), m.ID)
+	if err != nil || allowed {
+		t.Fatalf("junk policy allowed=%v err=%v", allowed, err)
+	}
+	if r.bodies[m.ID].avatar != nil {
+		t.Fatal("automatic avatar remains displayed after same message moves to Junk")
+	}
+	b := r.bodies[m.ID]
+	h.see("已阻止发件人头像")
+	h.until("junk body metadata", func() bool { return b.msg.InJunk && !b.trusted && !b.loading })
+	if b.msg.RemoteImagesBlocked != 0 || h.tt.HasText("始终信任此发件人") {
+		t.Fatal("junk notice has stale body policy")
+	}
+	h.click("加载图片")
+	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.allow })
+	h.app.refresh(nil)
+	h.until("same-message refresh", func() bool { return !h.app.mail.loading })
+	if !b.avatarAllow || b.avatar == nil {
+		t.Fatal("refresh revoked current-message manual permission")
+	}
+	if err := h.env.Svc.Move(t.Context(), []int64{m.ID}, m.FolderID); err != nil {
+		t.Fatal(err)
+	}
+	h.app.refresh(nil)
+	h.until("back in inbox", func() bool { return b.msg.FolderID == m.FolderID && !b.msg.InJunk && b.trusted && b.avatar != nil })
+	if !b.avatarAllow || !b.allow {
+		t.Fatal("folder move lost current-message permission")
+	}
+	// A fresh reader generation drops the manual grant; moving back then loads automatically.
+	h.post(func() { r.reset(r.key); r.load() })
+	h.until("fresh automatic inbox avatar", func() bool { b = r.bodies[m.ID]; return b != nil && b.avatar != nil && !b.avatarAllow })
+	for _, role := range []string{"junk", "inbox"} {
+		folder := h.folderOf(acc, role)
+		if err := h.env.Svc.Move(t.Context(), []int64{m.ID}, folder.ID); err != nil {
+			t.Fatal(err)
+		}
+		h.app.refresh(nil)
+		if role == "junk" {
+			h.until("automatic avatar revoked again", func() bool { return b.msg.InJunk && b.avatar == nil && b.avatarBlocked })
+		} else {
+			h.until("automatic avatar restored", func() bool { return !b.msg.InJunk && b.avatar != nil && !b.avatarAllow })
+		}
+	}
+}
+
+func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, r *http.Request) { w.Write(readerAvatarSVG) })
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(acc)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	r := h.app.mail.reader
+	b := r.bodies[m.ID]
+	h.until("automatic avatar", func() bool { return b.avatar != nil })
+	started, release, finished := make(chan struct{}), make(chan struct{}, 1), make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	get := r.getMessage
+	var calls atomic.Int64
+	r.getMessage = func(ctx context.Context, id int64, remote bool) (core.Message, error) {
+		msg, err := get(ctx, id, remote)
+		if calls.Add(1) == 1 {
+			close(started)
+			<-release
+			close(finished)
+		}
+		return msg, err
+	}
+	h.post(func() { r.loadBody(m.ID) })
+	h.until("old body read pending", func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	})
+	if err := h.env.Svc.MoveToRole(t.Context(), []int64{m.ID}, "junk"); err != nil {
+		t.Fatal(err)
+	}
+	h.app.refresh(nil)
+	h.until("current junk policy", func() bool { return b.msg.InJunk && !b.loading && b.avatar == nil && b.avatarBlocked })
+	h.see("已阻止发件人头像")
+	release <- struct{}{}
+	<-finished
+	h.queued("old body callback", 1)
+	h.drain()
+	if !b.msg.InJunk || b.msg.FolderID == m.FolderID || b.trusted || b.avatar != nil {
+		t.Fatal("old body read restored pre-move metadata or avatar")
+	}
+}

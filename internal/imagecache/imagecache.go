@@ -271,8 +271,15 @@ func (c *Cache) lookupAvatar(ctx context.Context, key string) (Image, bool, erro
 	return img, true, nil
 }
 
-// PutAvatar stores validated bytes under a source-specific key.
-func (c *Cache) PutAvatar(ctx context.Context, key string, data []byte, source string) (Image, error) {
+// AvatarGeneration captures the Clear boundary before an avatar discovery starts.
+func (c *Cache) AvatarGeneration() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gen
+}
+
+// PutAvatar stores validated bytes only if the cache has not been cleared since gen.
+func (c *Cache) PutAvatar(ctx context.Context, key string, data []byte, source string, gen int) (Image, error) {
 	if source == "" || avatarSource(key) != source {
 		return Image{}, imagefetch.ErrFormat
 	}
@@ -281,7 +288,6 @@ func (c *Cache) PutAvatar(ctx context.Context, key string, data []byte, source s
 		c.mu.Unlock()
 		return Image{}, ErrClosed
 	}
-	gen := c.gen
 	c.wg.Add(1)
 	c.mu.Unlock()
 	defer c.wg.Done()
@@ -314,7 +320,8 @@ func (c *Cache) AvatarMiss(key string) bool {
 	return true
 }
 
-func (c *Cache) RememberAvatarMiss(key string) error {
+// RememberAvatarMiss stores a definitive miss within the discovery's Clear boundary.
+func (c *Cache) RememberAvatarMiss(key string, gen int) error {
 	if avatarSource(key) == "" {
 		return imagefetch.ErrFormat
 	}
@@ -323,7 +330,6 @@ func (c *Cache) RememberAvatarMiss(key string) error {
 		c.mu.Unlock()
 		return ErrClosed
 	}
-	gen := c.gen
 	c.wg.Add(1)
 	c.mu.Unlock()
 	defer c.wg.Done()
@@ -345,12 +351,13 @@ func (c *Cache) remove(key string) {
 
 // GetAvatar shares the ordinary cache's jobs, singleflight and lifecycle.
 // The first caller's deadline bounds the shared download; cancellation stops waiting.
-func (c *Cache) GetAvatar(ctx context.Context, src, source string) (Image, error) {
+// gen is captured before discovery, so Clear also blocks its later candidate downloads.
+func (c *Cache) GetAvatar(ctx context.Context, src, source string, gen int) (Image, error) {
 	key := AvatarKey(source, src)
 	if key == "" {
 		return Image{}, imagefetch.ErrFormat
 	}
-	return c.get(ctx, key, src, source)
+	return c.get(ctx, key, src, source, gen)
 }
 
 // Dims is the size of src's image if it is cached; it reads no file.
@@ -399,16 +406,21 @@ func (c *Cache) Clear() error {
 // at the same time). A download goes on when its caller gives up, so the next
 // ask finds it; a URL that failed fails at once for a few minutes.
 func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
-	return c.get(ctx, Key(src), src, "")
+	return c.get(ctx, Key(src), src, "", 0)
 }
 
-func (c *Cache) get(ctx context.Context, key, src, source string) (Image, error) {
+func (c *Cache) get(ctx context.Context, key, src, source string, gen int) (Image, error) {
 	c.mu.Lock()
 	if c.ctx.Err() != nil {
 		c.mu.Unlock()
 		return Image{}, ErrClosed
 	}
 	if source != "" {
+		// Check under the flight lock so an old discovery cannot start a new download after Clear.
+		if gen != c.gen {
+			c.mu.Unlock()
+			return Image{}, errors.New("image cache cleared during avatar discovery")
+		}
 		if img, ok, err := c.lookupAvatar(ctx, key); ok || errors.Is(err, ErrClosed) || ctx.Err() != nil {
 			c.mu.Unlock()
 			return img, err

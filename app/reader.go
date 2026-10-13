@@ -66,6 +66,7 @@ type msgBody struct {
 	msg     core.Message
 	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
 	loading bool
+	bodyGen uint64 // older reads cannot restore policy after a same-message folder move
 	ready   bool
 	err     error // the last read, or making the page, failed; a retry reads again
 
@@ -150,9 +151,9 @@ func (r *reader) load() {
 		if k[1] != 0 {
 			msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
-		known := map[int64]bool{} // messages shown before keep their state
+		known := map[int64]int64{} // messages shown before keep their state
 		for _, m := range r.msgs {
-			known[m.ID] = true
+			known[m.ID] = m.FolderID
 		}
 		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
 		for id, b := range r.bodies { // gone from the thread: its page goes too
@@ -165,7 +166,17 @@ func (r *reader) load() {
 		}
 		var unread []core.MessageSummary
 		for i, m := range msgs {
-			if known[m.ID] {
+			if folder, ok := known[m.ID]; ok {
+				if b := r.bodies[m.ID]; b != nil && folder != m.FolderID {
+					b.msg.MessageSummary = m
+					b.trusted = false
+					if !b.avatarAllow {
+						b.stopAvatar()
+						b.avatar, b.avatarDone, b.avatarBlocked = nil, false, true
+					}
+					b.loading = false
+					r.loadBody(m.ID)
+				}
 				continue
 			}
 			if !isSeen(m) {
@@ -248,6 +259,8 @@ func (r *reader) loadBody(id int64) {
 		return
 	}
 	b.loading, b.err = true, nil
+	b.bodyGen++
+	read := b.bodyGen
 	var m core.Message
 	var trusted bool
 	a.do(func(ctx context.Context) (err error) {
@@ -257,7 +270,7 @@ func (r *reader) loadBody(id int64) {
 		trusted, err = a.svc.ImagesAllowed(ctx, id)
 		return err
 	}, func(err error) {
-		if gen != r.gen || r.bodies[id] != b {
+		if gen != r.gen || r.bodies[id] != b || read != b.bodyGen {
 			return
 		}
 		b.loading = false
@@ -793,7 +806,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					return
 				}
 				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-				if addr != "" && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
+				if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
 					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
 				}
 			})
@@ -894,7 +907,7 @@ func (r *reader) trustSender(from, addr string) {
 			return
 		}
 		for id, b := range r.bodies {
-			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.msg.InJunk { // as core: never junk
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.loading && !b.msg.InJunk { // as core: never junk
 				r.loadImages(id, false)
 			}
 		}

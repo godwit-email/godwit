@@ -292,7 +292,7 @@ func TestAvatarPersistenceIsolationAndClear(t *testing.T) {
 	c := open(t, dir, 0)
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 0L16 16"/></svg>`)
 	key := AvatarKey("favicon", "example.com")
-	if _, err := c.PutAvatar(t.Context(), key, svg, "favicon"); err != nil {
+	if _, err := c.PutAvatar(t.Context(), key, svg, "favicon", c.AvatarGeneration()); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := c.LookupAvatar(t.Context(), AvatarKey("gravatar", "example.com")); err != nil || ok {
@@ -302,7 +302,7 @@ func TestAvatarPersistenceIsolationAndClear(t *testing.T) {
 		t.Fatal("avatar entered ordinary cache")
 	}
 	miss := AvatarKey("favicon", "missing.example")
-	if err := c.RememberAvatarMiss(miss); err != nil {
+	if err := c.RememberAvatarMiss(miss, c.AvatarGeneration()); err != nil {
 		t.Fatal(err)
 	}
 	c.Close()
@@ -338,7 +338,7 @@ func TestAvatarCacheRejectsSmallPersistedFavicon(t *testing.T) {
 	if _, ok, err := c.LookupAvatar(t.Context(), key); ok || err == nil {
 		t.Fatalf("small cached favicon accepted: %v %v", ok, err)
 	}
-	if _, err := c.PutAvatar(t.Context(), key, pngOf(t, 16, 16), "favicon"); err == nil {
+	if _, err := c.PutAvatar(t.Context(), key, pngOf(t, 16, 16), "favicon", c.AvatarGeneration()); err == nil {
 		t.Fatal("small favicon written")
 	}
 }
@@ -362,7 +362,7 @@ func TestAvatarCacheTTLAndTransientFailure(t *testing.T) {
 			}
 			defer c.Close()
 			for range 2 {
-				c.GetAvatar(t.Context(), srv.URL, "gravatar")
+				c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration())
 			}
 			if hits.Load() != 1 {
 				t.Fatalf("hits %d", hits.Load())
@@ -380,7 +380,7 @@ func TestAvatarCacheTTLAndTransientFailure(t *testing.T) {
 			if _, ok, _ := c.LookupAvatar(t.Context(), key); ok {
 				t.Fatal("expired entry returned")
 			}
-			c.GetAvatar(t.Context(), srv.URL, "gravatar")
+			c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration())
 			if hits.Load() != 2 {
 				t.Fatalf("expired cache did not refresh: %d", hits.Load())
 			}
@@ -413,7 +413,7 @@ func TestAvatarSingleflightClearAndClose(t *testing.T) {
 			var wg sync.WaitGroup
 			for range 6 {
 				wg.Add(1)
-				go func() { defer wg.Done(); c.GetAvatar(t.Context(), srv.URL, "favicon") }()
+				go func() { defer wg.Done(); c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()) }()
 			}
 			<-started
 			if action == "clear" {
@@ -452,7 +452,7 @@ func TestAvatarFastSingleflight(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon"); err != nil {
+			if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -480,7 +480,7 @@ func TestAvatarOrdinaryGetRejectsICOAndSVG(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon"); err != nil {
+		if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := c.Get(t.Context(), srv.URL); !errors.Is(err, imagefetch.ErrFormat) {
@@ -524,7 +524,7 @@ func TestAvatarMissCapacityAndTotalEviction(t *testing.T) {
 	dir := t.TempDir()
 	c := open(t, dir, 0)
 	for i := range 1002 {
-		if err := c.RememberAvatarMiss(AvatarKey("favicon", strconv.Itoa(i))); err != nil {
+		if err := c.RememberAvatarMiss(AvatarKey("favicon", strconv.Itoa(i)), c.AvatarGeneration()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -539,7 +539,7 @@ func TestAvatarMissCapacityAndTotalEviction(t *testing.T) {
 	c.Close()
 	c = open(t, t.TempDir(), 1)
 	defer c.Close()
-	if _, err := c.PutAvatar(t.Context(), AvatarKey("favicon", "large"), pngOf(t, 32, 32), "favicon"); err != nil {
+	if _, err := c.PutAvatar(t.Context(), AvatarKey("favicon", "large"), pngOf(t, 32, 32), "favicon", c.AvatarGeneration()); err != nil {
 		t.Fatal(err)
 	}
 	if c.Size() != 0 {
@@ -562,7 +562,7 @@ func TestAvatarFailurePersistenceByKind(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := c.GetAvatar(t.Context(), srv.URL, "gravatar"); err == nil {
+			if _, err := c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration()); err == nil {
 				t.Fatal("bad image accepted")
 			}
 			c.Close()
@@ -571,7 +571,7 @@ func TestAvatarFailurePersistenceByKind(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-			_, err = c.GetAvatar(t.Context(), srv.URL, "gravatar")
+			_, err = c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration())
 			want := int64(2)
 			if status == 200 || status == 404 {
 				want = 1
@@ -603,7 +603,7 @@ func TestAvatarFailureDuringClearIsNotRemembered(t *testing.T) {
 	}
 	defer c.Close()
 	done := make(chan struct{})
-	go func() { c.GetAvatar(t.Context(), srv.URL, "gravatar"); close(done) }()
+	go func() { c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration()); close(done) }()
 	<-started
 	if err := c.Clear(); err != nil {
 		t.Fatal(err)
@@ -613,7 +613,7 @@ func TestAvatarFailureDuringClearIsNotRemembered(t *testing.T) {
 	if c.AvatarMiss(AvatarKey("gravatar", srv.URL)) {
 		t.Fatal("old flight restored miss after clear")
 	}
-	c.GetAvatar(t.Context(), srv.URL, "gravatar")
+	c.GetAvatar(t.Context(), srv.URL, "gravatar", c.AvatarGeneration())
 	if hits.Load() != 2 {
 		t.Fatal("old flight restored failure after clear")
 	}
@@ -635,10 +635,10 @@ func TestAvatarFirstDeadlineCancelsSharedDownload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
 	defer cancel()
 	first := make(chan error, 1)
-	go func() { _, err := c.GetAvatar(ctx, srv.URL, "favicon"); first <- err }()
+	go func() { _, err := c.GetAvatar(ctx, srv.URL, "favicon", c.AvatarGeneration()); first <- err }()
 	<-started
 	second := make(chan error, 1)
-	go func() { _, err := c.GetAvatar(t.Context(), srv.URL, "favicon"); second <- err }()
+	go func() { _, err := c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()); second <- err }()
 	if err := <-first; !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("first caller: %v", err)
 	}
@@ -695,5 +695,43 @@ func TestOrdinaryDeadlineLeavesSharedDownloadRunning(t *testing.T) {
 	img, err := c.Get(t.Context(), srv.URL)
 	if err != nil || !bytes.Equal(img.Data, pic) {
 		t.Fatalf("background download did not finish: %v", err)
+	}
+}
+
+func TestAvatarDiscoveryGeneration(t *testing.T) {
+	var hits atomic.Int64
+	pic := pngOf(t, 32, 32)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1); w.Write(pic) }))
+	defer srv.Close()
+	c, err := Open(t.TempDir(), 0, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	gen := c.AvatarGeneration()
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon", gen); err == nil {
+		t.Fatal("old discovery started a post-clear candidate")
+	}
+	key := AvatarKey("favicon", "example.com")
+	if _, err := c.PutAvatar(t.Context(), key, pic, "favicon", gen); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := c.LookupAvatar(t.Context(), key); err != nil || ok {
+		t.Fatalf("old discovery stored success: %v %v", ok, err)
+	}
+	if err := c.RememberAvatarMiss(key, gen); err != nil {
+		t.Fatal(err)
+	}
+	if c.AvatarMiss(key) || c.Size() != 0 || hits.Load() != 0 {
+		t.Fatal("old discovery repopulated cache or started network")
+	}
+	if _, err := c.GetAvatar(t.Context(), srv.URL, "favicon", c.AvatarGeneration()); err != nil {
+		t.Fatal(err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("fresh discovery requests = %d", hits.Load())
 	}
 }

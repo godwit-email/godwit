@@ -135,7 +135,7 @@ func TestFaviconAppleStopsDiscovery(t *testing.T) {
 func TestFaviconPolicyBeforeCachedSite(t *testing.T) {
 	good := faviconPNG(t, 32)
 	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected request") })
-	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "example.com"), good, "favicon")
+	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "example.com"), good, "favicon", f.cache.AvatarGeneration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestFaviconPolicyBeforeCachedCandidate(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
-	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "https://example.com/cached.png"), good, "favicon")
+	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "https://example.com/cached.png"), good, "favicon", f.cache.AvatarGeneration())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,6 +457,61 @@ func TestFaviconCandidateTransientDoesNotCacheSiteMiss(t *testing.T) {
 			// URL failures are cached briefly; homepage discovery has no transient cache API.
 			if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/declared", "/favicon.ico", "/"}) {
 				t.Fatalf("transient caching requests = %v", got)
+			}
+		})
+	}
+}
+
+func TestFaviconClearDuringDiscovery(t *testing.T) {
+	for _, tc := range []struct {
+		name, blocked string
+		success       bool
+	}{
+		{"success", "/apple-touch-icon.png", true},
+		{"homepage", "/", true},
+		{"miss", "/favicon.ico", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			good := faviconPNG(t, 32)
+			started, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == tc.blocked {
+					once.Do(func() { close(started); <-release })
+				}
+				if tc.success && (tc.blocked == "/apple-touch-icon.png" || r.URL.Path == "/favicon.ico") {
+					w.Write(good)
+				} else {
+					http.NotFound(w, r)
+				}
+			})
+			done := make(chan struct{})
+			go func() { FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); close(done) }()
+			<-started
+			err := f.cache.Clear()
+			close(release)
+			<-done
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := imagecache.AvatarKey("favicon", "example.com")
+			if _, ok, err := f.cache.LookupAvatar(t.Context(), key); err != nil || ok || f.cache.AvatarMiss(key) {
+				t.Fatalf("pre-clear discovery repopulated site entry: found=%v miss=%v err=%v bytes=%d", ok, f.cache.AvatarMiss(key), err, f.cache.Size())
+			}
+			if f.cache.Size() != 0 {
+				t.Fatalf("pre-clear discovery repopulated URL bytes: %d", f.cache.Size())
+			}
+			if got := f.requests(); tc.blocked == "/" && !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/"}) {
+				t.Fatalf("old discovery continued after clear: %v", got)
+			}
+			_, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil)
+			if ok != tc.success || f.cache.AvatarMiss(key) == tc.success {
+				t.Fatalf("new discovery success=%v miss=%v", ok, f.cache.AvatarMiss(key))
+			}
+			if tc.success {
+				if _, ok, err := f.cache.LookupAvatar(t.Context(), key); err != nil || !ok {
+					t.Fatalf("fresh site entry found=%v err=%v", ok, err)
+				}
 			}
 		})
 	}

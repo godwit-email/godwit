@@ -23,10 +23,12 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	if host == "" {
 		return imagecache.Image{}, false
 	}
+	gen := cache.AvatarGeneration()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	permitted := func() bool {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || gen != cache.AvatarGeneration() {
+			cancel()
 			return false
 		}
 		if canFetch != nil && !canFetch() {
@@ -53,12 +55,12 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 		if !permitted() {
 			return imagecache.Image{}, false
 		}
-		img, err := cache.GetAvatar(ctx, src, "favicon")
+		img, err := cache.GetAvatar(ctx, src, "favicon", gen)
 		if err == nil {
 			if !permitted() {
 				return imagecache.Image{}, false
 			}
-			img, err = cache.PutAvatar(ctx, key, img.Data, "favicon")
+			img, err = cache.PutAvatar(ctx, key, img.Data, "favicon", gen)
 			if err == nil {
 				return img, true
 			}
@@ -93,7 +95,7 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 		return img, true
 	}
 	if !transient && permitted() {
-		_ = cache.RememberAvatarMiss(key)
+		_ = cache.RememberAvatarMiss(key, gen)
 	}
 	return imagecache.Image{}, false
 }

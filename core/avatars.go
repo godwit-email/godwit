@@ -94,7 +94,7 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	if ok, err := allowed(); !ok || err != nil {
 		return Avatar{}, err
 	}
-	img, err := s.images.GetAvatar(ctx, avatar.GravatarURL(email), "gravatar")
+	img, err := s.images.GetAvatar(ctx, avatar.GravatarURL(email), "gravatar", s.images.AvatarGeneration())
 	if err == nil {
 		return result(img, "gravatar")
 	}
