@@ -29,6 +29,9 @@ type Settings struct {
 	// questions; "" (or one gone or with judge off): the DefaultModel does.
 	JudgeService string
 	LocalAPI     bool // the GUI serves the Local API; off by default
+	// AutoLabel lets the classifier label new Inbox mail; on by default.
+	// A rescan runs either way.
+	AutoLabel bool
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
@@ -53,7 +56,7 @@ const settingsVersion = 3
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true}
+		KeepInBackground: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)

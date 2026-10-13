@@ -195,7 +195,7 @@ func gui(ctx context.Context, dataDir string) int {
 			mygo.App.Quit()
 			return
 		}
-		svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, SystemLanguage: lang})
+		svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang})
 		if err != nil {
 			i18n.SetLanguage(lang)
 			code = 1

@@ -126,14 +126,14 @@ func TestMailContextReadsOnlyTheDatabase(t *testing.T) {
 }
 
 // newLabelService is newMailContextService with a chosen data dir ("" for a
-// new one) and system language, and without the background labeler.
+// new one) and system language. Without LabelMail, the labeler does not run.
 func newLabelService(t *testing.T, dir, lang string) *Service {
 	t.Helper()
 	keyring.MockInit()
 	if dir == "" {
 		dir = t.TempDir()
 	}
-	s, err := New(t.Context(), Options{DataDir: dir, SystemLanguage: lang, noLabeler: true})
+	s, err := New(t.Context(), Options{DataDir: dir, SystemLanguage: lang})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	_, err = s.db.Execute(t.Context(), "INSERT OR IGNORE INTO accounts(id, email) VALUES (1, 'me@x')")

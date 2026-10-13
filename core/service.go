@@ -34,13 +34,14 @@ var ErrClosed = errors.New("service is closed")
 type Options struct {
 	DataDir  string
 	AutoSync bool // run a background sync worker per account
+	// LabelMail runs the label classifier in the background (the apps set it;
+	// tests call it by hand or leave it off so their scripted models stay theirs).
+	LabelMail bool
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
-	// noLabeler leaves the background label classifier off (package tests run it by hand).
-	noLabeler bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -106,9 +107,11 @@ type Service struct {
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
 	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
-	hookClock   plugins.Clock              // hook backoff and polling; nil is the real clock
-	pluginNet   plugins.NetOptions         // ctx.net.fetch's network; tests inject a resolver and dialer
-	pluginClock plugins.Clock              // plugin VM call limits; nil is the real clock
+	labelWake   chan struct{}              // wakes the label classifier
+	labelJudge  func(context.Context) (ai.Judge, error)
+	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
+	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
 
 	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
 	mcpStMu sync.Mutex          // guards mcpSt
@@ -141,7 +144,8 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		hookClock: testHookClock, pluginClock: testPluginClock}
+		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
+	s.labelJudge = s.defaultLabelJudge
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
 	}
@@ -180,6 +184,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s.startJanitor()
+	if opts.LabelMail {
+		s.startLabeler()
+	}
 	s.startImagePrefetch()
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
@@ -478,6 +485,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	}
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
 	s.notifyHooks() // rows committed before an error count too
+	s.wakeLabeler()
 	if more {
 		s.wakeWorker(accountID) // the backfill yielded: the worker's next round goes on with it
 	}

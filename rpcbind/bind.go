@@ -38,6 +38,7 @@ var sentinels = []struct {
 	{"model_service_not_found", core.ErrModelServiceNotFound},
 	{"model_not_found", core.ErrModelNotFound},
 	{"model_auth", core.ErrModelAuth},
+	{"label_exists", core.ErrLabelExists},
 	{"base_url_invalid", core.ErrBaseURLInvalid},
 	{"base_url_scheme", core.ErrBaseURLScheme},
 	{"no_model_list", ai.ErrNoModelList},
