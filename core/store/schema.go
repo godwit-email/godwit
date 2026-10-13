@@ -287,9 +287,12 @@ var Migrations = [][]string{{
 	// and fingerprint (its Message-ID, else sender, date, subject, size and the
 	// start of its text) and hands
 	// them to the other copies; a copy inserted later takes the stash back.
-	// SetLabel keeps the stash at the user's last choice.
+	// SetLabel keeps the stash at the user's last choice. The fingerprint holds
+	// mail headers, so the janitor drops a stash after eventsKeepFor, as it does
+	// the event log: refetches and moves complete long before.
 	`CREATE TABLE label_keep (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, fp TEXT NOT NULL,
-		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL, PRIMARY KEY(account_id, fp, label_id))`,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL,
+		kept_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY(account_id, fp, label_id))`,
 	`CREATE TRIGGER messages_label_stash BEFORE DELETE ON messages
 		WHEN EXISTS (SELECT 1 FROM message_labels WHERE message_id = old.id AND source = 'manual')
 			AND EXISTS (SELECT 1 FROM accounts WHERE id = old.account_id) BEGIN

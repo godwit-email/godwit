@@ -3,6 +3,7 @@ package core
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -407,4 +408,19 @@ func TestFingerprintTellsBodiesApart(t *testing.T) {
 	c := add("first body") // the same message, refetched
 	_, on = labelRow(t, s, c, otp)
 	require.Equal(t, 1, on)
+}
+
+// TestLabelKeepExpires: stashed labels, with the sender and subject they are
+// keyed by, are cleaned after eventsKeepFor like the event log.
+func TestLabelKeepExpires(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	old := time.Now().Add(-eventsKeepFor - time.Hour).Unix()
+	_, err := s.db.Execute(t.Context(), `INSERT INTO label_keep(account_id, fp, label_id, active, kept_at)
+		VALUES (1, 'old', ?, 1, ?), (1, 'new', ?, 1, unixepoch())`, otp, old, otp)
+	require.NoError(t, err)
+	require.NoError(t, s.cleanEvents(t.Context()))
+	rows, err := s.db.Query(t.Context(), "SELECT fp FROM label_keep")
+	require.NoError(t, err)
+	require.Equal(t, [][]any{{"new"}}, rows.Values)
 }

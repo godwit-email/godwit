@@ -328,9 +328,10 @@ func (c *timerClock) waiting(d time.Duration) bool {
 }
 
 func TestLabelerBackoffIgnoresWake(t *testing.T) {
-	s := newLabelService(t, "", "zh-CN")
 	clock := &timerClock{}
-	s.hookClock = clock
+	testHookClock = clock // before New: the janitor reads it from the start
+	t.Cleanup(func() { testHookClock = nil })
+	s := newLabelService(t, "", "zh-CN")
 	j := &fakeJudge{err: errors.New("boom")}
 	useLabelJudge(s, j)
 	addMessage(t, s, "a", "a@x", "", "", 1)
@@ -508,4 +509,26 @@ func TestClassifyDropsWhenLabelAdded(t *testing.T) {
 	_, on := labelRow(t, s, a, otp)
 	require.Equal(t, -1, on)
 	require.Nil(t, labeledAt(t, s, a), "asked again with the new label")
+}
+
+// TestClassifyStopsWhenAutoOff: turning auto-labeling off mid-batch stops
+// the new mail still queued in it.
+func TestClassifyStopsWhenAutoOff(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2) // newer: asked first
+	j := &fakeJudge{}
+	j.during = func() {
+		st, err := s.GetSettings(context.Background())
+		require.NoError(t, err)
+		st.AutoLabel = false
+		_, err = s.SetSettings(context.Background(), st)
+		require.NoError(t, err)
+	}
+	useLabelJudge(s, j)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, j.count())
+	require.Greater(t, store.Int(labeledAt(t, s, b)), int64(0))
+	require.Nil(t, labeledAt(t, s, a))
 }

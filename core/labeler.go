@@ -107,6 +107,11 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 	}()
 	for _, r := range rows.Values {
 		id, at := store.Int(r[0]), r[1]
+		if at == nil { // new mail: only while auto-labeling is on, which may change mid-batch
+			if st, err := s.loadSettings(ctx); err != nil || !st.AutoLabel {
+				return done, err
+			}
+		}
 		labels, qs, newest, err := s.labelQuestions(ctx, id)
 		if err != nil {
 			return done, err
