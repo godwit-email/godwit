@@ -111,8 +111,9 @@ func findFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 		}
 	}()
 	if cache.AvatarUnreachable(key) {
-		transient = true
-		return imagecache.Image{}, false
+		// Not remembered again: the rest must run out for the site to be tried again.
+		img, found, _ = cache.FallbackAvatar(callerCtx, key, gen)
+		return img, found
 	}
 	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
 	try := func(src string) (imagecache.Image, bool) {
