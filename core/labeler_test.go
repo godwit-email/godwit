@@ -490,3 +490,22 @@ func TestClassifyDropsEditedLabel(t *testing.T) {
 	require.Equal(t, -1, on)
 	require.Nil(t, labeledAt(t, s, a), "asked again with the new description")
 }
+
+// TestClassifyDropsWhenLabelAdded: a label created while the model answered
+// was never asked about, so the message stays pending.
+func TestClassifyDropsWhenLabelAdded(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	j := &fakeJudge{p: map[string]float64{"otp": 0.9}}
+	j.during = func() {
+		_, err := s.CreateLabel(context.Background(), LabelInput{Name: "家人", Color: "pink", Icon: "heart-3"})
+		require.NoError(t, err)
+	}
+	useLabelJudge(s, j)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	_, on := labelRow(t, s, a, otp)
+	require.Equal(t, -1, on)
+	require.Nil(t, labeledAt(t, s, a), "asked again with the new label")
+}

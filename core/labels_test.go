@@ -368,3 +368,43 @@ func TestKeptLabelsFollowLaterEdits(t *testing.T) {
 	_, on = labelRow(t, s, c, otp)
 	require.Equal(t, 0, on, "the later copy follows the user's last choice")
 }
+
+// TestKeptLabelsTakeNewChoices: a hand-set choice on a label the stash did not
+// hold yet is kept too, for copies that turn up later.
+func TestKeptLabelsTakeNewChoices(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	l := labelIDs(t, s)
+	a := addCopy(t, s, "m@x")
+	require.NoError(t, s.SetLabel(t.Context(), []int64{a}, l["otp"], true))
+	_, err := s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", a)
+	require.NoError(t, err)
+	b := addCopy(t, s, "m@x")
+	require.NoError(t, s.SetLabel(t.Context(), []int64{b}, l["bill"], false)) // not in the stash
+	c := addCopy(t, s, "m@x")
+	src, on := labelRow(t, s, c, l["bill"])
+	require.Equal(t, "manual", src)
+	require.Equal(t, 0, on)
+}
+
+// TestFingerprintTellsBodiesApart: two messages with no Message-ID and the
+// same sender, date and subject but different bodies are not one message.
+func TestFingerprintTellsBodiesApart(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	add := func(body string) int64 {
+		res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, subject, from_addr, date, body_text, size)
+			VALUES (1, 1, 1, 's', 'a@x', 1, ?, ?)`, body, len(body))
+		require.NoError(t, err)
+		return res.LastInsertID
+	}
+	a := add("first body")
+	b := add("another one")
+	require.NoError(t, s.SetLabel(t.Context(), []int64{a}, otp, true))
+	_, err := s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", a)
+	require.NoError(t, err)
+	_, on := labelRow(t, s, b, otp)
+	require.Equal(t, -1, on, "the other message is not this one")
+	c := add("first body") // the same message, refetched
+	_, on = labelRow(t, s, c, otp)
+	require.Equal(t, 1, on)
+}

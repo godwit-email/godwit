@@ -107,7 +107,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 	}()
 	for _, r := range rows.Values {
 		id, at := store.Int(r[0]), r[1]
-		labels, qs, err := s.labelQuestions(ctx, id)
+		labels, qs, newest, err := s.labelQuestions(ctx, id)
 		if err != nil {
 			return done, err
 		}
@@ -134,7 +134,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				yes[a.Name] = !a.Refused && a.Probability >= labelYes
 			}
 		}
-		if _, err := s.db.Transaction(ctx, labelWrites(id, at, labels, yes)); err != nil {
+		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes)); err != nil {
 			return done, err
 		}
 		done++
@@ -151,13 +151,19 @@ func unanswerable(err error) bool {
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has
-// no hand-set row for, and their questions (named by slug).
-func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Question, error) {
+// no hand-set row for, their questions (named by slug), and the newest label's
+// id then, so a label added while the model answers is noticed.
+func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Question, int64, error) {
+	top, err := s.db.Query(ctx, "SELECT COALESCE(MAX(id), 0) FROM labels")
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	newest := store.Int(top.Values[0][0])
 	rows, err := s.db.Query(ctx, `SELECT id, slug, name, description FROM labels l
 		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source = 'manual')
 		ORDER BY position, id`, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 	labels := make([]Label, 0, len(rows.Values))
 	qs := make([]ai.Question, 0, len(rows.Values))
@@ -167,7 +173,7 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 		qs = append(qs, ai.Question{Name: l.Slug, Kind: ai.YesNo,
 			Instructions: strings.TrimSpace(fmt.Sprintf("Answer yes if this email belongs to the user's label %q. %s", l.Name, l.Description))})
 	}
-	return labels, qs, nil
+	return labels, qs, newest, nil
 }
 
 // labelState is the message for the judge: headers and the start of its text,
@@ -186,12 +192,13 @@ func labelState(m Message) string {
 
 // labelWrites applies the answers to a message read with labeled_at at. Every
 // statement checks the message is still that one in the Inbox (not stopped,
-// moved or rescanned meanwhile) and that no label asked about was edited
-// meanwhile (an answer to its old name or description); otherwise nothing is
+// moved or rescanned meanwhile), that no label was added and no label asked
+// about was edited meanwhile (an answer to its old name or description); otherwise nothing is
 // written and the message is asked again. Hand-set rows are left alone.
-func labelWrites(id int64, at any, labels []Label, yes map[string]bool) []sqlite.Statement {
-	guard := "EXISTS (SELECT 1 FROM messages m WHERE m.id = ? AND m.labeled_at IS ? AND " + inboxCond + ")"
-	guardArgs := []any{id, at}
+func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]bool) []sqlite.Statement {
+	guard := "EXISTS (SELECT 1 FROM messages m WHERE m.id = ? AND m.labeled_at IS ? AND " + inboxCond + ")" +
+		" AND NOT EXISTS (SELECT 1 FROM labels WHERE id > ?)" // a label added meanwhile was never asked about
+	guardArgs := []any{id, at, newest}
 	for _, l := range labels { // a deleted label is no reason to ask again
 		guard += " AND NOT EXISTS (SELECT 1 FROM labels WHERE id = ? AND (name IS NOT ? OR description IS NOT ?))"
 		guardArgs = append(guardArgs, l.ID, l.Name, l.Description)
