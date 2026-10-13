@@ -153,6 +153,10 @@ func (v *labelsView) dialog(c *ui.Context) {
 	}
 	taken := v.taken(v.name)
 	long := utf8.RuneCountInString(strings.TrimSpace(v.name)) > core.MaxLabelName
+	descErr := ""
+	if utf8.RuneCountInString(strings.TrimSpace(v.desc)) > core.MaxLabelDescription {
+		descErr = i18n.Tf("settings.labels.desc.long", core.MaxLabelDescription)
+	}
 	nameErr := ""
 	switch {
 	case taken:
@@ -177,8 +181,8 @@ func (v *labelsView) dialog(c *ui.Context) {
 		kit.Field(c, i18n.T("settings.labels.name"), "", nameErr, func() {
 			kit.Input(c, &v.name, kit.InputOpts{Placeholder: i18n.T("settings.labels.name.placeholder"), Invalid: nameErr != ""}).Label(i18n.T("settings.labels.name"))
 		})
-		kit.Field(c, i18n.T("settings.labels.desc"), "", "", func() {
-			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder")}).Label(i18n.T("settings.labels.desc"))
+		kit.Field(c, i18n.T("settings.labels.desc"), "", descErr, func() {
+			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder"), Invalid: descErr != ""}).Label(i18n.T("settings.labels.desc"))
 		})
 		kit.Field(c, i18n.T("settings.labels.color"), "", "", func() {
 			ui.Row(c).Gap(th.Space(3)).Children(func() {
@@ -222,7 +226,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 			ui.Spacer(c)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.dlg = false })
-		kit.Button(c, save, kit.ButtonOpts{Disabled: nameErr != "" || strings.TrimSpace(v.name) == ""}).OnClick(v.save)
+		kit.Button(c, save, kit.ButtonOpts{Disabled: nameErr != "" || descErr != "" || strings.TrimSpace(v.name) == ""}).OnClick(v.save)
 	})
 	if !v.confirm {
 		return

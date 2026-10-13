@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -444,4 +445,14 @@ func TestSeedSkipsTakenNames(t *testing.T) {
 	}
 	require.Equal(t, 1, n)
 	require.Len(t, ls, 7, "six presets and the user's label")
+}
+
+// TestLabelDescriptionLimit: a description goes into every judge request, so
+// it is bounded.
+func TestLabelDescriptionLimit(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	_, err := s.CreateLabel(t.Context(), LabelInput{Name: "长", Description: strings.Repeat("字", MaxLabelDescription), Color: "red", Icon: "bill"})
+	require.NoError(t, err)
+	_, err = s.CreateLabel(t.Context(), LabelInput{Name: "更长", Description: strings.Repeat("字", MaxLabelDescription+1), Color: "red", Icon: "bill"})
+	require.Error(t, err)
 }

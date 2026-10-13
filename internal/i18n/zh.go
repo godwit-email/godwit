@@ -901,4 +901,5 @@ var zh = map[string]string{
 	"settings.labels.name.long":           "名称最多 %d 个字",
 	"settings.labels.model.none":          "还没有配置",
 	"settings.labels.rescan.no_model":     "还没有能用来分类的模型，先在「模型服务」里添加一个",
+	"settings.labels.desc.long":           "说明最多 %d 个字",
 }

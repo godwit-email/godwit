@@ -901,4 +901,5 @@ var en = map[string]string{
 	"settings.labels.name.long":           "At most %d characters",
 	"settings.labels.model.none":          "Not set up",
 	"settings.labels.rescan.no_model":     "No model can sort mail yet; add one in Model services first",
+	"settings.labels.desc.long":           "At most %d characters",
 }

@@ -218,3 +218,18 @@ func TestSettingsLabelsNameTooLong(t *testing.T) {
 		t.Error("an over-long name was saved or the dialog closed")
 	}
 }
+
+func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
+	h, _ := withAccount(t)
+	h.labelsPage()
+	h.click("新建标签")
+	h.typeUnder("名称", "家人")
+	h.typeUnder("说明（可选）", strings.Repeat("字", core.MaxLabelDescription+1))
+	h.see("说明最多 500 个字")
+	n := len(h.labels())
+	h.click("创建")
+	h.drain()
+	if len(h.labels()) != n {
+		t.Error("an over-long description was saved")
+	}
+}

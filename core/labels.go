@@ -31,6 +31,10 @@ var ErrLabelExists = errors.New("a label with this name exists")
 // MaxLabelName is the most runes a label name has.
 const MaxLabelName = 32
 
+// MaxLabelDescription is the most runes a label description has: every
+// classification sends every description to the model.
+const MaxLabelDescription = 500
+
 // Label is a mail label. Count is the messages it is on, Unread those unread.
 type Label struct {
 	ID                                   int64
@@ -133,6 +137,8 @@ func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (La
 		return in, errors.New("a label needs a name")
 	case utf8.RuneCountInString(in.Name) > MaxLabelName:
 		return in, fmt.Errorf("a label name has at most %d characters", MaxLabelName)
+	case utf8.RuneCountInString(in.Description) > MaxLabelDescription:
+		return in, fmt.Errorf("a label description has at most %d characters", MaxLabelDescription)
 	case !slices.Contains(LabelColors, in.Color):
 		return in, fmt.Errorf("invalid label color %q", in.Color)
 	case !slices.Contains(LabelIcons, in.Icon):
