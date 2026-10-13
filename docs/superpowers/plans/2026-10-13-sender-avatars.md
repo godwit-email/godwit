@@ -164,7 +164,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 **集成补充:** 修改 `internal/imagecache/imagecache.go` 及测试，将首次创建头像共享下载的调用方 deadline 传给实际下载，与缓存关闭上下文共同生效；普通 Get 的后台下载行为不变。共享调用继承首个期限，超时按瞬时失败处理，可在失败缓存过期后重试。首页瞬时失败仅不写长期未命中，不新增首页失败缓存接口；候选图像 URL 仍使用既有 5 分钟失败缓存。
 
-**Interfaces:** `avatar.PersonalDomain(domain string, providerDomains []string) bool`；`avatar.FaviconSites(domain string) []string`；`avatar.FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string) (imagecache.Image, bool)`；`avatar.GravatarURL(email string) string`。FindFavicon 返回一站的安全图像；原始域名与组织域的调用顺序由 core 编排，格式校验使用任务 3 的 imagefetch.CheckAvatarImage。
+**Interfaces:** `avatar.PersonalDomain(domain string, providerDomains []string) bool`；`avatar.FaviconSites(domain string) []string`；`avatar.FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (imagecache.Image, bool)`；`avatar.GravatarURL(email string) string`。FindFavicon 返回一站的安全图像；core 的 canFetch 回调在缓存读取和每次尚未开始的网站发现／图标候选前重检当前邮件图片政策，nil 仅用于没有邮件政策的独立内部调用；原始域名与组织域的调用顺序由 core 编排，格式校验使用任务 3 的 imagefetch.CheckAvatarImage。
 
 - [x] 写测试：公共邮箱精确匹配；自有域名仍可兜底；`mail.example.co.uk` → 原始域名／`example.co.uk`；IDN；同域去重；固定候选顺序；HTML 属性顺序与相对地址；首页重定向后的基准地址；恶意 URL／HTTPS 降级／内网／超过候选数停止；首页读取最多 256 KiB；网站成功结果／确定未命中在重启后不再抓首页，瞬时错误不写长期未命中；所有图标失败返回无图像。
 - [x] `TestGravatarURL` 对大小写／前后空白产生同一 SHA-256；保留点和 +tag；断言固定 `s=64&d=404&r=g`，没有原始邮箱、名称、profile 请求。
@@ -197,7 +197,7 @@ RemoteImages=auto 时允许自动网络头像；trusted 只允许已信任发件
 
 - [ ] 写测试：初始字母占位；成功后保持名称标签／32 DIP／布局；解析失败仍字母；旧线程迟到结果丢弃；点击加载图片触发头像重试；禁用网络与垃圾邮件不自动加载、垃圾邮件手动许可可加载；设置中文／英文说明覆盖网站与 Gravatar。
 - [ ] 新增 `TestRemoteImagesAvatarSetting` 检查中英文说明；运行 `go test ./internal/kit ./app -run 'Avatar|ReaderRemoteImages|RemoteImagesAvatarSetting' -count=1`，确认新行为未实现时失败；既有 `TestReaderRemoteImages` 保留通过。
-- [ ] 实现异步加载和旧结果隔离，复用 app 既有 query／取消机制；不在 View 回调调用 DNS、HTTP 或 SVG 解析，不影响打开邮件与回复操作。
+- [ ] 实现异步加载和旧结果隔离，复用 app 既有 query／取消机制；不在 View 回调调用 DNS、HTTP 或 SVG 解析，不影响打开邮件与回复操作。纯文本或没有正文远程图片的邮件，头像被政策阻止时也提供当前邮件的“加载图片”动作；使用头像被阻止的说明，不增加正文图片计数，复用同一手动许可。
 - [ ] 设置说明中文：`远程图片设置也适用于发件人头像。允许自动加载时，新邮件会提前获取头像；旧邮件、缓存未命中或过期、手动加载时，仍可能在读信时访问发件人网站和 Gravatar，对方可看到本机 IP 并可能推测阅读时间。Gravatar 使用邮箱哈希查询。` 英文提供等义说明，保留现有无 Cookie／Referer 描述，不作全局隐藏阅读时间的承诺。
 - [ ] 运行 `go test ./internal/avatar ./internal/imagefetch ./internal/imagecache ./internal/kit ./core/... ./app ./contract -count=1` 与 `go test -race ./internal/avatar ./internal/imagecache ./core -run 'Avatar|ImageCache' -count=1`；有失败先排查，不扩大成无关重构。
 - [ ] macOS 手工查看可信 BIMI、网站 PNG／ICO／SVG、公共邮箱 Gravatar、全部失败、离线、远程图片禁用、快速切换线程。检查品牌原色、圆形裁切和无布局跳动；使用经授权测试账号，不把真实邮箱提交到随机演示服务。

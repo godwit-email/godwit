@@ -16,14 +16,28 @@ import (
 	"golang.org/x/net/html"
 )
 
-// FindFavicon checks one site's persistent result before sequential discovery.
-func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string) (imagecache.Image, bool) {
+// FindFavicon checks message policy before cached sources and every discovery or
+// candidate request. canFetch is nil only for callers without a message policy.
+func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cache, host string, canFetch func() bool) (imagecache.Image, bool) {
 	host = normalizeDomain(host)
 	if host == "" {
 		return imagecache.Image{}, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	permitted := func() bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		if canFetch != nil && !canFetch() {
+			cancel()
+			return false
+		}
+		return true
+	}
+	if !permitted() {
+		return imagecache.Image{}, false
+	}
 	key := imagecache.AvatarKey("favicon", host)
 	if img, ok, err := cache.LookupAvatar(ctx, key); ok {
 		return img, true
@@ -36,8 +50,14 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	base := &url.URL{Scheme: "https", Host: host, Path: "/"}
 	transient := false
 	try := func(src string) (imagecache.Image, bool) {
+		if !permitted() {
+			return imagecache.Image{}, false
+		}
 		img, err := cache.GetAvatar(ctx, src, "favicon")
 		if err == nil {
+			if !permitted() {
+				return imagecache.Image{}, false
+			}
 			img, err = cache.PutAvatar(ctx, key, img.Data, "favicon")
 			if err == nil {
 				return img, true
@@ -51,7 +71,7 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	if img, ok := try(base.ResolveReference(&url.URL{Path: "/apple-touch-icon.png"}).String()); ok {
 		return img, true
 	}
-	if ctx.Err() != nil {
+	if !permitted() {
 		return imagecache.Image{}, false
 	}
 	candidates, err := faviconLinks(ctx, imagefetch.NewAvatarClient(client), base)
@@ -72,7 +92,7 @@ func FindFavicon(ctx context.Context, client *http.Client, cache *imagecache.Cac
 	if img, ok := try(base.ResolveReference(&url.URL{Path: "/favicon.ico"}).String()); ok {
 		return img, true
 	}
-	if !transient && ctx.Err() == nil {
+	if !transient && permitted() {
 		_ = cache.RememberAvatarMiss(key)
 	}
 	return imagecache.Image{}, false

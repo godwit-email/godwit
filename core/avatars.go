@@ -72,11 +72,21 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 		providerDomains = append(providerDomains, provider.Domains...)
 	}
 	if avatar.PersonalDomain(domain, providerDomains) {
+		var policyErr error
+		canFetch := func() bool {
+			var ok bool
+			ok, policyErr = allowed()
+			return ok && policyErr == nil
+		}
 		for _, host := range sites {
 			if ok, err := allowed(); !ok || err != nil {
 				return Avatar{}, err
 			}
-			if img, ok := avatar.FindFavicon(ctx, s.opts.ImageClient, s.images, host); ok {
+			img, ok := avatar.FindFavicon(ctx, s.opts.ImageClient, s.images, host, canFetch)
+			if policyErr != nil {
+				return Avatar{}, policyErr
+			}
+			if ok {
 				return result(img, "favicon")
 			}
 		}

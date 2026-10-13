@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/png"
 	"net"
@@ -260,6 +261,113 @@ func TestAvatarCancellation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAvatarPolicyStopsPendingFaviconRequests(t *testing.T) {
+	for _, stage := range []string{"/apple-touch-icon.png", "/", "/one", "/two"} {
+		for _, manual := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/manual=%v", stage, manual), func(t *testing.T) {
+				good := avatarPNG(t)
+				started, release := make(chan struct{}), make(chan struct{})
+				f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == stage {
+						close(started)
+						<-release
+					}
+					switch r.URL.Path {
+					case "/":
+						w.Write([]byte(`<link rel="icon" href="/one"><link rel="icon" href="/two">`))
+					case "/two":
+						if stage == "/two" {
+							http.NotFound(w, r)
+						} else {
+							w.Write(good)
+						}
+					case "/favicon.ico":
+						w.Write(good)
+					default:
+						http.NotFound(w, r)
+					}
+				})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				id := addMessage(t, f.s, "s", "bob@example.com", "", "", 1)
+				done := make(chan Avatar, 1)
+				go func() {
+					a, err := f.s.SenderAvatar(bg, id, manual)
+					if err != nil {
+						t.Errorf("SenderAvatar: %v", err)
+					}
+					done <- a
+				}()
+				waitSignal(t, started, "blocked favicon request", time.Second)
+				f.policy(t, "ask", false, false)
+				close(release)
+				var got Avatar
+				select {
+				case got = <-done:
+				case <-time.After(time.Second):
+					t.Fatal("avatar call did not stop")
+				}
+				want := []string{"example.com/apple-touch-icon.png", "example.com/", "example.com/one", "example.com/two"}
+				if stage == "/two" && manual {
+					want = append(want, "example.com/favicon.ico")
+				}
+				if manual {
+					assert.Equal(t, "favicon", got.Source)
+					assert.Equal(t, good, got.Data)
+				} else {
+					assert.Empty(t, got.Data)
+					switch stage {
+					case "/apple-touch-icon.png":
+						want = want[:1]
+					case "/":
+						want = want[:2]
+					case "/one":
+						want = want[:3]
+					}
+				}
+				assert.Equal(t, want, f.hits(), "no new automatic discovery/candidate after switching to ask")
+			})
+		}
+	}
+}
+
+func TestAvatarPolicyFaviconRecheckError(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/apple-touch-icon.png" {
+			close(started)
+			<-release
+		}
+		http.NotFound(w, r)
+	})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	id := addMessage(t, f.s, "s", "bob@example.com", "", "", 1)
+	done := make(chan error, 1)
+	go func() { _, err := f.s.SenderAvatar(bg, id, false); done <- err }()
+	waitSignal(t, started, "blocked favicon request", time.Second)
+	_, err := f.s.db.Execute(t.Context(), "DROP TABLE settings")
+	require.NoError(t, err)
+	close(release)
+	select {
+	case err = <-done:
+		require.ErrorContains(t, err, "no such table")
+	case <-time.After(time.Second):
+		t.Fatal("avatar did not stop after policy error")
+	}
+	assert.Equal(t, []string{"example.com/apple-touch-icon.png"}, f.hits(), "policy errors stop subsequent requests and return to the caller")
 }
 
 func TestAvatarCancellationBeforeRequest(t *testing.T) {

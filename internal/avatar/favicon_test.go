@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func TestFaviconOrderRelativeRedirectAndRestart(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
-	img, ok := FindFavicon(context.Background(), f.client, f.cache, "EXAMPLE.COM.")
+	img, ok := FindFavicon(context.Background(), f.client, f.cache, "EXAMPLE.COM.", nil)
 	if !ok || img.Width != 32 || !bytes.Equal(img.Data, good) {
 		t.Fatalf("favicon = %+v, %v", img, ok)
 	}
@@ -114,7 +115,7 @@ func TestFaviconOrderRelativeRedirectAndRestart(t *testing.T) {
 		t.Fatalf("requests = %v, want %v", got, want)
 	}
 	f.reopen(t)
-	img, ok = FindFavicon(context.Background(), f.client, f.cache, "example.com")
+	img, ok = FindFavicon(context.Background(), f.client, f.cache, "example.com", nil)
 	if !ok || img.Width != 32 || !reflect.DeepEqual(f.requests(), want) {
 		t.Fatal("site success was not reused after restart")
 	}
@@ -123,11 +124,56 @@ func TestFaviconOrderRelativeRedirectAndRestart(t *testing.T) {
 func TestFaviconAppleStopsDiscovery(t *testing.T) {
 	good := faviconPNG(t, 32)
 	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { w.Write(good) })
-	if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com"); !ok {
+	if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); !ok {
 		t.Fatal("missing apple icon")
 	}
 	if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png"}) {
 		t.Fatalf("extra requests: %v", got)
+	}
+}
+
+func TestFaviconPolicyBeforeCachedSite(t *testing.T) {
+	good := faviconPNG(t, 32)
+	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected request") })
+	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "example.com"), good, "favicon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", func() bool { return false })
+	if ok || len(img.Data) > 0 {
+		t.Fatal("policy denied but cached site was returned")
+	}
+	if got := f.requests(); len(got) != 0 {
+		t.Fatalf("requests = %v", got)
+	}
+}
+
+func TestFaviconPolicyBeforeCachedCandidate(t *testing.T) {
+	good := faviconPNG(t, 32)
+	var allowed atomic.Bool
+	allowed.Store(true)
+	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			allowed.Store(false)
+			w.Write([]byte(`<link rel="icon" href="/cached.png">`))
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	_, err := f.cache.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "https://example.com/cached.png"), good, "favicon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", allowed.Load)
+	if ok || len(img.Data) > 0 {
+		t.Fatal("cached candidate bypassed the changed policy")
+	}
+	want := []string{"/apple-touch-icon.png", "/"}
+	if got := f.requests(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("requests = %v, want %v", got, want)
+	}
+	if f.cache.AvatarMiss(imagecache.AvatarKey("favicon", "example.com")) {
+		t.Fatal("policy denial recorded a site miss")
 	}
 }
 
@@ -147,7 +193,7 @@ func TestFaviconNoDeclarationStillTriesICO(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			})
-			if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com"); !ok {
+			if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); !ok {
 				t.Fatal("ICO fallback missed")
 			}
 			if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/favicon.ico"}) {
@@ -165,7 +211,7 @@ func TestFaviconDeclarationLimitAndUnsafeURLs(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	})
-	if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com"); ok {
+	if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); ok {
 		t.Fatal("expected miss")
 	}
 	want := []string{"/apple-touch-icon.png", "/", "/one", "/two", "/three", "/favicon.ico"}
@@ -190,7 +236,7 @@ func TestFaviconLimitedCompleteHTML(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			})
-			FindFavicon(context.Background(), f.client, f.cache, "example.com")
+			FindFavicon(context.Background(), f.client, f.cache, "example.com", nil)
 			if got := f.requests(); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("requests = %v, want %v", got, tt.want)
 			}
@@ -202,7 +248,7 @@ func TestFaviconMissRestartAndTransient(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
-			if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com"); ok {
+			if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); ok {
 				t.Fatal("expected miss")
 			}
 			key := imagecache.AvatarKey("favicon", "example.com")
@@ -211,7 +257,7 @@ func TestFaviconMissRestartAndTransient(t *testing.T) {
 			}
 			n := len(f.requests())
 			f.reopen(t)
-			FindFavicon(context.Background(), f.client, f.cache, "example.com")
+			FindFavicon(context.Background(), f.client, f.cache, "example.com", nil)
 			if (len(f.requests()) == n) != (status == http.StatusNotFound) {
 				t.Fatal("incorrect restart retry")
 			}
@@ -231,7 +277,7 @@ func TestFaviconAllTooSmallAndOrganizationalFallback(t *testing.T) {
 	var ok bool
 	var img imagecache.Image
 	for _, site := range FaviconSites("mail.example.co.uk") {
-		img, ok = FindFavicon(context.Background(), f.client, f.cache, site)
+		img, ok = FindFavicon(context.Background(), f.client, f.cache, site, nil)
 		if ok {
 			break
 		}
@@ -248,7 +294,7 @@ func TestFaviconCancellationNoPersistentMiss(t *testing.T) {
 	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, ok := FindFavicon(ctx, f.client, f.cache, "example.com"); ok {
+	if _, ok := FindFavicon(ctx, f.client, f.cache, "example.com", nil); ok {
 		t.Fatal("canceled call returned image")
 	}
 	if f.cache.AvatarMiss(imagecache.AvatarKey("favicon", "example.com")) {
@@ -270,7 +316,7 @@ func TestFaviconHomepageReadLimitClosesStream(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	})
-	FindFavicon(t.Context(), f.client, f.cache, "example.com")
+	FindFavicon(t.Context(), f.client, f.cache, "example.com", nil)
 	select {
 	case <-closed:
 	case <-time.After(time.Second):
@@ -285,7 +331,7 @@ func TestFaviconSiteDeadlineStopsActualRequest(t *testing.T) {
 	canceled := make(chan struct{})
 	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done(); close(canceled) })
 	start := time.Now()
-	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com"); ok {
+	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); ok {
 		t.Fatal("slow request succeeded")
 	}
 	if elapsed := time.Since(start); elapsed < 4*time.Second || elapsed > 6*time.Second {
@@ -314,7 +360,7 @@ func TestFaviconHTTPSRedirectPoliciesAndPrivateHost(t *testing.T) {
 				}
 				http.NotFound(w, r)
 			})
-			if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com"); ok {
+			if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); ok {
 				t.Fatal("unsafe redirect accepted")
 			}
 			if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/favicon.ico"}) {
@@ -330,7 +376,7 @@ func TestFaviconHTTPSRedirectPoliciesAndPrivateHost(t *testing.T) {
 func TestFaviconInvalidSiteNeverRequests(t *testing.T) {
 	f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("invalid site requested") })
 	for _, host := range []string{"127.0.0.1", "localhost", "https://example.com", "user@example.com", "co.uk"} {
-		if _, ok := FindFavicon(t.Context(), f.client, f.cache, host); ok {
+		if _, ok := FindFavicon(t.Context(), f.client, f.cache, host, nil); ok {
 			t.Errorf("invalid site accepted: %s", host)
 		}
 	}
@@ -356,7 +402,7 @@ func TestFaviconNetworkHomepageFailureStillFallsBack(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
-	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com"); !ok {
+	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); !ok {
 		t.Fatal("network failure suppressed ICO fallback")
 	}
 	if got := f.requests(); got[len(got)-1] != "/favicon.ico" {
@@ -379,7 +425,7 @@ func TestFaviconDeclaredCDNAndDeduplication(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
-	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com"); !ok {
+	if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); !ok {
 		t.Fatal("public CDN candidate unavailable")
 	}
 	if got := f.requests(); !reflect.DeepEqual(got, []string{"/apple-touch-icon.png", "/", "/bad", "/good"}) {
@@ -401,7 +447,7 @@ func TestFaviconCandidateTransientDoesNotCacheSiteMiss(t *testing.T) {
 				}
 			})
 			for range 2 {
-				if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com"); ok {
+				if _, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", nil); ok {
 					t.Fatal("transient candidate succeeded")
 				}
 				if f.cache.AvatarMiss(imagecache.AvatarKey("favicon", "example.com")) {
