@@ -282,14 +282,28 @@ var Migrations = [][]string{{
 	`ALTER TABLE messages ADD COLUMN labeled_at INTEGER`,
 	`CREATE INDEX messages_labeled ON messages(folder_id, labeled_at)`,
 }, {
-	// Labels set by hand on the messages a UIDVALIDITY reset drops, by folder and
-	// Message-ID: every refetched copy there (twins too) takes them back as it is
-	// inserted. Rows stay until the folder's next reset replaces them.
-	`CREATE TABLE label_keep (folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE, mid TEXT NOT NULL,
-		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL, PRIMARY KEY(folder_id, mid, label_id))`,
-	`CREATE TRIGGER messages_label_keep AFTER INSERT ON messages
-		WHEN EXISTS (SELECT 1 FROM label_keep WHERE folder_id = new.server_folder_id AND mid = new.message_id) BEGIN
+	// Labels set by hand outlive the cached rows they are on (a UIDVALIDITY reset,
+	// a move the server did not report): a row dropped stashes them by account
+	// and fingerprint (its Message-ID, else sender, date and subject) and hands
+	// them to the other copies; a copy inserted later takes the stash back.
+	// SetLabel keeps the stash at the user's last choice.
+	`CREATE TABLE label_keep (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, fp TEXT NOT NULL,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL, PRIMARY KEY(account_id, fp, label_id))`,
+	`CREATE TRIGGER messages_label_stash BEFORE DELETE ON messages
+		WHEN EXISTS (SELECT 1 FROM message_labels WHERE message_id = old.id AND source = 'manual')
+			AND EXISTS (SELECT 1 FROM accounts WHERE id = old.account_id) BEGIN
+		INSERT OR REPLACE INTO label_keep(account_id, fp, label_id, active)
+			SELECT old.account_id, CASE WHEN COALESCE(old.message_id, '') != '' THEN old.message_id ELSE 'fp:' || COALESCE(old.from_addr, '') || char(31) || COALESCE(old.date, '') || char(31) || COALESCE(old.subject, '') END, label_id, active FROM message_labels WHERE message_id = old.id AND source = 'manual';
 		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
-			SELECT new.id, label_id, 'manual', active FROM label_keep WHERE folder_id = new.server_folder_id AND mid = new.message_id;
+			SELECT m.id, ml.label_id, 'manual', ml.active FROM messages m JOIN message_labels ml ON ml.message_id = old.id AND ml.source = 'manual'
+			WHERE m.account_id = old.account_id AND m.id != old.id AND (
+				(COALESCE(old.message_id, '') != '' AND m.message_id = old.message_id)
+				OR (COALESCE(old.message_id, '') = '' AND COALESCE(m.message_id, '') = ''
+					AND m.from_addr IS old.from_addr AND m.date IS old.date AND m.subject IS old.subject));
+	END`,
+	`CREATE TRIGGER messages_label_keep AFTER INSERT ON messages
+		WHEN EXISTS (SELECT 1 FROM label_keep WHERE account_id = new.account_id AND fp = CASE WHEN COALESCE(new.message_id, '') != '' THEN new.message_id ELSE 'fp:' || COALESCE(new.from_addr, '') || char(31) || COALESCE(new.date, '') || char(31) || COALESCE(new.subject, '') END) BEGIN
+		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
+			SELECT new.id, label_id, 'manual', active FROM label_keep WHERE account_id = new.account_id AND fp = CASE WHEN COALESCE(new.message_id, '') != '' THEN new.message_id ELSE 'fp:' || COALESCE(new.from_addr, '') || char(31) || COALESCE(new.date, '') || char(31) || COALESCE(new.subject, '') END;
 	END`,
 }}

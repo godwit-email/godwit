@@ -304,3 +304,67 @@ func TestLabelsSurviveResetForEachCopy(t *testing.T) {
 	assert.Equal(t, 2, e.count(t, `SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
 		WHERE m.message_id = 'twin@x' AND ml.label_id = ? AND ml.source = 'manual' AND ml.active = 1`, l.ID))
 }
+
+// TestLabelsSurviveResetWithoutMessageID: mail with no Message-ID keeps its
+// hand-set labels across a reset too (by sender, date and subject).
+func TestLabelsSurviveResetWithoutMessageID(t *testing.T) {
+	e := newSyncEnv(t)
+	raw := "From: bob@example.com\r\nTo: alice@example.com\r\nSubject: no id\r\nDate: " + day + "\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
+	e.put(t, "Archive", raw)
+	e.sync(t)
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	old := store.Int(e.rows(t, "SELECT id FROM messages WHERE subject = 'no id'")[0][0])
+	require.NoError(t, e.s.SetLabel(bg, []int64{old}, l.ID, false))
+
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	e.put(t, "Archive", raw)
+	e.sync(t)
+
+	id := store.Int(e.rows(t, "SELECT id FROM messages WHERE subject = 'no id'")[0][0])
+	require.NotEqual(t, old, id)
+	assert.Equal(t, [][]any{{"manual", int64(0)}}, e.rows(t, "SELECT source, active FROM message_labels WHERE message_id = ?", id))
+}
+
+// addCopy inserts a cached copy of a message with a Message-ID, as an import does.
+func addCopy(t *testing.T, s *Service, mid string) int64 {
+	t.Helper()
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, message_id, subject, from_addr, date)
+		VALUES (1, 1, 1, ?, 's', 'a@x', 1)`, mid)
+	require.NoError(t, err)
+	return res.LastInsertID
+}
+
+// TestLabelsMoveToTheOtherCopy: a cached row dropped while another copy of the
+// message exists (a move the server did not report) hands it its labels.
+func TestLabelsMoveToTheOtherCopy(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addCopy(t, s, "m@x")
+	b := addCopy(t, s, "m@x")
+	require.NoError(t, s.SetLabel(t.Context(), []int64{a}, otp, false))
+	_, err := s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", a)
+	require.NoError(t, err)
+	src, on := labelRow(t, s, b, otp)
+	require.Equal(t, "manual", src)
+	require.Equal(t, 0, on)
+}
+
+// TestKeptLabelsFollowLaterEdits: a copy arriving after the user changed a
+// restored label takes the current choice, not the kept old one.
+func TestKeptLabelsFollowLaterEdits(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addCopy(t, s, "m@x")
+	require.NoError(t, s.SetLabel(t.Context(), []int64{a}, otp, true))
+	_, err := s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", a)
+	require.NoError(t, err)
+	b := addCopy(t, s, "m@x") // refetched: restored on
+	_, on := labelRow(t, s, b, otp)
+	require.Equal(t, 1, on)
+	require.NoError(t, s.SetLabel(t.Context(), []int64{b}, otp, false))
+	c := addCopy(t, s, "m@x") // a later copy
+	_, on = labelRow(t, s, c, otp)
+	require.Equal(t, 0, on, "the later copy follows the user's last choice")
+}

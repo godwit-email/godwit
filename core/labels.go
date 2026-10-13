@@ -282,11 +282,15 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 	if int(store.Int(rows.Values[0][0])) != len(slices.Compact(slices.Sorted(slices.Values(messageIDs)))) {
 		return errors.New("some messages no longer exist")
 	}
-	stmts := make([]sqlite.Statement, len(messageIDs))
-	for i, id := range messageIDs {
-		stmts[i] = sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', ?)
-			ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'manual', active = excluded.active`, Args: []any{id, labelID, b2i(on)}}
+	stmts := make([]sqlite.Statement, 0, len(messageIDs)+1)
+	for _, id := range messageIDs {
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', ?)
+			ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'manual', active = excluded.active`, Args: []any{id, labelID, b2i(on)}})
 	}
+	// A copy that turns up later takes this choice, not one stashed before it.
+	stmts = append(stmts, sqlite.Statement{SQL: `UPDATE label_keep SET active = ? WHERE label_id = ? AND (account_id, fp) IN
+		(SELECT m.account_id, ` + messageFP + ` FROM messages m WHERE m.id IN (` + placeholders(len(messageIDs)) + `))`,
+		Args: append([]any{b2i(on), labelID}, int64Args(messageIDs)...)})
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
@@ -337,3 +341,7 @@ func int64Args(ids []int64) []any {
 	}
 	return out
 }
+
+// messageFP is a message m's fingerprint in label_keep, as the schema's
+// triggers compute it: its Message-ID, else sender, date and subject.
+const messageFP = "CASE WHEN COALESCE(m.message_id, '') != '' THEN m.message_id ELSE 'fp:' || COALESCE(m.from_addr, '') || char(31) || COALESCE(m.date, '') || char(31) || COALESCE(m.subject, '') END"
