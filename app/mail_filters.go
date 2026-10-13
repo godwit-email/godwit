@@ -147,6 +147,18 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 	})
 }
 
+// labelsLoaded drops a label filter whose label is gone, and searches again:
+// kept, it would filter by nothing the chip shows and find nothing.
+func (p *mailPage) labelsLoaded() {
+	if _, ok := p.a.label(p.sf.labelID); ok || p.sf.labelID == 0 {
+		return
+	}
+	p.sf.labelID = 0
+	if p.searched {
+		p.runSearch()
+	}
+}
+
 // setFilter changes the filters, closes their menus and searches again.
 func (p *mailPage) setFilter(change func(*searchFilters)) {
 	change(&p.sf)

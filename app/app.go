@@ -336,6 +336,9 @@ func (a *App) load() {
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
 		if labels != nil {
 			a.labels = labels
+			if a.mail != nil {
+				a.mail.labelsLoaded()
+			}
 		}
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			a.settings, a.settingsOK = st, st

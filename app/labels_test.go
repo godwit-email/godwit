@@ -141,3 +141,22 @@ func TestSearchLabelFilter(t *testing.T) {
 	h.click("全部标签")
 	h.until("both again", func() bool { h.tt.Frame(); return len(p.results) == 2 })
 }
+
+// TestSearchLabelFilterDeleted: a filter on a label deleted since is dropped,
+// not kept as an invisible filter that finds nothing.
+func TestSearchLabelFilterDeleted(t *testing.T) {
+	h, acc, m := labeledMail(t)
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Check-in closed", "too late"))
+	h.syncNow(acc)
+	h.autoLabel(m.ID, "otp")
+	p := h.app.mail
+	p.searchOpen = true
+	p.query = "Check-in"
+	p.sf.labelID = h.labelID("otp")
+	p.runSearch()
+	h.until("the filtered result", func() bool { h.tt.Frame(); return p.searched && len(p.results) == 1 })
+	if err := h.env.Svc.DeleteLabel(context.Background(), h.labelID("otp")); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("both results again", func() bool { return len(p.results) == 2 && p.sf.labelID == 0 })
+}

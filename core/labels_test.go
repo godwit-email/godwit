@@ -48,7 +48,7 @@ func TestSeedLabelsChinese(t *testing.T) {
 }
 
 func TestSeedLabelsEnglish(t *testing.T) {
-	s := newLabelService(t, "", "")
+	s := newLabelService(t, "", "en")
 	ls, err := s.ListLabels(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "Codes", ls[0].Name)
@@ -231,4 +231,20 @@ func TestLabelView(t *testing.T) {
 	require.Error(t, err)
 	_, err = s.ListMessages(ctx, View{LabelID: otp, FolderID: 1}, "", 10)
 	require.Error(t, err)
+}
+
+// TestSeedLabelsWaitsForLanguage: a first start that does not know the
+// language (headless) seeds nothing, so the GUI seeds in the user's.
+func TestSeedLabelsWaitsForLanguage(t *testing.T) {
+	dir := t.TempDir()
+	s := newLabelService(t, dir, "")
+	ls, err := s.ListLabels(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, ls)
+	s.Close()
+	s = newLabelService(t, dir, "zh-CN")
+	ls, err = s.ListLabels(t.Context())
+	require.NoError(t, err)
+	require.Len(t, ls, 7)
+	require.Equal(t, "验证码", ls[0].Name)
 }

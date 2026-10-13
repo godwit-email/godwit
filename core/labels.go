@@ -56,7 +56,9 @@ var presetLabels = []presetLabel{
 	{"newsletter", "gray", "newspaper", "订阅与资讯", "Newsletters", "新闻简报、产品更新和营销邮件", "Newsletters, product updates and promotions"},
 }
 
-// seedLabels writes the presets once; a preset the user deleted stays gone.
+// seedLabels writes the presets once, in the UI language; a preset the user
+// deleted stays gone. With no language known yet (a headless first start) it
+// waits for a start that knows one.
 func (s *Service) seedLabels(ctx context.Context) error {
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'labels_seeded'")
 	if err != nil || len(rows.Values) > 0 {
@@ -66,7 +68,11 @@ func (s *Service) seedLabels(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	zh := strings.HasPrefix(strings.ToLower(cmp.Or(st.UILanguage, s.opts.SystemLanguage)), "zh")
+	lang := strings.ToLower(cmp.Or(st.UILanguage, s.opts.SystemLanguage))
+	if lang == "" {
+		return nil
+	}
+	zh := strings.HasPrefix(lang, "zh")
 	var stmts []sqlite.Statement
 	for i, p := range presetLabels {
 		name, desc := p.en, p.enDesc
