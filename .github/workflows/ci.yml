@@ -149,7 +149,10 @@ jobs:
             Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
             winapp manifest generate --executable "$dir\Godwit.exe" --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit | Out-Host # not into $dirs
             $manifest = Get-Item *.appxmanifest
-            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" | Set-Content "$dir\$($manifest.Name)" -NoNewline
+            # Experiment: keep %APPDATA% real, so the Local API socket and the data stay where the CLI looks. Needs the restricted unvirtualizedResources capability.
+            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
+              -replace '</Properties>', '<desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization></Properties>' `
+              -replace '</Capabilities>', '<rescap:Capability Name="unvirtualizedResources" /></Capabilities>' | Set-Content "$dir\$($manifest.Name)" -NoNewline
             Remove-Item $manifest
             $dir
           }
