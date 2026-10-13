@@ -113,8 +113,8 @@ func (p *platform) SetTrayUnread(n int) {
 		}
 		p.tray.SetTitle(title) // shown on macOS only
 	}
-	mygo.App.SetBadgeCount(n)
 }
+func (*platform) SetAppUnread(n int) { mygo.App.SetBadgeCount(n) }
 func (p *platform) ShowWindow() {
 	if p.win.IsMinimized() {
 		p.win.Restore()

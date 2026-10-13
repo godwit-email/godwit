@@ -288,6 +288,116 @@ func TestTrayUnread(t *testing.T) {
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 }
 
+func TestAppUnreadInitialClear(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		on     bool
+		unread bool
+	}{
+		{"empty inbox", true, false},
+		{"disabled with unread mail", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+				acc := e.AddAccount(t, "alice@example.com")
+				if tc.unread {
+					e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
+				}
+				st, err := e.Svc.GetSettings(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				st.UnreadOnAppIcon = tc.on
+				if _, err := e.Svc.SetSettings(t.Context(), st); err != nil {
+					t.Fatal(err)
+				}
+			})
+			h.until("initial load", func() bool { return h.app.loaded })
+			if !slices.Contains(h.plat.Calls(), "SetAppUnread 0") {
+				t.Fatal("initial load did not clear the native badge")
+			}
+		})
+	}
+}
+
+func TestAppUnread(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com", "carol@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", accs[0].Email, "One", "1"))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", accs[0].Email, "Two", "2"))
+	h.put(accs[0], "Archive", coretest.Msg("bob@example.com", accs[0].Email, "Archived", "3"))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", accs[1].Email, "Three", "3"))
+	for _, acc := range accs {
+		h.syncNow(acc)
+	}
+	h.waitMail("badge shows 3 inbox messages", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 3") })
+	if slices.Contains(h.plat.Calls(), "SetTrayUnread 3") {
+		t.Fatal("badge enabled the menu bar count")
+	}
+	for i, acc := range accs {
+		page, err := h.env.Svc.ListMessages(t.Context(), core.View{FolderID: h.folderOf(acc, "inbox").ID}, "", 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []int64
+		for _, m := range page.Items {
+			ids = append(ids, m.ID)
+		}
+		start := len(h.plat.Calls())
+		if err := h.env.Svc.SetFlags(t.Context(), ids, []string{`\Seen`}, nil); err != nil {
+			t.Fatal(err)
+		}
+		want := "SetAppUnread 1"
+		if i == 1 {
+			want = "SetAppUnread 0"
+		}
+		h.waitMail("badge updates after reading", func() bool { return slices.Contains(h.plat.Calls()[start:], want) })
+	}
+}
+
+func TestAppUnreadSettingIndependent(t *testing.T) {
+	h, acc := notifyHarness(t, nil)
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
+	h.waitMail("badge shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 1") })
+	h.openSettings("general")
+	start := len(h.plat.Calls())
+	h.click("在应用图标显示未读数")
+	h.waitMail("badge cleared", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 0") })
+	h.until("badge preference saved", func() bool { return h.app.writes.keys["settings"] == nil })
+	h.click("在菜单栏显示未读数")
+	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
+	start = len(h.plat.Calls())
+	h.click("在应用图标显示未读数")
+	h.waitMail("badge restored", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 1") })
+	start = len(h.plat.Calls())
+	h.click("在菜单栏显示未读数")
+	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetTrayUnread 0") })
+	if slices.Contains(h.plat.Calls()[start:], "SetAppUnread 0") {
+		t.Fatal("disabling the menu bar count cleared the badge")
+	}
+}
+
+func TestAppUnreadSettingFailureRestoresBadge(t *testing.T) {
+	h, acc := notifyHarness(t, nil)
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
+	h.waitMail("badge shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 1") })
+	h.app.saveSettings = func(context.Context, core.Settings) (core.Settings, error) {
+		return core.Settings{}, errors.New("disk full")
+	}
+	h.openSettings("general")
+	start := len(h.plat.Calls())
+	h.click("在应用图标显示未读数")
+	h.see("出错了：disk full")
+	var calls []string
+	for _, call := range h.plat.Calls()[start:] {
+		if strings.HasPrefix(call, "SetAppUnread ") {
+			calls = append(calls, call)
+		}
+	}
+	if !slices.Equal(calls, []string{"SetAppUnread 0", "SetAppUnread 1"}) {
+		t.Fatalf("badge calls %v, want clear then restore", calls)
+	}
+}
+
 // slowSettings makes the next settings save wait for release, then fail
 // with fail (nil saves), and starts one.
 func slowSettings(h *harness, fail error) (started, release chan struct{}) {

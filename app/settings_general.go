@@ -64,6 +64,9 @@ func (a *App) settingsEffects(old, st core.Settings) {
 		i18n.SetLanguage(tag)
 	}
 	a.plat.SettingsChanged(st)
+	if st.UnreadOnAppIcon != old.UnreadOnAppIcon || st.UnreadInMenuBar != old.UnreadInMenuBar {
+		a.showUnread(a.inboxUnread)
+	}
 	a.syncLocalAPI()
 }
 
@@ -237,6 +240,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.startup"), "",
 		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
 		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
+		sw(&st.UnreadOnAppIcon, i18n.T("settings.unread_on_app_icon"), ""),
 		sw(&st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), ""))
 	settingsSection(c, i18n.T("settings.notifications"), "",
 		sw(&st.NotifyNewMail, i18n.T("settings.notify_new_mail"), ""),
