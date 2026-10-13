@@ -248,6 +248,106 @@ func TestFaviconCoalescesConcurrentDiscovery(t *testing.T) {
 	}
 }
 
+func TestFaviconFollowerRestartsAfterOwnerDrops(t *testing.T) {
+	good := faviconPNG(t, 32)
+	for _, policy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cancel", true: "policy"}[policy], func(t *testing.T) {
+			started, release := make(chan struct{}), make(chan struct{})
+			var once, releaseOnce sync.Once
+			var homes atomic.Int32
+			var ownerAllowed atomic.Bool
+			ownerAllowed.Store(true)
+			f := newFaviconFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/":
+					if homes.Add(1) == 1 {
+						once.Do(func() { close(started) })
+						if policy {
+							<-release
+						} else {
+							<-r.Context().Done()
+							return
+						}
+					}
+					w.Write([]byte(`<link rel="icon" href="/logo.png">`))
+				case "/logo.png":
+					w.Write(good)
+				default:
+					http.NotFound(w, r)
+				}
+			})
+			t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+			ownerCtx, ownerCancel := context.WithCancel(t.Context())
+			t.Cleanup(ownerCancel)
+			ownerDone := make(chan bool, 1)
+			go func() {
+				_, ok := FindFavicon(ownerCtx, f.client, f.cache, "example.com", func() bool { return ownerAllowed.Load() })
+				ownerDone <- ok
+			}()
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("homepage request missing")
+			}
+			followerDone := make(chan imagecache.Image, 1)
+			go func() {
+				img, ok := FindFavicon(t.Context(), f.client, f.cache, "example.com", func() bool { return true })
+				if ok {
+					followerDone <- img
+				} else {
+					followerDone <- imagecache.Image{}
+				}
+			}()
+			waitForFaviconFollower(t, f.cache, "example.com")
+			if policy {
+				ownerAllowed.Store(false)
+				releaseOnce.Do(func() { close(release) })
+			} else {
+				ownerCancel()
+			}
+			select {
+			case ok := <-ownerDone:
+				if ok {
+					t.Fatal("dropped owner received a favicon")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("dropped owner did not return")
+			}
+			select {
+			case img := <-followerDone:
+				if len(img.Data) == 0 || !bytes.Equal(img.Data, good) {
+					t.Fatal("follower lost the favicon after the owner dropped")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("follower did not rediscover")
+			}
+			if homes.Load() < 2 {
+				t.Fatalf("follower did not rediscover: homepages=%d", homes.Load())
+			}
+			if f.cache.AvatarMiss(imagecache.AvatarKey("favicon", "example.com")) {
+				t.Fatal("owner drop recorded a site miss")
+			}
+		})
+	}
+}
+
+func waitForFaviconFollower(t *testing.T, cache *imagecache.Cache, host string) {
+	t.Helper()
+	key := struct {
+		cache *imagecache.Cache
+		host  string
+		gen   int
+	}{cache, host, cache.AvatarGeneration()}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if v, ok := faviconFlights.Load(key); ok && v.(*faviconFlight).waiters.Load() > 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("follower did not join favicon discovery")
+}
+
 func TestFaviconStaleFallback(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
