@@ -166,6 +166,10 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
+	LabelSwatchDot        = 24
+	LabelSwatchRing       = 2
+	LabelIconCell         = 36 // a cell of the label icon grid
 	ToastMaxWidth         = 420
 	ToastMax              = 3  // toasts shown at once
 	TitleButtonHeight     = 24 // buttons in the top bar

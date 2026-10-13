@@ -69,11 +69,12 @@ type settingsPage struct {
 
 	models *modelsView
 	ext    *extView
+	labels *labelsView
 }
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{},
-		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability}, ext: &extView{a: a, tab: 1}}
+		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -127,10 +128,10 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "models", "extensions", "privacy", "about"}
+var appSections = []string{"general", "models", "labels", "extensions", "privacy", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "models": "cpu", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -205,6 +206,8 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.privacyView(c)
 					case sec == "models":
 						p.models.view(c)
+					case sec == "labels":
+						p.labels.view(c, p)
 					case sec == "extensions":
 						p.ext.view(c)
 					case sec == "about":
