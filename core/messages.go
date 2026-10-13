@@ -104,7 +104,16 @@ func decodeCursor(c string) (date, id int64, err error) {
 
 // viewCond returns a SQL condition on messages alias m selecting the view.
 func viewCond(v View) (string, []any, error) {
+	set := 0
+	for _, on := range []bool{v.FolderID != 0, v.Unified != "", v.LabelID != 0} {
+		if on {
+			set++
+		}
+	}
 	switch {
+	case set != 1:
+	case v.LabelID != 0:
+		return labelCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
@@ -112,7 +121,7 @@ func viewCond(v View) (string, []any, error) {
 	case v.Unified == "" && v.FolderID != 0:
 		return "m.folder_id = ?", []any{v.FolderID}, nil
 	}
-	return "", nil, errors.New("view needs exactly one of FolderID or Unified (inbox, starred)")
+	return "", nil, errors.New("view needs exactly one of FolderID, Unified (inbox, starred) or LabelID")
 }
 
 // ListMessages lists the view's messages as flat rows, newest first.
@@ -154,12 +163,13 @@ type SearchQuery struct {
 	From           string    // a substring of the From header, any case
 	Since, Until   time.Time // the date from Since, before Until
 	HasAttachments bool
+	LabelID        int64 // mail with this label on
 }
 
 // Filtered reports whether a filter beyond the account is set: such a query
 // needs no text.
 func (q SearchQuery) Filtered() bool {
-	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments
+	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0
 }
 
 // Search finds synced messages; accountID 0 searches every account.
@@ -210,6 +220,10 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	}
 	if q.HasAttachments {
 		cond += " AND m.has_attachments = 1" // as the list's paperclip: inline parts count
+	}
+	if q.LabelID != 0 {
+		cond += " AND " + labelCond
+		args = append(args, q.LabelID)
 	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
 		append(args, clampLimit(limit))...)

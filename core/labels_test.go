@@ -4,6 +4,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,4 +142,93 @@ func TestLabelCounts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, ls[0].Count)
 	require.Equal(t, 1, ls[0].Unread)
+}
+
+// labelRow is a message_labels row as (source, active), or ("", -1) for none.
+func labelRow(t *testing.T, s *Service, msg, label int64) (string, int) {
+	t.Helper()
+	rows, err := s.db.Query(t.Context(), "SELECT source, active FROM message_labels WHERE message_id = ? AND label_id = ?", msg, label)
+	require.NoError(t, err)
+	if len(rows.Values) == 0 {
+		return "", -1
+	}
+	return store.Str(rows.Values[0][0]), int(store.Int(rows.Values[0][1]))
+}
+
+func setRow(t *testing.T, s *Service, msg, label int64, source string, active int) {
+	t.Helper()
+	_, err := s.db.Execute(t.Context(), `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, ?, ?)
+		ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active`, msg, label, source, active)
+	require.NoError(t, err)
+}
+
+func TestSetLabelManual(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	l := labelIDs(t, s)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2)
+	setRow(t, s, a, l["otp"], "auto", 1)
+	require.NoError(t, s.SetLabel(ctx, []int64{a}, l["otp"], false))
+	src, on := labelRow(t, s, a, l["otp"])
+	require.Equal(t, "manual", src)
+	require.Equal(t, 0, on)
+	got, err := s.MessageLabels(ctx, []int64{a})
+	require.NoError(t, err)
+	require.Empty(t, got[a])
+
+	require.NoError(t, s.SetLabel(ctx, []int64{a, b}, l["bill"], true))
+	got, err = s.MessageLabels(ctx, []int64{a, b})
+	require.NoError(t, err)
+	require.Equal(t, []AppliedLabel{{LabelID: l["bill"]}}, got[a])
+	require.Equal(t, []AppliedLabel{{LabelID: l["bill"]}}, got[b])
+}
+
+func TestSetLabelAtomic(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	otp := labelIDs(t, s)["otp"]
+	require.Error(t, s.SetLabel(t.Context(), []int64{a, 999999}, otp, true))
+	_, on := labelRow(t, s, a, otp)
+	require.Equal(t, -1, on, "nothing written when one message is missing")
+}
+
+func TestThreadLabels(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	l := labelIDs(t, s)
+	_, err := s.db.Execute(ctx, "INSERT INTO threads(id, account_id, subject, last_date) VALUES (1, 1, 't', 2), (2, 1, 'u', 3)")
+	require.NoError(t, err)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2)
+	c := addMessage(t, s, "c", "c@x", "", "", 3)
+	_, err = s.db.Execute(ctx, "UPDATE messages SET thread_id = CASE id WHEN ? THEN 2 ELSE 1 END", c)
+	require.NoError(t, err)
+	setRow(t, s, a, l["otp"], "auto", 1)
+	setRow(t, s, b, l["otp"], "manual", 1)
+	setRow(t, s, c, l["bill"], "auto", 1)
+	setRow(t, s, c, l["otp"], "auto", 1)
+	setRow(t, s, a, l["notice"], "auto", 0)
+	got, err := s.ThreadLabels(ctx, []int64{1, 2})
+	require.NoError(t, err)
+	require.Equal(t, []AppliedLabel{{LabelID: l["otp"]}}, got[1], "one manual row makes the thread's label manual")
+	require.Equal(t, []AppliedLabel{{LabelID: l["otp"], Auto: true}, {LabelID: l["bill"], Auto: true}}, got[2], "in the labels' order")
+}
+
+func TestLabelView(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	otp := labelIDs(t, s)["otp"]
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2)
+	setRow(t, s, a, otp, "auto", 1)
+	setRow(t, s, b, otp, "manual", 0)
+	p, err := s.ListMessages(ctx, View{LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, p.Items, 1)
+	require.Equal(t, a, p.Items[0].ID)
+	_, err = s.ListMessages(ctx, View{LabelID: otp, Unified: "inbox"}, "", 10)
+	require.Error(t, err)
+	_, err = s.ListMessages(ctx, View{LabelID: otp, FolderID: 1}, "", 10)
+	require.Error(t, err)
 }

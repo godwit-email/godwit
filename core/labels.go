@@ -246,3 +246,87 @@ func (s *Service) ReorderLabels(ctx context.Context, ids []int64) error {
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
 	return nil
 }
+
+// labelCond matches a message m with the label (one arg) on.
+const labelCond = "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.label_id = ? AND ml.active = 1)"
+
+// AppliedLabel is a label on a message or thread. Auto: the model set it, and
+// no message of the thread has it set by hand.
+type AppliedLabel struct {
+	LabelID int64
+	Auto    bool
+}
+
+// SetLabel puts the label on the messages (on) or takes it off, by hand: the
+// classifier leaves these rows alone from then on. All or none are written.
+func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int64, on bool) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	rows, err := s.db.Query(ctx, "SELECT count(*) FROM messages WHERE id IN ("+placeholders(len(messageIDs))+")", int64Args(messageIDs)...)
+	if err != nil {
+		return err
+	}
+	if int(store.Int(rows.Values[0][0])) != len(slices.Compact(slices.Sorted(slices.Values(messageIDs)))) {
+		return errors.New("some messages no longer exist")
+	}
+	stmts := make([]sqlite.Statement, len(messageIDs))
+	for i, id := range messageIDs {
+		stmts[i] = sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', ?)
+			ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'manual', active = excluded.active`, Args: []any{id, labelID, b2i(on)}}
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.LabelsChanged})
+	return nil
+}
+
+// MessageLabels returns the labels on each of the messages, in the labels' order.
+func (s *Service) MessageLabels(ctx context.Context, ids []int64) (map[int64][]AppliedLabel, error) {
+	return s.appliedLabels(ctx, "ml.message_id", ids)
+}
+
+// ThreadLabels returns the labels on any message of each thread, in the labels' order.
+func (s *Service) ThreadLabels(ctx context.Context, threadIDs []int64) (map[int64][]AppliedLabel, error) {
+	return s.appliedLabels(ctx, "m.thread_id", threadIDs)
+}
+
+func (s *Service) appliedLabels(ctx context.Context, key string, ids []int64) (map[int64][]AppliedLabel, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	out := map[int64][]AppliedLabel{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT `+key+`, ml.label_id, min(ml.source = 'auto') FROM message_labels ml
+		JOIN messages m ON m.id = ml.message_id JOIN labels l ON l.id = ml.label_id
+		WHERE ml.active = 1 AND `+key+` IN (`+placeholders(len(ids))+`)
+		GROUP BY `+key+`, ml.label_id ORDER BY min(l.position), ml.label_id`, int64Args(ids)...)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows.Values {
+		k := store.Int(r[0])
+		out[k] = append(out[k], AppliedLabel{LabelID: store.Int(r[1]), Auto: store.Int(r[2]) != 0})
+	}
+	return out, nil
+}
+
+func placeholders(n int) string { return strings.TrimSuffix(strings.Repeat("?,", n), ",") }
+
+func int64Args(ids []int64) []any {
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
+}

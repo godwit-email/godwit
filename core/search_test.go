@@ -46,4 +46,10 @@ func TestSearchWithFilters(t *testing.T) {
 	require.Nil(t, ids(SearchQuery{Text: "  "}))
 	require.True(t, SearchQuery{From: "x"}.Filtered())
 	require.False(t, SearchQuery{AccountID: 1, Text: "x"}.Filtered())
+	require.True(t, SearchQuery{LabelID: 1}.Filtered())
+	otp := labelIDs(t, s)["otp"]
+	require.NoError(t, s.SetLabel(t.Context(), []int64{recent}, otp, true))
+	require.NoError(t, s.SetLabel(t.Context(), []int64{old}, otp, false))
+	require.Equal(t, []int64{recent}, ids(SearchQuery{LabelID: otp}))
+	require.Equal(t, []int64{recent}, ids(SearchQuery{Text: "budget", LabelID: otp}))
 }
