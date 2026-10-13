@@ -91,7 +91,7 @@ func (a *App) onEvent(ev events.Event) {
 	a.events++
 	switch ev.Type {
 	case events.SettingsChanged:
-		a.mail.reader.invalidateAvatars()
+		a.mail.reader.invalidateAvatars(false)
 	case events.SyncStarted:
 		a.syncing[ev.AccountID] = true
 	case events.SyncFinished:

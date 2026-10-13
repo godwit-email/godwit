@@ -355,10 +355,13 @@ func (b *msgBody) stopAvatar() {
 	b.avatarGen++
 }
 
-// invalidateAvatars revokes both displayed images and in-flight results;
-// the body's existing image permission is independent of the new policy.
-func (r *reader) invalidateAvatars() {
+// invalidateAvatars clears displayed images and in-flight results, preserving
+// manual grants unless the image policy changed or the reader is closing.
+func (r *reader) invalidateAvatars(revokeManual bool) {
 	for _, b := range r.bodies {
+		if b.avatarAllow && !revokeManual {
+			continue
+		}
 		b.stopAvatar()
 		b.avatar, b.avatarDone, b.avatarAllow, b.avatarBlocked = nil, false, false, true
 	}
@@ -411,7 +414,7 @@ func (b *msgBody) closeView() {
 
 // closeViews closes every page (the App closing).
 func (r *reader) closeViews() {
-	r.invalidateAvatars()
+	r.invalidateAvatars(true)
 	for _, b := range r.bodies {
 		b.closeView()
 	}

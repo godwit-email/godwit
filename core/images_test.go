@@ -73,6 +73,39 @@ func htmlEml(id, body string) string {
 	return strings.Replace(eml(id, "bob@example.com", "alice@example.com", "s", day, body), "text/plain", "text/html", 1)
 }
 
+func TestPrefetchBodyDoesNotWaitForAvatars(t *testing.T) {
+	good := avatarPNG(t)
+	started, release := make(chan struct{}, 1), make(chan struct{})
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "body.example.com" {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		w.Write(good)
+	})
+	t.Cleanup(func() { close(release) })
+	one := addMessage(t, f.s, "first", "bob@example.com", "", `<img src="https://body.example.com/one">`, 1)
+	two := addMessage(t, f.s, "second", "carol@example.net", "", `<img src="https://body.example.com/two">`, 1)
+	f.s.bus.Publish(events.Event{Type: events.MessageReceived, MessageIDs: []int64{one, two}})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("avatar request missing")
+	}
+	require.Eventually(t, func() bool {
+		return f.s.images.Cached("https://body.example.com/one") && f.s.images.Cached("https://body.example.com/two")
+	}, time.Second, 10*time.Millisecond, "a stalled avatar must not hold up either message's body")
+	require.NoError(t, f.s.Close())
+	assert.NotContains(t, f.hits(), "example.net/apple-touch-icon.png", "close stops the queued avatar work")
+}
+
 func TestPrefetchAvatarOnArrival(t *testing.T) {
 	for _, tc := range []struct {
 		name, html, mode string
@@ -152,13 +185,17 @@ func TestPrefetchAvatarBodyByteLimit(t *testing.T) {
 		fmt.Fprintf(&body, `<img src="https://body.example.com/%d">`, i)
 	}
 	id := addMessage(t, f.s, "s", "bob@example.com", "", body.String(), 1)
-	f.s.prefetchImages(t.Context(), id)
+	f.s.bus.Publish(events.Event{Type: events.MessageReceived, MessageIDs: []int64{id}})
+	require.Eventually(t, func() bool {
+		_, ok, _ := f.s.images.LookupAvatar(bg, imagecache.AvatarKey("favicon", "example.com"))
+		return ok && f.s.images.Cached("https://body.example.com/3")
+	}, 2*time.Second, 10*time.Millisecond)
 	want := []string{"example.com/apple-touch-icon.png", "body.example.com/0", "body.example.com/1", "body.example.com/2", "body.example.com/3"}
-	assert.Equal(t, want, f.hits(), "avatar precedes body; 16 MiB stops the fifth body request")
+	assert.ElementsMatch(t, want, f.hits(), "independent avatar and body workers; 16 MiB stops the fifth body request")
 	a, err := f.s.SenderAvatar(t.Context(), id, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, a.Data)
-	assert.Equal(t, want, f.hits())
+	assert.ElementsMatch(t, want, f.hits())
 }
 
 func TestPrefetchAvatarBodyReadFailure(t *testing.T) {
@@ -168,7 +205,11 @@ func TestPrefetchAvatarBodyReadFailure(t *testing.T) {
 	// Fail only the body read; sender/account data remains available.
 	_, err := f.s.db.Execute(t.Context(), "ALTER TABLE messages DROP COLUMN body_html")
 	require.NoError(t, err)
-	f.s.prefetchImages(t.Context(), id)
+	f.s.bus.Publish(events.Event{Type: events.MessageReceived, MessageIDs: []int64{id}})
+	require.Eventually(t, func() bool {
+		_, ok, _ := f.s.images.LookupAvatar(bg, imagecache.AvatarKey("favicon", "example.com"))
+		return ok
+	}, 2*time.Second, 10*time.Millisecond)
 	assert.Equal(t, []string{"example.com/apple-touch-icon.png"}, f.hits())
 	a, err := f.s.SenderAvatar(t.Context(), id, false)
 	require.NoError(t, err)
@@ -201,5 +242,5 @@ func TestAvatarCancellationPrefetchBodyAfterAccountDelete(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 		t.Fatal("account deletion did not cancel the message prefetch worker")
 	}
-	assert.Equal(t, []string{"example.com/apple-touch-icon.png", "body.example.com/one"}, f.hits(), "no subsequent body request after deleting its account")
+	assert.Equal(t, []string{"body.example.com/one"}, f.hits(), "no subsequent body request after deleting its account")
 }

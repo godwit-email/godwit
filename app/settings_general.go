@@ -56,7 +56,7 @@ func (a *App) changeSettings(st core.Settings) {
 // settingsEffects tells the platform and the catalog what changed from old to st.
 func (a *App) settingsEffects(old, st core.Settings) {
 	if st.RemoteImages != old.RemoteImages || !slices.Equal(st.TrustedImageSenders, old.TrustedImageSenders) {
-		a.mail.reader.invalidateAvatars()
+		a.mail.reader.invalidateAvatars(true)
 	}
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)

@@ -258,9 +258,16 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				hits.Add(1)
 				w.Write(readerAvatarSVG)
 			})
-			// Arrive under ask so the second sender is not prefetched/cached.
-			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "First", "plain"))
-			n := h.deliverOne(acc, coretest.Msg("Carol <carol@example.net>", acc.Email, "Second", "plain"))
+			// First-sync imports do not race arrival prefetch against the policy changes below.
+			h.put(acc, "INBOX", coretest.Msg("Bob <bob@example.com>", acc.Email, "First", "plain"))
+			h.put(acc, "INBOX", coretest.Msg("Carol <carol@example.net>", acc.Email, "Second", "plain"))
+			h.syncNow(acc)
+			page, err := h.env.Svc.ListMessages(t.Context(), core.View{Unified: "inbox"}, "", 200)
+			if err != nil || len(page.Items) != 2 {
+				t.Fatalf("initial messages: %d, %v", len(page.Items), err)
+			}
+			m := page.Items[slices.IndexFunc(page.Items, func(m core.MessageSummary) bool { return m.Subject == "First" })]
+			n := page.Items[slices.IndexFunc(page.Items, func(m core.MessageSummary) bool { return m.Subject == "Second" })]
 			st := h.app.settings
 			st.RemoteImages = "auto"
 			h.app.changeSettings(st)
@@ -338,6 +345,51 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				if hits.Load() != 2 {
 					t.Errorf("manual requests %d", hits.Load())
 				}
+			}
+		})
+	}
+}
+
+func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
+	for _, external := range []bool{false, true} {
+		t.Run(strconv.FormatBool(external), func(t *testing.T) {
+			var hits atomic.Int64
+			h, acc := avatarHarness(t, "ask", func(w http.ResponseWriter, req *http.Request) {
+				hits.Add(1)
+				w.Write(readerAvatarSVG)
+			})
+			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			h.click("加载图片")
+			b := h.app.mail.reader.bodies[m.ID]
+			h.until("manual avatar", func() bool { return b.avatar != nil })
+			before := h.app.events
+			st := h.app.settings
+			st.Theme = "dark"
+			if external {
+				if _, err := h.env.Svc.SetSettings(t.Context(), st); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				h.app.changeSettings(st)
+			}
+			h.until("settings event", func() bool {
+				return h.app.events > before && h.app.settingsVer == h.app.settingsSavedVer
+			})
+			h.app.load()
+			h.until("new settings loaded", func() bool { return h.app.settings.Theme == "dark" && h.app.accountsGen == h.app.loadGen })
+			if b.avatar == nil || !b.avatarAllow || !b.allow || hits.Load() != 1 {
+				t.Fatalf("unrelated setting revoked permission: avatar=%v manual=%v body=%v requests=%d", b.avatar != nil, b.avatarAllow, b.allow, hits.Load())
+			}
+			st.RemoteImages = "trusted"
+			if _, err := h.env.Svc.SetSettings(t.Context(), st); err != nil {
+				t.Fatal(err)
+			}
+			h.app.load()
+			h.until("changed policy loaded", func() bool { return h.app.settings.RemoteImages == "trusted" })
+			if b.avatar != nil || b.avatarAllow {
+				t.Fatal("relevant policy change retained manual permission")
 			}
 		})
 	}
