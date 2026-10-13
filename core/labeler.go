@@ -87,14 +87,17 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Until the presets are seeded (a start with no language known), there is
-	// nothing to classify against: the mail waits for them.
-	if seeded, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'labels_seeded'"); err != nil || len(seeded.Values) == 0 {
+	// New mail waits for the presets (a start with no language known seeds
+	// none yet), to be classified against them; a rescan, asked for, runs
+	// against the labels there are.
+	seeded, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'labels_seeded'")
+	if err != nil {
 		return 0, err
 	}
+	newMail := st.AutoLabel && len(seeded.Values) > 0
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.labeled_at FROM messages m
 		WHERE (m.labeled_at = 0 OR (? AND m.labeled_at IS NULL)) AND `+inboxCond+`
-		ORDER BY m.labeled_at IS NULL, m.date DESC, m.id DESC LIMIT ?`, b2i(st.AutoLabel), labelBatch)
+		ORDER BY m.labeled_at IS NULL, m.date DESC, m.id DESC LIMIT ?`, b2i(newMail), labelBatch)
 	if err != nil {
 		return 0, err
 	}

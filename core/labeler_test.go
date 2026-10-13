@@ -536,3 +536,27 @@ func TestClassifyStopsWhenAutoOff(t *testing.T) {
 	require.Greater(t, store.Int(labeledAt(t, s, b)), int64(0))
 	require.Nil(t, labeledAt(t, s, a))
 }
+
+// TestRescanBeforePresets: a rescan asked for before the presets are seeded
+// (headless, through the Local API) runs against the labels there are; only
+// new mail waits for the presets.
+func TestRescanBeforePresets(t *testing.T) {
+	s := newLabelService(t, "", "")
+	l, err := s.CreateLabel(t.Context(), LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	useLabelJudge(s, &fakeJudge{p: map[string]float64{l.Slug: 0.9}})
+	a := addMessage(t, s, "a", "a@x", "", "", time.Now().Unix())
+	n, err := s.RescanLabels(t.Context(), 30, false)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	fresh := addMessage(t, s, "new", "n@x", "", "", time.Now().Unix())
+	_, err = s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	p, err := s.PendingLabels(t.Context())
+	require.NoError(t, err)
+	require.Zero(t, p, "the rescan finished")
+	got, err := s.MessageLabels(t.Context(), []int64{a})
+	require.NoError(t, err)
+	require.Equal(t, []AppliedLabel{{LabelID: l.ID, Auto: true}}, got[a])
+	require.Nil(t, labeledAt(t, s, fresh), "new mail still waits for the presets")
+}
