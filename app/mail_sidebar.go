@@ -63,6 +63,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
 		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
 		ui.Box(c).Height(th.Space(2.5))
+		p.labelNav(c)
 		for _, acc := range a.accounts {
 			p.account(c, acc)
 		}

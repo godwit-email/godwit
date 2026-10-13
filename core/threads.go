@@ -10,10 +10,12 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// View selects what a list shows: one folder or a unified view ("inbox", "starred").
+// View selects what a list shows: one folder, a unified view ("inbox",
+// "starred") or one label's mail across accounts. Exactly one is set.
 type View struct {
 	FolderID int64
 	Unified  string
+	LabelID  int64
 }
 
 // ThreadSummary is a conversation as listed. Count, Unread and Flagged cover the whole thread.

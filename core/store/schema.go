@@ -267,4 +267,43 @@ var Migrations = [][]string{{
 	// as the signature and drafts refer to it (cid:<cid>).
 	`CREATE TABLE signature_images (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		cid TEXT NOT NULL, content_type TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account_id, cid))`,
+}, {
+	// Mail labels (spec 2026-10-13): slug never changes, so a later sync can use it as
+	// an IMAP keyword. A message_labels row set by hand (source manual) wins over the
+	// classifier; active 0 is a label the user took off. labeled_at: NULL new mail
+	// waiting for the classifier, 0 a rescan's target, else when it was classified.
+	`CREATE TABLE labels (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL, icon TEXT NOT NULL,
+		builtin INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL)`,
+	`CREATE TABLE message_labels (message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+		source TEXT NOT NULL, active INTEGER NOT NULL, PRIMARY KEY(message_id, label_id))`,
+	`CREATE INDEX message_labels_label ON message_labels(label_id, active)`,
+	`ALTER TABLE messages ADD COLUMN labeled_at INTEGER`,
+	`CREATE INDEX messages_labeled ON messages(folder_id, labeled_at)`,
+}, {
+	// Labels set by hand outlive the cached rows they are on (a UIDVALIDITY reset,
+	// a move the server did not report): a row dropped stashes them by account
+	// and label_fp, and hands them to the other copies; a copy inserted later
+	// takes the stash back. SetLabel keeps the stash at the user's last choice.
+	// label_fp is a SHA-256 the import computes (of the Message-ID, else the
+	// headers and the whole text), so the stash holds no mail content.
+	`ALTER TABLE messages ADD COLUMN label_fp TEXT`,
+	`CREATE INDEX messages_label_fp ON messages(account_id, label_fp)`,
+	`CREATE TABLE label_keep (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, fp TEXT NOT NULL,
+		label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE, active INTEGER NOT NULL, PRIMARY KEY(account_id, fp, label_id))`,
+	`CREATE TRIGGER messages_label_stash BEFORE DELETE ON messages
+		WHEN old.label_fp IS NOT NULL AND EXISTS (SELECT 1 FROM message_labels WHERE message_id = old.id AND source = 'manual')
+			AND EXISTS (SELECT 1 FROM accounts WHERE id = old.account_id) BEGIN
+		INSERT OR REPLACE INTO label_keep(account_id, fp, label_id, active)
+			SELECT old.account_id, old.label_fp, label_id, active FROM message_labels WHERE message_id = old.id AND source = 'manual';
+		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
+			SELECT m.id, ml.label_id, 'manual', ml.active FROM messages m JOIN message_labels ml ON ml.message_id = old.id AND ml.source = 'manual'
+			WHERE m.account_id = old.account_id AND m.label_fp = old.label_fp AND m.id != old.id;
+	END`,
+	`CREATE TRIGGER messages_label_keep AFTER INSERT ON messages
+		WHEN new.label_fp IS NOT NULL AND EXISTS (SELECT 1 FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp) BEGIN
+		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
+			SELECT new.id, label_id, 'manual', active FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp;
+	END`,
 }}

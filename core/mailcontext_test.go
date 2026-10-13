@@ -124,3 +124,21 @@ func TestMailContextReadsOnlyTheDatabase(t *testing.T) {
 	require.Equal(t, logins, e.im.Logins(), "no IMAP connection")
 	require.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"), "no attachment fetched")
 }
+
+// newLabelService is newMailContextService with a chosen data dir ("" for a
+// new one) and system language. Without LabelMail, the labeler does not run.
+func newLabelService(t *testing.T, dir, lang string) *Service {
+	t.Helper()
+	keyring.MockInit()
+	if dir == "" {
+		dir = t.TempDir()
+	}
+	s, err := New(t.Context(), Options{DataDir: dir, SystemLanguage: lang})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	_, err = s.db.Execute(t.Context(), "INSERT OR IGNORE INTO accounts(id, email) VALUES (1, 'me@x')")
+	require.NoError(t, err)
+	_, err = s.db.Execute(t.Context(), "INSERT OR IGNORE INTO folders(id, account_id, name, role) VALUES (1, 1, 'INBOX', 'inbox')")
+	require.NoError(t, err)
+	return s
+}

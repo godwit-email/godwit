@@ -41,6 +41,7 @@ type mailItem struct {
 	Count, Unread, Flagged int
 	Attach                 bool
 	Msg                    core.MessageSummary // a message row's own summary
+	Labels                 []core.AppliedLabel
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
@@ -302,7 +303,7 @@ func fetchItems(ctx context.Context, svc *core.Service, v core.View, threads boo
 			}
 		}
 		if cursor == "" || !toEnd && len(out) >= want {
-			return out, cursor, nil
+			return out, cursor, withLabels(ctx, svc, out)
 		}
 	}
 }
@@ -451,7 +452,11 @@ func unreadSub(n int) string {
 
 // Title names the view the route shows, with its unread count.
 func (p *mailPage) Title() (string, string) {
-	switch v := p.a.route.View; v.Unified {
+	v := p.a.route.View
+	if l, ok := p.a.label(v.LabelID); ok && v.LabelID != 0 {
+		return l.Name, unreadSub(l.Unread)
+	}
+	switch v.Unified {
 	case "inbox":
 		return i18n.T("mail.unified.inbox"), unreadSub(p.inboxUnread())
 	case "starred":
@@ -976,6 +981,7 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 		if line := p.folderLine(it); line != "" {
 			kit.Text(c, line, t.Text.Sm).TextColor(t.Muted).SingleLine()
 		}
+		p.a.rowChips(c, it.Labels)
 	})
 }
 
@@ -1059,6 +1065,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		if it.Snippet != "" {
 			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
+		p.a.rowChips(c, it.Labels)
 	})
 }
 
@@ -1081,9 +1088,22 @@ func (p *mailPage) search() {
 	a := p.a
 	q, gen := sq.Text, p.searchGen
 	var found []core.MessageSummary
+	labels := map[int64][]core.AppliedLabel{}
 	a.do(func(ctx context.Context) (err error) {
-		found, err = a.svc.SearchWith(ctx, sq, searchLimit)
-		return err
+		if found, err = a.svc.SearchWith(ctx, sq, searchLimit); err != nil {
+			return err
+		}
+		items := make([]mailItem, len(found))
+		for i, m := range found {
+			items[i] = messageItem(m)
+		}
+		if err = withLabels(ctx, a.svc, items); err != nil {
+			return err
+		}
+		for i := range found {
+			labels[found[i].ID] = items[i].Labels
+		}
+		return nil
 	}, func(err error) {
 		if gen != p.searchGen {
 			return
@@ -1096,6 +1116,7 @@ func (p *mailPage) search() {
 		r := p.a.route
 		for i, m := range found {
 			it := messageItem(m)
+			it.Labels = labels[m.ID]
 			if p.found.cur < 0 && (m.ID == r.MessageID || r.MessageID == 0 && m.ThreadID == r.ThreadID && r.ThreadID != 0) {
 				p.found.cur = i // the mail open stays chosen among the results
 				p.found.sel.Add(it.key())
@@ -1144,10 +1165,13 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		names[acc.ID] = acc.Email
 	}
 	v, search := p.view, p.searched
+	var labeled map[int64][]core.AppliedLabel // a label view's messages' labels
 	inView := func(m core.MessageSummary) bool {
 		switch {
 		case search:
 			return true
+		case v.LabelID != 0:
+			return slices.ContainsFunc(labeled[m.ID], func(l core.AppliedLabel) bool { return l.LabelID == v.LabelID })
 		case v.Unified == "inbox":
 			return role[m.FolderID] == "inbox"
 		case v.Unified == "starred":
@@ -1172,6 +1196,16 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 				continue
 			}
 			msgs = append(msgs, th.Messages...)
+		}
+		if v.LabelID != 0 && !search {
+			ids := make([]int64, len(msgs))
+			for i, m := range msgs {
+				ids[i] = m.ID
+			}
+			var err error
+			if labeled, err = a.svc.MessageLabels(ctx, ids); err != nil {
+				return err
+			}
 		}
 		op = act
 		switch act {

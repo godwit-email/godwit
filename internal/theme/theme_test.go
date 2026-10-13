@@ -216,3 +216,28 @@ func TestLine(t *testing.T) {
 		}
 	}
 }
+
+// TestLabelColors: each label color is a Tailwind step set, -100/-200/-700 in
+// the light and -950/-800/-300 in the dark; gray is neutral with Primary's dot.
+func TestLabelColors(t *testing.T) {
+	lc := func(dot ui.Color, fill, edge, text p.OKLCH) LabelColor {
+		return LabelColor{Dot: dot, Fill: fill.Color(), Edge: edge.Color(), Text: text.Color()}
+	}
+	l, d := Light(), Dark()
+	for i, n := range LabelNames {
+		if l.Labels[i] == (LabelColor{}) || d.Labels[i] == (LabelColor{}) {
+			t.Errorf("label color %s unset", n)
+		}
+	}
+	for name, c := range map[string]struct{ got, want LabelColor }{
+		"light red":  {l.Label("red"), lc(p.Red500.Color(), p.Red100, p.Red200, p.Red700)},
+		"dark red":   {d.Label("red"), lc(p.Red500.Color(), p.Red950, p.Red800, p.Red300)},
+		"light gray": {l.Label("gray"), lc(l.Primary, p.Neutral100, p.Neutral200, p.Neutral700)},
+		"dark gray":  {d.Label("gray"), lc(d.Primary, p.Neutral800, p.Neutral700, p.Neutral300)},
+		"light pink": {l.Label("pink"), lc(p.Pink500.Color(), p.Pink100, p.Pink200, p.Pink700)},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %+v, want %+v", name, c.got, c.want)
+		}
+	}
+}
