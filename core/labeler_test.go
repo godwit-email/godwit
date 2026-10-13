@@ -42,7 +42,11 @@ func (j *fakeJudge) Ask(_ context.Context, state string, qs []ai.Question) ([]ai
 	}
 	out := make([]ai.Answer, len(qs))
 	for i, q := range qs {
-		out[i] = ai.Answer{Name: q.Name, Probability: j.p[q.Name], Refused: j.refused[q.Name]}
+		p := j.p[q.Name]
+		out[i] = ai.Answer{Type: ai.Predicate, Name: q.Name, Probability: &p}
+		if j.refused[q.Name] {
+			out[i] = ai.Answer{Type: ai.Refusal, Name: q.Name}
+		}
 	}
 	return out, nil
 }
@@ -98,7 +102,7 @@ func TestClassifyAppliesAuto(t *testing.T) {
 	require.Equal(t, []AppliedLabel{{LabelID: l["otp"], Auto: true}}, got[a], "0.5 is yes, just under is no")
 	require.Greater(t, store.Int(labeledAt(t, s, a)), int64(0))
 	require.Equal(t, []string{"otp", "bill", "order", "travel", "calendar", "notice", "newsletter"}, qNames(j.qs[0]))
-	require.Equal(t, ai.YesNo, j.qs[0][0].Kind)
+	require.Equal(t, ai.Predicate, j.qs[0][0].Type)
 	require.Contains(t, j.qs[0][0].Instructions, "验证码")
 	require.Contains(t, j.qs[0][0].Instructions, "一次性验证码")
 	require.Contains(t, j.states[0], "<untrusted_email")

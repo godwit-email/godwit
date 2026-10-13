@@ -136,7 +136,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				return done, err
 			}
 			for _, a := range answers {
-				yes[a.Name] = !a.Refused && a.Probability >= labelYes
+				yes[a.Name] = a.Type == ai.Predicate && a.Probability != nil && *a.Probability >= labelYes // a refusal is no
 			}
 		}
 		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes)); err != nil {
@@ -175,7 +175,7 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 	for _, r := range rows.Values {
 		l := Label{ID: store.Int(r[0]), Slug: store.Str(r[1]), Name: store.Str(r[2]), Description: store.Str(r[3])}
 		labels = append(labels, l)
-		qs = append(qs, ai.Question{Name: l.Slug, Kind: ai.YesNo,
+		qs = append(qs, ai.Question{Name: l.Slug, Type: ai.Predicate,
 			Instructions: strings.TrimSpace(fmt.Sprintf("Answer yes if this email belongs to the user's label %q. %s", l.Name, l.Description))})
 	}
 	return labels, qs, newest, nil
