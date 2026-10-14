@@ -86,7 +86,7 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 				<div
 					id="name-origin"
 					role="tooltip"
-					class="pointer-events-none invisible absolute top-full left-0 z-10 w-64 translate-y-1 pt-2 opacity-0 transition duration-200 ease-out group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-150"
+					class="pointer-events-none invisible absolute top-full left-0 z-10 w-64 translate-y-1 pt-2 opacity-0 transition duration-200 ease-out group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-150"
 				>
 					<div class="rounded-xl bg-background p-3.5 text-sm leading-relaxed text-muted-foreground shadow-float">
 						<div class="mb-1 font-medium text-foreground italic">Limosa lapponica</div>
@@ -195,7 +195,7 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 									<Icon name={p.main.icon} class="size-[18px]" />
 									{p.main.label}
 								</a>
-								<!-- Hover, focus or a tap opens the other builds (the script toggles data-open for touch). -->
+								<!-- Hover, or a click or tap, opens the other builds; the script keeps data-open to one menu and closes it on an outside click or Escape. -->
 								<div data-more class="group relative mt-3 text-center">
 									<button type="button" aria-expanded="false" class="inline-flex items-center gap-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
 										{s.otherVersions}
@@ -268,13 +268,23 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 				primary.hidden = true;
 				document.querySelector<HTMLElement>("[data-store]")!.classList.replace("hidden", "inline-flex");
 			}
-			for (const more of document.querySelectorAll<HTMLElement>("[data-more]")) {
-				const button = more.querySelector("button")!;
-				button.addEventListener("click", () => {
-					const open = more.toggleAttribute("data-open");
-					button.setAttribute("aria-expanded", String(open));
+			const menus = [...document.querySelectorAll<HTMLElement>("[data-more]")];
+			const setOpen = (more: HTMLElement, open: boolean) => {
+				more.toggleAttribute("data-open", open);
+				more.querySelector("button")!.setAttribute("aria-expanded", String(open));
+			};
+			for (const more of menus) {
+				more.querySelector("button")!.addEventListener("click", () => {
+					const open = !more.hasAttribute("data-open");
+					for (const m of menus) setOpen(m, m === more && open);
 				});
 			}
+			document.addEventListener("click", (e) => {
+				for (const m of menus) if (!m.contains(e.target as Node)) setOpen(m, false);
+			});
+			document.addEventListener("keydown", (e) => {
+				if (e.key === "Escape") for (const m of menus) setOpen(m, false);
+			});
 			for (const demo of document.querySelectorAll<HTMLElement>("[data-demo]")) demo.dataset.platform = os;
 
 			for (const b of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
