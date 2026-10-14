@@ -418,3 +418,35 @@ func TestRegistryScriptToNativeNeedsConsent(t *testing.T) {
 	assert.True(t, p.NeedsGrant)
 	assert.False(t, p.Enabled)
 }
+
+// A release revoked while its file downloads is not installed as listed.
+func TestRegistryInstallRacingRevocation(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	core.SetRegistryHooksForTest(t, func() {
+		rs.Publish(t, coretest.Registry(t0.Add(time.Hour))) // revoked meanwhile
+		require.NoError(t, s.RefreshPluginRegistry(ctx))
+	}, false)
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.Error(t, err)
+	_, ok := pluginByName(t, s, "dlx")
+	assert.False(t, ok, "nothing installed")
+}
+
+// A refresh that cannot stage its cache changes no plugin.
+func TestRegistryRefreshStagesBeforeApplying(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	core.SetRegistryHooksForTest(t, nil, true)
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour))) // would revoke it
+	require.Error(t, s.RefreshPluginRegistry(ctx))
+	p := nativeInfo(t, s, "dlx")
+	assert.True(t, p.Enabled, "the revocation was not applied")
+	assert.Equal(t, "listed", p.Trust)
+}

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
@@ -346,18 +347,31 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	if len(texts) == 0 {
 		return src, nil
 	}
-	out := make([]string, 0, len(texts))
-	for start := 0; start < len(texts); { // batches within the ABI's request limit, in order
+	// Long blocks go in pieces, and pieces in batches, each request well within the ABI's limit.
+	var pieces []draftPiece
+	for i, t := range texts {
+		for _, p := range splitText(t, draftPieceBytes) {
+			p.leaf = i
+			pieces = append(pieces, p)
+		}
+	}
+	out := make([]string, len(texts))
+	for start := 0; start < len(pieces); {
 		end, size := start, 0
-		for end < len(texts) && (end == start || size+len(texts[end]) <= draftBatch) {
-			size += len(texts[end])
+		var batch []string
+		for end < len(pieces) && (end == start || size+jsonLen(pieces[end].text) <= draftBatch) {
+			size += jsonLen(pieces[end].text)
+			batch = append(batch, pieces[end].text)
 			end++
 		}
-		res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: texts[start:end], Target: target})
+		res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: batch, Target: target})
 		if err != nil {
 			return "", err
 		}
-		out = append(out, res.Texts...)
+		for k, tx := range res.Texts {
+			p := pieces[start+k]
+			out[p.leaf] += tx + p.sep
+		}
 		start = end
 	}
 	for i, n := range leaves {
@@ -387,8 +401,45 @@ func isBlockNode(c *html.Node) bool {
 		c.DataAtom == atom.Hr || hasBlock(c))
 }
 
-// draftBatch caps the text of one translate request, well under the ABI's 1 MiB.
-const draftBatch = 256 << 10
+// draftBatch caps the JSON-encoded text of one translate request, well under
+// the ABI's 1 MiB; draftPieceBytes caps a piece of a long block (JSON may
+// grow it sixfold: "<" is \u003c).
+const (
+	draftBatch      = 256 << 10
+	draftPieceBytes = 32 << 10
+)
+
+// draftPiece is a block's text, or a piece of it, and what joins it to the next piece.
+type draftPiece struct {
+	text, sep string
+	leaf      int
+}
+
+// splitText cuts s into pieces of at most max bytes: at a space or line
+// break in the second half of each piece (the separator kept as sep), else at
+// a rune boundary.
+func splitText(s string, max int) []draftPiece {
+	var out []draftPiece
+	for len(s) > max {
+		cut := max
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		if i := strings.LastIndexAny(s[:cut], " \n"); i > max/2 {
+			out = append(out, draftPiece{text: s[:i], sep: s[i : i+1]})
+			s = s[i+1:]
+			continue
+		}
+		out = append(out, draftPiece{text: s[:cut]})
+		s = s[cut:]
+	}
+	return append(out, draftPiece{text: s})
+}
+
+func jsonLen(s string) int {
+	b, _ := json.Marshal(s)
+	return len(b)
+}
 
 // hasBlock reports whether a block or pre element is inside n.
 func hasBlock(n *html.Node) bool {

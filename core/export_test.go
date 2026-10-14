@@ -156,3 +156,11 @@ func SetNativeStartForTest(t interface{ Cleanup(func()) }, d time.Duration) {
 	nativeStart = d
 	t.Cleanup(func() { nativeStart = old })
 }
+
+// SetRegistryHooksForTest runs downloaded after an install's download, before
+// it commits, and fails a refresh's cache staging when stageFails.
+func SetRegistryHooksForTest(t interface{ Cleanup(func()) }, downloaded func(), stageFails bool) {
+	oldD, oldS := registryDownloaded, registryStageFails
+	registryDownloaded, registryStageFails = downloaded, stageFails
+	t.Cleanup(func() { registryDownloaded, registryStageFails = oldD, oldS })
+}

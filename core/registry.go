@@ -25,7 +25,6 @@ import (
 
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
-	"github.com/godwit-email/godwit/core/store"
 )
 
 // RegistrySource is where the registry comes from and the key it is signed with.
@@ -50,6 +49,13 @@ const (
 
 // registryFirst is how long after start the first background refresh waits.
 var registryFirst = time.Minute
+
+// Tests: registryDownloaded runs after an install's download, before it
+// commits; registryStageFails fails a refresh's cache staging.
+var (
+	registryDownloaded func()
+	registryStageFails bool
+)
 
 // DefaultRegistry is Godwit's own registry, nil while it has no key.
 var DefaultRegistry = func() *RegistrySource {
@@ -141,12 +147,38 @@ func (s *Service) refreshRegistry(ctx context.Context, src *RegistrySource) erro
 	if old, err := s.cachedRegistry(src); err == nil && reg.Updated.Before(old.Updated) {
 		return ErrRegistryStale
 	}
-	// Applied first: a failure keeps the old cache, and the next refresh tries again.
+	// The new cache is written before anything changes (a full disk fails
+	// here, with nothing applied) and renamed into place once it is applied.
+	tmp, err := s.stageRegistryCache(cachedRegistryFile{Body: body, Sig: sig})
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp) // gone once renamed
 	if err := s.applyRegistry(ctx, reg); err != nil {
 		return err
 	}
-	b, _ := json.Marshal(cachedRegistryFile{Body: body, Sig: sig})
-	return store.WriteFileAtomic(s.registryCache(), b)
+	return os.Rename(tmp, s.registryCache())
+}
+
+// stageRegistryCache writes c to a synced temporary file beside the cache.
+// shortcut: a crash between staging and rename leaves the .registry-* file behind; sweep the data dir if they pile up.
+func (s *Service) stageRegistryCache(c cachedRegistryFile) (string, error) {
+	if registryStageFails {
+		return "", errors.New("plugin registry: cannot write its cache (test)")
+	}
+	b, _ := json.Marshal(c)
+	f, err := os.CreateTemp(s.dataDir, ".registry-*")
+	if err != nil {
+		return "", err
+	}
+	if _, err = f.Write(b); err == nil {
+		err = f.Sync()
+	}
+	if err = errors.Join(err, f.Close()); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, limit int64) ([]byte, error) {
@@ -397,7 +429,37 @@ func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (P
 	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), rel.Manifest, 0o600); err != nil {
 		return PluginInfo{}, err
 	}
+	if registryDownloaded != nil {
+		registryDownloaded()
+	}
+	// The download ran unlocked; the release may have been revoked since. Check
+	// again and install while no refresh can commit in between.
+	s.registryMu.Lock()
+	defer s.registryMu.Unlock()
+	if now, err := s.cachedRegistry(src); err != nil || !listsArtifact(now, name, rel.Version, art.SHA256) {
+		return PluginInfo{}, errors.Join(fmt.Errorf("plugin %s %s is no longer in the plugin registry", name, rel.Version), err)
+	}
 	return s.installPlugin(ctx, dir, "listed")
+}
+
+// listsArtifact reports whether reg has plugin name's release version with a file of this SHA-256.
+func listsArtifact(reg plugins.Registry, name, version, sha string) bool {
+	for _, p := range reg.Plugins {
+		if p.Name != name {
+			continue
+		}
+		for _, rel := range p.Releases {
+			if rel.Version != version {
+				continue
+			}
+			for _, a := range rel.Artifacts {
+				if a.SHA256 == sha {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // downloadArtifact writes a's file to path if it is exactly a.Size bytes with a.SHA256.

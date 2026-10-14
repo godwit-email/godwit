@@ -415,10 +415,28 @@ func TestTranslateDraftHTMLBatches(t *testing.T) {
 	src := "<p>" + block + "1</p><p>" + block + "2</p><p>" + block + "3</p>"
 	got, err := e.s.translateDraftHTML(t.Context(), "dlx", src, "fr")
 	require.NoError(t, err)
-	i1, i2, i3 := strings.Index(got, "[fr] "+block+"1"), strings.Index(got, "[fr] "+block+"2"), strings.Index(got, "[fr] "+block+"3")
-	assert.True(t, i1 >= 0 && i1 < i2 && i2 < i3, "all three, in order")
+	plain := strings.ReplaceAll(got, "[fr] ", "") // each piece of a long block comes back prefixed by the fake
+	i1, i2, i3 := strings.Index(plain, block+"1"), strings.Index(plain, block+"2"), strings.Index(plain, block+"3")
+	assert.True(t, i1 >= 0 && i1 < i2 && i2 < i3, "all three, whole and in order")
 	reqs := translateRequests(t, record)
 	assert.Greater(t, len(reqs), 1, "more than one request")
+	for _, r := range reqs {
+		b, _ := json.Marshal(r)
+		assert.Less(t, len(b), 1<<20, "each within the ABI's request limit")
+	}
+}
+
+// One block over the ABI's request limit, and text that grows when JSON-encoded, still fit.
+func TestTranslateDraftHTMLSplitsLargeBlocks(t *testing.T) {
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	words := strings.Repeat("word ", 300<<10)             // 1.5 MiB in one paragraph
+	angles := strings.Repeat("&lt;&lt;&lt;&lt; ", 40<<10) // < encodes as < in JSON: six bytes each
+	got, err := e.s.translateDraftHTML(t.Context(), "dlx", "<p>"+words+"</p><p>"+angles+"</p>", "fr")
+	require.NoError(t, err)
+	assert.Contains(t, got, "word word", "the long paragraph came back")
+	reqs := translateRequests(t, record)
+	require.Greater(t, len(reqs), 2)
 	for _, r := range reqs {
 		b, _ := json.Marshal(r)
 		assert.Less(t, len(b), 1<<20, "each within the ABI's request limit")
