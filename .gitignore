@@ -5,3 +5,12 @@
 web/node_modules/
 web/dist/
 /.mygo/
+.DS_Store
+/output/
+/tmp/
+/.cloudflare/
+.claude/worktrees/
+.env*
+!.env.example
+!.env.sample
+.dev.vars
