@@ -160,7 +160,7 @@ const state: ComposeState = {
   updatedAt: 0,
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
   text,
-  wit: { enabled: true, skills: [], languages: [], chips: [], model: "" },
+  wit: { enabled: true, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
 const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
 const pending: Approval = {
@@ -605,6 +605,13 @@ test("⌘K goes to Wit only with a model and unlocked; else the link popover", a
   vi.mocked(api.ask).mockResolvedValue(7);
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "x{Enter}");
   await waitFor(async () => expect(await body()).toHaveAttribute("data-cmdk", "false"));
+});
+
+test("⌘K in the translate-only panel keeps the link popover: there is nothing to ask", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, wit: { ...state.wit, translateOnly: true } });
+  render(<ComposePage />);
+  expect(await body()).toHaveAttribute("data-cmdk", "false");
+  expect(await body()).toHaveAttribute("placeholder", ""); // nothing to tell Wit on the right
 });
 
 test("⌘K without a model keeps the link popover", async () => {

@@ -33,6 +33,7 @@ var composeKeys = []string{
 	"wit.compose.review.rewrite_plain", "wit.compose.review_body", "wit.compose.applied", "wit.compose.undo",
 	"wit.compose.cmdk", "wit.compose.cmdk.input", "wit.compose.cmdk.esc", "wit.compose.cmdk.go",
 	"wit.compose.adjust", "wit.compose.translate", "wit.compose.translate_to", "wit.compose.source",
+	"wit.compose.translate_only", "wit.compose.translate_only.models",
 	"wit.compose.history", "shell.resize", "wit.tool.update_draft", "wit.tool.update_selection", "wit.tool.create_draft", "wit.tool.classify_mail",
 }
 

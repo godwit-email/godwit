@@ -9,7 +9,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14 and the zh-CN copy)
 
 | page      | states                                                         |
 | --------- | -------------------------------------------------------------- |
-| compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`   |
+| compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates) |
 | wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`            |
 | signature | `filled`                                                       |
 | reader    | `basic` (not in the design set)                                |

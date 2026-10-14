@@ -63,6 +63,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   text,
   wit: {
     enabled: true,
+    translateOnly: false,
     skills: [
       { id: "formal", label: "更正式", hint: "语气" },
       { id: "friendly", label: "更友好", hint: "语气" },

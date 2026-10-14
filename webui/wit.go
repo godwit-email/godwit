@@ -17,8 +17,11 @@ import (
 
 // WitInfo is what the Wit panel offers for the draft.
 type WitInfo struct {
-	// Enabled means a model is configured: the panel shows.
+	// Enabled means the panel shows: a model is configured, or a plugin translates.
 	Enabled bool `json:"enabled"`
+	// TranslateOnly: no model, but a plugin translates. The panel offers its
+	// 翻译 menu alone: no input, no 调整, no chips.
+	TranslateOnly bool `json:"translateOnly"`
 	// Skills are the 调整 menu's; Languages the 翻译 menu's, the reading
 	// language first.
 	Skills    []Skill    `json:"skills"`
@@ -147,7 +150,8 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	if err != nil {
 		return WitInfo{}, err
 	}
-	info := WitInfo{Enabled: st.DefaultModel != "", Chips: []string{}, Model: modelLabel(st.DefaultModel)}
+	plugin := strings.HasPrefix(st.Translator, "plugin/") // translate-draft runs on it without a model (core assistSkill)
+	info := WitInfo{Enabled: st.DefaultModel != "" || plugin, TranslateOnly: st.DefaultModel == "" && plugin, Chips: []string{}, Model: modelLabel(st.DefaultModel)}
 	for _, id := range adjustSkills {
 		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}

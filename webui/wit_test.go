@@ -568,3 +568,27 @@ func TestComposeAskQuotes(t *testing.T) {
 	require.Equal(t, "context", evs[0].Kind)
 	assert.Equal(t, hits[0].ID, evs[0].Citations[0].MessageID)
 }
+
+// No model but a translation plugin: the panel shows, for translating alone.
+func TestComposeWitInfoTranslateOnly(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Translator = "plugin/dlx"
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.True(t, info.Enabled)
+	assert.True(t, info.TranslateOnly)
+	assert.NotEmpty(t, info.Languages)
+
+	llm := f.e.LLM(t)
+	t.Cleanup(llm.Release)
+	info, err = f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.True(t, info.Enabled)
+	assert.False(t, info.TranslateOnly, "with a model the whole panel shows")
+}

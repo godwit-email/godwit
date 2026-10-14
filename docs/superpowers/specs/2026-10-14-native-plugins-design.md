@@ -451,7 +451,7 @@ P0 全部通过，可以开始 P1。
 
 ### P4 升级与草稿翻译
 
-2026-10-14 完成，计划见 `docs/superpowers/plans/2026-10-14-native-plugins-p4.md`。升级按钮在 P2 已做。另外修了一个 P1 留下的问题：子进程崩溃、超时或空闲退出后重启时不会重新 `configure`；现在每个新进程先核对 `describe`、再拿到当前配置。草稿翻译按 HTML 块进行（不用 `internal/richtext`，它依赖界面库）。没有模型时撰写页的 Wit 面板不显示，所以那时没有「翻译草稿」入口，是否要只放出翻译的模式待定。
+2026-10-14 完成，计划见 `docs/superpowers/plans/2026-10-14-native-plugins-p4.md`。升级按钮在 P2 已做。另外修了一个 P1 留下的问题：子进程崩溃、超时或空闲退出后重启时不会重新 `configure`；现在每个新进程先核对 `describe`、再拿到当前配置。草稿翻译按 HTML 块进行（不用 `internal/richtext`，它依赖界面库）。没有模型、但翻译方式选了插件时，撰写页的 Wit 面板进入「只有翻译」模式（2026-10-15 加入）：只有「翻译」菜单与审阅提案，没有输入框、「调整」和标签，⌘K 仍是链接，编辑器不提示「在右边告诉 Wit」，面板里一行说明和「添加模型」入口。
 
 - [ ] 名单版本比较与「更新」按钮（复用 P2 安装路径）。
 - [ ] `translate-draft` 走插件：`richtext.FromComposeHTML` → 逐块翻译文本 → `ToHTML` → 现有 `proposeUpdate` 提案流程。

@@ -13,7 +13,16 @@ const runStart = { run: 2, conversation: 1, revision: 1, conflict: false };
 
 const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; setup(): void }> = {
   compose: {
-    states: ["plain", "streaming", "inline", "rewrite", "applied", "cmdk", "signature"],
+    states: [
+      "plain",
+      "streaming",
+      "inline",
+      "rewrite",
+      "applied",
+      "cmdk",
+      "signature",
+      "translate",
+    ],
     entry: () => import("@/compose/main"),
     setup() {
       const withBody = ["inline", "rewrite", "cmdk"].includes(state);
@@ -43,13 +52,19 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Load": async () => ({
           ...fx.compose(mode, withBody),
           revision,
+          ...(state === "translate" && {
+            wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
+          }),
           ...(state === "signature" && {
             signature: "-- \nAlex Chen\nPartnerships · Example Co.",
             signatureImages: [fx.logo],
           }),
         }),
         "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision }),
-        "ComposePage.WitInfo": async () => fx.compose(mode, false).wit,
+        "ComposePage.WitInfo": async () => ({
+          ...fx.compose(mode, false).wit,
+          translateOnly: state === "translate",
+        }),
         "ComposePage.Follow": async () => {
           if (!followed) {
             followed = true;
