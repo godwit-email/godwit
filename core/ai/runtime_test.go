@@ -861,6 +861,27 @@ func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	e.mu.Unlock()
 }
 
+func TestForgetCancelsRetiredInstance(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
+	m1 := modelFor(srv, KindResponses, "token-1")
+	events1, wait1 := e.Run(context.Background(), Request{Model: m1, Prompt: "one", MaxTurns: 1})
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 5*time.Millisecond)
+	m2 := m1
+	m2.APIKey = "token-2"
+	_, res2 := run(e, Request{Model: m2, Prompt: "two", MaxTurns: 1})
+	require.Nil(t, res2.Err)
+
+	e.Forget(m1.ServiceID) // the service changed or went: the run on its older key ends too
+	_, res1 := collect(events1, wait1)
+	require.NotNil(t, res1.Err)
+	assert.Equal(t, CodeStale, res1.Err.Code)
+	e.mu.Lock()
+	assert.Empty(t, e.retired)
+	e.mu.Unlock()
+}
+
 func TestCodexRequestShape(t *testing.T) {
 	e := newEngine(t)
 	srv := testllm.Start(t, KindResponses)

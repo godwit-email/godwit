@@ -127,6 +127,12 @@ func (e *Engine) Forget(serviceID int64) {
 		in.cancel(errStale)
 		delete(e.insts, serviceID)
 	}
+	for in := range e.retired { // its runs on an older key are stale too
+		if in.cfg.ServiceID == serviceID {
+			in.cancel(errStale)
+			delete(e.retired, in)
+		}
+	}
 }
 
 // Close drops every instance; later runs fail and runs in flight are cancelled.
