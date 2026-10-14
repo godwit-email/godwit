@@ -44,12 +44,14 @@ type ModelService struct {
 	Slug                    string // the service part of its "slug/model" references; kept on rename
 	Models                  []string
 	JudgeFormat, JudgeModel string
+	Email                   string // OAuth sign-in address (chatgpt, grok); "" for API-key services
 	HasKey                  bool
 	Version                 int64
 	// Status is the last test of each capability (CapGen, CapJudge), absent
 	// when untested or when what it tested changed since.
 	Status     map[string]CapStatus
-	keyVersion int64 // its key's keychain entry (model_services.key_version)
+	keyVersion int64  // its key's keychain entry (model_services.key_version)
+	clientID   string // OAuth client_id issued at sign-in (chatgpt)
 }
 
 // Providers: which formats a service offers (the add dialog's tiles).
@@ -58,6 +60,8 @@ const (
 	ProviderAnthropic = "anthropic"
 	ProviderTypeSafe  = "typesafe"
 	ProviderOther     = "other"
+	ProviderChatGPT   = "chatgpt"
+	ProviderGrok      = "grok"
 )
 
 var providerFormats = map[string]struct{ gen, judge []string }{
@@ -65,6 +69,8 @@ var providerFormats = map[string]struct{ gen, judge []string }{
 	ProviderAnthropic: {[]string{ai.KindAnthropic}, nil},
 	ProviderTypeSafe:  {nil, []string{string(ai.FormatSystemOne)}},
 	ProviderOther:     {[]string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}, []string{string(ai.FormatDecisions), string(ai.FormatSystemOne)}},
+	ProviderChatGPT:   {[]string{ai.KindResponses}, nil},
+	ProviderGrok:      {[]string{ai.KindResponses}, nil},
 }
 
 // ProviderFormats are the generate kinds and judge formats provider p offers, in the dialog's order.
@@ -123,9 +129,11 @@ var (
 type ModelServiceInput struct {
 	Name, Kind, BaseURL, APIKey string
 	KeyAction                   string
+	OAuthFlowID                 string
 	Models                      []string
 	Provider                    string
 	JudgeFormat, JudgeModel     string
+	oauthEmail, oauthClientID   string
 }
 
 // Input is m as it is saved, keeping its key.
@@ -214,11 +222,17 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 			return "", "", old, err
 		}
 	}
+	if in.Provider == "" && old.Provider != "" {
+		in.Provider = old.Provider
+	}
+	if ModelProviderLogin(in.Provider) == "oauth" {
+		in.BaseURL = ModelProviderURL(in.Provider)
+	}
 	if in.BaseURL, err = ai.NormalizeBaseURL(in.BaseURL); err != nil {
 		return "", "", old, err
 	}
 	if in.Provider == "" {
-		in.Provider = cmp.Or(old.Provider, inferProvider(in.BaseURL, in.Kind))
+		in.Provider = inferProvider(in.BaseURL, in.Kind)
 	}
 	f, ok := providerFormats[in.Provider]
 	switch {
@@ -235,6 +249,27 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 	}
 	if in.JudgeFormat == "" {
 		in.JudgeModel = ""
+	}
+	if ModelProviderLogin(in.Provider) == "oauth" {
+		if in.APIKey != "" || in.KeyAction == KeyClear {
+			return "", "", old, errors.New("this service signs in instead of taking a key")
+		}
+		if in.OAuthFlowID != "" {
+			g, err := s.flowGrant(AccountInput{OAuthFlowID: in.OAuthFlowID, Provider: in.Provider})
+			if err != nil {
+				return "", "", old, err
+			}
+			if g.RefreshToken == "" {
+				return "", "", old, errors.New("the provider granted no refresh token")
+			}
+			in.oauthEmail, in.oauthClientID = g.Email, g.ClientID
+			return KeyReplace, g.RefreshToken, old, nil
+		}
+		if id == 0 {
+			return "", "", old, ErrModelLogin
+		}
+		key, err := s.modelKey(old)
+		return KeyKeep, key, old, err
 	}
 	action = in.KeyAction
 	if action == "" {
@@ -275,11 +310,11 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 	return "", "", old, fmt.Errorf("invalid key action %q", action)
 }
 
-const modelCols = "id, name, kind, base_url, models, version, slug, key_version, provider, judge_format, judge_model"
+const modelCols = "id, name, kind, base_url, models, version, slug, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id"
 
 func (s *Service) scanModelService(r []any) (ModelService, error) {
 	m := ModelService{ID: store.Int(r[0]), Name: store.Str(r[1]), Kind: store.Str(r[2]), BaseURL: store.Str(r[3]), Version: store.Int(r[5]), Slug: store.Str(r[6]), keyVersion: store.Int(r[7]),
-		Provider: store.Str(r[8]), JudgeFormat: store.Str(r[9]), JudgeModel: store.Str(r[10])}
+		Provider: store.Str(r[8]), JudgeFormat: store.Str(r[9]), JudgeModel: store.Str(r[10]), Email: store.Str(r[11]), clientID: store.Str(r[12])}
 	if err := json.Unmarshal([]byte(store.Str(r[4])), &m.Models); err != nil {
 		return m, fmt.Errorf("stored models: %w", err)
 	}
@@ -381,9 +416,9 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	if key != "" {
 		kv = 1
 	}
-	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix(), kv, in.Provider, in.JudgeFormat, in.JudgeModel)
+	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix(), kv, in.Provider, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID)
 	if err != nil {
 		return ModelService{}, err
 	}
@@ -400,6 +435,9 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 			}
 			return ModelService{}, fmt.Errorf("save API key to keychain: %w", err)
 		}
+	}
+	if in.OAuthFlowID != "" {
+		s.takeGrant(in.OAuthFlowID)
 	}
 	return s.modelServiceBy(ctx, "id = ?", id)
 }
@@ -446,8 +484,8 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 		kv = 0
 	}
 	stmts := []sqlite.Statement{{SQL: `UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1, key_version = ?,
-		judge_format = ?, judge_model = ? WHERE id = ?`,
-		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, id}}}
+		judge_format = ?, judge_model = ?, oauth_email = COALESCE(NULLIF(?, ''), oauth_email), oauth_client_id = COALESCE(NULLIF(?, ''), oauth_client_id) WHERE id = ?`,
+		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID, id}}}
 	// A test's status no longer holds once what it tested changed: the
 	// address or key for both capabilities, a format (or judge model) for its own.
 	moved := in.BaseURL != old.BaseURL || action == KeyReplace || action == KeyClear && old.keyVersion != 0
@@ -464,6 +502,9 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return ModelService{}, err // a new key's entry stays listed in the trash
+	}
+	if in.OAuthFlowID != "" {
+		s.takeGrant(in.OAuthFlowID)
 	}
 	s.forgetModel(id)
 	// The write is done: a cancelled ctx must not turn it into an error.

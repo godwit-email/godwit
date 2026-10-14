@@ -29,16 +29,24 @@ var oauthConfig = func(providerID string) (auth.OAuthConfig, error) {
 // BeginOAuth starts an authorization flow for the provider and returns its ID
 // and the URL to open in the browser. The flow ends after auth.FlowTimeout.
 func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) (flowID, authURL string, err error) {
-	_, end, err := s.begin(ctx, 0)
+	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return "", "", err
 	}
 	defer end() // Close waits for this, then closes the flow added below
 	cfg, err := oauthConfig(providerID)
 	if err != nil {
+		cfg, err = s.modelOAuthConfig(ctx, providerID, loginHint)
+	}
+	if err != nil {
 		return "", "", err
 	}
-	f, err := auth.StartFlow(cfg, loginHint, http.DefaultClient)
+	var f flow
+	if cfg.DeviceURL != "" {
+		f, err = auth.StartDevice(ctx, cfg, http.DefaultClient)
+	} else {
+		f, err = auth.StartFlow(cfg, loginHint, http.DefaultClient)
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -53,7 +61,7 @@ func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) 
 	// nobody awaits does not stay in memory. A pending AwaitOAuth gets ErrFlowExpired.
 	time.AfterFunc(auth.FlowTimeout, func() {
 		s.oauthMu.Lock()
-		if s.flows[flowID].Flow == f {
+		if s.flows[flowID].flow == f {
 			delete(s.flows, flowID)
 		}
 		s.oauthMu.Unlock()
@@ -73,7 +81,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	s.oauthMu.Lock()
 	of := s.flows[flowID]
 	s.oauthMu.Unlock()
-	f := of.Flow
+	f := of.flow
 	if f == nil {
 		return "", ErrUnknownFlow
 	}
@@ -85,7 +93,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	// AwaitOAuth may have taken it while Wait returned.
 	s.oauthMu.Lock()
 	defer s.oauthMu.Unlock()
-	if s.flows[flowID].Flow != f {
+	if s.flows[flowID].flow != f {
 		if err == nil {
 			err = ErrUnknownFlow
 		}
@@ -111,7 +119,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 // its grant. Unknown IDs are ignored.
 func (s *Service) CancelOAuth(flowID string) {
 	s.oauthMu.Lock()
-	f := s.flows[flowID].Flow
+	f := s.flows[flowID].flow
 	delete(s.flows, flowID)
 	delete(s.grants, flowID)
 	s.oauthMu.Unlock()
@@ -120,9 +128,15 @@ func (s *Service) CancelOAuth(flowID string) {
 	}
 }
 
+type flow interface {
+	AuthURL() string
+	Wait(context.Context) (auth.Grant, error)
+	Close()
+}
+
 // oauthFlow is a flow begun for a provider.
 type oauthFlow struct {
-	*auth.Flow
+	flow
 	provider string
 }
 
