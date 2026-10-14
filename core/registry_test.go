@@ -357,3 +357,10 @@ func TestSideloadOverListedScriptIsNotListed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", nativeInfo(t, s, "hello").Trust)
 }
+
+// Godwit's own registry is on, at dl.godwit.email, with a 32-byte ed25519 key.
+func TestDefaultRegistry(t *testing.T) {
+	require.NotNil(t, core.DefaultRegistry)
+	assert.Equal(t, "https://dl.godwit.email/plugins/registry.json", core.DefaultRegistry.URL)
+	assert.Len(t, core.DefaultRegistry.PublicKey, 32)
+}

@@ -36,9 +36,10 @@ type RegistrySource struct {
 
 const (
 	registryURL = "https://dl.godwit.email/plugins/registry.json"
-	// registryPublicKey verifies registry.json (base64). Empty until the
-	// plugins repository's signing key exists; the registry is off until then.
-	registryPublicKey = ""
+	// registryPublicKey verifies registry.json (base64 ed25519). Its private key
+	// is the plugins repository's secret GODWIT_REGISTRY_KEY; rotating it
+	// needs a Godwit release (docs/registry/README.md).
+	registryPublicKey = "bm291vHdLh6gATDFvUsm3tQ1aWd0qGZOjxfsnC79drs="
 
 	maxRegistry     = 4 << 20
 	maxRegistrySig  = 1 << 10
