@@ -4,9 +4,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/aymerick/douceur/css"
-	"github.com/aymerick/douceur/parser"
 	"github.com/gorilla/css/scanner"
+	"github.com/tdewolff/parse/v2"
+	tcss "github.com/tdewolff/parse/v2/css"
 )
 
 // Mail styles itself with <style> blocks: classes, media queries for narrow
@@ -41,8 +41,8 @@ type styleSheet struct{ text, media string }
 
 // sanitizeCSS is the safe, scoped form of the stylesheets, "" when nothing
 // stays, and whether the mail has styles of its own for the dark scheme. A
-// block that does not parse is left out, as is one whose media cannot be
-// kept: its rules would hold where it does not; the others are kept.
+// block whose media cannot be kept is left out: its rules would hold where it
+// does not; the others are kept.
 func sanitizeCSS(sheets []styleSheet) (out string, darkAware bool) {
 	var b strings.Builder
 	rules := 0
@@ -51,10 +51,7 @@ func sanitizeCSS(sheets []styleSheet) (out string, darkAware bool) {
 		if len(text) > maxCSSBytes {
 			text = text[:maxCSSBytes]
 		}
-		sheet, err := parser.Parse(text)
-		if err != nil {
-			continue
-		}
+		sheet := parseSheet(text)
 		if m := strings.TrimSpace(sh.media); m != "" && !strings.EqualFold(m, "all") {
 			// as one @media around the sheet: its own @media, nested, go
 			prelude, scheme, ok := mediaQuery(m)
@@ -62,7 +59,7 @@ func sanitizeCSS(sheets []styleSheet) (out string, darkAware bool) {
 				continue
 			}
 			var inner strings.Builder
-			for _, r := range sheet.Rules {
+			for _, r := range sheet {
 				writeRule(&inner, r, scheme, 1, &rules, &darkAware)
 			}
 			if inner.Len() > 0 {
@@ -70,29 +67,99 @@ func sanitizeCSS(sheets []styleSheet) (out string, darkAware bool) {
 			}
 			continue
 		}
-		for _, r := range sheet.Rules {
+		for _, r := range sheet {
 			writeRule(&b, r, "", 0, &rules, &darkAware)
 		}
 	}
 	return b.String(), darkAware
 }
 
+// cssRule is a rule of a stylesheet: a qualified one (at is "") with its
+// selectors as prelude, or an at-rule with a block.
+type cssRule struct {
+	at, prelude string
+	decls       []cssDecl
+	rules       []*cssRule
+}
+
+type cssDecl struct {
+	prop, value string
+	important   bool
+}
+
+// parseSheet reads text as a browser does (CSS Syntax Level 3): what does not
+// parse is left out, the rest kept. A sheet whose blocks the parser closes
+// without saying so (it does on a stray ) or ] in a selector) is left out
+// whole: which rules are inside which cannot be told.
+func parseSheet(text string) []*cssRule {
+	p := tcss.NewParser(parse.NewInputString(text), false)
+	var top, open []*cssRule
+	for {
+		gt, _, data := p.Next()
+		switch gt {
+		case tcss.ErrorGrammar:
+			if p.HasParseError() {
+				continue // the parser goes on past it
+			}
+			if len(open) > 0 {
+				return nil
+			}
+			return top
+		case tcss.BeginRulesetGrammar, tcss.BeginAtRuleGrammar:
+			r := &cssRule{prelude: tokenText(p.Values())}
+			if gt == tcss.BeginAtRuleGrammar {
+				r.at = string(data)
+			}
+			if len(open) == 0 {
+				top = append(top, r)
+			} else {
+				parent := open[len(open)-1]
+				parent.rules = append(parent.rules, r)
+			}
+			open = append(open, r)
+		case tcss.EndRulesetGrammar, tcss.EndAtRuleGrammar:
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			}
+		case tcss.DeclarationGrammar:
+			if len(open) == 0 {
+				continue
+			}
+			v := p.Values()
+			n := len(v)
+			important := n >= 2 && v[n-2].TokenType == tcss.DelimToken && string(v[n-2].Data) == "!" &&
+				v[n-1].TokenType == tcss.IdentToken && strings.EqualFold(string(v[n-1].Data), "important")
+			if important {
+				v = v[:n-2]
+			}
+			r := open[len(open)-1]
+			r.decls = append(r.decls, cssDecl{string(data), strings.TrimSpace(tokenText(v)), important})
+		}
+	}
+}
+
+// tokenText is ts written back; the parser has already collapsed whitespace.
+func tokenText(ts []tcss.Token) string {
+	var b strings.Builder
+	for _, t := range ts {
+		b.Write(t.Data)
+	}
+	return b.String()
+}
+
 // writeRule writes r when it is safe; scheme is "dark" or "light" inside a
 // query for it.
-func writeRule(b *strings.Builder, r *css.Rule, scheme string, depth int, rules *int, dark *bool) {
+func writeRule(b *strings.Builder, r *cssRule, scheme string, depth int, rules *int, dark *bool) {
 	if *rules >= maxCSSRules {
 		return
 	}
-	switch r.Kind {
-	case css.QualifiedRule:
-		decls := declarations(r.Declarations)
+	switch r.at {
+	case "":
+		decls := declarations(r.decls)
 		if decls == "" {
 			return
 		}
-		var sels []string
-		for _, s := range r.Selectors {
-			sels = append(sels, scopeSelector(s, scheme)...)
-		}
+		sels := scopeSelector(r.prelude, scheme)
 		if len(sels) == 0 {
 			return
 		}
@@ -101,16 +168,16 @@ func writeRule(b *strings.Builder, r *css.Rule, scheme string, depth int, rules 
 			*dark = true
 		}
 		b.WriteString(strings.Join(sels, ",") + "{" + decls + "}\n")
-	case css.AtRule:
-		if !strings.EqualFold(r.Name, "@media") || depth > 0 {
+	case "@media": // the parser lowercases at-rule names
+		if depth > 0 {
 			return
 		}
-		prelude, scheme, ok := mediaQuery(r.Prelude)
+		prelude, scheme, ok := mediaQuery(r.prelude)
 		if !ok {
 			return
 		}
 		var inner strings.Builder
-		for _, c := range r.Rules {
+		for _, c := range r.rules {
 			writeRule(&inner, c, scheme, depth+1, rules, dark)
 		}
 		if inner.Len() > 0 {
@@ -337,15 +404,14 @@ func safeValue(v string) bool {
 	return true
 }
 
-func declarations(ds []*css.Declaration) string {
+func declarations(ds []cssDecl) string {
 	var b strings.Builder
 	for _, d := range ds {
-		prop := strings.ToLower(strings.TrimSpace(d.Property))
-		if !cssAllowed[prop] || !safeValue(d.Value) {
+		if !cssAllowed[d.prop] || !safeValue(d.value) {
 			continue
 		}
-		b.WriteString(prop + ":" + strings.TrimSpace(d.Value))
-		if d.Important {
+		b.WriteString(d.prop + ":" + d.value)
+		if d.important {
 			b.WriteString(" !important")
 		}
 		b.WriteString(";")

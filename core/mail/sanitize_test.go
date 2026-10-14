@@ -205,8 +205,8 @@ func TestSanitizeStyleBlock(t *testing.T) {
 	assert.NotContains(t, rest, `id=`, "the reader's own id is not the mail's")
 	for _, want := range []string{
 		"#godwit-body{background:#e6eaf0;margin:0;}",
-		"#godwit-body .card,#godwit-body .wide > td{width:720px;color:red !important;}",
-		"@media only screen and (max-width: 950px){#godwit-body .wd360{width:360px !important;}",
+		"#godwit-body .card,#godwit-body .wide>td{width:720px;color:red !important;}",
+		"@media only screen and (max-width:950px){#godwit-body .wd360{width:360px !important;}",
 		"@media (min-width:0px){#godwit-body.godwit-dark .card{background:#202124;color:#e8eaed;}",
 	} {
 		assert.Contains(t, css, want)
@@ -236,14 +236,14 @@ func css(t *testing.T, style string) string {
 // Selectors and queries are read as CSS tokens: what is not plain goes, a
 // scheme query scopes its rules, and nothing can leave the <style>.
 func TestSanitizeStyleTokens(t *testing.T) {
-	assert.Equal(t, "#godwit-body .a:hover,#godwit-body .b > i{color:red;}\n", css(t, `.a:hover, .b > i { color: red }`))
-	assert.Equal(t, "#godwit-body{color:red;}\n#godwit-body > table{color:red;}\n", css(t, `html { color: red } body > table { color: red }`))
+	assert.Equal(t, "#godwit-body .a:hover,#godwit-body .b>i{color:red;}\n", css(t, `.a:hover, .b > i { color: red }`))
+	assert.Equal(t, "#godwit-body{color:red;}\n#godwit-body >table{color:red;}\n", css(t, `html { color: red } body > table { color: red }`))
 	assert.Equal(t, "#godwit-body{color:red;}\n", css(t, `html body { color: red }`))
 	assert.Equal(t, "#godwit-body .a{color:red;}\n", css(t, `body.dark, body:hover, .a { color: red }`), "body.dark cannot match")
 	assert.Equal(t, "#godwit-body a[href^=\"http\"]{color:red;}\n", css(t, `a[href^="http"] { color: red }`))
 	assert.Equal(t, "#godwit-body li:nth-child(2n+1){color:red;}\n", css(t, `li:nth-child(2n+1) { color: red }`))
 	// scheme queries scope under the class the reader sets from the theme
-	assert.Equal(t, "@media (min-width:0px) and (max-width: 600px){#godwit-body.godwit-light .a{color:red;}\n}\n",
+	assert.Equal(t, "@media (min-width:0px) and (max-width:600px){#godwit-body.godwit-light .a{color:red;}\n}\n",
 		css(t, `@media (prefers-color-scheme: light) and (max-width: 600px) { .a { color: red } }`))
 	assert.Equal(t, "", css(t, `@media (prefers-color-scheme: dark), print { .a { color: red } }`), "a scheme for some of the queries only")
 	assert.Equal(t, "", css(t, `@media url(x) { .a { color: red } }`))
@@ -263,7 +263,16 @@ func TestSanitizeStyleTokens(t *testing.T) {
 		safe, _ := mail.Sanitize(`<style>`+style+`</style>`, nil, false)
 		assert.NotContains(t, strings.ToLower(safe), "<script", style)
 	}
-	assert.Equal(t, "#godwit-body .a{color:rgb(1, 2, 3);width:calc(100% - 4px);}\n", css(t, `.a { color: rgb(1, 2, 3); width: calc(100% - 4px) }`))
+	assert.Equal(t, "#godwit-body .a{color:rgb(1,2,3);width:calc(100% - 4px);}\n", css(t, `.a { color: rgb(1, 2, 3); width: calc(100% - 4px) }`))
+}
+
+// A ; where a selector is expected (douceur looped on it forever) is read as
+// a browser does: part of the next rule's selector, which it makes invalid.
+func TestSanitizeStyleStraySemicolon(t *testing.T) {
+	assert.Equal(t, "#godwit-body .a{color:red;}\n#godwit-body .c{color:red;}\n", css(t, `.a{color:red}; .b{color:red} .c{color:red}`))
+	assert.Equal(t, "@media (max-width:1px){#godwit-body .a{color:red;}\n#godwit-body .c{color:red;}\n}\n",
+		css(t, `@media (max-width: 1px) { .a{color:red}; .b{color:red} .c{color:red} }`))
+	assert.Equal(t, "#godwit-body .a{color:red;}\n", css(t, `@import "x"; .a{color:red;}`))
 }
 
 // A class or id the mail's styles select by stays, only when plain, and the
@@ -278,9 +287,9 @@ func TestSanitizeClassAndID(t *testing.T) {
 
 // Shadows and gradients are plain tokens; a url() in the same property is not.
 func TestSanitizeShadowAndGradient(t *testing.T) {
-	assert.Equal(t, "#godwit-body .a{box-shadow:0 4px 22px rgba(46,92,255,0.10), inset 1.2px 1.6px 1.6px rgba(255,255,255,0.66);}\n",
-		css(t, `.a { box-shadow: 0 4px 22px rgba(46,92,255,0.10), inset 1.2px 1.6px 1.6px rgba(255,255,255,0.66) }`))
-	assert.Equal(t, "#godwit-body .a{background-image:linear-gradient(160deg, rgba(255,255,255,0.55) 0%, #eee 100%) !important;}\n",
+	assert.Equal(t, "#godwit-body .a{box-shadow:0 4px 22px rgba(46,92,255,0.10),inset 1.2px 1.6px 1.6px rgba(255,255,255,0.66);}\n",
+		css(t, `.a { box-shadow: 0 4px 22px rgba(46,92,255,0.10),inset 1.2px 1.6px 1.6px rgba(255,255,255,0.66) }`))
+	assert.Equal(t, "#godwit-body .a{background-image:linear-gradient(160deg,rgba(255,255,255,0.55) 0%,#eee 100%) !important;}\n",
 		css(t, `.a { background-image: linear-gradient(160deg, rgba(255,255,255,0.55) 0%, #eee 100%) !important }`))
 	assert.Equal(t, "", css(t, `.a { background-image: url(https://evil.example/x.png) }`))
 	assert.Equal(t, "", css(t, `.a { background-image: linear-gradient(red, url(https://evil.example/x.png)) }`))
