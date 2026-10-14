@@ -23,11 +23,11 @@ var (
 )
 
 type envelope struct {
-	ID        int64           `json:"id"`
-	OK        bool            `json:"ok"`
-	Result    json.RawMessage `json:"result"`
+	ID        int64                           `json:"id"`
+	OK        bool                            `json:"ok"`
+	Result    json.RawMessage                 `json:"result"`
 	Error     *struct{ Code, Message string } `json:"error"`
-	HostError string          `json:"host_error"`
+	HostError string                          `json:"host_error"`
 }
 
 type proc struct {
