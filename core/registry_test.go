@@ -494,3 +494,41 @@ func TestRegistryCachedRevocationAppliedAtStart(t *testing.T) {
 	assert.Equal(t, "trust_revoked", p.DisabledReason, "revoked before it could load")
 	assert.Equal(t, "", p.Trust)
 }
+
+// A sideload with the listed file and permissions but another manifest is not the reviewed package.
+func TestSideloadChangedManifestIsNotListed(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	const perms, code = `{"net":["api.example.com"]}`, `export default function () {}`
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rs.ScriptRelease("hello", "0.1.0", perms, code))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "hello")
+	require.NoError(t, err)
+	require.Equal(t, "listed", nativeInfo(t, s, "hello").Trust)
+
+	src := filepath.Join(t.TempDir(), "hello")
+	require.NoError(t, os.MkdirAll(src, 0o700))
+	m := []byte(`{"name":"hello","version":"0.1.0","main":"index.js","description":"not reviewed","permissions":` + perms + `}`)
+	require.NoError(t, os.WriteFile(filepath.Join(src, "plugin.json"), m, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "index.js"), []byte(code), 0o600))
+	_, err = s.InstallPlugin(ctx, src)
+	require.NoError(t, err)
+	assert.NotEqual(t, "listed", nativeInfo(t, s, "hello").Trust)
+}
+
+// A release whose manifest changes while its file downloads is not installed as listed.
+func TestRegistryInstallRacingManifestChange(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	code := `export default function () {}`
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rs.ScriptRelease("hello", "0.1.0", `{"net":["api.example.com"]}`, code))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	core.SetRegistryHooksForTest(t, func() {
+		rs.Publish(t, coretest.Registry(t0.Add(time.Hour), plugin("hello", rs.ScriptRelease("hello", "0.1.0", `{}`, code))))
+		require.NoError(t, s.RefreshPluginRegistry(ctx))
+	}, false)
+	_, err := s.InstallPluginFromRegistry(ctx, "hello")
+	require.Error(t, err)
+	_, ok := pluginByName(t, s, "hello")
+	assert.False(t, ok, "nothing installed")
+}

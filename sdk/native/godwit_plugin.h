@@ -29,6 +29,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" { /* the host looks the init symbol up by its C name */
+#endif
+
 #define GODWIT_PLUGIN_ABI 1
 
 /* Puts godwit_plugin_init in the library's export table: MSVC exports nothing
@@ -74,6 +78,10 @@ typedef struct {
  */
 #ifndef GODWIT_PLUGIN_NO_INIT_DECL
 GODWIT_PLUGIN_EXPORT int godwit_plugin_init(uint32_t host_abi, godwit_plugin_api *api);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

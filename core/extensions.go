@@ -299,7 +299,10 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (Plug
 			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
 			library_hash = excluded.library_hash,
 			trust = CASE WHEN excluded.trust = 'listed' THEN 'listed'
-				WHEN permission_hash = excluded.permission_hash AND library_hash = excluded.library_hash THEN trust ELSE '' END, -- the same files keep their trust
+				WHEN permission_hash != excluded.permission_hash OR library_hash != excluded.library_hash THEN ''
+				-- another package around the reviewed file is the user's, which a refresh lists again if it is a release
+				WHEN trust = 'listed' AND source_hash != excluded.source_hash THEN CASE WHEN granted_hash = permission_hash THEN 'user' ELSE '' END
+				ELSE trust END, -- the same files keep their trust
 			granted_hash = CASE WHEN ? THEN excluded.granted_hash ELSE granted_hash END,
 			enabled = CASE WHEN ? THEN excluded.enabled ELSE enabled AND permission_hash = excluded.permission_hash END,
 			disabled_reason = '', installed_at = excluded.installed_at`,

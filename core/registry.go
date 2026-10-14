@@ -424,26 +424,26 @@ func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (P
 	// again and install while no refresh can commit in between.
 	s.registryMu.Lock()
 	defer s.registryMu.Unlock()
-	if now, err := s.cachedRegistry(src); err != nil || !listsArtifact(now, name, rel.Version, art.SHA256) {
+	if now, err := s.cachedRegistry(src); err != nil || !listsRelease(now, name, rel, art) {
 		return PluginInfo{}, errors.Join(fmt.Errorf("plugin %s %s is no longer in the plugin registry", name, rel.Version), err)
 	}
 	return s.installPlugin(ctx, dir, "listed")
 }
 
-// listsArtifact reports whether reg has plugin name's release version with a file of this SHA-256.
-func listsArtifact(reg plugins.Registry, name, version, sha string) bool {
+// listsRelease reports whether reg still has plugin name's release rel as
+// it was picked: its version, its manifest and its file art for this platform.
+func listsRelease(reg plugins.Registry, name string, rel plugins.RegistryRelease, art plugins.Artifact) bool {
+	key := plugins.PlatformKey()
+	if !rel.Parsed.IsNative() {
+		key = plugins.AnyPlatform
+	}
 	for _, p := range reg.Plugins {
 		if p.Name != name {
 			continue
 		}
-		for _, rel := range p.Releases {
-			if rel.Version != version {
-				continue
-			}
-			for _, a := range rel.Artifacts {
-				if a.SHA256 == sha {
-					return true
-				}
+		for _, r := range p.Releases {
+			if r.Version == rel.Version && bytes.Equal(r.Manifest, rel.Manifest) && r.Artifacts[key] == art {
+				return true
 			}
 		}
 	}
