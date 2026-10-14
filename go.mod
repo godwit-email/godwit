@@ -4,7 +4,6 @@ go 1.27.1
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.23.0
-	github.com/aymerick/douceur v0.2.0
 	github.com/dop251/goja v0.0.0-20260923012348-67663e7a3b97
 	github.com/egoist/mygo v0.4.8
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
@@ -23,6 +22,7 @@ require (
 	github.com/openai/openai-go v1.8.2
 	github.com/openai/openai-go/v3 v3.77.0
 	github.com/stretchr/testify v1.12.1
+	github.com/tdewolff/parse/v2 v2.8.16
 	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/image v0.46.0
@@ -33,6 +33,7 @@ require (
 )
 
 require (
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
