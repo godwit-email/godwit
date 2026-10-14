@@ -116,6 +116,8 @@ type Service struct {
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
+	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
+	nativeEnv   []string           // and its whole environment
 
 	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
 	mcpStMu sync.Mutex          // guards mcpSt
@@ -150,6 +152,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
 	s.labelJudge = s.defaultLabelJudge
+	if exe, err := os.Executable(); err == nil {
+		s.nativeCmd = []string{exe, "plugin-host"}
+	}
+	s.nativeEnv = []string{"PATH=" + os.Getenv("PATH")}
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
 	}

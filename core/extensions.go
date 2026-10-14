@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dop251/goja"
@@ -39,6 +40,12 @@ type PluginInfo struct {
 	Enabled, NeedsGrant   bool
 	DisabledReason, Error string
 	Config                []plugins.ConfigField
+	// Native: a shared library, run with all of Godwit's rights (no
+	// permissions apply); its grant is for the file LibraryHash names.
+	Native       bool
+	Trust        string // native: "user" once the user allowed the current file, "" not allowed
+	Capabilities []string
+	LibraryHash  string // native: SHA-256 of the shared library
 }
 
 // disabled_reason values.
@@ -57,6 +64,7 @@ type pluginRow struct {
 	m                             plugins.Manifest
 	sourceHash, permHash, granted string
 	installDir                    string
+	trust, libraryHash            string
 	secretKeys                    []string // keys that may have a keychain entry
 	enabled                       bool
 	reason                        string
@@ -96,7 +104,7 @@ func (s *Service) removeOldVersions(name, keep string) error {
 }
 
 func (s *Service) pluginRows(ctx context.Context, name string) (map[string]pluginRow, error) {
-	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir, secret_keys FROM plugins"
+	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir, secret_keys, trust, library_hash FROM plugins"
 	var args []any
 	if name != "" {
 		q += " WHERE name = ?"
@@ -117,7 +125,7 @@ func (s *Service) pluginRows(ctx context.Context, name string) (map[string]plugi
 			return nil, err
 		}
 		out[store.Str(r[0])] = pluginRow{secretKeys: keys, m: m, sourceHash: store.Str(r[2]), permHash: store.Str(r[3]), granted: store.Str(r[4]),
-			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7])}
+			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7]), trust: store.Str(r[9]), libraryHash: store.Str(r[10])}
 	}
 	return out, nil
 }
@@ -137,7 +145,11 @@ func (s *Service) checkPluginFiles(name string, r pluginRow) error {
 	if _, err := plugins.ParseManifest(data, name); err != nil {
 		return fmt.Errorf("%w; reinstall the plugin", err)
 	}
-	if h, err := plugins.HashDir(dir); err != nil || h != r.sourceHash {
+	lim := plugins.ScriptLimits
+	if r.m.IsNative() {
+		lim = plugins.NativeLimits
+	}
+	if h, err := plugins.HashDir(dir, lim); err != nil || h != r.sourceHash {
 		return errors.New("the installed files were changed or damaged; reinstall the plugin")
 	}
 	return nil
@@ -145,7 +157,8 @@ func (s *Service) checkPluginFiles(name string, r pluginRow) error {
 
 func (s *Service) pluginInfo(name string, r pluginRow) PluginInfo {
 	info := PluginInfo{Name: name, Version: r.m.Version, Description: r.m.Description, Permissions: r.m.Permissions, Enabled: r.enabled,
-		NeedsGrant: r.granted != r.permHash, DisabledReason: r.reason, Config: r.m.Config}
+		NeedsGrant: r.granted != r.permHash, DisabledReason: r.reason, Config: r.m.Config,
+		Native: r.m.IsNative(), Trust: r.trust, Capabilities: r.m.Capabilities, LibraryHash: r.libraryHash}
 	if err := s.checkPluginFiles(name, r); err != nil {
 		info.Error = err.Error()
 	}
@@ -166,7 +179,7 @@ func (s *Service) ListPlugins(ctx context.Context) ([]PluginInfo, error) {
 		return nil, err
 	}
 	out := []PluginInfo{}
-	// ponytail: hashes every plugin's files per call (20 MB cap each); cache by mtime if lists get slow.
+	// shortcut: hashes every plugin's files per call (20 MB per script plugin, 80 MB per native one); cache by mtime if lists get slow.
 	for n, r := range rows {
 		out = append(out, s.pluginInfo(n, r))
 	}
@@ -194,7 +207,8 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 	}
 	defer os.RemoveAll(staging)
 	snap := filepath.Join(staging, "p")
-	hash, err := plugins.Snapshot(srcDir, snap)
+	// The larger native limits until the manifest says which kind it is.
+	hash, err := plugins.Snapshot(srcDir, snap, plugins.NativeLimits)
 	if err != nil {
 		return PluginInfo{}, err
 	}
@@ -209,8 +223,20 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 	if err != nil {
 		return PluginInfo{}, err
 	}
-	if _, err := plugins.Build(snap, m.Main); err != nil {
-		return PluginInfo{}, err
+	// A native plugin's grant is for its exact files (spec 2.6); a script plugin's for its permissions.
+	permHash, libHash := m.PermissionHash(), ""
+	if m.IsNative() {
+		if libHash, err = plugins.FileSHA256(filepath.Join(snap, plugins.LibraryName())); err != nil {
+			return PluginInfo{}, fmt.Errorf("plugin %s has no %s for this platform", m.Name, plugins.LibraryName())
+		}
+		permHash = hash
+	} else {
+		if _, err := plugins.HashDir(snap, plugins.ScriptLimits); err != nil {
+			return PluginInfo{}, err
+		}
+		if _, err := plugins.Build(snap, m.Main); err != nil {
+			return PluginInfo{}, err
+		}
 	}
 	mj, err := json.Marshal(m)
 	if err != nil {
@@ -238,13 +264,15 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 	}
 	// The switch. If it fails nothing changed: the old version keeps running and
 	// the new directory is removed on the next start or install.
-	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, installed_at)
-		VALUES (?, ?, ?, ?, ?, ?, unixepoch())
+	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, installed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(name) DO UPDATE SET version = excluded.version, manifest = excluded.manifest,
 			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
+			library_hash = excluded.library_hash,
+			trust = CASE WHEN permission_hash = excluded.permission_hash THEN trust ELSE '' END,
 			enabled = enabled AND permission_hash = excluded.permission_hash,
 			disabled_reason = '', installed_at = excluded.installed_at`,
-		m.Name, m.Version, string(mj), hash, installDir, m.PermissionHash())
+		m.Name, m.Version, string(mj), hash, installDir, permHash, libHash)
 	if err != nil {
 		return PluginInfo{}, err
 	}
@@ -312,7 +340,7 @@ func (s *Service) GrantPermission(ctx context.Context, name string) error {
 	defer end()
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
-	r, err := s.db.Execute(ctx, "UPDATE plugins SET granted_hash = permission_hash WHERE name = ?", name)
+	r, err := s.db.Execute(ctx, "UPDATE plugins SET granted_hash = permission_hash, trust = CASE WHEN trust = 'listed' THEN trust ELSE 'user' END WHERE name = ?", name)
 	if err != nil {
 		return err
 	}
@@ -449,11 +477,13 @@ func (s *Service) startPlugins(ctx context.Context) error {
 
 // runningPlugin is a started plugin: the code it runs and its VM.
 type runningPlugin struct {
-	hash string // source hash of the code it runs
-	gen  uint64 // this instance, among every instance started by the Service
-	host *pluginHost
-	p    *plugins.Plugin
-	row  pluginRow // the row it was started from: manifest and permission hashes
+	hash string          // source hash of the code it runs
+	gen  uint64          // this instance, among every instance started by the Service
+	host *pluginHost     // script plugins
+	p    *plugins.Plugin // script plugins
+	row  pluginRow       // the row it was started from: manifest and permission hashes
+
+	native *plugins.NativeProcess // native plugins (p and host are nil)
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -469,6 +499,9 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		if err := pluginHook("load", name); err != nil {
 			return err
 		}
+	}
+	if r.m.IsNative() {
+		return s.loadNative(ctx, name, r)
 	}
 	code, err := plugins.Build(s.versionDir(name, r.installDir), r.m.Main)
 	if err != nil {
@@ -515,10 +548,72 @@ func (s *Service) stopPlugin(name string) {
 		if rp.stopHooks != nil {
 			rp.stopHooks() // it ends on its own; Close waits for it (s.begin)
 		}
-		rp.p.VM().Close()
+		if rp.native != nil {
+			rp.native.Close()
+		} else {
+			rp.p.VM().Close()
+		}
 		delete(s.running, name)
 		s.unregisterPluginTools(name)
 	}
+}
+
+// nativeStart bounds a native plugin's start: its process, describe and configure.
+const nativeStart = 30 * time.Second
+
+// loadNative starts a native plugin's process (spec 3.3): plugin-host checks
+// the library's hash before loading it, describe must match the manifest,
+// configure hands it its settings. Called with pluginsMu held.
+func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) error {
+	if len(s.nativeCmd) == 0 {
+		return errors.New("cannot find Godwit's own executable to run the plugin")
+	}
+	lib, err := filepath.Abs(filepath.Join(s.versionDir(name, r.installDir), plugins.LibraryName())) // hardened macOS programs load absolute paths only
+	if err != nil {
+		return err
+	}
+	n := plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash, Redact: s.secrets.Redact})
+	cctx, cancel := context.WithTimeout(ctx, nativeStart)
+	defer cancel()
+	if err := s.startNative(cctx, name, r, n); err != nil {
+		n.Close()
+		return fmt.Errorf("plugin %s: %w", name, err)
+	}
+	s.stopPlugin(name)
+	if s.running == nil {
+		s.running = map[string]*runningPlugin{}
+	}
+	s.pluginGen++
+	s.running[name] = &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, native: n, row: r}
+	return nil
+}
+
+func (s *Service) startNative(ctx context.Context, name string, r pluginRow, n *plugins.NativeProcess) error {
+	res, err := n.Call(ctx, "describe", struct{}{})
+	if err != nil {
+		return err
+	}
+	var d struct {
+		Name, Version string
+		ABI           uint32
+		Capabilities  []string
+	}
+	sorted := func(xs []string) []string { return slices.Sorted(slices.Values(xs)) }
+	if json.Unmarshal(res, &d) != nil || d.Name != name || d.Version != r.m.Version || d.ABI != plugins.NativeABI ||
+		!slices.Equal(sorted(d.Capabilities), sorted(r.m.Capabilities)) {
+		return fmt.Errorf("the library describes itself as %q %q, not as its plugin.json says", d.Name, d.Version)
+	}
+	return s.configureNative(ctx, name, n)
+}
+
+// configureNative hands a native plugin its settings, secrets included. The caller holds pluginsMu.
+func (s *Service) configureNative(ctx context.Context, name string, n *plugins.NativeProcess) error {
+	cfg, _, err := s.pluginConfigLocked(ctx, name)
+	if err != nil {
+		return err
+	}
+	_, err = n.Call(ctx, "configure", map[string]any{"config": cfg})
+	return err
 }
 
 // stopPlugins stops every plugin (Close).
@@ -879,7 +974,11 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 	}
 	if err == nil {
 		// The old values stay redacted: the running instance may hold them.
-		if rp := s.running[name]; rp != nil {
+		if rp := s.running[name]; rp != nil && rp.native != nil {
+			if err := s.configureNative(ctx, name, rp.native); err != nil {
+				return fmt.Errorf("plugin %s did not accept the saved settings: %w", name, err)
+			}
+		} else if rp != nil {
 			rp.host.refreshConfig(ctx) // the next call sees the saved config
 		}
 		return nil
@@ -949,4 +1048,13 @@ func (s *Service) SetPluginNetForTest(n plugins.NetOptions) {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	s.pluginNet = n
+}
+
+// SetNativeHostForTest adds env to the environment of native plugins'
+// processes. Tests only: with coretest.NativeChildEnv the test binary serves
+// as plugin-host. Call it right after New, before any plugin starts.
+func (s *Service) SetNativeHostForTest(env ...string) {
+	s.pluginsMu.Lock()
+	defer s.pluginsMu.Unlock()
+	s.nativeEnv = append(s.nativeEnv, env...)
 }

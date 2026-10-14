@@ -82,7 +82,7 @@ func (s *Service) runningPlugins(keep func(*plugins.Plugin) bool) []pluginCall {
 	defer s.pluginsMu.RUnlock()
 	var out []pluginCall
 	for name, rp := range s.running {
-		if keep(rp.p) {
+		if rp.p != nil && keep(rp.p) { // a native plugin has no actions or cards
 			out = append(out, pluginCall{name, rp.gen, rp.p, rp.row, rp.host})
 		}
 	}

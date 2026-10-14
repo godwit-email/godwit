@@ -51,7 +51,7 @@ func ServeNativeWith(args []string, stdin io.Reader, stdout, stderr io.Writer, o
 	if fs.Parse(args) != nil {
 		return 2
 	}
-	got, err := fileSHA256(*lib)
+	got, err := FileSHA256(*lib)
 	if err != nil || got != *want {
 		fmt.Fprintf(stderr, "DENIED_BEFORE_DLOPEN: %s is not the granted file\n", *lib)
 		return 3
@@ -83,7 +83,8 @@ func ServeNativeWith(args []string, stdin io.Reader, stdout, stderr io.Writer, o
 	return 0
 }
 
-func fileSHA256(path string) (string, error) {
+// FileSHA256 is the hex SHA-256 of a file's contents.
+func FileSHA256(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err

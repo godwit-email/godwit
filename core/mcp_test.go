@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +34,10 @@ import (
 const mcpServerEnv = "GODWIT_MCP_TEST_SERVER"
 
 func TestMain(m *testing.M) {
+	// coretest.ServeNativeIfChild, which this package's tests cannot import.
+	if os.Getenv("GODWIT_CORETEST_NATIVE") != "" && len(os.Args) > 1 && os.Args[1] == "plugin-host" {
+		os.Exit(plugins.ServeNativeWith(os.Args[2:], os.Stdin, os.Stdout, os.Stderr, plugins.FakeNativeOpener(os.Stderr)))
+	}
 	if mode := os.Getenv(mcpServerEnv); mode != "" {
 		runTestMCPServer(mode)
 		return

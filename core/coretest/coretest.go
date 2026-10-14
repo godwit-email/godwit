@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"net"
@@ -96,6 +97,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	}))
 	t.Cleanup(api.Close)
 	svc.SetPluginNetForTest(netOptions(api.Listener.Addr().String()))
+	svc.SetNativeHostForTest(NativeChildEnv + "=1")
 	return e
 }
 
@@ -393,6 +395,53 @@ func (e *Env) InstallPlugin(t *testing.T, name string) {
 	if err := e.Svc.SetPluginEnabled(ctx, info.Name, true); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// NativeChildEnv makes the test binary a fake plugin-host (ServeNativeIfChild);
+// a Service gets it with SetNativeHostForTest(NativeChildEnv + "=1").
+const NativeChildEnv = "GODWIT_CORETEST_NATIVE"
+
+// ServeNativeIfChild serves as a native plugin's process when the test binary
+// was started as one: it never loads a library (plugins.FakeNativeOpener). A
+// TestMain whose tests run native plugins calls it first.
+func ServeNativeIfChild() {
+	if os.Getenv(NativeChildEnv) == "" || len(os.Args) < 2 || os.Args[1] != "plugin-host" {
+		return
+	}
+	os.Exit(plugins.ServeNativeWith(os.Args[2:], os.Stdin, os.Stdout, os.Stderr, plugins.FakeNativeOpener(os.Stderr)))
+}
+
+// NativePluginFixture writes a native plugin source directory: a manifest
+// (capabilities translate; a text setting endpoint with a default and a
+// secret token) and a fake library (see plugins.FakeNativeOpener) whose
+// describe matches the manifest unless describe is given; extra is merged
+// into the fake library's JSON (record, initFail, echoStderr).
+func NativePluginFixture(t *testing.T, name, version string, describe, extra map[string]any) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "src-"+name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := fmt.Sprintf(`{"name":%q,"version":%q,"description":"A native test plugin","native":{"abi":1},"capabilities":["translate"],
+		"config":[{"key":"endpoint","type":"text","label":"Endpoint","default":"https://default.example"},{"key":"token","type":"secret","label":"Token"}]}`, name, version)
+	if describe == nil {
+		describe = map[string]any{"name": name, "version": version, "abi": 1, "capabilities": []string{"translate"}}
+	}
+	lib := map[string]any{"describe": describe}
+	for k, v := range extra {
+		lib[k] = v
+	}
+	b, err := json.Marshal(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(m), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, plugins.LibraryName()), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // mcpChildEnv makes the test binary serve MCP over stdio (ServeMCPIfChild).
