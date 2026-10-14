@@ -183,6 +183,9 @@ func (m *modelsView) dialog(c *ui.Context) {
 	f.follow()
 	f.edited()
 	title, desc := i18n.T("settings.models.dialog.add"), i18n.T("settings.models.dialog.desc")
+	if m.group == 0 {
+		desc = i18n.T("settings.models.dialog.desc.sub")
+	}
 	if f.id != 0 {
 		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+cmp.Or(f.email, f.baseURL)
 	}
@@ -255,6 +258,12 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
+		kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
+		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
+			m.cancelForm()
+			f = newForm(providerGroups[m.group][0])
+			m.form = f
+		}
 		m.tiles(c, f)
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
@@ -471,7 +480,7 @@ func (m *modelsView) judgeModel(c *ui.Context, f *modelForm) {
 func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	ui.RadioGroup(c, func() {
-		for _, p := range providerOrder {
+		for _, p := range providerGroups[m.group] {
 			sub := i18n.T("settings.models.tile." + p)
 			if core.ModelProviderLogin(p) != "oauth" {
 				gen, judge := core.ProviderFormats(p)
@@ -590,6 +599,8 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 		})
 	case f.fetch == "ok":
 		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
+	case len(f.offered) == 0 && core.ModelProviderLogin(f.provider) == "oauth":
+		kit.Text(c, i18n.T("settings.models.hint.sub"), t.Text.Sm).TextColor(t.Muted)
 	case len(f.offered) == 0:
 		kit.Text(c, i18n.T("settings.models.hint"), t.Text.Sm).TextColor(t.Muted)
 	}

@@ -424,6 +424,9 @@ func TestShots(t *testing.T) {
 		modelsStatus(s, "normal")
 		shot(s.harness, "SettingsModels")
 		s.click("添加服务")
+		s.see("Continue with ChatGPT")
+		shot(s.harness, "SettingsModelsSheetSubscription")
+		s.click("API 密钥")
 		s.see("其他服务")
 		s.see("https://api.openai.com/v1")
 		shot(s.harness, "SettingsModelsSheet")
@@ -433,6 +436,7 @@ func TestShots(t *testing.T) {
 	dlg := func(state string) func(m *modelsView) {
 		ready := func(m *modelsView) *modelForm {
 			m.add()
+			m.group, m.form = 1, newForm(core.ProviderOpenAI)
 			f := m.form
 			f.key, f.offered, f.models, f.fetch, f.fetched = strings.Repeat("k", 20), []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, []string{"[MODEL A]", "[MODEL B]"}, "ok", 3
 			return f

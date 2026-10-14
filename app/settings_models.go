@@ -30,6 +30,7 @@ type modelsView struct {
 	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
 	judge                string
 	open                 bool // the add/edit dialog shows form
+	group                int  // the add dialog's provider group: index into providerGroups
 	loaded               bool // the list has been read once
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
@@ -88,7 +89,16 @@ var providerURL = map[string]string{core.ProviderOpenAI: "https://api.openai.com
 	core.ProviderTypeSafe: "https://api.typesafe.ai/v1", core.ProviderOther: "",
 	core.ProviderChatGPT: core.ModelProviderURL(core.ProviderChatGPT), core.ProviderGrok: core.ModelProviderURL(core.ProviderGrok)}
 
-var providerOrder = []string{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther, core.ProviderChatGPT, core.ProviderGrok}
+// providerGroups are the add dialog's tiles by group: subscriptions first, then API keys.
+var providerGroups = [][]string{
+	{core.ProviderChatGPT, core.ProviderGrok},
+	{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther},
+}
+
+// providerGroup is the index of p's group in providerGroups.
+func providerGroup(p string) int {
+	return slices.IndexFunc(providerGroups, func(g []string) bool { return slices.Contains(g, p) })
+}
 
 func svcProvider(p string) string {
 	switch p {
@@ -532,14 +542,14 @@ func (m *modelsView) openEdit(s core.ModelService) {
 	m.fetchAs(m.form, true)
 }
 
-func (m *modelsView) add() { m.form, m.open = newForm(core.ProviderOpenAI), true }
+func (m *modelsView) add() { m.group, m.form, m.open = 0, newForm(providerGroups[0][0]), true }
 
 // addLocal opens the dialog for a local gateway: 其他服务 with a loopback address to complete.
 func (m *modelsView) addLocal() {
 	f := newForm(core.ProviderOther)
 	f.name, f.baseURL = i18n.T("settings.models.local.name"), localGateway
 	f.autoName, f.autoURL = f.name, f.baseURL
-	m.form, m.open = f, true
+	m.group, m.form, m.open = 1, f, true
 }
 
 // save writes the form; a failed test doesn't stop it.

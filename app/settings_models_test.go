@@ -66,6 +66,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.see("test")
 	h.see("默认")
 	h.click("添加服务")
+	h.click("API 密钥")
 	h.click("其他服务")
 	h.fill("名称", "local")
 	h.fill("地址", test.BaseURL)
@@ -270,6 +271,7 @@ func (h *harness) newService() *modelsView {
 	p := h.openSettings("models")
 	h.see("test")
 	h.click("添加服务")
+	h.click("API 密钥")
 	h.click("其他服务")
 	return p.models
 }
@@ -285,6 +287,15 @@ func TestProviderTiles(t *testing.T) {
 	p := h.openSettings("models")
 	h.see("test")
 	h.click("添加服务")
+	h.see("用你已有的 ChatGPT 或 SuperGrok 订阅登录，不需要 API Key。判断会由生成模型兼任。")
+	if f := p.models.form; f.provider != core.ProviderChatGPT || h.tt.HasText("Anthropic") {
+		t.Fatalf("the subscription group opens first: form %+v", f)
+	}
+	h.click("API 密钥")
+	h.see("选好服务商，填上 Key")
+	if h.tt.HasText("Grok") {
+		t.Fatal("a subscription tile shows in the API key group")
+	}
 	f := p.models.form
 	if f.provider != core.ProviderOpenAI || f.name != "OpenAI" || f.baseURL != "https://api.openai.com/v1" || f.kind != ai.KindResponses || !f.genOn || !f.judgeOn || f.judgeModel != "gpt-6-luna" {
 		t.Fatalf("form %+v", f)
