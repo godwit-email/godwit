@@ -31,6 +31,14 @@
 
 #define GODWIT_PLUGIN_ABI 1
 
+/* Puts godwit_plugin_init in the library's export table: MSVC exports nothing
+ * by default, and GCC or Clang with -fvisibility=hidden would hide it. */
+#if defined(_WIN32)
+#define GODWIT_PLUGIN_EXPORT __declspec(dllexport)
+#else
+#define GODWIT_PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
 typedef struct {
     void  *ptr;
     size_t len;
@@ -65,7 +73,7 @@ typedef struct {
  * api and return 0.
  */
 #ifndef GODWIT_PLUGIN_NO_INIT_DECL
-int godwit_plugin_init(uint32_t host_abi, godwit_plugin_api *api);
+GODWIT_PLUGIN_EXPORT int godwit_plugin_init(uint32_t host_abi, godwit_plugin_api *api);
 #endif
 
 #endif

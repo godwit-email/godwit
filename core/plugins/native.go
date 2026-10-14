@@ -91,6 +91,7 @@ type nativeLine struct {
 
 type nativeProc struct {
 	cmd     *exec.Cmd
+	kill    func() // ends the process and whatever it started
 	stdin   io.WriteCloser
 	dead    chan struct{}
 	mu      sync.Mutex // pending, and writes to stdin
@@ -147,6 +148,7 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 	if err := cmd.Start(); err != nil {
 		return nil, false, err
 	}
+	p.kill = nativeKiller(cmd)
 	go func() {
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 64<<10), maxNativeResponse+64<<10)
@@ -179,12 +181,13 @@ func (n *NativeProcess) ready(ctx context.Context) (*nativeProc, error) {
 	if fresh {
 		if n.o.OnStart != nil {
 			p.readyErr = n.o.OnStart(ctx, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-				return n.send(ctx, p, method, params)
+				res, _, err := n.send(ctx, p, method, params, nil)
+				return res, err
 			})
 		}
 		close(p.ready)
 		if p.readyErr != nil {
-			killNativeGroup(p.cmd)
+			p.kill()
 			<-p.dead
 			return nil, p.readyErr
 		}
@@ -251,21 +254,31 @@ func (n *NativeProcess) Call(ctx context.Context, method string, params any) (js
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	defer func() { <-n.sem }()
 	n.busy()
-	defer n.done()
+	held := true
+	release := func() { n.done(); <-n.sem }
+	defer func() {
+		if held {
+			release()
+		}
+	}()
 	p, err := n.ready(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return n.send(ctx, p, method, json.RawMessage(req))
+	res, detached, err := n.send(ctx, p, method, json.RawMessage(req), release)
+	held = !detached // an abandoned call keeps its slot until the plugin is done with it
+	return res, err
 }
 
-// send runs one call on p (OnStart's calls come here directly).
-func (n *NativeProcess) send(ctx context.Context, p *nativeProc, method string, params any) (json.RawMessage, error) {
+// send runs one call on p (OnStart's calls come here directly). When ctx
+// ends first and detach is set, the call is left to finish in the plugin:
+// send returns at once with detached true, and detach runs once the plugin
+// answers, exits or runs out of time.
+func (n *NativeProcess) send(ctx context.Context, p *nativeProc, method string, params any, detach func()) (_ json.RawMessage, detached bool, _ error) {
 	req, err := json.Marshal(params)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	n.mu.Lock()
 	n.next++
@@ -277,34 +290,58 @@ func (n *NativeProcess) send(ctx context.Context, p *nativeProc, method string, 
 	p.pending[id] = ch
 	_, werr := p.stdin.Write(append(line, '\n'))
 	p.mu.Unlock()
-	defer func() {
+	forget := func() {
 		p.mu.Lock()
 		delete(p.pending, id)
 		p.mu.Unlock()
-	}()
+	}
 	if werr != nil { // it stopped reading: whether or not it exits by itself, it is done
-		killNativeGroup(p.cmd)
+		forget()
+		p.kill()
 		<-p.dead
-		return nil, n.exited(p)
+		return nil, false, n.exited(p)
 	}
 	t := time.NewTimer(n.o.Timeout)
-	defer t.Stop()
 	select {
 	case l := <-ch:
-		return n.answer(l)
+		t.Stop()
+		forget()
+		res, err := n.answer(l)
+		return res, false, err
 	case <-p.dead:
+		t.Stop()
+		forget()
 		select {
 		case l := <-ch: // answered just before it exited
-			return n.answer(l)
+			res, err := n.answer(l)
+			return res, false, err
 		default:
-			return nil, n.exited(p)
+			return nil, false, n.exited(p)
 		}
 	case <-t.C:
-		killNativeGroup(p.cmd)
+		forget()
+		p.kill()
 		<-p.dead
-		return nil, fmt.Errorf("%w (%s after %s)", ErrTimeout, method, n.o.Timeout)
+		return nil, false, fmt.Errorf("%w (%s after %s)", ErrTimeout, method, n.o.Timeout)
 	case <-ctx.Done():
-		return nil, ctx.Err() // nothing to cancel across the ABI: the call runs on in the plugin
+		if detach == nil {
+			t.Stop()
+			forget()
+			return nil, false, ctx.Err()
+		}
+		go func() { // nothing to cancel across the ABI: the call runs on in the plugin
+			defer detach()
+			defer forget()
+			defer t.Stop()
+			select {
+			case <-ch:
+			case <-p.dead:
+			case <-t.C:
+				p.kill()
+				<-p.dead
+			}
+		}()
+		return nil, true, ctx.Err()
 	}
 }
 
@@ -348,7 +385,7 @@ func (n *NativeProcess) Close() {
 	select {
 	case <-p.dead:
 	case <-time.After(nativeGrace):
-		killNativeGroup(p.cmd)
+		p.kill()
 		<-p.dead
 	}
 }

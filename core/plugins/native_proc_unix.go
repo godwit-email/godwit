@@ -10,4 +10,8 @@ import (
 // The plugin's process gets a group of its own, so killing it ends what it started too.
 func setNativeGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
-func killNativeGroup(cmd *exec.Cmd) { syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+// nativeKiller ends the started cmd's process group.
+func nativeKiller(cmd *exec.Cmd) func() {
+	pid := cmd.Process.Pid
+	return func() { syscall.Kill(-pid, syscall.SIGKILL) }
+}

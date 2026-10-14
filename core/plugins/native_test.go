@@ -262,3 +262,22 @@ func TestNativeIdleWaitsForCalls(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), runs.Load(), "a call in flight is not idle")
 }
+
+// A call the caller stopped waiting for still runs in the plugin: it keeps
+// its in-flight slot until the plugin answers.
+func TestNativeCanceledCallKeepsSlot(t *testing.T) {
+	lib, sha := fakeLib(t, map[string]any{})
+	n := newFake(t, lib, sha, 0, nil)
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	for range 4 {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		_, err := n.Call(ctx, "probe.sleep", map[string]any{"ms": 600})
+		cancel()
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	}
+	start := time.Now()
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, time.Since(start), 300*time.Millisecond, "the four abandoned calls still hold the slots")
+}
