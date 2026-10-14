@@ -43,6 +43,9 @@ type deviceResp struct {
 	Error                   string `json:"error"`
 }
 
+// devicePollTimeout bounds one token poll, so a stalled connection is retried.
+const devicePollTimeout = 30 * time.Second
+
 // deviceStartTimeout bounds the device-code request.
 const deviceStartTimeout = 30 * time.Second
 
@@ -173,17 +176,23 @@ func (f *DeviceFlow) poll() {
 			form.Set(k, v)
 		}
 		reqCtx, cancel := context.WithDeadline(f.ctx, deadline)
+		reqCtx, cancelReq := context.WithTimeout(reqCtx, devicePollTimeout)
 		b, status, err := postForm(reqCtx, f.hc, f.cfg.TokenURL, form)
+		cancelReq()
 		cancel()
 		if err != nil {
 			if f.ctx.Err() != nil {
 				f.finish(Grant{}, context.Canceled)
-			} else if errors.Is(err, context.DeadlineExceeded) || !time.Now().Before(deadline) {
-				f.finish(Grant{}, ErrFlowExpired)
-			} else {
-				f.finish(Grant{}, err)
+				return
 			}
-			return
+			if !time.Now().Before(deadline) {
+				f.finish(Grant{}, ErrFlowExpired)
+				return
+			}
+			// RFC 8628 §3.5: after a connection timeout or transport failure,
+			// back off and keep polling until the code expires.
+			interval += 5 * time.Second
+			continue
 		}
 		var tr tokenResp
 		if json.Unmarshal(b, &tr) != nil {
