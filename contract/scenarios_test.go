@@ -213,7 +213,7 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", LocalAPI: true, SidebarWidth: 320, ListWidth: 400,
+			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400,
 			TrustedImageSenders: []string{"bob@example.com"}} // only TrustImageSender sets it; SetSettings keeps it
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip

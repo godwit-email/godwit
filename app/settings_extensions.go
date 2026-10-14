@@ -365,6 +365,9 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 					if len(pm.Net) > 0 {
 						perm("net", i18n.Tf("settings.ext.perm.net", strings.Join(pm.Net, i18n.T("mail.list_sep"))), false)
 					}
+					if slices.Contains(p.Capabilities, "translate") { // it gets the mail the user translates, and may send it to its hosts unasked
+						perm("translate", i18n.T("settings.ext.perm.translate"), false)
+					}
 					if pm.LLM {
 						perm("llm", i18n.T("settings.ext.perm.llm"), false)
 					}

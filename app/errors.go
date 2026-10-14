@@ -20,6 +20,7 @@ var errorKeys = []struct {
 	{core.ErrRunActive, "error.run_active"},
 	{core.ErrStaleApproval, "error.stale_approval"},
 	{core.ErrNeedsGrant, "error.needs_grant"},
+	{core.ErrTranslatorUnavailable, "error.translator_unavailable"},
 	{core.ErrRegistryMismatch, "error.registry_mismatch"},
 	{core.ErrRegistrySignature, "error.registry_signature"},
 	{core.ErrAINotConfigured, "error.ai_not_configured"},

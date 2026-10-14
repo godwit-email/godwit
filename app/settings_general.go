@@ -239,6 +239,9 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				{Value: "reading", Label: i18n.T("settings.reply_language.reading")},
 			})
 		}),
+		sel(i18n.T("settings.translator"), i18n.T("settings.translator.help"), func() ui.Element {
+			return settingSelect(c, i18n.T("settings.translator"), &st.Translator, p.translatorOptions(st.Translator))
+		}),
 		func() {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
 		})
@@ -322,4 +325,26 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 			}
 		})
 	})
+}
+
+// translatorOptions are the 翻译方式 choices: the model, then each plugin
+// that can translate (marked when off), and the chosen one if it is gone.
+func (p *settingsPage) translatorOptions(cur string) []kit.Option[string] {
+	opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.translator.model")}}
+	found := cur == ""
+	for _, tr := range p.translators {
+		if tr.ID == "" {
+			continue
+		}
+		label := tr.Name
+		if !tr.Running {
+			label = i18n.Tf("settings.translator.off", tr.Name)
+		}
+		opts = append(opts, kit.Option[string]{Value: tr.ID, Label: label})
+		found = found || tr.ID == cur
+	}
+	if !found {
+		opts = append(opts, kit.Option[string]{Value: cur, Label: i18n.Tf("settings.translator.gone", strings.TrimPrefix(cur, "plugin/"))})
+	}
+	return opts
 }
