@@ -6,6 +6,7 @@ import (
 	"context"
 	"os/exec"
 	"strconv"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -25,7 +26,7 @@ func nativeKiller(cmd *exec.Cmd) func() {
 	}
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return func() { tree(); cmd.Process.Kill() }
+		return sync.OnceFunc(func() { tree(); cmd.Process.Kill() })
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE}}
@@ -41,11 +42,13 @@ func nativeKiller(cmd *exec.Cmd) func() {
 	}
 	if err != nil {
 		windows.CloseHandle(job)
-		return func() { tree(); cmd.Process.Kill() }
+		return sync.OnceFunc(func() { tree(); cmd.Process.Kill() })
 	}
-	return func() {
+	// Once: the first call (a timeout, or the clean exit) ends the tree and
+	// releases the job; a later one must not touch the closed handle.
+	return sync.OnceFunc(func() {
 		tree()
 		windows.TerminateJobObject(job, 1)
 		windows.CloseHandle(job)
-	}
+	})
 }

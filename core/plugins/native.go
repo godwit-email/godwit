@@ -166,6 +166,7 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 			}
 		}
 		cmd.Wait()
+		p.kill() // also after a clean exit: helpers it started go, and on Windows its job is released
 		close(p.dead)
 	}()
 	n.p = p

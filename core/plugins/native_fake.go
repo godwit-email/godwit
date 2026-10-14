@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -110,6 +112,13 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				}
 				json.Unmarshal(req, &r)
 				time.Sleep(time.Duration(r.MS) * time.Millisecond)
+				return ok(struct{}{}), nil
+			case "probe.spawn": // a helper process, its pid in record + ".helper"
+				helper := exec.Command("sleep", "30")
+				if err := helper.Start(); err != nil {
+					return nil, err
+				}
+				os.WriteFile(spec.Record+".helper", []byte(strconv.Itoa(helper.Process.Pid)), 0o600)
 				return ok(struct{}{}), nil
 			case "probe.crash":
 				fmt.Fprintln(stderr, spec.EchoStderr)
