@@ -112,6 +112,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.models.load()
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		p.ext.load()
+		if hints == nil { // opened: the directory may have changed since
+			p.ext.refreshRegistry()
+		}
 	case sec == "privacy" && hints == nil:
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
