@@ -28,7 +28,7 @@ const platforms = [
 		main: { label: s.microsoftStore, href: storeUrl, icon: "microsoft" },
 		others: [{ label: s.installer, href: "/download/windows-amd64" }, { label: s.windowsArm, href: "/download/windows-arm64" }],
 	},
-	{ name: "Linux", icon: "ubuntu", note: s.linuxNote, main: { label: s.downloadLinux, href: "/download/linux-amd64", icon: "download" }, others: [{ label: s.arm64, href: "/download/linux-arm64" }] },
+	{ name: "Linux", icon: "ubuntu", note: s.linuxNote, main: { label: s.downloadLinux, href: "/download/linux-amd64", icon: "ubuntu" }, others: [{ label: s.arm64, href: "/download/linux-arm64" }] },
 ] as const;
 const commands = [
 	{ label: s.homebrew, cmd: "brew install godwit-email/tap/godwit" },
@@ -137,7 +137,7 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 						class="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 font-medium text-primary-foreground transition-opacity hover:opacity-90"
 					>
 						<span data-os-icon="darwin" class="inline-flex"><Icon name="apple" /></span>
-						<span data-os-icon="linux" hidden class="inline-flex"><Icon name="download" /></span>
+						<span data-os-icon="linux" hidden class="inline-flex"><Icon name="ubuntu" /></span>
 						<span>{s.downloadMac}</span>
 					</a>
 					<!-- On Windows the Store is the way in: the script swaps it for the primary button. -->
