@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/godwit-email/godwit/compare/v1.0.0...v1.0.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **mail:** parse mail stylesheets with tdewolff/parse instead of douceur ([#59](https://github.com/godwit-email/godwit/issues/59)) ([ed48086](https://github.com/godwit-email/godwit/commit/ed48086b1ca17050bf92a394faccb45edc892149))
+
 ## [1.0.0](https://github.com/godwit-email/godwit/compare/v0.3.0...v1.0.0) (2026-10-13)
 
 
