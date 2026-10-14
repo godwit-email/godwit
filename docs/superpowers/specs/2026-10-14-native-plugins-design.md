@@ -26,9 +26,9 @@
 
 ### 2.1 一句话
 
-原生插件 = `plugin.json` + 一个平台专用动态库。核心（`core`）在**加载前**完成全部校验与授权，然后为每个启用的原生插件启动一个子进程 `godwit plugin-host`，由子进程 `dlopen` 并通过 C ABI 调用；核心与子进程之间走 stdio 上的 JSON 行协议。可信名单是一个 ed25519 签名的 `index.json`，由独立的 `godwit-email/plugins` 仓库维护、CI 签名后发布；翻译流程新增「翻译方式」设置，在内置模型翻译与启用的插件之间选择。
+原生插件 = `plugin.json` + 一个平台专用动态库。核心（`core`）在**加载前**完成全部校验与授权，然后为每个启用的原生插件启动一个子进程 `godwit plugin-host`，由子进程 `dlopen` 并通过 C ABI 调用；核心与子进程之间走 stdio 上的 JSON 行协议。可信名单是一个 ed25519 签名的 `registry.json`，由独立的 `godwit-email/plugins` 仓库维护、CI 签名后发布，原生插件和脚本插件都在里面；两种插件通过同一个能力层接入翻译流程（2.7）；翻译流程新增「翻译方式」设置，在内置模型翻译与启用的插件之间选择。
 
-### 2.2 取舍一：子进程宿主，而不是在主进程里 dlopen  `[我的决定，需确认]`
+### 2.2 取舍一：子进程宿主，而不是在主进程里 dlopen  `[已确认 2026-10-14]`
 
 验证原型是在主进程里 dlopen 的。本文改为子进程，理由：
 
@@ -45,38 +45,74 @@
 
 被否的更懒方案：让插件直接是一个可执行文件，走 MCP 一样的 stdio。它更省代码，但用户已定动态库方向，且动态库让宿主控制进程本身（可执行文件是插件自己的，Godwit 只能 exec 它）。本文不采用，记在这里供对比。
 
-### 2.3 取舍二：宿主不用 cgo，用 purego  `[未验证，P0 第一项实验]`
+### 2.3 取舍二：宿主不用 cgo，用 purego  `[macOS 已验证：E1；Linux / Windows 待 E3]`
 
 原型的宿主用 cgo 写了 `loader.c`，并据此认为「macOS 宿主 dlopen 需要 CGO」。但 mygo 本身就在无 cgo 下用 `purego.Dlopen` 加载 libghostty-vt、sqlite 和 Metal（`plugins/terminal/internal/vt/open_unix.go`、`plugins/sqlite/ffi_unix.go`），Windows 用 `syscall.LoadLibrary`。purego v0.11.1 已经是间接依赖。所以 CI 的 `CGO_ENABLED=0` 策略不变，只需把 purego 改成直接依赖。
 
-未验证的点：**无 cgo 的 Go 宿主（purego 的 fakecgo 运行时）加载一个 Go c-shared 库**，两个 Go 运行时共处一个进程。原型是 cgo 宿主。这是 P0 的第一个实验；不通过则退回「`plugin-host` 子命令用 cgo 单独编译」或可执行文件插件。
+E1 已在 macOS arm64 上验证：`CGO_ENABLED=0` 的宿主用 purego 加载 Go c-shared 的 DLX，调用、并发、超时 kill、崩溃隔离、真实翻译都通过，`-race` 无报告（见 §6 P0）。Linux 上 purego 无 cgo 时走 fakecgo，Windows 走 `syscall.LoadLibrary`，这两个平台等 E3。
 
-### 2.4 取舍三：可信名单签名发布到 R2，而不是网站反代  `[我的决定，需确认]`
+### 2.4 取舍三：可信名单签名发布到 R2，而不是网站反代  `[已确认 2026-10-14]`
 
 用户设想：插件仓库根目录放 JSON/YAML，网站反代，应用读网站接口。本文调整两点：
 
-1. **签名**：仓库 CI 用 ed25519 私钥（GitHub Secret）对 `index.json` 签名，公钥编进应用（同 mygo 更新器把 `publicKey` 写在 `mygo.config.ts` 的做法）。这样「名单来源可验证」不依赖谁控制 CDN、R2 或反代；Go 标准库 `crypto/ed25519` 直接验，不加依赖。
-2. **发布位置**：CI 把 `index.json` 和 `index.json.sig` 上传到现有 R2 桶 `godwit-downloads` 的 `plugins/` 下，应用从 `https://dl.godwit.email/plugins/index.json` 读。`site/` 不需要加代码（`release.yml` 已经有上传 R2 的凭据模式）。如果仍希望网站反代 GitHub 原文件，只是 `site/src/worker.ts` 多一条路由，核心不受影响；签名让两种方式一样安全。
+1. **签名**：仓库 CI 用 ed25519 私钥（GitHub Secret）对 `registry.json` 签名，公钥编进应用（同 mygo 更新器把 `publicKey` 写在 `mygo.config.ts` 的做法）。这样「名单来源可验证」不依赖谁控制 CDN、R2 或反代；Go 标准库 `crypto/ed25519` 直接验，不加依赖。
+2. **发布位置**：CI 把 `registry.json` 和 `registry.json.sig` 上传到现有 R2 桶 `godwit-downloads` 的 `plugins/` 下，应用从 `https://dl.godwit.email/plugins/registry.json` 读。`site/` 不需要加代码（`release.yml` 已经有上传 R2 的凭据模式）。如果仍希望网站反代 GitHub 原文件，只是 `site/src/worker.ts` 多一条路由，核心不受影响；签名让两种方式一样安全。
 
-格式用 JSON 不用 YAML：Go 标准库有 JSON，没有 YAML。
+文件名 `registry.json`。格式用 JSON 不用 YAML：Go 标准库有 JSON，没有 YAML。
+
+**脚本插件也进同一个 registry**。区别只在产物和审核的含义（4.2、3.8）：
+
+| | 原生插件 | 脚本插件 |
+|---|---|---|
+| 产物 | 每个平台一个动态库 | 一个平台无关的 `.js` 文件（作者自己 bundle 好） |
+| 「已审核」意味着 | 这个文件可以加载；首装确认一次风险后直接启用 | 这个文件经过审核；**权限仍由用户授权**（现有权限卡片），因为权限是用户对数据的同意，审核替代不了 |
+| 升级 | 目录版本一键升级，不再确认 | 权限不变则保持启用（现有行为），权限变了待授权（现有行为） |
 
 ### 2.5 取舍四：发布产物是裸动态库，不打包  `[我的决定]`
 
-每个版本每个平台发布一个裸文件（`dlx-0.1.0-darwin-arm64.dylib`），`plugin.json` 的内容随 PR 写进 `index.json` 并经审核。应用安装时自己把 manifest 写成 `plugin.json`、把库放成固定名 `plugin.dylib` / `plugin.so` / `plugin.dll`，再走现有 `InstallPlugin(dir)`。好处：不解 zip（没有 zip-slip、没有多余文件），名单里的 `sha256` 就是**那一个文件**的哈希，和「信任绑定具体文件」一一对应；一份 manifest 服务所有平台。名单外安装则是用户选一个目录（现有「安装」按钮），目录里放 `plugin.json` 和 `plugin.<ext>`。
+每个版本每个平台发布一个裸文件（`dlx-0.1.0-darwin-arm64.dylib`），`plugin.json` 的内容随 PR 写进 `registry.json` 并经审核。应用安装时自己把 manifest 写成 `plugin.json`、把库放成固定名 `plugin.dylib` / `plugin.so` / `plugin.dll`，再走现有 `InstallPlugin(dir)`。好处：不解 zip（没有 zip-slip、没有多余文件），名单里的 `sha256` 就是**那一个文件**的哈希，和「信任绑定具体文件」一一对应；一份 manifest 服务所有平台。名单外安装则是用户选一个目录（现有「安装」按钮），目录里放 `plugin.json` 和 `plugin.<ext>`。
 
 ### 2.6 取舍五：复用现有的「授权绑定哈希」机制
 
 现有脚本插件用 `permission_hash` / `granted_hash` 表达「用户授权过的权限集」。原生插件把 `permission_hash` 定义为 **`source_hash`**（安装快照里 `plugin.json` + 库文件的哈希）。于是：文件变了 → `NeedsGrant` 重新为真 → 不能启用，直到重新审核或用户重新授权。不用新表，`GrantPermission`、`SetPluginEnabled`、`checkPluginFiles`、版本目录、`startPlugins` 的清理照旧。
 
-要改的一处：`InstallPlugin` 的 upsert 今天写的是 `enabled = enabled AND permission_hash = excluded.permission_hash`。原生插件的 `permission_hash` 每个版本都变，照旧的话**每次升级都会变成待授权**。所以 `InstallPlugin` 增加一个参数 `grant string`（`""` 或 `"listed"`）：为 `"listed"` 时，同一条 upsert 里写 `granted_hash = excluded.permission_hash, trust = 'listed', enabled = 1`，切换与授权是一条语句，不会出现「新文件已切换、授权还是旧的」的中间态。名单外安装传 `""`，行为与今天一样。
+要改的一处：`InstallPlugin` 的 upsert 今天写的是 `enabled = enabled AND permission_hash = excluded.permission_hash`。原生插件的 `permission_hash` 每个版本都变，照旧的话**每次升级都会变成待授权**。所以 `InstallPlugin` 增加一个参数 `trust string`（`""` 或 `"listed"`）。为 `"listed"` 时总是写 `trust = 'listed'`；对原生插件还在同一条 upsert 里写 `granted_hash = excluded.permission_hash, enabled = 1`（脚本插件不授权，见 3.8），切换与授权是一条语句，不会出现「新文件已切换、授权还是旧的」的中间态。名单外安装传 `""`，行为与今天一样。
 
 新增一列 `trust`（`listed` | `user`）记录**这次授权是怎么来的**：`listed` 表示安装时文件哈希命中了签名名单；`user` 表示用户看过风险提示后自己授权。这就是「审核可信」和「用户已授权」的区分。
+
+### 2.7 统一的能力层，两种运行时各一个适配器  `[2026-10-14 按用户意见加入]`
+
+用户的设想是 app → 插件层 → 适配层 → JS / 动态库。本文采纳，统一点放在**能力**这一层，不放在 `ctx` 宿主 API 这一层：
+
+```
+app（阅读页翻译按钮、设置里的「翻译方式」）
+  └─ core：RunSkill("translate") 按 Settings.Translator 分流；ListTranslators 列出可选渠道
+       ├─ 内置：模型翻译（现有流式路径，原样保留）
+       └─ translator 接口  translate(ctx, req) (res, error)
+            ├─ jsTranslator      → goja VM，调用插件 ctx.translators.register 注册的函数
+            └─ nativeTranslator  → NativePlugin 子进程，调用 C ABI 的 "translate"
+```
+
+**统一的部分**：
+
+- 能力契约：`translate` 的请求 `{texts, source, target}`、响应 `{texts, source}`、错误码集合，对 JS 和原生完全相同（4.4）。JS 侧的类型写进 `sdk/godwit.d.ts`。
+- 能力声明：两种插件都在 manifest 里写 `capabilities: ["translate"]`。设置页据此列出渠道，**不需要先加载插件**。JS 插件在初始化时注册了没声明的能力，或声明了没注册，都算加载失败。
+- 生命周期：安装、授权、启停、配置、卸载、失败计数、registry，都是同一张 `plugins` 表和同一组 `Service` 方法，按 manifest 分流。
+
+**不统一的部分**：`ctx.mail` / `ctx.net` / `ctx.llm` / `ctx.storage` 这些宿主 API 只给 JS 插件。原因：
+
+- 它们存在的意义是让沙箱里的代码在受控范围内办事。原生代码本来就能直接读文件、联网，给它 `ctx.net` 不增加任何约束，只增加 ABI 面。
+- 把它们搬到 C ABI 需要宿主回调（插件持有宿主的函数指针），是 ABI v2 级别的改动。真有需要时（例如原生插件要调用户选的模型）再加；子进程协议是双向 JSON 行，到时宿主回调只是多一种消息。
+
+**模型翻译不塞进 `translator` 接口**：它是流式的（`ai.Event` 通道，带 `NO_TRANSLATION` 前缀缓冲和缓存），插件是一次性返回。强行统一要么让插件假装流式，要么让模型失去流式。所以分流点就在 `runSkill` 里一个 `if`，渠道列表对用户是统一的。
+
+**JS 插件提供翻译时的外发规则** `[我的决定]`：新调用种类 `KindTranslate`。它拿到 manifest 声明的全部主机，**不逐次审批**，并且在交给插件前把插件标为 `holds_mail`。理由是用户在设置里把它选为翻译方式，并且每次自己点击「翻译」，这本身就是对「把这封邮件交给这个插件、它会发往声明的主机」的同意；安装时的权限卡片多一行「会收到你要翻译的邮件内容，并可发往上面列出的地址」。这和 Action / Tool 的「同时有 mail:read 和 net 时每次审批」不同，需要你确认。
 
 ## 3. 用户流程
 
 ### 3.1 安装（名单内）
 
-1. 设置 › 扩展 › 插件 › 「插件目录」区块列出 `index.json` 里当前平台有产物、`abi` 与应用兼容、`minGodwit` 满足的插件（不满足的灰显并说明原因）。信息全部来自名单，不来自插件文件。
+1. 设置 › 扩展 › 插件 › 「插件目录」区块列出 `registry.json` 里当前平台有产物、`abi` 与应用兼容、`minGodwit` 满足的插件（不满足的灰显并说明原因）。信息全部来自名单，不来自插件文件。
 2. 点「安装」→ 一个简短确认（现有 `confirmView` 样式）：
 
    > **安装原生插件 DLX 0.1.0**
@@ -129,9 +165,16 @@
 
 ### 3.7 撤销信任
 
-- 名单维护者从 `index.json` 删掉某个 release（或整个插件）并发布。
+- 名单维护者从 `registry.json` 删掉某个 release（或整个插件）并发布。
 - 应用下次刷新名单：对每个 `trust = 'listed'` 的已装插件，用它库文件的 `sha256` 查名单；查不到 → `enabled = 0`，`disabled_reason = trust_revoked`，`granted_hash = ''`，发 `PluginsChanged`。行内提示「Godwit 插件目录已撤销对这个文件的信任」，用户可按 3.2 的流程以 `user` 身份重新授权。
 - 名单刷新失败（离线）不改变任何已装插件的状态；缓存的名单继续用于展示。
+
+### 3.8 目录里的脚本插件
+
+1. 「插件目录」里脚本插件和原生插件列在一起，标签分别是「脚本」和「原生」。
+2. 点「安装」→ 下载那个 `.js` → `sha256` 校验（失败同样不可绕过）→ 写 `plugin.json` 和 `<main>` → `InstallPlugin(dir, "listed")`。
+3. 安装后进入现有的待授权状态，显示现有的权限卡片，上面多一行「已审核：Godwit 插件目录」。用户点「允许」才启用。`"listed"` 对脚本插件只写 `trust` 列，不授权。
+4. 撤销：和原生插件一样，`trust_revoked` 停用。
 
 ## 4. 数据格式
 
@@ -154,13 +197,13 @@
 
 - `native` 与 `main` 二选一；有 `native` 时 `main`、`permissions` 必须缺省（原生代码没有可执行的权限表达，写了就是误导）。
 - `native.abi` 必须等于应用支持的 ABI 版本（v1 = 1），否则拒绝安装（在加载前）。
-- `capabilities` 非空，每项在已知集合里（v1 只有 `translate`）。
+- `capabilities` 对原生插件必须非空，对脚本插件可以缺省；每项在已知集合里（v1 只有 `translate`）。脚本插件声明了 `translate` 就必须在初始化时用 `ctx.translators.register` 注册，反之亦然（2.7）。
 - 库文件名固定 `plugin.dylib` / `plugin.so` / `plugin.dll`，由当前平台决定，不在 manifest 里。
 - `config` 规则不变（secret 进钥匙串）。注意：配置值通过 `configure` 交给原生代码，secret 也在内；风险文案已覆盖「凭据」。
 
 大小限制：`plugins.Limits{File, Total}` 作为 `Snapshot` / `HashDir` 的参数；脚本插件 5 / 20 MiB 不变，原生 64 / 80 MiB。`InstallPlugin` 先用大限制快照、读 manifest 判定类型，脚本插件再按小限制复核（`files()` 走一遍即可）。
 
-### 4.2 可信名单（`index.json`）
+### 4.2 可信名单（`registry.json`）
 
 ```json
 {
@@ -190,9 +233,31 @@
 }
 ```
 
+脚本插件的条目（同一个 `plugins` 数组）：
+
+```json
+{
+  "name": "deepl",
+  "title": { "default": "DeepL" },
+  "summary": { "default": "Translate with your DeepL API key." },
+  "homepage": "https://github.com/someone/godwit-deepl",
+  "releases": [
+    {
+      "version": "0.1.0",
+      "minGodwit": "1.2.0",
+      "manifest": { "name": "deepl", "version": "0.1.0", "main": "index.js", "capabilities": ["translate"],
+                    "permissions": { "net": ["api.deepl.com", "api-free.deepl.com"] },
+                    "config": [{ "key": "apiKey", "type": "secret", "label": "DeepL API Key" }] },
+      "artifacts": { "any": { "url": "https://github.com/someone/godwit-deepl/releases/download/v0.1.0/index.js", "sha256": "…", "size": 18342 } }
+    }
+  ]
+}
+```
+
+- 原生插件的 release 只有平台键；脚本插件的 release 只有 `any`，且 `manifest.main` 是不带目录的单个 `.js` 文件名，应用把产物写成这个名字。大小沿用脚本插件的 5 MiB。
 - 平台键与 `site/src/download.ts` 的 `targets` 一致：`darwin-arm64`、`darwin-amd64`、`windows-amd64`、`windows-arm64`、`linux-amd64`、`linux-arm64`。缺的平台就是不支持。
-- `manifest` 必须能通过 `ParseManifest`，且 `name` / `version` 与外层一致，`native.abi` 与应用一致。CI 在签名前跑同一个校验（Go 小程序或 `godwit` 的隐藏子命令）。
-- `index.json.sig`：ed25519 对 `index.json` 原始字节的签名，base64。应用：下载两者 → 验签 → `updated` 不早于缓存 → 替换缓存 `DataDir/plugins/index.json`（原子写）。任一步失败 → 保留旧缓存，界面提示「插件目录暂时无法更新」。
+- `manifest` 必须能通过 `ParseManifest`，且 `name` / `version` 与外层一致；原生插件的 `native.abi` 与应用一致。CI 在签名前跑同一个校验（Go 小程序或 `godwit` 的隐藏子命令）。
+- `registry.json.sig`：ed25519 对 `registry.json` 原始字节的签名，base64。应用：下载两者 → 验签 → `updated` 不早于缓存 → 替换缓存 `DataDir/plugins/registry.json`（原子写）。任一步失败 → 保留旧缓存，界面提示「插件目录暂时无法更新」。
 - 公钥是 `core` 里的常量（与更新器密钥不同，缩小泄露影响）。
 - 下载：`net/http`，只允许 `https`，响应最多 `size`（或 64 MiB），30 秒连接 / 5 分钟总超时，不走环境代理之外的特殊逻辑（和更新器一样是应用自己的出站）。
 
@@ -279,7 +344,7 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 
 ### 4.5 核心 ↔ 子进程协议
 
-`godwit plugin-host --library <绝对路径> --sha256 <hex>`，stdio 上每行一个 JSON：
+`godwit plugin-host --library <绝对路径> --sha256 <hex>`，stdio 上每行一个 JSON。路径必须是绝对路径：hardened 程序的 dlopen 拒绝相对路径（E2），`versionDir` 的结果先过一次 `filepath.Abs`。
 
 ```jsonc
 → { "id": 1, "method": "translate", "params": { … } }
@@ -298,12 +363,15 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 | `core/plugins/native.go`（新） | `NativePlugin`：启动 `plugin-host`、JSON 行客户端、`Call(ctx, method, params) (json.RawMessage, error)`、在途计数、超时 kill、退出通知、懒重启。约 200 行 + 测试（用本测试二进制当假子进程，照 `core/mcp_proc.go` 与 laya-spike 分支的 `client_test.go`） |
 | `cmd/godwit/pluginhost.go`、`pluginhost_unix.go`、`pluginhost_windows.go`（新） | 子命令；purego `Dlopen` + `RegisterFunc`（unix）/ `syscall.LoadLibrary` + `NewLazyProc`（windows）；函数指针调用用 `purego.SyscallN` |
 | `sdk/native/godwit_plugin.h`（新） | 4.4 的头文件 |
-| `core/extensions.go` | `InstallPlugin(ctx, dir, grant)`：原生分支跳过 `Build`，`permission_hash = hash`，`grant == "listed"` 时同一条 upsert 授权并启用（2.6）；现有调用方（`app/settings_extensions.go` 的 `install`、rpc、测试）传 `""`。`runningPlugin` 今天绑死 goja（`p *plugins.Plugin`、`registerPluginTools`、`startHooks`、`stopPlugin` 里的 `VM().Close()`）：加一个字段 `native *plugins.NativePlugin`，`loadPlugin` / `stopPlugin` 在入口按 manifest 分流，原生分支不注册工具和 Hook。`SetPluginConfig`：原生插件保存后重发 `configure`；`pluginInfo` 填 `Native/Trust/Capabilities`；`pluginFailed` 只由 ABI 错误、超时、退出调用（3.3）。`ListPlugins` 每次都重算所有插件文件的哈希（已有 `shortcut` 注释），64 MiB 的库会让扩展页变慢：原生插件按 `(size, mtime)` 缓存哈希，变了再算 |
-| `core/pluginstore.go`（新） | `index` 类型、`RefreshPluginIndex`（下载、验签、防回滚、缓存、撤销检查）、`ListPluginIndex`、`InstallPluginFromIndex(name)`（下载、校验、staging、`InstallPlugin`、`trust='listed'`、启用）。公钥常量。约 250 行 + 测试（httptest + 测试密钥对） |
+| `core/extensions.go` | `InstallPlugin(ctx, dir, trust)`：原生分支跳过 `Build`，`permission_hash = hash`，`trust == "listed"` 时写 `trust`，原生插件同一条 upsert 授权并启用（2.6）；现有调用方（`app/settings_extensions.go` 的 `install`、rpc、测试）传 `""`。`runningPlugin` 今天绑死 goja（`p *plugins.Plugin`、`registerPluginTools`、`startHooks`、`stopPlugin` 里的 `VM().Close()`）：加一个字段 `native *plugins.NativePlugin`，`loadPlugin` / `stopPlugin` 在入口按 manifest 分流，原生分支不注册工具和 Hook。`SetPluginConfig`：原生插件保存后重发 `configure`；`pluginInfo` 填 `Native/Trust/Capabilities`；`pluginFailed` 只由 ABI 错误、超时、退出调用（3.3）。`ListPlugins` 每次都重算所有插件文件的哈希（已有 `shortcut` 注释），64 MiB 的库会让扩展页变慢：原生插件按 `(size, mtime)` 缓存哈希，变了再算 |
+| `core/pluginstore.go`（新） | `registry` 类型、`RefreshPluginRegistry`（下载、验签、防回滚、缓存、撤销检查）、`ListPluginRegistry`、`InstallPluginFromRegistry(name)`（下载、校验、staging、`InstallPlugin`、`trust='listed'`、启用）。公钥常量。约 250 行 + 测试（httptest + 测试密钥对） |
 | `core/store/schema.go` | 追加 `trust` 列 |
 | `core/settings.go` | `Translator string`（`""` 或 `plugin:<name>`）；`validate` 用 `skills.ValidName` |
 | `core/models.go` | `TaskModel("translate")`：`Translator` 指向插件时返回 `"plugin/<name>"`；插件未启用/未运行返回新错误 `ErrTranslatorUnavailable`（不在 `refreshTasks` 的隐藏集合里，按钮仍显示、运行时报错） |
 | `core/aiservice.go` | `runSkill`：`name == "translate"` 且 `Translator` 指向插件时，**在 `resolveTask` 之前**分流（否则没配模型的用户会先得到 `ErrAINotConfigured`）。插件分支：`mailTarget` + `bind` 照旧；正文取 `body_text`，为空则 `mail.HTMLToText(body_html)`（`mailForModel` 的 `Text` 只有 `body_text`，纯 HTML 邮件会是空的）；selection 用 `t.Text`；按空行切段 → `Call("translate")` → `NoTranslate` 判定 → 一次 `text` 事件 + `done`；cache key 用 `("plugin", name, version, lang, keep)` 代替模型三元组；`context` 事件 `Model = "plugin/<name>"`；审计照旧写 `gateway.Record` |
+| `core/translators.go`（新） | `translator` 接口、`nativeTranslator`、`jsTranslator`、`ListTranslators`（内置模型 + 声明了 `translate` 且已启用的插件）。约 80 行 |
+| `core/plugins/vm.go`、`host.go`、`types.go` | `ctx.translators.register`；`KindTranslate`；`EgressFor` 对 `KindTranslate` 返回声明的全部主机、不审批（2.7）；`Plugin.Translate(ctx, inv, req)` |
+| `sdk/godwit.d.ts` | `TranslateRequest` / `TranslateResult` / `ctx.translators` 类型 |
 | `core/pluginhost.go` | 不动（原生插件没有 ctx API） |
 | `rpc/roles.go` | 新方法默认只在 `full` 角色；`mcp` 允许名单不动 |
 | `app/settings_extensions.go` | 插件行：`Native` 时权限卡片换成风险卡片 + 信任行（「已审核：Godwit 插件目录」/「你已授权此文件」）+ 「原生」pill；`NeedsGrant` 且 `Native` 时按钮改「仍然安装并启用」（Destructive）；新增「插件目录」区块（列表、安装、更新、不可用原因）；`trust_revoked` 的提示文案 |
@@ -312,28 +380,40 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 | `internal/i18n/zh.go`、`en.go` | 新文案 |
 | `mygo.config.ts` + `entitlements.plist`（新） | `macos.entitlements` 加 `com.apple.security.cs.disable-library-validation`（见 7.1） |
 | `go.mod` | purego 改直接依赖 |
-| 新仓库 `godwit-email/plugins` | `index.json`、`schema.md`、审核清单、CI（校验 → 签名 → 上传 R2） |
+| 新仓库 `godwit-email/plugins` | `registry.json`、`schema.md`、审核清单、CI（校验 → 签名 → 上传 R2） |
 
 不改的：`core/plugins/vm.go`、`host.go`、`net.go`、hooks、beforeSend、Card、Tool。原生插件不参与这些。
 
 ## 6. 分阶段计划
 
-### P0 实验（不进主干，1–2 天）
+### P0 实验
 
-全部用 `tmp/dlx-native-spike/plugin` 编出的 dylib。
+2026-10-14 在 macOS 27 arm64、Go 1.27.1 上完成 E1、E2、E4。实验代码在本地分支 `experiment/native-p0-e3` 的 `experiments/native-p0/`：插件是 DLX（`0f2b50d`）套上 4.4 的 ABI，加 `probe.sleep`、`probe.crash`；宿主是一个 `CGO_ENABLED=0` 的程序，`plugin-host` 子命令就是 4.5 的子进程，不带子命令时扮演核心。
 
-- [ ] **E1 purego 宿主**：一个无 cgo 的 Go 程序用 `purego.Dlopen` 加载它，完成 `init` + `describe` + 1024 次并发 `translate(" ")`。验收：CGO_ENABLED=0 编译通过，结果与原型一致，`-race` 不报。
-- [ ] **E2 签名包加载**：用 Developer ID 签名、hardened runtime、带 `disable-library-validation` 的 Godwit 包（CI 的 macOS job 或 Baran 的机器）在子进程里加载一个**另一个 Team ID 或 ad-hoc 签名**的 dylib。验收：能加载；去掉 entitlement 则按 #64 的表应被拒绝（确认 entitlement 是必要且充分的）。同时确认 `net/http` 下载的文件没有 `com.apple.quarantine`，而用户从浏览器下载再选目录的文件经快照复制后 xattr 不随之复制。
-- [ ] **E3 Windows / Linux**：各一台 VM，E1 的程序 + 对应平台的 c-shared 产物。验收：加载、调用、kill 后文件可删。
-- [ ] **E4 ABI 不兼容**：`host_abi = 2` → 插件返回非 0 → 宿主报错不崩。
+- [x] **E1 purego 宿主**：通过。
+  - `go version -m` 确认 `CGO_ENABLED=0`，purego v0.11.1；宿主对 linux / windows 的 amd64 / arm64 和 darwin/amd64 都能交叉编译。
+  - 子进程加载、`describe`、坏请求返回 `invalid_request`、1024 次并发（16 路在途）、超时 1 秒 kill 进程组后下次调用懒重启、插件里未捕获的 panic 只杀子进程且 stderr 尾部带上 panic 信息、stdin 关闭后子进程自己退出、运行中删库文件（unix 可以）和退出后删文件，全部通过。
+  - `-race` 版本（无 cgo 也能开）主进程和子进程都没有报告。
+  - 三次真实翻译：「Hello, world!」「See you tomorrow.」→「你好，世界！」「明天见。」，插件返回检测到的源语言 `en`。耗时 1607 / 583 / 1021 ms。
+  - 子进程常驻内存：加载后约 21 MiB，1024 次调用后约 31 MiB，真实翻译后约 29 MiB（`ps` RSS，仅子进程）。
+  - 加载到 `describe` 返回：一个新文件第一次加载约 370 ms（系统对新代码的评估），之后同一文件 11–16 ms。
+- [x] **E2 签名与库验证**：通过，结论见 7.1。用本机的 Developer ID Application 证书签宿主（`--options runtime --timestamp`），测试五种库。
+  - 只开 hardened runtime：只加载同一 Team ID 签名的库，ad-hoc 库被拒（「different Team IDs」）。
+  - 再加 `com.apple.security.cs.disable-library-validation`：ad-hoc 库可以加载。**这个 entitlement 必要且充分**。
+  - 没签名的库：所有宿主都拒绝（arm64 不运行无签名代码）。插件 CI 用 Go 链接器默认的 ad-hoc 签名就够了。
+  - 带 `com.apple.quarantine`、系统从没见过的库：所有宿主都拒绝（「library load disallowed by system policy」）。把内容写成一个新文件后就能加载。同一份代码哈希评估过之后，带隔离标记的副本也能加载，所以实验必须用新编译的库。
+  - hardened 程序 dlopen 不接受相对路径，宿主必须传绝对路径（4.5）。
+  - 没做：公证（本机没有 notarytool 凭据）；打成 `.app` 后的同样测试（库验证按进程的签名判断，裸二进制与包内主程序一样，但没有实测）。
+- [ ] **E3 Windows / Linux**：本机没有可用的虚拟机环境（只有一台关着的 Windows UTM 虚拟机，没有 mingw）。已在本地分支 `experiment/native-p0-e3` 准备好工作流 `.github/workflows/native-p0-e3.yml`，只在推送这个分支时运行：ubuntu x64 / arm64、windows x64 / arm64（arm64 的 Windows 没有自带 mingw，只作参考），跑同一个 driver、拒绝加载与 ABI 检查、Linux 的 race 与最低 glibc。**需要推送这个分支**。
+- [x] **E4 ABI 不兼容**：通过。宿主传 `host_abi = 2`，插件 `init` 返回 -1，子进程以退出码 4 报「incompatible ABI」，不崩。另外：哈希不符时退出码 3、不 dlopen，只有构造函数的库**没有执行**；授权的哈希下构造函数执行，然后因为没有入口被拒（证明校验必须在加载前）；文件改一个字节被拒。
 
-任一项失败，回到 2.2 / 2.3 重新决策，再开始 P1。
+E3 通过后开始 P1。E3 失败则只影响对应平台：该平台的 registry 条目不发布，P1 照常。
 
 ### P1 核心加载链路
 
 - [ ] manifest 原生分支与测试（二选一、ABI、capabilities、限制）。
 - [ ] `plugin-host` 子命令与 `NativePlugin` 客户端（假子进程测试：正常、崩溃后懒重启、超时 kill、stdin 关闭退出、哈希不符拒绝）。
-- [ ] `InstallPlugin(dir, grant)` / `runningPlugin` / `loadPlugin` / `stopPlugin` / `SetPluginConfig` 的原生分支；`permission_hash = source_hash`；`trust` 列；`pluginFailed` 只计 ABI 错误、超时、退出；`ListPlugins` 的哈希缓存。
+- [ ] `InstallPlugin(dir, trust)` / `runningPlugin` / `loadPlugin` / `stopPlugin` / `SetPluginConfig` 的原生分支；`permission_hash = source_hash`；`trust` 列；`pluginFailed` 只计 ABI 错误、超时、退出；`ListPlugins` 的哈希缓存。
 - [ ] 扩展页：风险卡片、`user` 授权按钮、「原生」pill、信任行。
 - [ ] `mygo.config.ts` entitlement。
 
@@ -341,20 +421,21 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 
 ### P2 名单与目录
 
-- [ ] 新仓库：`index.json`、校验程序、签名与上传 CI、审核清单（看源码、看构建是否可复现、核对 sha256）。
+- [ ] 新仓库：`registry.json`、校验程序、签名与上传 CI、审核清单（看源码、看构建是否可复现、核对 sha256）。
 - [ ] `core/pluginstore.go`：拉取、验签、防回滚、缓存、撤销。
-- [ ] `InstallPluginFromIndex`：下载、哈希、staging、安装、`trust='listed'`。
+- [ ] `InstallPluginFromRegistry`：下载、哈希、staging、安装、`trust='listed'`。
 - [ ] 扩展页「插件目录」区块与「有更新」。
 
-验收：假 index（httptest + 测试密钥）→ 列表显示 → 安装 → 一键启用；从 0.1.0 升到 0.2.0 后仍是启用状态、`trust = 'listed'`、没有待授权；篡改 index 字节 → 验签失败、旧缓存继续用；篡改下载产物 → 丢弃报错，无法绕过；从 index 删掉 release → 刷新后该插件 `trust_revoked` 停用，重新授权为 `user` 后可启用；`updated` 回退的 index 被拒。
+验收：假 registry（httptest + 测试密钥）→ 列表显示 → 安装 → 一键启用；从 0.1.0 升到 0.2.0 后仍是启用状态、`trust = 'listed'`、没有待授权；篡改 registry 字节 → 验签失败、旧缓存继续用；篡改下载产物 → 丢弃报错，无法绕过；从 registry 删掉 release → 刷新后该插件 `trust_revoked` 停用，重新授权为 `user` 后可启用；`updated` 回退的 registry 被拒。
 
 ### P3 翻译接入
 
 - [ ] `Settings.Translator` 与设置界面。
-- [ ] `TaskModel` / `runSkill` 的插件路径、缓存键、`NoTranslate`、错误。
+- [ ] `translator` 接口与两个适配器（2.7）；`TaskModel` / `runSkill` 的插件路径、缓存键、`NoTranslate`、错误。
+- [ ] 脚本插件：`ctx.translators.register`、`KindTranslate` 与它的外发规则、SDK 类型、权限卡片多出的一行。
 - [ ] `refreshTasks` 监听 `PluginsChanged`。
 
-验收：契约测试（`contract/`）用假原生插件（夹具子进程直接实现协议，不需要真 dylib）跑通：选插件 → 阅读页翻译得到插件译文、标签显示插件名；源语言在 `NoTranslate` → 「无需翻译」；插件停用 → 按钮仍在、错误提示正确；切回模型 → 行为与今天一致。手动：真 DLX 插件翻译一封真实邮件。
+验收：契约测试（`contract/`）分别用假原生插件（夹具子进程直接实现协议，不需要真 dylib）和夹具脚本插件跑通同一组用例：选插件 → 阅读页翻译得到插件译文、标签显示插件名；源语言在 `NoTranslate` → 「无需翻译」；插件停用 → 按钮仍在、错误提示正确；切回模型 → 行为与今天一致。手动：真 DLX 插件翻译一封真实邮件。
 
 ### P4 升级与草稿翻译
 
@@ -368,15 +449,16 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 
 ### 7.1 macOS
 
-- 正式包由 `mygo build` 以 Developer ID 签名并开 hardened runtime（`codesignArgs` 加 `--options runtime`）。hardened runtime 下 **库验证** 会拒绝加载 Team ID 不同的 dylib（#64 §4.2 实测）。因此应用需要 `com.apple.security.cs.disable-library-validation`，`mygo.config.ts` 的 `macos.entitlements` 支持。公证接受这个 entitlement。
-- 替代：mygo 的 `macos.helperEntitlements` 可以只给资源里的某个可执行文件 entitlement。如果不想放松主程序，可把 `godwit` 二进制复制一份到 `resources/<platform>/bin/plugin-host` 单独签。多一步构建，v1 不做；写在这里备选。
-- 带 `com.apple.quarantine` 的 dylib 会被拒绝。`net/http` 写出的文件没有这个属性；名单外安装时快照是逐字节复制出的新文件，xattr 不随之复制 `[未验证，E2]`。
+- 正式包由 `mygo build` 以 Developer ID 签名并开 hardened runtime（`codesignArgs` 加 `--options runtime`）。E2 实测：这时库验证只放行同一 Team ID 签名的库，第三方插件必然被拒；加上 `com.apple.security.cs.disable-library-validation` 后放行，且这个 entitlement 必要且充分。`mygo.config.ts` 的 `macos.entitlements` 支持。Apple 把它列为 hardened runtime 允许的例外，公证应当接受 `[推断，未实测]`。
+- **entitlement 加在哪** `[我的决定]`：v1 加在 `godwit` 主程序上，因为子进程就是 `godwit plugin-host`，同一个可执行文件。代价是主进程也不再校验它加载的库是谁签的：能写入 Godwit 安装目录的本机程序，可以换进一个 ad-hoc 签名的库，继承 Godwit 获得的系统权限（通知、将来可能的通讯录等）。另一种做法是做一个只有加载功能的小程序 `godwit-plugin-host`，放进 `resources/<platform>/bin/`，用 mygo 的 `macos.helperEntitlements` 只给它这个 entitlement，主程序保留库验证。成本是一个新的 `cmd/` 和发布流程里每个平台多一次 `go build`。钥匙串在两种做法下没有区别：go-keyring 在 macOS 上通过 `/usr/bin/security` 读写，同一用户的任何进程本来就能读到这些条目。要更严，就换成小程序，P1 之前定。
+- 带 `com.apple.quarantine`、系统没评估过的库会被拒。安装路径总是写**新文件**：registry 下载由 `net/http` 写出，不带隔离标记；名单外安装由 `Snapshot` 逐字节复制，xattr 不跟过来。这意味着名单外插件**不经过 Gatekeeper**，替代它的就是本文的风险提示和按哈希授权。这一点写进风险文案之外的开发者文档即可，用户文案不变。
+- 新文件第一次加载约 370 ms，之后 11–16 ms（E1），首次启用会稍慢。
 - 没有 osx-x86_64 的 ORT 之类问题不在本文范围；DLX 是纯 Go，六个平台都能交叉编译（c-shared 需要各平台的 C 工具链，这是插件仓库 CI 的事）。
 
 ### 7.2 Windows / Linux
 
-- Windows：`syscall.LoadLibrary` 不需要 cgo；加载中的 DLL 不能删除或覆盖，子进程先退出再删解决。Go c-shared 的 DLL 需要 mingw 构建 `[未验证，E3]`。
-- Linux：purego `Dlopen` 不需要 cgo；c-shared 产物链接 glibc，最低 glibc 版本由插件仓库的构建镜像决定，写进 `index.json` 的 `summary` 里即可，应用不检测。
+- Windows：`syscall.LoadLibrary` 不需要 cgo；加载中的 DLL 不能删除或覆盖，子进程先退出再删解决（E3 的 `file_lock` 步骤专门验证）。Go c-shared 的 DLL 需要 mingw 构建 `[未验证，E3]`。
+- Linux：purego `Dlopen` 不需要 cgo；c-shared 产物链接 glibc，最低 glibc 版本由插件仓库的构建镜像决定，写进 `registry.json` 的 `summary` 里即可，应用不检测。
 
 ### 7.3 生命周期
 
@@ -394,27 +476,28 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 | 名单外默认不加载 | 安装后 `enabled = 0`、`trust = ''`，`SetPluginEnabled` 返回 `ErrNeedsGrant` | P1 单测 |
 | 下载完整性 | 篡改产物 → 丢弃；界面无绕过按钮（界面测试断言没有该按钮） | P2 单测 + app 测试 |
 | 名单可验证 | 坏签名 / 旧 `updated` / 坏 JSON 各一例 → 旧缓存保留 | P2 单测 |
-| 撤销 | 从 index 删 release → `trust_revoked` | P2 单测 |
+| 撤销 | 从 registry 删 release → `trust_revoked` | P2 单测 |
 | ABI 不兼容 | E4 + 子进程单测（假库返回非 0） | P0 / P1 |
 | 并发 | 夹具子进程 4 路并发 + 真 dylib 1024 次（原型脚本） | P1 / 手动 |
 | 真实翻译 | 真 DLX 插件翻一封邮件；契约测试用假插件 | P3 |
 | 崩溃隔离 | 假子进程 `os.Exit(2)` → 失败计数、下次调用懒重启、三次后停用；主进程存活 | P1 单测 |
 | 业务错误不停用 | 假插件连续返回 `rate_limited` 十次 → 仍启用 | P1 单测 |
 | 纯 HTML 邮件 | `body_text` 为空的邮件走插件翻译得到非空请求 | P3 单测 |
-| 平台打包 | CI 的 macOS job 产出的 dmg 装上后加载 ad-hoc dylib（E2）；Windows / Linux VM（E3） | P0 |
+| 平台打包 | macOS 签名矩阵已测（E2）；公证与 `.app` 内实测在第一次带 entitlement 的发布；Windows / Linux 走 E3 工作流 | P0 / P1 |
 | 无 cgo | CI 现有 `CGO_ENABLED=0` 的 build / test 不改 | 持续 |
 
 ## 9. 尚未验证的问题
 
-需要先做小实验才能定方向（都在 P0）：
+P0 已回答：无 cgo 宿主在 macOS 上加载 Go c-shared 库可行（E1）；`disable-library-validation` 必要且充分，隔离标记会拒绝加载，复制成新文件可以消除（E2）；ABI 不兼容能干净失败（E4）。
 
-1. 无 cgo（purego / fakecgo）宿主加载 Go c-shared 库是否稳定。原型是 cgo 宿主。
-2. Developer ID + hardened runtime + `disable-library-validation` 的正式包能否加载第三方 dylib；没有这个 entitlement 是否必然失败。本机没有 Developer ID 证书，要在 CI 或 Baran 的机器上做。
-3. Windows mingw 构建的 Go c-shared DLL 被无 cgo 宿主 `LoadLibrary` 是否正常；Linux 最低 glibc。
+仍需实验：
+
+1. Windows mingw 构建的 Go c-shared DLL 被无 cgo 宿主 `LoadLibrary` 是否正常；Linux 上 purego 的 fakecgo 加载 Go c-shared 库是否正常；Linux 最低 glibc（E3，等推送实验分支）。
+2. 公证：带 `disable-library-validation` 的包能否通过公证（`release.yml` 的 macOS job 跑一次即可）。
 
 不阻塞方向、但要记住的：
 
-- 原型的内存（47 MiB 峰值）和加载时间（306 ms）是单次测量，不是稳态；子进程常驻意味着这部分内存长期存在，P4 的空闲退出是对策。
+- 内存和加载时间都是单机短时测量（E1：子进程约 21–31 MiB，新文件首次加载约 370 ms），不是稳态；子进程常驻意味着这部分内存长期存在，P4 的空闲退出是对策。
 - DLX 依赖非公开的 DeepL 接口，随时可能失效或限流；这是插件自己的错误码 `upstream` / `rate_limited`，核心只负责展示。
 - 两个 Go 运行时共处的长期稳定性（信号处理、GC 线程）没有做过数小时的运行。
 - 8 GB 内存机器未测。
@@ -424,7 +507,7 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 #64 需要：把 ONNX Runtime 动态库打进应用并签名（T3）、下载约 575 MB 模型（T4）、子进程跑推理（§4.3 的内存结论）、实现 `ai.Judge`（T2）。本机制能承接其中一部分：
 
 - **能**：一个社区插件「laya」声明 `capabilities: ["judge"]`，自带 ORT 和 Go/Rust 胶水，通过同一个 C ABI 暴露 `judge` 方法（请求 / 响应就是 `ai.Question` / `ai.Answer` 的 JSON）。它天然跑在子进程里，正好是 #64 自己得出的「推理放子进程、空闲退出」结论；ORT 的 dylib 由插件库在子进程里加载，同一个 entitlement 覆盖；T3 的「随应用打包签名」整个消失，应用核心不再背 ORT。
-- **要加的**：（a）`judge` 能力与 `ai.Judge` 的插件实现（`resolveJudge` 多一个来源，和本文 `Translator` 同样的「设置里选来源」模式）；（b）大资产下载：模型不适合作为「产物」走 64 MiB 的安装路径，需要 `index.json` 的 release 多一个 `assets` 列表（url / sha256 / size），应用按同样的校验下载到插件目录，`configure` 时把路径告诉插件。这两项都是本文机制的直接延伸，不改 ABI。
+- **要加的**：（a）`judge` 能力与 `ai.Judge` 的插件实现（`resolveJudge` 多一个来源，和本文 `Translator` 同样的「设置里选来源」模式）；（b）大资产下载：模型不适合作为「产物」走 64 MiB 的安装路径，需要 `registry.json` 的 release 多一个 `assets` 列表（url / sha256 / size），应用按同样的校验下载到插件目录，`configure` 时把路径告诉插件。这两项都是本文机制的直接延伸，不改 ABI。
 - **不能替代的**：#64 的 go/no-go 是模型在邮件 yes/no 题上准不准（T0 评测），和加载机制无关；ORT 1.27.1 没有 osx-x86_64 产物，插件在该平台就是「不支持」。
 
 结论：先按本文做翻译；`judge` 能力等 #64 的 T0 评测有结果再加，到时主要工作是 (a)(b) 两项，不用重做信任和加载。
