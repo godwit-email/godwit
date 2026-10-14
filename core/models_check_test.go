@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -203,4 +204,10 @@ func TestModelServiceHost(t *testing.T) {
 	} {
 		assert.Equal(t, c.want, modelServiceHost(ModelService{Provider: c.provider, BaseURL: c.base}), c.provider+" "+c.base)
 	}
+}
+
+func TestCapCodeNotEligible(t *testing.T) {
+	code, st := capCode(&ai.Error{Code: ai.CodeUnauthorized, Detail: ai.DetailChatGPTEligibility})
+	assert.Equal(t, "not_eligible", code)
+	assert.Equal(t, 403, st)
 }

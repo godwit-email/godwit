@@ -700,6 +700,9 @@ func classify(ctx context.Context, err error) *Error {
 	}
 	switch status.Of(err) {
 	case status.Unauthenticated, status.PermissionDenied:
+		if errors.Is(err, errNotEligible) {
+			return &Error{Code: CodeUnauthorized, Msg: "the ChatGPT account is not eligible for subscription sharing", Detail: DetailChatGPTEligibility}
+		}
 		return &Error{Code: CodeUnauthorized, Msg: "the model service rejected the API key"}
 	case status.ResourceExhausted:
 		if errors.Is(err, errUsageLimit) {

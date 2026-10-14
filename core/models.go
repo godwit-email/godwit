@@ -737,6 +737,8 @@ func capCode(err error) (string, int) {
 	var nl *ai.NoListError
 	run := errors.As(err, &ae)
 	switch {
+	case run && ae.Detail == ai.DetailChatGPTEligibility:
+		return "not_eligible", 403
 	case errors.Is(err, ai.ErrModelAuth), errors.Is(err, ErrModelReauth), run && ae.Code == ai.CodeUnauthorized:
 		return "auth", 401
 	case errors.Is(err, ai.ErrModelForbidden):

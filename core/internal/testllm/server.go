@@ -48,6 +48,7 @@ type Turn struct {
 	Calls      []Call
 	Hang       bool
 	Status     int
+	Code       string // openai-responses: the error.code a Status turn's body carries
 	Finish     string
 	Reasoning  string
 	Fail       string
@@ -257,7 +258,7 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("retry-after-ms", "1") // SDK retries come back at once
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(turn.Status)
-		fmt.Fprintf(w, `{"error":{"type":"error","message":"rejected key %s"}}`, sentKey(kind, r))
+		fmt.Fprintf(w, `{"error":{"type":"error","code":%s,"message":"rejected key %s"}}`, js(turn.Code), sentKey(kind, r))
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")

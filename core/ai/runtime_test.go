@@ -864,8 +864,21 @@ func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {
 		assert.Equal(t, "error", last(t, evs).Kind)
 	}
 
-	srv.Script(testllm.Turn{Fail: "x"})
+	// The same codes as HTTP errors, and the account that may not share its plan at all.
+	srv.Script(testllm.Turn{Status: http.StatusTooManyRequests, Code: "subscription_sharing_usage_limit_exceeded"})
 	_, res := run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeRateLimited, res.Err.Code)
+	assert.Equal(t, DetailChatGPTUsage, res.Err.Detail)
+	srv.Script(testllm.Turn{Status: http.StatusForbidden, Code: "subscription_sharing_user_not_eligible"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeUnauthorized, res.Err.Code)
+	assert.Equal(t, DetailChatGPTEligibility, res.Err.Detail)
+	assert.NotContains(t, res.Err.Msg, "token-1")
+
+	srv.Script(testllm.Turn{Fail: "x"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
 	require.NotNil(t, res.Err)
 	assert.Equal(t, CodeBadResponse, res.Err.Code)
 	assert.Empty(t, res.Err.Detail)

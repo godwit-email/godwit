@@ -55,6 +55,7 @@ var (
 	errRespFailed    = status.Errorf(status.ErrInternal, "the model service failed the reply")
 	errRespTruncated = status.Errorf(status.ErrInternal, "the model service ended the reply early")
 	errUsageLimit    = status.Errorf(status.ErrResourceExhausted, "the ChatGPT plan's usage is exhausted or unavailable")
+	errNotEligible   = status.Errorf(status.ErrPermissionDenied, "the ChatGPT account is not eligible for subscription sharing")
 )
 
 func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.ModelRequest, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
@@ -156,6 +157,13 @@ func respError(ctx context.Context, err error) error {
 	}
 	var ae *openai.Error
 	if errors.As(err, &ae) {
+		// Sign in with ChatGPT's own codes come as HTTP errors too, not only as response.failed.
+		switch ae.Code {
+		case "subscription_sharing_user_not_eligible":
+			return errNotEligible
+		case "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable":
+			return errUsageLimit
+		}
 		switch c := ae.StatusCode; {
 		case c == http.StatusUnauthorized || c == http.StatusForbidden:
 			return status.Errorf(status.ErrUnauthenticated, "the model service rejected the API key")
