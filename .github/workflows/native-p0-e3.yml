@@ -1,0 +1,71 @@
+# P0 experiment E3 for docs/superpowers/specs/2026-10-14-native-plugins-design.md:
+# a no-cgo Go host loads a Go c-shared DLX library on Linux and Windows.
+# Throwaway; runs only on this branch.
+name: native-p0-e3
+
+on:
+  push:
+    branches: [experiment/native-p0-e3]
+
+permissions:
+  contents: read
+
+jobs:
+  e3:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-11-arm' }} # no stock arm64 mingw; informative only
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm]
+    defaults:
+      run:
+        shell: bash
+        working-directory: experiments/native-p0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache: false
+      - name: DLX at the spike's commit
+        run: git clone -q https://github.com/OwO-Network/DLX dlx && git -C dlx checkout -q 0f2b50dd69fea3012d95a8d0e7a4ae8dca9ff5b2
+      - name: Toolchain
+        run: go version; gcc --version | head -1 || echo "no gcc"
+      - name: Build the plugin (cgo, c-shared)
+        working-directory: experiments/native-p0/plugin
+        run: |
+          ext=so; [ "$RUNNER_OS" = Windows ] && ext=dll
+          CGO_ENABLED=1 go build -buildmode=c-shared -o ../out/plugin.$ext .
+          ls -l ../out
+      - name: Build the host (no cgo)
+        working-directory: experiments/native-p0/host
+        run: |
+          CGO_ENABLED=0 go build -o ../out/p0host$( [ "$RUNNER_OS" = Windows ] && echo .exe ) .
+          go version -m ../out/p0host* | grep CGO_ENABLED
+      - name: Linux library facts
+        if: runner.os == 'Linux'
+        run: |
+          ldd out/plugin.so
+          echo "newest glibc symbol needed:"; objdump -T out/plugin.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+      - name: Driver (describe, invalid requests, 1024 concurrent, timeout kill, crash, file lock, live x1)
+        run: |
+          lib=$(ls "$PWD"/out/plugin.* | head -1)
+          [ "$RUNNER_OS" = Windows ] && lib=$(cygpath -w "$lib")
+          ./out/p0host -library "$lib" -live 1
+      - name: Denied before load, ABI mismatch
+        run: |
+          lib=$(ls "$PWD"/out/plugin.* | head -1)
+          [ "$RUNNER_OS" = Windows ] && lib=$(cygpath -w "$lib")
+          sha=$(sha256sum out/plugin.* | cut -d' ' -f1)
+          set +e
+          ./out/p0host plugin-host --library "$lib" --sha256 0000 </dev/null; c=$?; echo "wrong sha exit=$c"; [ $c = 3 ] || exit 1
+          ./out/p0host plugin-host --library "$lib" --sha256 "$sha" --abi 2 </dev/null; c=$?; echo "abi 2 exit=$c"; [ $c = 4 ] || exit 1
+          ./out/p0host plugin-host --library "$lib" --sha256 "$sha" </dev/null; c=$?; echo "abi 1, stdin closed exit=$c"; [ $c = 0 ] || exit 1
+      - name: Race (Linux)
+        if: runner.os == 'Linux'
+        working-directory: experiments/native-p0/host
+        run: |
+          CGO_ENABLED=1 go build -race -o ../out/p0host-race .
+          ../out/p0host-race -library "$(ls "$PWD"/../out/plugin.so)"
