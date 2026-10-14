@@ -257,6 +257,9 @@ func (l tln) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A fixed send buffer: autotuned, it grows to MBs, which a client that stops
+	// reading early would still show in BytesSent.
+	nc.(*net.TCPConn).SetWriteBuffer(64 << 10)
 	c := &tconn{Conn: nc, sent: &l.s.sent, noIdle: l.s.cfg.noIdle, s: l.s, r: bufio.NewReader(nc)}
 	l.s.mu.Lock()
 	l.s.conn[c] = struct{}{}
