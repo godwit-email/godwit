@@ -19,7 +19,7 @@ const self = paths[lang];
 const featureIcons = ["mail", "sparkles", "file-text", "cpu", "puzzle", "robot"] as const;
 const platforms = [
 	{ name: "macOS", icon: "monitor", note: s.macNote, builds: [{ label: s.appleSilicon, target: "darwin-arm64" }, { label: s.intel, target: "darwin-amd64" }] },
-	{ name: "Windows", icon: "monitor", note: s.windowsNote, builds: [{ label: s.x64, target: "windows-amd64" }, { label: s.arm64, target: "windows-arm64" }] },
+	{ name: "Windows", icon: "monitor", note: s.windowsNote, store: true, arm: { label: s.windowsArm, target: "windows-arm64" }, builds: [{ label: s.installer, target: "windows-amd64" }] },
 	{ name: "Linux", icon: "terminal", note: s.linuxNote, builds: [{ label: s.x64, target: "linux-amd64" }, { label: s.arm64, target: "linux-arm64" }] },
 ] as const;
 const commands = [
@@ -172,7 +172,7 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 						<a data-release-link href={`${github}/releases/latest`} class="underline underline-offset-4 hover:text-foreground">{s.release.notes}</a>
 					</p>
 				</div>
-				<div data-reveal-group class="mt-12 grid gap-4 md:grid-cols-3">
+				<div data-reveal-group class="mt-12 grid gap-4 lg:grid-cols-3">
 					{
 						platforms.map((p) => (
 							<div class="flex flex-col rounded-xl border p-6">
@@ -180,15 +180,31 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 									<Icon name={p.icon} class="size-[18px]" />
 									{p.name}
 								</div>
-								<p class="mt-2 flex-1 text-sm text-muted-foreground">{p.note}</p>
-								<div class="mt-5 grid grid-cols-2 gap-2">
+								<p class="mt-2 flex-1 text-sm text-muted-foreground">
+									{p.note}
+									{"arm" in p && (
+										<>
+											{" "}
+											<a href={`/download/${p.arm.target}`} class="underline underline-offset-4 hover:text-foreground">{p.arm.label}</a>
+										</>
+									)}
+								</p>
+								<div class="mt-5 flex gap-2">
+									{"store" in p && (
+										<a data-press href={storeUrl} class="shrink-0">
+											<picture>
+												<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
+												<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
+											</picture>
+										</a>
+									)}
 									{p.builds.map((b, i) => (
 										<a
 											data-press
 											href={`/download/${b.target}`}
 											class:list={[
-												"inline-flex h-9 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition",
-												i === 0 ? "bg-primary text-primary-foreground hover:opacity-90" : "border hover:bg-accent",
+												"inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition",
+												i === 0 && !("store" in p) ? "bg-primary text-primary-foreground hover:opacity-90" : "border hover:bg-accent",
 											]}
 										>
 											<Icon name="download" class="size-3.5" />
@@ -196,14 +212,6 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 										</a>
 									))}
 								</div>
-								{p.name === "Windows" && (
-									<a data-press href={storeUrl} class="mt-3 flex justify-center">
-										<picture>
-											<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
-											<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
-										</picture>
-									</a>
-								)}
 							</div>
 						))
 					}
