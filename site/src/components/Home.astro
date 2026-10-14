@@ -136,6 +136,13 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 						<Icon name="download" />
 						<span>{s.downloadMac}</span>
 					</a>
+					<!-- On Windows the Store is the way in: the script swaps it for the primary button. -->
+					<a data-press data-store hidden href={storeUrl} class="inline-flex">
+						<picture>
+							<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
+							<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
+						</picture>
+					</a>
 					<a href="#download" data-press class="inline-flex h-11 items-center rounded-lg border px-5 font-medium transition-colors hover:bg-accent">{s.otherPlatforms}</a>
 				</div>
 			</section>
@@ -264,6 +271,10 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 			const labels = JSON.parse(primary.dataset.labels!) as Record<string, string>;
 			primary.href = `/download/${os}-${arch}`;
 			primary.querySelector("span")!.textContent = labels[os];
+			if (os === "windows") {
+				primary.hidden = true;
+				document.querySelector<HTMLElement>("[data-store]")!.hidden = false;
+			}
 			for (const demo of document.querySelectorAll<HTMLElement>("[data-demo]")) demo.dataset.platform = os;
 
 			for (const b of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
