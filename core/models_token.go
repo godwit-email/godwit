@@ -132,6 +132,8 @@ func (s *Service) modelCredential(ctx context.Context, m ModelService) (string, 
 	if err != nil {
 		return "", err
 	}
+	// The old refresh token is spent: a cancelled caller must not lose the new one.
+	ctx = context.WithoutCancel(ctx)
 	// Under modelMu, as a removal or re-login is: neither may have happened since m
 	// was read, or the write below would recreate a removed service's credential.
 	s.modelMu.RLock()

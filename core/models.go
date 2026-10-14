@@ -489,9 +489,13 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	case KeyClear:
 		kv = 0
 	}
+	clientID := old.clientID
+	if in.OAuthFlowID != "" { // a new sign-in's client, or none: a Codex login after an official one has no issued client
+		clientID = in.oauthClientID
+	}
 	stmts := []sqlite.Statement{{SQL: `UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1, key_version = ?,
-		judge_format = ?, judge_model = ?, oauth_email = COALESCE(NULLIF(?, ''), oauth_email), oauth_client_id = COALESCE(NULLIF(?, ''), oauth_client_id) WHERE id = ?`,
-		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID, id}}}
+		judge_format = ?, judge_model = ?, oauth_email = COALESCE(NULLIF(?, ''), oauth_email), oauth_client_id = ? WHERE id = ?`,
+		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, in.oauthEmail, clientID, id}}}
 	// A test's status no longer holds once what it tested changed: the
 	// address or key for both capabilities, a format (or judge model) for its own.
 	moved := in.BaseURL != old.BaseURL || action == KeyReplace || action == KeyClear && old.keyVersion != 0

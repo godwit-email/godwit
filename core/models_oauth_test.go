@@ -158,6 +158,23 @@ func TestChatGPTReloginUsesIssuedClient(t *testing.T) {
 	assert.Equal(t, testoauth.IssuedClientID, q.Get("client_id"))
 	assert.Empty(t, q.Get("agent_name_hint"))
 	assert.Equal(t, s.hostID(), q.Get("ext_agent_host_id"))
+
+	// Signing in again with a login that issues no client (Codex after the official one) clears it.
+	s.CancelOAuth(id2)
+	oa.Dynamic(false)
+	modelOAuth[ProviderChatGPT] = modelProvider{BaseURL: mp.BaseURL, OAuth: oa.Config("openid", "email")}
+	fid2 := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	in := ms.Input()
+	in.OAuthFlowID = fid2
+	_, err = s.UpdateModelService(bg, ms.ID, in)
+	require.NoError(t, err)
+	got, err = s.modelServiceBy(bg, "id = ?", ms.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.clientID, "the official login's client would refresh the new token with the wrong client")
+
+	in.OAuthFlowID, in.Name = "", "Renamed" // an ordinary edit keeps what is there
+	_, err = s.UpdateModelService(bg, ms.ID, in)
+	require.NoError(t, err)
 }
 
 func TestAddGrokServiceByDeviceCode(t *testing.T) {
