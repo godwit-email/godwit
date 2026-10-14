@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -91,10 +92,11 @@ type RegistryEntry struct {
 	Update                                          bool
 }
 
-func (s *Service) registryFiles() (string, string) {
-	p := filepath.Join(s.dataDir, "plugin-registry.json")
-	return p, p + ".sig"
-}
+// registryCache is the cached registry with its signature, in one file so a
+// failed write never pairs a registry with another one's signature.
+func (s *Service) registryCache() string { return filepath.Join(s.dataDir, "plugin-registry.cache") }
+
+type cachedRegistryFile struct{ Body, Sig []byte }
 
 // RefreshPluginRegistry fetches the registry, verifies it and, if it is not
 // older than the cached one, caches it and applies it to the installed
@@ -139,14 +141,12 @@ func (s *Service) refreshRegistry(ctx context.Context, src *RegistrySource) erro
 	if old, err := s.cachedRegistry(src); err == nil && reg.Updated.Before(old.Updated) {
 		return ErrRegistryStale
 	}
-	jsonPath, sigPath := s.registryFiles()
-	if err := store.WriteFileAtomic(jsonPath, body); err != nil {
+	// Applied first: a failure keeps the old cache, and the next refresh tries again.
+	if err := s.applyRegistry(ctx, reg); err != nil {
 		return err
 	}
-	if err := store.WriteFileAtomic(sigPath, sig); err != nil {
-		return err
-	}
-	return s.applyRegistry(ctx, reg)
+	b, _ := json.Marshal(cachedRegistryFile{Body: body, Sig: sig})
+	return store.WriteFileAtomic(s.registryCache(), b)
 }
 
 func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, limit int64) ([]byte, error) {
@@ -189,16 +189,15 @@ func verifyRegistry(pub ed25519.PublicKey, body, sig []byte) (plugins.Registry, 
 
 // cachedRegistry reads and verifies the cached registry; fs.ErrNotExist when there is none.
 func (s *Service) cachedRegistry(src *RegistrySource) (plugins.Registry, error) {
-	jsonPath, sigPath := s.registryFiles()
-	body, err := os.ReadFile(jsonPath)
+	b, err := os.ReadFile(s.registryCache())
 	if err != nil {
 		return plugins.Registry{}, err
 	}
-	sig, err := os.ReadFile(sigPath)
-	if err != nil {
-		return plugins.Registry{}, err
+	var c cachedRegistryFile
+	if err := json.Unmarshal(b, &c); err != nil {
+		return plugins.Registry{}, ErrRegistrySignature
 	}
-	return verifyRegistry(src.PublicKey, body, sig)
+	return verifyRegistry(src.PublicKey, c.Body, c.Sig)
 }
 
 // ListPluginRegistry is the cached registry as this build sees it.
@@ -281,7 +280,7 @@ func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error
 			}
 			s.stopPlugin(name)
 			changed = true
-		case r.trust == "user" && listed(r.m.Version):
+		case r.trust == "user" && listed(r.m.Version) && s.isReviewedPackage(name, r, byName[name]):
 			if _, err := s.db.Execute(ctx, "UPDATE plugins SET trust = 'listed' WHERE name = ?", name); err != nil {
 				return err
 			}
@@ -292,6 +291,38 @@ func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error
 		s.bus.Publish(events.Event{Type: events.PluginsChanged})
 	}
 	return nil
+}
+
+// isReviewedPackage reports whether the installed files of r are exactly a
+// release of p at r's version: its manifest and its one file, nothing else.
+func (s *Service) isReviewedPackage(name string, r pluginRow, p plugins.RegistryPlugin) bool {
+	i := slices.IndexFunc(p.Releases, func(rel plugins.RegistryRelease) bool { return rel.Version == r.m.Version })
+	if i < 0 {
+		return false
+	}
+	installed, _ := json.Marshal(r.m)
+	reviewed, _ := json.Marshal(p.Releases[i].Parsed)
+	if !bytes.Equal(installed, reviewed) {
+		return false
+	}
+	file := plugins.LibraryName()
+	if !r.m.IsNative() {
+		file = r.m.Main
+	}
+	ents, err := os.ReadDir(s.versionDir(name, r.installDir))
+	if err != nil {
+		return false
+	}
+	var names []string
+	for _, e := range ents {
+		if e.Name() != plugins.BuildDir {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	want := []string{"plugin.json", file}
+	slices.Sort(want)
+	return slices.Equal(names, want)
 }
 
 // startRegistryRefresh refreshes the registry registryFirst after start and

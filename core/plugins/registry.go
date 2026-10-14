@@ -97,8 +97,8 @@ func ParseRegistry(data []byte) (Registry, error) {
 }
 
 func checkRelease(name string, rel *RegistryRelease) error {
-	if rel.Version == "" {
-		return errors.New("version is required")
+	if !parsableVersion(rel.Version) { // releases are ordered by it
+		return fmt.Errorf("version %q is not a dotted number version", rel.Version)
 	}
 	m, err := ParseManifest(rel.Manifest, name)
 	if err != nil {

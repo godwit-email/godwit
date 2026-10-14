@@ -129,11 +129,16 @@ func TestRegistryRejectsBadSource(t *testing.T) {
 	assert.Error(t, s.RefreshPluginRegistry(ctx))
 	stillGood("no signature")
 
-	// The cache is checked again on every read.
-	cache := filepath.Join(dir, "plugin-registry.json")
+	// One file holds the registry and its signature, so a failed write never
+	// pairs a new registry with an old signature; and it is checked again on every read.
+	assert.NoFileExists(t, filepath.Join(dir, "plugin-registry.json.sig"))
+	cache := filepath.Join(dir, "plugin-registry.cache")
 	b, err := os.ReadFile(cache)
 	require.NoError(t, err)
-	b[len(b)-2] = ' '
+	var c struct{ Body, Sig []byte }
+	require.NoError(t, json.Unmarshal(b, &c))
+	c.Body[len(c.Body)-2] = ' '
+	b, _ = json.Marshal(c)
 	require.NoError(t, os.WriteFile(cache, b, 0o600))
 	_, err = s.ListPluginRegistry(ctx)
 	assert.ErrorIs(t, err, core.ErrRegistrySignature)
@@ -363,4 +368,30 @@ func TestDefaultRegistry(t *testing.T) {
 	require.NotNil(t, core.DefaultRegistry)
 	assert.Equal(t, "https://dl.godwit.email/plugins/registry.json", core.DefaultRegistry.URL)
 	assert.Len(t, core.DefaultRegistry.PublicKey, 32)
+}
+
+// Listed means the reviewed package: the same manifest and the same files, not just the same library.
+func TestRegistryPromotesOnlyTheReviewedPackage(t *testing.T) {
+	for name, change := range map[string]func(src string){
+		"an extra file": func(src string) {
+			require.NoError(t, os.WriteFile(filepath.Join(src, "extra.txt"), []byte("not reviewed"), 0o600))
+		},
+		"another manifest": func(src string) {
+			p := filepath.Join(src, "plugin.json")
+			b, err := os.ReadFile(p)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(p, []byte(strings.Replace(string(b), "A native test plugin", "Something else", 1)), 0o600))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rs := coretest.NewRegistryServer(t)
+			s := regService(t, rs, t.TempDir())
+			src := coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, nil)
+			change(src)
+			installEnabled(t, s, src)
+			rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil)))) // the same library bytes
+			require.NoError(t, s.RefreshPluginRegistry(ctx))
+			assert.Equal(t, "user", nativeInfo(t, s, "dlx").Trust)
+		})
+	}
 }

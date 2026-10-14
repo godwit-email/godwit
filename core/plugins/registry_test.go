@@ -80,6 +80,7 @@ func TestParseRegistryRejects(t *testing.T) {
 			return ps
 		}),
 		"native any":          mutate(setRel(0, nativeRel("0.1.0", map[string]any{"any": art(1)}))),
+		"unparsable version":  mutate(setRel(0, nativeRel("1.x", map[string]any{"darwin-arm64": art(1)}))),
 		"native no artifacts": mutate(setRel(0, nativeRel("0.1.0", map[string]any{}))),
 		"unknown platform":    mutate(setRel(0, nativeRel("0.1.0", map[string]any{"plan9-amd64": art(1)}))),
 		"script platform":     mutate(setRel(1, scriptRel("0.1.0", "index.js", map[string]any{"linux-amd64": art(1)}))),
