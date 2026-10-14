@@ -394,7 +394,8 @@ func TestTranslateDraftHTMLKeepsImagesAndCode(t *testing.T) {
 	for src, want := range map[string][]string{
 		`<p>Hello<img src="cid:x"></p>`:                    {"[fr] Hello", `<img src="cid:x"/>`},
 		`<p><code>npm install foo</code></p>`:              {`<p><code>npm install foo</code></p>`},
-		`<p>Run <code>npm i</code> now</p>`:                {"<code>npm i</code>", "[fr] Run"},
+		`<p>Run <code>npm i</code> now</p>`:                {"<p>[fr] Run <code>npm i</code> [fr] now</p>"},
+		`<p>before<img src="cid:x">after</p>`:              {`<p>[fr] before<img src="cid:x"/>[fr] after</p>`},
 		`<p>One<br>Two</p>`:                                {"[fr] One<br/>Two"},
 		`<p><a href="https://x.example/docs">Docs</a></p>`: {`<a href="https://x.example/docs">[fr] Docs</a>`},
 	} {

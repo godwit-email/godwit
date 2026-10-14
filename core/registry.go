@@ -25,6 +25,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // RegistrySource is where the registry comes from and the key it is signed with.
@@ -51,7 +52,7 @@ const (
 var registryFirst = time.Minute
 
 // Tests: registryDownloaded runs after an install's download, before it
-// commits; registryStageFails fails a refresh's cache staging.
+// commits; registryStageFails fails a refresh's cache write.
 var (
 	registryDownloaded func()
 	registryStageFails bool
@@ -147,38 +148,28 @@ func (s *Service) refreshRegistry(ctx context.Context, src *RegistrySource) erro
 	if old, err := s.cachedRegistry(src); err == nil && reg.Updated.Before(old.Updated) {
 		return ErrRegistryStale
 	}
-	// The new cache is written before anything changes (a full disk fails
-	// here, with nothing applied) and renamed into place once it is applied.
-	tmp, err := s.stageRegistryCache(cachedRegistryFile{Body: body, Sig: sig})
-	if err != nil {
+	// The cache is committed first and applied after; a refresh cut short
+	// between the two is finished at the next start (applyCachedRegistry).
+	if registryStageFails {
+		return errors.New("plugin registry: cannot write its cache (test)")
+	}
+	b, _ := json.Marshal(cachedRegistryFile{Body: body, Sig: sig})
+	if err := store.WriteFileAtomic(s.registryCache(), b); err != nil {
 		return err
 	}
-	defer os.Remove(tmp) // gone once renamed
-	if err := s.applyRegistry(ctx, reg); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.registryCache())
+	return s.applyRegistry(ctx, reg)
 }
 
-// stageRegistryCache writes c to a synced temporary file beside the cache.
-// shortcut: a crash between staging and rename leaves the .registry-* file behind; sweep the data dir if they pile up.
-func (s *Service) stageRegistryCache(c cachedRegistryFile) (string, error) {
-	if registryStageFails {
-		return "", errors.New("plugin registry: cannot write its cache (test)")
-	}
-	b, _ := json.Marshal(c)
-	f, err := os.CreateTemp(s.dataDir, ".registry-*")
+// applyCachedRegistry applies the cached registry again, so a revocation
+// committed by a refresh that did not finish holds before any plugin starts.
+func (s *Service) applyCachedRegistry(ctx context.Context) error {
+	s.registryMu.Lock()
+	defer s.registryMu.Unlock()
+	reg, err := s.cachedRegistry(s.opts.Registry)
 	if err != nil {
-		return "", err
+		return nil // none yet, or not valid: nothing to apply
 	}
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	if err = errors.Join(err, f.Close()); err != nil {
-		os.Remove(f.Name())
-		return "", err
-	}
-	return f.Name(), nil
+	return s.applyRegistry(ctx, reg)
 }
 
 func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, limit int64) ([]byte, error) {
@@ -278,8 +269,8 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 	return v, nil
 }
 
-// applyRegistry revokes listed files reg no longer lists and promotes
-// user-allowed files it lists at their version (spec 3.5, 3.7).
+// applyRegistry revokes listed packages reg no longer lists and promotes
+// user-allowed packages it lists exactly (spec 3.5, 3.7).
 func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
@@ -293,26 +284,23 @@ func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error
 	}
 	changed := false
 	for name, r := range rows {
-		listed := func(version string) bool {
-			key := plugins.PlatformKey()
-			if !r.m.IsNative() {
-				key = plugins.AnyPlatform
-			}
-			for _, rel := range byName[name].Releases {
-				if a, ok := rel.Artifacts[key]; ok && r.libraryHash != "" && a.SHA256 == r.libraryHash && (version == "" || rel.Version == version) {
-					return true
-				}
-			}
-			return false
+		key := plugins.PlatformKey()
+		if !r.m.IsNative() {
+			key = plugins.AnyPlatform
 		}
+		// The registry lists the installed package itself: its version, its file and its manifest.
+		reviewed := r.libraryHash != "" && slices.ContainsFunc(byName[name].Releases, func(rel plugins.RegistryRelease) bool {
+			a, ok := rel.Artifacts[key]
+			return ok && a.SHA256 == r.libraryHash && rel.Version == r.m.Version
+		}) && s.isReviewedPackage(name, r, byName[name])
 		switch {
-		case r.trust == "listed" && !listed(""):
+		case r.trust == "listed" && !reviewed:
 			if _, err := s.db.Execute(ctx, "UPDATE plugins SET enabled = 0, disabled_reason = ?, granted_hash = '', trust = '' WHERE name = ?", disabledRevoked, name); err != nil {
 				return err
 			}
 			s.stopPlugin(name)
 			changed = true
-		case r.trust == "user" && listed(r.m.Version) && s.isReviewedPackage(name, r, byName[name]):
+		case r.trust == "user" && reviewed:
 			if _, err := s.db.Execute(ctx, "UPDATE plugins SET trust = 'listed' WHERE name = ?", name); err != nil {
 				return err
 			}

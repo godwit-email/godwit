@@ -199,6 +199,12 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
+	if opts.Registry != nil {
+		if err := s.applyCachedRegistry(ctx); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("plugin registry: %w", err)
+		}
+	}
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err

@@ -576,10 +576,15 @@ func TestComposeWitInfoTranslateOnly(t *testing.T) {
 	f.c.Attach(1, d.ID)
 	st, err := f.e.Svc.GetSettings(t.Context())
 	require.NoError(t, err)
-	st.Translator = "plugin/dlx"
+	st.Translator = "plugin/translate-demo"
 	_, err = f.e.Svc.SetSettings(t.Context(), st)
 	require.NoError(t, err)
 	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.False(t, info.Enabled, "the chosen plugin is not running")
+
+	f.e.InstallPlugin(t, "translate-demo")
+	info, err = f.page.WitInfo(f.ctx(1))
 	require.NoError(t, err)
 	assert.True(t, info.Enabled)
 	assert.True(t, info.TranslateOnly)

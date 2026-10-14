@@ -450,3 +450,47 @@ func TestRegistryRefreshStagesBeforeApplying(t *testing.T) {
 	assert.True(t, p.Enabled, "the revocation was not applied")
 	assert.Equal(t, "listed", p.Trust)
 }
+
+// A listed release whose manifest is corrected (same code, fewer permissions)
+// no longer lists the installed package: it is revoked, not kept listed.
+func TestRegistryRevokesChangedManifest(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	code := `export default function () {}`
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rs.ScriptRelease("hello", "0.1.0", `{"net":["api.example.com"]}`, code))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "hello")
+	require.NoError(t, err)
+	require.NoError(t, s.GrantPermission(ctx, "hello"))
+	require.NoError(t, s.SetPluginEnabled(ctx, "hello", true))
+
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour), plugin("hello", rs.ScriptRelease("hello", "0.1.0", `{}`, code))))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	p := nativeInfo(t, s, "hello")
+	assert.False(t, p.Enabled)
+	assert.Equal(t, "trust_revoked", p.DisabledReason)
+	assert.Equal(t, "", p.Trust)
+}
+
+// A refresh commits the cache, then applies it; one cut short in between (a
+// crash, a failed write) is finished on the next start, before plugins load.
+func TestRegistryCachedRevocationAppliedAtStart(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))))
+	dir := t.TempDir()
+	s := regService(t, rs, dir)
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour))) // committed to the cache, never applied
+	b, err := json.Marshal(struct{ Body, Sig []byte }{fileAt(t, rs, rs.Src.URL), fileAt(t, rs, rs.Src.URL+".sig")})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin-registry.cache"), b, 0o600))
+
+	s = regService(t, rs, dir)
+	p := nativeInfo(t, s, "dlx")
+	assert.Equal(t, "trust_revoked", p.DisabledReason, "revoked before it could load")
+	assert.Equal(t, "", p.Trust)
+}

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -291,9 +292,11 @@ var (
 // translateDraftHTML translates draft HTML block by block: a paragraph,
 // heading, list item, quote or table cell (and text beside blocks) is one
 // text, sent in batches within the ABI's request limit; pre and code stay as
-// they are. The translation replaces a block's text in place (setText):
-// images, code and a link or style around the whole text stay, while text in
+// they are. A block's text between images and code is one segment, its
+// translation put in place (setText) so they stay where they were in the
+// sentence, as does a link or style around the whole segment; a segment in
 // several styles comes back in the first one's, which the user sees in the proposal.
+// shortcut: a sentence around inline code translates in pieces; placeholders would keep it whole, if plugins kept them.
 func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target string) (string, error) {
 	tr, rp, err := s.pluginTranslator(plugin)
 	if err != nil {
@@ -308,10 +311,17 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 		body.AppendChild(n)
 	}
 	var leaves, runs []*html.Node
-	var texts []string
+	var segs [][]*html.Node
+	var texts, leads, trails []string
 	leaf := func(n *html.Node) {
-		if t := strings.TrimSpace(nodeText(n)); t != "" {
-			leaves, texts = append(leaves, n), append(texts, t)
+		leaves = append(leaves, n)
+		for _, seg := range segments(n) {
+			t := segText(seg)
+			if core := strings.TrimSpace(t); core != "" {
+				lead := t[:len(t)-len(strings.TrimLeftFunc(t, unicode.IsSpace))]
+				segs, texts = append(segs, seg), append(texts, core)
+				leads, trails = append(leads, lead), append(trails, t[len(lead)+len(core):])
+			}
 		}
 	}
 	var walk func(n *html.Node)
@@ -374,8 +384,11 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 		}
 		start = end
 	}
-	for i, n := range leaves {
-		setText(n, out[i])
+	for i, seg := range segs {
+		setText(seg, leads[i]+out[i]+trails[i])
+	}
+	for _, n := range leaves {
+		pruneEmpty(n)
 	}
 	for _, r := range runs { // unwrap the runs before rendering
 		for r.FirstChild != nil {
@@ -451,60 +464,56 @@ func hasBlock(n *html.Node) bool {
 	return false
 }
 
-// nodeText is n's text without code, a line break for each <br>.
-func nodeText(n *html.Node) string {
-	var b strings.Builder
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		switch {
-		case n.DataAtom == atom.Code:
-			return // commands and snippets are not translated
-		case n.Type == html.TextNode:
-			b.WriteString(n.Data)
-		case n.DataAtom == atom.Br:
-			b.WriteString("\n")
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(n)
-	return b.String()
-}
-
-// setText puts text in place of n's text, leaving its elements (images,
-// code, a link around it all) where they are: the translation goes in the
-// first text node, in that node's styles, and the block's other text goes;
-// style elements left empty go too. The translation's line breaks replace the
-// block's <br>s.
-func setText(n *html.Node, text string) {
-	var first *html.Node
-	var brs []*html.Node
+// segments splits n's text at the elements that stay as they are (code,
+// images): each segment is its text nodes and <br>s, in order.
+func segments(n *html.Node) [][]*html.Node {
+	segs := [][]*html.Node{nil}
 	var walk func(*html.Node)
 	walk = func(c *html.Node) {
 		switch {
-		case c.DataAtom == atom.Code:
+		case c.Type == html.TextNode || c.DataAtom == atom.Br:
+			segs[len(segs)-1] = append(segs[len(segs)-1], c)
 			return
-		case c.DataAtom == atom.Br:
-			brs = append(brs, c)
-		case c.Type == html.TextNode:
-			if first == nil && strings.TrimSpace(c.Data) != "" {
-				first = c
-			} else {
-				c.Data = ""
-			}
+		case c != n && c.Type == html.ElementNode && !styleTags[c.DataAtom]:
+			segs = append(segs, nil) // commands and snippets are not translated
+			return
 		}
 		for d := c.FirstChild; d != nil; d = d.NextSibling {
 			walk(d)
 		}
 	}
 	walk(n)
-	for _, br := range brs {
-		br.Parent.RemoveChild(br)
+	return segs
+}
+
+// segText is seg's text, a line break for each <br>.
+func segText(seg []*html.Node) string {
+	var b strings.Builder
+	for _, c := range seg {
+		if c.Type == html.TextNode {
+			b.WriteString(c.Data)
+		} else {
+			b.WriteString("\n")
+		}
 	}
-	if first == nil {
-		first = &html.Node{Type: html.TextNode}
-		n.AppendChild(first)
+	return b.String()
+}
+
+// setText puts text in place of seg's text: in its first text node that is
+// not blank, in that node's styles; its other text and its <br>s go, the
+// translation's line breaks becoming <br>s. pruneEmpty then drops the style
+// elements left empty.
+func setText(seg []*html.Node, text string) {
+	var first *html.Node
+	for _, c := range seg {
+		switch {
+		case c.Type != html.TextNode:
+			c.Parent.RemoveChild(c)
+		case first == nil && strings.TrimSpace(c.Data) != "":
+			first = c
+		default:
+			c.Data = ""
+		}
 	}
 	lines := strings.Split(text, "\n")
 	first.Data = lines[0]
@@ -516,7 +525,6 @@ func setText(n *html.Node, text string) {
 		at.Parent.InsertBefore(t, br.NextSibling)
 		at = t
 	}
-	pruneEmpty(n)
 }
 
 // pruneEmpty removes the style elements under n that hold no text and no other element.
