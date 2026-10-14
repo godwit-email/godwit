@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,8 +12,13 @@ import (
 
 // FakeNativeOpener is a NativeOpener for tests that loads nothing: the
 // "library" file is JSON {"describe": {...}, "initFail": bool, "echoStderr":
-// "...", "record": "<path>", "describeSleepMs": n}. initFail writes echoStderr
-// and fails init; describe answers after describeSleepMs.
+// "...", "record": "<path>", "describeSleepMs": n, "recordEnv": bool,
+// "source": "en", "translateWrongCount": bool, "translateError": "<code>"}.
+// initFail writes echoStderr and fails init; describe answers after
+// describeSleepMs. translate answers "[<target>] <text>" per text from source
+// (default "en"), one text short with translateWrongCount, or the error
+// envelope translateError; with record each request is appended to
+// record + ".translate", and recordEnv adds the environment to configure's record.
 // Methods: describe, configure (writes its request to record, if set),
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
 // probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2).
@@ -28,6 +34,10 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			InitFail        bool            `json:"initFail"`
 			EchoStderr      string          `json:"echoStderr"`
 			Record          string          `json:"record"`
+			RecordEnv       bool            `json:"recordEnv"`
+			Source          string          `json:"source"`
+			WrongCount      bool            `json:"translateWrongCount"`
+			TranslateError  string          `json:"translateError"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
@@ -47,17 +57,43 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				return ok(spec.Describe), nil
 			case "configure":
 				if spec.Record != "" {
-					if err := os.WriteFile(spec.Record, req, 0o600); err != nil {
+					rec := req
+					if spec.RecordEnv {
+						var r map[string]any
+						json.Unmarshal(req, &r)
+						r["env"] = os.Environ()
+						rec, _ = json.Marshal(r)
+					}
+					if err := os.WriteFile(spec.Record, rec, 0o600); err != nil {
 						return nil, err
 					}
 				}
 				return ok(struct{}{}), nil
 			case "translate":
+				if spec.Record != "" {
+					f, err := os.OpenFile(spec.Record+".translate", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+					if err != nil {
+						return nil, err
+					}
+					f.Write(append(append([]byte{}, req...), '\n'))
+					f.Close()
+				}
+				if spec.TranslateError != "" {
+					return []byte(`{"ok":false,"error":{"code":"` + spec.TranslateError + `","message":"slow down","retryable":true}}`), nil
+				}
 				var r struct {
-					Texts []string `json:"texts"`
+					Texts  []string `json:"texts"`
+					Target string   `json:"target"`
 				}
 				json.Unmarshal(req, &r)
-				return ok(map[string]any{"texts": r.Texts, "source": "en"}), nil
+				out := make([]string, 0, len(r.Texts))
+				for _, t := range r.Texts {
+					out = append(out, "["+r.Target+"] "+t)
+				}
+				if spec.WrongCount && len(out) > 0 {
+					out = out[1:]
+				}
+				return ok(map[string]any{"texts": out, "source": cmp.Or(spec.Source, "en")}), nil
 			case "fail":
 				return []byte(`{"ok":false,"error":{"code":"rate_limited","message":"slow down","retryable":true}}`), nil
 			case "probe.sleep":

@@ -64,7 +64,7 @@ func TestNativeCall(t *testing.T) {
 	assert.JSONEq(t, `{"name":"fake","version":"1","abi":1,"capabilities":["translate"]}`, string(res))
 	res, err = n.Call(context.Background(), "translate", map[string]any{"texts": []string{"a", "b"}, "source": "", "target": "zh-CN"})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"texts":["a","b"],"source":"en"}`, string(res))
+	assert.JSONEq(t, `{"texts":["[zh-CN] a","[zh-CN] b"],"source":"en"}`, string(res))
 }
 
 func TestNativeBusinessError(t *testing.T) {

@@ -74,6 +74,15 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if !slices.Contains(sk.On, t.Kind) {
 		return nil, fmt.Errorf("skill %s does not run on a %s", name, t.Kind)
 	}
+	if name == "translate" { // before any model: a plugin translates without one
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
+			return s.runPluginTranslate(ctx, end, plugin, t, st)
+		}
+	}
 	model, ref, err := s.resolveTask(ctx, sk.Model, sk.Tier == "small")
 	if err != nil {
 		return nil, err
