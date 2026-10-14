@@ -268,10 +268,8 @@ func TestNotificationClickBeforeLoad(t *testing.T) {
 		id = page.Items[0].ID
 	})
 	h.app.NotificationClicked("message:" + strconv.FormatInt(id, 10)) // the click that launched the app
-	h.until("the message open", func() bool { return h.app.loaded && h.tt.HasText("body of Cold start") })
-	if h.app.route.ThreadID == 0 {
-		t.Fatalf("route %+v", h.app.route)
-	}
+	// the inbox shows first, its row's snippet the same text as the body
+	h.until("the message open", func() bool { return h.app.route.ThreadID != 0 && h.tt.HasText("body of Cold start") })
 }
 
 func TestTrayUnread(t *testing.T) {
