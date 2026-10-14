@@ -580,7 +580,7 @@ func TestShots(t *testing.T) {
 	})
 	t.Run("OnboardingOAuth", func(t *testing.T) {
 		h := onboarding(t)
-		h.app.oauth = &fakeOAuth{flows: map[string]chan string{}}
+		h.app.oauth = &fakeOAuth{flows: map[string]chan flowResult{}}
 		h.click("Outlook / Hotmail")
 		h.see("已在浏览器中打开登录页")
 		shot(h, "OnboardingOAuth")

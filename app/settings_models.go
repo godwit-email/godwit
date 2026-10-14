@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -32,6 +33,7 @@ type modelsView struct {
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
 	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
+	saveService  func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ModelService, error)
 }
 
 // modelForm edits one service (id 0: a new one). A result for a form that
@@ -42,6 +44,9 @@ type modelForm struct {
 	savedKind, savedJudge    string // as saved: where a stored key may go
 	savedURL                 string // as saved, normalized
 	provider                 string // its tile; fixed once added
+	email, flowID, authURL   string // this session's OAuth sign-in; authURL for Reopen
+	loggingIn                bool
+	loginErr                 string
 	confirmDel               bool   // the footer asks to confirm the removal
 	keyFocus, urlFocus       bool
 	fetch, fetchErr          string // "ok" or "fail" once the key's /models fetch is back; why it failed
@@ -73,13 +78,15 @@ type capTest struct {
 	state, text string
 	status      core.CapStatus
 	basis       string
+	usage       bool
 }
 
 // providerURL is each provider's address (the design's PROVIDERS).
 var providerURL = map[string]string{core.ProviderOpenAI: "https://api.openai.com/v1", core.ProviderAnthropic: "https://api.anthropic.com/v1",
-	core.ProviderTypeSafe: "https://api.typesafe.ai/v1", core.ProviderOther: ""}
+	core.ProviderTypeSafe: "https://api.typesafe.ai/v1", core.ProviderOther: "",
+	core.ProviderChatGPT: core.ModelProviderURL(core.ProviderChatGPT), core.ProviderGrok: core.ModelProviderURL(core.ProviderGrok)}
 
-var providerOrder = []string{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther}
+var providerOrder = []string{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther, core.ProviderChatGPT, core.ProviderGrok}
 
 func svcProvider(p string) string {
 	switch p {
@@ -89,6 +96,10 @@ func svcProvider(p string) string {
 		return "Anthropic"
 	case core.ProviderTypeSafe:
 		return "TypeSafe"
+	case core.ProviderChatGPT:
+		return i18n.T("settings.models.preset.chatgpt")
+	case core.ProviderGrok:
+		return i18n.T("settings.models.preset.grok")
 	}
 	return i18n.T("settings.models.preset.custom")
 }
@@ -152,6 +163,7 @@ func (f *modelForm) url() string {
 }
 
 func (f *modelForm) custom() bool { return f.provider == core.ProviderOther }
+func (f *modelForm) oauth() bool  { return core.ModelProviderLogin(f.provider) == "oauth" }
 
 // moved reports whether a saved service now points at another address or
 // format, which core won't send the stored key to.
@@ -176,7 +188,7 @@ func (f *modelForm) keyAction() string {
 
 // conn is what a fetch or test depends on: the formats, address and key.
 func (f *modelForm) conn() string {
-	return strings.Join([]string{f.kind, f.judgeFormat, f.url(), f.keyAction(), f.key}, "\n")
+	return strings.Join([]string{f.kind, f.judgeFormat, f.url(), f.keyAction(), f.key, f.flowID}, "\n")
 }
 
 // capBasis is what a test of capability c ran on: conn() and the model it asked.
@@ -229,10 +241,15 @@ func (f *modelForm) pickGateway(name, url string) {
 	}
 }
 
-func (f *modelForm) anyCap() bool    { return f.genOn || f.judgeOn }
-func (f *modelForm) anyKey() bool    { return f.key != "" || f.hasKey }
-func (f *modelForm) testing() bool   { return f.gen.state == "testing" || f.judge.state == "testing" }
-func (f *modelForm) needKey() bool   { return f.id == 0 && !f.custom() && f.key == "" }
+func (f *modelForm) anyCap() bool  { return f.genOn || f.judgeOn }
+func (f *modelForm) anyKey() bool  { return f.key != "" || f.hasKey || f.flowID != "" && !f.loggingIn }
+func (f *modelForm) testing() bool { return f.gen.state == "testing" || f.judge.state == "testing" }
+func (f *modelForm) needKey() bool {
+	if f.oauth() {
+		return f.id == 0 && (f.flowID == "" || f.loggingIn)
+	}
+	return f.id == 0 && !f.custom() && f.key == ""
+}
 func (f *modelForm) needModel() bool { return f.genOn && len(f.models) == 0 }
 func (f *modelForm) noURL() bool     { return strings.TrimSpace(f.baseURL) == "" }
 func (f *modelForm) noName() bool    { return strings.TrimSpace(f.name) == "" }
@@ -258,6 +275,8 @@ func (f *modelForm) hint() string {
 		return i18n.T("settings.models.need.cap")
 	case f.noURL():
 		return i18n.T("settings.models.need.url")
+	case f.needKey() && f.oauth():
+		return i18n.T("settings.models.need.login")
 	case f.needKey():
 		return i18n.T("settings.models.need.key")
 	case f.noName():
@@ -297,6 +316,9 @@ func (f *modelForm) decList() []string {
 func (f *modelForm) input() core.ModelServiceInput {
 	in := core.ModelServiceInput{Name: strings.TrimSpace(f.name), BaseURL: strings.TrimSpace(f.baseURL), APIKey: f.key, KeyAction: f.keyAction(),
 		Models: slices.Clone(f.models), Provider: f.provider}
+	if f.oauth() {
+		in.OAuthFlowID, in.APIKey, in.KeyAction = f.flowID, "", ""
+	}
 	if f.genOn {
 		in.Kind = f.kind
 	}
@@ -392,12 +414,113 @@ func (m *modelsView) edit(s core.ModelService) {
 	gen, judge := core.ProviderFormats(p)
 	savedURL, _ := core.NormalizeModelBaseURL(s.BaseURL)
 	f := &modelForm{id: s.ID, title: s.Name, slug: s.Slug, savedKind: s.Kind, savedJudge: s.JudgeFormat, savedURL: cmp.Or(savedURL, s.BaseURL), provider: p,
-		name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models),
+		email: s.Email, name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models),
 		kind: cmp.Or(s.Kind, first(gen)), genOn: s.Kind != "", judgeOn: s.JudgeFormat != "", judgeFormat: cmp.Or(s.JudgeFormat, first(judge)), judgeModel: s.JudgeModel}
 	if f.judgeModel == "" {
 		f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
 	}
 	m.form = f
+}
+
+// svcSubtitle is the second line of a service card: the signed-in email for an OAuth provider, else its BaseURL.
+func svcSubtitle(s core.ModelService) string {
+	if core.ModelProviderLogin(s.Provider) == "oauth" {
+		return s.Email
+	}
+	return s.BaseURL
+}
+
+func (m *modelsView) cancelFlow(id string) {
+	if id == "" {
+		return
+	}
+	oauth := m.a.oauth
+	m.a.do(func(context.Context) error { oauth.Cancel(id); return nil }, nil)
+}
+
+func (m *modelsView) cancelForm() {
+	if f := m.form; f != nil {
+		if f.flowID != "" {
+			m.cancelFlow(f.flowID)
+			f.flowID = ""
+		}
+		f.loggingIn = false
+	}
+}
+
+func (m *modelsView) openURL(url string) {
+	plat, a := m.a.plat, m.a
+	a.do(func(context.Context) error { return plat.OpenURL(url) }, a.toastErr)
+}
+
+func loginError(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return ""
+	case errors.Is(err, auth.ErrAccessDenied):
+		return i18n.T("settings.models.login.denied")
+	case errors.Is(err, auth.ErrFlowExpired):
+		return i18n.T("settings.models.login.timeout")
+	}
+	return humanize(err)
+}
+
+// login begins a browser sign-in for f, opens it, awaits the result, and
+// fetches the service's models once signed in.
+func (m *modelsView) login(f *modelForm) {
+	if f.flowID != "" {
+		m.cancelFlow(f.flowID)
+	}
+	f.loggingIn, f.loginErr, f.flowID, f.authURL = true, "", "", ""
+	a := m.a
+	oauth, plat, prov, hint := a.oauth, a.plat, f.provider, strings.TrimSpace(f.email)
+	var id, url string
+	var openErr error
+	a.do(func(ctx context.Context) error {
+		var err error
+		if id, url, err = oauth.Begin(ctx, prov, hint); err != nil {
+			return err
+		}
+		openErr = plat.OpenURL(url)
+		return nil
+	}, func(err error) {
+		if m.form != f || !f.loggingIn {
+			if err == nil && id != "" {
+				m.cancelFlow(id)
+			}
+			return
+		}
+		if err != nil {
+			f.loggingIn = false
+			f.loginErr = loginError(err)
+			return
+		}
+		a.toastErr(openErr)
+		f.flowID, f.authURL = id, url
+		var email string
+		a.do(func(ctx context.Context) error {
+			var err error
+			email, err = oauth.Await(ctx, id)
+			return err
+		}, func(err error) {
+			if m.form != f || !f.loggingIn || f.flowID != id {
+				return
+			}
+			f.loggingIn = false
+			if errors.Is(err, context.Canceled) {
+				f.flowID = ""
+				return
+			}
+			a.plat.ShowWindow()
+			if err != nil {
+				f.flowID = ""
+				f.loginErr = loginError(err)
+				return
+			}
+			f.email, f.flowID = email, id
+			m.fetch(f)
+		})
+	})
 }
 
 // openEdit shows the service in the dialog and quietly lists its models.
@@ -433,13 +556,16 @@ func (m *modelsView) submit(f *modelForm) {
 	a := m.a
 	snap := *f
 	snap.models = slices.Clone(f.models)
-	in, id, found := f.input(), f.id, f.found()
+	in, id, found, save := f.input(), f.id, f.found(), m.saveService
 	f.busy = true
 	var saved core.ModelService
 	a.writes.Chain("models", func(ctx context.Context) (err error) {
-		if id == 0 {
+		switch {
+		case save != nil:
+			saved, err = save(ctx, id, in)
+		case id == 0:
 			saved, err = a.svc.AddModelService(ctx, in)
-		} else {
+		default:
 			saved, err = a.svc.UpdateModelService(ctx, id, in)
 		}
 		if err != nil {
@@ -463,12 +589,17 @@ func (m *modelsView) submit(f *modelForm) {
 		switch {
 		case m.form != f:
 		case f.unchanged(snap):
+			f.flowID = ""
 			m.close()
 		default:
 			f.id, f.title, f.slug, f.hasKey, f.savedKind, f.savedJudge = saved.ID, saved.Name, saved.Slug, saved.HasKey, saved.Kind, saved.JudgeFormat
+			f.email = cmp.Or(saved.Email, f.email)
 			f.savedURL, _ = core.NormalizeModelBaseURL(saved.BaseURL)
 			if f.key == snap.key {
 				f.key = ""
+			}
+			if f.flowID == snap.flowID {
+				f.flowID = ""
 			}
 		}
 		noDefault := a.settings.DefaultModel == ""
@@ -494,7 +625,7 @@ func (m *modelsView) submit(f *modelForm) {
 
 func (f *modelForm) unchanged(snap modelForm) bool {
 	return f.kind == snap.kind && f.name == snap.name && f.baseURL == snap.baseURL && f.key == snap.key && f.noKey == snap.noKey &&
-		f.manual == snap.manual && slices.Equal(f.models, snap.models) && f.genOn == snap.genOn && f.judgeOn == snap.judgeOn &&
+		f.flowID == snap.flowID && f.manual == snap.manual && slices.Equal(f.models, snap.models) && f.genOn == snap.genOn && f.judgeOn == snap.judgeOn &&
 		f.judgeFormat == snap.judgeFormat && f.judgeModel == snap.judgeModel
 }
 
@@ -587,6 +718,9 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 		case errors.Is(err, core.ErrModelAuth):
 			f.keyErr = humanize(err)
 			return
+		case errors.Is(err, core.ErrModelReauth):
+			f.loginErr = humanize(err)
+			return
 		case err != nil:
 			if !quiet {
 				f.fetch, f.fetchErr = "fail", fetchFailure(err)
@@ -668,6 +802,10 @@ func capResult(format string, st core.CapStatus, err error) capTest {
 	switch {
 	case err == nil:
 		return capTest{state: "ok", text: i18n.Tf("settings.models.test.ok", st.LatencyMs)}
+	case isChatGPTUsage(err):
+		return capTest{state: "fail", text: humanize(err), usage: true}
+	case errors.Is(err, core.ErrModelReauth):
+		return capTest{state: "fail", text: humanize(err)}
 	case st.Code == "forbidden":
 		return capTest{state: "fail", text: strconv.Itoa(st.HTTPStatus) + " · " + i18n.Tf("settings.models.fail.no_api", formats[format].api)}
 	case st.State == "fail":
@@ -864,6 +1002,10 @@ func badge(provider string) string {
 		return "AN"
 	case core.ProviderTypeSafe:
 		return "TS"
+	case core.ProviderChatGPT:
+		return "CG"
+	case core.ProviderGrok:
+		return "GK"
 	}
 	return "GW" // other: a gateway or compatible service
 }

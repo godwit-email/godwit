@@ -12,9 +12,11 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/stretchr/testify/assert"
 )
 
 // withLLM is an App with an account and the fake model service "test".
@@ -1109,3 +1111,93 @@ func TestBlockedFooterDisabled(t *testing.T) {
 		t.Fatal("the ready footer buttons don't take focus")
 	}
 }
+
+func TestOAuthTileLogin(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	var saved core.ModelServiceInput
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		return core.ServiceCheck{Models: []string{"gpt-x"}, ListSupported: true}, nil
+	}
+	m.saveService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ModelService, error) {
+		saved = in
+		return core.ModelService{ID: 9, Name: in.Name, Slug: "chatgpt", Provider: in.Provider, Kind: in.Kind, Models: in.Models, Email: "alice@example.com", HasKey: true}, nil
+	}
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.see("先登录再添加")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	h.see("已在浏览器中打开登录页")
+	fo.finish("f1", "alice@example.com")
+	h.until("signed in", func() bool { return m.form != nil && m.form.email == "alice@example.com" && slices.Equal(m.form.models, []string{"gpt-x"}) })
+	h.see("alice@example.com")
+	h.click("添加")
+	h.until("saved", func() bool { return saved.OAuthFlowID == "f1" })
+	assert.Equal(t, core.ProviderChatGPT, saved.Provider)
+	assert.Equal(t, ai.KindResponses, saved.Kind)
+	assert.Empty(t, saved.APIKey)
+}
+
+func TestOAuthTileLoginDenied(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	saved := false
+	m.saveService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ModelService, error) {
+		saved = true
+		return core.ModelService{}, nil
+	}
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	fo.fail("f1", auth.ErrAccessDenied)
+	h.see("登录被拒绝或取消")
+	h.see("Continue with ChatGPT")
+	assert.Empty(t, m.form.flowID)
+	assert.False(t, saved)
+}
+
+func TestOAuthTileCloseCancels(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	h.click("关闭")
+	h.until("flow canceled", func() bool { return slices.Equal(fo.Canceled(), []string{"f1"}) })
+	h.drain()
+	h.tt.Frame()
+	assert.Nil(t, m.form)
+	assert.Empty(t, h.app.toasts)
+	assert.False(t, h.tt.HasText("出错了"))
+}
+
+// svcSubtitle 是卡片第二行：订阅型服务显示邮箱，其他显示地址。
+func TestServiceCardSubtitle(t *testing.T) {
+	assert.Equal(t, "alice@example.com", svcSubtitle(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://api.openai.com/v1"}))
+	assert.Equal(t, "https://api.openai.com/v1", svcSubtitle(core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1"}))
+}
+
+func TestHumanizeChatGPTUsage(t *testing.T) {
+	err := &ai.Error{Code: ai.CodeRateLimited, Detail: ai.DetailChatGPTUsage}
+	assert.Equal(t, "ChatGPT 套餐用量已达上限", humanize(err))
+	assert.Equal(t, "登录已失效，请重新登录", humanize(core.ErrModelReauth))
+}
+

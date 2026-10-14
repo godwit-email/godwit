@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -490,6 +491,13 @@ func (r *reader) output(c *ui.Context, run *aiRun) {
 	}
 }
 
+const chatGPTUsageURL = "https://chatgpt.com/settings/usage"
+
+func isChatGPTUsage(err error) bool {
+	var aiErr *ai.Error
+	return errors.As(err, &aiErr) && aiErr.Detail == ai.DetailChatGPTUsage
+}
+
 // runState shows a spinner while run runs, its error with Retry when it failed.
 func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 	switch {
@@ -497,6 +505,11 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 		kit.Spinner(c)
 	case run.err != nil:
 		kit.Alert(c, kit.Danger, humanize(run.err), func() {
+			if isChatGPTUsage(run.err) {
+				a := r.p.a
+				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+			}
 			if retry != nil {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
 			}
@@ -508,6 +521,11 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) {
 	if msg := humanize(err); msg != "" && !loading {
 		kit.Alert(c, kit.Danger, msg, func() {
+			if isChatGPTUsage(err) {
+				a := r.p.a
+				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+			}
 			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
 		})
 	}
