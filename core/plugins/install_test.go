@@ -3,6 +3,7 @@ package plugins
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -26,23 +27,23 @@ func TestSnapshotRejects(t *testing.T) {
 	writeFiles(t, src, base)
 	require.NoError(t, os.Symlink("/etc/passwd", filepath.Join(src, "link")))
 	dst := filepath.Join(t.TempDir(), "p")
-	_, err := Snapshot(src, dst)
+	_, err := Snapshot(src, dst, ScriptLimits)
 	assert.ErrorContains(t, err, "link")
 	assert.NoDirExists(t, dst)
 
 	src = t.TempDir()
 	writeFiles(t, src, base)
-	writeFiles(t, src, map[string]string{"big.bin": strings.Repeat("x", MaxFileBytes+1)})
-	_, err = Snapshot(src, dst)
+	writeFiles(t, src, map[string]string{"big.bin": strings.Repeat("x", int(ScriptLimits.File)+1)})
+	_, err = Snapshot(src, dst, ScriptLimits)
 	assert.ErrorContains(t, err, "big.bin")
 	assert.NoDirExists(t, dst)
 
 	src = t.TempDir()
 	writeFiles(t, src, base)
 	for _, n := range []string{"a", "b", "c", "d", "e"} {
-		writeFiles(t, src, map[string]string{n + ".bin": strings.Repeat("x", MaxFileBytes-1)})
+		writeFiles(t, src, map[string]string{n + ".bin": strings.Repeat("x", int(ScriptLimits.File)-1)})
 	}
-	_, err = Snapshot(src, dst)
+	_, err = Snapshot(src, dst, ScriptLimits)
 	assert.ErrorContains(t, err, "too large")
 	assert.NoDirExists(t, dst)
 
@@ -51,21 +52,21 @@ func TestSnapshotRejects(t *testing.T) {
 	src = t.TempDir()
 	writeFiles(t, src, base)
 	writeFiles(t, src, map[string]string{"lib/util.ts": "export const x = 1", ".build/old.js": "junk"})
-	h, err := Snapshot(src, dst)
+	h, err := Snapshot(src, dst, ScriptLimits)
 	require.NoError(t, err)
 	assert.NoDirExists(t, filepath.Join(dst, ".build"))
 	assert.FileExists(t, filepath.Join(dst, "lib", "util.ts"))
-	h2, err := HashDir(dst)
+	h2, err := HashDir(dst, ScriptLimits)
 	require.NoError(t, err)
 	assert.Equal(t, h, h2)
 
 	// A version is written once: dst must be a fresh path.
 	writeFiles(t, src, map[string]string{"lib/util.ts": "export const x = 2"})
-	_, err = Snapshot(src, dst)
+	_, err = Snapshot(src, dst, ScriptLimits)
 	assert.Error(t, err)
 	b, _ := os.ReadFile(filepath.Join(dst, "lib", "util.ts"))
 	assert.Equal(t, "export const x = 1", string(b), "the existing snapshot is untouched")
-	h3, err := Snapshot(src, dst+"2")
+	h3, err := Snapshot(src, dst+"2", ScriptLimits)
 	require.NoError(t, err)
 	assert.NotEqual(t, h, h3)
 	left, _ := os.ReadDir(filepath.Dir(dst))
@@ -94,7 +95,7 @@ func TestSnapshotSymlinkRace(t *testing.T) {
 			}
 			defer func() { beforeOpen = nil }()
 			dst := filepath.Join(t.TempDir(), "p")
-			_, err := Snapshot(src, dst)
+			_, err := Snapshot(src, dst, ScriptLimits)
 			assert.ErrorContains(t, err, tc.swap)
 			assert.NoDirExists(t, dst)
 		})
@@ -108,7 +109,7 @@ func TestBuildFromSnapshotOnly(t *testing.T) {
 		"lib/util.ts": `export const word = "snapshot-one"`,
 	})
 	dst := filepath.Join(t.TempDir(), "p")
-	_, err := Snapshot(src, dst)
+	_, err := Snapshot(src, dst, ScriptLimits)
 	require.NoError(t, err)
 	writeFiles(t, src, map[string]string{"lib/util.ts": `export const word = "changed-later"`})
 	out, err := Build(dst, "index.ts")
@@ -129,7 +130,7 @@ func TestBuildFromSnapshotOnly(t *testing.T) {
 			src := t.TempDir()
 			writeFiles(t, src, map[string]string{"index.ts": code})
 			dst := filepath.Join(root, "p")
-			_, err := Snapshot(src, dst)
+			_, err := Snapshot(src, dst, ScriptLimits)
 			require.NoError(t, err)
 			_, err = Build(dst, "index.ts")
 			assert.ErrorContains(t, err, "index.ts:1: cannot import")
@@ -154,7 +155,7 @@ func TestBuildCache(t *testing.T) {
 	src := t.TempDir()
 	writeFiles(t, src, map[string]string{"index.ts": `export default function () { return "v1" }`})
 	dst := filepath.Join(t.TempDir(), "p")
-	_, err := Snapshot(src, dst)
+	_, err := Snapshot(src, dst, ScriptLimits)
 	require.NoError(t, err)
 
 	c := &countingCompiler{key: "opts-a"}
@@ -179,4 +180,24 @@ func TestBuildCache(t *testing.T) {
 	assert.Len(t, cached, 1, "only the current build is kept")
 
 	assert.NotEmpty(t, ESBuild.Key())
+}
+
+func TestSnapshotNativeLimits(t *testing.T) {
+	src := t.TempDir()
+	writeFiles(t, src, map[string]string{"plugin.json": "{}", "plugin.so": strings.Repeat("x", 6<<20)})
+	_, err := Snapshot(src, filepath.Join(t.TempDir(), "p"), ScriptLimits)
+	assert.ErrorContains(t, err, "plugin.so", "6 MiB is over the script limit")
+	dst := filepath.Join(t.TempDir(), "p")
+	h, err := Snapshot(src, dst, NativeLimits)
+	require.NoError(t, err)
+	h2, err := HashDir(dst, NativeLimits)
+	require.NoError(t, err)
+	assert.Equal(t, h, h2)
+	_, err = HashDir(dst, ScriptLimits)
+	assert.Error(t, err, "HashDir applies the limits it is given")
+}
+
+func TestLibraryName(t *testing.T) {
+	want := map[string]string{"darwin": "plugin.dylib", "windows": "plugin.dll", "linux": "plugin.so"}[runtime.GOOS]
+	assert.Equal(t, want, LibraryName())
 }

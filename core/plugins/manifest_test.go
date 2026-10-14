@@ -190,3 +190,46 @@ func TestSDKTypesCompile(t *testing.T) {
 	require.Len(t, res.OutputFiles, 1)
 	assert.Contains(t, string(res.OutputFiles[0].Contents), "translate")
 }
+
+func TestParseManifestNative(t *testing.T) {
+	m, err := ParseManifest([]byte(`{"name":"dlx","version":"0.1.0","native":{"abi":1},"capabilities":["translate"],
+		"config":[{"key":"endpoint","type":"text","label":"Endpoint"}]}`), "dlx")
+	require.NoError(t, err)
+	assert.True(t, m.IsNative())
+	assert.Equal(t, "", m.Main)
+	assert.Equal(t, NativeABI, m.Native.ABI)
+	assert.Equal(t, []string{"translate"}, m.Capabilities)
+	b, err := json.Marshal(m)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), `"main"`, "a native manifest stores no main")
+}
+
+func TestParseManifestNativeRejects(t *testing.T) {
+	for name, body := range map[string]string{
+		"main too":        `"main":"index.ts","native":{"abi":1},"capabilities":["translate"]`,
+		"permissions":     `"native":{"abi":1},"capabilities":["translate"],"permissions":{"net":["api.x.com"]}`,
+		"llm permission":  `"native":{"abi":1},"capabilities":["translate"],"permissions":{"llm":true}`,
+		"abi 2":           `"native":{"abi":2},"capabilities":["translate"]`,
+		"abi 0":           `"native":{"abi":0},"capabilities":["translate"]`,
+		"no capabilities": `"native":{"abi":1}`,
+		"unknown":         `"native":{"abi":1},"capabilities":["judge"]`,
+		"duplicate":       `"native":{"abi":1},"capabilities":["translate","translate"]`,
+	} {
+		_, err := ParseManifest([]byte(`{"name":"dlx","version":"0.1.0",`+body+`}`), "dlx")
+		assert.Error(t, err, name)
+	}
+}
+
+func TestParseManifestScriptCapabilities(t *testing.T) {
+	with := func(caps string) []byte {
+		return []byte(`{"name":"demo","version":"1.0.0","main":"index.ts","permissions":` + okPerms + `,"capabilities":` + caps + `}`)
+	}
+	m, err := ParseManifest(with(`["translate"]`), "demo")
+	require.NoError(t, err)
+	assert.False(t, m.IsNative())
+	assert.Equal(t, []string{"translate"}, m.Capabilities)
+	_, err = ParseManifest(with(`["judge"]`), "demo")
+	assert.Error(t, err)
+	_, err = ParseManifest(manifest(`"demo"`, `"index.ts"`, okPerms, `[]`), "demo")
+	assert.NoError(t, err, "capabilities are optional for a script plugin")
+}

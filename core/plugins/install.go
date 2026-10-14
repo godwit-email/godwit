@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -18,11 +19,26 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 )
 
-// Snapshot limits.
-const (
-	MaxFileBytes  = 5 << 20
-	MaxTotalBytes = 20 << 20
+// Limits caps a snapshot: each file, and all of them together, in bytes.
+type Limits struct{ File, Total int64 }
+
+// Snapshot limits by kind: a native plugin carries a shared library.
+var (
+	ScriptLimits = Limits{File: 5 << 20, Total: 20 << 20}
+	NativeLimits = Limits{File: 64 << 20, Total: 80 << 20}
 )
+
+// LibraryName is the file a native plugin's shared library has in its
+// directory on this platform.
+func LibraryName() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "plugin.dylib"
+	case "windows":
+		return "plugin.dll"
+	}
+	return "plugin.so"
+}
 
 // BuildDir is where a snapshot keeps its compiled code; it is not part of the snapshot.
 const BuildDir = ".build"
@@ -30,7 +46,7 @@ const BuildDir = ".build"
 // files lists the regular files under dir (slash paths, sorted), skipping
 // BuildDir. Symlinks, devices and other special files, and oversized files or
 // totals, are errors.
-func files(dir string) ([]string, error) {
+func files(dir string, lim Limits) ([]string, error) {
 	var out []string
 	var total int64
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -61,11 +77,11 @@ func files(dir string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if info.Size() > MaxFileBytes {
-			return fmt.Errorf("%s: larger than %d MB", rel, MaxFileBytes>>20)
+		if info.Size() > lim.File {
+			return fmt.Errorf("%s: larger than %d MB", rel, lim.File>>20)
 		}
-		if total += info.Size(); total > MaxTotalBytes {
-			return fmt.Errorf("plugin is too large (over %d MB)", MaxTotalBytes>>20)
+		if total += info.Size(); total > lim.Total {
+			return fmt.Errorf("plugin is too large (over %d MB)", lim.Total>>20)
 		}
 		out = append(out, rel)
 		return nil
@@ -75,8 +91,8 @@ func files(dir string) ([]string, error) {
 }
 
 // HashDir hashes the files of a plugin directory as Snapshot does.
-func HashDir(dir string) (string, error) {
-	names, err := files(dir)
+func HashDir(dir string, lim Limits) (string, error) {
+	names, err := files(dir, lim)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +111,7 @@ func HashDir(dir string) (string, error) {
 // Snapshot copies the plugin directory src to dst, which must not exist yet,
 // and returns the hash of the copy. It copies into a sibling temp directory and
 // renames that to dst, so dst is complete or absent.
-func Snapshot(src, dst string) (sourceHash string, err error) {
+func Snapshot(src, dst string, lim Limits) (sourceHash string, err error) {
 	root, err := os.OpenRoot(src)
 	if err != nil {
 		return "", err
@@ -110,11 +126,11 @@ func Snapshot(src, dst string) (sourceHash string, err error) {
 	}
 	defer os.RemoveAll(tmp) // gone once renamed to dst
 	var total int64
-	if err := copyTree(root, "", tmp, &total); err != nil {
+	if err := copyTree(root, "", tmp, &total, lim); err != nil {
 		return "", err
 	}
 	// Hash the copy, not src, which may change while we copy it.
-	if sourceHash, err = HashDir(tmp); err != nil {
+	if sourceHash, err = HashDir(tmp, lim); err != nil {
 		return "", err
 	}
 	return sourceHash, os.Rename(tmp, dst)
@@ -127,7 +143,7 @@ var beforeOpen func(rel string)
 // is Lstat-ed (regular files and directories only) and then opened through r;
 // the opened file must be the one checked (os.SameFile), so swapping in a
 // symlink, or a symlinked parent, between check and use fails.
-func copyTree(r *os.Root, prefix, dst string, total *int64) error {
+func copyTree(r *os.Root, prefix, dst string, total *int64, lim Limits) error {
 	d, err := r.Open(".")
 	if err != nil {
 		return err
@@ -158,7 +174,7 @@ func copyTree(r *os.Root, prefix, dst string, total *int64) error {
 			err = sameFile(rel, fi, func() (fs.FileInfo, error) { return sub.Stat(".") })
 			if err == nil {
 				if err = os.Mkdir(filepath.Join(dst, name), 0o700); err == nil {
-					err = copyTree(sub, rel, filepath.Join(dst, name), total)
+					err = copyTree(sub, rel, filepath.Join(dst, name), total, lim)
 				}
 			}
 			sub.Close()
@@ -166,16 +182,16 @@ func copyTree(r *os.Root, prefix, dst string, total *int64) error {
 				return err
 			}
 		case fi.Mode().IsRegular():
-			if fi.Size() > MaxFileBytes {
-				return fmt.Errorf("%s: larger than %d MB", rel, MaxFileBytes>>20)
+			if fi.Size() > lim.File {
+				return fmt.Errorf("%s: larger than %d MB", rel, lim.File>>20)
 			}
-			if *total += fi.Size(); *total > MaxTotalBytes {
-				return fmt.Errorf("plugin is too large (over %d MB)", MaxTotalBytes>>20)
+			if *total += fi.Size(); *total > lim.Total {
+				return fmt.Errorf("plugin is too large (over %d MB)", lim.Total>>20)
 			}
 			if beforeOpen != nil {
 				beforeOpen(rel)
 			}
-			if err := copyFile(r, name, rel, fi, filepath.Join(dst, name)); err != nil {
+			if err := copyFile(r, name, rel, fi, filepath.Join(dst, name), lim.File); err != nil {
 				return err
 			}
 		default:
@@ -196,7 +212,7 @@ func sameFile(rel string, want fs.FileInfo, stat func() (fs.FileInfo, error)) er
 	return nil
 }
 
-func copyFile(r *os.Root, name, rel string, want fs.FileInfo, to string) error {
+func copyFile(r *os.Root, name, rel string, want fs.FileInfo, to string, max int64) error {
 	// O_NONBLOCK: a FIFO swapped in after the check must not block the open.
 	in, err := r.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -210,7 +226,7 @@ func copyFile(r *os.Root, name, rel string, want fs.FileInfo, to string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, io.LimitReader(in, MaxFileBytes+1)) // grown since the check: HashDir rejects it
+	_, err = io.Copy(out, io.LimitReader(in, max+1)) // grown since the check: HashDir rejects it
 	return errors.Join(err, out.Close())
 }
 
@@ -342,7 +358,7 @@ func Build(dir, main string) ([]byte, error) { return BuildWith(ESBuild, dir, ma
 // BuildWith compiles the snapshot in dir with c. The result is cached in
 // dir/.build under the snapshot's hash, main and c.Key(); other builds there are removed.
 func BuildWith(c Compiler, dir, main string) ([]byte, error) {
-	h, err := HashDir(dir)
+	h, err := HashDir(dir, ScriptLimits)
 	if err != nil {
 		return nil, err
 	}
