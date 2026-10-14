@@ -440,6 +440,8 @@ P0 全部通过，可以开始 P1。
 
 ### P3 翻译接入
 
+2026-10-14 完成，计划见 `docs/superpowers/plans/2026-10-14-native-plugins-p3.md`。与本节的差异：没有做 `contract/` 的契约测试，改由 core 与 app 测试覆盖；原生插件启动没有挪出 `pluginsMu`，启动时限从 30 秒降到 10 秒；`refreshTasks` 不需要改（任何事件都会重新读取，`TaskModel` 在插件停用时返回 `ErrTranslatorUnavailable`，按钮保留）。用真实的 `godwit plugin-host` 与 DLX 动态库翻译了一封两段的英文邮件和一个选区。
+
 - [ ] `Settings.Translator` 与设置界面。
 - [ ] `translator` 接口与两个适配器（2.7）；`TaskModel` / `runSkill` 的插件路径、缓存键、`NoTranslate`、错误。
 - [ ] 脚本插件：`ctx.translators.register`、`KindTranslate` 与它的外发规则、SDK 类型、权限卡片多出的一行。

@@ -29,7 +29,7 @@ func useNativeTranslator(t *testing.T, s *Service, extra map[string]any) string 
 	}
 	dir := filepath.Join(t.TempDir(), "dlx")
 	require.NoError(t, os.MkdirAll(dir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"dlx","version":"0.1.0","native":{"abi":1},"capabilities":["translate"]}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"dlx","version":"0.1.0","native":{"abi":1},"capabilities":["translate"],"config":[{"key":"engine","type":"text","label":"Engine"}]}`), 0o600))
 	b, _ := json.Marshal(lib)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, plugins.LibraryName()), b, 0o600))
 	_, err := s.InstallPlugin(t.Context(), dir)
@@ -248,4 +248,15 @@ func TestScriptPluginTranslate(t *testing.T) {
 	list, err := e.s.ListTranslators(t.Context())
 	require.NoError(t, err)
 	assert.Contains(t, list, TranslatorInfo{ID: "plugin/translate-demo", Name: "translate-demo", Running: true})
+}
+
+// Changing the plugin's settings may change its translations: no stale cache.
+func TestPluginTranslateCacheFollowsConfig(t *testing.T) {
+	e := newSkillEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	tg := Target{Kind: "message", ID: e.msg}
+	e.run(t, "translate", tg)
+	require.NoError(t, e.s.SetPluginConfig(t.Context(), "dlx", map[string]json.RawMessage{"engine": json.RawMessage(`"formal"`)}))
+	e.run(t, "translate", tg)
+	assert.Len(t, translateRequests(t, record), 2, "translated again after a settings change")
 }

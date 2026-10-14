@@ -201,7 +201,11 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		key = cacheKey("translate-plugin", plugin, rp.hash, t.Kind, t.ID, members, lang, keep)
+		_, cfgVer, err := s.pluginConfig(ctx, plugin) // its settings may change its translations
+		if err != nil {
+			return nil, err
+		}
+		key = cacheKey("translate-plugin", plugin, rp.hash, cfgVer, t.Kind, t.ID, members, lang, keep)
 		if o, hit, err := s.cacheGet(ctx, key); err != nil {
 			return nil, err
 		} else if hit {

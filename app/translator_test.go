@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/plugins"
 )
 
 // withNativeTranslator installs, grants and (if on) enables the native fixture dlx.
@@ -72,4 +74,18 @@ func TestScriptTranslatorPermissionLine(t *testing.T) {
 	h.openSettings("extensions")
 	h.see("待授权")
 	h.see("会收到你要翻译的邮件内容")
+}
+
+// A native plugin's crash, timeout or broken answer reads as Godwit's own
+// words, not the plugin's stderr.
+func TestHumanizeNativeFailures(t *testing.T) {
+	for err, want := range map[error]string{
+		fmt.Errorf("translation plugin dlx: %w: panic: secret stack", plugins.ErrNativeExited): "插件意外退出，请重试。",
+		fmt.Errorf("translation plugin dlx: %w (translate after 1m0s)", plugins.ErrTimeout):    "插件没有在时限内响应，请重试。",
+		fmt.Errorf("translation plugin dlx: %w: rc=-1", plugins.ErrNativeABI):                  "插件的应答不合规范，请联系插件作者。",
+	} {
+		if got := humanize(err); got != want {
+			t.Errorf("humanize(%v) = %q, want %q", err, got, want)
+		}
+	}
 }
