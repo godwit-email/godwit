@@ -733,6 +733,9 @@ func TestAvatarFirstDeadlineCancelsSharedDownload(t *testing.T) {
 		close(started)
 		<-r.Context().Done()
 		close(canceled)
+		// No reply: the client's transport uses a response that races its own
+		// cancel, and this empty 200 would become a miss.
+		panic(http.ErrAbortHandler)
 	}))
 	defer srv.Close()
 	c, err := Open(t.TempDir(), 0, srv.Client())
