@@ -18,9 +18,9 @@ const s = strings[lang];
 const self = paths[lang];
 const featureIcons = ["mail", "sparkles", "file-text", "cpu", "puzzle", "robot"] as const;
 const platforms = [
-	{ name: "macOS", icon: "monitor", note: s.macNote, builds: [{ label: s.appleSilicon, target: "darwin-arm64" }, { label: s.intel, target: "darwin-amd64" }] },
-	{ name: "Windows", icon: "monitor", note: s.windowsNote, store: true, arm: { label: s.windowsArm, target: "windows-arm64" }, builds: [{ label: s.installer, target: "windows-amd64" }] },
-	{ name: "Linux", icon: "terminal", note: s.linuxNote, builds: [{ label: s.x64, target: "linux-amd64" }, { label: s.arm64, target: "linux-arm64" }] },
+	{ name: "macOS", icon: "apple", note: s.macNote, builds: [{ label: s.appleSilicon, target: "darwin-arm64" }, { label: s.intel, target: "darwin-amd64" }] },
+	{ name: "Windows", icon: "windows", note: s.windowsNote, store: true, arm: { label: s.windowsArm, target: "windows-arm64" }, builds: [{ label: s.installer, target: "windows-amd64" }] },
+	{ name: "Linux", icon: "ubuntu", note: s.linuxNote, builds: [{ label: s.x64, target: "linux-amd64" }, { label: s.arm64, target: "linux-arm64" }] },
 ] as const;
 const commands = [
 	{ label: s.homebrew, cmd: "brew install godwit-email/tap/godwit" },
