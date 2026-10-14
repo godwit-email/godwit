@@ -336,3 +336,24 @@ func TestRegistryReplacesUserInstall(t *testing.T) {
 	assert.Equal(t, "listed", p.Trust)
 	assert.True(t, p.Enabled)
 }
+
+// Sideloading other code under a listed script plugin's name, with the same
+// permissions, must not keep the review mark.
+func TestSideloadOverListedScriptIsNotListed(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	const perms = `{"net":["api.example.com"]}`
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rs.ScriptRelease("hello", "0.1.0", perms, `export default function () {}`))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "hello")
+	require.NoError(t, err)
+	require.Equal(t, "listed", nativeInfo(t, s, "hello").Trust)
+
+	src := filepath.Join(t.TempDir(), "hello")
+	require.NoError(t, os.MkdirAll(src, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "plugin.json"), []byte(`{"name":"hello","version":"0.1.0","main":"index.js","permissions":`+perms+`}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "index.js"), []byte(`export default function () { /* not reviewed */ }`), 0o600))
+	_, err = s.InstallPlugin(ctx, src)
+	require.NoError(t, err)
+	assert.Equal(t, "", nativeInfo(t, s, "hello").Trust)
+}

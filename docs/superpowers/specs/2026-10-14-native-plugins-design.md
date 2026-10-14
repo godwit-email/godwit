@@ -429,6 +429,8 @@ P0 全部通过，可以开始 P1。
 
 ### P2 名单与目录
 
+2026-10-14 完成，计划见 `docs/superpowers/plans/2026-10-14-native-plugins-p2.md`。生产公钥 `registryPublicKey` 还是空的：在插件仓库的签名密钥生成之前，目录功能关闭（`DefaultRegistry` 为 nil，扩展页不显示目录）。插件仓库的模板在 `docs/registry/`。推迟：Windows 依赖 DLL 的 `LoadLibraryEx`（目录里还没有多 DLL 插件）；跟随 https→http 重定向；发布时 `.sig` 晚于 JSON 上传的几秒窗口。
+
 - [ ] 新仓库：`registry.json`、校验程序、签名与上传 CI、审核清单（看源码、看构建是否可复现、核对 sha256）。
 - [ ] `core/pluginstore.go`：拉取、验签、防回滚、缓存、撤销。
 - [ ] `InstallPluginFromRegistry`：下载、哈希、staging、安装、`trust='listed'`。
