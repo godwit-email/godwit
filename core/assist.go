@@ -651,6 +651,12 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
+	if plugin, ok := strings.CutPrefix(ref, translatorPrefix); ok { // the plugin gets the draft: the audit log says so
+		if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: plugin, Tool: "plugin:" + plugin + "/translate",
+			TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
+			return nil, err
+		}
+	}
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()

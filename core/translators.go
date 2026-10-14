@@ -305,21 +305,40 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	for _, n := range nodes {
 		body.AppendChild(n)
 	}
-	var leaves []*html.Node
+	var leaves, runs []*html.Node
 	var texts []string
+	leaf := func(n *html.Node) {
+		if t := strings.TrimSpace(nodeText(n)); t != "" {
+			leaves, texts = append(leaves, n), append(texts, t)
+		}
+	}
 	var walk func(n *html.Node)
 	walk = func(n *html.Node) {
 		if n.DataAtom == atom.Pre {
 			return
 		}
 		if (n == body || blockTags[n.DataAtom]) && !hasBlock(n) {
-			if t := strings.TrimSpace(nodeText(n)); t != "" {
-				leaves, texts = append(leaves, n), append(texts, t)
-			}
+			leaf(n)
 			return
 		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		// Text beside blocks, as a list item's own text before its nested
+		// list, is a text of its own: wrap each run of it while translating.
+		for c := n.FirstChild; c != nil; {
+			if isBlockNode(c) {
+				walk(c)
+				c = c.NextSibling
+				continue
+			}
+			run := &html.Node{Type: html.ElementNode, Data: "span", DataAtom: atom.Span}
+			n.InsertBefore(run, c)
+			for c != nil && !isBlockNode(c) {
+				next := c.NextSibling
+				n.RemoveChild(c)
+				run.AppendChild(c)
+				c = next
+			}
+			runs = append(runs, run)
+			leaf(run)
 		}
 	}
 	walk(body)
@@ -333,6 +352,14 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	for i, n := range leaves {
 		setText(n, res.Texts[i])
 	}
+	for _, r := range runs { // unwrap the runs before rendering
+		for r.FirstChild != nil {
+			c := r.FirstChild
+			r.RemoveChild(c)
+			r.Parent.InsertBefore(c, r)
+		}
+		r.Parent.RemoveChild(r)
+	}
 	var b strings.Builder
 	for c := body.FirstChild; c != nil; c = c.NextSibling {
 		if err := html.Render(&b, c); err != nil {
@@ -342,11 +369,17 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	return b.String(), nil
 }
 
+// isBlockNode reports whether c is, or holds, a block: not part of a run of text.
+func isBlockNode(c *html.Node) bool {
+	return c.Type == html.ElementNode && (blockTags[c.DataAtom] || c.DataAtom == atom.Pre || c.DataAtom == atom.Ul || c.DataAtom == atom.Ol ||
+		c.DataAtom == atom.Table || c.DataAtom == atom.Tbody || c.DataAtom == atom.Thead || c.DataAtom == atom.Tfoot || c.DataAtom == atom.Tr ||
+		c.DataAtom == atom.Hr || hasBlock(c))
+}
+
 // hasBlock reports whether a block or pre element is inside n.
 func hasBlock(n *html.Node) bool {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if c.Type == html.ElementNode && (blockTags[c.DataAtom] || c.DataAtom == atom.Pre || c.DataAtom == atom.Ul || c.DataAtom == atom.Ol ||
-			c.DataAtom == atom.Table || hasBlock(c)) {
+		if isBlockNode(c) {
 			return true
 		}
 	}

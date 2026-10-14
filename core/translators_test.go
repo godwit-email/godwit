@@ -356,3 +356,29 @@ func TestTranslateDraftPluginUnavailable(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTranslatorUnavailable)
 	assert.Empty(t, e.srv.Requests())
 }
+
+// Godwit's editor keeps a list item open for its nested list: the item's own
+// text is translated too, as is text beside blocks.
+func TestTranslateDraftNestedBlocks(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	d := e.replyDraft(t, `<ul><li>Parent<ul><li>Child</li></ul></li></ul><div>Lead<p>Inner</p></div>`)
+	e.accept(t, translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"}))
+	ed, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	for _, want := range []string{"[fr] Parent", "[fr] Child", "[fr] Lead", "[fr] Inner"} {
+		assert.Contains(t, ed, want)
+	}
+	assert.Contains(t, ed, "<ul><li>[fr] Child</li></ul>", "the nested list stays in its item")
+}
+
+// The audit log shows that the plugin got the draft.
+func TestTranslateDraftAudited(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	d := e.replyDraft(t, `<p>Hi</p>`)
+	translateDraft(t, e, d, SkillOptions{})
+	rows, err := e.s.db.Query(t.Context(), "SELECT target_kind, target_id FROM audit_log WHERE extension = 'dlx' AND tool = 'plugin:dlx/translate'")
+	require.NoError(t, err)
+	require.Len(t, rows.Values, 1)
+	assert.Equal(t, "draft", rows.Values[0][0])
+}
