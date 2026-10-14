@@ -27,6 +27,7 @@ const commands = [
 	{ label: s.installScript, cmd: "curl -fsSL https://dl.godwit.email/install.sh | sh" },
 ];
 const github = "https://github.com/godwit-email/godwit";
+const storeUrl = "https://apps.microsoft.com/detail/9NS3Q2CGWD12";
 const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ');
 ---
 
@@ -192,6 +193,12 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 										</a>
 									))}
 								</div>
+								{p.name === "Windows" && (
+									<a data-press href={storeUrl} class="mt-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition hover:bg-accent">
+										<Icon name="download" class="size-3.5" />
+										{s.microsoftStore}
+									</a>
+								)}
 							</div>
 						))
 					}

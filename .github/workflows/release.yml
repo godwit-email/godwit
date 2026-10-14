@@ -110,3 +110,45 @@ jobs:
     with:
       tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
     secrets: inherit
+
+  # The Windows MSIX bundle of the release's tag, for the Microsoft Store.
+  msix:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    uses: ./.github/workflows/msix.yml
+    with:
+      tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
+
+  # Submits the bundle to the Store as an update of the published app. The Store
+  # certifies it before customers get it, and needs a higher version each time.
+  # Without the Partner Center secrets the bundle is built but not submitted.
+  store:
+    needs: msix
+    if: ${{ !cancelled() && needs.msix.result == 'success' }}
+    runs-on: windows-latest
+    env:
+      STORE_PRODUCT_ID: 9NS3Q2CGWD12 # apps.microsoft.com/detail/9NS3Q2CGWD12
+      TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+      SELLER_ID: ${{ secrets.SELLER_ID }}
+      CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+    steps:
+      - id: creds
+        shell: pwsh
+        run: |
+          if ($env:TENANT_ID -and $env:SELLER_ID -and $env:CLIENT_ID -and $env:CLIENT_SECRET) { "ready=true" >> $env:GITHUB_OUTPUT }
+          else { Write-Host "::warning::The Microsoft Store secrets are not set: the MSIX bundle was built but not submitted." }
+      - if: steps.creds.outputs.ready == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: msix
+      - if: steps.creds.outputs.ready == 'true'
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+      - if: steps.creds.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          # The CLI documents .msix and .msixupload; an upload file is a zip holding the bundle.
+          Compress-Archive (Get-ChildItem *.msixbundle).FullName -DestinationPath Godwit.zip
+          Rename-Item Godwit.zip Godwit.msixupload
+          msstore publish "$PWD\Godwit.msixupload" -id $env:STORE_PRODUCT_ID

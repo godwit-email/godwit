@@ -47,6 +47,7 @@ export interface Strings {
 	arm64: string;
 	macNote: string;
 	windowsNote: string;
+	microsoftStore: string;
 	linuxNote: string;
 	homebrew: string;
 	installScript: string;
@@ -123,6 +124,7 @@ export const strings: Record<Lang, Strings> = {
 		arm64: "ARM64",
 		macNote: "磁盘映像，需要 macOS 12 或更新版本。",
 		windowsNote: "为当前用户安装，不需要管理员权限。",
+		microsoftStore: "从 Microsoft Store 获取",
 		linuxNote: "Debian / Ubuntu 软件包。",
 		homebrew: "用 Homebrew 安装",
 		installScript: "不用 root，为当前用户安装",
@@ -195,6 +197,7 @@ export const strings: Record<Lang, Strings> = {
 		arm64: "ARM64",
 		macNote: "Disk image, macOS 12 or later.",
 		windowsNote: "Installs for the current user, without admin rights.",
+		microsoftStore: "Get it from the Microsoft Store",
 		linuxNote: "Debian / Ubuntu package.",
 		homebrew: "With Homebrew",
 		installScript: "For the current user, no root",
