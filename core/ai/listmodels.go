@@ -12,9 +12,26 @@ import (
 	"time"
 )
 
+// Model is a listed model: its ID and, when the service gives one, a display name.
+type Model struct{ ID, Name string }
+
 // ListModels asks a service for its model IDs, sorted. Errors never include the
 // key or the response body.
 func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]string, error) {
+	ms, err := ListModelsNamed(ctx, c, kind, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(ms))
+	for i, m := range ms {
+		ids[i] = m.ID
+	}
+	return ids, nil
+}
+
+// ListModelsNamed is ListModels with display names. It reads both the API's
+// data[].id shape and the Sign in with ChatGPT models[].slug/display_name shape.
+func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]Model, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	base := strings.TrimRight(baseURL, "/")
@@ -66,18 +83,28 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 			ID         string
 			Visibility string
 		}
+		Models []struct {
+			Slug        string
+			DisplayName string `json:"display_name"`
+			Visibility  string
+		}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("list models: unexpected response")
 	}
-	ids := make([]string, 0, len(out.Data))
+	ms := make([]Model, 0, len(out.Data)+len(out.Models))
 	for _, m := range out.Data {
 		if m.ID != "" && (m.Visibility == "" || m.Visibility == "list") {
-			ids = append(ids, m.ID)
+			ms = append(ms, Model{ID: m.ID})
 		}
 	}
-	sort.Strings(ids)
-	return ids, nil
+	for _, m := range out.Models {
+		if m.Slug != "" && (m.Visibility == "" || m.Visibility == "list") {
+			ms = append(ms, Model{m.Slug, m.DisplayName})
+		}
+	}
+	sort.Slice(ms, func(i, j int) bool { return ms[i].ID < ms[j].ID })
+	return ms, nil
 }
 
 var (

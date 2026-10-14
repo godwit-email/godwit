@@ -21,6 +21,7 @@ type Server struct {
 	mu         sync.Mutex
 	models     []string
 	hidden     []string
+	names      map[string]string // non-nil: list in the Sign in with ChatGPT shape (models[].slug/display_name)
 	key        string
 	listStatus int
 	headers    []http.Header
@@ -85,7 +86,7 @@ func Start(t *testing.T, kind string) *Server {
 	}
 	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
-		models, hidden, key, status := s.models, s.hidden, s.key, s.listStatus
+		models, hidden, names, key, status := s.models, s.hidden, s.names, s.key, s.listStatus
 		s.mu.Unlock()
 		got := sentKey(kind, r)
 		if status != 0 {
@@ -98,10 +99,13 @@ func Start(t *testing.T, kind string) *Server {
 			http.Error(w, "bad key "+got, http.StatusUnauthorized)
 			return
 		}
-		data := []map[string]string{}
+		data, field := []map[string]string{}, "data"
 		for _, m := range models {
 			item := map[string]string{"id": m}
-			if len(hidden) > 0 {
+			if names != nil {
+				item, field = map[string]string{"slug": m, "display_name": names[m]}, "models"
+			}
+			if len(hidden) > 0 || names != nil {
 				item["visibility"] = "list"
 				if slices.Contains(hidden, m) {
 					item["visibility"] = "hidden"
@@ -109,7 +113,7 @@ func Start(t *testing.T, kind string) *Server {
 			}
 			data = append(data, item)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": data})
+		json.NewEncoder(w).Encode(map[string]any{field: data})
 	})
 	s.Mux.HandleFunc("POST "+chat, func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +136,10 @@ func sentKey(kind string, r *http.Request) string {
 
 func (s *Server) SetModels(m ...string) { s.mu.Lock(); s.models = m; s.mu.Unlock() }
 func (s *Server) SetHidden(m ...string) { s.mu.Lock(); s.hidden = m; s.mu.Unlock() }
-func (s *Server) RequireKey(k string)   { s.mu.Lock(); s.key = k; s.mu.Unlock() }
+
+// SetDisplayNames lists models the way a ChatGPT subscription token sees them: models[].slug with display_name.
+func (s *Server) SetDisplayNames(n map[string]string) { s.mu.Lock(); s.names = n; s.mu.Unlock() }
+func (s *Server) RequireKey(k string)                 { s.mu.Lock(); s.key = k; s.mu.Unlock() }
 
 // SetListStatus makes the model list answer with that HTTP status; 0 restores it.
 func (s *Server) SetListStatus(code int) { s.mu.Lock(); s.listStatus = code; s.mu.Unlock() }

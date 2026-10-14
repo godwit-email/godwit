@@ -37,6 +37,14 @@ func TestCheckModelService(t *testing.T) {
 	assert.True(t, c.ListSupported)
 	assert.Empty(t, c.Models)
 
+	srv.SetModels("b", "a")
+	srv.SetDisplayNames(map[string]string{"a": "Model A"}) // the Sign in with ChatGPT shape
+	c, err = s.CheckModelService(bg, 0, in)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, c.Models)
+	assert.Equal(t, map[string]string{"a": "Model A"}, c.Names)
+	srv.SetDisplayNames(nil)
+
 	srv.SetListStatus(http.StatusNotFound)
 	c, err = s.CheckModelService(bg, 0, in)
 	require.NoError(t, err)

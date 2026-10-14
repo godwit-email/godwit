@@ -31,7 +31,7 @@
 - 换 token：`POST https://auth.openai.com/api/accounts/oauth/token`，表单 `grant_type=authorization_code, code, client_id, code_verifier, redirect_uri, resource`。返回 `access_token, refresh_token, id_token, expires_in(3600), scope`；`scope` 必须含 `chatgpt.tokens.use.direct`，否则视为失败。邮箱取 `id_token` 的 `email`。
 - 刷新：同一端点，`grant_type=refresh_token, refresh_token, client_id, resource`。refresh token 每次轮换（单次使用）。
 - 推理：只能 `POST /v1/responses` 和 `GET /v1/models`。请求必须 `store:false`、`stream:true`、`input` 为数组、系统提示放 `instructions`（显式 system 消息被拒）；不能发 `max_output_tokens, temperature, top_p, truncation, metadata, user, prompt_cache_retention, previous_response_id` 等。Godwit 的 Responses 插件（`core/ai/responses.go`）现状已全部满足，不需改。
-- `/v1/models` 返回带 `visibility` 的条目，只展示 `visibility == "list"` 的。
+- `/v1/models` 对订阅令牌返回的是 `models[]`（字段 `slug`、`display_name`、`visibility`），不是 API key 的 `data[].id`；只展示 `visibility == "list"` 的，`slug` 作模型 ID 发请求，`display_name` 在模型选择里展示。
 - 用量超限：流里 `response.failed`，`error.code` 为 `subscription_sharing_usage_limit_exceeded` 或 `subscription_sharing_usage_unavailable`。UI 规范要求提供「管理用量」链接到 `https://chatgpt.com/settings/usage`，登录按钮文案 **Continue with ChatGPT**。
 - 资格：开源且本地运行的应用。Godwit 是 Apache-2.0 桌面应用，符合。
 

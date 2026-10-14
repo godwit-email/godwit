@@ -14,8 +14,9 @@ import (
 type ServiceCheck struct {
 	BaseURL, Endpoint string
 	Models            []string
-	ListSupported     bool // false: the service has no model list; models are typed by hand
-	NoListStatus      int  // the HTTP status that said so, when known
+	Names             map[string]string // model ID -> display name, for the IDs the service names
+	ListSupported     bool              // false: the service has no model list; models are typed by hand
+	NoListStatus      int               // the HTTP status that said so, when known
 	JudgeEndpoint     string
 	JudgeModels       []string // nil until there is a key, except for ProviderOther
 }
@@ -45,7 +46,17 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	c := ServiceCheck{BaseURL: in.BaseURL}
 	if in.Kind != "" {
 		c.Endpoint, c.ListSupported = ai.Endpoint(in.Kind, in.BaseURL), true
-		c.Models, err = ai.ListModels(ctx, s.modelHTTP, in.Kind, in.BaseURL, key)
+		var ms []ai.Model
+		ms, err = ai.ListModelsNamed(ctx, s.modelHTTP, in.Kind, in.BaseURL, key)
+		for _, m := range ms {
+			c.Models = append(c.Models, m.ID)
+			if m.Name != "" {
+				if c.Names == nil {
+					c.Names = map[string]string{}
+				}
+				c.Names[m.ID] = m.Name
+			}
+		}
 		var nl *ai.NoListError
 		if errors.As(err, &nl) {
 			c.ListSupported, c.NoListStatus, c.Models, err = false, nl.Status, nil, nil

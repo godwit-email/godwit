@@ -78,3 +78,16 @@ func TestListModelsVisibility(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"gpt-a"}, ids)
 }
+
+func TestListModelsChatGPTShape(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.SetModels("gpt-5.2", "gpt-5.2-mini", "gpt-5.2-codex")
+	srv.SetHidden("gpt-5.2-codex")
+	srv.SetDisplayNames(map[string]string{"gpt-5.2": "GPT-5.2", "gpt-5.2-mini": "GPT-5.2 mini"})
+	ms, err := ListModelsNamed(context.Background(), nil, KindResponses, srv.URL, "k")
+	require.NoError(t, err)
+	assert.Equal(t, []Model{{"gpt-5.2", "GPT-5.2"}, {"gpt-5.2-mini", "GPT-5.2 mini"}}, ms)
+	ids, err := ListModels(context.Background(), nil, KindResponses, srv.URL, "k")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gpt-5.2", "gpt-5.2-mini"}, ids)
+}

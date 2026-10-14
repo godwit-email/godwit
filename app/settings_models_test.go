@@ -406,6 +406,25 @@ func TestStaleProbeIgnored(t *testing.T) {
 	}
 }
 
+func TestModelChipsShowDisplayNames(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	m := p.models
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"gpt-5.2", "gpt-5.2-mini"}, Names: map[string]string{"gpt-5.2": "GPT-5.2"}, ListSupported: true}, nil
+	}
+	h.click("test") // opening lists the models
+	h.see("编辑 test")
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	h.see("GPT-5.2")
+	h.see("gpt-5.2-mini")
+	h.click("GPT-5.2")
+	if !slices.Contains(f.models, "gpt-5.2") {
+		t.Fatalf("clicking the display name did not tick its ID: models %q", f.models)
+	}
+}
+
 func TestResponsesKindSelectable(t *testing.T) {
 	h := withLLM(t)
 	url, _ := modelsServer(t, 0, "r1")
@@ -1135,7 +1154,9 @@ func TestOAuthTileLogin(t *testing.T) {
 	})
 	h.see("已在浏览器中打开登录页")
 	fo.finish("f1", "alice@example.com")
-	h.until("signed in", func() bool { return m.form != nil && m.form.email == "alice@example.com" && slices.Equal(m.form.models, []string{"gpt-x"}) })
+	h.until("signed in", func() bool {
+		return m.form != nil && m.form.email == "alice@example.com" && slices.Equal(m.form.models, []string{"gpt-x"})
+	})
 	h.see("alice@example.com")
 	h.click("添加")
 	h.until("saved", func() bool { return saved.OAuthFlowID == "f1" })
@@ -1200,4 +1221,3 @@ func TestHumanizeChatGPTUsage(t *testing.T) {
 	assert.Equal(t, "ChatGPT 套餐用量已达上限", humanize(err))
 	assert.Equal(t, "登录已失效，请重新登录", humanize(core.ErrModelReauth))
 }
-

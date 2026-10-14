@@ -532,7 +532,11 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 		for _, name := range f.offered {
 			on := slices.Contains(f.models, name)
-			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(name).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
+			label, font := name, theme.Mono
+			if n := f.names[name]; n != "" {
+				label, font = n, "" // a display name reads as prose, an ID as code
+			}
+			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
 			fg := t.Foreground
 			if on {
 				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
@@ -540,7 +544,12 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 				b.Background(t.Background).Border(theme.Hairline, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
 				fg = t.Muted
 			}
-			b.Children(func() { kit.Text(c, name, t.Text.Sm).Font(theme.Mono).TextColor(fg) })
+			b.Children(func() {
+				tx := kit.Text(c, label, t.Text.Sm).TextColor(fg)
+				if font != "" {
+					tx.Font(font)
+				}
+			})
 			if b.Clicked() {
 				if !on {
 					f.models = append(f.models, name)

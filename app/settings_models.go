@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -47,7 +48,7 @@ type modelForm struct {
 	email, flowID, authURL   string // this session's OAuth sign-in; authURL for Reopen
 	loggingIn                bool
 	loginErr                 string
-	confirmDel               bool   // the footer asks to confirm the removal
+	confirmDel               bool // the footer asks to confirm the removal
 	keyFocus, urlFocus       bool
 	fetch, fetchErr          string // "ok" or "fail" once the key's /models fetch is back; why it failed
 	fetched                  int    // how many models that fetch listed
@@ -62,6 +63,7 @@ type modelForm struct {
 	autoName, autoURL        string   // the name nameAuto set last, and the address it set it for
 	manual                   string   // a model ID being typed
 	models, offered          []string
+	names                    map[string]string // offered ID -> display name, when the service gave one
 	busy, probing            bool
 	gen, judge               capTest // the dialog's tests; cleared when conn() changes
 	tests                    int     // bumped by each test: only the newest one's results show
@@ -740,6 +742,10 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 				f.offered = append(f.offered, g)
 			}
 		}
+		if len(res.Names) > 0 && f.names == nil {
+			f.names = map[string]string{}
+		}
+		maps.Copy(f.names, res.Names)
 		if fresh && len(f.models) == 0 && len(res.Models) > 0 { // the first listed is chosen, as the design's onKey does
 			f.models = []string{res.Models[0]}
 		}
