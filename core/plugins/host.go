@@ -94,8 +94,9 @@ type Plugin struct {
 	card    *card
 
 	// ctx.config is read once per call (owner goroutine only).
-	cfgCall *CallScope
-	cfgVal  goja.Value
+	cfgCall    *CallScope
+	cfgVal     goja.Value
+	translator goja.Callable // ctx.translators.register's translate
 }
 
 type tool struct {
@@ -262,6 +263,9 @@ func Load(ctx context.Context, vm *VM, m Manifest, h Host, cfg *ConfigSnapshot) 
 	egress, _ := EgressFor(KindInit, m, true, false, false) // none: init never fetches
 	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit, EgressHosts: egress, Config: cfg}, p.newCtx); err != nil {
 		return nil, err
+	}
+	if slices.Contains(m.Capabilities, "translate") && p.translator == nil {
+		return nil, fmt.Errorf("plugin %s declares translate but registered no translator", m.Name)
 	}
 	return p, nil
 }
@@ -554,6 +558,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		"actions", object("register", fn("actions.register", p.registerAction)),
 		"cards", object("register", fn("cards.register", p.registerCard)),
 		"tools", object("register", fn("tools.register", p.registerTool)),
+		"translators", object("register", fn("translators.register", p.registerTranslator)),
 		"mail", mail, "llm", llm, "net", netObj, "storage", storage,
 	)
 	_ = o.DefineAccessorProperty("config", fn("config", func(c *CallScope, _ goja.FunctionCall) goja.Value {
@@ -657,6 +662,30 @@ func (p *Plugin) registerAction(c *CallScope, call goja.FunctionCall) goja.Value
 	}
 	p.actions = append(p.actions, a)
 	return goja.Undefined()
+}
+
+func (p *Plugin) registerTranslator(c *CallScope, call goja.FunctionCall) goja.Value {
+	const fn = "translators.register"
+	duringInit(c)
+	if !slices.Contains(p.m.Capabilities, "translate") {
+		panic(c.Runtime().NewTypeError(fn + ": plugin.json does not declare the translate capability"))
+	}
+	o := call.Argument(0).ToObject(c.Runtime())
+	f := function(c, fn, o, "translate")
+	if p.translator != nil {
+		panic(errors.New("a translator is already registered"))
+	}
+	p.translator = f
+	return goja.Undefined()
+}
+
+// Translate runs the registered translator on req under inv and returns its
+// (awaited) result as plain JSON data.
+func (p *Plugin) Translate(ctx context.Context, inv Invocation, req any) (any, error) {
+	if p.translator == nil {
+		return nil, fmt.Errorf("plugin %s has no translator", p.Name)
+	}
+	return p.call(ctx, inv, p.translator, false, req)
 }
 
 func (p *Plugin) registerCard(c *CallScope, call goja.FunctionCall) goja.Value {

@@ -85,3 +85,12 @@ func TestEgressForHoldsMail(t *testing.T) {
 	assert.Nil(t, got)
 	assert.False(t, approval)
 }
+
+func TestEgressForTranslate(t *testing.T) {
+	m := Manifest{Permissions: Permissions{Net: []string{"api.example.com"}}}
+	hosts, ask := EgressFor(KindTranslate, m, true, true, true)
+	assert.Equal(t, []string{"api.example.com"}, hosts)
+	assert.False(t, ask, "choosing the translator and clicking translate is the consent")
+	hosts, _ = EgressFor(KindTranslate, m, false, false, false)
+	assert.Empty(t, hosts, "not granted: no egress")
+}

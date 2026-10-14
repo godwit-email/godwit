@@ -18,7 +18,9 @@
  *   configure  {"config": {...}}                   -> {}
  *              After start and after each settings save; secrets included.
  *   translate  {"texts":[...],"source":"","target":"zh-CN"} -> {"texts":[...],"source":"en"}
- *              source "" asks the plugin to detect it; tags are BCP 47.
+ *              source "" asks the plugin to detect it; tags are BCP 47. One text
+ *              per paragraph of the mail, in order; they may be long, so split
+ *              them as your service requires and answer the same number of texts.
  * Unknown methods answer invalid_request.
  */
 #ifndef GODWIT_PLUGIN_H

@@ -225,3 +225,27 @@ func pluginInfoByName(t *testing.T, s *Service, name string) PluginInfo {
 	t.Fatalf("no plugin %s", name)
 	return PluginInfo{}
 }
+
+func TestScriptPluginTranslate(t *testing.T) {
+	e := newSkillEnv(t)
+	src, err := filepath.Abs(filepath.Join("coretest", "testdata", "translate-demo"))
+	require.NoError(t, err)
+	_, err = e.s.InstallPlugin(t.Context(), src)
+	require.NoError(t, err)
+	require.NoError(t, e.s.GrantPermission(t.Context(), "translate-demo"))
+	require.NoError(t, e.s.SetPluginEnabled(t.Context(), "translate-demo", true))
+	st, _ := e.s.GetSettings(t.Context())
+	st.Translator = "plugin/translate-demo"
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	setBody(t, e, "Hello\n\nSee you", "")
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "plugin/translate-demo", evs[0].Model)
+	assert.Equal(t, []string{"HELLO\n\nSEE YOU"}, texts(evs))
+	held, err := e.s.holdsMail(t.Context(), "translate-demo")
+	require.NoError(t, err)
+	assert.True(t, held, "the plugin was handed mail content")
+	list, err := e.s.ListTranslators(t.Context())
+	require.NoError(t, err)
+	assert.Contains(t, list, TranslatorInfo{ID: "plugin/translate-demo", Name: "translate-demo", Running: true})
+}

@@ -7,6 +7,7 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,7 +99,33 @@ func (s *Service) pluginTranslator(name string) (translator, *runningPlugin, err
 	if rp.native != nil {
 		return nativeTranslator{rp.native}, rp, nil
 	}
-	return nil, nil, ErrTranslatorUnavailable
+	return jsTranslator{s, name, rp}, rp, nil
+}
+
+// jsTranslator is a script plugin's ctx.translators.register.
+type jsTranslator struct {
+	s    *Service
+	name string
+	rp   *runningPlugin
+}
+
+func (t jsTranslator) translate(ctx context.Context, req translateRequest) (translateResult, error) {
+	r := t.rp.row
+	hosts, _ := plugins.EgressFor(plugins.KindTranslate, r.m, r.granted == r.permHash, true, true)
+	if err := t.s.markHoldsMail(ctx, t.name); err != nil { // mail content, before the plugin has it
+		return translateResult{}, err
+	}
+	inv := plugins.Invocation{ID: "translate:" + rand.Text(), Kind: plugins.KindTranslate, EgressHosts: hosts, Config: t.rp.host.snapshot()}
+	v, err := t.rp.p.Translate(ctx, inv, req)
+	if err != nil {
+		return translateResult{}, err
+	}
+	b, _ := json.Marshal(v)
+	var res translateResult
+	if err := json.Unmarshal(b, &res); err != nil {
+		return translateResult{}, fmt.Errorf("%w: the translate result is not {texts, source}", errTranslatorAnswer)
+	}
+	return res, nil
 }
 
 var paragraphRE = regexp.MustCompile(`\n[ \t]*\n`)
@@ -198,7 +225,9 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 	}
 	if err != nil {
 		var failed error
-		if plugins.IsNativeFailure(err) || errors.Is(err, errTranslatorAnswer) {
+		// A script plugin's error counts as an action's does; a native one's
+		// error envelope is its answer (plugins.IsNativeFailure).
+		if rp.native == nil || plugins.IsNativeFailure(err) || errors.Is(err, errTranslatorAnswer) {
 			failed = s.pluginFailed(ctx, plugin, rp.gen)
 		}
 		return nil, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, s.cleanError(err)), failed)

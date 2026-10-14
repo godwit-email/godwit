@@ -191,6 +191,33 @@ export type Answer =
   | { type: "score"; name: string; score: number; probabilities?: { value: number; label: string; probability: number }[]; confidence?: number }
   | { type: "refusal"; name: string }
 
+/**
+ * What a translator gets: the paragraphs of the mail (or selection) the user
+ * translates, and the target language (BCP 47). source is "" (detect it).
+ * The texts may be long: split them as your service requires.
+ */
+export interface TranslateRequest {
+  texts: string[]
+  source: string
+  target: string
+}
+
+/** One translation per request text, in order, and the source language detected (BCP 47). */
+export interface TranslateResult {
+  texts: string[]
+  source: string
+}
+
+/**
+ * A translation channel the user can pick in Settings › General. The plugin
+ * must declare "capabilities": ["translate"] in plugin.json and register in
+ * its default function. It may fetch from every host in permissions.net
+ * without asking each time; the user chose it and clicked Translate.
+ */
+export interface Translator {
+  translate(req: TranslateRequest): MaybePromise<TranslateResult>
+}
+
 export interface Ctx {
   on(event: "message.received", handler: (message: ReceivedMessage, info: DeliveryInfo) => MaybePromise<void>): void
   on(event: "message.beforeSend", handler: (draft: OutgoingDraft) => MaybePromise<SendCheck | void>): void
@@ -198,6 +225,8 @@ export interface Ctx {
   actions: { register(action: Action): void }
   cards: { register(card: CardProvider): void }
   tools: { register(tool: Tool): void }
+  /** needs "capabilities": ["translate"]; at most one */
+  translators: { register(translator: Translator): void }
 
   /** the user's configuration, secrets included; read-only */
   readonly config: Readonly<Record<string, string | number | boolean | undefined>>
