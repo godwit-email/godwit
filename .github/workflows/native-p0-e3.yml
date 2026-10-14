@@ -31,13 +31,24 @@ jobs:
           cache: false
       - name: DLX at the spike's commit
         run: git clone -q https://github.com/OwO-Network/DLX dlx && git -C dlx checkout -q 0f2b50dd69fea3012d95a8d0e7a4ae8dca9ff5b2
+      - name: Library path
+        run: |
+          ext=so; [ "$RUNNER_OS" = Windows ] && ext=dll
+          lib="$PWD/out/plugin.$ext"; [ "$RUNNER_OS" = Windows ] && lib=$(cygpath -w "$lib")
+          echo "EXT=$ext" >> "$GITHUB_ENV"; echo "LIB=$lib" >> "$GITHUB_ENV"
+      # The arm64 Windows image ships only an x86_64 mingw; zig is an arm64 C compiler for cgo.
+      - if: matrix.os == 'windows-11-arm'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+      - if: matrix.os == 'windows-11-arm'
+        run: echo "CC=zig cc -target aarch64-windows-gnu" >> "$GITHUB_ENV"
       - name: Toolchain
-        run: go version; gcc --version | head -1 || echo "no gcc"
+        run: go version; gcc --version | head -1 || echo "no gcc"; echo "CC=${CC:-default}"
       - name: Build the plugin (cgo, c-shared)
         working-directory: experiments/native-p0/plugin
         run: |
-          ext=so; [ "$RUNNER_OS" = Windows ] && ext=dll
-          CGO_ENABLED=1 go build -buildmode=c-shared -o ../out/plugin.$ext .
+          CGO_ENABLED=1 go build -buildmode=c-shared -o ../out/plugin.$EXT .
           ls -l ../out
       - name: Build the host (no cgo)
         working-directory: experiments/native-p0/host
@@ -50,15 +61,11 @@ jobs:
           ldd out/plugin.so
           echo "newest glibc symbol needed:"; objdump -T out/plugin.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
       - name: Driver (describe, invalid requests, 1024 concurrent, timeout kill, crash, file lock, live x1)
-        run: |
-          lib=$(ls "$PWD"/out/plugin.* | head -1)
-          [ "$RUNNER_OS" = Windows ] && lib=$(cygpath -w "$lib")
-          ./out/p0host -library "$lib" -live 1
+        run: ./out/p0host -library "$LIB" -live 1
       - name: Denied before load, ABI mismatch
         run: |
-          lib=$(ls "$PWD"/out/plugin.* | head -1)
-          [ "$RUNNER_OS" = Windows ] && lib=$(cygpath -w "$lib")
-          sha=$(sha256sum out/plugin.* | cut -d' ' -f1)
+          lib="$LIB"
+          sha=$(sha256sum "out/plugin.$EXT" | cut -d' ' -f1)
           set +e
           ./out/p0host plugin-host --library "$lib" --sha256 0000 </dev/null; c=$?; echo "wrong sha exit=$c"; [ $c = 3 ] || exit 1
           ./out/p0host plugin-host --library "$lib" --sha256 "$sha" --abi 2 </dev/null; c=$?; echo "abi 2 exit=$c"; [ $c = 4 ] || exit 1
@@ -68,4 +75,4 @@ jobs:
         working-directory: experiments/native-p0/host
         run: |
           CGO_ENABLED=1 go build -race -o ../out/p0host-race .
-          ../out/p0host-race -library "$(ls "$PWD"/../out/plugin.so)"
+          ../out/p0host-race -library "$LIB"
