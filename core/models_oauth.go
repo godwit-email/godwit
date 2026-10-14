@@ -46,7 +46,7 @@ var chatgptOfficial = modelProvider{
 
 // chatgptCodex signs in as the Codex CLI does (its public client, which only
 // registers localhost:1455) and talks to ChatGPT's Codex backend, as pi's
-// openai-codex provider. The backend has no /models: the list is built in.
+// openai-codex provider. Its model list comes from the backend (ai.ListModels).
 var chatgptCodex = modelProvider{
 	BaseURL: "https://chatgpt.com/backend-api/codex",
 	OAuth: auth.OAuthConfig{
@@ -60,7 +60,6 @@ var chatgptCodex = modelProvider{
 		NoPrompt:     true,
 		AuthParams:   map[string]string{"id_token_add_organizations": "true", "codex_cli_simplified_flow": "true", "originator": "godwit"},
 	},
-	Models: []string{"gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"},
 }
 
 // modelOAuthLogins are every login a provider has had, by the address it
