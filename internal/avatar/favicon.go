@@ -191,9 +191,9 @@ func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]st
 	}
 	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
 	z := html.NewTokenizer(bytes.NewReader(data))
-	candidates := make([]string, 0, 3)
-	seen := map[string]bool{}
-	for len(candidates) < 3 {
+	var touch, icons []string
+	seenTouch, seenIcon := map[string]bool{}, map[string]bool{}
+	for len(touch) < 3 {
 		kind := z.Next()
 		if kind == html.ErrorToken {
 			break
@@ -218,13 +218,15 @@ func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]st
 				href = attr.Val
 			}
 		}
-		icon := false
+		isTouch, isIcon := false, false
 		for _, r := range strings.Fields(strings.ToLower(rel)) {
-			if r == "apple-touch-icon" || r == "apple-touch-icon-precomposed" || r == "icon" {
-				icon = true
+			if r == "apple-touch-icon" || r == "apple-touch-icon-precomposed" {
+				isTouch = true
+			} else if r == "icon" {
+				isIcon = true
 			}
 		}
-		if !icon || strings.TrimSpace(href) == "" {
+		if (!isTouch && !isIcon) || strings.TrimSpace(href) == "" {
 			continue
 		}
 		u, err := base.Parse(strings.TrimSpace(href))
@@ -233,8 +235,22 @@ func faviconLinks(ctx context.Context, client *http.Client, base *url.URL) ([]st
 		}
 		u.Fragment = ""
 		src := u.String()
-		if !seen[src] {
-			seen[src] = true
+		if isTouch {
+			if !seenTouch[src] {
+				seenTouch[src] = true
+				touch = append(touch, src)
+			}
+		} else if len(icons) < 3 && !seenIcon[src] {
+			seenIcon[src] = true
+			icons = append(icons, src)
+		}
+	}
+	candidates := touch
+	for _, src := range icons {
+		if len(candidates) == 3 {
+			break
+		}
+		if !seenTouch[src] {
 			candidates = append(candidates, src)
 		}
 	}

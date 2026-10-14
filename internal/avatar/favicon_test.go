@@ -100,7 +100,7 @@ func TestFaviconOrderRelativeRedirectAndRestart(t *testing.T) {
 		case "/":
 			http.Redirect(w, r, "/site/home", http.StatusFound)
 		case "/site/home":
-			w.Write([]byte(`<link href="small.png" sizes="128x128" rel="ICON"><link type="image/png" rel="alternate apple-touch-icon" href="../good.png">`))
+			w.Write([]byte(`<link type="image/png" rel="ICON" href="../good.png"><link href="small.png" sizes="128x128" rel="alternate apple-touch-icon">`))
 		case "/site/small.png":
 			w.Write(small)
 		case "/good.png":
@@ -455,7 +455,7 @@ func TestFaviconDeclarationLimitAndUnsafeURLs(t *testing.T) {
 	if _, ok := FindFavicon(context.Background(), f.client, f.cache, "example.com", nil); ok {
 		t.Fatal("expected miss")
 	}
-	want := []string{"/apple-touch-icon.png", "/", "/one", "/two", "/three", "/favicon.ico"}
+	want := []string{"/apple-touch-icon.png", "/", "/two", "/one", "/three", "/favicon.ico"}
 	if got := f.requests(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("requests = %v, want %v", got, want)
 	}
