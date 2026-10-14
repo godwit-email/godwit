@@ -93,6 +93,8 @@
 	}
 	html {
 		@apply bg-background font-sans text-foreground antialiased;
+		/* The gap between CJK and Latin text, drawn by the browser, so copy carries no spaces. */
+		text-autospace: normal;
 	}
 	::selection {
 		@apply bg-foreground text-background;
