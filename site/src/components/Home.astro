@@ -28,6 +28,9 @@ const commands = [
 ];
 const github = "https://github.com/godwit-email/godwit";
 const storeUrl = "https://apps.microsoft.com/detail/9NS3Q2CGWD12";
+// Microsoft's own Store badge, unmodified and hosted here (so the page asks Microsoft for nothing); its
+// artwork stays Microsoft's, used under the Microsoft Store badge guidelines. "dark" is the badge for light pages.
+const badge = lang === "en" ? "en-us" : "zh-cn";
 const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ');
 ---
 
@@ -194,9 +197,11 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 									))}
 								</div>
 								{p.name === "Windows" && (
-									<a data-press href={storeUrl} class="mt-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border text-sm font-medium transition hover:bg-accent">
-										<Icon name="download" class="size-3.5" />
-										{s.microsoftStore}
+									<a data-press href={storeUrl} class="mt-3 flex justify-center">
+										<picture>
+											<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
+											<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
+										</picture>
 									</a>
 								)}
 							</div>
