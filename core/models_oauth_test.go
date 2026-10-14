@@ -23,7 +23,7 @@ func oauthLLM(t *testing.T, p string) (*testoauth.Server, *testllm.Server) {
 	if p == ProviderGrok {
 		cfg = oa.DeviceConfig("openid", "email")
 	}
-	modelOAuth[p] = modelProvider{BaseURL: llm.URL, OAuth: cfg, Models: saved.Models}
+	modelOAuth[p] = modelProvider{BaseURL: llm.URL, OAuth: cfg}
 	t.Cleanup(func() { modelOAuth[p] = saved })
 	return oa, llm
 }
@@ -277,31 +277,22 @@ func TestUnauthorizedRunForgetsToken(t *testing.T) {
 	assert.NotEqual(t, m.APIKey, m2.APIKey)
 }
 
-func TestGrokCheckFallsBackToBuiltinModels(t *testing.T) {
+func TestGrokCheckListsOrFails(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	oa, llm := oauthLLM(t, ProviderGrok)
 	fid := signIn(t, s, oa, ProviderGrok, "alice@example.com")
 	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "Grok", Provider: ProviderGrok, Kind: ai.KindResponses, Models: []string{"grok-4.7"}, OAuthFlowID: fid})
 	require.NoError(t, err)
 
-	llm.SetListStatus(404)
+	llm.SetListStatus(404) // no list: nothing is built in to stand in for it
 	chk, err := s.CheckModelService(bg, ms.ID, ms.Input())
 	require.NoError(t, err)
 	assert.False(t, chk.ListSupported)
-	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
+	assert.Empty(t, chk.Models)
 
 	llm.SetListStatus(500)
-	chk, err = s.CheckModelService(bg, ms.ID, ms.Input())
-	require.NoError(t, err)
-	assert.False(t, chk.ListSupported)
-	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
-
-	llm.SetListStatus(0)
-	llm.SetModels()
-	chk, err = s.CheckModelService(bg, ms.ID, ms.Input())
-	require.NoError(t, err)
-	assert.False(t, chk.ListSupported)
-	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
+	_, err = s.CheckModelService(bg, ms.ID, ms.Input())
+	assert.Error(t, err)
 
 	llm.SetListStatus(401)
 	_, err = s.CheckModelService(bg, ms.ID, ms.Input())
@@ -314,6 +305,5 @@ func TestChatGPTLoginsByAddress(t *testing.T) {
 	assert.Equal(t, "dynamic_agent_client", official.OAuth.ClientID, "a saved official sign-in keeps refreshing with its own client")
 	codex := modelLogin(ModelService{Provider: ProviderChatGPT, BaseURL: chatgptCodex.BaseURL})
 	assert.Equal(t, 1455, codex.OAuth.RedirectPort)
-	assert.Empty(t, codex.Models, "the backend lists them; nothing is built in")
 	assert.Equal(t, modelOAuth[ProviderGrok].BaseURL, modelLogin(ModelService{Provider: ProviderGrok, BaseURL: "http://127.0.0.1:1/v1"}).BaseURL, "an unknown address falls back to the provider's login")
 }

@@ -44,7 +44,7 @@
 - 返回 `access_token, refresh_token, id_token, expires_in`（约 6 小时；缺省按 1 小时）。邮箱取 `id_token` 的 `email`。
 - 刷新：同端点 `grant_type=refresh_token, refresh_token, client_id`。可能轮换；没返回新的就沿用旧的。
 - 推理：`POST https://api.x.ai/v1/responses`，只需 `Authorization: Bearer`。标准 Responses API，支持 function tools。
-- 模型列表：参考项目都写死。先试 `GET /v1/models`，失败回退内置列表 `grok-4.7`、`grok-4.6`。
+- 模型列表：`GET /v1/language-models`（xAI 的 `/v1/models` 混有 grok-imagine 的图和视频模型，这个接口只列文本模型；2026-10-14 用订阅令牌实测可用，返回 `data[].id`）。不设内置回退。
 - 403 或错误含 "subscription"/"not eligible"：没有 SuperGrok / X Premium 订阅。
 
 ### 2.3 ChatGPT 的 Codex 登录（当前默认，2026-10-14 追加）
@@ -55,7 +55,7 @@
 - Codex 客户端（借用 Codex CLI，与 Grok 同类风险）：client `app_EMoamEEZ73f0CkXaXp7hrann`，authorize `https://auth.openai.com/oauth/authorize`，token `https://auth.openai.com/oauth/token`，scope `openid profile email offline_access`，authorize 额外参数 `id_token_add_organizations=true`、`codex_cli_simplified_flow=true`、`originator=godwit`，回调固定 `http://localhost:1455/auth/callback`（`OAuthConfig.RedirectPort`；端口被占报 `auth.ErrRedirectPortBusy`）。只做浏览器登录。邮箱来自 id_token。
 - 请求：`POST {base}/responses`，头 `chatgpt-account-id`（从 access token JWT 的 `https://api.openai.com/auth`.`chatgpt_account_id` 解出，不另存）、`originator: godwit`、`OpenAI-Beta: responses=experimental`；`instructions` 为空时填 "You are a helpful assistant."。`store:false`、`stream:true`、`include` 同官方。
 - 错误：HTTP 429，或错误码 `usage_limit_reached`、`usage_not_included`、`rate_limit_exceeded` → `CodeRateLimited` + Detail `chatgpt_usage`（仅 Codex 地址下）。官方地址下 HTTP 错误里的 `subscription_sharing_user_not_eligible` → `CodeUnauthorized` + Detail `chatgpt_not_eligible`，测试连接显示 `not_eligible`/403。
-- 模型列表：`GET {base}/models?client_version=<Codex CLI 版本>`，`client_version` 必填（缺了 400），后端按每个模型的 `minimal_client_version` 过滤，所以版本常量（`ai.codexClientVersion`，现为 0.159.0）要跟着新模型升。返回 `models[].slug/display_name/visibility`，与 §2.1 同一解析；只展示 `visibility == "list"`。不设内置列表：拉不到就按失败显示（Grok 仍保留内置回退，其接口未实测）。参考 aio-proxy 的 `openai-chatgpt` 插件 `catalog.ts`。
+- 模型列表：`GET {base}/models?client_version=<Codex CLI 版本>`，`client_version` 必填（缺了 400），后端按每个模型的 `minimal_client_version` 过滤，所以取最新的 Codex CLI 版本：先 GitHub `openai/codex` 的 latest release（`rust-v` 标签），再 npm `@openai/codex`，命中缓存一小时，都失败则沿用上次或兜底 0.159.0 并五分钟内不再查（`ai.codexClientVersion`，照 aio-proxy 的 `codex-version.ts`）。返回 `models[].slug/display_name/visibility`，与 §2.1 同一解析；只展示 `visibility == "list"`。不设内置列表：拉不到就按失败显示。参考 aio-proxy 的 `openai-chatgpt` 插件 `catalog.ts`。
 
 ## 3. 数据
 

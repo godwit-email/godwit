@@ -35,12 +35,7 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	base := strings.TrimRight(baseURL, "/")
-	url, hdr := base+"/models", http.Header{}
-	if strings.HasSuffix(base, "/backend-api/codex") {
-		// ChatGPT's Codex backend 400s without a client version, and lists only the
-		// models that version may use (minimal_client_version). The Codex CLI's.
-		url += "?client_version=" + codexClientVersion
-	}
+	url, hdr := modelsURL(ctx, c, base), http.Header{}
 	switch kind {
 	case KindOpenAI, KindResponses:
 		if apiKey != "" {
@@ -112,9 +107,18 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 	return ms, nil
 }
 
-// codexClientVersion is the Codex CLI release the model list is asked for; a
-// newer model may need a newer one.
-const codexClientVersion = "0.159.0"
+// modelsURL is where base lists its models. ChatGPT's Codex backend 400s
+// without a client version and lists only what that version may use; xAI's
+// /models mixes in image and video models, which /language-models leaves out.
+func modelsURL(ctx context.Context, c *http.Client, base string) string {
+	switch {
+	case strings.HasSuffix(base, "/backend-api/codex"):
+		return base + "/models?client_version=" + codexClientVersion(ctx, c)
+	case strings.HasSuffix(base, "://api.x.ai/v1"):
+		return base + "/language-models"
+	}
+	return base + "/models"
+}
 
 var (
 	ErrModelAuth   = errors.New("the model service rejected the key")

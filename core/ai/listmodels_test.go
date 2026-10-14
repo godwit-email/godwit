@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +80,38 @@ func TestListModelsVisibility(t *testing.T) {
 	assert.Equal(t, []string{"gpt-a"}, ids)
 }
 
+func TestModelsURL(t *testing.T) {
+	var hits int
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Write([]byte(`{"tag_name":"rust-v0.161.2","prerelease":false,"draft":false}`))
+	}))
+	defer gh.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "nope", 503) }))
+	defer bad.Close()
+	reset := func() { codexVersion.version, codexVersion.until = "", time.Time{} }
+	urls := codexVersionURLs
+	t.Cleanup(func() { reset(); codexVersionURLs = urls })
+	ctx := context.Background()
+
+	reset()
+	codexVersionURLs = []string{bad.URL, gh.URL}
+	assert.Equal(t, "http://x/backend-api/codex/models?client_version=0.161.2", modelsURL(ctx, nil, "http://x/backend-api/codex"), "the first lookup that answers")
+	modelsURL(ctx, nil, "http://x/backend-api/codex")
+	assert.Equal(t, 1, hits, "cached")
+
+	reset()
+	codexVersionURLs = []string{bad.URL}
+	assert.Equal(t, "http://x/backend-api/codex/models?client_version="+codexFallbackVersion, modelsURL(ctx, nil, "http://x/backend-api/codex"), "every lookup failed")
+
+	assert.Equal(t, "https://api.x.ai/v1/language-models", modelsURL(ctx, nil, "https://api.x.ai/v1"), "xAI: text models only")
+	assert.Equal(t, "https://api.openai.com/v1/models", modelsURL(ctx, nil, "https://api.openai.com/v1"))
+}
+
 func TestListModelsCodex(t *testing.T) {
+	t.Cleanup(func() { codexVersion.version, codexVersion.until = "", time.Time{} })
+	codexVersion.version, codexVersion.until = "0.159.0", time.Now().Add(time.Hour) // no lookup off the network
+
 	srv := testllm.Start(t, "openai-responses")
 	srv.SetModels("gpt-6-luna", "gpt-5.6-luna")
 	ms, err := ListModelsNamed(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex", "tok")

@@ -20,7 +20,6 @@ var ErrModelLogin = errors.New("sign in to add this service")
 type modelProvider struct {
 	BaseURL string
 	OAuth   auth.OAuthConfig
-	Models  []string // fallback model list when /models fails
 }
 
 // chatgptOfficial is Sign in with ChatGPT, the flow OpenAI sanctions for
@@ -89,7 +88,6 @@ var modelOAuth = map[string]modelProvider{
 			Scopes:     []string{"openid", "profile", "email", "offline_access", "grok-cli:access", "api:access"},
 			AuthParams: map[string]string{"referrer": "godwit"},
 		},
-		Models: []string{"grok-4.7", "grok-4.6"},
 	},
 }
 

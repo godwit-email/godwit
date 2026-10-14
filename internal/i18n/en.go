@@ -511,7 +511,6 @@ var en = map[string]string{
 	"settings.models.retry":                        "Retry",
 	"settings.models.fetch_failed":                 "Fetching /models failed (%s). This service may not list its models; you can enter a model ID instead.",
 	"settings.models.fetched":                      "Fetched %d models from /models; click to select.",
-	"settings.models.builtin":                      "This service has no model list; these are built in. You can also type a model ID.",
 	"settings.models.hint":                         "Once the API key is filled in, the available models are fetched from /models; click to select, or enter a model ID.",
 	"settings.models.hint.sub":                     "Once signed in, the models come from /models; click to pick, or type a model ID.",
 	"settings.models.key.show":                     "Show API key",

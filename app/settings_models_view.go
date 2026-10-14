@@ -613,8 +613,6 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 				kit.Text(c, i18n.T("settings.models.retry"), t.Text.Sm).TextColor(t.WarningText)
 			})
 		})
-	case f.fetch == "builtin":
-		kit.Text(c, i18n.T("settings.models.builtin"), t.Text.Sm).TextColor(t.Muted)
 	case f.fetch == "ok":
 		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
 	case len(f.offered) == 0 && core.ModelProviderLogin(f.provider) == "oauth":
