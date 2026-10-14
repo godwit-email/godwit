@@ -2,8 +2,11 @@ package core_test
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,4 +147,192 @@ func TestRegistryPromotesUserFile(t *testing.T) {
 	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil)))) // the same bytes
 	require.NoError(t, s.RefreshPluginRegistry(ctx))
 	assert.Equal(t, "listed", nativeInfo(t, s, "dlx").Trust)
+}
+func TestRegistryRevokes(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	record := filepath.Join(t.TempDir(), "configure.json")
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", map[string]any{"record": record}))))
+	dir := t.TempDir()
+	s := regService(t, rs, dir)
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	require.True(t, nativeInfo(t, s, "dlx").Enabled)
+
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour)))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	p := nativeInfo(t, s, "dlx")
+	assert.False(t, p.Enabled)
+	assert.Equal(t, "trust_revoked", p.DisabledReason)
+	assert.True(t, p.NeedsGrant)
+	assert.Equal(t, "", p.Trust)
+	require.NoError(t, s.Close())
+
+	require.NoError(t, os.Remove(record))
+	s = regService(t, rs, dir)
+	assert.False(t, nativeInfo(t, s, "dlx").Enabled)
+	time.Sleep(200 * time.Millisecond)
+	assert.NoFileExists(t, record, "a revoked plugin does not start again")
+}
+
+func TestInstallFromRegistryNative(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	record := filepath.Join(t.TempDir(), "configure.json")
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", map[string]any{"record": record}))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	info, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	assert.Equal(t, "0.1.0", info.Version)
+	p := nativeInfo(t, s, "dlx")
+	assert.True(t, p.Native)
+	assert.True(t, p.Enabled)
+	assert.False(t, p.NeedsGrant)
+	assert.Equal(t, "listed", p.Trust)
+	recorded(t, record)
+	e := entry(t, s, "dlx")
+	assert.Equal(t, "0.1.0", e.Installed)
+	assert.False(t, e.Update)
+}
+
+func TestInstallFromRegistryScript(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rs.ScriptRelease("hello", "0.1.0", `{"net":["api.example.com"]}`, `export default function () {}`))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "hello")
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "hello")
+	assert.False(t, p.Native)
+	assert.True(t, p.NeedsGrant, "review does not grant a script plugin's permissions")
+	assert.Equal(t, "listed", p.Trust)
+	assert.False(t, p.Enabled)
+	require.NoError(t, s.GrantPermission(ctx, "hello"))
+	require.NoError(t, s.SetPluginEnabled(ctx, "hello", true))
+	assert.True(t, nativeInfo(t, s, "hello").Enabled)
+	assert.Equal(t, "listed", nativeInfo(t, s, "hello").Trust, "granting keeps the review")
+}
+
+func TestInstallFromRegistryMismatch(t *testing.T) {
+	for name, spoil := range map[string]func(rs *coretest.RegistryServer, rel map[string]any){
+		"sha": func(_ *coretest.RegistryServer, rel map[string]any) {
+			for _, a := range rel["artifacts"].(map[string]any) {
+				a.(map[string]any)["sha256"] = strings.Repeat("0", 64)
+			}
+		},
+		"one byte more": func(rs *coretest.RegistryServer, rel map[string]any) {
+			for _, a := range rel["artifacts"].(map[string]any) {
+				u := a.(map[string]any)["url"].(string)
+				path := u[strings.Index(u, "/files/"):]
+				rs.Serve(path, append(fileAt(t, rs, u), ' '))
+			}
+		},
+		"missing": func(rs *coretest.RegistryServer, rel map[string]any) {
+			for _, a := range rel["artifacts"].(map[string]any) {
+				u := a.(map[string]any)["url"].(string)
+				rs.Serve(u[strings.Index(u, "/files/"):], nil)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rs := coretest.NewRegistryServer(t)
+			rel := rs.NativeRelease(t, "dlx", "0.1.0", nil)
+			spoil(rs, rel)
+			rs.Publish(t, coretest.Registry(t0, plugin("dlx", rel)))
+			dir := t.TempDir()
+			s := regService(t, rs, dir)
+			require.NoError(t, s.RefreshPluginRegistry(ctx))
+			_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+			require.Error(t, err)
+			if name != "missing" {
+				assert.ErrorIs(t, err, core.ErrRegistryMismatch)
+			}
+			_, ok := pluginByName(t, s, "dlx")
+			assert.False(t, ok)
+			left, _ := os.ReadDir(filepath.Join(dir, "plugins"))
+			for _, e := range left {
+				t.Errorf("left behind: %s", e.Name())
+			}
+		})
+	}
+}
+
+// fileAt fetches what the registry server serves at url.
+func fileAt(t *testing.T, rs *coretest.RegistryServer, url string) []byte {
+	t.Helper()
+	resp, err := rs.Src.Client.Get(url)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return b
+}
+
+func TestPublicInstallIsNeverListed(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	s := regService(t, rs, t.TempDir())
+	_, err := s.InstallPlugin(ctx, coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, nil))
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "dlx")
+	assert.Equal(t, "", p.Trust)
+	assert.True(t, p.NeedsGrant)
+}
+
+func TestRegistryUpdate(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	v1 := rs.NativeRelease(t, "dlx", "0.1.0", nil)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", v1)))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	require.NoError(t, s.SetPluginConfig(ctx, "dlx", map[string]json.RawMessage{"endpoint": json.RawMessage(`"https://mine.example"`)}))
+
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour), plugin("dlx", v1, rs.NativeRelease(t, "dlx", "0.2.0", nil))))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	e := entry(t, s, "dlx")
+	assert.True(t, e.Update)
+	assert.Equal(t, "0.2.0", e.Version)
+	_, err = s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "dlx")
+	assert.Equal(t, "0.2.0", p.Version)
+	assert.True(t, p.Enabled)
+	assert.Equal(t, "listed", p.Trust)
+	cfg, err := s.GetPluginConfig(ctx, "dlx")
+	require.NoError(t, err)
+	assert.JSONEq(t, `"https://mine.example"`, string(cfg[0].Value), "settings survive the update")
+	assert.False(t, entry(t, s, "dlx").Update)
+}
+
+func TestRegistryUpdateKeepsUserDisabled(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	v1 := rs.NativeRelease(t, "dlx", "0.1.0", nil)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", v1)))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	require.NoError(t, s.SetPluginEnabled(ctx, "dlx", false))
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour), plugin("dlx", v1, rs.NativeRelease(t, "dlx", "0.2.0", nil))))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err = s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "dlx")
+	assert.Equal(t, "0.2.0", p.Version)
+	assert.False(t, p.Enabled, "the user turned it off")
+}
+
+func TestRegistryReplacesUserInstall(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	s := regService(t, rs, t.TempDir())
+	installEnabled(t, s, coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, map[string]any{"echoStderr": "another build"}))
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	require.Equal(t, "user", nativeInfo(t, s, "dlx").Trust, "another file: not promoted")
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "dlx")
+	assert.Equal(t, "listed", p.Trust)
+	assert.True(t, p.Enabled)
 }

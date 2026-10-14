@@ -194,6 +194,13 @@ func (s *Service) ListPlugins(ctx context.Context) ([]PluginInfo, error) {
 // An update with other permissions is disabled until they are granted; with the
 // same ones a running plugin restarts on the new code, and is disabled if that fails.
 func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo, error) {
+	return s.installPlugin(ctx, srcDir, "")
+}
+
+// installPlugin is InstallPlugin; trust "listed" (only InstallPluginFromRegistry
+// passes it) records the file as reviewed and, for a native plugin, grants it
+// and enables it unless the user had turned it off.
+func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (PluginInfo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return PluginInfo{}, err
@@ -238,6 +245,10 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 		if _, err := plugins.Build(snap, m.Main); err != nil {
 			return PluginInfo{}, err
 		}
+		// What the registry lists of a script plugin: its one bundled file.
+		if libHash, err = plugins.FileSHA256(filepath.Join(snap, filepath.FromSlash(m.Main))); err != nil {
+			return PluginInfo{}, err
+		}
 	}
 	mj, err := json.Marshal(m)
 	if err != nil {
@@ -265,15 +276,27 @@ func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo,
 	}
 	// The switch. If it fails nothing changed: the old version keeps running and
 	// the new directory is removed on the next start or install.
-	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, installed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+	// A reviewed native file is granted at once (spec 3.1); it stays off if the
+	// user had turned it off, and comes back if Godwit had (failures, revoked).
+	listedNative := trust == "listed" && m.IsNative()
+	var granted any
+	enable := 0
+	if listedNative {
+		granted = permHash
+		if old, ok := before[m.Name]; !ok || old.enabled || old.reason != "" {
+			enable = 1
+		}
+	}
+	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, trust, granted_hash, enabled, installed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(name) DO UPDATE SET version = excluded.version, manifest = excluded.manifest,
 			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
 			library_hash = excluded.library_hash,
-			trust = CASE WHEN permission_hash = excluded.permission_hash THEN trust ELSE '' END,
-			enabled = enabled AND permission_hash = excluded.permission_hash,
+			trust = CASE WHEN excluded.trust = 'listed' THEN 'listed' WHEN permission_hash = excluded.permission_hash THEN trust ELSE '' END,
+			granted_hash = CASE WHEN ? THEN excluded.granted_hash ELSE granted_hash END,
+			enabled = CASE WHEN ? THEN excluded.enabled ELSE enabled AND permission_hash = excluded.permission_hash END,
 			disabled_reason = '', installed_at = excluded.installed_at`,
-		m.Name, m.Version, string(mj), hash, installDir, permHash, libHash)
+		m.Name, m.Version, string(mj), hash, installDir, permHash, libHash, trust, granted, enable, listedNative, listedNative)
 	if err != nil {
 		return PluginInfo{}, err
 	}

@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,6 +63,8 @@ var (
 	ErrRegistrySignature = errors.New("the plugin registry's signature does not match")
 	ErrRegistryStale     = errors.New("the plugin registry is older than the one Godwit has")
 	ErrRegistryMismatch  = errors.New("the downloaded file does not match the plugin registry; it was discarded")
+
+	errRegistryTooLarge = errors.New("larger than the plugin registry allows")
 )
 
 // RegistryView is what the extensions page shows of the registry. Stale is
@@ -168,7 +173,7 @@ func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, lim
 		return nil, fmt.Errorf("plugin registry: %w", err)
 	}
 	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("plugin registry: %s is larger than %d bytes", url, limit)
+		return nil, fmt.Errorf("plugin registry: %s: %w (%d bytes)", url, errRegistryTooLarge, limit)
 	}
 	return b, nil
 }
@@ -309,4 +314,72 @@ func (s *Service) startRegistryRefresh() {
 			t.Reset(registryEvery)
 		}
 	}()
+}
+
+// InstallPluginFromRegistry installs or updates plugin name from the cached
+// registry: the newest release this build can take, its file downloaded and
+// checked against the registry's size and SHA-256 (a mismatch is
+// ErrRegistryMismatch and nothing is installed), then installed as listed.
+func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (PluginInfo, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return PluginInfo{}, err
+	}
+	defer end()
+	src := s.opts.Registry
+	if src == nil {
+		return PluginInfo{}, ErrRegistryOff
+	}
+	s.registryMu.Lock()
+	reg, err := s.cachedRegistry(src)
+	s.registryMu.Unlock()
+	if errors.Is(err, fs.ErrNotExist) {
+		return PluginInfo{}, errors.New("the plugin registry has not been read yet")
+	}
+	if err != nil {
+		return PluginInfo{}, err
+	}
+	i := slices.IndexFunc(reg.Plugins, func(p plugins.RegistryPlugin) bool { return p.Name == name })
+	if i < 0 {
+		return PluginInfo{}, fmt.Errorf("plugin %s is not in the plugin registry", name)
+	}
+	rel, art, why := reg.Plugins[i].Pick(plugins.PlatformKey(), s.opts.AppVersion)
+	if why != "" {
+		return PluginInfo{}, fmt.Errorf("plugin %s cannot be installed here (%s)", name, why)
+	}
+	if err := os.MkdirAll(s.pluginsDir(), 0o700); err != nil {
+		return PluginInfo{}, err
+	}
+	dir, err := os.MkdirTemp(s.pluginsDir(), ".download-") // removed at start if this dies
+	if err != nil {
+		return PluginInfo{}, err
+	}
+	defer os.RemoveAll(dir)
+	file := plugins.LibraryName()
+	if !rel.Parsed.IsNative() {
+		file = rel.Parsed.Main
+	}
+	if err := downloadArtifact(ctx, src, art, filepath.Join(dir, file)); err != nil {
+		return PluginInfo{}, fmt.Errorf("plugin %s %s: %w", name, rel.Version, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), rel.Manifest, 0o600); err != nil {
+		return PluginInfo{}, err
+	}
+	return s.installPlugin(ctx, dir, "listed")
+}
+
+// downloadArtifact writes a's file to path if it is exactly a.Size bytes with a.SHA256.
+func downloadArtifact(ctx context.Context, src *RegistrySource, a plugins.Artifact, path string) error {
+	b, err := fetchRegistryFile(ctx, src, a.URL, a.Size)
+	if err != nil {
+		if errors.Is(err, errRegistryTooLarge) {
+			return ErrRegistryMismatch
+		}
+		return err
+	}
+	sum := sha256.Sum256(b)
+	if int64(len(b)) != a.Size || hex.EncodeToString(sum[:]) != a.SHA256 {
+		return ErrRegistryMismatch
+	}
+	return os.WriteFile(path, b, 0o600)
 }
