@@ -11,6 +11,10 @@ on:
         description: The release tag to build; empty builds the caller's own ref
         type: string
         default: ""
+      archs:
+        description: Comma-separated architectures to build; a single one packs a plain .msix, not a bundle
+        type: string
+        default: amd64,arm64
 
 jobs:
   msix:
@@ -26,15 +30,25 @@ jobs:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) }}
       - uses: jdx/mise-action@v2
       - uses: microsoft/setup-WinAppCli@v0.1
+      - id: go-cache
+        shell: bash
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache.outputs.dir }}
+          key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ github.job }}-
       - run: mise run web:install
       - name: build the Windows executables
-        run: go tool mygo build -platform windows/amd64,windows/arm64
+        shell: bash
+        run: go tool mygo build -platform "$(echo "${{ inputs.archs }}" | sed 's|[^,]*|windows/&|g')"
       - name: pack
         shell: pwsh
         run: |
           $version = (Select-String -Path mygo.config.ts -Pattern 'version: "(\d+\.\d+\.\d+)"').Matches[0].Groups[1].Value + '.0'
           $logo = (Resolve-Path assets\icon.png).Path
-          $dirs = foreach ($arch in 'amd64', 'arm64') {
+          $dirs = foreach ($arch in '${{ inputs.archs }}'.Split(',')) {
             $dir = "msix-in-$arch"
             New-Item -ItemType Directory $dir | Out-Null
             Copy-Item "dist\windows-$arch\*" $dir -Recurse
@@ -53,7 +67,7 @@ jobs:
             $dir
           }
           winapp cert generate --publisher $env:MSIX_PUBLISHER
-          winapp pack @dirs --cert devcert.pfx
+          winapp pack @($dirs) --cert devcert.pfx
           Get-ChildItem *.msix*
       - uses: actions/upload-artifact@v4
         with:
