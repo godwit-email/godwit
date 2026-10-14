@@ -731,6 +731,9 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 			return
 		}
 		switch {
+		case errors.Is(err, core.ErrModelAuth) && core.ModelProviderLogin(f.provider) == "oauth":
+			f.loginErr = humanize(err) // no key field to show it under: the account row
+			return
 		case errors.Is(err, core.ErrModelAuth):
 			f.keyErr = humanize(err)
 			return

@@ -44,7 +44,7 @@
 - 返回 `access_token, refresh_token, id_token, expires_in`（约 6 小时；缺省按 1 小时）。邮箱取 `id_token` 的 `email`。
 - 刷新：同端点 `grant_type=refresh_token, refresh_token, client_id`。可能轮换；没返回新的就沿用旧的。
 - 推理：`POST https://api.x.ai/v1/responses`，只需 `Authorization: Bearer`。标准 Responses API，支持 function tools。
-- 模型列表：`GET /v1/language-models`（xAI 的 `/v1/models` 混有 grok-imagine 的图和视频模型，这个接口只列文本模型；2026-10-14 用订阅令牌实测可用，返回 `data[].id`）。不设内置回退。
+- 模型列表：`GET /v1/language-models`（xAI 的 `/v1/models` 混有 grok-imagine 的图和视频模型，这个接口只列文本模型；2026-10-14 用订阅令牌实测可用，返回 `models[].id`，`ai.ListModels` 对 `models[]` 同时认 `slug` 和 `id`）。不设内置回退。
 - 403 或错误含 "subscription"/"not eligible"：没有 SuperGrok / X Premium 订阅。
 
 ### 2.3 ChatGPT 的 Codex 登录（当前默认，2026-10-14 追加）

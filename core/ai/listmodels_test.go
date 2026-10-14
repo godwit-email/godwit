@@ -123,6 +123,16 @@ func TestListModelsCodex(t *testing.T) {
 	require.NoError(t, err, "a trailing slash is fine")
 }
 
+func TestListModelsXAIShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"models":[{"id":"grok-4.7","input_modalities":["text","image"],"output_modalities":["text"]},{"id":"grok-4.6"}]}`))
+	}))
+	defer srv.Close()
+	ids, err := ListModels(context.Background(), nil, KindResponses, srv.URL, "k")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"grok-4.6", "grok-4.7"}, ids)
+}
+
 func TestListModelsChatGPTShape(t *testing.T) {
 	srv := testllm.Start(t, "openai-responses")
 	srv.SetModels("gpt-5.2", "gpt-5.2-mini", "gpt-5.2-codex")

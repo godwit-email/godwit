@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,8 +30,9 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 	return ids, nil
 }
 
-// ListModelsNamed is ListModels with display names. It reads both the API's
-// data[].id shape and the Sign in with ChatGPT models[].slug/display_name shape.
+// ListModelsNamed is ListModels with display names. It reads the API's
+// data[].id shape, Sign in with ChatGPT's models[].slug/display_name and
+// xAI's models[].id.
 func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]Model, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -83,8 +85,8 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 			ID         string
 			Visibility string
 		}
-		Models []struct {
-			Slug        string
+		Models []struct { // Sign in with ChatGPT and the Codex backend: slug; xAI's language-models: id
+			ID, Slug    string
 			DisplayName string `json:"display_name"`
 			Visibility  string
 		}
@@ -99,8 +101,8 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 		}
 	}
 	for _, m := range out.Models {
-		if m.Slug != "" && (m.Visibility == "" || m.Visibility == "list") {
-			ms = append(ms, Model{m.Slug, m.DisplayName})
+		if id := cmp.Or(m.Slug, m.ID); id != "" && (m.Visibility == "" || m.Visibility == "list") {
+			ms = append(ms, Model{id, m.DisplayName})
 		}
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].ID < ms[j].ID })
