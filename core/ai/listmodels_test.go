@@ -79,6 +79,18 @@ func TestListModelsVisibility(t *testing.T) {
 	assert.Equal(t, []string{"gpt-a"}, ids)
 }
 
+func TestListModelsCodex(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.SetModels("gpt-6-luna", "gpt-5.6-luna")
+	ms, err := ListModelsNamed(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex", "tok")
+	require.NoError(t, err)
+	assert.Equal(t, []Model{{ID: "gpt-5.6-luna"}, {ID: "gpt-6-luna"}}, ms)
+	last := srv.Headers()[len(srv.Headers())-1]
+	assert.Equal(t, "Bearer tok", last.Get("Authorization"))
+	_, err = ListModels(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex/", "tok")
+	require.NoError(t, err, "a trailing slash is fine")
+}
+
 func TestListModelsChatGPTShape(t *testing.T) {
 	srv := testllm.Start(t, "openai-responses")
 	srv.SetModels("gpt-5.2", "gpt-5.2-mini", "gpt-5.2-codex")

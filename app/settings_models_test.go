@@ -442,6 +442,23 @@ func TestServiceListAvatars(t *testing.T) {
 	}
 }
 
+func TestBuiltinModelListIsNotAFailure(t *testing.T) {
+	h := withLLM(t)
+	m := h.newService()
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"gpt-6.1-sol"}, ListSupported: false}, nil
+	}
+	h.fill("地址", "https://gw.example.com/v1")
+	h.fill("API Key", "k-123456")
+	h.blurKey() // lists the models: a provider's built-in list, not a failed fetch
+	f := m.form
+	h.until("the fetch settles", func() bool { return !f.probing && f.fetch != "" })
+	h.see("这个服务不提供模型列表，以上是内置的；也可以直接输入模型 ID。")
+	if h.tt.HasText("拉取 /models 失败") {
+		t.Fatal("a built-in list reads as a failed fetch")
+	}
+}
+
 func TestModelChipsShowDisplayNames(t *testing.T) {
 	h := withLLM(t)
 	p := h.openSettings("models")

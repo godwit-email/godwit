@@ -55,7 +55,7 @@
 - Codex 客户端（借用 Codex CLI，与 Grok 同类风险）：client `app_EMoamEEZ73f0CkXaXp7hrann`，authorize `https://auth.openai.com/oauth/authorize`，token `https://auth.openai.com/oauth/token`，scope `openid profile email offline_access`，authorize 额外参数 `id_token_add_organizations=true`、`codex_cli_simplified_flow=true`、`originator=godwit`，回调固定 `http://localhost:1455/auth/callback`（`OAuthConfig.RedirectPort`；端口被占报 `auth.ErrRedirectPortBusy`）。只做浏览器登录。邮箱来自 id_token。
 - 请求：`POST {base}/responses`，头 `chatgpt-account-id`（从 access token JWT 的 `https://api.openai.com/auth`.`chatgpt_account_id` 解出，不另存）、`originator: godwit`、`OpenAI-Beta: responses=experimental`；`instructions` 为空时填 "You are a helpful assistant."。`store:false`、`stream:true`、`include` 同官方。
 - 错误：HTTP 429，或错误码 `usage_limit_reached`、`usage_not_included`、`rate_limit_exceeded` → `CodeRateLimited` + Detail `chatgpt_usage`（仅 Codex 地址下）。官方地址下 HTTP 错误里的 `subscription_sharing_user_not_eligible` → `CodeUnauthorized` + Detail `chatgpt_not_eligible`，测试连接显示 `not_eligible`/403。
-- 模型列表：Codex 后端无 `/models`，内置 `gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna`（官方接口 2026-10-14 列出的同一组）。
+- 模型列表：`GET {base}/models?client_version=<Codex CLI 版本>`，`client_version` 必填（缺了 400），后端按每个模型的 `minimal_client_version` 过滤，所以版本常量（`ai.codexClientVersion`，现为 0.159.0）要跟着新模型升。返回 `models[].slug/display_name/visibility`，与 §2.1 同一解析；只展示 `visibility == "list"`。空列表或失败时退回内置 `gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna`，界面显示「内置列表」说明而不是拉取失败。参考 aio-proxy 的 `openai-chatgpt` 插件 `catalog.ts`。
 
 ## 3. 数据
 

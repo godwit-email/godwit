@@ -765,6 +765,8 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 		}
 		switch {
 		case quiet:
+		case !res.ListSupported && len(res.Models) > 0: // the provider's built-in list: nothing failed
+			f.fetch, f.fetched = "builtin", len(res.Models)
 		case !res.ListSupported || len(res.Models) == 0:
 			f.fetch, f.fetchErr = "fail", ""
 			if res.NoListStatus > 0 {

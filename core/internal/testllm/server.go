@@ -85,10 +85,40 @@ func Start(t *testing.T, kind string) *Server {
 	case "openai-responses":
 		chat = "/responses"
 	}
-	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
+	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) { s.list(kind, w, r, false) })
+	if kind == "openai-responses" { // ChatGPT's Codex backend: client_version is required, and the list is models[].slug
+		s.Mux.HandleFunc("GET /backend-api/codex/models", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("client_version") == "" {
+				http.Error(w, `{"message":"client_version: Field required"}`, http.StatusBadRequest)
+				return
+			}
+			s.list(kind, w, r, true)
+		})
+	}
+	s.Mux.HandleFunc("POST "+chat, func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	if kind == "openai-responses" { // ChatGPT's Codex backend, at <URL>/backend-api/codex
+		s.Mux.HandleFunc("POST /backend-api/codex/responses", func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		s.headers = append(s.headers, r.Header.Clone())
+		s.mu.Unlock()
+		s.Mux.ServeHTTP(w, r)
+	}))
+	t.Cleanup(func() { s.Release(); ts.Close() })
+	s.URL = ts.URL
+	return s
+}
+
+// list answers the model list; codex forces the Codex backend's models[].slug shape.
+func (s *Server) list(kind string, w http.ResponseWriter, r *http.Request, codex bool) {
+	{
 		s.mu.Lock()
 		models, hidden, names, key, status := s.models, s.hidden, s.names, s.key, s.listStatus
 		s.mu.Unlock()
+		if codex && names == nil {
+			names = map[string]string{}
+		}
 		got := sentKey(kind, r)
 		if status != 0 {
 			// echoes the key, so tests can prove errors repeat neither it nor the body
@@ -115,20 +145,7 @@ func Start(t *testing.T, kind string) *Server {
 			data = append(data, item)
 		}
 		json.NewEncoder(w).Encode(map[string]any{field: data})
-	})
-	s.Mux.HandleFunc("POST "+chat, func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
-	if kind == "openai-responses" { // ChatGPT's Codex backend, at <URL>/backend-api/codex
-		s.Mux.HandleFunc("POST /backend-api/codex/responses", func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
 	}
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.mu.Lock()
-		s.headers = append(s.headers, r.Header.Clone())
-		s.mu.Unlock()
-		s.Mux.ServeHTTP(w, r)
-	}))
-	t.Cleanup(func() { s.Release(); ts.Close() })
-	s.URL = ts.URL
-	return s
 }
 
 func sentKey(kind string, r *http.Request) string {

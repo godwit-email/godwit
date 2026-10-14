@@ -511,6 +511,7 @@ var zh = map[string]string{
 	"settings.models.retry":                        "重试",
 	"settings.models.fetch_failed":                 "拉取 /models 失败（%s）。这个服务可能不提供模型列表，直接输入模型 ID 也可以。",
 	"settings.models.fetched":                      "已从 /models 拉取 %d 个模型，点一下选中。",
+	"settings.models.builtin":                      "这个服务不提供模型列表，以上是内置的；也可以直接输入模型 ID。",
 	"settings.models.hint":                         "填好 API Key 后会从 /models 拉取可用模型，点一下选中；也可以直接输入模型 ID。",
 	"settings.models.hint.sub":                     "登录后会从 /models 拉取可用模型，点一下选中；也可以直接输入模型 ID。",
 	"settings.models.key.show":                     "显示 API Key",
