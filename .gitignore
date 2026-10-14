@@ -11,4 +11,6 @@ web/dist/
 /.cloudflare/
 .claude/worktrees/
 .env*
+!.env.example
+!.env.sample
 .dev.vars
