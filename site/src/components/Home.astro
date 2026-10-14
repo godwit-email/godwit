@@ -136,7 +136,8 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 						data-labels={JSON.stringify({ darwin: s.downloadMac, windows: s.downloadWindows, linux: s.downloadLinux })}
 						class="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 font-medium text-primary-foreground transition-opacity hover:opacity-90"
 					>
-						<Icon name="download" />
+						<span data-os-icon="darwin" class="inline-flex"><Icon name="apple" /></span>
+						<span data-os-icon="linux" hidden class="inline-flex"><Icon name="download" /></span>
 						<span>{s.downloadMac}</span>
 					</a>
 					<!-- On Windows the Store is the way in: the script swaps it for the primary button. -->
@@ -261,7 +262,8 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 			const primary = document.querySelector<HTMLAnchorElement>("[data-primary]")!;
 			const labels = JSON.parse(primary.dataset.labels!) as Record<string, string>;
 			primary.href = `/download/${os}-${arch}`;
-			primary.querySelector("span")!.textContent = labels[os];
+			primary.querySelector("span:last-child")!.textContent = labels[os];
+			for (const icon of primary.querySelectorAll<HTMLElement>("[data-os-icon]")) icon.hidden = icon.dataset.osIcon !== os;
 			if (os === "windows") {
 				primary.hidden = true;
 				document.querySelector<HTMLElement>("[data-store]")!.classList.replace("hidden", "inline-flex");
