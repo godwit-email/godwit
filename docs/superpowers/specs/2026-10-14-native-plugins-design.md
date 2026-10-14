@@ -417,6 +417,8 @@ P0 全部通过，可以开始 P1。
 
 ### P1 核心加载链路
 
+2026-10-14 完成，计划见 `docs/superpowers/plans/2026-10-14-native-plugins-p1.md`。与本节的差异：失败计数与三次停用挪到 P3（P1 没有运行时调用）；`ListPlugins` 的哈希缓存不做，留了 `shortcut:` 注释。用 Developer ID 签名、开 hardened runtime 的真实 `godwit` 二进制在 headless 模式下装、授权、启用、停用、卸载了真实的 DLX 动态库。
+
 - [ ] manifest 原生分支与测试（二选一、ABI、capabilities、限制）。
 - [ ] `plugin-host` 子命令与 `NativePlugin` 客户端（假子进程测试：正常、崩溃后懒重启、超时 kill、stdin 关闭退出、哈希不符拒绝）。
 - [ ] `InstallPlugin(dir, trust)` / `runningPlugin` / `loadPlugin` / `stopPlugin` / `SetPluginConfig` 的原生分支；`permission_hash = source_hash`；`trust` 列；`pluginFailed` 只计 ABI 错误、超时、退出；`ListPlugins` 的哈希缓存。
