@@ -104,3 +104,22 @@ func TestServeNativeHostErrorLine(t *testing.T) {
 	assert.False(t, line.OK)
 	assert.Contains(t, line.HostError, "rc=-1")
 }
+
+// A pretty-printed envelope is valid JSON; it must still travel as one line.
+func TestServeNativePrettyEnvelope(t *testing.T) {
+	lib := filepath.Join(t.TempDir(), LibraryName())
+	require.NoError(t, os.WriteFile(lib, []byte("x"), 0o600))
+	sum := sha256.Sum256([]byte("x"))
+	pretty := func(string, uint32) (NativeCall, error) {
+		return func(string, []byte) ([]byte, error) {
+			return []byte("{\n  \"ok\": true,\n  \"result\": {\"a\": 1}\n}\n"), nil
+		}, nil
+	}
+	var out, errw bytes.Buffer
+	code := ServeNativeWith([]string{"--library", lib, "--sha256", hex.EncodeToString(sum[:])},
+		strings.NewReader(`{"id":3,"method":"describe","params":{}}`+"\n"), &out, &errw, pretty)
+	require.Equal(t, 0, code)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 1, "one response, one line")
+	assert.JSONEq(t, `{"id":3,"ok":true,"result":{"a":1}}`, lines[0])
+}

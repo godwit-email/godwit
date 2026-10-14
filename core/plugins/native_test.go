@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -17,12 +18,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const fakeNativeEnv = "GODWIT_PLUGINS_FAKE_NATIVE"
+const (
+	fakeNativeEnv = "GODWIT_PLUGINS_FAKE_NATIVE"
+	realNativeEnv = "GODWIT_PLUGINS_REAL_NATIVE" // the real ServeNative, with a library built by buildEcho
+)
 
 // TestMain: the test binary is also a fake plugin-host for NativeProcess.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "plugin-host" && os.Getenv(fakeNativeEnv) != "" {
 		os.Exit(ServeNativeWith(os.Args[2:], os.Stdin, os.Stdout, os.Stderr, FakeNativeOpener(os.Stderr)))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "plugin-host" && os.Getenv(realNativeEnv) != "" {
+		os.Exit(ServeNative(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	os.Exit(m.Run())
 }
@@ -136,4 +143,34 @@ func TestNativeClose(t *testing.T) {
 	n.Close()
 	_, err = n.Call(context.Background(), "describe", struct{}{})
 	assert.True(t, errors.Is(err, ErrClosed))
+}
+
+// A process that closed its stdin but lives on must not hold a call (or the
+// caller's locks) until it happens to exit.
+func TestNativeStdinClosedDoesNotHang(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs /bin/sh")
+	}
+	n := NewNativeProcess(NativeOptions{Command: []string{"/bin/sh", "-c", "exec 0<&-; sleep 20", "plugin-host"}, Library: "x", SHA256: "x", Timeout: 30 * time.Second})
+	t.Cleanup(n.Close)
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	n.Call(ctx, "describe", struct{}{}) // starts it; by now its stdin is closed
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	assert.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second)
+}
+
+// What a library prints to stdout must not break the JSON lines on it.
+func TestNativeLibraryStdoutKeptOffProtocol(t *testing.T) {
+	lib, sha := buildEcho(t)
+	n := NewNativeProcess(NativeOptions{Command: []string{os.Args[0], "plugin-host"}, Env: []string{"PATH=" + os.Getenv("PATH"), realNativeEnv + "=1"},
+		Library: lib, SHA256: sha, Timeout: 3 * time.Second})
+	t.Cleanup(n.Close)
+	_, err := n.Call(context.Background(), "noisy", struct{}{})
+	require.NoError(t, err)
+	res, err := n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Contains(t, string(res), `"echo"`)
 }

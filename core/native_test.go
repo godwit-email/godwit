@@ -197,3 +197,22 @@ func TestNativeTooLarge(t *testing.T) {
 	assert.ErrorContains(t, err, "data.bin", "a script plugin keeps the 5 MB limit")
 	assert.True(t, strings.Contains(err.Error(), "5 MB"), err.Error())
 }
+
+// A library whose describe never answers fails to start within the limit, and is not left running.
+func TestNativeDescribeHangFails(t *testing.T) {
+	core.SetNativeStartForTest(t, 500*time.Millisecond)
+	s := nativeService(t, t.TempDir())
+	record := filepath.Join(t.TempDir(), "configure.json")
+	_, err := s.InstallPlugin(ctx, coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, map[string]any{"describeSleepMs": 60000, "record": record}))
+	require.NoError(t, err)
+	require.NoError(t, s.GrantPermission(ctx, "dlx"))
+	start := time.Now()
+	err = s.SetPluginEnabled(ctx, "dlx", true)
+	assert.Error(t, err)
+	assert.Less(t, time.Since(start), 5*time.Second, "start limit plus the close grace")
+	assert.False(t, nativeInfo(t, s, "dlx").Enabled)
+	list, err := s.ListPlugins(ctx) // the lock is free again
+	require.NoError(t, err)
+	assert.Len(t, list, 1)
+	assert.NoFileExists(t, record, "never configured")
+}

@@ -190,7 +190,8 @@ func (n *NativeProcess) Call(ctx context.Context, method string, params any) (js
 		delete(p.pending, id)
 		p.mu.Unlock()
 	}()
-	if werr != nil {
+	if werr != nil { // it stopped reading: whether or not it exits by itself, it is done
+		killNativeGroup(p.cmd)
 		<-p.dead
 		return nil, n.exited(p)
 	}

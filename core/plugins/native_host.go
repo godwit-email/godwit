@@ -38,6 +38,15 @@ type NativeOpener func(path string, hostABI uint32) (NativeCall, error)
 // ServeNative is `godwit plugin-host`. Exit codes: 3 the file is not the one
 // granted (nothing was loaded), 4 it did not load or init, 0 stdin closed.
 func ServeNative(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if stdout == os.Stdout { // a library's printf would land in the protocol
+		proto, err := takeStdout()
+		if err != nil {
+			fmt.Fprintln(stderr, "LOAD_FAILED: stdout:", err)
+			return 4
+		}
+		defer proto.Close()
+		stdout = proto
+	}
 	return ServeNativeWith(args, stdin, stdout, stderr, openNative)
 }
 
@@ -113,17 +122,22 @@ func serveLine(call NativeCall, line []byte) []byte {
 	if err == nil {
 		err = checkEnvelope(env)
 	}
+	var compact bytes.Buffer
+	if err == nil {
+		err = json.Compact(&compact, env) // one envelope, one line: a pretty-printed one is valid too
+	}
 	if err != nil {
 		return hostErrorLine(req.ID, err.Error())
 	}
 	// env is a JSON object: put the id in front of its fields.
-	return append([]byte(`{"id":`+strconv.FormatInt(req.ID, 10)+`,`), env[1:]...)
+	return append([]byte(`{"id":`+strconv.FormatInt(req.ID, 10)+`,`), compact.Bytes()[1:]...)
 }
 
 func checkEnvelope(env []byte) error {
 	var probe struct {
 		OK *bool `json:"ok"`
 	}
+	env = bytes.TrimSpace(env)
 	if len(env) == 0 || len(env) > maxNativeResponse || env[0] != '{' || json.Unmarshal(env, &probe) != nil || probe.OK == nil {
 		return errors.New("the plugin returned an invalid envelope")
 	}

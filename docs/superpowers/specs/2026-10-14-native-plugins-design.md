@@ -352,7 +352,7 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
 ← { "id": 1, "ok": false, "error": { "code": "…", "message": "…" } }
 ```
 
-子进程只做四件事：读文件→算 `sha256`→不等于参数则退出码 3 不加载；`dlopen` + `godwit_plugin_init`；把每行的 `params` 字节原样交给 `call`，把信封原样加 `id` 写回；stdin 关闭则退出。它不读数据目录、不碰钥匙串、环境只有 `PATH`（照 `startMCPProcess`）。
+子进程只做四件事：读文件→算 `sha256`→不等于参数则退出码 3 不加载；`dlopen` + `godwit_plugin_init`；把每行的 `params` 字节原样交给 `call`，把信封压成一行（`json.Compact`，格式化输出的信封也合法）加 `id` 写回；加载库之前把进程的 stdout 留给协议、fd 1 指向 stderr，库的打印进日志，不会混进协议；stdin 关闭则退出。它不读数据目录、不碰钥匙串、环境只有 `PATH`（照 `startMCPProcess`）。
 
 ## 5. 需要改的地方
 

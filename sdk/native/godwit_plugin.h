@@ -46,6 +46,7 @@ typedef struct {
  * its end, and a call past the host's deadline (60 s) ends the process.
  * There is no shutdown entry: the host closes the process, so do not rely
  * on destructors. Neither side keeps a pointer it got from the other.
+ * The process's stdout and stderr both go to Godwit's log; print freely.
  */
 typedef int  (*godwit_call_fn)(const char *method, const uint8_t *req, size_t req_len, godwit_buffer *out);
 typedef void (*godwit_free_fn)(void *ptr, size_t len);

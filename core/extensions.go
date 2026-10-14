@@ -559,7 +559,7 @@ func (s *Service) stopPlugin(name string) {
 }
 
 // nativeStart bounds a native plugin's start: its process, describe and configure.
-const nativeStart = 30 * time.Second
+var nativeStart = 30 * time.Second
 
 // loadNative starts a native plugin's process (spec 3.3): plugin-host checks
 // the library's hash before loading it, describe must match the manifest,

@@ -11,7 +11,8 @@ import (
 
 // FakeNativeOpener is a NativeOpener for tests that loads nothing: the
 // "library" file is JSON {"describe": {...}, "initFail": bool, "echoStderr":
-// "...", "record": "<path>"}. initFail writes echoStderr and fails init.
+// "...", "record": "<path>", "describeSleepMs": n}. initFail writes echoStderr
+// and fails init; describe answers after describeSleepMs.
 // Methods: describe, configure (writes its request to record, if set),
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
 // probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2).
@@ -22,10 +23,11 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			return nil, err
 		}
 		var spec struct {
-			Describe   json.RawMessage `json:"describe"`
-			InitFail   bool            `json:"initFail"`
-			EchoStderr string          `json:"echoStderr"`
-			Record     string          `json:"record"`
+			Describe        json.RawMessage `json:"describe"`
+			DescribeSleepMs int             `json:"describeSleepMs"`
+			InitFail        bool            `json:"initFail"`
+			EchoStderr      string          `json:"echoStderr"`
+			Record          string          `json:"record"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
@@ -41,6 +43,7 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 		return func(method string, req []byte) ([]byte, error) {
 			switch method {
 			case "describe":
+				time.Sleep(time.Duration(spec.DescribeSleepMs) * time.Millisecond)
 				return ok(spec.Describe), nil
 			case "configure":
 				if spec.Record != "" {

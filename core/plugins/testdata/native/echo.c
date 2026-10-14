@@ -23,6 +23,11 @@ static int reply(const char *s, godwit_buffer *out) {
 
 static int call(const char *method, const uint8_t *req, size_t len, godwit_buffer *out) {
     (void)req; (void)len;
+    if (strcmp(method, "noisy") == 0) { /* libraries print: it must not reach the protocol */
+        printf("noise");
+        fflush(stdout);
+        return reply("{\"ok\":true,\"result\":{}}", out);
+    }
     if (strcmp(method, "describe") == 0)
         return reply("{\"ok\":true,\"result\":{\"name\":\"echo\",\"version\":\"1\",\"abi\":1,\"capabilities\":[\"translate\"]}}", out);
     return reply("{\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"message\":\"unknown method\"}}", out);
