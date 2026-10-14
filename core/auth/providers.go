@@ -14,6 +14,7 @@ type OAuthConfig struct {
 	ClientID, AuthURL, TokenURL string
 	Scopes                      []string
 	RedirectHost, RedirectPath  string            // "" = "localhost", "/callback"
+	RedirectPort                int               // 0 = any free port; a client registered with one fixed port needs it
 	AuthParams, TokenParams     map[string]string // extra authorize / token & refresh parameters
 	DynamicClient               bool              // callback carries client_id; use it afterwards
 	NoPrompt                    bool              // omit prompt=select_account

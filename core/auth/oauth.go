@@ -76,8 +76,11 @@ func StartFlow(cfg OAuthConfig, loginHint string, hc *http.Client) (*Flow, error
 	if cfg.ClientID == "" {
 		return nil, ErrOAuthNotConfigured
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.RedirectPort))
 	if err != nil {
+		if cfg.RedirectPort != 0 {
+			return nil, fmt.Errorf("%w: %d", ErrRedirectPortBusy, cfg.RedirectPort)
+		}
 		return nil, err
 	}
 	state := make([]byte, 32)

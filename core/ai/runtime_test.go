@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -846,6 +847,38 @@ func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	evs1, res1 := collect(events1, wait1)
 	require.Nil(t, res1.Err)
 	assert.Equal(t, "done", last(t, evs1).Kind)
+}
+
+func TestCodexRequestShape(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"OK"}})
+	tok := "h." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}`)) + ".s"
+	m := modelFor(srv, KindResponses, tok)
+	m.BaseURL = srv.URL + "/backend-api/codex"
+	_, res := run(e, Request{Model: m, Prompt: "hi", MaxTurns: 1})
+	require.Nil(t, res.Err)
+	req := srv.Requests()[0]
+	assert.Equal(t, "/backend-api/codex/responses", req.Path)
+	assert.Equal(t, "acct-9", req.Header.Get("chatgpt-account-id"))
+	assert.Equal(t, "godwit", req.Header.Get("originator"))
+	assert.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+	assert.Contains(t, string(req.Body), `"instructions":"You are a helpful assistant."`)
+	assert.Contains(t, string(req.Body), `"store":false`)
+
+	for _, turn := range []testllm.Turn{{Status: http.StatusTooManyRequests}, {Status: http.StatusBadRequest, Code: "usage_not_included"}} {
+		srv.Script(turn)
+		_, res = run(e, Request{Model: m, Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeRateLimited, res.Err.Code)
+		assert.Equal(t, DetailChatGPTUsage, res.Err.Detail)
+	}
+	// Not the Codex backend: a 429 is an ordinary rate limit, with no plan to manage.
+	srv.Script(testllm.Turn{Status: http.StatusTooManyRequests, Code: "rate_limit_exceeded"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "sk-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeRateLimited, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
 }
 
 func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {

@@ -23,24 +23,64 @@ type modelProvider struct {
 	Models  []string // fallback model list when /models fails
 }
 
-var modelOAuth = map[string]modelProvider{
-	ProviderChatGPT: {
-		BaseURL: "https://api.openai.com/v1",
-		OAuth: auth.OAuthConfig{
-			ClientID:      "dynamic_agent_client",
-			AuthURL:       "https://auth.openai.com/api/accounts/authorize",
-			TokenURL:      "https://auth.openai.com/api/accounts/oauth/token",
-			Scopes:        []string{"openid", "profile", "email", "offline_access", "resource.invoke", "chatgpt.tokens.use.direct"},
-			RedirectHost:  "127.0.0.1",
-			RedirectPath:  "/auth/callback",
-			DynamicClient: true,
-			NoPrompt:      true,
-			Nonce:         true,
-			RequireScope:  "chatgpt.tokens.use.direct",
-			AuthParams:    map[string]string{"resource": "https://api.openai.com/v1", "agent_name_hint": "Godwit"},
-			TokenParams:   map[string]string{"resource": "https://api.openai.com/v1"},
-		},
+// chatgptOfficial is Sign in with ChatGPT, the flow OpenAI sanctions for
+// local apps. Kept, but not the default: accounts outside the subscription
+// sharing preview get 403 subscription_sharing_user_not_eligible from it.
+var chatgptOfficial = modelProvider{
+	BaseURL: "https://api.openai.com/v1",
+	OAuth: auth.OAuthConfig{
+		ClientID:      "dynamic_agent_client",
+		AuthURL:       "https://auth.openai.com/api/accounts/authorize",
+		TokenURL:      "https://auth.openai.com/api/accounts/oauth/token",
+		Scopes:        []string{"openid", "profile", "email", "offline_access", "resource.invoke", "chatgpt.tokens.use.direct"},
+		RedirectHost:  "127.0.0.1",
+		RedirectPath:  "/auth/callback",
+		DynamicClient: true,
+		NoPrompt:      true,
+		Nonce:         true,
+		RequireScope:  "chatgpt.tokens.use.direct",
+		AuthParams:    map[string]string{"resource": "https://api.openai.com/v1", "agent_name_hint": "Godwit"},
+		TokenParams:   map[string]string{"resource": "https://api.openai.com/v1"},
 	},
+}
+
+// chatgptCodex signs in as the Codex CLI does (its public client, which only
+// registers localhost:1455) and talks to ChatGPT's Codex backend, as pi's
+// openai-codex provider. The backend has no /models: the list is built in.
+var chatgptCodex = modelProvider{
+	BaseURL: "https://chatgpt.com/backend-api/codex",
+	OAuth: auth.OAuthConfig{
+		ClientID:     "app_EMoamEEZ73f0CkXaXp7hrann",
+		AuthURL:      "https://auth.openai.com/oauth/authorize",
+		TokenURL:     "https://auth.openai.com/oauth/token",
+		Scopes:       []string{"openid", "profile", "email", "offline_access"},
+		RedirectHost: "localhost",
+		RedirectPath: "/auth/callback",
+		RedirectPort: 1455,
+		NoPrompt:     true,
+		AuthParams:   map[string]string{"id_token_add_organizations": "true", "codex_cli_simplified_flow": "true", "originator": "godwit"},
+	},
+	Models: []string{"gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"},
+}
+
+// modelOAuthLogins are every login a provider has had, by the address it
+// talks to: a saved service's login is the one its BaseURL names.
+var modelOAuthLogins = map[string]modelProvider{
+	chatgptOfficial.BaseURL: chatgptOfficial,
+	chatgptCodex.BaseURL:    chatgptCodex,
+}
+
+// modelLogin is the login behind a service: by its address, else its provider's current one.
+func modelLogin(m ModelService) modelProvider {
+	if mp, ok := modelOAuthLogins[m.BaseURL]; ok {
+		return mp
+	}
+	return modelOAuth[m.Provider]
+}
+
+// modelOAuth is each provider's login for a service added now.
+var modelOAuth = map[string]modelProvider{
+	ProviderChatGPT: chatgptCodex,
 	ProviderGrok: {
 		BaseURL: "https://api.x.ai/v1",
 		OAuth: auth.OAuthConfig{
@@ -81,18 +121,25 @@ func (s *Service) modelOAuthConfig(ctx context.Context, p, loginHint string) (au
 	if !ok {
 		return auth.OAuthConfig{}, fmt.Errorf("provider %q does not sign in with OAuth", p)
 	}
+	return s.loginConfig(ctx, mp, p, loginHint)
+}
+
+// loginConfig is mp's OAuth settings for provider p, with what a dynamic
+// client needs: this install's host ID, and the client already issued to the
+// account loginHint names, so a re-login does not register another.
+func (s *Service) loginConfig(ctx context.Context, mp modelProvider, p, loginHint string) (auth.OAuthConfig, error) {
 	cfg := mp.OAuth
 	cfg.Scopes = slices.Clone(cfg.Scopes)
 	cfg.AuthParams = maps.Clone(cfg.AuthParams)
 	cfg.TokenParams = maps.Clone(cfg.TokenParams)
-	if p == ProviderChatGPT {
+	if cfg.DynamicClient {
 		if cfg.AuthParams == nil {
 			cfg.AuthParams = map[string]string{}
 		}
 		cfg.AuthParams["ext_agent_host_id"] = s.hostID()
 		if h := strings.TrimSpace(loginHint); h != "" {
 			rows, err := s.db.Query(ctx, `SELECT oauth_client_id FROM model_services
-				WHERE provider = ? AND lower(oauth_email) = lower(?) AND oauth_client_id != '' LIMIT 1`, ProviderChatGPT, h)
+				WHERE provider = ? AND base_url = ? AND lower(oauth_email) = lower(?) AND oauth_client_id != '' LIMIT 1`, p, mp.BaseURL, h)
 			if err != nil {
 				return auth.OAuthConfig{}, err
 			}

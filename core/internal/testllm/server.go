@@ -117,6 +117,9 @@ func Start(t *testing.T, kind string) *Server {
 		json.NewEncoder(w).Encode(map[string]any{field: data})
 	})
 	s.Mux.HandleFunc("POST "+chat, func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	if kind == "openai-responses" { // ChatGPT's Codex backend, at <URL>/backend-api/codex
+		s.Mux.HandleFunc("POST /backend-api/codex/responses", func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.headers = append(s.headers, r.Header.Clone())

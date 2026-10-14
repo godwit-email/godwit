@@ -6,6 +6,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -23,6 +24,7 @@ var errorKeys = []struct {
 	{core.ErrModelNotFound, "error.model_not_found"},
 	{core.ErrModelAuth, "error.model_auth"},
 	{core.ErrModelReauth, "settings.models.login.expired"},
+	{auth.ErrRedirectPortBusy, "settings.models.login.port_busy"},
 	{core.ErrKeyNeedsConfirm, "settings.models.key_moved"},
 	{core.ErrBaseURLInvalid, "error.base_url_invalid"},
 	{core.ErrBaseURLScheme, "error.base_url_scheme"},

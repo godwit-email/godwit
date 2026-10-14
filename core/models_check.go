@@ -62,7 +62,7 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 			c.ListSupported, c.NoListStatus, c.Models, err = false, nl.Status, nil, nil
 		}
 		if ModelProviderLogin(in.Provider) == "oauth" && !errors.Is(err, ai.ErrModelAuth) && (err != nil || len(c.Models) == 0) {
-			c.ListSupported, c.Models, err = false, slices.Clone(modelOAuth[in.Provider].Models), nil
+			c.ListSupported, c.Models, err = false, slices.Clone(modelLogin(ModelService{Provider: in.Provider, BaseURL: in.BaseURL}).Models), nil
 		}
 		if err != nil {
 			return ServiceCheck{}, err

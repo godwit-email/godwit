@@ -574,6 +574,7 @@ var zh = map[string]string{
 	"settings.models.login.denied":                 "登录被拒绝或取消",
 	"settings.models.login.timeout":                "登录超时，请重试",
 	"settings.models.login.expired":                "登录已失效，请重新登录",
+	"settings.models.login.port_busy":              "登录回调端口 1455 被占用。关掉正在登录的 Codex CLI 再试。",
 	"settings.models.need.login":                   "先登录再添加",
 	"error.ai.rate_limited.chatgpt_usage":          "ChatGPT 套餐用量已达上限",
 	"error.ai.unauthorized.chatgpt_not_eligible":   "这个 ChatGPT 账号不支持订阅共享，它的套餐不能在这里使用。",

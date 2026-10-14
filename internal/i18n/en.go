@@ -574,6 +574,7 @@ var en = map[string]string{
 	"settings.models.login.denied":                 "Sign-in was declined",
 	"settings.models.login.timeout":                "Sign-in timed out; try again",
 	"settings.models.login.expired":                "The sign-in is no longer valid; sign in again",
+	"settings.models.login.port_busy":              "Port 1455, which the sign-in listens on, is in use. Close a Codex CLI that is signing in and try again.",
 	"settings.models.need.login":                   "Sign in to add it",
 	"error.ai.rate_limited.chatgpt_usage":          "Your ChatGPT plan's usage limit is reached",
 	"error.ai.unauthorized.chatgpt_not_eligible":   "This ChatGPT account isn't eligible for subscription sharing, so its plan can't be used here.",

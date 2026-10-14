@@ -92,7 +92,7 @@ func (s *Service) modelCredential(ctx context.Context, m ModelService) (string, 
 		_ = s.putCapStatus(ctx, m.ID, m.Version, CapGen, CapStatus{State: "fail", Code: "auth", HTTPStatus: 401, At: time.Now()})
 		return "", ErrModelReauth
 	}
-	cfg, err := s.modelOAuthConfig(ctx, m.Provider, m.Email)
+	cfg, err := s.loginConfig(ctx, modelLogin(m), m.Provider, m.Email)
 	if err != nil {
 		return "", err
 	}

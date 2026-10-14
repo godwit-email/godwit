@@ -47,6 +47,16 @@
 - 模型列表：参考项目都写死。先试 `GET /v1/models`，失败回退内置列表 `grok-4.7`、`grok-4.6`。
 - 403 或错误含 "subscription"/"not eligible"：没有 SuperGrok / X Premium 订阅。
 
+### 2.3 ChatGPT 的 Codex 登录（当前默认，2026-10-14 追加）
+
+真机验证发现：官方 Sign in with ChatGPT 对部分账号（含 Plus）在 `POST /v1/responses` 返回 403 `subscription_sharing_user_not_eligible`，而 `/v1/models` 正常；pi 的 issue #10605 同样，社区办法是改走 Codex 入口。因此 ChatGPT tile 背后有两种登录，**现在默认 Codex**，官方流程保留在代码与测试里，待资格问题解决后在 tile 下放两个入口。
+
+- 区分方式：服务的 `base_url`。官方 `https://api.openai.com/v1`，Codex `https://chatgpt.com/backend-api/codex`；`modelOAuthLogins` 按地址找回登录配置，刷新用对应的客户端，不加新列。
+- Codex 客户端（借用 Codex CLI，与 Grok 同类风险）：client `app_EMoamEEZ73f0CkXaXp7hrann`，authorize `https://auth.openai.com/oauth/authorize`，token `https://auth.openai.com/oauth/token`，scope `openid profile email offline_access`，authorize 额外参数 `id_token_add_organizations=true`、`codex_cli_simplified_flow=true`、`originator=godwit`，回调固定 `http://localhost:1455/auth/callback`（`OAuthConfig.RedirectPort`；端口被占报 `auth.ErrRedirectPortBusy`）。只做浏览器登录。邮箱来自 id_token。
+- 请求：`POST {base}/responses`，头 `chatgpt-account-id`（从 access token JWT 的 `https://api.openai.com/auth`.`chatgpt_account_id` 解出，不另存）、`originator: godwit`、`OpenAI-Beta: responses=experimental`；`instructions` 为空时填 "You are a helpful assistant."。`store:false`、`stream:true`、`include` 同官方。
+- 错误：HTTP 429，或错误码 `usage_limit_reached`、`usage_not_included`、`rate_limit_exceeded` → `CodeRateLimited` + Detail `chatgpt_usage`（仅 Codex 地址下）。官方地址下 HTTP 错误里的 `subscription_sharing_user_not_eligible` → `CodeUnauthorized` + Detail `chatgpt_not_eligible`，测试连接显示 `not_eligible`/403。
+- 模型列表：Codex 后端无 `/models`，内置 `gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna`（官方接口 2026-10-14 列出的同一组）。
+
 ## 3. 数据
 
 `core/store/schema.go` 新迁移：

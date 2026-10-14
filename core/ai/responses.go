@@ -24,7 +24,13 @@ import (
 // on first use (IDs may hold "/"). Every request is stateless: store is false,
 // the whole history goes along, and reasoning comes back encrypted, kept in
 // the history as reasoning parts and returned in its place.
-type responsesPlugin struct{ svc responses.ResponseService }
+type responsesPlugin struct {
+	svc   responses.ResponseService
+	codex bool // ChatGPT's Codex backend: its own headers and usage codes, and instructions must not be empty
+}
+
+// codexBase ends the address of ChatGPT's Codex backend (a Codex sign-in's service).
+const codexBase = "/backend-api/codex/"
 
 // newResponsesPlugin reads nothing from the environment: only these options.
 func newResponsesPlugin(baseURL, key string, c *http.Client) *responsesPlugin {
@@ -32,7 +38,31 @@ func newResponsesPlugin(baseURL, key string, c *http.Client) *responsesPlugin {
 	if key != "" {
 		opts = append(opts, option.WithAPIKey(key))
 	}
-	return &responsesPlugin{svc: responses.NewResponseService(opts...)}
+	codex := strings.HasSuffix(baseURL, codexBase)
+	if codex { // as the Codex CLI sends: the account the token is for, and who is asking
+		opts = append(opts, option.WithHeader("chatgpt-account-id", codexAccountID(key)),
+			option.WithHeader("originator", "godwit"), option.WithHeader("OpenAI-Beta", "responses=experimental"))
+	}
+	return &responsesPlugin{svc: responses.NewResponseService(opts...), codex: codex}
+}
+
+// codexAccountID is the ChatGPT account a Codex access token (a JWT) is for.
+func codexAccountID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		Auth struct {
+			AccountID string `json:"chatgpt_account_id"`
+		} `json:"https://api.openai.com/auth"`
+	}
+	json.Unmarshal(b, &c)
+	return c.Auth.AccountID
 }
 
 func (p *responsesPlugin) Name() string                                 { return "godwit-responses" }
@@ -62,6 +92,9 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 	params, err := responsesParams(model, req)
 	if err != nil {
 		return nil, err
+	}
+	if p.codex && !params.Instructions.Valid() {
+		params.Instructions = param.NewOpt("You are a helpful assistant.") // the backend rejects none, as pi fills in
 	}
 	stream := p.svc.NewStreaming(ctx, params)
 	defer stream.Close()
@@ -145,13 +178,14 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return nil, respError(ctx, err)
+		return nil, respError(ctx, err, p.codex)
 	}
 	return nil, errRespTruncated // the stream ended with no terminal event
 }
 
 // respError classifies a transport or HTTP error without keeping its text.
-func respError(ctx context.Context, err error) error {
+// codex: the Codex backend's usage errors are the ChatGPT plan's usage limit.
+func respError(ctx context.Context, err error, codex bool) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -162,6 +196,13 @@ func respError(ctx context.Context, err error) error {
 		case "subscription_sharing_user_not_eligible":
 			return errNotEligible
 		case "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable":
+			return errUsageLimit
+		case "usage_limit_reached", "usage_not_included", "rate_limit_exceeded":
+			if codex {
+				return errUsageLimit
+			}
+		}
+		if codex && ae.StatusCode == http.StatusTooManyRequests {
 			return errUsageLimit
 		}
 		switch c := ae.StatusCode; {

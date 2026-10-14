@@ -307,3 +307,13 @@ func TestGrokCheckFallsBackToBuiltinModels(t *testing.T) {
 	_, err = s.CheckModelService(bg, ms.ID, ms.Input())
 	assert.ErrorIs(t, err, ErrModelAuth)
 }
+
+func TestChatGPTLoginsByAddress(t *testing.T) {
+	assert.Equal(t, chatgptCodex.BaseURL, ModelProviderURL(ProviderChatGPT), "a new ChatGPT service signs in as Codex")
+	official := modelLogin(ModelService{Provider: ProviderChatGPT, BaseURL: chatgptOfficial.BaseURL})
+	assert.Equal(t, "dynamic_agent_client", official.OAuth.ClientID, "a saved official sign-in keeps refreshing with its own client")
+	codex := modelLogin(ModelService{Provider: ProviderChatGPT, BaseURL: chatgptCodex.BaseURL})
+	assert.Equal(t, 1455, codex.OAuth.RedirectPort)
+	assert.Contains(t, codex.Models, "gpt-5.6-luna")
+	assert.Equal(t, modelOAuth[ProviderGrok].BaseURL, modelLogin(ModelService{Provider: ProviderGrok, BaseURL: "http://127.0.0.1:1/v1"}).BaseURL, "an unknown address falls back to the provider's login")
+}

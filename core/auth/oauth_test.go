@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -358,6 +359,22 @@ func TestFlowRequiresScope(t *testing.T) {
 	ch := wait(ctx, f)
 	srv.Browse(t, f.AuthURL(), "alice@example.com")
 	assert.ErrorIs(t, recv(t, ch).err, auth.ErrScopeMissing)
+}
+
+func TestFlowFixedPort(t *testing.T) {
+	srv := testoauth.Start(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	cfg := srv.Config("openid")
+	cfg.RedirectPort = port
+	_, err = auth.StartFlow(cfg, "", http.DefaultClient)
+	assert.ErrorIs(t, err, auth.ErrRedirectPortBusy, "the port is taken")
+	ln.Close()
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	assert.Equal(t, strconv.Itoa(port), redirectURI(t, f).Port())
 }
 
 func TestFlowDynamicClientMissingID(t *testing.T) {
