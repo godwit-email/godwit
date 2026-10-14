@@ -276,3 +276,34 @@ func TestUnauthorizedRunForgetsToken(t *testing.T) {
 	assert.Equal(t, 2, oa.TokenRequests())
 	assert.NotEqual(t, m.APIKey, m2.APIKey)
 }
+
+func TestGrokCheckFallsBackToBuiltinModels(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, llm := oauthLLM(t, ProviderGrok)
+	fid := signIn(t, s, oa, ProviderGrok, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "Grok", Provider: ProviderGrok, Kind: ai.KindResponses, Models: []string{"grok-4.7"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+
+	llm.SetListStatus(404)
+	chk, err := s.CheckModelService(bg, ms.ID, ms.Input())
+	require.NoError(t, err)
+	assert.False(t, chk.ListSupported)
+	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
+
+	llm.SetListStatus(500)
+	chk, err = s.CheckModelService(bg, ms.ID, ms.Input())
+	require.NoError(t, err)
+	assert.False(t, chk.ListSupported)
+	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
+
+	llm.SetListStatus(0)
+	llm.SetModels()
+	chk, err = s.CheckModelService(bg, ms.ID, ms.Input())
+	require.NoError(t, err)
+	assert.False(t, chk.ListSupported)
+	assert.Equal(t, []string{"grok-4.7", "grok-4.6"}, chk.Models)
+
+	llm.SetListStatus(401)
+	_, err = s.CheckModelService(bg, ms.ID, ms.Input())
+	assert.ErrorIs(t, err, ErrModelAuth)
+}

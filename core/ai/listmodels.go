@@ -62,14 +62,17 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 		return nil, fmt.Errorf("list models: HTTP %d", resp.StatusCode)
 	}
 	var out struct {
-		Data []struct{ ID string }
+		Data []struct {
+			ID         string
+			Visibility string
+		}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
 		return nil, fmt.Errorf("list models: unexpected response")
 	}
 	ids := make([]string, 0, len(out.Data))
 	for _, m := range out.Data {
-		if m.ID != "" {
+		if m.ID != "" && (m.Visibility == "" || m.Visibility == "list") {
 			ids = append(ids, m.ID)
 		}
 	}

@@ -288,7 +288,7 @@ func (r *runner) run(req Request) Result {
 	}
 	in, err := r.e.instance(r.ctx, req.Model)
 	if errors.Is(err, errStale) {
-		return Result{State: req.State, Err: &Error{CodeStale, "the model service changed; try again"}}
+		return Result{State: req.State, Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
 	}
 	if err != nil {
 		return fail(err)
@@ -690,27 +690,30 @@ func display(msgs []*gai.Message) []Message {
 // key or a request or response body.
 func classify(ctx context.Context, err error) *Error {
 	if errors.Is(err, errDuplicateCallID) {
-		return &Error{CodeBadResponse, "the model repeated a tool call ID"}
+		return &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}
 	}
 	if errors.Is(context.Cause(ctx), errStale) {
-		return &Error{CodeStale, "the model service changed during the run"}
+		return &Error{Code: CodeStale, Msg: "the model service changed during the run"}
 	}
 	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-		return &Error{CodeCanceled, "the run was cancelled"}
+		return &Error{Code: CodeCanceled, Msg: "the run was cancelled"}
 	}
 	switch status.Of(err) {
 	case status.Unauthenticated, status.PermissionDenied:
-		return &Error{CodeUnauthorized, "the model service rejected the API key"}
+		return &Error{Code: CodeUnauthorized, Msg: "the model service rejected the API key"}
 	case status.ResourceExhausted:
-		return &Error{CodeRateLimited, "the model service is rate limiting requests"}
+		if errors.Is(err, errUsageLimit) {
+			return &Error{Code: CodeRateLimited, Msg: "the ChatGPT plan's usage limit is reached", Detail: DetailChatGPTUsage}
+		}
+		return &Error{Code: CodeRateLimited, Msg: "the model service is rate limiting requests"}
 	case status.Unavailable, status.DeadlineExceeded:
-		return &Error{CodeUnavailable, "the model service is unavailable"}
+		return &Error{Code: CodeUnavailable, Msg: "the model service is unavailable"}
 	}
 	var ne net.Error
 	if errors.As(err, &ne) {
-		return &Error{CodeUnavailable, "could not reach the model service"}
+		return &Error{Code: CodeUnavailable, Msg: "could not reach the model service"}
 	}
-	return &Error{CodeBadResponse, "the model service returned an unusable response"}
+	return &Error{Code: CodeBadResponse, Msg: "the model service returned an unusable response"}
 }
 
 // incomplete is the error for a reply that did not finish normally. The
@@ -718,9 +721,9 @@ func classify(ctx context.Context, err error) *Error {
 func incomplete(r gai.FinishReason) *Error {
 	switch r {
 	case gai.FinishReasonLength:
-		return &Error{CodeIncomplete, "the model's reply was cut off at its output limit"}
+		return &Error{Code: CodeIncomplete, Msg: "the model's reply was cut off at its output limit"}
 	case gai.FinishReasonBlocked:
-		return &Error{CodeIncomplete, "the model service withheld the reply"}
+		return &Error{Code: CodeIncomplete, Msg: "the model service withheld the reply"}
 	}
-	return &Error{CodeIncomplete, "the model did not finish its reply"}
+	return &Error{Code: CodeIncomplete, Msg: "the model did not finish its reply"}
 }

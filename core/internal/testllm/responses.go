@@ -176,9 +176,13 @@ func responsesStream(send func(...string), t Turn, n int, model string, hang fun
 	switch {
 	case t.Truncate:
 		return // the stream just ends
-	case t.Fail != "":
+	case t.Fail != "" || t.FailCode != "":
+		code := t.FailCode
+		if code == "" {
+			code = "server_error"
+		}
 		r := resp("failed")
-		r["error"] = map[string]any{"code": "server_error", "message": t.Fail}
+		r["error"] = map[string]any{"code": code, "message": t.Fail}
 		send(ev("response.failed", map[string]any{"response": r}))
 	case t.Incomplete:
 		r := resp("incomplete")

@@ -82,10 +82,13 @@ const (
 	CodeIncomplete Code = "incomplete"
 )
 
+const DetailChatGPTUsage = "chatgpt_usage"
+
 // Error is a run failure. Msg never holds a key or a request or response body.
 type Error struct {
-	Code Code
-	Msg  string
+	Code   Code
+	Msg    string
+	Detail string
 }
 
 func (e *Error) Error() string { return e.Msg }

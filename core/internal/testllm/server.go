@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ type Server struct {
 
 	mu         sync.Mutex
 	models     []string
+	hidden     []string
 	key        string
 	listStatus int
 	headers    []http.Header
@@ -37,9 +39,9 @@ type Server struct {
 //
 // openai-responses only: Reasoning adds a reasoning item with that
 // encrypted_content; Fail ends with response.failed carrying that message,
-// Incomplete with response.incomplete, Truncate with no terminal event. A
-// Status turn keeps answering (the SDK's retries) until Advance or the next
-// Script call.
+// FailCode sets its error.code (default server_error), Incomplete with
+// response.incomplete, Truncate with no terminal event. A Status turn keeps
+// answering (the SDK's retries) until Advance or the next Script call.
 type Turn struct {
 	Text       []string
 	Calls      []Call
@@ -48,6 +50,7 @@ type Turn struct {
 	Finish     string
 	Reasoning  string
 	Fail       string
+	FailCode   string
 	Incomplete bool
 	Truncate   bool
 	Refusal    string // openai-responses: the reply is this refusal, not text
@@ -82,7 +85,7 @@ func Start(t *testing.T, kind string) *Server {
 	}
 	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
-		models, key, status := s.models, s.key, s.listStatus
+		models, hidden, key, status := s.models, s.hidden, s.key, s.listStatus
 		s.mu.Unlock()
 		got := sentKey(kind, r)
 		if status != 0 {
@@ -97,7 +100,14 @@ func Start(t *testing.T, kind string) *Server {
 		}
 		data := []map[string]string{}
 		for _, m := range models {
-			data = append(data, map[string]string{"id": m})
+			item := map[string]string{"id": m}
+			if len(hidden) > 0 {
+				item["visibility"] = "list"
+				if slices.Contains(hidden, m) {
+					item["visibility"] = "hidden"
+				}
+			}
+			data = append(data, item)
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": data})
 	})
@@ -121,6 +131,7 @@ func sentKey(kind string, r *http.Request) string {
 }
 
 func (s *Server) SetModels(m ...string) { s.mu.Lock(); s.models = m; s.mu.Unlock() }
+func (s *Server) SetHidden(m ...string) { s.mu.Lock(); s.hidden = m; s.mu.Unlock() }
 func (s *Server) RequireKey(k string)   { s.mu.Lock(); s.key = k; s.mu.Unlock() }
 
 // SetListStatus makes the model list answer with that HTTP status; 0 restores it.
@@ -217,7 +228,7 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if kind == "openai-responses" && turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" &&
-		turn.Fail == "" && !turn.Incomplete && !turn.Truncate && turn.Refusal == "" {
+		turn.Fail == "" && turn.FailCode == "" && !turn.Incomplete && !turn.Truncate && turn.Refusal == "" {
 		out := []outItem{{"reasoning", fmt.Sprintf("rs_%d", n), turn.Reasoning}}
 		if len(turn.Text) > 0 {
 			out = append(out, outItem{typ: "message"})

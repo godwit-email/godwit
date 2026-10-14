@@ -7,6 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/godwit-email/godwit/core/internal/testllm"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestListModelsErrorKinds(t *testing.T) {
@@ -64,4 +68,13 @@ func TestListModelsRequestShape(t *testing.T) {
 			t.Errorf("%s: %v %v", c.kind, ids, err)
 		}
 	}
+}
+
+func TestListModelsVisibility(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.SetModels("gpt-a", "gpt-b")
+	srv.SetHidden("gpt-b")
+	ids, err := ListModels(context.Background(), nil, KindOpenAI, srv.URL, "k")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gpt-a"}, ids)
 }

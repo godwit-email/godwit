@@ -847,3 +847,26 @@ func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	require.Nil(t, res1.Err)
 	assert.Equal(t, "done", last(t, evs1).Kind)
 }
+
+func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	for _, turn := range []testllm.Turn{
+		{FailCode: "subscription_sharing_usage_limit_exceeded"},
+		{FailCode: "subscription_sharing_usage_unavailable", Fail: "UPSTREAM-BODY quota out"},
+	} {
+		srv.Script(turn)
+		evs, res := run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err, turn.FailCode)
+		assert.Equal(t, CodeRateLimited, res.Err.Code, turn.FailCode)
+		assert.Equal(t, DetailChatGPTUsage, res.Err.Detail, turn.FailCode)
+		assert.NotContains(t, res.Err.Msg, "UPSTREAM-BODY")
+		assert.Equal(t, "error", last(t, evs).Kind)
+	}
+
+	srv.Script(testllm.Turn{Fail: "x"})
+	_, res := run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeBadResponse, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
+}

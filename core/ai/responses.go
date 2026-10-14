@@ -54,6 +54,7 @@ func (p *responsesPlugin) ResolveAction(t api.ActionType, id string) api.Action 
 var (
 	errRespFailed    = status.Errorf(status.ErrInternal, "the model service failed the reply")
 	errRespTruncated = status.Errorf(status.ErrInternal, "the model service ended the reply early")
+	errUsageLimit    = status.Errorf(status.ErrResourceExhausted, "the ChatGPT plan's usage is exhausted or unavailable")
 )
 
 func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.ModelRequest, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
@@ -135,6 +136,10 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 			}
 			return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: reason}, nil
 		case "response.failed", "error":
+			switch ev.Response.Error.Code {
+			case "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable":
+				return nil, errUsageLimit
+			}
 			return nil, errRespFailed
 		}
 	}
