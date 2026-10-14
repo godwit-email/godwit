@@ -17,21 +17,24 @@ const s = strings[lang];
 // Each language at its fixed path; / is any of them, by the browser's languages (src/worker.ts).
 const self = paths[lang];
 const featureIcons = ["mail", "sparkles", "file-text", "cpu", "puzzle", "robot"] as const;
+// The Store's own installer for the app: it downloads a small .exe that installs Godwit from the Store.
+const storeUrl = "https://get.microsoft.com/installer/download/9NS3Q2CGWD12?referrer=appbadge";
 const platforms = [
-	{ name: "macOS", icon: "apple", note: s.macNote, builds: [{ label: s.appleSilicon, target: "darwin-arm64" }, { label: s.intel, target: "darwin-amd64" }] },
-	{ name: "Windows", icon: "windows", note: s.windowsNote, store: true, arm: { label: s.windowsArm, target: "windows-arm64" }, builds: [{ label: s.installer, target: "windows-amd64" }] },
-	{ name: "Linux", icon: "ubuntu", note: s.linuxNote, builds: [{ label: s.x64, target: "linux-amd64" }, { label: s.arm64, target: "linux-arm64" }] },
+	{ name: "macOS", icon: "apple", note: s.macNote, main: { label: s.downloadMac, href: "/download/darwin-arm64", icon: "apple" }, others: [{ label: s.intel, href: "/download/darwin-amd64" }] },
+	{
+		name: "Windows",
+		icon: "windows",
+		note: s.windowsNote,
+		main: { label: s.microsoftStore, href: storeUrl, icon: "microsoft" },
+		others: [{ label: s.installer, href: "/download/windows-amd64" }, { label: s.windowsArm, href: "/download/windows-arm64" }],
+	},
+	{ name: "Linux", icon: "ubuntu", note: s.linuxNote, main: { label: s.downloadLinux, href: "/download/linux-amd64", icon: "download" }, others: [{ label: s.arm64, href: "/download/linux-arm64" }] },
 ] as const;
 const commands = [
 	{ label: s.homebrew, cmd: "brew install godwit-email/tap/godwit" },
 	{ label: s.installScript, cmd: "curl -fsSL https://dl.godwit.email/install.sh | sh" },
 ];
 const github = "https://github.com/godwit-email/godwit";
-// The Store's own installer for the app, which the badge links to in its "direct" mode.
-const storeUrl = "https://get.microsoft.com/installer/download/9NS3Q2CGWD12?referrer=appbadge";
-// Microsoft's own Store badge, unmodified and hosted here (so the page asks Microsoft for nothing); its
-// artwork stays Microsoft's, used under the Microsoft Store badge guidelines. "dark" is the badge for light pages.
-const badge = lang === "en" ? "en-us" : "zh-cn";
 const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ');
 ---
 
@@ -137,11 +140,9 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 						<span>{s.downloadMac}</span>
 					</a>
 					<!-- On Windows the Store is the way in: the script swaps it for the primary button. -->
-					<a data-press data-store hidden href={storeUrl} class="inline-flex">
-						<picture>
-							<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
-							<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
-						</picture>
+					<a data-press data-store href={storeUrl} class="hidden h-11 items-center gap-2 rounded-lg bg-primary px-5 font-medium text-primary-foreground transition-opacity hover:opacity-90">
+						<Icon name="microsoft" />
+						<span>{s.microsoftStore}</span>
 					</a>
 					<a href="#download" data-press class="inline-flex h-11 items-center rounded-lg border px-5 font-medium transition-colors hover:bg-accent">{s.otherPlatforms}</a>
 				</div>
@@ -188,37 +189,27 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 									<Icon name={p.icon} class="size-[18px]" />
 									{p.name}
 								</div>
-								<p class="mt-2 flex-1 text-sm text-muted-foreground">
-									{p.note}
-									{"arm" in p && (
-										<>
-											{" "}
-											<a href={`/download/${p.arm.target}`} class="underline underline-offset-4 hover:text-foreground">{p.arm.label}</a>
-										</>
-									)}
-								</p>
-								<div class="mt-5 flex gap-2">
-									{"store" in p && (
-										<a data-press href={storeUrl} class="shrink-0">
-											<picture>
-												<source media="(prefers-color-scheme: dark)" srcset={`/badges/${badge}-light.svg`} />
-												<img src={`/badges/${badge}-dark.svg`} alt={s.microsoftStore} width="161" height="44" />
-											</picture>
-										</a>
-									)}
-									{p.builds.map((b, i) => (
-										<a
-											data-press
-											href={`/download/${b.target}`}
-											class:list={[
-												"inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition",
-												i === 0 && !("store" in p) ? "bg-primary text-primary-foreground hover:opacity-90" : "border hover:bg-accent",
-											]}
-										>
-											<Icon name="download" class="size-3.5" />
-											{b.label}
-										</a>
-									))}
+								<p class="mt-2 flex-1 text-sm text-muted-foreground">{p.note}</p>
+								<a data-press href={p.main.href} class="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+									<Icon name={p.main.icon} class="size-[18px]" />
+									{p.main.label}
+								</a>
+								<!-- Hover, focus or a tap opens the other builds (the script toggles data-open for touch). -->
+								<div data-more class="group relative mt-3 text-center">
+									<button type="button" aria-expanded="false" class="inline-flex items-center gap-0.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+										{s.otherVersions}
+										<Icon name="chevron-down" class="size-4" />
+									</button>
+									<div class="invisible absolute inset-x-0 top-full z-10 -translate-y-1 pt-1 opacity-0 transition duration-200 ease-out group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-data-[open]:visible group-data-[open]:translate-y-0 group-data-[open]:opacity-100">
+										<div class="flex flex-col rounded-xl bg-background p-1 text-sm shadow-float">
+											{p.others.map((o) => (
+												<a href={o.href} class="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 transition-colors hover:bg-accent">
+													<Icon name="download" class="size-3.5" />
+													{o.label}
+												</a>
+											))}
+										</div>
+									</div>
 								</div>
 							</div>
 						))
@@ -273,7 +264,14 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 			primary.querySelector("span")!.textContent = labels[os];
 			if (os === "windows") {
 				primary.hidden = true;
-				document.querySelector<HTMLElement>("[data-store]")!.hidden = false;
+				document.querySelector<HTMLElement>("[data-store]")!.classList.replace("hidden", "inline-flex");
+			}
+			for (const more of document.querySelectorAll<HTMLElement>("[data-more]")) {
+				const button = more.querySelector("button")!;
+				button.addEventListener("click", () => {
+					const open = more.toggleAttribute("data-open");
+					button.setAttribute("aria-expanded", String(open));
+				});
 			}
 			for (const demo of document.querySelectorAll<HTMLElement>("[data-demo]")) demo.dataset.platform = os;
 
