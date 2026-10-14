@@ -395,3 +395,26 @@ func TestRegistryPromotesOnlyTheReviewedPackage(t *testing.T) {
 		})
 	}
 }
+
+// A listed script plugin whose next release is native does not get native
+// rights from the update: it waits for the user, with the native risk card.
+func TestRegistryScriptToNativeNeedsConsent(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	script := rs.ScriptRelease("dlx", "0.1.0", `{}`, `export default function () {}`)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", script)))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	require.NoError(t, s.GrantPermission(ctx, "dlx"))
+	require.NoError(t, s.SetPluginEnabled(ctx, "dlx", true))
+
+	rs.Publish(t, coretest.Registry(t0.Add(time.Hour), plugin("dlx", rs.NativeRelease(t, "dlx", "0.2.0", nil))))
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err = s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	p := nativeInfo(t, s, "dlx")
+	assert.True(t, p.Native)
+	assert.True(t, p.NeedsGrant)
+	assert.False(t, p.Enabled)
+}

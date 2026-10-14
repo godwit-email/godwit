@@ -279,7 +279,12 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (Plug
 	// the new directory is removed on the next start or install.
 	// A reviewed native file is granted at once (spec 3.1); it stays off if the
 	// user had turned it off, and comes back if Godwit had (failures, revoked).
+	// A script plugin turning native gets no native rights from an update: the
+	// user consents to them on the risk card first, as for any new native file.
 	listedNative := trust == "listed" && m.IsNative()
+	if old, ok := before[m.Name]; ok && !old.m.IsNative() {
+		listedNative = false
+	}
 	var granted any
 	enable := 0
 	if listedNative {
