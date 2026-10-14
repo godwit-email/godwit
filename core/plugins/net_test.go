@@ -84,7 +84,10 @@ func newNetEnv(t *testing.T) *netEnv {
 	mux.HandleFunc("/exact", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(make([]byte, 5<<20))
 	})
-	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
+	// /slow never answers while the test runs: answering once the client
+	// gives up can race its timeout, and net/http then keeps the response.
+	stop := make(chan struct{})
+	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) { <-stop })
 	e.srv = httptest.NewUnstartedServer(mux)
 	e.srv.TLS = &tls.Config{GetConfigForClient: func(h *tls.ClientHelloInfo) (*tls.Config, error) {
 		e.mu.Lock()
@@ -94,6 +97,7 @@ func newNetEnv(t *testing.T) *netEnv {
 	}}
 	e.srv.StartTLS()
 	t.Cleanup(e.srv.Close)
+	t.Cleanup(func() { close(stop) }) // before Close, which waits for handlers
 	_, e.port, _ = net.SplitHostPort(e.srv.Listener.Addr().String())
 	for _, h := range []string{"example.com", "api.example.com", "other.example.com", "evil.example.com"} {
 		e.dns.ips[h] = []string{"127.0.0.1"}
