@@ -278,6 +278,9 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 						if p.NeedsGrant {
 							kit.Text(c, p.Version, t.Text.Sm).TextColor(t.Muted)
 						}
+						if p.Native {
+							statusPill(c, i18n.T("settings.ext.native"), false)
+						}
 					})
 					if d := p.Description.For(i18n.Language()); d != "" { // untrusted length: one line, all of it in the tooltip
 						kit.Tooltip(c, kit.Text(c, d, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1), d)
@@ -309,40 +312,44 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		} else if p.DisabledReason != "" && !p.Enabled {
 			kit.Alert(c, kit.Warning, p.DisabledReason, nil)
 		}
-		ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
-			kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
-			ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-				perm := func(tag, text string, muted bool) {
-					r := ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center)
-					if muted {
-						r.TextColor(t.Muted)
-					}
-					r.Children(func() {
-						ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-							kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
+		if p.Native {
+			nativeCard(c, p)
+		} else {
+			ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
+				ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+					perm := func(tag, text string, muted bool) {
+						r := ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center)
+						if muted {
+							r.TextColor(t.Muted)
+						}
+						r.Children(func() {
+							ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+								kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
+							})
+							kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text)).Shrink(1)
 						})
-						kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text)).Shrink(1)
-					})
-				}
-				pm := p.Permissions
-				if slices.Contains(pm.Mail, "read") {
-					perm("mail:read", i18n.T("settings.ext.perm.mail_read"), false)
-				}
-				if slices.Contains(pm.Mail, "write") {
-					perm("mail:write", i18n.T("settings.ext.perm.mail_write"), false)
-				}
-				if len(pm.Net) > 0 {
-					perm("net", i18n.Tf("settings.ext.perm.net", strings.Join(pm.Net, i18n.T("mail.list_sep"))), false)
-				}
-				if pm.LLM {
-					perm("llm", i18n.T("settings.ext.perm.llm"), false)
-				}
-				if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
-					ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
-				}
-				perm(i18n.T("settings.ext.excluded"), pluginExcluded(pm), true)
+					}
+					pm := p.Permissions
+					if slices.Contains(pm.Mail, "read") {
+						perm("mail:read", i18n.T("settings.ext.perm.mail_read"), false)
+					}
+					if slices.Contains(pm.Mail, "write") {
+						perm("mail:write", i18n.T("settings.ext.perm.mail_write"), false)
+					}
+					if len(pm.Net) > 0 {
+						perm("net", i18n.Tf("settings.ext.perm.net", strings.Join(pm.Net, i18n.T("mail.list_sep"))), false)
+					}
+					if pm.LLM {
+						perm("llm", i18n.T("settings.ext.perm.llm"), false)
+					}
+					if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
+						ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
+					}
+					perm(i18n.T("settings.ext.excluded"), pluginExcluded(pm), true)
+				})
 			})
-		})
+		}
 		if f != nil && len(p.Config) > 0 {
 			e.configView(c, f, p.Config, !p.NeedsGrant)
 		}
@@ -352,7 +359,11 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 					OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
 				return
 			}
-			kit.Button(c, i18n.T("settings.ext.allow"), kit.ButtonOpts{Disabled: f != nil && f.busy}).OnClick(func() { e.allow(name, f, p.Config) })
+			allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Disabled: f != nil && f.busy}
+			if p.Native { // consent to the risk, not to permissions
+				allow, opts.Variant = i18n.T("settings.ext.native.allow"), kit.Destructive
+			}
+			kit.Button(c, allow, opts).OnClick(func() { e.allow(name, f, p.Config) })
 			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
 				if e.later == nil {
 					e.later = map[string]bool{}
@@ -360,6 +371,29 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 				e.later[name] = true
 			})
 		})
+	})
+}
+
+// nativeCard stands in for the permissions card of a native plugin: no
+// permission binds native code, so it states the risk, how the current
+// file came to be allowed, and which file that is.
+func nativeCard(c *ui.Context, p core.PluginInfo) {
+	t, th := theme.Of(c), c.Theme()
+	trust := i18n.T("settings.ext.native.trust.unlisted")
+	if p.Trust == "user" {
+		trust = i18n.T("settings.ext.native.trust.user")
+	}
+	h := p.LibraryHash
+	if len(h) > 12 {
+		h = h[:8] + "…" + h[len(h)-4:]
+	}
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+		title := i18n.T("settings.ext.native.risk.title")
+		kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
+		for _, s := range []string{i18n.T("settings.ext.native.risk.body"), trust} {
+			kit.Text(c, s, t.Text.Body).LineHeight(theme.LineFor(s))
+		}
+		kit.Text(c, i18n.Tf("settings.ext.native.file", plugins.LibraryName(), h), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 	})
 }
 
