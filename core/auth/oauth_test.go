@@ -24,7 +24,12 @@ type result struct {
 
 func startFlow(t *testing.T, srv *testoauth.Server) *auth.Flow {
 	t.Helper()
-	f, err := auth.StartFlow(srv.Config("openid", "email"), "alice@example.com", http.DefaultClient)
+	return startFlowWith(t, srv, srv.Config("openid", "email"))
+}
+
+func startFlowWith(t *testing.T, _ *testoauth.Server, cfg auth.OAuthConfig) *auth.Flow {
+	t.Helper()
+	f, err := auth.StartFlow(cfg, "alice@example.com", http.DefaultClient)
 	require.NoError(t, err)
 	t.Cleanup(f.Close)
 	return f
@@ -365,4 +370,49 @@ func TestFlowDynamicClientMissingID(t *testing.T) {
 	ch := wait(ctx, f)
 	srv.Browse(t, f.AuthURL(), "alice@example.com")
 	require.Error(t, recv(t, ch).err)
+}
+
+func TestRefreshForm(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.Require("resource", "r1")
+	srv.GrantScope("openid plan.use")
+	cfg := srv.Config("openid")
+	cfg.AuthParams = map[string]string{"resource": "r1"}
+	cfg.TokenParams = map[string]string{"resource": "r1"}
+	f := startFlowWith(t, srv, cfg)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	g := recv(t, ch).g
+
+	g2, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, g.RefreshToken)
+	require.NoError(t, err)
+	assert.True(t, srv.ValidAccess(g2.AccessToken))
+	assert.Empty(t, g2.RefreshToken, "not rotated")
+	assert.Equal(t, "alice@example.com", g2.Email)
+	assert.Equal(t, "openid plan.use", g2.Scope)
+	assert.WithinDuration(t, time.Now().Add(time.Hour), g2.Expiry, time.Minute)
+
+	srv.RotateRefresh(true)
+	srv.OmitExpiry(true)
+	g3, err := auth.RefreshForm(ctx, cfg, nil, g.RefreshToken)
+	require.NoError(t, err)
+	assert.NotEmpty(t, g3.RefreshToken)
+	assert.NotEqual(t, g.RefreshToken, g3.RefreshToken)
+	assert.WithinDuration(t, time.Now().Add(30*time.Minute), g3.Expiry, time.Minute)
+
+	_, err = auth.RefreshForm(ctx, cfg, http.DefaultClient, "bogus")
+	assert.ErrorIs(t, err, auth.ErrInvalidGrant)
+
+	srv.RespondNext(500, `{"error":"boom","secret":"`+g.RefreshToken+`"}`)
+	_, err = auth.RefreshForm(ctx, cfg, http.DefaultClient, g3.RefreshToken)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), g.RefreshToken)
+
+	_, err = auth.RefreshForm(ctx, auth.OAuthConfig{}, nil, g3.RefreshToken)
+	assert.ErrorIs(t, err, auth.ErrOAuthNotConfigured)
+
+	c, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = auth.RefreshForm(c, cfg, nil, g3.RefreshToken)
+	assert.ErrorIs(t, err, context.Canceled)
 }

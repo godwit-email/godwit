@@ -321,20 +321,24 @@ func tokenError(err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("oauth: token request: %w", context.DeadlineExceeded)
 	case errors.As(err, &re):
-		switch re.ErrorCode {
-		case "invalid_grant":
-			return ErrInvalidGrant
-		case "access_denied":
-			return ErrAccessDenied
-		}
-		if m, ok := tokenMessages[re.ErrorCode]; ok {
-			return errors.New(m)
-		}
-		return errBadTokenResponse
+		return tokenCodeError(re.ErrorCode)
 	}
 	var ue *url.Error
 	if errors.As(err, &ue) { // transport failure: the request never got an answer
 		return errors.New("oauth: could not reach the token endpoint")
+	}
+	return errBadTokenResponse
+}
+
+func tokenCodeError(code string) error {
+	switch code {
+	case "invalid_grant":
+		return ErrInvalidGrant
+	case "access_denied":
+		return ErrAccessDenied
+	}
+	if m, ok := tokenMessages[code]; ok {
+		return errors.New(m)
 	}
 	return errBadTokenResponse
 }
