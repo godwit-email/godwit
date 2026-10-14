@@ -27,7 +27,8 @@ const commands = [
 	{ label: s.installScript, cmd: "curl -fsSL https://dl.godwit.email/install.sh | sh" },
 ];
 const github = "https://github.com/godwit-email/godwit";
-const storeUrl = "https://apps.microsoft.com/detail/9NS3Q2CGWD12";
+// The Store's own installer for the app, which the badge links to in its "direct" mode.
+const storeUrl = "https://get.microsoft.com/installer/download/9NS3Q2CGWD12?referrer=appbadge";
 // Microsoft's own Store badge, unmodified and hosted here (so the page asks Microsoft for nothing); its
 // artwork stays Microsoft's, used under the Microsoft Store badge guidelines. "dark" is the badge for light pages.
 const badge = lang === "en" ? "en-us" : "zh-cn";
