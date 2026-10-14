@@ -29,8 +29,15 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	}
 	defer end()
 	s.modelMu.RLock()
-	_, key, _, err := s.prepare(ctx, id, &in)
+	action, key, old, err := s.prepare(ctx, id, &in)
 	s.modelMu.RUnlock()
+	if err == nil && ModelProviderLogin(in.Provider) == "oauth" {
+		if in.oauthGrant.AccessToken != "" {
+			key = in.oauthGrant.AccessToken
+		} else if action == KeyKeep {
+			key, err = s.modelCredential(ctx, old)
+		}
+	}
 	if err != nil {
 		return ServiceCheck{}, err
 	}

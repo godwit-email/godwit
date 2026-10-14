@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -172,4 +173,106 @@ func TestAddGrokServiceByDeviceCode(t *testing.T) {
 func TestHostID(t *testing.T) {
 	s := modelSvc(t)
 	assert.Regexp(t, `^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, s.hostID())
+}
+
+func TestChatGPTRunUsesAccessToken(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, _ := oauthLLM(t, ProviderChatGPT)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+	m, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.True(t, oa.ValidAccess(m.APIKey), "APIKey is a live access token, not the refresh token")
+	assert.Equal(t, 1, oa.TokenRequests(), "the first token request was the code exchange; the sign-in's access token is reused")
+	// 没有缓存时刷新一次，之后命中缓存
+	s.forgetModelToken(ms.ID)
+	m2, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.Equal(t, 2, oa.TokenRequests())
+	_, err = s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.Equal(t, 2, oa.TokenRequests(), "cached")
+	assert.NotEqual(t, m.APIKey, m2.APIKey)
+}
+
+func TestChatGPTRefreshRotatesAndSaves(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, _ := oauthLLM(t, ProviderChatGPT)
+	oa.RotateRefresh(true)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+	before := storedKey(t, s, ms.ID)
+
+	s.forgetModelToken(ms.ID)
+	m, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.True(t, oa.ValidAccess(m.APIKey))
+	after := storedKey(t, s, ms.ID)
+	assert.NotEqual(t, before, after)
+
+	s.forgetModelToken(ms.ID)
+	m2, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.True(t, oa.ValidAccess(m2.APIKey))
+}
+
+func TestChatGPTRevokedNeedsReauth(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, _ := oauthLLM(t, ProviderChatGPT)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+
+	oa.RevokeAll()
+	s.forgetModelToken(ms.ID)
+	_, err = s.resolveModel(bg, ms.Slug+"/gpt-x")
+	assert.ErrorIs(t, err, ErrModelReauth)
+
+	list, err := s.ListModelServices(bg)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "fail", list[0].Status[CapGen].State)
+	assert.Equal(t, "auth", list[0].Status[CapGen].Code)
+}
+
+func TestChatGPTCheckListsWithToken(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, llm := oauthLLM(t, ProviderChatGPT)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+
+	chk, err := s.CheckModelService(bg, ms.ID, ms.Input())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"gpt-x"}, chk.Models)
+	hs := llm.Headers()
+	require.NotEmpty(t, hs)
+	auth := hs[len(hs)-1].Get("Authorization")
+	assert.True(t, strings.HasPrefix(auth, "Bearer "))
+	assert.True(t, oa.ValidAccess(strings.TrimPrefix(auth, "Bearer ")))
+}
+
+func TestUnauthorizedRunForgetsToken(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, llm := oauthLLM(t, ProviderChatGPT)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+
+	m, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.Equal(t, 1, oa.TokenRequests())
+
+	llm.Script(testllm.Turn{Status: 401})
+	e, err := s.aiEngine()
+	require.NoError(t, err)
+	_, err = s.runText(bg, e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 0)
+	require.Error(t, err)
+
+	m2, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
+	require.NoError(t, err)
+	assert.Equal(t, 2, oa.TokenRequests())
+	assert.NotEqual(t, m.APIKey, m2.APIKey)
 }

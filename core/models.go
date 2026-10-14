@@ -15,6 +15,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -134,6 +135,7 @@ type ModelServiceInput struct {
 	Provider                    string
 	JudgeFormat, JudgeModel     string
 	oauthEmail, oauthClientID   string
+	oauthGrant                  auth.Grant
 }
 
 // Input is m as it is saved, keeping its key.
@@ -262,7 +264,7 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 			if g.RefreshToken == "" {
 				return "", "", old, errors.New("the provider granted no refresh token")
 			}
-			in.oauthEmail, in.oauthClientID = g.Email, g.ClientID
+			in.oauthEmail, in.oauthClientID, in.oauthGrant = g.Email, g.ClientID, g.Grant
 			return KeyReplace, g.RefreshToken, old, nil
 		}
 		if id == 0 {
@@ -438,6 +440,7 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	}
 	if in.OAuthFlowID != "" {
 		s.takeGrant(in.OAuthFlowID)
+		s.cacheModelToken(id, int64(kv), in.oauthGrant)
 	}
 	return s.modelServiceBy(ctx, "id = ?", id)
 }
@@ -507,6 +510,9 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 		s.takeGrant(in.OAuthFlowID)
 	}
 	s.forgetModel(id)
+	if in.OAuthFlowID != "" {
+		s.cacheModelToken(id, kv, in.oauthGrant)
+	}
 	// The write is done: a cancelled ctx must not turn it into an error.
 	ctx = context.WithoutCancel(ctx)
 	if kv != old.keyVersion && old.keyVersion != 0 {
@@ -585,16 +591,19 @@ func (s *Service) fetchModels(ctx context.Context, id int64) ([]string, error) {
 // modelServiceKey reads the service and its key as one snapshot (modelMu).
 func (s *Service) modelServiceKey(ctx context.Context, id int64) (ModelService, string, error) {
 	s.modelMu.RLock()
-	defer s.modelMu.RUnlock()
 	m, err := s.modelServiceBy(ctx, "id = ?", id)
 	if err != nil {
+		s.modelMu.RUnlock()
 		return m, "", err
 	}
-	key, err := s.modelKey(m)
-	if err != nil {
-		return m, "", err
+	if ModelProviderLogin(m.Provider) != "oauth" {
+		key, err := s.modelKey(m)
+		s.modelMu.RUnlock()
+		return m, key, err
 	}
-	return m, key, nil
+	s.modelMu.RUnlock()
+	key, err := s.modelCredential(ctx, m)
+	return m, key, err
 }
 
 // TestCapability tests capability c (CapGen, CapJudge) of in as service id
@@ -613,6 +622,13 @@ func (s *Service) TestCapability(ctx context.Context, id int64, in ModelServiceI
 	s.modelMu.RLock()
 	action, key, old, err := s.prepare(ctx, id, &in)
 	s.modelMu.RUnlock()
+	if err == nil && ModelProviderLogin(in.Provider) == "oauth" {
+		if in.oauthGrant.AccessToken != "" {
+			key = in.oauthGrant.AccessToken
+		} else if action == KeyKeep {
+			key, err = s.modelCredential(ctx, old)
+		}
+	}
 	if err != nil {
 		return CapStatus{}, err
 	}
@@ -698,7 +714,7 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 		return err
 	}
 	defer e.Close()
-	_, err = runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key},
+	_, err = s.runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key},
 		Prompt: "Reply with OK.", MaxTurns: 1}, 0)
 	return err
 }
@@ -721,7 +737,7 @@ func capCode(err error) (string, int) {
 	var nl *ai.NoListError
 	run := errors.As(err, &ae)
 	switch {
-	case errors.Is(err, ai.ErrModelAuth), run && ae.Code == ai.CodeUnauthorized:
+	case errors.Is(err, ai.ErrModelAuth), errors.Is(err, ErrModelReauth), run && ae.Code == ai.CodeUnauthorized:
 		return "auth", 401
 	case errors.Is(err, ai.ErrModelForbidden):
 		return "forbidden", 403
@@ -742,7 +758,7 @@ func capCode(err error) (string, int) {
 }
 
 // runText runs req and returns its text, cut at max bytes (0: none kept).
-func runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (string, error) {
+func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (string, error) {
 	events, wait := e.Run(ctx, req)
 	var b strings.Builder
 	for ev := range events {
@@ -751,6 +767,9 @@ func runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (string
 		}
 	}
 	if r := wait(); r.Err != nil {
+		if r.Err.Code == ai.CodeUnauthorized {
+			s.forgetModelToken(req.Model.ServiceID)
+		}
 		return "", r.Err
 	}
 	return b.String(), nil
@@ -780,8 +799,9 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 	return s.ai, nil
 }
 
-// forgetModel drops the service's Genkit instance after a change or removal.
+// forgetModel drops the service's Genkit instance and cached token after a change or removal.
 func (s *Service) forgetModel(id int64) {
+	s.forgetModelToken(id)
 	s.aiMu.Lock()
 	defer s.aiMu.Unlock()
 	if s.ai != nil {
@@ -868,15 +888,21 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 // one service's URL with another's key.
 func (s *Service) serviceByRef(ctx context.Context, name string) (ModelService, string, error) {
 	s.modelMu.RLock()
-	defer s.modelMu.RUnlock()
 	m, err := s.modelServiceBy(ctx, "slug = ?", name)
 	if errors.Is(err, ErrModelServiceNotFound) { // never by current name: it may have moved to another service
 		m, err = s.modelServiceBy(ctx, "id = (SELECT service_id FROM model_service_aliases WHERE name = ?)", name)
 	}
 	if err != nil {
+		s.modelMu.RUnlock()
 		return m, "", err
 	}
-	key, err := s.modelKey(m)
+	if ModelProviderLogin(m.Provider) != "oauth" {
+		key, err := s.modelKey(m)
+		s.modelMu.RUnlock()
+		return m, key, err
+	}
+	s.modelMu.RUnlock()
+	key, err := s.modelCredential(ctx, m)
 	return m, key, err
 }
 
@@ -907,7 +933,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
-		return runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
+		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
 	}), ref, true, nil
 }
 

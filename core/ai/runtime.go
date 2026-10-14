@@ -147,7 +147,11 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 		if in.cfg == cfg {
 			return in, nil
 		}
-		in.cancel(errStale)
+		same := in.cfg
+		same.APIKey = cfg.APIKey
+		if same != cfg {
+			in.cancel(errStale)
+		}
 		delete(e.insts, m.ServiceID)
 	}
 	if api.CurrentEnvironment() == api.EnvironmentDev {

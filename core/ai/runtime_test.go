@@ -826,3 +826,24 @@ func TestRunContextHidden(t *testing.T) {
 		assert.Contains(t, string(srv.Requests()[1].Messages), "QUOTED-MAIL", "the state keeps it")
 	})
 }
+
+func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
+	m1 := modelFor(srv, KindResponses, "token-1")
+	events1, wait1 := e.Run(context.Background(), Request{Model: m1, Prompt: "one", MaxTurns: 1})
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 5*time.Millisecond)
+
+	m2 := m1
+	m2.APIKey = "token-2"
+	evs2, res2 := run(e, Request{Model: m2, Prompt: "two", MaxTurns: 1})
+	require.Nil(t, res2.Err)
+	assert.Equal(t, "done", last(t, evs2).Kind)
+	assert.EqualValues(t, 2, e.inits.Load())
+
+	srv.Release()
+	evs1, res1 := collect(events1, wait1)
+	require.Nil(t, res1.Err)
+	assert.Equal(t, "done", last(t, evs1).Kind)
+}

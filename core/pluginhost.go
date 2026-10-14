@@ -236,6 +236,9 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 			}
 		}
 		if r := wait(); r.Err != nil {
+			if r.Err.Code == ai.CodeUnauthorized {
+				h.s.forgetModelToken(model.ServiceID)
+			}
 			return r.Err
 		}
 		out = b.String()
