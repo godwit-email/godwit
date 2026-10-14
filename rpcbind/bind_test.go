@@ -36,7 +36,8 @@ var sentinels = map[string]error{
 	"ErrProviderMismatch": core.ErrProviderMismatch, "ErrNeedsGrant": core.ErrNeedsGrant,
 	"ErrPluginNotFound": core.ErrPluginNotFound, "ErrMCPNotFound": core.ErrMCPNotFound,
 	"ErrAINotConfigured": core.ErrAINotConfigured, "ErrModelServiceNotFound": core.ErrModelServiceNotFound,
-	"ErrModelNotFound": core.ErrModelNotFound, "ErrModelAuth": core.ErrModelAuth, "ErrLabelExists": core.ErrLabelExists,
+	"ErrModelNotFound": core.ErrModelNotFound, "ErrModelAuth": core.ErrModelAuth,
+	"ErrModelLogin": core.ErrModelLogin, "ErrModelReauth": core.ErrModelReauth, "ErrLabelExists": core.ErrLabelExists,
 	"ErrBaseURLInvalid": core.ErrBaseURLInvalid, "ErrBaseURLScheme": core.ErrBaseURLScheme,
 	"ErrKeyNeedsConfirm": core.ErrKeyNeedsConfirm, "ErrUnknownFlow": core.ErrUnknownFlow,
 	"ErrInvalidState": core.ErrInvalidState, "ErrSkillDisabled": core.ErrSkillDisabled,
@@ -47,6 +48,7 @@ var sentinels = map[string]error{
 	"ai.ErrNoModelList": ai.ErrNoModelList, "ai.ErrModelForbidden": ai.ErrModelForbidden, "conn.ErrAuthFailed": conn.ErrAuthFailed,
 	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
 	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
+	"auth.ErrScopeMissing": auth.ErrScopeMissing,
 }
 
 func wire(t *testing.T, c *rpc.Codec, err error, redact func(string) string) (*rpc.WireError, string, error) {
@@ -220,7 +222,8 @@ func TestWireCodesPinned(t *testing.T) {
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
 		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,
 		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
-		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth, "label_exists": core.ErrLabelExists,
+		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
+		"model_login": core.ErrModelLogin, "model_reauth": core.ErrModelReauth, "label_exists": core.ErrLabelExists,
 		"base_url_invalid": core.ErrBaseURLInvalid, "base_url_scheme": core.ErrBaseURLScheme,
 		"no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
 		"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState,
@@ -230,6 +233,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"canceled":      context.Canceled, "deadline": context.DeadlineExceeded,
 		"auth_failed": conn.ErrAuthFailed, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 		"flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
+		"scope_missing":            auth.ErrScopeMissing,
 		"check_failed":             &core.CheckError{},
 		"send_warnings":            &core.SendWarningsError{},
 		"send_blocked":             &core.SendBlockedError{},

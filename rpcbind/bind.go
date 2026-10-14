@@ -38,6 +38,8 @@ var sentinels = []struct {
 	{"model_service_not_found", core.ErrModelServiceNotFound},
 	{"model_not_found", core.ErrModelNotFound},
 	{"model_auth", core.ErrModelAuth},
+	{"model_login", core.ErrModelLogin},
+	{"model_reauth", core.ErrModelReauth},
 	{"label_exists", core.ErrLabelExists},
 	{"base_url_invalid", core.ErrBaseURLInvalid},
 	{"base_url_scheme", core.ErrBaseURLScheme},
@@ -59,6 +61,7 @@ var sentinels = []struct {
 	{"flow_expired", auth.ErrFlowExpired},
 	{"invalid_grant", auth.ErrInvalidGrant},
 	{"access_denied", auth.ErrAccessDenied},
+	{"scope_missing", auth.ErrScopeMissing},
 }
 
 // NewCodec registers core's error types (tried first, so *ai.Error with Code
@@ -97,7 +100,7 @@ func NewCodec() *rpc.Codec {
 		func(e *core.ErrNoRoleFolder) any { return *e },
 		rpc.DecodeDetail[core.ErrNoRoleFolder])
 	rpc.RegisterType(c, "ai_error",
-		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg} },
+		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg, Detail: e.Detail} },
 		rpc.DecodeDetail[ai.Error])
 	for _, s := range sentinels {
 		c.RegisterSentinel(s.code, s.err, s.err.Error())
