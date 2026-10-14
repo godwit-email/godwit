@@ -151,14 +151,17 @@ func TestNativeStdinClosedDoesNotHang(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("needs /bin/sh")
 	}
-	n := NewNativeProcess(NativeOptions{Command: []string{"/bin/sh", "-c", "exec 0<&-; sleep 20", "plugin-host"}, Library: "x", SHA256: "x", Timeout: 30 * time.Second})
+	// The first call's line goes into the pipe while it is open; 0.2 s later the
+	// process closes stdin and lives on, so the second call's write must fail.
+	n := NewNativeProcess(NativeOptions{Command: []string{"/bin/sh", "-c", "sleep 0.2; exec 0<&-; sleep 20", "plugin-host"}, Library: "x", SHA256: "x", Timeout: 30 * time.Second})
 	t.Cleanup(n.Close)
-	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	n.Call(ctx, "describe", struct{}{}) // starts it; by now its stdin is closed
-	_, err := n.Call(context.Background(), "describe", struct{}{})
-	assert.Error(t, err)
+	_, err := n.Call(ctx, "describe", struct{}{})
+	require.ErrorIs(t, err, context.DeadlineExceeded, "written, never answered")
+	start := time.Now()
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	assert.ErrorIs(t, err, ErrNativeExited)
 	assert.Less(t, time.Since(start), 5*time.Second)
 }
 
