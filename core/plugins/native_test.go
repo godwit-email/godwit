@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,4 +177,88 @@ func TestNativeLibraryStdoutKeptOffProtocol(t *testing.T) {
 	res, err := n.Call(context.Background(), "describe", struct{}{})
 	require.NoError(t, err)
 	assert.Contains(t, string(res), `"echo"`)
+}
+
+// newStarted is newFake with an OnStart that counts its runs (after delay) and fails while fail returns an error.
+func newStarted(t *testing.T, idle, delay time.Duration, fail func() error) (*NativeProcess, *atomic.Int32, *atomic.Bool) {
+	t.Helper()
+	lib, sha := fakeLib(t, map[string]any{})
+	var runs atomic.Int32
+	var started atomic.Bool
+	n := NewNativeProcess(NativeOptions{Command: []string{os.Args[0], "plugin-host"}, Env: []string{"PATH=" + os.Getenv("PATH"), fakeNativeEnv + "=1"},
+		Library: lib, SHA256: sha, Idle: idle,
+		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
+			time.Sleep(delay)
+			runs.Add(1)
+			if fail != nil {
+				if err := fail(); err != nil {
+					return err
+				}
+			}
+			if _, err := call(ctx, "configure", map[string]any{"config": map[string]any{}}); err != nil {
+				return err
+			}
+			started.Store(true)
+			return nil
+		}})
+	t.Cleanup(n.Close)
+	return n, &runs, &started
+}
+
+func TestNativeOnStartGatesCalls(t *testing.T) {
+	n, runs, started := newStarted(t, 0, 300*time.Millisecond, nil)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			_, err := n.Call(context.Background(), "describe", struct{}{})
+			assert.NoError(t, err)
+			assert.True(t, started.Load(), "no call goes out before OnStart is done")
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, int32(1), runs.Load())
+}
+
+func TestNativeOnStartAfterCrash(t *testing.T) {
+	n, runs, _ := newStarted(t, 0, 0, nil)
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	_, err = n.Call(context.Background(), "probe.crash", struct{}{})
+	require.ErrorIs(t, err, ErrNativeExited)
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), runs.Load(), "the new process was set up again")
+}
+
+func TestNativeOnStartError(t *testing.T) {
+	var once atomic.Bool
+	n, runs, _ := newStarted(t, 0, 0, func() error {
+		if once.CompareAndSwap(false, true) {
+			return errors.New("nope")
+		}
+		return nil
+	})
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	assert.ErrorContains(t, err, "nope")
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	assert.NoError(t, err)
+	assert.Equal(t, int32(2), runs.Load())
+}
+
+func TestNativeIdleExit(t *testing.T) {
+	n, runs, _ := newStarted(t, 200*time.Millisecond, 0, nil)
+	require.NoError(t, n.Start(context.Background()))
+	time.Sleep(700 * time.Millisecond)
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), runs.Load(), "it exited when idle and started again")
+}
+
+func TestNativeIdleWaitsForCalls(t *testing.T) {
+	n, runs, _ := newStarted(t, 200*time.Millisecond, 0, nil)
+	_, err := n.Call(context.Background(), "probe.sleep", map[string]any{"ms": 600})
+	require.NoError(t, err)
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), runs.Load(), "a call in flight is not idle")
 }

@@ -55,22 +55,30 @@ func IsNativeFailure(err error) bool {
 
 // NativeOptions start a plugin's process: Command then --library Library
 // --sha256 SHA256, in the environment Env alone. Timeout 0 is 60 s; Redact
-// nil leaves error text as it is.
+// nil leaves error text as it is. OnStart, if set, runs once per new
+// process before any call reaches it (calls made meanwhile wait); its error
+// fails the call that started the process, which is then ended. Idle, if
+// set, ends a process no call has used for that long; the next call starts
+// a new one.
 type NativeOptions struct {
 	Command         []string
 	Env             []string
 	Library, SHA256 string
 	Timeout         time.Duration
 	Redact          func(string) string
+	OnStart         func(ctx context.Context, call func(ctx context.Context, method string, params any) (json.RawMessage, error)) error
+	Idle            time.Duration
 }
 
 type NativeProcess struct {
-	o      NativeOptions
-	sem    chan struct{}
-	mu     sync.Mutex
-	p      *nativeProc
-	next   int64
-	closed bool
+	o        NativeOptions
+	sem      chan struct{}
+	mu       sync.Mutex
+	p        *nativeProc
+	next     int64
+	closed   bool
+	inflight int         // calls (and Starts) under way
+	idle     *time.Timer // ends p once no call has used it for o.Idle
 }
 
 type nativeLine struct {
@@ -88,6 +96,10 @@ type nativeProc struct {
 	mu      sync.Mutex // pending, and writes to stdin
 	pending map[int64]chan nativeLine
 	stderr  *stderrTail
+
+	ready    chan struct{} // closed once OnStart is done
+	readyErr error         // OnStart's error, set before ready closes
+	closing  bool          // stdin closed for being idle: it takes no more calls (n.mu)
 }
 
 // NewNativeProcess returns the plugin's process handle; nothing starts until the first Call.
@@ -104,36 +116,36 @@ func NewNativeProcess(o NativeOptions) *NativeProcess {
 	return &NativeProcess{o: o, sem: make(chan struct{}, nativeInFlight)}
 }
 
-// proc returns the running process, starting one if there is none.
-func (n *NativeProcess) proc() (*nativeProc, error) {
+// proc returns the running process, starting one if there is none; fresh
+// reports that this call started it, and must run OnStart.
+func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.closed {
-		return nil, ErrClosed
+		return nil, false, ErrClosed
 	}
-	if p := n.p; p != nil {
+	if p := n.p; p != nil && !p.closing {
 		select {
 		case <-p.dead:
 		default:
-			return p, nil
+			return p, false, nil
 		}
 	}
 	args := append(append([]string{}, n.o.Command[1:]...), "--library", n.o.Library, "--sha256", n.o.SHA256)
 	cmd := exec.Command(n.o.Command[0], args...)
 	cmd.Env = n.o.Env
 	setNativeGroup(cmd)
-	p := &nativeProc{cmd: cmd, dead: make(chan struct{}), pending: map[int64]chan nativeLine{}, stderr: &stderrTail{}}
+	p = &nativeProc{cmd: cmd, dead: make(chan struct{}), pending: map[int64]chan nativeLine{}, stderr: &stderrTail{}, ready: make(chan struct{})}
 	cmd.Stderr = p.stderr
-	var err error
 	if p.stdin, err = cmd.StdinPipe(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	go func() {
 		sc := bufio.NewScanner(stdout)
@@ -155,7 +167,76 @@ func (n *NativeProcess) proc() (*nativeProc, error) {
 		close(p.dead)
 	}()
 	n.p = p
+	return p, true, nil
+}
+
+// ready returns a process that finished OnStart, starting one if needed.
+func (n *NativeProcess) ready(ctx context.Context) (*nativeProc, error) {
+	p, fresh, err := n.proc()
+	if err != nil {
+		return nil, err
+	}
+	if fresh {
+		if n.o.OnStart != nil {
+			p.readyErr = n.o.OnStart(ctx, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+				return n.send(ctx, p, method, params)
+			})
+		}
+		close(p.ready)
+		if p.readyErr != nil {
+			killNativeGroup(p.cmd)
+			<-p.dead
+			return nil, p.readyErr
+		}
+		return p, nil
+	}
+	select {
+	case <-p.ready:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if p.readyErr != nil {
+		return nil, p.readyErr
+	}
 	return p, nil
+}
+
+// busy and done bracket a call for the idle timer.
+func (n *NativeProcess) busy() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.inflight++
+	if n.idle != nil {
+		n.idle.Stop()
+	}
+}
+
+func (n *NativeProcess) done() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.inflight--; n.inflight > 0 || n.o.Idle == 0 || n.p == nil || n.closed {
+		return
+	}
+	p := n.p
+	n.idle = time.AfterFunc(n.o.Idle, func() {
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		if n.p != p || n.inflight > 0 || p.closing {
+			return
+		}
+		p.closing = true // it exits on its own once stdin closes
+		p.mu.Lock()
+		p.stdin.Close()
+		p.mu.Unlock()
+	})
+}
+
+// Start makes sure the process runs and finished OnStart.
+func (n *NativeProcess) Start(ctx context.Context) error {
+	n.busy()
+	defer n.done()
+	_, err := n.ready(ctx)
+	return err
 }
 
 // Call runs method with params (marshalled to JSON) and returns the result.
@@ -171,7 +252,18 @@ func (n *NativeProcess) Call(ctx context.Context, method string, params any) (js
 		return nil, ctx.Err()
 	}
 	defer func() { <-n.sem }()
-	p, err := n.proc()
+	n.busy()
+	defer n.done()
+	p, err := n.ready(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return n.send(ctx, p, method, json.RawMessage(req))
+}
+
+// send runs one call on p (OnStart's calls come here directly).
+func (n *NativeProcess) send(ctx context.Context, p *nativeProc, method string, params any) (json.RawMessage, error) {
+	req, err := json.Marshal(params)
 	if err != nil {
 		return nil, err
 	}
@@ -245,6 +337,9 @@ func (n *NativeProcess) Close() {
 	n.mu.Lock()
 	p := n.p
 	n.closed = true
+	if n.idle != nil {
+		n.idle.Stop()
+	}
 	n.mu.Unlock()
 	if p == nil {
 		return

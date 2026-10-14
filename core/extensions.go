@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -508,7 +509,8 @@ type runningPlugin struct {
 	p    *plugins.Plugin // script plugins
 	row  pluginRow       // the row it was started from: manifest and permission hashes
 
-	native *plugins.NativeProcess // native plugins (p and host are nil)
+	native *plugins.NativeProcess         // native plugins (p and host are nil)
+	cfg    atomic.Pointer[map[string]any] // native: the settings a new process gets
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -583,12 +585,17 @@ func (s *Service) stopPlugin(name string) {
 	}
 }
 
-// nativeStart bounds a native plugin's start: its process, describe and configure.
-var nativeStart = 10 * time.Second
+// nativeStart bounds a native plugin's start: its process, describe and
+// configure. nativeIdle ends a process no call used for that long.
+var (
+	nativeStart = 10 * time.Second
+	nativeIdle  = 10 * time.Minute
+)
 
 // loadNative starts a native plugin's process (spec 3.3): plugin-host checks
-// the library's hash before loading it, describe must match the manifest,
-// configure hands it its settings. Called with pluginsMu held.
+// the library's hash before loading it, then every new process (this one and
+// any after a crash, timeout or idle exit) must describe itself as the
+// manifest says before it gets its settings. Called with pluginsMu held.
 func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) error {
 	if len(s.nativeCmd) == 0 {
 		return errors.New("cannot find Godwit's own executable to run the plugin")
@@ -597,11 +604,21 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
-	n := plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash, Redact: s.secrets.Redact})
+	cfg, _, err := s.pluginConfigLocked(ctx, name)
+	if err != nil {
+		return err
+	}
+	rp := &runningPlugin{hash: r.sourceHash, row: r}
+	rp.cfg.Store(&cfg)
+	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
+		Redact: s.secrets.Redact, Idle: nativeIdle,
+		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
+			return setUpNative(ctx, name, r, rp, call)
+		}})
 	cctx, cancel := context.WithTimeout(ctx, nativeStart)
 	defer cancel()
-	if err := s.startNative(cctx, name, r, n); err != nil {
-		n.Close()
+	if err := rp.native.Start(cctx); err != nil {
+		rp.native.Close()
 		return fmt.Errorf("plugin %s: %w", name, err)
 	}
 	s.stopPlugin(name)
@@ -609,12 +626,15 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	s.running[name] = &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, native: n, row: r}
+	rp.gen = s.pluginGen
+	s.running[name] = rp
 	return nil
 }
 
-func (s *Service) startNative(ctx context.Context, name string, r pluginRow, n *plugins.NativeProcess) error {
-	res, err := n.Call(ctx, "describe", struct{}{})
+// setUpNative is a new process's OnStart: describe must match the manifest
+// before the settings (secrets included) are handed over.
+func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugin, call func(context.Context, string, any) (json.RawMessage, error)) error {
+	res, err := call(ctx, "describe", struct{}{})
 	if err != nil {
 		return err
 	}
@@ -628,16 +648,19 @@ func (s *Service) startNative(ctx context.Context, name string, r pluginRow, n *
 		!slices.Equal(sorted(d.Capabilities), sorted(r.m.Capabilities)) {
 		return fmt.Errorf("the library describes itself as %q %q, not as its plugin.json says", d.Name, d.Version)
 	}
-	return s.configureNative(ctx, name, n)
+	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
+	return err
 }
 
-// configureNative hands a native plugin its settings, secrets included. The caller holds pluginsMu.
-func (s *Service) configureNative(ctx context.Context, name string, n *plugins.NativeProcess) error {
+// configureNative saves the plugin's settings for its next processes and
+// hands them to the running one. The caller holds pluginsMu.
+func (s *Service) configureNative(ctx context.Context, name string, rp *runningPlugin) error {
 	cfg, _, err := s.pluginConfigLocked(ctx, name)
 	if err != nil {
 		return err
 	}
-	_, err = n.Call(ctx, "configure", map[string]any{"config": cfg})
+	rp.cfg.Store(&cfg)
+	_, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg})
 	return err
 }
 
@@ -1000,7 +1023,7 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 	if err == nil {
 		// The old values stay redacted: the running instance may hold them.
 		if rp := s.running[name]; rp != nil && rp.native != nil {
-			if err := s.configureNative(ctx, name, rp.native); err != nil {
+			if err := s.configureNative(ctx, name, rp); err != nil {
 				return fmt.Errorf("plugin %s did not accept the saved settings: %w", name, err)
 			}
 		} else if rp != nil {

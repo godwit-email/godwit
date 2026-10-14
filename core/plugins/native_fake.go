@@ -30,6 +30,7 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 		}
 		var spec struct {
 			Describe        json.RawMessage `json:"describe"`
+			RestartDescribe json.RawMessage `json:"restartDescribe"`
 			DescribeSleepMs int             `json:"describeSleepMs"`
 			InitFail        bool            `json:"initFail"`
 			EchoStderr      string          `json:"echoStderr"`
@@ -41,6 +42,13 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
+		}
+		if spec.Record != "" && spec.RestartDescribe != nil { // a later process describes itself otherwise
+			starts := spec.Record + ".starts"
+			if _, err := os.Stat(starts); err == nil {
+				spec.Describe = spec.RestartDescribe
+			}
+			os.WriteFile(starts, []byte("started\n"), 0o600)
 		}
 		if spec.InitFail || hostABI != NativeABI {
 			fmt.Fprintln(stderr, spec.EchoStderr)

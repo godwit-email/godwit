@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -259,4 +260,37 @@ func TestPluginTranslateCacheFollowsConfig(t *testing.T) {
 	require.NoError(t, e.s.SetPluginConfig(t.Context(), "dlx", map[string]json.RawMessage{"engine": json.RawMessage(`"formal"`)}))
 	e.run(t, "translate", tg)
 	assert.Len(t, translateRequests(t, record), 2, "translated again after a settings change")
+}
+
+func shortIdle(t *testing.T) {
+	old := nativeIdle
+	nativeIdle = 200 * time.Millisecond
+	t.Cleanup(func() { nativeIdle = old })
+}
+
+// After an idle exit the plugin's next process gets its current settings first.
+func TestNativeReconfiguredAfterRestart(t *testing.T) {
+	shortIdle(t)
+	e := newSkillEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	require.NoError(t, e.s.SetPluginConfig(t.Context(), "dlx", map[string]json.RawMessage{"engine": json.RawMessage(`"formal"`)}))
+	require.NoError(t, os.Remove(record))
+	time.Sleep(700 * time.Millisecond)
+	e.run(t, "translate", Target{Kind: "selection", ID: e.msg, Text: "Hi"})
+	b, err := os.ReadFile(record)
+	require.NoError(t, err, "configured again")
+	assert.Contains(t, string(b), `"formal"`)
+}
+
+// A restarted process must describe itself as the manifest says before it gets any settings.
+func TestNativeRestartChecksDescribe(t *testing.T) {
+	shortIdle(t)
+	e := newSkillEnv(t)
+	record := useNativeTranslator(t, e.s, map[string]any{"restartDescribe": map[string]any{"name": "dlx", "version": "9.9.9", "abi": 1, "capabilities": []string{"translate"}}})
+	require.NoError(t, os.Remove(record))
+	time.Sleep(700 * time.Millisecond)
+	_, err := e.s.RunSkill(t.Context(), "translate", Target{Kind: "selection", ID: e.msg, Text: "Hi"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "describes itself")
+	assert.NoFileExists(t, record, "no settings for a library that is not the one allowed")
 }

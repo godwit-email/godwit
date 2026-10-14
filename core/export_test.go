@@ -143,6 +143,13 @@ func (s *Service) PluginSecretKeysForTest(name string) (string, error) {
 	return rows.Values[0][0].(string), nil
 }
 
+// SetNativeIdleForTest shortens how long an unused native plugin process lives.
+func SetNativeIdleForTest(t interface{ Cleanup(func()) }, d time.Duration) {
+	old := nativeIdle
+	nativeIdle = d
+	t.Cleanup(func() { nativeIdle = old })
+}
+
 // SetNativeStartForTest shortens how long a native plugin may take to start.
 func SetNativeStartForTest(t interface{ Cleanup(func()) }, d time.Duration) {
 	old := nativeStart
