@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -211,7 +212,11 @@ func TestNativeEnvProxy(t *testing.T) {
 	b, err := os.ReadFile(record)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, &got))
-	assert.Contains(t, got.Env, "HTTPS_PROXY=http://proxy.example:3128")
+	found := slices.ContainsFunc(got.Env, func(kv string) bool { // Windows may report the name in another case
+		k, v, _ := strings.Cut(kv, "=")
+		return strings.EqualFold(k, "HTTPS_PROXY") && v == "http://proxy.example:3128"
+	})
+	assert.True(t, found, "%v", got.Env)
 }
 
 func pluginInfoByName(t *testing.T, s *Service, name string) PluginInfo {

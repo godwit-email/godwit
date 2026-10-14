@@ -163,9 +163,11 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		s.nativeCmd = []string{exe, "plugin-host"}
 	}
 	s.nativeEnv = []string{"PATH=" + os.Getenv("PATH")}
-	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"} {
-		if v, ok := os.LookupEnv(k); ok { // a plugin reaching its service goes through the user's proxy
-			s.nativeEnv = append(s.nativeEnv, k+"="+v)
+	for _, kv := range os.Environ() { // a plugin reaching its service goes through the user's proxy
+		k, _, _ := strings.Cut(kv, "=")
+		switch strings.ToUpper(k) { // as set, once each: Windows names ignore case
+		case "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY":
+			s.nativeEnv = append(s.nativeEnv, kv)
 		}
 	}
 	if opts.ImageClient == nil {
