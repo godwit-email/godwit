@@ -4,7 +4,9 @@ package plugins
 
 import (
 	"context"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -28,4 +30,20 @@ func TestNativeGracefulExitEndsHelpers(t *testing.T) {
 	require.NoError(t, err)
 	n.Close() // stdin closes, the host exits by itself
 	assert.Eventually(t, func() bool { return syscall.Kill(pid, 0) != nil }, 5*time.Second, 50*time.Millisecond, "the helper is gone")
+}
+
+// The protocol's stdout is not inherited by a helper the library starts: it
+// ends when the host exits, not when the helper does.
+func TestTakeStdoutNotInherited(t *testing.T) {
+	cmd := exec.Command(os.Args[0])
+	cmd.Env = append(os.Environ(), takeStdoutEnv+"=1")
+	out, err := cmd.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+	start := time.Now()
+	b, err := io.ReadAll(out)
+	require.NoError(t, err)
+	require.NoError(t, cmd.Wait())
+	assert.Equal(t, "done\n", string(b))
+	assert.Less(t, time.Since(start), 2*time.Second, "EOF waited for the helper")
 }

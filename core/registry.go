@@ -145,7 +145,9 @@ func (s *Service) refreshRegistry(ctx context.Context, src *RegistrySource) erro
 	}
 	s.registryMu.Lock() // one refresh writes the cache at a time
 	defer s.registryMu.Unlock()
-	if old, err := s.cachedRegistry(src); err == nil && reg.Updated.Before(old.Updated) {
+	// An older registry, or another one with the same timestamp, is a stale copy or a replay.
+	if old, oldBody, err := s.readRegistryCache(src); err == nil &&
+		(reg.Updated.Before(old.Updated) || reg.Updated.Equal(old.Updated) && !bytes.Equal(body, oldBody)) {
 		return ErrRegistryStale
 	}
 	// The cache is committed first and applied after; a refresh cut short
@@ -212,15 +214,22 @@ func verifyRegistry(pub ed25519.PublicKey, body, sig []byte) (plugins.Registry, 
 
 // cachedRegistry reads and verifies the cached registry; fs.ErrNotExist when there is none.
 func (s *Service) cachedRegistry(src *RegistrySource) (plugins.Registry, error) {
+	reg, _, err := s.readRegistryCache(src)
+	return reg, err
+}
+
+// readRegistryCache is the cached registry and its signed body.
+func (s *Service) readRegistryCache(src *RegistrySource) (plugins.Registry, []byte, error) {
 	b, err := os.ReadFile(s.registryCache())
 	if err != nil {
-		return plugins.Registry{}, err
+		return plugins.Registry{}, nil, err
 	}
 	var c cachedRegistryFile
 	if err := json.Unmarshal(b, &c); err != nil {
-		return plugins.Registry{}, ErrRegistrySignature
+		return plugins.Registry{}, nil, ErrRegistrySignature
 	}
-	return verifyRegistry(src.PublicKey, c.Body, c.Sig)
+	reg, err := verifyRegistry(src.PublicKey, c.Body, c.Sig)
+	return reg, c.Body, err
 }
 
 // ListPluginRegistry is the cached registry as this build sees it.

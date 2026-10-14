@@ -10,8 +10,9 @@ import (
 
 // takeStdout keeps the process's stdout for the protocol and points fd 1 at
 // stderr, so whatever a library prints goes to the log, not into the JSON lines.
+// It is close-on-exec: a helper the library starts must not hold it open past the host.
 func takeStdout() (*os.File, error) {
-	fd, err := unix.Dup(1)
+	fd, err := unix.FcntlInt(1, unix.F_DUPFD_CLOEXEC, 3)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -32,7 +33,26 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "plugin-host" && os.Getenv(realNativeEnv) != "" {
 		os.Exit(ServeNative(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	if os.Getenv(takeStdoutEnv) != "" {
+		os.Exit(takeStdoutProbe())
+	}
 	os.Exit(m.Run())
+}
+
+// takeStdoutEnv makes the test binary take its stdout, start a helper that
+// outlives it, write one line and exit (TestTakeStdoutNotInherited).
+const takeStdoutEnv = "GODWIT_PLUGINS_TAKE_STDOUT"
+
+func takeStdoutProbe() int {
+	proto, err := takeStdout()
+	if err != nil {
+		return 1
+	}
+	if exec.Command("sleep", "3").Start() != nil {
+		return 1
+	}
+	proto.WriteString("done\n")
+	return 0
 }
 
 // fakeLib writes a fake library (FakeNativeOpener's JSON) and returns its path and SHA-256.

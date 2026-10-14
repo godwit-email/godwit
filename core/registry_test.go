@@ -532,3 +532,15 @@ func TestRegistryInstallRacingManifestChange(t *testing.T) {
 	_, ok := pluginByName(t, s, "hello")
 	assert.False(t, ok, "nothing installed")
 }
+
+// Another registry with the same timestamp is a replay or a stale copy, not an update; the same one again is fine.
+func TestRegistrySameTimestampMustBeSame(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	require.NoError(t, s.RefreshPluginRegistry(ctx), "the same registry again")
+	rs.Publish(t, coretest.Registry(t0))
+	assert.ErrorIs(t, s.RefreshPluginRegistry(ctx), core.ErrRegistryStale)
+	assert.Equal(t, "0.1.0", entry(t, s, "dlx").Version, "the cache stays")
+}
