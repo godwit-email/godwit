@@ -290,6 +290,9 @@ func TestHookResumeAfterReenable(t *testing.T) {
 	e.newMail(t, "one@x", "one")
 	e.sync(t)
 	waitLog(t, e.s, "rec", 1)
+	// the log is written before the handler returns: disabling before the cursor moves redelivers "one"
+	seq := store.Int(e.rows(t, "SELECT seq FROM events_log")[0][0])
+	require.Eventually(t, func() bool { return cursor(t, e.s, "rec") == seq }, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, e.s.SetPluginEnabled(bg, "rec", false))
 	e.newMail(t, "two@x", "two")
 	e.sync(t)
