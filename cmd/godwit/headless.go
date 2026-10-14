@@ -30,7 +30,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 		return 1
 	}
 	defer release()
-	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true})
+	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, Registry: core.DefaultRegistry, AppVersion: app.Version})
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
 		return 1

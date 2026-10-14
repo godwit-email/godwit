@@ -54,6 +54,7 @@ const (
 	disabledFiles    = "files_changed"        // the version directory is damaged
 	disabledLoad     = "load_failed"          // the plugin did not start
 	disabledKeychain = "keychain_unavailable" // its secrets could not be read
+	disabledRevoked  = "trust_revoked"        // the plugin registry no longer lists its file
 )
 
 // pluginHook, if set, runs at "switch" (before the row points at a new

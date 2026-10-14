@@ -6,8 +6,11 @@ package coretest
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -64,9 +67,15 @@ type mailServers struct {
 	smtpAddr string
 }
 
-type config struct{ autoSync bool }
+type config struct {
+	autoSync bool
+	registry *core.RegistrySource
+}
 
 type Option func(*config)
+
+// WithRegistry gives the Service a plugin registry, as from NewRegistryServer.
+func WithRegistry(src *core.RegistrySource) Option { return func(c *config) { c.registry = src } }
 
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
@@ -84,7 +93,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	dir := t.TempDir()
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient})
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
+		Registry: cfg.registry, AppVersion: "1.2.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,4 +482,104 @@ func ServeMCPIfChild() {
 func MCPCommand(t *testing.T) (cmd string, args []string, env map[string]string) {
 	t.Helper()
 	return os.Args[0], nil, map[string]string{mcpChildEnv: "serve-lookup"}
+}
+
+// RegistryServer is a plugin registry over https with its own signing key.
+type RegistryServer struct {
+	Src  *core.RegistrySource
+	srv  *httptest.Server
+	key  ed25519.PrivateKey
+	mu   sync.Mutex
+	docs map[string][]byte
+}
+
+// NewRegistryServer starts an empty registry; Publish puts one up.
+func NewRegistryServer(t *testing.T) *RegistryServer {
+	t.Helper()
+	pub, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &RegistryServer{key: key, docs: map[string][]byte{}}
+	r.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.mu.Lock()
+		b, ok := r.docs[req.URL.Path]
+		r.mu.Unlock()
+		if !ok {
+			http.NotFound(w, req)
+			return
+		}
+		w.Write(b)
+	}))
+	t.Cleanup(r.srv.Close)
+	r.Src = &core.RegistrySource{URL: r.srv.URL + "/registry.json", PublicKey: pub, Client: r.srv.Client()}
+	return r
+}
+
+// URL is the server's address for path.
+func (r *RegistryServer) URL(path string) string { return r.srv.URL + path }
+
+// Serve puts body at path (an artifact), or removes it when body is nil.
+func (r *RegistryServer) Serve(path string, body []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if body == nil {
+		delete(r.docs, path)
+		return
+	}
+	r.docs[path] = body
+}
+
+// Publish signs and serves reg as /registry.json with /registry.json.sig.
+func (r *RegistryServer) Publish(t *testing.T, reg map[string]any) {
+	t.Helper()
+	b, err := json.Marshal(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Serve("/registry.json", b)
+	r.Serve("/registry.json.sig", []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(r.key, b))+"\n"))
+}
+
+// Tamper changes the published registry without signing it again.
+func (r *RegistryServer) Tamper(fn func([]byte) []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.docs["/registry.json"] = fn(r.docs["/registry.json"])
+}
+
+// NativeRelease is a registry release of the NativePluginFixture plugin
+// name at version for this platform, its library served from r.
+func (r *RegistryServer) NativeRelease(t *testing.T, name, version string, extra map[string]any) map[string]any {
+	t.Helper()
+	src := NativePluginFixture(t, name, version, nil, extra)
+	manifest, err := os.ReadFile(filepath.Join(src, "plugin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, err := os.ReadFile(filepath.Join(src, plugins.LibraryName()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.release(name, version, plugins.PlatformKey(), manifest, lib)
+}
+
+// ScriptRelease is a registry release of a one-file script plugin.
+func (r *RegistryServer) ScriptRelease(name, version, perms, code string) map[string]any {
+	manifest := fmt.Sprintf(`{"name":%q,"version":%q,"main":"index.js","permissions":%s}`, name, version, perms)
+	return r.release(name, version, plugins.AnyPlatform, []byte(manifest), []byte(code))
+}
+
+func (r *RegistryServer) release(name, version, key string, manifest, file []byte) map[string]any {
+	path := "/files/" + name + "-" + version + "-" + key
+	r.Serve(path, file)
+	sum := sha256.Sum256(file)
+	return map[string]any{"version": version, "manifest": json.RawMessage(manifest),
+		"artifacts": map[string]any{key: map[string]any{"url": r.URL(path), "sha256": hex.EncodeToString(sum[:]), "size": len(file)}}}
+}
+
+// Registry is a registry document updated at updated with plugins, each
+// {"name", "title", "summary", "releases"} (see NativeRelease, ScriptRelease).
+func Registry(updated time.Time, plugins ...map[string]any) map[string]any {
+	return map[string]any{"schema": 1, "updated": updated.UTC().Format(time.RFC3339), "plugins": plugins}
 }
