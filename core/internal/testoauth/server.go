@@ -17,8 +17,12 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 )
 
-// ClientID is the only client the server knows.
-const ClientID = "godwit-test"
+// ClientID is the only client the server knows unless Dynamic(true).
+const (
+	ClientID        = "godwit-test"
+	DynamicClientID = "godwit-test-dynamic"
+	IssuedClientID  = "godwit-test-issued"
+)
 
 type grant struct{ challenge, redirect, email string }
 
@@ -32,20 +36,23 @@ type canned struct {
 type Server struct {
 	AuthURL, TokenURL string
 
-	mu            sync.Mutex
-	email         string           // SetEmail override for id_tokens; "" = the signed-in email
-	deny          bool             // the user refuses consent
-	next          *canned          // RespondNext: the next token response
-	hang          chan struct{}    // Hang: token requests wait until it closes
-	rotate        bool             // refreshes issue a new refresh token
-	noExpiry      bool             // token responses omit expires_in
-	codes         map[string]grant // code -> pending exchange
-	refresh       map[string]string
-	access        map[string]bool
-	tokenRequests int
-	auths, noS256 int // authorization requests; those without S256
-	exchanges     int // code exchanges
-	badVerifier   int // exchanges whose code_verifier did not match
+	mu                 sync.Mutex
+	email              string           // SetEmail override for id_tokens; "" = the signed-in email
+	deny               bool             // the user refuses consent
+	next               *canned          // RespondNext: the next token response
+	hang               chan struct{}    // Hang: token requests wait until it closes
+	rotate             bool             // refreshes issue a new refresh token
+	noExpiry           bool             // token responses omit expires_in
+	dynamic            bool             // Dynamic: accept DynamicClientID and issue IssuedClientID
+	reqParam, reqValue string           // Require: extra parameter required at /authorize and /token
+	scope              string           // GrantScope: scope field in token responses
+	codes              map[string]grant // code -> pending exchange
+	refresh            map[string]string
+	access             map[string]bool
+	tokenRequests      int
+	auths, noS256      int // authorization requests; those without S256
+	exchanges          int // code exchanges
+	badVerifier        int // exchanges whose code_verifier did not match
 }
 
 // Start runs a Server until the test ends.
@@ -71,6 +78,20 @@ func (s *Server) SetEmail(email string) { s.mu.Lock(); s.email = email; s.mu.Unl
 
 // Deny makes the user refuse consent: the server redirects with error=access_denied.
 func (s *Server) Deny(deny bool) { s.mu.Lock(); s.deny = deny; s.mu.Unlock() }
+
+// Dynamic makes the server accept DynamicClientID at /authorize, return
+// client_id=IssuedClientID on the callback, and accept IssuedClientID at /token.
+func (s *Server) Dynamic(on bool) { s.mu.Lock(); s.dynamic = on; s.mu.Unlock() }
+
+// Require makes /authorize and /token reject requests missing param=value.
+func (s *Server) Require(param, value string) {
+	s.mu.Lock()
+	s.reqParam, s.reqValue = param, value
+	s.mu.Unlock()
+}
+
+// GrantScope sets the scope string returned in token responses when non-empty.
+func (s *Server) GrantScope(scope string) { s.mu.Lock(); s.scope = scope; s.mu.Unlock() }
 
 // RespondNext makes the token endpoint answer its next request with status and
 // a JSON body, whatever was asked.
@@ -191,15 +212,22 @@ func Get(t *testing.T, u string) Callback {
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	q := r.URL.Query()
 	redirect, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil || q.Get("client_id") != ClientID || q.Get("response_type") != "code" ||
-		redirect.Scheme != "http" || redirect.Hostname() != "localhost" || q.Get("code_challenge") == "" {
+	cid := q.Get("client_id")
+	okClient := cid == ClientID || (s.dynamic && (cid == DynamicClientID || cid == IssuedClientID))
+	host := ""
+	if err == nil {
+		host = redirect.Hostname()
+	}
+	if err != nil || !okClient || q.Get("response_type") != "code" ||
+		redirect.Scheme != "http" || (host != "localhost" && host != "127.0.0.1") || q.Get("code_challenge") == "" ||
+		(s.reqParam != "" && q.Get(s.reqParam) != s.reqValue) {
 		http.Error(w, "bad authorization request", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.auths++
 	if q.Get("code_challenge_method") != "S256" {
 		s.noS256++
@@ -211,6 +239,9 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		code := random()
 		s.codes[code] = grant{challenge: q.Get("code_challenge"), redirect: redirect.String(), email: q.Get("test_email")}
 		back.Set("code", code)
+		if s.dynamic {
+			back.Set("client_id", IssuedClientID)
+		}
 	}
 	redirect.RawQuery = back.Encode()
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
@@ -236,8 +267,17 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, c.body)
 		return
 	}
-	if r.ParseForm() != nil || r.PostForm.Get("client_id") != ClientID {
+	if r.ParseForm() != nil {
+		oauthError(w, "invalid_request")
+		return
+	}
+	cid := r.PostForm.Get("client_id")
+	if cid != ClientID && (!s.dynamic || cid != IssuedClientID) {
 		oauthError(w, "invalid_client")
+		return
+	}
+	if s.reqParam != "" && r.PostForm.Get(s.reqParam) != s.reqValue {
+		oauthError(w, "invalid_request")
 		return
 	}
 	var email string
@@ -292,6 +332,9 @@ func (s *Server) issue(w http.ResponseWriter, email, refreshToken string) {
 		"id_token": enc([]byte(`{"alg":"none"}`)) + "." + enc(claims) + "."}
 	if refreshToken != "" {
 		body["refresh_token"] = refreshToken
+	}
+	if s.scope != "" {
+		body["scope"] = s.scope
 	}
 	if s.noExpiry {
 		delete(body, "expires_in")

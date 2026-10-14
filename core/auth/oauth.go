@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,11 +31,13 @@ var FlowTimeout = 10 * time.Minute
 type Grant struct {
 	Email, RefreshToken, AccessToken string
 	Expiry                           time.Time
+	ClientID, Scope                  string // ClientID is only set for DynamicClient flows
 }
 
 // Flow is one authorization-code flow with PKCE, waiting for the browser on a
 // loopback listener.
 type Flow struct {
+	ocfg     OAuthConfig
 	cfg      oauth2.Config
 	hc       *http.Client
 	verifier string
@@ -78,17 +82,30 @@ func StartFlow(cfg OAuthConfig, loginHint string, hc *http.Client) (*Flow, error
 	}
 	state := make([]byte, 32)
 	rand.Read(state)
-	f := &Flow{cfg: config(cfg), hc: hc, verifier: oauth2.GenerateVerifier(),
+	host := cmp.Or(cfg.RedirectHost, "localhost")
+	path := cmp.Or(cfg.RedirectPath, "/callback")
+	f := &Flow{ocfg: cfg, cfg: config(cfg), hc: hc, verifier: oauth2.GenerateVerifier(),
 		state: base64.RawURLEncoding.EncodeToString(state), done: make(chan struct{})}
-	f.cfg.RedirectURL = fmt.Sprintf("http://localhost:%d/callback", ln.Addr().(*net.TCPAddr).Port)
-	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(f.verifier), oauth2.SetAuthURLParam("prompt", "select_account")}
+	f.cfg.RedirectURL = fmt.Sprintf("http://%s:%d%s", host, ln.Addr().(*net.TCPAddr).Port, path)
+	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(f.verifier)}
+	if !cfg.NoPrompt {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
+	if cfg.Nonce {
+		nonce := make([]byte, 32)
+		rand.Read(nonce)
+		opts = append(opts, oauth2.SetAuthURLParam("nonce", base64.RawURLEncoding.EncodeToString(nonce)))
+	}
+	for k, v := range cfg.AuthParams {
+		opts = append(opts, oauth2.SetAuthURLParam(k, v))
+	}
 	if loginHint != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("login_hint", loginHint))
 	}
 	f.authURL = f.cfg.AuthCodeURL(f.state, opts...)
 	f.ctx, f.cancel = context.WithTimeout(context.Background(), FlowTimeout)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", f.callback)
+	mux.HandleFunc(path, f.callback)
 	f.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	f.ln = ln
 	go f.srv.Serve(ln)
@@ -194,11 +211,29 @@ func (f *Flow) exchange(q url.Values) (Grant, error) {
 	if code == "" {
 		return Grant{}, errors.New("oauth: the callback carried no authorization code")
 	}
-	tok, err := f.cfg.Exchange(withClient(f.ctx, f.hc), code, oauth2.VerifierOption(f.verifier))
+	clientID := q.Get("client_id")
+	if f.ocfg.DynamicClient && clientID == "" {
+		return Grant{}, errors.New("oauth: the callback named no client ID")
+	}
+	cfg := f.cfg
+	if f.ocfg.DynamicClient {
+		cfg.ClientID = clientID
+	}
+	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(f.verifier)}
+	for k, v := range f.ocfg.TokenParams {
+		opts = append(opts, oauth2.SetAuthURLParam(k, v))
+	}
+	tok, err := cfg.Exchange(withClient(f.ctx, f.hc), code, opts...)
 	if err != nil {
 		return Grant{}, tokenError(err)
 	}
 	g := grantFrom(tok)
+	if f.ocfg.DynamicClient {
+		g.ClientID = clientID
+	}
+	if f.ocfg.RequireScope != "" && !slices.Contains(strings.Fields(g.Scope), f.ocfg.RequireScope) {
+		return Grant{}, ErrScopeMissing
+	}
 	if g.Email == "" {
 		return Grant{}, errors.New("oauth: the token response named no email address")
 	}
@@ -234,6 +269,9 @@ func grantFrom(tok *oauth2.Token) Grant {
 	}
 	if id, ok := tok.Extra("id_token").(string); ok {
 		g.Email = emailFromIDToken(id)
+	}
+	if sc, ok := tok.Extra("scope").(string); ok {
+		g.Scope = sc
 	}
 	return g
 }

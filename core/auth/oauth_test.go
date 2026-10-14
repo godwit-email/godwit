@@ -310,3 +310,59 @@ func TestCallbackRejectsHEAD(t *testing.T) {
 	srv.Browse(t, f.AuthURL(), "alice@example.com")
 	require.NoError(t, recv(t, ch).err)
 }
+
+func TestFlowDynamicClient(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.Dynamic(true)
+	srv.Require("resource", "https://api.example/v1")
+	srv.GrantScope("openid email plan.use")
+	cfg := srv.Config("openid", "email")
+	cfg.ClientID, cfg.DynamicClient, cfg.NoPrompt, cfg.Nonce = testoauth.DynamicClientID, true, true, true
+	cfg.RedirectHost, cfg.RedirectPath = "127.0.0.1", "/auth/callback"
+	cfg.AuthParams = map[string]string{"resource": "https://api.example/v1", "agent_name_hint": "Godwit"}
+	cfg.TokenParams = map[string]string{"resource": "https://api.example/v1"}
+	cfg.RequireScope = "plan.use"
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	u, _ := url.Parse(f.AuthURL())
+	q := u.Query()
+	assert.Equal(t, "Godwit", q.Get("agent_name_hint"))
+	assert.NotEmpty(t, q.Get("nonce"))
+	assert.Empty(t, q.Get("prompt"))
+	r := redirectURI(t, f)
+	assert.Equal(t, "127.0.0.1", r.Hostname())
+	assert.Equal(t, "/auth/callback", r.Path)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	res := recv(t, ch)
+	require.NoError(t, res.err)
+	assert.Equal(t, testoauth.IssuedClientID, res.g.ClientID)
+	assert.Equal(t, "openid email plan.use", res.g.Scope)
+	assert.Equal(t, "alice@example.com", res.g.Email)
+}
+
+func TestFlowRequiresScope(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.GrantScope("openid email")
+	cfg := srv.Config("openid", "email")
+	cfg.RequireScope = "plan.use"
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	assert.ErrorIs(t, recv(t, ch).err, auth.ErrScopeMissing)
+}
+
+func TestFlowDynamicClientMissingID(t *testing.T) {
+	srv := testoauth.Start(t) // Dynamic off: the callback carries no client_id
+	cfg := srv.Config("openid")
+	cfg.DynamicClient = true
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	require.Error(t, recv(t, ch).err)
+}

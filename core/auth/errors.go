@@ -13,3 +13,6 @@ var (
 
 // ErrAccessDenied: the user declined at the provider.
 var ErrAccessDenied = errors.New("oauth: access was denied at the provider")
+
+// ErrScopeMissing: the token response did not include the required scope.
+var ErrScopeMissing = errors.New("oauth: the sign-in did not grant the access this app needs")
