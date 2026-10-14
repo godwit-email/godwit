@@ -267,7 +267,8 @@ const body = () => screen.findByRole("textbox", { name: "正文" });
 const setup = async (history = empty) => {
   vi.mocked(api.follow).mockResolvedValue(history);
   render(<ComposePage />);
-  await screen.findByRole("textbox", { name: "告诉 Wit 你想怎么回" });
+  // The file's first mount is cold (fresh jsdom, unwarmed React and jsdom CSS): over 1 s on CI.
+  await screen.findByRole("textbox", { name: "告诉 Wit 你想怎么回" }, { timeout: 3000 });
 };
 
 test("inline review: accept one, reject one → finish([1,-1]); the body takes the result", async () => {
