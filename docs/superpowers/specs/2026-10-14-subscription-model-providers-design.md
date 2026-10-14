@@ -1,6 +1,6 @@
 # 订阅型模型提供商（ChatGPT、Grok）：设计
 
-日期：2026-10-14 · 状态：待评审
+日期：2026-10-14 · 状态：已实现
 
 让用户用 ChatGPT 订阅（Sign in with ChatGPT）和 Grok 订阅（SuperGrok / X Premium）当模型服务：浏览器登录一次，Godwit 保存 refresh token，之后像用 API key 一样调用。参考实现：[pi](https://github.com/earendil-works/pi)（`packages/ai/src/auth/oauth/openai-chatgpt.ts`、`xai.ts`）、[Lorca](https://github.com/egoist/Lorca)、[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)。
 

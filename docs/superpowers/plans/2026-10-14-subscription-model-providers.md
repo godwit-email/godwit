@@ -61,7 +61,7 @@
   ```
 - testoauth 新增：`const DynamicClientID = "godwit-test-dynamic"`、`const IssuedClientID = "godwit-test-issued"`；`func (s *Server) Dynamic(on bool)`（授权接受 DynamicClientID，回调附 `client_id=IssuedClientID`，token 端点接受 IssuedClientID）；`func (s *Server) Require(param, value string)`（授权与 token 请求缺该参数即 400 `invalid_request`）；`func (s *Server) GrantScope(scope string)`（token 响应带 `scope`）；`authorize` 接受 `redirect_uri` 主机 `localhost` 或 `127.0.0.1`，路径任意。
 
-- [ ] **Step 1: 写失败测试**（追加到 `core/auth/oauth_test.go`）
+- [x] **Step 1: 写失败测试**（追加到 `core/auth/oauth_test.go`）
 
 ```go
 func TestFlowDynamicClient(t *testing.T) {
@@ -121,27 +121,27 @@ func TestFlowDynamicClientMissingID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `go test ./core/auth/ -run 'TestFlowDynamicClient|TestFlowRequiresScope' -v`
 Expected: 编译错误（`DynamicClient`、`testoauth.Dynamic` 未定义）。
 
-- [ ] **Step 3: 实现 testoauth 改动**（`core/internal/testoauth/server.go`）
+- [x] **Step 3: 实现 testoauth 改动**（`core/internal/testoauth/server.go`）
 
 `Dynamic`、`Require`、`GrantScope` 各存一个字段；`authorize` 校验 `client_id == ClientID || (dynamic && client_id == DynamicClientID)`，检查 `Require` 的参数；回调在 dynamic 时加 `client_id=IssuedClientID`；`token` 校验 `client_id == ClientID || (dynamic && client_id == IssuedClientID)` 与 `Require`；`issue` 在 scope 非空时加 `"scope"` 字段。`authorize` 的 redirect 主机校验改为 `localhost` 或 `127.0.0.1`。
 
-- [ ] **Step 4: 实现 auth 改动**
+- [x] **Step 4: 实现 auth 改动**
 
 - `StartFlow`：`host := cmp.Or(cfg.RedirectHost, "localhost")`、`path := cmp.Or(cfg.RedirectPath, "/callback")`；mux 路由注册在 `path`；`!cfg.NoPrompt` 才加 `prompt=select_account`；`cfg.Nonce` 时生成 32 字节随机 base64url 加 `nonce`；`AuthParams` 每项 `oauth2.SetAuthURLParam`。
 - `callback`：`clientID := q.Get("client_id")` 传给 `exchange`。
 - `exchange(q)`：`DynamicClient && clientID == ""` → `errors.New("oauth: the callback named no client ID")`；复制 `f.cfg`，dynamic 时 `ClientID = clientID`；`Exchange` 的 opts 加 `TokenParams` 的 `SetAuthURLParam`；`grantFrom` 后填 `g.ClientID = clientID`（dynamic）和 `g.Scope = tok.Extra("scope")`；`RequireScope != ""` 且 `slices.Contains(strings.Fields(g.Scope), RequireScope)` 为假 → `ErrScopeMissing`。
 
-- [ ] **Step 5: 跑全部 auth 测试**
+- [x] **Step 5: 跑全部 auth 测试**
 
 Run: `go test ./core/auth/ ./core/internal/testoauth/ ./core/ -run 'Flow|OAuth|Refresh|Reauth' `
 Expected: PASS（现有邮箱 OAuth 用例不变）。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add core/auth core/internal/testoauth
@@ -159,7 +159,7 @@ git commit -m "feat(auth): dynamic client, fixed redirect path and extra params 
 **Interfaces:**
 - Produces: `func RefreshForm(ctx context.Context, cfg OAuthConfig, hc *http.Client, refreshToken string) (Grant, error)`。表单 POST `cfg.TokenURL`：`grant_type=refresh_token, refresh_token, client_id=cfg.ClientID` + `cfg.TokenParams`。返回的 `Grant.RefreshToken` 在服务端没给或与旧的相同时为 `""`；`Expiry` 缺 `expires_in` 时为 now+30min（复用 `noExpiryTTL`）；`Email` 来自 id_token（复用 `emailFromIDToken`）。错误：响应 JSON `error` 字段按 `tokenError` 同一套映射（`invalid_grant` → `ErrInvalidGrant`，码表外 → `errBadTokenResponse`）；传输失败 → `errors.New("oauth: could not reach the token endpoint")`；ctx 取消/超时用 `%w` 包住。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 func TestRefreshForm(t *testing.T) {
@@ -193,17 +193,17 @@ func TestRefreshForm(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `go test ./core/auth/ -run TestRefreshForm -v` — Expected: `auth.RefreshForm` 未定义。
 
-- [ ] **Step 3: 实现 `RefreshForm`**（`core/auth/refresh.go`）
+- [x] **Step 3: 实现 `RefreshForm`**（`core/auth/refresh.go`）
 
 限制读取响应正文 64 KiB；解码 `access_token, refresh_token, expires_in, id_token, scope, error`。
 
-- [ ] **Step 4: 跑测试** — `go test ./core/auth/` Expected: PASS
+- [x] **Step 4: 跑测试** — `go test ./core/auth/` Expected: PASS
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(auth): RefreshForm for token endpoints that take extra params"`
+- [x] **Step 5: Commit** — `git commit -m "feat(auth): RefreshForm for token endpoints that take extra params"`
 
 ---
 
@@ -226,7 +226,7 @@ Run: `go test ./core/auth/ -run TestRefreshForm -v` — Expected: `auth.RefreshF
   `StartDevice` 表单 POST `cfg.DeviceURL`：`client_id, scope=strings.Join(Scopes," ")` + `AuthParams`；解析 `device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval`（`interval` 缺省或 ≤0 → 5 秒）；`verification_uri*` 必须是 https（测试服务器是 http：允许 loopback 主机的 http）。轮询在 `StartDevice` 返回前启动的 goroutine 里进行，内部 ctx 超时取 `min(expires_in, FlowTimeout)`；POST `cfg.TokenURL`：`grant_type=urn:ietf:params:oauth:grant-type:device_code, device_code, client_id`。响应 `error`：`authorization_pending` 继续；`slow_down` 间隔 +5 秒；`access_denied`/`authorization_denied` → `ErrAccessDenied`；`expired_token` 或内部超时 → `ErrFlowExpired`；其他 → `errBadTokenResponse`。成功响应按 `RefreshForm` 同样解析为 `Grant`（RefreshToken 原样保留）。`Wait`/`Close` 语义与 `Flow` 相同（`finishOnce` + `done`）。
 - testoauth 新增：`func (s *Server) DeviceConfig(scopes ...string) auth.OAuthConfig`（含 `DeviceURL = URL+"/device/code"`）；`POST /device/code` 返回 `interval: 1`、`expires_in: 5`；`func (s *Server) Approve(email string)` 让后续轮询成功；`func (s *Server) DenyDevice()`；`func (s *Server) SlowDownOnce()`；`func (s *Server) DeviceExpired()`（轮询返回 `expired_token`）。
 
-- [ ] **Step 1: 写失败测试**（`core/auth/device_test.go`，package `auth_test`）
+- [x] **Step 1: 写失败测试**（`core/auth/device_test.go`，package `auth_test`）
 
 ```go
 func TestDeviceFlowHappyPath(t *testing.T) {
@@ -253,13 +253,13 @@ func TestDeviceFlowSlowDown(t *testing.T) { /* SlowDownOnce 后 Approve：仍成
 func TestDeviceFlowCancelled(t *testing.T) { /* ctx 取消 → Wait 返回 context.Canceled；Close 幂等 */ }
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — `go test ./core/auth/ -run TestDeviceFlow` Expected: 未定义。
+- [x] **Step 2: 跑测试确认失败** — `go test ./core/auth/ -run TestDeviceFlow` Expected: 未定义。
 
-- [ ] **Step 3: 实现 testoauth 设备码端点**，再 **Step 4: 实现 `device.go`**。
+- [x] **Step 3: 实现 testoauth 设备码端点**，再 **Step 4: 实现 `device.go`**。
 
-- [ ] **Step 5: 跑测试** — `go test ./core/auth/ ./core/internal/testoauth/` Expected: PASS（总耗时 < 10 s）。
+- [x] **Step 5: 跑测试** — `go test ./core/auth/ ./core/internal/testoauth/` Expected: PASS（总耗时 < 10 s）。
 
-- [ ] **Step 6: Commit** — `git commit -m "feat(auth): device-code flow"`
+- [x] **Step 6: Commit** — `git commit -m "feat(auth): device-code flow"`
 
 ---
 
@@ -299,7 +299,7 @@ func TestDeviceFlowCancelled(t *testing.T) { /* ctx 取消 → Wait 返回 conte
 - `prepare` 规则（在 provider 校验之后、key action 之前）：当 `ModelProviderLogin(in.Provider) == "oauth"`：`in.BaseURL = ModelProviderURL(in.Provider)`；`in.Kind != "" && in.Kind != ai.KindResponses` → 现有 invalid kind 错误；`in.JudgeFormat != ""` → `fmt.Errorf("%s does not judge", in.Provider)`；`in.APIKey != "" || in.KeyAction == KeyClear` → `errors.New("this service signs in instead of taking a key")`；`in.OAuthFlowID != ""` → `g, err := s.flowGrant(AccountInput{OAuthFlowID: in.OAuthFlowID, Provider: in.Provider})`，`in.oauthEmail, in.oauthClientID = g.Email, g.ClientID`，返回 `(KeyReplace, g.RefreshToken, old, nil)`；否则 `id == 0` → `ErrModelLogin`，`id != 0` → 走 `KeyKeep`。
 - `AddModelService`/`UpdateModelService`：INSERT/UPDATE 带 `oauth_email`、`oauth_client_id`（UPDATE 用 `COALESCE(NULLIF(?, ''), oauth_email)`）；成功后 `in.OAuthFlowID != ""` 时 `s.takeGrant(in.OAuthFlowID)`。
 
-- [ ] **Step 1: 写失败测试**（`core/models_oauth_test.go`，package `core`）
+- [x] **Step 1: 写失败测试**（`core/models_oauth_test.go`，package `core`）
 
 ```go
 // oauthLLM points chatgpt at a testoauth server (PKCE) and a testllm Responses server; restores on cleanup.
@@ -375,15 +375,15 @@ func TestHostID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — `go test ./core/ -run 'ChatGPT|Grok|HostID' ` Expected: 编译错误。
+- [x] **Step 2: 跑测试确认失败** — `go test ./core/ -run 'ChatGPT|Grok|HostID' ` Expected: 编译错误。
 
-- [ ] **Step 3: 实现迁移、`models_oauth.go`、`prepare` 与 Add/Update 改动、`BeginOAuth` 分派**
+- [x] **Step 3: 实现迁移、`models_oauth.go`、`prepare` 与 Add/Update 改动、`BeginOAuth` 分派**
 
 `modelOAuth` 里 ChatGPT 的 `OAuth`：`ClientID: "dynamic_agent_client"`，`RedirectHost: "127.0.0.1"`，`RedirectPath: "/auth/callback"`，`DynamicClient, NoPrompt, Nonce: true`，`RequireScope: "chatgpt.tokens.use.direct"`，`AuthParams: {"resource": ..., "agent_name_hint": "Godwit"}`，`TokenParams: {"resource": ...}`；Grok 的 `OAuth`：`DeviceURL`、`AuthParams: {"referrer": "godwit"}`，`Models: ["grok-4.7", "grok-4.6"]`。
 
-- [ ] **Step 4: 跑测试** — `go test ./core/` Expected: PASS（含现有 `TestModelServiceCRUD`、`TestModelServiceValidation`）。
+- [x] **Step 4: 跑测试** — `go test ./core/` Expected: PASS（含现有 `TestModelServiceCRUD`、`TestModelServiceValidation`）。
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(core): chatgpt and grok model providers signed in with OAuth"`
+- [x] **Step 5: Commit** — `git commit -m "feat(core): chatgpt and grok model providers signed in with OAuth"`
 
 ---
 
@@ -411,7 +411,7 @@ func TestHostID(t *testing.T) {
 - `runText`：`r.Err != nil && r.Err.Code == ai.CodeUnauthorized` → `s.forgetModelToken(req.Model.ServiceID)`。`core/assist.go` 里消费 `Result.Err` 的地方（grep `wait()` / `.Err`）同样加这一行。
 - `ai.Engine.instance`：`in.cfg != cfg` 时，若除 `APIKey` 外全同，则只 `delete(e.insts, id)` 不 `cancel`；否则照旧 `cancel(errStale)`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 // core/ai/runtime_test.go
@@ -463,15 +463,15 @@ func TestUnauthorizedRunForgetsToken(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — `go test ./core/ ./core/ai/ -run 'AccessToken|Rotates|Reauth|ListsWithToken|Forgets|KeyChange'` Expected: 未定义 / FAIL。
+- [x] **Step 2: 跑测试确认失败** — `go test ./core/ ./core/ai/ -run 'AccessToken|Rotates|Reauth|ListsWithToken|Forgets|KeyChange'` Expected: 未定义 / FAIL。
 
-- [ ] **Step 3: 实现 `models_token.go`、调用点、`runtime.go`**
+- [x] **Step 3: 实现 `models_token.go`、调用点、`runtime.go`**
 
 登录时拿到的 access token 也要进缓存：`prepare` 消费 grant 时记下 `g.AccessToken, g.Expiry`，Add/Update 成功后 `s.cacheModelToken(id, keyVersion, g)`（未导出小函数）。
 
-- [ ] **Step 4: 跑测试** — `go test ./core/... ` Expected: PASS。
+- [x] **Step 4: 跑测试** — `go test ./core/... ` Expected: PASS。
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(core): access tokens for subscription model services"`
+- [x] **Step 5: Commit** — `git commit -m "feat(core): access tokens for subscription model services"`
 
 ---
 
@@ -494,7 +494,7 @@ func TestUnauthorizedRunForgetsToken(t *testing.T) {
   `CheckModelService`：`ModelProviderLogin(in.Provider) == "oauth"` 且 `ListModels` 返回非 `ErrModelAuth` 的错误或空列表时，`c.ListSupported = false`，`c.Models = slices.Clone(modelOAuth[in.Provider].Models)`，`err = nil`。
 - testllm 新增：`func (s *Server) SetHidden(models ...string)`（这些以 `visibility: "hidden"` 列出，其余列为 `"list"`；默认不带字段）；`Turn.FailCode string`（`response.failed` 的 `error.code`，默认 `server_error`）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```go
 // core/ai/listmodels_test.go
@@ -521,13 +521,13 @@ func TestGrokCheckFallsBackToBuiltinModels(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — `go test ./core/ai/ ./core/ -run 'Visibility|UsageLimit|FallsBack'`
+- [x] **Step 2: 跑测试确认失败** — `go test ./core/ai/ ./core/ -run 'Visibility|UsageLimit|FallsBack'`
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
-- [ ] **Step 4: 跑测试** — `go test ./core/...` Expected: PASS。
+- [x] **Step 4: 跑测试** — `go test ./core/...` Expected: PASS。
 
-- [ ] **Step 5: Commit** — `git commit -m "feat(ai): hidden model filtering and ChatGPT usage-limit errors"`
+- [x] **Step 5: Commit** — `git commit -m "feat(ai): hidden model filtering and ChatGPT usage-limit errors"`
 
 ---
 
@@ -564,7 +564,7 @@ func TestGrokCheckFallsBackToBuiltinModels(t *testing.T) {
   - `app/reader_ai.go:499` 的 `kit.Alert`：错误是 `*ai.Error` 且 `Detail == ai.DetailChatGPTUsage` 时，action 为「管理用量」按钮，点击 `a.plat.OpenURL("https://chatgpt.com/settings/usage")`。
 - i18n 新键（zh / en）：`settings.models.preset.chatgpt`（"ChatGPT"/"ChatGPT"）、`settings.models.preset.grok`（"Grok"）、`settings.models.tile.chatgpt`（"用 ChatGPT 订阅" / "Your ChatGPT plan"）、`settings.models.tile.grok`（"用 SuperGrok / X Premium 订阅" / "Your SuperGrok or X Premium plan"）、`settings.models.account`（"账户" / "Account"）、`settings.models.login.chatgpt`（"Continue with ChatGPT" 两种语言相同）、`settings.models.login.grok`（"使用 SuperGrok 登录" / "Sign in with SuperGrok"）、`settings.models.login.opened`（"已在浏览器中打开登录页，完成后这里会自动继续" / "The sign-in page is open in your browser; this continues when you finish"）、`settings.models.login.reopen`（"重新打开" / "Reopen"）、`settings.models.login.again`（"重新登录" / "Sign in again"）、`settings.models.login.denied`（"登录被拒绝或取消" / "Sign-in was declined"）、`settings.models.login.timeout`（"登录超时，请重试" / "Sign-in timed out; try again"）、`settings.models.login.expired`（"登录已失效，请重新登录" / "The sign-in is no longer valid; sign in again"）、`settings.models.need.login`（"先登录再添加" / "Sign in to add it"）、`error.ai.rate_limited.chatgpt_usage`（"ChatGPT 套餐用量已达上限" / "Your ChatGPT plan's usage limit is reached"）、`settings.models.manage_usage`（"管理用量" / "Manage usage"）。
 
-- [ ] **Step 1: 写失败测试**（`app/settings_models_test.go`；`fakeOAuth` 来自 `onboarding_test.go`，装法 `h.app.oauth = fo`；给它加 `func (f *fakeOAuth) fail(flowID string, err error)`，让 `Await` 返回该错误——把 `flows` 的通道元素改成 `struct{ email string; err error }`）
+- [x] **Step 1: 写失败测试**（`app/settings_models_test.go`；`fakeOAuth` 来自 `onboarding_test.go`，装法 `h.app.oauth = fo`；给它加 `func (f *fakeOAuth) fail(flowID string, err error)`，让 `Await` 返回该错误——把 `flows` 的通道元素改成 `struct{ email string; err error }`）
 
 ```go
 func TestOAuthTileLogin(t *testing.T) {
@@ -622,22 +622,22 @@ func TestHumanizeChatGPTUsage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 跑测试确认失败** — `go test ./app/ -run 'OAuthTile|OAuthService|HumanizeChatGPT'` Expected: 编译错误。
+- [x] **Step 2: 跑测试确认失败** — `go test ./app/ -run 'OAuthTile|OAuthService|HumanizeChatGPT'` Expected: 编译错误。
 
-- [ ] **Step 3: 实现 i18n 键、表单状态与 `accountRow`、`login`、卡片副标题、错误映射、reader 的「管理用量」按钮**
+- [x] **Step 3: 实现 i18n 键、表单状态与 `accountRow`、`login`、卡片副标题、错误映射、reader 的「管理用量」按钮**
 
 `login` 照 `app/onboarding.go` 的 `startOAuth` 结构写（`a.do` 两段：Begin+OpenURL，再 Await）。
 
-- [ ] **Step 4: 跑测试** — `go test ./app/ ./internal/i18n/` Expected: PASS（含 `TestKeysMatch` 与现有 `TestModelServiceCRUD`）。
+- [x] **Step 4: 跑测试** — `go test ./app/ ./internal/i18n/` Expected: PASS（含 `TestKeysMatch` 与现有 `TestModelServiceCRUD`）。
 
 - [ ] **Step 5: 手动验证**（真机，不进 CI）：`mise run dev`（或项目的启动方式）→ 设置 → 模型服务 → 添加服务 → ChatGPT → Continue with ChatGPT → 浏览器完成 → 回到 Godwit 看到邮箱和模型列表 → 添加 → 在 Wit 里发一句话收到回复。Grok 同样走一遍。把两家 `/v1/models` 的真实返回摘要追加到 spec 的附录。
 
-- [ ] **Step 6: Commit** — `git commit -m "feat(settings): sign in with ChatGPT and SuperGrok as model services"`
+- [x] **Step 6: Commit** — `git commit -m "feat(settings): sign in with ChatGPT and SuperGrok as model services"`
 
 ---
 
 ### Task 8: 收尾
 
-- [ ] `go vet ./... && go test ./...` 全绿。
-- [ ] `docs/superpowers/specs/2026-10-14-subscription-model-providers-design.md` 状态改为「已实现」，§8 里真机验证结果（Grok `/v1/models` 是否可用）更新。
-- [ ] Commit：`docs(specs): mark subscription providers as implemented`。
+- [x] `go vet ./... && go test ./...` 全绿。
+- [x] `docs/superpowers/specs/2026-10-14-subscription-model-providers-design.md` 状态改为「已实现」，§8 里真机验证结果（Grok `/v1/models` 是否可用）更新。
+- [x] Commit：`docs(specs): mark subscription providers as implemented`。
