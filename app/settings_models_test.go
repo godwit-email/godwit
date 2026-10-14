@@ -1,12 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -414,6 +418,27 @@ func TestStaleProbeIgnored(t *testing.T) {
 	h.until("the probe settles", func() bool { return !f.probing })
 	if slices.Contains(f.offered, "stale-model") {
 		t.Fatalf("a probe of the old address was adopted: offered %q", f.offered)
+	}
+}
+
+func TestServiceListAvatars(t *testing.T) {
+	h := withLLM(t)
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	var calls atomic.Int32
+	m.serviceAvatar = func(_ context.Context, id int64) (core.Avatar, error) {
+		calls.Add(1)
+		var buf bytes.Buffer
+		png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 1, 1)))
+		return core.Avatar{Data: buf.Bytes(), Format: "png", Source: "favicon"}, nil
+	}
+	h.openSettings("models")
+	test, _ := h.modelService("test")
+	h.until("the favicon shows", func() bool { return m.avatars[test.BaseURL] != nil })
+	h.openSettings("general")
+	h.openSettings("models")
+	h.see("test")
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the favicon was asked for %d times", n)
 	}
 }
 

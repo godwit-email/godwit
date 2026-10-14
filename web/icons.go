@@ -128,9 +128,18 @@ var RemixIcons = map[string]string{
 	"x":                         "node_modules/remixicon/icons/System/close-line.svg",
 }
 
-// remix holds exactly the files of RemixIcons, and the package licence.
+// BrandIcons are the model providers' marks, from @lobehub/icons-static-svg
+// (MIT), by Godwit provider ID. Each value is the path under remix.
+var BrandIcons = map[string]string{
+	"chatgpt": "node_modules/@lobehub/icons-static-svg/icons/openai.svg",
+	"grok":    "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
+}
+
+// remix holds exactly the files of RemixIcons and BrandIcons, and the packages' licences.
 //
 //go:embed node_modules/remixicon/License
+//go:embed node_modules/@lobehub/icons-static-svg/icons/openai.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/grok.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
@@ -252,7 +261,16 @@ var remix embed.FS
 
 // RemixIcon returns the SVG of a Godwit icon name, as "trash-2".
 func RemixIcon(name string) ([]byte, bool) {
-	p, ok := RemixIcons[name]
+	return readIcon(RemixIcons, name)
+}
+
+// BrandIcon returns the SVG of a model provider's mark, as "chatgpt".
+func BrandIcon(id string) ([]byte, bool) {
+	return readIcon(BrandIcons, id)
+}
+
+func readIcon(m map[string]string, name string) ([]byte, bool) {
+	p, ok := m[name]
 	if !ok {
 		return nil, false
 	}

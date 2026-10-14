@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/godwit-email/godwit/web"
 )
 
 //go:embed brands/*.png
@@ -17,6 +19,21 @@ var (
 	brandOnce sync.Once
 	brands    map[string]*ui.Bitmap
 )
+
+// BrandIcon returns the glyph of a model provider ID, as "chatgpt" (from
+// web.BrandIcons; ui.Icon tints it), or nil for a provider without one.
+func BrandIcon(id string) *ui.SVG {
+	return glyphs[id]
+}
+
+var glyphs = func() map[string]*ui.SVG {
+	m := make(map[string]*ui.SVG, len(web.BrandIcons))
+	for id := range web.BrandIcons {
+		b, _ := web.BrandIcon(id)
+		m[id] = ui.MustParseSVG(b)
+	}
+	return m
+}()
 
 // Brand returns the mark of a provider ID, as "qq" (see brands/README.md),
 // or nil for a provider without one.

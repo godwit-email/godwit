@@ -109,9 +109,9 @@ func NewCodec() *rpc.Codec {
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported
-// one but Close, Redact, AuditExternal, SenderAvatar and the test hooks.
+// one but Close, Redact, AuditExternal, the avatars and the test hooks.
 func Expose(method string) bool {
-	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && !strings.HasSuffix(method, "ForTest")
+	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" && !strings.HasSuffix(method, "ForTest")
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see

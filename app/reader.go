@@ -327,19 +327,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		if err != nil || len(avatar.Data) == 0 {
 			return err
 		}
-		if avatar.Format == "svg" {
-			var svg *ui.SVG
-			svg, err = ui.ParseSVG(avatar.Data)
-			if err == nil {
-				image = svg
-			}
-		} else {
-			var bitmap *ui.Bitmap
-			bitmap, err = ui.DecodeBitmap(avatar.Data)
-			if err == nil {
-				image = bitmap
-			}
-		}
+		image, err = avatarImage(avatar)
 		if err == nil && !manual {
 			trusted, err = a.svc.ImagesAllowed(ctx, id)
 			if !trusted {

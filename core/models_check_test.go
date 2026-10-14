@@ -190,3 +190,17 @@ func TestKeylessKeepNewAddress(t *testing.T) {
 	require.Len(t, b.Headers(), 1)
 	assert.Zero(t, keyed(b.Headers()), "B got no auth header")
 }
+
+func TestModelServiceHost(t *testing.T) {
+	for _, c := range []struct{ provider, base, want string }{
+		{ProviderOpenAI, "https://api.openai.com/v1", "openai.com"},
+		{ProviderAnthropic, "https://api.anthropic.com/v1", "anthropic.com"},
+		{ProviderTypeSafe, "https://api.typesafe.ai/v1", "typesafe.ai"},
+		{ProviderOther, "https://openrouter.ai/api/v1", "openrouter.ai"},
+		{ProviderOther, "http://localhost:4000/v1", ""},
+		{ProviderChatGPT, "https://api.openai.com/v1", ""},
+		{ProviderGrok, "https://api.x.ai/v1", ""},
+	} {
+		assert.Equal(t, c.want, modelServiceHost(ModelService{Provider: c.provider, BaseURL: c.base}), c.provider+" "+c.base)
+	}
+}

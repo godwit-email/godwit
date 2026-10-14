@@ -43,6 +43,20 @@ func (m *modelsView) close() {
 	m.open, m.form = false, nil
 }
 
+// svcMark is a service's avatar: its provider's glyph, else the favicon of
+// the site it talks to, else its initial, as a sender's in mail.
+func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
+	t, th := theme.Of(c), c.Theme()
+	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
+			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+		})
+		return
+	}
+	m.loadAvatar(s)
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
+}
+
 // list is the services, one card row each.
 func (m *modelsView) list(c *ui.Context, u usage) {
 	t, th := theme.Of(c), c.Theme()
@@ -50,9 +64,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 	for _, s := range m.services {
 		rows = append(rows, func() {
 			listRow(c.Key(s.ID), 0, false, func() { m.openEdit(s) }, func() {
-				ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-					kit.Text(c, badge(s.Provider), t.Text.Sm).Font(theme.Mono)
-				})
+				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, s.Name).FontWeight(500).LineHeight(theme.LineFor(s.Name)).SingleLine().Shrink(1)
@@ -258,7 +270,9 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
-		kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
+		ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
+			kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
+		})
 		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
 			m.cancelForm()
 			f = newForm(providerGroups[m.group][0])
@@ -306,7 +320,9 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
 			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600).LineHeight(theme.LineFor(i18n.T("settings.models.caps")))
-			kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
+				kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+			}
 		})
 		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
 		gen, judge := core.ProviderFormats(f.provider)

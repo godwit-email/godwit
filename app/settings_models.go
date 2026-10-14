@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -29,9 +30,12 @@ type modelsView struct {
 	form                 *modelForm // nil until a service is chosen or added
 	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
 	judge                string
-	open                 bool // the add/edit dialog shows form
-	group                int  // the add dialog's provider group: index into providerGroups
-	loaded               bool // the list has been read once
+	open                 bool                      // the add/edit dialog shows form
+	group                int                       // the add dialog's provider group: index into providerGroups
+	loaded               bool                      // the list has been read once
+	avatars              map[string]ui.ImageSource // services' favicons by BaseURL; present once asked for
+
+	serviceAvatar func(ctx context.Context, id int64) (core.Avatar, error)
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
 	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
@@ -1009,21 +1013,35 @@ func fetchFailure(err error) string {
 	return humanize(err)
 }
 
-// badge is a service's two-letter mark: its provider's.
-func badge(provider string) string {
-	switch provider {
-	case core.ProviderOpenAI:
-		return "AI"
-	case core.ProviderAnthropic:
-		return "AN"
-	case core.ProviderTypeSafe:
-		return "TS"
-	case core.ProviderChatGPT:
-		return "CG"
-	case core.ProviderGrok:
-		return "GK"
+// loadAvatar asks core once for the favicon of the site s talks to.
+func (m *modelsView) loadAvatar(s core.ModelService) {
+	if _, asked := m.avatars[s.BaseURL]; asked || icons.BrandIcon(s.Provider) != nil {
+		return
 	}
-	return "GW" // other: a gateway or compatible service
+	if m.avatars == nil {
+		m.avatars = map[string]ui.ImageSource{}
+	}
+	m.avatars[s.BaseURL] = nil
+	var image ui.ImageSource
+	m.a.do(func(ctx context.Context) error {
+		av, err := m.serviceAvatar(ctx, s.ID)
+		if err == nil && len(av.Data) > 0 {
+			image, err = avatarImage(av)
+		}
+		return err
+	}, func(err error) {
+		if err == nil && image != nil {
+			m.avatars[s.BaseURL] = image
+		}
+	})
+}
+
+// avatarImage decodes an avatar core returned, SVG or bitmap.
+func avatarImage(av core.Avatar) (ui.ImageSource, error) {
+	if av.Format == "svg" {
+		return ui.ParseSVG(av.Data)
+	}
+	return ui.DecodeBitmap(av.Data)
 }
 
 // listCard is a bordered list of rows.
