@@ -404,10 +404,16 @@ res: { "texts": ["…", "…"], "source": "en" }                              //
   - 带 `com.apple.quarantine`、系统从没见过的库：所有宿主都拒绝（「library load disallowed by system policy」）。把内容写成一个新文件后就能加载。同一份代码哈希评估过之后，带隔离标记的副本也能加载，所以实验必须用新编译的库。
   - hardened 程序 dlopen 不接受相对路径，宿主必须传绝对路径（4.5）。
   - 没做：公证（本机没有 notarytool 凭据）；打成 `.app` 后的同样测试（库验证按进程的签名判断，裸二进制与包内主程序一样，但没有实测）。
-- [ ] **E3 Windows / Linux**：本机没有可用的虚拟机环境（只有一台关着的 Windows UTM 虚拟机，没有 mingw）。已在本地分支 `experiment/native-p0-e3` 准备好工作流 `.github/workflows/native-p0-e3.yml`，只在推送这个分支时运行：ubuntu x64 / arm64、windows x64 / arm64（arm64 的 Windows 没有自带 mingw，只作参考），跑同一个 driver、拒绝加载与 ABI 检查、Linux 的 race 与最低 glibc。**需要推送这个分支**。
+- [x] **E3 Windows / Linux**：通过。GitHub Actions 运行 [38561668170](https://github.com/godwit-email/godwit/actions/runs/38561668170)，分支 `experiment/native-p0-e3`。四个平台都是 `CGO_ENABLED=0` 的宿主加载各自平台用 cgo 编出的 DLX。
+  - ubuntu x64、ubuntu arm64、windows x64、windows arm64：`describe`、坏请求、1024 次并发、超时 kill 后懒重启、崩溃隔离、真实翻译、哈希不符退出码 3、ABI 2 退出码 4、stdin 关闭正常退出，全部通过。
+  - Windows 上加载中的 DLL 删除失败（「Access is denied」），子进程退出后可以删，和 7.2 的设计一致。Linux 加载中也能删。
+  - Linux 的 `-race` 只能用 cgo 宿主跑（Linux 的 race 需要 cgo），结果无报告；无 cgo 宿主的正确性由上面的普通运行覆盖。
+  - 在 ubuntu 24.04 上编出的 `.so` 只依赖 libc，最高需要 `GLIBC_2.34`，也就是 Ubuntu 22.04、Debian 12 及以后。要支持更老的发行版，插件仓库的 CI 换用更老的构建镜像即可，应用不用管。
+  - Windows arm64 镜像只带 x86_64 的 mingw，用 `zig cc -target aarch64-windows-gnu` 作为 cgo 编译器可以编出可用的 arm64 DLL。插件仓库的发布 CI 照这个做。
+  - 加载到 `describe` 返回：Linux 14–19 ms，Windows 171–217 ms（含 Defender 首次扫描新文件，未细分）。
 - [x] **E4 ABI 不兼容**：通过。宿主传 `host_abi = 2`，插件 `init` 返回 -1，子进程以退出码 4 报「incompatible ABI」，不崩。另外：哈希不符时退出码 3、不 dlopen，只有构造函数的库**没有执行**；授权的哈希下构造函数执行，然后因为没有入口被拒（证明校验必须在加载前）；文件改一个字节被拒。
 
-E3 通过后开始 P1。E3 失败则只影响对应平台：该平台的 registry 条目不发布，P1 照常。
+P0 全部通过，可以开始 P1。
 
 ### P1 核心加载链路
 
@@ -457,8 +463,8 @@ E3 通过后开始 P1。E3 失败则只影响对应平台：该平台的 registr
 
 ### 7.2 Windows / Linux
 
-- Windows：`syscall.LoadLibrary` 不需要 cgo；加载中的 DLL 不能删除或覆盖，子进程先退出再删解决（E3 的 `file_lock` 步骤专门验证）。Go c-shared 的 DLL 需要 mingw 构建 `[未验证，E3]`。
-- Linux：purego `Dlopen` 不需要 cgo；c-shared 产物链接 glibc，最低 glibc 版本由插件仓库的构建镜像决定，写进 `registry.json` 的 `summary` 里即可，应用不检测。
+- Windows：`syscall.LoadLibrary` 不需要 cgo；加载中的 DLL 不能删除或覆盖，子进程先退出再删（E3 已验证）。Go c-shared 的 DLL 用 mingw 构建，arm64 用 zig（E3）。
+- Linux：purego `Dlopen` 不需要 cgo（E3 已验证 x64 与 arm64）；c-shared 产物只链接 libc，在 ubuntu 24.04 上构建需要 glibc 2.34。最低 glibc 由插件仓库的构建镜像决定，写进 `registry.json` 的 `summary` 里即可，应用不检测。
 
 ### 7.3 生命周期
 
@@ -492,7 +498,7 @@ P0 已回答：无 cgo 宿主在 macOS 上加载 Go c-shared 库可行（E1）�
 
 仍需实验：
 
-1. Windows mingw 构建的 Go c-shared DLL 被无 cgo 宿主 `LoadLibrary` 是否正常；Linux 上 purego 的 fakecgo 加载 Go c-shared 库是否正常；Linux 最低 glibc（E3，等推送实验分支）。
+1. Windows 与 Linux 已由 E3 回答。
 2. 公证：带 `disable-library-validation` 的包能否通过公证（`release.yml` 的 macOS job 跑一次即可）。
 
 不阻塞方向、但要记住的：
