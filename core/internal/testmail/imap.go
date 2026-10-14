@@ -199,11 +199,17 @@ func (c *tconn) Write(b []byte) (int, error) {
 		c.Conn.Close()
 		return 0, net.ErrClosed
 	}
-	out := c.rewrite(b)
-	n, err := c.Conn.Write(out)
-	c.sent.Add(int64(n))
-	if err != nil {
-		return 0, err
+	// Each chunk is counted before it is written, so a reply the client has is in
+	// BytesSent, and one still blocked in Write adds at most a chunk.
+	for out := c.rewrite(b); len(out) > 0; {
+		k := min(len(out), 32<<10)
+		c.sent.Add(int64(k))
+		n, err := c.Conn.Write(out[:k])
+		c.sent.Add(int64(n - k))
+		if err != nil {
+			return 0, err
+		}
+		out = out[k:]
 	}
 	return len(b), nil
 }
