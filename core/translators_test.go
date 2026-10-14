@@ -387,3 +387,40 @@ func TestTranslateDraftAudited(t *testing.T) {
 	require.Len(t, rows.Values, 1)
 	assert.Equal(t, "draft", rows.Values[0][0])
 }
+
+func TestTranslateDraftHTMLKeepsImagesAndCode(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	for src, want := range map[string][]string{
+		`<p>Hello<img src="cid:x"></p>`:                    {"[fr] Hello", `<img src="cid:x"/>`},
+		`<p><code>npm install foo</code></p>`:              {`<p><code>npm install foo</code></p>`},
+		`<p>Run <code>npm i</code> now</p>`:                {"<code>npm i</code>", "[fr] Run"},
+		`<p>One<br>Two</p>`:                                {"[fr] One<br/>Two"},
+		`<p><a href="https://x.example/docs">Docs</a></p>`: {`<a href="https://x.example/docs">[fr] Docs</a>`},
+	} {
+		got, err := e.s.translateDraftHTML(t.Context(), "dlx", src, "fr")
+		require.NoError(t, err, src)
+		for _, w := range want {
+			assert.Contains(t, got, w, src)
+		}
+		assert.NotContains(t, got, "[fr] npm", src)
+	}
+}
+
+// A draft larger than one ABI request is sent in batches, in order.
+func TestTranslateDraftHTMLBatches(t *testing.T) {
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	block := strings.Repeat("a", 400<<10)
+	src := "<p>" + block + "1</p><p>" + block + "2</p><p>" + block + "3</p>"
+	got, err := e.s.translateDraftHTML(t.Context(), "dlx", src, "fr")
+	require.NoError(t, err)
+	i1, i2, i3 := strings.Index(got, "[fr] "+block+"1"), strings.Index(got, "[fr] "+block+"2"), strings.Index(got, "[fr] "+block+"3")
+	assert.True(t, i1 >= 0 && i1 < i2 && i2 < i3, "all three, in order")
+	reqs := translateRequests(t, record)
+	assert.Greater(t, len(reqs), 1, "more than one request")
+	for _, r := range reqs {
+		b, _ := json.Marshal(r)
+		assert.Less(t, len(b), 1<<20, "each within the ABI's request limit")
+	}
+}

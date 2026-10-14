@@ -284,14 +284,15 @@ var (
 		atom.Li: true, atom.Td: true, atom.Th: true, atom.Blockquote: true, atom.Div: true, atom.Dd: true, atom.Dt: true}
 	// styleTags may wrap a block's whole text and stay around its translation.
 	styleTags = map[atom.Atom]bool{atom.A: true, atom.B: true, atom.Strong: true, atom.I: true, atom.Em: true, atom.U: true,
-		atom.S: true, atom.Del: true, atom.Span: true, atom.Code: true, atom.Font: true}
+		atom.S: true, atom.Del: true, atom.Span: true, atom.Font: true}
 )
 
 // translateDraftHTML translates draft HTML block by block: a paragraph,
-// heading, list item, quote or table cell is one text; pre and code blocks,
-// rules and images stay. A block whose whole text is in one chain of style
-// elements (a link, bold) keeps them; mixed styles become plain text, which
-// the user sees in the proposal.
+// heading, list item, quote or table cell (and text beside blocks) is one
+// text, sent in batches within the ABI's request limit; pre and code stay as
+// they are. The translation replaces a block's text in place (setText):
+// images, code and a link or style around the whole text stay, while text in
+// several styles comes back in the first one's, which the user sees in the proposal.
 func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target string) (string, error) {
 	tr, rp, err := s.pluginTranslator(plugin)
 	if err != nil {
@@ -345,12 +346,22 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	if len(texts) == 0 {
 		return src, nil
 	}
-	res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: texts, Target: target})
-	if err != nil {
-		return "", err
+	out := make([]string, 0, len(texts))
+	for start := 0; start < len(texts); { // batches within the ABI's request limit, in order
+		end, size := start, 0
+		for end < len(texts) && (end == start || size+len(texts[end]) <= draftBatch) {
+			size += len(texts[end])
+			end++
+		}
+		res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: texts[start:end], Target: target})
+		if err != nil {
+			return "", err
+		}
+		out = append(out, res.Texts...)
+		start = end
 	}
 	for i, n := range leaves {
-		setText(n, res.Texts[i])
+		setText(n, out[i])
 	}
 	for _, r := range runs { // unwrap the runs before rendering
 		for r.FirstChild != nil {
@@ -376,6 +387,9 @@ func isBlockNode(c *html.Node) bool {
 		c.DataAtom == atom.Hr || hasBlock(c))
 }
 
+// draftBatch caps the text of one translate request, well under the ABI's 1 MiB.
+const draftBatch = 256 << 10
+
 // hasBlock reports whether a block or pre element is inside n.
 func hasBlock(n *html.Node) bool {
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -386,12 +400,14 @@ func hasBlock(n *html.Node) bool {
 	return false
 }
 
-// nodeText is n's text, a line break for each <br>.
+// nodeText is n's text without code, a line break for each <br>.
 func nodeText(n *html.Node) string {
 	var b strings.Builder
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		switch {
+		case n.DataAtom == atom.Code:
+			return // commands and snippets are not translated
 		case n.Type == html.TextNode:
 			b.WriteString(n.Data)
 		case n.DataAtom == atom.Br:
@@ -405,37 +421,74 @@ func nodeText(n *html.Node) string {
 	return b.String()
 }
 
-// setText replaces n's content with text, inside n's chain of style
-// elements when its whole text sits in one; line breaks become <br>.
+// setText puts text in place of n's text, leaving its elements (images,
+// code, a link around it all) where they are: the translation goes in the
+// first text node, in that node's styles, and the block's other text goes;
+// style elements left empty go too. The translation's line breaks replace the
+// block's <br>s.
 func setText(n *html.Node, text string) {
-	in := n
-	for {
-		var only *html.Node
-		for c := in.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.TextNode && strings.TrimSpace(c.Data) == "" {
-				continue
+	var first *html.Node
+	var brs []*html.Node
+	var walk func(*html.Node)
+	walk = func(c *html.Node) {
+		switch {
+		case c.DataAtom == atom.Code:
+			return
+		case c.DataAtom == atom.Br:
+			brs = append(brs, c)
+		case c.Type == html.TextNode:
+			if first == nil && strings.TrimSpace(c.Data) != "" {
+				first = c
+			} else {
+				c.Data = ""
 			}
-			if only != nil || c.Type != html.ElementNode || !styleTags[c.DataAtom] {
-				only = nil
-				break
+		}
+		for d := c.FirstChild; d != nil; d = d.NextSibling {
+			walk(d)
+		}
+	}
+	walk(n)
+	for _, br := range brs {
+		br.Parent.RemoveChild(br)
+	}
+	if first == nil {
+		first = &html.Node{Type: html.TextNode}
+		n.AppendChild(first)
+	}
+	lines := strings.Split(text, "\n")
+	first.Data = lines[0]
+	at := first
+	for _, line := range lines[1:] {
+		br := &html.Node{Type: html.ElementNode, Data: "br", DataAtom: atom.Br}
+		t := &html.Node{Type: html.TextNode, Data: line}
+		at.Parent.InsertBefore(br, at.NextSibling)
+		at.Parent.InsertBefore(t, br.NextSibling)
+		at = t
+	}
+	pruneEmpty(n)
+}
+
+// pruneEmpty removes the style elements under n that hold no text and no other element.
+func pruneEmpty(n *html.Node) {
+	for c := n.FirstChild; c != nil; {
+		next := c.NextSibling
+		if c.Type == html.ElementNode && c.DataAtom != atom.Code {
+			pruneEmpty(c)
+			if styleTags[c.DataAtom] && empty(c) {
+				n.RemoveChild(c)
 			}
-			only = c
+		} else if c.Type == html.TextNode && c.Data == "" {
+			n.RemoveChild(c)
 		}
-		if only == nil {
-			break
+		c = next
+	}
+}
+
+func empty(n *html.Node) bool {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode || c.Type == html.TextNode && c.Data != "" {
+			return false
 		}
-		in = only
 	}
-	if in != n && strings.TrimSpace(nodeText(in)) != strings.TrimSpace(nodeText(n)) {
-		in = n // text outside the chain: the block's styles are mixed
-	}
-	for in.FirstChild != nil {
-		in.RemoveChild(in.FirstChild)
-	}
-	for i, line := range strings.Split(text, "\n") {
-		if i > 0 {
-			in.AppendChild(&html.Node{Type: html.ElementNode, Data: "br", DataAtom: atom.Br})
-		}
-		in.AppendChild(&html.Node{Type: html.TextNode, Data: line})
-	}
+	return true
 }
