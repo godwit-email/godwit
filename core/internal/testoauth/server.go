@@ -34,7 +34,7 @@ type canned struct {
 // Server issues codes, tokens and unsigned id_tokens. Refresh tokens do not rotate
 // unless RotateRefresh(true).
 type Server struct {
-	AuthURL, TokenURL string
+	AuthURL, DeviceURL, TokenURL string
 
 	mu                 sync.Mutex
 	email              string           // SetEmail override for id_tokens; "" = the signed-in email
@@ -44,8 +44,13 @@ type Server struct {
 	rotate             bool             // refreshes issue a new refresh token
 	noExpiry           bool             // token responses omit expires_in
 	dynamic            bool             // Dynamic: accept DynamicClientID and issue IssuedClientID
-	reqParam, reqValue string           // Require: extra parameter required at /authorize and /token
+	reqParam, reqValue string           // Require: extra parameter required at /authorize, /device/code and /token
 	scope              string           // GrantScope: scope field in token responses
+	deviceCode         string           // active device_code issued by /device/code
+	deviceEmail        string           // Approve: email for device-code grant
+	deviceDenied       bool             // DenyDevice
+	deviceExpired      bool             // DeviceExpired
+	slowDown           bool             // SlowDownOnce
 	codes              map[string]grant // code -> pending exchange
 	refresh            map[string]string
 	access             map[string]bool
@@ -61,10 +66,11 @@ func Start(t *testing.T) *Server {
 	s := &Server{codes: map[string]grant{}, refresh: map[string]string{}, access: map[string]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /authorize", s.authorize)
+	mux.HandleFunc("POST /device/code", s.device)
 	mux.HandleFunc("POST /token", s.token)
 	hs := httptest.NewServer(mux)
 	t.Cleanup(hs.Close)
-	s.AuthURL, s.TokenURL = hs.URL+"/authorize", hs.URL+"/token"
+	s.AuthURL, s.DeviceURL, s.TokenURL = hs.URL+"/authorize", hs.URL+"/device/code", hs.URL+"/token"
 	return s
 }
 
@@ -72,6 +78,23 @@ func Start(t *testing.T) *Server {
 func (s *Server) Config(scopes ...string) auth.OAuthConfig {
 	return auth.OAuthConfig{ClientID: ClientID, AuthURL: s.AuthURL, TokenURL: s.TokenURL, Scopes: scopes}
 }
+
+// DeviceConfig is an OAuthConfig for this server's device-code endpoint.
+func (s *Server) DeviceConfig(scopes ...string) auth.OAuthConfig {
+	return auth.OAuthConfig{ClientID: ClientID, DeviceURL: s.DeviceURL, TokenURL: s.TokenURL, Scopes: scopes}
+}
+
+// Approve makes the device-code flow succeed as email on its next poll.
+func (s *Server) Approve(email string) { s.mu.Lock(); s.deviceEmail = email; s.mu.Unlock() }
+
+// DenyDevice makes the device-code flow answer access_denied.
+func (s *Server) DenyDevice() { s.mu.Lock(); s.deviceDenied = true; s.mu.Unlock() }
+
+// SlowDownOnce makes the next device-code poll answer slow_down.
+func (s *Server) SlowDownOnce() { s.mu.Lock(); s.slowDown = true; s.mu.Unlock() }
+
+// DeviceExpired makes the device-code flow answer expired_token.
+func (s *Server) DeviceExpired() { s.mu.Lock(); s.deviceExpired = true; s.mu.Unlock() }
 
 // SetEmail makes later id_tokens name email whoever signed in; "" undoes it.
 func (s *Server) SetEmail(email string) { s.mu.Lock(); s.email = email; s.mu.Unlock() }
@@ -247,6 +270,29 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect.String(), http.StatusFound)
 }
 
+func (s *Server) device(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r.ParseForm() != nil || r.PostForm.Get("client_id") != ClientID ||
+		(s.reqParam != "" && r.PostForm.Get(s.reqParam) != s.reqValue) {
+		oauthError(w, "invalid_request")
+		return
+	}
+	dc, uc := random(), random()[:8]
+	s.deviceCode = dc
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"device_code":               dc,
+		"user_code":                 uc,
+		"verification_uri":          s.AuthURL,
+		"verification_uri_complete": s.AuthURL + "?user_code=" + uc,
+		"interval":                  1,
+		"expires_in":                5,
+	})
+}
+
+const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	hang := s.hang
@@ -276,12 +322,13 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, "invalid_client")
 		return
 	}
-	if s.reqParam != "" && r.PostForm.Get(s.reqParam) != s.reqValue {
+	gt := r.PostForm.Get("grant_type")
+	if gt != deviceGrantType && s.reqParam != "" && r.PostForm.Get(s.reqParam) != s.reqValue {
 		oauthError(w, "invalid_request")
 		return
 	}
 	var email string
-	switch r.PostForm.Get("grant_type") {
+	switch gt {
 	case "authorization_code":
 		g, ok := s.codes[r.PostForm.Get("code")]
 		delete(s.codes, r.PostForm.Get("code"))
@@ -312,6 +359,33 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rt = random()
+		s.refresh[rt] = email
+		s.issue(w, email, rt)
+	case deviceGrantType:
+		if s.deviceCode == "" || r.PostForm.Get("device_code") != s.deviceCode {
+			oauthError(w, "invalid_grant")
+			return
+		}
+		if s.slowDown {
+			s.slowDown = false
+			oauthError(w, "slow_down")
+			return
+		}
+		if s.deviceDenied {
+			oauthError(w, "access_denied")
+			return
+		}
+		if s.deviceExpired {
+			oauthError(w, "expired_token")
+			return
+		}
+		if s.deviceEmail == "" {
+			oauthError(w, "authorization_pending")
+			return
+		}
+		email = s.deviceEmail
+		s.deviceCode, s.deviceEmail = "", ""
+		rt := random()
 		s.refresh[rt] = email
 		s.issue(w, email, rt)
 	default:
