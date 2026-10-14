@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,8 @@ type Server struct {
 
 	mu         sync.Mutex
 	models     []string
+	hidden     []string
+	names      map[string]string // non-nil: list in the Sign in with ChatGPT shape (models[].slug/display_name)
 	key        string
 	listStatus int
 	headers    []http.Header
@@ -37,17 +40,19 @@ type Server struct {
 //
 // openai-responses only: Reasoning adds a reasoning item with that
 // encrypted_content; Fail ends with response.failed carrying that message,
-// Incomplete with response.incomplete, Truncate with no terminal event. A
-// Status turn keeps answering (the SDK's retries) until Advance or the next
-// Script call.
+// FailCode sets its error.code (default server_error), Incomplete with
+// response.incomplete, Truncate with no terminal event. A Status turn keeps
+// answering (the SDK's retries) until Advance or the next Script call.
 type Turn struct {
 	Text       []string
 	Calls      []Call
 	Hang       bool
 	Status     int
+	Code       string // openai-responses: the error.code a Status turn's body carries
 	Finish     string
 	Reasoning  string
 	Fail       string
+	FailCode   string
 	Incomplete bool
 	Truncate   bool
 	Refusal    string // openai-responses: the reply is this refusal, not text
@@ -80,28 +85,20 @@ func Start(t *testing.T, kind string) *Server {
 	case "openai-responses":
 		chat = "/responses"
 	}
-	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) {
-		s.mu.Lock()
-		models, key, status := s.models, s.key, s.listStatus
-		s.mu.Unlock()
-		got := sentKey(kind, r)
-		if status != 0 {
-			// echoes the key, so tests can prove errors repeat neither it nor the body
-			http.Error(w, "UPSTREAM-BODY bad key "+got, status)
-			return
-		}
-		if key != "" && got != key {
-			// echoes what it got, so tests can prove errors don't repeat it
-			http.Error(w, "bad key "+got, http.StatusUnauthorized)
-			return
-		}
-		data := []map[string]string{}
-		for _, m := range models {
-			data = append(data, map[string]string{"id": m})
-		}
-		json.NewEncoder(w).Encode(map[string]any{"data": data})
-	})
+	s.Mux.HandleFunc("GET "+list, func(w http.ResponseWriter, r *http.Request) { s.list(kind, w, r, false) })
+	if kind == "openai-responses" { // ChatGPT's Codex backend: client_version is required, and the list is models[].slug
+		s.Mux.HandleFunc("GET /backend-api/codex/models", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("client_version") == "" {
+				http.Error(w, `{"message":"client_version: Field required"}`, http.StatusBadRequest)
+				return
+			}
+			s.list(kind, w, r, true)
+		})
+	}
 	s.Mux.HandleFunc("POST "+chat, func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	if kind == "openai-responses" { // ChatGPT's Codex backend, at <URL>/backend-api/codex
+		s.Mux.HandleFunc("POST /backend-api/codex/responses", func(w http.ResponseWriter, r *http.Request) { s.chat(kind, w, r) })
+	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.headers = append(s.headers, r.Header.Clone())
@@ -113,6 +110,44 @@ func Start(t *testing.T, kind string) *Server {
 	return s
 }
 
+// list answers the model list; codex forces the Codex backend's models[].slug shape.
+func (s *Server) list(kind string, w http.ResponseWriter, r *http.Request, codex bool) {
+	{
+		s.mu.Lock()
+		models, hidden, names, key, status := s.models, s.hidden, s.names, s.key, s.listStatus
+		s.mu.Unlock()
+		if codex && names == nil {
+			names = map[string]string{}
+		}
+		got := sentKey(kind, r)
+		if status != 0 {
+			// echoes the key, so tests can prove errors repeat neither it nor the body
+			http.Error(w, "UPSTREAM-BODY bad key "+got, status)
+			return
+		}
+		if key != "" && got != key {
+			// echoes what it got, so tests can prove errors don't repeat it
+			http.Error(w, "bad key "+got, http.StatusUnauthorized)
+			return
+		}
+		data, field := []map[string]string{}, "data"
+		for _, m := range models {
+			item := map[string]string{"id": m}
+			if names != nil {
+				item, field = map[string]string{"slug": m, "display_name": names[m]}, "models"
+			}
+			if len(hidden) > 0 || names != nil {
+				item["visibility"] = "list"
+				if slices.Contains(hidden, m) {
+					item["visibility"] = "hidden"
+				}
+			}
+			data = append(data, item)
+		}
+		json.NewEncoder(w).Encode(map[string]any{field: data})
+	}
+}
+
 func sentKey(kind string, r *http.Request) string {
 	if kind != "anthropic" {
 		return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -121,7 +156,11 @@ func sentKey(kind string, r *http.Request) string {
 }
 
 func (s *Server) SetModels(m ...string) { s.mu.Lock(); s.models = m; s.mu.Unlock() }
-func (s *Server) RequireKey(k string)   { s.mu.Lock(); s.key = k; s.mu.Unlock() }
+func (s *Server) SetHidden(m ...string) { s.mu.Lock(); s.hidden = m; s.mu.Unlock() }
+
+// SetDisplayNames lists models the way a ChatGPT subscription token sees them: models[].slug with display_name.
+func (s *Server) SetDisplayNames(n map[string]string) { s.mu.Lock(); s.names = n; s.mu.Unlock() }
+func (s *Server) RequireKey(k string)                 { s.mu.Lock(); s.key = k; s.mu.Unlock() }
 
 // SetListStatus makes the model list answer with that HTTP status; 0 restores it.
 func (s *Server) SetListStatus(code int) { s.mu.Lock(); s.listStatus = code; s.mu.Unlock() }
@@ -217,7 +256,7 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if kind == "openai-responses" && turn.Reasoning != "" && turn.Status == 0 && req.Invalid == "" &&
-		turn.Fail == "" && !turn.Incomplete && !turn.Truncate && turn.Refusal == "" {
+		turn.Fail == "" && turn.FailCode == "" && !turn.Incomplete && !turn.Truncate && turn.Refusal == "" {
 		out := []outItem{{"reasoning", fmt.Sprintf("rs_%d", n), turn.Reasoning}}
 		if len(turn.Text) > 0 {
 			out = append(out, outItem{typ: "message"})
@@ -239,7 +278,7 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("retry-after-ms", "1") // SDK retries come back at once
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(turn.Status)
-		fmt.Fprintf(w, `{"error":{"type":"error","message":"rejected key %s"}}`, sentKey(kind, r))
+		fmt.Fprintf(w, `{"error":{"type":"error","code":%s,"message":"rejected key %s"}}`, js(turn.Code), sentKey(kind, r))
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")

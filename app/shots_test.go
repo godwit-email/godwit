@@ -358,6 +358,7 @@ func TestShots(t *testing.T) {
 	// stored tests need a reachable service, which the design's addresses aren't.
 	modelsStatus := func(s *shotEnv, view string) {
 		m := s.app.pages[PageSettings].(*settingsPage).models
+		m.serviceAvatar = func(context.Context, int64) (core.Avatar, error) { return core.Avatar{}, nil } // no favicons off the network
 		ok := func(ms int) core.CapStatus { return core.CapStatus{State: "ok", LatencyMs: ms} }
 		auth := core.CapStatus{State: "fail", Code: "auth", HTTPStatus: 401}
 		for i, svc := range m.services {
@@ -370,6 +371,9 @@ func TestShots(t *testing.T) {
 				m.services[i].Status = map[string]core.CapStatus{core.CapGen: ok(812)}
 			}
 		}
+		// A signed-in subscription, as the design lists one; adding one for real needs a browser.
+		m.services = append(m.services, core.ModelService{ID: 99, Name: "ChatGPT", Provider: core.ProviderChatGPT, Email: "you@example.com", BaseURL: "https://api.openai.com/v1",
+			Kind: ai.KindResponses, Models: []string{"gpt-5.2"}, Status: map[string]core.CapStatus{core.CapGen: ok(640)}})
 	}
 	t.Run("Settings", func(t *testing.T) {
 		s := shotMail(t, noAuto)
@@ -424,6 +428,9 @@ func TestShots(t *testing.T) {
 		modelsStatus(s, "normal")
 		shot(s.harness, "SettingsModels")
 		s.click("添加服务")
+		s.see("Continue with ChatGPT")
+		shot(s.harness, "SettingsModelsSheetSubscription")
+		s.click("API 密钥")
 		s.see("其他服务")
 		s.see("https://api.openai.com/v1")
 		shot(s.harness, "SettingsModelsSheet")
@@ -433,6 +440,7 @@ func TestShots(t *testing.T) {
 	dlg := func(state string) func(m *modelsView) {
 		ready := func(m *modelsView) *modelForm {
 			m.add()
+			m.group, m.form = 1, newForm(core.ProviderOpenAI)
 			f := m.form
 			f.key, f.offered, f.models, f.fetch, f.fetched = strings.Repeat("k", 20), []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, []string{"[MODEL A]", "[MODEL B]"}, "ok", 3
 			return f
@@ -580,7 +588,7 @@ func TestShots(t *testing.T) {
 	})
 	t.Run("OnboardingOAuth", func(t *testing.T) {
 		h := onboarding(t)
-		h.app.oauth = &fakeOAuth{flows: map[string]chan string{}}
+		h.app.oauth = &fakeOAuth{flows: map[string]chan flowResult{}}
 		h.click("Outlook / Hotmail")
 		h.see("已在浏览器中打开登录页")
 		shot(h, "OnboardingOAuth")

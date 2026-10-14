@@ -178,7 +178,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 				continue
 			}
 			// No tools, so anything else is the terminal event.
-			wait()
+			s.runRejected(model, wait().Err)
 			if ev.Kind == "done" {
 				o := text.String()
 				if translate && strings.TrimSpace(o) == noTranslation {
@@ -348,7 +348,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 			text.WriteString(ev.Text)
 			continue
 		case "error":
-			wait()
+			s.runRejected(model, wait().Err)
 			return nil, ev.Err
 		}
 		wait() // no tools: anything else is done

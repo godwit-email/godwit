@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -24,7 +25,12 @@ type result struct {
 
 func startFlow(t *testing.T, srv *testoauth.Server) *auth.Flow {
 	t.Helper()
-	f, err := auth.StartFlow(srv.Config("openid", "email"), "alice@example.com", http.DefaultClient)
+	return startFlowWith(t, srv, srv.Config("openid", "email"))
+}
+
+func startFlowWith(t *testing.T, _ *testoauth.Server, cfg auth.OAuthConfig) *auth.Flow {
+	t.Helper()
+	f, err := auth.StartFlow(cfg, "alice@example.com", http.DefaultClient)
 	require.NoError(t, err)
 	t.Cleanup(f.Close)
 	return f
@@ -309,4 +315,121 @@ func TestCallbackRejectsHEAD(t *testing.T) {
 	assert.Zero(t, srv.TokenRequests())
 	srv.Browse(t, f.AuthURL(), "alice@example.com")
 	require.NoError(t, recv(t, ch).err)
+}
+
+func TestFlowDynamicClient(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.Dynamic(true)
+	srv.Require("resource", "https://api.example/v1")
+	srv.GrantScope("openid email plan.use")
+	cfg := srv.Config("openid", "email")
+	cfg.ClientID, cfg.DynamicClient, cfg.NoPrompt, cfg.Nonce = testoauth.DynamicClientID, true, true, true
+	cfg.RedirectHost, cfg.RedirectPath = "127.0.0.1", "/auth/callback"
+	cfg.AuthParams = map[string]string{"resource": "https://api.example/v1", "agent_name_hint": "Godwit"}
+	cfg.TokenParams = map[string]string{"resource": "https://api.example/v1"}
+	cfg.RequireScope = "plan.use"
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	u, _ := url.Parse(f.AuthURL())
+	q := u.Query()
+	assert.Equal(t, "Godwit", q.Get("agent_name_hint"))
+	assert.NotEmpty(t, q.Get("nonce"))
+	assert.Empty(t, q.Get("prompt"))
+	r := redirectURI(t, f)
+	assert.Equal(t, "127.0.0.1", r.Hostname())
+	assert.Equal(t, "/auth/callback", r.Path)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	res := recv(t, ch)
+	require.NoError(t, res.err)
+	assert.Equal(t, testoauth.IssuedClientID, res.g.ClientID)
+	assert.Equal(t, "openid email plan.use", res.g.Scope)
+	assert.Equal(t, "alice@example.com", res.g.Email)
+}
+
+func TestFlowRequiresScope(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.GrantScope("openid email")
+	cfg := srv.Config("openid", "email")
+	cfg.RequireScope = "plan.use"
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	assert.ErrorIs(t, recv(t, ch).err, auth.ErrScopeMissing)
+}
+
+func TestFlowFixedPort(t *testing.T) {
+	srv := testoauth.Start(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	cfg := srv.Config("openid")
+	cfg.RedirectPort = port
+	_, err = auth.StartFlow(cfg, "", http.DefaultClient)
+	assert.ErrorIs(t, err, auth.ErrRedirectPortBusy, "the port is taken")
+	ln.Close()
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	assert.Equal(t, strconv.Itoa(port), redirectURI(t, f).Port())
+}
+
+func TestFlowDynamicClientMissingID(t *testing.T) {
+	srv := testoauth.Start(t) // Dynamic off: the callback carries no client_id
+	cfg := srv.Config("openid")
+	cfg.DynamicClient = true
+	f, err := auth.StartFlow(cfg, "", http.DefaultClient)
+	require.NoError(t, err)
+	t.Cleanup(f.Close)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	require.Error(t, recv(t, ch).err)
+}
+
+func TestRefreshForm(t *testing.T) {
+	srv := testoauth.Start(t)
+	srv.Require("resource", "r1")
+	srv.GrantScope("openid plan.use")
+	cfg := srv.Config("openid")
+	cfg.AuthParams = map[string]string{"resource": "r1"}
+	cfg.TokenParams = map[string]string{"resource": "r1"}
+	f := startFlowWith(t, srv, cfg)
+	ch := wait(ctx, f)
+	srv.Browse(t, f.AuthURL(), "alice@example.com")
+	g := recv(t, ch).g
+
+	g2, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, g.RefreshToken)
+	require.NoError(t, err)
+	assert.True(t, srv.ValidAccess(g2.AccessToken))
+	assert.Empty(t, g2.RefreshToken, "not rotated")
+	assert.Equal(t, "alice@example.com", g2.Email)
+	assert.Equal(t, "openid plan.use", g2.Scope)
+	assert.WithinDuration(t, time.Now().Add(time.Hour), g2.Expiry, time.Minute)
+
+	srv.RotateRefresh(true)
+	srv.OmitExpiry(true)
+	g3, err := auth.RefreshForm(ctx, cfg, nil, g.RefreshToken)
+	require.NoError(t, err)
+	assert.NotEmpty(t, g3.RefreshToken)
+	assert.NotEqual(t, g.RefreshToken, g3.RefreshToken)
+	assert.WithinDuration(t, time.Now().Add(30*time.Minute), g3.Expiry, time.Minute)
+
+	_, err = auth.RefreshForm(ctx, cfg, http.DefaultClient, "bogus")
+	assert.ErrorIs(t, err, auth.ErrInvalidGrant)
+
+	srv.RespondNext(500, `{"error":"boom","secret":"`+g.RefreshToken+`"}`)
+	_, err = auth.RefreshForm(ctx, cfg, http.DefaultClient, g3.RefreshToken)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), g.RefreshToken)
+
+	_, err = auth.RefreshForm(ctx, auth.OAuthConfig{}, nil, g3.RefreshToken)
+	assert.ErrorIs(t, err, auth.ErrOAuthNotConfigured)
+
+	c, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = auth.RefreshForm(c, cfg, nil, g3.RefreshToken)
+	assert.ErrorIs(t, err, context.Canceled)
 }

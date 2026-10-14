@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,14 @@ func TestCheckModelService(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, c.ListSupported)
 	assert.Empty(t, c.Models)
+
+	srv.SetModels("b", "a")
+	srv.SetDisplayNames(map[string]string{"a": "Model A"}) // the Sign in with ChatGPT shape
+	c, err = s.CheckModelService(bg, 0, in)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, c.Models)
+	assert.Equal(t, map[string]string{"a": "Model A"}, c.Names)
+	srv.SetDisplayNames(nil)
 
 	srv.SetListStatus(http.StatusNotFound)
 	c, err = s.CheckModelService(bg, 0, in)
@@ -181,4 +190,24 @@ func TestKeylessKeepNewAddress(t *testing.T) {
 	assert.False(t, saved.HasKey)
 	require.Len(t, b.Headers(), 1)
 	assert.Zero(t, keyed(b.Headers()), "B got no auth header")
+}
+
+func TestModelServiceHost(t *testing.T) {
+	for _, c := range []struct{ provider, base, want string }{
+		{ProviderOpenAI, "https://api.openai.com/v1", "openai.com"},
+		{ProviderAnthropic, "https://api.anthropic.com/v1", "anthropic.com"},
+		{ProviderTypeSafe, "https://api.typesafe.ai/v1", "typesafe.ai"},
+		{ProviderOther, "https://openrouter.ai/api/v1", "openrouter.ai"},
+		{ProviderOther, "http://localhost:4000/v1", ""},
+		{ProviderChatGPT, "https://api.openai.com/v1", ""},
+		{ProviderGrok, "https://api.x.ai/v1", ""},
+	} {
+		assert.Equal(t, c.want, modelServiceHost(ModelService{Provider: c.provider, BaseURL: c.base}), c.provider+" "+c.base)
+	}
+}
+
+func TestCapCodeNotEligible(t *testing.T) {
+	code, st := capCode(&ai.Error{Code: ai.CodeUnauthorized, Detail: ai.DetailChatGPTEligibility})
+	assert.Equal(t, "not_eligible", code)
+	assert.Equal(t, 403, st)
 }

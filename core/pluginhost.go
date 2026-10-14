@@ -236,6 +236,7 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 			}
 		}
 		if r := wait(); r.Err != nil {
+			h.s.runRejected(model, r.Err)
 			return r.Err
 		}
 		out = b.String()

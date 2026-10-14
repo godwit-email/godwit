@@ -129,18 +129,23 @@ func TestOnboardingDetect(t *testing.T) {
 	})
 }
 
+type flowResult struct {
+	email string
+	err   error
+}
+
 // fakeOAuth hands out flows f1, f2, …; Await returns once the test finishes the flow.
 type fakeOAuth struct {
 	mu       sync.Mutex
 	canceled []string
-	flows    map[string]chan string
+	flows    map[string]chan flowResult
 }
 
 func (f *fakeOAuth) Begin(_ context.Context, provider, hint string) (string, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := strconv.Itoa(len(f.flows) + 1)
-	f.flows["f"+n] = make(chan string, 1)
+	f.flows["f"+n] = make(chan flowResult, 1)
 	return "f" + n, "https://login.example/authorize?n=" + n, nil
 }
 
@@ -149,8 +154,8 @@ func (f *fakeOAuth) Await(ctx context.Context, flowID string) (string, error) {
 	ch := f.flows[flowID]
 	f.mu.Unlock()
 	select {
-	case e := <-ch:
-		return e, nil
+	case r := <-ch:
+		return r.email, r.err
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
@@ -160,13 +165,25 @@ func (f *fakeOAuth) Await(ctx context.Context, flowID string) (string, error) {
 func (f *fakeOAuth) finish(flowID, email string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.flows[flowID] <- email
+	f.flows[flowID] <- flowResult{email: email}
+}
+
+func (f *fakeOAuth) fail(flowID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.flows[flowID] <- flowResult{err: err}
 }
 
 func (f *fakeOAuth) Cancel(flowID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.canceled = append(f.canceled, flowID)
+	if ch, ok := f.flows[flowID]; ok {
+		select {
+		case ch <- flowResult{err: context.Canceled}:
+		default:
+		}
+	}
 }
 
 func (f *fakeOAuth) Canceled() []string {
@@ -177,7 +194,7 @@ func (f *fakeOAuth) Canceled() []string {
 
 func TestOnboardingOAuth(t *testing.T) {
 	h, _ := withAccount(t)
-	fo := &fakeOAuth{flows: map[string]chan string{}}
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
 	h.app.oauth = fo
 	h.app.openAddAccount()
 	h.see("添加账户")

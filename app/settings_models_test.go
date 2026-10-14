@@ -1,20 +1,26 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/stretchr/testify/assert"
 )
 
 // withLLM is an App with an account and the fake model service "test".
@@ -64,6 +70,7 @@ func TestModelServiceCRUD(t *testing.T) {
 	h.see("test")
 	h.see("默认")
 	h.click("添加服务")
+	h.click("API 密钥")
 	h.click("其他服务")
 	h.fill("名称", "local")
 	h.fill("地址", test.BaseURL)
@@ -268,6 +275,7 @@ func (h *harness) newService() *modelsView {
 	p := h.openSettings("models")
 	h.see("test")
 	h.click("添加服务")
+	h.click("API 密钥")
 	h.click("其他服务")
 	return p.models
 }
@@ -283,6 +291,15 @@ func TestProviderTiles(t *testing.T) {
 	p := h.openSettings("models")
 	h.see("test")
 	h.click("添加服务")
+	h.see("用你已有的 ChatGPT 或 SuperGrok 订阅登录，不需要 API Key。判断会由生成模型兼任。")
+	if f := p.models.form; f.provider != core.ProviderChatGPT || h.tt.HasText("Anthropic") {
+		t.Fatalf("the subscription group opens first: form %+v", f)
+	}
+	h.click("API 密钥")
+	h.see("选好服务商，填上 Key")
+	if h.tt.HasText("Grok") {
+		t.Fatal("a subscription tile shows in the API key group")
+	}
 	f := p.models.form
 	if f.provider != core.ProviderOpenAI || f.name != "OpenAI" || f.baseURL != "https://api.openai.com/v1" || f.kind != ai.KindResponses || !f.genOn || !f.judgeOn || f.judgeModel != "gpt-6-luna" {
 		t.Fatalf("form %+v", f)
@@ -401,6 +418,46 @@ func TestStaleProbeIgnored(t *testing.T) {
 	h.until("the probe settles", func() bool { return !f.probing })
 	if slices.Contains(f.offered, "stale-model") {
 		t.Fatalf("a probe of the old address was adopted: offered %q", f.offered)
+	}
+}
+
+func TestServiceListAvatars(t *testing.T) {
+	h := withLLM(t)
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	var calls atomic.Int32
+	m.serviceAvatar = func(_ context.Context, id int64) (core.Avatar, error) {
+		calls.Add(1)
+		var buf bytes.Buffer
+		png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 1, 1)))
+		return core.Avatar{Data: buf.Bytes(), Format: "png", Source: "favicon"}, nil
+	}
+	h.openSettings("models")
+	test, _ := h.modelService("test")
+	h.until("the favicon shows", func() bool { return m.avatars[test.BaseURL] != nil })
+	h.openSettings("general")
+	h.openSettings("models")
+	h.see("test")
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the favicon was asked for %d times", n)
+	}
+}
+
+func TestModelChipsShowDisplayNames(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	m := p.models
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		return core.ServiceCheck{BaseURL: in.BaseURL, Models: []string{"gpt-5.2", "gpt-5.2-mini"}, Names: map[string]string{"gpt-5.2": "GPT-5.2"}, ListSupported: true}, nil
+	}
+	h.click("test") // opening lists the models
+	h.see("编辑 test")
+	f := m.form
+	h.until("the probe settles", func() bool { return !f.probing })
+	h.see("GPT-5.2")
+	h.see("gpt-5.2-mini")
+	h.click("GPT-5.2")
+	if !slices.Contains(f.models, "gpt-5.2") {
+		t.Fatalf("clicking the display name did not tick its ID: models %q", f.models)
 	}
 }
 
@@ -1108,4 +1165,95 @@ func TestBlockedFooterDisabled(t *testing.T) {
 	if !reached("添加") || !reached("测试连接") {
 		t.Fatal("the ready footer buttons don't take focus")
 	}
+}
+
+func TestOAuthTileLogin(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	var saved core.ModelServiceInput
+	m.checkService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
+		return core.ServiceCheck{Models: []string{"gpt-x"}, ListSupported: true}, nil
+	}
+	m.saveService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ModelService, error) {
+		saved = in
+		return core.ModelService{ID: 9, Name: in.Name, Slug: "chatgpt", Provider: in.Provider, Kind: in.Kind, Models: in.Models, Email: "alice@example.com", HasKey: true}, nil
+	}
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.see("先登录再添加")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	h.see("已在浏览器中打开登录页")
+	fo.finish("f1", "alice@example.com")
+	h.until("signed in", func() bool {
+		return m.form != nil && m.form.email == "alice@example.com" && slices.Equal(m.form.models, []string{"gpt-x"})
+	})
+	h.see("alice@example.com")
+	h.click("添加")
+	h.until("saved", func() bool { return saved.OAuthFlowID == "f1" })
+	assert.Equal(t, core.ProviderChatGPT, saved.Provider)
+	assert.Equal(t, ai.KindResponses, saved.Kind)
+	assert.Empty(t, saved.APIKey)
+}
+
+func TestOAuthTileLoginDenied(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	saved := false
+	m.saveService = func(_ context.Context, _ int64, in core.ModelServiceInput) (core.ModelService, error) {
+		saved = true
+		return core.ModelService{}, nil
+	}
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	fo.fail("f1", auth.ErrAccessDenied)
+	h.see("登录被拒绝或取消")
+	h.see("Continue with ChatGPT")
+	assert.Empty(t, m.form.flowID)
+	assert.False(t, saved)
+}
+
+func TestOAuthTileCloseCancels(t *testing.T) {
+	h := withLLM(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.openSettings("models")
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	h.click("添加服务")
+	h.click("ChatGPT")
+	h.click("Continue with ChatGPT")
+	h.until("the sign-in page opens", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	h.click("关闭")
+	h.until("flow canceled", func() bool { return slices.Equal(fo.Canceled(), []string{"f1"}) })
+	h.drain()
+	h.tt.Frame()
+	assert.Nil(t, m.form)
+	assert.Empty(t, h.app.toasts)
+	assert.False(t, h.tt.HasText("出错了"))
+}
+
+// svcSubtitle 是卡片第二行：订阅型服务显示邮箱，其他显示地址。
+func TestServiceCardSubtitle(t *testing.T) {
+	assert.Equal(t, "alice@example.com", svcSubtitle(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://api.openai.com/v1"}))
+	assert.Equal(t, "https://api.openai.com/v1", svcSubtitle(core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1"}))
+}
+
+func TestHumanizeChatGPTUsage(t *testing.T) {
+	err := &ai.Error{Code: ai.CodeRateLimited, Detail: ai.DetailChatGPTUsage}
+	assert.Equal(t, "ChatGPT 套餐用量已达上限", humanize(err))
+	assert.Equal(t, "登录已失效，请重新登录", humanize(core.ErrModelReauth))
 }

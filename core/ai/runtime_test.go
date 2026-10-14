@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -825,4 +826,126 @@ func TestRunContextHidden(t *testing.T) {
 		require.Nil(t, res2.Err)
 		assert.Contains(t, string(srv.Requests()[1].Messages), "QUOTED-MAIL", "the state keeps it")
 	})
+}
+
+func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
+	m1 := modelFor(srv, KindResponses, "token-1")
+	events1, wait1 := e.Run(context.Background(), Request{Model: m1, Prompt: "one", MaxTurns: 1})
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 5*time.Millisecond)
+
+	m2 := m1
+	m2.APIKey = "token-2"
+	evs2, res2 := run(e, Request{Model: m2, Prompt: "two", MaxTurns: 1})
+	require.Nil(t, res2.Err)
+	assert.Equal(t, "done", last(t, evs2).Kind)
+	assert.EqualValues(t, 2, e.inits.Load())
+	e.mu.Lock()
+	var old *instance
+	for in := range e.retired {
+		old = in
+	}
+	e.mu.Unlock()
+	require.NotNil(t, old, "the replaced instance waits for its run")
+	assert.NoError(t, old.ctx.Err())
+
+	srv.Release()
+	evs1, res1 := collect(events1, wait1)
+	require.Nil(t, res1.Err)
+	assert.Equal(t, "done", last(t, evs1).Kind)
+	assert.Error(t, old.ctx.Err(), "and goes once that run is over")
+	e.mu.Lock()
+	assert.Empty(t, e.retired)
+	e.mu.Unlock()
+}
+
+func TestForgetCancelsRetiredInstance(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
+	m1 := modelFor(srv, KindResponses, "token-1")
+	events1, wait1 := e.Run(context.Background(), Request{Model: m1, Prompt: "one", MaxTurns: 1})
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 5*time.Millisecond)
+	m2 := m1
+	m2.APIKey = "token-2"
+	_, res2 := run(e, Request{Model: m2, Prompt: "two", MaxTurns: 1})
+	require.Nil(t, res2.Err)
+
+	e.Forget(m1.ServiceID) // the service changed or went: the run on its older key ends too
+	_, res1 := collect(events1, wait1)
+	require.NotNil(t, res1.Err)
+	assert.Equal(t, CodeStale, res1.Err.Code)
+	e.mu.Lock()
+	assert.Empty(t, e.retired)
+	e.mu.Unlock()
+}
+
+func TestCodexRequestShape(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"OK"}})
+	tok := "h." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}`)) + ".s"
+	m := modelFor(srv, KindResponses, tok)
+	m.BaseURL = srv.URL + "/backend-api/codex"
+	_, res := run(e, Request{Model: m, Prompt: "hi", MaxTurns: 1})
+	require.Nil(t, res.Err)
+	req := srv.Requests()[0]
+	assert.Equal(t, "/backend-api/codex/responses", req.Path)
+	assert.Equal(t, "acct-9", req.Header.Get("chatgpt-account-id"))
+	assert.Equal(t, "godwit", req.Header.Get("originator"))
+	assert.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+	assert.Contains(t, string(req.Body), `"instructions":"You are a helpful assistant."`)
+	assert.Contains(t, string(req.Body), `"store":false`)
+
+	for _, turn := range []testllm.Turn{{Status: http.StatusTooManyRequests}, {Status: http.StatusBadRequest, Code: "usage_not_included"}} {
+		srv.Script(turn)
+		_, res = run(e, Request{Model: m, Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeRateLimited, res.Err.Code)
+		assert.Equal(t, DetailChatGPTUsage, res.Err.Detail)
+	}
+	// Not the Codex backend: a 429 is an ordinary rate limit, with no plan to manage.
+	srv.Script(testllm.Turn{Status: http.StatusTooManyRequests, Code: "rate_limit_exceeded"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "sk-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeRateLimited, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
+}
+
+func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	for _, turn := range []testllm.Turn{
+		{FailCode: "subscription_sharing_usage_limit_exceeded"},
+		{FailCode: "subscription_sharing_usage_unavailable", Fail: "UPSTREAM-BODY quota out"},
+	} {
+		srv.Script(turn)
+		evs, res := run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+		require.NotNil(t, res.Err, turn.FailCode)
+		assert.Equal(t, CodeRateLimited, res.Err.Code, turn.FailCode)
+		assert.Equal(t, DetailChatGPTUsage, res.Err.Detail, turn.FailCode)
+		assert.NotContains(t, res.Err.Msg, "UPSTREAM-BODY")
+		assert.Equal(t, "error", last(t, evs).Kind)
+	}
+
+	// The same codes as HTTP errors, and the account that may not share its plan at all.
+	srv.Script(testllm.Turn{Status: http.StatusTooManyRequests, Code: "subscription_sharing_usage_limit_exceeded"})
+	_, res := run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeRateLimited, res.Err.Code)
+	assert.Equal(t, DetailChatGPTUsage, res.Err.Detail)
+	srv.Script(testllm.Turn{Status: http.StatusForbidden, Code: "subscription_sharing_user_not_eligible"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeUnauthorized, res.Err.Code)
+	assert.Equal(t, DetailChatGPTEligibility, res.Err.Detail)
+	assert.NotContains(t, res.Err.Msg, "token-1")
+
+	srv.Script(testllm.Turn{Fail: "x"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "token-1"), Prompt: "hi", MaxTurns: 1})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeBadResponse, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
 }

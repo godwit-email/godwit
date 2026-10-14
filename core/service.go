@@ -82,6 +82,10 @@ type Service struct {
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
 	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
 
+	modelTokMu      sync.Mutex
+	modelTokens     map[int64]modelToken    // OAuth model services' access tokens; never stored
+	modelRefreshing map[int64]chan struct{} // per-service 1-slot semaphore around a token refresh
+
 	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
 	active map[int64]*runJob // runs in flight, guarded by runMu
 	extRun map[int64]extExec // approvals executing outside runMu (external mode) by ID, guarded by runMu

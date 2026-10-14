@@ -32,13 +32,30 @@ func (m *modelsView) view(c *ui.Context) {
 		m.usage(c, u)
 		m.list(c, u)
 	}
-	if m.open {
+	if m.form != nil {
 		m.dialog(c)
 	}
 }
 
 // close drops the form with its dialog: its pending results are ignored.
-func (m *modelsView) close() { m.open, m.form = false, nil }
+func (m *modelsView) close() {
+	m.cancelForm()
+	m.open, m.form = false, nil
+}
+
+// svcMark is a service's avatar: its provider's glyph, else the favicon of
+// the site it talks to, else its initial, as a sender's in mail.
+func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
+	t, th := theme.Of(c), c.Theme()
+	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
+			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+		})
+		return
+	}
+	m.loadAvatar(s)
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
+}
 
 // list is the services, one card row each.
 func (m *modelsView) list(c *ui.Context, u usage) {
@@ -47,16 +64,14 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 	for _, s := range m.services {
 		rows = append(rows, func() {
 			listRow(c.Key(s.ID), 0, false, func() { m.openEdit(s) }, func() {
-				ui.Box(c).Size(th.Space(9), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
-					kit.Text(c, badge(s.Provider), t.Text.Sm).Font(theme.Mono)
-				})
+				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, s.Name).FontWeight(500).LineHeight(theme.LineFor(s.Name)).SingleLine().Shrink(1)
 						l, label := svcLook(s)
 						statusLine(c, line{label, l})
 					})
-					kit.Text(c, s.BaseURL, t.Text.Sm).Font(theme.Mono).LineHeight(theme.LineBase).TextColor(t.Muted).SingleLine()
+					kit.Text(c, svcSubtitle(s), t.Text.Sm).Font(theme.Mono).LineHeight(theme.LineBase).TextColor(t.Muted).SingleLine()
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
 						if s.Kind != "" && len(s.Models) > 0 {
 							capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), u.genSvc != nil && u.genSvc.ID == s.ID)
@@ -180,8 +195,11 @@ func (m *modelsView) dialog(c *ui.Context) {
 	f.follow()
 	f.edited()
 	title, desc := i18n.T("settings.models.dialog.add"), i18n.T("settings.models.dialog.desc")
+	if m.group == 0 {
+		desc = i18n.T("settings.models.dialog.desc.sub")
+	}
 	if f.id != 0 {
-		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+f.baseURL
+		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+cmp.Or(f.email, f.baseURL)
 	}
 	opts := kit.DialogOpts{Size: kit.DialogLg, Desc: desc, Danger: f.confirmDel, Close: i18n.T("common.close")}
 	kit.Dialog(c, &m.open, title, opts, func() { m.formView(c, f) }, func() { m.footer(c, f) })
@@ -252,45 +270,59 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
+		ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
+			kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
+		})
+		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
+			m.cancelForm()
+			f = newForm(providerGroups[m.group][0])
+			m.form = f
+		}
 		m.tiles(c, f)
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
 		formRow(c, i18n.T("settings.models.name"), func() ui.Element {
 			return kit.Input(c, &f.name, kit.InputOpts{Placeholder: i18n.T("settings.models.name.ph"), Flat: true})
 		}, nil)
-		var urlErr string
-		if f.urlErr != "" && f.baseURL == f.urlBad {
-			urlErr = f.urlErr
-		}
-		formRow(c, i18n.T("settings.models.base_url"), func() ui.Element {
-			var in ui.Element
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				in = kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true, Invalid: urlErr != "", Placeholder: i18n.T("settings.models.url.ph"), Flat: true}).Grow(1).Shrink(1)
-				focused := in.Focused()
-				if f.urlFocus && !focused {
-					f.normalize()
+		if f.oauth() {
+			m.accountRow(c, f)
+		} else {
+			var urlErr string
+			if f.urlErr != "" && f.baseURL == f.urlBad {
+				urlErr = f.urlErr
+			}
+			formRow(c, i18n.T("settings.models.base_url"), func() ui.Element {
+				var in ui.Element
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					in = kit.Input(c, &f.baseURL, kit.InputOpts{Mono: true, Invalid: urlErr != "", Placeholder: i18n.T("settings.models.url.ph"), Flat: true}).Grow(1).Shrink(1)
+					focused := in.Focused()
+					if f.urlFocus && !focused {
+						f.normalize()
+					}
+					f.urlFocus = focused
+					if f.canResetURL() {
+						kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost}).PaddingX(th.Space(2.5)).TextColor(t.Muted).FontWeight(400).
+							OnClick(func() { f.baseURL = providerURL[f.provider] })
+					}
+				})
+				return in
+			}, func() {
+				if f.custom() {
+					m.gatewayChips(c, f)
 				}
-				f.urlFocus = focused
-				if f.canResetURL() {
-					kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost}).PaddingX(th.Space(2.5)).TextColor(t.Muted).FontWeight(400).
-						OnClick(func() { f.baseURL = providerURL[f.provider] })
+				if urlErr != "" {
+					kit.Text(c, urlErr, t.Text.Sm).TextColor(t.Danger)
 				}
 			})
-			return in
-		}, func() {
-			if f.custom() {
-				m.gatewayChips(c, f)
-			}
-			if urlErr != "" {
-				kit.Text(c, urlErr, t.Text.Sm).TextColor(t.Danger)
-			}
-		})
-		m.keyField(c, f)
+			m.keyField(c, f)
+		}
 	})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
 			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600).LineHeight(theme.LineFor(i18n.T("settings.models.caps")))
-			kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
+				kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+			}
 		})
 		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
 		gen, judge := core.ProviderFormats(f.provider)
@@ -300,7 +332,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 				reqLine(c, gen, f.kind, core.ModelEndpoint(f.kind, f.url()))
 				m.modelChips(c, f)
 				m.modelNote(c, f)
-				capStatus(c, f.gen)
+				m.capStatus(c, f.gen)
 			})
 		capCard(c, i18n.T("settings.models.use.judge"), i18n.T("settings.models.judge.desc"), i18n.Tf("settings.models.judge.unsupported", svcProvider(f.provider)),
 			i18n.T("settings.models.judge.switch"), len(judge) > 0, &f.judgeOn, judgeWarn, func() {
@@ -309,8 +341,39 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 				}
 				reqLine(c, judge, f.judgeFormat, f.url()+ai.JudgeFormat(f.judgeFormat).Path())
 				m.judgeModel(c, f)
-				capStatus(c, f.judge)
+				m.capStatus(c, f.judge)
 			})
+	})
+}
+
+func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
+	t, th := theme.Of(c), c.Theme()
+	formRow(c, i18n.T("settings.models.account"), func() ui.Element {
+		return ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).MinHeight(th.Space(8)).Children(func() {
+			switch {
+			case f.loggingIn:
+				kit.Spinner(c)
+				kit.Text(c, i18n.T("settings.models.login.opened"), t.Text.Sm).TextColor(t.Muted)
+				if f.authURL != "" {
+					kit.Button(c, i18n.T("settings.models.login.reopen"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						OnClick(func() { m.openURL(f.authURL) })
+				}
+				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+					OnClick(m.cancelForm)
+			case f.email != "":
+				ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(t.Success)
+				kit.Text(c, f.email, t.Text.Sm).Font(theme.Mono)
+				kit.Button(c, i18n.T("settings.models.login.again"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Flat: true}).
+					OnClick(func() { m.login(f) })
+			default:
+				kit.Button(c, i18n.T("settings.models.login."+f.provider), kit.ButtonOpts{Variant: kit.Outline, Flat: true}).
+					OnClick(func() { m.login(f) })
+			}
+		})
+	}, func() {
+		if f.loginErr != "" {
+			kit.Text(c, f.loginErr, t.Text.Sm).TextColor(t.Danger)
+		}
 	})
 }
 
@@ -382,7 +445,7 @@ func reqLine(c *ui.Context, list []string, format, url string) {
 }
 
 // capStatus is a capability test's line: testing grey, ok green, failed red.
-func capStatus(c *ui.Context, r capTest) {
+func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 	if r.state == "" {
 		return
 	}
@@ -394,9 +457,12 @@ func capStatus(c *ui.Context, r capTest) {
 	case "fail":
 		dot, fg, text = t.Danger, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
 	}
-	ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
 		kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineProse).TextColor(fg) // CJK beside Latin digits: the design's line is that tall
+		if r.usage {
+			kit.TextLink(c, i18n.T("settings.models.manage_usage"), fg, t.Text.Sm).OnClick(func() { m.openURL(chatGPTUsageURL) })
+		}
 	})
 }
 
@@ -426,22 +492,27 @@ func (m *modelsView) judgeModel(c *ui.Context, f *modelForm) {
 	kit.Text(c, note, t.Text.Sm).TextColor(t.Muted)
 }
 
-// tiles are the providers, four to a row, with what each can do.
+// tiles are the providers, with what each can do.
 func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	ui.RadioGroup(c, func() {
-		for _, p := range providerOrder {
-			gen, judge := core.ProviderFormats(p)
-			var caps []string
-			if len(gen) > 0 {
-				caps = append(caps, i18n.T("settings.models.cap.gen"))
-			}
-			if len(judge) > 0 {
-				caps = append(caps, i18n.T("settings.models.cap.judge"))
+		for _, p := range providerGroups[m.group] {
+			sub := i18n.T("settings.models.tile." + p)
+			if core.ModelProviderLogin(p) != "oauth" {
+				gen, judge := core.ProviderFormats(p)
+				var caps []string
+				if len(gen) > 0 {
+					caps = append(caps, i18n.T("settings.models.cap.gen"))
+				}
+				if len(judge) > 0 {
+					caps = append(caps, i18n.T("settings.models.cap.judge"))
+				}
+				sub = strings.Join(caps, " · ")
 			}
 			name := svcProvider(p)
 			b := ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).Border(theme.Hairline, t.Border).Background(t.Background)
 			if b.Changed() { // another provider starts the form over
+				m.cancelForm()
 				m.form = newForm(p)
 			}
 			if f.provider == p {
@@ -450,7 +521,7 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, name).FontWeight(500).LineHeight(theme.LineRow).SingleLine() // the row's CJK caption sets its line
-					kit.Text(c, strings.Join(caps, " · "), t.Text.Sm).LineHeight(theme.LineRow).TextColor(t.Muted).SingleLine()
+					kit.Text(c, sub, t.Text.Sm).LineHeight(theme.LineRow).TextColor(t.Muted).SingleLine()
 				})
 			})
 		}
@@ -486,7 +557,11 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 		for _, name := range f.offered {
 			on := slices.Contains(f.models, name)
-			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(name).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
+			label, font := name, theme.Mono
+			if n := f.names[name]; n != "" {
+				label, font = n, "" // a display name reads as prose, an ID as code
+			}
+			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
 			fg := t.Foreground
 			if on {
 				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
@@ -494,7 +569,12 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 				b.Background(t.Background).Border(theme.Hairline, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
 				fg = t.Muted
 			}
-			b.Children(func() { kit.Text(c, name, t.Text.Sm).Font(theme.Mono).TextColor(fg) })
+			b.Children(func() {
+				tx := kit.Text(c, label, t.Text.Sm).TextColor(fg)
+				if font != "" {
+					tx.Font(font)
+				}
+			})
 			if b.Clicked() {
 				if !on {
 					f.models = append(f.models, name)
@@ -535,6 +615,8 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 		})
 	case f.fetch == "ok":
 		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
+	case len(f.offered) == 0 && core.ModelProviderLogin(f.provider) == "oauth":
+		kit.Text(c, i18n.T("settings.models.hint.sub"), t.Text.Sm).TextColor(t.Muted)
 	case len(f.offered) == 0:
 		kit.Text(c, i18n.T("settings.models.hint"), t.Text.Sm).TextColor(t.Muted)
 	}

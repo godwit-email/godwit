@@ -36,9 +36,10 @@ type Engine struct {
 	secrets func() []string
 	client  *http.Client // never follows redirects; Close drops its connections
 
-	mu     sync.Mutex
-	insts  map[int64]*instance
-	closed bool
+	mu      sync.Mutex
+	insts   map[int64]*instance
+	retired map[*instance]bool // replaced instances still running; Close cancels them too
+	closed  bool
 
 	keysMu sync.Mutex
 	keys   map[string]bool // every API key handed to Genkit, redacted from its logs
@@ -57,6 +58,18 @@ type instance struct {
 	provider string
 	ctx      context.Context // ends when the instance is dropped; so do its runs
 	cancel   context.CancelCauseFunc
+	runs     int  // runs using it (Engine.mu)
+	retired  bool // replaced for a new key: cancelled once runs reaches 0
+}
+
+// release ends one run's use of in; a retired instance is cancelled after its last run.
+func (e *Engine) release(in *instance) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if in.runs--; in.retired && in.runs == 0 {
+		in.cancel(errStale)
+		delete(e.retired, in)
+	}
 }
 
 // errStale ends the runs of an instance whose service changed or went away.
@@ -114,6 +127,12 @@ func (e *Engine) Forget(serviceID int64) {
 		in.cancel(errStale)
 		delete(e.insts, serviceID)
 	}
+	for in := range e.retired { // its runs on an older key are stale too
+		if in.cfg.ServiceID == serviceID {
+			in.cancel(errStale)
+			delete(e.retired, in)
+		}
+	}
 }
 
 // Close drops every instance; later runs fail and runs in flight are cancelled.
@@ -124,6 +143,10 @@ func (e *Engine) Close() {
 		in.cancel(context.Canceled)
 		delete(e.insts, id)
 	}
+	for in := range e.retired {
+		in.cancel(context.Canceled)
+	}
+	e.retired = nil
 	e.mu.Unlock()
 	e.client.CloseIdleConnections()
 }
@@ -145,9 +168,21 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	}
 	if in := e.insts[m.ServiceID]; in != nil {
 		if in.cfg == cfg {
+			in.runs++
 			return in, nil
 		}
-		in.cancel(errStale)
+		same := in.cfg
+		same.APIKey = cfg.APIKey
+		switch {
+		case same != cfg, in.runs == 0:
+			in.cancel(errStale)
+		default: // only the key rotated: its runs finish on the old one, then it goes
+			in.retired = true
+			if e.retired == nil {
+				e.retired = map[*instance]bool{}
+			}
+			e.retired[in] = true
+		}
 		delete(e.insts, m.ServiceID)
 	}
 	if api.CurrentEnvironment() == api.EnvironmentDev {
@@ -190,7 +225,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	}()
 	g := genkit.Init(ictx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
 	e.inits.Add(1)
-	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel}
+	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel, runs: 1}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }
@@ -284,11 +319,12 @@ func (r *runner) run(req Request) Result {
 	}
 	in, err := r.e.instance(r.ctx, req.Model)
 	if errors.Is(err, errStale) {
-		return Result{State: req.State, Err: &Error{CodeStale, "the model service changed; try again"}}
+		return Result{State: req.State, Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
 	}
 	if err != nil {
 		return fail(err)
 	}
+	defer r.e.release(in)
 	// The run ends with its instance: a changed or removed service sends nothing more.
 	ctx, cancel := context.WithCancelCause(r.ctx)
 	defer cancel(nil)
@@ -686,27 +722,33 @@ func display(msgs []*gai.Message) []Message {
 // key or a request or response body.
 func classify(ctx context.Context, err error) *Error {
 	if errors.Is(err, errDuplicateCallID) {
-		return &Error{CodeBadResponse, "the model repeated a tool call ID"}
+		return &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}
 	}
 	if errors.Is(context.Cause(ctx), errStale) {
-		return &Error{CodeStale, "the model service changed during the run"}
+		return &Error{Code: CodeStale, Msg: "the model service changed during the run"}
 	}
 	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-		return &Error{CodeCanceled, "the run was cancelled"}
+		return &Error{Code: CodeCanceled, Msg: "the run was cancelled"}
 	}
 	switch status.Of(err) {
 	case status.Unauthenticated, status.PermissionDenied:
-		return &Error{CodeUnauthorized, "the model service rejected the API key"}
+		if errors.Is(err, errNotEligible) {
+			return &Error{Code: CodeUnauthorized, Msg: "the ChatGPT account is not eligible for subscription sharing", Detail: DetailChatGPTEligibility}
+		}
+		return &Error{Code: CodeUnauthorized, Msg: "the model service rejected the API key"}
 	case status.ResourceExhausted:
-		return &Error{CodeRateLimited, "the model service is rate limiting requests"}
+		if errors.Is(err, errUsageLimit) {
+			return &Error{Code: CodeRateLimited, Msg: "the ChatGPT plan's usage limit is reached", Detail: DetailChatGPTUsage}
+		}
+		return &Error{Code: CodeRateLimited, Msg: "the model service is rate limiting requests"}
 	case status.Unavailable, status.DeadlineExceeded:
-		return &Error{CodeUnavailable, "the model service is unavailable"}
+		return &Error{Code: CodeUnavailable, Msg: "the model service is unavailable"}
 	}
 	var ne net.Error
 	if errors.As(err, &ne) {
-		return &Error{CodeUnavailable, "could not reach the model service"}
+		return &Error{Code: CodeUnavailable, Msg: "could not reach the model service"}
 	}
-	return &Error{CodeBadResponse, "the model service returned an unusable response"}
+	return &Error{Code: CodeBadResponse, Msg: "the model service returned an unusable response"}
 }
 
 // incomplete is the error for a reply that did not finish normally. The
@@ -714,9 +756,9 @@ func classify(ctx context.Context, err error) *Error {
 func incomplete(r gai.FinishReason) *Error {
 	switch r {
 	case gai.FinishReasonLength:
-		return &Error{CodeIncomplete, "the model's reply was cut off at its output limit"}
+		return &Error{Code: CodeIncomplete, Msg: "the model's reply was cut off at its output limit"}
 	case gai.FinishReasonBlocked:
-		return &Error{CodeIncomplete, "the model service withheld the reply"}
+		return &Error{Code: CodeIncomplete, Msg: "the model service withheld the reply"}
 	}
-	return &Error{CodeIncomplete, "the model did not finish its reply"}
+	return &Error{Code: CodeIncomplete, Msg: "the model did not finish its reply"}
 }

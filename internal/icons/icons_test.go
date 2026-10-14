@@ -57,4 +57,12 @@ func TestBrands(t *testing.T) {
 	if Brand("other") != nil {
 		t.Error("other has a mark")
 	}
+	for _, id := range []string{"chatgpt", "grok"} {
+		if BrandIcon(id) == nil {
+			t.Errorf("no glyph for %s", id)
+		}
+	}
+	if BrandIcon("openai") != nil {
+		t.Error("openai has a glyph")
+	}
 }

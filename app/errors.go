@@ -6,6 +6,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -22,6 +23,8 @@ var errorKeys = []struct {
 	{core.ErrAINotConfigured, "error.ai_not_configured"},
 	{core.ErrModelNotFound, "error.model_not_found"},
 	{core.ErrModelAuth, "error.model_auth"},
+	{core.ErrModelReauth, "settings.models.login.expired"},
+	{auth.ErrRedirectPortBusy, "settings.models.login.port_busy"},
 	{core.ErrKeyNeedsConfirm, "settings.models.key_moved"},
 	{core.ErrBaseURLInvalid, "error.base_url_invalid"},
 	{core.ErrBaseURLScheme, "error.base_url_scheme"},
@@ -50,6 +53,11 @@ func humanize(err error) string {
 	case errors.As(err, &blocked):
 		return i18n.Tf("error.send_blocked", blocked.Plugin, blocked.Message)
 	case errors.As(err, &aiErr):
+		if aiErr.Detail != "" {
+			if key := "error.ai." + string(aiErr.Code) + "." + aiErr.Detail; i18n.T(key) != key {
+				return i18n.T(key)
+			}
+		}
 		if key := "error.ai." + string(aiErr.Code); i18n.T(key) != key {
 			return i18n.T(key)
 		}

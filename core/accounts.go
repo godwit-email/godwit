@@ -100,8 +100,8 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 }
 
 // flowGrant returns the grant of in's finished OAuth flow without using it up.
-// Its signed-in address must be in.Email, ignoring case, and in.Provider, if
-// set, the provider the flow began with.
+// Its signed-in address must be in.Email (when set), ignoring case, and
+// in.Provider, if set, the provider the flow began with.
 func (s *Service) flowGrant(in AccountInput) (oauthGrant, error) {
 	s.oauthMu.Lock()
 	g, ok := s.grants[in.OAuthFlowID]
@@ -111,7 +111,7 @@ func (s *Service) flowGrant(in AccountInput) (oauthGrant, error) {
 		return oauthGrant{}, ErrUnknownFlow
 	case in.Provider != "" && in.Provider != g.provider:
 		return oauthGrant{}, ErrProviderMismatch
-	case !strings.EqualFold(g.Email, strings.TrimSpace(in.Email)):
+	case in.Email != "" && !strings.EqualFold(g.Email, strings.TrimSpace(in.Email)):
 		return oauthGrant{}, ErrWrongAccount
 	}
 	return g, nil

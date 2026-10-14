@@ -306,4 +306,10 @@ var Migrations = [][]string{{
 		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
 			SELECT new.id, label_id, 'manual', active FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp;
 	END`,
+}, {
+	// Subscription model services (ChatGPT, Grok) signed in with OAuth:
+	// oauth_email is shown in the UI and sent as login_hint on re-login;
+	// oauth_client_id is the dynamic client_id ChatGPT issued at sign-in.
+	`ALTER TABLE model_services ADD COLUMN oauth_email TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
 }}

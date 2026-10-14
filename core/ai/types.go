@@ -82,10 +82,17 @@ const (
 	CodeIncomplete Code = "incomplete"
 )
 
+const DetailChatGPTUsage = "chatgpt_usage"
+
+// DetailChatGPTEligibility on a CodeUnauthorized Error: the ChatGPT account
+// signed in is not eligible for subscription sharing, so its plan can't be used.
+const DetailChatGPTEligibility = "chatgpt_not_eligible"
+
 // Error is a run failure. Msg never holds a key or a request or response body.
 type Error struct {
-	Code Code
-	Msg  string
+	Code   Code
+	Msg    string
+	Detail string
 }
 
 func (e *Error) Error() string { return e.Msg }
