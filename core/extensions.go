@@ -654,7 +654,8 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 	sorted := func(xs []string) []string { return slices.Sorted(slices.Values(xs)) }
 	if json.Unmarshal(res, &d) != nil || d.Name != name || d.Version != r.m.Version || d.ABI != plugins.NativeABI ||
 		!slices.Equal(sorted(d.Capabilities), sorted(r.m.Capabilities)) {
-		return fmt.Errorf("the library describes itself as %q %q, not as its plugin.json says", d.Name, d.Version)
+		// a native failure, so failed restarts count towards disabling it
+		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
 	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
 	return err

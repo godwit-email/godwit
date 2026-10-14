@@ -298,6 +298,13 @@ func TestNativeRestartChecksDescribe(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "describes itself")
 	assert.NoFileExists(t, record, "no settings for a library that is not the one allowed")
+	for range 2 { // each call starts another process that fails the same check
+		_, err = e.s.RunSkill(t.Context(), "translate", Target{Kind: "selection", ID: e.msg, Text: "Hi"})
+		require.Error(t, err)
+	}
+	p := pluginInfoByName(t, e.s, "dlx")
+	assert.False(t, p.Enabled, "the third failed restart disables it")
+	assert.Equal(t, disabledFailures, p.DisabledReason)
 }
 
 // translateDraft runs translate-draft and returns its one update_draft proposal.
