@@ -294,3 +294,65 @@ func TestNativeRestartChecksDescribe(t *testing.T) {
 	assert.Contains(t, err.Error(), "describes itself")
 	assert.NoFileExists(t, record, "no settings for a library that is not the one allowed")
 }
+
+// translateDraft runs translate-draft and returns its one update_draft proposal.
+func translateDraft(t *testing.T, e skillEnv, d Draft, opts SkillOptions) Approval {
+	t.Helper()
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", opts)
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, 1)
+	require.Equal(t, "update_draft", last.Approvals[0].Tool)
+	return last.Approvals[0]
+}
+
+func TestTranslateDraftWithPlugin(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	d := e.replyDraft(t, `<p>Hello <a href="https://x.example">there</a></p><ul><li>One</li><li>Two</li></ul>`)
+	_, q, sig := parts(t, d.HTML)
+	a := translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"})
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML, "a proposal, not yet applied")
+	e.accept(t, a)
+	ed, q2, sig2 := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Contains(t, ed, "[fr] Hello there", "a block of mixed styles becomes plain text")
+	assert.Contains(t, ed, "<li>[fr] One</li>")
+	assert.Contains(t, ed, "<li>[fr] Two</li>")
+	assert.Equal(t, q, q2)
+	assert.Equal(t, sig, sig2)
+	assert.Empty(t, e.srv.Requests(), "no model was asked")
+
+	d = e.replyDraft(t, `<p><a href="https://x.example/docs">Docs</a></p>`)
+	e.accept(t, translateDraft(t, e, d, SkillOptions{}))
+	ed, _, _ = parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Contains(t, ed, `href="https://x.example/docs"`, "a block in one style keeps it")
+	assert.Contains(t, ed, "[zh-CN] Docs", "no target: the reading language")
+}
+
+// A draft changed after the proposal is not overwritten by it.
+func TestTranslateDraftStaleWithPlugin(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	d := e.replyDraft(t, `<p>One</p><p>Two</p>`)
+	a := translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"})
+	d = e.getDraft(t, d.ID)
+	d.HTML = strings.Replace(d.HTML, "One", "Uno", 1)
+	_, err := e.s.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.ResolveApproval(t.Context(), a.ID, true), ErrStaleDraft)
+	ed, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Contains(t, ed, "Uno")
+	assert.NotContains(t, ed, "[fr]")
+}
+
+func TestTranslateDraftPluginUnavailable(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, nil)
+	require.NoError(t, e.s.SetPluginEnabled(t.Context(), "dlx", false))
+	d := e.replyDraft(t, `<p>Hi</p>`)
+	_, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{})
+	assert.ErrorIs(t, err, ErrTranslatorUnavailable)
+	assert.Empty(t, e.srv.Requests())
+}

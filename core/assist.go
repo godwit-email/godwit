@@ -610,27 +610,43 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			return nil, err
 		}
 	}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	target := cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx))
 	ref := sk.Model
-	if ref == "" {
-		st, err := s.loadSettings(ctx)
+	var run runFunc
+	var req ai.Request
+	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok && name == "translate-draft" {
+		// The plugin translates instead of a model; the proposal, its decision and undo stay as they are.
+		if _, _, err := s.pluginTranslator(plugin); err != nil {
+			return nil, err
+		}
+		src := editable
+		if sel != nil {
+			src = editable[sel.Start:sel.End]
+		}
+		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target)
+	} else {
+		if ref == "" {
+			if ref = st.DefaultModel; ref == "" {
+				return nil, ErrAINotConfigured
+			}
+		}
+		model, err := s.resolveModel(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
-		if ref = st.DefaultModel; ref == "" {
-			return nil, ErrAINotConfigured
+		e, err := s.aiEngine()
+		if err != nil {
+			return nil, err
 		}
-	}
-	model, err := s.resolveModel(ctx, ref)
-	if err != nil {
-		return nil, err
-	}
-	e, err := s.aiEngine()
-	if err != nil {
-		return nil, err
-	}
-	system := sk.Body + "\n\n" + ai.UntrustedSystemNote
-	if name == "translate-draft" { // never "the original's language": the skill does not see it
-		system += "\n\nTarget language: " + cmp.Or(strings.TrimSpace(opts.TargetLanguage), s.readingLanguage(ctx)) + "."
+		system := sk.Body + "\n\n" + ai.UntrustedSystemNote
+		if name == "translate-draft" { // never "the original's language": the skill does not see it
+			system += "\n\nTarget language: " + target + "."
+		}
+		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1}
 	}
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
@@ -676,7 +692,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		return ai.Result{State: state, Interrupts: []ai.ToolCall{{ID: "skill", Name: "update_draft"}}}
 	}
 	out := s.newStream()
-	go s.drive(job, end, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, out)
+	req.Prompt = prompt
+	go s.drive(job, end, run, req, out)
 	return out, nil
 }
 

@@ -652,7 +652,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	req.Prompt = prompt
 	out := s.newStream()
-	go s.drive(job, end, e, req, out)
+	go s.drive(job, end, e.Run, req, out)
 	return out, nil
 }
 
@@ -765,7 +765,11 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 
 // drive runs req, forwards its events and records how it ended before
 // sending the event that ends it.
-func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, out *witStream) {
+// runFunc runs a request: the engine's Run, or a stand-in that answers
+// without a model (a plugin translating a draft).
+type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() ai.Result)
+
+func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
 	defer func() {
 		if beforeUntrack != nil {
@@ -789,7 +793,7 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	if len(cs) > 0 {
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
 	}
-	events, wait := e.Run(job.ctx, req)
+	events, wait := run(job.ctx, req)
 	for ev := range events {
 		if !terminal(WitEvent{Event: ev}) {
 			wev := WitEvent{Event: ev}
@@ -994,6 +998,6 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	req.Responses = results
-	go s.drive(job, end, e, req, nil)
+	go s.drive(job, end, e.Run, req, nil)
 	return nil
 }

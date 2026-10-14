@@ -20,6 +20,8 @@ import (
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // translatorPrefix marks a plugin in Settings.Translator and in a run's model slot.
@@ -220,23 +222,8 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 		TargetKind: t.Kind, TargetID: t.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
-	res, err := tr.translate(ctx, translateRequest{Texts: paras, Target: lang})
-	if err == nil && len(res.Texts) != len(paras) {
-		err = fmt.Errorf("%w: %d texts for %d", errTranslatorAnswer, len(res.Texts), len(paras))
-	}
-	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
-		return nil, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
-	}
+	res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: paras, Target: lang})
 	if err != nil {
-		var failed error
-		// A script plugin's error counts as an action's does; a native one's
-		// error envelope is its answer (plugins.IsNativeFailure).
-		if rp.native == nil || plugins.IsNativeFailure(err) || errors.Is(err, errTranslatorAnswer) {
-			failed = s.pluginFailed(ctx, plugin, rp.gen)
-		}
-		return nil, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, s.cleanError(err)), failed)
-	}
-	if err := s.pluginSucceeded(ctx, plugin, rp.gen); err != nil {
 		return nil, err
 	}
 	out := strings.Join(res.Texts, "\n\n")
@@ -247,4 +234,175 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 		s.cachePut(ctx, key, account, out, "translate")
 	}
 	return reply(out)
+}
+
+// callTranslator runs one translation and keeps the plugin's failure count:
+// a script plugin's error counts as an action's does, a native one's error
+// envelope is its answer (plugins.IsNativeFailure), and a wrong number of
+// texts always counts.
+func (s *Service) callTranslator(ctx context.Context, plugin string, tr translator, rp *runningPlugin, req translateRequest) (translateResult, error) {
+	res, err := tr.translate(ctx, req)
+	if err == nil && len(res.Texts) != len(req.Texts) {
+		err = fmt.Errorf("%w: %d texts for %d", errTranslatorAnswer, len(res.Texts), len(req.Texts))
+	}
+	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
+		return translateResult{}, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
+	}
+	if err != nil {
+		var failed error
+		if rp.native == nil || plugins.IsNativeFailure(err) || errors.Is(err, errTranslatorAnswer) {
+			failed = s.pluginFailed(ctx, plugin, rp.gen)
+		}
+		return translateResult{}, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, s.cleanError(err)), failed)
+	}
+	return res, s.pluginSucceeded(ctx, plugin, rp.gen)
+}
+
+// pluginDraftRun is a run that translates the draft HTML src with plugin and
+// answers it as the model would, for assistSkill's proposal.
+func (s *Service) pluginDraftRun(plugin, src, target string) runFunc {
+	return func(ctx context.Context, _ ai.Request) (<-chan ai.Event, func() ai.Result) {
+		events, done := make(chan ai.Event), make(chan struct{})
+		var res ai.Result
+		go func() {
+			defer close(done)
+			defer close(events)
+			out, err := s.translateDraftHTML(ctx, plugin, src, target)
+			if err != nil {
+				res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
+				return
+			}
+			res = ai.Result{Messages: []ai.Message{{Role: "model", Text: out}}}
+		}()
+		return events, func() ai.Result { <-done; return res }
+	}
+}
+
+var (
+	// blockTags hold one translatable text each when no other block is inside them.
+	blockTags = map[atom.Atom]bool{atom.P: true, atom.H1: true, atom.H2: true, atom.H3: true, atom.H4: true, atom.H5: true, atom.H6: true,
+		atom.Li: true, atom.Td: true, atom.Th: true, atom.Blockquote: true, atom.Div: true, atom.Dd: true, atom.Dt: true}
+	// styleTags may wrap a block's whole text and stay around its translation.
+	styleTags = map[atom.Atom]bool{atom.A: true, atom.B: true, atom.Strong: true, atom.I: true, atom.Em: true, atom.U: true,
+		atom.S: true, atom.Del: true, atom.Span: true, atom.Code: true, atom.Font: true}
+)
+
+// translateDraftHTML translates draft HTML block by block: a paragraph,
+// heading, list item, quote or table cell is one text; pre and code blocks,
+// rules and images stay. A block whose whole text is in one chain of style
+// elements (a link, bold) keeps them; mixed styles become plain text, which
+// the user sees in the proposal.
+func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target string) (string, error) {
+	tr, rp, err := s.pluginTranslator(plugin)
+	if err != nil {
+		return "", err
+	}
+	body := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
+	nodes, err := html.ParseFragment(strings.NewReader(src), body)
+	if err != nil {
+		return "", err
+	}
+	for _, n := range nodes {
+		body.AppendChild(n)
+	}
+	var leaves []*html.Node
+	var texts []string
+	var walk func(n *html.Node)
+	walk = func(n *html.Node) {
+		if n.DataAtom == atom.Pre {
+			return
+		}
+		if (n == body || blockTags[n.DataAtom]) && !hasBlock(n) {
+			if t := strings.TrimSpace(nodeText(n)); t != "" {
+				leaves, texts = append(leaves, n), append(texts, t)
+			}
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(body)
+	if len(texts) == 0 {
+		return src, nil
+	}
+	res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: texts, Target: target})
+	if err != nil {
+		return "", err
+	}
+	for i, n := range leaves {
+		setText(n, res.Texts[i])
+	}
+	var b strings.Builder
+	for c := body.FirstChild; c != nil; c = c.NextSibling {
+		if err := html.Render(&b, c); err != nil {
+			return "", err
+		}
+	}
+	return b.String(), nil
+}
+
+// hasBlock reports whether a block or pre element is inside n.
+func hasBlock(n *html.Node) bool {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && (blockTags[c.DataAtom] || c.DataAtom == atom.Pre || c.DataAtom == atom.Ul || c.DataAtom == atom.Ol ||
+			c.DataAtom == atom.Table || hasBlock(c)) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeText is n's text, a line break for each <br>.
+func nodeText(n *html.Node) string {
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		switch {
+		case n.Type == html.TextNode:
+			b.WriteString(n.Data)
+		case n.DataAtom == atom.Br:
+			b.WriteString("\n")
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return b.String()
+}
+
+// setText replaces n's content with text, inside n's chain of style
+// elements when its whole text sits in one; line breaks become <br>.
+func setText(n *html.Node, text string) {
+	in := n
+	for {
+		var only *html.Node
+		for c := in.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.TextNode && strings.TrimSpace(c.Data) == "" {
+				continue
+			}
+			if only != nil || c.Type != html.ElementNode || !styleTags[c.DataAtom] {
+				only = nil
+				break
+			}
+			only = c
+		}
+		if only == nil {
+			break
+		}
+		in = only
+	}
+	if in != n && strings.TrimSpace(nodeText(in)) != strings.TrimSpace(nodeText(n)) {
+		in = n // text outside the chain: the block's styles are mixed
+	}
+	for in.FirstChild != nil {
+		in.RemoveChild(in.FirstChild)
+	}
+	for i, line := range strings.Split(text, "\n") {
+		if i > 0 {
+			in.AppendChild(&html.Node{Type: html.ElementNode, Data: "br", DataAtom: atom.Br})
+		}
+		in.AppendChild(&html.Node{Type: html.TextNode, Data: line})
+	}
 }
