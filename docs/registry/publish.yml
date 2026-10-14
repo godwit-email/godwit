@@ -1,0 +1,39 @@
+# .github/workflows/publish.yml of the plugins repository (docs/registry/README.md).
+# A pull request is checked; a merge to main is checked, signed and published.
+name: Publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+      # Godwit's own validator: what passes here is what the app accepts.
+      - name: Check every release and download every file
+        run: go run github.com/godwit-email/godwit/cmd/godwit-registry@main check --fetch registry.json
+      - name: Sign
+        if: github.event_name == 'push'
+        env:
+          GODWIT_REGISTRY_KEY: ${{ secrets.GODWIT_REGISTRY_KEY }}
+        run: go run github.com/godwit-email/godwit/cmd/godwit-registry@main sign registry.json
+      # The bucket dl.godwit.email serves; the app reads plugins/registry.json and its .sig.
+      - name: Upload
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2: https://9c578ed9cad837fb4a2564db7b36b483.r2.cloudflarestorage.com
+        run: |
+          aws s3 cp registry.json s3://godwit-downloads/plugins/registry.json --endpoint-url "$R2" --cache-control no-cache --content-type application/json
+          aws s3 cp registry.json.sig s3://godwit-downloads/plugins/registry.json.sig --endpoint-url "$R2" --cache-control no-cache --content-type text/plain
