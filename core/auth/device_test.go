@@ -66,7 +66,7 @@ func TestDeviceFlowExpires(t *testing.T) {
 
 	expSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/device" {
-			w.Write([]byte(`{"device_code":"dc","user_code":"uc","verification_uri":"https://auth.example/verify","interval":1,"expires_in":1}`))
+			w.Write([]byte(`{"device_code":"dc","user_code":"uc","verification_uri":"https://auth.example/verify","verification_uri_complete":"https://auth.example/verify?c=uc","interval":1,"expires_in":1}`))
 			return
 		}
 		w.WriteHeader(http.StatusBadRequest)
@@ -76,7 +76,7 @@ func TestDeviceFlowExpires(t *testing.T) {
 	f2, err := auth.StartDevice(ctx, auth.OAuthConfig{ClientID: "id", DeviceURL: expSrv.URL + "/device", TokenURL: expSrv.URL + "/token"}, nil)
 	require.NoError(t, err)
 	t.Cleanup(f2.Close)
-	assert.Equal(t, "https://auth.example/verify", f2.AuthURL())
+	assert.Equal(t, "https://auth.example/verify?c=uc", f2.AuthURL())
 	_, err = f2.Wait(ctx)
 	require.ErrorIs(t, err, auth.ErrFlowExpired)
 }
@@ -121,4 +121,11 @@ func TestDeviceFlowCancelled(t *testing.T) {
 	t.Cleanup(badSrv.Close)
 	_, err = auth.StartDevice(ctx, auth.OAuthConfig{ClientID: "id", DeviceURL: badSrv.URL, TokenURL: badSrv.URL}, nil)
 	require.Error(t, err)
+
+	bareSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"device_code":"dc","user_code":"uc","verification_uri":"https://auth.example/verify"}`))
+	}))
+	t.Cleanup(bareSrv.Close)
+	_, err = auth.StartDevice(ctx, auth.OAuthConfig{ClientID: "id", DeviceURL: bareSrv.URL, TokenURL: bareSrv.URL}, nil)
+	require.Error(t, err, "a code the user would have to type, which Godwit never shows")
 }

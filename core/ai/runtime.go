@@ -36,9 +36,10 @@ type Engine struct {
 	secrets func() []string
 	client  *http.Client // never follows redirects; Close drops its connections
 
-	mu     sync.Mutex
-	insts  map[int64]*instance
-	closed bool
+	mu      sync.Mutex
+	insts   map[int64]*instance
+	retired map[*instance]bool // replaced instances still running; Close cancels them too
+	closed  bool
 
 	keysMu sync.Mutex
 	keys   map[string]bool // every API key handed to Genkit, redacted from its logs
@@ -57,6 +58,18 @@ type instance struct {
 	provider string
 	ctx      context.Context // ends when the instance is dropped; so do its runs
 	cancel   context.CancelCauseFunc
+	runs     int  // runs using it (Engine.mu)
+	retired  bool // replaced for a new key: cancelled once runs reaches 0
+}
+
+// release ends one run's use of in; a retired instance is cancelled after its last run.
+func (e *Engine) release(in *instance) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if in.runs--; in.retired && in.runs == 0 {
+		in.cancel(errStale)
+		delete(e.retired, in)
+	}
 }
 
 // errStale ends the runs of an instance whose service changed or went away.
@@ -124,6 +137,10 @@ func (e *Engine) Close() {
 		in.cancel(context.Canceled)
 		delete(e.insts, id)
 	}
+	for in := range e.retired {
+		in.cancel(context.Canceled)
+	}
+	e.retired = nil
 	e.mu.Unlock()
 	e.client.CloseIdleConnections()
 }
@@ -145,12 +162,20 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	}
 	if in := e.insts[m.ServiceID]; in != nil {
 		if in.cfg == cfg {
+			in.runs++
 			return in, nil
 		}
 		same := in.cfg
 		same.APIKey = cfg.APIKey
-		if same != cfg {
+		switch {
+		case same != cfg, in.runs == 0:
 			in.cancel(errStale)
+		default: // only the key rotated: its runs finish on the old one, then it goes
+			in.retired = true
+			if e.retired == nil {
+				e.retired = map[*instance]bool{}
+			}
+			e.retired[in] = true
 		}
 		delete(e.insts, m.ServiceID)
 	}
@@ -194,7 +219,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	}()
 	g := genkit.Init(ictx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
 	e.inits.Add(1)
-	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel}
+	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel, runs: 1}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }
@@ -293,6 +318,7 @@ func (r *runner) run(req Request) Result {
 	if err != nil {
 		return fail(err)
 	}
+	defer r.e.release(in)
 	// The run ends with its instance: a changed or removed service sends nothing more.
 	ctx, cancel := context.WithCancelCause(r.ctx)
 	defer cancel(nil)

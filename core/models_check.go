@@ -56,6 +56,9 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 				c.Names[m.ID] = m.Name
 			}
 		}
+		if errors.Is(err, ai.ErrModelAuth) && action == KeyKeep {
+			s.dropRejectedToken(old.ID, key) // the next probe refreshes instead of reusing a revoked token
+		}
 		var nl *ai.NoListError
 		if errors.As(err, &nl) {
 			c.ListSupported, c.NoListStatus, c.Models, err = false, nl.Status, nil, nil

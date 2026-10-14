@@ -34,10 +34,13 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 // data[].id shape, Sign in with ChatGPT's models[].slug/display_name and
 // xAI's models[].id.
 func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]Model, error) {
+	base := strings.TrimRight(baseURL, "/")
+	url, hdr := modelsURL(ctx, c, base), http.Header{} // before the list's own timeout: a version lookup has its own
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	base := strings.TrimRight(baseURL, "/")
-	url, hdr := modelsURL(ctx, c, base), http.Header{}
+	if strings.HasSuffix(base, "/backend-api/codex") && apiKey != "" {
+		hdr.Set("chatgpt-account-id", codexAccountID(apiKey)) // as the Codex CLI: a multi-account plan lists the token's account
+	}
 	switch kind {
 	case KindOpenAI, KindResponses:
 		if apiKey != "" {

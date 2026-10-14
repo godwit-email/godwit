@@ -842,11 +842,23 @@ func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	require.Nil(t, res2.Err)
 	assert.Equal(t, "done", last(t, evs2).Kind)
 	assert.EqualValues(t, 2, e.inits.Load())
+	e.mu.Lock()
+	var old *instance
+	for in := range e.retired {
+		old = in
+	}
+	e.mu.Unlock()
+	require.NotNil(t, old, "the replaced instance waits for its run")
+	assert.NoError(t, old.ctx.Err())
 
 	srv.Release()
 	evs1, res1 := collect(events1, wait1)
 	require.Nil(t, res1.Err)
 	assert.Equal(t, "done", last(t, evs1).Kind)
+	assert.Error(t, old.ctx.Err(), "and goes once that run is over")
+	e.mu.Lock()
+	assert.Empty(t, e.retired)
+	e.mu.Unlock()
 }
 
 func TestCodexRequestShape(t *testing.T) {

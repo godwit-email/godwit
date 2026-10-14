@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 )
 
@@ -54,6 +55,28 @@ func (s *Service) forgetModelToken(id int64) {
 	delete(s.modelTokens, id)
 	s.modelTokMu.Unlock()
 }
+
+// dropRejectedToken forgets service id's cached access token if it is still
+// the one a request was refused with, so a late refusal does not evict a
+// token another run has refreshed since.
+func (s *Service) dropRejectedToken(id int64, access string) {
+	s.modelTokMu.Lock()
+	if access != "" && s.modelTokens[id].access == access {
+		delete(s.modelTokens, id)
+	}
+	s.modelTokMu.Unlock()
+}
+
+// runRejected drops the token a run was refused with. Not for an ineligible
+// ChatGPT account: refreshing cannot change that, it only rotates the token.
+func (s *Service) runRejected(m ai.ResolvedModel, e *ai.Error) {
+	if e != nil && e.Code == ai.CodeUnauthorized && e.Detail != ai.DetailChatGPTEligibility {
+		s.dropRejectedToken(m.ServiceID, m.APIKey)
+	}
+}
+
+// errModelChanged: the service was removed or signed in again while its token refreshed.
+var errModelChanged = errors.New("the model service changed while its sign-in refreshed; try again")
 
 // modelCredential is the credential requests to m should carry: its API key,
 // or for a subscription service a cached or refreshed access token.
@@ -108,6 +131,16 @@ func (s *Service) modelCredential(ctx context.Context, m ModelService) (string, 
 	}
 	if err != nil {
 		return "", err
+	}
+	// Under modelMu, as a removal or re-login is: neither may have happened since m
+	// was read, or the write below would recreate a removed service's credential.
+	s.modelMu.RLock()
+	defer s.modelMu.RUnlock()
+	if cur, err := s.modelServiceBy(ctx, "id = ?", m.ID); err != nil || cur.keyVersion != m.keyVersion {
+		if err != nil && !errors.Is(err, ErrModelServiceNotFound) {
+			return "", err
+		}
+		return "", errModelChanged
 	}
 	if g.RefreshToken != "" {
 		if err := keychainSet(s.modelKeyUser(m.ID, m.keyVersion), g.RefreshToken); err != nil {

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -114,12 +115,14 @@ func TestListModelsCodex(t *testing.T) {
 
 	srv := testllm.Start(t, "openai-responses")
 	srv.SetModels("gpt-6-luna", "gpt-5.6-luna")
-	ms, err := ListModelsNamed(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex", "tok")
+	tok := "h." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}`)) + ".s"
+	ms, err := ListModelsNamed(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex", tok)
 	require.NoError(t, err)
 	assert.Equal(t, []Model{{ID: "gpt-5.6-luna"}, {ID: "gpt-6-luna"}}, ms)
 	last := srv.Headers()[len(srv.Headers())-1]
-	assert.Equal(t, "Bearer tok", last.Get("Authorization"))
-	_, err = ListModels(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex/", "tok")
+	assert.Equal(t, "Bearer "+tok, last.Get("Authorization"))
+	assert.Equal(t, "acct-9", last.Get("chatgpt-account-id"), "the token's account, as the responses carry")
+	_, err = ListModels(context.Background(), nil, KindResponses, srv.URL+"/backend-api/codex/", tok)
 	require.NoError(t, err, "a trailing slash is fine")
 }
 

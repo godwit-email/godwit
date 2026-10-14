@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +43,9 @@ type deviceResp struct {
 	Error                   string `json:"error"`
 }
 
+// deviceStartTimeout bounds the device-code request.
+const deviceStartTimeout = 30 * time.Second
+
 // StartDevice requests a device code at cfg.DeviceURL and starts polling
 // cfg.TokenURL in the background.
 func StartDevice(ctx context.Context, cfg OAuthConfig, hc *http.Client) (*DeviceFlow, error) {
@@ -57,7 +59,10 @@ func StartDevice(ctx context.Context, cfg OAuthConfig, hc *http.Client) (*Device
 	for k, v := range cfg.AuthParams {
 		form.Set(k, v)
 	}
-	b, status, err := postForm(ctx, hc, cfg.DeviceURL, form)
+	// Bounded: no flow exists yet for the user to cancel while this waits.
+	rctx, cancel := context.WithTimeout(ctx, deviceStartTimeout)
+	b, status, err := postForm(rctx, hc, cfg.DeviceURL, form)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +73,8 @@ func StartDevice(ctx context.Context, cfg OAuthConfig, hc *http.Client) (*Device
 	if dr.Error != "" || status < 200 || status >= 300 {
 		return nil, tokenCodeError(dr.Error)
 	}
-	authURL := cmp.Or(dr.VerificationURIComplete, dr.VerificationURI)
+	// The complete URI only: Godwit opens it and never shows the user code to type in.
+	authURL := dr.VerificationURIComplete
 	if dr.DeviceCode == "" || !validDeviceURI(authURL) {
 		return nil, errBadTokenResponse
 	}
@@ -204,8 +210,7 @@ func (f *DeviceFlow) poll() {
 		case "authorization_pending":
 			continue
 		case "slow_down":
-			interval += 5 * time.Second
-			deadline = deadline.Add(5 * time.Second)
+			interval += 5 * time.Second // RFC 8628: the code's lifetime stays as it was
 			continue
 		case "access_denied", "authorization_denied":
 			f.finish(Grant{}, ErrAccessDenied)

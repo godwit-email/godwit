@@ -229,6 +229,9 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 	}
 	if ModelProviderLogin(in.Provider) == "oauth" {
 		in.BaseURL = ModelProviderURL(in.Provider)
+		if id != 0 && in.OAuthFlowID == "" { // its refresh token belongs to the login its address names
+			in.BaseURL = old.BaseURL
+		}
 	}
 	if in.BaseURL, err = ai.NormalizeBaseURL(in.BaseURL); err != nil {
 		return "", "", old, err
@@ -769,9 +772,7 @@ func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max
 		}
 	}
 	if r := wait(); r.Err != nil {
-		if r.Err.Code == ai.CodeUnauthorized {
-			s.forgetModelToken(req.Model.ServiceID)
-		}
+		s.runRejected(req.Model, r.Err)
 		return "", r.Err
 	}
 	return b.String(), nil

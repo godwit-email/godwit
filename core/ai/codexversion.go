@@ -23,8 +23,9 @@ var codexVersionURLs = []string{
 }
 
 const (
-	codexVersionFresh = time.Hour       // how long a looked-up version is used
-	codexVersionRetry = 5 * time.Minute // how long a failed lookup is not repeated
+	codexVersionFresh  = time.Hour       // how long a looked-up version is used
+	codexVersionRetry  = 5 * time.Minute // how long a failed lookup is not repeated
+	codexVersionBudget = 4 * time.Second // every lookup together: the list still has its own time
 )
 
 var codexVersion struct {
@@ -45,6 +46,8 @@ func codexClientVersion(ctx context.Context, c *http.Client) string {
 	if codexVersion.version != "" && time.Now().Before(codexVersion.until) {
 		return codexVersion.version
 	}
+	ctx, cancel := context.WithTimeout(ctx, codexVersionBudget)
+	defer cancel()
 	for _, u := range codexVersionURLs {
 		if v := fetchCodexVersion(ctx, c, u); v != "" {
 			codexVersion.version, codexVersion.until = v, time.Now().Add(codexVersionFresh)

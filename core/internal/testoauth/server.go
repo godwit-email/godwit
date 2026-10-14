@@ -287,7 +287,7 @@ func (s *Server) device(w http.ResponseWriter, r *http.Request) {
 		"verification_uri":          s.AuthURL,
 		"verification_uri_complete": s.AuthURL + "?user_code=" + uc,
 		"interval":                  1,
-		"expires_in":                5,
+		"expires_in":                30, // room for a slow_down, which no longer extends it
 	})
 }
 

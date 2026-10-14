@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"github.com/godwit-email/godwit/core/auth"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -297,6 +299,59 @@ func TestGrokCheckListsOrFails(t *testing.T) {
 	llm.SetListStatus(401)
 	_, err = s.CheckModelService(bg, ms.ID, ms.Input())
 	assert.ErrorIs(t, err, ErrModelAuth)
+	s.modelTokMu.Lock()
+	_, cached := s.modelTokens[ms.ID]
+	s.modelTokMu.Unlock()
+	assert.False(t, cached, "the refused token goes, so the next probe refreshes")
+}
+
+func TestOnlyTheRefusedTokenIsDropped(t *testing.T) {
+	s := modelSvc(t)
+	s.cacheModelToken(7, 1, auth.Grant{AccessToken: "token-b", Expiry: time.Now().Add(time.Hour)})
+	s.runRejected(ai.ResolvedModel{ServiceID: 7, APIKey: "token-a"}, &ai.Error{Code: ai.CodeUnauthorized})
+	assert.Equal(t, "token-b", s.modelTokens[7].access, "a late refusal of an older token keeps the newer one")
+	s.runRejected(ai.ResolvedModel{ServiceID: 7, APIKey: "token-b"}, &ai.Error{Code: ai.CodeUnauthorized, Detail: ai.DetailChatGPTEligibility})
+	assert.Equal(t, "token-b", s.modelTokens[7].access, "a refresh cannot make the account eligible")
+	s.runRejected(ai.ResolvedModel{ServiceID: 7, APIKey: "token-b"}, &ai.Error{Code: ai.CodeUnauthorized})
+	assert.Empty(t, s.modelTokens[7].access)
+}
+
+func TestEditKeepsTheSavedLogin(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, llm := oauthLLM(t, ProviderChatGPT)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+	mp := modelOAuth[ProviderChatGPT]
+	mp.BaseURL = "https://elsewhere.example/v1" // the provider's login for new services moved on
+	modelOAuth[ProviderChatGPT] = mp
+	in := ms.Input()
+	in.Name = "Mine"
+	ms2, err := s.UpdateModelService(bg, ms.ID, in)
+	require.NoError(t, err)
+	assert.Equal(t, llm.URL, ms2.BaseURL, "an edit without a new sign-in keeps the address its refresh token belongs to")
+}
+
+func TestRefreshAfterRemovalWritesNothing(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	oa, _ := oauthLLM(t, ProviderChatGPT)
+	oa.RotateRefresh(true)
+	fid := signIn(t, s, oa, ProviderChatGPT, "alice@example.com")
+	ms, err := s.AddModelService(bg, ModelServiceInput{Name: "ChatGPT", Provider: ProviderChatGPT, Kind: ai.KindResponses, Models: []string{"gpt-x"}, OAuthFlowID: fid})
+	require.NoError(t, err)
+	m, err := s.modelServiceBy(bg, "id = ?", ms.ID)
+	require.NoError(t, err)
+	before, err := s.modelKey(m)
+	require.NoError(t, err)
+	s.forgetModelToken(ms.ID)
+	// The row goes while m, read before, is refreshing: as RemoveModelService between the reads.
+	_, err = s.db.Execute(bg, "DELETE FROM model_services WHERE id = ?", ms.ID)
+	require.NoError(t, err)
+	_, err = s.modelCredential(bg, m)
+	assert.ErrorIs(t, err, errModelChanged)
+	after, err := s.modelKey(m)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "the rotated refresh token is not saved for a removed service")
 }
 
 func TestChatGPTLoginsByAddress(t *testing.T) {

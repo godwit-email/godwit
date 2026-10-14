@@ -803,9 +803,7 @@ func (s *Service) drive(job *runJob, end func(), e *ai.Engine, req ai.Request, o
 	}
 	ctx := context.WithoutCancel(job.ctx) // the outcome is recorded even when cancelled
 	res := wait()
-	if res.Err != nil && res.Err.Code == ai.CodeUnauthorized {
-		s.forgetModelToken(req.Model.ServiceID)
-	}
+	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
 		// Save the whole history, not just what this run was sent.
 		if st, err := ai.RestoreState(job.full, res.State, job.dropped); err != nil {
