@@ -15,17 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Godwit's own validator and signer, from its main branch's source (not the module proxy, which lags).
+      - uses: actions/checkout@v4
+        with:
+          repository: godwit-email/godwit
+          path: godwit
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27.1"
+          go-version-file: godwit/go.mod
+          cache-dependency-path: godwit/go.sum
       # Godwit's own validator: what passes here is what the app accepts.
       - name: Check every release and download every file
-        run: go run github.com/godwit-email/godwit/cmd/godwit-registry@main check --fetch registry.json
+        run: cd godwit && go run ./cmd/godwit-registry check --fetch ../registry.json
       - name: Sign
         if: github.event_name == 'push'
         env:
           GODWIT_REGISTRY_KEY: ${{ secrets.GODWIT_REGISTRY_KEY }}
-        run: go run github.com/godwit-email/godwit/cmd/godwit-registry@main sign registry.json
+        run: cd godwit && go run ./cmd/godwit-registry sign ../registry.json
       # The bucket dl.godwit.email serves; the app reads plugins/registry.json and its .sig.
       - name: Upload
         if: github.event_name == 'push'
