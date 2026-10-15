@@ -47,6 +47,7 @@ godwit [--data-dir DIR]                                the desktop app
 godwit --headless [--data-dir DIR]                     serve the Local API without a window
 godwit call [--data-dir DIR] METHOD [JSON_ARGS_ARRAY]  call the running Godwit once
 godwit mcp [--data-dir DIR]                            an MCP server on stdio for agents
+godwit dev-sync-db                                    replace the dev database from production (development builds only)
 godwit --version
 ```
 
@@ -58,12 +59,33 @@ Godwit is written in Go on [MyGo](https://github.com/egoist/mygo): the main wind
 mise install
 mise run generate    # install web dependencies and generate Go/TypeScript code before Go tests
 mise run dev         # run the app, reloading on changes
+mise run dev:sync-db # replace the dev database from production; stop both apps first
 go test ./...        # Go tests
 mise run web:check
 mise run build       # package for this machine into dist/
 ```
 
 Native and web UI translations share `internal/i18n/en.json` and `zh-Hans.json`, using ICU MessageFormat. Edit these catalogs, run `mise run generate` to update the Go and TypeScript accessors, and validate with `go tool mygo i18n check`. MyGo's generated Go/TypeScript accessors and client are ignored by Git; do not edit them directly. Development, packaging and `mise run web:check` / `web:test` generate them automatically; run `mise run generate` before using Go commands directly.
+
+Development builds (`mygo dev` and `go run`) use a separate `Godwit-dev` data
+directory beside production's `Godwit` directory (on Windows, `~/.godwit-dev`
+beside `~/.godwit`). GUI, headless, `call` and `mcp` all use the matching default;
+an explicit `--data-dir` still takes precedence. Release builds keep their existing
+directory. `MYGO_ENV=production` selects production defaults for an unpackaged binary.
+
+To start dev with production mail and settings, quit both instances and run
+`mise run dev:sync-db`, then `mise run dev`. This **overwrites the dev database**.
+It copies committed WAL data, validates and migrates only the copy, and leaves
+the production database untouched. It refuses to run while either directory is
+owned by a running instance. A database already upgraded by an older dev run is
+not downgraded by this command.
+
+The sync copies only the database. Dev gets a fresh keychain identity, so enter
+account credentials and model/plugin/MCP secrets again in dev. Cached attachments
+are downloaded again; draft attachments and outbox files are not copied, and their
+file references are cleared to avoid using production or stale dev files. Re-add
+draft attachments before sending from dev. Skills and plugin files are not
+copied. After you sign in, dev can sync and change the same remote mailbox.
 
 Layout:
 

@@ -10,6 +10,11 @@ run = "bun install --frozen-lockfile"
 depends = ["web:install"]
 run = "go tool mygo dev"
 
+[tasks."dev:sync-db"]
+description = "Replace the dev database from production; stop both apps first"
+depends = ["generate"]
+run = "go run ./cmd/godwit dev-sync-db"
+
 [tasks.build]
 depends = ["web:install"]
 run = "go tool mygo build -skip-dmg -skip-notarize"
