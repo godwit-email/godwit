@@ -49,13 +49,13 @@ func (m *modelsView) close() {
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(4, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
 			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
 		})
 		return
 	}
 	m.loadAvatar(s)
-	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL]).AlignSelf(ui.Start).Margin(4, 0, 0, 0)
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL]).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0)
 }
 
 // list is the services, one card row each.
