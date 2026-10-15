@@ -183,7 +183,7 @@ type App struct {
 
 	foreground  bool
 	vibrancy    bool                // Deps.Vibrancy
-	newMail     map[int64]*arrivals // per account, what arrived for its pending notification
+	newMail     map[int64]*arrivals // per account, what arrived for its pending notifications
 	logf        func(format string, args ...any)
 	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
