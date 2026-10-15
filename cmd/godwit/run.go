@@ -19,12 +19,16 @@ const usage = `usage:
   godwit --headless [--data-dir DIR]                     serve the Local API without a window
   godwit call [--data-dir DIR] METHOD [JSON_ARGS_ARRAY]  call the running Godwit once
   godwit mcp [--data-dir DIR]                            an MCP server on stdio for agents: read mail, write drafts
+  godwit dev-sync-db                                    replace the dev database from production (stop both first)
   godwit --version
 `
 
 // run is the whole command: it returns the exit code, and ends what it
 // started when ctx is cancelled. Usage errors exit 2.
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "dev-sync-db" {
+		return devSyncDB(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "call" {
 		return call(ctx, args[1:], stdout, stderr)
 	}

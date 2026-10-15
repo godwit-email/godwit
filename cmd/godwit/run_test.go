@@ -288,6 +288,7 @@ func TestDefaultDataDirHeadless(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("DISPLAY", "")
 	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("MYGO_ENV", "production")
 	dir, err := defaultDataDir()
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +303,17 @@ func TestDefaultDataDirHeadless(t *testing.T) {
 	}
 	if dir != want {
 		t.Fatalf("data dir %q, want %q", dir, want)
+	}
+	t.Setenv("MYGO_ENV", "")
+	dev, err := defaultDataDir()
+	if err != nil || dev != want+"-dev" {
+		t.Fatalf("dev data dir %q, %v; want %q", dev, err, want+"-dev")
+	}
+	if singleInstance(dev) {
+		t.Fatal("dev must run beside the production GUI")
+	}
+	if dir, custom := (&platform{dataDir: dev}).DataDir(); dir != dev || !custom {
+		t.Fatalf("dev MCP config must include its data directory: %q, %v", dir, custom)
 	}
 	if len(mygo.Windows()) != 0 || mygo.App.IsReady() {
 		t.Fatal("asking for the data directory started the App")
