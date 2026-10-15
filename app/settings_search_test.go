@@ -9,7 +9,45 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
+
+func TestSettingsSearchFocusRingIsNotClipped(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		t.Run(map[bool]string{false: "light", true: "dark"}[dark], func(t *testing.T) {
+			p := &settingsPage{}
+			tok := theme.Light()
+			if dark {
+				tok = theme.Dark()
+			}
+			tt := ui.NewTester(func(c *ui.Context) {
+				c.DisableAnimations()
+				theme.Apply(c, tok)
+				ui.Column(c).Fill().Padding(10).Background(tok.Window).Children(func() {
+					ui.Column(c).Grow(1).Label("viewport").Children(func() {
+						sidebarScroll(c, func() { p.searchField(c) })
+					})
+					ui.Box(c).Size(10, 10).Label("ring reference").Background(c.Theme().Focus)
+				})
+			}, 240, 100)
+			if err := tt.Click(i18n.T("settings.search")); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			in, _ := tt.Find(i18n.T("settings.search"))
+			viewport, _ := tt.Find("viewport")
+			ref, _ := tt.Find("ring reference")
+			img := tt.Image()
+			want := img.RGBAAt(int(ref.X+ref.W/2), int(ref.Y+ref.H/2))
+			for x := 0; x < int(theme.RingWidth); x++ {
+				got := img.RGBAAt(int(viewport.X)+x, int(in.Y+in.H/2))
+				if max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) > 3 {
+					t.Errorf("left focus ring clipped at %d px: got %v, want %v", x, got, want)
+				}
+			}
+		})
+	}
+}
 
 // TestSettingsIndexCoversRows: every text a settings page shows that is a
 // settings.* catalog message is in that page's search index.

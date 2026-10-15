@@ -47,7 +47,11 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.Hairline, t.Border)
 		Elevate(c, panel, theme.ShadowSm)
-		ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4)).Children(func() {
+		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
+		if body != nil {
+			header.Padding(th.Space(4), th.Space(4), th.Space(4)-theme.RingWidth, th.Space(4))
+		}
+		header.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 				Text(c, title, t.Text.Title).FontWeight(600).LineHeight(theme.LineFor(title))
 				if o.Desc != "" {
@@ -59,7 +63,8 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		})
 		if body != nil {
 			ui.Scroll(c).Shrink(1).Children(func() {
-				ui.Column(c).Padding(0, th.Space(4), th.Space(4), th.Space(4)).Gap(th.Space(4)).Children(body)
+				// Keep the first field's outer ring inside the viewport, without moving the content.
+				ui.Column(c).Padding(theme.RingWidth, th.Space(4), th.Space(4), th.Space(4)).Gap(th.Space(4)).Children(body)
 			})
 		}
 		if footer != nil {

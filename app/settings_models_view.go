@@ -632,11 +632,8 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	}
 	formRow(c, label, func() ui.Element {
 		var in ui.Element
-		border := t.Input
-		if f.keyErr != "" {
-			border = t.Danger
-		}
-		ui.Row(c).AlignItems(ui.Center).Height(th.Space(8)).Radius(t.Radius.Md).Border(theme.Hairline, border).Background(t.Background).Padding(0, th.Space(0.5), 0, 0).Children(func() {
+		box := kit.InputGroup(c, kit.InputOpts{Invalid: f.keyErr != "", Flat: true}).Padding(0, th.Space(0.5), 0, 0)
+		box.Children(func() {
 			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5)).OnSubmit(func() { m.fetch(f) })
 			icon, tip := "eye", i18n.T("settings.models.key.show")
 			if f.showKey {

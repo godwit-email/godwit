@@ -86,7 +86,8 @@ func (p *settingsPage) accountByEmail(q string) *core.Account {
 // searchField is the sidebar's 搜索设置 field; Enter opens the first match.
 func (p *settingsPage) searchField(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).FillWidth().Height(th.Space(8)).AlignItems(ui.Center).Gap(th.Space(2)).PaddingX(th.Space(2.5)).Margin(0, 0, th.Space(1.5), 0).Radius(t.Radius.Md).Background(t.Window).Children(func() {
+	box := kit.InputGroup(c, kit.InputOpts{Flat: true}).FillWidth().Gap(th.Space(2)).PaddingX(th.Space(2.5)).Margin(0, 0, th.Space(1.5), theme.RingWidth).Background(t.Window)
+	box.Children(func() {
 		ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 		in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("settings.search"), Bare: true}).FocusRing(false).Label(i18n.T("settings.search")).Grow(1)
 		if in.Submitted() {

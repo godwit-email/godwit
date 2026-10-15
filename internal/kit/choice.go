@@ -99,9 +99,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			current = o.Label
 		}
 	}
-	if !o.Flat {
-		Elevate(c, s.Trigger, theme.ShadowXs)
-	}
+	inputFrame(c, s.Trigger, InputOpts{Flat: o.Flat})
 	radius, minW := o.Radius, o.MinWidth
 	if radius == 0 {
 		radius = t.Radius.Md
@@ -109,7 +107,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 	if minW == 0 {
 		minW = theme.SelectMinWidth
 	}
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).Border(theme.Hairline, t.Input).Background(t.Background).MinWidth(minW).Children(func() {
+	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).MinWidth(minW).Children(func() {
 		ui.Text(c, current).Grow(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})

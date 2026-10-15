@@ -8,8 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -81,6 +85,177 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	for _, s := range securities {
 		if s.Value == core.SecurityNone {
 			t.Fatal("the form offers plaintext")
+		}
+	}
+}
+
+func TestOnboardingProviderEmail(t *testing.T) {
+	for _, p := range append(auth.ListProviders(), otherProvider) {
+		if p.Login == "oauth" {
+			continue
+		}
+		t.Run(p.ID, func(t *testing.T) {
+			h := newHarness(t)
+			o := h.firstRun()
+			h.click(providerName(p))
+			want := ""
+			if len(p.Domains) > 0 {
+				want = "@" + p.Domains[0]
+			}
+			if o.email != want || !o.askEmail {
+				t.Fatalf("email %q, askEmail %v; want %q, true", o.email, o.askEmail, want)
+			}
+			if want != "" {
+				h.typeText("alice")
+				if o.email != "alice"+want {
+					t.Fatalf("typing before @: got %q", o.email)
+				}
+				h.typeText("2")
+				if o.email != "alice2"+want {
+					t.Fatalf("caret moved after typing: got %q", o.email)
+				}
+			}
+		})
+	}
+}
+
+func TestOnboardingProviderEmailPreserved(t *testing.T) {
+	for _, email := range []string{"alice@company.example", "alice"} {
+		t.Run(email, func(t *testing.T) {
+			h := newHarness(t)
+			o := h.firstRun()
+			h.fill("邮箱地址", email)
+			if !validEmail(email) {
+				h.tt.Key(0, ui.KeyEscape)
+				h.tt.Frame()
+			}
+			h.click("Gmail")
+			if o.email != email || o.askEmail == validEmail(email) {
+				t.Fatalf("email %q, askEmail %v", o.email, o.askEmail)
+			}
+		})
+	}
+}
+
+func TestOnboardingSwitchUneditedProviderEmail(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("Gmail")
+	h.click("← 换一个邮箱")
+	h.click("iCloud")
+	h.typeText("alice")
+	if o.email != "alice@icloud.com" {
+		t.Fatalf("switching provider: got %q", o.email)
+	}
+}
+
+func TestOnboardingEmailAutocomplete(t *testing.T) {
+	for _, keyboard := range []bool{false, true} {
+		t.Run(strconv.FormatBool(keyboard), func(t *testing.T) {
+			h := newHarness(t)
+			o := h.firstRun()
+			h.fill("邮箱地址", "alice@g")
+			h.see("alice@gmail.com")
+			if h.tt.HasText("alice@qq.com") {
+				t.Fatal("suggested a domain that does not match")
+			}
+			if keyboard {
+				h.tt.Key(0, ui.KeyDown)
+				h.tt.Key(0, ui.KeyEnter)
+				h.drain()
+				h.tt.Frame()
+			} else {
+				h.click("alice@gmail.com")
+			}
+			if o.email != "alice@gmail.com" || o.step != stepPick {
+				t.Fatalf("completion: email %q, step %v", o.email, o.step)
+			}
+			h.advance(debounce)
+			h.see("识别为 Gmail")
+			h.click("继续")
+			if o.prov.ID != "gmail" || o.step != stepPassword || o.askEmail {
+				t.Fatalf("continue: provider %q, step %v, askEmail %v", o.prov.ID, o.step, o.askEmail)
+			}
+		})
+	}
+}
+
+func TestOnboardingSecretWhitespace(t *testing.T) {
+	for _, provider := range []string{"icloud", "gmail", "qq", "exmail", "other"} {
+		t.Run(provider, func(t *testing.T) {
+			h := newHarness(t)
+			o := h.firstRun()
+			o.prov = otherProvider
+			if p, ok := auth.ByID(provider); ok {
+				o.prov = p
+			}
+			o.email = "alice@example.com"
+			o.goTo(stepPassword)
+			const pasted = "\r\n abcd-efgh\tijkl\u00a0mnop \n"
+			o.secret = pasted
+			h.tt.Frame()
+			if o.input().Password != pasted {
+				t.Fatal("password changed without confirmation")
+			}
+			h.see("检测到空格或换行，可能是复制时带入的。是否清除？")
+			h.click("清除空白字符")
+			if o.input().Password != "abcd-efghijklmnop" {
+				t.Fatalf("password after cleanup %q", o.input().Password)
+			}
+			if h.tt.HasText("检测到空格或换行") {
+				t.Fatal("cleanup hint stayed after cleanup")
+			}
+		})
+	}
+}
+
+func TestOnboardingPasswordVisibility(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	h.fill("密码", "typed-secret")
+	h.click("显示密码")
+	h.see("隐藏密码")
+	if o.secret != "typed-secret" {
+		t.Fatal("showing the password changed its value")
+	}
+	h.click("隐藏密码")
+	h.see("显示密码")
+	if o.secret != "typed-secret" {
+		t.Fatal("hiding the password changed its value")
+	}
+	h.click("显示密码")
+	o.goTo(stepPassword)
+	h.tt.Frame()
+	h.see("显示密码")
+}
+
+func TestAccountInputOuterHeights(t *testing.T) {
+	var email, password string
+	var shown bool
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.Light())
+		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+			ui.Box(c).Label("email-frame").Children(func() {
+				kit.Input(c, &email, kit.InputOpts{}).Height(inputHeight(c))
+			})
+			ui.Box(c).Label("password-frame").Children(func() {
+				secretInput(c, &password, &shown, "密码")
+			})
+		})
+	}, 400, 200)
+	for _, toggle := range []bool{false, true} {
+		if toggle {
+			if err := tt.Click("显示密码"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+		}
+		for _, label := range []string{"email-frame", "password-frame"} {
+			r, ok := tt.Find(label)
+			if !ok || r.H != 36 {
+				t.Fatalf("%s outer height %v, want 36 (shown=%v)", label, r.H, shown)
+			}
 		}
 	}
 }
@@ -383,13 +558,15 @@ func TestOnboardingDetectedBadgeInInput(t *testing.T) {
 	h.fill("邮箱地址", "x@qq.com")
 	h.advance(debounce)
 	h.see("识别为 QQ 邮箱")
+	time.Sleep(2 * theme.MotionFast)
+	h.tt.Frame()
 	in, ok1 := h.tt.Find("邮箱地址")
 	badge, ok2 := h.tt.Find("识别为 QQ 邮箱")
 	if !ok1 || !ok2 {
 		t.Fatalf("input %v, badge %v", ok1, ok2)
 	}
-	if in.H != 40 {
-		t.Fatalf("email input is %v high, want 40", in.H)
+	if in.H != 34 {
+		t.Fatalf("email input is %v high, want 34 inside its 36-high frame", in.H)
 	}
 	if badge.X < in.X+in.W || badge.Y < in.Y || badge.Y+badge.H > in.Y+in.H {
 		t.Fatalf("badge %v is not trailing the input %v", badge, in)
@@ -442,6 +619,8 @@ func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
 	h.click("邮箱地址")
+	time.Sleep(2 * theme.MotionFast)
+	h.tt.Frame()
 	in, _ := h.tt.Find("邮箱地址")
 	img, want := h.tt.Image(), theme.Light().Ring.SRGB()
 	y, found := int(in.Y+in.H/2), false

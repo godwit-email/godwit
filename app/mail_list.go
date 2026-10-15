@@ -530,11 +530,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
 			// the design's box is 32 inside its border (a content-box label)
-			box := ui.Row(c).Height(th.Space(8.5)).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).
-				Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background)
-			if box.FocusWithin() { // the row is the box, so it carries the ring
-				box.Border(theme.Hairline, t.Ring).Shadow(0, 0, 0, theme.RingWidth, th.Focus)
-			}
+			box := kit.InputGroup(c, kit.InputOpts{Flat: true}).Height(th.Space(8.5)).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).Radius(t.Radius.Lg)
 			box.Children(func() {
 				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)

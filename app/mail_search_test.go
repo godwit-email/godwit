@@ -270,6 +270,7 @@ func TestSearchFilterChips(t *testing.T) {
 	n(3)
 	h.see("找到 3 封 · 全部账户 · 只搜索已同步到本机的邮件")
 
+	h.tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	h.app.sidebarHidden = true // the menu's accounts are then the only ones
 	h.click("全部账户")
 	h.click("alice@example.com")
