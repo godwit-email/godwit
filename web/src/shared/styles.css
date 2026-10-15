@@ -149,6 +149,11 @@
   }
 }
 
+/* Also override scroll utilities in generated components without editing their source. */
+* {
+  overscroll-behavior: none;
+}
+
 /* No font is bundled: web pages use the system's (spec §A4). */
 body {
   font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
