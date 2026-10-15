@@ -1,130 +1,14 @@
-name: Release
+name: Retry Store v1.1.0
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: # builds and publishes a release whose run failed, e.g. v0.0.0
-    inputs:
-      tag:
-        description: The release tag to build, e.g. v0.0.0
-        required: true
+  workflow_dispatch:
 
 permissions:
-  contents: write # the release and its tag
-  pull-requests: write # the release PR
+  contents: read
+  actions: read
 
 jobs:
-  release-please:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    outputs:
-      created: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
-    steps:
-      # Keeps a release PR open that bumps mygo.config.ts and CHANGELOG.md; merging
-      # it creates the draft release that publish makes public once the builds are up.
-      - id: release
-        uses: googleapis/release-please-action@v5
-
-  # Here, not on the tag: a tag pushed with GITHUB_TOKEN starts no workflow.
-  build:
-    needs: release-please
-    if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || inputs.tag != '') }}
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: macOS, os: macos-latest, platform: "darwin/arm64,darwin/amd64" }
-          - { name: Windows, os: ubuntu-latest, platform: "windows/amd64,windows/arm64" }
-          - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
-    steps:
-      # A manual run names its tag: build only an existing release, and its tag,
-      # never a branch of the same name, before any secret is in reach.
-      - name: The tag must be a release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
-        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName | grep -qx -- "$TAG"
-      - uses: actions/checkout@v4
-        with:
-          ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
-      - uses: jdx/mise-action@v2
-      - run: mise run web:install # generating the client compiles Go, which embeds files from web/node_modules
-      - name: Install NSIS, for the Windows installers
-        if: matrix.name == 'Windows'
-        run: sudo apt-get update && sudo apt-get install -y nsis
-      # mygo.config.ts signs with the identity and notarizes with the profile in this keychain.
-      - name: Import the Developer ID certificate and the notary credentials
-        if: matrix.name == 'macOS'
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }} # an App Store Connect team key (.p8), base64
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          password="$(openssl rand -base64 24)"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          rm "$RUNNER_TEMP/certificate.p12"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
-          security list-keychains -d user -s "$keychain" login.keychain
-          echo "$APPLE_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
-          xcrun notarytool store-credentials notary --keychain "$keychain" \
-            --key "$RUNNER_TEMP/notary.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
-          rm "$RUNNER_TEMP/notary.p8"
-          identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
-          test -n "$identity" || { echo "no Developer ID Application identity in MACOS_CERTIFICATE" >&2; exit 1; }
-          echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
-          echo "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-      # Uploads to the R2 bucket of updates.s3 in mygo.config.ts, each
-      # platform's manifest last: that is what publishes its update.
-      - name: Build and upload
-        env:
-          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: go tool mygo build -platform "${{ matrix.platform }}" -upload
-
-  # Every platform is on dl.godwit.email: make the release notes public.
-  publish:
-    needs: [release-please, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${{ inputs.tag || needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false
-
-  # Called, not triggered: a release published with GITHUB_TOKEN starts no workflow.
-  homebrew:
-    needs: [release-please, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    uses: ./.github/workflows/homebrew.yml
-    with:
-      tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
-    secrets: inherit
-
-  # The Windows MSIX bundle of the release's tag, for the Microsoft Store.
-  msix:
-    needs: [release-please, build]
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    uses: ./.github/workflows/msix.yml
-    with:
-      tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
-
-  # Submits the bundle to the Store as an update of the published app. The Store
-  # certifies it before customers get it, and needs a higher version each time.
-  # Without the Partner Center secrets the bundle is built but not submitted.
   store:
-    needs: msix
-    if: ${{ !cancelled() && needs.msix.result == 'success' }}
     runs-on: windows-latest
     env:
       STORE_PRODUCT_ID: 9NS3Q2CGWD12 # apps.microsoft.com/detail/9NS3Q2CGWD12
@@ -142,6 +26,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: msix
+          run-id: 38663348345
+          github-token: ${{ github.token }}
       - if: steps.creds.outputs.ready == 'true'
         uses: microsoft/microsoft-store-apppublisher@v1.1
       - if: steps.creds.outputs.ready == 'true'
