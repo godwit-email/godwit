@@ -639,7 +639,7 @@
   "onboarding_secret_help": "Saved in the system keychain",
   "onboarding_secret_hide": "Hide password",
   "onboarding_secret_show": "Show password",
-  "onboarding_secret_whitespace": "Spaces or line breaks detected. They may have been copied with the password. Remove them?",
+  "onboarding_secret_whitespace": "Spaces, line breaks or zero-width characters detected. They may have been copied with the password. Remove them?",
   "onboarding_security_starttls": "STARTTLS",
   "onboarding_security_tls": "SSL/TLS",
   "onboarding_sheet_title": "Add account",

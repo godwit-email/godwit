@@ -184,7 +184,7 @@ func TestSettingsPasswordWhitespace(t *testing.T) {
 	const pasted = "\r\n abcd-efgh\tijkl\u00a0mnop \n"
 	p.secret = pasted
 	h.tt.Frame()
-	h.see("检测到空格或换行，可能是复制时带入的。是否清除？")
+	h.see("检测到空格、换行或零宽字符，可能是复制时带入的。是否清除？")
 	if p.secret != pasted {
 		t.Fatal("password changed without confirmation")
 	}
@@ -192,7 +192,7 @@ func TestSettingsPasswordWhitespace(t *testing.T) {
 	if p.secret != "abcd-efghijklmnop" {
 		t.Fatalf("password after cleanup %q", p.secret)
 	}
-	if h.tt.HasText("检测到空格或换行") {
+	if h.tt.HasText("检测到空格、换行或零宽字符") {
 		t.Fatal("cleanup hint stayed after cleanup")
 	}
 }

@@ -302,7 +302,7 @@
   "onboarding_secret_help": "保存在系统钥匙串",
   "onboarding_secret_hide": "隐藏密码",
   "onboarding_secret_show": "显示密码",
-  "onboarding_secret_whitespace": "检测到空格或换行，可能是复制时带入的。是否清除？",
+  "onboarding_secret_whitespace": "检测到空格、换行或零宽字符，可能是复制时带入的。是否清除？",
   "onboarding_security_starttls": "STARTTLS",
   "onboarding_security_tls": "SSL/TLS",
   "onboarding_sheet_title": "添加账户",

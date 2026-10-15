@@ -197,13 +197,38 @@ func TestOnboardingSecretWhitespace(t *testing.T) {
 			if o.input().Password != pasted {
 				t.Fatal("password changed without confirmation")
 			}
-			h.see("检测到空格或换行，可能是复制时带入的。是否清除？")
+			h.see("检测到空格、换行或零宽字符，可能是复制时带入的。是否清除？")
 			h.click("清除空白字符")
 			if o.input().Password != "abcd-efghijklmnop" {
 				t.Fatalf("password after cleanup %q", o.input().Password)
 			}
-			if h.tt.HasText("检测到空格或换行") {
+			if h.tt.HasText("检测到空格、换行或零宽字符") {
 				t.Fatal("cleanup hint stayed after cleanup")
+			}
+		})
+	}
+}
+
+func TestSecretZeroWidthCharacters(t *testing.T) {
+	for _, invisible := range []string{"\u200b", "\ufeff", " \u200b\t\ufeff\u00a0"} {
+		t.Run(strconv.Quote(invisible), func(t *testing.T) {
+			secret := invisible + "abc\u200c\u200d-def" + invisible
+			pasted := secret
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c, theme.Light())
+				secretWhitespaceHint(c, &secret)
+			}, 800, 200)
+			if secret != pasted {
+				t.Fatal("password changed without confirmation")
+			}
+			if err := tt.Click("清除空白字符"); err != nil {
+				t.Fatal(err)
+			}
+			if secret != "abc\u200c\u200d-def" {
+				t.Fatalf("password after cleanup %q", secret)
+			}
+			if tt.HasText("清除空白字符") {
+				t.Fatal("cleanup hint stayed for meaningful joiners")
 			}
 		})
 	}

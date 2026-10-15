@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -662,7 +663,12 @@ func secretInput(c *ui.Context, secret *string, shown *bool, label string) ui.El
 }
 
 func secretWhitespaceHint(c *ui.Context, secret *string) {
-	cleaned := strings.Join(strings.Fields(*secret), "")
+	cleaned := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || r == '\u200b' || r == '\ufeff' {
+			return -1
+		}
+		return r
+	}, *secret)
 	if cleaned == *secret {
 		return
 	}
@@ -940,6 +946,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 		lineText(c, line, t.Text.Body).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
+		// Keep the completion form's original height; the 36px fields are for sign-in.
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(th.Space(10) + theme.Hairline + theme.Hairline).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
 	opts := rangeOptions()

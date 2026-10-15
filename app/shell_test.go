@@ -425,6 +425,45 @@ func TestSidebarToggleAnimates(t *testing.T) {
 	}
 }
 
+func TestSidebarDragDuringCollapse(t *testing.T) {
+	a := &App{route: Route{Page: PageSettings}, pages: map[Page]pageView{PageSettings: sidebarMotionPage{}}, clock: newFakeClock()}
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.Light())
+		a.titleBar(c, theme.TopBarHeight)
+		a.body(c)
+	}, 700, 200)
+	left := func() float32 { r, _ := tt.Find("content"); return r.X }
+	shown, width := left(), a.sidebarWidth()
+	if err := tt.Click(i18n.T("shell.sidebar.collapse")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(theme.MotionFast / 2)
+	tt.Frame()
+	if x := left(); x <= theme.GripWidth || x >= shown {
+		t.Fatalf("not in the middle of collapsing: content at %v, shown %v", x, shown)
+	}
+	r, ok := tt.Find(i18n.T("shell.resize"))
+	if !ok {
+		t.Fatal("no grip during collapse")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	tt.Press(x, y)
+	if left() >= shown || a.sidebarWidth() != width {
+		t.Fatal("pressing the grip jumped or changed the saved width")
+	}
+	x += theme.SidebarCollapsePull * 2
+	tt.Move(x, y)
+	if a.sidebarHidden {
+		t.Fatal("dragging during collapse did not reopen the sidebar")
+	}
+	tt.Release(x, y)
+	time.Sleep(2 * theme.MotionBase)
+	tt.Frame()
+	if left() != shown || a.sidebarWidth() != width || a.sidebarSave != nil {
+		t.Fatalf("reopening changed the width: content %v (want %v), width %v (want %v), save scheduled %v", left(), shown, a.sidebarWidth(), width, a.sidebarSave != nil)
+	}
+}
+
 // TestVibrancyShowsThroughTopBar: with the window's material on, the top
 // bar is drawn transparent, with the sidebar beside the content.
 func TestVibrancyShowsThroughTopBar(t *testing.T) {
