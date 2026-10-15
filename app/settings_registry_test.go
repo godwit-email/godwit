@@ -5,11 +5,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/plugins"
 )
 
 var regT0 = time.Date(2026, 10, 14, 8, 0, 0, 0, time.UTC)
@@ -49,6 +52,34 @@ func TestRegistrySectionInstallNative(t *testing.T) {
 	h.see("已审核：Godwit 插件目录。")
 	if h.tt.HasText("也可能让 Godwit 崩溃") {
 		t.Fatal("a reviewed plugin shows the unlisted-source warning")
+	}
+}
+
+func TestRegistryNativeChangedFilesShowRisk(t *testing.T) {
+	h, _, _ := registryHarness(t)
+	if err := h.env.Svc.RefreshPluginRegistry(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.InstallPluginFromRegistry(context.Background(), "dlx"); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(h.env.DataDir, "plugins", "dlx", "*", plugins.LibraryName()))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("installed library: %v, %v", files, err)
+	}
+	if err := os.WriteFile(files[0], []byte("damaged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := h.openSettings("extensions")
+	h.until("integrity error", func() bool {
+		info, ok := h.plugin("dlx")
+		return ok && info.Trust == "listed" && info.Error != ""
+	})
+	p.ext.plugin = "dlx"
+	h.see("the installed files were changed or damaged")
+	h.see("也可能让 Godwit 崩溃")
+	if h.tt.HasText("已审核：Godwit 插件目录。") {
+		t.Fatal("a changed native plugin is labeled as reviewed")
 	}
 }
 

@@ -421,7 +421,10 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 	case "user":
 		trust = i18n.T("settings.ext.native.trust.user")
 	case "listed":
-		trust = i18n.T("settings.ext.native.trust.listed")
+		trust = ""
+		if p.Error == "" {
+			trust = i18n.T("settings.ext.native.trust.listed")
+		}
 	}
 	h := p.LibraryHash
 	if len(h) > 12 {
@@ -429,7 +432,7 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 	}
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
 		title, body := i18n.T("settings.ext.native.risk.title"), i18n.T("settings.ext.native.risk.body")
-		if p.Trust == "listed" {
+		if p.Trust == "listed" && p.Error == "" {
 			title, body, trust = trust, i18n.T("settings.ext.native.reviewed.body"), ""
 		}
 		kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
