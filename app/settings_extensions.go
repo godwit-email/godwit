@@ -950,7 +950,7 @@ func unavailable(reason string) string {
 	if min, ok := strings.CutPrefix(reason, "godwit:"); ok {
 		return i18n.Tf("settings.ext.registry.na.godwit", min)
 	}
-	if reason == "abi" {
+	if reason == "abi" || reason == "unsupported" {
 		return i18n.T("settings.ext.registry.na.abi")
 	}
 	return i18n.T("settings.ext.registry.na.platform")
