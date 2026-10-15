@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 )
@@ -47,9 +50,9 @@ type ReaderBody struct {
 	Blocked int `json:"blocked"`
 	// Cut is that the body is only its start: the Service kept only that,
 	// or the limits cut it.
-	Cut   bool              `json:"cut"`
-	Theme Theme             `json:"theme"`
-	Text  map[string]string `json:"text"`
+	Cut    bool   `json:"cut"`
+	Theme  Theme  `json:"theme"`
+	Locale string `json:"locale"`
 }
 
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
@@ -106,15 +109,17 @@ type Reader struct {
 
 // bodyOf is a bound message's state.
 type bodyOf struct {
-	pages   int // bound to it
-	allowed bool
-	version int64
-	body    *ReaderBody       // the body of version, once built
-	tokens  map[string]string // its image tokens (godwit-img: paths) → remote URLs
+	pages      int // bound to it
+	allowed    bool
+	generation int64
+	body       *ReaderBody       // the current displayed body, once built
+	original   *ReaderBody       // safe, prepared original for switching without rereading mail
+	tokens     map[string]string // its image tokens (godwit-img: paths) → remote URLs
 	// The pixels the images served for it take, from the message-wide budget:
 	// the page decodes every image at once. charged is the tokens counted.
-	pixels  *imagefetch.Budget
-	charged map[string]bool
+	pixels       *imagefetch.Budget
+	charged      map[string]bool
+	translations map[string]string // display only, applied to the original body's text
 }
 
 // NewReader keeps the reader pages of pages; SetService opens it up.
@@ -142,7 +147,7 @@ func (r *Reader) Bind(key any, message int64) {
 	st := r.msgs[message]
 	if st == nil {
 		r.version++
-		st = &bodyOf{version: r.version}
+		st = &bodyOf{generation: r.version}
 		r.msgs[message] = st
 	}
 	st.pages++
@@ -181,6 +186,56 @@ func (r *Reader) unbind(key any) {
 // message no page shows is left alone. It returns at once: the body is
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
+	r.reload(message, func(st *bodyOf) { st.allowed = true })
+}
+
+// Translate displays translated text in the original body; nil restores the original.
+func (r *Reader) Translate(message int64, texts map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.msgs[message]
+	if st == nil {
+		return
+	}
+	st.translations = maps.Clone(texts)
+	if st.original == nil || st.body == nil {
+		return // the pending build will apply the latest translation choice
+	}
+	r.emitTranslation(message, st)
+}
+
+// emitTranslation applies the current choice to the cached original, with r.mu held.
+func (r *Reader) emitTranslation(message int64, st *bodyOf) {
+	b := translateBody(*st.original, st.translations)
+	r.version++
+	b.Version = r.version
+	st.body = &b
+	for k, m := range r.bound {
+		if m == message {
+			r.d.OnBuilt(k, b)
+			r.d.Emit(k, b)
+		}
+	}
+}
+
+func translateBody(b ReaderBody, texts map[string]string) ReaderBody {
+	if len(texts) == 0 {
+		return b
+	}
+	if b.HTML != "" {
+		b.HTML = mail.MapHTMLText(b.HTML, func(text string) string {
+			if translated, ok := texts[text]; ok {
+				return translated
+			}
+			return text
+		})
+	} else if text, ok := texts[b.Plain]; ok {
+		b.Plain = text
+	}
+	return b
+}
+
+func (r *Reader) reload(message int64, change func(*bodyOf)) {
 	r.mu.Lock()
 	st := r.msgs[message]
 	svc := r.svc
@@ -188,20 +243,24 @@ func (r *Reader) Allow(message int64) {
 		r.mu.Unlock()
 		return
 	}
+	change(st)
+	allowed := st.allowed
 	r.version++
 	v := r.version
-	st.version, st.body, st.tokens, st.allowed = v, nil, nil, true
-	st.pixels, st.charged = nil, nil
+	st.generation, st.body = v, nil
 	r.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		b, err := r.build(ctx, svc, message, v, true)
+		b, err := r.build(ctx, svc, message, v, allowed)
 		if err != nil {
 			log.Printf("reader: message %d: %v", message, err)
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			if r.msgs[message] == st && st.version == v {
+			if r.msgs[message] == st && st.generation == v {
+				if st.original != nil {
+					r.emitTranslation(message, st)
+				}
 				for k, m := range r.bound {
 					if m == message {
 						r.d.OnFailed(k, message, err)
@@ -214,7 +273,7 @@ func (r *Reader) Allow(message int64) {
 		// version, gets nothing of this body.
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.msgs[message] != st || st.version != v {
+		if r.msgs[message] != st || st.generation != v {
 			return
 		}
 		for k, m := range r.bound {
@@ -225,8 +284,7 @@ func (r *Reader) Allow(message int64) {
 	}()
 }
 
-// build reads message's body for version v and keeps it, if v is still
-// the message's version.
+// build keeps the body only while its build generation v is current.
 func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64, allowed bool) (ReaderBody, error) {
 	m, err := r.getMessage(ctx, svc, message, allowed)
 	if err != nil {
@@ -237,7 +295,7 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 		return ReaderBody{}, err
 	}
 	b := ReaderBody{Message: message, Version: v, Remote: allowed, Blocked: m.RemoteImagesBlocked, Cut: m.Truncated,
-		Theme: ThemeOf(st), Text: readerText()}
+		Theme: ThemeOf(st), Locale: i18n.Language()}
 	var tokens map[string]string
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
@@ -247,10 +305,17 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if s := r.msgs[message]; s != nil && s.version == v {
+	if s := r.msgs[message]; s != nil && s.generation == v {
 		if s.body == nil {
+			r.version++
+			b.Version = r.version
+			original := b
+			s.original = &original
+			b = translateBody(b, s.translations)
 			s.body, s.tokens = &b, tokens
 			s.pixels, s.charged = budget, map[string]bool{}
+		} else {
+			b = *s.body
 		}
 		for k, m := range r.bound {
 			if m == message {
@@ -314,7 +379,7 @@ func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
 		p.r.mu.Unlock()
 		return b, nil
 	}
-	v, allowed := st.version, st.allowed
+	v, allowed := st.generation, st.allowed
 	p.r.mu.Unlock()
 	if !allowed { // the setting may let them load at once (core decides)
 		ok, err := svc.ImagesAllowed(ctx, message)
@@ -323,7 +388,7 @@ func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
 		}
 		if ok {
 			p.r.mu.Lock()
-			if p.r.msgs[message] == st && st.version == v {
+			if p.r.msgs[message] == st && st.generation == v {
 				st.allowed = true
 			}
 			allowed = st.allowed

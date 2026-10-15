@@ -13,7 +13,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/mail"
-	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,23 +169,13 @@ func streamed(evs []WitEvent, conv int64) string {
 	return s
 }
 
-func TestWitPageStringsExist(t *testing.T) {
-	t.Cleanup(func() { i18n.SetLanguage("zh") })
-	for _, lang := range []string{"zh", "en"} {
-		i18n.SetLanguage(lang)
-		for _, k := range witKeys {
-			assert.NotEqual(t, k, i18n.T(k), "%s has no %s text", k, lang)
-		}
-	}
-}
-
 func TestWitPageLoad(t *testing.T) {
 	f := newWitPageFixture(t)
 	st, err := f.p.Load(f.ctx())
 	require.NoError(t, err)
 	assert.Equal(t, "m1", st.Model)
 	assert.Zero(t, st.Conversation)
-	assert.Equal(t, "问点什么，比如：上周谁还在等我回复？", st.Text["wit.placeholder"])
+	assert.Equal(t, "zh-Hans", st.Locale)
 	assert.NotEmpty(t, st.Theme.Light)
 
 	assert.EqualValues(t, 1, f.w.SetConversation(5))

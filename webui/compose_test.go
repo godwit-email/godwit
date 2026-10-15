@@ -292,7 +292,7 @@ func TestComposeLoadRichBody(t *testing.T) {
 	assert.NotContains(t, st.Quote, "<blockquote")
 	assert.Contains(t, st.Signature, "Godwit")
 	assert.NotContains(t, st.Signature, "<div")
-	assert.Equal(t, "发送", st.Text["compose.send"])
+	assert.Equal(t, "zh-Hans", st.Locale)
 	assert.Equal(t, []Attachment{}, st.Attachments)
 }
 

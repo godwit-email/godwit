@@ -1,19 +1,49 @@
 package i18n
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestPseudoLocale(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-CN") })
+	SetLanguage("en-XA")
+	if Language() != "en-XA" || !strings.HasPrefix(T("common.save"), "[") {
+		t.Fatalf("pseudo locale: %q %q", Language(), T("common.save"))
+	}
+}
+
+func TestReorderedArgumentsAndPercent(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-CN") })
+	SetLanguage("en")
+	if got := Tf("wit.compose.history", "Ada", 3); got != "3 emails with Ada" {
+		t.Fatalf("reordered arguments: %q", got)
+	}
+	if got := Tf("wit.compose.rewrite", 62); got != "Rewritten, about 62% changed" {
+		t.Fatalf("percent: %q", got)
+	}
+}
 
 func TestKeysMatch(t *testing.T) {
-	for k, v := range zh {
-		if v == "" {
-			t.Errorf("zh-CN %q is empty", k)
+	catalogs := map[string]map[string]json.RawMessage{}
+	for _, locale := range Catalog.Languages() {
+		data, err := files.ReadFile(locale + ".json")
+		if err != nil {
+			t.Fatal(err)
 		}
-		if e, ok := en[k]; !ok || e == "" {
-			t.Errorf("en is missing or empty for %q", k)
+		var entries map[string]json.RawMessage
+		if err := json.Unmarshal(data, &entries); err != nil {
+			t.Fatal(err)
 		}
+		catalogs[locale] = entries
 	}
-	for k := range en {
-		if _, ok := zh[k]; !ok {
-			t.Errorf("zh-CN is missing %q", k)
+	for _, key := range Keys() {
+		for locale, entries := range catalogs {
+			var text string
+			if err := json.Unmarshal(entries[key], &text); err != nil || text == "" {
+				t.Errorf("%s is missing or empty for %q", locale, key)
+			}
 		}
 	}
 }
@@ -21,7 +51,7 @@ func TestKeysMatch(t *testing.T) {
 func TestFallbackAndFormat(t *testing.T) {
 	defer SetLanguage("zh-CN")
 	SetLanguage("zh_CN.UTF-8")
-	if Language() != "zh-CN" || T("common.save") != "保存" {
+	if Language() != "zh-Hans" || T("common.save") != "保存" {
 		t.Fatalf("zh: %q %q", Language(), T("common.save"))
 	}
 	SetLanguage("fr-FR")
@@ -46,5 +76,15 @@ func TestFallbackAndFormat(t *testing.T) {
 	}
 	if got := T("compose.format"); got != "格式" {
 		t.Errorf("compose.format: %q", got)
+	}
+}
+
+func TestChineseLocaleAliases(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	for _, tag := range []string{"zh", "zh-CN", "zh-SG", "zh-Hans", "zh-Hans-SG", "zh-TW", "zh-Hant"} {
+		SetLanguage(tag)
+		if Language() != "zh-Hans" || T("common.save") != "保存" {
+			t.Errorf("%s: %q %q", tag, Language(), T("common.save"))
+		}
 	}
 }

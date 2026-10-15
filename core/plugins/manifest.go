@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	mygoi18n "github.com/egoist/mygo/i18n"
 	"github.com/godwit-email/godwit/core/skills"
 )
 
@@ -61,7 +63,7 @@ type Text struct {
 }
 
 // For returns the text for lang, then for its base language ("de" for
-// "de-AT"), then the default.
+// "de-AT"), then a matching script/region, then the default.
 func (t Text) For(lang string) string {
 	if s, ok := t.ByLang[lang]; ok {
 		return s
@@ -70,6 +72,9 @@ func (t Text) For(lang string) string {
 		if s, ok := t.ByLang[base]; ok {
 			return s
 		}
+	}
+	if match := mygoi18n.Match([]string{lang}, slices.Sorted(maps.Keys(t.ByLang))); match != "" {
+		return t.ByLang[match]
 	}
 	return t.Default
 }

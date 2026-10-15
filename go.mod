@@ -6,7 +6,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.23.0
 	github.com/dop251/goja v0.0.0-20260923012348-67663e7a3b97
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.4.8
+	github.com/egoist/mygo v0.5.1
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
@@ -30,7 +30,7 @@ require (
 	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0
+	golang.org/x/text v0.43.0
 )
 
 require (
@@ -79,7 +79,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 )
 

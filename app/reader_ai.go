@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -27,7 +28,9 @@ import (
 // the model and target language it ran with.
 type aiRun struct {
 	text, model, lang string
-	doc               richtext.Doc // the output converted, once done
+	doc               richtext.Doc // a plugin action's HTML output
+	markdown          *markdown.Options
+	translations      map[string]string
 	err               error
 	running, done     bool
 }
@@ -236,23 +239,29 @@ func (r *reader) startAI() {
 // labelled with the model the run reports in its context event.
 func (r *reader) stream(id int64, skill string) *aiRun {
 	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
-	run := &aiRun{running: true, lang: r.readingLang()}
-	var doc richtext.Doc
+	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}}
+	if skill == "translate" {
+		run.markdown = nil
+	}
 	a.do(func(context.Context) error {
-		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id})
+		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"})
 		if err != nil {
 			return err
 		}
-		var all strings.Builder
 		for ev := range ch {
 			switch ev.Kind {
 			case "context":
 				model := modelOf(ev.Model)
 				a.onUI(func() { run.model = model })
 			case "text":
-				all.WriteString(ev.Text)
 				s := ev.Text
-				a.onUI(func() { run.text += s })
+				translations := ev.Translations
+				a.onUI(func() {
+					run.text += s
+					if translations != nil {
+						run.translations = translations
+					}
+				})
 			case "error":
 				if ev.Err != nil {
 					return ev.Err
@@ -260,10 +269,9 @@ func (r *reader) stream(id int64, skill string) *aiRun {
 				return errors.New(skill + " failed")
 			}
 		}
-		doc = richtext.FromMarkdown(all.String())
 		return ctx.Err()
 	}, func(err error) {
-		run.running, run.err, run.done, run.doc = false, err, err == nil, doc
+		run.running, run.err, run.done = false, err, err == nil
 	})
 	return run
 }
@@ -436,17 +444,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	if sum := st.summary; sum != nil && r.summaryShown(st) {
 		r.panel(c, i18n.T("reader.ai.summary"), modelLabel(i18n.Tf("reader.ai.summary.meta", "summarize", sum.model)), nil, func() {
-			ui.Column(c).Gap(th.Space(1)).Children(func() {
-				for _, line := range points(sum.text) {
-					ui.Row(c).AlignItems(ui.Start).Children(func() {
-						// a disc in the indent, on the first line's middle, as a list's marker
-						ui.Row(c).Size(theme.SummaryIndent, t.Text.Body*theme.LineSummary).Shrink(0).AlignItems(ui.Center).Padding(th.Space(1), 0, 0, th.Space(0.5)).Children(func() { // the browser sets its marker a little low
-							ui.Box(c).Size(theme.SummaryDot, theme.SummaryDot).Radius(t.Radius.Full).Background(t.Foreground)
-						})
-						ui.Text(c, line).LineHeight(theme.LineSummary).Grow(1).Shrink(1)
-					})
-				}
-			})
+			r.output(c, sum)
 			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
 		})
 	}
@@ -465,27 +463,44 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 }
 
-// translated draws the translation in place of the body; false when the
-// original shows.
-func (r *reader) translated(c *ui.Context, m core.MessageSummary) bool {
+// translationState keeps the original body visible while translating or on failure.
+func (r *reader) translationState(c *ui.Context, m core.MessageSummary) {
 	st := r.ai[m.ID]
+	b := r.bodies[m.ID]
+	var shown *aiRun
+	if st != nil && r.trShown(st) && st.translation.done && len(st.translation.translations) > 0 {
+		shown = st.translation
+	}
+	if b != nil && b.view != nil && b.translation != shown {
+		var texts map[string]string
+		if shown != nil {
+			texts = shown.translations
+		}
+		b.translation = shown
+		r.p.a.plat.TranslateBody(m.ID, texts)
+	}
 	if st == nil || !r.trShown(st) {
-		return false
+		return
 	}
 	tr := st.translation
 	if tr.done && strings.TrimSpace(tr.text) == "" { // it is in the reading language already
 		kit.Text(c, i18n.Tf("reader.ai.no_translation", shortLang(tr.lang)), theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
-		return false
+		return
 	}
-	r.output(c, tr)
 	r.runState(c, tr, func() { st.translation = r.stream(m.ID, "translate") })
-	return true
 }
 
-// output is a run's text: as plain text while it streams, converted once done.
+// output renders skills as Markdown and keeps plugin action HTML and text.
 func (r *reader) output(c *ui.Context, run *aiRun) {
 	if run.done && len(run.doc.Blocks) > 0 {
 		richtext.Render(c, run.doc, richtext.RenderOptions{OnLink: r.p.a.openLink})
+	} else if run.markdown != nil && run.text != "" {
+		run.markdown.Theme = &markdown.Theme{FontSize: theme.Of(c).BodyFontSize, CodeFont: theme.Mono, LineHeight: theme.LineReading}
+		if run.running {
+			markdown.Stream(c, run.text, run.markdown)
+		} else {
+			markdown.View(c, run.text, run.markdown)
+		}
 	} else if run.text != "" {
 		ui.Text(c, run.text).LineHeight(theme.LineReading)
 	}
@@ -545,21 +560,6 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 		})
 		body()
 	})
-}
-
-// points are a summary's lines without their list markers.
-func points(text string) []string {
-	var out []string
-	for _, l := range strings.Split(text, "\n") {
-		l = strings.TrimSpace(l)
-		for _, p := range []string{"- ", "* ", "• "} {
-			l = strings.TrimPrefix(l, p)
-		}
-		if l = strings.TrimSpace(l); l != "" {
-			out = append(out, l)
-		}
-	}
-	return out
 }
 
 // cards are the plugins' cards on a message; a failure to read them shows

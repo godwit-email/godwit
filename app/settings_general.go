@@ -65,8 +65,8 @@ func (a *App) settingsEffects(old, st core.Settings) {
 		plat := a.plat
 		a.writes.Chain("open-at-login", func(context.Context) error { return plat.SetOpenAtLogin(on) }, a.toastErr)
 	}
-	if tag := cmp.Or(st.UILanguage, a.sysLang); st.UILanguage != old.UILanguage && tag != "" {
-		i18n.SetLanguage(tag)
+	if st.UILanguage != old.UILanguage {
+		a.setLanguage(st.UILanguage)
 	}
 	a.plat.SettingsChanged(st)
 	if st.UnreadOnAppIcon != old.UnreadOnAppIcon || st.UnreadInMenuBar != old.UnreadInMenuBar {
@@ -187,6 +187,9 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
+	if st.UILanguage == "zh-CN" {
+		st.UILanguage = "zh-Hans"
+	}
 	sel := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, func() { control() }) }
 	}
@@ -222,7 +225,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
-				{Value: "zh-CN", Label: "简体中文"},
+				{Value: "zh-Hans", Label: "简体中文"},
 				{Value: "en", Label: "English"},
 			})
 		}),

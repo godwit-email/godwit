@@ -18,7 +18,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 	h.resize(1440, 3000)
 	byText := map[string][]string{}
 	for _, k := range i18n.Keys() {
-		if (strings.HasPrefix(k, "settings.") || strings.HasPrefix(k, "mail.folder.")) && !strings.Contains(k, "%") {
+		if (strings.HasPrefix(k, "settings_") || strings.HasPrefix(k, "mail_folder_")) && !strings.Contains(k, "%") {
 			byText[i18n.T(k)] = append(byText[i18n.T(k)], k)
 		}
 	}
@@ -31,7 +31,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 		h.openSettings(route)
 		in := map[string]bool{}
 		for _, k := range settingsIndex[sec] {
-			in[k] = true
+			in[strings.ReplaceAll(k, ".", "_")] = true
 		}
 		for _, txt := range h.tt.Texts() {
 			ks := byText[txt]

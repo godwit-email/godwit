@@ -7,53 +7,7 @@ import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 
-const t = makeT({
-  "wit.compose.placeholder": "告诉 Wit 你想怎么回",
-  "wit.compose.input": "Wit 输入",
-  "wit.compose.adjust": "调整",
-  "wit.compose.translate": "翻译",
-  "wit.compose.translate_to": "翻译为%s",
-  "wit.compose.translate_only": "没有配置模型，这里只能用翻译插件翻译草稿。",
-  "wit.compose.translate_only.models": "添加模型",
-  "wit.compose.review": "待确认",
-  "wit.send": "发送",
-  "wit.stop": "停止",
-  "common.retry": "重试",
-  "error.ai.unavailable": "服务不可用",
-  "error.unknown": "出错了：%s",
-  "wit.tools.one": "调用了 %d 个工具",
-  "wit.tools.other": "调用了 %d 个工具",
-  "wit.tools.called": "调用了 %s",
-  "wit.compose.working": "正在写入正文…",
-  "wit.thinking": "正在思考…",
-  "wit.model": "模型服务设置",
-  "wit.suspect": "来源 %s 中包含疑似指令。",
-  "wit.suspect_quote": "来源 %s 中包含疑似指令（「%s」）。",
-  "mail.list_sep": "、",
-  "wit.tool.update_draft": "修改正文",
-  "wit.tool.create_draft": "创建草稿",
-  "wit.approval.wants": "Wit 想要：%s",
-  "wit.approval.to": "收件人",
-  "wit.approval.cc": "抄送",
-  "wit.approval.subject": "主题",
-  "wit.approval.destinations": "会把数据发送到：%s",
-  "wit.approval.allow": "允许",
-  "wit.approval.allow_all": "全部允许",
-  "wit.approval.reject": "拒绝",
-  "wit.approval.send_note": "发送仍需你在撰写页亲自点击",
-  "wit.input": "向 Wit 提问",
-  "ask.citations": "引用的邮件",
-  "ask.citation.suspect": "含疑似指令，已作为数据处理",
-  "mail.no_subject": "（无主题）",
-  "link.title": "打开这个链接？",
-  "link.open": "打开",
-  "wit.add": "添加",
-  "wit.quote": "引用邮件",
-  "wit.quote.search": "搜索邮件",
-  "wit.quote.none": "没有找到邮件",
-  "wit.quote.remove": "移除 %s",
-  "wit.approval.allow_session": "本次对话都允许",
-});
+const t = makeT("zh-Hans");
 
 const info: WitInfo = {
   enabled: true,
@@ -63,7 +17,7 @@ const info: WitInfo = {
     { id: "shorter", label: "更短", hint: "长度" },
   ],
   languages: [
-    { tag: "zh-CN", name: "简体中文" },
+    { tag: "zh-Hans", name: "简体中文" },
     { tag: "en", name: "English" },
   ],
   chips: ["原邮件", "a.pdf"],
@@ -137,7 +91,7 @@ async function setup(
   return { ...r, api, tr, emit, onLink, resume: (run: number) => r.rerender(ui({ run })) };
 }
 
-const input = (name = "Wit 输入") => screen.getByRole("textbox", { name });
+const input = (name = "告诉 Wit 你想怎么回") => screen.getByRole("textbox", { name });
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -146,13 +100,16 @@ describe("Panel", () => {
     await setup();
     expect(screen.getByText("原邮件")).toBeInTheDocument();
     expect(screen.getByText("a.pdf")).toBeInTheDocument();
-    expect(input()).toHaveAttribute("placeholder", "告诉 Wit 你想怎么回");
+    expect(input()).toHaveAttribute(
+      "placeholder",
+      "告诉 Wit 你想怎么回，比如：答应时间，但研讨会推迟一周",
+    );
   });
 
   it("Send is a Primary icon button named 发送, idle while empty; the page's Stop is too while running", async () => {
     const user = userEvent.setup();
     const { api, unmount } = await setup({ page: true });
-    const send = screen.getByRole("button", { name: "发送" });
+    const send = screen.getByRole("button", { name: "发送给 Wit" });
     expect(send).toHaveTextContent("");
     expect(send).not.toBeDisabled(); // the Primary look: never greyed by disabled
     expect(send).toHaveAttribute("aria-disabled", "true");
@@ -175,7 +132,10 @@ describe("Panel", () => {
     expect(screen.queryByText("正在写入正文…")).toBeNull();
     emit({ kind: "tool_call", call: { id: "c1", name: "update_draft", args: "{}" } });
     expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "发送" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "发送给 Wit" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await user.click(screen.getByRole("button", { name: "停止" }));
     expect(stopRun).toHaveBeenCalled();
   });
@@ -204,7 +164,7 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const { api } = await setup({ info: { ...info, translateOnly: true } });
     expect(screen.queryByRole("button", { name: "调整" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Wit 输入" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "告诉 Wit 你想怎么回" })).toBeNull();
     expect(screen.queryByText("原邮件")).toBeNull();
     expect(screen.getByText("没有配置模型，这里只能用翻译插件翻译草稿。")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "翻译" }));
@@ -282,7 +242,7 @@ describe("Panel", () => {
     await user.click(screen.getByRole("button", { name: "停止" }));
     expect(api.stop).toHaveBeenCalledWith(7);
     emit({ kind: "error", error: "" }); // the stop: no failure
-    expect(await screen.findByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "发送给 Wit" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
@@ -293,7 +253,7 @@ describe("Panel", () => {
     await user.click(await screen.findByRole("menuitem", { name: /更正式/ }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledWith("tone-formal", ""));
     emit({ kind: "error", error: "error.ai.unavailable" });
-    expect(await screen.findByText("服务不可用")).toBeInTheDocument();
+    expect(await screen.findByText("模型服务暂时不可用。")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "重试" }));
     await waitFor(() => expect(api.skill).toHaveBeenCalledTimes(2));
     expect(api.skill).toHaveBeenLastCalledWith("tone-formal", "");
@@ -328,8 +288,11 @@ describe("Panel", () => {
     expect(screen.getByRole("button", { name: "调整" })).toHaveClass("disabled:opacity-100");
     expect(screen.getByRole("button", { name: "翻译" })).toBeDisabled();
     await user.type(input(), "hi");
-    expect(screen.getByRole("button", { name: "发送" })).toHaveAttribute("aria-disabled", "true");
-    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.getByRole("button", { name: "发送给 Wit" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "发送给 Wit" }));
     expect(api.ask).not.toHaveBeenCalled();
   });
 
@@ -422,17 +385,23 @@ describe("Panel", () => {
       "data-variant",
       "secondary",
     );
-    expect(screen.getByText("来源 [2] 中包含疑似指令。").closest("[role=status]")).toHaveClass(
-      "bg-(--warning-bg)",
-      "text-(--warning-text)",
-      "rounded-lg",
-    );
-    expect(screen.getByText("来源 [2] 中包含疑似指令。")).toBeInTheDocument();
+    expect(
+      screen
+        .getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。")
+        .closest("[role=status]"),
+    ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-lg");
+    expect(
+      screen.getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
+    ).toBeInTheDocument();
     await user.type(input(), "more{Enter}");
     emit({ kind: "context", citations: [cite(2, 51), cite(3, 52, true)] });
     emit({ kind: "text", text: "B" });
-    expect(await screen.findByText("来源 [3] 中包含疑似指令。")).toBeInTheDocument();
-    expect(screen.getAllByText("来源 [2] 中包含疑似指令。")).toHaveLength(2);
+    expect(
+      await screen.findByText("来源 [3] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
+    ).toHaveLength(2);
   });
 
   it("quotes the suspect text as plain text", async () => {
@@ -456,7 +425,9 @@ describe("Panel", () => {
         ],
       },
     });
-    const banner = screen.getByText(`来源 [5] 中包含疑似指令（「${quote}」）。`);
+    const banner = screen.getByText(
+      `来源 [5] 中包含疑似指令（「${quote}」）。它只被当作邮件内容处理，没有执行。`,
+    );
     expect(banner.querySelector("b")).toBeNull();
   });
 

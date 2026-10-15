@@ -161,7 +161,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         blocked: 0,
         cut: false,
         theme: fx.theme(mode),
-        text: fx.text,
+        locale: "zh-Hans",
       };
       installFake({
         "ReaderPage.Load": async () => body,

@@ -1,0 +1,1908 @@
+{
+  "@@locale": "en",
+  "app_another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
+  "app_lock_failed": "Godwit could not open its data directory.",
+  "app_open_failed": "Godwit could not open its data directory: {arg1}.",
+  "@app_open_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "app_open_failed_other": "the database could not be opened",
+  "app_open_failed_permission": "permission denied",
+  "ask_add_model": "Add a model service",
+  "ask_citation_suspect": "Contains suspected instructions; treated as data",
+  "ask_citations": "Cited mail",
+  "ask_delete": "Delete",
+  "ask_new": "New conversation",
+  "ask_no_model": "Wit needs a model service to answer. Add an OpenAI-compatible or Anthropic-compatible service and make it the default model.",
+  "ask_permissions": "Permissions: read-only + write drafts",
+  "ask_recent": "Recent",
+  "ask_untitled": "Untitled conversation",
+  "close_unsaved_back": "Go back",
+  "close_unsaved_quit": "Quit anyway",
+  "close_unsaved_title": "Some changes weren''t saved",
+  "common_cancel": "Cancel",
+  "common_close": "Close",
+  "common_confirm": "Confirm",
+  "common_continue": "Continue",
+  "common_delete": "Delete",
+  "common_done": "Done",
+  "common_retry": "Retry",
+  "common_save": "Save",
+  "compose_attach": "Attach files",
+  "compose_attach_failed": "Couldn''t attach: {arg1}",
+  "@compose_attach_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_attach_too_large": "Attachments can be at most {arg1}",
+  "@compose_attach_too_large": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_bcc": "Bcc",
+  "compose_bcc_input": "Add Bcc recipients",
+  "compose_body": "Message body",
+  "compose_bold": "Bold",
+  "compose_cc": "Cc",
+  "compose_cc_input": "Add Cc recipients",
+  "compose_cc_bcc": "Cc · Bcc",
+  "compose_conflict": "This draft was changed elsewhere",
+  "compose_conflict_keep": "Keep my version",
+  "compose_conflict_latest": "Use the latest version",
+  "compose_format": "Formatting",
+  "compose_from": "From",
+  "compose_from_select": "Sending account",
+  "compose_invalid": "Invalid address: {arg1}",
+  "@compose_invalid": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_italic": "Italic",
+  "compose_link": "Link",
+  "compose_link_apply": "Add link",
+  "compose_link_url": "Link address",
+  "compose_list": "Bulleted list",
+  "compose_list_ordered": "Numbered list",
+  "compose_new": "New message",
+  "compose_quote": "Quote",
+  "compose_quote_show": "Show the quoted message (read-only for the assistant)",
+  "compose_remove": "Remove {arg1}",
+  "@compose_remove": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_reply_to": "Reply-To",
+  "compose_reply_to_input": "Reply-To address",
+  "compose_send": "Send",
+  "compose_send_anyway": "Send anyway",
+  "compose_sending_locked": "Sending… the draft can''t be changed now",
+  "compose_sent": "Moved to the outbox",
+  "compose_status_saved": "Draft saved · {arg1}",
+  "@compose_status_saved": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_status_saving": "Saving…",
+  "compose_status_unsaved": "Not saved",
+  "compose_subject": "Subject",
+  "compose_subject_input": "Subject line",
+  "compose_to": "To",
+  "compose_to_input": "Add recipients",
+  "compose_underline": "Underline",
+  "compose_warn": "Check before sending: {arg1}",
+  "@compose_warn": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "compose_warn_from": "From plugin {arg1} (message.beforeSend)",
+  "@compose_warn_from": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "error_ai_bad_response": "The model service returned an unexpected response.",
+  "error_ai_incomplete": "The response stopped before it finished.",
+  "error_ai_internal": "Wit hit an internal error.",
+  "error_ai_rate_limited": "The model service is limiting requests. Try again later.",
+  "error_ai_rate_limited_chatgpt_usage": "Your ChatGPT plan''s usage limit is reached",
+  "error_ai_stale": "The content changed. Run it again.",
+  "error_ai_unauthorized": "The model service rejected the API key.",
+  "error_ai_unauthorized_chatgpt_not_eligible": "This ChatGPT account isn''t eligible for subscription sharing, so its plan can''t be used here.",
+  "error_ai_unavailable": "The model service is unavailable.",
+  "error_ai_not_configured": "No model is set up. Add a model service in Settings.",
+  "error_base_url_invalid": "Enter a valid service address, without a user name or password",
+  "error_base_url_scheme": "The address must use https (http only for this computer)",
+  "error_check_imap": "IMAP check failed: {arg1}",
+  "@error_check_imap": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "error_check_settings": "Account settings check failed: {arg1}",
+  "@error_check_settings": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "error_check_smtp": "SMTP check failed: {arg1}",
+  "@error_check_smtp": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "error_flush_slow": "A draft is still saving after 3 seconds",
+  "error_generic": "Something went wrong. Please try again later.",
+  "error_invalid_state": "This item has changed. Refresh and try again.",
+  "error_keychain": "The system keychain is unavailable.",
+  "error_load": "Failed to load.",
+  "error_model_auth": "API key rejected (401/403)",
+  "error_model_not_found": "The selected model was not found. Choose another in Settings.",
+  "error_needs_grant": "Grant the extension''s permissions first.",
+  "error_network": "Network connection failed. Check your connection and try again.",
+  "error_plugin_abi": "The plugin answered in a way Godwit cannot use. Contact its author.",
+  "error_plugin_exited": "The plugin quit unexpectedly. Try again.",
+  "error_plugin_timeout": "The plugin did not answer in time. Try again.",
+  "error_registry_mismatch": "The downloaded file does not match the plugin directory; it was discarded.",
+  "error_registry_signature": "The plugin directory''s signature is wrong; it was not used.",
+  "error_run_active": "Wit is still responding. Wait for it or stop it first.",
+  "error_send_blocked": "Extension “{arg1}” blocked sending: {arg2}",
+  "@error_send_blocked": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "error_signature_unsaved": "The signature was not saved",
+  "error_stale_approval": "This action changed after it was proposed. Review it again.",
+  "error_stale_draft": "The draft was changed elsewhere.",
+  "error_too_large": "The attachment exceeds the size limit.",
+  "error_translator_unavailable": "The translation plugin is not running. Enable it in Settings › Extensions, or translate with the model again.",
+  "error_unexpected": "An unexpected error occurred.",
+  "error_unknown": "Something went wrong: {arg1}",
+  "@error_unknown": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "label_color_amber": "Amber",
+  "label_color_blue": "Blue",
+  "label_color_gray": "Gray",
+  "label_color_green": "Green",
+  "label_color_orange": "Orange",
+  "label_color_pink": "Pink",
+  "label_color_red": "Red",
+  "label_color_violet": "Violet",
+  "label_more": "+{arg1, number, ::group-off}",
+  "@label_more": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "label_tip_auto": "Labeled by the model",
+  "label_tip_manual": "Labeled by you",
+  "link_copied": "Link copied",
+  "link_copy": "Copy link",
+  "link_open": "Open",
+  "link_title": "Open this link?",
+  "mail_action_archive": "Archive",
+  "mail_action_delete": "Delete",
+  "mail_action_junk": "Move to Junk",
+  "mail_action_read": "Mark as read",
+  "mail_action_star": "Star",
+  "mail_action_unread": "Mark as unread",
+  "mail_action_unstar": "Remove star",
+  "mail_add_account": "Add account",
+  "mail_attachment": "Attachment",
+  "mail_compose": "Compose",
+  "mail_draft_chip": "Editing",
+  "mail_draft_delete": "Delete draft",
+  "mail_draft_edit": "Continue editing",
+  "mail_draft_heading": "Drafts · {arg1}",
+  "@mail_draft_heading": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_draft_notice": "This draft is being edited in its compose window; this is what was last saved. Choose “Continue editing” to switch to that window.",
+  "mail_draft_saved": "Draft saved · {arg1}",
+  "@mail_draft_saved": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_draft_saved_editing": "Editing in the compose window · draft saved {arg1}",
+  "@mail_draft_saved_editing": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_draft_send_disabled": "Being edited in the compose window; send it there",
+  "mail_empty": "No mail",
+  "mail_failed": "{arg1, number, ::group-off} messages could not be processed",
+  "@mail_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "mail_filter_all": "All",
+  "mail_filter_label": "Label",
+  "mail_filter_label_any": "Any label",
+  "mail_filter_label_item": "Only “{arg1}”",
+  "@mail_filter_label_item": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_filter_label_name": "Filter by label",
+  "mail_filter_unread": "Unread",
+  "mail_folder_archive": "Archive",
+  "mail_folder_drafts": "Drafts",
+  "mail_folder_inbox": "Inbox",
+  "mail_folder_junk": "Junk",
+  "mail_folder_sent": "Sent",
+  "mail_folder_trash": "Trash",
+  "mail_group_older": "Earlier",
+  "mail_group_today": "Today",
+  "mail_group_week": "This week",
+  "mail_group_yesterday": "Yesterday",
+  "mail_labels": "Labels",
+  "mail_list_sep": ", ",
+  "mail_no_archive": "Skipped {arg1}: no archive folder",
+  "@mail_no_archive": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_no_junk": "Skipped {arg1}: no junk folder",
+  "@mail_no_junk": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_no_recipient": "(No recipients)",
+  "mail_no_subject": "(No subject)",
+  "mail_older_failed": "Couldn''t load older mail: {arg1}",
+  "@mail_older_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_older_loading": "Loading older mail…",
+  "mail_outbox": "Outbox",
+  "mail_resize_list": "Resize the list",
+  "mail_row_unread": "{arg1, number, ::group-off} unread",
+  "@mail_row_unread": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "mail_search": "Search",
+  "mail_search_all_accounts": "All accounts",
+  "mail_search_any_sender": "Any sender",
+  "mail_search_any_time": "Any time",
+  "mail_search_ask_wit": "Ask Wit to find it",
+  "mail_search_ask_wit_row": "Ask Wit to find: \"{arg1}\"",
+  "@mail_search_ask_wit_row": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_search_clear": "Clear search",
+  "mail_search_empty_desc": "Only mail synced to this device was searched. Try another keyword, or let Wit look for it.",
+  "mail_search_empty_desc_range": "Only mail synced to this device was searched ({arg1}). Try another keyword, or let Wit look for it.",
+  "@mail_search_empty_desc_range": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_search_empty_filtered": "No mail matches the filters",
+  "mail_search_empty_title": "No results for \"{arg1}\"",
+  "@mail_search_empty_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_search_expand": "Widen sync range",
+  "mail_search_filters": "Filters",
+  "mail_search_found": "{arg1} found · {arg2} · Searches only mail synced to this device",
+  "@mail_search_found": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_search_from": "Sender",
+  "mail_search_from_placeholder": "Name or address",
+  "mail_search_has_attachments": "Has attachments",
+  "mail_search_hint": "Searches only mail synced to this device",
+  "mail_search_month": "Last 30 days",
+  "mail_search_none": "No results · Searches only mail synced to this device",
+  "mail_search_placeholder": "Search mail, contacts and attachments",
+  "mail_search_sent_to": "Me → {arg1}",
+  "@mail_search_sent_to": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_search_time": "Date",
+  "mail_search_today": "Today",
+  "mail_search_week": "Last 7 days",
+  "mail_search_year": "This year",
+  "mail_unified_inbox": "All Inboxes",
+  "mail_unified_starred": "Starred",
+  "mail_unread_count": "{arg1, number, ::group-off} unread",
+  "@mail_unread_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "mail_weekday_0": "Sun",
+  "mail_weekday_1": "Mon",
+  "mail_weekday_2": "Tue",
+  "mail_weekday_3": "Wed",
+  "mail_weekday_4": "Thu",
+  "mail_weekday_5": "Fri",
+  "mail_weekday_6": "Sat",
+  "mail_yesterday": "Yesterday",
+  "notify_new_mail": "New mail",
+  "notify_new_mails": "{arg1, number, ::group-off} new messages",
+  "@notify_new_mails": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "oauth_page_fail_body": "Go back to Godwit and try again.",
+  "oauth_page_fail_title": "Sign-in did not finish",
+  "oauth_page_ok_body": "You can close this page and return to Godwit.",
+  "oauth_page_ok_title": "Signed in",
+  "onboarding_another": "Add another account",
+  "onboarding_brand": "Godwit",
+  "onboarding_change": "← Use another address",
+  "onboarding_check_connecting": "Connecting…",
+  "onboarding_check_failed": "Couldn''t connect",
+  "onboarding_check_imap_failed": "IMAP sign-in failed: {arg1}",
+  "@onboarding_check_imap_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_imap_ok": "Signed in to IMAP",
+  "onboarding_check_imap_running": "Signing in to IMAP…",
+  "onboarding_check_imap_waiting": "IMAP sign-in",
+  "onboarding_check_settings_builtin": "From the built-in provider list · {arg1} / {arg2}",
+  "@onboarding_check_settings_builtin": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_settings_failed": "The server settings are wrong: {arg1}",
+  "@onboarding_check_settings_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_settings_manual": "Set up manually · {arg1} / {arg2}",
+  "@onboarding_check_settings_manual": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_settings_ok": "Found the server settings",
+  "onboarding_check_settings_running": "Checking the server settings…",
+  "onboarding_check_settings_waiting": "Server settings",
+  "onboarding_check_smtp_failed": "SMTP authentication failed: {arg1}",
+  "@onboarding_check_smtp_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_smtp_ok": "Authenticated with SMTP",
+  "onboarding_check_smtp_running": "Authenticating with SMTP…",
+  "onboarding_check_smtp_waiting": "SMTP authentication",
+  "onboarding_check_waiting": "Waiting for the step above",
+  "onboarding_connect": "Connect",
+  "onboarding_detected": "Recognized: {arg1}",
+  "@onboarding_detected": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_done_title": "Connected",
+  "onboarding_email": "Email address",
+  "onboarding_email_invalid": "Enter a full email address.",
+  "onboarding_email_placeholder": "you@example.com",
+  "onboarding_headline": "Bring your mail in",
+  "onboarding_hint_app_password": "{arg1} signs in with an app password, not your account password",
+  "@onboarding_hint_app_password": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_hint_authorization_code": "{arg1} signs in with an authorization code, not your mailbox password",
+  "@onboarding_hint_authorization_code": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_hint_client_password": "With secure login on, {arg1} needs a client-specific password",
+  "@onboarding_hint_client_password": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_hint_qq": "QQ Mail signs in with an authorization code, not your QQ password",
+  "onboarding_imap_host": "IMAP server",
+  "onboarding_imap_port": "IMAP port",
+  "onboarding_imap_security": "IMAP encryption",
+  "onboarding_invalid_email": "the email address is incomplete",
+  "onboarding_invalid_flow": "the browser sign-in expired",
+  "onboarding_invalid_host": "no {arg1} server",
+  "@onboarding_invalid_host": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_invalid_other": "the settings can''t be used",
+  "onboarding_invalid_port": "{arg1} port “{arg2}” is not valid",
+  "@onboarding_invalid_port": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_invalid_provider": "you signed in with a different provider",
+  "onboarding_invalid_secret": "no {arg1}",
+  "@onboarding_invalid_secret": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_invalid_wrong_account": "you signed in to a different address",
+  "onboarding_lede": "Any IMAP mailbox works, and you can add more than one account.",
+  "onboarding_license": "Godwit is open source · Apache-2.0",
+  "onboarding_login_app_password": "App password",
+  "onboarding_login_authorization_code": "Authorization code",
+  "onboarding_login_client_password": "Password or authorization code",
+  "onboarding_login_manual": "Set up manually",
+  "onboarding_login_oauth": "Sign in with browser",
+  "onboarding_login_password": "Password",
+  "onboarding_manual": "Set up servers manually",
+  "onboarding_name": "Sender name",
+  "onboarding_name_help": "The name recipients see",
+  "onboarding_name_placeholder": "Your name",
+  "onboarding_next_email": "Check that the email address is complete",
+  "onboarding_next_host": "Enter the server address under Set up servers manually",
+  "onboarding_next_oauth": "Try signing in again",
+  "onboarding_next_password": "Check that the password is typed correctly",
+  "onboarding_next_port": "A port is a number from 1 to 65535, such as 993 or 465",
+  "onboarding_next_regenerate": "Check that you copied all of it, or create a new one in {arg1}",
+  "@onboarding_next_regenerate": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_next_secret": "Fill it in, then connect",
+  "onboarding_next_server": "Check the server address, port and encryption",
+  "onboarding_oauth_body": "Sign in and allow Godwit to read and send mail; this continues on its own. Godwit gets an access token and never sees your password.",
+  "onboarding_oauth_opened": "The sign-in page is open in your browser",
+  "onboarding_oauth_opening": "Opening the sign-in page…",
+  "onboarding_oauth_reopen": "Open the browser again",
+  "onboarding_oauth_sub": "Sign in to your Microsoft account in the browser",
+  "onboarding_open_help": "Open {arg1} settings ↗",
+  "@onboarding_open_help": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_or_pick": "or pick a provider",
+  "onboarding_pick_sub": "We recognize the provider as you type, or pick one below.",
+  "onboarding_pick_title": "Your email address",
+  "onboarding_port": "Port",
+  "onboarding_promise_ai": "AI features are off by default",
+  "onboarding_promise_ai_sub": "They turn on only once you set up a model service, and send only the message you work on.",
+  "onboarding_promise_keychain": "Passwords live only in the system keychain",
+  "onboarding_promise_keychain_sub": "Never written to config files, never shown in logs.",
+  "onboarding_promise_local": "Your mail stays on this computer",
+  "onboarding_promise_local_sub": "Godwit talks to your mail server directly, with no server in between.",
+  "onboarding_reason_auth": "wrong {arg1}",
+  "@onboarding_reason_auth": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_reason_connect": "can''t reach the server",
+  "onboarding_reason_dns": "server not found",
+  "onboarding_reason_oauth": "the sign-in was not accepted",
+  "onboarding_reason_protocol": "the server''s reply was not understood",
+  "onboarding_reason_timeout": "timed out",
+  "onboarding_reason_tls": "the encrypted connection failed",
+  "onboarding_relogin": "Sign in again",
+  "onboarding_retype": "Re-enter the {arg1}",
+  "@onboarding_retype": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_secret_help": "Saved in the system keychain",
+  "onboarding_security_starttls": "STARTTLS",
+  "onboarding_security_tls": "SSL/TLS",
+  "onboarding_sheet_title": "Add account",
+  "onboarding_smtp_host": "SMTP server",
+  "onboarding_smtp_port": "SMTP port",
+  "onboarding_smtp_security": "SMTP encryption",
+  "onboarding_start": "Get started",
+  "onboarding_steps_app_password": "Turn on two-step verification in your account''s security settings\nCreate an app password\nCopy it and paste it below",
+  "onboarding_steps_authorization_code": "In your mailbox on the web, open Settings → POP3/SMTP/IMAP\nTurn on the IMAP/SMTP service\nGenerate an authorization code and copy it here",
+  "onboarding_steps_client_password": "In Exmail, check Settings → Client settings for secure login\nIf it is on, create a client-specific password and copy it here",
+  "onboarding_steps_qq": "In QQ Mail on the web, open Settings → Account\nTurn on the IMAP/SMTP service\nGenerate an authorization code and copy it here",
+  "onboarding_sync": "How much mail to sync first",
+  "onboarding_sync_2000": "Latest 2,000 per folder (recommended)",
+  "onboarding_sync_help": "Older mail loads when you scroll to it",
+  "onboarding_username": "Username",
+  "onboarding_username_placeholder": "Your email address by default",
+  "outbox_confirm_sent": "Confirm sent",
+  "outbox_discard": "Discard",
+  "outbox_resend": "Send again",
+  "outbox_state_archive_uncertain": "Sent; not sure it was filed in Sent",
+  "outbox_state_archiving": "Filing in Sent",
+  "outbox_state_failed": "Sending failed",
+  "outbox_state_queued": "Waiting to send",
+  "outbox_state_send_uncertain": "Not sure it was sent",
+  "outbox_state_sending": "Sending",
+  "outbox_state_sent": "Sent, waiting to file in Sent",
+  "provider_aol": "AOL Mail",
+  "provider_aol_mark": "A",
+  "provider_dingtalk": "DingTalk Mail",
+  "provider_dingtalk_mark": "D",
+  "provider_exmail": "Tencent Exmail",
+  "provider_exmail_mark": "T",
+  "provider_feishu": "Feishu Mail",
+  "provider_feishu_mark": "L",
+  "provider_gmail": "Gmail",
+  "provider_gmail_mark": "G",
+  "provider_icloud": "iCloud",
+  "provider_icloud_mark": "i",
+  "provider_netease126": "NetEase 126 Mail",
+  "provider_netease126_mark": "126",
+  "provider_netease163": "NetEase 163 Mail",
+  "provider_netease163_mark": "163",
+  "provider_other": "Other IMAP mailbox",
+  "provider_other_mark": "@",
+  "provider_outlook": "Outlook / Hotmail",
+  "provider_outlook_mark": "O",
+  "provider_qq": "QQ Mail",
+  "provider_qq_mark": "QQ",
+  "provider_yahoo": "Yahoo Mail",
+  "provider_yahoo_mark": "Y",
+  "reader_ai_card_from": "{arg1} · from plugin {arg2}",
+  "@reader_ai_card_from": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_ai_close_result": "Close result",
+  "reader_ai_copied": "Copied",
+  "reader_ai_more_skills": "More skills",
+  "reader_ai_no_translation": "Already in {arg1}; no translation needed",
+  "@reader_ai_no_translation": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_ai_quick": "Quick replies · pick one, then edit it in the composer",
+  "reader_ai_show_original": "Show original",
+  "reader_ai_summarize": "Summary",
+  "reader_ai_summary": "Summary",
+  "reader_ai_summary_meta": "{arg1} · {arg2}",
+  "@reader_ai_summary_meta": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_ai_translate": "Translate",
+  "reader_ai_translated": "Translated into {arg1} · translate · {arg2}",
+  "@reader_ai_translated": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_avatar_blocked": "Blocked the sender avatar; loading may contact the sender''s website and Gravatar",
+  "reader_body": "Message body",
+  "reader_date": "{arg1} {arg2, number, ::group-off}",
+  "@reader_date": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_egress_allow": "Allow once",
+  "reader_egress_body": "Plugin {arg1} will send data to:",
+  "@reader_egress_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_egress_title": "Let the plugin send data?",
+  "reader_forward": "Forward",
+  "reader_labels_add": "Label",
+  "reader_labels_add_label": "Add label",
+  "reader_labels_auto": "By model",
+  "reader_labels_create": "Create “{arg1}”",
+  "@reader_labels_create": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_labels_manage": "Manage labels…",
+  "reader_labels_remove": "Remove label “{arg1}”",
+  "@reader_labels_remove": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_labels_search": "Search or create a label",
+  "reader_lang_en": "English",
+  "reader_lang_ja": "Japanese",
+  "reader_lang_zh": "Chinese",
+  "reader_load_images": "Load images",
+  "reader_me": "me",
+  "reader_month_1": "Jan",
+  "reader_month_10": "Oct",
+  "reader_month_11": "Nov",
+  "reader_month_12": "Dec",
+  "reader_month_2": "Feb",
+  "reader_month_3": "Mar",
+  "reader_month_4": "Apr",
+  "reader_month_5": "May",
+  "reader_month_6": "Jun",
+  "reader_month_7": "Jul",
+  "reader_month_8": "Aug",
+  "reader_month_9": "Sep",
+  "reader_open_in_browser": "View in browser",
+  "reader_remote_blocked": "Blocked {arg1, number, ::group-off} remote images so the sender can''t tell whether you opened this message",
+  "@reader_remote_blocked": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_reply": "Reply",
+  "reader_reply_all": "Reply all",
+  "reader_save_as": "Save as…",
+  "reader_to": "To {arg1} · {arg2}",
+  "@reader_to": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_today": "Today",
+  "reader_truncated": "This message is too long; only the beginning is shown",
+  "reader_trust_sender": "Always trust this sender",
+  "settings_about": "About",
+  "settings_about_license": "Open source under the Apache-2.0 license",
+  "settings_about_version": "Version {arg1}",
+  "@settings_about_version": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_alias": "Name in the sidebar",
+  "settings_account_basic": "Basics",
+  "settings_account_clear_cache": "Clear attachment cache",
+  "settings_account_clear_cache_body": "Downloaded attachments are deleted from this computer and download again when opened.",
+  "settings_account_clear_cache_confirm": "Clear",
+  "settings_account_clear_cache_title": "Clear the attachment cache?",
+  "settings_account_default": "Default",
+  "settings_account_detail_auth_rejected": "The server refused the sign-in",
+  "settings_account_detail_credentials_missing": "No credentials in the keychain",
+  "settings_account_detail_keychain_unavailable": "The keychain is unavailable",
+  "settings_account_detail_token_revoked": "The sign-in was revoked",
+  "settings_account_edit_servers": "Edit",
+  "settings_account_folders": "{arg1, number, ::group-off} folders",
+  "@settings_account_folders": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_account_login": "Sign-in and servers",
+  "settings_account_login_method": "Sign-in method",
+  "settings_account_login_oauth": "Browser sign-in (OAuth)",
+  "settings_account_login_oauth_expired": "Browser sign-in (OAuth) · token expired",
+  "settings_account_login_secret": "{arg1} · kept in the system keychain",
+  "@settings_account_login_secret": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_login_update": "Update {arg1}",
+  "@settings_account_login_update": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_mailbox": "Mailbox behaviour",
+  "settings_account_mailbox_archive_help": "Mail moves here when you press Archive",
+  "settings_account_mailbox_drafts_help": "Mail you have not finished is kept here",
+  "settings_account_mailbox_help": "Servers usually mark which folder is Drafts, Sent and Junk, and Godwit picks them up; if it gets one wrong, change it here. Purging deletes mail from the server for good, so your other devices lose it too.",
+  "settings_account_mailbox_none": "Don''t use",
+  "settings_account_mailbox_trash_help": "Deleted mail moves here first",
+  "settings_account_make_default": "Default sending account",
+  "settings_account_make_default_help": "Used when writing from All Inboxes",
+  "settings_account_name": "Sender name",
+  "settings_account_name_help": "The name recipients see",
+  "settings_account_password_updated": "{arg1} updated",
+  "@settings_account_password_updated": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_purge_0": "Never",
+  "settings_account_purge_1": "After a day",
+  "settings_account_purge_30": "After a month",
+  "settings_account_purge_7": "After a week",
+  "settings_account_purge_blocked": "The server lacks UIDPLUS, so nothing is purged",
+  "settings_account_purge_junk": "Purge junk",
+  "settings_account_purge_junk_help": "Junk older than this is deleted for good",
+  "settings_account_purge_trash": "Purge deleted mail",
+  "settings_account_purge_trash_help": "Deleted mail older than this is deleted for good",
+  "settings_account_reauth": "The sign-in has expired and syncing stopped {arg1}. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "@settings_account_reauth": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_reauth_browser": "Sign in again in the browser",
+  "settings_account_reauth_done": "Signed in again",
+  "settings_account_reauth_unknown": "The sign-in has expired and syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth_waiting": "Waiting for the browser…",
+  "settings_account_remove": "Remove account",
+  "settings_account_remove_aria": "Remove account {arg1}",
+  "@settings_account_remove_aria": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_remove_button": "Remove account",
+  "settings_account_remove_help": "Clears this computer''s mail cache, drafts and keychain credentials. Mail on the server is not affected.",
+  "settings_account_remove_row": "Remove this account from this computer",
+  "settings_account_remove_title": "Remove {arg1}?",
+  "@settings_account_remove_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_servers": "Server settings",
+  "settings_account_servers_help": "Change the addresses, ports and encryption by hand",
+  "settings_account_signature": "Signature",
+  "settings_account_signature_help": "Added to the end of mail you write. Wit never changes it. You can use bold, links and images (like a company logo).",
+  "settings_account_signature_image": "Insert image",
+  "settings_account_signature_image_invalid": "Images must be PNG, JPEG, GIF or WebP, up to 512 KB, at most 4",
+  "settings_account_signature_label": "Signature text",
+  "settings_account_status_error": "Error",
+  "settings_account_status_ok": "Synced",
+  "settings_account_status_reauth_required": "Sign-in required",
+  "settings_account_sync": "Sync",
+  "settings_account_sync_2000": "Latest 2,000 per folder",
+  "settings_account_sync_all": "All",
+  "settings_account_sync_limit": "Latest {arg1, number, ::group-off} per folder",
+  "@settings_account_sync_limit": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_account_sync_months": "Last {arg1, number, ::group-off} months",
+  "@settings_account_sync_months": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_account_sync_range": "Sync range",
+  "settings_account_sync_status": "Sync status",
+  "settings_account_sync_stopped": "Syncing stopped",
+  "settings_account_sync_now": "Sync now",
+  "settings_account_usage": "On this computer",
+  "settings_account_usage_help": "Mail cache and attachments",
+  "settings_accounts": "Accounts",
+  "settings_add_account": "Add account",
+  "settings_ai": "AI",
+  "settings_app": "App",
+  "settings_appearance": "Appearance",
+  "settings_body_font_size": "Mail body font size",
+  "settings_body_font_size_help": "Only the body of the mail you read",
+  "settings_body_font_size_ui": "Same as interface",
+  "settings_density": "Density",
+  "settings_density_comfortable": "Comfortable",
+  "settings_density_compact": "Compact (default)",
+  "settings_dot_attention": "Needs attention",
+  "settings_dot_ok": "Working",
+  "settings_ext_allow": "Allow and enable",
+  "settings_ext_builtin": "Built-in",
+  "settings_ext_config": "Settings",
+  "settings_ext_config_required": "Required",
+  "settings_ext_config_sub": "· form generated from the plugin''s config declaration",
+  "settings_ext_excl_llm": "calling the language model",
+  "settings_ext_excl_net": "network access",
+  "settings_ext_excl_read": "reading mail",
+  "settings_ext_excl_send": "sending mail (no plugin can send)",
+  "settings_ext_excl_write": "changing mail",
+  "settings_ext_excluded": "Excludes",
+  "settings_ext_grant": "Approve and enable",
+  "settings_ext_install": "Install from folder",
+  "settings_ext_mcp_add": "Add server",
+  "settings_ext_mcp_args": "Arguments",
+  "settings_ext_mcp_args_help": "One per line",
+  "settings_ext_mcp_command": "Command",
+  "settings_ext_mcp_edit": "Edit",
+  "settings_ext_mcp_edit_title": "Edit: {arg1}",
+  "@settings_ext_mcp_edit_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_mcp_empty": "No MCP servers yet.",
+  "settings_ext_mcp_enable": "Enable server",
+  "settings_ext_mcp_env": "Environment variables",
+  "settings_ext_mcp_grant_help": "Once approved, Godwit starts this server and Wit can call its tools.",
+  "settings_ext_mcp_headers": "Headers",
+  "settings_ext_mcp_kv_help": "One KEY=VALUE per line; values are kept in the system keychain. Editing shows the keys only; an empty value keeps the stored one.",
+  "settings_ext_mcp_name": "Name",
+  "settings_ext_mcp_no_tools": "No tools listed yet.",
+  "settings_ext_mcp_read_only": "Declares read-only (for reference only)",
+  "settings_ext_mcp_refresh": "Refresh tools",
+  "settings_ext_mcp_remove": "Delete server",
+  "settings_ext_mcp_remove_body": "The server''s settings and the values kept in the keychain are deleted.",
+  "settings_ext_mcp_remove_title": "Delete {arg1}?",
+  "@settings_ext_mcp_remove_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_mcp_tools_title": "Tools",
+  "settings_ext_mcp_transport": "Transport",
+  "settings_ext_mcp_trust": "Trust as a read-only tool",
+  "settings_ext_mcp_trust_help": "Once trusted, it needs approval only after Wit has read mail",
+  "settings_ext_mcp_url": "URL",
+  "settings_ext_native": "Native",
+  "settings_ext_native_allow": "Enable anyway",
+  "settings_ext_native_file": "File: {arg1} · SHA-256 {arg2}",
+  "@settings_ext_native_file": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_native_risk_body": "A native plugin can read your mail, account credentials and files on this computer, reach any network address, run programs, and can crash Godwit. Godwit cannot restrict it.",
+  "settings_ext_native_risk_title": "Runs with all of Godwit''s permissions",
+  "settings_ext_native_trust_listed": "Reviewed: Godwit''s plugin directory.",
+  "settings_ext_native_trust_unlisted": "This file is not in Godwit''s reviewed plugin directory. Enable it only if you trust where it came from.",
+  "settings_ext_native_trust_user": "You allowed this file. It needs your permission again if it changes.",
+  "settings_ext_no_send": "No plugin can send mail.",
+  "settings_ext_not_now": "Not now",
+  "settings_ext_perm_llm": "Call the language model (judging questions may go to a different vendor)",
+  "settings_ext_perm_mail_read": "Read the mail you open",
+  "settings_ext_perm_mail_write": "Change mail (flag, move, archive)",
+  "settings_ext_perm_net": "Reach only {arg1}",
+  "@settings_ext_perm_net": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_perm_none": "Asks for no permissions",
+  "settings_ext_perm_translate": "Gets the mail you translate and may send it to the addresses above",
+  "settings_ext_perms": "Permissions it asks for",
+  "settings_ext_plugin_enable": "Enable plugin",
+  "settings_ext_plugins_empty": "No plugins installed.",
+  "settings_ext_registry": "Plugin directory",
+  "settings_ext_registry_confirm_body": "A native plugin runs with all of Godwit''s permissions: it can read your mail, account credentials and files on this computer, reach any network address, run programs, and can crash Godwit. Godwit cannot restrict it. This file was reviewed for Godwit''s plugin directory.",
+  "settings_ext_registry_confirm_ok": "Install anyway",
+  "settings_ext_registry_confirm_replace": " It replaces the {arg1} you installed yourself.",
+  "@settings_ext_registry_confirm_replace": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_registry_confirm_title": "Install the native plugin {arg1} {arg2}",
+  "@settings_ext_registry_confirm_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_registry_empty": "The plugin directory has no plugins yet.",
+  "settings_ext_registry_install": "Install",
+  "settings_ext_registry_installed": "Installed",
+  "settings_ext_registry_na_abi": "Needs a newer Godwit",
+  "settings_ext_registry_na_godwit": "Needs Godwit {arg1} or later",
+  "@settings_ext_registry_na_godwit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_registry_na_platform": "Not available for this computer",
+  "settings_ext_registry_named": "{arg1} {arg2}",
+  "@settings_ext_registry_named": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_registry_replace": "Replace with the directory''s version",
+  "settings_ext_registry_stale": "The plugin directory could not be updated; this is what it listed last time.",
+  "settings_ext_registry_update": "Update to {arg1}",
+  "@settings_ext_registry_update": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_revoked": "Godwit''s plugin directory no longer trusts this file.",
+  "settings_ext_script": "Script",
+  "settings_ext_sec_plugins": "Plugins",
+  "settings_ext_sec_skills": "Skills",
+  "settings_ext_skill_enable": "Enable {arg1}",
+  "@settings_ext_skill_enable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_skill_error": "Failed to load: {arg1}",
+  "@settings_ext_skill_error": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_skill_on": "Works on: {arg1}",
+  "@settings_ext_skill_on": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_skill_on_draft": "drafts",
+  "settings_ext_skill_on_message": "messages",
+  "settings_ext_skill_on_selection": "selected text",
+  "settings_ext_skill_on_thread": "threads",
+  "settings_ext_skill_wit_only": "Used by Wit only",
+  "settings_ext_status_disabled": "Disabled",
+  "settings_ext_status_enabled": "Enabled",
+  "settings_ext_status_error": "Error",
+  "settings_ext_status_needs_grant": "Needs approval",
+  "settings_ext_status_pending": "Pending approval",
+  "settings_ext_sub": "Skills are just prompts; script plugins run in a sandbox with only the permissions you approve, native plugins have all of Godwit''s; MCP gives Wit outside tools.",
+  "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
+  "@settings_ext_tab_mcp": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_ext_tab_plugins": "Plugins · {arg1, number, ::group-off}",
+  "@settings_ext_tab_plugins": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_ext_tab_skills": "Skills · {arg1, number, ::group-off}",
+  "@settings_ext_tab_skills": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_ext_uninstall": "Uninstall plugin",
+  "settings_ext_uninstall_body": "The plugin''s files and settings are deleted.",
+  "settings_ext_uninstall_confirm": "Uninstall",
+  "settings_ext_uninstall_title": "Uninstall {arg1}?",
+  "@settings_ext_uninstall_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_extensions": "Extensions",
+  "settings_font_size": "Font size",
+  "settings_general": "General",
+  "settings_general_sub": "Appearance, language and app behavior.",
+  "settings_heading": "Settings",
+  "settings_keep_in_background": "Keep running after the window closes",
+  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon",
+  "settings_keychain": "System keychain",
+  "settings_keychain_checking": "Checking…",
+  "settings_keychain_ok": "The system keychain works",
+  "settings_labels": "Labels",
+  "settings_labels_auto": "Auto-labeling",
+  "settings_labels_auto_on": "Label new mail automatically",
+  "settings_labels_auto_on_help": "Sorts new mail in the background, Inbox only",
+  "settings_labels_builtin": "Built-in",
+  "settings_labels_color": "Color",
+  "settings_labels_count": "{arg1, number, ::group-off}",
+  "@settings_labels_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_create": "Create",
+  "settings_labels_delete": "Delete label",
+  "settings_labels_delete_confirm": "Delete “{arg1}”?",
+  "@settings_labels_delete_confirm": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_labels_delete_confirm_help": "It will be removed from {arg1, number, ::group-off} messages.",
+  "@settings_labels_delete_confirm_help": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_desc": "Description (optional)",
+  "settings_labels_desc_long": "At most {arg1, number, ::group-off} characters",
+  "@settings_labels_desc_long": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_desc_placeholder": "Say which mail counts, e.g. mail from my parents and my kid’s school",
+  "settings_labels_dialog_edit": "Edit label",
+  "settings_labels_dialog_new": "New label",
+  "settings_labels_dialog_sub": "The model uses the name and description to decide which mail gets this label.",
+  "settings_labels_edit": "Edit “{arg1}”",
+  "@settings_labels_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_labels_icon": "Icon",
+  "settings_labels_list": "All labels",
+  "settings_labels_list_foot": "Drag to reorder; the sidebar and menus follow this order",
+  "settings_labels_model": "Judge model",
+  "settings_labels_model_go": "Open",
+  "settings_labels_model_help": "Without a judge model the generation model answers, more slowly",
+  "settings_labels_model_none": "Not set up",
+  "settings_labels_model_value": "From Model services",
+  "settings_labels_name": "Name",
+  "settings_labels_name_exists": "A label with this name exists",
+  "settings_labels_name_long": "At most {arg1, number, ::group-off} characters",
+  "@settings_labels_name_long": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_name_placeholder": "e.g. Family",
+  "settings_labels_new": "New label",
+  "settings_labels_no_desc": "No description; judged by name only",
+  "settings_labels_preview_auto": "By model",
+  "settings_labels_preview_manual": "By you",
+  "settings_labels_rescan": "Rescan existing mail",
+  "settings_labels_rescan_all_range": "Everything synced",
+  "settings_labels_rescan_days": "Last {arg1, number, ::group-off} days",
+  "@settings_labels_rescan_days": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_rescan_missing": "Unlabeled only",
+  "settings_labels_rescan_missing_help": "Mail with labels stays as is",
+  "settings_labels_rescan_mode": "Mode",
+  "settings_labels_rescan_no_model": "No model can sort mail yet; add one in Model services first",
+  "settings_labels_rescan_progress": "Rescan progress",
+  "settings_labels_rescan_range": "Range",
+  "settings_labels_rescan_redo": "Judge all again",
+  "settings_labels_rescan_redo_help": "Model labels are judged again; yours are kept",
+  "settings_labels_rescan_running": "Rescanning · {arg1, number, ::group-off} of {arg2, number, ::group-off}",
+  "@settings_labels_rescan_running": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_labels_rescan_start": "Rescan",
+  "settings_labels_rescan_stop": "Stop",
+  "settings_labels_rescan_sub": "After adding or changing labels, sort Inbox mail again with the current labels",
+  "settings_labels_sub": "The model labels new mail for you, and you can change labels any time. Your changes are never overwritten.",
+  "settings_labels_untitled": "New label",
+  "settings_language": "Language",
+  "settings_launch_at_login": "Open at login",
+  "settings_launch_at_login_help": "Starts Godwit in the background after login",
+  "settings_local_api": "Local API",
+  "settings_local_api_copy": "Copy configuration",
+  "settings_local_api_help": "When on, scripts and AI tools on this computer can reach Godwit through the Local API. The full Local API can read mail, send mail, and change accounts and settings; AI tools connected through MCP (`godwit mcp`) can only read mail and create drafts, never send. Turn it on only if you trust the programs running on this computer.",
+  "settings_local_api_mcp": "MCP client configuration",
+  "settings_local_api_on": "Turn on the Local API",
+  "settings_local_api_socket": "Socket: {arg1}",
+  "@settings_local_api_socket": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_mail": "Mail",
+  "settings_models": "Model services",
+  "settings_models_account": "Account",
+  "settings_models_add": "Add service",
+  "settings_models_api_key": "API key",
+  "settings_models_api_key_help": "Kept in the system keychain; never shown in the interface or logs.",
+  "settings_models_base_url": "Address",
+  "settings_models_cap_gen": "Generate",
+  "settings_models_cap_judge": "Judge",
+  "settings_models_caps": "Capabilities",
+  "settings_models_caps_note": "One key can turn on both",
+  "settings_models_common": "Common",
+  "settings_models_confirm_add": "Add",
+  "settings_models_default_missing": "Model not found: {arg1}",
+  "@settings_models_default_missing": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_default_none": "Not set",
+  "settings_models_default_badge": "Default",
+  "settings_models_del_confirm": "Delete “{arg1}”? Skills using it fall back to the default model, and its key is removed from the keychain.",
+  "@settings_models_del_confirm": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_del_title": "Confirm deletion",
+  "settings_models_dialog_add": "Add a model service",
+  "settings_models_dialog_desc": "Pick a provider, enter its key, then decide whether it generates, judges, or both. A service can offer several formats; pick one for each capability.",
+  "settings_models_dialog_desc_sub": "Sign in with a ChatGPT or SuperGrok plan you already have; no API key needed. The generating model judges too.",
+  "settings_models_edit": "Edit {arg1}",
+  "@settings_models_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_empty_desc": "Summaries, translation, writing, Wit and smart views all need at least one service that can generate. OpenAI, Anthropic, TypeSafe and compatible services such as OpenRouter or a local gateway are supported.",
+  "settings_models_empty_title": "No model service yet",
+  "settings_models_fail_auth": "Invalid API key",
+  "settings_models_fail_error": "Connection failed",
+  "settings_models_fail_forbidden": "Access denied",
+  "settings_models_fail_no_api": "This key has no access to the {arg1} API",
+  "@settings_models_fail_no_api": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_fail_not_eligible": "This ChatGPT account isn''t eligible for subscription sharing",
+  "settings_models_fail_timeout": "Timed out",
+  "settings_models_fetch_failed": "Fetching /models failed ({arg1}). This service may not list its models; you can enter a model ID instead.",
+  "@settings_models_fetch_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_fetched": "Fetched {arg1, number, ::group-off} models from /models; click to select.",
+  "@settings_models_fetched": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_models_fetching": "Fetching /models…",
+  "settings_models_foot": "Capabilities marked ✓ are the ones used by default.",
+  "settings_models_gen_formats": "Generate format",
+  "settings_models_gen_switch": "Turn on generate",
+  "settings_models_gen_unsupported": "{arg1} has no generate API.",
+  "@settings_models_gen_unsupported": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_group_api": "API key",
+  "settings_models_group_sub": "Subscription",
+  "settings_models_hint": "Once the API key is filled in, the available models are fetched from /models; click to select, or enter a model ID.",
+  "settings_models_hint_sub": "Once signed in, the models come from /models; click to pick, or type a model ID.",
+  "settings_models_judge_desc": "Classification, notification filtering, code detection and action routing. Answers only predefined questions, an order of magnitude faster than generating.",
+  "settings_models_judge_fetched": "Fetched {arg1, number, ::group-off} judge models from /models.",
+  "@settings_models_judge_fetched": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_models_judge_formats": "Judge format",
+  "settings_models_judge_hint": "Once the API key is filled in, the judge models are fetched from /models.",
+  "settings_models_judge_model": "Model",
+  "settings_models_judge_switch": "Turn on judge",
+  "settings_models_judge_unsupported": "{arg1} has no judge API; the generate model answers instead.",
+  "@settings_models_judge_unsupported": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_judge_wait": "Waiting for the list",
+  "settings_models_judge_chip": "Judge · {arg1}",
+  "@settings_models_judge_chip": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_key_hide": "Hide API key",
+  "settings_models_key_ph_anthropic": "sk-ant-…",
+  "settings_models_key_ph_openai": "sk-…",
+  "settings_models_key_ph_other": "Leave empty if there is none",
+  "settings_models_key_ph_typesafe": "Paste the API key",
+  "settings_models_key_show": "Show API key",
+  "settings_models_key_moved": "The address changed: enter the API key again, or choose no key",
+  "settings_models_local": "Connect a local gateway",
+  "settings_models_local_name": "Local gateway",
+  "settings_models_login_again": "Sign in again",
+  "settings_models_login_chatgpt": "Continue with ChatGPT",
+  "settings_models_login_denied": "Sign-in was declined",
+  "settings_models_login_expired": "The sign-in is no longer valid; sign in again",
+  "settings_models_login_grok": "Sign in with SuperGrok",
+  "settings_models_login_opened": "The sign-in page is open in your browser; this continues when you finish",
+  "settings_models_login_port_busy": "Port 1455, which the sign-in listens on, is in use. Close a Codex CLI that is signing in and try again.",
+  "settings_models_login_reopen": "Reopen",
+  "settings_models_login_timeout": "Sign-in timed out; try again",
+  "settings_models_manage_usage": "Manage usage",
+  "settings_models_manual": "Add a model ID",
+  "settings_models_manual_add": "Add model",
+  "settings_models_models": "Models",
+  "settings_models_name": "Name",
+  "settings_models_name_ph": "e.g. OpenRouter",
+  "settings_models_need_cap": "Turn on at least one capability",
+  "settings_models_need_failed_add": "A test failed; you can still add it and fix it later",
+  "settings_models_need_failed_save": "A test failed; you can still save and fix it later",
+  "settings_models_need_key": "Enter the API key to add it",
+  "settings_models_need_login": "Sign in to add it",
+  "settings_models_need_model": "Select at least one model to generate with",
+  "settings_models_need_name": "Enter a name",
+  "settings_models_need_url": "Enter the address",
+  "settings_models_no_key": "No key",
+  "settings_models_no_list": "Fetching /models failed. This service may not list its models; you can enter a model ID instead.",
+  "settings_models_off_gen_alt": "It is the default generate model. Once off, summaries, translation, writing and Wit use {arg1}.",
+  "@settings_models_off_gen_alt": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_off_gen_only": "It is the only service that generates; once off, summaries, translation, writing and Wit are unavailable.",
+  "settings_models_off_judge": "It is the default judge model. Once off, the generate model answers judge questions, more slowly.",
+  "settings_models_preset_chatgpt": "ChatGPT",
+  "settings_models_preset_custom": "Other service",
+  "settings_models_preset_grok": "Grok",
+  "settings_models_provider": "Provider",
+  "settings_models_remove": "Delete this service",
+  "settings_models_req": "Requests go to",
+  "settings_models_reset_url": "Reset",
+  "settings_models_retry": "Retry",
+  "settings_models_services": "Services",
+  "settings_models_small_same": "Same as the default model",
+  "settings_models_status_bad": "Key invalid",
+  "settings_models_status_ok": "OK",
+  "settings_models_status_untested": "Untested",
+  "settings_models_sub": "Generation writes; judging classifies and routes. One service can do both.",
+  "settings_models_test": "Test connection",
+  "settings_models_test_busy": "Testing…",
+  "settings_models_test_ok": "Connected · {arg1, number, ::group-off} ms",
+  "@settings_models_test_ok": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_models_testing": "Testing…",
+  "settings_models_tile_chatgpt": "Your ChatGPT plan",
+  "settings_models_tile_grok": "Your SuperGrok or X Premium plan",
+  "settings_models_unsupported": "Not supported",
+  "settings_models_url_ph": "https://… or http://127.0.0.1:[PORT]/v1",
+  "settings_models_usage": "Usage",
+  "settings_models_use_add_first": "Add a service first",
+  "settings_models_use_alert": "{arg1}, used for generation, can''t connect ({arg2}): summaries, translation, writing and Wit are unavailable",
+  "@settings_models_use_alert": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_use_alert_end": ".",
+  "settings_models_use_alert_judge_too": ", and so is judging.",
+  "settings_models_use_fix": "Fix",
+  "settings_models_use_gen": "Generate",
+  "settings_models_use_gen_desc": "Summaries, translation, writing and Wit chats.",
+  "settings_models_use_gen_none": "Not set up: these features are unavailable for now",
+  "settings_models_use_judge": "Judge",
+  "settings_models_use_judge_by_gen": "The generation model (slower)",
+  "settings_models_use_judge_desc": "Classification, notification filtering, code detection and action routing.",
+  "settings_models_use_judge_none": "Not set up",
+  "settings_models_use_judge_slow": "{arg1} answers judge questions, about 10× slower",
+  "@settings_models_use_judge_slow": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_models_use_small": "Small tasks",
+  "settings_models_use_small_desc": "Summaries, translation and quick replies can use a cheaper model",
+  "settings_models_use_suggest": "Add OpenAI Decisions or TypeSafe to judge an order of magnitude faster. ",
+  "settings_no_translate": "Languages not to translate",
+  "settings_no_translate_help": "Mail in these languages shows no translation offer",
+  "settings_no_translate_none": "None",
+  "settings_notifications": "Notifications",
+  "settings_notify_new_mail": "Notify about new mail",
+  "settings_notify_preview": "Show a preview in notifications",
+  "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
+  "settings_privacy": "Privacy & security",
+  "settings_privacy_sub": "Your mail and credentials stay on this computer.",
+  "settings_px": "{arg1, number, ::group-off} px",
+  "@settings_px": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_px_default": "{arg1, number, ::group-off} px (default)",
+  "@settings_px_default": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_quick_replies": "Quick replies",
+  "settings_quick_replies_help": "Offer a few short replies to mail you receive",
+  "settings_reading_language": "Reading language",
+  "settings_reading_language_help": "Summaries, translations and Wit''s answers use this language",
+  "settings_reading_language_ui": "Same as the interface",
+  "settings_remote_images": "Remote images",
+  "settings_remote_images_ask": "Ask each time",
+  "settings_remote_images_auto": "Automatically",
+  "settings_remote_images_avatars": "Remote image settings also apply to sender avatars. When automatic loading is allowed, new messages fetch avatars in advance. Old messages, cache misses or expired entries, and manual loading may still contact sender websites and Gravatar while you read. They can see this computer''s IP address and may infer your reading time. Gravatar queries use an email hash.",
+  "settings_remote_images_cache": "Image cache",
+  "settings_remote_images_cache_help": "New mail’s images are fetched on arrival; cached ones show offline",
+  "settings_remote_images_clear": "Clear image cache",
+  "settings_remote_images_mode": "Load remote images",
+  "settings_remote_images_mode_help": "Images in Junk never load by themselves",
+  "settings_remote_images_sub": "Godwit downloads a message’s images for you, without cookies or a referrer, so senders cannot tell when you read it when the images were fetched as the mail arrived (they still see this computer’s IP address when an image is fetched)",
+  "settings_remote_images_trusted": "Trusted senders only",
+  "settings_reply_language": "Reply language",
+  "settings_reply_language_help": "Used when Wit and quick replies draft mail. Defaults to the incoming mail''s language; new mail follows the recipient''s earlier mail",
+  "settings_reply_language_match": "Match the incoming mail (default)",
+  "settings_reply_language_reading": "Always the reading language",
+  "settings_saved": "Saved",
+  "settings_search": "Search settings",
+  "settings_secret_kept": "Configured · leave empty to keep it",
+  "settings_startup": "Startup and window",
+  "settings_summary": "Mail summaries",
+  "settings_summary_help": "Summarize mail as you open it; needs a model service",
+  "settings_theme": "Theme",
+  "settings_theme_dark": "Dark",
+  "settings_theme_help": "Follows macOS appearance when set to System",
+  "settings_theme_light": "Light",
+  "settings_theme_system": "System",
+  "settings_thread_view": "Conversation view",
+  "settings_thread_view_help": "Group mail of the same conversation together",
+  "settings_translator": "Translate with",
+  "settings_translator_gone": "{arg1} (uninstalled)",
+  "@settings_translator_gone": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_translator_help": "Plugins need to be enabled in Extensions",
+  "settings_translator_model": "Model (default)",
+  "settings_translator_off": "{arg1} (off)",
+  "@settings_translator_off": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_trusted": "Trusted senders",
+  "settings_trusted_none": "No trusted senders yet. Choose “Always trust this sender” on a message''s remote image notice to add one",
+  "settings_trusted_remove": "Remove",
+  "settings_trusted_remove_label": "Remove {arg1}",
+  "@settings_trusted_remove_label": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_trusted_sub": "Remote images from these senders load automatically, except in Junk",
+  "settings_ui_language": "Interface language",
+  "settings_ui_language_system": "System ({arg1})",
+  "@settings_ui_language_system": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
+  "settings_unread_on_app_icon": "Show the unread count on the app icon",
+  "shell_back": "Back",
+  "shell_forward": "Forward",
+  "shell_nav_back_to": "Back to {arg1}",
+  "@shell_nav_back_to": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_nav_mail": "Mail",
+  "shell_nav_settings": "Settings",
+  "shell_nav_wit": "Wit",
+  "shell_resize": "Resize",
+  "shell_sidebar_collapse": "Collapse sidebar",
+  "shell_sidebar_expand": "Expand sidebar",
+  "shell_sync_failed": "Sync failed",
+  "shell_sync_just_now": "just now",
+  "shell_sync_reauth": "Sign-in required",
+  "shell_sync_synced": "Synced · {arg1}",
+  "@shell_sync_synced": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_syncing": "Syncing…",
+  "toast_close": "Close",
+  "tray_open": "Open Godwit",
+  "tray_quit": "Quit",
+  "tray_sync_all": "Sync all accounts now",
+  "wit_add": "Add",
+  "wit_approval_allow": "Allow",
+  "wit_approval_allow_all": "Allow all",
+  "wit_approval_allow_session": "Allow for this conversation",
+  "wit_approval_cc": "Cc",
+  "wit_approval_destinations": "Sends data to: {arg1}",
+  "@wit_approval_destinations": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_approval_reject": "Reject",
+  "wit_approval_send_note": "You still send it yourself from the compose page",
+  "wit_approval_subject": "Subject",
+  "wit_approval_to": "To",
+  "wit_approval_wants": "Wit wants to: {arg1}",
+  "@wit_approval_wants": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_compose_accept": "Accept",
+  "wit_compose_accept_all": "Accept all",
+  "wit_compose_adjust": "Adjust",
+  "wit_compose_applied": "Applied to the body",
+  "wit_compose_back": "Back to new version",
+  "wit_compose_cmdk": "⌘K · Change only the selection",
+  "wit_compose_cmdk_esc": "Esc",
+  "wit_compose_cmdk_go": "Generate ↵",
+  "wit_compose_cmdk_input": "Change the selection",
+  "wit_compose_compare": "Compare with original",
+  "wit_compose_empty": "Write it yourself, or tell Wit on the right how to reply",
+  "wit_compose_history": "{arg2, number, ::group-off} emails with {arg1}",
+  "@wit_compose_history": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_compose_input": "Tell Wit how to reply",
+  "wit_compose_link": "Link changed to {arg1}",
+  "@wit_compose_link": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_compose_locked": "Accept or reject the assistant''s changes first",
+  "wit_compose_new": "New version",
+  "wit_compose_original": "Original",
+  "wit_compose_placeholder": "Tell Wit how to reply, like: accept the dates but move the webinar a week later",
+  "wit_compose_reject": "Reject",
+  "wit_compose_reject_all": "Reject all",
+  "wit_compose_review": "To review",
+  "wit_compose_review_rewrite": "Rewritten, about {arg1, number, ::group-off}% changed.",
+  "@wit_compose_review_rewrite": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_compose_review_rewrite_plain": "Rewritten.",
+  "wit_compose_review_body": "Body with changes",
+  "wit_compose_rewrite": "Rewritten, about {arg1, number, ::group-off}% changed",
+  "@wit_compose_rewrite": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_compose_rewrite_plain": "Rewritten",
+  "wit_compose_source": "Original email",
+  "wit_compose_translate": "Translate",
+  "wit_compose_translate_only": "No model is set up: here you can only translate the draft with the translation plugin.",
+  "wit_compose_translate_only_models": "Add a model",
+  "wit_compose_translate_to": "Translate to {arg1}",
+  "@wit_compose_translate_to": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_compose_undo": "Undo",
+  "wit_compose_working": "Writing the body…",
+  "wit_compose_writing_banner": "The assistant is writing the body; it cannot be edited for now",
+  "wit_input": "Ask Wit",
+  "wit_loading": "Wit is replying…",
+  "wit_model": "Model service settings",
+  "wit_placeholder": "Ask something, like: who is still waiting for my reply from last week?",
+  "wit_quote": "Quote an email",
+  "wit_quote_none": "No mail found",
+  "wit_quote_remove": "Remove {arg1}",
+  "@wit_quote_remove": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_quote_search": "Search mail",
+  "wit_scroll_end": "Jump to latest",
+  "wit_send": "Send to Wit",
+  "wit_skill_longer": "Longer",
+  "wit_skill_longer_hint": "Length",
+  "wit_skill_proofread": "Proofread",
+  "wit_skill_proofread_hint": "Only typos and grammar",
+  "wit_skill_shorter": "Shorter",
+  "wit_skill_shorter_hint": "Length",
+  "wit_skill_tone_formal": "More formal",
+  "wit_skill_tone_formal_hint": "Tone",
+  "wit_skill_tone_friendly": "Friendlier",
+  "wit_skill_tone_friendly_hint": "Tone",
+  "wit_stop": "Stop",
+  "wit_suspect": "Source {arg1} contains suspected instructions. It was treated as mail content only and not followed.",
+  "@wit_suspect": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_suspect_quote": "Source {arg1} contains suspected instructions (“{arg2}”). It was treated as mail content only and not followed.",
+  "@wit_suspect_quote": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_thinking": "Thinking…",
+  "wit_tool_classify_mail": "classify mail",
+  "wit_tool_create_draft": "create a draft",
+  "wit_tool_update_draft": "Edit the body",
+  "wit_tool_update_selection": "Edit the selection",
+  "wit_tools_called": "Used {arg1}",
+  "@wit_tools_called": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_mcp_tools": "{arg1, plural, one {{arg1, number, ::group-off} tool} other {{arg1, number, ::group-off} tools}}",
+  "@settings_ext_mcp_tools": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_models_gen": "{arg1, plural, one {Generate · {arg1, number, ::group-off} model} other {Generate · {arg1, number, ::group-off} models}}",
+  "@settings_models_gen": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "shell_sync_hours_ago": "{arg1, plural, one {{arg1, number, ::group-off} hour ago} other {{arg1, number, ::group-off} hours ago}}",
+  "@shell_sync_hours_ago": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "shell_sync_minutes_ago": "{arg1, plural, one {{arg1, number, ::group-off} minute ago} other {{arg1, number, ::group-off} minutes ago}}",
+  "@shell_sync_minutes_ago": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_compose_pending": "{arg1, plural, one {{arg1, number, ::group-off} change to review} other {{arg1, number, ::group-off} changes to review}}",
+  "@wit_compose_pending": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_compose_review_inline": "{arg1, plural, one {{arg1, number, ::group-off} change. Point at a change to accept or reject it on its own.} other {{arg1, number, ::group-off} changes. Point at a change to accept or reject it on its own.}}",
+  "@wit_compose_review_inline": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools": "{arg1, plural, one {Used {arg1, number, ::group-off} tool} other {Used {arg1, number, ::group-off} tools}}",
+  "@wit_tools": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  }
+}

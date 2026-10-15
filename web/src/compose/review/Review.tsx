@@ -5,12 +5,9 @@ import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/my
 import type { T } from "@/shared/i18n";
 import { sanitize } from "../editor/html";
 
-/** key.one or key.other by n, as the native i18n.Plural. */
-export const plural = (t: T, key: string, n: number) => t(`${key}.${n === 1 ? "one" : "other"}`, n);
-
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
 export function reviewSummary(r: ReviewT, t: T): string {
-  if (r.inline) return plural(t, "wit.compose.review.inline", r.changes);
+  if (r.inline) return t("wit.compose.review.inline", r.changes);
   return r.exact
     ? t("wit.compose.review.rewrite", Math.round(r.ratio * 100))
     : t("wit.compose.review.rewrite_plain");
@@ -222,7 +219,7 @@ export function Review({
         <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
           {r.inline
-            ? plural(t, "wit.compose.pending", open)
+            ? t("wit.compose.pending", open)
             : r.exact
               ? t("wit.compose.rewrite", pct)
               : t("wit.compose.rewrite_plain")}

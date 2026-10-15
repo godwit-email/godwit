@@ -33,7 +33,10 @@ vi.mock("@/mygo", () => ({
     },
   },
 }));
-vi.mock("mygo-runtime", () => ({ currentWindow: { setTitle: vi.fn() } }));
+vi.mock("mygo-runtime", async (original) => ({
+  ...(await original<typeof import("mygo-runtime")>()),
+  currentWindow: { setTitle: vi.fn() },
+}));
 // Plate has its own tests; here the body is a textarea that, like Plate, reads `initial` at mount
 // and takes no input while read-only.
 vi.mock("./editor/Editor", async () => {
@@ -69,33 +72,6 @@ vi.mock("./editor/Editor", async () => {
 import { currentWindow } from "mygo-runtime";
 import { ComposePage as api, type ComposeState as ComposeStateT } from "@/mygo";
 
-const text = {
-  "compose.new": "新邮件",
-  "compose.status.saving": "正在保存…",
-  "compose.status.saved": "草稿已保存 · %s",
-  "compose.status.unsaved": "未保存",
-  "compose.from": "发件人",
-  "compose.from.select": "发件账户",
-  "compose.to": "收件人",
-  "compose.subject": "主题",
-  "compose.body": "正文",
-  "compose.attach": "添加附件",
-  "compose.remove": "移除 %s",
-  "compose.quote.show": "显示引用的原邮件（助手只读）",
-  "compose.conflict": "草稿在别处被修改",
-  "compose.conflict.keep": "保留我的版本",
-  "compose.conflict.latest": "使用最新版本",
-  "compose.warn": "发送前检查：%s",
-  "compose.warn.from": "来自插件 %s（message.beforeSend）",
-  "compose.send_anyway": "仍然发送",
-  "compose.send": "发送",
-  "compose.sending.locked": "正在发送，暂时不能修改草稿",
-  "compose.attach.failed": "未能添加：%s",
-  "error.stale_draft": "草稿在别处被修改。",
-  "error.unknown": "出错了：%s",
-  "common.cancel": "取消",
-  "common.retry": "重试",
-};
 const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
 const state = {
   draftId: 1,
@@ -117,7 +93,7 @@ const state = {
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
-  text,
+  locale: "zh-Hans",
   wit: { enabled: false, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 };
 const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };

@@ -1,6 +1,6 @@
 import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
 import { currentWindow } from "mygo-runtime";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
@@ -20,7 +20,7 @@ import {
   type WitEvent,
   type WitHistory,
 } from "@/mygo";
-import { makeT, type T } from "@/shared/i18n";
+import { type T, useT } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
@@ -206,7 +206,9 @@ function Compose({
   gate: CloseGate;
   frozen: boolean;
 }) {
-  const t = useMemo(() => makeT(state.text), [state.text]);
+  const t = useT(state.locale);
+  const currentT = useRef(t);
+  currentT.current = t;
   const fieldsRef = useRef<FieldsHandle>(null);
   // The edit as it stands, read synchronously: commitPending's edits arrive within the settling.
   const cur = useRef(editOf(state));
@@ -411,14 +413,14 @@ function Compose({
         setPendings(history.approvals.filter(pendingEdit));
         setWit({ tr, history, n: 0 });
       },
-      (e) => live && toast.error(witError(message(e), t)),
+      (e) => live && toast.error(witError(message(e), currentT.current)),
     );
     return () => {
       live = false;
       off();
       tr.close();
     };
-  }, [state, t]);
+  }, [state]);
 
   const current = pendings[0];
   const currentId = current?.id;
@@ -428,12 +430,12 @@ function Compose({
     let live = true;
     api.review(currentId).then(
       (r) => live && setReview(r),
-      (e) => live && toast.error(witError(message(e), t)),
+      (e) => live && toast.error(witError(message(e), currentT.current)),
     );
     return () => {
       live = false;
     };
-  }, [currentId, t]);
+  }, [currentId]);
 
   const reviewing = review && review.approval === currentId ? review : undefined;
 

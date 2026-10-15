@@ -15,8 +15,7 @@ import type {
 } from "@/mygo";
 import themeJson from "./theme.json";
 
-/** Light and dark tokens and the zh-CN copy, as `webui.ThemeOf` and the pages' text keys emit them. */
-export const text: Record<string, string> = themeJson.text;
+/** Light and dark tokens, as `webui.ThemeOf` emits them. */
 export const theme = (mode: "light" | "dark"): Theme => ({
   mode,
   light: themeJson.light,
@@ -60,7 +59,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   revision: 1,
   theme: theme(mode),
   updatedAt: new Date().setHours(9, 52, 0, 0),
-  text,
+  locale: "zh-Hans",
   wit: {
     enabled: true,
     translateOnly: false,
@@ -73,7 +72,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
     ],
     languages: [
       { tag: "en", name: "English" },
-      { tag: "zh-CN", name: "中文" },
+      { tag: "zh-Hans", name: "中文" },
       { tag: "ja", name: "日本語" },
     ],
     chips: ["原邮件", "Q4-proposal.pdf", "与 Lena 的往来 3 封"],
@@ -361,7 +360,7 @@ export const witPage = (mode: "light" | "dark", conversation: number): WitPageSt
   conversation,
   version: 1,
   model: "[MODEL]",
-  text,
+  locale: "zh-Hans",
   theme: theme(mode),
 });
 
@@ -369,7 +368,7 @@ export const witPage = (mode: "light" | "dark", conversation: number): WitPageSt
 
 export const signature = (mode: "light" | "dark"): SignatureState => ({
   account: 1,
-  text,
+  locale: "zh-Hans",
   theme: theme(mode),
 });
 export const signatureHtml =

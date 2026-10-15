@@ -236,11 +236,12 @@ func TestShots(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)
 		shot(s.harness, "Main")
-		// the translation shows over the body, under the summary
-		s.llm.Script(coretest.Turn{Text: []string{"你好，\n\n接着上周的通话，我整理了一份 Q4 合作的提案草稿。要点是 11 月联合发布，以及一场联合网络研讨会。\n\n能否在周五前看一下，告诉我时间安排对你们来说是否可行？\n\n祝好，Lena"}})
+		// Translation keeps the message's body page, below the summary.
+		s.llm.Script(coretest.Turn{Text: []string{`{"texts":["你好，\n\n接着上周的通话，我整理了一份 Q4 合作的提案草稿。要点是 11 月联合发布，以及一场联合网络研讨会。\n\n能否在周五前看一下，告诉我时间安排对你们来说是否可行？\n\n祝好，Lena"],"source":"en"}`}})
 		s.click("翻译")
 		s.see("显示原文")
-		s.see("能否在周五前看一下")
+		m, _ := s.app.mail.reader.last()
+		s.seeTranslation(m.ID, "能否在周五前看一下")
 		shot(s.harness, "MainTranslated")
 	})
 	t.Run("MainWindows", func(t *testing.T) {

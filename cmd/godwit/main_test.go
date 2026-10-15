@@ -33,6 +33,25 @@ func TestWindowOptionsPerOS(t *testing.T) {
 	}
 }
 
+func TestUILocale(t *testing.T) {
+	for _, tc := range []struct{ preference, system, want string }{
+		{"", "zh-TW", "zh-Hans"},
+		{"", "zh-HK", "zh-Hans"},
+		{"", "zh-Hant", "zh-Hans"},
+		{"", "zh-CN", ""},
+		{"", "zh-Hans", ""},
+		{"", "en-US", ""},
+		{"", "fr-FR", ""},
+		{"en", "zh-TW", "en"},
+		{"zh-CN", "en-US", "zh-CN"},
+		{"en-XA", "zh-TW", "en-XA"},
+	} {
+		if got := uiLocale(tc.preference, tc.system); got != tc.want {
+			t.Errorf("uiLocale(%q, %q) = %q, want %q", tc.preference, tc.system, got, tc.want)
+		}
+	}
+}
+
 func TestTrayIcon(t *testing.T) {
 	for _, goos := range []string{"darwin", "windows"} {
 		t.Run(goos, func(t *testing.T) { checkTrayIcon(t, trayBoxFor(goos)) })

@@ -46,24 +46,11 @@ vi.mock("sonner", async (orig) => ({
 import { WitPage as api } from "@/mygo";
 import { WitPage } from "./WitPage";
 
-const text: Record<string, string> = {
-  "wit.input": "向 Wit 提问",
-  "wit.placeholder": "问点什么",
-  "wit.send": "发送",
-  "wit.stop": "停止",
-  "wit.model": "模型服务设置",
-  "ask.citations": "引用的邮件",
-  "link.title": "打开这个链接？",
-  "link.open": "打开",
-  "wit.approval.wants": "Wit 想要：%s",
-  "wit.approval.allow": "允许",
-  "wit.approval.reject": "拒绝",
-};
 const state = (conversation: number, version: number, model = "m1"): WitPageState => ({
   conversation,
   version,
   model,
-  text,
+  locale: "zh-Hans",
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
 });
 const msg = (id: string, role: string, t: string, runs: number[]) => ({
@@ -157,7 +144,7 @@ test("switching conversations drops the old stream", async () => {
   emit({ conversation: 3, run: 7, text: "late" }); // the core run goes on: not shown here
   expect(screen.queryByText(/old|late/)).toBeNull();
   expect(api.stop).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "发送给 Wit" })).toBeInTheDocument();
 });
 
 test("out-of-order follow results: A's late result is ignored after B", async () => {
@@ -188,7 +175,9 @@ test("first ask creates and keeps the conversation", async () => {
   emit({ conversation: 7, run: 9, text: "made" });
   emit({ conversation: 7, run: 9, kind: "done" });
   expect(await screen.findByText("made")).toBeInTheDocument();
-  await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "发送给 Wit" })).toBeInTheDocument(),
+  );
   // no switch (it would have dropped the answer): 7's only read is the end's reconcile
   await waitFor(() => expect(api.follow).toHaveBeenLastCalledWith(7));
   expect(vi.mocked(api.follow).mock.calls.filter(([c]) => c === 7)).toHaveLength(1);

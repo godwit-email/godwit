@@ -26,7 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { fromHTML, IMAGE_SRC, safeHref, toHTML, toText } from "@/compose/editor/html";
 import { linkPlugin, SafePastePlugin } from "@/compose/editor/plugins";
 import { SignaturePage as api, events, type SignatureState } from "@/mygo";
-import { makeT, type T } from "@/shared/i18n";
+import { type T, useT } from "@/shared/i18n";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
 import { type Doc, signatureSaver } from "./saver";
 
@@ -259,7 +259,6 @@ export function SignatureApp() {
       events.signatureAccount.on(saver.show),
       events.signatureFlush.on(saver.flush),
       events.theme.on((th) => setTheme(th as PageTheme)),
-      events.signatureText.on((text) => setState((s) => s && { ...s, text })),
     ];
     const g = saver.gen();
     api.state().then((s) => {
@@ -273,7 +272,7 @@ export function SignatureApp() {
   }, [saver]);
   useEffect(() => (theme ? applyTheme(theme) : undefined), [theme]);
 
-  const t = useMemo(() => makeT(state?.text ?? {}), [state]);
+  const t = useT(state?.locale);
   if (!state || !doc) return <main />;
   if ("error" in doc)
     return (

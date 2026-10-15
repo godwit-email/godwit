@@ -7,6 +7,11 @@ export default mergeConfig(
   defineConfig({
     // The ⌘K contract's shared cases live in webui/testdata.
     server: { fs: { allow: [".", "../webui/testdata"] } },
-    test: { environment: "jsdom", globals: true, setupFiles: ["./src/test-setup.ts"] },
+    test: {
+      environment: "jsdom",
+      globals: true,
+      setupFiles: ["./src/test-setup.ts"],
+      css: { include: [/frame\.css/] },
+    },
   }),
 );

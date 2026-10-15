@@ -35,6 +35,8 @@ type Target struct {
 	Kind string
 	ID   int64
 	Text string
+	// PreserveHTML translates message text nodes for the reader, without rewriting markup.
+	PreserveHTML bool
 }
 
 const (
@@ -78,6 +80,9 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		st, err := s.loadSettings(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if t.PreserveHTML && t.Kind == "message" {
+			return s.runBodyTranslation(ctx, end, sk, t, st)
 		}
 		if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
 			return s.runPluginTranslate(ctx, end, plugin, t, st)

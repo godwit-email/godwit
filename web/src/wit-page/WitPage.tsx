@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -9,7 +9,7 @@ import {
   type WitOpenMsg,
   type WitPageState,
 } from "@/mygo";
-import { makeT, type T } from "@/shared/i18n";
+import { type T, useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { type Decide, Panel, witError } from "@/wit/Panel";
@@ -137,7 +137,7 @@ export function WitPage() {
     };
   }, [theme]);
 
-  const t = useMemo(() => makeT(st?.text ?? {}), [st?.text]);
+  const t = useT(st?.locale);
   if (!st) return <main />;
   return (
     <main className="h-screen">

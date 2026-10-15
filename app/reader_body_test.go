@@ -53,6 +53,20 @@ func (h *harness) seeBody(message int64) *fakeBodyView {
 	return v
 }
 
+func (h *harness) seeTranslation(message int64, text string) *fakeBodyView {
+	h.t.Helper()
+	v := h.seeBody(message)
+	h.until("the body's translated text", func() bool {
+		for _, translated := range v.translations {
+			if strings.Contains(translated, text) {
+				return true
+			}
+		}
+		return false
+	})
+	return v
+}
+
 // countCalls counts the platform calls equal to call.
 func (h *harness) countCalls(call string) int {
 	n := 0
@@ -227,23 +241,46 @@ func TestReaderBodyViewError(t *testing.T) {
 	h.seeBody(m.ID)
 }
 
-// While the translation shows the body's page is not built (it hides);
-// 显示原文 shows it again, the same page.
-func TestReaderTranslationHidesView(t *testing.T) {
+// Translation and 显示原文 keep the same HTML body page visible.
+func TestReaderTranslationKeepsView(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noAuto)
-	llm.Script(coretest.Turn{Text: []string{"Hallo **Welt**, das ist die Übersetzung des Textes."}})
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["Hallo Welt, das ist die Übersetzung des Textes."],"source":"en"}`}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "the original words"))
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("Welt")
-	h.until("the page hidden", func() bool { _, ok := h.viewBox(v); return !ok })
+	h.seeTranslation(m.ID, "Welt")
 	if v.closed {
 		t.Fatal("the translation closed the page")
 	}
 	h.click("显示原文")
 	if h.seeBody(m.ID) != v {
 		t.Fatal("the original is a new page")
+	}
+}
+
+func TestReaderTranslationKeepsOriginalUntilSuccess(t *testing.T) {
+	for _, answer := range []string{`{"texts":["你好"],"source":"en"}`, `{"texts":[]}`} {
+		t.Run(answer, func(t *testing.T) {
+			h, acc, llm := aiHarness(t, true, noAuto)
+			llm.Script(coretest.Turn{Text: []string{answer}, Hang: true})
+			m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "Hello"))
+			h.openThread(m.ThreadID)
+			v := h.seeBody(m.ID)
+			h.click("翻译")
+			h.until("translation waiting", func() bool { return llm.Requests() == 1 })
+			if h.seeBody(m.ID) != v || len(v.translations) != 0 {
+				t.Fatal("translation hid or changed the original while waiting")
+			}
+			llm.Release()
+			r := h.app.mail.reader
+			h.until("translation finished", func() bool { return !r.ai[m.ID].translation.running })
+			if r.ai[m.ID].translation.err == nil {
+				h.seeTranslation(m.ID, "你好")
+			} else if h.seeBody(m.ID) != v || len(v.translations) != 0 {
+				t.Fatal("failed translation replaced the original")
+			}
+		})
 	}
 }
 

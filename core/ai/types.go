@@ -111,6 +111,8 @@ type Event struct {
 	Interrupts []ToolCall
 	Err        *Error
 	Model      string // context only: the "slug/model" the run uses
+	// Translations replaces original text nodes in a reader body; markup is never generated.
+	Translations map[string]string `json:",omitempty"`
 }
 
 // Request is one run. State is the previous run's opaque state (empty = new

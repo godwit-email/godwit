@@ -20,24 +20,31 @@ vi.mock("@/mygo", () => ({
     signatureAccount: { on: h.on("account") },
     signatureFlush: { on: h.on("flush") },
     theme: { on: h.on("theme") },
-    signatureText: { on: h.on("text") },
   },
 }));
 
 import { SignaturePage as api } from "@/mygo";
 import { SignatureApp } from "./Signature";
 
-test("a language change relabels the toolbar", async () => {
+afterEach(() => vi.unstubAllGlobals());
+
+test("a language change relabels the toolbar without reloading the signature", async () => {
   const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
   vi.mocked(api.state).mockResolvedValue({
     account: 1,
-    text: { "compose.bold": "加粗" },
+    locale: "zh-Hans",
     theme,
   } as never);
+  vi.stubGlobal("mygo", {
+    locale: "zh-Hans",
+    on: (name: string, fn: (v: never) => void) => h.on(name)(fn),
+  });
   render(<SignatureApp />);
   expect(await screen.findByRole("button", { name: "加粗" })).toBeInTheDocument();
   await act(async () => {
-    for (const fn of h.subs.text ?? []) fn({ "compose.bold": "Bold" } as never);
+    for (const fn of h.subs["mygo:locale"] ?? []) fn({ locale: "en", dir: "ltr" } as never);
   });
   expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
+  expect(api.load).toHaveBeenCalledOnce();
+  expect(screen.getByText("Bob")).toBeInTheDocument();
 });

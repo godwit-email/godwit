@@ -216,8 +216,7 @@ func TestReaderPageLoad(t *testing.T) {
 	assert.False(t, b.Cut)
 	assert.Empty(t, b.Plain)
 	assert.EqualValues(t, 14, b.Theme.BodyFontSize)
-	assert.Equal(t, "重试", b.Text["common.retry"])
-	assert.Equal(t, "邮件正文", b.Text["reader.body"])
+	assert.Equal(t, "zh-Hans", b.Locale)
 
 	again, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
@@ -228,6 +227,156 @@ func TestReaderPageLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", pb.HTML)
 	assert.Contains(t, pb.Plain, "just words")
+}
+
+func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	original, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	f.r.Translate(m.ID, map[string]string{"Hello reader": `你好 <img src="https://evil.test/x">`})
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Greater(t, translated.Version, original.Version)
+	assert.Contains(t, translated.HTML, `你好 &lt;img`)
+	assert.Equal(t, strings.Count(original.HTML, "<img"), strings.Count(translated.HTML, "<img"))
+	assert.False(t, translated.Remote)
+	assert.Equal(t, original.Blocked, translated.Blocked)
+	f.r.Allow(m.ID)
+	withImages, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.True(t, withImages.Remote)
+	assert.Contains(t, withImages.HTML, `你好 &lt;img`)
+	assert.Contains(t, withImages.HTML, `godwit-img:`)
+	f.r.Translate(m.ID, nil)
+	restored, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, restored.HTML, "Hello reader")
+	assert.NotContains(t, restored.HTML, "你好")
+	assert.Contains(t, restored.HTML, `godwit-img:`)
+	assert.True(t, restored.Remote, "switching back keeps image consent")
+}
+
+func TestReaderTranslationNeedsNoReread(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	original, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+		return core.Message{}, errors.New("mail unavailable")
+	}
+	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, translated.HTML, "你好")
+	f.r.Translate(m.ID, nil)
+	restored, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, original.HTML, restored.HTML)
+	assert.Greater(t, restored.Version, translated.Version)
+}
+
+func TestReaderTranslationMatchesSanitizedHTML(t *testing.T) {
+	f := newReaderFixture(t)
+	llm := f.e.LLM(t)
+	t.Cleanup(llm.Release)
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["你好","阅读更多"],"source":"en"}`}})
+	m := f.deliverOne(t, coretest.Msg("bob@example.com", f.acc.Email, "News", "fallback",
+		coretest.HTML(`<p>Hello &amp; welcome&nbsp;<img src="https://images.example/logo.png" width="2" height="2"></p><a href="https://example.com?q=a&amp;b=c"><span>Read more</span></a>`)))
+	k := f.page(m.ID)
+	original, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	events, err := f.e.Svc.RunSkill(t.Context(), "translate", core.Target{Kind: "message", ID: m.ID, PreserveHTML: true})
+	require.NoError(t, err)
+	var texts map[string]string
+	for event := range events {
+		require.Nil(t, event.Err)
+		if event.Kind == "text" {
+			texts = event.Translations
+		}
+	}
+	require.Equal(t, map[string]string{"Hello & welcome\u00a0": "你好\u00a0", "Read more": "阅读更多"}, texts)
+	f.r.Translate(m.ID, texts)
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, translated.HTML, "你好\u00a0")
+	assert.Contains(t, translated.HTML, `<span>阅读更多</span>`)
+	assert.Contains(t, translated.HTML, `data-href="https://example.com?q=a&amp;b=c"`)
+	assert.Equal(t, original.Blocked, translated.Blocked)
+	f.r.Allow(m.ID)
+	withImages, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, withImages.HTML, "你好\u00a0")
+	assert.Contains(t, withImages.HTML, `<span>阅读更多</span>`)
+	assert.Contains(t, withImages.HTML, `src="`+proxied(m.ID, "https://images.example/logo.png")+`"`)
+	assert.True(t, withImages.Remote)
+}
+
+func TestReaderTranslationDuringImageReload(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		restore, fail bool
+	}{
+		{name: "translated"},
+		{name: "original", restore: true},
+		{name: "translated after failure", fail: true},
+		{name: "original after failure", restore: true, fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newReaderFixture(t)
+			m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+			k := f.page(m.ID)
+			original, err := f.p.Load(pageCtx(k))
+			require.NoError(t, err)
+			started, release := make(chan struct{}), make(chan struct{})
+			real := f.r.getMessage
+			f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+				close(started)
+				<-release
+				if tc.fail {
+					return core.Message{}, errors.New("mail unavailable")
+				}
+				return real(ctx, svc, id, remote)
+			}
+			f.r.Allow(m.ID)
+			<-started
+			f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
+			if tc.restore {
+				f.r.Translate(m.ID, nil)
+			}
+			f.mu.Lock()
+			assert.Empty(t, f.emitted, "no stale body is emitted during the reload")
+			assert.Len(t, f.built, 1, "no stale image policy is reported during the reload")
+			f.mu.Unlock()
+			close(release)
+			require.Eventually(t, func() bool {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				return len(f.emitted) == 1 && (!tc.fail || len(f.failed) == 1)
+			}, 10*time.Second, 5*time.Millisecond)
+			body := f.waitEmitted(t, k)
+			assert.Equal(t, !tc.fail, body.Remote)
+			assert.Greater(t, body.Version, original.Version)
+			if tc.restore {
+				assert.Contains(t, body.HTML, "Hello reader")
+				assert.NotContains(t, body.HTML, "你好")
+			} else {
+				assert.Contains(t, body.HTML, "你好")
+			}
+			if tc.fail {
+				f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+					t.Error("switching after a failed reload must use the cached original")
+					return core.Message{}, errors.New("mail unavailable")
+				}
+				f.r.Translate(m.ID, nil)
+				restored, err := f.p.Load(pageCtx(k))
+				require.NoError(t, err)
+				assert.Equal(t, original.HTML, restored.HTML)
+			}
+		})
+	}
 }
 
 func TestReaderPageScoped(t *testing.T) {

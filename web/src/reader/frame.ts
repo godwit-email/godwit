@@ -1,4 +1,5 @@
 import type { ReaderBody, Theme } from "@/mygo";
+import frameCSS from "./frame.css?inline";
 
 /**
  * The body iframe's own CSP, the first element of its head: nothing loads but inline styles,
@@ -18,47 +19,14 @@ const size = (px: unknown) =>
 // line is the line height: plain text reads at 1.5; HTML mail sets its own, and where it does not
 // (a button, a footer) it gets the browser's normal, as in any mail client, not our reading height.
 const base = (px: number, line: string) =>
-  "html,body{margin:0;padding:0}" +
-  `html{font:${px}px/${line} -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;` +
-  "-webkit-text-size-adjust:100%}" +
-  // Wide content scrolls sideways in the wrapper; vertically it is fitted (the page reports its height).
-  "#godwit-body{overflow-x:auto;overflow-y:hidden;overflow-wrap:break-word;word-break:break-word}" +
-  ":where([data-href]){cursor:pointer}" +
-  "[data-href]:focus-visible{outline:2px solid #0b57d0;outline-offset:1px;border-radius:2px}";
-
-// HTML mail follows the theme: transparent over the app's background, its own colours kept. The
-// classes on #godwit-body say which: godwit-dark in the dark theme (the mail's own (prefers-color-
-// scheme) styles are scoped to it and godwit-light by Go), and godwit-invert in the dark for a mail
-// with no dark styles of its own, which is drawn as itself and inverted (images back again), so it
-// reads as dark, not as a sheet. The defaults are :where, so the mail's own colours win.
-const INVERT = "invert(1) hue-rotate(180deg)";
-// An element with a background image from Go's image proxy (webui: --godwit-bg).
-const BG = '#godwit-body.godwit-invert [style*="--godwit-bg"]';
-const link = (c: string) => `text-decoration:underline;color:${c}`;
+  `html{font:${px}px/${line} -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}`;
 
 const htmlCSS = (t: Theme, scheme: string) => {
   const fg = (m: Record<string, string> | undefined) => color(m?.["--foreground"]);
   return (
-    `html,body{background:transparent}html{color-scheme:${scheme}}` +
-    `:where(#godwit-body){color:${fg(t.light) || "#0a0a0a"}}` +
-    `:where(#godwit-body.godwit-dark){color:${fg(t.dark) || "#fafafa"}}` +
-    ":where(#godwit-body.godwit-invert){color:#0a0a0a}" +
-    `:where([data-href]){${link("#0b57d0")}}` +
-    `:where(#godwit-body.godwit-dark:not(.godwit-invert) [data-href]){${link("#8ab4f8")}}` +
-    `#godwit-body.godwit-invert{filter:${INVERT}}` +
-    `#godwit-body.godwit-invert img{filter:${INVERT}}` +
-    // A background image is drawn again on the element's own ::before, under its content, and only
-    // that layer is inverted back: inverting the element would invert its text back too.
-    `${BG}{position:relative;isolation:isolate;background-image:none!important}` +
-    `${BG}::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;` +
-    "background-image:var(--godwit-bg);background-size:inherit;background-position:inherit;" +
-    `background-repeat:inherit;border-radius:inherit;filter:${INVERT}}` +
-    "#godwit-body img{max-width:100%!important}" +
-    // keeps the ratio of an image shrunk to the width (its width and height attributes give the
-    // ratio); one with only a height (an icon sized by it) keeps that height
-    ":where(#godwit-body img:not([height]:not([width]))){height:auto}" +
-    "#godwit-body table{max-width:100%}" +
-    ":where(#godwit-body td,#godwit-body th){word-break:break-word}"
+    `html{color-scheme:${scheme};` +
+    `--godwit-fg-light:${fg(t.light) || "initial"};` +
+    `--godwit-fg-dark:${fg(t.dark) || "initial"}}`
   );
 };
 
@@ -83,10 +51,8 @@ export function frameScheme(b: ReaderBody, t: Theme, systemDark = false): string
 // Plain text: on the page's background (transparent), in the theme's text colour by its mode.
 const plainCSS = (t: Theme, scheme: string) => {
   const fg = (m: Record<string, string> | undefined) => color(m?.["--foreground"]);
-  const rule = (c: string) => (c ? `:root{color:${c}}` : "");
-  const pre =
-    `html,body{background:transparent}html{color-scheme:${scheme}}` +
-    "#godwit-body{white-space:pre-wrap}";
+  const rule = (c: string) => (c ? `:root{--godwit-plain-fg:${c}}` : "");
+  const pre = `html{color-scheme:${scheme}}`;
   if (t.mode === "light") return pre + rule(fg(t.light));
   if (t.mode === "dark") return pre + rule(fg(t.dark));
   const dark = rule(fg(t.dark));
@@ -101,11 +67,12 @@ const plainCSS = (t: Theme, scheme: string) => {
 export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string {
   const html = b.html !== "";
   const css =
+    frameCSS +
     base(size(t.bodyFontSize), html ? "normal" : "1.5") +
     (html ? htmlCSS(t, frameScheme(b, t, systemDark)) : plainCSS(t, frameScheme(b, t)));
   const dark = isDark(t, systemDark);
   const cls = !html
-    ? ""
+    ? "godwit-plain"
     : dark
       ? hasDarkStyles(b)
         ? "godwit-dark"

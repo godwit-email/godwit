@@ -10,6 +10,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // ErrNotAsk is returned to the Wit page for a conversation that is not an
@@ -27,9 +28,9 @@ type WitPageState struct {
 	Conversation int64 `json:"conversation"`
 	Version      int64 `json:"version"`
 	// Model is the default model's label; "" for none.
-	Model string            `json:"model"`
-	Text  map[string]string `json:"text"`
-	Theme Theme             `json:"theme"`
+	Model  string `json:"model"`
+	Locale string `json:"locale"`
+	Theme  Theme  `json:"theme"`
 }
 
 // WitOpenMsg tells the Wit page to show Conversation (0: a new one), the
@@ -161,7 +162,7 @@ func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(st.DefaultModel), Text: witText(), Theme: ThemeOf(st)}
+	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
 }
 
 // modelLabel is a default model's label: its name without the provider.

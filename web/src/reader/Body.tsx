@@ -2,23 +2,13 @@ import { RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ReaderPage as api, events, type ReaderBody, type Theme } from "@/mygo";
-import { makeT } from "@/shared/i18n";
+import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
 import { buildSrcdoc, frameScheme } from "./frame";
 import { wheelForwarder } from "./wheel";
 
 const ignore = () => {};
-
-/**
- * The page's own copy before any body (and its Text) arrived, as when the first Load fails: the
- * reader keys (webui readerKeys) in the default UI language. A body's Text replaces them.
- */
-const DEFAULT_TEXT: Record<string, string> = {
-  "common.retry": "重试",
-  "error.unknown": "出错了：%s",
-  "reader.body": "邮件正文",
-};
 
 // Go refuses a taller body (webui maxBodyHeight): the page clamps to it.
 const MAX_HEIGHT = 1 << 20;
@@ -80,7 +70,7 @@ export function ReaderApp() {
   useEffect(() => (theme ? applyTheme(theme as PageTheme) : undefined), [theme]);
 
   if (failed !== undefined)
-    return <Failed error={failed} retry={() => load.current()} text={body?.text} />;
+    return <Failed error={failed} retry={() => load.current()} locale={body?.locale} />;
   if (!body || !theme) return <main />;
   return (
     <main>
@@ -89,16 +79,8 @@ export function ReaderApp() {
   );
 }
 
-function Failed({
-  error,
-  retry,
-  text,
-}: {
-  error: string;
-  retry: () => void;
-  text?: Record<string, string>;
-}) {
-  const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...text }), [text]);
+function Failed({ error, retry, locale }: { error: string; retry: () => void; locale?: string }) {
+  const t = useT(locale);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const px = Math.ceil(ref.current?.getBoundingClientRect().height ?? 0);
@@ -142,7 +124,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
   const srcdoc = useMemo(() => buildSrcdoc(body, theme, systemDark), [body, theme, systemDark]);
   const frame = useRef<HTMLIFrameElement>(null);
-  const t = useMemo(() => makeT({ ...DEFAULT_TEXT, ...body.text }), [body.text]);
+  const t = useT(body.locale);
 
   // One forwarder for both windows, so a frame's wheels are summed once.
   const wheel = useMemo(() => wheelForwarder((dy) => void api.wheel(dy).catch(ignore)), []);
