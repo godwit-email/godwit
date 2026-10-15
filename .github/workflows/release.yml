@@ -151,5 +151,5 @@ jobs:
           # The CLI documents .msix and .msixupload; an upload file is a zip holding the bundle.
           Compress-Archive (Get-ChildItem *.msixbundle).FullName -DestinationPath Godwit.zip
           Rename-Item Godwit.zip Godwit.msixupload
-          # The CLI searches the input directory for the .msixupload package.
-          msstore publish "$PWD" --inputDirectory "$PWD" -id $env:STORE_PRODUCT_ID
+          # The package path selects the CLI's standalone MSIX publisher.
+          msstore publish "$PWD\Godwit.msixupload" -id $env:STORE_PRODUCT_ID
