@@ -131,11 +131,11 @@ func (s *Service) RefreshPluginRegistry(ctx context.Context) error {
 }
 
 func (s *Service) refreshRegistry(ctx context.Context, src *RegistrySource) error {
-	body, err := fetchRegistryFile(ctx, src, src.URL, maxRegistry)
+	body, err := fetchRegistryFile(ctx, src, src.URL, maxRegistry, nil)
 	if err != nil {
 		return err
 	}
-	sig, err := fetchRegistryFile(ctx, src, src.URL+".sig", maxRegistrySig)
+	sig, err := fetchRegistryFile(ctx, src, src.URL+".sig", maxRegistrySig, nil)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (s *Service) applyCachedRegistry(ctx context.Context) error {
 	return s.applyRegistry(ctx, reg)
 }
 
-func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, limit int64) ([]byte, error) {
+func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, limit int64, progress func(int64)) ([]byte, error) {
 	if !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("plugin registry: %s is not https", url)
 	}
@@ -194,7 +194,11 @@ func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, lim
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("plugin registry: %s answered %s", url, resp.Status)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	var reader io.Reader = io.LimitReader(resp.Body, limit+1)
+	if progress != nil {
+		reader = &registryProgressReader{Reader: reader, progress: progress}
+	}
+	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("plugin registry: %w", err)
 	}
@@ -202,6 +206,21 @@ func fetchRegistryFile(ctx context.Context, src *RegistrySource, url string, lim
 		return nil, fmt.Errorf("plugin registry: %s: %w (%d bytes)", url, errRegistryTooLarge, limit)
 	}
 	return b, nil
+}
+
+type registryProgressReader struct {
+	io.Reader
+	done     int64
+	progress func(int64)
+}
+
+func (r *registryProgressReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.done += int64(n)
+	if n > 0 {
+		r.progress(r.done)
+	}
+	return n, err
 }
 
 func verifyRegistry(pub ed25519.PublicKey, body, sig []byte) (plugins.Registry, error) {
@@ -382,6 +401,19 @@ func (s *Service) startRegistryRefresh() {
 // checked against the registry's size and SHA-256 (a mismatch is
 // ErrRegistryMismatch and nothing is installed), then installed as listed.
 func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (PluginInfo, error) {
+	return s.InstallPluginFromRegistryWithProgress(ctx, name, nil)
+}
+
+// PluginInstallProgress reports download bytes, then the verify and install stages.
+// Done and Total are set only for download; completing it does not complete installation.
+type PluginInstallProgress struct {
+	Stage       string // "download", "verify", or "install"
+	Done, Total int64
+}
+
+// InstallPluginFromRegistryWithProgress is InstallPluginFromRegistry with an optional
+// callback invoked synchronously on the calling goroutine, never after return.
+func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, name string, progress func(PluginInstallProgress)) (PluginInfo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return PluginInfo{}, err
@@ -420,7 +452,7 @@ func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (P
 	if !rel.Parsed.IsNative() {
 		file = rel.Parsed.Main
 	}
-	if err := downloadArtifact(ctx, src, art, filepath.Join(dir, file)); err != nil {
+	if err := downloadArtifact(ctx, src, art, filepath.Join(dir, file), progress); err != nil {
 		return PluginInfo{}, fmt.Errorf("plugin %s %s: %w", name, rel.Version, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), rel.Manifest, 0o600); err != nil {
@@ -435,6 +467,9 @@ func (s *Service) InstallPluginFromRegistry(ctx context.Context, name string) (P
 	defer s.registryMu.Unlock()
 	if now, err := s.cachedRegistry(src); err != nil || !listsRelease(now, name, rel, art) {
 		return PluginInfo{}, errors.Join(fmt.Errorf("plugin %s %s is no longer in the plugin registry", name, rel.Version), err)
+	}
+	if progress != nil {
+		progress(PluginInstallProgress{Stage: "install"})
 	}
 	return s.installPlugin(ctx, dir, "listed")
 }
@@ -460,13 +495,23 @@ func listsRelease(reg plugins.Registry, name string, rel plugins.RegistryRelease
 }
 
 // downloadArtifact writes a's file to path if it is exactly a.Size bytes with a.SHA256.
-func downloadArtifact(ctx context.Context, src *RegistrySource, a plugins.Artifact, path string) error {
-	b, err := fetchRegistryFile(ctx, src, a.URL, a.Size)
+func downloadArtifact(ctx context.Context, src *RegistrySource, a plugins.Artifact, path string, progress func(PluginInstallProgress)) error {
+	var downloaded func(int64)
+	if progress != nil {
+		downloaded = func(done int64) {
+			progress(PluginInstallProgress{Stage: "download", Done: min(done, a.Size), Total: a.Size})
+		}
+		downloaded(0)
+	}
+	b, err := fetchRegistryFile(ctx, src, a.URL, a.Size, downloaded)
 	if err != nil {
 		if errors.Is(err, errRegistryTooLarge) {
 			return ErrRegistryMismatch
 		}
 		return err
+	}
+	if progress != nil {
+		progress(PluginInstallProgress{Stage: "verify"})
 	}
 	sum := sha256.Sum256(b)
 	if int64(len(b)) != a.Size || hex.EncodeToString(sum[:]) != a.SHA256 {

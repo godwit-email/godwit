@@ -132,6 +132,20 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	h.until("endpoint hides", func() bool { return !h.tt.HasText("自定义地址") })
 }
 
+func TestPluginFolderInstallLoading(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.dir = coretest.PluginFixture(t, "config-demo")
+	h.openSettings("extensions")
+	release := h.block("plugins")
+	h.click("从文件夹安装")
+	h.see("正在安装…")
+	release()
+	h.until("installed without progress", func() bool {
+		_, ok := h.plugin("config-demo")
+		return ok && !h.tt.HasText("正在安装…")
+	})
+}
+
 func TestPluginDetailNoSend(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) {
 		e.AddAccount(t, "alice@example.com")

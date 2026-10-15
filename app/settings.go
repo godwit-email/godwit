@@ -113,10 +113,16 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.models.load()
 	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		var list []core.TranslatorInfo
-		a.query(func(ctx context.Context) (err error) { list, err = a.svc.ListTranslators(ctx); return err },
+		var registry core.RegistryView
+		a.query(func(ctx context.Context) (err error) {
+			registry, _ = a.svc.ListPluginRegistry(ctx) // Missing display names must not hide installed translators.
+			list, err = a.svc.ListTranslators(ctx)
+			return err
+		},
 			func(err error) {
 				if err == nil {
 					p.translators = list
+					p.ext.reg = registry
 				}
 			})
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
