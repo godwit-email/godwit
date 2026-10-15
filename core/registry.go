@@ -90,11 +90,12 @@ type RegistryView struct {
 // release it would install ("" none, Unavailable says why: "platform", "abi"
 // or "godwit:<min>"); Installed and InstalledTrust describe what is installed
 // under its name; Update is a newer listed release for a listed install.
+// Native and Script are its kind, neither when this build reads no release.
 type RegistryEntry struct {
 	Name                                            string
 	Title, Summary                                  plugins.Text
 	Homepage                                        string
-	Native                                          bool
+	Native, Script                                  bool
 	Version, Unavailable, Installed, InstalledTrust string
 	Update                                          bool
 }
@@ -283,10 +284,11 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 		e := RegistryEntry{Name: p.Name, Title: p.Title, Summary: p.Summary, Homepage: p.Homepage}
 		rel, _, why := p.Pick(plugins.PlatformKey(), s.opts.AppVersion)
 		e.Version, e.Unavailable = rel.Version, why
-		if why == "" {
-			e.Native = rel.Parsed.IsNative()
-		} else if len(p.Releases) > 0 {
-			e.Native = p.Releases[0].Parsed.IsNative()
+		if why != "" && len(p.Releases) > 0 {
+			rel = p.Releases[0]
+		}
+		if why == "" || len(p.Releases) > 0 {
+			e.Native, e.Script = rel.Parsed.IsNative(), !rel.Parsed.IsNative()
 		}
 		if r, ok := rows[p.Name]; ok {
 			e.Installed, e.InstalledTrust = r.m.Version, r.trust

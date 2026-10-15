@@ -73,7 +73,7 @@ func check(path string, fetch bool, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	reg, err := plugins.ParseRegistry(b)
+	reg, err := plugins.CheckRegistry(b)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func sign(path string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := plugins.ParseRegistry(b); err != nil {
+	if _, err := plugins.CheckRegistry(b); err != nil {
 		return err // Godwit would reject it: never sign it
 	}
 	sig := ed25519.Sign(ed25519.NewKeyFromSeed(seed), b)
