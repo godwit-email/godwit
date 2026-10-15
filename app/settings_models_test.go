@@ -37,7 +37,7 @@ func TestJudgeThresholdSetting(t *testing.T) {
 	h := withLLM(t)
 	h.openSettings("models")
 	h.until("judge threshold control", func() bool { return h.tt.HasText("决策阈值") })
-	h.see("70%")
+	h.see("80%")
 	h.see("生成模型兼任时只返回 0% 或 100%，无法细调。")
 	for i := 0; i < 30 && !h.tt.Focused("决策阈值"); i++ {
 		h.tt.Key(0, ui.KeyTab)
@@ -50,19 +50,19 @@ func TestJudgeThresholdSetting(t *testing.T) {
 	h.tt.Frame()
 	h.until("minimum threshold saved", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && st.JudgeThreshold == 0.3
+		return err == nil && st.JudgeThreshold == 0.5
 	})
-	h.see("30%")
+	h.see("50%")
 	h.tt.Key(0, ui.KeyEnd)
 	h.tt.Frame()
 	h.until("threshold saved", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && st.JudgeThreshold == 0.9
+		return err == nil && st.JudgeThreshold == 0.95
 	})
-	h.see("90%")
+	h.see("95%")
 	h.openSettings("general")
 	h.openSettings("models")
-	h.until("saved threshold shown", func() bool { return h.tt.HasText("90%") })
+	h.until("saved threshold shown", func() bool { return h.tt.HasText("95%") })
 }
 
 // editService opens the page and the dialog of the service called name.
