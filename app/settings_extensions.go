@@ -880,11 +880,12 @@ func (e *extView) registryRow(c *ui.Context, en core.RegistryEntry) {
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				kind := i18n.T("settings.ext.script")
-				if en.Native {
-					kind = i18n.T("settings.ext.native")
+				switch {
+				case en.Native:
+					statusPill(c, i18n.T("settings.ext.native"), false)
+				case en.Script:
+					statusPill(c, i18n.T("settings.ext.script"), false)
 				}
-				statusPill(c, kind, false)
 				title := entryTitle(en)
 				kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500).Shrink(1)
 				if v := cmp.Or(en.Version, en.Installed); v != "" {

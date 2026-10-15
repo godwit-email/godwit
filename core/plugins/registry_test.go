@@ -126,6 +126,12 @@ func TestParseRegistryRejects(t *testing.T) {
 			ps[0]["releases"] = []any{nativeRel("0.1.0", map[string]any{"darwin-arm64": art(1)}), nativeRel("0.1.0", map[string]any{"darwin-arm64": art(1)})}
 			return ps
 		}),
+		"duplicate unreadable version": mutate(func(ps []map[string]any) []map[string]any {
+			next := nativeRel("0.1.0", map[string]any{"darwin-arm64": art(1)})
+			next["extra"] = 1
+			ps[0]["releases"] = []any{nativeRel("0.1.0", map[string]any{"darwin-arm64": art(1)}), next}
+			return ps
+		}),
 		"http homepage": mutate(func(ps []map[string]any) []map[string]any {
 			ps[0]["homepage"] = "http://example.com"
 			return ps

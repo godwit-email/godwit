@@ -110,19 +110,20 @@ func parseRegistry(data []byte, strict bool) (Registry, error) {
 		versions := map[string]bool{}
 		for _, b := range rp.Releases {
 			rel, err := parseRelease(rp.Name, b)
-			if err != nil {
-				if strict {
-					return Registry{}, fmt.Errorf("registry: %s %s: %w", rp.Name, rel.Version, err)
-				}
-				if parsableVersion(rel.Version) {
-					p.Unsupported = append(p.Unsupported, rel)
-				}
+			if err != nil && strict {
+				return Registry{}, fmt.Errorf("registry: %s %s: %w", rp.Name, rel.Version, err)
+			}
+			if err != nil && !parsableVersion(rel.Version) {
 				continue
 			}
 			if versions[rel.Version] {
 				return Registry{}, fmt.Errorf("registry: %s: version %s is repeated", rp.Name, rel.Version)
 			}
 			versions[rel.Version] = true
+			if err != nil {
+				p.Unsupported = append(p.Unsupported, rel)
+				continue
+			}
 			p.Releases = append(p.Releases, rel)
 		}
 		r.Plugins = append(r.Plugins, p)

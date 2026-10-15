@@ -80,7 +80,7 @@ func TestRegistryList(t *testing.T) {
 	assert.Equal(t, "0.1.0", d.Version)
 	assert.Equal(t, "", d.Unavailable)
 	assert.Equal(t, "", d.Installed)
-	assert.False(t, entry(t, s, "deepl").Native)
+	assert.True(t, entry(t, s, "deepl").Script)
 }
 
 func TestRegistryUnavailablePlatform(t *testing.T) {
@@ -215,6 +215,7 @@ func TestRegistryForwardCompatible(t *testing.T) {
 	l := entry(t, s, "laya")
 	assert.Equal(t, "", l.Version)
 	assert.Equal(t, "godwit:1.3.0", l.Unavailable)
+	assert.False(t, l.Native || l.Script, "its kind is unknown")
 }
 
 func TestInstallFromRegistryNative(t *testing.T) {
