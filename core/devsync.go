@@ -15,7 +15,7 @@ import (
 
 // SyncDevDatabase replaces dst's database with an isolated copy of src's.
 // It requires both data directories to be offline and never migrates src.
-func SyncDevDatabase(ctx context.Context, src, dst string) error {
+func SyncDevDatabase(ctx context.Context, src, dst string) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -34,7 +34,22 @@ func SyncDevDatabase(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(stage)
+	target := filepath.Join(dst, "godwit.db")
+	var moved []string
+	installed := false
+	defer func() {
+		var restoreErr error
+		if !installed {
+			for _, suffix := range moved {
+				restoreErr = errors.Join(restoreErr, os.Rename(filepath.Join(stage, "old"+suffix), target+suffix))
+			}
+		}
+		if restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("restore dev database from %s: %w", stage, restoreErr))
+			return // Keep any backups that could not be restored.
+		}
+		os.RemoveAll(stage)
+	}()
 	for _, name := range []string{"godwit.db", "godwit.db-wal"} {
 		if err := copyDatabaseFile(filepath.Join(src, name), filepath.Join(stage, name)); err != nil {
 			if name == "godwit.db-wal" && errors.Is(err, os.ErrNotExist) {
@@ -62,32 +77,31 @@ func SyncDevDatabase(ctx context.Context, src, dst string) error {
 	if err = errors.Join(err, db.Close()); err != nil {
 		return err
 	}
-	target := filepath.Join(dst, "godwit.db")
-	if fi, err := os.Lstat(target); err == nil {
-		if !fi.Mode().IsRegular() || os.SameFile(sourceInfo, fi) {
-			return fmt.Errorf("dev database must be a separate regular file: %s", target)
+	// Move old files aside without opening them: even corrupt dev data can be replaced.
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		fi, err := os.Lstat(target + suffix)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
 		}
-		// Flush the old WAL before replacement so it cannot overwrite the new DB.
-		old, err := sqlite.Open(ctx, target, sqlite.OpenOptions{})
 		if err != nil {
 			return err
 		}
-		if err := errors.Join(sealDatabase(ctx, old), old.Close()); err != nil {
+		if !fi.Mode().IsRegular() || os.SameFile(sourceInfo, fi) {
+			return fmt.Errorf("dev database files must be separate regular files: %s", target+suffix)
+		}
+		if err := os.Rename(target+suffix, filepath.Join(stage, "old"+suffix)); err != nil {
 			return err
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	} else {
-		for _, suffix := range []string{"-wal", "-shm", "-journal"} {
-			if err := os.Remove(target + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
+		moved = append(moved, suffix)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return os.Rename(path, target)
+	if err := os.Rename(path, target); err != nil {
+		return err
+	}
+	installed = true
+	return nil
 }
 
 func sealDatabase(ctx context.Context, db *sqlite.DB) error {

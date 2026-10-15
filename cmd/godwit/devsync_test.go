@@ -14,7 +14,7 @@ import (
 )
 
 // Leave committed data in a WAL, as after an unclean shutdown.
-func syncFixture(t *testing.T, dir, value string) {
+func syncFixture(t *testing.T, dir, value string, queries ...string) {
 	t.Helper()
 	seed := filepath.Join(t.TempDir(), "godwit.db")
 	db, err := sqlite.Open(t.Context(), seed, sqlite.OpenOptions{})
@@ -46,6 +46,11 @@ func syncFixture(t *testing.T, dir, value string) {
 	)
 	if _, err := db.Transaction(t.Context(), stmts); err != nil {
 		t.Fatal(err)
+	}
+	for _, query := range queries {
+		if _, err := db.Query(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -116,7 +121,7 @@ func TestDevSyncDB(t *testing.T) {
 }
 
 func TestSyncDatabaseRefusesBusyOrInvalidSource(t *testing.T) {
-	for _, failure := range []string{"production busy", "dev busy", "missing", "corrupt", "shared file", "cancelled"} {
+	for _, failure := range []string{"production busy", "dev busy", "missing", "corrupt", "shared file", "dev sidecar directory", "cancelled"} {
 		t.Run(failure, func(t *testing.T) {
 			src, dst := filepath.Join(t.TempDir(), "prod"), filepath.Join(t.TempDir(), "dev")
 			syncFixture(t, src, "production")
@@ -151,6 +156,10 @@ func TestSyncDatabaseRefusesBusyOrInvalidSource(t *testing.T) {
 				if err := os.Link(filepath.Join(src, "godwit.db"), filepath.Join(dst, "godwit.db")); err != nil {
 					t.Fatal(err)
 				}
+			case "dev sidecar directory":
+				if err := os.Mkdir(filepath.Join(dst, "godwit.db-shm"), 0o700); err != nil {
+					t.Fatal(err)
+				}
 			case "cancelled":
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
@@ -172,6 +181,49 @@ func TestSyncDatabaseRefusesBusyOrInvalidSource(t *testing.T) {
 				if err != nil || !bytes.Equal(got, want) {
 					t.Fatalf("failed sync changed dev %q: %v", suffix, err)
 				}
+			}
+		})
+	}
+}
+
+func TestSyncDatabaseReplacesCorruptDev(t *testing.T) {
+	for _, corrupt := range []string{"database", "WAL"} {
+		t.Run(corrupt, func(t *testing.T) {
+			src, dst := filepath.Join(t.TempDir(), "prod"), filepath.Join(t.TempDir(), "dev")
+			syncFixture(t, src, "production")
+			if corrupt == "database" {
+				if err := os.MkdirAll(dst, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dst, "godwit.db"), []byte("invalid SQLite"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				// Keep the main DB valid, then commit corrupt schema data only to the WAL.
+				syncFixture(t, dst, "old dev", "PRAGMA wal_checkpoint(TRUNCATE)", "PRAGMA writable_schema=ON",
+					"UPDATE sqlite_schema SET sql = 'invalid SQL' WHERE name = 'drafts'")
+			}
+			for _, suffix := range []string{"-shm", "-journal"} {
+				if err := os.WriteFile(filepath.Join(dst, "godwit.db")+suffix, []byte("stale dev data"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := core.SyncDevDatabase(t.Context(), src, dst); err != nil {
+				t.Fatal(err)
+			}
+			for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+				if _, err := os.Stat(filepath.Join(dst, "godwit.db") + suffix); !os.IsNotExist(err) {
+					t.Errorf("old sidecar %q remains: %v", suffix, err)
+				}
+			}
+			db, err := sqlite.Open(t.Context(), filepath.Join(dst, "godwit.db"), sqlite.OpenOptions{ReadOnly: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			rows, err := db.Query(t.Context(), "SELECT subject FROM drafts")
+			if err != nil || len(rows.Values) != 1 || rows.Values[0][0] != "production" {
+				t.Fatalf("restored drafts = %v, %v; want production", rows.Values, err)
 			}
 		})
 	}
