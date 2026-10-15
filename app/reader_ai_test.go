@@ -15,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/richtext"
 )
 
 // aiHarness is a mail harness with one account; with llm a fake model
@@ -79,7 +80,7 @@ func gateAfterFirstText(r *reader) (release func()) {
 
 func TestSummaryStreams(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noQuick)
-	llm.Script(coretest.Turn{Text: []string{"- 第一点要点\n", "- 第二点要点\n"}})
+	llm.Script(coretest.Turn{Text: []string{"- **第一点要点**\n", "- [第二点要点](https://summary.example/plan)\n"}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	other := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Other", "other body"))
 	r := h.app.mail.reader
@@ -88,15 +89,20 @@ func TestSummaryStreams(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.see("summarize · m1")
 	h.see("第一点要点")
+	if h.tt.HasText("**") {
+		t.Fatalf("streaming summary shows Markdown markers: %q", h.tt.Texts())
+	}
 	if h.tt.HasText("第二点要点") || !r.ai[m.ID].summary.running {
 		t.Fatalf("the second point before it streamed: %q", h.tt.Texts())
 	}
 	release()
 	h.see("第二点要点")
-	if n := h.countTexts("点要点"); n != 2 {
-		t.Fatalf("%d points: %q", n, h.tt.Texts())
-	}
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary.done })
+	clickAIOutputLink(h, "第二点要点")
+	if !h.app.linkOpen || h.app.link != "https://summary.example/plan" {
+		t.Fatalf("summary link did not use the link dialog: %v %q", h.app.linkOpen, h.app.link)
+	}
+	h.click("取消")
 	n := llm.Requests()
 	h.openThread(other.ThreadID)
 	h.seeBody(other.ID)
@@ -110,6 +116,65 @@ func TestSummaryStreams(t *testing.T) {
 	if got := llm.Requests(); got != n2 {
 		t.Fatalf("requests %d after coming back, want %d", got, n2)
 	}
+}
+
+func TestSkillMarkdownStreams(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, noAuto, func(e *coretest.Env) { writeSkill(t, e, "brief") })
+	llm.Script(coretest.Turn{Text: []string{"## **Progress", "**\n\n[Read more](https://skill.example/plan)\n\n![Private image](https://image.example/pixel.png)"}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
+	r := h.app.mail.reader
+	release := gateAfterFirstText(r)
+	t.Cleanup(release)
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.skillMenu("brief")
+	h.see("Progress")
+	if h.tt.HasText("##") || h.tt.HasText("**") || !r.ai[m.ID].result.run.running {
+		t.Fatalf("unfinished Markdown was not rendered while streaming: %q", h.tt.Texts())
+	}
+	release()
+	h.until("the skill done", func() bool { return r.ai[m.ID].result.run.done })
+	h.see("Private image")
+	if h.tt.HasText("##") || h.tt.HasText("**") || h.tt.HasText("![") {
+		t.Fatalf("completed output shows Markdown markers: %q", h.tt.Texts())
+	}
+	heading, _ := h.tt.Find("Progress")
+	h.setSettings(func(st *core.Settings) { st.BodyFontSize = 20 })
+	larger, _ := h.tt.Find("Progress")
+	if larger.H <= heading.H {
+		t.Fatalf("Markdown ignored the reading font size: before %v, after %v", heading.H, larger.H)
+	}
+	clickAIOutputLink(h, "Read more")
+	if !h.app.linkOpen || h.app.link != "https://skill.example/plan" {
+		t.Fatalf("skill link did not use the link dialog: %v %q", h.app.linkOpen, h.app.link)
+	}
+}
+
+func TestAIOutputKeepsPluginHTML(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, noAuto)
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	doc, _ := richtext.FromMailHTML(`<p><strong>Plugin result</strong></p><p><a href="https://plugin.example/plan">Plugin link</a></p>`, richtext.DefaultLimits)
+	h.app.mail.reader.state(m.ID).result = &aiResult{title: "Plugin", run: &aiRun{text: "fallback text", doc: doc, done: true}}
+	h.see("Plugin result")
+	if h.tt.HasText("fallback text") || h.tt.HasText("<strong>") {
+		t.Fatalf("plugin HTML was not rendered: %q", h.tt.Texts())
+	}
+	h.see("Plugin link")
+}
+
+// Rich-text paragraphs span the whole row, so click within the link's glyphs.
+func clickAIOutputLink(h *harness, text string) {
+	h.t.Helper()
+	h.see(text)
+	box, ok := h.tt.Find(text)
+	if !ok {
+		h.t.Fatalf("no link %q", text)
+	}
+	h.tt.ClickAt(box.X+5, box.Y+box.H/2)
+	h.drain()
+	h.tt.Frame()
 }
 
 // setSettings changes the settings in the Service and in the App, as a
@@ -164,12 +229,12 @@ func TestSummaryEveryExpanded(t *testing.T) {
 
 func TestTranslationStaysWithMessage(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noAuto)
-	llm.Script(coretest.Turn{Text: []string{"Die übersetzten Worte der ersten Nachricht hier."}})
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["Die übersetzten Worte der ersten Nachricht hier."],"source":"en"}`}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("p1@x"), at(h.clock.Now(), 2)))
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("übersetzten")
+	h.seeTranslation(m.ID, "übersetzten")
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "reply words",
 		coretest.MessageID("p2@x"), coretest.InReplyTo("p1@x"), at(h.clock.Now(), 1)))
 	r := h.app.mail.reader
@@ -180,16 +245,16 @@ func TestTranslationStaysWithMessage(t *testing.T) {
 		_, ok := h.viewBox(h.plat.view(r.msgs[1].ID))
 		return ok
 	})
-	h.see("übersetzten")
+	h.seeTranslation(m.ID, "übersetzten")
 	h.see("显示原文")
-	if _, ok := h.viewBox(v); ok {
+	if _, ok := h.viewBox(v); !ok {
 		t.Fatal("the older message lost its translation")
 	}
 	h.click("显示原文")
 	if h.seeBody(m.ID) != v {
 		t.Fatal("the original is a new page")
 	}
-	if h.tt.HasText("übersetzten") {
+	if len(v.translations) != 0 {
 		t.Fatal("the translation still shows")
 	}
 }
@@ -230,26 +295,26 @@ func TestSummaryOnDemand(t *testing.T) {
 
 func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noAuto)
-	llm.Script(coretest.Turn{Text: []string{"Hallo Welt, das ist die erste Übersetzung hier."}},
-		coretest.Turn{Text: []string{"こんにちは世界、これは二番目の翻訳です。ここにあります。"}})
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["Hallo Welt, das ist die erste Übersetzung hier."],"source":"en"}`}},
+		coretest.Turn{Text: []string{`{"texts":["こんにちは世界、これは二番目の翻訳です。ここにあります。"],"source":"en"}`}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "the original words"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("翻译")
 	h.see("已翻译为中文 · translate · m1")
-	h.see("erste Übersetzung")
+	h.seeTranslation(m.ID, "erste Übersetzung")
 	h.app.settings.DefaultModel = "test/m2" // a later model does not relabel the result
 	h.tt.Frame()
 	h.see("已翻译为中文 · translate · m1")
 	h.app.settings.DefaultModel = "test/m1"
 	h.setSettings(func(st *core.Settings) { st.ReadingLanguage = "ja" })
-	h.seeBody(m.ID) // the original, not the other language's translation
-	if h.tt.HasText("erste Übersetzung") || h.tt.HasText("已翻译为") {
+	v := h.seeBody(m.ID) // the original, not the other language's translation
+	if len(v.translations) != 0 || h.tt.HasText("已翻译为") {
 		t.Fatalf("a translation into another language shown: %q", h.tt.Texts())
 	}
 	h.click("翻译")
 	h.see("已翻译为日文 · translate · m1")
-	h.see("二番目の翻訳")
+	h.seeTranslation(m.ID, "二番目の翻訳")
 	if n := llm.Requests(); n != 2 {
 		t.Fatalf("%d requests, want 2", n)
 	}
@@ -349,21 +414,23 @@ func TestSummaryOffWithoutModel(t *testing.T) {
 
 func TestTranslateToggle(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noAuto)
-	llm.Script(coretest.Turn{Text: []string{"Hallo **Welt**, das ist die Übersetzung des Textes."}})
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["Hallo Welt, das ist die Übersetzung des Textes."],"source":"en"}`}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "the original words"))
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.click("翻译")
 	h.see("已翻译为中文 · translate · m1")
-	h.see("Welt")
-	h.until("the original replaced", func() bool { _, ok := h.viewBox(v); return !ok })
+	h.seeTranslation(m.ID, "Welt")
+	if h.seeBody(m.ID) != v {
+		t.Fatal("translation replaced the mail's body view")
+	}
 	h.click("显示原文")
 	h.seeBody(m.ID)
-	if h.tt.HasText("Welt") {
+	if len(v.translations) != 0 {
 		t.Fatal("translation still shown")
 	}
 	h.click("翻译")
-	h.see("Welt")
+	h.seeTranslation(m.ID, "Welt")
 	if n := llm.Requests(); n != 1 {
 		t.Fatalf("%d requests, want 1", n)
 	}

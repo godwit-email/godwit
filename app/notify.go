@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,7 +55,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.ID == acc }); i >= 0 {
 		email = a.accounts[i].Email
 	}
-	one, several := i18n.T("notify.new_mail"), i18n.T("notify.new_mails")
+	texts := i18n.In(i18n.Language())
 	plat, svc, logf := a.plat, a.svc, a.logf
 	a.do(func(ctx context.Context) error {
 		if !plat.NotificationsSupported() {
@@ -73,12 +72,12 @@ func (a *App) notify(acc int64, got *arrivals) {
 			return nil
 		case len(msgs) == 1:
 			m := msgs[0]
-			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: one}
+			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
 			if st.NotifyPreview {
 				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
 			}
 		default:
-			n = Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: "Godwit", Body: fmt.Sprintf(several, len(msgs))}
+			n = Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: "Godwit", Body: texts.NotifyNewMails(len(msgs))}
 			if st.NotifyPreview {
 				n.Title = email
 			}

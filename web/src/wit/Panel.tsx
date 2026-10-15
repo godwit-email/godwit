@@ -97,8 +97,7 @@ function toolsLabel(calls: DynamicToolUIPart[], page: boolean, t: T): string {
   for (const c of calls) count.set(c.toolName, (count.get(c.toolName) ?? 0) + 1);
   if (!page) return t("wit.tools.called", [...count.keys()].join(" · "));
   const names = [...count].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n));
-  const key = count.size === 1 ? "wit.tools.one" : "wit.tools.other";
-  return `${t(key, count.size)} · ${names.join(t("mail.list_sep"))}`;
+  return `${t("wit.tools", count.size)} · ${names.join(t("mail.list_sep"))}`;
 }
 
 const clip = (s: string, n = ARGS) => (s.length > n ? `${s.slice(0, n)}…` : s);

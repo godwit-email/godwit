@@ -15,6 +15,7 @@ export default {
   buildCommand: "cd web && bun install --frozen-lockfile && bun run build",
   frontendDist: "web/dist",
   bindings: "web/src/mygo.ts",
+  i18n: { dir: "internal/i18n", source: "en" },
   macos: {
     icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",

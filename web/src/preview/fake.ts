@@ -29,6 +29,8 @@ export function installFake(handlers: Record<string, Handler>, platform: Platfor
       });
       return off;
     },
+    locale: "zh-CN",
+    dir: "ltr",
     platform,
     windowId: 1,
     version: "preview",

@@ -65,8 +65,8 @@ func (a *App) settingsEffects(old, st core.Settings) {
 		plat := a.plat
 		a.writes.Chain("open-at-login", func(context.Context) error { return plat.SetOpenAtLogin(on) }, a.toastErr)
 	}
-	if tag := cmp.Or(st.UILanguage, a.sysLang); st.UILanguage != old.UILanguage && tag != "" {
-		i18n.SetLanguage(tag)
+	if st.UILanguage != old.UILanguage {
+		a.setLanguage(st.UILanguage)
 	}
 	a.plat.SettingsChanged(st)
 	if st.UnreadOnAppIcon != old.UnreadOnAppIcon || st.UnreadInMenuBar != old.UnreadInMenuBar {

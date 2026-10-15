@@ -15,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -453,10 +454,10 @@ func TestComposeWitErrorKeys(t *testing.T) {
 	assert.Equal(t, "error.run_active", errorKey(errors.Join(errors.New("x"), core.ErrRunActive)))
 	assert.Equal(t, "error.unknown", errorKey(errors.New("boom")))
 	for _, k := range witErrorKeys {
-		assert.Contains(t, composeKeys, k.key)
+		assert.NotEqual(t, k.key, i18n.T(k.key))
 	}
 	for _, code := range []ai.Code{ai.CodeUnauthorized, ai.CodeRateLimited, ai.CodeUnavailable, ai.CodeBadResponse, ai.CodeInternal, ai.CodeStale, ai.CodeIncomplete} {
-		assert.Contains(t, composeKeys, "error.ai."+string(code))
+		assert.NotEqual(t, "error.ai."+string(code), i18n.T("error.ai."+string(code)))
 	}
 	assert.True(t, strings.HasPrefix(errorKey(ErrNoDraft), "error."))
 	assert.Equal(t, "", keyed(context.Canceled).Error(), "a cancellation shows nothing")

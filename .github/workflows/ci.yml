@@ -119,7 +119,7 @@ jobs:
       - name: generated client matches the Go code
         if: runner.os == 'Linux'
         shell: bash
-        run: git diff --exit-code -- web/src/mygo.ts
+        run: git diff --exit-code -- web/src/mygo.ts web/src/i18n.ts internal/i18n/catalog_gen.go
 
   # The Windows build as an MSIX bundle for the Microsoft Store; release.yml submits the same one.
   msix:

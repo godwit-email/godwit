@@ -109,20 +109,15 @@ func TestSignatureFlushAck(t *testing.T) {
 	assert.Equal(t, []bool{false, true}, acks)
 }
 
-func TestSignatureCopyFollowsLanguage(t *testing.T) {
+func TestSignatureLocaleFollowsLanguage(t *testing.T) {
 	f := newSigFixture(t)
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
-	var sent []map[string]string
-	emit := func(text map[string]string) { sent = append(sent, text) }
-	f.s.SettingsChanged(emit)
-	assert.Empty(t, sent, "a page that never ran is not told")
-	i18n.SetLanguage("zh-CN")
-	_, err := f.p.State(pageCtx(f.page))
-	require.NoError(t, err)
-	i18n.SetLanguage("en")
-	f.s.SettingsChanged(emit)
-	require.Len(t, sent, 1)
-	assert.Equal(t, "Bold", sent[0]["compose.bold"])
+	for _, locale := range []string{"zh-CN", "en"} {
+		i18n.SetLanguage(locale)
+		st, err := f.p.State(pageCtx(f.page))
+		require.NoError(t, err)
+		assert.Equal(t, locale, st.Locale)
+	}
 }
 
 func TestSignaturePickImage(t *testing.T) {

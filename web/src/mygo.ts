@@ -160,8 +160,8 @@ export interface ComposeState {
   theme: Theme;
   /** UpdatedAt is when the draft was last stored, in Unix milliseconds. */
   updatedAt: number;
-  /** Text is the page's copy: i18n key → text in the UI language. */
-  text: Record<string, string>;
+  /** Locale selects the shared catalog bundled with the page. */
+  locale: string;
   /** Wit is what the Wit panel offers, as WitInfo. */
   wit: WitInfo;
 }
@@ -210,7 +210,7 @@ export interface ReaderBody {
    */
   cut: boolean;
   theme: Theme;
-  text: Record<string, string>;
+  locale: string;
 }
 
 /** Review is a pending draft edit as the compose page reviews it. */
@@ -322,11 +322,11 @@ export interface SendWarning {
 
 /**
  * SignatureState is what the signature page needs besides a signature:
- * the account shown (0 before native showed one), its copy and theme.
+ * the account shown (0 before native showed one), its locale and theme.
  */
 export interface SignatureState {
   account: number;
-  text: Record<string, string>;
+  locale: string;
   theme: Theme;
 }
 
@@ -459,7 +459,7 @@ export interface WitPageState {
   version: number;
   /** Model is the default model's label; "" for none. */
   model: string;
-  text: Record<string, string>;
+  locale: string;
   theme: Theme;
 }
 
@@ -795,7 +795,7 @@ export const SignaturePage = {
   saved(token: number, ok: boolean): Promise<void> {
     return call("SignaturePage.Saved", token, ok);
   },
-  /** State is the account shown, the page's copy and the theme. */
+  /** State is the account shown, the locale and the theme. */
   state(): Promise<SignatureState> {
     return call("SignaturePage.State");
   },
@@ -823,8 +823,6 @@ export const events = {
    * SignaturePage.Saved and the same token.
    */
   signatureFlush: event<number>("signatureFlush"),
-  /** SignatureText carries the page's copy again after a language change. */
-  signatureText: event<Record<string, string>>("signatureText"),
   /**
    * Closing tells a compose page its window is closing: it flushes its
    * input and calls ComposePage.Closed with the payload, the close

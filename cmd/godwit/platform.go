@@ -227,19 +227,16 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 // AllowImages lets message's reader pages load its remote images.
 func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
 
+func (p *platform) TranslateBody(message int64, texts map[string]string) {
+	p.reader.Translate(message, texts)
+}
+
 func (p *platform) SettingsChanged(st core.Settings) {
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
 	}
 	if p.wit != nil {
 		p.wit.SettingsChanged(st)
-	}
-	if p.sig != nil {
-		p.sig.SettingsChanged(func(text map[string]string) {
-			if err := webui.SignatureText.Broadcast(text); err != nil {
-				log.Printf("the copy to the signature page: %v", err)
-			}
-		})
 	}
 }
 func (*platform) TempDir() string {

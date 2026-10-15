@@ -21,8 +21,6 @@ var (
 	// SignatureFlush asks the signature page to save now; it answers with
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
-	// SignatureText carries the page's copy again after a language change.
-	SignatureText = mygo.NewEvent[map[string]string]("signatureText")
 )
 
 // maxSignatureBytes caps a saved signature at a mail body's limit, plus its
@@ -43,35 +41,12 @@ func (s *Signature) Close() {
 	s.mu.Unlock()
 }
 
-// signatureKeys are the i18n keys the signature page shows.
-var signatureKeys = []string{"compose.bold", "compose.italic", "compose.underline", "compose.link",
-	"compose.link.url", "compose.link.apply", "settings.account.signature.label", "error.unknown",
-	"settings.account.signature.image", "settings.account.signature.image_invalid"}
-
-func signatureCopy() map[string]string {
-	text := make(map[string]string, len(signatureKeys))
-	for _, k := range signatureKeys {
-		text[k] = i18n.T(k)
-	}
-	return text
-}
-
-// SettingsChanged sends a running page its copy through emit (SignatureText).
-func (s *Signature) SettingsChanged(emit func(text map[string]string)) {
-	s.mu.Lock()
-	live := s.live
-	s.mu.Unlock()
-	if live {
-		emit(signatureCopy())
-	}
-}
-
 // SignatureState is what the signature page needs besides a signature:
-// the account shown (0 before native showed one), its copy and theme.
+// the account shown (0 before native showed one), its locale and theme.
 type SignatureState struct {
-	Account int64             `json:"account"`
-	Text    map[string]string `json:"text"`
-	Theme   Theme             `json:"theme"`
+	Account int64  `json:"account"`
+	Locale  string `json:"locale"`
+	Theme   Theme  `json:"theme"`
 }
 
 // Signature keeps the signature page's state (role "signature", embedded
@@ -147,7 +122,7 @@ func (s *Signature) caller(ctx context.Context) (*core.Service, error) {
 	return s.svc, nil
 }
 
-// State is the account shown, the page's copy and the theme.
+// State is the account shown, the locale and the theme.
 func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
@@ -157,11 +132,11 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	if err != nil {
 		return SignatureState{}, err
 	}
-	text := signatureCopy()
+	locale := i18n.Language()
 	p.s.mu.Lock()
 	defer p.s.mu.Unlock()
 	p.s.live = true
-	return SignatureState{Account: p.s.account, Text: text, Theme: ThemeOf(st)}, nil
+	return SignatureState{Account: p.s.account, Locale: locale, Theme: ThemeOf(st)}, nil
 }
 
 // Load is account's signature as the editor's HTML: sanitized, a plain

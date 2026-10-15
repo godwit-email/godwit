@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -13,17 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestComposeStringsExist(t *testing.T) {
-	t.Cleanup(func() { i18n.SetLanguage("zh") })
-	for _, lang := range []string{"zh", "en"} {
-		i18n.SetLanguage(lang)
-		for _, k := range append(composeKeys, signatureKeys...) {
-			assert.NotEqual(t, k, i18n.T(k), "%s has no %s text", k, lang)
-		}
-	}
-	assert.NotContains(t, composeKeys, "compose.sent")
-}
 
 // webKeys are the i18n keys quoted in the non-test sources under web/src/<dir>.
 func webKeys(t *testing.T, dirs ...string) map[string]bool {
@@ -38,7 +26,7 @@ func webKeys(t *testing.T, dirs ...string) map[string]bool {
 			}
 			b, err := os.ReadFile(p)
 			for _, m := range lit.FindAllStringSubmatch(string(b), -1) {
-				if i18n.T(m[1]) != m[1] {
+				if strings.HasPrefix(m[1], "compose.") || strings.HasPrefix(m[1], "wit.") || strings.HasPrefix(m[1], "ask.") || strings.HasPrefix(m[1], "common.") || strings.HasPrefix(m[1], "error.") || strings.HasPrefix(m[1], "reader.") || strings.HasPrefix(m[1], "settings.") || strings.HasPrefix(m[1], "mail.") || strings.HasPrefix(m[1], "close.") || strings.HasPrefix(m[1], "link.") || strings.HasPrefix(m[1], "shell.") {
 					out[m[1]] = true
 				}
 			}
@@ -49,18 +37,14 @@ func webKeys(t *testing.T, dirs ...string) map[string]bool {
 	return out
 }
 
-// TestWebKeysSent: every key the web pages quote reaches them, else they show the raw key.
-// The shared wit/ code has copy for one layout only: ask.* (the Wit page's citations) and the
-// panel's compose copy, which the other page never shows.
-func TestWebKeysSent(t *testing.T) {
-	panelOnly := func(k string) bool {
-		return strings.HasPrefix(k, "compose.") || strings.HasPrefix(k, "wit.compose.") ||
-			k == "wit.tools.called" || k == "wit.thinking"
-	}
-	for k := range webKeys(t, "compose", "wit") {
-		assert.True(t, strings.HasPrefix(k, "ask.") || slices.Contains(composeKeys, k), "composeKeys lacks %s", k)
-	}
-	for k := range webKeys(t, "wit-page", "wit") {
-		assert.True(t, panelOnly(k) || slices.Contains(witKeys, k), "witKeys lacks %s", k)
+// Every literal page key must be in the catalogs bundled with the frontend.
+func TestWebCatalogMessages(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	keys := webKeys(t, "compose", "wit", "wit-page", "reader", "signature")
+	for _, locale := range []string{"zh-CN", "en"} {
+		i18n.SetLanguage(locale)
+		for key := range keys {
+			assert.NotEqual(t, key, i18n.T(key), "%s has no %s", locale, key)
+		}
 	}
 }

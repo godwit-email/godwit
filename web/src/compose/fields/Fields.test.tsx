@@ -4,19 +4,7 @@ import { createRef, useState } from "react";
 import { makeT } from "@/shared/i18n";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./Fields";
 
-const t = makeT({
-  "compose.from": "发件人",
-  "compose.from.select": "发件账户",
-  "compose.to": "收件人",
-  "compose.to.input": "添加收件人",
-  "compose.cc_bcc": "抄送 · 密送",
-  "compose.cc": "抄送",
-  "compose.bcc": "密送",
-  "compose.reply_to": "回复地址",
-  "compose.subject": "主题",
-  "compose.invalid": "地址无效：%s",
-  "compose.remove": "移除 %s",
-});
+const t = makeT("zh-CN");
 
 const accounts = [
   { id: 1, email: "me@x.com" },

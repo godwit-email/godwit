@@ -42,8 +42,8 @@ type ComposeState struct {
 	Theme    Theme `json:"theme"`
 	// UpdatedAt is when the draft was last stored, in Unix milliseconds.
 	UpdatedAt int64 `json:"updatedAt"`
-	// Text is the page's copy: i18n key → text in the UI language.
-	Text map[string]string `json:"text"`
+	// Locale selects the shared catalog bundled with the page.
+	Locale string `json:"locale"`
 	// Wit is what the Wit panel offers, as WitInfo.
 	Wit WitInfo `json:"wit"`
 }

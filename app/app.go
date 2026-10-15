@@ -61,6 +61,8 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
+	// TranslateBody replaces only the body's text nodes; nil shows the original.
+	TranslateBody(message int64, texts map[string]string)
 	// NewSignatureView makes the signature page (the account settings'
 	// rich-text editor) in the main window; the App makes one and closes
 	// it (unregistered and destroyed) as it closes. show
@@ -105,6 +107,9 @@ type Deps struct {
 	// SystemLanguage is the system's language tag; the interface uses it
 	// while Settings.UILanguage is "".
 	SystemLanguage string
+	// SetLanguage applies the UI preference; an empty tag follows the system.
+	// By default only the catalog changes; the desktop also updates MyGo.
+	SetLanguage func(string)
 
 	// Vibrancy: the window has a material, which shows around the panel.
 	Vibrancy bool
@@ -167,8 +172,9 @@ type App struct {
 	settingsVer      uint64                                                             // bumped per local settings change
 	settingsSavedVer uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
 	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
-	sysLang          string                                                             // Deps.SystemLanguage
-	accountsGen      uint64                                                             // the load gen that read a.accounts
+	setLanguage      func(string)
+	sysLang          string // Deps.SystemLanguage
+	accountsGen      uint64 // the load gen that read a.accounts
 
 	localAPIWant bool   // what the last SetLocalAPI asked for
 	localAPIGen  uint64 // bumped per SetLocalAPI; only the newest one's result counts
@@ -232,7 +238,10 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	a := &App{setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	if a.setLanguage == nil {
+		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }
+	}
 	if a.clock == nil {
 		a.clock = realClock{}
 	}
@@ -358,8 +367,8 @@ func (a *App) load() {
 		a.refreshTasks() // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
-		if tag := cmp.Or(st.UILanguage, a.sysLang); first && tag != "" {
-			i18n.SetLanguage(tag)
+		if first {
+			a.setLanguage(st.UILanguage)
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)

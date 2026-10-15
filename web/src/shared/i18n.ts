@@ -1,12 +1,30 @@
-/** Looks up a native i18n key; `%s` / `%d` take the args in order, `%%` is `%`. A missing key reads as itself. */
+import { isMyGo, onLocaleChange, locale as runtimeLocale } from "mygo-runtime";
+import { useEffect, useMemo, useState } from "react";
+import { messages, messagesIn } from "@/i18n";
+
 export type T = (key: string, ...args: (string | number)[]) => string;
 
-/** The T over a page's copy (`ComposeState.Text`: key → text in the UI language). */
-export function makeT(text: Record<string, string>): T {
+/** Keep dynamic page keys while the generated catalog owns arguments and plural rules. */
+export function makeT(locale?: string): T {
+  const catalog = (locale ? messagesIn(locale) : messages) as unknown as Record<
+    string,
+    (...args: (string | number)[]) => string
+  >;
   return (key, ...args) => {
-    let i = 0;
-    return (text[key] ?? key).replace(/%[sd%]/g, (m) =>
-      m === "%%" ? "%" : i < args.length ? String(args[i++]) : m,
-    );
+    const name = key.replace(/[.-]/g, "_");
+    return Object.hasOwn(catalog, name) ? catalog[name](...args) : key;
   };
+}
+
+export function useT(locale?: string): T {
+  const [changed, setChanged] = useState<string | undefined>(() =>
+    isMyGo() ? runtimeLocale() : undefined,
+  );
+  useEffect(() => {
+    if (!isMyGo()) return;
+    const off = onLocaleChange(setChanged);
+    setChanged(runtimeLocale());
+    return off;
+  }, []);
+  return useMemo(() => makeT(changed ?? locale), [changed, locale]);
 }

@@ -3,13 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Response } from "./Response";
 
-const t = makeT({
-  "link.title": "打开这个链接？",
-  "link.open": "打开",
-  "link.copy": "复制链接",
-  "link.copied": "链接已复制",
-  "common.cancel": "取消",
-});
+const t = makeT("zh-CN");
 
 const md = [
   "![x](https://t/x.png)",

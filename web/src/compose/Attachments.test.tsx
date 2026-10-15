@@ -3,11 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Attachments } from "./Attachments";
 
-const t = makeT({
-  "compose.remove": "移除 %s",
-  "compose.attach.too_large": "附件超过了 %s 的上限",
-  "compose.attach.failed": "未能添加：%s",
-});
+const t = makeT("zh-CN");
 
 test("lists, removes and reports oversize", async () => {
   const onRemove = vi.fn();

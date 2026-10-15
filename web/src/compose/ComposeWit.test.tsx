@@ -43,7 +43,10 @@ vi.mock("@/mygo", () => ({
     },
   },
 }));
-vi.mock("mygo-runtime", () => ({ currentWindow: { setTitle: vi.fn() } }));
+vi.mock("mygo-runtime", async (original) => ({
+  ...(await original<typeof import("mygo-runtime")>()),
+  currentWindow: { setTitle: vi.fn() },
+}));
 vi.mock("sonner", async (orig) => ({
   ...(await orig<typeof import("sonner")>()),
   toast: Object.assign(vi.fn(), { error: vi.fn(), warning: vi.fn() }),
@@ -97,51 +100,6 @@ vi.mock("./editor/Editor", async () => {
 import { toast } from "sonner";
 import { ComposePage as api } from "@/mygo";
 
-const text: Record<string, string> = {
-  "compose.body": "正文",
-  "compose.subject": "主题",
-  "compose.bold": "加粗",
-  "compose.attach": "附件",
-  "wit.compose.empty": "自己写，或者在右边告诉 Wit 你想怎么回",
-  "compose.sending.locked": "正在发送，暂时不能修改草稿",
-  "error.unknown": "出错了：%s",
-  "common.retry": "重试",
-  "wit.send": "发送",
-  "wit.stop": "停止",
-  "wit.compose.input": "告诉 Wit 你想怎么回",
-  "wit.compose.writing_banner": "助手正在写入正文，暂时不能编辑",
-  "wit.compose.locked": "先接受或拒绝助手的修改",
-  "wit.compose.pending.one": "%d 处修改待确认",
-  "wit.compose.pending.other": "%d 处修改待确认",
-  "wit.compose.accept_all": "全部接受",
-  "wit.compose.reject_all": "全部拒绝",
-  "wit.compose.accept": "接受",
-  "wit.compose.reject": "拒绝",
-  "wit.compose.link": "链接改为 %s",
-  "wit.compose.rewrite": "已整体重写，改动约 %d%%",
-  "wit.compose.rewrite_plain": "已整体重写",
-  "wit.compose.compare": "对比原文",
-  "wit.compose.back": "返回新版本",
-  "wit.compose.original": "原文",
-  "wit.compose.new": "新版本",
-  "wit.compose.review": "待确认",
-  "wit.compose.review.inline.other": "修改 %d 处。鼠标停在某处修改上，可以单独接受或拒绝。",
-  "wit.compose.review.rewrite": "整体重写，改动约 %d%%。",
-  "wit.compose.review_body": "正文修订",
-  "wit.compose.applied": "已应用到正文",
-  "wit.compose.undo": "撤销",
-  "wit.compose.cmdk": "⌘K · 只修改选中的这一段",
-  "wit.compose.cmdk.input": "修改选中的内容",
-  "wit.compose.cmdk.esc": "Esc",
-  "wit.compose.cmdk.go": "生成 ↵",
-  "wit.tool.update_draft": "修改正文",
-  "wit.approval.wants": "Wit 想要：%s",
-  "wit.approval.allow": "允许",
-  "wit.approval.allow_all": "全部允许",
-  "wit.approval.reject": "拒绝",
-  "link.title": "打开这个链接？",
-  "link.open": "打开",
-};
 const state: ComposeState = {
   draftId: 1,
   accounts: [{ id: 1, email: "me@x.com" }],
@@ -159,7 +117,7 @@ const state: ComposeState = {
   revision: 7,
   updatedAt: 0,
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
-  text,
+  locale: "zh-CN",
   wit: { enabled: true, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
 const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
@@ -316,7 +274,7 @@ test("the formatting toolbar sits in the bottom bar with Send, disabled while an
   await screen.findByRole("region", { name: "正文修订" });
   const bold = screen.getByRole("button", { name: "加粗" });
   expect(bold).toBeDisabled();
-  const send = screen.getByRole("button", { name: "compose.send" });
+  const send = screen.getByRole("button", { name: "发送" });
   expect(send.closest("[data-bar]")).toContainElement(bold);
 });
 
@@ -325,7 +283,7 @@ test("attach is off while an edit waits; accepting still applies", async () => {
   vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
   await setup(withPending);
   await screen.findByRole("region", { name: "正文修订" });
-  expect(screen.getByRole("button", { name: "附件" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "添加附件" })).toBeDisabled();
   fireEvent.click(screen.getAllByRole("button", { name: "全部接受" })[0]);
   await waitFor(() => expect(api.decide).toHaveBeenCalledWith(4, true));
   expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
@@ -777,4 +735,26 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
   await user.click(await screen.findByText("b"));
   await user.click(await screen.findByRole("button", { name: "打开" }));
   expect(api.openLink).toHaveBeenCalledWith("mailto:x@y.z");
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+test("a language change keeps the draft and the panel's unsent question", async () => {
+  let change: (p: { locale: string; dir: string }) => void = () => {};
+  vi.stubGlobal("mygo", {
+    locale: "zh-CN",
+    on: (_name: string, listener: typeof change) => {
+      change = listener;
+      return () => {};
+    },
+  });
+  await setup();
+  fireEvent.change(await body(), { target: { value: "unsaved draft" } });
+  const question = screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" });
+  fireEvent.change(question, { target: { value: "unsent question" } });
+  act(() => change({ locale: "en", dir: "ltr" }));
+  expect(await screen.findByRole("textbox", { name: "Message body" })).toHaveValue("unsaved draft");
+  await waitFor(() => expect(api.follow).toHaveBeenCalledOnce());
+  expect(question).toBeInTheDocument();
+  expect(question).toHaveValue("unsent question");
 });

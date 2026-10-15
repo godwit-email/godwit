@@ -63,6 +63,8 @@ mise run web:check
 mise run build       # package for this machine into dist/
 ```
 
+Native and web UI translations share `internal/i18n/en.json` and `zh-CN.json`, using ICU MessageFormat. Edit these catalogs, run `mise run generate` to update the Go and TypeScript accessors, and validate with `go tool mygo i18n check`. The generated files are committed; do not edit them directly.
+
 Layout:
 
 | Path | |

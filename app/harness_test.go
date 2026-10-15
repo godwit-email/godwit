@@ -368,8 +368,9 @@ func (p *fakePlatform) sigShown() int64 {
 // fakeBodyView stands for a reader page's *mygo.WebView, bound to message.
 type fakeBodyView struct {
 	ui.NativeWebView
-	message int64
-	closed  bool
+	message      int64
+	closed       bool
+	translations map[string]string
 }
 
 // NewBodyView records "NewBodyView <message>" and makes a fake page;
@@ -406,6 +407,14 @@ func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), err
 }
 
 func (p *fakePlatform) AllowImages(message int64) { p.record("AllowImages", message) }
+
+func (p *fakePlatform) TranslateBody(message int64, texts map[string]string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if v := p.views[message]; v != nil {
+		v.translations = texts
+	}
+}
 
 // view is message's open body page, or nil.
 func (p *fakePlatform) view(message int64) *fakeBodyView {

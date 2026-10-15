@@ -3,15 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Notices } from "./Notices";
 
-const t = makeT({
-  "compose.warn": "发送前检查：%s",
-  "compose.warn.from": "来自插件 %s（message.beforeSend）",
-  "compose.send_anyway": "仍然发送",
-  "compose.conflict": "草稿在别处被修改",
-  "compose.conflict.keep": "保留我的版本",
-  "compose.conflict.latest": "使用最新版本",
-  "common.retry": "重试",
-});
+const t = makeT("zh-CN");
 
 function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
   const f = { onSendAnyway: vi.fn(), onKeepMine: vi.fn(), onUseLatest: vi.fn(), onRetry: vi.fn() };

@@ -34,7 +34,7 @@ func TestReaderTranslatesWithPlugin(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("[zh-CN] the original words")
+	h.seeTranslation(m.ID, "[zh-CN] the original words")
 	h.see("已翻译为中文 · translate · dlx")
 }
 

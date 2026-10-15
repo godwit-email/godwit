@@ -18,10 +18,14 @@ const body = (over: Partial<ReaderBody> = {}): ReaderBody => ({
   blocked: 0,
   cut: false,
   theme: theme(),
-  text: {},
+  locale: "en",
   ...over,
 });
 const parse = (s: string) => new DOMParser().parseFromString(s, "text/html");
+const styles = (doc: Document) =>
+  (doc.querySelector("style")?.textContent ?? "")
+    .replace(/\s*([{},:;])\s*/g, "$1")
+    .replace(/;}/g, "}");
 
 test("iframe csp first: the head's first element is the CSP meta, img-src data: and godwit-img: only", () => {
   const s = buildSrcdoc(body(), theme());
@@ -60,7 +64,7 @@ test("the body sits in #godwit-body; html mail is transparent, in the theme's te
   const wrap = doc.getElementById("godwit-body");
   expect(wrap?.innerHTML).toContain("Hello");
   expect(wrap?.className).toBe("godwit-light");
-  const css = doc.querySelector("style")?.textContent ?? "";
+  const css = styles(doc);
   expect(css).toMatch(/html,body\{[^}]*background:transparent/);
   expect(css).not.toContain("#fff");
   expect(css).toContain("oklch(0.145 0 0)");
@@ -84,8 +88,10 @@ test("html mail follows the theme: light, dark with its own dark styles, dark in
   expect(cls(render(aware, "light"))).toBe("godwit-light");
   expect(cls(render(aware, "dark"))).toBe("godwit-dark");
   expect(cls(render({}, "dark"))).toBe("godwit-dark godwit-invert");
-  const css = render({}, "dark").querySelector("style")?.textContent ?? "";
-  expect(css).toMatch(/\.godwit-invert\{filter:invert\(1\)/);
+  const css = styles(render({}, "dark"));
+  expect(css).toMatch(
+    /#godwit-body\.godwit-invert,#godwit-body\.godwit-invert img\{filter:invert\(1\)/,
+  );
   expect(css).toMatch(/\.godwit-invert img\{filter:invert\(1\)/);
   // a background image is inverted back on its own layer, not with its element's content
   expect(css).toContain('[style*="--godwit-bg"]::before{');
@@ -117,11 +123,12 @@ test("plain text uses theme and body size, escaped and pre-wrapped", () => {
   const wrap = doc.getElementById("godwit-body");
   expect(wrap?.textContent).toBe("a <b> & c\n  d");
   expect(wrap?.children).toHaveLength(0);
-  const css = doc.querySelector("style")?.textContent ?? "";
+  const css = styles(doc);
   expect(css).toContain("pre-wrap");
   expect(css).toContain("15px/1.5 ");
   expect(css).toContain("oklch(0.985 0 0)");
-  expect(css).not.toContain("#0a0a0a");
+  expect(css).toContain("--godwit-plain-fg:oklch(0.985 0 0)");
+  expect(css).toContain("color:var(--godwit-plain-fg,CanvasText)");
 });
 
 test("plain text in system mode follows the appearance", () => {
@@ -135,8 +142,7 @@ test("plain text in system mode follows the appearance", () => {
 
 test("plain text is transparent in the theme's colour scheme", () => {
   const plain = body({ html: "", plain: "x" });
-  const css = (m: string) =>
-    parse(buildSrcdoc(plain, theme({ mode: m }))).querySelector("style")?.textContent ?? "";
+  const css = (m: string) => styles(parse(buildSrcdoc(plain, theme({ mode: m }))));
   expect(css("dark")).toContain("color-scheme:dark");
   expect(css("light")).toContain("color-scheme:light");
   expect(css("system")).toContain("color-scheme:light dark");

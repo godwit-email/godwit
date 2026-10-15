@@ -1,15 +1,17 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"io/fs"
 	"log"
+	"os"
 	"runtime"
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo"
+	mygoi18n "github.com/egoist/mygo/i18n"
 	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
@@ -38,6 +40,15 @@ func windowOptions(goos string) mygo.WindowOptions {
 		o.Vibrancy, o.TitleBarHeight = mygo.VibrancyMica, 40
 	}
 	return o
+}
+
+// uiLocale keeps Godwit's Chinese fallback where MyGo distinguishes scripts.
+func uiLocale(preference, system string) string {
+	if preference == "" && strings.HasPrefix(system, "zh") && mygoi18n.Match([]string{system}, i18n.Catalog.Languages()) == "" {
+		// shortcut: this fallback follows system changes on restart; remove when MyGo supports custom matching.
+		return "zh-CN"
+	}
+	return preference
 }
 
 // gui runs the desktop app on dataDir until it quits or ctx ends. On the
@@ -187,7 +198,10 @@ func gui(ctx context.Context, dataDir string) int {
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
 	mygo.App.WhenReady(func() {
-		lang := mygo.App.Locale()
+		lang := "en"
+		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {
+			lang = preferred[0]
+		}
 		var err error
 		release, err = ownerlock.Acquire(dataDir)
 		if err != nil {
@@ -211,21 +225,28 @@ func gui(ctx context.Context, dataDir string) int {
 		wit.SetService(svc)
 		reader.SetService(svc)
 		sig.SetService(svc)
-		uiLang := lang // for the menus; the App applies the language to itself
+		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
 		if st, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 		} else {
-			uiLang = cmp.Or(st.UILanguage, lang)
+			uiLang = st.UILanguage
 			// Before the window opens: its material and controls follow this, not the system's.
 			mygo.Theme.SetSource(mygo.ThemeSource(st.Theme))
 		}
-		i18n.SetLanguage(uiLang)
+		setLanguage := func(tag string) {
+			if os.Getenv("MYGO_LOCALE") == "" {
+				mygo.App.SetLocale(uiLocale(tag, lang))
+			}
+		}
+		setLanguage(uiLang)
+		i18n.SetLanguage(mygo.App.Locale())
 
 		opts := windowOptions(runtime.GOOS)
 		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
-			SystemLanguage: lang, Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
+			SystemLanguage: lang, SetLanguage: setLanguage,
+			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
 		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = ui.View(a.View)
@@ -258,43 +279,57 @@ func gui(ctx context.Context, dataDir string) int {
 		})
 
 		compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
-		// The Mail menu stands in for File, which on macOS holds Close (⌘W).
-		mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-			mygo.Separator(), {Role: mygo.RoleClose}}
-		appMenu := []*mygo.MenuItem{
-			{Role: mygo.RoleAbout},
-			mygo.Separator(),
-			{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
-			mygo.Separator(),
-			{Role: mygo.RoleServices},
-			mygo.Separator(),
-			{Role: mygo.RoleHide},
-			{Role: mygo.RoleHideOthers},
-			{Role: mygo.RoleUnhide},
-			mygo.Separator(),
-			{Role: mygo.RoleQuit},
+		updateMenu := func() {
+			// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+			mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+				mygo.Separator(), {Role: mygo.RoleClose}}
+			appMenu := []*mygo.MenuItem{
+				{Role: mygo.RoleAbout},
+				mygo.Separator(),
+				{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
+				mygo.Separator(),
+				{Role: mygo.RoleServices},
+				mygo.Separator(),
+				{Role: mygo.RoleHide},
+				{Role: mygo.RoleHideOthers},
+				{Role: mygo.RoleUnhide},
+				mygo.Separator(),
+				{Role: mygo.RoleQuit},
+			}
+			if !packaged() { // the Store updates the MSIX
+				appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
+			}
+			mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+				{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
+				{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
+				{Role: mygo.RoleEditMenu},
+				{Role: mygo.RoleWindowMenu},
+			}))
 		}
-		if !packaged() { // the Store updates the MSIX
-			appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
-		}
-		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
-			{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
-			{Role: mygo.RoleEditMenu},
-			{Role: mygo.RoleWindowMenu},
-		}))
-		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
-			log.Print(err)
-		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
-			Menu: mygo.NewMenu([]*mygo.MenuItem{
+		updateMenu()
+		trayMenu := func() *mygo.Menu {
+			return mygo.NewMenu([]*mygo.MenuItem{
 				{Label: i18n.T("tray.open"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow() }},
 				{Label: i18n.T("mail.compose"), Click: compose},
 				{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
 				mygo.Separator(),
 				{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-			})}); err != nil {
+			})
+		}
+
+		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
+			log.Print(err)
+		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
+			Menu: trayMenu()}); err != nil {
 			log.Print(err) // no tray here (Linux without an indicator host)
 		}
+		mygo.App.OnLocaleChanged(func(locale string) {
+			i18n.SetLanguage(locale)
+			updateMenu()
+			if plat.tray != nil {
+				plat.tray.SetMenu(trayMenu())
+			}
+		})
 
 		// Closing the window hides it while the App keeps running in the
 		// background; otherwise closing quits. Every quit goes through

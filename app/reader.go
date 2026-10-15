@@ -76,9 +76,10 @@ type msgBody struct {
 	ready   bool
 	err     error // the last read, or making the page, failed; a retry reads again
 
-	view   ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
-	close  func()           // closes view: unbinds and destroys it
-	height int              // the page's last reported height, CSS px; 0 until it reports
+	view        ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
+	close       func()           // closes view: unbinds and destroys it
+	height      int              // the page's last reported height, CSS px; 0 until it reports
+	translation *aiRun           // the translated text currently displayed by the page
 
 	// The remote images: allow is the user's 加载图片, which every page
 	// made for the message is told (Platform.AllowImages); remote that the
@@ -413,6 +414,7 @@ func (b *msgBody) closeView() {
 		b.close()
 	}
 	b.view, b.close, b.remote, b.allowErr = nil, nil, false, nil
+	b.translation = nil
 }
 
 // closeViews closes every page (the App closing).
@@ -821,9 +823,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				}
 			})
 		}
-		// The translation shows in the body's place: the page is not
-		// built, so it hides, keeping its state.
-		if !r.translated(c, m) && b.view != nil {
+		r.translationState(c, m)
+		if b.view != nil {
 			ui.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
 		}
 		if b.cut {

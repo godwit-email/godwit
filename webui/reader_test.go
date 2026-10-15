@@ -216,8 +216,7 @@ func TestReaderPageLoad(t *testing.T) {
 	assert.False(t, b.Cut)
 	assert.Empty(t, b.Plain)
 	assert.EqualValues(t, 14, b.Theme.BodyFontSize)
-	assert.Equal(t, "重试", b.Text["common.retry"])
-	assert.Equal(t, "邮件正文", b.Text["reader.body"])
+	assert.Equal(t, "zh-CN", b.Locale)
 
 	again, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
@@ -228,6 +227,88 @@ func TestReaderPageLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", pb.HTML)
 	assert.Contains(t, pb.Plain, "just words")
+}
+
+func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	original, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	f.r.Translate(m.ID, map[string]string{"Hello reader": `你好 <img src="https://evil.test/x">`})
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Greater(t, translated.Version, original.Version)
+	assert.Contains(t, translated.HTML, `你好 &lt;img`)
+	assert.Equal(t, strings.Count(original.HTML, "<img"), strings.Count(translated.HTML, "<img"))
+	assert.False(t, translated.Remote)
+	assert.Equal(t, original.Blocked, translated.Blocked)
+	f.r.Allow(m.ID)
+	withImages, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.True(t, withImages.Remote)
+	assert.Contains(t, withImages.HTML, `你好 &lt;img`)
+	assert.Contains(t, withImages.HTML, `godwit-img:`)
+	f.r.Translate(m.ID, nil)
+	restored, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, restored.HTML, "Hello reader")
+	assert.NotContains(t, restored.HTML, "你好")
+	assert.Contains(t, restored.HTML, `godwit-img:`)
+	assert.True(t, restored.Remote, "switching back keeps image consent")
+}
+
+func TestReaderTranslationNeedsNoReread(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	original, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+		return core.Message{}, errors.New("mail unavailable")
+	}
+	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, translated.HTML, "你好")
+	f.r.Translate(m.ID, nil)
+	restored, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, original.HTML, restored.HTML)
+	assert.Greater(t, restored.Version, translated.Version)
+}
+
+func TestReaderTranslationDuringImageReload(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	started, release := make(chan struct{}), make(chan struct{})
+	real := f.r.getMessage
+	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+		close(started)
+		<-release
+		return real(ctx, svc, id, remote)
+	}
+	f.r.Allow(m.ID)
+	<-started
+	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
+	f.r.Translate(m.ID, nil)
+	close(release)
+	require.Eventually(t, func() bool {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return len(f.emitted) == 3
+	}, 10*time.Second, 5*time.Millisecond)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Contains(t, f.emitted[0].body.HTML, "你好")
+	assert.Contains(t, f.emitted[1].body.HTML, "Hello reader")
+	assert.True(t, f.emitted[2].body.Remote)
+	assert.Contains(t, f.emitted[2].body.HTML, "Hello reader")
+	assert.Greater(t, f.emitted[1].body.Version, f.emitted[0].body.Version)
+	assert.Greater(t, f.emitted[2].body.Version, f.emitted[1].body.Version)
 }
 
 func TestReaderPageScoped(t *testing.T) {
