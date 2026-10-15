@@ -199,6 +199,7 @@ const (
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	CloseButton                                      = 20             // a toast's close button
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons

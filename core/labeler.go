@@ -21,7 +21,6 @@ import (
 const (
 	labelBatch     = 20
 	labelBodyRunes = 4000
-	labelYes       = 0.5
 	inboxCond      = "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')"
 )
 
@@ -139,7 +138,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				return done, err
 			}
 			for _, a := range answers {
-				yes[a.Name] = a.Type == ai.Predicate && a.Probability != nil && *a.Probability >= labelYes // a refusal is no
+				yes[a.Name] = a.Type == ai.Predicate && a.Probability != nil && *a.Probability >= st.JudgeThreshold // a refusal is no
 			}
 		}
 		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes)); err != nil {
