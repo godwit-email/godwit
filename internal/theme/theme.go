@@ -177,7 +177,7 @@ const (
 	SelectedBorder        = 2  // the border of a chosen tile
 	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
 	GripHeight            = 56
-	RingWidth             = 2   // a focused box's ring, outside its border
+	RingWidth             = 3   // shadcn's focused box ring, outside its border
 	QuoteBar              = 2   // the bar left of a quote in a mail body
 	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
 	ReaderMaxWidth        = 720 // the reading pane's text column

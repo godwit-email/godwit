@@ -222,9 +222,13 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	}
 	ui.Row(c).Height(h).FillWidth().Padding(0, padR, 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
-		if !a.sidebarHidden {
-			lead.MinWidth(max(0, a.contentLeft(c)-padL))
+		width := max(0, a.contentLeft(c)-padL)
+		if a.sidebarHidden {
+			width = 0
+		} else if a.sidebarDragFrom != 0 {
+			lead.Jump("sidebar-width", width)
 		}
+		lead.MinWidth(lead.Animate("sidebar-width", width, theme.MotionBase))
 		lead.Children(func() {
 			winCaption(c)
 			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
@@ -330,25 +334,40 @@ func (a *App) body(c *ui.Context) {
 	if a.sidebarHidden {
 		padL = 0 // the edge grip takes the inset
 	}
-	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(0, th.Space(2), th.Space(2), padL).Children(func() {
-		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
-		if a.sidebarHidden {
-			a.edgeGrip(c, content)
+	row := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(0, th.Space(2), th.Space(2), padL)
+	width := a.sidebarWidth()
+	target := width
+	if a.sidebarHidden {
+		target = 0
+	} else if a.sidebarDragFrom != 0 {
+		row.Jump("sidebar-width", width)
+	}
+	visible := row.Animate("sidebar-width", target, theme.MotionBase)
+	sidebar := func() {
+		if visible == 0 {
 			return
 		}
-		a.sidebarW = a.sidebarWidth()
-		before := a.sidebarW
-		changed, dragging := kit.Resizer(c, &a.sidebarW, theme.GripWidth, true, i18n.T("shell.resize"), nil, func() {
-			top := th.Space(3)
-			if a.route.Page == PageMail || a.route.Page == PageWit {
-				top = 0 // the page switch sits right under the title bar
-			}
-			ui.Column(c).Fill().Padding(top, 0, th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
-				ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
-				ui.Column(c).Gap(th.Space(0.5)).Padding(0, sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })
-			})
-		}, content)
-		a.collapsePull(before, dragging)
+		top := th.Space(3)
+		if a.route.Page == PageMail || a.route.Page == PageWit {
+			top = 0 // the page switch sits right under the title bar
+		}
+		// Keep the sidebar's layout at its full width while it slides out of the clipped pane.
+		ui.Column(c).Width(width).FillHeight().Shrink(0).Translate(visible-width, 0).Disabled(a.sidebarHidden).
+			Padding(top, 0, th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
+			ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
+			ui.Column(c).Gap(th.Space(0.5)).Padding(0, sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })
+		})
+	}
+	row.Children(func() {
+		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
+		if a.sidebarHidden {
+			a.edgeGrip(c, visible, sidebar, content)
+			return
+		}
+		before := visible
+		changed, dragging := kit.Resizer(c, &visible, theme.GripWidth, true, i18n.T("shell.resize"), nil, sidebar, content)
+		a.sidebarW = width + (visible - before)
+		a.collapsePull(width, dragging)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
 		if changed {
 			a.saveWidths()
@@ -359,10 +378,11 @@ func (a *App) body(c *ui.Context) {
 // edgeGrip is the folded sidebar's way back: the same grip in the window's
 // left inset, beside content; dragging it SidebarCollapsePull to the right
 // (or a click, or, focused, the right arrow) brings the sidebar back at its width.
-func (a *App) edgeGrip(c *ui.Context, content func()) {
-	var pulled float32 // the grip's first pane stays empty: the drag only counts
+func (a *App) edgeGrip(c *ui.Context, width float32, sidebar, content func()) {
+	pulled := width
 	open := func() { a.sidebarHidden = false }
-	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), false, i18n.T("shell.resize"), open, func() {}, content)
+	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), false, i18n.T("shell.resize"), open, sidebar, content)
+	pulled -= width
 	if changed && !dragging && pulled > 0 {
 		a.sidebarHidden = false
 		return

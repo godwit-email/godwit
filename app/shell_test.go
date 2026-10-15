@@ -354,9 +354,113 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	}
 	h.app.sidebarHidden = true
 	h.tt.Frame()
+	time.Sleep(2 * theme.MotionBase)
+	h.tt.Frame()
 	pull(0) // a click
 	if h.app.sidebarHidden {
 		t.Error("a click on the edge grip left the sidebar folded")
+	}
+}
+
+type sidebarMotionPage struct{}
+
+func (sidebarMotionPage) Title() (string, string) { return "", "" }
+func (sidebarMotionPage) refresh([]events.Event)  {}
+func (sidebarMotionPage) Sidebar(c *ui.Context)   { ui.Text(c, "sidebar") }
+func (sidebarMotionPage) Content(c *ui.Context)   { ui.Box(c).Fill().Label("content") }
+
+func TestSidebarToggleAnimates(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reduce=%v", reduce), func(t *testing.T) {
+			a := &App{route: Route{Page: PageSettings}, pages: map[Page]pageView{PageSettings: sidebarMotionPage{}}}
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c, theme.Light())
+				a.titleBar(c, theme.TopBarHeight)
+				a.body(c)
+			}, 700, 200)
+			tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+			left := func() float32 { r, _ := tt.Find("content"); return r.X }
+			shown := left()
+			for _, hidden := range []bool{true, false} {
+				before := left()
+				label := "shell.sidebar.collapse"
+				if !hidden {
+					label = "shell.sidebar.expand"
+				}
+				if err := tt.Click(i18n.T(label)); err != nil {
+					t.Fatal(err)
+				}
+				first := left()
+				time.Sleep(theme.MotionFast / 2)
+				tt.Frame()
+				middle := left()
+				time.Sleep(2 * theme.MotionBase)
+				tt.Frame()
+				last := left()
+				if (first == last) != reduce || before == last {
+					t.Errorf("hidden=%v: content jumped or stayed still: before %v, first %v, last %v", hidden, before, first, last)
+				}
+				if !reduce && (middle <= min(before, last) || middle >= max(before, last)) {
+					t.Errorf("hidden=%v: no intermediate layout: before %v, middle %v, last %v", hidden, before, middle, last)
+				}
+				if !hidden && last != shown {
+					t.Errorf("expanded content at %v, want original %v", last, shown)
+				}
+			}
+			if !reduce {
+				tt.Click(i18n.T("shell.sidebar.collapse"))
+				time.Sleep(theme.MotionFast / 2)
+				tt.Frame()
+				tt.Click(i18n.T("shell.sidebar.expand"))
+				if left() >= shown {
+					t.Error("reversing the animation jumped to fully expanded")
+				}
+				time.Sleep(2 * theme.MotionBase)
+				tt.Frame()
+				if left() != shown || a.sidebarWidth() != theme.SidebarWidth {
+					t.Errorf("toggle changed the saved width: content %v, sidebar %v", left(), a.sidebarWidth())
+				}
+			}
+		})
+	}
+}
+
+func TestSidebarDragDuringCollapse(t *testing.T) {
+	a := &App{route: Route{Page: PageSettings}, pages: map[Page]pageView{PageSettings: sidebarMotionPage{}}, clock: newFakeClock()}
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.Light())
+		a.titleBar(c, theme.TopBarHeight)
+		a.body(c)
+	}, 700, 200)
+	left := func() float32 { r, _ := tt.Find("content"); return r.X }
+	shown, width := left(), a.sidebarWidth()
+	if err := tt.Click(i18n.T("shell.sidebar.collapse")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(theme.MotionFast / 2)
+	tt.Frame()
+	if x := left(); x <= theme.GripWidth || x >= shown {
+		t.Fatalf("not in the middle of collapsing: content at %v, shown %v", x, shown)
+	}
+	r, ok := tt.Find(i18n.T("shell.resize"))
+	if !ok {
+		t.Fatal("no grip during collapse")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	tt.Press(x, y)
+	if left() >= shown || a.sidebarWidth() != width {
+		t.Fatal("pressing the grip jumped or changed the saved width")
+	}
+	x += theme.SidebarCollapsePull * 2
+	tt.Move(x, y)
+	if a.sidebarHidden {
+		t.Fatal("dragging during collapse did not reopen the sidebar")
+	}
+	tt.Release(x, y)
+	time.Sleep(2 * theme.MotionBase)
+	tt.Frame()
+	if left() != shown || a.sidebarWidth() != width || a.sidebarSave != nil {
+		t.Fatalf("reopening changed the width: content %v (want %v), width %v (want %v), save scheduled %v", left(), shown, a.sidebarWidth(), width, a.sidebarSave != nil)
 	}
 }
 
