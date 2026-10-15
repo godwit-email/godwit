@@ -27,6 +27,36 @@ const styles = (doc: Document) =>
     .replace(/\s*([{},:;])\s*/g, "$1")
     .replace(/;}/g, "}");
 
+test.each([true, false])("font and theme parse as separate CSS rules (html: %s)", (html) => {
+  const t = theme({ mode: "dark", bodyFontSize: 19 });
+  const doc = parse(
+    buildSrcdoc(body({ html: html ? '<style data-dark=""></style><p>x</p>' : "" }), t),
+  );
+  const style = document.createElement("style");
+  style.textContent = doc.querySelector("style")?.textContent ?? "";
+  document.head.append(style);
+  try {
+    const rules = Array.from(style.sheet?.cssRules ?? []).filter(
+      (rule): rule is CSSStyleRule => rule.type === CSSRule.STYLE_RULE,
+    );
+    const font = rules.find(
+      (rule) => rule.selectorText === "html" && rule.style.getPropertyValue("font"),
+    );
+    expect(font?.style.getPropertyValue("font-size")).toBe("19px");
+    expect(font?.style.getPropertyValue("line-height")).toBe(html ? "normal" : "1.5");
+    const scheme = rules.find(
+      (rule) => rule.selectorText === "html" && rule.style.getPropertyValue("color-scheme"),
+    );
+    expect(scheme?.style.getPropertyValue("color-scheme")).toBe("dark");
+    const property = html ? "--godwit-fg-dark" : "--godwit-plain-fg";
+    expect(
+      rules.find((rule) => rule.style.getPropertyValue(property))?.style.getPropertyValue(property),
+    ).toBe(t.dark?.["--foreground"]);
+  } finally {
+    style.remove();
+  }
+});
+
 test("iframe csp first: the head's first element is the CSP meta, img-src data: and godwit-img: only", () => {
   const s = buildSrcdoc(body(), theme());
   expect(s.startsWith("<!doctype html>")).toBe(true);
