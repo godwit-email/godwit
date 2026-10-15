@@ -13,7 +13,7 @@ import (
 func TestBodyTranslationUsesTextNodes(t *testing.T) {
 	e := newSkillEnv(t)
 	_, err := e.s.db.Execute(t.Context(), `UPDATE messages SET body_html = ? WHERE id = ?`,
-		`<table><tr><td><img src="https://images.test/logo.png"><a href="https://example.com">Hello <strong>world</strong></a></td></tr></table>`, e.msg)
+		`<table><tr><td><img src="https://images.test/logo.png"><a href="https://example.com">Hello <strong>world</strong></a></td></tr></table><code>go test ./...</code><pre>export TOKEN=example</pre>`, e.msg)
 	require.NoError(t, err)
 	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["你好","世界"],"source":"en"}`}})
 	tg := Target{Kind: "message", ID: e.msg, PreserveHTML: true}
@@ -25,6 +25,8 @@ func TestBodyTranslationUsesTextNodes(t *testing.T) {
 	assert.Contains(t, prompt, `"Hello"`)
 	assert.NotContains(t, prompt, "https://images.test")
 	assert.NotContains(t, prompt, "Subject:")
+	assert.NotContains(t, prompt, "go test")
+	assert.NotContains(t, prompt, "TOKEN")
 	assert.Equal(t, evs, e.run(t, "translate", tg), "layout translations have their own cache")
 	assert.Len(t, e.srv.Requests(), 1)
 }

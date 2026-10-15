@@ -117,7 +117,7 @@ const state: ComposeState = {
   revision: 7,
   updatedAt: 0,
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
-  locale: "zh-CN",
+  locale: "zh-Hans",
   wit: { enabled: true, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
 const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
@@ -742,7 +742,7 @@ afterEach(() => vi.unstubAllGlobals());
 test("a language change keeps the draft and the panel's unsent question", async () => {
   let change: (p: { locale: string; dir: string }) => void = () => {};
   vi.stubGlobal("mygo", {
-    locale: "zh-CN",
+    locale: "zh-Hans",
     on: (_name: string, listener: typeof change) => {
       change = listener;
       return () => {};

@@ -165,7 +165,7 @@ test("height is clamped to Go's maximum and stops growing there", async () => {
 });
 
 test("a failed first load uses the runtime locale before any body arrives", async () => {
-  vi.stubGlobal("mygo", { locale: "zh-CN", on: () => () => {} });
+  vi.stubGlobal("mygo", { locale: "zh-Hans", on: () => () => {} });
   vi.mocked(api.load).mockRejectedValueOnce(new Error("boom"));
   render(<ReaderApp />);
   const retry = await screen.findByRole("button", { name: "重试" });

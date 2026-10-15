@@ -32,11 +32,11 @@ test("a language change relabels the toolbar without reloading the signature", a
   const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
   vi.mocked(api.state).mockResolvedValue({
     account: 1,
-    locale: "zh-CN",
+    locale: "zh-Hans",
     theme,
   } as never);
   vi.stubGlobal("mygo", {
-    locale: "zh-CN",
+    locale: "zh-Hans",
     on: (name: string, fn: (v: never) => void) => h.on(name)(fn),
   });
   render(<SignatureApp />);

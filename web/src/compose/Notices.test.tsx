@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Notices } from "./Notices";
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
   const f = { onSendAnyway: vi.fn(), onKeepMine: vi.fn(), onUseLatest: vi.fn(), onRetry: vi.fn() };

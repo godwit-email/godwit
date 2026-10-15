@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { SendBar } from "./SendBar";
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 function setup(frozen = false, sending = false) {
   const onSend = vi.fn();

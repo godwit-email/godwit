@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Attachments } from "./Attachments";
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 test("lists, removes and reports oversize", async () => {
   const onRemove = vi.fn();

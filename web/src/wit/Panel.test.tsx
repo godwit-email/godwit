@@ -7,7 +7,7 @@ import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 const info: WitInfo = {
   enabled: true,
@@ -17,7 +17,7 @@ const info: WitInfo = {
     { id: "shorter", label: "更短", hint: "长度" },
   ],
   languages: [
-    { tag: "zh-CN", name: "简体中文" },
+    { tag: "zh-Hans", name: "简体中文" },
     { tag: "en", name: "English" },
   ],
   chips: ["原邮件", "a.pdf"],

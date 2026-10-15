@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { Response } from "./Response";
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 const md = [
   "![x](https://t/x.png)",

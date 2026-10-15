@@ -8,7 +8,8 @@ import (
 )
 
 func TestMapHTMLTextKeepsMarkup(t *testing.T) {
-	src := `<style>p{color:red}</style><table style="width:600px"><tr><td><img src="cid:logo"><a href="https://example.com">Hello <strong>world</strong></a></td></tr></table>`
+	src := `<style>p{color:red}</style><table style="width:600px"><tr><td><img src="cid:logo"><a href="https://example.com">Hello <strong>world</strong></a></td></tr></table><code>go test <span>./...</span></code><pre>export TOKEN=example
+<span>go run .</span></pre>`
 	var seen []string
 	got := MapHTMLText(src, func(s string) string {
 		seen = append(seen, s)
@@ -19,5 +20,7 @@ func TestMapHTMLTextKeepsMarkup(t *testing.T) {
 	assert.Contains(t, got, `<table style="width:600px">`)
 	assert.Contains(t, got, `<img src="cid:logo"/>`)
 	assert.Contains(t, got, `<a href="https://example.com">你好 <strong>&lt;img`)
+	assert.Contains(t, got, `<code>go test <span>./...</span></code>`)
+	assert.Contains(t, got, "<pre>export TOKEN=example\n<span>go run .</span></pre>")
 	assert.Equal(t, 1, strings.Count(got, "<img"), "translations cannot add markup")
 }

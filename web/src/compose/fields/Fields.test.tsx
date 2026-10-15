@@ -4,7 +4,7 @@ import { createRef, useState } from "react";
 import { makeT } from "@/shared/i18n";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./Fields";
 
-const t = makeT("zh-CN");
+const t = makeT("zh-Hans");
 
 const accounts = [
   { id: 1, email: "me@x.com" },

@@ -50,7 +50,7 @@ const state = (conversation: number, version: number, model = "m1"): WitPageStat
   conversation,
   version,
   model,
-  locale: "zh-CN",
+  locale: "zh-Hans",
   theme: { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 },
 });
 const msg = (id: string, role: string, t: string, runs: number[]) => ({

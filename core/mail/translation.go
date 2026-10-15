@@ -7,7 +7,7 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// MapHTMLText replaces visible text nodes, leaving markup and attributes intact.
+// MapHTMLText replaces prose text nodes, leaving code, markup and attributes intact.
 // The callback's result is text: html.Render escapes it, including any model markup.
 func MapHTMLText(src string, replace func(string) string) string {
 	body := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
@@ -17,7 +17,8 @@ func MapHTMLText(src string, replace func(string) string) string {
 	}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
-		if n.DataAtom == atom.Style || n.DataAtom == atom.Script {
+		switch n.DataAtom {
+		case atom.Style, atom.Script, atom.Code, atom.Pre:
 			return
 		}
 		if n.Type == html.TextNode && strings.TrimSpace(n.Data) != "" {
