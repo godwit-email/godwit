@@ -278,37 +278,105 @@ func TestReaderTranslationNeedsNoReread(t *testing.T) {
 	assert.Greater(t, restored.Version, translated.Version)
 }
 
-func TestReaderTranslationDuringImageReload(t *testing.T) {
+func TestReaderTranslationMatchesSanitizedHTML(t *testing.T) {
 	f := newReaderFixture(t)
-	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+	llm := f.e.LLM(t)
+	t.Cleanup(llm.Release)
+	llm.Script(coretest.Turn{Text: []string{`{"texts":["你好","阅读更多"],"source":"en"}`}})
+	m := f.deliverOne(t, coretest.Msg("bob@example.com", f.acc.Email, "News", "fallback",
+		coretest.HTML(`<p>Hello &amp; welcome&nbsp;<img src="https://images.example/logo.png" width="2" height="2"></p><a href="https://example.com?q=a&amp;b=c"><span>Read more</span></a>`)))
 	k := f.page(m.ID)
-	_, err := f.p.Load(pageCtx(k))
+	original, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
-	started, release := make(chan struct{}), make(chan struct{})
-	real := f.r.getMessage
-	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
-		close(started)
-		<-release
-		return real(ctx, svc, id, remote)
+	events, err := f.e.Svc.RunSkill(t.Context(), "translate", core.Target{Kind: "message", ID: m.ID, PreserveHTML: true})
+	require.NoError(t, err)
+	var texts map[string]string
+	for event := range events {
+		require.Nil(t, event.Err)
+		if event.Kind == "text" {
+			texts = event.Translations
+		}
 	}
+	require.Equal(t, map[string]string{"Hello & welcome\u00a0": "你好\u00a0", "Read more": "阅读更多"}, texts)
+	f.r.Translate(m.ID, texts)
+	translated, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, translated.HTML, "你好\u00a0")
+	assert.Contains(t, translated.HTML, `<span>阅读更多</span>`)
+	assert.Contains(t, translated.HTML, `data-href="https://example.com?q=a&amp;b=c"`)
+	assert.Equal(t, original.Blocked, translated.Blocked)
 	f.r.Allow(m.ID)
-	<-started
-	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
-	f.r.Translate(m.ID, nil)
-	close(release)
-	require.Eventually(t, func() bool {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return len(f.emitted) == 3
-	}, 10*time.Second, 5*time.Millisecond)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	assert.Contains(t, f.emitted[0].body.HTML, "你好")
-	assert.Contains(t, f.emitted[1].body.HTML, "Hello reader")
-	assert.True(t, f.emitted[2].body.Remote)
-	assert.Contains(t, f.emitted[2].body.HTML, "Hello reader")
-	assert.Greater(t, f.emitted[1].body.Version, f.emitted[0].body.Version)
-	assert.Greater(t, f.emitted[2].body.Version, f.emitted[1].body.Version)
+	withImages, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, withImages.HTML, "你好\u00a0")
+	assert.Contains(t, withImages.HTML, `<span>阅读更多</span>`)
+	assert.Contains(t, withImages.HTML, `src="`+proxied(m.ID, "https://images.example/logo.png")+`"`)
+	assert.True(t, withImages.Remote)
+}
+
+func TestReaderTranslationDuringImageReload(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		restore, fail bool
+	}{
+		{name: "translated"},
+		{name: "original", restore: true},
+		{name: "translated after failure", fail: true},
+		{name: "original after failure", restore: true, fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newReaderFixture(t)
+			m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
+			k := f.page(m.ID)
+			original, err := f.p.Load(pageCtx(k))
+			require.NoError(t, err)
+			started, release := make(chan struct{}), make(chan struct{})
+			real := f.r.getMessage
+			f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+				close(started)
+				<-release
+				if tc.fail {
+					return core.Message{}, errors.New("mail unavailable")
+				}
+				return real(ctx, svc, id, remote)
+			}
+			f.r.Allow(m.ID)
+			<-started
+			f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
+			if tc.restore {
+				f.r.Translate(m.ID, nil)
+			}
+			f.mu.Lock()
+			assert.Empty(t, f.emitted, "no stale body is emitted during the reload")
+			assert.Len(t, f.built, 1, "no stale image policy is reported during the reload")
+			f.mu.Unlock()
+			close(release)
+			require.Eventually(t, func() bool {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				return len(f.emitted) == 1 && (!tc.fail || len(f.failed) == 1)
+			}, 10*time.Second, 5*time.Millisecond)
+			body := f.waitEmitted(t, k)
+			assert.Equal(t, !tc.fail, body.Remote)
+			assert.Greater(t, body.Version, original.Version)
+			if tc.restore {
+				assert.Contains(t, body.HTML, "Hello reader")
+				assert.NotContains(t, body.HTML, "你好")
+			} else {
+				assert.Contains(t, body.HTML, "你好")
+			}
+			if tc.fail {
+				f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+					t.Error("switching after a failed reload must use the cached original")
+					return core.Message{}, errors.New("mail unavailable")
+				}
+				f.r.Translate(m.ID, nil)
+				restored, err := f.p.Load(pageCtx(k))
+				require.NoError(t, err)
+				assert.Equal(t, original.HTML, restored.HTML)
+			}
+		})
+	}
 }
 
 func TestReaderPageScoped(t *testing.T) {

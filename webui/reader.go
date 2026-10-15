@@ -198,15 +198,18 @@ func (r *Reader) Translate(message int64, texts map[string]string) {
 		return
 	}
 	st.translations = maps.Clone(texts)
-	if st.original == nil {
-		return // the initial build will apply these translations
+	if st.original == nil || st.body == nil {
+		return // the pending build will apply the latest translation choice
 	}
+	r.emitTranslation(message, st)
+}
+
+// emitTranslation applies the current choice to the cached original, with r.mu held.
+func (r *Reader) emitTranslation(message int64, st *bodyOf) {
 	b := translateBody(*st.original, st.translations)
 	r.version++
 	b.Version = r.version
-	if st.body != nil {
-		st.body = &b
-	}
+	st.body = &b
 	for k, m := range r.bound {
 		if m == message {
 			r.d.OnBuilt(k, b)
@@ -255,6 +258,9 @@ func (r *Reader) reload(message int64, change func(*bodyOf)) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			if r.msgs[message] == st && st.generation == v {
+				if st.original != nil {
+					r.emitTranslation(message, st)
+				}
 				for k, m := range r.bound {
 					if m == message {
 						r.d.OnFailed(k, message, err)
