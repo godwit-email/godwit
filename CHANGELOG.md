@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/godwit-email/godwit/compare/v1.1.0...v1.2.0) (2026-10-15)
+
+
+### Features
+
+* **plugins:** native plugins, a signed plugin directory, and translation through plugins ([#68](https://github.com/godwit-email/godwit/issues/68)) ([40bf3d7](https://github.com/godwit-email/godwit/commit/40bf3d776aa7f2cf3f97e91cdce777294be11e29))
+* upgrade MyGo to 0.5.1 and improve mail rendering and i18n ([#74](https://github.com/godwit-email/godwit/issues/74)) ([1a0266f](https://github.com/godwit-email/godwit/commit/1a0266fde12ad9bb30fe2c680cb6db62c3cd9b68))
+
+
+### Bug Fixes
+
+* **ci:** select the standalone MSIX publisher with the package path ([#72](https://github.com/godwit-email/godwit/issues/72)) ([89b78a0](https://github.com/godwit-email/godwit/commit/89b78a04f54eedbb9cd691b26713a582deb6c99d))
+* **ci:** use the supported Store publish input directory ([#70](https://github.com/godwit-email/godwit/issues/70)) ([a6dfb21](https://github.com/godwit-email/godwit/commit/a6dfb2112014d2759c8ca9919f0b9b3bfff2eb04))
+* **dev:** isolate development data from production ([#75](https://github.com/godwit-email/godwit/issues/75)) ([8eaa551](https://github.com/godwit-email/godwit/commit/8eaa551bcfaa8e7ccfb7d2f200cadb8d43d40b91))
+* **plugins:** show install progress and clarify plugin settings ([#77](https://github.com/godwit-email/godwit/issues/77)) ([60051bd](https://github.com/godwit-email/godwit/commit/60051bda9e846ef0815a083a4d515a54faf066bd))
+
 ## [1.1.0](https://github.com/godwit-email/godwit/compare/v1.0.1...v1.1.0) (2026-10-15)
 
 
