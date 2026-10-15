@@ -1,0 +1,75 @@
+name: MSIX
+
+# The Windows build as an MSIX bundle for the Microsoft Store, which re-signs
+# it; the throwaway dev certificate here only lets winapp sign the bundle.
+# The identity is the app's, from Partner Center (Product management > App identity).
+# Called, not triggered: by ci.yml on every change, and by release.yml, which submits the bundle.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag to build; empty builds the caller's own ref
+        type: string
+        default: ""
+      archs:
+        description: Comma-separated architectures to build; a single one packs a plain .msix, not a bundle
+        type: string
+        default: amd64,arm64
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    env:
+      MSIX_NAME: BaranWang.Godwit
+      MSIX_DISPLAY_NAME: Godwit # the name reserved in Partner Center; the Store rejects any other
+      MSIX_PUBLISHER: CN=07259668-8BC9-4107-94ED-584A42E65ECF
+      MSIX_PUBLISHER_DISPLAY_NAME: Baran Wang
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) }}
+      - uses: jdx/mise-action@v2
+      - uses: microsoft/setup-WinAppCli@v0.1
+      - id: go-cache
+        shell: bash
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache.outputs.dir }}
+          key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ github.job }}-
+      - run: mise run web:install
+      - name: build the Windows executables
+        shell: bash
+        run: go tool mygo build -platform "$(echo "${{ inputs.archs }}" | sed 's|[^,]*|windows/&|g')"
+      - name: pack
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path mygo.config.ts -Pattern 'version: "(\d+\.\d+\.\d+)"').Matches[0].Groups[1].Value + '.0'
+          $logo = (Resolve-Path assets\icon.png).Path
+          $dirs = foreach ($arch in '${{ inputs.archs }}'.Split(',')) {
+            $dir = "msix-in-$arch"
+            New-Item -ItemType Directory $dir | Out-Null
+            Copy-Item "dist\windows-$arch\*" $dir -Recurse
+            Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
+            Push-Location $dir # the manifest and its Assets are generated next to the app
+            winapp manifest generate --executable Godwit.exe --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit --logo-path $logo | Out-Host # not into $dirs
+            $manifest = Get-Item *.appxmanifest
+            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
+              -replace '(<DisplayName>)[^<]*', "`${1}$env:MSIX_DISPLAY_NAME" `
+              -replace '(<uap:VisualElements\s+DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+            $text = Get-Content $manifest -Raw # a replace that matches nothing is silent: the Store would reject the package
+            foreach ($want in "<DisplayName>$env:MSIX_DISPLAY_NAME<", ('DisplayName="' + $env:MSIX_DISPLAY_NAME + '"'), "<PublisherDisplayName>$env:MSIX_PUBLISHER_DISPLAY_NAME<") {
+              if (-not $text.Contains($want)) { throw "the manifest lacks $want" }
+            }
+            Pop-Location
+            $dir
+          }
+          winapp cert generate --publisher $env:MSIX_PUBLISHER
+          winapp pack @($dirs) --cert devcert.pfx
+          Get-ChildItem *.msix*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msix
+          path: "*.msix*"

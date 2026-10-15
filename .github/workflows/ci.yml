@@ -90,16 +90,17 @@ jobs:
         env:
           CGO_ENABLED: "0"
       - name: test (race)
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         run: go test -race -count=1 ./...
 
+  # Windows packages in the msix job below, which builds it anyway.
   package:
     needs: changes
     if: needs.changes.outputs.client == 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -116,59 +117,18 @@ jobs:
       - name: build (every platform must package)
         run: mise run build
       - name: generated client matches the Go code
+        if: runner.os == 'Linux'
         shell: bash
         run: git diff --exit-code -- web/src/mygo.ts
 
-  # The Windows build as an MSIX bundle for the Microsoft Store, which re-signs
-  # it; the throwaway dev certificate here only lets winapp sign the bundle.
-  # The identity is the app's, from Partner Center (Product management > App identity).
+  # The Windows build as an MSIX bundle for the Microsoft Store; release.yml submits the same one.
   msix:
     needs: changes
     if: needs.changes.outputs.client == 'true'
-    runs-on: windows-latest
-    continue-on-error: true
-    env:
-      MSIX_NAME: BaranWang.Godwit
-      MSIX_DISPLAY_NAME: Godwit # the name reserved in Partner Center; the Store rejects any other
-      MSIX_PUBLISHER: CN=07259668-8BC9-4107-94ED-584A42E65ECF
-      MSIX_PUBLISHER_DISPLAY_NAME: Baran Wang
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
-      - uses: microsoft/setup-WinAppCli@v0.1
-      - run: mise run web:install
-      - name: build the Windows executables
-        run: go tool mygo build -platform windows/amd64,windows/arm64
-      - name: pack
-        shell: pwsh
-        run: |
-          $version = (Select-String -Path mygo.config.ts -Pattern 'version: "(\d+\.\d+\.\d+)"').Matches[0].Groups[1].Value + '.0'
-          $logo = (Resolve-Path assets\icon.png).Path
-          $dirs = foreach ($arch in 'amd64', 'arm64') {
-            $dir = "msix-in-$arch"
-            New-Item -ItemType Directory $dir | Out-Null
-            Copy-Item "dist\windows-$arch\*" $dir -Recurse
-            Remove-Item "$dir\*Setup*.exe" -ErrorAction SilentlyContinue # the installer sits beside the app
-            Push-Location $dir # the manifest and its Assets are generated next to the app
-            winapp manifest generate --executable Godwit.exe --package-name $env:MSIX_NAME --publisher-name $env:MSIX_PUBLISHER --version $version --description Godwit --logo-path $logo | Out-Host # not into $dirs
-            $manifest = Get-Item *.appxmanifest
-            (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
-              -replace '(<DisplayName>)[^<]*', "`${1}$env:MSIX_DISPLAY_NAME" `
-              -replace '(<uap:VisualElements\s+DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
-            $text = Get-Content $manifest -Raw # a replace that matches nothing is silent: the Store would reject the package
-            foreach ($want in "<DisplayName>$env:MSIX_DISPLAY_NAME<", ('DisplayName="' + $env:MSIX_DISPLAY_NAME + '"'), "<PublisherDisplayName>$env:MSIX_PUBLISHER_DISPLAY_NAME<") {
-              if (-not $text.Contains($want)) { throw "the manifest lacks $want" }
-            }
-            Pop-Location
-            $dir
-          }
-          winapp cert generate --publisher $env:MSIX_PUBLISHER
-          winapp pack @dirs --cert devcert.pfx
-          Get-ChildItem *.msix*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: msix
-          path: "*.msix*"
+    uses: ./.github/workflows/msix.yml
+    with:
+      # Pull requests check one architecture; main builds both, as the release does.
+      archs: ${{ github.event_name == 'pull_request' && 'amd64' || 'amd64,arm64' }}
 
   web:
     needs: changes

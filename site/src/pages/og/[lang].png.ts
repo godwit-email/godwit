@@ -36,7 +36,8 @@ const row = (y: number, sender: number, line: number, unread: boolean, selected:
 	<rect x="122" y="${y + 33}" width="${line - 40}" height="7" rx="3.5" fill="${t.muted}" opacity="0.35"/>`;
 
 function svg(lang: Lang): string {
-	const [first, second] = strings[lang].headline;
+	// Resvg has no text-autospace: put back the CJK-Latin gap the page's CSS draws.
+	const [first, second] = strings[lang].headline.map((l) => l.replace(/(?<=[\u4e00-\u9fff])(?=[A-Za-z0-9])|(?<=[A-Za-z0-9])(?=[\u4e00-\u9fff])/g, " "));
 	return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
 	<rect width="1200" height="630" fill="${t.window}"/>
 

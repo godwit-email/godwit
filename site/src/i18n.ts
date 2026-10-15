@@ -47,6 +47,10 @@ export interface Strings {
 	arm64: string;
 	macNote: string;
 	windowsNote: string;
+	microsoftStore: string;
+	installer: string;
+	otherVersions: string;
+	windowsArm: string;
 	linuxNote: string;
 	homebrew: string;
 	installScript: string;
@@ -62,37 +66,37 @@ export interface Strings {
 
 export const strings: Record<Lang, Strings> = {
 	"zh-Hans": {
-		title: "Godwit · 开源、AI 原生的邮件客户端",
-		description: "Godwit 是开源的桌面邮件客户端，支持任何 IMAP/SMTP 邮箱，内置 AI 助手 Wit，用你自己选的模型读信、总结、翻译、起草回复。",
-		headline: ["开源、AI 原生、", "由你扩展的邮件客户端"],
-		sub: "支持任何 IMAP/SMTP 邮箱。内置助手 Wit 帮你读信、总结、翻译、起草回复，用的是你自己选的模型。macOS、Windows、Linux 都能用。",
+		title: "Godwit · 开源、AI原生的邮件客户端",
+		description: "Godwit是开源的桌面邮件客户端，支持任何IMAP/SMTP邮箱，内置AI助手Wit，用你自己选的模型读信、总结、翻译、起草回复。",
+		headline: ["开源、AI原生、", "由你扩展的邮件客户端"],
+		sub: "支持任何IMAP/SMTP邮箱。内置助手Wit帮你读信、总结、翻译、起草回复，用的是你自己选的模型。macOS、Windows、Linux都能用。",
 		download: "下载",
-		downloadMac: "下载 macOS 版",
-		downloadWindows: "下载 Windows 版",
-		downloadLinux: "下载 Linux 版",
+		downloadMac: "下载macOS版",
+		downloadWindows: "下载Windows版",
+		downloadLinux: "下载Linux版",
 		otherPlatforms: "其他平台与安装方式",
 		github: "GitHub",
 		featuresTitle: "一个邮件客户端，加上一个懂你邮件的助手",
 		features: [
 			{
 				title: "邮件",
-				body: "IMAP/SMTP 同步、离线修改、会话、全文搜索、HTML 撰写。自动识别 Gmail、Outlook、iCloud、QQ 邮箱、163/126、腾讯企业邮、飞书、钉钉等邮箱的设置。",
+				body: "IMAP/SMTP同步、离线修改、会话、全文搜索、HTML撰写。自动识别Gmail、Outlook、iCloud、QQ邮箱、163/126、腾讯企业邮、飞书、钉钉等邮箱的设置。",
 			},
-			{ title: "Wit", body: "回答关于你邮件的问题，能读 PDF、Office、CSV 附件，帮你起草回复。没有你的批准，它不会发出任何邮件。" },
-			{ title: "AI 操作", body: "总结、翻译、调整语气和长度、即时回复，作用于一封邮件、一段选中的文字或一份草稿。" },
+			{ title: "Wit", body: "回答关于你邮件的问题，能读PDF、Office、CSV附件，帮你起草回复。没有你的批准，它不会发出任何邮件。" },
+			{ title: "AI操作", body: "总结、翻译、调整语气和长度、即时回复，作用于一封邮件、一段选中的文字或一份草稿。" },
 			{
 				title: "你的模型",
-				body: "任何兼容 OpenAI（Chat Completions 或 Responses）或 Anthropic 的服务，包括 Ollama、LM Studio 这样的本地模型。API Key 只存在系统钥匙串里。",
+				body: "任何兼容OpenAI（Chat Completions或Responses）或Anthropic的服务，包括Ollama、LM Studio这样的本地模型。API Key只存在系统钥匙串里。",
 			},
 			{
 				title: "扩展",
-				body: "放一个 SKILL.md 就多一个按钮；TypeScript 插件声明权限后，能加卡片、动作和 Wit 工具；MCP 服务器给 Wit 接入外部工具。内置的 AI 功能走的也是同样的扩展点。",
+				body: "放一个SKILL.md就多一个按钮；TypeScript插件声明权限后，能加卡片、动作和Wit工具；MCP服务器给Wit接入外部工具。内置的AI功能走的也是同样的扩展点。",
 			},
-			{ title: "给其他 Agent", body: "godwit mcp 是一个 MCP 服务器：Claude、Cursor 等 agent 可以读你的邮件、创建草稿，但不能发送。" },
+			{ title: "给其他Agent", body: "godwit mcp是一个MCP服务器：Claude、Cursor等agent可以读你的邮件、创建草稿，但不能发送。" },
 		],
 		privacy: {
 			title: "你的邮件只去你允许的地方",
-			sub: "没有 Godwit 账号，没有遥测，也没有转发邮件的中间服务器。下面就是 Godwit 会发起的全部连接。",
+			sub: "没有Godwit账号，没有遥测，也没有转发邮件的中间服务器。下面就是Godwit会发起的全部连接。",
 			local: [
 				{ title: "邮件存在这台电脑上", body: "同步下来的邮件、草稿和搜索索引都在本机的数据目录里。" },
 				{ title: "密码只存在系统钥匙串", body: "不会写进配置文件，也不会出现在日志里。" },
@@ -103,30 +107,34 @@ export const strings: Record<Lang, Strings> = {
 				name: "你的模型",
 				cloud: "云端",
 				local: "本机",
-				cloudHost: "api.openai.com 或你填的地址",
+				cloudHost: "api.openai.com或你填的地址",
 				localHost: "localhost:11434 · Ollama",
-				cloudWhat: "只有你让 AI 处理的内容，发给你自己选的服务商。",
+				cloudWhat: "只有你让AI处理的内容，发给你自己选的服务商。",
 				localWhat: "模型跑在这台电脑上，邮件不出本机。",
 			},
 			rest: [
-				{ name: "插件与 MCP", host: "只限你批准的域名", what: "插件只能连它声明过、你批准过的域名；MCP 的每次写操作都要你确认。" },
+				{ name: "插件与MCP", host: "只限你批准的域名", what: "插件只能连它声明过、你批准过的域名；MCP的每次写操作都要你确认。" },
 				{ name: "远程图片", host: "发件人的服务器", what: "默认拦截，你点「加载图片」才会连接。" },
 				{ name: "检查更新", host: "dl.godwit.email", what: "只下载新版本，不上传任何东西。" },
 			],
-			none: { name: "Godwit 的服务器", host: "不存在", what: "你的邮件、密码和对话，我们一样都收不到。" },
+			none: { name: "Godwit的服务器", host: "不存在", what: "你的邮件、密码和对话，我们一样都收不到。" },
 		},
-		downloadTitle: "下载 Godwit",
-		downloadSub: "装好之后，Godwit 会自己检查并安装更新。",
-		appleSilicon: "Apple 芯片",
+		downloadTitle: "下载Godwit",
+		downloadSub: "装好之后，Godwit会自己检查并安装更新。",
+		appleSilicon: "Apple芯片",
 		intel: "Intel",
 		x64: "x64",
 		arm64: "ARM64",
-		macNote: "磁盘映像，需要 macOS 12 或更新版本。",
-		windowsNote: "为当前用户安装，不需要管理员权限。",
-		linuxNote: "Debian / Ubuntu 软件包。",
-		homebrew: "用 Homebrew 安装",
-		installScript: "不用 root，为当前用户安装",
-		license: "以 Apache-2.0 许可证开源",
+		macNote: "磁盘映像，需要macOS 12或更新版本。",
+		windowsNote: "商店版由Microsoft Store安装和更新；独立安装包为当前用户安装，不需要管理员权限。",
+		microsoftStore: "从Microsoft Store获取",
+		installer: "x64独立安装包",
+		otherVersions: "其他版本",
+		windowsArm: "ARM64独立安装包",
+		linuxNote: "Debian / Ubuntu软件包。",
+		homebrew: "用Homebrew安装",
+		installScript: "不用root，为当前用户安装",
+		license: "以Apache-2.0许可证开源",
 		privacyPolicy: "隐私政策",
 		release: { out: "已发布", whatsNew: "查看更新", latest: "最新版本", on: "，发布于 ", notes: "更新日志" },
 		name: "名字来自斑尾塍鹬（bar-tailed godwit），不经停飞行距离最远的鸟。",
@@ -194,7 +202,11 @@ export const strings: Record<Lang, Strings> = {
 		x64: "x64",
 		arm64: "ARM64",
 		macNote: "Disk image, macOS 12 or later.",
-		windowsNote: "Installs for the current user, without admin rights.",
+		windowsNote: "The Store installs and updates it for you; the standalone installer is for the current user, without admin rights.",
+		microsoftStore: "Get it from the Microsoft Store",
+		installer: "x64 installer",
+		otherVersions: "Other versions",
+		windowsArm: "ARM64 installer",
 		linuxNote: "Debian / Ubuntu package.",
 		homebrew: "With Homebrew",
 		installScript: "For the current user, no root",

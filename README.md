@@ -21,7 +21,7 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
   - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts). Plugins can read mail and write drafts; none can send.
   - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
 - **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on **Settings › Local API** and copy the client configuration from there.
-- **Updates itself** from dl.godwit.email.
+- **Updates itself** from dl.godwit.email (the Microsoft Store version is updated by the Store).
 
 ## Install
 
@@ -32,7 +32,7 @@ Download the latest build from [godwit.email](https://godwit.email/#download):
   ```sh
   brew install godwit-email/tap/godwit
   ```
-- **Windows**: the installer. It installs for the current user, without admin rights.
+- **Windows**: the installer, which installs for the current user without admin rights, or [Godwit on the Microsoft Store](https://apps.microsoft.com/detail/9NS3Q2CGWD12), which the Store updates.
 - **Linux**: the `.deb`, or install for the current user (no root) with:
 
   ```sh
