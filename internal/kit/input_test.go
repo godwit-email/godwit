@@ -2,6 +2,7 @@ package kit
 
 import (
 	"image/color"
+	"math"
 	"testing"
 	"time"
 
@@ -59,16 +60,25 @@ func TestInputFocusFades(t *testing.T) {
 }
 
 func TestDialogInputFocusIsNotClipped(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		t.Run(map[bool]string{false: "light", true: "dark"}[dark], func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		dark   bool
+		offset float32
+	}{
+		{"light", false, 0},
+		{"dark", true, 0},
+		{"light/fractional", false, 0.75},
+		{"dark/fractional", true, 0.75},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			open, value := true, ""
 			tt := ui.NewTester(themed(func(c *ui.Context) {
 				c.DisableAnimations()
 				Dialog(c, &open, "Account", DialogOpts{Desc: "Choose your provider", Close: "close"}, func() {
-					Input(c, &value, InputOpts{}).Label("input")
+					Input(c, &value, InputOpts{}).Label("input").Margin(tc.offset, 0, 0, 0)
 				}, nil)
 			}), 800, 500)
-			tt.SetDark(dark)
+			tt.SetDark(tc.dark)
 			time.Sleep(2 * theme.MotionBase)
 			tt.Frame()
 			if err := tt.Click("input"); err != nil {
@@ -78,8 +88,10 @@ func TestDialogInputFocusIsNotClipped(t *testing.T) {
 			r, _ := tt.Find("input")
 			img := tt.Image()
 			want := img.RGBAAt(int(r.X)-2, int(r.Y+r.H/2))
+			// Sample inside the ring when platform font metrics put its top between pixels.
+			top := int(math.Ceil(float64(r.Y)))
 			for _, offset := range []int{1, 2, 3} {
-				got := img.RGBAAt(int(r.X+r.W/2), int(r.Y)-offset)
+				got := img.RGBAAt(int(r.X+r.W/2), top-offset)
 				if max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) > 3 {
 					t.Errorf("top focus ring clipped at %d px: got %v, side %v", offset, got, want)
 				}

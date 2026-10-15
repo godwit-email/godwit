@@ -278,7 +278,7 @@ func TestPluginRowSwitch(t *testing.T) {
 		e.InstallPlugin(t, "config-demo")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
+	p := h.openSettings("extensions")
 	h.see("config-demo") // the plugins tab shows first, each plugin one closed row
 	if h.tt.HasText("它请求的权限") || h.tt.HasText("卸载插件") {
 		t.Fatal("an installed plugin opens by default")
@@ -288,7 +288,14 @@ func TestPluginRowSwitch(t *testing.T) {
 	h.click("config-demo")
 	h.until("closed", func() bool { return !h.tt.HasText("卸载插件") })
 	h.click("启用 config-demo")
-	h.until("off", func() bool { p, _ := h.plugin("config-demo"); return !p.Enabled })
+	// The next click must use the refreshed switch, not just the persisted value.
+	h.until("off in service and view", func() bool {
+		stored, _ := h.plugin("config-demo")
+		return !stored.Enabled && len(h.app.writes.chains["plugins"]) == 0 &&
+			slices.ContainsFunc(p.ext.plugins, func(p core.PluginInfo) bool {
+				return p.Name == "config-demo" && !p.Enabled
+			})
+	})
 	h.click("启用 config-demo")
 	h.until("on", func() bool { p, _ := h.plugin("config-demo"); return p.Enabled })
 }
