@@ -792,7 +792,8 @@ func TestLoadOlderCancelledLeavingMail(t *testing.T) {
 // A folder list at its local end fetches older mail past the sync range, with
 // an inline error and 重试, and stops once the server has nothing older.
 func TestLoadOlderInFolder(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
+	// Keep background sync from importing mail while the limited-range fixture is seeded.
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	acc := accs[0]
 	r := core.SyncRange{Limit: 1}
 	if _, err := h.env.Svc.UpdateAccount(context.Background(), acc.ID, core.AccountPatch{Sync: &r}); err != nil {
