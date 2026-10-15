@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/godwit-email/godwit/compare/v1.0.1...v1.1.0) (2026-10-15)
+
+
+### Features
+
+* sign in with ChatGPT and Grok subscriptions as model providers ([#61](https://github.com/godwit-email/godwit/issues/61)) ([08452aa](https://github.com/godwit-email/godwit/commit/08452aa7544d6728d3baaffb9441101266d3a9a7))
+
+
+### Bug Fixes
+
+* **avatars:** prioritize apple-touch-icon links over generic icon links ([#62](https://github.com/godwit-email/godwit/issues/62)) ([78c082e](https://github.com/godwit-email/godwit/commit/78c082e9b2721e44f3ef72fb7dd9a00affed22c2))
+
 ## [1.0.1](https://github.com/godwit-email/godwit/compare/v1.0.0...v1.0.1) (2026-10-14)
 
 
