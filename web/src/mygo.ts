@@ -402,8 +402,13 @@ export interface WitHistory {
 
 /** WitInfo is what the Wit panel offers for the draft. */
 export interface WitInfo {
-  /** Enabled means a model is configured: the panel shows. */
+  /** Enabled means the panel shows: a model is configured, or a plugin translates. */
   enabled: boolean;
+  /**
+   * TranslateOnly: no model, but a plugin translates. The panel offers its
+   * 翻译 menu alone: no input, no 调整, no chips.
+   */
+  translateOnly: boolean;
   /**
    * Skills are the 调整 menu's; Languages the 翻译 menu's, the reading
    * language first.

@@ -164,6 +164,8 @@
     "wit.compose.cmdk.input": "修改选中的内容",
     "wit.compose.compare": "对比原文",
     "wit.compose.empty": "自己写，或者在右边告诉 Wit 你想怎么回",
+    "wit.compose.translate_only": "没有配置模型，这里只能用翻译插件翻译草稿。",
+    "wit.compose.translate_only.models": "添加模型",
     "wit.compose.history": "与 %s 的往来 %d 封",
     "wit.compose.input": "告诉 Wit 你想怎么回",
     "wit.compose.link": "链接改为 %s",

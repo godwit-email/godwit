@@ -18,6 +18,9 @@ export default {
   macos: {
     icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
+    // Native plugins are libraries other developers sign: the hardened runtime
+    // loads them only with library validation off (docs/superpowers/specs/2026-10-14-native-plugins-design.md 7.1).
+    entitlements: "assets/entitlements.plist",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },
   // Installers and updates live in the R2 bucket that dl.godwit.email serves;

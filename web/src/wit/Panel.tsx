@@ -845,10 +845,12 @@ export function Panel({
       <RiArrowDownSLine className="size-3 text-muted-foreground" />
     </Button>
   );
+  // No model, a plugin translates: the 翻译 menu alone, the tray standing on its own.
+  const only = info?.translateOnly ?? false;
   // a card filling its resizable panel (320 by default) beside the editor's
   return (
     <aside className={cn("flex h-full w-full flex-col overflow-hidden", card)}>
-      {info && info.chips.length > 0 && (
+      {info && !only && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
             <Badge
@@ -866,24 +868,32 @@ export function Panel({
         {fade}
         {error && <div className="pb-2">{error}</div>}
         {info && (
-          <div data-tray className="mx-1 -mb-4 flex gap-1 rounded-t-2xl bg-muted px-1 pt-1 pb-5">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={locked}
-                render={trayButton(RiEqualizerLine, t("wit.compose.adjust"))}
-              />
-              <DropdownMenuContent className="min-w-45">
-                {info.skills.map((s) => (
-                  <DropdownMenuItem
-                    key={s.id}
-                    onClick={() => ask(s.label, { skill: s.id, lang: "" })}
-                  >
-                    {s.label}
-                    <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div
+            data-tray
+            className={cn(
+              "mx-1 flex gap-1 bg-muted px-1 pt-1",
+              only ? "rounded-2xl pb-1" : "-mb-4 rounded-t-2xl pb-5",
+            )}
+          >
+            {!only && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={locked}
+                  render={trayButton(RiEqualizerLine, t("wit.compose.adjust"))}
+                />
+                <DropdownMenuContent className="min-w-45">
+                  {info.skills.map((s) => (
+                    <DropdownMenuItem
+                      key={s.id}
+                      onClick={() => ask(s.label, { skill: s.id, lang: "" })}
+                    >
+                      {s.label}
+                      <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger
                 disabled={locked}
@@ -907,7 +917,26 @@ export function Panel({
             </DropdownMenu>
           </div>
         )}
-        {input}
+        {only ? (
+          <p className="px-2 pt-2 text-muted-foreground text-sm">
+            {t("wit.compose.translate_only")}
+            {onModels && (
+              <>
+                {" "}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto p-0 align-baseline text-sm"
+                  onClick={onModels}
+                >
+                  {t("wit.compose.translate_only.models")}
+                </Button>
+              </>
+            )}
+          </p>
+        ) : (
+          input
+        )}
       </div>
     </aside>
   );

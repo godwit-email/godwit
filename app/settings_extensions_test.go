@@ -19,6 +19,7 @@ import (
 
 func TestMain(m *testing.M) {
 	coretest.ServeMCPIfChild()
+	coretest.ServeNativeIfChild()
 	kit.BackdropBlur = false // slow on the Tester's CPU renderer; kit's own test covers it
 	os.Exit(m.Run())
 }
@@ -404,5 +405,37 @@ func TestPendingPluginsKeepOwnForms(t *testing.T) {
 	}
 	if len(p.ext.cfgBusy) != 0 {
 		t.Fatal("a read is still in flight")
+	}
+}
+
+// A native plugin awaiting consent shows its risk, not permissions it cannot be held to.
+func TestNativePluginRiskAndGrant(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.dir = coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, nil)
+	h.openSettings("extensions")
+	h.click("从文件夹安装")
+	h.called("OpenDirectory")
+	h.until("installed", func() bool { _, ok := h.plugin("dlx"); return ok })
+	h.until("the 原生 pill", func() bool { _, ok := h.tt.Find("原生"); return ok }) // exactly: the page's subtitle mentions 原生插件
+	h.see("待授权")
+	h.see("以 Godwit 的全部权限运行")
+	h.see("这个文件不在 Godwit 审核过的插件目录里")
+	h.see("SHA-256")
+	if h.tt.HasText("不包含") || h.tt.HasText("它请求的权限") || h.tt.HasText("允许并启用") {
+		t.Fatal("a native plugin shows script permissions")
+	}
+	h.click("仍然启用")
+	h.until("enabled", func() bool { info, _ := h.plugin("dlx"); return info.Enabled && !info.NeedsGrant })
+	h.see("你已授权这个文件")
+}
+
+func TestScriptPluginCardUnchanged(t *testing.T) {
+	h := pendingHarness(t)
+	h.openSettings("extensions")
+	h.see("它请求的权限")
+	h.see("不包含")
+	h.see("允许并启用")
+	if _, pill := h.tt.Find("原生"); pill || h.tt.HasText("仍然启用") {
+		t.Fatal("a script plugin shows the native card")
 	}
 }

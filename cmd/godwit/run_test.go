@@ -459,3 +459,12 @@ func TestRelativeDataDir(t *testing.T) {
 		}
 	}
 }
+
+func TestPluginHostSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"plugin-host", "--library", filepath.Join(t.TempDir(), "missing"), "--sha256", "00"},
+		strings.NewReader(""), &stdout, &stderr)
+	if code != 3 {
+		t.Fatalf("code %d, stderr %q", code, stderr.String())
+	}
+}

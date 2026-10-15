@@ -818,11 +818,15 @@ function Compose({
                         key={`${state.draftId}:${initial.n}`}
                         initial={initial.body}
                         readOnly={locked || witLocked}
-                        placeholder={wit ? t("wit.compose.empty") : ""}
+                        placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}
                         onChange={(body) => edit({ body })}
                         onComposing={() => {}} // <main> tracks compositions, the fields' too
                         t={t}
-                        onCmdK={wit && !locked && !witLocked ? openCmdK : undefined}
+                        onCmdK={
+                          wit && !locked && !witLocked && !state.wit.translateOnly
+                            ? openCmdK
+                            : undefined
+                        }
                         toolbarSlot={toolbarSlot}
                         attach={attach}
                         popover={

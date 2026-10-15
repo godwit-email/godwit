@@ -42,6 +42,11 @@ type Options struct {
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
+	// Registry is where reviewed plugins are listed; nil turns the plugin
+	// directory off (DefaultRegistry is Godwit's own). The apps set it.
+	Registry *RegistrySource
+	// AppVersion is this build's version, for a release's minGodwit; "" or "dev" takes any.
+	AppVersion string
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -116,6 +121,10 @@ type Service struct {
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
+	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
+	nativeEnv   []string           // and its whole environment
+	registryMu  sync.Mutex         // registry cache writes; registryErr
+	registryErr string             // why the last registry refresh failed; "" it did not
 
 	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
 	mcpStMu sync.Mutex          // guards mcpSt
@@ -150,6 +159,17 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
 	s.labelJudge = s.defaultLabelJudge
+	if exe, err := os.Executable(); err == nil {
+		s.nativeCmd = []string{exe, "plugin-host"}
+	}
+	s.nativeEnv = []string{"PATH=" + os.Getenv("PATH")}
+	for _, kv := range os.Environ() { // a plugin reaching its service goes through the user's proxy
+		k, _, _ := strings.Cut(kv, "=")
+		switch strings.ToUpper(k) { // as set, once each: Windows names ignore case
+		case "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY":
+			s.nativeEnv = append(s.nativeEnv, kv)
+		}
+	}
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
 	}
@@ -179,6 +199,12 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, err
 	}
+	if opts.Registry != nil {
+		if err := s.applyCachedRegistry(ctx); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("plugin registry: %w", err)
+		}
+	}
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err
@@ -192,6 +218,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		s.startLabeler()
 	}
 	s.startImagePrefetch()
+	if opts.Registry != nil {
+		s.startRegistryRefresh()
+	}
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {
 		s.Close()

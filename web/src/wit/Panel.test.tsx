@@ -13,6 +13,8 @@ const t = makeT({
   "wit.compose.adjust": "调整",
   "wit.compose.translate": "翻译",
   "wit.compose.translate_to": "翻译为%s",
+  "wit.compose.translate_only": "没有配置模型，这里只能用翻译插件翻译草稿。",
+  "wit.compose.translate_only.models": "添加模型",
   "wit.compose.review": "待确认",
   "wit.send": "发送",
   "wit.stop": "停止",
@@ -55,6 +57,7 @@ const t = makeT({
 
 const info: WitInfo = {
   enabled: true,
+  translateOnly: false,
   skills: [
     { id: "tone-formal", label: "更正式", hint: "语气" },
     { id: "shorter", label: "更短", hint: "长度" },
@@ -94,6 +97,7 @@ async function setup(
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
     page?: boolean;
+    info?: WitInfo;
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -112,7 +116,7 @@ async function setup(
   await tr.follow(); // as the page does: the history read through this transport
   const ui = (resume?: { run: number }) => (
     <Panel
-      info={info}
+      info={o.info ?? info}
       history={o.history ?? empty}
       locked={o.locked ?? false}
       review={o.review}
@@ -194,6 +198,18 @@ describe("Panel", () => {
     );
     await user.click(screen.getByRole("button", { name: /Sonnet/ }));
     expect(onModels).toHaveBeenCalledOnce();
+  });
+
+  it("translate-only: the 翻译 menu alone, no input, 调整 or chips", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ info: { ...info, translateOnly: true } });
+    expect(screen.queryByRole("button", { name: "调整" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Wit 输入" })).toBeNull();
+    expect(screen.queryByText("原邮件")).toBeNull();
+    expect(screen.getByText("没有配置模型，这里只能用翻译插件翻译草稿。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "翻译" }));
+    await user.click(await screen.findByRole("menuitem", { name: "English" }));
+    await waitFor(() => expect(api.skill).toHaveBeenCalledWith("translate-draft", "en"));
   });
 
   it("the compose layout's 调整 / 翻译 tray sits right above the input; the page has none", async () => {

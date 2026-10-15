@@ -354,7 +354,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	})()`)
 	assert.Equal(t, []any{"actions.register", "cards.register", "config", "llm.complete", "llm.decide",
 		"mail.createDraft", "mail.get", "mail.move", "mail.search", "mail.setFlags", "mail.updateDraft",
-		"net.fetch", "on", "storage.delete", "storage.get", "storage.set", "tools.register"}, got)
+		"net.fetch", "on", "storage.delete", "storage.get", "storage.set", "tools.register", "translators.register"}, got)
 
 	var methods []string
 	ht := reflect.TypeFor[Host]()
@@ -407,4 +407,29 @@ func TestFetchGateAudited(t *testing.T) {
 	got := try(t, p, egress, `ctx.net.fetch("https://evil.example.com/")`)
 	assert.Contains(t, got, "permission denied: net:evil.example.com")
 	assert.Contains(t, got, "audit disk full")
+}
+
+func TestTranslatorRegistrationMatchesManifest(t *testing.T) {
+	const reg = `var plugin = {default(ctx) {
+		ctx.translators.register({ translate: (req) => ({ texts: req.texts.map((x) => x + "!"), source: "en" }) })
+	}}`
+	declares := Manifest{Name: "test", Capabilities: []string{"translate"}}
+	load := func(m Manifest, src string) (*Plugin, error) {
+		return Load(context.Background(), newTestVM(t, src, nil), m, &fakeHost{}, testConfig)
+	}
+	p, err := load(declares, reg)
+	require.NoError(t, err)
+	got, err := p.Translate(context.Background(), Invocation{ID: "t", Kind: KindTranslate, Config: testConfig}, map[string]any{"texts": []string{"hi"}, "target": "zh-CN"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"texts": []any{"hi!"}, "source": "en"}, got)
+
+	_, err = load(declares, `var plugin = {default(ctx) {}}`)
+	assert.ErrorContains(t, err, "registered no translator")
+	_, err = load(Manifest{Name: "test"}, reg)
+	assert.ErrorContains(t, err, "translate capability")
+	_, err = load(declares, `var plugin = {default(ctx) {
+		const t = { translate: (req) => req }
+		ctx.translators.register(t); ctx.translators.register(t)
+	}}`)
+	assert.ErrorContains(t, err, "already")
 }

@@ -331,7 +331,7 @@ func (s *Service) sendCheckers() []sendChecker {
 func (s *Service) sendCheckersLocked() []sendChecker {
 	var out []sendChecker
 	for name, rp := range s.running {
-		if rp.p.Handles(plugins.EventBeforeSend) {
+		if rp.p != nil && rp.p.Handles(plugins.EventBeforeSend) { // a native plugin has no hooks
 			cfg := rp.host.snapshot()
 			id := name + "@" + rp.hash + "@" + strconv.FormatInt(cfg.Version, 10)
 			out = append(out, sendChecker{id: id, name: name, gen: rp.gen, p: rp.p, cfg: cfg})

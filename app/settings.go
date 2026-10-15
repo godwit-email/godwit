@@ -48,8 +48,9 @@ type settingsPage struct {
 	update  func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	// general
-	st, shown core.Settings // what the controls are bound to, and what they showed last frame
-	noTrans   bool          // the no-translate language list is open
+	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
+	noTrans     bool                  // the no-translate language list is open
+	translators []core.TranslatorInfo // the 翻译方式 choices, read on opening General
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
@@ -110,8 +111,19 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.readMailbox(acc.ID)
 	case sec == "models" && hints == nil:
 		p.models.load()
+	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
+		var list []core.TranslatorInfo
+		a.query(func(ctx context.Context) (err error) { list, err = a.svc.ListTranslators(ctx); return err },
+			func(err error) {
+				if err == nil {
+					p.translators = list
+				}
+			})
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		p.ext.load()
+		if hints == nil { // opened: the directory may have changed since
+			p.ext.refreshRegistry()
+		}
 	case sec == "privacy" && hints == nil:
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },

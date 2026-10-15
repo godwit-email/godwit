@@ -1,0 +1,8 @@
+{
+  "name": "translate-demo",
+  "version": "0.1.0",
+  "description": "Upper-cases text, as a translator",
+  "main": "index.ts",
+  "capabilities": ["translate"],
+  "permissions": { "net": ["api.example.com"] }
+}

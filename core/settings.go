@@ -11,6 +11,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -26,6 +27,9 @@ type Settings struct {
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	DefaultModel, SmallModel                         string
+	// Translator is the reader's translation channel: "" the model, or
+	// "plugin/<name>" a plugin declaring translate (ListTranslators).
+	Translator string
 	// JudgeService is the slug of the service whose judge answers typed
 	// questions; "" (or one gone or with judge off): the DefaultModel does.
 	JudgeService string
@@ -86,6 +90,9 @@ func (st Settings) validate() error {
 		return fmt.Errorf("sidebar width must be between 240 and 480")
 	case st.ListWidth != 0 && (st.ListWidth < 280 || st.ListWidth > 560):
 		return fmt.Errorf("list width must be between 280 and 560")
+	}
+	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
+		return fmt.Errorf("invalid translator %q", st.Translator)
 	}
 	if strings.Contains(st.JudgeService, "/") {
 		return fmt.Errorf("invalid judge service %q", st.JudgeService)

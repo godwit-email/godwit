@@ -31,6 +31,8 @@ var (
 	ErrAINotConfigured      = errors.New("no model configured")
 	ErrModelServiceNotFound = errors.New("model service not found")
 	ErrModelNotFound        = errors.New("model not found")
+	// ErrTranslatorUnavailable: the settings translate with a plugin that is not running.
+	ErrTranslatorUnavailable = errors.New("the translation plugin is not running")
 )
 
 // ModelService is a model service and its two capabilities. Kind is the
@@ -850,6 +852,18 @@ func (s *Service) TaskModel(ctx context.Context, skill string) (string, error) {
 		return "", err
 	}
 	defer end()
+	if skill == "translate" {
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return "", err
+		}
+		if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
+			if _, _, err := s.pluginTranslator(name); err != nil {
+				return "", err
+			}
+			return st.Translator, nil
+		}
+	}
 	override, small := "", true
 	if skill != "" {
 		sk, err := s.skill(ctx, skill)

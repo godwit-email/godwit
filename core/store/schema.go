@@ -312,4 +312,10 @@ var Migrations = [][]string{{
 	// oauth_client_id is the dynamic client_id ChatGPT issued at sign-in.
 	`ALTER TABLE model_services ADD COLUMN oauth_email TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Native plugins (docs/superpowers/specs/2026-10-14-native-plugins-design.md 4.3):
+	// trust is how the current file came to be allowed ('' not allowed, 'user'
+	// the user allowed it); library_hash is the SHA-256 of its shared library.
+	`ALTER TABLE plugins ADD COLUMN trust TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE plugins ADD COLUMN library_hash TEXT NOT NULL DEFAULT ''`,
 }}

@@ -19,6 +19,7 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
 - **Extensions**:
   - **Skills**: a `SKILL.md` ([Agent Skills](https://agentskills.io)) in the data directory's `skills/` folder becomes a Wit skill, or an action button with `godwit-action-*` metadata.
   - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts). Plugins can read mail and write drafts; none can send.
+  - **Native plugins**: a shared library behind a small C ABI ([`sdk/native/godwit_plugin.h`](sdk/native/godwit_plugin.h)), for what a sandbox cannot do. It runs with all of Godwit's rights, so Godwit shows the risk and asks you to allow that exact file; a changed file needs your permission again.
   - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
 - **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on **Settings › Local API** and copy the client configuration from there.
 - **Updates itself** from dl.godwit.email (the Microsoft Store version is updated by the Store).

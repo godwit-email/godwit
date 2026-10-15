@@ -7,6 +7,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -20,6 +21,13 @@ var errorKeys = []struct {
 	{core.ErrRunActive, "error.run_active"},
 	{core.ErrStaleApproval, "error.stale_approval"},
 	{core.ErrNeedsGrant, "error.needs_grant"},
+	{core.ErrTranslatorUnavailable, "error.translator_unavailable"},
+	// A native plugin's failures: its stderr is the plugin's text, not the user's.
+	{plugins.ErrNativeExited, "error.plugin_exited"},
+	{plugins.ErrTimeout, "error.plugin_timeout"},
+	{plugins.ErrNativeABI, "error.plugin_abi"},
+	{core.ErrRegistryMismatch, "error.registry_mismatch"},
+	{core.ErrRegistrySignature, "error.registry_signature"},
 	{core.ErrAINotConfigured, "error.ai_not_configured"},
 	{core.ErrModelNotFound, "error.model_not_found"},
 	{core.ErrModelAuth, "error.model_auth"},

@@ -17,15 +17,33 @@ import (
 	"github.com/godwit-email/godwit/core/skills"
 )
 
-// Manifest is a plugin's plugin.json (spec 5.3–5.4).
+// Manifest is a plugin's plugin.json (spec 5.3–5.4). A script plugin has
+// Main and Permissions; a native one (docs/superpowers/specs/2026-10-14-native-plugins-design.md)
+// has Native instead, and its shared library is LibraryName() beside plugin.json.
 type Manifest struct {
-	Name        string        `json:"name"`
-	Version     string        `json:"version"`
-	Description Text          `json:"description"` // one line, shown under the name in settings
-	Main        string        `json:"main"`
-	Permissions Permissions   `json:"permissions"`
-	Config      []ConfigField `json:"config"`
+	Name         string        `json:"name"`
+	Version      string        `json:"version"`
+	Description  Text          `json:"description"` // one line, shown under the name in settings
+	Main         string        `json:"main,omitempty"`
+	Native       *NativeSpec   `json:"native,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"` // what it provides to Godwit's own features
+	Permissions  Permissions   `json:"permissions"`
+	Config       []ConfigField `json:"config"`
 }
+
+// NativeABI is the C ABI version this build of Godwit loads.
+const NativeABI uint32 = 1
+
+// NativeSpec marks a native plugin: the C ABI version its library exports.
+type NativeSpec struct {
+	ABI uint32 `json:"abi"`
+}
+
+// IsNative reports whether m is a native (shared library) plugin.
+func (m Manifest) IsNative() bool { return m.Native != nil }
+
+// capabilities a plugin may declare.
+var knownCapabilities = []string{"translate"}
 
 // Permissions: Mail holds "read" and/or "write" (there is no send); Net the
 // hosts, each "host" or "host:port", lowercased and without ":443" after
@@ -173,8 +191,24 @@ func ParseManifest(data []byte, dirName string) (Manifest, error) {
 	if m.Version == "" {
 		return Manifest{}, fmt.Errorf("plugin %s: version is required", m.Name)
 	}
-	// No ":" or backslash: "C:/x.ts" and "C:x.ts" leave the plugin on Windows.
-	if !fs.ValidPath(m.Main) || m.Main == "." || strings.ContainsAny(m.Main, `:\`) ||
+	for i, c := range m.Capabilities {
+		if !slices.Contains(knownCapabilities, c) || slices.Contains(m.Capabilities[:i], c) {
+			return Manifest{}, fmt.Errorf("plugin %s: capability %q is unknown or repeated", m.Name, c)
+		}
+	}
+	if m.IsNative() {
+		// Native code runs with all of Godwit's rights: permissions would read as limits it does not have.
+		switch {
+		case m.Main != "":
+			return Manifest{}, fmt.Errorf("plugin %s: a native plugin has no main", m.Name)
+		case len(m.Permissions.Mail) > 0 || len(m.Permissions.Net) > 0 || m.Permissions.LLM:
+			return Manifest{}, fmt.Errorf("plugin %s: a native plugin declares no permissions", m.Name)
+		case m.Native.ABI != NativeABI:
+			return Manifest{}, fmt.Errorf("plugin %s: native ABI %d is not the supported %d", m.Name, m.Native.ABI, NativeABI)
+		case len(m.Capabilities) == 0:
+			return Manifest{}, fmt.Errorf("plugin %s: a native plugin needs capabilities", m.Name)
+		}
+	} else if !fs.ValidPath(m.Main) || m.Main == "." || strings.ContainsAny(m.Main, `:\`) || // no ":" or backslash: "C:/x.ts" and "C:x.ts" leave the plugin on Windows
 		!(strings.HasSuffix(m.Main, ".ts") || strings.HasSuffix(m.Main, ".js")) {
 		return Manifest{}, fmt.Errorf("plugin %s: main %q must be a relative .ts or .js path inside the plugin", m.Name, m.Main)
 	}
