@@ -65,13 +65,13 @@ const settingsVersion = 3
 
 // MinJudgeThreshold and MaxJudgeThreshold bound the user-adjustable cutoff.
 const (
-	MinJudgeThreshold = 0.3
-	MaxJudgeThreshold = 0.9
+	MinJudgeThreshold = 0.5
+	MaxJudgeThreshold = 0.95
 )
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.7}
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)

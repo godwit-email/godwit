@@ -1541,7 +1541,7 @@
   "settings_models_tile_grok": "Your SuperGrok or X Premium plan",
   "settings_models_threshold": "Decision threshold",
   "settings_models_threshold_binary": "When the generation model handles judgments, it only returns 0% or 100%, so fine-tuning has no effect.",
-  "settings_models_threshold_help": "Shared across features: probabilities at or above this value count as yes. Higher is stricter; range 30%–90%, default 70%.",
+  "settings_models_threshold_help": "Shared across features: probabilities at or above this value count as yes. Higher is stricter; range 50%–95%, default 80%.",
   "settings_models_unsupported": "Not supported",
   "settings_models_url_ph": "https://… or http://127.0.0.1:[PORT]/v1",
   "settings_models_usage": "Usage",

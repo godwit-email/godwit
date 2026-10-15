@@ -92,7 +92,7 @@ func qNames(qs []ai.Question) []string {
 func TestClassifyAppliesAuto(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
 	l := labelIDs(t, s)
-	j := &fakeJudge{p: map[string]float64{"otp": 0.7, "bill": 0.6999}}
+	j := &fakeJudge{p: map[string]float64{"otp": 0.8, "bill": 0.7999}}
 	useLabelJudge(s, j)
 	a := addMessage(t, s, "登录验证码", "Code Host <noreply@x>", "验证码 482913", "", 1)
 	n, err := s.classifyBatch(t.Context())
@@ -100,7 +100,7 @@ func TestClassifyAppliesAuto(t *testing.T) {
 	require.Equal(t, 1, n)
 	got, err := s.MessageLabels(t.Context(), []int64{a})
 	require.NoError(t, err)
-	require.Equal(t, []AppliedLabel{{LabelID: l["otp"], Auto: true}}, got[a], "0.7 is yes, just under is no")
+	require.Equal(t, []AppliedLabel{{LabelID: l["otp"], Auto: true}}, got[a], "0.8 is yes, just under is no")
 	require.Greater(t, store.Int(labeledAt(t, s, a)), int64(0))
 	require.Equal(t, []string{"otp", "bill", "order", "travel", "calendar", "notice", "newsletter"}, qNames(j.qs[0]))
 	require.Equal(t, ai.Predicate, j.qs[0][0].Type)
@@ -110,7 +110,7 @@ func TestClassifyAppliesAuto(t *testing.T) {
 }
 
 func TestClassifyUsesJudgeThreshold(t *testing.T) {
-	for _, p := range []float64{0.3, 0.7, 0.8, 0.9} {
+	for _, p := range []float64{0.5, 0.8, 0.95} {
 		t.Run(fmt.Sprint(p), func(t *testing.T) {
 			s := newLabelService(t, "", "zh-CN")
 			st, err := s.GetSettings(t.Context())

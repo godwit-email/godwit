@@ -15,15 +15,19 @@ func TestInputFocusFades(t *testing.T) {
 		for _, group := range []bool{false, true} {
 			t.Run(map[bool]string{false: "input", true: "group"}[group]+map[bool]string{false: "/motion", true: "/reduced"}[reduce], func(t *testing.T) {
 				var value string
+				fading := false
 				tt := ui.NewTester(themed(func(c *ui.Context) {
 					ui.Column(c).Fill().Padding(10).Background(theme.Of(c).Background).Children(func() {
+						var frame ui.Element
 						if group {
-							InputGroup(c, InputOpts{Flat: true}).Label("frame").Children(func() {
+							frame = InputGroup(c, InputOpts{Flat: true}).Label("frame").Children(func() {
 								Input(c, &value, InputOpts{Bare: true}).Grow(1).Label("input")
 							})
 						} else {
-							Input(c, &value, InputOpts{Flat: true}).Label("input")
+							frame = Input(c, &value, InputOpts{Flat: true}).Label("input")
 						}
+						// Click may settle the whole fade before returning on a slow runner.
+						fading = fading || !frame.Settled("input-ring")
 						Button(c, "blur", ButtonOpts{})
 					})
 				}), 160, 100)
@@ -38,21 +42,20 @@ func TestInputFocusFades(t *testing.T) {
 				if err := tt.Click("input"); err != nil {
 					t.Fatal(err)
 				}
-				first := pixel()
 				time.Sleep(2 * theme.MotionFast)
 				tt.Frame()
 				focused := pixel()
-				if first == focused || focused == rest {
-					t.Errorf("focus did not fade: rest %v, first %v, focused %v", rest, first, focused)
+				if !fading || focused == rest {
+					t.Errorf("focus did not fade: fading %v, rest %v, focused %v", fading, rest, focused)
 				}
+				fading = false
 				if err := tt.Click("blur"); err != nil {
 					t.Fatal(err)
 				}
-				first = pixel()
 				time.Sleep(2 * theme.MotionFast)
 				tt.Frame()
-				if last := pixel(); first == last || last != rest {
-					t.Errorf("blur did not fade: first %v, last %v, want %v", first, last, rest)
+				if last := pixel(); !fading || last != rest {
+					t.Errorf("blur did not fade: fading %v, last %v, want %v", fading, last, rest)
 				}
 			})
 		}

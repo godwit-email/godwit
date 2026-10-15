@@ -771,7 +771,7 @@
   "settings_models_tile_grok": "用 SuperGrok / X Premium 订阅",
   "settings_models_threshold": "决策阈值",
   "settings_models_threshold_binary": "生成模型兼任时只返回 0% 或 100%，无法细调。",
-  "settings_models_threshold_help": "全局共用，概率达到此值时判为“是”。越高越严格，范围 30%–90%，默认 70%。",
+  "settings_models_threshold_help": "全局共用，概率达到此值时判为“是”。越高越严格，范围 50%–95%，默认 80%。",
   "settings_models_unsupported": "不支持",
   "settings_models_url_ph": "https://… 或 http://127.0.0.1:[PORT]/v1",
   "settings_models_usage": "用途",
