@@ -36,6 +36,7 @@ func TestTextLanguages(t *testing.T) {
 	var x Text
 	require.NoError(t, json.Unmarshal([]byte(`{"default":"Plan","zh-CN":"套餐","de":"Tarif"}`), &x))
 	assert.Equal(t, "套餐", x.For("zh-CN"))
+	assert.Equal(t, "套餐", x.For("zh-Hans"), "script tags still find older region-tagged translations")
 	assert.Equal(t, "Tarif", x.For("de-AT"), "falls back to the base language")
 	assert.Equal(t, "Plan", x.For("fr"))
 	b, err := json.Marshal(x)

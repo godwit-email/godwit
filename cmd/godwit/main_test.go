@@ -35,9 +35,9 @@ func TestWindowOptionsPerOS(t *testing.T) {
 
 func TestUILocale(t *testing.T) {
 	for _, tc := range []struct{ preference, system, want string }{
-		{"", "zh-TW", "zh-CN"},
-		{"", "zh-HK", "zh-CN"},
-		{"", "zh-Hant", "zh-CN"},
+		{"", "zh-TW", "zh-Hans"},
+		{"", "zh-HK", "zh-Hans"},
+		{"", "zh-Hant", "zh-Hans"},
 		{"", "zh-CN", ""},
 		{"", "zh-Hans", ""},
 		{"", "en-US", ""},

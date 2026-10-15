@@ -12,6 +12,8 @@ afterEach(() => {
 test("uses the generated locale catalog and preserves unknown keys", () => {
   expect(makeT("en")("common.save")).toBe("Save");
   expect(makeT("zh-CN")("common.save")).toBe("保存");
+  expect(makeT("zh-Hans")("common.save")).toBe("保存");
+  expect(makeT("zh-SG")("common.save")).toBe("保存");
   expect(makeT("en")("missing.key")).toBe("missing.key");
   expect(makeT("en")("toString")).toBe("toString");
 });

@@ -13,7 +13,7 @@ import (
 var lang atomic.Value
 var messageKey = strings.NewReplacer(".", "_", "-", "_")
 
-func init() { lang.Store("zh-CN") }
+func init() { lang.Store("zh-Hans") }
 
 // SetLanguage keeps the existing Chinese/English preference and accepts
 // MyGo's pseudo locales for layout checks.
@@ -22,7 +22,7 @@ func SetLanguage(tag string) {
 	switch {
 	case mygoi18n.IsPseudo(tag):
 	case strings.HasPrefix(tag, "zh"):
-		tag = "zh-CN"
+		tag = "zh-Hans"
 	default:
 		tag = "en"
 	}

@@ -1,5 +1,5 @@
 {
-  "@@locale": "zh-CN",
+  "@@locale": "zh-Hans",
   "app_another_owner": "Godwit 已在运行（GUI 或 headless）。",
   "app_lock_failed": "Godwit 无法打开数据目录。",
   "app_open_failed": "Godwit 无法打开数据目录：{arg1}。",

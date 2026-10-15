@@ -5,6 +5,9 @@
 web/node_modules/
 web/dist/
 /.mygo/
+/internal/i18n/catalog_gen.go
+/web/src/i18n.ts
+/web/src/mygo.ts
 .DS_Store
 /output/
 /tmp/

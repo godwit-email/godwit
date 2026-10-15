@@ -51,7 +51,7 @@ func TestKeysMatch(t *testing.T) {
 func TestFallbackAndFormat(t *testing.T) {
 	defer SetLanguage("zh-CN")
 	SetLanguage("zh_CN.UTF-8")
-	if Language() != "zh-CN" || T("common.save") != "保存" {
+	if Language() != "zh-Hans" || T("common.save") != "保存" {
 		t.Fatalf("zh: %q %q", Language(), T("common.save"))
 	}
 	SetLanguage("fr-FR")
@@ -76,5 +76,15 @@ func TestFallbackAndFormat(t *testing.T) {
 	}
 	if got := T("compose.format"); got != "格式" {
 		t.Errorf("compose.format: %q", got)
+	}
+}
+
+func TestChineseLocaleAliases(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	for _, tag := range []string{"zh", "zh-CN", "zh-SG", "zh-Hans", "zh-Hans-SG", "zh-TW", "zh-Hant"} {
+		SetLanguage(tag)
+		if Language() != "zh-Hans" || T("common.save") != "保存" {
+			t.Errorf("%s: %q %q", tag, Language(), T("common.save"))
+		}
 	}
 }

@@ -20,7 +20,7 @@ run = "go tool mygo generate"
 
 [tasks."web:test"]
 dir = "web"
-depends = ["web:install"]
+depends = ["generate"]
 run = "bun run test"
 
 [tasks."web:lint"]
@@ -35,7 +35,7 @@ run = "bun run components"
 
 [tasks."web:check"]
 dir = "web"
-depends = ["web:install"]
+depends = ["generate"]
 run = 'bun run typecheck && bun run lint && bun run test && bun run components && test -z "$(git status --porcelain -- .)"'
 
 [tasks."site:install"]

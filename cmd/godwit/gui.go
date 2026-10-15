@@ -46,7 +46,7 @@ func windowOptions(goos string) mygo.WindowOptions {
 func uiLocale(preference, system string) string {
 	if preference == "" && strings.HasPrefix(system, "zh") && mygoi18n.Match([]string{system}, i18n.Catalog.Languages()) == "" {
 		// shortcut: this fallback follows system changes on restart; remove when MyGo supports custom matching.
-		return "zh-CN"
+		return "zh-Hans"
 	}
 	return preference
 }

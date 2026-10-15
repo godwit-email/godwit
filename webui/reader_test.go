@@ -216,7 +216,7 @@ func TestReaderPageLoad(t *testing.T) {
 	assert.False(t, b.Cut)
 	assert.Empty(t, b.Plain)
 	assert.EqualValues(t, 14, b.Theme.BodyFontSize)
-	assert.Equal(t, "zh-CN", b.Locale)
+	assert.Equal(t, "zh-Hans", b.Locale)
 
 	again, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)

@@ -175,7 +175,7 @@ func TestWitPageLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "m1", st.Model)
 	assert.Zero(t, st.Conversation)
-	assert.Equal(t, "zh-CN", st.Locale)
+	assert.Equal(t, "zh-Hans", st.Locale)
 	assert.NotEmpty(t, st.Theme.Light)
 
 	assert.EqualValues(t, 1, f.w.SetConversation(5))

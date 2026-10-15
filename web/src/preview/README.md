@@ -5,7 +5,7 @@ Opens a page in a normal browser over fake data, to screenshot it against the de
     cd web && bun run preview      # http://localhost:5173/preview.html
 
 `?page=<page>&state=<state>&theme=light|dark` (theme defaults to light; the pages draw the tokens
-from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-CN text comes from the generated i18n catalog).
+from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes from the generated i18n catalog).
 
 | page      | states                                                         |
 | --------- | -------------------------------------------------------------- |

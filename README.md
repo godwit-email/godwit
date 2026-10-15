@@ -56,14 +56,14 @@ Godwit is written in Go on [MyGo](https://github.com/egoist/mygo): the main wind
 
 ```sh
 mise install
-mise run web:install   # the Go build embeds files from web/node_modules
+mise run generate    # install web dependencies and generate Go/TypeScript code before Go tests
 mise run dev         # run the app, reloading on changes
 go test ./...        # Go tests
 mise run web:check
 mise run build       # package for this machine into dist/
 ```
 
-Native and web UI translations share `internal/i18n/en.json` and `zh-CN.json`, using ICU MessageFormat. Edit these catalogs, run `mise run generate` to update the Go and TypeScript accessors, and validate with `go tool mygo i18n check`. The generated files are committed; do not edit them directly.
+Native and web UI translations share `internal/i18n/en.json` and `zh-Hans.json`, using ICU MessageFormat. Edit these catalogs, run `mise run generate` to update the Go and TypeScript accessors, and validate with `go tool mygo i18n check`. MyGo's generated Go/TypeScript accessors and client are ignored by Git; do not edit them directly. Development, packaging and `mise run web:check` / `web:test` generate them automatically; run `mise run generate` before using Go commands directly.
 
 Layout:
 
