@@ -993,6 +993,17 @@
   "settings_ext_excluded": "Excludes",
   "settings_ext_grant": "Approve and enable",
   "settings_ext_install": "Install from folder",
+  "settings_ext_installing": "Installing…",
+  "settings_ext_downloading": "Downloading… {arg1, number, ::group-off}%",
+  "@settings_ext_downloading": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_ext_verifying": "Verifying…",
+  "settings_ext_native_reviewed_body": "Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_mcp_add": "Add server",
   "settings_ext_mcp_args": "Arguments",
   "settings_ext_mcp_args_help": "One per line",
@@ -1068,8 +1079,8 @@
   "settings_ext_plugin_enable": "Enable plugin",
   "settings_ext_plugins_empty": "No plugins installed.",
   "settings_ext_registry": "Plugin directory",
-  "settings_ext_registry_confirm_body": "A native plugin runs with all of Godwit''s permissions: it can read your mail, account credentials and files on this computer, reach any network address, run programs, and can crash Godwit. Godwit cannot restrict it. This file was reviewed for Godwit''s plugin directory.",
-  "settings_ext_registry_confirm_ok": "Install anyway",
+  "settings_ext_registry_confirm_body": "This file was reviewed for Godwit''s plugin directory. Its integrity is checked before installation. Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
+  "settings_ext_registry_confirm_ok": "Install",
   "settings_ext_registry_confirm_replace": " It replaces the {arg1} you installed yourself.",
   "@settings_ext_registry_confirm_replace": {
     "placeholders": {

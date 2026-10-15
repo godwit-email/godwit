@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -64,6 +65,33 @@ func TestTranslatorSetting(t *testing.T) {
 	h.openSettings("extensions")
 	h.openSettings("general")
 	h.see("dlx（已停用）")
+}
+
+func TestTranslatorSettingUsesRegistryTitle(t *testing.T) {
+	h, rs, dlx := registryHarness(t)
+	en := regPlugin("dlx", dlx)
+	en["title"] = map[string]string{"default": "DLX", "zh-CN": "DLX 翻译"}
+	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), en))
+	ctx := context.Background()
+	if err := h.env.Svc.RefreshPluginRegistry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.InstallPluginFromRegistry(ctx, "dlx"); err != nil {
+		t.Fatal(err)
+	}
+	h.openSettings("general")
+	h.click("模型（默认）")
+	h.click("DLX 翻译")
+	h.until("saved with the stable ID", func() bool {
+		st, err := h.env.Svc.GetSettings(ctx)
+		return err == nil && st.Translator == "plugin/dlx"
+	})
+	if err := h.env.Svc.SetPluginEnabled(ctx, "dlx", false); err != nil {
+		t.Fatal(err)
+	}
+	h.openSettings("extensions")
+	h.openSettings("general")
+	h.see("DLX 翻译（已停用）")
 }
 
 func TestScriptTranslatorPermissionLine(t *testing.T) {

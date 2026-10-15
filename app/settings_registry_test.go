@@ -2,6 +2,10 @@ package app
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +47,82 @@ func TestRegistrySectionInstallNative(t *testing.T) {
 	h.click("继续安装")
 	h.until("installed and enabled", func() bool { p, ok := h.plugin("dlx"); return ok && p.Enabled && p.Trust == "listed" })
 	h.see("已审核：Godwit 插件目录。")
+	if h.tt.HasText("也可能让 Godwit 崩溃") {
+		t.Fatal("a reviewed plugin shows the unlisted-source warning")
+	}
+}
+
+func TestRegistryInstallLoading(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
+			h, rs, _ := registryHarness(t)
+			h.openSettings("extensions")
+			if fail {
+				rs.Serve("/files/hello-0.1.0-any", nil)
+			}
+			release := h.block("plugins")
+			h.click("安装 hello")
+			if !h.tt.HasText("正在安装…") {
+				t.Fatal("no visible progress while installation is pending")
+			}
+			// Repeated activation must not queue another installation.
+			if err := h.tt.Click("正在安装… hello"); err != nil {
+				t.Fatal(err)
+			}
+			h.tt.Frame()
+			if got := len(h.app.writes.chains["plugins"]); got != 2 {
+				t.Fatalf("queued %d writes, want the blocker and one install", got)
+			}
+			release()
+			h.until("installation settles", func() bool { return len(h.app.writes.chains["plugins"]) == 0 && !h.tt.HasText("正在安装…") })
+			if fail {
+				h.seeExactly("安装 hello")
+				if _, ok := h.plugin("hello"); ok {
+					t.Fatal("a failed download installed the plugin")
+				}
+				rs.Serve("/files/hello-0.1.0-any", []byte(`export default function () {}`))
+				h.click("安装 hello")
+				h.until("installed on retry", func() bool { _, ok := h.plugin("hello"); return ok })
+			} else {
+				h.until("installed", func() bool { _, ok := h.plugin("hello"); return ok })
+			}
+		})
+	}
+}
+
+func TestRegistryDownloadProgress(t *testing.T) {
+	h, rs, _ := registryHarness(t)
+	code := "export default function () {}\n"
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, code[:len(code)/2])
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		io.WriteString(w, code[len(code)/2:])
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(unblock)
+	rel := rs.ScriptRelease("hello", "0.2.0", `{}`, code)
+	rel["artifacts"].(map[string]any)["any"].(map[string]any)["url"] = server.URL
+	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), regPlugin("hello", rel)))
+	h.openSettings("extensions")
+	h.seeExactly("0.2.0")
+	h.click("安装 hello")
+	h.see("正在下载… 50%")
+	if _, ok := h.plugin("hello"); ok {
+		t.Fatal("the plugin was installed before its download finished")
+	}
+	unblock()
+	h.until("installed without progress", func() bool {
+		_, ok := h.plugin("hello")
+		return ok && !h.tt.HasText("正在下载…") && !h.tt.HasText("正在安装…")
+	})
 }
 
 func TestRegistrySectionInstallScript(t *testing.T) {
@@ -69,7 +149,12 @@ func TestRegistrySectionUpdate(t *testing.T) {
 	}
 	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), regPlugin("dlx", dlx, rs.NativeRelease(t, "dlx", "0.2.0", nil))))
 	h.openSettings("extensions")
+	release := h.block("plugins")
 	h.click("更新到 0.2.0 dlx")
+	if !h.tt.HasText("正在安装…") {
+		t.Fatal("no visible progress during an update")
+	}
+	release()
 	h.until("updated", func() bool { p, _ := h.plugin("dlx"); return p.Version == "0.2.0" })
 	if h.tt.HasText("安装原生插件") {
 		t.Fatal("an update asked for confirmation")

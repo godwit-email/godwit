@@ -199,7 +199,7 @@ func TestExposeCoversService(t *testing.T) {
 	svc := newService(t)
 	_, err := rpc.NewDispatcher(svc, rpcbind.Expose)
 	require.NoError(t, err)
-	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar"} {
+	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar", "InstallPluginFromRegistryWithProgress"} {
 		assert.False(t, rpcbind.Expose(m), m)
 	}
 	var exposed []string
@@ -210,6 +210,7 @@ func TestExposeCoversService(t *testing.T) {
 	}
 	assert.Contains(t, exposed, "ListAccounts")
 	assert.Contains(t, exposed, "Send")
+	assert.Contains(t, exposed, "InstallPluginFromRegistry")
 	assert.NotContains(t, exposed, "SenderAvatar")
 	t.Logf("%d of %d methods exposed", len(exposed), reflect.TypeOf(svc).NumMethod())
 }
