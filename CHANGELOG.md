@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/godwit-email/godwit/compare/v1.2.0...v1.3.0) (2026-10-15)
+
+
+### Features
+
+* make the decision threshold configurable ([#82](https://github.com/godwit-email/godwit/issues/82)) ([7e7fd22](https://github.com/godwit-email/godwit/commit/7e7fd2250264cba58ccd4182bc9b0dfad09e4464))
+* **ui:** refine account inputs and sidebar transitions ([#78](https://github.com/godwit-email/godwit/issues/78)) ([aae89b6](https://github.com/godwit-email/godwit/commit/aae89b68a67377f52fe9135b41e395eba1013dab))
+
+
+### Bug Fixes
+
+* **notify:** send a separate notification for each new message ([#79](https://github.com/godwit-email/godwit/issues/79)) ([fb54353](https://github.com/godwit-email/godwit/commit/fb54353c2f52e00fdaeb642a1033598f4570c639))
+* **plugins:** read the plugin registry forward-compatibly ([#81](https://github.com/godwit-email/godwit/issues/81)) ([360cc40](https://github.com/godwit-email/godwit/commit/360cc40b2ce28fcb7b9f1b38c6971a82ac969f91))
+
 ## [1.2.0](https://github.com/godwit-email/godwit/compare/v1.1.0...v1.2.0) (2026-10-15)
 
 
