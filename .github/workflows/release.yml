@@ -34,7 +34,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: write # godwit-store-ci trusts repo:godwit-email/godwit:ref:refs/heads/main
+      id-token: write # godwit-store-ci trusts only this repository's main branch (immutable GitHub IDs)
     defaults:
       run:
         shell: bash
