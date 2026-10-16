@@ -33,8 +33,7 @@ func TestThemeThumbTooltip(t *testing.T) {
 		t.Errorf("thumbnail %vx%v, want 76x48", r.W, r.H)
 	}
 	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	time.Sleep(900 * time.Millisecond)
-	h.tt.Frame()
+	h.tt.Advance(900 * time.Millisecond)
 	if count() < 2 {
 		t.Errorf("no tooltip after hover: %q", h.tt.Texts())
 	}

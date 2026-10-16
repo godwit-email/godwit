@@ -2,6 +2,11 @@
 // Developer ID it imports and notarizes (release.yml); elsewhere builds are
 // signed ad hoc.
 const env = process.env;
+const provisioningProfile = env.MACOS_PROVISIONING_PROFILE;
+const entitlements = env.MACOS_ENTITLEMENTS;
+if (Boolean(provisioningProfile) !== Boolean(entitlements)) {
+  throw new Error("Set both MACOS_PROVISIONING_PROFILE and MACOS_ENTITLEMENTS for communication notifications");
+}
 
 export default {
   name: "Godwit",
@@ -18,10 +23,13 @@ export default {
   i18n: { dir: "internal/i18n", source: "en" },
   macos: {
     icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
+    // Set both only for a signed build with an authorized profile (docs/notifications.md).
+    provisioningProfile,
+    infoPlist: { NSUserActivityTypes: ["INSendMessageIntent"] },
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
     // Native plugins are libraries other developers sign: the hardened runtime
     // loads them only with library validation off (docs/superpowers/specs/2026-10-14-native-plugins-design.md 7.1).
-    entitlements: "assets/entitlements.plist",
+    entitlements: entitlements || "assets/entitlements.plist",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },
   windows: { signCommand: env.WINDOWS_SIGN_COMMAND },

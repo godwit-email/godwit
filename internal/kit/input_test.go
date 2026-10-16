@@ -4,7 +4,6 @@ import (
 	"image/color"
 	"math"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -42,8 +41,7 @@ func TestInputFocusFades(t *testing.T) {
 				if err := tt.Click("input"); err != nil {
 					t.Fatal(err)
 				}
-				time.Sleep(2 * theme.MotionFast)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionFast)
 				focused := pixel()
 				if !fading || focused == rest {
 					t.Errorf("focus did not fade: fading %v, rest %v, focused %v", fading, rest, focused)
@@ -52,8 +50,7 @@ func TestInputFocusFades(t *testing.T) {
 				if err := tt.Click("blur"); err != nil {
 					t.Fatal(err)
 				}
-				time.Sleep(2 * theme.MotionFast)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionFast)
 				if last := pixel(); !fading || last != rest {
 					t.Errorf("blur did not fade: fading %v, last %v, want %v", fading, last, rest)
 				}
@@ -82,8 +79,7 @@ func TestDialogInputFocusIsNotClipped(t *testing.T) {
 				}, nil)
 			}), 800, 500)
 			tt.SetDark(tc.dark)
-			time.Sleep(2 * theme.MotionBase)
-			tt.Frame()
+			tt.Advance(2 * theme.MotionBase)
 			if err := tt.Click("input"); err != nil {
 				t.Fatal(err)
 			}

@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      signed_macos:
+        description: Build and notarize both macOS architectures without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,6 +37,10 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "client=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base=$(git merge-base "$BASE" "$HEAD")
           elif [[ "$BASE" =~ ^0+$ ]]; then
@@ -76,6 +86,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gocache-${{ github.job }}-
       - run: mise run generate
+      - run: bun test scripts/notifications-config.test.ts
+      - run: python3 -m unittest discover -s scripts -p '*_test.py'
       - name: gofmt
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
@@ -115,8 +127,30 @@ jobs:
           key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
           restore-keys: |
             ${{ runner.os }}-gocache-${{ github.job }}-
+      - name: Prepare release signing for manual macOS validation
+        if: runner.os == 'macOS' && inputs.signed_macos
+        uses: ./.github/actions/macos-sign
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MACOS_PROFILE_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
       - name: build (every platform must package)
+        if: runner.os != 'macOS' || !inputs.signed_macos
         run: mise run build
+      - name: Build and notarize macOS without publishing
+        if: runner.os == 'macOS' && inputs.signed_macos
+        run: |
+          mise run web:install
+          go tool mygo build -platform darwin/arm64,darwin/amd64
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS' && inputs.signed_macos
+        with:
+          name: Godwit-macOS-notarized
+          path: dist/darwin-*/*.dmg
+          if-no-files-found: error
 
   # The Windows build as an MSIX bundle for the Microsoft Store; release.yml submits the same one.
   msix:

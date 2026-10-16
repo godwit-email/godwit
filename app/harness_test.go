@@ -110,6 +110,7 @@ func (h *harness) until(desc string, cond func() bool) {
 	for {
 		h.drain()
 		h.tt.Frame()
+		h.tt.Advance(time.Second / 60)
 		if cond() {
 			return
 		}

@@ -76,6 +76,8 @@ type Platform interface {
 type Notification struct {
 	ID, Title, Subtitle, Body string
 	MessageID                 int64
+	Sender                    string // only set when preview is enabled
+	ThreadID                  int64
 }
 
 // OAuthFlow signs in with an OAuth provider; the default wraps the Service.
