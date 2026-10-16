@@ -10,6 +10,7 @@ import (
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
+	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/app"
 )
 
@@ -24,7 +25,10 @@ func (p *platform) notificationAvatar(n app.Notification) []byte {
 	if err != nil {
 		return nil
 	}
-	return notificationAvatarData(avatar)
+	var data []byte
+	// The renderer shares caches with the UI, so serialize it with window drawing.
+	mygo.RunOnMain(func() { data = notificationAvatarData(avatar) })
+	return data
 }
 
 var loadCommunicationNotifications = sync.OnceValue(func() error {
