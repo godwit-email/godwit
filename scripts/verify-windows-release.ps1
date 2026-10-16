@@ -49,8 +49,12 @@ foreach ($name in @('Godwit.exe', 'mygo-sqlite3.dll')) {
 }
 Write-Host "PASS installation: version=$version; architecture=$arch; files match published update"
 $exe = Join-Path $install 'Godwit.exe'
-$reportedVersion = & $exe --version
-if ($LASTEXITCODE -ne 0 -or "$reportedVersion" -notmatch [regex]::Escape($version)) { throw "Executable version check failed: $reportedVersion" }
+$versionOutput = Join-Path $work 'version.txt'
+$versionProcess = Start-Process $exe -ArgumentList '--version' -RedirectStandardOutput $versionOutput -RedirectStandardError (Join-Path $work 'version-error.txt') -PassThru
+if (-not $versionProcess.WaitForExit(30000)) { $versionProcess.Kill(); throw 'Version command timed out' }
+$reportedVersion = Get-Content $versionOutput -Raw
+if ($versionProcess.ExitCode -ne 0 -or "$reportedVersion".Trim() -ne "godwit $version") { throw "Executable version check failed: exit=$($versionProcess.ExitCode); stdout=$reportedVersion; stderr=$(Get-Content (Join-Path $work 'version-error.txt') -Raw)" }
+Write-Host "PASS executable version: $reportedVersion"
 $app = Start-Process $exe -PassThru
 try {
     Start-Sleep -Seconds 15
