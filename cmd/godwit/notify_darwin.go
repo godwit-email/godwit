@@ -24,7 +24,7 @@ func (p *platform) notificationAvatar(n app.Notification) []byte {
 	if err != nil {
 		return nil
 	}
-	return avatar.Data
+	return notificationAvatarData(avatar)
 }
 
 var loadCommunicationNotifications = sync.OnceValue(func() error {

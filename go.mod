@@ -86,5 +86,3 @@ require (
 ignore ./web/node_modules
 
 tool github.com/egoist/mygo/cmd/mygo
-
-replace github.com/egoist/mygo => github.com/baranwang/mygo v0.0.0-20261016102404-768644e06d3f
