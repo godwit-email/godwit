@@ -104,7 +104,8 @@ jobs:
           CGO_ENABLED: "0"
       - name: test (race)
         if: runner.os == 'Linux'
-        run: go test -race -count=1 ./...
+        # The UI suite renders every frame under race instrumentation.
+        run: go test -race -count=1 -timeout 20m ./...
 
   # Windows packages in the msix job below, which builds it anyway.
   package:
