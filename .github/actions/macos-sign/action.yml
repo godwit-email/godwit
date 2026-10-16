@@ -24,7 +24,8 @@ runs:
         test -n "$MACOS_PROFILE_BASE64" || { echo "MACOS_PROVISIONING_PROFILE secret is required" >&2; exit 1; }
         profile="$RUNNER_TEMP/Godwit.provisionprofile"
         printf '%s' "$MACOS_PROFILE_BASE64" | base64 --decode > "$profile"
-        python3 scripts/macos_profile.py "$profile" assets/notifications.entitlements.plist "$identity" "$keychain"
+        swiftc -parse-as-library scripts/macos_profile.swift -o "$RUNNER_TEMP/macos-profile"
+        "$RUNNER_TEMP/macos-profile" "$profile" assets/notifications.entitlements.plist "$identity" "$keychain"
         echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
         echo "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
         echo "MACOS_PROVISIONING_PROFILE=$profile" >> "$GITHUB_ENV"

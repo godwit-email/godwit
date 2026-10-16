@@ -62,6 +62,8 @@ SVG 由 Godwit 使用现有 MyGo 公开渲染接口转换，不依赖 fork 或�
 CI 的手动 `signed_macos` 构建复用 `.github/actions/macos-sign`，在构建前校验
 profile 的平台、有效期、应用/团队标识、通信权限及实际签名证书。缺失或不匹配
 时构建失败，避免发布时静默关闭头像功能。普通 PR 构建不接触签名私钥。
+校验工具为 `scripts/macos_profile.swift`，使用 Foundation 和 CryptoKit，
+在签名 Action 中编译执行；校验测试仅在 macOS CI 上运行，无需 Python。
 
 在 CI 工作流手动勾选 `signed_macos`，会构建、公证 arm64 和 amd64 的 DMG 并保存
 为 Actions artifact；这个验证入口不上传更新服务器，也不发布 GitHub Release。

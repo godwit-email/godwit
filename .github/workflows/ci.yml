@@ -87,7 +87,11 @@ jobs:
             ${{ runner.os }}-gocache-${{ github.job }}-
       - run: mise run generate
       - run: bun test scripts/notifications-config.test.ts
-      - run: python3 -m unittest discover -s scripts -p '*_test.py'
+      - name: Test macOS provisioning profile checks
+        if: runner.os == 'macOS'
+        run: |
+          swiftc -D PROFILE_TEST scripts/macos_profile.swift scripts/macos_profile_test.swift -o "$RUNNER_TEMP/macos-profile-tests"
+          "$RUNNER_TEMP/macos-profile-tests"
       - name: gofmt
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
