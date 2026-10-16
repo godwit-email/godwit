@@ -33,7 +33,7 @@ jobs:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: read
+      contents: write # draft releases are visible only with push access
       id-token: write # godwit-store-ci trusts only this repository's main branch (immutable GitHub IDs)
     defaults:
       run:
