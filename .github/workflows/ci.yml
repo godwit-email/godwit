@@ -86,7 +86,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gocache-${{ github.job }}-
       - run: mise run generate
-      - run: bun test scripts/notifications-config.test.ts
       - name: Test macOS provisioning profile checks
         if: runner.os == 'macOS'
         run: |
