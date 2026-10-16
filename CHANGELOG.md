@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/godwit-email/godwit/compare/v1.3.0...v1.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* default decision threshold to 80% with a 50–95% range ([#84](https://github.com/godwit-email/godwit/issues/84)) ([99f1dbd](https://github.com/godwit-email/godwit/commit/99f1dbd9d0a656486537c44bb00b4d5815ab0a67))
+
 ## [1.3.0](https://github.com/godwit-email/godwit/compare/v1.2.0...v1.3.0) (2026-10-15)
 
 
