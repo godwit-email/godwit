@@ -89,7 +89,7 @@ func TestNotifyEachMessage(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arrive(acc, "Secret plans")
 		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != "Godwit" || notes[0].Body != "新邮件" {
+		if len(notes) != 1 || notes[0].Title != "Godwit" || notes[0].Body != "新邮件" || notes[0].Sender != "" || notes[0].ThreadID != 0 {
 			t.Fatalf("notes %+v, want neither sender nor subject", notes)
 		}
 	})
@@ -106,7 +106,7 @@ func TestNotifyEachMessage(t *testing.T) {
 		}
 		for i, subject := range []string{"One", "Two"} {
 			n := notes[i]
-			if n.Title != "Bob Stone" || n.Subtitle != subject || !strings.Contains(n.Body, "body of "+subject) || n.MessageID == 0 {
+			if n.Title != "Bob Stone" || n.Subtitle != subject || !strings.Contains(n.Body, "body of "+subject) || n.MessageID == 0 || n.ThreadID == 0 || n.Sender != "Bob Stone <bob@example.com>" {
 				t.Fatalf("note %+v for %q", n, subject)
 			}
 		}
@@ -153,7 +153,7 @@ func TestNotifyEachMessage(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
 		h.arrive(acc, "Lunch")
 		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Subtitle != "Lunch" || !strings.Contains(notes[0].Body, "body of Lunch") || notes[0].MessageID == 0 {
+		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Subtitle != "Lunch" || !strings.Contains(notes[0].Body, "body of Lunch") || notes[0].MessageID == 0 || notes[0].Sender != "Bob Stone <bob@example.com>" || notes[0].ThreadID == 0 {
 			t.Fatalf("notes %+v", notes)
 		}
 	})

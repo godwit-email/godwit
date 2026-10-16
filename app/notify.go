@@ -64,6 +64,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 			n := Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
 			if st.NotifyPreview {
 				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
+				n.Sender, n.ThreadID = m.From, m.ThreadID
 			}
 			if err := plat.Notify(n); err != nil {
 				logf("notify: account %d: %v", acc, err)

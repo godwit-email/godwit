@@ -73,7 +73,17 @@ jobs:
           Install-Module ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery
       # mygo.config.ts signs with the identity and notarizes with the profile in this keychain.
       - name: Import the Developer ID certificate and the notary credentials
-        if: matrix.name == 'macOS'
+        if: matrix.name == 'macOS' && hashFiles('.github/actions/macos-sign/action.yml') != ''
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }} # an App Store Connect team key (.p8), base64
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MACOS_PROFILE_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
+        uses: ./.github/actions/macos-sign
+      - name: Sign older release tags without notification-profile support
+        if: matrix.name == 'macOS' && hashFiles('.github/actions/macos-sign/action.yml') == ''
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}

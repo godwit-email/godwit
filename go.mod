@@ -6,7 +6,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.23.0
 	github.com/dop251/goja v0.0.0-20260923012348-67663e7a3b97
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.5.1
+	github.com/egoist/mygo v0.5.6-0.20261016073705-dc7d9667bb34
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6

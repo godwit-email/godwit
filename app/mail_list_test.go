@@ -477,6 +477,9 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred", func() bool { return h.items()[0].Flagged == 0 })
 	choose("标为未读", "标为已读", "标为未读")
 	h.waitMail("unread", func() bool { return h.items()[0].Unread == 1 })
+	// The context menu selected this row; leave it before reopening it to read.
+	h.click("已标星")
+	h.click("全部收件箱")
 	h.click("first") // reads it; the list has the focus
 	h.waitMail("read by the reader", func() bool { return h.items()[0].Unread == 0 })
 	h.click("first")

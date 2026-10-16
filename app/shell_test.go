@@ -354,8 +354,7 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	}
 	h.app.sidebarHidden = true
 	h.tt.Frame()
-	time.Sleep(2 * theme.MotionBase)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase)
 	pull(0) // a click
 	if h.app.sidebarHidden {
 		t.Error("a click on the edge grip left the sidebar folded")
@@ -391,11 +390,9 @@ func TestSidebarToggleAnimates(t *testing.T) {
 					t.Fatal(err)
 				}
 				first := left()
-				time.Sleep(theme.MotionFast / 2)
-				tt.Frame()
+				tt.Advance(theme.MotionFast / 2)
 				middle := left()
-				time.Sleep(2 * theme.MotionBase)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionBase)
 				last := left()
 				if (first == last) != reduce || before == last {
 					t.Errorf("hidden=%v: content jumped or stayed still: before %v, first %v, last %v", hidden, before, first, last)
@@ -409,14 +406,12 @@ func TestSidebarToggleAnimates(t *testing.T) {
 			}
 			if !reduce {
 				tt.Click(i18n.T("shell.sidebar.collapse"))
-				time.Sleep(theme.MotionFast / 2)
-				tt.Frame()
+				tt.Advance(theme.MotionFast / 2)
 				tt.Click(i18n.T("shell.sidebar.expand"))
 				if left() >= shown {
 					t.Error("reversing the animation jumped to fully expanded")
 				}
-				time.Sleep(2 * theme.MotionBase)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionBase)
 				if left() != shown || a.sidebarWidth() != theme.SidebarWidth {
 					t.Errorf("toggle changed the saved width: content %v, sidebar %v", left(), a.sidebarWidth())
 				}
@@ -437,8 +432,7 @@ func TestSidebarDragDuringCollapse(t *testing.T) {
 	if err := tt.Click(i18n.T("shell.sidebar.collapse")); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(theme.MotionFast / 2)
-	tt.Frame()
+	tt.Advance(theme.MotionFast / 2)
 	if x := left(); x <= theme.GripWidth || x >= shown {
 		t.Fatalf("not in the middle of collapsing: content at %v, shown %v", x, shown)
 	}
@@ -457,8 +451,7 @@ func TestSidebarDragDuringCollapse(t *testing.T) {
 		t.Fatal("dragging during collapse did not reopen the sidebar")
 	}
 	tt.Release(x, y)
-	time.Sleep(2 * theme.MotionBase)
-	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
 	if left() != shown || a.sidebarWidth() != width || a.sidebarSave != nil {
 		t.Fatalf("reopening changed the width: content %v (want %v), width %v (want %v), save scheduled %v", left(), shown, a.sidebarWidth(), width, a.sidebarSave != nil)
 	}

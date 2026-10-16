@@ -181,8 +181,7 @@ func TestShots(t *testing.T) {
 	}
 	write := func(h *harness, dir, name string) {
 		h.t.Helper()
-		time.Sleep(2 * theme.MotionBase) // hover, selection and theme fades run on the wall clock
-		h.tt.Frame()
+		h.tt.Advance(2 * theme.MotionBase)
 		f, err := os.Create(filepath.Join(dir, name+".png"))
 		if err != nil {
 			t.Fatal(err)
@@ -535,7 +534,7 @@ func TestShots(t *testing.T) {
 		s.app.toastAs(kit.ToastWarning, "work@company.example 没有归档文件夹，已跳过")
 		s.app.toast("链接已复制")
 		s.see("链接已复制")
-		time.Sleep(2 * theme.MotionBase) // the toasts' enter motion runs on the wall clock
+		s.tt.Advance(2 * theme.MotionBase)
 		shot(s.harness, "Toasts")
 	})
 	t.Run("AddAccountSheet", func(t *testing.T) {
