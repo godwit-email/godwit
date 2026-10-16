@@ -32,12 +32,18 @@ jobs:
     if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || inputs.tag != '') }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # godwit-store-ci trusts repo:godwit-email/godwit:ref:refs/heads/main
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         include:
           - { name: macOS, os: macos-latest, platform: "darwin/arm64,darwin/amd64" }
-          - { name: Windows, os: ubuntu-latest, platform: "windows/amd64,windows/arm64" }
+          - { name: Windows, os: windows-latest, platform: "windows/amd64,windows/arm64" }
           - { name: Linux, os: ubuntu-latest, platform: "linux/amd64,linux/arm64" }
     steps:
       # A manual run names its tag: build only an existing release, and its tag,
@@ -52,9 +58,19 @@ jobs:
           ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
       - uses: jdx/mise-action@v2
       - run: mise run web:install # generating the client compiles Go, which embeds files from web/node_modules
-      - name: Install NSIS, for the Windows installers
+      - name: Log in to Azure for Windows signing (OIDC)
         if: matrix.name == 'Windows'
-        run: sudo apt-get update && sudo apt-get install -y nsis
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_AD_TENANT_ID }}
+          allow-no-subscriptions: true # only the signing role is needed, not subscription access
+      - name: Set up Windows signing
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/sign-windows.test.ps1
+          Install-Module ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery
       # mygo.config.ts signs with the identity and notarizes with the profile in this keychain.
       - name: Import the Developer ID certificate and the notary credentials
         if: matrix.name == 'macOS'
@@ -87,6 +103,8 @@ jobs:
       # platform's manifest last: that is what publishes its update.
       - name: Build and upload
         env:
+          # MyGo signs the app, uninstaller and installer before making update archives and manifests.
+          WINDOWS_SIGN_COMMAND: ${{ matrix.name == 'Windows' && 'pwsh -NoProfile -File scripts/sign-windows.ps1 %1' || '' }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -121,33 +139,46 @@ jobs:
 
   # Submits the bundle to the Store as an update of the published app. The Store
   # certifies it before customers get it, and needs a higher version each time.
-  # Without the Partner Center secrets the bundle is built but not submitted.
+  # Without the Partner Center IDs the bundle is built but not submitted.
   store:
     needs: msix
     if: ${{ !cancelled() && needs.msix.result == 'success' }}
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
     env:
       STORE_PRODUCT_ID: 9NS3Q2CGWD12 # apps.microsoft.com/detail/9NS3Q2CGWD12
       TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
       SELLER_ID: ${{ secrets.SELLER_ID }}
       CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
     steps:
       - id: creds
         shell: pwsh
         run: |
-          if ($env:TENANT_ID -and $env:SELLER_ID -and $env:CLIENT_ID -and $env:CLIENT_SECRET) { "ready=true" >> $env:GITHUB_OUTPUT }
-          else { Write-Host "::warning::The Microsoft Store secrets are not set: the MSIX bundle was built but not submitted." }
+          if ($env:TENANT_ID -and $env:SELLER_ID -and $env:CLIENT_ID) { "ready=true" >> $env:GITHUB_OUTPUT }
+          else { Write-Host "::warning::The Microsoft Store IDs are not set: the MSIX bundle was built but not submitted." }
       - if: steps.creds.outputs.ready == 'true'
         uses: actions/download-artifact@v4
         with:
           name: msix
       - if: steps.creds.outputs.ready == 'true'
         uses: microsoft/microsoft-store-apppublisher@v1.1
+        with:
+          version: v0.4.3 # supports --clientAssertion for both packaged and unpackaged apps
+      - name: Get the Microsoft Store client assertion (OIDC)
+        if: steps.creds.outputs.ready == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('api://AzureADTokenExchange');
+            core.setSecret(token);
+            core.exportVariable('MSSTORE_CLIENT_ASSERTION', token);
       - if: steps.creds.outputs.ready == 'true'
         shell: pwsh
         run: |
-          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientSecret $env:CLIENT_SECRET
+          msstore reconfigure --tenantId $env:TENANT_ID --sellerId $env:SELLER_ID --clientId $env:CLIENT_ID --clientAssertion
+          if ($LASTEXITCODE -ne 0) { throw 'Microsoft Store OIDC authentication failed' }
           # The CLI documents .msix and .msixupload; an upload file is a zip holding the bundle.
           Compress-Archive (Get-ChildItem *.msixbundle).FullName -DestinationPath Godwit.zip
           Rename-Item Godwit.zip Godwit.msixupload

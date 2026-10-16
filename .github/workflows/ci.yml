@@ -65,6 +65,10 @@ jobs:
         run: Add-MpPreference -ExclusionPath $env:TEMP
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - name: Windows signing checks (no Azure credentials)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/sign-windows.test.ps1
       - id: go-cache
         shell: bash
         run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
