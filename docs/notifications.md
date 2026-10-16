@@ -47,7 +47,9 @@ SVG 栅格化修复见 [#421](https://github.com/egoist/mygo/pull/421)。合入�
    profile 和 entitlements 环境变量：`mygo dev` 默认使用 ad-hoc 签名，且开发 bundle
    identifier 为 `email.godwit.app.dev`，不匹配正式应用的 profile。
 5. 用这个签名构建实测启动、来信通知的头像和小图标、点击定位、关闭预览和
-   多封邮件分别通知。签名、原生显示与公证验收结果见本任务的交付记录。
+   多封邮件分别通知。验收前退出同一应用标识的旧版或其它测试副本，并通过
+   正常安装/启动登记新 bundle；旧副本的注册信息可能导致系统仍按普通通知显示。
+   实际验收结果见下方交付记录。
 
 参考：[Apple 通信通知实现](https://developer.apple.com/documentation/usernotifications/implementing-communication-notifications)、
 [macOS 支持的 capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-macos/)、
@@ -62,3 +64,17 @@ profile 的平台、有效期、应用/团队标识、通信权限及实际签�
 
 在 CI 工作流手动勾选 `signed_macos`，会构建、公证 arm64 和 amd64 的 DMG 并保存
 为 Actions artifact；这个验证入口不上传更新服务器，也不发布 GitHub Release。
+
+## 2026-10-16 交付验收
+
+- 签名原生测试应用实测 PNG、SVG 均显示发件人大头像和 Godwit 小角标。
+- 无效图片、关闭预览均显示普通 Godwit 通知；点击 SVG 测试卡片收到对应通知 ID。
+- [手动签名构建](https://github.com/godwit-email/godwit/actions/runs/38887761310)
+  已生成 arm64、amd64 公证 DMG，未发布版本或上传更新服务器。
+- 下载后两份 DMG 均通过 `stapler validate`；两份包内应用均通过严格签名验证及
+  Gatekeeper 检查，嵌入 profile 的应用、团队、权限和签名证书匹配。
+- arm64 公证产物已安装并正常启动，原生插件进程正常；验收用的同标识测试副本已退出。
+
+通知视觉和系统点击回调使用虚构内容的原生测试应用验收，未发送真实测试邮件。
+正式应用每封邮件的通知数据及定位逻辑通过现有应用测试验证；尚未实测真实新邮件的
+点击定位，也未在 Windows、Linux 桌面或 Intel Mac 上做视觉验收。
