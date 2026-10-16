@@ -69,7 +69,7 @@ jobs:
         if: matrix.name == 'Windows'
         shell: pwsh
         run: |
-          ./scripts/sign-windows.test.ps1
+          if (-not (Test-Path scripts/sign-windows.ps1)) { throw 'The release tag does not include Windows signing support' }
           Install-Module ArtifactSigning -RequiredVersion 0.1.20 -Force -Repository PSGallery
       # mygo.config.ts signs with the identity and notarizes with the profile in this keychain.
       - name: Import the Developer ID certificate and the notary credentials
