@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/godwit-email/godwit/compare/v1.3.1...v1.4.0) (2026-10-16)
+
+
+### Features
+
+* signed macOS sender-avatar notifications ([#89](https://github.com/godwit-email/godwit/issues/89)) ([63c7ff1](https://github.com/godwit-email/godwit/commit/63c7ff1922b660ab3235cda01f2827e780e9f233))
+
+
+### Bug Fixes
+
+* **ci:** allow builds to read draft releases ([#87](https://github.com/godwit-email/godwit/issues/87)) ([5fa894f](https://github.com/godwit-email/godwit/commit/5fa894fe1349260532f4ba5d0eb562b744dd377d))
+
 ## [1.3.1](https://github.com/godwit-email/godwit/compare/v1.3.0...v1.3.1) (2026-10-16)
 
 
