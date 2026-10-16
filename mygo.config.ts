@@ -24,6 +24,7 @@ export default {
     entitlements: "assets/entitlements.plist",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },
+  windows: { signCommand: env.WINDOWS_SIGN_COMMAND },
   // Installers and updates live in the R2 bucket that dl.godwit.email serves;
   // installed apps check update-<platform>.json there. `mygo build -upload`
   // puts them in with the R2 token in AWS_ACCESS_KEY_ID and
