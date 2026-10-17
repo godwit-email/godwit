@@ -83,7 +83,7 @@ func signInCode(subject, text, htmlBody string) string {
 	if htmlBody != "" && doc == nil {
 		return ""
 	}
-	if replySubject.MatchString(subject) {
+	if replySubject.MatchString(simplified(subject)) {
 		subject = ""
 	}
 	var lines []string
@@ -220,8 +220,8 @@ var replySent = ci(`^\s*` + words(func(l lexicon) string { return l.replySent })
 // (From: then Sent: or Date:) on.
 func beforeReply(text string) string {
 	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		if replyHeader.MatchString(line) || replyFrom.MatchString(line) && i+1 < len(lines) && replySent.MatchString(lines[i+1]) {
+	for i, line := range lines { // matched as the lexicons' words are written: normalised
+		if replyHeader.MatchString(simplified(line)) || replyFrom.MatchString(simplified(line)) && i+1 < len(lines) && replySent.MatchString(simplified(lines[i+1])) {
 			return strings.Join(lines[:i], "\n")
 		}
 	}
