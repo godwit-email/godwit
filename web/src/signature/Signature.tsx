@@ -109,7 +109,7 @@ function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
   if (link !== undefined)
     return (
       <form
-        className="flex items-center gap-1 border-b bg-sidebar px-1.5 py-1"
+        className="flex items-center gap-1 border-b-[0.5px] bg-sidebar px-1.5 py-1"
         onSubmit={(e) => {
           e.preventDefault();
           const href = safeHref(link);
@@ -163,7 +163,7 @@ function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
   return (
     <div
       data-slot="signature-toolbar"
-      className="flex items-center border-b bg-sidebar px-1.5 py-1"
+      className="flex items-center border-b-[0.5px] bg-sidebar px-1.5 py-1"
     >
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {marks.map((m) =>
@@ -172,7 +172,7 @@ function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
             editor.tf.focus();
           }),
         )}
-        <span className="mx-1 h-4 w-px bg-border" />
+        <span className="mx-1 h-4 border-l-[0.5px]" />
         {item("link", "compose.link", RiLink, () => {
           saved.current = editor.selection;
           setBad(false);

@@ -126,7 +126,7 @@ test("the editor is a card on the window's material, under a borderless title ba
   const main = screen.getByRole("main");
   expect(main).toHaveClass("bg-window");
   expect(main.querySelector("header")).not.toHaveClass("border-b");
-  expect(section).toHaveClass("overflow-hidden", "rounded-xl", "border", "bg-background");
+  expect(section).toHaveClass("overflow-hidden", "rounded-xl", "border-[0.5px]", "bg-background");
   // in a resizable panel of the row inset on the material; the grip is the 8 px gap
   expect(section?.closest("[data-group]")).toHaveClass("px-2", "pb-2");
 });

@@ -750,7 +750,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart: two chosen ones stay two
+	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
 	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
 		c.WriteClipboard(p.devPath)
 		p.a.toast(p.devPath)

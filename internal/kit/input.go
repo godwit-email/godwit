@@ -15,7 +15,7 @@ type InputOpts struct {
 
 func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t := theme.Of(c)
-	e.Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background)
+	e.Radius(t.Radius.Md).Border(theme.Stroke, t.Input).Background(t.Background)
 	if !o.Flat {
 		Elevate(c, e, theme.ShadowXs)
 	}
@@ -28,7 +28,7 @@ func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		border = t.Danger
 	}
 	a := ui.Animation{Duration: theme.MotionFast, Ease: ui.EaseOut}
-	e.Border(theme.Hairline, e.AnimateColor("input-border", border, a)).
+	e.Border(theme.Stroke, e.AnimateColor("input-border", border, a)).
 		Shadow(0, 0, 0, theme.RingWidth, e.AnimateColor("input-ring", ring, a))
 	return e
 }

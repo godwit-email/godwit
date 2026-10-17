@@ -746,7 +746,7 @@ function Compose({
         onLayoutChanged={layout.onLayoutChanged}
       >
         <ResizablePanel id="editor" minSize={320}>
-          <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-(--shadow-xs)">
+          <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
             <div className="flex min-h-0 flex-1 flex-col overflow-auto">
               <Fields
                 key={fieldsKey}

@@ -87,8 +87,9 @@ func TestDialogInputFocusIsNotClipped(t *testing.T) {
 			r, _ := tt.Find("input")
 			img := tt.Image()
 			want := img.RGBAAt(int(r.X)-2, int(r.Y+r.H/2))
-			// Sample inside the ring when platform font metrics put its top between pixels.
-			top := int(math.Ceil(float64(r.Y)))
+			// Sample inside the ring where the painter puts its top: edges round to
+			// the nearest pixel (a Hairline border leaves r.Y a hair past one).
+			top := int(math.Round(float64(r.Y)))
 			for _, offset := range []int{1, 2, 3} {
 				got := img.RGBAAt(int(r.X+r.W/2), top-offset)
 				if max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) > 3 {

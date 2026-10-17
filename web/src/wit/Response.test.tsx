@@ -23,8 +23,8 @@ describe("answer layout", () => {
     expect(container.firstElementChild).toHaveClass("text-md", "leading-[1.75]");
     // one border, the table's own box: no outer frame around it
     const table = container.querySelector("table");
-    expect(table?.parentElement).toHaveClass("border", "rounded-lg");
-    expect(container.querySelectorAll(".border")).toHaveLength(1);
+    expect(table?.parentElement).toHaveClass("border-[0.5px]", "rounded-lg");
+    expect(container.querySelectorAll(".border-\\[0\\.5px\\]")).toHaveLength(1);
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
   });
 

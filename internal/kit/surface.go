@@ -71,7 +71,7 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	t := theme.Of(c)
 	b := ui.ButtonBase(c).Justify(ui.Start).Radius(t.Radius.Lg).Transition(colors(theme.MotionFast))
 	if o.Bordered {
-		b.Border(theme.Hairline, t.Border).Background(t.Background)
+		b.Border(theme.Stroke, t.Border).Background(t.Background)
 	}
 	if !o.Bare {
 		switch {

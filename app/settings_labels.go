@@ -80,7 +80,7 @@ func (v *labelsView) list(c *ui.Context) {
 	v.order.Key = func(i int) any { return a.labels[i].ID }
 	v.order.Label = func(i int) string { return a.labels[i].Name }
 	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
-	h := float32(n)*th.Space(12) + float32(max(n-1, 0))*theme.Hairline
+	h := float32(n)*th.Space(12) + float32(max(n-1, 0))*theme.Stroke
 	// A drag scrolls only the list under it, never the page: past half the window
 	// the list scrolls itself, so both its edges fit on screen to drag toward.
 	_, wh := c.Size()

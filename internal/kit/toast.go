@@ -44,7 +44,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Hairline, look.border).Children(func() {
+					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Stroke, look.border).Children(func() {
 						ui.Text(c, tst.Action)
 					})
 				}

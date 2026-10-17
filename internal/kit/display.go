@@ -153,13 +153,14 @@ func AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element {
 }
 
 // Separator is a hairline: horizontal across its parent, or a short vertical
-// one. In a row, give it Grow(1).
+// one. In a row, give it Grow(1). It takes a Stroke's room but draws one
+// device pixel, as a border (a box that thin rounds away).
 func Separator(c *ui.Context, vertical bool) ui.Element {
-	b := ui.Box(c).Background(theme.Of(c).Border)
+	b := ui.Box(c).BorderColor(theme.Of(c).Border)
 	if vertical {
-		return b.Size(theme.Hairline, theme.TitleButtonHeight)
+		return b.Size(theme.Stroke, theme.TitleButtonHeight).BorderWidth(0, 0, 0, theme.Hairline)
 	}
-	return b.Height(theme.Hairline).AlignSelf(ui.Stretch)
+	return b.Height(theme.Stroke).AlignSelf(ui.Stretch).BorderWidth(theme.Hairline, 0, 0, 0)
 }
 
 // Skeleton is a pulsing placeholder w wide (0: the full width) and h high. It

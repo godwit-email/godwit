@@ -195,7 +195,7 @@ describe("Panel", () => {
       "h-full",
       "w-full",
       "rounded-xl",
-      "border",
+      "border-[0.5px]",
       "bg-background",
       "overflow-hidden",
     );
@@ -203,7 +203,7 @@ describe("Panel", () => {
     fadeOver(input(), aside);
     unmount();
     await setup({ page: true });
-    const card = input("向 Wit 提问").closest(".rounded-xl.border");
+    const card = input("向 Wit 提问").closest(".rounded-xl.border-\\[0\\.5px\\]");
     expect(card).toHaveClass("flex-1", "overflow-hidden", "bg-background");
     fadeOver(input("向 Wit 提问"), card);
   });
@@ -774,7 +774,12 @@ describe("Panel", () => {
     const under = lists.find((l) => !l.closest("aside"));
     expect(column?.closest("aside")?.className).toContain("@4xl:flex");
     expect(column?.closest("aside")?.className).toContain("hidden");
-    expect(column?.closest("aside")).toHaveClass("w-80", "rounded-xl", "border", "bg-background");
+    expect(column?.closest("aside")).toHaveClass(
+      "w-80",
+      "rounded-xl",
+      "border-[0.5px]",
+      "bg-background",
+    );
     expect(column?.closest("aside")).not.toHaveClass("border-l", "bg-sidebar");
     expect(under?.className).toContain("@4xl:hidden");
     expect(under?.closest("[data-role=assistant]")).not.toBeNull();

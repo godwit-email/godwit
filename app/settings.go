@@ -287,7 +287,7 @@ func settingsCard(c *ui.Context, rows ...func()) {
 
 // hairline divides the rows of a settings card.
 func hairline(c *ui.Context) {
-	ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(theme.Of(c).Border)
+	kit.Separator(c, false).Shrink(0)
 }
 
 // settingRow is a labelled control: label (500) and description on the

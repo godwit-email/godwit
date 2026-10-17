@@ -527,13 +527,13 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 				sub = strings.Join(caps, " · ")
 			}
 			name := svcProvider(p)
-			b := ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).Border(theme.Hairline, t.Border).Background(t.Background)
+			b := ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).Border(theme.Stroke, t.Border).Background(t.Background)
 			if b.Changed() { // another provider starts the form over
 				m.cancelForm()
 				m.form = newForm(p)
 			}
 			if f.provider == p {
-				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
+				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
 			}
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
@@ -558,10 +558,10 @@ func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 				Label(name+" "+i18n.T("settings.models.common")).Height(th.Space(6)).Padding(0, th.Space(2)).Radius(t.Radius.Md)
 			fg := t.Muted
 			if on {
-				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
+				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
 				fg = t.Foreground
 			} else {
-				b.Border(theme.Hairline, t.Border).Background(t.Background)
+				b.Border(theme.Stroke, t.Border).Background(t.Background)
 			}
 			b.Children(func() { kit.Text(c, name, t.Text.Sm).TextColor(fg) })
 		}
@@ -581,9 +581,9 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
 			fg := t.Foreground
 			if on {
-				b.Background(t.Hover).Border(theme.Hairline, t.Primary)
+				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
 			} else {
-				b.Background(t.Background).Border(theme.Hairline, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
+				b.Background(t.Background).Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
 				fg = t.Muted
 			}
 			b.Children(func() {
@@ -604,7 +604,7 @@ func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
 			kit.Input(c, &f.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true}).Label(i18n.T("settings.models.manual")).
 				Height(th.Space(7)).Width(theme.ModelIDInputWidth).PaddingX(th.Space(2)).OnSubmit(f.addManual)
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: f.addManual}).Label(i18n.T("settings.models.manual.add")).Size(th.Space(7), th.Space(7)).Justify(ui.Center).
-				Radius(t.Radius.Md).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() { ui.Text(c, "+") })
+				Radius(t.Radius.Md).Border(theme.Stroke, t.Border).Background(t.Background).Children(func() { ui.Text(c, "+") })
 		})
 	})
 }
@@ -626,7 +626,7 @@ func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Text(c, msg, t.Text.Sm).TextColor(t.WarningText).Shrink(1)
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { m.fetch(f) }}).Label(i18n.T("settings.models.retry")).Height(th.Space(6)).Padding(0, th.Space(2)).
-				Radius(t.Radius.Md).Border(theme.Hairline, t.WarningBorder).Background(t.WarningBg).Children(func() {
+				Radius(t.Radius.Md).Border(theme.Stroke, t.WarningBorder).Background(t.WarningBg).Children(func() {
 				kit.Text(c, i18n.T("settings.models.retry"), t.Text.Sm).TextColor(t.WarningText)
 			})
 		})

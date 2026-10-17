@@ -37,9 +37,9 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	chip.AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).Padding(0, right, 0, th.Space(1.5)).
 		Radius(t.Radius.Sm).TextColor(o.Color.Text).FontSize(t.Text.Sm)
 	if o.Auto {
-		chip.Border(theme.Hairline, o.Color.Edge)
+		chip.Border(theme.Stroke, o.Color.Edge)
 	} else {
-		chip.Background(o.Color.Fill).Border(theme.Hairline, o.Color.Fill)
+		chip.Background(o.Color.Fill).Border(theme.Stroke, o.Color.Fill)
 	}
 	chip.Children(func() {
 		ui.Icon(c, icons.Get("label-"+o.Icon)).Size(theme.IconXs, theme.IconXs)

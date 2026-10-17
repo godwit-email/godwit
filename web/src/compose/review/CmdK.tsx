@@ -30,7 +30,7 @@ export function CmdK({
   return (
     <form
       ref={box}
-      className="flex flex-col gap-1.5 rounded-xl border bg-popover px-2.5 py-2 text-md leading-normal shadow-md"
+      className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-popover px-2.5 py-2 text-md leading-normal shadow-md"
       onSubmit={(e) => {
         e.preventDefault();
         const s = text.trim();
