@@ -263,7 +263,7 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 	c.Invalidate() // the pointer moves without telling the view; follow it every frame
 }
 
-const codeGuideReach = 40 // how far the centre line runs past the banner, above and below
+const codeGuideReach = 40 // how far the centre line runs past the banner, above and below; it stops 8pt short of it
 
 // showSnapGuide shows the centre line through a banner held on it, as
 // design tools draw their alignment guides, and hides it otherwise.
@@ -277,8 +277,13 @@ func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point) {
 	if b.guide == nil {
 		b.guide = mygo.NewFlyout(mygo.FlyoutOptions{Tray: p.tray, Width: 1, Height: codeBannerHeight + 2*codeGuideReach, Hidden: true,
 			Content: ui.View(func(c *ui.Context) {
+				// Two segments, above and below the banner, never across its code.
+				t, th := theme.Of(c), c.Theme()
 				c.Root().Background(ui.Transparent)
-				ui.Box(c).Fill().Background(theme.Of(c).Unread)
+				ui.Column(c).Fill().Gap(codeBannerHeight + 2*th.Space(2)).Children(func() {
+					ui.Box(c).FillWidth().Grow(1).Background(t.Unread)
+					ui.Box(c).FillWidth().Grow(1).Background(t.Unread)
+				})
 			})})
 		b.guide.SetIgnoreMouseEvents(true)
 	}
