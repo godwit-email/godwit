@@ -17,7 +17,8 @@ func TestRecentSignInCodes(t *testing.T) {
 	put("initial@x", "INBOX", "Verification code: 111111", now)
 	e.sync(t) // importing a mailbox must not populate the recent-code menu
 	put("new@x", "INBOX", "Verification code: aB0123", now)
-	put("stale@x", "INBOX", "Verification code: 222222", now.Add(-time.Hour))
+	put("stale@x", "INBOX", "Verification code: 222222", now.Add(-48*time.Hour)) // an old mail moved back in
+	put("late@x", "INBOX", "Verification code: 666666", now.Add(-time.Hour))     // delivered late: it just arrived
 	put("archive@x", "Archive", "Verification code: 333333", now)
 	put("ordinary@x", "INBOX", "Order 444444", now)
 	e.put(t, "INBOX", eml("link@x", "Acme <id@acme.example>", e.acc.Email, "Sign in to Acme", now.Format(time.RFC1123Z), "Log in with this link:\nhttps://acme.example/l/1"))
@@ -25,8 +26,9 @@ func TestRecentSignInCodes(t *testing.T) {
 	e.sync(t)
 	got, err := e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)
-	require.Len(t, got, 3)
+	require.Len(t, got, 4)
 	require.True(t, slices.ContainsFunc(got, func(c SignInCode) bool { return c.Code == "555555" }), "a future Date header hid a code that just arrived")
+	require.True(t, slices.ContainsFunc(got, func(c SignInCode) bool { return c.Code == "666666" }), "a late Date header hid a code that just arrived")
 	code := got[slices.IndexFunc(got, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "new@x") })]
 	require.Equal(t, SignInCode{MessageID: e.idOf(t, "new@x"), Code: "aB0123", From: "Login <login@example.com>", ReceivedAt: code.ReceivedAt}, code)
 	link := got[slices.IndexFunc(got, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "link@x") })]

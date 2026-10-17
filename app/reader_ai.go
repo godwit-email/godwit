@@ -44,22 +44,32 @@ type fetch[T any] struct {
 	done, loading bool
 	err           error
 	gen           uint64
+	seq           uint64 // bumped per read and by restart; only the newest read lands
 }
 
 // fetchInto reads into f unless it is read, being read, or (without force)
 // was tried during this visit. failed, if set, hears a failure.
+// restart forgets what was read and drops a read in flight, so the next
+// fetchInto reads afresh.
+func (f *fetch[T]) restart() {
+	f.seq++
+	f.done, f.loading = false, false
+}
+
 func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
 	if f.done || f.loading && f.gen == r.gen || !force && f.gen == r.gen {
 		return
 	}
 	a, gen, ctx := r.p.a, r.gen, r.aiContext()
+	f.seq++
+	seq := f.seq
 	f.gen, f.loading, f.err = gen, true, nil
 	var v T
 	a.do(func(context.Context) (err error) {
 		v, err = get(ctx)
 		return err
 	}, func(err error) {
-		if gen != r.gen {
+		if gen != r.gen || seq != f.seq {
 			return
 		}
 		f.loading = false
@@ -219,7 +229,8 @@ func (r *reader) loadTags(id int64, force bool) {
 func (r *reader) reloadPluginParts() {
 	for id := range r.open {
 		if st := r.ai[id]; st != nil {
-			st.cards.done, st.tags.done = false, false
+			st.cards.restart()
+			st.tags.restart()
 		}
 		r.loadCards(id, true)
 		r.loadTags(id, true)

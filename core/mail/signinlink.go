@@ -18,7 +18,10 @@ const (
 // A magic link's mail speaks of the link itself: "This link expires in 10
 // minutes", "your sign-in link", "登录链接". A reminder to go and sign in
 // ("请登录您的 Google 相册账号") leads to a sign-in page, not a link that signs in.
-var linkDelivery = regexp.MustCompile(`(?i)\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b|(?:登录|一次性|安全)链接|链接[^\n]{0,30}(?:有效|过期|失效)`)
+var linkDelivery = regexp.MustCompile(`(?i)\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b|(?:登录|登入|一次性|安全|此|该|下面的|下方的)链接|链接[^\n]{0,30}(?:有效|过期|失效)`)
+
+// A security alert speaks of signing in but its links review activity.
+var linkAlert = regexp.MustCompile(`(?i)\bnew (?:sign[ -]?in|login|device)\b|\b(?:sign[ -]?in|login) (?:attempt|alert|activity)\b|\bunusual\b|新(?:的)?(?:登录|登入|设备)|登录(?:提醒|通知|活动)|异常登录`)
 
 var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b|登录|登入`)
 
@@ -64,19 +67,19 @@ var fallbackLabel = regexp.MustCompile(`(?i)^\s*use this link\s*$`)
 // which it is. Conflicting links are left to the reader rather than guessed.
 func ActionLink(subject, text, htmlBody string) (link, kind string) {
 	subject = simplified(subject)
-	if linkSubject.MatchString(subject) && (linkDelivery.MatchString(subject) || linkDelivery.MatchString(bodyText(text, htmlBody))) {
+	body := bodyText(text, htmlBody)
+	if linkSubject.MatchString(subject) && !linkAlert.MatchString(subject) && (linkDelivery.MatchString(subject) || linkDelivery.MatchString(body)) {
 		if l := oneLink(text, htmlBody, linkLabel, linkLead, true); l != "" {
 			return l, LinkSignIn
 		}
 	}
-	confirm := confirmContext.MatchString(subject) || confirmContext.MatchString(simplified(text))
-	if l := oneLink(text, htmlBody, confirmLabel, confirmLead, confirm); l != "" {
+	// An explicit button or lead stands alone; a button's fallback line
+	// ("use this link") counts only in mail that is about that, quotes left out.
+	if l := oneLink(text, htmlBody, confirmLabel, confirmLead, confirmContext.MatchString(subject) || confirmContext.MatchString(body)); l != "" {
 		return l, LinkConfirm
 	}
-	if resetContext.MatchString(subject) {
-		if l := oneLink(text, htmlBody, resetLabel, resetLead, true); l != "" {
-			return l, LinkReset
-		}
+	if l := oneLink(text, htmlBody, resetLabel, resetLead, resetContext.MatchString(subject) || resetContext.MatchString(body)); l != "" {
+		return l, LinkReset
 	}
 	return "", ""
 }
@@ -91,11 +94,11 @@ func bodyText(text, htmlBody string) string {
 // follows a colon after leadRE in the text (or after a button fallback line,
 // when fallback); "" for none or several.
 func oneLink(text, htmlBody string, labelRE, leadRE *regexp.Regexp, fallback bool) string {
+	plain := text
 	text, doc := unquoted(text, htmlBody)
 	if htmlBody != "" && doc == nil {
 		return ""
 	}
-	text = simplified(text)
 	link, conflict := "", false
 	add := func(raw string) {
 		u, err := url.Parse(strings.TrimSpace(raw))
@@ -130,31 +133,50 @@ func oneLink(text, htmlBody string, labelRE, leadRE *regexp.Regexp, fallback boo
 	// did not sign in, visit https://…") or a report ("Review sign-in
 	// activity: https://…") is neither.
 	leads := func(s string) bool { return leadRE.MatchString(s) || fallback && buttonFallback.MatchString(s) }
-	lines := strings.Split(text, "\n")
 	quoted := func(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
-	for i, line := range lines {
-		if quoted(line) {
-			continue
-		}
-		var urls []string
-		if loc := plainURL.FindStringIndex(line); loc != nil {
-			if leads(strings.TrimRight(line[:loc[0]], " \t<\"'(（「【[")) {
-				urls = plainURL.FindAllString(line, -1)
+	scan := func(text string) {
+		lines := strings.Split(simplified(text), "\n")
+		for i, line := range lines {
+			if quoted(line) {
+				continue
 			}
-		} else if leads(line) {
-			next := i + 1
-			for next < len(lines) && strings.TrimSpace(lines[next]) == "" { // paragraphs have a blank line between
-				next++
+			var urls []string
+			if loc := plainURL.FindStringIndex(line); loc != nil {
+				if leads(strings.TrimRight(line[:loc[0]], " \t<\"'(（「【[")) {
+					urls = urlsOf(line)
+				}
+			} else if leads(line) {
+				next := i + 1
+				for next < len(lines) && strings.TrimSpace(lines[next]) == "" { // paragraphs have a blank line between
+					next++
+				}
+				if next < len(lines) && !quoted(lines[next]) {
+					urls = urlsOf(lines[next])
+				}
 			}
-			if next < len(lines) && !quoted(lines[next]) {
-				urls = plainURL.FindAllString(lines[next], 1) // the URL written out, not its "(https://…)" repeat
+			for _, u := range urls {
+				add(strings.TrimRight(u, ".,;:!?。，；：！？、")) // the sentence's punctuation, not the link's
 			}
-		}
-		for _, u := range urls {
-			add(strings.TrimRight(u, ".,;:!?。，；：！？、")) // the sentence's punctuation, not the link's
 		}
 	}
+	scan(text)
+	if link == "" && !conflict && htmlBody != "" && plain != "" { // an image-only button may leave the URL to the text part
+		scan(beforeReply(plain))
+	}
 	return pick(link, conflict)
+}
+
+// urlsOf are a line's https URLs, leaving out a "(https://…)" that annotates
+// the link before it with its real address, as mail text writes "label (href)".
+func urlsOf(line string) []string {
+	var out []string
+	for _, loc := range plainURL.FindAllStringIndex(line, -1) {
+		if len(out) > 0 && loc[0] > 0 && line[loc[0]-1] == '(' {
+			continue
+		}
+		out = append(out, line[loc[0]:loc[1]])
+	}
+	return out
 }
 
 func pick(link string, conflict bool) string {

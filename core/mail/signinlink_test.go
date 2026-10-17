@@ -83,6 +83,10 @@ func TestActionLinkBadCases(t *testing.T) {
 		{"Traditional password reset (DMIT)", "重置密碼的驗證", "",
 			`<p>若要重置密碼，請訪問下面的連結：</p><p><a href="https://track.example/x">https://www.dmit.io/index.php?rp=/password/reset/use/key/4c6d</a></p>`,
 			"https://www.dmit.io/index.php?rp=/password/reset/use/key/4c6d", mail.LinkReset},
+		{"security alert with a fallback link", "New sign-in to your account", "", `<p>We noticed a new sign-in. If this link expires, sign in again.</p><a href="https://a.example/activity">Use this link</a>`, "", ""},
+		{"reset button without a reset subject", "Forgot your password?", "", `<a href="https://a.example/reset/1">Reset password</a>`, "https://a.example/reset/1", mail.LinkReset},
+		{"two URLs after a lead", "Sign in to Acme", "Log in here:\nhttps://a.example/auth https://b.example/auth\nThis link expires in 10 minutes.", "", "", ""},
+		{"Traditional sign-in link", "登入 Acme", "登入連結：https://acme.example/l/7\n此連結 10 分鐘內有效。", "", "https://acme.example/l/7", mail.LinkSignIn},
 		{"no fallback outside a known kind", "Your invoice", "If the button does not work, use this link:\nhttps://x.example/invoice", "", "", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

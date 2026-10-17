@@ -28,10 +28,11 @@ func (s *Service) RecentSignInCodes(ctx context.Context, now time.Time) ([]SignI
 		return nil, err
 	}
 	since := now.Add(-15 * time.Minute).Unix()
+	dated := now.Add(-24 * time.Hour).Unix() // late delivery or a slow sender clock still counts; a moved old mail does not
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.subject, m.from_addr, m.body_text, m.body_html, MAX(e.created_at)
 		FROM events_log e JOIN messages m ON m.id = e.message_id JOIN folders f ON f.id = m.folder_id
 		WHERE e.type = 'message.received' AND e.created_at > ? AND m.date > ? AND f.role = 'inbox'
-		GROUP BY m.id ORDER BY MAX(e.created_at) DESC, m.id DESC`, since, since)
+		GROUP BY m.id ORDER BY MAX(e.created_at) DESC, m.id DESC`, since, dated)
 	if err != nil {
 		return nil, err
 	}

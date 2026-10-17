@@ -161,7 +161,8 @@ type signInBanner struct {
 	timer                     *time.Timer
 	failed, copied, hovered   bool
 	dragging, snapped, atHome bool
-	pressing, onButton        bool           // the pointer is down on the banner; on its button
+	pressing, onButton        bool           // the pointer is down on the banner; it is over the button
+	pressOnButton             bool           // the press began over the button: a click, never a drag
 	guide                     *mygo.Window   // the centring guide shown while a drag is held on the centre line
 	guideDashes               int            // dashes in each half of the guide
 	dragFrom, dragStart       mygo.Point     // the cursor and the banner where the drag began
@@ -214,7 +215,7 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
 			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}, i18n.T("codes.copy_button"), i18n.T("codes.copied"), i18n.T("codes.retry")).Shrink(0)
-			b.onButton = btn.Pressed()
+			b.onButton = btn.Hovered()
 			switch {
 			case btn.Hovered() && !b.copied:
 				btn.Background(t.Foreground.Alpha(0.1))
@@ -239,10 +240,10 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 	}
 	cursor := mygo.Screen.CursorScreenPoint()
 	if !b.pressing {
-		b.pressing, b.dragFrom, b.dragStart = true, cursor, b.position
+		b.pressing, b.dragFrom, b.dragStart, b.pressOnButton = true, cursor, b.position, b.onButton
 	}
 	// A press on Copy or Open is a click, and a hand's jitter is not a drag.
-	if !b.dragging && (b.onButton || abs(cursor.X-b.dragFrom.X) < codeBannerDeadzone && abs(cursor.Y-b.dragFrom.Y) < codeBannerDeadzone) {
+	if !b.dragging && (b.pressOnButton || abs(cursor.X-b.dragFrom.X) < codeBannerDeadzone && abs(cursor.Y-b.dragFrom.Y) < codeBannerDeadzone) {
 		c.Invalidate()
 		return
 	}

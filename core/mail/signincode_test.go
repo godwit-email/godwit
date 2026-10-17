@@ -45,6 +45,11 @@ func TestSignInCode(t *testing.T) {
 		{"passcode", "Sign in", "Your passcode is 731904", "731904"},
 		{"Traditional (M-Team)", "[M-Team - TP] 驗證碼 856035", "驗證碼: 856035, 20分鐘內有效\n時間: 2026-09-13 15:55:51", "856035"},
 		{"activation code (V.PS)", "Your account needs activation", "If asked, your activation code is: r23wb5.", "r23wb5"},
+		{"reverse coupon", "Thanks for your order", "SAVE20 is your code for 20% off", ""},
+		{"reverse booking", "Your booking", "AB12CD is your confirmation code", ""},
+		{"reply subject", "Re: Your verification code: 123456", "Thanks, it worked.", ""},
+		{"coupon alone on its line", "Weekend sale", "Use this coupon code at checkout:\n\n123456", ""},
+		{"licence key", "Your licence", "Your activation code: XQ12RT", ""},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
