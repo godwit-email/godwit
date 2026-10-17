@@ -33,19 +33,20 @@ type settingsPage struct {
 	a *App
 
 	// accounts
-	forms   map[int64]*accountForm
-	usage   map[int64]int64                                                                // attachment cache bytes per account; absent until read
-	boxes   map[int64]*mailbox                                                             // 邮箱行为 per account; absent until read
-	dialog  string                                                                         // the open dialog: "password", "servers", "remove", "cache"; "" none
-	dlgAcc  int64                                                                          // the account the dialog is about
-	dlgGen  uint64                                                                         // bumped per dialog opened; an older dialog's result leaves it alone
-	open    bool                                                                           // the dialog shows; Escape or a click outside clears it
-	busy    bool                                                                           // the dialog's action runs
-	dlgErr  error                                                                          // the dialog action's failure
-	secret  string                                                                         // the password dialog's field
-	servers serverForm                                                                     // the servers dialog's fields
-	reauth  map[int64]bool                                                                 // a browser sign-in runs for the account
-	update  func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
+	forms      map[int64]*accountForm
+	usage      map[int64]int64    // attachment cache bytes per account; absent until read
+	boxes      map[int64]*mailbox // 邮箱行为 per account; absent until read
+	dialog     string             // the open dialog: "password", "servers", "remove", "cache"; "" none
+	dlgAcc     int64              // the account the dialog is about
+	dlgGen     uint64             // bumped per dialog opened; an older dialog's result leaves it alone
+	open       bool               // the dialog shows; Escape or a click outside clears it
+	busy       bool               // the dialog's action runs
+	dlgErr     error              // the dialog action's failure
+	secret     string             // the password dialog's field
+	showSecret bool
+	servers    serverForm                                                                     // the servers dialog's fields
+	reauth     map[int64]bool                                                                 // a browser sign-in runs for the account
+	update     func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	// general
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
@@ -113,10 +114,16 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.models.load()
 	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		var list []core.TranslatorInfo
-		a.query(func(ctx context.Context) (err error) { list, err = a.svc.ListTranslators(ctx); return err },
+		var registry core.RegistryView
+		a.query(func(ctx context.Context) (err error) {
+			registry, _ = a.svc.ListPluginRegistry(ctx) // Missing display names must not hide installed translators.
+			list, err = a.svc.ListTranslators(ctx)
+			return err
+		},
 			func(err error) {
 				if err == nil {
 					p.translators = list
+					p.ext.reg = registry
 				}
 			})
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
@@ -174,10 +181,13 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 			item(accountRoute(acc.ID)).Children(func() {
 				mark(c, accountProvider(a, acc), theme.MarkSm)
 				ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
-				if acc.Status == "ok" {
+				switch a.syncHealth(acc).level {
+				case syncAction:
+					kit.StatusDot(c, kit.Error).Label(i18n.T("settings.dot.action"))
+				case syncRetrying:
+					kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.retrying"))
+				default:
 					kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
-				} else {
-					kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.attention"))
 				}
 			})
 		}

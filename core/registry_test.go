@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,7 +80,7 @@ func TestRegistryList(t *testing.T) {
 	assert.Equal(t, "0.1.0", d.Version)
 	assert.Equal(t, "", d.Unavailable)
 	assert.Equal(t, "", d.Installed)
-	assert.False(t, entry(t, s, "deepl").Native)
+	assert.True(t, entry(t, s, "deepl").Script)
 }
 
 func TestRegistryUnavailablePlatform(t *testing.T) {
@@ -180,6 +183,41 @@ func TestRegistryRevokes(t *testing.T) {
 	assert.NoFileExists(t, record, "a revoked plugin does not start again")
 }
 
+// A registry that also carries what a newer Godwit added keeps working:
+// the installed release stays listed, and the new ones say why they wait.
+func TestRegistryForwardCompatible(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	v1 := rs.NativeRelease(t, "dlx", "0.1.0", nil)
+	rs.Publish(t, coretest.Registry(t0, plugin("dlx", v1)))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+
+	v2 := rs.NativeRelease(t, "dlx", "0.2.0", nil)
+	v2["minGodwit"], v2["assets"] = "1.3.0", []any{map[string]any{"name": "model"}}
+	laya := rs.NativeRelease(t, "laya", "0.1.0", nil)
+	laya["minGodwit"] = "1.3.0"
+	m := string(laya["manifest"].(json.RawMessage))
+	require.Contains(t, m, `"translate"`)
+	laya["manifest"] = json.RawMessage(strings.Replace(m, `"translate"`, `"judge"`, 1))
+	reg := coretest.Registry(t0.Add(time.Hour), plugin("dlx", v1, v2), plugin("laya", laya))
+	reg["mirrors"] = []string{"https://example.com"}
+	rs.Publish(t, reg)
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+
+	p := nativeInfo(t, s, "dlx")
+	assert.True(t, p.Enabled)
+	assert.Equal(t, "listed", p.Trust)
+	d := entry(t, s, "dlx")
+	assert.Equal(t, "0.1.0", d.Version)
+	assert.False(t, d.Update)
+	l := entry(t, s, "laya")
+	assert.Equal(t, "", l.Version)
+	assert.Equal(t, "godwit:1.3.0", l.Unavailable)
+	assert.False(t, l.Native || l.Script, "its kind is unknown")
+}
+
 func TestInstallFromRegistryNative(t *testing.T) {
 	rs := coretest.NewRegistryServer(t)
 	record := filepath.Join(t.TempDir(), "configure.json")
@@ -218,6 +256,47 @@ func TestInstallFromRegistryScript(t *testing.T) {
 	assert.Equal(t, "listed", nativeInfo(t, s, "hello").Trust, "granting keeps the review")
 }
 
+func TestInstallFromRegistryProgress(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	code := `export default function () {}`
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, code[:10])
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		io.WriteString(w, code[10:])
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(unblock)
+	rel := rs.ScriptRelease("hello", "0.1.0", `{}`, code)
+	rel["artifacts"].(map[string]any)["any"].(map[string]any)["url"] = server.URL
+	rs.Publish(t, coretest.Registry(t0, plugin("hello", rel)))
+	s := regService(t, rs, t.TempDir())
+	require.NoError(t, s.RefreshPluginRegistry(ctx))
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	var updates []core.PluginInstallProgress
+	_, err := s.InstallPluginFromRegistryWithProgress(ctx, "hello", func(p core.PluginInstallProgress) {
+		updates = append(updates, p)
+		if p.Stage == "download" && p.Done == 10 {
+			unblock() // The remaining bytes are sent only after the partial download was reported.
+		}
+	})
+	require.NoError(t, err)
+	require.Contains(t, updates, core.PluginInstallProgress{Stage: "download", Done: 10, Total: int64(len(code))})
+	require.Contains(t, updates, core.PluginInstallProgress{Stage: "download", Done: int64(len(code)), Total: int64(len(code))})
+	require.Equal(t, "verify", updates[len(updates)-2].Stage)
+	require.Equal(t, "install", updates[len(updates)-1].Stage)
+	_, ok := pluginByName(t, s, "hello")
+	require.True(t, ok)
+}
+
 func TestInstallFromRegistryMismatch(t *testing.T) {
 	for name, spoil := range map[string]func(rs *coretest.RegistryServer, rel map[string]any){
 		"sha": func(_ *coretest.RegistryServer, rel map[string]any) {
@@ -247,8 +326,12 @@ func TestInstallFromRegistryMismatch(t *testing.T) {
 			dir := t.TempDir()
 			s := regService(t, rs, dir)
 			require.NoError(t, s.RefreshPluginRegistry(ctx))
-			_, err := s.InstallPluginFromRegistry(ctx, "dlx")
+			var stages []string
+			_, err := s.InstallPluginFromRegistryWithProgress(ctx, "dlx", func(p core.PluginInstallProgress) {
+				stages = append(stages, p.Stage)
+			})
 			require.Error(t, err)
+			assert.NotContains(t, stages, "install", "an invalid download must not advance to installation")
 			if name != "missing" {
 				assert.ErrorIs(t, err, core.ErrRegistryMismatch)
 			}

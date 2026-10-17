@@ -110,7 +110,45 @@ func TestSyncStatus(t *testing.T) {
 	if err := h.env.Svc.SyncNow(ctx, acc.ID); err == nil {
 		t.Fatal("sync with a wrong password succeeded")
 	}
-	h.see("同步失败")
+	h.see("alice@example.com · 密码被拒绝") // the server refused it: named, red, not retried
+}
+
+func TestSyncRetryTurnsRed(t *testing.T) {
+	var acc core.Account // no background sync: its result would replace the injected failures
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	h.see("alice@example.com · 重试中")
+	h.click("alice@example.com · 重试中")
+	h.see("自动重试中")
+	h.see("会自动重试，一般不用处理")
+	h.post(func() { // a later failure keeps when the failures began
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	h.advance(syncGiveUp)
+	h.see("alice@example.com · 同步失败")
+	h.see("30 分钟前开始失败")
+	h.post(func() { h.app.onEvent(events.Event{Type: events.SyncFinished, AccountID: acc.ID}) })
+	h.see("已同步 · 刚刚")
+}
+
+func TestSyncWorstFirst(t *testing.T) {
+	var a, b core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: a.ID, Kind: "timeout"})
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: b.ID, Kind: "tls"})
+		h.app.onEvent(events.Event{Type: events.SyncStarted, AccountID: a.ID}) // syncing does not hide a failure
+	})
+	h.see("bob@example.com · 同步失败")
+	if hs := h.app.syncHealths(); hs[0].acc.ID != b.ID || hs[0].level != syncAction || hs[1].level != syncRetrying {
+		t.Fatalf("healths %+v", hs)
+	}
 }
 
 func TestReauthStatus(t *testing.T) {
@@ -119,9 +157,10 @@ func TestReauthStatus(t *testing.T) {
 	_ = h.env.Svc.SyncNow(context.Background(), acc.ID) // marks the account reauth_required
 	h.until("reauth shown", func() bool {
 		h.advance(250 * time.Millisecond) // the throttled refresh reloads the accounts
-		return h.tt.HasText("需要重新登录")
+		return h.tt.HasText("alice@example.com · 密码被拒绝")
 	})
-	h.click("需要重新登录")
+	h.click("alice@example.com · 密码被拒绝")
+	h.click("更新密码")
 	want := Route{Page: PageSettings, Settings: fmt.Sprintf("account:%d", acc.ID)}
 	if h.app.route != want {
 		t.Fatalf("route %+v, want %+v", h.app.route, want)
@@ -354,9 +393,106 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	}
 	h.app.sidebarHidden = true
 	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase)
 	pull(0) // a click
 	if h.app.sidebarHidden {
 		t.Error("a click on the edge grip left the sidebar folded")
+	}
+}
+
+type sidebarMotionPage struct{}
+
+func (sidebarMotionPage) Title() (string, string) { return "", "" }
+func (sidebarMotionPage) refresh([]events.Event)  {}
+func (sidebarMotionPage) Sidebar(c *ui.Context)   { ui.Text(c, "sidebar") }
+func (sidebarMotionPage) Content(c *ui.Context)   { ui.Box(c).Fill().Label("content") }
+
+func TestSidebarToggleAnimates(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reduce=%v", reduce), func(t *testing.T) {
+			a := &App{route: Route{Page: PageSettings}, pages: map[Page]pageView{PageSettings: sidebarMotionPage{}}}
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c, theme.Light())
+				a.titleBar(c, theme.TopBarHeight)
+				a.body(c)
+			}, 700, 200)
+			tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+			left := func() float32 { r, _ := tt.Find("content"); return r.X }
+			shown := left()
+			for _, hidden := range []bool{true, false} {
+				before := left()
+				label := "shell.sidebar.collapse"
+				if !hidden {
+					label = "shell.sidebar.expand"
+				}
+				if err := tt.Click(i18n.T(label)); err != nil {
+					t.Fatal(err)
+				}
+				first := left()
+				tt.Advance(theme.MotionFast / 2)
+				middle := left()
+				tt.Advance(2 * theme.MotionBase)
+				last := left()
+				if (first == last) != reduce || before == last {
+					t.Errorf("hidden=%v: content jumped or stayed still: before %v, first %v, last %v", hidden, before, first, last)
+				}
+				if !reduce && (middle <= min(before, last) || middle >= max(before, last)) {
+					t.Errorf("hidden=%v: no intermediate layout: before %v, middle %v, last %v", hidden, before, middle, last)
+				}
+				if !hidden && last != shown {
+					t.Errorf("expanded content at %v, want original %v", last, shown)
+				}
+			}
+			if !reduce {
+				tt.Click(i18n.T("shell.sidebar.collapse"))
+				tt.Advance(theme.MotionFast / 2)
+				tt.Click(i18n.T("shell.sidebar.expand"))
+				if left() >= shown {
+					t.Error("reversing the animation jumped to fully expanded")
+				}
+				tt.Advance(2 * theme.MotionBase)
+				if left() != shown || a.sidebarWidth() != theme.SidebarWidth {
+					t.Errorf("toggle changed the saved width: content %v, sidebar %v", left(), a.sidebarWidth())
+				}
+			}
+		})
+	}
+}
+
+func TestSidebarDragDuringCollapse(t *testing.T) {
+	a := &App{route: Route{Page: PageSettings}, pages: map[Page]pageView{PageSettings: sidebarMotionPage{}}, clock: newFakeClock()}
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c, theme.Light())
+		a.titleBar(c, theme.TopBarHeight)
+		a.body(c)
+	}, 700, 200)
+	left := func() float32 { r, _ := tt.Find("content"); return r.X }
+	shown, width := left(), a.sidebarWidth()
+	if err := tt.Click(i18n.T("shell.sidebar.collapse")); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(theme.MotionFast / 2)
+	if x := left(); x <= theme.GripWidth || x >= shown {
+		t.Fatalf("not in the middle of collapsing: content at %v, shown %v", x, shown)
+	}
+	r, ok := tt.Find(i18n.T("shell.resize"))
+	if !ok {
+		t.Fatal("no grip during collapse")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	tt.Press(x, y)
+	if left() >= shown || a.sidebarWidth() != width {
+		t.Fatal("pressing the grip jumped or changed the saved width")
+	}
+	x += theme.SidebarCollapsePull * 2
+	tt.Move(x, y)
+	if a.sidebarHidden {
+		t.Fatal("dragging during collapse did not reopen the sidebar")
+	}
+	tt.Release(x, y)
+	tt.Advance(2 * theme.MotionBase)
+	if left() != shown || a.sidebarWidth() != width || a.sidebarSave != nil {
+		t.Fatalf("reopening changed the width: content %v (want %v), width %v (want %v), save scheduled %v", left(), shown, a.sidebarWidth(), width, a.sidebarSave != nil)
 	}
 }
 

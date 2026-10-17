@@ -162,11 +162,11 @@ func TestSettingsReauthBanner(t *testing.T) {
 	})
 	r, ok := h.tt.Find("需要处理")
 	if !ok {
-		t.Fatalf("no amber dot: %q", h.tt.Texts())
+		t.Fatalf("no red dot: %q", h.tt.Texts())
 	}
-	got, want := h.tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)), theme.Light().Attention.SRGB()
+	got, want := h.tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)), theme.Light().Danger.SRGB() // signing in again is the user's to do
 	if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
-		t.Fatalf("dot %v, want amber %v", got, want)
+		t.Fatalf("dot %v, want red %v", got, want)
 	}
 
 	h.env.IMAP(acc.ID).SetPassword("secret") // the user changed it back on the server
@@ -175,6 +175,52 @@ func TestSettingsReauthBanner(t *testing.T) {
 	h.click("保存")
 	h.until("signed in again", func() bool { return h.account(acc.ID).Status == "ok" })
 	h.until("the banner goes", func() bool { return !h.tt.HasText(banner) })
+}
+
+func TestSettingsPasswordWhitespace(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	p.openDialog("password", acc)
+	const pasted = "\r\n abcd-efgh\tijkl\u00a0mnop \n"
+	p.secret = pasted
+	h.tt.Frame()
+	h.see("检测到空格、换行或零宽字符，可能是复制时带入的。是否清除？")
+	if p.secret != pasted {
+		t.Fatal("password changed without confirmation")
+	}
+	h.click("清除空白字符")
+	if p.secret != "abcd-efghijklmnop" {
+		t.Fatalf("password after cleanup %q", p.secret)
+	}
+	if h.tt.HasText("检测到空格、换行或零宽字符") {
+		t.Fatal("cleanup hint stayed after cleanup")
+	}
+}
+
+func TestSettingsPasswordVisibility(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	p.openDialog("password", acc)
+	h.tt.Frame()
+	h.fill("密码", "typed-secret")
+	h.click("显示密码")
+	h.see("隐藏密码")
+	if p.secret != "typed-secret" {
+		t.Fatal("showing the password changed its value")
+	}
+	h.click("隐藏密码")
+	h.see("显示密码")
+	if p.secret != "typed-secret" {
+		t.Fatal("hiding the password changed its value")
+	}
+	h.click("显示密码")
+	h.click("取消")
+	p.openDialog("password", acc)
+	h.tt.Frame()
+	if p.secret != "" {
+		t.Fatal("reopening the password dialog kept the password")
+	}
+	h.see("显示密码")
 }
 
 func diff(a, b uint8) int {

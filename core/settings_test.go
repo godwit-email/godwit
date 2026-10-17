@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 3, ReplyLanguage: "match",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true}, got)
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, JudgeThreshold: 0.8}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -35,6 +36,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	in, _ := s.GetSettings(t.Context())
 	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-CN", []string{"en", "fr"}, "svc/m"
 	in.UnreadOnAppIcon = false
+	in.JudgeThreshold = 0.83
 	_, err := s.SetSettings(t.Context(), in)
 	require.NoError(t, err)
 	select {
@@ -58,6 +60,32 @@ func TestSettingsRoundTrip(t *testing.T) {
 	assert.Equal(t, "light", got.Theme)
 	assert.Equal(t, 14, got.FontSize)
 	assert.True(t, got.UnreadOnAppIcon, "older settings default to showing the app badge")
+	assert.Equal(t, 0.8, got.JudgeThreshold, "settings with no threshold use the default")
+}
+
+func TestSettingsJudgeThresholdBounds(t *testing.T) {
+	for raw, want := range map[string]float64{
+		`{}`:                      0.8,
+		`{"JudgeThreshold":0}`:    0.5,
+		`{"JudgeThreshold":0.3}`:  0.5,
+		`{"JudgeThreshold":0.49}`: 0.5,
+		`{"JudgeThreshold":0.5}`:  0.5,
+		`{"JudgeThreshold":0.7}`:  0.7,
+		`{"JudgeThreshold":0.9}`:  0.9,
+		`{"JudgeThreshold":0.95}`: 0.95,
+		`{"JudgeThreshold":1}`:    0.95,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			s := settingsService(t, t.TempDir(), "")
+			_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", raw)
+			require.NoError(t, err)
+			st, err := s.GetSettings(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, want, st.JudgeThreshold)
+			_, err = s.SetSettings(t.Context(), st)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestSettingsValidation(t *testing.T) {
@@ -67,17 +95,21 @@ func TestSettingsValidation(t *testing.T) {
 	_, err := s.SetSettings(t.Context(), base)
 	require.NoError(t, err)
 	for name, mod := range map[string]func(*Settings){
-		"theme":    func(x *Settings) { x.Theme = "neon" },
-		"density":  func(x *Settings) { x.Density = "tiny" },
-		"reply":    func(x *Settings) { x.ReplyLanguage = "other" },
-		"font":     func(x *Settings) { x.FontSize = 9 },
-		"bodyfont": func(x *Settings) { x.BodyFontSize = 33 },
-		"lang":     func(x *Settings) { x.UILanguage = "zh_CN!" },
-		"notrans":  func(x *Settings) { x.NoTranslate = []string{"en", "x y"} },
-		"narrow":   func(x *Settings) { x.SidebarWidth = 239 },
-		"wide":     func(x *Settings) { x.SidebarWidth = 481 },
-		"list":     func(x *Settings) { x.ListWidth = 279 },
-		"listwide": func(x *Settings) { x.ListWidth = 561 },
+		"theme":          func(x *Settings) { x.Theme = "neon" },
+		"density":        func(x *Settings) { x.Density = "tiny" },
+		"reply":          func(x *Settings) { x.ReplyLanguage = "other" },
+		"font":           func(x *Settings) { x.FontSize = 9 },
+		"bodyfont":       func(x *Settings) { x.BodyFontSize = 33 },
+		"lang":           func(x *Settings) { x.UILanguage = "zh_CN!" },
+		"notrans":        func(x *Settings) { x.NoTranslate = []string{"en", "x y"} },
+		"narrow":         func(x *Settings) { x.SidebarWidth = 239 },
+		"wide":           func(x *Settings) { x.SidebarWidth = 481 },
+		"list":           func(x *Settings) { x.ListWidth = 279 },
+		"listwide":       func(x *Settings) { x.ListWidth = 561 },
+		"threshold low":  func(x *Settings) { x.JudgeThreshold = 0.4999 },
+		"threshold high": func(x *Settings) { x.JudgeThreshold = 0.9501 },
+		"threshold NaN":  func(x *Settings) { x.JudgeThreshold = math.NaN() },
+		"threshold inf":  func(x *Settings) { x.JudgeThreshold = math.Inf(1) },
 	} {
 		in := base
 		mod(&in)

@@ -99,7 +99,13 @@ func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	open := p.accountOpen(acc.ID)
 	kit.Collapsible(c, open, func() {
-		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
+		ui.Text(c, accountName(acc)).SingleLine().Grow(1).Shrink(1)
+		switch p.a.syncHealth(acc).level { // which account the top bar's status means
+		case syncAction:
+			kit.StatusDot(c, kit.Error).Label(i18n.T("settings.dot.action"))
+		case syncRetrying:
+			kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.retrying"))
+		}
 		if n := p.a.unread[acc.ID]; !*open && n > 0 {
 			ui.Text(c, strconv.Itoa(n))
 		}

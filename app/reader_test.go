@@ -683,6 +683,7 @@ func TestReaderReplyCreatesDraft(t *testing.T) {
 
 func TestReaderArchive(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	h.app.sidebarHidden = true // its Archive folder is named as the button is
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Done", "file it"))
 	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 }) // batch finds archives by them

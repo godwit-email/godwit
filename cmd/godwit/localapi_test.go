@@ -105,6 +105,7 @@ func TestLocalAPIServeFailure(t *testing.T) {
 }
 
 func TestPlatformDataDir(t *testing.T) {
+	t.Setenv("MYGO_ENV", "production")
 	def, err := defaultDataDir()
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +190,7 @@ func TestLocalAPICleanupRace(t *testing.T) {
 // lock (a second one focuses the first); one on another directory runs
 // beside it, guarded by that directory's owner lock alone.
 func TestSingleInstanceOnlyOnDefaultDir(t *testing.T) {
+	t.Setenv("MYGO_ENV", "production")
 	def, err := defaultDataDir()
 	if err != nil {
 		t.Fatal(err)

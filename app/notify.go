@@ -12,14 +12,13 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// notifyWait is how long new mail gathers into one notification per account.
+// notifyWait is how long new mail gathers before reading it for notifications.
 const notifyWait = time.Second
 
-// arrivals are an account's new messages and their threads, gathering for
-// one notification.
+// arrivals are an account's new messages and their threads awaiting notifications.
 type arrivals struct{ msgs, threads []int64 }
 
-// mailArrived gathers ev's new messages for their account's notification,
+// mailArrived gathers ev's new messages for their notifications,
 // shown notifyWait after the first of them.
 func (a *App) mailArrived(ev events.Event) {
 	if len(ev.MessageIDs) == 0 {
@@ -42,18 +41,13 @@ func (a *App) mailArrived(ev events.Event) {
 	got.threads = append(got.threads, ev.ThreadIDs...)
 }
 
-// notify shows one notification for what arrived in the account's inboxes,
-// unless the settings turn it off or the window is in front. With preview on
-// one message shows its sender, subject and snippet, more their account and number;
-// with preview off it says only "Godwit" and how many.
+// notify shows a notification for each message that arrived in the account's
+// inboxes, unless disabled or the window is in front. Preview shows the sender,
+// subject and snippet; otherwise it says only "Godwit" and "new mail".
 func (a *App) notify(acc int64, got *arrivals) {
 	st := a.settings
 	if !st.NotifyNewMail || a.foreground {
 		return
-	}
-	email := ""
-	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.ID == acc }); i >= 0 {
-		email = a.accounts[i].Email
 	}
 	texts := i18n.In(i18n.Language())
 	plat, svc, logf := a.plat, a.svc, a.logf
@@ -74,24 +68,15 @@ func (a *App) notify(acc int64, got *arrivals) {
 				})
 			}
 		}
-		var n Notification
-		switch {
-		case len(msgs) == 0:
-			return nil
-		case len(msgs) == 1:
-			m := msgs[0]
-			n = Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
+		for _, m := range msgs {
+			n := Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
 			if st.NotifyPreview {
 				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
+				n.Sender, n.ThreadID = m.From, m.ThreadID
 			}
-		default:
-			n = Notification{ID: "account:" + strconv.FormatInt(acc, 10), Title: "Godwit", Body: texts.NotifyNewMails(len(msgs))}
-			if st.NotifyPreview {
-				n.Title = email
+			if err := plat.Notify(n); err != nil {
+				logf("notify: account %d: %v", acc, err)
 			}
-		}
-		if err := plat.Notify(n); err != nil {
-			logf("notify: account %d: %v", acc, err)
 		}
 		return nil
 	}, nil)

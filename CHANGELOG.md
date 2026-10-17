@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.4.0](https://github.com/godwit-email/godwit/compare/v1.3.1...v1.4.0) (2026-10-16)
+
+
+### Features
+
+* signed macOS sender-avatar notifications ([#89](https://github.com/godwit-email/godwit/issues/89)) ([63c7ff1](https://github.com/godwit-email/godwit/commit/63c7ff1922b660ab3235cda01f2827e780e9f233))
+
+
+### Bug Fixes
+
+* **ci:** allow builds to read draft releases ([#87](https://github.com/godwit-email/godwit/issues/87)) ([5fa894f](https://github.com/godwit-email/godwit/commit/5fa894fe1349260532f4ba5d0eb562b744dd377d))
+
+## [1.3.1](https://github.com/godwit-email/godwit/compare/v1.3.0...v1.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* default decision threshold to 80% with a 50–95% range ([#84](https://github.com/godwit-email/godwit/issues/84)) ([99f1dbd](https://github.com/godwit-email/godwit/commit/99f1dbd9d0a656486537c44bb00b4d5815ab0a67))
+
+## [1.3.0](https://github.com/godwit-email/godwit/compare/v1.2.0...v1.3.0) (2026-10-15)
+
+
+### Features
+
+* make the decision threshold configurable ([#82](https://github.com/godwit-email/godwit/issues/82)) ([7e7fd22](https://github.com/godwit-email/godwit/commit/7e7fd2250264cba58ccd4182bc9b0dfad09e4464))
+* **ui:** refine account inputs and sidebar transitions ([#78](https://github.com/godwit-email/godwit/issues/78)) ([aae89b6](https://github.com/godwit-email/godwit/commit/aae89b68a67377f52fe9135b41e395eba1013dab))
+
+
+### Bug Fixes
+
+* **notify:** send a separate notification for each new message ([#79](https://github.com/godwit-email/godwit/issues/79)) ([fb54353](https://github.com/godwit-email/godwit/commit/fb54353c2f52e00fdaeb642a1033598f4570c639))
+* **plugins:** read the plugin registry forward-compatibly ([#81](https://github.com/godwit-email/godwit/issues/81)) ([360cc40](https://github.com/godwit-email/godwit/commit/360cc40b2ce28fcb7b9f1b38c6971a82ac969f91))
+
+## [1.2.0](https://github.com/godwit-email/godwit/compare/v1.1.0...v1.2.0) (2026-10-15)
+
+
+### Features
+
+* **plugins:** native plugins, a signed plugin directory, and translation through plugins ([#68](https://github.com/godwit-email/godwit/issues/68)) ([40bf3d7](https://github.com/godwit-email/godwit/commit/40bf3d776aa7f2cf3f97e91cdce777294be11e29))
+* upgrade MyGo to 0.5.1 and improve mail rendering and i18n ([#74](https://github.com/godwit-email/godwit/issues/74)) ([1a0266f](https://github.com/godwit-email/godwit/commit/1a0266fde12ad9bb30fe2c680cb6db62c3cd9b68))
+
+
+### Bug Fixes
+
+* **ci:** select the standalone MSIX publisher with the package path ([#72](https://github.com/godwit-email/godwit/issues/72)) ([89b78a0](https://github.com/godwit-email/godwit/commit/89b78a04f54eedbb9cd691b26713a582deb6c99d))
+* **ci:** use the supported Store publish input directory ([#70](https://github.com/godwit-email/godwit/issues/70)) ([a6dfb21](https://github.com/godwit-email/godwit/commit/a6dfb2112014d2759c8ca9919f0b9b3bfff2eb04))
+* **dev:** isolate development data from production ([#75](https://github.com/godwit-email/godwit/issues/75)) ([8eaa551](https://github.com/godwit-email/godwit/commit/8eaa551bcfaa8e7ccfb7d2f200cadb8d43d40b91))
+* **plugins:** show install progress and clarify plugin settings ([#77](https://github.com/godwit-email/godwit/issues/77)) ([60051bd](https://github.com/godwit-email/godwit/commit/60051bda9e846ef0815a083a4d515a54faf066bd))
+
 ## [1.1.0](https://github.com/godwit-email/godwit/compare/v1.0.1...v1.1.0) (2026-10-15)
 
 

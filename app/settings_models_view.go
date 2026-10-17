@@ -2,6 +2,7 @@ package app
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -48,13 +49,13 @@ func (m *modelsView) close() {
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
 			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
 		})
 		return
 	}
 	m.loadAvatar(s)
-	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL]).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0)
 }
 
 // list is the services, one card row each.
@@ -123,7 +124,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	}() // what the next frame shows
 	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string)) {
-		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, MinWidth: theme.UsageSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, v, opts).Label(label).Disabled(u.disabled)
+		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled)
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -158,6 +159,22 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 			func() {
 				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
 					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v })
+				})
+			},
+			func() {
+				help := i18n.T("settings.models.threshold.help")
+				if u.judgeSvc == nil {
+					help += " " + i18n.T("settings.models.threshold.binary")
+				}
+				settingRow(c, i18n.T("settings.models.threshold"), help, func() {
+					threshold := a.settings.JudgeThreshold
+					ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+						slider := ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
+						if slider.Changed() {
+							m.setModel(func(st *core.Settings) { st.JudgeThreshold = threshold })
+						}
+						kit.Text(c, fmt.Sprintf("%.0f%%", threshold*100), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
+					})
 				})
 			})
 	})
@@ -632,11 +649,8 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	}
 	formRow(c, label, func() ui.Element {
 		var in ui.Element
-		border := t.Input
-		if f.keyErr != "" {
-			border = t.Danger
-		}
-		ui.Row(c).AlignItems(ui.Center).Height(th.Space(8)).Radius(t.Radius.Md).Border(theme.Hairline, border).Background(t.Background).Padding(0, th.Space(0.5), 0, 0).Children(func() {
+		box := kit.InputGroup(c, kit.InputOpts{Invalid: f.keyErr != "", Flat: true}).Padding(0, th.Space(0.5), 0, 0)
+		box.Children(func() {
 			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5)).OnSubmit(func() { m.fetch(f) })
 			icon, tip := "eye", i18n.T("settings.models.key.show")
 			if f.showKey {

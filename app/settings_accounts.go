@@ -506,18 +506,10 @@ func rangeOptions(cur ...core.SyncRange) []kit.Option[core.SyncRange] {
 
 func (p *settingsPage) syncState(acc core.Account) string {
 	a := p.a
-	switch {
-	case acc.Status != "ok":
+	if acc.Status != "ok" {
 		return i18n.T("settings.account.sync.stopped")
-	case a.syncing[acc.ID]:
-		return i18n.T("shell.sync.syncing")
-	case a.syncErr[acc.ID] != "":
-		return i18n.T("shell.sync.failed")
 	}
-	if at, ok := a.syncedAtBy[acc.ID]; ok {
-		return i18n.Tf("shell.sync.synced", a.ago(at))
-	}
-	return ""
+	return a.syncHealth(acc).status
 }
 
 func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
@@ -560,12 +552,14 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dialog, p.open, p.busy, p.dlgErr, p.dlgAcc = kind, true, false, nil, acc.ID
 	p.dlgGen++
 	p.secret = ""
+	p.showSecret = false
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
 		smtpPort: strconv.Itoa(acc.SMTPPort), username: acc.Username, imapSec: acc.IMAPSecurity, smtpSec: acc.SMTPSecurity}
 }
 
 func (p *settingsPage) closeDialog() {
 	p.dialog, p.open, p.busy, p.dlgErr, p.secret = "", false, false, nil, ""
+	p.showSecret = false
 }
 
 // act runs the dialog's action after the account's earlier writes. Success
@@ -616,8 +610,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	case "password":
 		title = i18n.Tf("settings.account.login.update", secretName(prov))
 		body = func() {
-			ui.Field(c, secretName(prov), func() { kit.Input(c, &p.secret, kit.InputOpts{Password: true}) }).
+			ui.Field(c, secretName(prov), func() { secretInput(c, &p.secret, &p.showSecret, secretName(prov)) }).
 				Description(i18n.T("onboarding.secret.help"))
+			secretWhitespaceHint(c, &p.secret)
 		}
 		secret := p.secret
 		confirm = func() {

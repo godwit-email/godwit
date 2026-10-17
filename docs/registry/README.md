@@ -50,6 +50,12 @@ Open a pull request that adds to `plugins` (or to an existing plugin's `releases
 - A script release has one file, `any`: the plugin bundled into the single `.js` file its
   `manifest.main` names, at most 5 MiB.
 - Bump the top-level `updated` (RFC 3339) in every pull request.
+- **Never edit a published release**; publish a new version instead. A Godwit that cannot read a
+  release (a field, capability or manifest field from a newer Godwit) sets that release aside and
+  keeps the rest of the registry, so a release that uses anything new must carry the `minGodwit`
+  that reads it. Editing a release older Godwits installed into a form they cannot read revokes
+  it for them. `check` reads every release with the Godwit it is built from and fails on anything
+  it cannot read.
 
 ## Review checklist
 

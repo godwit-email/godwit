@@ -87,7 +87,7 @@ const (
 	Error
 )
 
-// StatusDot is a 6×6 dot: green OK, amber Attention, red Error.
+// StatusDot is a 6×6 dot: green OK, amber Attention (clears by itself), red Error (needs the user).
 func StatusDot(c *ui.Context, s Status) ui.Element {
 	t := theme.Of(c)
 	color := t.Success

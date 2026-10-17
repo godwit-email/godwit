@@ -33,7 +33,11 @@ type Settings struct {
 	// JudgeService is the slug of the service whose judge answers typed
 	// questions; "" (or one gone or with judge off): the DefaultModel does.
 	JudgeService string
-	LocalAPI     bool // the GUI serves the Local API; off by default
+	// JudgeThreshold is the minimum predicate probability treated as yes by
+	// app features, from MinJudgeThreshold to MaxJudgeThreshold. Raw judge
+	// answers keep their probabilities.
+	JudgeThreshold float64
+	LocalAPI       bool // the GUI serves the Local API; off by default
 	// AutoLabel lets the classifier label new Inbox mail; on by default.
 	// A rescan runs either way.
 	AutoLabel bool
@@ -59,9 +63,15 @@ type Settings struct {
 
 const settingsVersion = 3
 
+// MinJudgeThreshold and MaxJudgeThreshold bound the user-adjustable cutoff.
+const (
+	MinJudgeThreshold = 0.5
+	MaxJudgeThreshold = 0.95
+)
+
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true}
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -90,6 +100,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("sidebar width must be between 240 and 480")
 	case st.ListWidth != 0 && (st.ListWidth < 280 || st.ListWidth > 560):
 		return fmt.Errorf("list width must be between 280 and 560")
+	case !(st.JudgeThreshold >= MinJudgeThreshold && st.JudgeThreshold <= MaxJudgeThreshold):
+		return fmt.Errorf("judge threshold must be between %g and %g", MinJudgeThreshold, MaxJudgeThreshold)
 	}
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
@@ -141,6 +153,7 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	if stored.SettingsVersion < 3 && st.BodyFontSize == 14 {
 		st.BodyFontSize = 0
 	}
+	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
 	st.SettingsVersion = settingsVersion
 	return st, nil
 }

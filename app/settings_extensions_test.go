@@ -132,6 +132,20 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	h.until("endpoint hides", func() bool { return !h.tt.HasText("自定义地址") })
 }
 
+func TestPluginFolderInstallLoading(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.dir = coretest.PluginFixture(t, "config-demo")
+	h.openSettings("extensions")
+	release := h.block("plugins")
+	h.click("从文件夹安装")
+	h.see("正在安装…")
+	release()
+	h.until("installed without progress", func() bool {
+		_, ok := h.plugin("config-demo")
+		return ok && !h.tt.HasText("正在安装…")
+	})
+}
+
 func TestPluginDetailNoSend(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) {
 		e.AddAccount(t, "alice@example.com")
@@ -264,7 +278,7 @@ func TestPluginRowSwitch(t *testing.T) {
 		e.InstallPlugin(t, "config-demo")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
+	p := h.openSettings("extensions")
 	h.see("config-demo") // the plugins tab shows first, each plugin one closed row
 	if h.tt.HasText("它请求的权限") || h.tt.HasText("卸载插件") {
 		t.Fatal("an installed plugin opens by default")
@@ -274,7 +288,14 @@ func TestPluginRowSwitch(t *testing.T) {
 	h.click("config-demo")
 	h.until("closed", func() bool { return !h.tt.HasText("卸载插件") })
 	h.click("启用 config-demo")
-	h.until("off", func() bool { p, _ := h.plugin("config-demo"); return !p.Enabled })
+	// The next click must use the refreshed switch, not just the persisted value.
+	h.until("off in service and view", func() bool {
+		stored, _ := h.plugin("config-demo")
+		return !stored.Enabled && len(h.app.writes.chains["plugins"]) == 0 &&
+			slices.ContainsFunc(p.ext.plugins, func(p core.PluginInfo) bool {
+				return p.Name == "config-demo" && !p.Enabled
+			})
+	})
 	h.click("启用 config-demo")
 	h.until("on", func() bool { p, _ := h.plugin("config-demo"); return p.Enabled })
 }

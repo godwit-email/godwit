@@ -635,7 +635,11 @@
       }
     }
   },
+  "onboarding_secret_clean": "Remove whitespace",
   "onboarding_secret_help": "Saved in the system keychain",
+  "onboarding_secret_hide": "Hide password",
+  "onboarding_secret_show": "Show password",
+  "onboarding_secret_whitespace": "Spaces, line breaks or zero-width characters detected. They may have been copied with the password. Remove them?",
   "onboarding_security_starttls": "STARTTLS",
   "onboarding_security_tls": "SSL/TLS",
   "onboarding_sheet_title": "Add account",
@@ -978,7 +982,6 @@
   "settings_density": "Density",
   "settings_density_comfortable": "Comfortable",
   "settings_density_compact": "Compact (default)",
-  "settings_dot_attention": "Needs attention",
   "settings_dot_ok": "Working",
   "settings_ext_allow": "Allow and enable",
   "settings_ext_builtin": "Built-in",
@@ -993,6 +996,17 @@
   "settings_ext_excluded": "Excludes",
   "settings_ext_grant": "Approve and enable",
   "settings_ext_install": "Install from folder",
+  "settings_ext_installing": "Installing…",
+  "settings_ext_downloading": "Downloading… {arg1, number, ::group-off}%",
+  "@settings_ext_downloading": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_ext_verifying": "Verifying…",
+  "settings_ext_native_reviewed_body": "Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_mcp_add": "Add server",
   "settings_ext_mcp_args": "Arguments",
   "settings_ext_mcp_args_help": "One per line",
@@ -1068,8 +1082,8 @@
   "settings_ext_plugin_enable": "Enable plugin",
   "settings_ext_plugins_empty": "No plugins installed.",
   "settings_ext_registry": "Plugin directory",
-  "settings_ext_registry_confirm_body": "A native plugin runs with all of Godwit''s permissions: it can read your mail, account credentials and files on this computer, reach any network address, run programs, and can crash Godwit. Godwit cannot restrict it. This file was reviewed for Godwit''s plugin directory.",
-  "settings_ext_registry_confirm_ok": "Install anyway",
+  "settings_ext_registry_confirm_body": "This file was reviewed for Godwit''s plugin directory. Its integrity is checked before installation. Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
+  "settings_ext_registry_confirm_ok": "Install",
   "settings_ext_registry_confirm_replace": " It replaces the {arg1} you installed yourself.",
   "@settings_ext_registry_confirm_replace": {
     "placeholders": {
@@ -1524,6 +1538,9 @@
   "settings_models_testing": "Testing…",
   "settings_models_tile_chatgpt": "Your ChatGPT plan",
   "settings_models_tile_grok": "Your SuperGrok or X Premium plan",
+  "settings_models_threshold": "Decision threshold",
+  "settings_models_threshold_binary": "When the generation model handles judgments, it only returns 0% or 100%, so fine-tuning has no effect.",
+  "settings_models_threshold_help": "Shared across features: probabilities at or above this value count as yes. Higher is stricter; range 50%–95%, default 80%.",
   "settings_models_unsupported": "Not supported",
   "settings_models_url_ph": "https://… or http://127.0.0.1:[PORT]/v1",
   "settings_models_usage": "Usage",
@@ -1902,6 +1919,120 @@
     "placeholders": {
       "arg1": {
         "type": "int"
+      }
+    }
+  },
+  "settings_dot_action": "Needs attention",
+  "settings_dot_retrying": "Retrying",
+  "shell_sync_account": "{arg1} · {arg2}",
+  "@shell_sync_account": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_title": "Sync status",
+  "shell_sync_all": "Sync all now",
+  "shell_sync_retry": "Retry now",
+  "shell_sync_servers": "Check server settings",
+  "shell_sync_reauth_reason": "The sign-in expired, so this account stopped syncing and new mail is not arriving. Sign in again and it catches up.",
+  "shell_sync_missing": "No saved {arg1}",
+  "@shell_sync_missing": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_missing_reason": "The keychain has no {arg1} for this account; it may have been removed. Syncing is paused until you enter it again.",
+  "@shell_sync_missing_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_rejected": "{arg1} refused",
+  "@shell_sync_rejected": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_rejected_reason": "The server does not accept the saved {arg1}. If you changed it recently or it expired, update it. Syncing is paused until then.",
+  "@shell_sync_rejected_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_keychain": "Keychain unavailable",
+  "shell_sync_keychain_reason": "The system keychain cannot be opened right now, so Godwit cannot read this account’s password. Unlock it, then retry.",
+  "shell_sync_tls": "Certificate problem",
+  "shell_sync_tls_reason": "Cannot verify the certificate of {arg1}. The server setup may have changed, or this network is intercepting the connection. Try another network, or check the server settings.",
+  "@shell_sync_tls_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_retrying": "Retrying",
+  "shell_sync_retrying_short": "retrying",
+  "shell_sync_retrying_reason": "{arg1}. Godwit keeps retrying; this usually clears up by itself.",
+  "@shell_sync_retrying_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_stuck_reason": "Started failing {arg1}: {arg2}. Retrying has not helped. Check your network; if it is fine, the server address or port may have changed.",
+  "@shell_sync_stuck_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_dns": "Cannot find the server {arg1}; the network may be down",
+  "@shell_sync_cause_dns": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_connect": "Cannot connect to {arg1}; the network may be down",
+  "@shell_sync_cause_connect": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_timeout": "{arg1} is not responding",
+  "@shell_sync_cause_timeout": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_other": "Something went wrong talking to {arg1}",
+  "@shell_sync_cause_other": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
       }
     }
   },

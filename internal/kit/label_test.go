@@ -67,8 +67,7 @@ func TestKitLabelChipRemove(t *testing.T) {
 	}), 300, 200)
 	r, _ := tt.Find("验证码")
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	time.Sleep(900 * time.Millisecond)
-	tt.Frame()
+	tt.Advance(900 * time.Millisecond)
 	if !tt.HasText("由模型标记") {
 		t.Errorf("no tip on hover: %q", tt.Texts())
 	}

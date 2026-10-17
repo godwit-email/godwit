@@ -57,7 +57,7 @@ func (h *harness) arriveIn(acc core.Account, folder string, subjects ...string) 
 	h.until("the arrivals", func() bool { got := h.app.newMail[acc.ID]; return got != nil && len(got.msgs) == len(subjects) })
 }
 
-// notesAfter lets the coalescing window pass and returns the notifications
+// notesAfter lets the arrival window pass and returns the notifications
 // shown, waiting for want of them.
 func (h *harness) notesAfter(want int) []Notification {
 	h.t.Helper()
@@ -71,32 +71,47 @@ func (h *harness) notesAfter(want int) []Notification {
 	return h.plat.Notes()
 }
 
-func TestNotifyCoalesces(t *testing.T) {
+func TestNotifyEachMessage(t *testing.T) {
 	t.Run("three in a second", func(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arrive(acc, "One", "Two", "Three")
-		notes := h.notesAfter(1)
-		if len(notes) != 1 {
-			t.Fatalf("notes %+v, want one", notes)
+		notes := h.notesAfter(3)
+		if len(notes) != 3 {
+			t.Fatalf("notes %+v, want one per message", notes)
 		}
-		if n := notes[0]; n.Body != "3 封新邮件" || n.Title != "Godwit" || !strings.HasPrefix(n.ID, "account:") {
-			t.Fatalf("note %+v", n)
+		for _, n := range notes {
+			if n.Body != "新邮件" || n.Title != "Godwit" || n.Subtitle != "" || !strings.HasPrefix(n.ID, "message:") || n.MessageID == 0 {
+				t.Fatalf("note %+v", n)
+			}
 		}
 	})
 	t.Run("preview off", func(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = false })
 		h.arrive(acc, "Secret plans")
 		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != "Godwit" || notes[0].Body != "新邮件" {
+		if len(notes) != 1 || notes[0].Title != "Godwit" || notes[0].Body != "新邮件" || notes[0].Sender != "" || notes[0].ThreadID != 0 {
 			t.Fatalf("notes %+v, want neither sender nor subject", notes)
 		}
 	})
 	t.Run("preview on, several", func(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
-		h.arrive(acc, "One", "Two")
-		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != acc.Email || notes[0].Body != "2 封新邮件" {
+		for _, subject := range []string{"One", "Two"} {
+			h.put(acc, "INBOX", coretest.Msg("Bob Stone <bob@example.com>", acc.Email, subject, "body of "+subject))
+		}
+		h.syncNow(acc)
+		h.until("both arrivals", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 2 })
+		notes := h.notesAfter(2)
+		if len(notes) != 2 {
 			t.Fatalf("notes %+v", notes)
+		}
+		for i, subject := range []string{"One", "Two"} {
+			n := notes[i]
+			if n.Title != "Bob Stone" || n.Subtitle != subject || !strings.Contains(n.Body, "body of "+subject) || n.MessageID == 0 || n.ThreadID == 0 || n.Sender != "Bob Stone <bob@example.com>" {
+				t.Fatalf("note %+v for %q", n, subject)
+			}
+		}
+		if notes[0].ID == notes[1].ID {
+			t.Fatal("notifications share an ID")
 		}
 	})
 	t.Run("inbox only", func(t *testing.T) {
@@ -117,8 +132,8 @@ func TestNotifyCoalesces(t *testing.T) {
 		h.plat.mu.Lock()
 		h.plat.notifyErr = errors.New("denied")
 		h.plat.mu.Unlock()
-		h.arrive(acc, "Private subject")
-		h.notesAfter(1)
+		h.arrive(acc, "Private subject", "Another private subject")
+		h.notesAfter(2)
 		h.until("the log line", func() bool { return len(h.logged()) > 0 })
 		if l := strings.Join(h.logged(), "\n"); !strings.Contains(l, "denied") || strings.Contains(l, "Private subject") || strings.Contains(l, "Bob") {
 			t.Fatalf("log %q", l)
@@ -138,7 +153,7 @@ func TestNotifyCoalesces(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
 		h.arrive(acc, "Lunch")
 		notes := h.notesAfter(1)
-		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Subtitle != "Lunch" || !strings.Contains(notes[0].Body, "body of Lunch") || notes[0].MessageID == 0 {
+		if len(notes) != 1 || notes[0].Title != "Bob Stone" || notes[0].Subtitle != "Lunch" || !strings.Contains(notes[0].Body, "body of Lunch") || notes[0].MessageID == 0 || notes[0].Sender != "Bob Stone <bob@example.com>" || notes[0].ThreadID == 0 {
 			t.Fatalf("notes %+v", notes)
 		}
 	})
@@ -172,8 +187,20 @@ func TestNotificationClickOpens(t *testing.T) {
 	}
 
 	h.arrive(acc, "A", "B")
-	notes = h.notesAfter(2)
-	h.app.NotificationClicked(notes[1].ID)
+	notes = h.notesAfter(3)
+	for i, subject := range []string{"A", "B"} {
+		n := notes[i+1]
+		h.app.NotificationClicked(n.ID)
+		h.until("the clicked message", func() bool {
+			return h.app.route.ThreadID != 0 && h.app.mail.reader.subject == subject
+		})
+		m, err := h.env.Svc.GetMessage(t.Context(), n.MessageID, false)
+		if err != nil || m.ThreadID != h.app.route.ThreadID {
+			t.Fatalf("notification %+v opened route %+v: %v", n, h.app.route, err)
+		}
+	}
+	// Notifications left by older versions still open the account's inbox.
+	h.app.NotificationClicked("account:" + strconv.FormatInt(acc.ID, 10))
 	inbox := h.folderOf(acc, "inbox")
 	h.until("the account's inbox", func() bool {
 		r := h.app.route

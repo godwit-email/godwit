@@ -17,8 +17,9 @@ import (
 // Border outlines panels and cards, Input the controls (a step stronger in
 // the dark), Ring the keyboard focus (at half opacity) and a hovered divider.
 // Attention is the amber of
-// status dots that ask for a look (amber-500); Unread, the blue of the dot
-// beside unread mail (blue-500).
+// status dots for a trouble that clears by itself, as a sync being retried
+// (amber-500); Danger's red marks one that needs the user. Unread, the blue
+// of the dot beside unread mail (blue-500).
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
@@ -166,6 +167,7 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	SyncMenuWidth         = 336 // the top bar's sync status list: 360 with the popover's padding
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24
 	LabelSwatchRing       = 2
@@ -177,7 +179,7 @@ const (
 	SelectedBorder        = 2  // the border of a chosen tile
 	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
 	GripHeight            = 56
-	RingWidth             = 2   // a focused box's ring, outside its border
+	RingWidth             = 3   // shadcn's focused box ring, outside its border
 	QuoteBar              = 2   // the bar left of a quote in a mail body
 	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
 	ReaderMaxWidth        = 720 // the reading pane's text column
@@ -199,6 +201,7 @@ const (
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	CloseButton                                      = 20             // a toast's close button
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons

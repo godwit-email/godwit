@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,10 @@ func (r *raw) until(id string) wire {
 
 func (r *raw) closed() {
 	r.t.Helper()
+	if runtime.GOOS == "windows" && r.conn.LocalAddr().Network() == "unix" {
+		// Match net.TestCloseWrite's workaround for the close/read race (go.dev/issue/49352).
+		time.Sleep(10 * time.Millisecond)
+	}
 	r.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
 		if _, err := r.r.ReadBytes('\n'); err != nil {

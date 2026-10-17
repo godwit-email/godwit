@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -58,7 +59,9 @@ type onboarding struct {
 
 	prov                 auth.Provider
 	askEmail             bool // the provider was picked before an address was typed
+	focusEmail           bool // place the caret before a newly prefilled domain once
 	secret, username     string
+	showSecret           bool
 	manual               bool
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
@@ -120,10 +123,14 @@ func (o *onboarding) cancelFlow(id string) {
 func (o *onboarding) goTo(s obStep) {
 	o.gen++
 	o.step = s
+	o.showSecret = false
 }
 
 func (o *onboarding) toPick() {
 	o.leave()
+	if o.askEmail && len(o.prov.Domains) > 0 && o.email == "@"+o.prov.Domains[0] {
+		o.email = ""
+	}
 	o.step = stepPick
 }
 
@@ -219,9 +226,14 @@ func (o *onboarding) choose(p auth.Provider) {
 	}
 	o.manual = p.IMAP.Host == ""
 	o.askEmail = !validEmail(o.email)
+	o.focusEmail = false
 	if p.Login == "oauth" {
 		o.startOAuth()
 		return
+	}
+	if o.email == "" && len(p.Domains) > 0 {
+		o.email = "@" + p.Domains[0]
+		o.focusEmail = true
 	}
 	o.goTo(stepPassword)
 }
@@ -533,11 +545,26 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	})
 }
 
-// inputHeight is the mockup's text field: 40 inside its 1 px border.
-func inputHeight(c *ui.Context) float32 { return c.Theme().Space(10) + 2*theme.Hairline }
+func inputHeight(c *ui.Context) float32 { return c.Theme().Space(9) }
 
 func primary(c *ui.Context, label string, disabled bool) ui.Element {
 	return kit.Button(c, label, kit.ButtonOpts{Size: kit.SizeLg, Disabled: disabled}).FillWidth()
+}
+
+func (o *onboarding) emailSuggestions() []string {
+	local, domain, _ := strings.Cut(strings.TrimSpace(o.email), "@")
+	if !validEmail(local + "@example.com") {
+		return nil
+	}
+	var suggestions []string
+	for _, p := range o.providers {
+		for _, d := range p.Domains {
+			if strings.HasPrefix(d, strings.ToLower(domain)) {
+				suggestions = append(suggestions, local+"@"+d)
+			}
+		}
+	}
+	return suggestions
 }
 
 func (o *onboarding) pickView(c *ui.Context) {
@@ -546,15 +573,11 @@ func (o *onboarding) pickView(c *ui.Context) {
 		heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
 	}
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		box := ui.Row(c).Height(inputHeight(c)).AlignItems(ui.Center).Gap(th.Space(2)).PaddingX(th.Space(3)).Radius(t.Radius.Md).Border(theme.Hairline, t.Input).Background(t.Background)
-		if box.FocusWithin() { // the row is the box, so it carries the ring a bare input would
-			box.Border(theme.Hairline, t.Ring)
-		}
-		if o.emailErr != "" {
-			box.Border(theme.Hairline, t.Danger)
-		}
-		kit.Elevate(c, box, theme.ShadowXs).Children(func() {
-			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Bare: true}).FocusRing(false).Label(i18n.T("onboarding.email")).Grow(1).Height(th.Space(10))
+		box := kit.InputGroup(c, kit.InputOpts{Invalid: o.emailErr != ""}).Height(inputHeight(c)).Gap(th.Space(2)).PaddingX(th.Space(3))
+		box.Children(func() {
+			in := ui.Autocomplete(c, &o.email, o.emailSuggestions()).Placeholder(i18n.T("onboarding.email.placeholder")).
+				Padding(0).Border(0, t.Input).Background(t.Background).FocusRing(false).
+				Label(i18n.T("onboarding.email")).Grow(1).MinWidth(0).Height(inputHeight(c) - theme.Hairline - theme.Hairline)
 			if in.Changed() {
 				o.emailErr = ""
 				o.scheduleDetect()
@@ -623,6 +646,37 @@ func tr(key string) string {
 	return ""
 }
 
+func secretInput(c *ui.Context, secret *string, shown *bool, label string) ui.Element {
+	th := c.Theme()
+	height := inputHeight(c)
+	var in ui.Element
+	row := kit.InputGroup(c, kit.InputOpts{}).Height(height).Padding(0, th.Space(0.5), 0, 0)
+	row.Children(func() {
+		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).Label(label).Height(height - theme.Hairline - theme.Hairline).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
+		icon, tip := "eye", i18n.T("onboarding.secret.show")
+		if *shown {
+			icon, tip = "eye-off", i18n.T("onboarding.secret.hide")
+		}
+		kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { *shown = !*shown })
+	})
+	return in
+}
+
+func secretWhitespaceHint(c *ui.Context, secret *string) {
+	cleaned := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || r == '\u200b' || r == '\ufeff' {
+			return -1
+		}
+		return r
+	}, *secret)
+	if cleaned == *secret {
+		return
+	}
+	kit.Alert(c, kit.Warning, i18n.T("onboarding.secret.whitespace"), func() {
+		kit.AlertAction(c, kit.Warning, i18n.T("onboarding.secret.clean"), func() { *secret = cleaned })
+	})
+}
+
 func (o *onboarding) passwordView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
@@ -633,7 +687,15 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	o.providerHeader(c, sub)
 	if o.askEmail {
 		ui.Field(c, i18n.T("onboarding.email"), func() {
-			kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder")}).Height(inputHeight(c))
+			placeholder := i18n.T("onboarding.email.placeholder")
+			if len(o.prov.Domains) > 0 {
+				placeholder = "you@" + o.prov.Domains[0]
+			}
+			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: placeholder}).Height(inputHeight(c))
+			if o.focusEmail {
+				in.Focus().SetTextSelection(0, 0)
+				o.focusEmail = false
+			}
 		})
 	}
 	name, login := providerName(o.prov), o.prov.Login
@@ -662,10 +724,11 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		})
 	}
 	ui.Field(c, o.secretName(), func() {
-		if kit.Input(c, &o.secret, kit.InputOpts{Password: true}).Height(inputHeight(c)).Submitted() && o.secret != "" {
+		if secretInput(c, &o.secret, &o.showSecret, o.secretName()).Submitted() && o.secret != "" {
 			o.connect()
 		}
 	}).Description(i18n.T("onboarding.secret.help")).LineHeight(theme.LineFor(o.secretName())) // the label's line; the description's is the same
+	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
 }
@@ -883,7 +946,8 @@ func (o *onboarding) doneView(c *ui.Context) {
 		lineText(c, line, t.Text.Body).TextColor(t.Muted)
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
-		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(inputHeight(c)).Disabled(o.adding || o.addedID != 0) // the name saves with the account
+		// Keep the completion form's original height; the 36px fields are for sign-in.
+		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(th.Space(10) + theme.Hairline + theme.Hairline).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
 	opts := rangeOptions()
 	opts[0].Label = i18n.T("onboarding.sync.2000") // （推荐） here only

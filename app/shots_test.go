@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -181,8 +182,7 @@ func TestShots(t *testing.T) {
 	}
 	write := func(h *harness, dir, name string) {
 		h.t.Helper()
-		time.Sleep(2 * theme.MotionBase) // hover, selection and theme fades run on the wall clock
-		h.tt.Frame()
+		h.tt.Advance(2 * theme.MotionBase)
 		f, err := os.Create(filepath.Join(dir, name+".png"))
 		if err != nil {
 			t.Fatal(err)
@@ -244,6 +244,37 @@ func TestShots(t *testing.T) {
 		s.seeTranslation(m.ID, "能否在周五前看一下")
 		shot(s.harness, "MainTranslated")
 	})
+	for _, v := range []struct {
+		name string
+		evs  func(s *shotEnv) []events.Event
+		wait time.Duration
+	}{
+		{"MainSyncOk", func(s *shotEnv) []events.Event { return nil }, 0},
+		{"MainSyncRetrying", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "connect", Error: "dial tcp: connection refused"}}
+		}, 0},
+		{"MainSyncPassword", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "auth", Error: "login refused"},
+				{Type: events.SyncFailed, AccountID: s.work.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 0},
+		{"MainSyncFailed", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 2 * time.Hour},
+	} {
+		t.Run(v.name, func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.settle()
+			s.post(func() {
+				for _, ev := range v.evs(s) {
+					s.app.onEvent(ev)
+				}
+			})
+			s.drain()
+			s.advance(v.wait)
+			s.app.syncOpen = true
+			shot(s.harness, v.name)
+		})
+	}
 	t.Run("MainWindows", func(t *testing.T) {
 		old := goos
 		goos = "windows"
@@ -535,7 +566,7 @@ func TestShots(t *testing.T) {
 		s.app.toastAs(kit.ToastWarning, "work@company.example 没有归档文件夹，已跳过")
 		s.app.toast("链接已复制")
 		s.see("链接已复制")
-		time.Sleep(2 * theme.MotionBase) // the toasts' enter motion runs on the wall clock
+		s.tt.Advance(2 * theme.MotionBase)
 		shot(s.harness, "Toasts")
 	})
 	t.Run("AddAccountSheet", func(t *testing.T) {

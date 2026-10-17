@@ -79,6 +79,8 @@ type Platform interface {
 type Notification struct {
 	ID, Title, Subtitle, Body string
 	MessageID                 int64
+	Sender                    string // only set when preview is enabled
+	ThreadID                  int64
 }
 
 // OAuthFlow signs in with an OAuth provider; the default wraps the Service.
@@ -186,7 +188,7 @@ type App struct {
 
 	foreground                           bool
 	vibrancy                             bool                // Deps.Vibrancy
-	newMail                              map[int64]*arrivals // per account, what arrived for its pending notification
+	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
@@ -215,7 +217,8 @@ type App struct {
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
 	syncing    map[int64]bool      // accounts syncing now
-	syncErr    map[int64]string    // each account's last sync failure, until it syncs
+	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
+	syncOpen   bool                // the sync status's account list shows
 	syncedAt   time.Time           // the last successful sync; zero before one
 	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
 	ticking    bool                // a minute tick redraws the sync age
@@ -274,7 +277,7 @@ func New(d Deps) *App {
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
-	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]string{}, map[int64]time.Time{}
+	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
@@ -381,7 +384,7 @@ func (a *App) load() {
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)
-		maps.DeleteFunc(a.syncErr, func(id int64, _ string) bool { return gone(id, false) })
+		maps.DeleteFunc(a.syncErr, func(id int64, _ syncFail) bool { return gone(id, false) })
 		switch {
 		case len(accs) == 0 && a.route.Page != PageOnboarding:
 			a.history, a.ahead = nil, nil

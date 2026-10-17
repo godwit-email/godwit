@@ -340,8 +340,14 @@ func (p *settingsPage) translatorOptions(cur string) []kit.Option[string] {
 			continue
 		}
 		label := tr.Name
+		for _, en := range p.ext.reg.Entries {
+			if en.Name == tr.Name {
+				label = entryTitle(en)
+				break
+			}
+		}
 		if !tr.Running {
-			label = i18n.Tf("settings.translator.off", tr.Name)
+			label = i18n.Tf("settings.translator.off", label)
 		}
 		opts = append(opts, kit.Option[string]{Value: tr.ID, Label: label})
 		found = found || tr.ID == cur
