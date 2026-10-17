@@ -105,6 +105,7 @@ func TestLexicons(t *testing.T) {
 		{"tr", []code{
 			{"Doğrulama kodu", "Doğrulama kodunuz: 482913", "482913"},
 		}, []link{
+			{"ACME'YE GİRİŞ YAP", `<p>Bu bağlantı 10 dakika geçerlidir.</p><a href="https://acme.example/l/2">GİRİŞ YAP</a>`, "https://acme.example/l/2", mail.LinkSignIn},
 			{"Acme'ye giriş yap", `<p>Bu bağlantı 10 dakika geçerlidir.</p><a href="https://acme.example/l/1">Giriş yap</a>`, "https://acme.example/l/1", mail.LinkSignIn},
 			{"Hoş geldiniz", `<a href="https://acme.example/c/1">E-posta adresinizi doğrulayın</a>`, "https://acme.example/c/1", mail.LinkConfirm},
 			{"Şifre sıfırlama", `<a href="https://acme.example/r/1">Şifrenizi sıfırlayın</a>`, "https://acme.example/r/1", mail.LinkReset},

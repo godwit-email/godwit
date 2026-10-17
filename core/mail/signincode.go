@@ -92,7 +92,7 @@ func signInCode(subject, text, htmlBody string) string {
 			lines = append(lines, line)
 		}
 	}
-	s := simplified(strings.Join(lines, "\n")) // 驗證碼 reads as 验证码; offsets hold, as each pair is 3 bytes
+	s := simplified(strings.Join(lines, "\n")) // 驗證碼 reads as 验证码; candidates are offsets into s itself
 	code := ""
 	var candidates [][2]int
 	for _, hint := range allHints(s) {
@@ -229,12 +229,16 @@ func beforeReply(text string) string {
 }
 
 // simplified writes the Traditional characters these rules look for in their
-// Simplified form, so "驗證碼" and "重置密碼" read as "验证码" and "重置密码".
-// Each pair is the same length in UTF-8, so offsets into s hold.
+// Simplified form, so "驗證碼" and "重置密碼" read as "验证码" and "重置密码",
+// and folds Turkish İ/ı to i. Offsets are taken in its result, never mapped
+// back to the input.
 func simplified(s string) string { return traditional.Replace(s) }
 
 var traditional = strings.NewReplacer(
 	"連結", "链接", // a word whose characters map apart (連 alone is 连); first, as keys match in order
+	// Turkish İ and ı, which case-insensitive matching keeps apart from i:
+	// "GİRİŞ YAP" reads as "giriş yap".
+	"İ", "i", "ı", "i",
 	"驗", "验", "證", "证", "碼", "码", "動", "动", "態", "态", "確", "确", "認", "认",
 	"錄", "录", "郵", "邮", "電", "电", "帳", "帐", "賬", "账", "戶", "户", "號", "号",
 	"鏈", "链", "結", "结", "連", "连", "設", "设", "點", "点", "擊", "击", "請", "请",
