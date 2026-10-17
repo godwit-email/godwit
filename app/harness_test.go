@@ -241,15 +241,18 @@ func (c *fakeClock) advance(d time.Duration) {
 
 // fakePlatform records every call; dialogs return the preset answers.
 type fakePlatform struct {
-	mu        sync.Mutex
-	calls     []string
-	notes     []Notification
-	files     []string // OpenFiles
-	dir       string   // OpenDirectory
-	savePath  string   // SaveFile
-	supported bool     // NotificationsSupported
-	notifyErr error    // Notify
-	tempDir   string
+	mu           sync.Mutex
+	calls        []string
+	notes        []Notification
+	codes        []core.SignInCode
+	codeBanners  []core.SignInCode
+	noCodeBanner bool
+	files        []string // OpenFiles
+	dir          string   // OpenDirectory
+	savePath     string   // SaveFile
+	supported    bool     // NotificationsSupported
+	notifyErr    error    // Notify
+	tempDir      string
 
 	localAPIPath string // SetLocalAPI(true)'s answer
 	localAPIErr  error
@@ -469,6 +472,13 @@ func (p *fakePlatform) Notify(n Notification) error {
 	defer p.mu.Unlock()
 	p.notes = append(p.notes, n)
 	return p.notifyErr
+}
+func (p *fakePlatform) SetSignInCodes(codes []core.SignInCode) { p.codes = slices.Clone(codes) }
+func (p *fakePlatform) SignInCodeBannerSupported() bool        { return !p.noCodeBanner }
+func (p *fakePlatform) ShowSignInCode(code *core.SignInCode) {
+	if code != nil {
+		p.codeBanners = append(p.codeBanners, *code)
+	}
 }
 func (p *fakePlatform) Notes() []Notification {
 	p.mu.Lock()

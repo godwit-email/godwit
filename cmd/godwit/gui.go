@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	mygoi18n "github.com/egoist/mygo/i18n"
@@ -308,13 +309,20 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		updateMenu()
 		trayMenu := func() *mygo.Menu {
-			return mygo.NewMenu([]*mygo.MenuItem{
+			items := []*mygo.MenuItem{
 				{Label: i18n.T("tray.open"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow() }},
 				{Label: i18n.T("mail.compose"), Click: compose},
 				{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
 				mygo.Separator(),
 				{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-			})
+			}
+			items = slices.Insert(items, 3, recentCodeMenu(plat.signInCodes, time.Now(), plat.useSignInCode)...)
+			return mygo.NewMenu(items)
+		}
+		plat.updateTray = func() {
+			if plat.tray != nil {
+				plat.tray.SetMenu(trayMenu())
+			}
 		}
 
 		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {

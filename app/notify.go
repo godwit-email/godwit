@@ -57,6 +57,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 	}
 	texts := i18n.In(i18n.Language())
 	plat, svc, logf := a.plat, a.svc, a.logf
+	codeBanner, now := st.NotifyPreview && plat.SignInCodeBannerSupported(), a.clock.Now()
 	a.do(func(ctx context.Context) error {
 		if !plat.NotificationsSupported() {
 			return nil
@@ -65,6 +66,13 @@ func (a *App) notify(acc int64, got *arrivals) {
 		if err != nil {
 			logf("notify: account %d: reading new mail: %v", acc, err)
 			return nil
+		}
+		if codeBanner {
+			if codes, err := svc.RecentSignInCodes(ctx, now); err == nil {
+				msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool {
+					return slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == m.ID })
+				})
+			}
 		}
 		var n Notification
 		switch {

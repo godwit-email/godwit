@@ -936,5 +936,16 @@
   "shell_sync_minutes_ago": "{arg1, plural, other {{arg1, number, ::group-off} 分钟前}}",
   "wit_compose_pending": "{arg1, plural, other {{arg1, number, ::group-off} 处修改待确认}}",
   "wit_compose_review_inline": "{arg1, plural, other {修改 {arg1, number, ::group-off} 处。鼠标停在某处修改上，可以单独接受或拒绝。}}",
-  "wit_tools": "{arg1, plural, other {调用了 {arg1, number, ::group-off} 个工具}}"
+  "wit_tools": "{arg1, plural, other {调用了 {arg1, number, ::group-off} 个工具}}",
+  "codes_copy": "复制验证码 {arg1}",
+  "codes_recent": "最近的验证码",
+  "codes_empty": "最近 15 分钟没有验证码",
+  "codes_copy_failed": "复制失败",
+  "codes_copy_button": "复制",
+  "codes_copied": "已复制",
+  "codes_retry": "重试",
+  "codes_link": "登录链接",
+  "codes_open": "打开",
+  "codes_link_item": "登录链接 · {arg1} · {arg2}",
+  "codes_open_link": "打开登录链接 · {arg1}"
 }
