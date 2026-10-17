@@ -143,6 +143,13 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 		lease()
 		return judgeFailure(ctx, err)
 	}
+	// Under pluginsMu, as stopPlugin's dropLoaded: a plugin stopped meanwhile never gets the lease.
+	j.s.pluginsMu.RLock()
+	defer j.s.pluginsMu.RUnlock()
+	if j.s.running[j.name] != j.rp {
+		lease()
+		return plugins.ErrClosed
+	}
 	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease}); had { // calls are one at a time: no other load raced this one
 		old.(loadedModel).lease()
 	}

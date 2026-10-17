@@ -895,7 +895,7 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 	}
 	if isPluginRef(ref) {
 		m, err := s.resolvePluginModel(ctx, ref)
-		if !errors.Is(err, ErrModelUnavailable) {
+		if !errors.Is(err, errNoPluginModel) { // a plugin that failed to list is not a reason to go elsewhere
 			return m, ref, err
 		}
 		// No such plugin model: a service that had the slug "plugin" may own

@@ -124,7 +124,7 @@ func (s *Service) pluginModel(ctx context.Context, ref string) (string, *running
 	rp := s.running[name]
 	s.pluginsMu.RUnlock()
 	if rp == nil || !slices.Contains(rp.row.m.Capabilities, "models") {
-		return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", errNoPluginModel, ref)
 	}
 	ms, cfg, err := s.pluginModels(ctx, name, rp)
 	if errors.Is(err, errOwnModel) {
@@ -136,8 +136,12 @@ func (s *Service) pluginModel(ctx context.Context, ref string) (string, *running
 	if i := slices.IndexFunc(ms, func(m plugins.ProviderModel) bool { return m.ID == id }); i >= 0 {
 		return name, rp, ms[i], cfg, nil
 	}
-	return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", errNoPluginModel, ref)
 }
+
+// errNoPluginModel: no running plugin offers the model, as its list says;
+// unlike a list that failed, a legacy service ref may then be meant (resolveRef).
+var errNoPluginModel = fmt.Errorf("%w", ErrModelUnavailable)
 
 // isPluginRef reports whether ref is a well-formed "plugin/<name>/<model id>".
 func isPluginRef(ref string) bool {

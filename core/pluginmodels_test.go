@@ -430,3 +430,22 @@ func TestPluginOwnModelFailsFast(t *testing.T) {
 	assert.Empty(t, res.Text)
 	assert.Less(t, time.Since(start), 10*time.Second, "no wait for the plugin timeout")
 }
+
+// A plugin that fails to list its models does not send plugin/<name>/<id>
+// to a service that once had the slug plugin and has a model "<name>/<id>".
+func TestFailingPluginListNoLegacyFallback(t *testing.T) {
+	s := newMailContextService(t)
+	legacyService(t, s, 1, "Plugin", "p/m1")
+	_, err := s.db.Execute(t.Context(), "UPDATE model_services SET slug = 'plugin' WHERE id = 1")
+	require.NoError(t, err)
+	upgrade(t, s)
+	startModelPlugin(t, s, "p", "api.example.com", `export default function (ctx: any) {
+  ctx.models.register({ listModels: () => { throw new Error("catalog down") } })
+}`)
+	_, _, err = s.resolveRef(t.Context(), "plugin/p/m1")
+	assert.ErrorContains(t, err, "catalog down")
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "p", false))
+	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
+	require.NoError(t, err, "with no plugin p, the legacy service's model")
+	assert.EqualValues(t, 1, m.ServiceID)
+}
