@@ -123,6 +123,7 @@ type Service struct {
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
 	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
 	nativeEnv   []string           // and its whole environment
+	assets      modelAssets        // registry-hosted model files (assets.go)
 	registryMu  sync.Mutex         // registry cache writes; registryErr
 	registryErr string             // why the last registry refresh failed; "" it did not
 
@@ -159,6 +160,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
 	s.labelJudge = s.defaultLabelJudge
+	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
 	}
@@ -205,6 +207,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 			return nil, fmt.Errorf("plugin registry: %w", err)
 		}
 	}
+	s.sweepAssets(ctx) // best effort: what is left is only disk space
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err

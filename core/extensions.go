@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -69,6 +70,7 @@ type pluginRow struct {
 	sourceHash, permHash, granted string
 	installDir                    string
 	trust, libraryHash            string
+	assetsDigest                  string   // plugins.AssetsDigest of its release's assets here; "" none
 	secretKeys                    []string // keys that may have a keychain entry
 	enabled                       bool
 	reason                        string
@@ -108,7 +110,7 @@ func (s *Service) removeOldVersions(name, keep string) error {
 }
 
 func (s *Service) pluginRows(ctx context.Context, name string) (map[string]pluginRow, error) {
-	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir, secret_keys, trust, library_hash FROM plugins"
+	q := "SELECT name, manifest, source_hash, permission_hash, granted_hash, enabled, disabled_reason, install_dir, secret_keys, trust, library_hash, assets_digest FROM plugins"
 	var args []any
 	if name != "" {
 		q += " WHERE name = ?"
@@ -129,7 +131,7 @@ func (s *Service) pluginRows(ctx context.Context, name string) (map[string]plugi
 			return nil, err
 		}
 		out[store.Str(r[0])] = pluginRow{secretKeys: keys, m: m, sourceHash: store.Str(r[2]), permHash: store.Str(r[3]), granted: store.Str(r[4]),
-			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7]), trust: store.Str(r[9]), libraryHash: store.Str(r[10])}
+			enabled: store.Int(r[5]) != 0, reason: store.Str(r[6]), installDir: store.Str(r[7]), trust: store.Str(r[9]), libraryHash: store.Str(r[10]), assetsDigest: store.Str(r[11])}
 	}
 	return out, nil
 }
@@ -201,13 +203,14 @@ func (s *Service) ListPlugins(ctx context.Context) ([]PluginInfo, error) {
 // An update with other permissions is disabled until they are granted; with the
 // same ones a running plugin restarts on the new code, and is disabled if that fails.
 func (s *Service) InstallPlugin(ctx context.Context, srcDir string) (PluginInfo, error) {
-	return s.installPlugin(ctx, srcDir, "")
+	return s.installPlugin(ctx, srcDir, "", "")
 }
 
 // installPlugin is InstallPlugin; trust "listed" (only InstallPluginFromRegistry
 // passes it) records the file as reviewed and, for a native plugin, grants it
-// and enables it unless the user had turned it off.
-func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (PluginInfo, error) {
+// and enables it unless the user had turned it off. assetsDigest is the
+// release's registry assets on this platform ("" none), part of what was reviewed.
+func (s *Service) installPlugin(ctx context.Context, srcDir, trust, assetsDigest string) (PluginInfo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return PluginInfo{}, err
@@ -302,11 +305,11 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (Plug
 			enable = 1
 		}
 	}
-	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, trust, granted_hash, enabled, installed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, assets_digest, trust, granted_hash, enabled, installed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(name) DO UPDATE SET version = excluded.version, manifest = excluded.manifest,
 			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
-			library_hash = excluded.library_hash,
+			library_hash = excluded.library_hash, assets_digest = excluded.assets_digest,
 			trust = CASE WHEN excluded.trust = 'listed' THEN 'listed'
 				WHEN permission_hash != excluded.permission_hash OR library_hash != excluded.library_hash THEN ''
 				-- another package around the reviewed file is the user's, which a refresh lists again if it is a release
@@ -315,7 +318,7 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (Plug
 			granted_hash = CASE WHEN ? THEN excluded.granted_hash ELSE granted_hash END,
 			enabled = CASE WHEN ? THEN excluded.enabled ELSE enabled AND permission_hash = excluded.permission_hash END,
 			disabled_reason = '', installed_at = excluded.installed_at`,
-		m.Name, m.Version, string(mj), hash, installDir, permHash, libHash, trust, granted, enable, listedNative, listedNative)
+		m.Name, m.Version, string(mj), hash, installDir, permHash, libHash, assetsDigest, trust, granted, enable, listedNative, listedNative)
 	if err != nil {
 		return PluginInfo{}, err
 	}
@@ -459,6 +462,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, name string) error {
 	if !skills.ValidName(name) || builtin(name) != nil { // name becomes a path below; a built-in one only switches off
 		return ErrPluginNotFound
 	}
+	defer s.sweepAssets(ctx) // after pluginsMu is released: it takes registryMu first
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	rows, err := s.pluginRows(ctx, name)
@@ -635,7 +639,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	rp := &runningPlugin{hash: r.sourceHash, row: r}
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
-		Redact: s.secrets.Redact, Idle: nativeIdle,
+		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
 			return setUpNative(ctx, name, r, rp, call)
 		}})

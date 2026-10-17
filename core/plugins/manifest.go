@@ -36,9 +36,11 @@ type Manifest struct {
 // NativeABI is the C ABI version this build of Godwit loads.
 const NativeABI uint32 = 1
 
-// NativeSpec marks a native plugin: the C ABI version its library exports.
+// NativeSpec marks a native plugin: the C ABI version its library exports,
+// and Idle, the seconds an unused process lives (0 is Godwit's default).
 type NativeSpec struct {
-	ABI uint32 `json:"abi"`
+	ABI  uint32 `json:"abi"`
+	Idle int    `json:"idle,omitempty"`
 }
 
 // IsNative reports whether m is a native (shared library) plugin.
@@ -212,6 +214,8 @@ func ParseManifest(data []byte, dirName string) (Manifest, error) {
 			return Manifest{}, fmt.Errorf("plugin %s: native ABI %d is not the supported %d", m.Name, m.Native.ABI, NativeABI)
 		case len(m.Capabilities) == 0:
 			return Manifest{}, fmt.Errorf("plugin %s: a native plugin needs capabilities", m.Name)
+		case m.Native.Idle != 0 && (m.Native.Idle < 30 || m.Native.Idle > 3600):
+			return Manifest{}, fmt.Errorf("plugin %s: native idle %d is not 30–3600 seconds", m.Name, m.Native.Idle)
 		}
 	} else if !fs.ValidPath(m.Main) || m.Main == "." || strings.ContainsAny(m.Main, `:\`) || // no ":" or backslash: "C:/x.ts" and "C:x.ts" leave the plugin on Windows
 		!(strings.HasSuffix(m.Main, ".ts") || strings.HasSuffix(m.Main, ".js")) {

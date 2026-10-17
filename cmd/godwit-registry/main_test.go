@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -103,6 +104,38 @@ func TestSignWithoutKey(t *testing.T) {
 	t.Setenv("GODWIT_REGISTRY_KEY", "")
 	reg := registryFile(t, "https://example.com/index.js", strings.Repeat("a", 64), 10)
 	if code, _, errw := call("sign", reg); code != 1 || !strings.Contains(errw, "GODWIT_REGISTRY_KEY") {
+		t.Fatalf("code %d, %q", code, errw)
+	}
+}
+
+func TestCheckFetchAssets(t *testing.T) {
+	lib, weights := []byte("lib"), []byte("weights")
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/lib" {
+			w.Write(lib)
+			return
+		}
+		w.Write(weights)
+	}))
+	defer srv.Close()
+	old := client
+	client = srv.Client()
+	defer func() { client = old }()
+	hash := func(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
+	write := func(weightsSHA string) string {
+		manifest := `{"name":"dlx","version":"0.1.0","native":{"abi":1},"capabilities":["translate"]}`
+		reg := fmt.Sprintf(`{"schema":1,"updated":"2026-10-14T08:00:00Z","plugins":[{"name":"dlx","title":"DLX","summary":"s","releases":[
+			{"version":"0.1.0","manifest":%s,"artifacts":{"darwin-arm64":{"url":"%s/lib","sha256":"%s","size":%d}},
+			 "assets":[{"name":"model","variants":[{"id":"small","files":[{"name":"model.gguf","url":"%s/w","sha256":"%s","size":%d}]}]}]}]}]}`,
+			manifest, srv.URL, hash(lib), len(lib), srv.URL, weightsSHA, len(weights))
+		path := filepath.Join(t.TempDir(), "registry.json")
+		os.WriteFile(path, []byte(reg), 0o600)
+		return path
+	}
+	if code, out, errw := call("check", "--fetch", write(hash(weights))); code != 0 || !strings.Contains(out, "model small model.gguf: ok") {
+		t.Fatalf("code %d, %q, %q", code, out, errw)
+	}
+	if code, _, errw := call("check", "--fetch", write(strings.Repeat("b", 64))); code != 1 || !strings.Contains(errw, "model.gguf") {
 		t.Fatalf("code %d, %q", code, errw)
 	}
 }

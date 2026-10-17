@@ -2,7 +2,7 @@
 // (docs/registry/README.md). The plugins repository's CI runs it with
 // `go run github.com/godwit-email/godwit/cmd/godwit-registry@main`.
 //
-//	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file and checks its size and sha256
+//	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file (artifacts and assets) and checks its size and sha256
 //	godwit-registry sign registry.json              write registry.json.sig with the key in GODWIT_REGISTRY_KEY
 //	godwit-registry keygen                          print a new key pair
 package main
@@ -94,6 +94,18 @@ func check(path string, fetch bool, stdout io.Writer) error {
 					errs = append(errs, fmt.Errorf("%s %s %s: %w", p.Name, rel.Version, k, err))
 				} else {
 					fmt.Fprintf(stdout, "%s %s %s: ok\n", p.Name, rel.Version, k)
+				}
+			}
+			for _, a := range rel.Assets {
+				for _, v := range a.Variants {
+					for _, f := range v.Files {
+						where := fmt.Sprintf("%s %s %s %s %s", p.Name, rel.Version, a.Name, v.ID, f.Name)
+						if err := checkFile(plugins.Artifact{URL: f.URL, SHA256: f.SHA256, Size: f.Size}); err != nil {
+							errs = append(errs, fmt.Errorf("%s: %w", where, err))
+						} else {
+							fmt.Fprintf(stdout, "%s: ok\n", where)
+						}
+					}
 				}
 			}
 		}

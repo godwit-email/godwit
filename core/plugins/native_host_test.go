@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,4 +123,27 @@ func TestServeNativePrettyEnvelope(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	require.Len(t, lines, 1, "one response, one line")
 	assert.JSONEq(t, `{"id":3,"ok":true,"result":{"a":1}}`, lines[0])
+}
+
+// Godwit gone while a call hangs in the library: plugin-host still exits, so
+// what the library holds (a loaded model) does not outlive the app.
+func TestServeNativeExitsWhenACallHangs(t *testing.T) {
+	old := nativeDrain
+	nativeDrain = 100 * time.Millisecond
+	t.Cleanup(func() { nativeDrain = old })
+	lib := filepath.Join(t.TempDir(), LibraryName())
+	require.NoError(t, os.WriteFile(lib, []byte("x"), 0o600))
+	sum := sha256.Sum256([]byte("x"))
+	hang := make(chan struct{})
+	t.Cleanup(func() { close(hang) })
+	stuck := func(string, uint32) (NativeCall, error) {
+		return func(string, []byte) ([]byte, error) { <-hang; return nil, nil }, nil
+	}
+	var out, errw bytes.Buffer
+	start := time.Now()
+	code := ServeNativeWith([]string{"--library", lib, "--sha256", hex.EncodeToString(sum[:])},
+		strings.NewReader(`{"id":1,"method":"judge","params":{}}`+"\n"), &out, &errw, stuck)
+	assert.Equal(t, 0, code)
+	assert.Less(t, time.Since(start), 2*time.Second)
+	assert.Contains(t, errw.String(), "still running")
 }
