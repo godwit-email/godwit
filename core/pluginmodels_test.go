@@ -202,9 +202,13 @@ func TestPluginModelRefs(t *testing.T) {
 	st.DefaultModel, st.SmallModel, st.JudgeService = "gone/model", "plugin/p/m1", "plugin/p/m1"
 	_, err = s.SetSettings(t.Context(), st)
 	require.NoError(t, err)
-	_, ref, err := s.resolveTask(t.Context(), "", true)
+	m, ref, err := s.resolveTask(t.Context(), "", true)
 	require.NoError(t, err)
 	assert.Equal(t, "plugin/p/m1", ref)
+	require.NoError(t, s.SetPluginConfig(t.Context(), "p", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)}))
+	m2, _, err := s.resolveTask(t.Context(), "", true)
+	require.NoError(t, err)
+	assert.NotEqual(t, m.Version, m2.Version, "new settings: cached results of the old ones do not match")
 	_, _, _, err = s.resolveJudge(t.Context())
 	assert.ErrorIs(t, err, ErrModelNotFound, "a generation model does not judge")
 
@@ -295,4 +299,27 @@ func TestStoppingPluginEndsItsRuns(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the run kept going after its plugin stopped")
 	}
+}
+
+// A client resolved before its plugin stopped sends nothing, even with no
+// prepare hook to fail on (classifyBatch reuses one judge for a batch).
+func TestStoppedPluginClientRefuses(t *testing.T) {
+	s := newMailContextService(t)
+	var hits atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{"q": map[string]any{"type": "noul", "noul": 0.9}}})
+	}))
+	t.Cleanup(ts.Close)
+	useNativeModels(t, s, nil, map[string]any{"models": map[string]any{"models": []map[string]any{
+		{"id": "jev", "name": "Jev", "transport": "http", "protocol": "typesafe-systemone", "baseURL": ts.URL}}}})
+	j, err := s.pluginJudge(t.Context(), "plugin/nm/jev")
+	require.NoError(t, err)
+	qs := []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "?"}}
+	_, err = j.Ask(t.Context(), "mail", qs)
+	require.NoError(t, err)
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
+	_, err = j.Ask(t.Context(), "mail", qs)
+	assert.Error(t, err)
+	assert.Equal(t, int64(1), hits.Load())
 }

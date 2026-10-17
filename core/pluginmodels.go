@@ -25,6 +25,7 @@ import (
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/skills"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // PluginModels are a running plugin's models, or Err when it could not list them.
@@ -152,7 +153,14 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 	if m.Judges() {
 		return ai.ResolvedModel{}, fmt.Errorf("%w: %s is a judge model", ErrModelNotFound, ref)
 	}
-	return ai.ResolvedModel{ServiceID: pluginServiceID(ref), Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
+	// Version follows the plugin's code and settings, as cache keys built from it must.
+	rows, err := s.db.Query(ctx, "SELECT config_version FROM plugins WHERE name = ?", name)
+	if err != nil || len(rows.Values) == 0 {
+		return ai.ResolvedModel{}, cmp.Or(err, fmt.Errorf("%w: %s", ErrModelUnavailable, ref))
+	}
+	h := fnv.New64a()
+	fmt.Fprint(h, rp.hash, "\x00", store.Int(rows.Values[0][0]))
+	return ai.ResolvedModel{ServiceID: pluginServiceID(ref), Version: int64(h.Sum64() >> 1), Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
 		Model: m.ID, Client: s.pluginModelClient(name, rp, m.ID)}, nil
 }
 
@@ -227,6 +235,12 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 	ctx := req.Context()
 	if req.Body != nil {
 		defer req.Body.Close()
+	}
+	t.s.pluginsMu.RLock()
+	stale := t.s.running[t.name] != t.rp
+	t.s.pluginsMu.RUnlock()
+	if stale { // stopped or replaced: a client resolved before never sends again
+		return nil, fmt.Errorf("%w: plugin/%s/%s", ErrModelUnavailable, t.name, t.model)
 	}
 	if t.rp.native == nil {
 		if err := t.s.markHoldsMail(ctx, t.name); err != nil { // the request holds mail, prepared or not
