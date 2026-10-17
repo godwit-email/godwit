@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/egoist/mygo"
 	mygoi18n "github.com/egoist/mygo/i18n"
@@ -205,7 +204,7 @@ func gui(ctx context.Context, dataDir string) int {
 			lang = preferred[0]
 		}
 		var err error
-		release, err = acquireOwner(dataDir)
+		release, err = ownerlock.Acquire(dataDir)
 		if err != nil {
 			i18n.SetLanguage(lang)
 			var msg string
@@ -358,17 +357,20 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		clicked = nil
 	})
+	// Before a relaunch starts the next Godwit, which needs dataDir's lock.
+	mygo.App.OnQuit(func() {
+		if plat != nil {
+			plat.SetLocalAPI(0, false) // after BeforeClose, before the Service closes
+		}
+		if svc != nil {
+			svc.Close()
+		}
+		if release != nil {
+			release()
+		}
+	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
-	}
-	if plat != nil {
-		plat.SetLocalAPI(0, false) // after BeforeClose, before the Service closes
-	}
-	if svc != nil {
-		svc.Close()
-	}
-	if release != nil {
-		release()
 	}
 	return code
 }
@@ -404,23 +406,6 @@ func calledByRelaunch() bool {
 		if !more {
 			return false
 		}
-	}
-}
-
-// ownerWait is how long a starting GUI waits for another owner to go: after
-// a relaunch the previous Godwit still closes its Service.
-const ownerWait = 5 * time.Second
-
-// acquireOwner is ownerlock.Acquire, retried for ownerWait while another
-// process owns dataDir.
-func acquireOwner(dataDir string) (func() error, error) {
-	deadline := time.Now().Add(ownerWait)
-	for {
-		release, err := ownerlock.Acquire(dataDir)
-		if !errors.Is(err, ownerlock.ErrAnotherOwner) || time.Now().After(deadline) {
-			return release, err
-		}
-		time.Sleep(100 * time.Millisecond)
 	}
 }
 

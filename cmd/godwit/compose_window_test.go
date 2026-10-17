@@ -2,11 +2,9 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/internal/theme"
-	"github.com/godwit-email/godwit/ownerlock"
 )
 
 // fakeWindows is the compose windows as the quit hook sees them.
@@ -183,20 +181,6 @@ func TestComposeWindowCascade(t *testing.T) {
 	if *fourth != (fakePlaced{124, 104}) {
 		t.Fatalf("fourth at %+v, want past the first, the last still open", *fourth)
 	}
-}
-
-func TestAcquireOwnerWaitsForThePreviousOwner(t *testing.T) {
-	dir := t.TempDir()
-	release, err := ownerlock.Acquire(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.AfterFunc(300*time.Millisecond, func() { release() }) // a relaunched Godwit's predecessor closing
-	again, err := acquireOwner(dir)
-	if err != nil {
-		t.Fatalf("acquireOwner: %v", err)
-	}
-	again()
 }
 
 func TestQuitHookIsNotARelaunch(t *testing.T) {
