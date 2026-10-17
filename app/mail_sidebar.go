@@ -23,7 +23,7 @@ var roleOrder = []string{"inbox", "drafts", "sent", "archive", "junk", "trash"}
 var folderIcons = map[string]string{"inbox": "inbox", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
 
 // folderName is a role folder's name in the UI's language, else the server's
-// name: also for Gmail's all, flagged and important, which have none of ours.
+// name: also for Gmail's Starred (flagged), which has none of ours.
 func folderName(f core.Folder) string {
 	if slices.Contains(roleOrder, f.Role) {
 		return i18n.T("mail.folder." + f.Role)
@@ -46,8 +46,9 @@ type sideFolder struct {
 // delimiter, each parent before its children and siblings by name, with a row
 // for a parent only named in paths. Folders under a role folder (Courier's
 // INBOX.Projects) show at the top, but keep the role folder in their key.
-// Gmail's All Mail (unless it is the archive), Starred and Important show no
-// row: 已标星 at the top is Starred.
+// Only folders that map onto a row are folded into it: Gmail's Starred into
+// 已标星 at the top, its All Mail into 归档 when there is no archive. The rest
+// show as they are.
 func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 	byRole := map[string]core.Folder{}
 	for _, f := range fs {
