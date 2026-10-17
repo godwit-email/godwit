@@ -54,7 +54,7 @@ func (h *harness) pluginConfig(name string) map[string]core.ConfigValue {
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("extensions")
-	h.see("插件 · 0") // plugins come first
+	h.see("插件 · 1") // plugins come first
 	skills, err := h.env.Svc.ListSkills(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,7 @@ func TestPluginDetailNoSend(t *testing.T) {
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
 	h.openSettings("extensions")
-	h.click("插件 · 1")
+	h.click("插件 · 2")
 	h.click("config-demo")
 	h.see("任何插件都不能发送邮件。")
 	h.see("不请求任何权限")
@@ -206,7 +206,7 @@ func TestPluginConfigEditDuringSave(t *testing.T) {
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
 	p := h.openSettings("extensions")
-	h.click("插件 · 1")
+	h.click("插件 · 2")
 	h.click("config-demo") // an installed plugin opens on a click
 	h.click("Free")
 	h.click("Pro")
@@ -311,7 +311,7 @@ func TestPendingPluginExcludedLine(t *testing.T) {
 	}
 	h := pendingHarness(t)
 	h.openSettings("extensions")
-	h.click("插件 · 1")
+	h.click("插件 · 2")
 	h.see("待授权")
 	h.see("它请求的权限")
 	h.see("不包含")
@@ -383,7 +383,7 @@ func TestPluginRowDescription(t *testing.T) {
 func TestPendingNotNowCollapses(t *testing.T) {
 	h := pendingHarness(t)
 	h.openSettings("extensions")
-	h.click("插件 · 1")
+	h.click("插件 · 2")
 	h.see("允许并启用")
 	h.click("暂不启用")
 	h.until("collapsed", func() bool { return !h.tt.HasText("允许并启用") })
@@ -413,7 +413,7 @@ func TestPendingPluginsKeepOwnForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := h.openSettings("extensions")
-	h.click("插件 · 2")
+	h.click("插件 · 3")
 	h.until("both forms", func() bool { return p.ext.cfgs["config-demo"] != nil && p.ext.cfgs["config-two"] != nil })
 	a, b := p.ext.cfgs["config-demo"], p.ext.cfgs["config-two"]
 	a.vals["apiKey"].s, b.vals["apiKey"].s = "aaa", "bbb"

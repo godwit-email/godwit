@@ -29,7 +29,8 @@ import (
 // route names one: older read messages fold to a line, unread ones and the
 // newest open. All its state lives on the UI thread.
 type reader struct {
-	p *mailPage
+	copiedCard string // the card button that just copied (message/plugin/button), shown as Copied for a moment
+	p          *mailPage
 
 	key     [2]int64 // the route's ThreadID and MessageID shown
 	gen     uint64   // bumped per key; older results are dropped
@@ -60,9 +61,10 @@ type reader struct {
 	getAvatar  func(context.Context, int64, bool) (core.Avatar, error)                        // tests wrap it
 	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
 	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
-	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error)          // tests wrap it
-	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                            // tests wrap it
-	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)              // tests wrap it
+	tagsFn     func(ctx context.Context, messageID int64) ([]core.Tag, error)
+	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error) // tests wrap it
+	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                   // tests wrap it
+	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)     // tests wrap it
 }
 
 // msgBody is a message read in full, for its header, notices and
@@ -100,7 +102,7 @@ type msgBody struct {
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
 		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
-		cardsFn: p.a.svc.PluginCards, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
+		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -672,8 +674,16 @@ func (r *reader) view(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
-						kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+					r.column(c).Gap(th.Space(2)).Children(func() {
+						// Plugins' tags follow the subject, so a glance at it is enough.
+						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+							tx := kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1).Selectable() // copied as often as read
+							if !r.hasTags() {
+								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop once MyGo measures it right.
+								tx.Grow(1)
+							}
+							r.tagChips(c)
+						})
 						r.labelRow(c)
 					})
 					for _, m := range r.msgs {
@@ -716,7 +726,7 @@ func (r *reader) toolbar(c *ui.Context) {
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	name, _ := sender(m.From)
-	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
+	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
@@ -759,84 +769,101 @@ func (r *reader) recipients(m core.MessageSummary) string {
 func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	b := r.bodies[m.ID]
-	ui.Column(c).Gap(th.Space(3.5)).Children(func() {
+	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
-		var fold func() // only a thread of more than one message folds
-		if len(r.msgs) > 1 {
-			fold = func() { r.toggle(m.ID) }
-		}
-		kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
-			// Until the avatar is fetched or refused, a pulse; then the image or the initial.
-			if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
-				kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
-			} else {
-				kit.AvatarImage(c, name, b.avatar)
+		head := r.column(c).Gap(th.Space(3.5))
+		var bodyReady bool
+		head.Children(func() {
+			var fold func() // only a thread of more than one message folds
+			if len(r.msgs) > 1 {
+				fold = func() { r.toggle(m.ID) }
 			}
-			ui.Column(c).Shrink(1).Children(func() {
-				ui.Row(c).Gap(th.Space(1)).Children(func() {
-					ui.Text(c, name).FontWeight(500).SingleLine()
-					if addr != "" && addr != name {
-						ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
+			kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
+				// Until the avatar is fetched or refused, a pulse; then the image or the initial.
+				if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
+					kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
+				} else {
+					kit.AvatarImage(c, name, b.avatar)
+				}
+				ui.Column(c).Shrink(1).Children(func() {
+					ui.Row(c).Gap(th.Space(1)).Children(func() {
+						ui.Text(c, name).FontWeight(500).SingleLine()
+						if addr != "" && addr != name {
+							ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
+						}
+					})
+					when := senderDate(r.p.a.clock.Now(), m.Date)
+					kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
+				})
+			})
+			r.aiArea(c, m)
+			r.cards(c, m)
+			switch {
+			case b != nil && b.err != nil && !b.loading:
+				kit.Alert(c, kit.Danger, humanize(b.err), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						OnClick(func() { r.loadBody(m.ID) })
+				})
+				return
+			case b == nil || !b.ready:
+				kit.Spinner(c)
+				return
+			}
+			bodyReady = true
+			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
+			avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
+			switch {
+			case !bodyBlocked && !avatarBlocked:
+			case b.allowErr != nil:
+				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						OnClick(func() { r.allowImages(m.ID) })
+				})
+			default: // until the page has them; a slimmer notice than an Alert, at Base
+				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
+					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+					text := i18n.T("reader.avatar_blocked")
+					if bodyBlocked {
+						text = i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
+					}
+					kit.Text(c, text, t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
+					if bodyBlocked && b.allow {
+						kit.Spinner(c)
+						return
+					}
+					kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
+					if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
+						kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
 					}
 				})
-				when := senderDate(r.p.a.clock.Now(), m.Date)
-				kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
-			})
+			}
+			r.translationState(c, m)
 		})
-		r.aiArea(c, m)
-		r.cards(c, m)
-		switch {
-		case b != nil && b.err != nil && !b.loading:
-			kit.Alert(c, kit.Danger, humanize(b.err), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.loadBody(m.ID) })
-			})
-			return
-		case b == nil || !b.ready:
-			kit.Spinner(c)
+		if !bodyReady {
 			return
 		}
-		bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
-		avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
-		switch {
-		case !bodyBlocked && !avatarBlocked:
-		case b.allowErr != nil:
-			kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.allowImages(m.ID) })
-			})
-		default: // until the page has them; a slimmer notice than an Alert, at Base
-			ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
-				Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-				text := i18n.T("reader.avatar_blocked")
-				if bodyBlocked {
-					text = i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
-				}
-				kit.Text(c, text, t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
-				if bodyBlocked && b.allow {
-					kit.Spinner(c)
-					return
-				}
-				kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-				if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
-					kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
-				}
-			})
-		}
-		r.translationState(c, m)
-		if b.view != nil {
+		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
 			ui.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
 		}
-		if b.cut {
-			ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
-				kit.Text(c, i18n.T("reader.truncated"), t.Text.Sm).TextColor(t.Muted)
-				kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
-					OnClick(func() { r.viewInBrowser(m.ID) })
-			})
-		}
-		r.attachments(c, b.msg.Attachments)
-		r.quickReplies(c, m)
+		r.column(c).Gap(th.Space(3.5)).Children(func() {
+			if b.cut {
+				ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
+					kit.Text(c, i18n.T("reader.truncated"), t.Text.Sm).TextColor(t.Muted)
+					kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
+						OnClick(func() { r.viewInBrowser(m.ID) })
+				})
+			}
+			r.attachments(c, b.msg.Attachments)
+			r.quickReplies(c, m)
+		})
 	})
+}
+
+// column is the reading pane's centred column for all but a message's
+// body: the subject, its tags and labels, the sender, the AI's parts and
+// what follows the body, never wider than ReaderMaxWidth.
+func (r *reader) column(c *ui.Context) ui.Element {
+	return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center)
 }
 
 // attachments lists the files attached: a click opens one, Save as copies it.

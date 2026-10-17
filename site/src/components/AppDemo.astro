@@ -193,7 +193,21 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 								</span>
 							</div>
 							<div class="min-h-0 flex-1 overflow-y-auto px-7 py-5 select-text">
-								<h3 class="text-lg font-semibold tracking-tight">{m.subject}</h3>
+								<h3 class="flex flex-wrap items-center gap-x-2 gap-y-1 text-lg font-semibold tracking-tight">
+									{m.subject}
+									{m.card?.kind === "otp" && (
+										<button
+											type="button"
+											data-act="copy"
+											data-code={m.card.code}
+											data-done={m.card.done}
+											class="inline-flex h-6 min-w-[6.5rem] items-center justify-start gap-1 rounded-md bg-muted px-2 text-app font-normal tracking-normal transition-colors hover:bg-accent"
+										>
+											<Icon name="copy" class="size-3.5" />
+											<span class="font-mono font-medium">{m.card.code}</span>
+										</button>
+									)}
+								</h3>
 								<div class="mt-3 flex items-center gap-3">
 									<span class="grid size-8 place-items-center rounded-full border text-app font-medium">{m.from[0]}</span>
 									<span class="leading-tight">
@@ -227,25 +241,6 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 											<div class="text-app-sm text-muted-foreground">{m.card.hint}</div>
 										</div>
 										<span class="inline-flex h-8 shrink-0 items-center rounded-lg bg-primary px-3 font-medium text-primary-foreground">{m.card.action}</span>
-									</div>
-								)}
-								{m.card?.kind === "otp" && (
-									<div class="mt-4 flex items-center gap-4 rounded-xl border px-3.5 py-3 shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
-										<div class="min-w-0 flex-1">
-											<div class="text-app-sm text-muted-foreground">{m.card.meta}</div>
-											<div class="my-1 font-mono text-[22px] tracking-[3px]">{m.card.code}</div>
-											<div class="text-app-sm text-muted-foreground">{m.card.hint}</div>
-										</div>
-										<button
-											type="button"
-											data-act="copy"
-											data-code={m.card.code}
-											data-done={m.card.done}
-											class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 font-medium text-primary-foreground transition-opacity hover:opacity-90"
-										>
-											<Icon name="copy" class="size-3.5" />
-											<span>{m.card.action}</span>
-										</button>
 									</div>
 								)}
 								{m.blocked && (

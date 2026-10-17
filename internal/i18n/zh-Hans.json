@@ -973,5 +973,15 @@
   "shell_sync_cause_dns": "找不到服务器 {arg1}，可能是网络断了",
   "shell_sync_cause_connect": "连不上 {arg1}，可能是网络断了",
   "shell_sync_cause_timeout": "{arg1} 响应超时",
-  "shell_sync_cause_other": "和 {arg1} 通信出错"
+  "shell_sync_cause_other": "和 {arg1} 通信出错",
+  "codes_recent": "最近的验证码",
+  "codes_empty": "最近 15 分钟没有验证码",
+  "codes_copy_failed": "复制失败",
+  "codes_copy_button": "复制",
+  "codes_copied": "已复制",
+  "codes_retry": "重试",
+  "codes_open": "打开",
+  "codes_card_confirm": "确认链接",
+  "codes_card_signin": "登录链接",
+  "codes_card_reset": "重置密码链接"
 }

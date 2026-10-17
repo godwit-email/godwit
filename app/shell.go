@@ -112,6 +112,8 @@ func (a *App) onEvent(ev events.Event) {
 		a.tick() // a failure that lasts turns red
 	case events.MessageReceived:
 		a.mailArrived(ev)
+	case events.PluginsChanged: // a card's plugin may have been switched
+		a.mail.reader.reloadPluginParts()
 	}
 	a.dirty = append(a.dirty, ev)
 	if a.refreshStop == nil {
@@ -166,6 +168,9 @@ func (a *App) View(c *ui.Context) {
 	root := t.Window
 	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
 		root = ui.Transparent // the material shows where the window's own color would
+		if !t.Dark {
+			root = t.Window.Alpha(theme.MaterialTint) // lighter, as the design's material, the blur still showing
+		}
 	}
 	for _, ts := range a.toasts {
 		c.AddToast(ts)

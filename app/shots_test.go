@@ -166,7 +166,7 @@ func shotInstall(t *testing.T, h *harness, name, manifest, index string, grant b
 }
 
 // shotDescs are the design's plugin descriptions.
-var shotDescs = map[string]string{"otp-card": "识别验证码，显示复制卡片", "flight-cards": "航班邮件显示行程卡片", "attachment-check": "发送前检查遗漏的附件"}
+var shotDescs = map[string]string{"flight-cards": "航班邮件显示行程卡片", "attachment-check": "发送前检查遗漏的附件"}
 
 // shotPlugin installs an enabled plugin with a card on the messages whose
 // subject has match.
@@ -336,7 +336,7 @@ func TestShots(t *testing.T) {
 	t.Run("MainOTP", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		writeSkill(t, s.env, "brief")
-		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [{ label: "", value: "482 913" }, { label: "", value: "10 分钟内有效" }], buttons: [{ label: "复制", kind: "copy", value: "482913" }] }`)
+		// the built-in sign-in codes plugin draws the card
 		s.click("[Code Host] 你的登录验证码")
 		s.see("复制")
 		shot(s.harness, "MainOTP")
@@ -559,7 +559,6 @@ func TestShots(t *testing.T) {
 			"config":[{"key":"apiKey","type":"secret","label":"DeepL API Key"},
 				{"key":"plan","type":"select","label":"套餐","options":[{"value":"free","label":"Free"},{"value":"pro","label":"Pro"}],"default":"free"}]}`,
 			`export default function (_ctx: any) {}`, false)
-		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [] }`)
 		shotPlugin(t, s.harness, "flight-cards", "NW", `{ title: "航班", fields: [] }`)
 		shotPlugin(t, s.harness, "attachment-check", "-", `{ title: "附件", fields: [] }`)
 		s.openSettings("extensions")

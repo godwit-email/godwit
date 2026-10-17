@@ -16,7 +16,7 @@ func TestThemeTokens(t *testing.T) {
 		got  ui.Color
 		want p.OKLCH
 	}{
-		"Window": {l.Window, p.Mid(p.Neutral100, p.Neutral200)}, "Sidebar": {l.Sidebar, p.Neutral50},
+		"Window": {l.Window, p.Neutral50}, "Sidebar": {l.Sidebar, p.Neutral50},
 		"Background": {l.Background, p.White}, "Foreground": {l.Foreground, p.Neutral950},
 		"Muted": {l.Muted, p.Neutral500}, "Border": {l.Border, p.Neutral200},
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},

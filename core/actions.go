@@ -55,6 +55,29 @@ type Card struct {
 	Buttons       []CardButton
 }
 
+// Tag is a plugin's small action shown right after a message's subject:
+// copy a value (Kind "copy") or open a link ("open-url"). Text is what the
+// tag shows (a code; a link's host), Value what it copies or opens. A
+// built-in plugin's Label is a key the app words ("signin", "confirm",
+// "reset" for a link); a copy tag needs none.
+type Tag struct {
+	Plugin            string
+	Builtin           bool
+	Kind, Label, Text string
+	Value             string
+}
+
+// PluginTags are the tags the plugins that are on put after the message's
+// subject. Only built-in plugins contribute tags so far.
+func (s *Service) PluginTags(ctx context.Context, messageID int64) ([]Tag, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return s.builtinTags(ctx, messageID)
+}
+
 type CardField struct{ Label, Value string }
 
 // CardButton: Kind copy (Value is the text), open-url (an http or https URL)

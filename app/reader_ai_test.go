@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -507,7 +508,12 @@ func TestCardCopy(t *testing.T) {
 	if got := h.tt.Clipboard(); got != "INV-1" {
 		t.Fatalf("clipboard %q", got)
 	}
-	h.see("已复制")
+	h.see("已复制") // on the button, in place of Copy
+	if h.tt.HasText("Copy") {
+		t.Fatal("Copy still shows beside 已复制")
+	}
+	h.advance(1500 * time.Millisecond)
+	h.see("Copy")
 	h.click("Open")
 	h.see("pay.example")
 	if !h.app.linkOpen || h.app.link != "https://pay.example/inv" {
