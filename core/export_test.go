@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -163,4 +164,42 @@ func SetRegistryHooksForTest(t interface{ Cleanup(func()) }, downloaded func(), 
 	oldD, oldS := registryDownloaded, registryStageFails
 	registryDownloaded, registryStageFails = downloaded, stageFails
 	t.Cleanup(func() { registryDownloaded, registryStageFails = oldD, oldS })
+}
+
+// ModelAssets is the registry-hosted model files seam (modelseam.go), for tests.
+type ModelAssets = modelAssets
+
+// ModelAssetsForTest is the Service's model files.
+func (s *Service) ModelAssetsForTest() ModelAssets { return s.assets }
+
+// PluginAssetsDigestForTest is the assets digest an installed plugin's row holds.
+func (s *Service) PluginAssetsDigestForTest(t interface{ Fatal(...any) }, name string) string {
+	rows, err := s.pluginRows(context.Background(), name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows[name].assetsDigest
+}
+
+// SetPhysicalMemoryForTest makes the machine report gb decimal gigabytes.
+func SetPhysicalMemoryForTest(t interface{ Cleanup(func()) }, gb float64) {
+	old := physicalMemory
+	physicalMemory = func() uint64 { return uint64(gb * 1e9) }
+	t.Cleanup(func() { physicalMemory = old })
+}
+
+// SetAssetStallForTest shortens how long a download may receive nothing.
+func SetAssetStallForTest(t interface{ Cleanup(func()) }, d time.Duration) {
+	old := assetStall
+	assetStall = d
+	t.Cleanup(func() { assetStall = old })
+}
+
+// ModelErrorCode is err's *ModelError code, "" if it has none.
+func ModelErrorCode(err error) string {
+	var me *ModelError
+	if errors.As(err, &me) {
+		return me.Code
+	}
+	return ""
 }

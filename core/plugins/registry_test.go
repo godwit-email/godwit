@@ -268,7 +268,7 @@ func TestParseRegistryAssets(t *testing.T) {
 	assert.Equal(t, []string{"engine", "model"}, assetNames(rel.AssetsFor("darwin-arm64")))
 	assert.Equal(t, []string{"model"}, assetNames(rel.AssetsFor("linux-amd64")))
 	assert.NotEqual(t, AssetsDigest(rel.AssetsFor("darwin-arm64")), AssetsDigest(rel.AssetsFor("linux-amd64")))
-	assert.Equal(t, AssetsDigest(nil), AssetsDigest([]Asset{}), "no assets digest the same")
+	assert.Empty(t, AssetsDigest(nil), "no assets: what rows without assets hold")
 }
 
 func assetNames(as []Asset) []string {

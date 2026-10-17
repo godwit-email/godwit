@@ -318,10 +318,11 @@ func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error
 		if !r.m.IsNative() {
 			key = plugins.AnyPlatform
 		}
-		// The registry lists the installed package itself: its version, its file and its manifest.
+		// The registry lists the installed package itself: its version, its file, its manifest and its assets.
 		reviewed := r.libraryHash != "" && slices.ContainsFunc(byName[name].Releases, func(rel plugins.RegistryRelease) bool {
 			a, ok := rel.Artifacts[key]
-			return ok && a.SHA256 == r.libraryHash && rel.Version == r.m.Version
+			return ok && a.SHA256 == r.libraryHash && rel.Version == r.m.Version &&
+				plugins.AssetsDigest(rel.AssetsFor(plugins.PlatformKey())) == r.assetsDigest
 		}) && s.isReviewedPackage(name, r, byName[name])
 		switch {
 		case r.trust == "listed" && !reviewed:
@@ -473,7 +474,7 @@ func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, nam
 	if progress != nil {
 		progress(PluginInstallProgress{Stage: "install"})
 	}
-	return s.installPlugin(ctx, dir, "listed")
+	return s.installPlugin(ctx, dir, "listed", plugins.AssetsDigest(rel.AssetsFor(plugins.PlatformKey())))
 }
 
 // listsRelease reports whether reg still has plugin name's release rel as
@@ -488,7 +489,8 @@ func listsRelease(reg plugins.Registry, name string, rel plugins.RegistryRelease
 			continue
 		}
 		for _, r := range p.Releases {
-			if r.Version == rel.Version && bytes.Equal(r.Manifest, rel.Manifest) && r.Artifacts[key] == art {
+			if r.Version == rel.Version && bytes.Equal(r.Manifest, rel.Manifest) && r.Artifacts[key] == art &&
+				plugins.AssetsDigest(r.AssetsFor(plugins.PlatformKey())) == plugins.AssetsDigest(rel.AssetsFor(plugins.PlatformKey())) {
 				return true
 			}
 		}

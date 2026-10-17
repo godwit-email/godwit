@@ -113,7 +113,7 @@ func (rel RegistryRelease) AssetsFor(platform string) []Asset {
 // drops any of them (even a variant never downloaded) revokes the release.
 func AssetsDigest(as []Asset) string {
 	if len(as) == 0 {
-		as = []Asset{}
+		return "" // as installed plugins without assets recorded it
 	}
 	b, _ := json.Marshal(as)
 	sum := sha256.Sum256(b)
