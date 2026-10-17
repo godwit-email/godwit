@@ -36,6 +36,8 @@ var (
 // damaged or an update was interrupted); such a plugin is listed, not hidden.
 type PluginInfo struct {
 	Name, Version         string
+	Title                 plugins.Text // a built-in plugin's display name; others show Name
+	Builtin               bool         // ships with Godwit (builtins.go): a switch only
 	Description           plugins.Text
 	Permissions           plugins.Permissions
 	Enabled, NeedsGrant   bool
@@ -180,13 +182,17 @@ func (s *Service) ListPlugins(ctx context.Context) ([]PluginInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := []PluginInfo{}
+	out, err := s.builtinInfos(ctx) // first: they are Godwit's own
+	if err != nil {
+		return nil, err
+	}
+	installed := []PluginInfo{}
 	// shortcut: hashes every plugin's files per call (20 MB per script plugin, 80 MB per native one); cache by mtime if lists get slow.
 	for n, r := range rows {
-		out = append(out, s.pluginInfo(n, r))
+		installed = append(installed, s.pluginInfo(n, r))
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	sort.Slice(installed, func(i, j int) bool { return installed[i].Name < installed[j].Name })
+	return append(out, installed...), nil
 }
 
 // InstallPlugin installs or updates the plugin in srcDir: it snapshots the
@@ -231,6 +237,9 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust string) (Plug
 	m, err := plugins.ParseManifest(data, head.Name)
 	if err != nil {
 		return PluginInfo{}, err
+	}
+	if builtin(m.Name) != nil {
+		return PluginInfo{}, fmt.Errorf("%s is the name of a plugin built into Godwit", m.Name)
 	}
 	// A native plugin's grant is for its exact files (spec 2.6); a script plugin's for its permissions.
 	permHash, libHash := m.PermissionHash(), ""
@@ -393,6 +402,13 @@ func (s *Service) SetPluginEnabled(ctx context.Context, name string, enabled boo
 		return err
 	}
 	defer end()
+	if builtin(name) != nil {
+		if err := s.setBuiltinEnabled(ctx, name, enabled); err != nil {
+			return err
+		}
+		s.bus.Publish(events.Event{Type: events.PluginsChanged})
+		return nil
+	}
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	rows, err := s.pluginRows(ctx, name)
@@ -440,7 +456,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, name string) error {
 		return err
 	}
 	defer end()
-	if !skills.ValidName(name) { // name becomes a path below
+	if !skills.ValidName(name) || builtin(name) != nil { // name becomes a path below; a built-in one only switches off
 		return ErrPluginNotFound
 	}
 	s.pluginsMu.Lock()

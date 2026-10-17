@@ -75,7 +75,9 @@ func (e *extView) load() {
 		}
 		e.skills, e.plugins, e.servers, e.reg = sk, pl, ms, rv
 		for _, p := range pl {
-			e.loadCfg(p.Name)
+			if !p.Builtin { // no config, nothing installed
+				e.loadCfg(p.Name)
+			}
 		}
 		for n := range e.cfgs { // uninstalled
 			if !slices.ContainsFunc(pl, func(p core.PluginInfo) bool { return p.Name == n }) {
@@ -281,10 +283,13 @@ func (e *extView) pluginsView(c *ui.Context) {
 
 func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 	t, th := theme.Of(c), c.Theme()
-	name := p.Name
-	open := p.Name == e.plugin
+	name, title := p.Name, p.Name
+	open := p.Name == e.plugin && !p.Builtin // a built-in one has nothing to open: no permissions, config or uninstall
 	if p.NeedsGrant {
 		open = !e.later[name]
+	}
+	if p.Builtin {
+		title = p.Title.For(i18n.Language())
 	}
 	ui.Column(c).FillWidth().Children(func() {
 		ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
@@ -300,13 +305,16 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 				default:
 					e.plugin = name
 				}
-			}}).Label(name).Expanded(open).Grow(1).Shrink(1).Children(func() {
+			}}).Label(title).Expanded(open).Grow(1).Shrink(1).Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 					ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 						if p.Native {
 							statusPill(c, i18n.T("settings.ext.native"), false)
 						}
-						kit.Text(c, p.Name, t.Text.Body).LineHeight(theme.LineFor(p.Name)).FontWeight(500)
+						if p.Builtin {
+							statusPill(c, i18n.T("settings.ext.builtin"), false)
+						}
+						kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
 						if p.NeedsGrant {
 							kit.Text(c, p.Version, t.Text.Sm).TextColor(t.Muted)
 						}
@@ -321,7 +329,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 				return
 			}
 			on := p.Enabled
-			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", name)).Changed() {
+			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", title)).Changed() {
 				e.setPluginEnabled(name, !p.Enabled)
 			}
 		})

@@ -740,6 +740,12 @@ func (p *mailPage) listView(c *ui.Context) {
 				if m.Item("复制 HTML 路径（dev）").Chosen() {
 					p.devHTML(it)
 				}
+				if m.Item("预览验证码浮窗（dev）").Chosen() {
+					p.devSignIn(it, false)
+				}
+				if m.Item("预览登录链接浮窗（dev）").Chosen() {
+					p.devSignIn(it, true)
+				}
 			}
 		})
 	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Hairline) // rows a hairline apart: two chosen ones stay two
@@ -1269,6 +1275,44 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 
 // devHTML writes the original HTML, as received and unsanitized, of it (a
 // thread's newest message) to a temporary file, for the list to copy its path.
+// devSignIn shows the sign-in banner for the message, with its own code or
+// link when it has one, else a sample, so the banner can be seen without
+// waiting for real sign-in mail. Dev builds only.
+func (p *mailPage) devSignIn(it mailItem, link bool) {
+	a := p.a
+	var code core.SignInCode
+	a.do(func(ctx context.Context) error {
+		id := it.ID
+		if it.Thread {
+			t, err := a.svc.GetThread(ctx, it.ID)
+			if err != nil || len(t.Messages) == 0 {
+				return err
+			}
+			id = t.Messages[len(t.Messages)-1].ID
+		}
+		m, err := a.svc.GetMessage(ctx, id, false)
+		if err != nil {
+			return err
+		}
+		code = core.SignInCode{MessageID: id, From: m.From, ReceivedAt: a.clock.Now()}
+		if link {
+			code.Link, code.LinkKind = gomail.ActionLink(m.Subject, m.Text, m.HTML)
+			if code.Link == "" {
+				code.Link, code.LinkKind = "https://example.com/magic-link", gomail.LinkSignIn
+			}
+		} else {
+			code.Code = cmp.Or(gomail.SignInCode(m.Subject, m.Text, m.HTML), "482913")
+		}
+		return nil
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else if code.MessageID != 0 {
+			a.plat.ShowSignInCode(&code)
+		}
+	})
+}
+
 func (p *mailPage) devHTML(it mailItem) {
 	a := p.a
 	var path string

@@ -29,14 +29,17 @@ import (
 // tray stays nil where the system has none. The Local API serves svc on
 // dataDir, whose owner lock the GUI holds.
 type platform struct {
-	win     *mygo.Window
-	tray    *mygo.Tray
-	windows *webui.Windows // the compose windows
-	wit     *webui.Wit
-	roles   *webui.Pages                 // the embedded pages' roles
-	reader  *webui.Reader                // the reader pages' messages
-	sig     *webui.Signature             // the signature page's account and flushes
-	bodies  map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
+	win         *mygo.Window
+	tray        *mygo.Tray
+	windows     *webui.Windows // the compose windows
+	wit         *webui.Wit
+	roles       *webui.Pages                 // the embedded pages' roles
+	reader      *webui.Reader                // the reader pages' messages
+	sig         *webui.Signature             // the signature page's account and flushes
+	bodies      map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
+	signInCodes []core.SignInCode
+	codeBanner  *signInBanner
+	updateTray  func()
 
 	dataDir string
 	svc     *core.Service
@@ -232,6 +235,9 @@ func (p *platform) TranslateBody(message int64, texts map[string]string) {
 }
 
 func (p *platform) SettingsChanged(st core.Settings) {
+	if !st.NotifyNewMail || !st.NotifyPreview {
+		p.ShowSignInCode(nil)
+	}
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
 	}

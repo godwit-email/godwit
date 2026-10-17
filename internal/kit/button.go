@@ -159,6 +159,33 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 	})
 }
 
+// SwapButton is a Button whose label changes in place, as Copy turning
+// into Copied: the old label fades out as the new one fades in. It is as
+// wide as the widest of label and others, the labels it may show, and its
+// content starts at its left edge, so neither it nor its icon moves.
+func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.Element {
+	th := c.Theme()
+	content := func(c *ui.Context, text string) ui.Element {
+		return ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			if o.Icon != "" {
+				ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
+			}
+			ui.Text(c, text).Role(ui.RoleNone) // the button's Label names it
+		})
+	}
+	return button(c, o, false).Label(label).Children(func() {
+		ui.Column(c).AlignItems(ui.Start).Children(func() {
+			content(c.Key(label), label).
+				Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{}, Exit: &ui.Motion{}}) // a zero Motion is transparent: a fade
+			// Every label, unseen and of no height, widens the column to the widest.
+			for i, l := range append([]string{label}, others...) {
+				content(c.Key(i), l).Height(0).Opacity(0).PassThrough()
+			}
+		})
+		cover(c, o, label)
+	})
+}
+
 // IconButton is a square button showing only an icon, named label for
 // assistive technology and tests. A SizeXs one, 16 round, holds a 12 icon.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {

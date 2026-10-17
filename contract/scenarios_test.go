@@ -214,7 +214,8 @@ func TestSettings(t *testing.T) {
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400,
-			TrustedImageSenders: []string{"bob@example.com"}} // only TrustImageSender sets it; SetSettings keeps it
+			TrustedImageSenders: []string{"bob@example.com"},      // only TrustImageSender sets it; SetSettings keeps it
+			DisabledBuiltins:    []string{core.SignInCodesPlugin}} // only SetPluginEnabled sets it; SetSettings keeps it
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
@@ -222,6 +223,7 @@ func TestSettings(t *testing.T) {
 			}
 		}
 		require.NoError(t, api.TrustImageSender(ctx, "Bob <bob@example.com>"))
+		require.NoError(t, env.Svc.SetPluginEnabled(ctx, core.SignInCodesPlugin, false))
 		out["set"] = res(api.SetSettings(ctx, st))
 		out["after"] = res(api.GetSettings(ctx))
 		require.NoError(t, api.UntrustImageSender(ctx, "bob@example.com"))

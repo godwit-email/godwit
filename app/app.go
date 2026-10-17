@@ -30,9 +30,12 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
-	SetTrayUnread(n int) // the inboxes' unread total on the tray; 0 clears it
-	SetAppUnread(n int)  // the inboxes' unread total on the app icon; 0 clears it
-	ShowWindow()         // shows the window, in front
+	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
+	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
+	SetSignInCodes([]core.SignInCode) // replaces the tray's recent codes; UI thread
+	ShowSignInCode(*core.SignInCode)  // a nonactivating copy card; nil dismisses it; UI thread
+	SignInCodeBannerSupported() bool  // UI thread; false keeps ordinary mail notifications
+	ShowWindow()                      // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
 	// SetLocalAPI starts (on) or stops the Local API server for request
@@ -183,16 +186,20 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
-	foreground  bool
-	vibrancy    bool                // Deps.Vibrancy
-	newMail     map[int64]*arrivals // per account, what arrived for its pending notifications
-	logf        func(format string, args ...any)
-	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
-	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst   string                                                    // a click that came before the first load
-	inboxUnread int                                                       // the inboxes' unread total
-	trayUnread  int                                                       // what the tray shows
-	appUnread   int                                                       // what the app icon shows; -1 before the first update
+	foreground                           bool
+	vibrancy                             bool                // Deps.Vibrancy
+	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
+	logf                                 func(format string, args ...any)
+	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
+	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
+	noteFirst                            string                                                    // a click that came before the first load
+	inboxUnread                          int                                                       // the inboxes' unread total
+	trayUnread                           int                                                       // what the tray shows
+	appUnread                            int                                                       // what the app icon shows; -1 before the first update
+	codes                                []core.SignInCode
+	codesReady, codesLoading, codesAgain bool
+	codesStop                            func()
+	codesStarted                         time.Time
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
@@ -279,6 +286,7 @@ func New(d Deps) *App {
 // Start loads accounts and settings and starts the event pump. Cancelling
 // ctx closes the App's work as Close does.
 func (a *App) Start(ctx context.Context) {
+	a.codesStarted = a.clock.Now().Truncate(time.Second)
 	context.AfterFunc(ctx, a.cancel)
 	ch, unsub := a.svc.Subscribe()
 	go func() {
@@ -370,6 +378,7 @@ func (a *App) load() {
 		a.refreshTasks() // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
+		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
 		}
@@ -395,6 +404,10 @@ func (a *App) load() {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	if a.codesStop != nil {
+		a.codesStop()
+	}
+	a.plat.ShowSignInCode(nil)
 	a.mail.reader.closeViews()
 	a.pages[PageSettings].(*settingsPage).closeSignature()
 	a.tempMu.Lock()
@@ -472,7 +485,12 @@ func (a *App) BeforeClose(proceed func()) {
 }
 
 // SetForeground records whether the window is in front.
-func (a *App) SetForeground(on bool) { a.foreground = on }
+func (a *App) SetForeground(on bool) {
+	a.foreground = on
+	if on {
+		a.plat.ShowSignInCode(nil)
+	}
+}
 
 // OnUI posts f to the UI thread unless the App has closed by then, for
 // callbacks from elsewhere (the Wit page's).

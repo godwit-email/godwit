@@ -112,6 +112,8 @@ func (a *App) onEvent(ev events.Event) {
 		a.tick() // a failure that lasts turns red
 	case events.MessageReceived:
 		a.mailArrived(ev)
+	case events.PluginsChanged: // a card's plugin may have been switched
+		a.mail.reader.reloadPluginParts()
 	}
 	a.dirty = append(a.dirty, ev)
 	if a.refreshStop == nil {

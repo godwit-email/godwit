@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -213,6 +214,6 @@ func TestNativeDescribeHangFails(t *testing.T) {
 	assert.False(t, nativeInfo(t, s, "dlx").Enabled)
 	list, err := s.ListPlugins(ctx) // the lock is free again
 	require.NoError(t, err)
-	assert.Len(t, list, 1)
+	assert.Len(t, slices.DeleteFunc(list, func(p core.PluginInfo) bool { return p.Builtin }), 1)
 	assert.NoFileExists(t, record, "never configured")
 }
