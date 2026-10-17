@@ -539,7 +539,7 @@ type runningPlugin struct {
 	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
 	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
 	clients sync.Map                       // model id → *http.Client of its HTTP models
-	loaded  sync.Map                       // native: model id → files lease of each model its process loaded (pluginjudge.go)
+	loaded  sync.Map                       // native: model id → loadedModel, of each model its process loaded (pluginjudge.go)
 	judging chan struct{}                  // one judge call at a time
 
 	stopHooks func() // cancels its message.received dispatcher, if any
@@ -611,6 +611,7 @@ func (s *Service) stopPlugin(name string) {
 		} else {
 			rp.p.VM().Close()
 		}
+		s.forgetPluginModels(name, rp)
 		delete(s.running, name)
 		s.unregisterPluginTools(name)
 	}

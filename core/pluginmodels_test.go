@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -268,4 +269,30 @@ func TestPluginModelWithoutPrepareHoldsMail(t *testing.T) {
 	held, err := s.holdsMail(t.Context(), "p")
 	require.NoError(t, err)
 	assert.True(t, held, "the endpoint the plugin chose got the request")
+}
+
+func TestStoppingPluginEndsItsRuns(t *testing.T) {
+	s := newMailContextService(t)
+	srv, host := modelServer(t, s, "openai")
+	srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
+	startModelPlugin(t, s, "p", host, httpModelPlugin("openai-completions", host))
+	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
+	require.NoError(t, err)
+	e, err := s.aiEngine()
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
+		done <- err
+	}()
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "p", false))
+	select {
+	case err := <-done:
+		var ae *ai.Error
+		require.ErrorAs(t, err, &ae)
+		assert.Equal(t, ai.CodeStale, ae.Code, "the run ends as a removed service's does")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the run kept going after its plugin stopped")
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -184,4 +185,25 @@ func TestPluginJudgeReloadsAfterRestart(t *testing.T) {
 	assert.Len(t, recorded(t, record, "models.load"), 2, "the new process loads the model again")
 	assert.Equal(t, 2, fa.verified)
 	assert.Equal(t, 1, fa.released, "the old process's lease is released")
+}
+
+func TestPluginJudgeReloadsOtherAssets(t *testing.T) {
+	s := newMailContextService(t)
+	record := usePluginJudge(t, s, map[string]string{"weights": "4b"}, nil)
+	fa := &fakeAssets{}
+	s.assets = fa
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	rp := j.(pluginModelJudge).rp
+	m := j.(pluginModelJudge).model
+	m.Assets = map[string]string{"weights": "8b"} // as new settings may list it
+	rp.models.Store(&modelCatalog{rp.cfgKey(), []plugins.ProviderModel{m}})
+	j, _, _, err = s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	assert.Len(t, recorded(t, record, "models.load"), 2, "other files are loaded again")
+	assert.Equal(t, 1, fa.released, "the old files' lease goes")
 }

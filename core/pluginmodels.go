@@ -144,8 +144,6 @@ func isPluginRef(ref string) bool {
 var protocolKinds = map[string]string{"openai-completions": ai.KindOpenAI, "openai-responses": ai.KindResponses, "anthropic-message": ai.KindAnthropic}
 
 // resolvePluginModel resolves a plugin generation model's ref for the engine.
-// Its ServiceID is negative, a hash of ref, so it never names a stored
-// service, and is stable across runs for the cache keys built from it.
 func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.ResolvedModel, error) {
 	name, rp, m, err := s.pluginModel(ctx, ref)
 	if err != nil {
@@ -154,11 +152,26 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 	if m.Judges() {
 		return ai.ResolvedModel{}, fmt.Errorf("%w: %s is a judge model", ErrModelNotFound, ref)
 	}
-	// shortcut: a stopped plugin's Genkit instance stays in the engine until its ref is used again; Forget it on stop if plugins come and go often.
+	return ai.ResolvedModel{ServiceID: pluginServiceID(ref), Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
+		Model: m.ID, Client: s.pluginModelClient(name, rp, m.ID)}, nil
+}
+
+// pluginServiceID is a plugin model's engine ServiceID: negative, a hash of
+// its ref, so it never names a stored service, and stable across runs for
+// the cache keys built from it.
+func pluginServiceID(ref string) int64 {
 	h := fnv.New64a()
 	h.Write([]byte(ref))
-	return ai.ResolvedModel{ServiceID: -int64(h.Sum64()>>1) - 1, Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
-		Model: m.ID, Client: s.pluginModelClient(name, rp, m.ID)}, nil
+	return -int64(h.Sum64()>>1) - 1
+}
+
+// forgetPluginModels ends the engine instances of the models rp ran, as
+// stopping it does, so their runs in flight end like a removed service's.
+func (s *Service) forgetPluginModels(name string, rp *runningPlugin) {
+	rp.clients.Range(func(id, _ any) bool {
+		s.forgetModel(pluginServiceID(translatorPrefix + name + "/" + id.(string)))
+		return true
+	})
 }
 
 // judgeFormats are the judge formats of the HTTP judge protocols.
