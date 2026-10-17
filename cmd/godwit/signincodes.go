@@ -164,15 +164,16 @@ func (p *platform) useSignInCode(code core.SignInCode) {
 }
 
 type signInBanner struct {
-	code                    core.SignInCode
-	win                     *mygo.Window
-	timer                   *time.Timer
-	failed, copied, hovered bool
-	dragging                bool
-	dragFrom, dragStart     mygo.Point     // the cursor and the banner where the drag began
-	avatar                  ui.ImageSource // the sender's image once loaded; nil keeps the initial
-	stopAvatar              context.CancelFunc
-	position                mygo.Point
+	code                      core.SignInCode
+	win                       *mygo.Window
+	timer                     *time.Timer
+	failed, copied, hovered   bool
+	dragging, snapped, atHome bool
+	guide                     *mygo.Window   // the centre line shown while a drag is held on it
+	dragFrom, dragStart       mygo.Point     // the cursor and the banner where the drag began
+	avatar                    ui.ImageSource // the sender's image once loaded; nil keeps the initial
+	stopAvatar                context.CancelFunc
+	position                  mygo.Point
 }
 
 func (p *platform) SignInCodeBannerSupported() bool { return p.tray != nil }
@@ -236,7 +237,10 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 // but snaps it (snapSignInCode) on the way, which a system drag cannot.
 func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) {
 	if !pressed {
-		b.dragging = false
+		if b.dragging {
+			b.dragging, b.snapped, b.atHome = false, false, false
+			p.showSnapGuide(b, false, b.position)
+		}
 		return
 	}
 	cursor := mygo.Screen.CursorScreenPoint()
@@ -244,10 +248,44 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 		b.dragging, b.dragFrom, b.dragStart = true, cursor, b.position
 	}
 	pos := mygo.Point{X: b.dragStart.X + cursor.X - b.dragFrom.X, Y: b.dragStart.Y + cursor.Y - b.dragFrom.Y}
-	if pos = snapSignInCode(pos, mygo.Screen.DisplayNearestPoint(cursor).WorkArea); pos != b.position && b.win != nil {
+	area := mygo.Screen.DisplayNearestPoint(cursor).WorkArea
+	pos = snapSignInCode(pos, area)
+	if pos != b.position && b.win != nil {
 		b.win.SetPosition(pos.X, pos.Y) // OnMove records it
 	}
+	home := signInCodePosition(area, nil, nil)
+	onLine, atHome := pos.X == home.X, pos == home
+	if onLine && !b.snapped || atHome && !b.atHome {
+		snapFeedback() // a tick as it takes hold, as Keynote's guides do
+	}
+	b.snapped, b.atHome = onLine, atHome
+	p.showSnapGuide(b, onLine, pos)
 	c.Invalidate() // the pointer moves without telling the view; follow it every frame
+}
+
+const codeGuideReach = 40 // how far the centre line runs past the banner, above and below
+
+// showSnapGuide shows the centre line through a banner held on it, as
+// design tools draw their alignment guides, and hides it otherwise.
+func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point) {
+	if !on || b.win == nil {
+		if b.guide != nil {
+			b.guide.Hide()
+		}
+		return
+	}
+	if b.guide == nil {
+		b.guide = mygo.NewFlyout(mygo.FlyoutOptions{Tray: p.tray, Width: 1, Height: codeBannerHeight + 2*codeGuideReach, Hidden: true,
+			Content: ui.View(func(c *ui.Context) {
+				c.Root().Background(ui.Transparent)
+				ui.Box(c).Fill().Background(theme.Of(c).Unread)
+			})})
+		b.guide.SetIgnoreMouseEvents(true)
+	}
+	b.guide.SetPosition(pos.X+codeBannerWidth/2, pos.Y-codeGuideReach)
+	if !b.guide.IsVisible() {
+		b.guide.ShowInactive()
+	}
 }
 
 // signInAvatar is the sender's image as the reader shows it. Without the
@@ -320,6 +358,9 @@ func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	b.win.OnClosed(func() {
 		b.timer.Stop()
 		b.stopAvatar()
+		if b.guide != nil {
+			b.guide.Close()
+		}
 		if b.position != initialPosition {
 			if err := saveSignInCodePosition(path, b.position); err != nil {
 				log.Printf("saving code banner position: %v", err)
