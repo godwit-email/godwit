@@ -177,7 +177,7 @@ func (r *renderer) table(b Block) {
 	if cols == 0 {
 		return
 	}
-	ui.Grid(r.c).Columns(cols).Border(theme.Hairline, r.t.Border).Radius(r.t.Radius.Lg).Clip().Children(func() {
+	ui.Grid(r.c).Columns(cols).Border(theme.DeviceHairline, r.t.Border).Radius(r.t.Radius.Lg).Clip().Children(func() {
 		for i, row := range b.Rows {
 			for j := range cols {
 				cell := ui.Box(r.c).PaddingX(r.c.Theme().Space(3)).PaddingY(r.c.Theme().Space(2))
@@ -214,7 +214,7 @@ func (r *renderer) image(im *Image) {
 	if w <= 0 || h <= 0 {
 		w, h = theme.ImagePlaceholder, theme.ImagePlaceholder
 	}
-	e := ui.Box(r.c).Size(w, h).Border(theme.Hairline, r.t.Border).Radius(r.t.Radius.Lg).Center().Children(func() {
+	e := ui.Box(r.c).Size(w, h).Border(theme.DeviceHairline, r.t.Border).Radius(r.t.Radius.Lg).Center().Children(func() {
 		ui.Icon(r.c, icons.Get("image-off")).TextColor(r.t.Muted)
 	})
 	if im.Alt != "" {

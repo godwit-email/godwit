@@ -156,7 +156,7 @@ function ToolCard({
   }
   const label = toolLabel(a.tool, t);
   return (
-    <div className="overflow-hidden rounded-xl border border-primary">
+    <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
       <div className="flex flex-wrap items-center gap-2 bg-muted px-3.5 py-3 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-sm">{a.tool}</span>
@@ -179,7 +179,7 @@ function ToolCard({
           </p>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2 border-muted border-t px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
         <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true, false)}>
           {t("wit.approval.allow")}
         </Button>
@@ -341,13 +341,15 @@ function Answer({
         </div>
       )}
       {waiting.map((a) => (
-        <div key={a.id} className="overflow-hidden rounded-xl border border-primary">
+        <div key={a.id} className="overflow-hidden rounded-xl border-[0.5px] border-primary">
           <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
             <span className="font-semibold">{t("wit.compose.review")}</span>
             <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
           </div>
           <div className="px-3 py-2 text-md">{review?.summary}</div>
-          <div className="flex gap-1.5 border-muted border-t px-3 py-2">{review?.actions}</div>
+          <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
+            {review?.actions}
+          </div>
         </div>
       ))}
       {requested.filter((a) => !isDraftEdit(a.tool)).map(tools)}
@@ -808,7 +810,7 @@ export function Panel({
     />
   );
   // a card on the window's material: the native layout's content cards
-  const card = "rounded-xl border bg-background shadow-(--shadow-xs)";
+  const card = "rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)";
   if (page) {
     const cites = citesOf(...chat.messages);
     return (

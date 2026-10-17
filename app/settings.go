@@ -283,7 +283,7 @@ func sectionTitle(c *ui.Context, title string) {
 // settingsCard is a section's card of rows, with hairlines between them.
 func settingsCard(c *ui.Context, rows ...func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border).Background(t.Background).Clip().Children(func() {
 		for i, row := range rows {
 			if i > 0 {
 				hairline(c)
@@ -295,7 +295,7 @@ func settingsCard(c *ui.Context, rows ...func()) {
 
 // hairline divides the rows of a settings card.
 func hairline(c *ui.Context) {
-	ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(theme.Of(c).Border)
+	kit.Separator(c, false).Shrink(0)
 }
 
 // settingRow is a labelled control: label (500) and description on the

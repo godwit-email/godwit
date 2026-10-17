@@ -37,7 +37,7 @@ const (
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	bg, border, fg := alertLook(t, kind)
-	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
+	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.DeviceHairline, border).TextColor(fg).
 		FontSize(t.Text.Body).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
@@ -108,7 +108,7 @@ func Spinner(c *ui.Context) ui.Element {
 // Kbd shows a key or shortcut.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
+	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.DeviceHairline, t.Border).Background(t.Sidebar).Center().Children(func() {
 		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
 	})
 }
@@ -153,13 +153,14 @@ func AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element {
 }
 
 // Separator is a hairline: horizontal across its parent, or a short vertical
-// one. In a row, give it Grow(1).
+// one. In a row, give it Grow(1). It takes Hairline's room but draws one
+// device pixel, as a border (a box that thin rounds away).
 func Separator(c *ui.Context, vertical bool) ui.Element {
-	b := ui.Box(c).Background(theme.Of(c).Border)
+	b := ui.Box(c).BorderColor(theme.Of(c).Border)
 	if vertical {
-		return b.Size(theme.Hairline, theme.TitleButtonHeight)
+		return b.Size(theme.Hairline, theme.TitleButtonHeight).BorderWidth(0, 0, 0, theme.DeviceHairline)
 	}
-	return b.Height(theme.Hairline).AlignSelf(ui.Stretch)
+	return b.Height(theme.Hairline).AlignSelf(ui.Stretch).BorderWidth(theme.DeviceHairline, 0, 0, 0)
 }
 
 // Skeleton is a pulsing placeholder w wide (0: the full width) and h high. It

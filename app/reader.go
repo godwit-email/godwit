@@ -703,7 +703,7 @@ func (r *reader) view(c *ui.Context) {
 // the AI buttons.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.DeviceHairline, 0).BorderColor(t.Border).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
@@ -821,7 +821,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				})
 			default: // until the page has them; a slimmer notice than an Alert, at Base
 				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
-					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+					Background(t.WarningBg).Border(theme.DeviceHairline, t.WarningBorder).Children(func() {
 					text := i18n.T("reader.avatar_blocked")
 					if bodyBlocked {
 						text = i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
@@ -874,7 +874,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			if att.Inline {
 				continue
 			}
-			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.DeviceHairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)

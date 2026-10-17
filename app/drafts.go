@@ -102,7 +102,7 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 			kit.Text(c, text, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
 		if p.draftView[d.ID].editing {
-			ui.Box(c).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
+			ui.Box(c).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.DeviceHairline, t.Border).Children(func() {
 				kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
 			})
 		}
@@ -141,7 +141,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	saved := d.UpdatedAt.In(p.a.clock.Now().Location()).Format("15:04")
 	col.Children(func() {
 		p.sendDialog(c)
-		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.DeviceHairline, 0).BorderColor(t.Border).Children(func() {
 			kit.ButtonGroup(c,
 				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.plat.OpenCompose(d.ID) }},
 				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
@@ -172,7 +172,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 							})
 						}
 					})
-					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.DeviceHairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 					})
 					p.draftAttachments(c, d.Attachments)
@@ -186,7 +186,7 @@ func (p *mailPage) draftAttachments(c *ui.Context, atts []core.DraftAttachment) 
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 		for _, att := range atts {
-			ui.Row(c).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+			ui.Row(c).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Border(theme.DeviceHairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 					kit.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType}), t.Text.Xs).TextColor(t.Muted)
 				})

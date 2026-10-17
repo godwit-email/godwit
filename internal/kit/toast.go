@@ -29,7 +29,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
 			look := toastLook(t, tst.Type)
-			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.X2l).Background(look.bg).Border(theme.Hairline, look.border).
+			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.X2l).Background(look.bg).Border(theme.DeviceHairline, look.border).
 				TextColor(look.fg).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -2 * theme.MotionOffset}, Exit: &ui.Motion{Y: -2 * theme.MotionOffset}})
 			Elevate(c, toast.Root, theme.ShadowLg)

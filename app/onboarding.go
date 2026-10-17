@@ -713,7 +713,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		hint = i18n.Tf("onboarding.hint."+login, name)
 	}
 	if hint != "" {
-		ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Hover).Children(func() {
+		ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.DeviceHairline, t.Hover).Children(func() {
 			lineText(c, hint, t.Text.Body).FontWeight(500)
 			steps := tr("onboarding.steps." + o.prov.ID)
 			if steps == "" {
@@ -784,7 +784,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
 	o.providerHeader(c, i18n.T("onboarding.oauth.sub"))
-	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(o.startOAuth)
@@ -894,12 +894,12 @@ func (o *onboarding) checkView(c *ui.Context) {
 		title = i18n.T("onboarding.check.failed")
 	}
 	heading(c, title, strings.TrimSpace(o.email))
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border).Clip().Children(func() {
 		for i, st := range steps {
 			text, detail, status := o.checkRow(st)
 			row := ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Padding(th.Space(3), th.Space(3.5))
 			if i > 0 {
-				row.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover)
+				row.BorderWidth(theme.DeviceHairline, 0, 0, 0).BorderColor(t.Hover)
 			}
 			row.Children(func() {
 				dot := ui.Box(c).Size(theme.StepDot, theme.StepDot).Radius(t.Radius.Full).Center().FontSize(t.Text.Sm)

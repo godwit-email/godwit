@@ -586,7 +586,7 @@ func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) 
 // panel is the AI's box: a sparkle, a title, an optional close button, the body.
 func (r *reader) panel(c *ui.Context, title, meta string, close func(), body func()) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.DeviceHairline, t.Border).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
 			ui.Text(c, title).FontWeight(600).LineHeight(theme.LineCJK).Shrink(1)
@@ -609,7 +609,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	r.fetchErr(c, st.cards.err, st.cards.loading, func() { r.loadCards(m.ID, true) })
 	for _, card := range st.cards.v {
-		row := ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border)
+		row := ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border)
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
@@ -736,7 +736,7 @@ func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.DeviceHairline, 0, 0, 0).BorderColor(t.Hover).Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 			kit.Text(c, i18n.T("reader.ai.quick"), t.Text.Sm).TextColor(t.Muted)

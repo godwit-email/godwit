@@ -45,7 +45,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
 		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.DeviceHairline, t.Border)
 		Elevate(c, panel, theme.ShadowSm)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
 		if body != nil {
@@ -69,7 +69,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		}
 		if footer != nil {
 			bar := ui.Row(c).Shrink(0).Gap(th.Space(2)).AlignItems(ui.Center).Justify(ui.End).Padding(th.Space(3), th.Space(4)).
-				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Background(t.Sidebar)
+				BorderWidth(theme.DeviceHairline, 0, 0, 0).BorderColor(t.Border).Background(t.Sidebar)
 			if o.Danger {
 				bar.BorderColor(t.DangerBorder).Background(t.DangerBg)
 			}
@@ -120,7 +120,7 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionFast)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Opacity(k).Margin(theme.PopupOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(theme.PopupOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.DeviceHairline, t.Border)
 		Elevate(c, panel, theme.ShadowMd)
 		body()
 	})
