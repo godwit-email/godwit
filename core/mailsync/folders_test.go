@@ -21,4 +21,9 @@ func TestRoles(t *testing.T) {
 	if got := roles(list); !slices.Equal(got, want) {
 		t.Fatalf("roles %q, want %q", got, want)
 	}
+	list[2].Attrs = append(list[2].Attrs, imap.MailboxAttrNoSelect) // the marked one unusable: the guess stands
+	want = []string{"inbox", "sent", "sent", "flagged", "", "trash"}
+	if got := roles(list); !slices.Equal(got, want) {
+		t.Fatalf("roles %q, want %q", got, want)
+	}
 }

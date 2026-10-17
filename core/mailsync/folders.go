@@ -43,7 +43,7 @@ func roles(list []*imap.ListData) []string {
 	out := make([]string, len(list))
 	marked := map[string]bool{}
 	for i, d := range list {
-		if out[i] = markedRole(d); out[i] != "" {
+		if out[i] = markedRole(d); out[i] != "" && selectable(d) { // an unusable folder reserves nothing
 			marked[out[i]] = true
 		}
 	}
