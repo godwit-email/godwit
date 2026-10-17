@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -169,6 +170,10 @@ func TestPluginHTTPModelEgress(t *testing.T) {
 	_, err = s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 	assert.Error(t, err)
 	assert.Empty(t, srv.Requests(), "a host outside permissions.net is never reached")
+	rows, err := s.db.Query(t.Context(), "SELECT destination, decision, reason FROM audit_log WHERE tool = 'plugin:p:models'")
+	require.NoError(t, err)
+	require.NotEmpty(t, rows.Values)
+	assert.Equal(t, []any{"elsewhere.example.com:" + strings.Split(host, ":")[1], "deny", "host_not_allowed"}, rows.Values[0])
 }
 
 func TestNativePluginHTTPModel(t *testing.T) {

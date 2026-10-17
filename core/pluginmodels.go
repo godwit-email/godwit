@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/skills"
 )
@@ -153,6 +154,7 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 	if m.Judges() {
 		return ai.ResolvedModel{}, fmt.Errorf("%w: %s is a judge model", ErrModelNotFound, ref)
 	}
+	// shortcut: a stopped plugin's Genkit instance stays in the engine until its ref is used again; Forget it on stop if plugins come and go often.
 	h := fnv.New64a()
 	h.Write([]byte(ref))
 	return ai.ResolvedModel{ServiceID: -int64(h.Sum64()>>1) - 1, Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
@@ -220,8 +222,15 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if t.rp.native == nil {
 		r := t.rp.row
 		hosts, _ := plugins.EgressFor(plugins.KindModels, r.m, r.granted == r.permHash, true, true)
-		if err := t.rp.host.net.Allowed(out.URL, hosts); err != nil {
-			return nil, fmt.Errorf("plugin %s: %w", t.name, err)
+		err := t.rp.host.net.Allowed(out.URL, hosts)
+		e := gateway.Entry{Source: gateway.SourcePlugin, Extension: t.name, Tool: "plugin:" + t.name + ":models",
+			Decision: "allow", Destinations: []string{plugins.HostPort(out.URL)}} // host and port only, as for net.fetch
+		var ne *plugins.NetError
+		if errors.As(err, &ne) {
+			e.Decision, e.Reason = "deny", ne.Reason
+		}
+		if aerr := t.s.gateway().Record(context.WithoutCancel(ctx), e); err != nil || aerr != nil {
+			return nil, errors.Join(err, aerr)
 		}
 	}
 	return t.base.RoundTrip(out)
