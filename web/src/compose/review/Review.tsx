@@ -186,7 +186,7 @@ export function Review({
             >
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
-                <span className="absolute top-full left-0 z-10 mt-1 flex items-center gap-1 whitespace-nowrap rounded-lg border bg-popover p-1 text-base shadow-md">
+                <span className="absolute top-full left-0 z-10 mt-1 flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
                   {link && (
                     <span className="px-1 text-muted-foreground text-sm">
                       {t("wit.compose.link", link)}
@@ -256,7 +256,7 @@ export function Review({
               <h2 className="font-semibold text-sm">{t("wit.compose.original")}</h2>
               <Static html={r.old} label={t("wit.compose.original")} className="text-md" />
             </div>
-            <div className="flex flex-col gap-2 border-l pl-4">
+            <div className="flex flex-col gap-2 border-l-[0.5px] pl-4">
               <h2 className="font-semibold text-sm">{t("wit.compose.new")}</h2>
               <Static html={r.new} label={t("wit.compose.new")} className="text-md" />
             </div>

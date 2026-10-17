@@ -210,7 +210,7 @@ func TestRegistryRevokedNotice(t *testing.T) {
 func TestRegistrySectionHiddenWhenOff(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("extensions")
-	h.see("插件 · 0")
+	h.see("插件 · 1") // the built-in plugin: the list has loaded
 	if _, ok := h.tt.Find("插件目录"); ok {
 		t.Fatal("the registry section shows without a registry")
 	}

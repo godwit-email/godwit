@@ -535,12 +535,12 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 			// The logo fills the tile, at a size its levels halve to, sharp, under a one device pixel outline.
 			kit.Elevate(c, tile, theme.ShadowXs).Children(func() {
 				ui.Image(c, b).Size(size, size)
-				ui.Box(c).Absolute().Left(0).Top(0).Size(size, size).Radius(r).Border(theme.DeviceHairline, t.Outline)
+				ui.Box(c).Absolute().Left(0).Top(0).Size(size, size).Radius(r).Border(theme.Hairline, t.Outline)
 			})
 			return
 		}
-		tile.Border(theme.Hairline, t.Outline)
-		in := size - 2*theme.Hairline // inside the outline: a full-size logo would sit off centre, clipped
+		tile.Border(theme.Stroke, t.Outline)
+		in := size - 2*theme.Stroke // inside the outline: a full-size logo would sit off centre, clipped
 		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(in, in) })
 		return
 	}
@@ -586,7 +586,7 @@ func (o *onboarding) pickView(c *ui.Context) {
 		box.Children(func() {
 			in := ui.Autocomplete(c, &o.email, o.emailSuggestions()).Placeholder(i18n.T("onboarding.email.placeholder")).
 				Padding(0).Border(0, t.Input).Background(t.Background).FocusRing(false).
-				Label(i18n.T("onboarding.email")).Grow(1).MinWidth(0).Height(inputHeight(c) - theme.Hairline - theme.Hairline)
+				Label(i18n.T("onboarding.email")).Grow(1).MinWidth(0).Height(inputHeight(c) - theme.Stroke - theme.Stroke)
 			if in.Changed() {
 				o.emailErr = ""
 				o.scheduleDetect()
@@ -661,7 +661,7 @@ func secretInput(c *ui.Context, secret *string, shown *bool, label string) ui.El
 	var in ui.Element
 	row := kit.InputGroup(c, kit.InputOpts{}).Height(height).Padding(0, th.Space(0.5), 0, 0)
 	row.Children(func() {
-		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).Label(label).Height(height - theme.Hairline - theme.Hairline).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
+		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).Label(label).Height(height - theme.Stroke - theme.Stroke).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
 		icon, tip := "eye", i18n.T("onboarding.secret.show")
 		if *shown {
 			icon, tip = "eye-off", i18n.T("onboarding.secret.hide")
@@ -956,7 +956,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 	})
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		// Keep the completion form's original height; the 36px fields are for sign-in.
-		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(th.Space(10) + theme.Hairline + theme.Hairline).Disabled(o.adding || o.addedID != 0) // the name saves with the account
+		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(th.Space(10) + theme.Stroke + theme.Stroke).Disabled(o.adding || o.addedID != 0) // the name saves with the account
 	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
 	opts := rangeOptions()
 	opts[0].Label = i18n.T("onboarding.sync.2000") // （推荐） here only

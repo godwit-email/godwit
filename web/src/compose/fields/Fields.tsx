@@ -83,7 +83,7 @@ export function Fields({
   }));
 
   const row = (k: string, label: string, control: ReactNode) => (
-    <div key={k} className="mx-4 flex items-center gap-3 border-b py-2 text-md">
+    <div key={k} className="mx-4 flex items-center gap-3 border-b-[0.5px] py-2 text-md">
       <Label
         htmlFor={`${id}${k}`}
         className="w-12 shrink-0 font-normal text-md text-muted-foreground leading-5"
@@ -146,7 +146,7 @@ export function Fields({
         </>
       )}
       {bad.length > 0 && (
-        <p className="mx-4 border-b py-2 text-base text-destructive">
+        <p className="mx-4 border-b-[0.5px] py-2 text-base text-destructive">
           {t("compose.invalid", bad.join(", "))}
         </p>
       )}

@@ -604,9 +604,9 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 
 // ListFolders returns the account's folders with their unread counts. Each role
 // is on one folder at most, the one mailsync.RoleFolder resolves; inbox and
-// Gmail's all, flagged and important are detected only.
+// Gmail's Starred (flagged) are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
-	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'all', 'flagged', 'important') THEN f.role ELSE '' END,
+	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'flagged') THEN f.role ELSE '' END,
 		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0), f.delim
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {

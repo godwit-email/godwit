@@ -131,12 +131,14 @@ func (s TextScale) Line(size float32) float32 {
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline     = 1   // dividers
+	// Stroke is a control's border (inputs, buttons, checks), which their
+	// heights count, and the room of one: a separator's, a row gap.
+	Stroke       = 1
 	MaterialTint = 0.6 // the light Window's opacity over the window material: lighter, as the design, yet still see-through (its 95% is over a bare wallpaper, not a material)
-	// DeviceHairline is a border one device pixel wide at any scale: MyGo
-	// rounds border widths to whole device pixels, at least one. Borders
-	// only; a box or line this thin rounds away.
-	DeviceHairline  = 0.01
+	// Hairline is a border one device pixel wide at any scale, for cards,
+	// panels and dividers: MyGo rounds border widths to whole device pixels,
+	// at least one. Borders only; a box or line this thin rounds away.
+	Hairline        = 0.01
 	SidebarWidth    = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth = 480
@@ -211,6 +213,7 @@ const (
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons
 	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
+	StatusBadge, StatusBadgeRing                     = 9, 1.5         // a status dot on a mark's corner: the 6 dot in a ring of the background
 	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb
 	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
 	StepDot, PendingDot, DoneBadge                   = 20, 10, 36     // onboarding's check steps, OAuth wait, done mark

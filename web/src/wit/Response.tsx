@@ -129,7 +129,7 @@ export function Response({
       img: () => null,
       // One border: the table's, rounded, its header on the sidebar colour, rows ruled.
       table: ({ children }: { children?: ReactNode }) => (
-        <div className="overflow-x-auto rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border-[0.5px]">
           <table className="w-full border-collapse">{children}</table>
         </div>
       ),
@@ -138,7 +138,7 @@ export function Response({
       ),
       td: ({ children }: { children?: ReactNode }) => <td className="px-3 py-2">{children}</td>,
       tr: ({ children }: { children?: ReactNode }) => (
-        <tr className="border-muted not-first:border-t">{children}</tr>
+        <tr className="border-muted not-first:border-t-[0.5px]">{children}</tr>
       ),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         if (href?.startsWith(CITE)) {
@@ -206,7 +206,7 @@ export function Response({
             <AlertDialogTitle>{t("link.title")}</AlertDialogTitle>
             <AlertDialogDescription>{link && <Address url={link} />}</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="border-t-[0.5px]">
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <Button
               variant="outline"

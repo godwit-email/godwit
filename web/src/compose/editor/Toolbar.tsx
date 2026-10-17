@@ -149,7 +149,10 @@ export function Toolbar(props: {
       </ToggleGroup>
       {attach && (
         <>
-          <Separator orientation="vertical" className="mx-1.5 h-4.5 data-vertical:self-center" />
+          <Separator
+            orientation="vertical"
+            className="mx-1.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
+          />
           {attach}
         </>
       )}

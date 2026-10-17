@@ -261,7 +261,7 @@ func gui(ctx context.Context, dataDir string) int {
 		} else if err := loadAfterSetup(func() {
 			lockPage(v.Page())
 			roles.Register(v.Page(), "wit")
-		}, func() error { return v.Page().LoadURL("/wit.html") }, func() {
+		}, func() error { return v.Page().LoadURL(witURL(opts.Vibrancy != mygo.VibrancyNone)) }, func() {
 			roles.Unregister(v.Page())
 			v.Destroy()
 		}); err != nil {
@@ -493,4 +493,13 @@ func lockFailure(err error) (msg string, code int) {
 		return i18n.T("app.another_owner"), 2
 	}
 	return i18n.T("app.lock_failed"), 1
+}
+
+// witURL is the Wit page; over the window's material, ?material tells it to
+// tint it as the native root does rather than show it bare around its cards.
+func witURL(material bool) string {
+	if material {
+		return "/wit.html?material"
+	}
+	return "/wit.html"
 }

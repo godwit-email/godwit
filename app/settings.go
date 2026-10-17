@@ -179,16 +179,8 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 				continue
 			}
 			item(accountRoute(acc.ID)).Children(func() {
-				mark(c, accountProvider(a, acc), theme.MarkSm)
+				a.accountMark(c, acc)
 				ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
-				switch a.syncHealth(acc).level {
-				case syncAction:
-					kit.StatusDot(c, kit.Error).Label(i18n.T("settings.dot.action"))
-				case syncRetrying:
-					kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.retrying"))
-				default:
-					kit.StatusDot(c, kit.OK).Label(i18n.T("settings.dot.ok"))
-				}
 			})
 		}
 		if hit.accounts {
@@ -295,7 +287,7 @@ func settingsCard(c *ui.Context, rows ...func()) {
 
 // hairline divides the rows of a settings card.
 func hairline(c *ui.Context) {
-	ui.Box(c).FillWidth().Height(theme.Hairline).Shrink(0).Background(theme.Of(c).Border)
+	kit.Separator(c, false).Shrink(0)
 }
 
 // settingRow is a labelled control: label (500) and description on the

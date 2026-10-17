@@ -275,7 +275,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	}
 	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
-		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border).Background(tok.Window)
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border).Background(tok.Window)
 	if on {
 		b.Border(theme.SelectedBorder, t.Primary)
 	}
@@ -308,7 +308,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	}
 	t := theme.Of(c)
 	anchor := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.noTrans = !p.noTrans }}).Label(i18n.T("settings.no_translate")).
-		Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Input).Background(t.Background).
+		Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Lg).Border(theme.Stroke, t.Input).Background(t.Background).
 		MinWidth(theme.SettingsSelectMin).MaxWidth(theme.SettingsSelectMax)
 	anchor.Children(func() {
 		ui.Text(c, label).Grow(1)

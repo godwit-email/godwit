@@ -26,7 +26,7 @@ export function LinkPopover(props: {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger render={trigger} />
-      <PopoverContent className="w-80 border ring-0">
+      <PopoverContent className="w-80 border-[0.5px] ring-0">
         <form
           className="flex flex-col gap-2"
           onSubmit={(e) => {

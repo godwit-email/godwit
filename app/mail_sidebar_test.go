@@ -13,9 +13,8 @@ func TestSidebarFolders(t *testing.T) {
 	fs := []core.Folder{
 		{ID: 1, Name: "INBOX", Role: "inbox", Delim: ".", Unread: 3},
 		{ID: 2, Name: "[Gmail]/All Mail", Role: "archive", Delim: "/"}, // ListFolders resolves All Mail as the archive
-		{ID: 11, Name: "[Gmail]/Archive copy", Role: "all", Delim: "/"},
 		{ID: 3, Name: "[Gmail]/Starred", Role: "flagged", Delim: "/"},
-		{ID: 4, Name: "[Gmail]/Important", Role: "important", Delim: "/"},
+		{ID: 4, Name: "[Gmail]/Important", Delim: "/"}, // no row of ours: shown as it is
 		{ID: 5, Name: "[Gmail]/Spam", Role: "junk", Delim: "/"},
 		{ID: 6, Name: "INBOX.Projects.Q4.Contracts", Delim: ".", Unread: 2},
 		{ID: 7, Name: "INBOX.Projects.Expenses", Delim: ".", Unread: 1},
@@ -37,7 +36,8 @@ func TestSidebarFolders(t *testing.T) {
 	}
 	want := []string{
 		"收件箱", "草稿", "归档", "垃圾邮件", // drafts are local
-		"Projects +3", "  Expenses", "  Q4 (prefix) +2", "    Contracts", "Projects", "Projects Old", "flat",
+		"Projects +3", "  Expenses", "  Q4 (prefix) +2", "    Contracts", "Projects", "Projects Old",
+		"[Gmail] (prefix) +0", "  Important", "flat",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows\n%q\nwant\n%q", got, want)

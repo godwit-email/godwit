@@ -47,10 +47,10 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Sm).Border(theme.Hairline, t.Input).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center()
 		Elevate(c, box, theme.ShadowXs)
 		if *on {
-			box.Background(t.Primary).Border(theme.Hairline, t.Primary).TextColor(t.PrimaryText).Children(func() {
+			box.Background(t.Primary).Border(theme.Stroke, t.Primary).TextColor(t.PrimaryText).Children(func() {
 				ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
 			})
 		}
@@ -62,10 +62,10 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
-		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Hairline, t.Input).Background(t.Background).Center()
+		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center()
 		Elevate(c, dot, theme.ShadowXs)
 		if *sel == v {
-			dot.Border(theme.Hairline, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
+			dot.Border(theme.Stroke, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
 		}
 		ui.Text(c, label)
 	})

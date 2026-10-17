@@ -1178,23 +1178,26 @@ func TestBlockedFooterDisabled(t *testing.T) {
 	h := withLLM(t)
 	url, _ := modelsServer(t, 0, "m1")
 	h.newService()
-	reached := func(label string) bool {
+	// One Tab sweep for both buttons: every frame of it is slow under -race.
+	reached := func() (add, test bool) {
 		for range 60 {
 			h.tt.Key(0, ui.KeyTab)
 			h.tt.Frame()
-			if h.tt.Focused(label) {
-				return true
+			add = add || h.tt.Focused("添加")
+			test = test || h.tt.Focused("测试连接")
+			if add && test {
+				return
 			}
 		}
-		return false
+		return
 	}
-	if reached("添加") || reached("测试连接") {
+	if add, test := reached(); add || test {
 		t.Fatal("a blocked footer button takes focus")
 	}
 	h.fill("名称", "added")
 	h.fill("地址", url)
 	h.typeModel("m1")
-	if !reached("添加") || !reached("测试连接") {
+	if add, test := reached(); !add || !test {
 		t.Fatal("the ready footer buttons don't take focus")
 	}
 }

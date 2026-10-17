@@ -228,5 +228,26 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	})
 }
 
+// accountMark is the account's provider mark, with a badge on its corner
+// while its sync needs the user (red) or is retrying (amber), as the top
+// bar's status says.
+func (a *App) accountMark(c *ui.Context, acc core.Account) {
+	t := theme.Of(c)
+	ui.Box(c).Size(theme.MarkSm, theme.MarkSm).Shrink(0).Children(func() {
+		mark(c, accountProvider(a, acc), theme.MarkSm)
+		color, label := t.Danger, "settings.dot.action"
+		switch a.syncHealth(acc).level {
+		case syncAction:
+		case syncRetrying:
+			color, label = t.Attention, "settings.dot.retrying"
+		default:
+			return
+		}
+		at := float32(theme.MarkSm - theme.StatusBadge + theme.StatusBadgeRing) // over the corner by the ring
+		ui.Box(c).Absolute().Left(at).Top(at).Size(theme.StatusBadge, theme.StatusBadge).Radius(t.Radius.Full).
+			Background(color).Border(theme.StatusBadgeRing, t.Background).Label(i18n.T(label))
+	})
+}
+
 // accountName is how the sidebar names an account.
 func accountName(acc core.Account) string { return cmp.Or(acc.Alias, acc.Email) }

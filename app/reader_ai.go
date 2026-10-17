@@ -425,9 +425,9 @@ func (r *reader) aiTools(c *ui.Context) {
 	// it takes the Primary border and a Hover fill.
 	// aiButton shows icon before label; a menu's shows a chevron after it.
 	aiButton := func(icon, label string, on, menu bool) ui.Element {
-		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border)
+		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg).Border(theme.Stroke, t.Border)
 		if on {
-			b.Border(theme.Hairline, t.Primary).Background(t.Hover)
+			b.Border(theme.Stroke, t.Primary).Background(t.Hover)
 		}
 		return b.Children(func() {
 			if icon != "" {

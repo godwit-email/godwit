@@ -221,7 +221,7 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 				box := kit.InputGroup(c, kit.InputOpts{Invalid: v.err != "", Flat: true})
 				box.Children(func() {
 					ui.Autocomplete(c, &v.s, sugg).Label(label).Grow(1).MinWidth(0).
-						Height(th.Space(8)-theme.Hairline-theme.Hairline).Padding(0, th.Space(2.5)).Border(0, t.Input).FocusRing(false)
+						Height(th.Space(8)-theme.Stroke-theme.Stroke).Padding(0, th.Space(2.5)).Border(0, t.Input).FocusRing(false)
 				})
 			case fd.Type == "select":
 				opts := make([]kit.Option[string], len(fd.Options))

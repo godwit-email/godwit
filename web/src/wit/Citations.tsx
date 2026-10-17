@@ -45,7 +45,7 @@ export function Citations({
             type="button"
             onClick={() => onOpen(c.messageId)}
             className={cn(
-              "flex flex-col gap-1 rounded-xl border bg-background px-3 py-2.5 text-left hover:bg-accent",
+              "flex flex-col gap-1 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-left hover:bg-accent",
               suspect && "border-(--warning-border)",
             )}
           >
