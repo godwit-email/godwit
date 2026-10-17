@@ -215,6 +215,11 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if req.Body != nil {
 		defer req.Body.Close()
 	}
+	if t.rp.native == nil {
+		if err := t.s.markHoldsMail(ctx, t.name); err != nil { // the request holds mail, prepared or not
+			return nil, err
+		}
+	}
 	out, err := t.prepare(ctx, req)
 	if err != nil {
 		return nil, err
@@ -264,11 +269,6 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
-	}
-	if t.rp.native == nil {
-		if err := t.s.markHoldsMail(ctx, t.name); err != nil { // the request holds mail
-			return nil, err
-		}
 	}
 	err := t.s.callModelPlugin(ctx, t.name, t.rp, func(ctx context.Context) error {
 		if t.rp.native != nil {

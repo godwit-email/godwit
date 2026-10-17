@@ -17,7 +17,7 @@ import (
 // "library" file is JSON {"describe": {...}, "initFail": bool, "echoStderr":
 // "...", "record": "<path>", "describeSleepMs": n, "recordEnv": bool,
 // "source": "en", "translateWrongCount": bool, "translateError": "<code>",
-// "models": {...}, "judgeError": "<code>", "judgeWrong": bool, "loadError": "<code>"}.
+// "models": {...}, "judgeError": "<code>", "judgeWrong": bool, "judgeSleepMs": n, "loadError": "<code>"}.
 // initFail writes echoStderr and fails init; describe answers after
 // describeSleepMs. translate answers "[<target>] <text>" per text from source
 // (default "en"), one text short with translateWrongCount, or the error
@@ -50,6 +50,7 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			Models          json.RawMessage `json:"models"`
 			JudgeError      string          `json:"judgeError"`
 			JudgeWrong      bool            `json:"judgeWrong"`
+			JudgeSleepMs    int             `json:"judgeSleepMs"`
 			LoadError       string          `json:"loadError"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
@@ -96,6 +97,7 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				}
 				return ok(struct{}{}), nil
 			case "models.judge":
+				time.Sleep(time.Duration(spec.JudgeSleepMs) * time.Millisecond)
 				if spec.JudgeError != "" {
 					return fail(spec.JudgeError), nil
 				}

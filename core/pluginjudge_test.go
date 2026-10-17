@@ -144,3 +144,44 @@ func TestPluginJudgeAssets(t *testing.T) {
 	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
 	assert.Equal(t, 1, fa.released, "stopping the plugin releases its files")
 }
+
+func TestPluginJudgeCancelKeepsSlot(t *testing.T) {
+	s := newMailContextService(t)
+	record := usePluginJudge(t, s, nil, map[string]any{"judgeSleepMs": 300})
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1]) // the process is up
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	_, err = j.Ask(ctx, "mail", twoQuestions[:1])
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	rp := j.(pluginModelJudge).rp
+	select {
+	case rp.judging <- struct{}{}:
+		t.Fatal("the slot was free while the dispatched call still ran")
+	default:
+	}
+	assert.Eventually(t, func() bool { return len(recorded(t, record, "models.judge")) == 2 }, 2*time.Second, 10*time.Millisecond)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	assert.NoError(t, err, "the slot comes back once the call ends")
+}
+
+func TestPluginJudgeReloadsAfterRestart(t *testing.T) {
+	s := newMailContextService(t)
+	record := usePluginJudge(t, s, map[string]string{"weights": "4b"}, nil)
+	fa := &fakeAssets{}
+	s.assets = fa
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	rp := j.(pluginModelJudge).rp
+	_, err = rp.native.Call(t.Context(), "probe.crash", struct{}{})
+	require.Error(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	assert.Len(t, recorded(t, record, "models.load"), 2, "the new process loads the model again")
+	assert.Equal(t, 2, fa.verified)
+	assert.Equal(t, 1, fa.released, "the old process's lease is released")
+}

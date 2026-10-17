@@ -252,3 +252,20 @@ func TestPluginHTTPJudge(t *testing.T) {
 	assert.InDelta(t, 0.9, *got[0].Probability, 1e-9)
 	assert.Equal(t, "Bearer plugin", auth.Load())
 }
+
+func TestPluginModelWithoutPrepareHoldsMail(t *testing.T) {
+	s := newMailContextService(t)
+	srv, host := modelServer(t, s, "openai")
+	srv.Script(testllm.Turn{Text: []string{"x"}})
+	startModelPlugin(t, s, "p", host, fmt.Sprintf(`export default function (ctx: any) {
+  ctx.models.register({ listModels: () => ({ models: [{ id: "m1", name: "M1", transport: "http", protocol: "openai-completions", baseURL: "https://%s" }] }) })
+}`, host))
+	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
+	require.NoError(t, err)
+	e, err := s.aiEngine()
+	require.NoError(t, err)
+	s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100) // the fake is plain http: it fails, after the request left
+	held, err := s.holdsMail(t.Context(), "p")
+	require.NoError(t, err)
+	assert.True(t, held, "the endpoint the plugin chose got the request")
+}

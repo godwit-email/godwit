@@ -94,10 +94,12 @@ func (s *Service) newSlug(ctx context.Context, name string, exceptID int64) (str
 	return pickSlug(name, exceptID, rows, aliases), nil
 }
 
-// backfillSlugs gives the services an older Godwit stored a slug, and rewrites the
-// "name/model" references to them (DefaultModel, runs, conversations) to
-// "slug/model", all in one transaction. A name that already is a slug, and is
-// no other service's name, is kept, so its references stay as they are.
+// backfillSlugs gives the services an older Godwit stored a slug, or the slug
+// "plugin" now reserved for plugin models, a new one, and rewrites the
+// "name/model" (or "plugin/model") references to them (DefaultModel,
+// SmallModel, JudgeService, runs, conversations) to "slug/model", all in one
+// transaction. A name that already is a slug, and is no other service's
+// name, is kept, so its references stay as they are.
 func (s *Service) backfillSlugs(ctx context.Context) error {
 	rows, err := s.slugRows(ctx)
 	if err != nil {
@@ -108,16 +110,20 @@ func (s *Service) backfillSlugs(ctx context.Context) error {
 		return err
 	}
 	var stmts []sqlite.Statement
-	renamed := map[string]string{} // name → slug, where they differ
+	renamed := map[string]string{} // name (or reserved slug) → slug, where they differ
 	for i, r := range rows {
-		if r.slug != "" {
+		old := r.name
+		switch {
+		case r.slug+"/" == translatorPrefix:
+			old = r.slug
+		case r.slug != "":
 			continue
 		}
 		slug := pickSlug(r.name, r.id, rows, aliases) // the name itself when it is a free slug
 		rows[i].slug = slug
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE model_services SET slug = ? WHERE id = ?", Args: []any{slug, r.id}})
-		if slug != r.name {
-			renamed[r.name] = slug
+		if slug != old {
+			renamed[old] = slug
 		}
 	}
 	if len(stmts) == 0 {
@@ -133,16 +139,29 @@ func (s *Service) backfillSlugs(ctx context.Context) error {
 			if err := json.Unmarshal([]byte(store.Str(st.Values[0][0])), &fields); err != nil {
 				return err
 			}
-			var ref string
-			if json.Unmarshal(fields["DefaultModel"], &ref) == nil {
-				if svc, model, ok := strings.Cut(ref, "/"); ok && renamed[svc] != "" {
-					fields["DefaultModel"], _ = json.Marshal(renamed[svc] + "/" + model)
-					b, err := json.Marshal(fields)
-					if err != nil {
-						return err
-					}
-					stmts = append(stmts, sqlite.Statement{SQL: "UPDATE settings SET value = ? WHERE key = 'app'", Args: []any{string(b)}})
+			changed := false
+			for _, k := range []string{"DefaultModel", "SmallModel", "JudgeService"} {
+				var ref string
+				if json.Unmarshal(fields[k], &ref) != nil {
+					continue
 				}
+				svc, model, ok := strings.Cut(ref, "/")
+				switch {
+				case renamed[svc] == "":
+				case ok && k != "JudgeService":
+					fields[k], _ = json.Marshal(renamed[svc] + "/" + model)
+					changed = true
+				case !ok && k == "JudgeService": // a slug alone
+					fields[k], _ = json.Marshal(renamed[svc])
+					changed = true
+				}
+			}
+			if changed {
+				b, err := json.Marshal(fields)
+				if err != nil {
+					return err
+				}
+				stmts = append(stmts, sqlite.Statement{SQL: "UPDATE settings SET value = ? WHERE key = 'app'", Args: []any{string(b)}})
 			}
 		}
 	}

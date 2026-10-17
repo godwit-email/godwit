@@ -43,15 +43,35 @@ func (j pluginModelJudge) Ask(ctx context.Context, input string, qs []ai.Questio
 	return out, nil
 }
 
-// ask answers one question once the plugin's judge slot is free; a caller
-// may give up while it waits, not once its call is dispatched.
+// ask answers one question once the plugin's judge slot is free. A caller
+// may give up while it waits or after dispatch, but a dispatched call runs
+// to its end (the plugin's own timeout) and keeps the slot until then.
 func (j pluginModelJudge) ask(ctx context.Context, input string, q ai.Question) ([]ai.Answer, error) {
 	select {
 	case j.rp.judging <- struct{}{}:
-		defer func() { <-j.rp.judging }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+	type result struct {
+		answers []ai.Answer
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		defer func() { <-j.rp.judging }()
+		a, err := j.dispatch(context.WithoutCancel(ctx), input, q)
+		done <- result{a, err}
+	}()
+	select {
+	case r := <-done:
+		return r.answers, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// dispatch loads the model if needed and asks the plugin one question.
+func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Question) ([]ai.Answer, error) {
 	if j.rp.native == nil {
 		if err := j.s.markHoldsMail(ctx, j.name); err != nil { // the input is mail
 			return nil, err
@@ -88,6 +108,11 @@ func (j pluginModelJudge) ask(ctx context.Context, input string, q ai.Question) 
 func (j pluginModelJudge) load(ctx context.Context) error {
 	if j.rp.native == nil || len(j.model.Assets) == 0 {
 		return nil
+	}
+	// A process that exited (idle, crash) is started first: its OnStart
+	// forgets what the old one loaded before the cache is read.
+	if err := j.rp.native.Start(ctx); err != nil {
+		return judgeFailure(ctx, err)
 	}
 	if _, ok := j.rp.loaded.Load(j.model.ID); ok {
 		return nil

@@ -304,3 +304,18 @@ func TestAliasesCapturedOnUpgradeOnce(t *testing.T) {
 	_, err = s.resolveModel(bg, "Work/m1")
 	assert.ErrorIs(t, err, ErrModelServiceNotFound)
 }
+
+// A service an older Godwit gave the slug "plugin" gets another, and the
+// references to it follow: "plugin/…" now names plugin models.
+func TestBackfillReservedPluginSlug(t *testing.T) {
+	s := modelSvc(t)
+	legacyService(t, s, 1, "Plugin", "m1")
+	_, err := s.db.Execute(t.Context(), "UPDATE model_services SET slug = 'plugin' WHERE id = 1")
+	require.NoError(t, err)
+	setRawSettings(t, s, `{"DefaultModel":"plugin/m1","SmallModel":"plugin/m1","JudgeService":"plugin"}`)
+	upgrade(t, s)
+	assert.Equal(t, map[int64]any{1: "plugin-2"}, slugs(t, s))
+	st, err := s.loadSettings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"plugin-2/m1", "plugin-2/m1", "plugin-2"}, []string{st.DefaultModel, st.SmallModel, st.JudgeService})
+}
