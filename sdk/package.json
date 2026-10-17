@@ -1,0 +1,18 @@
+{
+  "name": "@godwit/sdk",
+  "version": "0.1.0",
+  "description": "Type definitions for Godwit plugins",
+  "license": "Apache-2.0",
+  "type": "module",
+  "types": "./godwit.d.ts",
+  "exports": { ".": { "types": "./godwit.d.ts" } },
+  "files": ["godwit.d.ts", "LICENSE", "README.md"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/godwit-email/godwit.git",
+    "directory": "sdk"
+  },
+  "publishConfig": { "access": "public" },
+  "scripts": { "test": "node test-package.mjs" },
+  "devDependencies": { "typescript": "7.0.2" }
+}

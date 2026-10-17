@@ -14,7 +14,7 @@
 
 - 这是一份待实施计划。本轮只新增本文，不改产品代码或设计文档，不 git add / commit。实施时也先保留用户“不暂存、不提交”的约束，直至用户明确改变。
 - 核对基线为 Godwit `origin/main`：`6f44bdc3a89fe4d639daca488b828e0bc5eda175`；已用只读 ls-remote 确认。当前工作分支是 `codex/fix-store-publish-package`，包含其他会话改动，缺少原生插件 / registry 主线实现。执行时从届时主线建立隔离工作树，再带入已审阅的设计与计划；不切换、重置或清理当前工作区。
-- 插件代码最终放在兄弟仓库 `/Users/baran/Documents/workspace/godwit-email/plugins/zen-free/`；Godwit 仓库只放宿主支持、SDK、测试夹具和文档。两个仓库分别审阅，不把插件源码塞进 Godwit。
+- 插件代码最终放在兄弟仓库 `/Users/baran/Documents/workspace/godwit-email/plugins/packages/zen-free/`；Godwit 仓库只放宿主支持、SDK、测试夹具和文档。两个仓库分别审阅，不把插件源码塞进 Godwit。
 - HTTP 协议固定为 `openai-completions / openai-responses / anthropic-message / typesafe-systemone / openai-decisions`；路径逐项遵循设计 §2，不由 SDK 重复增加 `/v1`。
 - 一个插件一个 provider；模型引用是宿主分配的 `slug/model-id`。插件 provider 不复用人工服务凭据，不因启用插件改变用户选择；模型 id 可以含 `/`。
 - 回调输入、输出和模型目录各限 `1 << 20` 字节；不截断。JS 调用 30 秒，原生 load / 单题各为派发后 60 秒；排队、下载、宿主哈希不占原生预算。
@@ -47,7 +47,7 @@ Tasks 1–8 构成 Godwit 基础 API PR；Task 9 是插件仓库的 Zen Free 源
 | plugin judge / 准备事务 | `core/modeljudge.go`、`core/modelassets.go`；不单独建立另一个模型注册中心 |
 | 设置 / 调用方 | `core/settings.go`、`core/models.go`、`core/pluginhost.go`、`core/labeler.go`、`core/conversations.go` 及全部直接 AI 调用点 |
 | UI / RPC | 现有 `app/settings_models*.go`、权限卡 / 事件刷新、`rpcbind`、`contract`、双语 i18n |
-| Zen Free | 插件仓库 `zen-free/` 的源码、Bun 测试、构建脚本、说明和许可证 |
+| Zen Free | 插件仓库 `packages/zen-free/` 的源码、Bun 测试、构建脚本、说明和许可证 |
 
 ### Task 1：模型契约与 JS / 原生能力发现
 
@@ -206,7 +206,7 @@ func (p *Plugin) JudgeModel(ctx context.Context, inv Invocation, req JudgeModelR
 
 ### Task 9：在 plugins 仓库实现 Zen Free
 
-**Files:** 在插件仓库 Create `zen-free/{plugin.json,package.json,README.md,LICENSE,build.ts}`、`zen-free/src/{index.ts,models.ts,request.ts}`、`zen-free/test/{models.test.ts,request.test.ts,host.test.ts}` 及小型脱敏 fixtures。打包产物生成到 `zen-free/dist/`，不把完整远程目录固化进产品代码。
+**Files:** 在插件仓库 Create `packages/zen-free/{plugin.json,package.json,README.md,LICENSE,build.ts}`、`packages/zen-free/src/{index.ts,models.ts,request.ts}`、`packages/zen-free/test/{models.test.ts,request.test.ts,host.test.ts}` 及小型脱敏 fixtures。打包产物生成到 `packages/zen-free/dist/`，不把完整远程目录固化进产品代码。
 
 **Interfaces:** SDK 由 Task 1 提供；源码默认导出 `(ctx: Ctx) => void`，只注册一个 ModelProvider。`discoverFreeModels(ctx: Ctx): Promise<ProviderModel[]>`，`adaptZenRequest(call: PrepareModelRequest): ModelHTTPRequest` 为插件内部纯适配边界。plugin.json 的 main 为 index.js，构建复制 manifest 并打包到 dist/index.js；源码无 Node import / 全局 fetch / Headers / WebCrypto / WASM 依赖。
 
@@ -219,17 +219,17 @@ func (p *Plugin) JudgeModel(ctx context.Context, inv Invocation, req JudgeModelR
   expect(second.requestHeader).not.toBe(first.requestHeader)
   expect(originalRequest).toEqual(beforeAdaptation)
   ```
-  Run（插件仓库）: `bun test ./zen-free/test`；预期失败。
+  Run（插件仓库）: `bun test ./packages/zen-free/test`；预期失败。
 - [ ] **实现发现。** 用 ctx.net.fetch 请求 `https://opencode.ai/inference/v1/models`，只接受其实际列出的模型，再用 `https://models.opencode.ai/api.json` 和参考 docs URL 补免费 / 协议信息。声明这三个域名；元数据降级只能使用明确可信的最近信息，首次不能把参考 bootstrap 当作真实可用目录。模型列表主请求失败抛业务错误，让宿主保留旧目录；成功空目录如实返回空。协议不能确认时不猜收费或未知协议模型。
 - [ ] **实现三种生成适配。** 基址固定 `https://opencode.ai/inference/v1`，公共凭据 public；沿参考源码设置协议相关 User-Agent / x-opencode-* / Anthropic 头。参考版本 OpenCode 1.19.0、runtime/bun/1.3.14、provider-utils chat=4.0.23 / responses=4.0.40 / anthropic=4.0.46，作为可验证的兼容常量而非宿主真实版本信息。只保留必要头，不外发工作目录 / 机器 ID。
 - [ ] **实现会话转换。** ses_ 前缀用宿主 sessionCreatedAt 和 sessionId 构造稳定 OpenCode 形状，msg_ 使用 requestId 和本次时间；禁止取邮件 / 第一条 prompt 作为身份。只用 goja 已支持的数值 / 字符串运算，不依赖 Node crypto / BigInt；测试低 12 位 counter 和 14 位字母数字尾部、VM 重建后同一宿主会话稳定。
 - [ ] **实现占位工具。** 仅补缺失的 bash / edit / glob / grep / read，参数分别为 command / filePath / pattern / pattern / filePath，并明确不可用；真实同名工具逐字保留。Godwit 继续负责流解析和工具授权，插件不解析返回工具名或吞掉截断流。
 - [ ] **免费 judge 门槛。** 参考实现当前主动排除了 SystemOne，不能从 bootstrap 的 jev 名称推断可用。只有 Task 10 实测通过的免费 judge 才加入目录；若上游不可用，宿主的两种 judge 协议仍由本地模拟服务测试交付，插件不列未经验证的判断模型。记录验证结果，不给用户“已支持免费 judge”的虚假承诺。
-- [ ] **打包与宿主验证。** `bun run --cwd zen-free build` 生成一份无外部 import 的 JS + manifest，大小不超过现有 script artifact 5 MiB；用 Godwit 实际 goja 插件加载跑 models.list / prepare。单纯 Bun 测试通过不代表沙箱兼容。README 说明启用即可用、第三方接收输入、非官方接口及限流可能、无配额保证。
+- [ ] **打包与宿主验证。** `bun run --cwd packages/zen-free build` 生成一份无外部 import 的 JS + manifest，大小不超过现有 script artifact 5 MiB；用 Godwit 实际 goja 插件加载跑 models.list / prepare。单纯 Bun 测试通过不代表沙箱兼容。README 说明启用即可用、第三方接收输入、非官方接口及限流可能、无配额保证。
 
 ### Task 10：集成验收与交付给 #90
 
-**Files:** Godwit 新增 `core/coretest/testdata/models-demo/{plugin.json,index.ts}`、`core/pluginmodels_integration_test.go`；原生 fake 继续复用 Task 1；插件仓库修改 `zen-free/README.md` 记录可复现验证方式。只有形成真实不可变发布产物后才准备 registry 条目，不写假的 URL / SHA / size。
+**Files:** Godwit 新增 `core/coretest/testdata/models-demo/{plugin.json,index.ts}`、`core/pluginmodels_integration_test.go`；原生 fake 继续复用 Task 1；插件仓库修改 `packages/zen-free/README.md` 记录可复现验证方式。只有形成真实不可变发布产物后才准备 registry 条目，不写假的 URL / SHA / size。
 
 **Interfaces:** 全部使用已交付的 SDK / Service API，不新增临时直连入口。#90 只替换 newModelAssets 的真实供应器、补资产 schema / 下载 UI / 生命周期，并实现 StartLux models.list / load / judge；不改 configure 或重新迁移 JudgeService。
 
