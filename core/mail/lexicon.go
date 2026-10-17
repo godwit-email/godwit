@@ -34,18 +34,19 @@ type lexicon struct {
 	replySent   string // "sent", "日期"
 
 	// Links.
-	signInSubject string // a subject about signing in
-	signInLabel   string // a sign-in button's words, whole
-	signInLead    string // a sign-in action before a colon and its URL
-	delivery      string // a magic link's mail speaking of the link itself: "this link expires"
-	alert         string // a security alert, whose links review activity
-	confirm       string // confirming a new account's address: "confirm your email"
-	reset         string // setting a new password: "reset your password"
-	clickTo       string // before a button's words: "click here to"
-	leadTail      string // between an action and its colon: " here", " below"
-	context       string // more words that make a mail about confirming or resetting: "email verification"
-	fallback      string // the line under an image-only button: "if the button does not work, use this link:"
-	fallbackLabel string // that line's link, whole: "use this link"
+	signInSubject  string // a subject about signing in
+	signInLabel    string // a sign-in button's words, whole
+	signInLead     string // a sign-in action before a colon and its URL
+	delivery       string // a magic link's mail speaking of the link itself: "this link expires"
+	alert          string // a security alert, whose links review activity
+	confirm        string // confirming a new account's address: "confirm your email"
+	reset          string // setting a new password: "reset your password"
+	clickTo        string // before a button's words: "click here to"
+	leadTail       string // between an action and its colon: " here", " below"
+	confirmContext string // more words that make a mail about confirming an address: "email verification"
+	resetContext   string // more words that make a mail about resetting a password: "password reset"
+	fallback       string // the line under an image-only button: "if the button does not work, use this link:"
+	fallbackLabel  string // that line's link, whole: "use this link"
 }
 
 // byLink: how a link is used, between an action and its colon.
@@ -53,30 +54,31 @@ const byLink = ` (?:by clicking|by tapping|using|with|via)(?: on)? (?:this|the)(
 
 var lexicons = []lexicon{
 	{
-		lang:          "en",
-		codeHints:     `\b(?:verification|authentication|login|sign[ -]?in|one[ -]time|single[ -]use)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b`,
-		ambiguous:     `\b(?:your|confirmation|security|activation)\s+code\b`,
-		copulas:       `\bis\b`,
-		codeBefore:    `\bis (?:your|the)\b`,
-		signIn:        `\b(?:verif(?:y|ying|ication)|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|\baccount needs activation\b|\bactivate (?:your )?account\b`,
-		enter:         `\b(?:enter|type|paste|input)\b`,
-		codeWords:     `\b(?:code|passcode|OTP)\b`,
-		replyPrefix:   `re|fwd?`,
-		replyHeader:   `-{2,}\s*(?:original message|forwarded message)\s*-{2,}|on .+ wrote:`,
-		replyFrom:     `from`,
-		replySent:     `sent|date`,
-		signInSubject: `\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b`,
-		signInLabel:   `(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?`,
-		signInLead:    `(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+|` + byLink + `)?|magic link`,
-		delivery:      `\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b`,
-		alert:         `\bnew (?:sign[ -]?in|login|device)\b|\b(?:sign[ -]?in|login) (?:attempt|alert|activity)\b|\bunusual\b`,
-		confirm:       `(?:confirm|verify|activate)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)`,
-		reset:         `(?:reset|change)\s+(?:your\s+)?password`,
-		clickTo:       `(?:click|tap) (?:here )?to `,
-		leadTail:      ` here| below|` + byLink,
-		context:       `\bemail verification\b|\bpassword reset\b`,
-		fallback:      `(?:button|link)\s+(?:does\s*n[o']t|is\s*n[o']t|won'?t|not)\s+work.*\b(?:use|copy|paste|open)\b.*\b(?:link|url|address)\b[^:：\n]*[:：]?\s*$|trouble clicking.*(?:copy|paste).*\b(?:url|link)\b`,
-		fallbackLabel: `use this link`,
+		lang:           "en",
+		codeHints:      `\b(?:verification|authentication|login|sign[ -]?in|one[ -]time|single[ -]use)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b`,
+		ambiguous:      `\b(?:your|confirmation|security|activation)\s+code\b`,
+		copulas:        `\bis\b`,
+		codeBefore:     `\bis (?:your|the)\b`,
+		signIn:         `\b(?:verif(?:y|ying|ication)|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|\baccount needs activation\b|\bactivate (?:your )?account\b`,
+		enter:          `\b(?:enter|type|paste|input)\b`,
+		codeWords:      `\b(?:code|passcode|OTP)\b`,
+		replyPrefix:    `re|fwd?`,
+		replyHeader:    `-{2,}\s*(?:original message|forwarded message)\s*-{2,}|on .+ wrote:`,
+		replyFrom:      `from`,
+		replySent:      `sent|date`,
+		signInSubject:  `\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b`,
+		signInLabel:    `(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?`,
+		signInLead:     `(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+|` + byLink + `)?|magic link`,
+		delivery:       `\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b`,
+		alert:          `\bnew (?:sign[ -]?in|login|device)\b|\b(?:sign[ -]?in|login) (?:attempt|alert|activity)\b|\bunusual\b`,
+		confirm:        `(?:confirm|verify|activate)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)`,
+		reset:          `(?:reset|change)\s+(?:your\s+)?password`,
+		clickTo:        `(?:click|tap) (?:here )?to `,
+		leadTail:       ` here| below|` + byLink,
+		confirmContext: `\bemail verification\b`,
+		resetContext:   `\bpassword reset\b`,
+		fallback:       `(?:button|link)\s+(?:does\s*n[o']t|is\s*n[o']t|won'?t|not)\s+work.*\b(?:use|copy|paste|open)\b.*\b(?:link|url|address)\b[^:：\n]*[:：]?\s*$|trouble clicking.*(?:copy|paste).*\b(?:url|link)\b`,
+		fallbackLabel:  `use this link`,
 	},
 	{
 		lang:          "zh-Hans",
@@ -353,7 +355,7 @@ var lexicons = []lexicon{
 		codeHints:     `mã xác minh|mã xác thực|mã đăng nhập|mật khẩu một lần`,
 		ambiguous:     `mã xác nhận|mã bảo mật|mã kích hoạt|mã của bạn`,
 		copulas:       `(?:của bạn\s+)?là`,
-		codeBefore:    `là mã`,
+		codeBefore:    `là`,
 		signIn:        `đăng nhập|xác minh|xác thực|mật khẩu`,
 		enter:         `nhập|dán`,
 		codeWords:     `mã`,

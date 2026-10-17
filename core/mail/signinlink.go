@@ -48,12 +48,12 @@ var confirmLabel = ci(`^\s*(?:` + clickTo + `)?` + confirms + `\s*[.!]?\s*$`)
 var confirmLead = ci(confirms + `(?:` + leadTail + `)?\s*[:：]\s*$`)
 
 // A mail about confirming an address, for the button fallback below.
-var confirmContext = ci(confirms + `|` + words(func(l lexicon) string { return l.context }))
+var confirmContext = ci(confirms + `|` + words(func(l lexicon) string { return l.confirmContext }))
 
 // Setting a new password: "Reset password", "若要重置密码，请访问下面的链接：".
 var resetLabel = ci(`^\s*(?:` + clickTo + `)?` + resets + `\s*[.!]?\s*$`)
 var resetLead = ci(resets + `[^:：\n]{0,30}[:：]\s*$`)
-var resetContext = ci(resets + `|` + words(func(l lexicon) string { return l.context }))
+var resetContext = ci(resets + `|` + words(func(l lexicon) string { return l.resetContext }))
 
 // The line many mails put under a button that is only an image: "If the
 // button does not work, use this link:", "Button not working? Use this link

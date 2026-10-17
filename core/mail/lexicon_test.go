@@ -111,6 +111,7 @@ func TestLexicons(t *testing.T) {
 		}},
 		{"vi", []code{
 			{"Mã xác minh Acme", "Mã xác minh của bạn là 482913", "482913"},
+			{"Acme", "482913 là mã xác minh của bạn", "482913"},
 		}, []link{
 			{"Đăng nhập vào Acme", `<p>Liên kết này có hiệu lực trong 10 phút.</p><a href="https://acme.example/l/1">Đăng nhập</a>`, "https://acme.example/l/1", mail.LinkSignIn},
 			{"Chào mừng", `<a href="https://acme.example/c/1">Xác nhận email của bạn</a>`, "https://acme.example/c/1", mail.LinkConfirm},

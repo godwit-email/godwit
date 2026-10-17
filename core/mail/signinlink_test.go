@@ -88,6 +88,7 @@ func TestActionLinkBadCases(t *testing.T) {
 		{"two URLs after a lead", "Sign in to Acme", "Log in here:\nhttps://a.example/auth https://b.example/auth\nThis link expires in 10 minutes.", "", "", ""},
 		{"Traditional sign-in link", "登入 Acme", "登入連結：https://acme.example/l/7\n此連結 10 分鐘內有效。", "", "https://acme.example/l/7", mail.LinkSignIn},
 		{"reply to a magic link", "Re: Your magic link", "Thanks!\n-- \nSign in: https://me.example/login\nThis link is my site.", "", "", ""},
+		{"reset by its fallback line", "Password reset", "Button does not work, use this link:\nhttps://a.example/reset/2", "", "https://a.example/reset/2", mail.LinkReset},
 		{"no fallback outside a known kind", "Your invoice", "If the button does not work, use this link:\nhttps://x.example/invoice", "", "", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
