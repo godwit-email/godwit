@@ -71,7 +71,7 @@ func SignInCode(subject, text, htmlBody string) string {
 // also its parsed document. An unparsable body gives "" and nil.
 func unquoted(text, htmlBody string) (string, *html.Node) {
 	if htmlBody == "" {
-		return text, nil
+		return beforeReply(text), nil
 	}
 	doc, err := html.Parse(strings.NewReader(htmlBody))
 	if err != nil {
@@ -113,7 +113,24 @@ func unquoted(text, htmlBody string) (string, *html.Node) {
 	if err := html.Render(&clean, doc); err != nil {
 		return "", nil
 	}
-	return HTMLToText(clean.String()), doc
+	return beforeReply(HTMLToText(clean.String())), doc
+}
+
+var replyHeader = regexp.MustCompile(`(?i)^\s*(?:-{2,}\s*(?:original message|forwarded message)\s*-{2,}|on .+ wrote:|在.+写道[:：])\s*$`)
+var replyFrom = regexp.MustCompile(`(?i)^\s*(?:from|发件人)\s*[:：]`)
+var replySent = regexp.MustCompile(`(?i)^\s*(?:sent|date|发送时间|日期)\s*[:：]`)
+
+// beforeReply cuts a reply's quoted message that has no "> " marks: from
+// "-----Original Message-----", "On … wrote:", or an Outlook header block
+// (From: then Sent: or Date:) on.
+func beforeReply(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if replyHeader.MatchString(line) || replyFrom.MatchString(line) && i+1 < len(lines) && replySent.MatchString(lines[i+1]) {
+			return strings.Join(lines[:i], "\n")
+		}
+	}
+	return text
 }
 
 func asciiCodeByte(b byte) bool {

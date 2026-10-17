@@ -27,6 +27,10 @@ func TestSignInCode(t *testing.T) {
 		{"prose", "Your verification code expires in 1000 seconds", "", ""},
 		{"prose word next line", "Your verification code", "\nIMPORTANT: do not share it", ""},
 		{"prose word same line", "Your verification code SECURITY notice", "", ""},
+		{"original message", "RE: login", "Thanks!\n-----Original Message-----\nYour verification code: 123456", ""},
+		{"outlook header", "RE: login", "Thanks!\n\nFrom: Login <login@example.com>\nSent: Friday\nSubject: code\n\nYour verification code: 123456", ""},
+		{"wrote", "Re: login", "Thanks!\n\nOn Fri, Oct 17, 2026 at 10:00 Login wrote:\nYour verification code: 123456", ""},
+		{"sender line kept", "Your verification code", "From: Acme Security\nYour verification code: 123456", "123456"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

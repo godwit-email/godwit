@@ -14,7 +14,7 @@ var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\bmagic link\b
 // sign in", "登录". "Sign in activity" in a security alert is not one.
 var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?\s*[.!]?\s*$|^\s*(?:点击|立即)?(?:登录|登入)(?:到|至)?\s*[A-Za-z0-9 ._-]*$`)
 
-var plainURL = regexp.MustCompile(`https://[^\s<>"'）)]+`)
+var plainURL = regexp.MustCompile(`https://[^\s<>"'）)」】]+`)
 
 // SignInLink recognizes the one sign-in link of a sign-in mail: the subject
 // asks to sign in and exactly one https link says so. Conflicting links are
