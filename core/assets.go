@@ -452,6 +452,7 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 		return fmt.Errorf("plugin asset: %s is not https", f.URL)
 	}
 	part := h.partial(n, f)
+	// shortcut: no free-space check before a GB download; a full disk fails the write and drops the partial file. Check up front if users hit it.
 	if err := os.MkdirAll(filepath.Dir(part), 0o700); err != nil {
 		return err
 	}
