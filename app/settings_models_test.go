@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/stretchr/testify/assert"
@@ -844,6 +845,9 @@ func TestDeriveUsage(t *testing.T) {
 	ts := core.ModelService{ID: 3, Name: "TypeSafe", Slug: "typesafe", JudgeFormat: "systemone", JudgeModel: "jev-latest"}
 	broken := oai
 	broken.Status = map[string]core.CapStatus{core.CapGen: auth, core.CapJudge: auth}
+	lux := []core.PluginModels{{Plugin: "lux", Models: []plugins.ProviderModel{
+		{ID: "chat", Name: "Chat", Transport: "http", Protocol: "openai-completions", BaseURL: "https://api.example.com"},
+		{ID: "j", Name: "Judge", Transport: "plugin", Operation: "judge"}}}}
 	labels := func(o []kit.Option[string]) (l []string) {
 		for _, x := range o {
 			l = append(l, x.Label)
@@ -854,6 +858,7 @@ func TestDeriveUsage(t *testing.T) {
 		name            string
 		st              core.Settings
 		svcs            []core.ModelService
+		plugins         []core.PluginModels
 		gen, judge      line
 		alert           string
 		suggest, off    bool
@@ -886,9 +891,16 @@ func TestDeriveUsage(t *testing.T) {
 		{name: "small and judge name what's gone", st: core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "ghost/y", JudgeService: "ghost"}, svcs: []core.ModelService{ant},
 			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"用 Anthropic / [MODEL D] 回答判断题，约慢 10 倍", lookSlow}, suggest: true,
 			genOpts: []string{"Anthropic / [MODEL D]"}, smalls: []string{"未设置", "与默认模型相同", "Anthropic / [MODEL D]"}, judges: []string{"未设置", "由生成模型兼任（较慢）"}},
+		{name: "plugin models", st: core.Settings{DefaultModel: "plugin/lux/chat", JudgeService: "plugin/lux/j"}, svcs: []core.ModelService{ant}, plugins: lux,
+			gen: line{"lux / Chat", lookNone}, judge: line{"lux / Judge", lookNone},
+			genOpts: []string{"Anthropic / [MODEL D]", "lux / Chat"}, judges: []string{"由生成模型兼任（较慢）", "lux / Judge"}},
+		{name: "plugin stopped", st: core.Settings{DefaultModel: "plugin/lux/chat", SmallModel: "plugin/lux/chat", JudgeService: "plugin/lux/j"}, svcs: []core.ModelService{ant},
+			gen: line{"插件未运行：plugin/lux/chat", lookFail}, judge: line{"插件未运行：plugin/lux/j", lookFail},
+			genOpts: []string{"插件未运行：plugin/lux/chat", "Anthropic / [MODEL D]"}, judges: []string{"插件未运行：plugin/lux/j", "由生成模型兼任（较慢）"},
+			smalls: []string{"插件未运行：plugin/lux/chat", "与默认模型相同", "Anthropic / [MODEL D]"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			u := deriveUsage(c.st, c.svcs)
+			u := deriveUsage(c.st, c.svcs, c.plugins)
 			if u.gen != c.gen || u.judge != c.judge {
 				t.Errorf("lines %+v %+v, want %+v %+v", u.gen, u.judge, c.gen, c.judge)
 			}

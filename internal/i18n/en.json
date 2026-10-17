@@ -1386,6 +1386,14 @@
     }
   },
   "settings_models_default_none": "Not set",
+  "settings_models_plugin_unavailable": "Plugin not running: {arg1}",
+  "@settings_models_plugin_unavailable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_models_default_badge": "Default",
   "settings_models_del_confirm": "Delete “{arg1}”? Skills using it fall back to the default model, and its key is removed from the keychain.",
   "@settings_models_del_confirm": {

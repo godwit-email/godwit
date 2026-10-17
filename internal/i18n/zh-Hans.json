@@ -679,6 +679,7 @@
   "settings_models_confirm_add": "添加",
   "settings_models_default_missing": "未找到的模型：{arg1}",
   "settings_models_default_none": "未设置",
+  "settings_models_plugin_unavailable": "插件未运行：{arg1}",
   "settings_models_default_badge": "默认",
   "settings_models_del_confirm": "删除「{arg1}」？用到它的 skill 会改用默认模型，Key 会从钥匙串移除。",
   "settings_models_del_title": "确认删除",

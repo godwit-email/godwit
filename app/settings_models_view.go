@@ -28,8 +28,8 @@ func (m *modelsView) view(c *ui.Context) {
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
-	if len(m.services) > 0 {
-		u := deriveUsage(m.a.settings, m.services)
+	if len(m.services) > 0 || len(m.plugins) > 0 {
+		u := deriveUsage(m.a.settings, m.services, m.plugins)
 		m.usage(c, u)
 		m.list(c, u)
 	}
