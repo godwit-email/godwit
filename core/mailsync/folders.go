@@ -22,6 +22,8 @@ type folder struct {
 var specialUse = map[imap.MailboxAttr]string{
 	imap.MailboxAttrSent: "sent", imap.MailboxAttrTrash: "trash", imap.MailboxAttrDrafts: "drafts",
 	imap.MailboxAttrJunk: "junk", imap.MailboxAttrArchive: "archive",
+	// Gmail's virtual folders ([Gmail]/All Mail, Starred, Important): the sidebar folds them away.
+	imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged", imap.MailboxAttrImportant: "important",
 }
 
 var roleNames = map[string]string{
@@ -47,6 +49,14 @@ func role(d *imap.ListData) string {
 		name = name[strings.LastIndexByte(name, byte(d.Delim))+1:]
 	}
 	return roleNames[strings.ToLower(name)]
+}
+
+// delim is the folder's hierarchy delimiter, "" when the server has none.
+func delim(d *imap.ListData) string {
+	if d.Delim == 0 {
+		return ""
+	}
+	return string(d.Delim)
 }
 
 func selectable(d *imap.ListData) bool {
@@ -81,9 +91,9 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		}
 		names = append(names, d.Mailbox)
 		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO folders(account_id, name, role, role_since) VALUES (?, ?, ?, unixepoch())
-				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role`,
-			Args: []any{accountID, d.Mailbox, role(d)},
+			SQL: `INSERT INTO folders(account_id, name, role, delim, role_since) VALUES (?, ?, ?, ?, unixepoch())
+				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role, delim = excluded.delim`,
+			Args: []any{accountID, d.Mailbox, role(d), delim(d)},
 		})
 	}
 	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"

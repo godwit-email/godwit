@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"slices"
 	"strconv"
 
 	"github.com/egoist/mygo/ui"
@@ -86,33 +87,33 @@ func withLabels(ctx context.Context, svc *core.Service, items []mailItem) error 
 	return nil
 }
 
-// labelNav is the sidebar's label group: the labels on some mail.
+// labelNav is the sidebar's foldable label group: the labels on some mail.
 func (p *mailPage) labelNav(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	shown := false
-	for _, l := range a.labels {
-		if l.Count == 0 {
-			continue
-		}
-		if !shown {
-			shown = true
-			kit.Text(c, i18n.T("mail.labels"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(1), th.Space(2), th.Space(1), th.Space(2))
-		}
-		v := core.View{LabelID: l.ID}
-		on := a.route.Page == PageMail && a.route.View == v && !p.searched
-		item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
-		item.Children(func() {
-			ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
-			ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
-			if l.Unread > 0 {
-				kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
+	if !slices.ContainsFunc(a.labels, func(l core.Label) bool { return l.Count > 0 }) {
+		return
+	}
+	kit.SidebarCollapsible(c, &p.labelsOpen, true, func() {
+		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
+	}, func() {
+		for _, l := range a.labels {
+			if l.Count == 0 {
+				continue
 			}
-		})
-	}
-	if shown {
-		ui.Box(c).Height(th.Space(2.5))
-	}
+			v := core.View{LabelID: l.ID}
+			on := p.viewShown(v)
+			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
+			item.Children(func() {
+				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
+				if l.Unread > 0 {
+					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
+				}
+			})
+		}
+	})
+	ui.Box(c).Height(th.Space(2))
 }
 
 // goneLabel reports a route to the view of a label that no longer exists.
