@@ -61,6 +61,14 @@ var codeBefore = regexp.MustCompile(`(?i)` + codeToken + `\s+(?:is your|is the)\
 // SignInCode recognizes an explicit code in the subject or unquoted text.
 // Conflicting candidates are left to the reader rather than guessed.
 func SignInCode(subject, text, htmlBody string) string {
+	code := signInCode(subject, text, htmlBody)
+	if code == "" && text != "" && strings.Contains(strings.ToLower(htmlBody), "<img") { // an HTML part may show the code as an image; its text part spells it out
+		code = signInCode(subject, text, "")
+	}
+	return code
+}
+
+func signInCode(subject, text, htmlBody string) string {
 	text, doc := unquoted(text, htmlBody)
 	if htmlBody != "" && doc == nil {
 		return ""

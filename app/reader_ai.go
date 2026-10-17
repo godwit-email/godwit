@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -227,7 +228,11 @@ func (r *reader) loadTags(id int64, force bool) {
 // reloadPluginParts reads the open messages' cards and tags again, as a
 // plugin was switched, installed or removed.
 func (r *reader) reloadPluginParts() {
-	for id := range r.open {
+	ids := maps.Clone(r.open)
+	if m, ok := r.last(); ok {
+		ids[m.ID] = true // its tags follow the subject even while it is folded
+	}
+	for id := range ids {
 		if st := r.ai[id]; st != nil {
 			st.cards.restart()
 			st.tags.restart()

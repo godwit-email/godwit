@@ -60,6 +60,12 @@ func TestSignInCode(t *testing.T) {
 	}
 }
 
+func TestSignInCodeFromTextPartWhenHTMLShowsAnImage(t *testing.T) {
+	if got := mail.SignInCode("Your verification code", "Your verification code: 482913", `<p>Your verification code:</p><img alt="" src="cid:code">`); got != "482913" {
+		t.Fatalf("code from the text part %q", got)
+	}
+}
+
 func TestSignInCodeExcludesHTMLQuotes(t *testing.T) {
 	outlook := `<div>Thanks, it worked.</div><div id="appendonsend"></div><hr><div id="divRplyFwdMsg"><b>From:</b> Login</div><div>Your verification code: 123456</div>`
 	if got := mail.SignInCode("RE: Your verification code", "", outlook); got != "" {
