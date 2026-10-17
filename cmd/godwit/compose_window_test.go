@@ -182,3 +182,10 @@ func TestComposeWindowCascade(t *testing.T) {
 		t.Fatalf("fourth at %+v, want past the first, the last still open", *fourth)
 	}
 }
+
+func TestQuitHookIsNotARelaunch(t *testing.T) {
+	quitHook(&fakeWindows{}, func(*mygo.QuitEvent) {}, func() {})(&mygo.QuitEvent{})
+	if relaunching.Load() {
+		t.Fatal("a plain quit counted as a relaunch")
+	}
+}
