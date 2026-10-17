@@ -25,6 +25,8 @@ func TestSignInCode(t *testing.T) {
 		{"long code first", "1234567890123456 is your verification code", "", ""},
 		{"lowercase otp", "Your OTP is x7Yz09", "", "x7Yz09"},
 		{"prose", "Your verification code expires in 1000 seconds", "", ""},
+		{"prose word next line", "Your verification code", "\nIMPORTANT: do not share it", ""},
+		{"prose word same line", "Your verification code SECURITY notice", "", ""},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

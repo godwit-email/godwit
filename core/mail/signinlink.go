@@ -50,15 +50,22 @@ func SignInLink(subject, text, htmlBody string) string {
 			}
 		})
 	} else {
-		// Plain text has no link labels: a URL on a line that asks to sign in,
-		// or on the line after one.
+		// Plain text has no link labels: the URL must follow a colon on a line
+		// that asks to sign in ("Log in here: https://…"), or come on the line
+		// after one ending in a colon. A caveat ("If you did not sign in,
+		// visit https://…") has none.
 		lines := strings.Split(text, "\n")
+		quoted := func(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
 		for i, line := range lines {
-			if strings.HasPrefix(strings.TrimSpace(line), ">") || !linkSubject.MatchString(line) {
+			if quoted(line) || !linkSubject.MatchString(line) {
 				continue
 			}
-			urls := plainURL.FindAllString(line, -1)
-			if len(urls) == 0 && i+1 < len(lines) {
+			var urls []string
+			if loc := plainURL.FindStringIndex(line); loc != nil {
+				if before := strings.TrimSpace(line[:loc[0]]); strings.HasSuffix(before, ":") || strings.HasSuffix(before, "：") {
+					urls = plainURL.FindAllString(line, -1)
+				}
+			} else if t := strings.TrimSpace(line); (strings.HasSuffix(t, ":") || strings.HasSuffix(t, "：")) && i+1 < len(lines) && !quoted(lines[i+1]) {
 				urls = plainURL.FindAllString(lines[i+1], -1)
 			}
 			for _, u := range urls {

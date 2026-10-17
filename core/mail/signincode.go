@@ -13,6 +13,7 @@ const codeToken = `([0-9]{3}[ \t-][0-9]{3}|[A-Za-z0-9]{4,10})`
 
 var codeHints = regexp.MustCompile(`(?i)` + codeHint)
 var codeAfter = regexp.MustCompile(`(?i)^\s*(?:(?:is|为|是)\s*)?[:：=\s"'「【]*` + codeToken)
+var explicitCode = regexp.MustCompile(`(?i)[:：=]|\bis\b|为|是`)
 var codeBefore = regexp.MustCompile(`(?i)` + codeToken + `\s+(?:is your|is the)\s+` + codeHint)
 
 // SignInCode recognizes an explicit code in the subject or unquoted text.
@@ -33,6 +34,12 @@ func SignInCode(subject, text, htmlBody string) string {
 	var candidates [][2]int
 	for _, hint := range codeHints.FindAllStringIndex(s, -1) {
 		if m := codeAfter.FindStringSubmatchIndex(s[hint[1]:]); m != nil {
+			// A word with no digit is a code only when the same line says so
+			// ("code: XQWERT"); one on the next line is prose ("IMPORTANT").
+			gap, token := s[hint[1]:hint[1]+m[2]], s[hint[1]+m[2]:hint[1]+m[3]]
+			if !strings.ContainsFunc(token, unicode.IsDigit) && (strings.Contains(gap, "\n") || !explicitCode.MatchString(gap)) {
+				continue
+			}
 			candidates = append(candidates, [2]int{hint[1] + m[2], hint[1] + m[3]})
 		}
 	}
