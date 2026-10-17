@@ -10,9 +10,9 @@ import (
 
 var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\bmagic link\b|登录|登入`)
 
-// A button's own words: "Sign in", "Log in to Acme", "Click here to sign in",
-// "登录". "Review sign-in activity" in a security alert is not one.
-var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in\b|magic link\b)|^\s*(?:点击|立即)?(?:登录|登入)`)
+// A button's own words, whole: "Sign in", "Log in to Acme", "Click here to
+// sign in", "登录". "Sign in activity" in a security alert is not one.
+var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?\s*[.!]?\s*$|^\s*(?:点击|立即)?(?:登录|登入)(?:到|至)?\s*[A-Za-z0-9 ._-]*$`)
 
 var plainURL = regexp.MustCompile(`https://[^\s<>"'）)]+`)
 
@@ -62,7 +62,7 @@ func SignInLink(subject, text, htmlBody string) string {
 				urls = plainURL.FindAllString(lines[i+1], -1)
 			}
 			for _, u := range urls {
-				add(u)
+				add(strings.TrimRight(u, ".,;:!?")) // the sentence's punctuation, not the link's
 			}
 		}
 	}
