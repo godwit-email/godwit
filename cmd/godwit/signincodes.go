@@ -214,7 +214,8 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				})
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
-			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}, i18n.T("codes.copy_button"), i18n.T("codes.copied"), i18n.T("codes.retry")).Shrink(0)
+			// Sized for Copy and Copied only, the pair a click swaps: Retry is rare and as wide as Copy in Chinese.
+			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}, i18n.T("codes.copy_button"), i18n.T("codes.copied")).Shrink(0)
 			b.onButton = btn.Hovered()
 			switch {
 			case btn.Hovered() && !b.copied:
