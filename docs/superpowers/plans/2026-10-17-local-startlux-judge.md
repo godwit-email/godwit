@@ -24,11 +24,11 @@
 - **平台与引擎包**（官方包压缩后的大小）：macOS arm64 12 MB、x64 11 MB（Metal）；Linux x64 Vulkan 30 MB、arm64 CPU 13 MB；Windows x64 Vulkan 32 MB、arm64 CPU 12 MB。CUDA 包超过 150 MB，不提供。Vulkan 包没有可用 GPU 时退回 CPU（Task 1 确认）。
 - **模型不随插件发布，是插件的一个配置项**。可选模型列在 registry 的 release 里，由 Godwit 下载：完整性仍由签名 registry 保证，进度、续传、隔离标记由 Godwit 统一处理，plugin-host 不碰网络和数据目录。新增模型 = 插件发一个新版本。
 - **第一版模型变体**（峰值内存 ≈ GGUF + 0.2–0.5 GB）：
-  - `4b-q4`（默认）：GGUF 2.71 GB，峰值 3.3 GB，一致率 92.1%，单封 p50 2.7 s；
-  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9%，单封 p50 0.8 s；给 8 GB 内存的机器用。
+  - `4b-q4`（默认）：GGUF 2.71 GB，峰值 3.3 GB，一致率 92.1%，单封 p50 2.7 s，`minMemoryGB: 8`；
+  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9%，单封 p50 0.8 s，`minMemoryGB: 6`。
   - 每个变体的文件是 GGUF 加它自己的 `decision_config.json`（选项字母的 token id、按题型的温度；2B 与 4B 的不同）。
-  - 安装时的默认变体按机器内存选：小于 12 GB 用 `2b-q8`。
-- **选模型用现有的 `select` 配置项**，加一个 `"asset": "<资产名>"` 属性；选项的 `value` 就是变体 ID。`checkRelease` 交叉校验选项与变体。
+  - **不按内存自动选变体。** 选项声明 `minMemoryGB`，本机物理内存不够就不让装、不让选那一档；默认永远是 manifest 的 `default`（`4b-q4`）。本机一档都跑不了，整个插件不能装，提示缺多少内存。
+- **选模型用现有的 `select` 配置项**，加一个 `"asset": "<资产名>"` 属性；选项的 `value` 就是变体 ID，可选 `minMemoryGB`。`checkRelease` 交叉校验选项与变体。
 - 第一版只支持原生插件提供 `judge`（不加 `ctx.judges.register`）。
 - 空闲退出：manifest 新增可选 `native.idle`（秒，30–3600），插件写 120。空闲退出连带结束 llama-server，内存归零。
 - **阈值不归本计划**：标签阈值由另一个进行中的需求做成可配置。数据显示 StartLux 的最佳阈值在 0.5–0.7、jev 在 0.8 左右，默认阈值应按 judge 分别设，这一点交给那个需求。
@@ -101,7 +101,8 @@ scripts/package.py、smoke.py    同 DLX
 eval/                           #64 的评测脚本（不含邮件）：生产输入、基线、打分
 plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120},"capabilities":["judge"],
                                  "config":[{"key":"model","type":"select","asset":"model","default":"4b-q4",
-                                            "options":[{"value":"4b-q4",…},{"value":"2b-q8",…}],"label":…}]}
+                                            "options":[{"value":"4b-q4","minMemoryGB":8,…},
+                                                       {"value":"2b-q8","minMemoryGB":6,…}],"label":…}]}
 ```
 
 ---
@@ -172,7 +173,7 @@ registry 里 0.1.0 的资产大致是：
 **Interfaces — Produces:**
 - `RegistryRelease.Assets []Asset`；`Asset{Name string; Platforms []string（空=全部）; Variants []AssetVariant}`；`AssetVariant{ID string; Files []AssetFile}`；`AssetFile{Name, URL, SHA256 string; Size int64}`。`checkRelease` 校验：名字与变体 ID 符合 `skills.ValidName`、不重复；文件名单层、跨平台可用、同一变体内不重复；URL https、sha256 小写 64 位、size > 0；每个支持的平台上同名资产恰好一个。
 - 只有一个变体的资产是固定资产；多于一个变体的资产必须被 manifest 里恰好一个带 `asset` 的 `select` 配置项引用，选项值与变体 ID 集合相同、`default` 在其中。
-- 安装时的默认变体：manifest 的 `default`；插件可在 select 选项上声明 `minMemoryGB`，机器内存不够时安装时退到下一个满足的选项，设置页对不满足的选项标「内存可能不足」。
+- **`minMemoryGB`**：select 选项可声明正整数；安装和保存配置时读本机物理内存，不够的变体拒绝（不自动改选别的）。设置页灰掉并写「需要 ≥ N GB 内存」。默认变体本机不够 → 安装确认里必须另选一档够格的，否则不能装。一档都不够 → 整个插件不能装。侧载同样按这个门槛拦。
 - 侧载的插件声明了带 `asset` 的配置项 → 安装时报「只能从插件目录安装」。
 - 存放：`<data>/plugin-assets/<变体摘要>/<文件名>`，摘要 = 该变体文件列表（名字 + sha256，排序后）的 sha256。可执行文件下载后设 0o755；macOS 上不打隔离标记（`net/http` 下载本来就不打）。插件行新列 `assets`（JSON：资产名 → 变体摘要）。
 - 续传暂存：`<data>/plugin-assets/.partial/<文件 sha256>`，与安装用的 `.download-` 临时目录分开，启动时不删；同一 sha256 同时只有一个下载者。续传前重新哈希已有部分；`206` 必须带匹配的 `Content-Range`，收到 `200` 从头写，`416` 删掉重下；超过 size 立刻中止。大文件用无总时限、30 秒无进展即断的超时。暂存超过 7 天、或磁盘剩余不足总大小时清理并报错。
@@ -197,10 +198,10 @@ registry 里 0.1.0 的资产大致是：
   - 吊销：registry 改了某个资产的 sha256 → 已安装的插件被吊销；撤掉整个资产同样。
   - 卸载 → 无引用、无租约的变体目录被删。
   - 加载时校验：改动资产文件的内容但保留 size 与 mtime → 下次进程启动前被发现，插件不启动并提示重新安装；目录里多出一个文件或符号链接 → 同样。
-  - `minMemoryGB`：模拟 8 GB 机器安装 → 默认变体退到 `2b-q8`。
+  - `minMemoryGB`：模拟 8 GB 机器可装默认 `4b-q4`；模拟 7 GB 不能装 `4b-q4`，可改选 `2b-q8` 后装上；模拟 5 GB 一档都不给装；保存配置选不够格的变体被拒、配置不变。
   - 内存：下载 200 MiB 测试资产时堆的峰值增长 < 16 MiB。
 - [ ] **Step 2: 实现** `core/assets.go` 与 `core/registry.go`、`core/extensions.go` 的改动；`fetchRegistryFile` 保持给小文件用。
-- [ ] **Step 3: 设置页**：带 `asset` 的 `select` 在选项旁显示大小、所需内存与「已下载」，保存时显示进度、可取消。
+- [ ] **Step 3: 设置页**：带 `asset` 的 `select` 在选项旁显示大小、所需内存与「已下载」；本机不够的选项灰掉、写「需要 ≥ N GB 内存」；保存时显示进度、可取消。
 - [ ] **Step 4:** `docs/registry/` 模板与审核清单加 `assets`；`cmd/godwit-registry check --fetch` 下载并校验资产。
 
 ### Task 5（主仓库）: 空闲时间与子进程清理
