@@ -79,6 +79,9 @@ const (
 	// plugin: like a hook it gets every declared host without asking each
 	// time (docs/superpowers/specs/2026-10-14-native-plugins-design.md 2.7).
 	KindTranslate InvocationKind = "translate"
+	// KindModels lists, prepares and runs the plugin's models, which the user
+	// picked as a model: every declared host, as for translate.
+	KindModels InvocationKind = "models"
 )
 
 // Invocation is what the host allows one top-level call into a plugin: whether
@@ -126,7 +129,7 @@ func EgressFor(kind InvocationKind, m Manifest, granted, holdsMail, scopeReadMai
 	}
 	readMail := slices.Contains(m.Permissions.Mail, "read")
 	switch kind {
-	case KindHook, KindTranslate:
+	case KindHook, KindTranslate, KindModels:
 	case KindAction, KindTool:
 		needsApproval = readMail || holdsMail || scopeReadMail
 	default: // init, card, beforeSend, and anything unknown
