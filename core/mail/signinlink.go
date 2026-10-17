@@ -62,7 +62,7 @@ func SignInLink(subject, text, htmlBody string) string {
 			}
 			var urls []string
 			if loc := plainURL.FindStringIndex(line); loc != nil {
-				if before := strings.TrimSpace(line[:loc[0]]); strings.HasSuffix(before, ":") || strings.HasSuffix(before, "：") {
+				if before := strings.TrimRight(line[:loc[0]], " \t<\"'(（「【"); strings.HasSuffix(before, ":") || strings.HasSuffix(before, "：") {
 					urls = plainURL.FindAllString(line, -1)
 				}
 			} else if t := strings.TrimSpace(line); (strings.HasSuffix(t, ":") || strings.HasSuffix(t, "：")) && i+1 < len(lines) && !quoted(lines[i+1]) {
