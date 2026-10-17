@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -88,9 +89,20 @@ func ServeNativeWith(args []string, stdin io.Reader, stdout, stderr io.Writer, o
 		line := bytes.Clone(sc.Bytes())
 		wg.Go(func() { write(serveLine(call, line)) })
 	}
-	wg.Wait()
+	// stdin closed: Godwit is done with this process, perhaps gone, so a call
+	// stuck in the library must not keep it (and what it loaded) alive.
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(nativeDrain):
+		fmt.Fprintf(stderr, "plugin-host: a call still running %s after stdin closed; exiting\n", nativeDrain)
+	}
 	return 0
 }
+
+// nativeDrain is how long plugin-host waits for running calls once stdin closes.
+var nativeDrain = 10 * time.Second
 
 // FileSHA256 is the hex SHA-256 of a file's contents.
 func FileSHA256(path string) (string, error) {

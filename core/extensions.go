@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -635,7 +636,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	rp := &runningPlugin{hash: r.sourceHash, row: r}
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
-		Redact: s.secrets.Redact, Idle: nativeIdle,
+		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
 			return setUpNative(ctx, name, r, rp, call)
 		}})

@@ -205,9 +205,9 @@ registry 里 0.1.0 的资产大致是：
 
 推理在 plugin-host 里，没有孙进程要清理；剩下的风险是 Godwit 已经退出、plugin-host 还卡在一次推理里，一直占着几个 GB。
 
-- [ ] `NativeSpec.Idle int`（秒）：0 = 缺省 `nativeIdle`；否则 30–3600，越界报 manifest 错误。`loadNative` 用它设 `NativeOptions.Idle`。
-- [ ] plugin-host 在 stdin 关闭时**先启动一个限时**（10 秒），再等进行中的调用；到时还没完就直接 `os.Exit`。现在 `ServeNative` 在 EOF 后无限期 `wg.Wait()`。
-- [ ] 测试：假库卡在一次调用里，关闭 stdin（模拟 Godwit 退出、不重启）→ plugin-host 在限时内退出；空闲按设定时间退出，下次调用重启、重新 `Verify` 并 `models.load`。
+- [x] `NativeSpec.Idle int`（秒）：0 = 缺省 `nativeIdle`；否则 30–3600，越界报 manifest 错误。`loadNative` 用它设 `NativeOptions.Idle`。
+- [x] plugin-host 在 stdin 关闭后最多再等进行中的调用 10 秒（`nativeDrain`），到时还没完就返回，`main` 随即 `os.Exit`。原来 `ServeNative` 在 EOF 后无限期 `wg.Wait()`。
+- [x] 测试：`TestServeNativeExitsWhenACallHangs`（假库卡在一次调用里、stdin 关闭 → 限时内返回）；`TestParseManifestNative*`（`idle` 解析，29、3601、-1 被拒）。空闲退出后的懒重启沿用现有 `TestNativeReconfiguredAfterRestart`；重启后 `Verify` + `models.load` 随 Task 3 和基础 PR 的接入再测。
 
 ### Task 5: 发布
 
