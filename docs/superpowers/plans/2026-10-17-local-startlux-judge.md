@@ -20,7 +20,7 @@
 
 - **引擎：llama.cpp 官方构建，所有平台统一用 GGUF**，不用 MLX、不用 ORT。实测 4B 8 位：MLX 单封 p50 3.4 s、峰值 7.6 GB；llama.cpp + Metal 是 2.8 s、5.0 GB，准确率相同。
 - **插件内调 `libllama`，不走 `llama-server`。** HTTP 只是 `llama-server` 暴露同一次前向的方式。进程内调用去掉了端口抢占、密钥传递、健康检查、pidfile 和孤儿进程；崩溃隔离不变（`libllama` 崩了只带走 plugin-host，宿主照常重启）。Godwit 主程序仍是 `CGO_ENABLED=0`；cgo 和链接只在插件仓库。官方包本来就带 `libllama` 和 `libggml*`，下载时不要 `llama-server` 等可执行文件。
-- **锁定的推理参数**（评测时 `llama-server` 用的那组，换成库参数）：`n_ctx = n_batch = n_ubatch = 4096`、`n_seq_max = 1`、全部层 offload（`n_gpu_layers = 99`）、每题之前清空 KV（`llama_memory_clear`），不做 prompt 缓存或 context checkpoint。整段 prompt 必须落在一个 ubatch 里：GGUF 自带 `qwen35.attention.causal = false`，全注意力层只有一次算完才看得到整个 prompt。
+- **锁定的推理参数**（评测时 `llama-server` 用的那组，换成库参数）：`n_ctx = n_batch = n_ubatch`，取 1024 / 2048 / 4096 里第一个装得下 prompt 的（见 Task 1「计算缓冲」）、`n_seq_max = 1`、全部层 offload（`n_gpu_layers = 99`）、每题之前清空 KV（`llama_memory_clear`），不做 prompt 缓存或 context checkpoint。整段 prompt 必须落在一个 ubatch 里：GGUF 自带 `qwen35.attention.causal = false`，全注意力层只有一次算完才看得到整个 prompt。
 - **分词用 GGUF 词表**（`llama_tokenize`，`add_special` / `parse_special` 与参考实现的 `/tokenize` 调用一致）。#64 已核实它和 HF tokenizer 在 693 个真实 prompt 上逐 id 相同；插件不带 tokenizer。
 - **读出**：取最后一个位置的 logits，只看 k 个选项字母的 token id（来自 `decision_config.json`，缺任何一个就报错），`p = softmax(logit / T_题型)`。这和参考实现「+100 bias、`post_sampling_probs`、取 log 后除以 T 再 softmax」在数学上等价，但要用 Task 2 的对照测试实证，不能只靠推导。
 - **锁定 llama.cpp 版本并镜像**：官方 Releases 只保留近期版本（b11549 已被撤掉）。选一个版本，把各平台包里的库文件镜像到 dl.godwit.email、固定 sha256（**在签名或改写依赖路径之后**再算）；插件仓库 vendor 同版本的 `llama.h`。升级前必须重跑 Task 2 的对照测试。
@@ -137,7 +137,17 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
   - **CPU 后端是运行时加载的模块**：Linux 包把 CPU 后端拆成 8 个按指令集区分的 `libggml-cpu-armv*.so`，必须先调 `ggml_backend_load_all_from_path(<引擎目录>)`，否则没有后端可用。Windows 包也是这种结构；macOS 包把后端直接链接进来，调用这个函数也无害。Task 2 的 `llama.go` 统一先调它。
   - **要下载的文件**：12 个、约 14 MB（`libllama.so.0`、`libggml.so.0`、`libggml-base.so.0`、`libggml-rpc.so` 加 8 个 CPU 后端）。
   - **纯 CPU 速度与内存**（`n_ctx = n_batch = n_ubatch = 4096`）：0.8B Q8 短 prompt 0.04 s、3401 token 9.5 s，峰值 2.1 GB；2B Q8 3401 token 17.9 s，峰值 2.9 GB。3 GB 内存的虚拟机低于两档的 `minMemoryGB`，4B 没测。
-- [ ] **Windows 分发闸门**：干净机器上开着 Defender 和 Smart App Control，plugin-host 加载下载来的 `llama.dll` / `ggml*.dll` 是否被拦。
+- [x] **Windows 分发闸门（部分）**（2026-10-17，Windows 11 专业版 arm64 虚拟机，6 核、4 GB 内存；`CGO_ENABLED=0` 交叉编译的未签名 Godwit，b11707 `win-cpu-arm64` 官方包）：
+  - **能加载**：Defender 实时保护开着，plugin-host 用 `LoadLibraryEx(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)` 加载下载目录里的 `llama.dll` 正常，没被拦。文件不带「来自网络」标记（和 `net/http` 下载一致）。
+  - **Smart App Control 没测**：这台机器上它是关闭的，而它只能在全新安装的系统上打开。仍需一台开着 SAC 的干净 Windows，并且要用正式签名的 Godwit。
+  - **取后端加载函数要从 `ggml.dll` 取**：Windows 的 `GetProcAddress` 不会顺着依赖查找，`ggml_backend_load_all_from_path` 要用 `GetModuleHandle("ggml.dll")` 取，从 `llama.dll` 取不到。
+  - **要下载的文件**：6 个，约 5.4 MB（`llama.dll`、`ggml.dll`、`ggml-base.dll`、`ggml-cpu.dll`、`ggml-rpc.dll`、`libomp.dll`）。
+  - **4 GB 的虚拟机跑不动 n_ctx 4096**，见下面的「计算缓冲」。速度数字因为内存不足一直在换页，不可信，没记录。
+- [x] **计算缓冲**（三个平台都量过）：llama.cpp 按 `n_ubatch` 预留计算缓冲，大约**每 1K token 1 GB，和模型大小基本无关**。CPU 上 0.8B 是 1K 0.99 GB、2K 1.99 GB、4K 4.2 GB；Metal 上 4B 在 4K 时是 4.07 GB。
+  - macOS 和 Linux 上这块缓冲大多只是预留，没有真正占用：4B Q4 在 4K 时用 `footprint` 量到的是 770 MB 脏页加 2.6 GB 映射的模型，合计约 3.4 GB，和 #64 记录的 3.3 GB 一致。
+  - **Windows 不允许超额提交**，整块缓冲都算已提交内存：4 GB 的虚拟机上，0.8B 开 4K、2B 开 2K 都申请失败（2B 是 `GGML_ASSERT` 直接让进程崩溃）。
+  - **对策：按 prompt 长度选 context 大小**。`n_ctx = n_ubatch` 取 1024 / 2048 / 4096 里第一个装得下这个 prompt 的；需要更大时重建 context，空闲退出时释放。大多数标签题落在 2K 以内，Windows 上提交量就是约 2 GB 而不是 4 GB。整个 prompt 仍在一个 ubatch 里，不影响双向注意力；Task 2 的对照测试要覆盖三档 context，确认概率不受 n_ctx 影响。
+  - **`minMemoryGB` 按平台算**：Windows 上至少要能放下模型加 4K 计算缓冲（2B 约 6.3 GB、4B Q4 约 7 GB）。现在的 8 / 6 在 macOS 和 Linux 上够用，Windows 上 2B 的 6 偏紧，Task 1 用 8 GB 以上的 Windows 实机确认。
 - [ ] **跨平台实测**：Windows x64（有 GPU 和只有 CPU 各一台）、Linux x64（同上）、一台 8 GB 内存的 Mac，用锁定版本跑 `eval/` 的 99 封：每种机器记录 2B 和 4B 的一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
 - [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU；确认 macOS x64 用 Metal 还是 CPU。
@@ -146,7 +156,7 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
 ### Task 2: plugin-startlux 骨架、推理与读出
 
 - [ ] 建仓库（Apache-2.0），复制 DLX 的 `bridge.c`、`protocol.go`、`sdk/godwit_plugin.h`、CI 矩阵（先 darwin-arm64，其他平台随 Task 1 的结论加）。
-- [ ] `llama.go` / `llama.c`：`dlopen` `assets.engine` 目录下的 `libllama`，按 vendored `llama.h` 取函数指针，再调 `ggml_backend_load_all_from_path(<引擎目录>)` 加载后端模块（版本与镜像的库一致，启动时核对 `llama_print_system_info` 或构建号，不一致就拒绝）。第一次 `judge` / `probe` 时装模型、建 context（参数见 Decisions），之后复用；空闲退出时随进程释放。
+- [ ] `llama.go` / `llama.c`：`dlopen` `assets.engine` 目录下的 `libllama`，按 vendored `llama.h` 取函数指针，再调 `ggml_backend_load_all_from_path(<引擎目录>)` 加载后端模块（Windows 上从 `ggml.dll` 取这个函数）；context 按 prompt 长度在 1024 / 2048 / 4096 三档里选（版本与镜像的库一致，启动时核对 `llama_print_system_info` 或构建号，不一致就拒绝）。第一次 `judge` / `probe` 时装模型、建 context（参数见 Decisions），之后复用；空闲退出时随进程释放。
 - [ ] `prompt.go`：照 `startlux_decide/prompt.py` 移植，包括 system 一行、`Evidence / Question / Options` 块、字母编号、noul 的 `yes` / `no`、选项只有 id 时只显示 id、纯字母或数字 id 在全部有描述时隐藏、score 由低到高（等级文字构造与参考实现逐字相同）、最多 26 个选项。对话模板写成常量：`<|im_start|>system\n…<|im_end|>\n<|im_start|>user\n…<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`。
 - [ ] `readout.go`：字母 token id 来自 `decision_config.json`，缺一个就报错；`p = softmax(logit / T)`，T 必须是正的有限数；predicate → noul 映射；choice 平局时保持参考实现的顺序；score 给出**从 0 起算**的期望等级与各级概率。
 - [ ] 长度：先拼空 evidence 的固定部分，超过 4080 token → 输入错误信封；否则截短 evidence（见 Global Constraints）。
