@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -598,9 +600,13 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					if i == 0 {
 						o = kit.ButtonOpts{Variant: kit.Default}
 					}
+					key := fmt.Sprintf("%d/%s/%d", m.ID, card.Plugin, i)
 					label := b.Label
 					if card.Builtin { // core leaves a built-in card's words to the app
 						label = map[string]string{"copy": i18n.T("codes.copy_button"), "open-url": i18n.T("codes.open")}[b.Kind]
+					}
+					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself
+						label, o.Icon = i18n.T("codes.copied"), "check"
 					}
 					if !kit.Button(c, label, o).Clicked() {
 						continue
@@ -608,7 +614,12 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					switch b.Kind {
 					case "copy":
 						c.WriteClipboard(b.Value)
-						r.p.a.toast(i18n.T("reader.ai.copied"))
+						r.copiedCard = key
+						r.p.a.after(1500*time.Millisecond, func() {
+							if r.copiedCard == key {
+								r.copiedCard = ""
+							}
+						})
 					case "open-url":
 						if card.Builtin { // its host is on the card: no second ask
 							a := r.p.a

@@ -29,7 +29,8 @@ import (
 // route names one: older read messages fold to a line, unread ones and the
 // newest open. All its state lives on the UI thread.
 type reader struct {
-	p *mailPage
+	copiedCard string // the card button that just copied (message/plugin/button), shown as Copied for a moment
+	p          *mailPage
 
 	key     [2]int64 // the route's ThreadID and MessageID shown
 	gen     uint64   // bumped per key; older results are dropped
