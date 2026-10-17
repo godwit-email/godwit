@@ -385,10 +385,13 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 					if slices.Contains(p.Capabilities, "translate") { // it gets the mail the user translates, and may send it to its hosts unasked
 						perm("translate", i18n.T("settings.ext.perm.translate"), false)
 					}
+					if slices.Contains(p.Capabilities, "models") {
+						perm("models", i18n.T("settings.ext.perm.models"), false)
+					}
 					if pm.LLM {
 						perm("llm", i18n.T("settings.ext.perm.llm"), false)
 					}
-					if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
+					if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM && !slices.Contains(p.Capabilities, "models") {
 						ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
 					}
 					perm(i18n.T("settings.ext.excluded"), pluginExcluded(pm), true)

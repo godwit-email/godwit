@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -315,4 +316,67 @@ func TestFetchHops(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	assert.Equal(t, []Hop{{api, "error", "cancelled"}}, hops(c, ctx, e.url("api.example.com", "/ok"), ""))
+}
+
+func TestPluginModelEgress(t *testing.T) {
+	e := newNetEnv(t)
+	c := e.client(true)
+	t.Cleanup(c.tr.CloseIdleConnections)
+	req, _ := http.NewRequest("POST", e.url("api.example.com", "/echo"), strings.NewReader(`{}`))
+	req.Header.Set("User-Agent", "zen-free")
+	resp, hops, err := c.DoModel(t.Context(), []string{e.hp("api.example.com")}, req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"user-agent":"zen-free"`)
+	require.Equal(t, "allow", hops[0].Decision)
+	req, _ = http.NewRequest("POST", e.url("api.example.com", "/redirect?to="+e.url("evil.example.com", "/ok")), nil)
+	resp, _, err = c.DoModel(t.Context(), []string{e.hp("api.example.com")}, req)
+	require.NoError(t, err)
+	require.Equal(t, 302, resp.StatusCode)
+	resp.Body.Close()
+	req, _ = http.NewRequest("POST", e.url("evil.example.com", "/ok"), nil)
+	_, hops, err = c.DoModel(t.Context(), []string{e.hp("api.example.com")}, req)
+	require.Error(t, err)
+	require.Equal(t, "deny", hops[0].Decision)
+	e.dns.mu.Lock()
+	e.dns.ips["mixed.example.com"] = []string{"8.8.8.8", "10.0.0.1"}
+	e.dns.mu.Unlock()
+	req, _ = http.NewRequest("POST", e.url("mixed.example.com", "/ok"), nil)
+	_, _, err = c.DoModel(t.Context(), []string{e.hp("mixed.example.com")}, req)
+	require.Error(t, err)
+}
+
+func TestPluginModelStreamBeforeEOF(t *testing.T) {
+	sent := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("first"))
+		w.(http.Flusher).Flush()
+		close(sent)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+	port := strings.Split(srv.Listener.Addr().String(), ":")[1]
+	c := NewClient(NetOptions{AllowHTTP: true, AllowLoopback: true, Resolver: &fakeDNS{ips: map[string][]string{"stream.example.com": {"127.0.0.1"}}}})
+	t.Cleanup(c.tr.CloseIdleConnections)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "POST", "http://stream.example.com:"+port, strings.NewReader(`{}`))
+	resp, _, err := c.DoModel(ctx, []string{"stream.example.com:" + port}, req)
+	require.NoError(t, err)
+	<-sent
+	b := make([]byte, 5)
+	_, err = io.ReadFull(resp.Body, b)
+	require.NoError(t, err)
+	require.Equal(t, "first", string(b))
+	cancel()
+	_, err = io.ReadAll(resp.Body)
+	require.Error(t, err)
+	resp.Body.Close()
 }

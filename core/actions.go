@@ -191,6 +191,10 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		out, err = actionResult(res)
 	}
 	if err != nil {
+		var business *plugins.NativeError
+		if errors.As(err, &business) {
+			return ActionResult{}, s.cleanError(err)
+		}
 		return ActionResult{}, errors.Join(s.cleanError(err), s.pluginFailed(ctx, name, pc.gen))
 	}
 	if err := s.pluginSucceeded(ctx, name, pc.gen); err != nil {

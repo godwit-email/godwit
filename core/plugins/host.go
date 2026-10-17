@@ -94,9 +94,10 @@ type Plugin struct {
 	card    *card
 
 	// ctx.config is read once per call (owner goroutine only).
-	cfgCall    *CallScope
-	cfgVal     goja.Value
-	translator goja.Callable // ctx.translators.register's translate
+	cfgCall                                *CallScope
+	cfgVal                                 goja.Value
+	modelsList, modelsPrepare, modelsJudge goja.Callable
+	translator                             goja.Callable // ctx.translators.register's translate
 }
 
 type tool struct {
@@ -168,6 +169,10 @@ func (p *Plugin) emit(ctx context.Context, inv Invocation, event string, discard
 // call runs f(args...) (plain JSON-like Go data) as one top-level call under
 // inv, awaiting it if it is async; discard drops a non-promise result.
 func (p *Plugin) call(ctx context.Context, inv Invocation, f goja.Callable, discard bool, args ...any) (any, error) {
+	if err := CheckModelReentry(ctx, p.Name); err != nil {
+		return nil, err
+	}
+	ctx = withPluginCall(ctx, p.Name)
 	return p.vm.Call(ctx, inv, func(c *CallScope) (any, error) {
 		vals := make([]goja.Value, len(args))
 		for i, a := range args {
@@ -267,6 +272,9 @@ func Load(ctx context.Context, vm *VM, m Manifest, h Host, cfg *ConfigSnapshot) 
 	if slices.Contains(m.Capabilities, "translate") && p.translator == nil {
 		return nil, fmt.Errorf("plugin %s declares translate but registered no translator", m.Name)
 	}
+	if slices.Contains(m.Capabilities, "models") && p.modelsList == nil {
+		return nil, fmt.Errorf("plugin %s declares models but registered no model provider", m.Name)
+	}
 	return p, nil
 }
 
@@ -280,7 +288,7 @@ func (p *Plugin) need(c *CallScope, perm string) {
 	case permMailWrite:
 		ok = slices.Contains(p.m.Permissions.Mail, "write") && c.Invocation().Write
 	case permLLM:
-		ok = p.m.Permissions.LLM
+		ok = p.m.Permissions.LLM && c.Invocation().Kind != KindInit && !modelInvocation(c.Invocation().Kind)
 	}
 	if !ok {
 		panic(&PermissionError{Perm: perm})
@@ -558,6 +566,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		"actions", object("register", fn("actions.register", p.registerAction)),
 		"cards", object("register", fn("cards.register", p.registerCard)),
 		"tools", object("register", fn("tools.register", p.registerTool)),
+		"models", object("register", fn("models.register", p.registerModels)),
 		"translators", object("register", fn("translators.register", p.registerTranslator)),
 		"mail", mail, "llm", llm, "net", netObj, "storage", storage,
 	)

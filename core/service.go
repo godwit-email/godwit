@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/singleflight"
 	"io/fs"
 	"maps"
 	"net/http"
@@ -110,21 +111,27 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running     map[string]*runningPlugin  // started plugins by name
-	pluginGen   uint64                     // last runningPlugin.gen handed out
-	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
-	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
-	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
-	labelWake   chan struct{}              // wakes the label classifier
-	labelJudge  func(context.Context) (ai.Judge, error)
-	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
-	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
-	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
-	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
-	nativeEnv   []string           // and its whole environment
-	registryMu  sync.Mutex         // registry cache writes; registryErr
-	registryErr string             // why the last registry refresh failed; "" it did not
+	pluginModelsMu     sync.Mutex
+	pluginModels       map[string]modelCatalog
+	modelReleases      map[string][]byte // immutable trusted release JSON by digest
+	pluginModelVersion int64
+	modelRefresh       singleflight.Group
+	assets             modelAssets
+	pluginsMu          sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running            map[string]*runningPlugin  // started plugins by name
+	pluginGen          uint64                     // last runningPlugin.gen handed out
+	hooksMu            sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes          map[chan struct{}]struct{} // each running dispatcher's wake-up
+	labelsMu           sync.Mutex                 // label writes: a name is checked and saved under it
+	labelWake          chan struct{}              // wakes the label classifier
+	labelJudge         func(context.Context) (ai.Judge, error)
+	hookClock          plugins.Clock      // hook backoff and polling; nil is the real clock
+	pluginNet          plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock        plugins.Clock      // plugin VM call limits; nil is the real clock
+	nativeCmd          []string           // a native plugin's process: this executable's plugin-host
+	nativeEnv          []string           // and its whole environment
+	registryMu         sync.Mutex         // registry cache writes; registryErr
+	registryErr        string             // why the last registry refresh failed; "" it did not
 
 	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
 	mcpStMu sync.Mutex          // guards mcpSt
@@ -158,6 +165,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
+	s.assets = newModelAssets(s)
 	s.labelJudge = s.defaultLabelJudge
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}

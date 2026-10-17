@@ -21,6 +21,7 @@ func ParseModelRef(s string) (ModelRef, error) {
 
 // ResolvedModel is a model reference resolved against a stored service.
 type ResolvedModel struct {
+	Provider                     string // manifest.name for plugin providers; empty for manual services
 	ServiceID, Version           int64
 	Kind, BaseURL, Model, APIKey string
 }
@@ -118,10 +119,11 @@ type Event struct {
 // Request is one run. State is the previous run's opaque state (empty = new
 // conversation); Responses answer the calls that interrupted it.
 type Request struct {
-	Model  ResolvedModel
-	System string
-	State  []byte
-	Prompt string
+	Session ModelSession
+	Model   ResolvedModel
+	System  string
+	State   []byte
+	Prompt  string
 	// Context goes to the model before Prompt, in the same user turn, and
 	// stays in the state; Messages never show it (quoted mail, for example).
 	Context   string

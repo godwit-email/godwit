@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +38,7 @@ type Engine struct {
 	client  *http.Client // never follows redirects; Close drops its connections
 
 	mu      sync.Mutex
-	insts   map[int64]*instance
+	insts   map[instanceKey]*instance
 	retired map[*instance]bool // replaced instances still running; Close cancels them too
 	closed  bool
 
@@ -49,7 +50,24 @@ type Engine struct {
 	// Current, if set, returns the service's stored version (an error when it
 	// is gone). A run whose model has another version fails with CodeStale.
 	// Set it before the first Run; it is called holding the engine's lock.
-	Current func(ctx context.Context, serviceID int64) (int64, error)
+	Current   func(ctx context.Context, model ResolvedModel) (int64, error)
+	ClientFor func(ResolvedModel, *http.Client) *http.Client
+}
+
+type instanceKey struct {
+	BaseURL   string
+	Provider  string
+	ServiceID int64
+	Kind      string
+	Version   int64
+}
+
+func modelInstanceKey(m ResolvedModel) instanceKey {
+	key := instanceKey{Provider: m.Provider, ServiceID: m.ServiceID, Kind: m.Kind, Version: m.Version}
+	if m.Provider != "" {
+		key.BaseURL = m.BaseURL
+	}
+	return key
 }
 
 type instance struct {
@@ -95,7 +113,7 @@ func NewEngine(l *slog.Logger, secrets func() []string) (*Engine, error) {
 	e := &Engine{
 		secrets: secrets,
 		client:  &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: NoRedirectClient.CheckRedirect},
-		insts:   map[int64]*instance{},
+		insts:   map[instanceKey]*instance{},
 		keys:    map[string]bool{},
 	}
 	e.log = slog.New(&redactor{l.Handler(), e.allSecrets})
@@ -123,12 +141,32 @@ func (e *Engine) logCtx(ctx context.Context) context.Context { return logger.Wit
 func (e *Engine) Forget(serviceID int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if in := e.insts[serviceID]; in != nil {
-		in.cancel(errStale)
-		delete(e.insts, serviceID)
+	for key, in := range e.insts {
+		if key.Provider == "" && key.ServiceID == serviceID {
+			in.cancel(errStale)
+			delete(e.insts, key)
+		}
 	}
 	for in := range e.retired { // its runs on an older key are stale too
-		if in.cfg.ServiceID == serviceID {
+		if in.cfg.Provider == "" && in.cfg.ServiceID == serviceID {
+			in.cancel(errStale)
+			delete(e.retired, in)
+		}
+	}
+}
+
+// ForgetProvider stops all protocols and versions of a plugin provider.
+func (e *Engine) ForgetProvider(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for key, in := range e.insts {
+		if key.Provider == name {
+			in.cancel(errStale)
+			delete(e.insts, key)
+		}
+	}
+	for in := range e.retired {
+		if in.cfg.Provider == name {
 			in.cancel(errStale)
 			delete(e.retired, in)
 		}
@@ -162,11 +200,18 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	// Checked under the lock: a service changed after this check is
 	// Forgotten after it too, which ends the run through the instance.
 	if e.Current != nil {
-		if v, err := e.Current(ctx, m.ServiceID); err != nil || v != m.Version {
+		if v, err := e.Current(ctx, m); err != nil || v != m.Version {
 			return nil, errStale
 		}
 	}
-	if in := e.insts[m.ServiceID]; in != nil {
+	key := modelInstanceKey(m)
+	for old, in := range e.insts {
+		if old.Provider == key.Provider && old.ServiceID == key.ServiceID && old.Kind == key.Kind && old.Version != key.Version {
+			in.cancel(errStale)
+			delete(e.insts, old)
+		}
+	}
+	if in := e.insts[key]; in != nil {
 		if in.cfg == cfg {
 			in.runs++
 			return in, nil
@@ -183,7 +228,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 			}
 			e.retired[in] = true
 		}
-		delete(e.insts, m.ServiceID)
+		delete(e.insts, key)
 	}
 	if api.CurrentEnvironment() == api.EnvironmentDev {
 		return nil, errors.New("ai: refusing to run with GENKIT_ENV=dev")
@@ -192,21 +237,25 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	// (openai-go and anthropic-sdk-go WithBaseURL drop RawPath): given one,
 	// they keep it as it is, so "%2F" reaches the service as previewed.
 	base := m.BaseURL + "/" // normalized: it never ends in "/"
+	client := e.client
+	if e.ClientFor != nil {
+		client = e.ClientFor(m, client)
+	}
 	var plugin api.Plugin
 	switch m.Kind {
 	case "openai":
 		// compat_oai clears the identity the SDK reads from the environment.
 		plugin = &compat_oai.OpenAICompatible{Provider: "godwit", APIKey: m.APIKey, BaseURL: base,
-			Opts: []oai.RequestOption{oai.WithHTTPClient(e.client)}}
+			Opts: []oai.RequestOption{oai.WithHTTPClient(client)}}
 	case "anthropic":
 		// The SDK also reads ANTHROPIC_AUTH_TOKEN and sends it as Authorization.
-		key, opts := m.APIKey, []ant.RequestOption{ant.WithHTTPClient(e.client), ant.WithHeaderDel("Authorization")}
+		key, opts := m.APIKey, []ant.RequestOption{ant.WithHTTPClient(client), ant.WithHeaderDel("Authorization")}
 		if key == "" { // a local gateway: no auth at all
 			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
 		}
 		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: AnthropicBase(m.BaseURL) + "/", Opts: opts}
 	case KindResponses:
-		plugin = newResponsesPlugin(base, m.APIKey, e.client)
+		plugin = newResponsesPlugin(base, m.APIKey, client)
 	default:
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}
@@ -226,7 +275,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	g := genkit.Init(ictx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
 	e.inits.Add(1)
 	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel, runs: 1}
-	e.insts[m.ServiceID] = in
+	e.insts[key] = in
 	return in, nil
 }
 
@@ -234,6 +283,14 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 // error; wait returns the Result once the run has ended, even if nobody reads
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
+	session := req.Session
+	if session.ID == "" {
+		session = ModelSessionFromContext(ctx)
+	}
+	if session.ID == "" {
+		session = ModelSession{ID: rand.Text(), CreatedAt: time.Now().UnixMilli()}
+	}
+	ctx = WithModelSession(ctx, session)
 	// One slot more than the events use: the terminal event always fits.
 	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey}
 	done := make(chan struct{})
@@ -345,7 +402,7 @@ func (r *runner) run(req Request) Result {
 		tools[s.Name] = r.tool(s)
 		refs = append(refs, tools[s.Name])
 	}
-	opts := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r})}
+	opts := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r: r, tools: seen})}
 	if len(refs) > 0 {
 		opts = append(opts, gai.WithTools(refs...))
 	}
@@ -432,7 +489,10 @@ func CallID(ctx context.Context) string {
 // callIDs hands each tool call's ID to the tool function through its context,
 // and turns arguments that fail the tool's schema into an error result for the
 // model, which can then retry, instead of a failed run.
-type callIDs struct{ r *runner }
+type callIDs struct {
+	r     *runner
+	tools map[string]bool
+}
 
 func (callIDs) Name() string { return "godwit_call_ids" }
 
@@ -456,6 +516,9 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 			if err == nil && resp.Message != nil {
 				seen := map[string]bool{}
 				for _, part := range resp.Message.Content {
+					if part != nil && part.IsToolRequest() && part.ToolRequest != nil && !c.tools[part.ToolRequest.Name] {
+						return nil, errUnknownTool
+					}
 					if part != nil && part.IsToolRequest() && part.ToolRequest != nil && part.ToolRequest.Ref != "" {
 						if seen[part.ToolRequest.Ref] {
 							return nil, errDuplicateCallID
@@ -468,6 +531,8 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 		},
 	}, nil
 }
+
+var errUnknownTool = errors.New("ai: the model requested an undeclared tool")
 
 var errDuplicateCallID = errors.New("ai: the model repeated a tool call ID")
 
@@ -721,6 +786,9 @@ func display(msgs []*gai.Message) []Message {
 // classify turns a Genkit error into an Error whose message never carries the
 // key or a request or response body.
 func classify(ctx context.Context, err error) *Error {
+	if errors.Is(err, errUnknownTool) {
+		return &Error{Code: CodeBadResponse, Msg: "the model requested an undeclared tool"}
+	}
 	if errors.Is(err, errDuplicateCallID) {
 		return &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}
 	}

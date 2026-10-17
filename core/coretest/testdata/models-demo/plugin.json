@@ -1,0 +1,1 @@
+{"name":"models-demo","version":"0.1.0","main":"index.ts","capabilities":["models"],"permissions":{"net":["models.godwit.test"]}}

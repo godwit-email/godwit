@@ -41,6 +41,12 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			Source          string          `json:"source"`
 			WrongCount      bool            `json:"translateWrongCount"`
 			TranslateError  string          `json:"translateError"`
+			Models          json.RawMessage `json:"models"`
+			ModelsAfterList json.RawMessage `json:"modelsAfterList"`
+			ModelAnswers    json.RawMessage `json:"modelAnswers"`
+			ModelError      string          `json:"modelError"`
+			ModelsSleepMs   int             `json:"modelsSleepMs"`
+			ModelLoadFailAt map[string]int  `json:"modelLoadFailAt"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
@@ -60,6 +66,8 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			b, _ := json.Marshal(map[string]any{"ok": true, "result": v})
 			return b
 		}
+		loadCalls := map[string]int{}
+		listCalls := 0
 		return func(method string, req []byte) ([]byte, error) {
 			switch method {
 			case "describe":
@@ -79,6 +87,57 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 					}
 				}
 				return ok(struct{}{}), nil
+			case "models.list", "models.prepare", "models.load", "models.judge":
+				if spec.Record != "" {
+					f, err := os.OpenFile(spec.Record+"."+method, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+					if err != nil {
+						return nil, err
+					}
+					_, err = f.Write(append(append([]byte{}, req...), '\n'))
+					cerr := f.Close()
+					if err != nil || cerr != nil {
+						return nil, errors.Join(err, cerr)
+					}
+				}
+				if method == "models.load" {
+					var r ModelLoadRequest
+					json.Unmarshal(req, &r)
+					loadCalls[r.ModelID]++
+					if at := spec.ModelLoadFailAt[r.ModelID]; at > 0 && loadCalls[r.ModelID] >= at {
+						return []byte(`{"ok":false,"error":{"code":"model_unavailable","message":"load failed","retryable":true}}`), nil
+					}
+				}
+				time.Sleep(time.Duration(spec.ModelsSleepMs) * time.Millisecond)
+				if spec.ModelError != "" {
+					b, _ := json.Marshal(map[string]any{"ok": false, "error": NativeError{Code: spec.ModelError, Message: "model unavailable", Retryable: true}})
+					return b, nil
+				}
+				switch method {
+				case "models.list":
+					models := spec.Models
+					listCalls++
+					if listCalls > 1 && spec.ModelsAfterList != nil {
+						models = spec.ModelsAfterList
+					}
+					if models == nil {
+						models = json.RawMessage(`[]`)
+					}
+					return ok(map[string]any{"models": models}), nil
+				case "models.prepare":
+					var r PrepareModelRequest
+					if err := json.Unmarshal(req, &r); err != nil {
+						return nil, err
+					}
+					return ok(r.Request), nil
+				case "models.judge":
+					answers := spec.ModelAnswers
+					if answers == nil {
+						answers = json.RawMessage(`[]`)
+					}
+					return ok(map[string]any{"answers": answers}), nil
+				default:
+					return ok(struct{}{}), nil
+				}
 			case "translate":
 				if spec.Record != "" {
 					f, err := os.OpenFile(spec.Record+".translate", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)

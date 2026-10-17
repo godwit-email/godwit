@@ -322,4 +322,16 @@ var Migrations = [][]string{{
 	// The hierarchy delimiter LIST gives a folder's name ('' when flat), which
 	// the sidebar splits user folders on into a tree.
 	`ALTER TABLE folders ADD COLUMN delim TEXT NOT NULL DEFAULT ''`,
+}, {
+	`CREATE TABLE plugin_model_providers (plugin TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE)`,
+}, {
+	`ALTER TABLE conversations ADD COLUMN model_session_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE conversations ADD COLUMN model_session_created_at INTEGER NOT NULL DEFAULT 0`,
+}, {
+	`UPDATE settings SET value = json_remove(
+   CASE WHEN coalesce(json_extract(value, '$.JudgeModel'), '') != '' THEN value
+   ELSE json_set(value, '$.JudgeModel',
+     CASE WHEN coalesce(json_extract(value, '$.JudgeService'), '') = '' THEN ''
+     ELSE json_extract(value, '$.JudgeService') || '/' || coalesce((SELECT judge_model FROM model_services WHERE slug = json_extract(value, '$.JudgeService')), '') END)
+   END, '$.JudgeService') WHERE key = 'app'`,
 }}

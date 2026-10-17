@@ -42,6 +42,8 @@ var sentinels = []struct {
 	{"ai_not_configured", core.ErrAINotConfigured},
 	{"model_service_not_found", core.ErrModelServiceNotFound},
 	{"model_not_found", core.ErrModelNotFound},
+	{"judge_unavailable", ai.ErrJudgeUnavailable},
+	{"judge_plugin", ai.ErrJudgePlugin},
 	{"model_auth", core.ErrModelAuth},
 	{"model_login", core.ErrModelLogin},
 	{"model_reauth", core.ErrModelReauth},
@@ -73,6 +75,17 @@ var sentinels = []struct {
 // canceled stays an *ai.Error) and sentinels.
 func NewCodec() *rpc.Codec {
 	c := &rpc.Codec{}
+	type modelDetail struct {
+		Code, Message string
+		Retryable     bool
+	}
+	rpc.RegisterType(c, "model_error", func(e *core.ModelError) any { return modelDetail{e.Code, e.Message, e.Retryable} }, func(raw json.RawMessage) (*core.ModelError, error) {
+		d, err := rpc.DecodeDetail[modelDetail](raw)
+		if err != nil {
+			return nil, err
+		}
+		return &core.ModelError{Code: d.Code, Message: d.Message, Retryable: d.Retryable}, nil
+	})
 	// The first failing step's error (Unwrap) stays on the server; only the
 	// sentinel it is crosses, as the cause.
 	rpc.RegisterType(c, "check_failed",

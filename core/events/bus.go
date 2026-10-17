@@ -14,6 +14,7 @@ const (
 	SettingsChanged  = "settings.changed"
 	ApprovalsChanged = "approvals.changed"
 	PluginsChanged   = "plugins.changed"
+	ModelsChanged    = "models.changed"
 	MCPChanged       = "mcp.changed"
 	LabelsChanged    = "labels.changed"
 )

@@ -301,3 +301,24 @@ func TestNativeCanceledCallKeepsSlot(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, time.Since(start), 300*time.Millisecond, "the four abandoned calls still hold the slots")
 }
+
+func TestNativeSessionGeneration(t *testing.T) {
+	lib, sha := fakeLib(t, map[string]any{})
+	n := newFake(t, lib, sha, 0, nil)
+	var first uint64
+	var done <-chan struct{}
+	err := n.WithProcess(t.Context(), func(s NativeSession) error {
+		first = s.Generation
+		done = s.Done
+		_, err := s.Call(t.Context(), "describe", struct{}{})
+		return err
+	})
+	require.NoError(t, err)
+	require.Positive(t, first)
+	err = n.WithProcess(t.Context(), func(s NativeSession) error { require.Equal(t, first, s.Generation); return nil })
+	require.NoError(t, err)
+	n.StopGeneration(first)
+	<-done
+	err = n.WithProcess(t.Context(), func(s NativeSession) error { require.Greater(t, s.Generation, first); return nil })
+	require.NoError(t, err)
+}

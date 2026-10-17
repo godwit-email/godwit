@@ -1,6 +1,11 @@
 import type { Card, Ctx, MailMessage } from "@godwit/sdk"
 
 export default function (ctx: Ctx) {
+  ctx.models.register({
+    listModels: () => ({ models: [{ id: "demo", name: "Demo", transport: "http", protocol: "openai-responses", baseURL: "https://example.com/v1" }] }),
+    prepareRequest: (call) => call.request,
+    judge: (call) => ({ answers: call.questions.map(q => ({ name: q.name, type: "predicate", probability: 0.5 })) }),
+  })
   ctx.on("message.received", async (msg, info) => {
     await ctx.storage.set(info.idempotencyKey, String(msg.id))
   })

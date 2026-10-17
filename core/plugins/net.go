@@ -341,3 +341,32 @@ func (c *Client) fail(ctx, tctx context.Context, err error) error {
 	}
 	return fmt.Errorf("fetch failed: %w", err)
 }
+
+// DoModel returns a policy-checked stream. The protocol caller owns its budget
+// and closes the body; redirects are returned to it without being followed.
+func (c *Client) DoModel(ctx context.Context, allowed []string, req *http.Request) (*http.Response, []Hop, error) {
+	dest, err := c.check(req.URL, allowed)
+	hop := Hop{Dest: dest, Decision: "deny"}
+	if err != nil {
+		var ne *NetError
+		if errors.As(err, &ne) {
+			hop.Reason = ne.Reason
+		}
+		return nil, []Hop{hop}, err
+	}
+	resp, err := c.tr.RoundTrip(req.Clone(ctx))
+	hop.Decision = "allow"
+	if err != nil {
+		hop.Decision = "error"
+		hop.Reason = FailReason(err)
+		if ctx.Err() != nil {
+			hop.Reason = "cancelled"
+		}
+		var ne *NetError
+		if errors.As(err, &ne) {
+			hop.Decision = "deny"
+			hop.Reason = ne.Reason
+		}
+	}
+	return resp, []Hop{hop}, err
+}

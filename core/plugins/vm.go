@@ -264,6 +264,9 @@ func (v *VM) exec(c *CallScope, fn func(c *CallScope) (any, error)) (res any, er
 			}
 		}
 		if p.State() == goja.PromiseStateRejected {
+			if e := v.modelBusinessError(p.Result()); e != nil {
+				return nil, e
+			}
 			return nil, fmt.Errorf("plugin %s: %s", v.name, v.clean(v.safeString(p.Result())))
 		}
 		val = p.Result()
@@ -407,6 +410,9 @@ func (v *VM) scriptError(err error) error {
 	case errors.As(err, &so):
 		return fmt.Errorf("plugin %s: call stack exceeded", v.name)
 	case errors.As(err, &exc):
+		if e := v.modelBusinessError(exc.Value()); e != nil {
+			return e
+		}
 		return fmt.Errorf("plugin %s: %s", v.name, v.clean(v.safeString(exc.Value())))
 	}
 	return fmt.Errorf("plugin %s: %s", v.name, v.clean(err.Error()))
@@ -496,6 +502,9 @@ func (v *VM) thrown(name string, r any) any {
 	}
 	switch r := r.(type) {
 	case *goja.Object:
+		if e := v.modelBusinessError(r); e != nil {
+			return v.errorValue(e)
+		}
 		msg := v.clean(v.safeString(r.Get("message")))
 		if v.safeString(r.Get("name")) == "TypeError" {
 			return v.rt.NewTypeError("%s", msg)
@@ -505,6 +514,10 @@ func (v *VM) thrown(name string, r any) any {
 		return v.jsError(v.clean(v.safeString(r)))
 	case runtime.Error:
 	case error:
+		var e *NativeError
+		if errors.As(r, &e) && modelBusinessCode(e.Code) {
+			return v.errorValue(e)
+		}
 		return v.jsError(name + ": " + v.clean(r.Error()))
 	}
 	return v.jsError(name + ": internal error")
@@ -542,7 +555,7 @@ func (c *CallScope) Async(fn func(ctx context.Context) (any, error)) goja.Value 
 		j := job{id: c.id, f: func() {
 			// Errors here are interrupts; the pump sees the ended context next.
 			if err != nil {
-				_ = reject(v.jsError(v.clean(err.Error())))
+				_ = reject(v.errorValue(err))
 			} else {
 				_ = resolve(v.rt.ToValue(res))
 			}
@@ -553,4 +566,17 @@ func (c *CallScope) Async(fn func(ctx context.Context) (any, error)) goja.Value 
 		}
 	}()
 	return v.rt.ToValue(p)
+}
+
+func (v *VM) errorValue(err error) goja.Value {
+	var e *NativeError
+	if errors.As(err, &e) && modelBusinessCode(e.Code) {
+		o := v.rt.NewObject()
+		_ = o.Set("code", e.Code)
+		message, _ := cut(v.clean(e.Message), 1024)
+		_ = o.Set("message", message)
+		_ = o.Set("retryable", e.Retryable)
+		return o
+	}
+	return v.jsError(v.clean(err.Error()))
 }

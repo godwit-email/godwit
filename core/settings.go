@@ -30,9 +30,8 @@ type Settings struct {
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).
 	Translator string
-	// JudgeService is the slug of the service whose judge answers typed
-	// questions; "" (or one gone or with judge off): the DefaultModel does.
-	JudgeService string
+	// JudgeModel names a model as provider/model; empty uses DefaultModel.
+	JudgeModel string
 	// JudgeThreshold is the minimum predicate probability treated as yes by
 	// app features, from MinJudgeThreshold to MaxJudgeThreshold. Raw judge
 	// answers keep their probabilities.
@@ -110,9 +109,6 @@ func (st Settings) validate() error {
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
 	}
-	if strings.Contains(st.JudgeService, "/") {
-		return fmt.Errorf("invalid judge service %q", st.JudgeService)
-	}
 	for _, r := range []string{st.DefaultModel, st.SmallModel} {
 		if _, err := ai.ParseModelRef(r); r != "" && err != nil {
 			return err
@@ -172,11 +168,28 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err := st.validate(); err != nil {
 		return Settings{}, err
 	}
+	previous, err := s.loadSettings(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	if st.JudgeModel != previous.JudgeModel && st.JudgeModel != "" {
+		if _, err := ai.ParseModelRef(st.JudgeModel); err != nil {
+			return Settings{}, err
+		}
+		if _, candidate, err := s.pluginModel(ctx, st.JudgeModel); err == nil && candidate.Assets != nil {
+			return Settings{}, &ModelError{Code: "model_not_ready", Message: "Prepare the model before selecting it"}
+		}
+	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
 	stored, err := s.loadSettings(ctx)
 	if err != nil {
 		return Settings{}, err
+	}
+	if st.JudgeModel != stored.JudgeModel && st.JudgeModel != "" {
+		if _, err := ai.ParseModelRef(st.JudgeModel); err != nil {
+			return Settings{}, err
+		}
 	}
 	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust
 	st.DisabledBuiltins = stored.DisabledBuiltins       // nor a plugin switch
