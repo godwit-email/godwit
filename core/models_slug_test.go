@@ -309,7 +309,7 @@ func TestAliasesCapturedOnUpgradeOnce(t *testing.T) {
 // references to it follow: "plugin/…" now names plugin models.
 func TestBackfillReservedPluginSlug(t *testing.T) {
 	s := modelSvc(t)
-	legacyService(t, s, 1, "Plugin", "m1")
+	legacyService(t, s, 1, "Plugin", "m1", "meta/model")
 	_, err := s.db.Execute(t.Context(), "UPDATE model_services SET slug = 'plugin' WHERE id = 1")
 	require.NoError(t, err)
 	setRawSettings(t, s, `{"DefaultModel":"plugin/m1","SmallModel":"plugin/m1","JudgeService":"plugin"}`)
@@ -318,7 +318,9 @@ func TestBackfillReservedPluginSlug(t *testing.T) {
 	st, err := s.loadSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"plugin-2/m1", "plugin-2/m1", "plugin-2"}, []string{st.DefaultModel, st.SmallModel, st.JudgeService})
-	r, err := s.resolveModel(t.Context(), "plugin/m1") // as a skill file may still say
-	require.NoError(t, err)
-	assert.EqualValues(t, 1, r.ServiceID)
+	for _, ref := range []string{"plugin/m1", "plugin/meta/model"} { // as skill files may still say
+		r, err := s.resolveModel(t.Context(), ref)
+		require.NoError(t, err, ref)
+		assert.EqualValues(t, 1, r.ServiceID, ref)
+	}
 }

@@ -58,7 +58,7 @@ func (s *Service) ListPluginModels(ctx context.Context) ([]PluginModels, error) 
 	s.pluginsMu.RUnlock()
 	var out []PluginModels
 	for name, rp := range rps {
-		ms, err := s.pluginModels(ctx, name, rp)
+		ms, _, err := s.pluginModels(ctx, name, rp)
 		pm := PluginModels{Plugin: name, Models: ms}
 		if err != nil {
 			pm.Err = s.cleanError(err).Error()
@@ -78,10 +78,11 @@ func (rp *runningPlugin) cfgKey() any {
 }
 
 // pluginModels is rp's model list, listed again after a settings change.
-func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlugin) ([]plugins.ProviderModel, error) {
+// cfg is the settings snapshot the list belongs to.
+func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlugin) (_ []plugins.ProviderModel, cfg any, _ error) {
 	key := rp.cfgKey()
 	if c := rp.models.Load(); c != nil && c.cfg == key {
-		return c.models, nil
+		return c.models, key, nil
 	}
 	var res plugins.ModelsResult
 	err := s.callModelPlugin(ctx, name, rp, func(ctx context.Context) error {
@@ -101,10 +102,10 @@ func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlug
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rp.models.Store(&modelCatalog{key, res.Models})
-	return res.Models, nil
+	return res.Models, key, nil
 }
 
 // modelInvocation admits a script plugin's models call, as a translation is admitted.
@@ -114,23 +115,25 @@ func (s *Service) modelInvocation(rp *runningPlugin) plugins.Invocation {
 	return plugins.Invocation{ID: "models:" + rand.Text(), Kind: plugins.KindModels, EgressHosts: hosts, Config: rp.host.snapshot()}
 }
 
-// pluginModel is the model ref ("plugin/<name>/<model id>") names, and its plugin.
-func (s *Service) pluginModel(ctx context.Context, ref string) (string, *runningPlugin, plugins.ProviderModel, error) {
+// pluginModel is the model ref ("plugin/<name>/<model id>") names, its
+// plugin, and the settings snapshot its listing belongs to: a client or judge
+// made from it refuses once the plugin's settings are other.
+func (s *Service) pluginModel(ctx context.Context, ref string) (string, *runningPlugin, plugins.ProviderModel, any, error) {
 	name, id, _ := strings.Cut(strings.TrimPrefix(ref, translatorPrefix), "/")
 	s.pluginsMu.RLock()
 	rp := s.running[name]
 	s.pluginsMu.RUnlock()
 	if rp == nil || !slices.Contains(rp.row.m.Capabilities, "models") {
-		return "", nil, plugins.ProviderModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
 	}
-	ms, err := s.pluginModels(ctx, name, rp)
+	ms, cfg, err := s.pluginModels(ctx, name, rp)
 	if err != nil {
-		return "", nil, plugins.ProviderModel{}, errors.Join(fmt.Errorf("%w: %s", ErrModelUnavailable, ref), err)
+		return "", nil, plugins.ProviderModel{}, nil, errors.Join(fmt.Errorf("%w: %s", ErrModelUnavailable, ref), err)
 	}
 	if i := slices.IndexFunc(ms, func(m plugins.ProviderModel) bool { return m.ID == id }); i >= 0 {
-		return name, rp, ms[i], nil
+		return name, rp, ms[i], cfg, nil
 	}
-	return "", nil, plugins.ProviderModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
 }
 
 // isPluginRef reports whether ref is a well-formed "plugin/<name>/<model id>".
@@ -145,7 +148,7 @@ var protocolKinds = map[string]string{"openai-completions": ai.KindOpenAI, "open
 
 // resolvePluginModel resolves a plugin generation model's ref for the engine.
 func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.ResolvedModel, error) {
-	name, rp, m, err := s.pluginModel(ctx, ref)
+	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
 	if err != nil {
 		return ai.ResolvedModel{}, err
 	}
@@ -160,7 +163,7 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 	h := fnv.New64a()
 	fmt.Fprint(h, rp.hash, "\x00", store.Int(rows.Values[0][0]))
 	return ai.ResolvedModel{ServiceID: pluginServiceID(ref), Version: int64(h.Sum64() >> 1), Kind: protocolKinds[m.Protocol], BaseURL: strings.TrimRight(m.BaseURL, "/"),
-		Model: m.ID, Client: s.pluginModelClient(name, rp, m.ID)}, nil
+		Model: m.ID, Client: s.pluginModelClient(name, rp, m.ID, cfg)}, nil
 }
 
 // pluginServiceID is a plugin model's engine ServiceID: negative, a hash of
@@ -186,7 +189,7 @@ var judgeFormats = map[string]ai.JudgeFormat{"typesafe-systemone": ai.FormatSyst
 
 // pluginJudge is the judge a plugin judge model's ref names.
 func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error) {
-	name, rp, m, err := s.pluginModel(ctx, ref)
+	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -194,16 +197,15 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		return nil, fmt.Errorf("%w: %s is not a judge model", ErrModelNotFound, ref)
 	}
 	if m.Transport == "plugin" {
-		return pluginModelJudge{s, name, rp, m, rp.cfgKey()}, nil
+		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
-	return ai.NewJudge(s.pluginModelClient(name, rp, m.ID), judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	return ai.NewJudge(s.pluginModelClient(name, rp, m.ID, cfg), judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 }
 
 // pluginModelClient is the client of rp's model id: one per instance, model
 // and settings snapshot, so the engine rebuilds its Genkit instance for a
 // restarted or reconfigured plugin.
-func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string) *http.Client {
-	cfg := rp.cfgKey()
+func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string, cfg any) *http.Client {
 	if c, ok := rp.clients.Load(id); ok && c.(*http.Client).Transport.(*pluginModelTransport).cfg == cfg {
 		return c.(*http.Client)
 	}
@@ -315,20 +317,25 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
 	}
+	var u *url.URL
 	err := t.s.callModelPlugin(ctx, t.name, t.rp, func(ctx context.Context) error {
+		var err error
 		if t.rp.native != nil {
-			v, err := t.rp.native.Call(ctx, "models.prepare", in)
-			return decodeAnswer(v, err, &res, "models.prepare")
+			v, cerr := t.rp.native.Call(ctx, "models.prepare", in)
+			err = decodeAnswer(v, cerr, &res, "models.prepare")
+		} else {
+			v, cerr := t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp), in)
+			err = decodeAnswer(v, cerr, &res, "prepareRequest")
 		}
-		v, err := t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp), in)
-		return decodeAnswer(v, err, &res, "prepareRequest")
+		if err == nil {
+			if u, err = url.Parse(res.URL); err != nil || u.Host == "" { // a wrong answer: it counts
+				err = fmt.Errorf("%w: prepareRequest returned no valid url", errPluginAnswer)
+			}
+		}
+		return err
 	})
 	if err != nil {
 		return nil, err
-	}
-	u, err := url.Parse(res.URL)
-	if err != nil || u.Host == "" {
-		return nil, fmt.Errorf("%w: prepareRequest returned no valid url", errPluginAnswer)
 	}
 	out, err := http.NewRequestWithContext(ctx, req.Method, u.String(), bytes.NewReader([]byte(res.Body)))
 	if err != nil {

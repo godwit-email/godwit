@@ -368,3 +368,39 @@ func TestPluginModelRequestAuditedOutcome(t *testing.T) {
 	require.NotEmpty(t, rows.Values)
 	assert.Equal(t, []any{host, "deny", "private_address"}, rows.Values[0])
 }
+
+func TestPluginPrepareBadURLCounts(t *testing.T) {
+	s := newMailContextService(t)
+	srv, host := modelServer(t, s, "openai")
+	srv.Script(testllm.Turn{Text: []string{"never"}})
+	startModelPlugin(t, s, "p", host, fmt.Sprintf(`export default function (ctx: any) {
+  ctx.models.register({
+    listModels: () => ({ models: [{ id: "m1", name: "M1", transport: "http", protocol: "openai-completions", baseURL: "https://%s" }] }),
+    prepareRequest: (req: any) => ({ url: "", headers: req.headers, body: req.body }),
+  })
+}`, host))
+	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
+	require.NoError(t, err)
+	e, err := s.aiEngine()
+	require.NoError(t, err)
+	_, err = s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
+	assert.Error(t, err)
+	assert.GreaterOrEqual(t, pluginFailures(t, s, "p"), int64(1), "a wrong answer counts")
+}
+
+// A client made from a listing of other settings than the plugin's now
+// (settings saved while it was resolved) refuses.
+func TestPluginModelClientOfOldListing(t *testing.T) {
+	s := newMailContextService(t)
+	srv, host := modelServer(t, s, "openai")
+	startModelPlugin(t, s, "p", host, httpModelPlugin("openai-completions", host))
+	s.pluginsMu.RLock()
+	rp := s.running["p"]
+	s.pluginsMu.RUnlock()
+	old := &plugins.ConfigSnapshot{}
+	c := s.pluginModelClient("p", rp, "m1", old)
+	req, _ := http.NewRequestWithContext(t.Context(), "POST", "https://"+host+"/chat/completions", strings.NewReader("{}"))
+	_, err := c.Do(req)
+	assert.ErrorIs(t, err, ErrModelUnavailable)
+	assert.Empty(t, srv.Requests())
+}

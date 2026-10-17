@@ -893,10 +893,23 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 			return ai.ResolvedModel{}, "", ErrAINotConfigured
 		}
 	}
-	if isPluginRef(ref) { // a two-part "plugin/model" is a service's from before the slug was reserved (its alias)
+	if isPluginRef(ref) {
 		m, err := s.resolvePluginModel(ctx, ref)
+		if !errors.Is(err, ErrModelUnavailable) {
+			return m, ref, err
+		}
+		// No such plugin model: a service that had the slug "plugin" may own
+		// it ("plugin/meta/model", its alias since), as a two-part ref always is.
+		if sm, sref, serr := s.serviceModelRef(ctx, ref); serr == nil {
+			return sm, sref, nil
+		}
 		return m, ref, err
 	}
+	return s.serviceModelRef(ctx, ref)
+}
+
+// serviceModelRef is resolveRef for a stored service's "slug/model" ref.
+func (s *Service) serviceModelRef(ctx context.Context, ref string) (ai.ResolvedModel, string, error) {
 	r, err := ai.ParseModelRef(ref)
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
