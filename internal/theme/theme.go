@@ -131,8 +131,12 @@ func (s TextScale) Line(size float32) float32 {
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline        = 1   // dividers
-	MaterialTint    = 0.6 // the light Window's opacity over the window material: lighter, as the design, yet still see-through (its 95% is over a bare wallpaper, not a material)
+	Hairline     = 1   // dividers
+	MaterialTint = 0.6 // the light Window's opacity over the window material: lighter, as the design, yet still see-through (its 95% is over a bare wallpaper, not a material)
+	// DeviceHairline is a border one device pixel wide at any scale: MyGo
+	// rounds border widths to whole device pixels, at least one. Borders
+	// only; a box or line this thin rounds away.
+	DeviceHairline  = 0.01
 	SidebarWidth    = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth = 480
@@ -201,7 +205,7 @@ const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
-	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	MarkSm, MarkMd, MarkLg, MarkXl                   = 16, 28, 40, 48 // provider marks
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	CloseButton                                      = 20             // a toast's close button
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph

@@ -222,6 +222,7 @@
   "link_copy": "Copy link",
   "link_open": "Open",
   "link_title": "Open this link?",
+  "mail_accounts": "Accounts",
   "mail_action_archive": "Archive",
   "mail_action_delete": "Delete",
   "mail_action_junk": "Move to Junk",
@@ -284,7 +285,23 @@
   "mail_filter_label_name": "Filter by label",
   "mail_filter_unread": "Unread",
   "mail_folder_archive": "Archive",
+  "mail_folder_collapse": "Collapse {arg1}",
+  "@mail_folder_collapse": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "mail_folder_drafts": "Drafts",
+  "mail_folder_expand": "Expand {arg1}",
+  "@mail_folder_expand": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "mail_folder_inbox": "Inbox",
   "mail_folder_junk": "Junk",
   "mail_folder_sent": "Sent",

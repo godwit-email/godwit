@@ -84,6 +84,12 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 	h.putSeen(you, "INBOX", m("Acme Cloud <billing@acme.example>", "Your receipt for October", "Thanks for your payment. Amount: [AMOUNT]", "acme@x", day(10, 2, 9, 0)))
 	h.putSeen(you, "Sent", coretest.Msg("Me <you@example.com>", "Lena Fischer <lena@partner.example>", "Re: proposal timeline", "Sounds good. Let us aim to finalize the proposal by Friday.", coretest.MessageID("sent@x"), coretest.Date(day(10, 3, 10, 0))))
 	h.putSeen(work, "Archive", coretest.Msg("Mark Chen <mark@partner.example>", work.Email, "Partnership proposal — revised deck", "Attached is the revised proposal deck with the pricing.", coretest.MessageID("mark@x"), coretest.Date(day(9, 28, 15, 0))))
+	for _, f := range []string{"项目/Q4/合同", "项目/Q4/发票", "项目/报销"} { // the design's nested folders
+		if err := h.env.IMAP(work.ID).User.Create(f, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.put(work, "项目/Q4/合同", coretest.Msg("Mark Chen <mark@partner.example>", work.Email, "合同终稿", "请查收合同终稿。", coretest.MessageID("contract@x"), coretest.Date(day(10, 7, 16, 0))))
 	h.syncNow(you)
 	h.syncNow(work)
 	h.waitMail("the sample mail", func() bool {
@@ -236,6 +242,9 @@ func TestShots(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)
 		shot(s.harness, "Main")
+		*s.app.mail.accountOpen(s.work.ID) = true
+		shot(s.harness, "MainFolders")
+		*s.app.mail.accountOpen(s.work.ID) = false
 		// Translation keeps the message's body page, below the summary.
 		s.llm.Script(coretest.Turn{Text: []string{`{"texts":["你好，\n\n接着上周的通话，我整理了一份 Q4 合作的提案草稿。要点是 11 月联合发布，以及一场联合网络研讨会。\n\n能否在周五前看一下，告诉我时间安排对你们来说是否可行？\n\n祝好，Lena"],"source":"en"}`}})
 		s.click("翻译")
