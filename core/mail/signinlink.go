@@ -73,7 +73,7 @@ func SignInLink(subject, text, htmlBody string) string {
 				urls = plainURL.FindAllString(lines[i+1], -1)
 			}
 			for _, u := range urls {
-				add(strings.TrimRight(u, ".,;:!?")) // the sentence's punctuation, not the link's
+				add(strings.TrimRight(u, ".,;:!?。，；：！？、")) // the sentence's punctuation, not the link's
 			}
 		}
 	}

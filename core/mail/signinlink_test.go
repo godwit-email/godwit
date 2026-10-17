@@ -25,6 +25,7 @@ func TestSignInLink(t *testing.T) {
 		{"plain reply", "RE: Sign in to Acme", "Thanks\n-----Original Message-----\nLog in here: https://acme.example/old", "", ""},
 		{"activity line", "New sign-in to your account", "Review sign-in activity: https://acme.example/activity", "", ""},
 		{"square brackets", "Log in to Acme", "Log in here: [https://acme.example/auth/abc]", "", "https://acme.example/auth/abc"},
+		{"Chinese sentence end", "登录 Acme", "登录链接：https://acme.example/auth/abc。", "", "https://acme.example/auth/abc"},
 		{"caveat next line", "Sign in to Acme", "If you did not sign in\nhttps://acme.example/security", "", ""},
 		{"quoted next line", "Sign in to Acme", "Log in:\n> https://acme.example/old", "", ""},
 		{"two links", "Sign in", "", `<a href="https://a.example/1">Sign in</a><a href="https://a.example/2">Log in</a>`, ""},
