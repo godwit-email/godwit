@@ -104,6 +104,11 @@ var (
 	// ErrJudgeAnswer: the service answered, but not with a valid typed answer.
 	ErrJudgeAnswer   = errors.New("the judge gave an invalid answer")
 	ErrJudgeQuestion = errors.New("invalid judge question")
+	// ErrJudgeUnavailable: a plugin judge cannot answer now (its model is not
+	// ready or its files are missing); ErrJudgePlugin: the plugin failed (it
+	// crashed, timed out or answered wrongly). Neither is about one input.
+	ErrJudgeUnavailable = errors.New("the judge model is not available")
+	ErrJudgePlugin      = errors.New("the judge plugin failed")
 )
 
 // HTTPError is a judge HTTP failure; it never carries the body.
@@ -282,6 +287,11 @@ var questionName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,40}$`)
 
 // ValidateQuestions checks qs as Ask does, for callers that ask many times.
 func ValidateQuestions(qs []Question) error { return validateQuestions(qs) }
+
+// ValidateAnswers checks a plugin judge's answers to qs as a service's are checked.
+func ValidateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
+	return validateAnswers(qs, answers)
+}
 
 func validateQuestions(qs []Question) error {
 	if len(qs) == 0 {

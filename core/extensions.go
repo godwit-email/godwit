@@ -539,6 +539,8 @@ type runningPlugin struct {
 	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
 	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
 	clients sync.Map                       // model id → *http.Client of its HTTP models
+	loaded  sync.Map                       // native: model id → files lease of each model its process loaded (pluginjudge.go)
+	judging chan struct{}                  // one judge call at a time
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -585,7 +587,7 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r, judging: make(chan struct{}, 1)}
 	s.running[name] = rp
 	if err := s.registerPluginTools(name, rp); err != nil {
 		s.stopPlugin(name)
@@ -605,6 +607,7 @@ func (s *Service) stopPlugin(name string) {
 		}
 		if rp.native != nil {
 			rp.native.Close()
+			rp.dropLoaded()
 		} else {
 			rp.p.VM().Close()
 		}
@@ -636,7 +639,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
-	rp := &runningPlugin{hash: r.sourceHash, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, row: r, judging: make(chan struct{}, 1)}
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: nativeIdle,
@@ -679,6 +682,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
 	rp.methods.Store(&d.Methods)
+	rp.dropLoaded() // a new process has loaded nothing
 	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
 	return err
 }

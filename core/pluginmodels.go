@@ -171,6 +171,9 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 	if !m.Judges() {
 		return nil, fmt.Errorf("%w: %s is not a judge model", ErrModelNotFound, ref)
 	}
+	if m.Transport == "plugin" {
+		return pluginModelJudge{s, name, rp, m}, nil
+	}
 	return ai.NewJudge(s.pluginModelClient(name, rp, m.ID), judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 }
 
@@ -253,15 +256,19 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
 	}
-	err := t.s.callModelPlugin(ctx, t.name, t.rp, "models.prepare", func(ctx context.Context) (any, error) {
-		if t.rp.native != nil {
-			return t.rp.native.Call(ctx, "models.prepare", in)
-		}
+	if t.rp.native == nil {
 		if err := t.s.markHoldsMail(ctx, t.name); err != nil { // the request holds mail
 			return nil, err
 		}
-		return t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp), in)
-	}, &res)
+	}
+	err := t.s.callModelPlugin(ctx, t.name, t.rp, func(ctx context.Context) error {
+		if t.rp.native != nil {
+			v, err := t.rp.native.Call(ctx, "models.prepare", in)
+			return decodeAnswer(v, err, &res, "models.prepare")
+		}
+		v, err := t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp), in)
+		return decodeAnswer(v, err, &res, "prepareRequest")
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -282,21 +289,28 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 // errPluginAnswer: a model plugin's answer is not what the call returns.
 var errPluginAnswer = errors.New("the model plugin answered wrongly")
 
-// callModelPlugin runs one call into a model plugin, decodes its answer into
-// out and keeps the plugin's failure count as callTranslator does: a script
-// plugin's error counts, a native one's error envelope is its answer, and an
-// answer out cannot hold always counts.
-func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningPlugin, method string, call func(context.Context) (any, error), out any) error {
-	v, err := call(ctx)
-	if err == nil {
-		raw, ok := v.(json.RawMessage)
-		if !ok {
-			raw, _ = json.Marshal(v)
-		}
-		if json.Unmarshal(raw, out) != nil {
-			err = fmt.Errorf("%w: %s", errPluginAnswer, method)
-		}
+// decodeAnswer decodes a call's answer v (a native call's JSON or a script's
+// value) into out; what names the call in the error.
+func decodeAnswer[T any](v T, err error, out any, what string) error {
+	if err != nil {
+		return err
 	}
+	raw, ok := any(v).(json.RawMessage)
+	if !ok {
+		raw, _ = json.Marshal(v)
+	}
+	if json.Unmarshal(raw, out) != nil {
+		return fmt.Errorf("%w: %s", errPluginAnswer, what)
+	}
+	return nil
+}
+
+// callModelPlugin runs one call into a model plugin and keeps the plugin's
+// failure count as callTranslator does: a script plugin's error counts, a
+// native one's error envelope is its answer, and a wrong answer
+// (errPluginAnswer) always counts.
+func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningPlugin, call func(context.Context) error) error {
+	err := call(ctx)
 	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
 		return errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
 	}

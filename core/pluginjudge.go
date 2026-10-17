@@ -1,0 +1,157 @@
+package core
+
+// Judge models a plugin answers itself (transport "plugin"): one question per
+// call and one call at a time per plugin; a native plugin's model with
+// assets has its files verified and is loaded once per process first.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/plugins"
+)
+
+// errJudgeInput: the plugin judge cannot take this input (invalid_request),
+// as a service answers 400: about this message alone.
+var errJudgeInput = errors.New("the judge model cannot take this input")
+
+// unavailableCodes are a plugin's error codes that mean its model cannot answer now.
+var unavailableCodes = map[string]bool{codeModelNotReady: true, codeModelUnavailable: true, codeInsufficientMemory: true,
+	codeUnsupportedPlatform: true, codeUpdateRequired: true, codeVerificationFailed: true}
+
+type pluginModelJudge struct {
+	s     *Service
+	name  string
+	rp    *runningPlugin
+	model plugins.ProviderModel
+}
+
+func (j pluginModelJudge) Ask(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
+	if err := ai.ValidateQuestions(qs); err != nil {
+		return nil, err
+	}
+	out := make([]ai.Answer, 0, len(qs))
+	for _, q := range qs {
+		a, err := j.ask(ctx, input, q)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a...)
+	}
+	return out, nil
+}
+
+// ask answers one question once the plugin's judge slot is free; a caller
+// may give up while it waits, not once its call is dispatched.
+func (j pluginModelJudge) ask(ctx context.Context, input string, q ai.Question) ([]ai.Answer, error) {
+	select {
+	case j.rp.judging <- struct{}{}:
+		defer func() { <-j.rp.judging }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if j.rp.native == nil {
+		if err := j.s.markHoldsMail(ctx, j.name); err != nil { // the input is mail
+			return nil, err
+		}
+	}
+	if err := j.load(ctx); err != nil {
+		return nil, err
+	}
+	qs := []ai.Question{q}
+	req := plugins.JudgeModelRequest{ModelID: j.model.ID, Input: input, Questions: qs}
+	var answers []ai.Answer
+	err := j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
+		var res plugins.JudgeModelResult
+		var err error
+		if j.rp.native != nil {
+			v, cerr := j.rp.native.Call(ctx, "models.judge", req)
+			err = decodeAnswer(v, judgeError(cerr), &res, "models.judge")
+		} else {
+			v, cerr := j.rp.p.JudgeModel(ctx, j.s.modelInvocation(j.rp), req)
+			err = decodeAnswer(v, cerr, &res, "judge")
+		}
+		if err == nil {
+			if answers, err = ai.ValidateAnswers(qs, res.Answers); err != nil {
+				err = fmt.Errorf("%w: %s", errPluginAnswer, err) // not ErrJudgeAnswer: the plugin is at fault, not this input
+			}
+		}
+		return err
+	})
+	return answers, judgeFailure(ctx, err)
+}
+
+// load verifies the files of a model with assets and has the plugin's
+// process load it, once per process (setUpNative forgets what it loaded).
+func (j pluginModelJudge) load(ctx context.Context) error {
+	if j.rp.native == nil || len(j.model.Assets) == 0 {
+		return nil
+	}
+	if _, ok := j.rp.loaded.Load(j.model.ID); ok {
+		return nil
+	}
+	// shortcut: release is "" until the plugin row stores its release's
+	// plugins.AssetsDigest (#90); noModelAssets never reads it.
+	dirs, lease, err := j.s.modelAssets().Verify(ctx, j.name, "", j.model.Assets)
+	if err != nil {
+		var me *ModelError
+		if errors.As(err, &me) && unavailableCodes[me.Code] {
+			return fmt.Errorf("%w: %w", ai.ErrJudgeUnavailable, err)
+		}
+		return err
+	}
+	err = j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
+		_, err := j.rp.native.Call(ctx, "models.load", map[string]any{"modelId": j.model.ID, "assets": dirs})
+		return judgeError(err)
+	})
+	if err != nil {
+		lease()
+		return judgeFailure(ctx, err)
+	}
+	if _, had := j.rp.loaded.LoadOrStore(j.model.ID, lease); had {
+		lease()
+	}
+	return nil
+}
+
+// judgeError maps a native plugin's error envelope: invalid_request is about
+// this input, any other code means the model cannot answer now.
+func judgeError(err error) error {
+	var ne *plugins.NativeError
+	switch {
+	case !errors.As(err, &ne):
+		return err
+	case ne.Code == "invalid_request":
+		return fmt.Errorf("%w: %w", errJudgeInput, err)
+	}
+	return fmt.Errorf("%w: %w", ai.ErrJudgeUnavailable, err)
+}
+
+// judgeFailure marks what callModelPlugin returned that is neither the
+// caller's cancellation nor an answer of the plugin's as ErrJudgePlugin.
+func judgeFailure(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) ||
+		errors.Is(err, ai.ErrJudgeUnavailable) || errors.Is(err, errJudgeInput) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ai.ErrJudgePlugin, err)
+}
+
+// dropLoaded forgets the models rp's process loaded, releasing their files.
+func (rp *runningPlugin) dropLoaded() {
+	rp.loaded.Range(func(id, lease any) bool {
+		rp.loaded.Delete(id)
+		lease.(func())()
+		return true
+	})
+}
+
+// modelAssets is the model files' manager (modelseam.go).
+func (s *Service) modelAssets() modelAssets {
+	if s.assets == nil {
+		return noModelAssets{}
+	}
+	return s.assets
+}
