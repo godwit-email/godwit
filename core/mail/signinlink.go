@@ -15,52 +15,51 @@ const (
 	LinkReset   = "reset"   // sets a new password
 )
 
+var (
+	clickTo  = words(func(l lexicon) string { return l.clickTo })
+	leadTail = words(func(l lexicon) string { return l.leadTail })
+	confirms = words(func(l lexicon) string { return l.confirm })
+	resets   = words(func(l lexicon) string { return l.reset })
+)
+
 // A magic link's mail speaks of the link itself: "This link expires in 10
 // minutes", "your sign-in link", "登录链接". A reminder to go and sign in
 // ("请登录您的 Google 相册账号") leads to a sign-in page, not a link that signs in.
-var linkDelivery = regexp.MustCompile(`(?i)\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b|(?:登录|登入|一次性|安全|此|该|下面的|下方的)链接|链接[^\n]{0,30}(?:有效|过期|失效)`)
+var linkDelivery = ci(words(func(l lexicon) string { return l.delivery }))
 
 // A security alert speaks of signing in but its links review activity.
-var linkAlert = regexp.MustCompile(`(?i)\bnew (?:sign[ -]?in|login|device)\b|\b(?:sign[ -]?in|login) (?:attempt|alert|activity)\b|\bunusual\b|新(?:的)?(?:登录|登入|设备)|登录(?:提醒|通知|活动)|异常登录`)
+var linkAlert = ci(words(func(l lexicon) string { return l.alert }))
 
-var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b|登录|登入`)
+var linkSubject = ci(words(func(l lexicon) string { return l.signInSubject }))
 
 // A button's own words, whole: "Sign in", "Log in to Acme", "Click here to
 // sign in", "登录". "Sign in activity" in a security alert is not one.
-var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?\s*[.!]?\s*$|^\s*(?:点击|立即)?(?:登录|登入)(?:到|至)?\s*[A-Za-z0-9 ._-]*$`)
+var linkLabel = ci(`^\s*` + words(func(l lexicon) string { return l.signInLabel }) + `\s*[.!]?\s*$`)
 
 var plainURL = regexp.MustCompile(`https://[^\s<>"'）)」】\]]+`)
 
-// "by clicking on this link", "using the button below": how, not what.
-const byLink = ` (?:by clicking|by tapping|using|with|via)(?: on)? (?:this|the)(?: (?:link|button))?(?: below)?`
-
-// What a plain-text line says right before its colon: an action, not a
-// report ("Review sign-in activity:").
-var linkLead = regexp.MustCompile(`(?i)(?:(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+|` + byLink + `)?|magic link|(?:登录|登入)(?:链接)?)\s*[:：]\s*$`)
+// What a line says right before its colon: an action, not a report
+// ("Review sign-in activity:").
+var linkLead = ci(words(func(l lexicon) string { return l.signInLead }) + `\s*[:：]\s*$`)
 
 // A button that confirms the address an account was made with: "Confirm
 // your email", "Verify email address", "确认您的电子邮件".
-const confirmWhat = `(?:confirm|verify|activate)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)`
-const confirmWhatZh = `(?:确认|验证|激活)(?:您|你)?的?(?:电子邮件|电子邮件地址|邮箱|邮箱地址|邮件地址|账户|帐户|账号)`
-
-var confirmLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to )?` + confirmWhat + `\s*[.!]?\s*$|^\s*(?:点击)?` + confirmWhatZh + `\s*$`)
-var confirmLead = regexp.MustCompile(`(?i)` + confirmWhat + `(?: here| below|` + byLink + `)?\s*[:：]\s*$|` + confirmWhatZh + `\s*[:：]\s*$`)
+var confirmLabel = ci(`^\s*(?:` + clickTo + `)?` + confirms + `\s*[.!]?\s*$`)
+var confirmLead = ci(confirms + `(?:` + leadTail + `)?\s*[:：]\s*$`)
 
 // A mail about confirming an address, for the button fallback below.
-var confirmContext = regexp.MustCompile(`(?i)` + confirmWhat + `|\bemail verification\b|` + confirmWhatZh)
+var confirmContext = ci(confirms + `|` + words(func(l lexicon) string { return l.context }))
 
 // Setting a new password: "Reset password", "若要重置密码，请访问下面的链接：".
-const resetWhat = `(?:reset|change)\s+(?:your\s+)?password|(?:重置|重设|找回)(?:您的|你的)?密码`
-
-var resetLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to )?(?:` + resetWhat + `)\s*[.!]?\s*$`)
-var resetLead = regexp.MustCompile(`(?i)(?:` + resetWhat + `)[^:：\n]{0,30}[:：]\s*$`)
-var resetContext = regexp.MustCompile(`(?i)` + resetWhat + `|password reset`)
+var resetLabel = ci(`^\s*(?:` + clickTo + `)?` + resets + `\s*[.!]?\s*$`)
+var resetLead = ci(resets + `[^:：\n]{0,30}[:：]\s*$`)
+var resetContext = ci(resets + `|` + words(func(l lexicon) string { return l.context }))
 
 // The line many mails put under a button that is only an image: "If the
 // button does not work, use this link:", "Button not working? Use this link
 // instead." What the link does comes from the mail around it.
-var buttonFallback = regexp.MustCompile(`(?i)(?:button|link)\s+(?:does\s*n[o']t|is\s*n[o']t|won'?t|not)\s+work.*\b(?:use|copy|paste|open)\b.*\b(?:link|url|address)\b[^:：\n]*[:：]?\s*$|trouble clicking.*(?:copy|paste).*\b(?:url|link)\b|(?:无法|不能)点击.*(?:按钮|链接).*[:：]\s*$`)
-var fallbackLabel = regexp.MustCompile(`(?i)^\s*use this link\s*$`)
+var buttonFallback = ci(words(func(l lexicon) string { return l.fallback }))
+var fallbackLabel = ci(`^\s*` + words(func(l lexicon) string { return l.fallbackLabel }) + `\s*$`)
 
 // ActionLink recognizes the one link a mail asks the reader to open to sign
 // in, to confirm a new account's address, or to set a new password, and

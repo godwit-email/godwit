@@ -8,17 +8,27 @@ import (
 	"golang.org/x/net/html"
 )
 
-const codeHint = `(?:\b(?:verification|security|authentication|confirmation|login|sign[ -]?in|one[ -]time|single[ -]use|activation)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b|\byour code\b|验证码|校验码|动态码|动态密码|一次性密码|一次性代码|安全代码|验证代码|激活码)`
+var (
+	strongHints    = words(func(l lexicon) string { return l.codeHints })
+	ambiguousHints = words(func(l lexicon) string { return l.ambiguous })
+	copulas        = words(func(l lexicon) string { return l.copulas })
+	codeHint       = "(?:" + strongHints + "|" + ambiguousHints + ")"
+)
+
 const codeToken = `([0-9]{3}[ \t-][0-9]{3}|[A-Za-z0-9]{4,10})`
 
-var codeHints = regexp.MustCompile(`(?i)` + codeHint)
-var codeAfter = regexp.MustCompile(`(?i)^\s*(?:(?:is|为|是)\s*)?[:：=\s"'「【]*` + codeToken)
+var codeHints = ci(codeHint)
+
+// Strong and ambiguous hints are found apart: "Votre code de vérification"
+// holds both, and one search would stop at the ambiguous "Votre code".
+var hintSearches = []*regexp.Regexp{ci(strongHints), ci(ambiguousHints)}
+var codeAfter = ci(`^\s*(?:` + copulas + `\s*)?[:：=\s"'「【\[—]*` + codeToken)
 
 // Hints that other mail uses too ("Your code is SAVE20", "Booking
 // confirmation code", "card security code") need sign-in words nearby, or a
 // code shaped like an OTP.
-var bareHint = regexp.MustCompile(`(?i)^(?:(?:your|confirmation|security|activation)\s+code|激活码)$`)
-var signInContext = regexp.MustCompile(`(?i)\b(?:verif(?:y|ying|ication)|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|\baccount needs activation\b|\bactivate (?:your )?account\b|登录|登入|验证|激活(?:您|你)?的?(?:账户|帐户|账号)`)
+var bareHint = ci(`^` + ambiguousHints + `$`)
+var signInContext = ci(words(func(l lexicon) string { return l.signIn }))
 
 // otpShaped: six or more digits, as one-time codes are; not a CVV (1234),
 // a booking reference (AB12CD) or a coupon (SAVE20).
@@ -35,7 +45,7 @@ func plausible(s string, start, end int, token string) bool {
 }
 
 // A reply's or forward's subject repeats the old mail's, code and all.
-var replySubject = regexp.MustCompile(`(?i)^\s*(?:re|fwd?|aw|wg|回复|答复|转发)\s*[:：]`)
+var replySubject = ci(`^\s*` + words(func(l lexicon) string { return l.replyPrefix }) + `\s*[:：]`)
 
 // signInNear: the subject (s's first line), or the hint's line and the one
 // before it, are about signing in; a footer elsewhere is not.
@@ -53,10 +63,10 @@ func signInNear(s string, start, end int) bool {
 }
 
 var aloneCode = regexp.MustCompile(`^(?:[0-9]{6,8}|[0-9]{3}[ -][0-9]{3})$`)
-var codeEnter = regexp.MustCompile(`(?i)\b(?:enter|type|paste|input)\b|输入|填写|粘贴`)
-var codeWord = regexp.MustCompile(`(?i)\b(?:code|passcode|OTP)\b|代码|验证码|校验码|确认码|动态码|动态密码`)
-var explicitCode = regexp.MustCompile(`(?i)[:：=]|\bis\b|为|是`)
-var codeBefore = regexp.MustCompile(`(?i)` + codeToken + `\s+(?:is your|is the)\s+` + codeHint)
+var codeEnter = ci(words(func(l lexicon) string { return l.enter }))
+var codeWord = ci(words(func(l lexicon) string { return l.codeWords }))
+var explicitCode = ci(`[:：=]|` + copulas)
+var codeBefore = ci(codeToken + `\s*` + words(func(l lexicon) string { return l.codeBefore }) + `\s*` + codeHint)
 
 // SignInCode recognizes an explicit code in the subject or unquoted text.
 // Conflicting candidates are left to the reader rather than guessed.
@@ -85,7 +95,7 @@ func signInCode(subject, text, htmlBody string) string {
 	s := simplified(strings.Join(lines, "\n")) // 驗證碼 reads as 验证码; offsets hold, as each pair is 3 bytes
 	code := ""
 	var candidates [][2]int
-	for _, hint := range codeHints.FindAllStringIndex(s, -1) {
+	for _, hint := range allHints(s) {
 		if m := codeAfter.FindStringSubmatchIndex(s[hint[1]:]); m != nil {
 			// A word with no digit is a code only when the same line says so
 			// ("code: XQWERT"); one on the next line is prose ("IMPORTANT").
@@ -143,6 +153,15 @@ func signInCode(subject, text, htmlBody string) string {
 	return code
 }
 
+// allHints are where every strong and every ambiguous hint stands in s.
+func allHints(s string) [][]int {
+	var out [][]int
+	for _, re := range hintSearches {
+		out = append(out, re.FindAllStringIndex(s, -1)...)
+	}
+	return out
+}
+
 // unquoted is the message text without quoted replies; with an HTML body,
 // also its parsed document. An unparsable body gives "" and nil.
 func unquoted(text, htmlBody string) (string, *html.Node) {
@@ -192,9 +211,9 @@ func unquoted(text, htmlBody string) (string, *html.Node) {
 	return beforeReply(HTMLToText(clean.String())), doc
 }
 
-var replyHeader = regexp.MustCompile(`(?i)^\s*(?:-{2,}\s*(?:original message|forwarded message)\s*-{2,}|on .+ wrote:|在.+写道[:：])\s*$`)
-var replyFrom = regexp.MustCompile(`(?i)^\s*(?:from|发件人)\s*[:：]`)
-var replySent = regexp.MustCompile(`(?i)^\s*(?:sent|date|发送时间|日期)\s*[:：]`)
+var replyHeader = ci(`^\s*` + words(func(l lexicon) string { return l.replyHeader }) + `\s*$`)
+var replyFrom = ci(`^\s*` + words(func(l lexicon) string { return l.replyFrom }) + `\s*[:：]`)
+var replySent = ci(`^\s*` + words(func(l lexicon) string { return l.replySent }) + `\s*[:：]`)
 
 // beforeReply cuts a reply's quoted message that has no "> " marks: from
 // "-----Original Message-----", "On … wrote:", or an Outlook header block
