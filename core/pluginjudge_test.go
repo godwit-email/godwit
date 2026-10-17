@@ -243,3 +243,16 @@ func TestPluginJudgeLoadOfOtherProcess(t *testing.T) {
 	assert.Len(t, recorded(t, record, "models.load"), 2)
 	assert.Equal(t, 1, fa.released, "the old entry's lease goes")
 }
+
+// A native plugin's error envelope is an answer: it ends a run of failures.
+func TestPluginJudgeEnvelopeResetsFailures(t *testing.T) {
+	s := newMailContextService(t)
+	usePluginJudge(t, s, nil, map[string]any{"judgeError": "invalid_request"})
+	_, err := s.db.Execute(t.Context(), "UPDATE plugins SET failures = 2 WHERE name = 'nm'")
+	require.NoError(t, err)
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	assert.True(t, unanswerable(err))
+	assert.Equal(t, int64(0), pluginFailures(t, s, "nm"))
+}

@@ -190,9 +190,10 @@ type loadedModel struct {
 
 // dropLoaded forgets the models rp's process loaded, releasing their files.
 func (rp *runningPlugin) dropLoaded() {
-	rp.loaded.Range(func(id, m any) bool {
-		rp.loaded.Delete(id)
-		m.(loadedModel).lease()
+	rp.loaded.Range(func(id, _ any) bool {
+		if m, ok := rp.loaded.LoadAndDelete(id); ok { // the value removed, which a concurrent Swap may have replaced
+			m.(loadedModel).lease()
+		}
 		return true
 	})
 }

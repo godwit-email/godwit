@@ -210,7 +210,9 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 	if m.Transport == "plugin" {
 		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
-	return ai.NewJudge(s.pluginModelClient(name, rp, m.ID, cfg), judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	c := s.pluginModelClient(name, rp, m.ID, cfg)
+	j, err := ai.NewJudge(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	return pluginHTTPJudge{j, c.Transport.(*pluginModelTransport)}, err
 }
 
 // pluginModelClient is the client of rp's model id: one per instance, model
@@ -260,11 +262,8 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if req.Body != nil {
 		defer req.Body.Close()
 	}
-	t.s.pluginsMu.RLock()
-	stale := t.s.running[t.name] != t.rp || t.rp.cfgKey() != t.cfg
-	t.s.pluginsMu.RUnlock()
-	if stale { // stopped, replaced or reconfigured: a client resolved before never sends again
-		return nil, fmt.Errorf("%w: plugin/%s/%s", ErrModelUnavailable, t.name, t.model)
+	if err := t.stale(); err != nil { // a client resolved before never sends again
+		return nil, err
 	}
 	if t.rp.native == nil {
 		if err := t.s.markHoldsMail(ctx, t.name); err != nil { // the request holds mail, prepared or not
@@ -305,6 +304,32 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 		return resp, err
 	}
 	return t.base.RoundTrip(out)
+}
+
+// stale is ErrModelUnavailable once the plugin stopped, was replaced or
+// took other settings since t was made.
+func (t *pluginModelTransport) stale() error {
+	t.s.pluginsMu.RLock()
+	stale := t.s.running[t.name] != t.rp || t.rp.cfgKey() != t.cfg
+	t.s.pluginsMu.RUnlock()
+	if stale {
+		return fmt.Errorf("%w: plugin/%s/%s", ErrModelUnavailable, t.name, t.model)
+	}
+	return nil
+}
+
+// pluginHTTPJudge is ai.NewJudge on a plugin model's client: a stale client
+// is ErrModelUnavailable, not the judge's generic "could not reach".
+type pluginHTTPJudge struct {
+	ai.Judge
+	t *pluginModelTransport
+}
+
+func (j pluginHTTPJudge) Ask(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
+	if err := j.t.stale(); err != nil {
+		return nil, err
+	}
+	return j.Judge.Ask(ctx, input, qs)
 }
 
 // prepare is req as the plugin returns it, or req itself when it adjusts none.
@@ -401,11 +426,13 @@ func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningP
 		return errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
 	}
 	if err != nil {
-		var failed error
+		var count error
 		if rp.native == nil || plugins.IsNativeFailure(err) || errors.Is(err, errPluginAnswer) {
-			failed = s.pluginFailed(ctx, name, rp.gen)
+			count = s.pluginFailed(ctx, name, rp.gen)
+		} else {
+			count = s.pluginSucceeded(ctx, name, rp.gen) // an envelope is an answer: failures are counted in a row
 		}
-		return errors.Join(fmt.Errorf("model plugin %s: %w", name, s.cleanError(err)), failed)
+		return errors.Join(fmt.Errorf("model plugin %s: %w", name, s.cleanError(err)), count)
 	}
 	return s.pluginSucceeded(ctx, name, rp.gen)
 }

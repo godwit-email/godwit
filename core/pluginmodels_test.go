@@ -345,7 +345,7 @@ func TestStoppedPluginClientRefuses(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
 	_, err = j.Ask(t.Context(), "mail", qs)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrModelUnavailable, "said as such, not as could not reach")
 	assert.Equal(t, int64(1), hits.Load())
 }
 
