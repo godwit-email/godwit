@@ -885,14 +885,15 @@ type usage struct {
 	genOpts, smallOpts, judgeOpts []kit.Option[string]
 	disabled                      bool // no generate model: the selects say 先添加一个服务
 	gen, judge                    line
-	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers
+	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers, unless pluginJudge
+	pluginJudge                   bool               // the judge setting names a plugin's model: generation never answers for it
 	alert                         string             // the default generator failed its test
 	suggest                       bool               // a judge service would be faster
 }
 
 // deriveUsage is the 用途 card for st, the services and the running plugins' models.
 func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels) usage {
-	var u usage
+	u := usage{pluginJudge: isPluginRef(st.JudgeService)}
 	var genModel, plugGen, plugJudge string // the defaults' labels when a plugin's model
 	var genPlug, judgePlug []kit.Option[string]
 	for _, p := range plugins {
@@ -976,12 +977,12 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 	} else {
 		u.gen = line{plugGen, lookNone}
 	}
-	if judgeLine(); u.judgeSvc == nil && !isPluginRef(st.JudgeService) {
+	if judgeLine(); u.judgeSvc == nil && !u.pluginJudge {
 		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
 	}
 	if u.gen.look == lookFail {
 		end := i18n.T("settings.models.use.alert.end")
-		if u.judge.look == lookFail || u.judgeSvc == nil {
+		if u.judge.look == lookFail || u.judgeSvc == nil && !u.pluginJudge {
 			end = i18n.T("settings.models.use.alert.judge_too")
 		}
 		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end

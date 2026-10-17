@@ -163,7 +163,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 			},
 			func() {
 				help := i18n.T("settings.models.threshold.help")
-				if u.judgeSvc == nil {
+				if u.judgeSvc == nil && !u.pluginJudge {
 					help += " " + i18n.T("settings.models.threshold.binary")
 				}
 				settingRow(c, i18n.T("settings.models.threshold"), help, func() {
