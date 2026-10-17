@@ -38,7 +38,8 @@ func signInCodePosition(area mygo.Rectangle, displays []mygo.Display, saved *myg
 	return mygo.Point{X: area.X + max(0, (area.Width-codeBannerWidth)/2), Y: area.Y + max(0, area.Height-codeBannerHeight-codeBannerInset)}
 }
 
-const codeBannerSnap = 16 // how close, in points, a drag comes before the banner holds still
+const codeBannerSnap = 16    // how close, in points, a drag comes before the banner holds still
+const codeBannerDeadzone = 4 // how far the pointer moves before a press drags the banner
 
 // snapSignInCode holds a dragged banner on the work area's vertical centre
 // line, and on its default spot there, once it comes within codeBannerSnap.
@@ -160,6 +161,7 @@ type signInBanner struct {
 	timer                     *time.Timer
 	failed, copied, hovered   bool
 	dragging, snapped, atHome bool
+	pressing, onButton        bool           // the pointer is down on the banner; on its button
 	guide                     *mygo.Window   // the centring guide shown while a drag is held on the centre line
 	guideDashes               int            // dashes in each half of the guide
 	dragFrom, dragStart       mygo.Point     // the cursor and the banner where the drag began
@@ -212,6 +214,7 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
 			btn := kit.Button(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}).Shrink(0)
+			b.onButton = btn.Pressed()
 			switch {
 			case b.copied:
 				btn.Background(ui.Transparent).TextColor(t.SuccessText)
@@ -230,15 +233,22 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) {
 	if !pressed {
 		if b.dragging {
-			b.dragging, b.snapped, b.atHome = false, false, false
+			b.snapped, b.atHome = false, false
 			p.showSnapGuide(b, false, b.position, mygo.Rectangle{})
 		}
+		b.pressing, b.dragging = false, false
 		return
 	}
 	cursor := mygo.Screen.CursorScreenPoint()
-	if !b.dragging {
-		b.dragging, b.dragFrom, b.dragStart = true, cursor, b.position
+	if !b.pressing {
+		b.pressing, b.dragFrom, b.dragStart = true, cursor, b.position
 	}
+	// A press on Copy or Open is a click, and a hand's jitter is not a drag.
+	if !b.dragging && (b.onButton || abs(cursor.X-b.dragFrom.X) < codeBannerDeadzone && abs(cursor.Y-b.dragFrom.Y) < codeBannerDeadzone) {
+		c.Invalidate()
+		return
+	}
+	b.dragging = true
 	pos := mygo.Point{X: b.dragStart.X + cursor.X - b.dragFrom.X, Y: b.dragStart.Y + cursor.Y - b.dragFrom.Y}
 	area := mygo.Screen.DisplayNearestPoint(cursor).WorkArea
 	pos = snapSignInCode(pos, area)

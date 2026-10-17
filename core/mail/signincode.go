@@ -18,7 +18,7 @@ var codeAfter = regexp.MustCompile(`(?i)^\s*(?:(?:is|为|是)\s*)?[:：=\s"'「�
 // confirmation code", "card security code") need sign-in words nearby, or a
 // code shaped like an OTP.
 var bareHint = regexp.MustCompile(`(?i)^(?:your|confirmation|security)\s+code$`)
-var signInContext = regexp.MustCompile(`(?i)\b(?:verif\w*|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|登录|登入|验证`)
+var signInContext = regexp.MustCompile(`(?i)\b(?:verif(?:y|ying|ication)|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|登录|登入|验证`)
 
 // signInNear: the subject (s's first line), or the hint's line and the one
 // before it, are about signing in; a footer elsewhere is not.
