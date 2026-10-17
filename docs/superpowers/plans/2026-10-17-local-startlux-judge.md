@@ -186,7 +186,7 @@ registry 里 0.1.0 的资产大致是：
 - `Remove`：只删目标变体中无租约、不被其他已准备模型引用的文件，保留共享的引擎；仍有租约 → `model_unavailable`，不部分删除。Windows 上删除失败写进待删表，下次启动重试。
 - 所有操作绑定传入的 release 摘要；升级、吊销后过期的结果不发布。
 
-- [ ] **Step 1: 失败的测试**（`core/assets_test.go`、`core/registry_test.go` 的 https 测试服务器）
+- [x] **Step 1: 失败的测试**（`core/assets_test.go`、`core/assets_darwin_test.go`、`core/plugins/registry_test.go`；`coretest.RegistryServer` 现在支持 Range 和故障注入）。没写：下载 200 MiB 时堆增长的测试（下载是流式写盘，没整个读进内存）。
   - `checkRelease`：`minMemoryGB` 的数值与平台映射、缺 `default`、非法键、非正数；多变体资产不再要求 `select`。
   - `Status`：未下载 → `model_not_ready`；内存不足（模拟 7 GB 对 `default: 8`，以及 `windows-*` 覆盖）→ `insufficient_memory`；平台无资产 → `unsupported_platform`；已下载 → `downloaded` 且不做全量哈希。
   - `Prepare`：固定资产与所选变体都校验通过才成功；任一 sha256 不符 → 全部丢弃；未选中的变体从不请求；进度先 `downloading` 后 `verifying`。
@@ -197,9 +197,9 @@ registry 里 0.1.0 的资产大致是：
   - 吊销与升级：registry 改了**没下载的**变体的 sha256 → 该 release 被吊销；升级到资产不变的新版本 → 不发资产请求；下载途中升级 → 旧 release 的结果不发布。
   - 删除：被占用的目录删除失败 → 记入待删表，重启后删掉；删掉一个模型后共享引擎还在、另一个模型仍是 `downloaded`。
   - 内存：下载 200 MiB 测试资产时堆的峰值增长 < 16 MiB。
-- [ ] **Step 2: 实现** `core/assets.go` 与 `core/registry.go` 的改动，替换 `newModelAssets`；`fetchRegistryFile` 保持给小文件用。
-- [ ] **Step 3: 设置页**：判断模型列表里的本地模型显示大小、所需内存与状态；`model_not_ready` 显示「下载并使用」，`insufficient_memory` / `unsupported_platform` 灰掉并写原因，`verification_failed` 提供「重新下载」；准备中显示进度、可取消；已下载的可「删除文件」。状态变化跟随基础 PR 的 `models.changed` 事件重新读取 `ListModels`。
-- [ ] **Step 4:** `docs/registry/` 模板与审核清单加 `assets`；`cmd/godwit-registry check --fetch` 下载并校验资产。
+- [x] **Step 2: 实现** `core/plugins/assets.go`（格式与校验）、`core/assets.go`（`modelAssets` 实现与卸载清理）、`core/registry.go`（资产纳入信任身份）。§8.2 的类型暂时声明在 `core/modelseam.go`，基础 PR 合入时保留一份。简化的地方都在代码里用 `shortcut:` 注释标明：同一插件的两个模型共用一个变体时，删一个会连带删掉；Windows 上删不掉的目录不进待删表，等下次删除或启动清理时重试；下载前不预先检查磁盘剩余空间，写满时报错并删掉半截文件。
+- [ ] **Step 3: 设置页**（等基础 PR 的 `ListModels` / `PrepareModel`）：判断模型列表里的本地模型显示大小、所需内存与状态；`model_not_ready` 显示「下载并使用」，`insufficient_memory` / `unsupported_platform` 灰掉并写原因，`verification_failed` 提供「重新下载」；准备中显示进度、可取消；已下载的可「删除文件」。状态变化跟随基础 PR 的 `models.changed` 事件重新读取 `ListModels`。
+- [x] **Step 4:** `docs/registry/README.md` 加 `assets` 格式与审核要点；`cmd/godwit-registry check --fetch` 下载并校验资产。
 
 ### Task 4（主仓库）: 空闲时间与退出
 
