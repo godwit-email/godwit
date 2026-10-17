@@ -139,6 +139,8 @@ plugin.json                     {"name":"startlux","version":"0.1.0","native":{"
 
 ### Task 2: plugin-startlux 骨架、推理与读出
 
+**进度（2026-10-17）**：本地仓库 `~/Documents/workspace/godwit-email/plugin-startlux`（未推到 GitHub）已完成骨架、libllama 绑定（`engine.c`，dlopen + 按需取函数指针）、prompt 与读出移植、`models.list` / `models.load` / `models.judge`。对照结果（llama.cpp b11707、M5 Max、Metal，见该仓库 `docs/parity.md`）：2B Q8 和 4B Q4 在 43 个合成用例与 693 个真实 prompt 上，prompt 逐字节相同、token 逐个相同，概率最大差 1.6e-6；三档 context 之间无差别。`scripts/smoke.py` 经 Godwit 真实的 plugin-host 跑通全部方法、8 个并发调用和 sha256 拒绝。还没做：CI 矩阵与各平台构建、`scripts/package.py`、Linux / Windows 上跑对照测试；llama.h 没有构建号接口，版本靠 registry 固定的 sha256 保证。
+
 - [ ] 建仓库（Apache-2.0），复制 DLX 的 `bridge.c`、`protocol.go`、`sdk/godwit_plugin.h`、CI 矩阵（先 darwin-arm64，其他平台随 Task 1 的结论加）。
 - [ ] `describe`：`capabilities: ["models"]`、`methods: ["models.list", "models.load", "models.judge"]`。`configure`：只接收 `{"config": {}}`，什么都不装。
 - [ ] `models.list`：返回 `decision-4b-q4`、`decision-2b-q8` 两个 `{"transport": "plugin", "operation": "judge", "assets": {"model": "<变体 ID>"}}`；不联网、不读文件，没下载也照常列出。
