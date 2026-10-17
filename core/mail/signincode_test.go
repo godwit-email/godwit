@@ -32,6 +32,7 @@ func TestSignInCode(t *testing.T) {
 		{"wrote", "Re: login", "Thanks!\n\nOn Fri, Oct 17, 2026 at 10:00 Login wrote:\nYour verification code: 123456", ""},
 		{"sender line kept", "Your verification code", "From: Acme Security\nYour verification code: 123456", "123456"},
 		{"coupon", "Thanks for your order", "Your code is SAVE20 for 20% off", ""},
+		{"coupon with sign-in footer", "Thanks for your order", "Your code is SAVE20 for 20% off\n\nLots of deals inside.\n\nSign in to manage your account", ""},
 		{"your code at sign-in", "Sign in to Acme", "Your code is 482913", "482913"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {

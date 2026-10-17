@@ -18,6 +18,22 @@ var codeAfter = regexp.MustCompile(`(?i)^\s*(?:(?:is|为|是)\s*)?[:：=\s"'「�
 // counts only in mail that is about signing in.
 var bareHint = regexp.MustCompile(`(?i)^your code$`)
 var signInContext = regexp.MustCompile(`(?i)\b(?:verif\w*|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|登录|登入|验证`)
+
+// signInNear: the subject (s's first line), or the hint's line and the one
+// before it, are about signing in; a footer elsewhere is not.
+func signInNear(s string, start, end int) bool {
+	subject, _, _ := strings.Cut(s, "\n")
+	from := strings.LastIndexByte(s[:start], '\n')
+	if from > 0 {
+		from = strings.LastIndexByte(s[:from], '\n')
+	}
+	to := strings.IndexByte(s[end:], '\n')
+	if to < 0 {
+		to = len(s) - end
+	}
+	return signInContext.MatchString(subject) || signInContext.MatchString(s[from+1:end+to])
+}
+
 var explicitCode = regexp.MustCompile(`(?i)[:：=]|\bis\b|为|是`)
 var codeBefore = regexp.MustCompile(`(?i)` + codeToken + `\s+(?:is your|is the)\s+` + codeHint)
 
@@ -38,7 +54,7 @@ func SignInCode(subject, text, htmlBody string) string {
 	code := ""
 	var candidates [][2]int
 	for _, hint := range codeHints.FindAllStringIndex(s, -1) {
-		if bareHint.MatchString(s[hint[0]:hint[1]]) && !signInContext.MatchString(s) {
+		if bareHint.MatchString(s[hint[0]:hint[1]]) && !signInNear(s, hint[0], hint[1]) {
 			continue
 		}
 		if m := codeAfter.FindStringSubmatchIndex(s[hint[1]:]); m != nil {

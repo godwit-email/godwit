@@ -21,10 +21,12 @@ func TestRecentSignInCodes(t *testing.T) {
 	put("archive@x", "Archive", "Verification code: 333333", now)
 	put("ordinary@x", "INBOX", "Order 444444", now)
 	e.put(t, "INBOX", eml("link@x", "Acme <id@acme.example>", e.acc.Email, "Sign in to Acme", now.Format(time.RFC1123Z), "Log in with this link:\nhttps://acme.example/l/1"))
+	put("skewed@x", "INBOX", "Verification code: 555555", now.Add(2*time.Hour)) // the sender's clock runs ahead
 	e.sync(t)
 	got, err := e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)
-	require.Len(t, got, 2)
+	require.Len(t, got, 3)
+	require.True(t, slices.ContainsFunc(got, func(c SignInCode) bool { return c.Code == "555555" }), "a future Date header hid a code that just arrived")
 	code := got[slices.IndexFunc(got, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "new@x") })]
 	require.Equal(t, SignInCode{MessageID: e.idOf(t, "new@x"), Code: "aB0123", From: "Login <login@example.com>", ReceivedAt: code.ReceivedAt}, code)
 	link := got[slices.IndexFunc(got, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "link@x") })]
