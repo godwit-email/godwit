@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testHTTPJudge(t *testing.T, prepare string, handler http.HandlerFunc) (*Service, ai.Judge) {
+func testHTTPJudge(t *testing.T, protocol, prepare string, handler http.HandlerFunc) (*Service, ai.Judge) {
 	t.Helper()
 	e := newApprovalEnv(t)
 	server := httptest.NewTLSServer(handler)
@@ -24,7 +24,7 @@ func testHTTPJudge(t *testing.T, prepare string, handler http.HandlerFunc) (*Ser
 	e.s.pluginNet = plugins.NetOptions{Resolver: modelIntegrationDNS{}, AllowLoopback: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 	}}
-	startTestPlugin(t, e.s, "httpjudge", `{"net":["example.com"]},"capabilities":["models"]`, fmt.Sprintf(`export default function(ctx){ctx.models.register({listModels:()=>({models:[{id:"j",name:"J",transport:"http",protocol:"typesafe-systemone",baseURL:"https://example.com/v1"}]}),prepareRequest(call){%s}})}`, prepare))
+	startTestPlugin(t, e.s, "httpjudge", `{"net":["example.com"]},"capabilities":["models"]`, fmt.Sprintf(`export default function(ctx){ctx.models.register({listModels:()=>({models:[{id:"j",name:"J",transport:"http",protocol:%q,baseURL:"https://example.com/v1"}]}),prepareRequest(call){%s}})}`, protocol, prepare))
 	e.s.running["httpjudge"].modelNet.Transport().TLSClientConfig.InsecureSkipVerify = true // pinned to loopback
 	rows, err := e.s.ListModels(bg)
 	require.NoError(t, err)
@@ -41,21 +41,27 @@ func testHTTPJudge(t *testing.T, prepare string, handler http.HandlerFunc) (*Ser
 }
 
 func TestPluginModelsHTTPJudgeBusinessError(t *testing.T) {
-	_, j := testHTTPJudge(t, `throw {code:"model_not_ready",message:"Prepare model",retryable:true}`, func(w http.ResponseWriter, r *http.Request) { t.Error("business error must stop before HTTP") })
-	answers, err := j.Ask(bg, "public", []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "test?"}})
-	require.Nil(t, answers)
-	require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
-	var me *ModelError
-	require.ErrorAs(t, err, &me)
-	require.Equal(t, "model_not_ready", me.Code)
-	require.True(t, me.Retryable)
+	for _, protocol := range []string{"typesafe-systemone", "openai-decisions"} {
+		for _, code := range []string{"model_not_ready", "model_unavailable"} {
+			t.Run(protocol+"/"+code, func(t *testing.T) {
+				_, j := testHTTPJudge(t, protocol, fmt.Sprintf(`throw {code:%q,message:"Prepare model",retryable:true}`, code), func(w http.ResponseWriter, r *http.Request) { t.Error("business error must stop before HTTP") })
+				answers, err := j.Ask(bg, "public", []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "test?"}})
+				require.Nil(t, answers)
+				require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
+				var me *ModelError
+				require.ErrorAs(t, err, &me)
+				require.Equal(t, code, me.Code)
+				require.True(t, me.Retryable)
+			})
+		}
+	}
 }
 
 func TestPluginModelsHTTPJudgeInvalidated(t *testing.T) {
 	for _, change := range []string{"disable", "config", "caller-cancel"} {
 		t.Run(change, func(t *testing.T) {
 			entered, released := make(chan struct{}), make(chan struct{})
-			s, j := testHTTPJudge(t, `return call.request`, func(w http.ResponseWriter, r *http.Request) {
+			s, j := testHTTPJudge(t, "typesafe-systemone", `return call.request`, func(w http.ResponseWriter, r *http.Request) {
 				close(entered)
 				select {
 				case <-released:

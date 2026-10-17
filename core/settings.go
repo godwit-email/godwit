@@ -168,17 +168,11 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err := st.validate(); err != nil {
 		return Settings{}, err
 	}
-	previous, err := s.loadSettings(ctx)
-	if err != nil {
-		return Settings{}, err
-	}
-	if st.JudgeModel != previous.JudgeModel && st.JudgeModel != "" {
-		if _, err := ai.ParseModelRef(st.JudgeModel); err != nil {
-			return Settings{}, err
-		}
-		if _, candidate, err := s.pluginModel(ctx, st.JudgeModel); err == nil && candidate.Assets != nil {
-			return Settings{}, &ModelError{Code: "model_not_ready", Message: "Prepare the model before selecting it"}
-		}
+	managedJudge := false
+	if st.JudgeModel != "" {
+		// Resolve before taking settingsMu: discovery may call the plugin process.
+		_, candidate, err := s.pluginModel(ctx, st.JudgeModel)
+		managedJudge = err == nil && candidate.Assets != nil
 	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
@@ -189,6 +183,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if st.JudgeModel != stored.JudgeModel && st.JudgeModel != "" {
 		if _, err := ai.ParseModelRef(st.JudgeModel); err != nil {
 			return Settings{}, err
+		}
+		if managedJudge {
+			return Settings{}, &ModelError{Code: "model_not_ready", Message: "Prepare the model before selecting it"}
 		}
 	}
 	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust

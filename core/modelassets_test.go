@@ -7,6 +7,7 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -283,6 +284,50 @@ func TestJudgeModelRequiresPreparation(t *testing.T) {
 	st.JudgeModel = "other/"
 	_, err = s.SetSettings(bg, st)
 	require.Error(t, err)
+}
+
+func TestJudgeModelStaleSettingsCannotReselectManagedModel(t *testing.T) {
+	s, _ := nativeAssetService(t)
+	s.assets = &fakeModelAssets{}
+	_, err := s.PrepareModel(bg, "assetjudge/a")
+	require.NoError(t, err)
+	stale, err := s.GetSettings(bg)
+	require.NoError(t, err)
+	stale.Theme = "dark"
+
+	s.settingsMu.Lock()
+	unlock := sync.OnceFunc(s.settingsMu.Unlock)
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { _, err := s.SetSettings(bg, stale); done <- err }()
+	// Wait for the stale writer's preflight to finish, without a timing-based sleep.
+	require.Eventually(t, func() bool {
+		buf := make([]byte, 1<<20)
+		for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+			if strings.Contains(stack, "[sync.Mutex.Lock]") && strings.Contains(stack, "(*Service).SetSettings(") {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, time.Millisecond)
+	current := stale
+	current.JudgeModel = ""
+	_, err = s.storeSettings(bg, current) // another writer commits while holding settingsMu
+	require.NoError(t, err)
+	require.NoError(t, s.RemoveModelFiles(bg, "assetjudge/a"))
+	unlock()
+
+	select {
+	case err := <-done:
+		var me *ModelError
+		require.ErrorAs(t, err, &me)
+		require.Equal(t, "model_not_ready", me.Code)
+	case <-time.After(5 * time.Second):
+		t.Fatal("stale settings writer did not finish")
+	}
+	stored, err := s.GetSettings(bg)
+	require.NoError(t, err)
+	require.Empty(t, stored.JudgeModel)
 }
 
 func TestPrepareModelCatalogInvalidatesResident(t *testing.T) {

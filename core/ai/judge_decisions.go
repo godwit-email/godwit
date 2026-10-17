@@ -40,6 +40,10 @@ func (h judgeHTTP) decisions(ctx context.Context, input string, qs []Question) (
 		if err := ctxError(err); err != nil {
 			return nil, err
 		}
+		var providerErr ModelRequestError
+		if errors.As(err, &providerErr) {
+			return nil, providerErr
+		}
 		var ae *openai.Error
 		if errors.As(err, &ae) {
 			if err := h.retryAfter(ctx, attempt, ae.StatusCode, ae.Response.Header); err != nil {
