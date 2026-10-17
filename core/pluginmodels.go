@@ -185,8 +185,8 @@ func pluginServiceID(ref string) int64 {
 // forgetPluginModels ends the engine instances of the models rp ran, as
 // stopping it does, so their runs in flight end like a removed service's.
 func (s *Service) forgetPluginModels(name string, rp *runningPlugin) {
-	rp.clients.Range(func(id, _ any) bool {
-		s.forgetModel(pluginServiceID(translatorPrefix + name + "/" + id.(string)))
+	rp.clients.Range(func(k, _ any) bool {
+		s.forgetModel(pluginServiceID(translatorPrefix + name + "/" + k.(clientKey).id))
 		return true
 	})
 }
@@ -213,7 +213,8 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 // and settings snapshot, so the engine rebuilds its Genkit instance for a
 // restarted or reconfigured plugin.
 func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string, cfg any) *http.Client {
-	if c, ok := rp.clients.Load(id); ok && c.(*http.Client).Transport.(*pluginModelTransport).cfg == cfg {
+	key := clientKey{id, cfg}
+	if c, ok := rp.clients.Load(key); ok {
 		return c.(*http.Client)
 	}
 	t := &pluginModelTransport{s: s, name: name, rp: rp, model: id, cfg: cfg, base: cmp.Or(s.modelHTTP, ai.NoRedirectClient).Transport}
@@ -223,9 +224,16 @@ func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string, c
 	if t.base == nil {
 		t.base = http.DefaultTransport
 	}
-	c := &http.Client{Transport: t, CheckRedirect: ai.NoRedirectClient.CheckRedirect}
-	rp.clients.Store(id, c)
-	return c
+	// LoadOrStore: concurrent first resolutions share one client, else the
+	// engine would take the second for a changed service and end the first's run.
+	c, _ := rp.clients.LoadOrStore(key, &http.Client{Transport: t, CheckRedirect: ai.NoRedirectClient.CheckRedirect})
+	return c.(*http.Client)
+}
+
+// clientKey names a plugin model's client: its model id and settings snapshot.
+type clientKey struct {
+	id  string
+	cfg any
 }
 
 // pluginModelTransport sends the requests an SDK encoded for a plugin's model:

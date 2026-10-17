@@ -538,7 +538,7 @@ type runningPlugin struct {
 	cfg     atomic.Pointer[map[string]any] // native: the settings a new process gets
 	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
 	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
-	clients sync.Map                       // model id → *http.Client of its HTTP models
+	clients sync.Map                       // clientKey → *http.Client of its HTTP models
 	loaded  sync.Map                       // native: model id → loadedModel, of each model its process loaded (pluginjudge.go)
 	judging chan struct{}                  // one judge call at a time
 

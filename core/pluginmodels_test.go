@@ -449,3 +449,21 @@ func TestFailingPluginListNoLegacyFallback(t *testing.T) {
 	require.NoError(t, err, "with no plugin p, the legacy service's model")
 	assert.EqualValues(t, 1, m.ServiceID)
 }
+
+func TestPluginModelClientShared(t *testing.T) {
+	s := newMailContextService(t)
+	_, host := modelServer(t, s, "openai")
+	startModelPlugin(t, s, "p", host, httpModelPlugin("openai-completions", host))
+	s.pluginsMu.RLock()
+	rp := s.running["p"]
+	s.pluginsMu.RUnlock()
+	cfg := rp.cfgKey()
+	got := make(chan *http.Client, 8)
+	for range 8 {
+		go func() { got <- s.pluginModelClient("p", rp, "m1", cfg) }()
+	}
+	first := <-got
+	for range 7 {
+		assert.Same(t, first, <-got, "concurrent first resolutions share one client")
+	}
+}
