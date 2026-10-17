@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
@@ -16,6 +17,8 @@ import { type Decide, Panel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { WitTransport } from "@/wit/transport";
 
+/** The main window shows its material (macOS): the page tints it as the native root does. */
+const material = new URLSearchParams(location.search).has("material");
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
@@ -140,7 +143,7 @@ export function WitPage() {
   const t = useT(st?.locale);
   if (!st) return <main />;
   return (
-    <main className="h-screen">
+    <main className={cn("h-screen", material && "bg-window-material")}>
       {view && (
         <Conversation
           key={view.key}
