@@ -893,7 +893,7 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 			return ai.ResolvedModel{}, "", ErrAINotConfigured
 		}
 	}
-	if strings.HasPrefix(ref, translatorPrefix) {
+	if isPluginRef(ref) { // a two-part "plugin/model" is a service's from before the slug was reserved (its alias)
 		m, err := s.resolvePluginModel(ctx, ref)
 		return m, ref, err
 	}

@@ -207,3 +207,14 @@ func TestPluginJudgeReloadsOtherAssets(t *testing.T) {
 	assert.Len(t, recorded(t, record, "models.load"), 2, "other files are loaded again")
 	assert.Equal(t, 1, fa.released, "the old files' lease goes")
 }
+
+func TestPluginJudgeLoadRejected(t *testing.T) {
+	s := newMailContextService(t)
+	usePluginJudge(t, s, map[string]string{"weights": "4b"}, map[string]any{"loadError": "invalid_request"})
+	s.assets = &fakeAssets{}
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	assert.ErrorIs(t, err, ai.ErrJudgeUnavailable)
+	assert.False(t, unanswerable(err), "a model that will not load is not about this message")
+}

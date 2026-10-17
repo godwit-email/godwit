@@ -130,7 +130,10 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	}
 	err = j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
 		_, err := j.rp.native.Call(ctx, "models.load", map[string]any{"modelId": j.model.ID, "assets": dirs})
-		return judgeError(err)
+		if ne := (*plugins.NativeError)(nil); errors.As(err, &ne) { // even invalid_request: no input is involved
+			return fmt.Errorf("%w: %w", ai.ErrJudgeUnavailable, err)
+		}
+		return err
 	})
 	if err != nil {
 		lease()

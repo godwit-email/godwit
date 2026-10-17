@@ -318,4 +318,7 @@ func TestBackfillReservedPluginSlug(t *testing.T) {
 	st, err := s.loadSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"plugin-2/m1", "plugin-2/m1", "plugin-2"}, []string{st.DefaultModel, st.SmallModel, st.JudgeService})
+	r, err := s.resolveModel(t.Context(), "plugin/m1") // as a skill file may still say
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, r.ServiceID)
 }

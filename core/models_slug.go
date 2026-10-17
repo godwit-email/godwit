@@ -122,6 +122,9 @@ func (s *Service) backfillSlugs(ctx context.Context) error {
 		slug := pickSlug(r.name, r.id, rows, aliases) // the name itself when it is a free slug
 		rows[i].slug = slug
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE model_services SET slug = ? WHERE id = ?", Args: []any{slug, r.id}})
+		if old != r.name { // the reserved slug; skill files may still say "plugin/<model>"
+			stmts = append(stmts, sqlite.Statement{SQL: "INSERT OR IGNORE INTO model_service_aliases(name, service_id) VALUES (?, ?)", Args: []any{old, r.id}})
+		}
 		if slug != old {
 			renamed[old] = slug
 		}
