@@ -22,6 +22,7 @@ var errorKeys = []struct {
 	{core.ErrStaleApproval, "error.stale_approval"},
 	{core.ErrNeedsGrant, "error.needs_grant"},
 	{core.ErrTranslatorUnavailable, "error.translator_unavailable"},
+	{core.ErrModelUnavailable, "error.model_unavailable"},
 	// A native plugin's failures: its stderr is the plugin's text, not the user's.
 	{plugins.ErrNativeExited, "error.plugin_exited"},
 	{plugins.ErrTimeout, "error.plugin_timeout"},

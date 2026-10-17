@@ -2,6 +2,7 @@ package ai
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -161,7 +162,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	}
 	// Checked under the lock: a service changed after this check is
 	// Forgotten after it too, which ends the run through the instance.
-	if e.Current != nil {
+	if e.Current != nil && m.Client == nil {
 		if v, err := e.Current(ctx, m.ServiceID); err != nil || v != m.Version {
 			return nil, errStale
 		}
@@ -192,21 +193,22 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 	// (openai-go and anthropic-sdk-go WithBaseURL drop RawPath): given one,
 	// they keep it as it is, so "%2F" reaches the service as previewed.
 	base := m.BaseURL + "/" // normalized: it never ends in "/"
+	client := cmp.Or(m.Client, e.client)
 	var plugin api.Plugin
 	switch m.Kind {
 	case "openai":
 		// compat_oai clears the identity the SDK reads from the environment.
 		plugin = &compat_oai.OpenAICompatible{Provider: "godwit", APIKey: m.APIKey, BaseURL: base,
-			Opts: []oai.RequestOption{oai.WithHTTPClient(e.client)}}
+			Opts: []oai.RequestOption{oai.WithHTTPClient(client)}}
 	case "anthropic":
 		// The SDK also reads ANTHROPIC_AUTH_TOKEN and sends it as Authorization.
-		key, opts := m.APIKey, []ant.RequestOption{ant.WithHTTPClient(e.client), ant.WithHeaderDel("Authorization")}
+		key, opts := m.APIKey, []ant.RequestOption{ant.WithHTTPClient(client), ant.WithHeaderDel("Authorization")}
 		if key == "" { // a local gateway: no auth at all
 			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
 		}
 		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: AnthropicBase(m.BaseURL) + "/", Opts: opts}
 	case KindResponses:
-		plugin = newResponsesPlugin(base, m.APIKey, e.client)
+		plugin = newResponsesPlugin(base, m.APIKey, client)
 	default:
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}

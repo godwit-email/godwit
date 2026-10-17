@@ -33,6 +33,10 @@ var (
 	ErrModelNotFound        = errors.New("model not found")
 	// ErrTranslatorUnavailable: the settings translate with a plugin that is not running.
 	ErrTranslatorUnavailable = errors.New("the translation plugin is not running")
+	// ErrModelUnavailable: a reference names a plugin model whose plugin is not
+	// running or no longer lists it. Unlike a removed service it never falls
+	// back to the default model.
+	ErrModelUnavailable = errors.New("the model's plugin is not running or no longer offers it")
 )
 
 // ModelService is a model service and its two capabilities. Kind is the
@@ -889,6 +893,10 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 			return ai.ResolvedModel{}, "", ErrAINotConfigured
 		}
 	}
+	if strings.HasPrefix(ref, translatorPrefix) {
+		m, err := s.resolvePluginModel(ctx, ref)
+		return m, ref, err
+	}
 	r, err := ai.ParseModelRef(ref)
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
@@ -934,6 +942,10 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return nil, "", false, err
+	}
+	if isPluginRef(st.JudgeService) { // never falls back: the user picked the plugin
+		j, err := s.pluginJudge(ctx, st.JudgeService)
+		return j, st.JudgeService, false, err
 	}
 	if st.JudgeService != "" {
 		m, key, err := s.serviceByRef(ctx, st.JudgeService)

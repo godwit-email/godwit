@@ -73,7 +73,7 @@ func pickSlug(name string, exceptID int64, rows []slugRow, aliases map[string]bo
 				return true
 			}
 		}
-		return aliases[c]
+		return aliases[c] || c+"/" == translatorPrefix // "plugin/…" references name plugin models
 	}
 	c := base
 	for n := 2; taken(c); n++ {

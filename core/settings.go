@@ -110,12 +110,15 @@ func (st Settings) validate() error {
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
 	}
-	if strings.Contains(st.JudgeService, "/") {
+	if strings.Contains(st.JudgeService, "/") && !isPluginRef(st.JudgeService) {
 		return fmt.Errorf("invalid judge service %q", st.JudgeService)
 	}
 	for _, r := range []string{st.DefaultModel, st.SmallModel} {
 		if _, err := ai.ParseModelRef(r); r != "" && err != nil {
 			return err
+		}
+		if strings.HasPrefix(r, translatorPrefix) && !isPluginRef(r) {
+			return fmt.Errorf("invalid plugin model reference %q", r)
 		}
 	}
 	for _, l := range append([]string{st.UILanguage, st.ReadingLanguage}, st.NoTranslate...) {

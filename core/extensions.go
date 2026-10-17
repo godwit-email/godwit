@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -533,9 +534,11 @@ type runningPlugin struct {
 	p    *plugins.Plugin // script plugins
 	row  pluginRow       // the row it was started from: manifest and permission hashes
 
-	native *plugins.NativeProcess         // native plugins (p and host are nil)
-	cfg    atomic.Pointer[map[string]any] // native: the settings a new process gets
-	models atomic.Pointer[modelCatalog] // its last model list (pluginmodels.go)
+	native  *plugins.NativeProcess         // native plugins (p and host are nil)
+	cfg     atomic.Pointer[map[string]any] // native: the settings a new process gets
+	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
+	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
+	clients sync.Map                       // model id → *http.Client of its HTTP models
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -667,6 +670,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		Name, Version string
 		ABI           uint32
 		Capabilities  []string
+		Methods       []string
 	}
 	sorted := func(xs []string) []string { return slices.Sorted(slices.Values(xs)) }
 	if json.Unmarshal(res, &d) != nil || d.Name != name || d.Version != r.m.Version || d.ABI != plugins.NativeABI ||
@@ -674,6 +678,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		// a native failure, so failed restarts count towards disabling it
 		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
+	rp.methods.Store(&d.Methods)
 	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
 	return err
 }
