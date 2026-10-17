@@ -15,7 +15,7 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 	e.sync(t)
 	e.put(t, "INBOX", eml("code@x", "Login <login@example.com>", e.acc.Email, "Verification code: 482913", now.Format(time.RFC1123Z), "Do not share it."))
-	e.put(t, "INBOX", eml("link@x", "Acme <id@acme.example>", e.acc.Email, "Sign in to Acme", now.Format(time.RFC1123Z), "Log in here: https://acme.example/l/1"))
+	e.put(t, "INBOX", eml("link@x", "Acme <id@acme.example>", e.acc.Email, "Sign in to Acme", now.Format(time.RFC1123Z), "Log in here: https://acme.example/l/1\nThis link expires in 10 minutes."))
 	e.sync(t)
 	codeID, linkID := e.idOf(t, "code@x"), e.idOf(t, "link@x")
 
