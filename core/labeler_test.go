@@ -411,13 +411,39 @@ func TestRescanAll(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, n)
 	_, on := labelRow(t, s, a, l["otp"])
+	require.Equal(t, 1, on, "a model label stays until the judge answers again")
+	p, err := s.PendingLabels(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 3, p)
+	_, err = s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	_, on = labelRow(t, s, a, l["otp"])
 	require.Equal(t, -1, on, "the model's labels are judged again")
 	src, on := labelRow(t, s, a, l["bill"])
 	require.Equal(t, "manual", src)
 	require.Equal(t, 1, on)
-	p, err := s.PendingLabels(t.Context())
+}
+
+// TestRescanJudgeFailureKeepsLabels: a judge that fails during a rescan, or a
+// stop before it gets to a message, leaves that message's model labels on.
+func TestRescanJudgeFailureKeepsLabels(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	now := time.Now().Unix()
+	a := addMessage(t, s, "a", "a@x", "", "", now)
+	b := addMessage(t, s, "b", "b@x", "", "", now)
+	setRow(t, s, a, otp, "auto", 1)
+	setRow(t, s, b, otp, "auto", 1)
+	useLabelJudge(s, &fakeJudge{err: errors.New("judge down")})
+	_, err := s.RescanLabels(t.Context(), 30, true)
 	require.NoError(t, err)
-	require.Equal(t, 3, p)
+	_, err = s.classifyBatch(t.Context())
+	require.Error(t, err)
+	_, on := labelRow(t, s, a, otp)
+	require.Equal(t, 1, on)
+	require.NoError(t, s.StopRescan(t.Context()))
+	_, on = labelRow(t, s, b, otp)
+	require.Equal(t, 1, on)
 }
 
 func TestRescanRange(t *testing.T) {
@@ -454,19 +480,23 @@ func TestStopRescan(t *testing.T) {
 	require.Nil(t, labeledAt(t, s, fresh), "new mail waits for the classifier, not the stop")
 }
 
-// TestClassifyUnanswerableIsNo: a message the model cannot answer for (a reply
-// with no valid answer, a request the service rejects) gets no labels and is
-// done, so it does not stop every later message.
-func TestClassifyUnanswerableIsNo(t *testing.T) {
+// TestClassifyUnanswerableKeepsLabels: a message the model cannot answer for (a reply
+// with no valid answer, a request the service rejects) is done with the labels
+// it has, so it does not stop every later message.
+func TestClassifyUnanswerableKeepsLabels(t *testing.T) {
 	for name, e := range map[string]error{"bad answer": ai.ErrJudgeAnswer, "rejected": &ai.HTTPError{Status: 400}} {
 		t.Run(name, func(t *testing.T) {
 			s := newLabelService(t, "", "zh-CN")
 			useLabelJudge(s, &fakeJudge{err: e})
+			otp := labelIDs(t, s)["otp"]
 			a := addMessage(t, s, "a", "a@x", "", "", 1)
+			setRow(t, s, a, otp, "auto", 1) // a rescan target's earlier answer
 			n, err := s.classifyBatch(t.Context())
 			require.NoError(t, err)
 			require.Equal(t, 1, n)
 			require.Greater(t, store.Int(labeledAt(t, s, a)), int64(0))
+			_, on := labelRow(t, s, a, otp)
+			require.Equal(t, 1, on, "no answer is no reason to drop it")
 		})
 	}
 }

@@ -134,8 +134,11 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				return done, err
 			}
 			answers, err := judge.Ask(ctx, labelState(m), qs)
-			if err != nil && !unanswerable(err) {
-				return done, err
+			if err != nil {
+				if !unanswerable(err) {
+					return done, err
+				}
+				labels = nil // no answer to go by: the labels it has stay
 			}
 			for _, a := range answers {
 				yes[a.Name] = a.Type == ai.Predicate && a.Probability != nil && *a.Probability >= st.JudgeThreshold // a refusal is no
@@ -150,8 +153,8 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 }
 
 // unanswerable reports an error that would repeat for this message alone: no
-// valid answer, or the service rejecting the request (a content filter). Its
-// labels are no, so one message does not stop the rest.
+// valid answer, or the service rejecting the request (a content filter). The
+// message is done with its labels as they are, so one message does not stop the rest.
 func unanswerable(err error) bool {
 	var he *ai.HTTPError
 	return errors.Is(err, ai.ErrJudgeAnswer) || errors.As(err, &he) && he.Status == 400
@@ -227,8 +230,9 @@ func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]
 }
 
 // RescanLabels makes the Inbox mail of the last days (0: all of it) the
-// classifier's targets again: all of it, its model labels dropped, or only
-// mail with no label on. Hand-set labels stay. It returns how many.
+// classifier's targets again: all of it, or only mail with no label on. Model
+// labels are replaced only once the judge answers for that message, so a judge
+// failing or a stop midway loses none; hand-set labels stay. It returns how many.
 func (s *Service) RescanLabels(ctx context.Context, days int, all bool) (int, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -249,17 +253,13 @@ func (s *Service) RescanLabels(ctx context.Context, days int, all bool) (int, er
 	if !all {
 		target += " AND NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.active = 1)"
 	}
-	ids := "SELECT m.id FROM messages m WHERE " + target
-	res, err := s.db.Transaction(ctx, []sqlite.Statement{
-		{SQL: "DELETE FROM message_labels WHERE source = 'auto' AND ? AND message_id IN (" + ids + ")", Args: []any{b2i(all), since}},
-		{SQL: "UPDATE messages SET labeled_at = 0 WHERE id IN (" + ids + ")", Args: []any{since}},
-	})
+	res, err := s.db.Execute(ctx, "UPDATE messages SET labeled_at = 0 WHERE id IN (SELECT m.id FROM messages m WHERE "+target+")", since)
 	if err != nil {
 		return 0, err
 	}
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
 	s.wakeLabeler()
-	return int(res[1].Changes), nil
+	return int(res.Changes), nil
 }
 
 // LabelModelReady reports whether a model can classify mail.
