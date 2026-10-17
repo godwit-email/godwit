@@ -19,7 +19,7 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	e := ui.Column(c).AlignItems(ui.Center).Justify(ui.Center).Gap(th.Space(4)).Padding(th.Space(8), th.Space(6))
 	if o.Dashed {
-		e.Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border).BorderStyle(ui.BorderDashed)
+		e.Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed)
 	}
 	return e.Children(func() {
 		if o.Icon != "" {

@@ -1050,7 +1050,7 @@ func avatarImage(av core.Avatar) (ui.ImageSource, error) {
 // listCard is a bordered list of rows.
 func listCard(c *ui.Context, rows func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.DeviceHairline, t.Border).Background(t.Background).Clip().Children(rows)
+	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
 }
 
 // listRow is a clickable row of a listCard; i > 0 draws a divider above it.
@@ -1059,7 +1059,7 @@ func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.
 	t, th := theme.Of(c), c.Theme()
 	b := kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
 	if i > 0 {
-		b.BorderWidth(theme.DeviceHairline, 0, 0, 0).BorderColor(t.Border)
+		b.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
 	}
 	return b.Children(children)
 }

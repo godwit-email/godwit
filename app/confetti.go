@@ -90,7 +90,7 @@ func decayEase(decay, ticks float64) ui.Easing {
 func (b *burst) build(c *ui.Context, x, y float32) {
 	t := theme.Of(c)
 	colors := confettiColors(t)
-	group := ui.Box(c.Key("confetti")).Absolute().Left(x).Top(y).Size(theme.Hairline, theme.Hairline).PassThrough() // sized to tell it was laid out
+	group := ui.Box(c.Key("confetti")).Absolute().Left(x).Top(y).Size(theme.Stroke, theme.Stroke).PassThrough() // sized to tell it was laid out
 	if !b.launched && group.Bounds().W > 0 {
 		b.launched = true
 	}

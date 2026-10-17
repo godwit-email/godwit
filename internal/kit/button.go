@@ -98,7 +98,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.SidebarSelected)
 		}
 	case Outline:
-		b.Background(t.Background).Border(theme.Hairline, t.Input).TextColor(t.Foreground)
+		b.Background(t.Background).Border(theme.Stroke, t.Input).TextColor(t.Foreground)
 		if !o.Flat {
 			Elevate(c, b, theme.ShadowXs)
 		}
@@ -119,7 +119,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.DangerBg)
 		}
 	case DestructiveOutline:
-		b.Background(t.Background).Border(theme.Hairline, t.DangerBorder).TextColor(t.Danger)
+		b.Background(t.Background).Border(theme.Stroke, t.DangerBorder).TextColor(t.Danger)
 		if hover {
 			b.Background(t.DangerBg)
 		}

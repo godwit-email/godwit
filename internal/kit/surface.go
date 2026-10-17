@@ -54,7 +54,7 @@ func SidebarIcon(c *ui.Context, item ui.Element, icon string, selected bool) {
 // Card is a bordered panel.
 func Card(c *ui.Context, body func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Xl).Background(t.Background).Border(theme.DeviceHairline, t.Border)
+	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Xl).Background(t.Background).Border(theme.Hairline, t.Border)
 	return Elevate(c, card, theme.ShadowSm).Children(body)
 }
 
@@ -71,7 +71,7 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	t := theme.Of(c)
 	b := ui.ButtonBase(c).Justify(ui.Start).Radius(t.Radius.Lg).Transition(colors(theme.MotionFast))
 	if o.Bordered {
-		b.Border(theme.DeviceHairline, t.Border).Background(t.Background)
+		b.Border(theme.Hairline, t.Border).Background(t.Background)
 	}
 	if !o.Bare {
 		switch {
@@ -126,7 +126,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 // corners of radius. Give it its size and Children.
 func Panel(c *ui.Context, radius float32) ui.Element {
 	t := theme.Of(c)
-	return Elevate(c, ui.Column(c).Radius(radius).Clip().Background(t.Background).Border(theme.DeviceHairline, t.Border), theme.ShadowXs)
+	return Elevate(c, ui.Column(c).Radius(radius).Clip().Background(t.Background).Border(theme.Hairline, t.Border), theme.ShadowXs)
 }
 
 // CardHeader is a Card's title with an optional description under it.

@@ -481,10 +481,10 @@ func TestKitSeparatorSizes(t *testing.T) {
 	tt.Frame()
 	h, _ := tt.Find("sep-h")
 	v, _ := tt.Find("sep-v")
-	if h.W != 200 || h.H != theme.Hairline {
+	if h.W != 200 || h.H != theme.Stroke {
 		t.Errorf("horizontal %vx%v", h.W, h.H)
 	}
-	if v.W != theme.Hairline {
+	if v.W != theme.Stroke {
 		t.Errorf("vertical width %v", v.W)
 	}
 	a, _ := tt.Find("row-a")
