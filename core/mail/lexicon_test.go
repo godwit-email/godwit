@@ -17,6 +17,17 @@ func TestLexicons(t *testing.T) {
 		codes []code
 		links []link
 	}{
+		{"zh-Hant", []code{
+			{"Acme 驗證碼", "您的驗證碼為 482913，10 分鐘內有效。", "482913"},
+			{"Acme 帳戶", "您的認證碼：482913，請勿告知他人。", "482913"},
+			{"482913 是您的驗證碼", "請於 10 分鐘內輸入。", "482913"},
+			{"信用卡資料", "安全碼：123", ""},
+		}, []link{
+			{"Acme 登入連結", `<p>此連結 10 分鐘內有效。</p><a href="https://acme.example/l/1">按此登入</a>`, "https://acme.example/l/1", mail.LinkSignIn},
+			{"歡迎加入 Acme", `<a href="https://acme.example/c/1">確認您的電郵地址</a>`, "https://acme.example/c/1", mail.LinkConfirm},
+			{"重新設定密碼", `<a href="https://acme.example/r/1">重新設定密碼</a>`, "https://acme.example/r/1", mail.LinkReset},
+			{"新的登入通知", `<p>此連結可查看活動。</p><a href="https://acme.example/a">登入</a>`, "", ""},
+		}},
 		{"ja", []code{
 			{"【Acme】認証コードのお知らせ", "あなたの認証コードは 482913 です。10分間有効です。", "482913"},
 			{"ご注文の確認", "クーポンのセキュリティコード：AB12", ""},

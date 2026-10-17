@@ -79,7 +79,7 @@ var lexicons = []lexicon{
 		fallbackLabel: `use this link`,
 	},
 	{
-		lang:          "zh",
+		lang:          "zh-Hans",
 		codeHints:     `验证码|校验码|动态码|动态密码|一次性密码|一次性代码|安全代码|验证代码`,
 		ambiguous:     `激活码`,
 		copulas:       `为|是`,
@@ -101,6 +101,33 @@ var lexicons = []lexicon{
 		clickTo:       `点击`,
 		fallback:      `(?:无法|不能)点击.*(?:按钮|链接).*[:：]\s*$`,
 		fallbackLabel: `使用此链接`,
+	},
+	{
+		// Taiwan's and Hong Kong's wording, written as it is: words are read
+		// Simplified like the text, so the characters zh-Hans shares match there
+		// already; these are the words zh-Hans does not use.
+		lang:          "zh-Hant",
+		codeHints:     `驗證碼|認證碼|簡訊驗證碼|一次性密碼|動態密碼|登入碼`,
+		ambiguous:     `安全碼|確認碼|啟用碼|開通碼`,
+		copulas:       `為|是`,
+		codeBefore:    `是(?:您|你)的`,
+		signIn:        `登入|驗證|認證|(?:啟用|開通)(?:您|你)?的?(?:帳戶|帳號)`,
+		enter:         `輸入|填寫|貼上`,
+		codeWords:     `代碼|驗證碼|認證碼|確認碼`,
+		replyPrefix:   `回覆|轉寄|轉發`,
+		replyHeader:   `(?:於|在).+寫道[:：]`,
+		replyFrom:     `寄件者|寄件人`,
+		replySent:     `寄件日期|傳送時間|日期`,
+		signInSubject: `登入|登錄`,
+		signInLabel:   `(?:按此|點此|點擊|立即)?(?:登入|登錄)(?:到|至)?\s*[A-Za-z0-9 ._-]*`,
+		signInLead:    `(?:登入|登錄)(?:連結)?`,
+		delivery:      `(?:登入|登錄|一次性|安全|此|該|下方的?)連結|連結[^\n]{0,30}(?:有效|過期|失效)`,
+		alert:         `新(?:的)?(?:登入|裝置)|登入(?:提醒|通知|活動)|(?:異常|不明)登入`,
+		confirm:       `(?:確認|驗證|啟用|開通)(?:您|你)?的?(?:電子郵件(?:地址)?|電郵(?:地址)?|信箱|郵件地址|帳戶|帳號)`,
+		reset:         `(?:重設|重新設定|重置|找回)(?:您的|你的)?密碼`,
+		clickTo:       `按此|點此|點擊`,
+		fallback:      `(?:無法|不能)(?:點擊|點選|按).*(?:按鈕|連結).*[:：]\s*$`,
+		fallbackLabel: `使用此連結`,
 	},
 	{
 		lang:          "ja",
