@@ -95,3 +95,20 @@ func TestSignInCodeArrivingBeforeFirstScan(t *testing.T) {
 	h.app.refreshSignInCodes()
 	h.until("startup arrival banner", func() bool { return len(h.plat.codeBanners) == 1 })
 }
+
+func TestSignInCodesInOneBatchKeepOtherNotifications(t *testing.T) {
+	h, acc := notifyHarness(t, nil)
+	h.clock.mu.Lock()
+	h.clock.now = time.Now().Truncate(time.Second)
+	h.clock.mu.Unlock()
+	h.app.refreshSignInCodes()
+	h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("first@example.com", acc.Email, "Verification code: 111111", ""))
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("second@example.com", acc.Email, "Verification code: 222222", ""))
+	h.until("both arrivals", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 2 })
+	notes := h.notesAfter(1)
+	h.until("the banner", func() bool { return len(h.plat.codeBanners) == 1 })
+	if len(notes) != 1 || notes[0].MessageID == h.plat.codeBanners[0].MessageID {
+		t.Fatalf("notifications %+v beside the banner for %d", notes, h.plat.codeBanners[0].MessageID)
+	}
+}

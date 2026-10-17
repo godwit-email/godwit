@@ -62,10 +62,10 @@ func (a *App) notify(acc int64, got *arrivals) {
 			return nil
 		}
 		if codeBanner {
-			if codes, err := svc.RecentSignInCodes(ctx, now); err == nil {
-				msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool {
-					return slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == m.ID })
-				})
+			// Only the newest code takes the banner; older ones in the same batch
+			// keep their ordinary notification.
+			if codes, err := svc.RecentSignInCodes(ctx, now); err == nil && len(codes) > 0 {
+				msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID == codes[0].MessageID })
 			}
 		}
 		for _, m := range msgs {

@@ -36,6 +36,10 @@ func TestSignInCode(t *testing.T) {
 }
 
 func TestSignInCodeExcludesHTMLQuotes(t *testing.T) {
+	outlook := `<div>Thanks, it worked.</div><div id="appendonsend"></div><hr><div id="divRplyFwdMsg"><b>From:</b> Login</div><div>Your verification code: 123456</div>`
+	if got := mail.SignInCode("RE: Your verification code", "", outlook); got != "" {
+		t.Fatalf("Outlook-quoted code %q", got)
+	}
 	if got := mail.SignInCode("Re: Your verification code", "Your verification code: 123456", `<p>Thanks, the login worked.</p><blockquote>Your verification code: 123456</blockquote>`); got != "" {
 		t.Fatalf("quoted code %q", got)
 	}

@@ -76,6 +76,15 @@ func unquoted(text, htmlBody string) (string, *html.Node) {
 			next := child.NextSibling
 			quoted := child.Type == html.ElementNode && child.Data == "blockquote"
 			for _, attr := range child.Attr {
+				// Outlook quotes without markup: everything from its reply header on is the old message.
+				if attr.Key == "id" && (attr.Val == "divRplyFwdMsg" || attr.Val == "appendonsend") {
+					for c := child; c != nil; {
+						after := c.NextSibling
+						n.RemoveChild(c)
+						c = after
+					}
+					return
+				}
 				if attr.Key == "class" {
 					for token := range strings.FieldsSeq(attr.Val) {
 						if token == "gmail_quote" || token == "yahoo_quoted" || token == "protonmail_quote" {
