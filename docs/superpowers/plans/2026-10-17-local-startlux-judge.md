@@ -57,7 +57,7 @@
 - **插件内部串行**：一个 `llama_context`，一把锁，一次一题。
 - 资产：只给 listed 插件下载；大小与 sha256 来自签名 registry；流式写盘，不整个读进内存；中断可续传；校验不过就删，不允许「仍然安装」。固定资产（库）安装时下载；变体只下载配置里选中的那个。
 - **资产纳入信任身份**：「已收录」比对的是版本、manifest、插件库**和本平台的全部资产描述**（`listsRelease`、`isReviewedPackage`、`applyRegistry`）。为此插件行除了「所选变体 → 目录」的绑定，还要**单独保存一份审核过的资产描述的规范化哈希**（含没选中的变体）；registry 撤掉或替换任何资产，等同吊销这个 release。
-- **加载时校验**：每个新进程启动前都按固定 sha256 校验所选资产的每个文件，目录里不能有多余文件或符号链接。校验要放在**懒重启也会走的那条路径**上（空闲退出后再次调用走的是 `OnStart`，不是 `loadNative`），并且在 `pluginsMu` 之外做、可取消、有自己的时间预算，不挤占 `loadNative` 的 10 秒启动时限。只有设置页的「已下载」状态可以用 size + mtime 缓存。Task 1 量一下每次空闲退出后重新哈希 3 GB 的代价，太贵再考虑「同一进程代内只校验一次 + 文件只读」的折中。
+- **加载时校验**：每个新进程启动前都按固定 sha256 校验所选资产的每个文件，目录里不能有多余文件或符号链接。校验要放在**懒重启也会走的那条路径**上（空闲退出后再次调用走的是 `OnStart`，不是 `loadNative`），并且在 `pluginsMu` 之外做、可取消、有自己的时间预算，不挤占 `loadNative` 的 10 秒启动时限。只有设置页的「已下载」状态可以用 size + mtime 缓存。实测 4B Q4 约 1 s（见 Task 1）。资产文件带隔离标记也算校验不通过。
 - 插件只从 `configure` 得到资产路径；plugin-host 仍不读数据目录。`configure` 只检查文件存在，不装模型（装模型放到第一次调用，避开 10 秒启动时限）。
 - **Registry 兼容**：release 带 `minGodwit`，取实现本计划的 Godwit 版本。v1.3.0 起的客户端（#81）会把读不了的 release 放一边、显示「需要更新」。
 
@@ -124,7 +124,13 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
 
 分发路径走不通，整个方案要改，所以放在最前面。
 
-- [ ] **macOS 分发闸门**：用 Developer ID 签名、公证过的 Godwit 构建，把锁定版本的 `libllama.dylib` + `libggml*.dylib` 按资产目录的布局放好，从 plugin-host 里 `dlopen`。确认：依赖库按 `@rpath` / `@loader_path` 能找到（必要时改写 install name，改写后重新签名、**再**算 sha256）；Metal shader 是内嵌的；带隔离标记、离线时都能加载；库由谁签名和公证（我们镜像时重签，还是沿用官方签名）。#68 验证的是主程序内加载 DLX，这里是从下载目录加载第三方库，要单独过一遍。
+- [x] **macOS 分发闸门**（2026-10-17，CI 公证的 Godwit 1.5.0 arm64 包，Developer ID + hardened runtime + `disable-library-validation`，llama.cpp b11707 官方包；测试插件在 plugin-host 里 `dlopen` libllama、装 4B Q4、跑一次前向）：
+  - **能加载**：官方库是 ad-hoc 签名，不用重签、不用公证，被签名的 Godwit 照常加载；用内嵌的 Metal 库，4B Q4 装载 0.56 s。
+  - **带隔离标记就加载不了**：`library load disallowed by system policy`。Godwit 不开沙盒、没设 `LSFileQuarantineEnabled`，用 `net/http` 自己下载的文件不带隔离标记；资产校验时**发现隔离标记就当作被改动**，提示重新下载，绝不自己去掉标记。
+  - **不联网也能加载**：给进程禁掉网络后照常跑（整机断网没测；不带隔离标记的文件 Gatekeeper 本来就不检查）。
+  - **要下载的文件**：7 个 dylib，约 11 MB：`libllama`、`libggml`、`libggml-base`、`libggml-cpu`、`libggml-blas`、`libggml-metal`、`libggml-rpc`。按 install name 存成 `lib*.0.dylib`、放在一个平铺目录里，靠 `@loader_path` 互相找到，不用符号链接、不用改依赖路径；sha256 就是官方文件本身的。
+  - 新目录里的库第一次 `dlopen` 约 1.5 s（系统校验签名），之后约 15 ms。
+  - **重新哈希**：Go sha256 约 2.7 GB/s，4B Q4 约 1 s、2B Q8 约 0.7 s（M5 Max）。每个进程代都完整校验可以接受，不需要折中方案；慢机器在跨平台实测里再量。
 - [ ] **Windows 分发闸门**：干净机器上开着 Defender 和 Smart App Control，plugin-host 加载下载来的 `llama.dll` / `ggml*.dll` 是否被拦。
 - [ ] **跨平台实测**：Windows x64（有 GPU 和只有 CPU 各一台）、Linux x64（同上）、一台 8 GB 内存的 Mac，用锁定版本跑 `eval/` 的 99 封：每种机器记录 2B 和 4B 的一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
@@ -179,7 +185,7 @@ registry 里 0.1.0 的资产大致是：
 ```json
 "assets": [
   {"name": "engine", "platforms": ["darwin-arm64"], "variants": [
-    {"id": "b11700-metal", "files": [{"name": "libllama.dylib", "url": "…", "sha256": "…", "size": 0}, {"name": "libggml.dylib", …}, …]}]},
+    {"id": "b11707-metal", "files": [{"name": "libllama.0.dylib", "url": "…", "sha256": "…", "size": 3529184}, {"name": "libggml.0.dylib", …}, …（共 7 个）]}]},
   {"name": "model", "variants": [
     {"id": "4b-q4", "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2710000000}, {"name": "decision_config.json", …}]},
     {"id": "2b-q8", "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2010000000}, {"name": "decision_config.json", …}]}]}
