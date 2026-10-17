@@ -541,6 +541,7 @@ type runningPlugin struct {
 	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
 	clients sync.Map                       // clientKey → *http.Client of its HTTP models
 	loaded  sync.Map                       // native: model id → loadedModel, of each model its process loaded (pluginjudge.go)
+	procs   atomic.Uint64                  // native: processes started, the current one\'s number
 	judging chan struct{}                  // one judge call at a time
 
 	stopHooks func() // cancels its message.received dispatcher, if any
@@ -684,6 +685,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
 	rp.methods.Store(&d.Methods)
+	rp.procs.Add(1)
 	rp.dropLoaded() // a new process has loaded nothing
 	cfg := rp.cfg.Load()
 	if _, err = call(ctx, "configure", map[string]any{"config": *cfg}); err == nil {

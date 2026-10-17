@@ -225,3 +225,21 @@ func TestPluginJudgeLoadRejected(t *testing.T) {
 	assert.ErrorIs(t, err, ai.ErrJudgeUnavailable)
 	assert.False(t, unanswerable(err), "a model that will not load is not about this message")
 }
+
+// A load stored after another process started (its OnStart found nothing to
+// drop) does not count for that process.
+func TestPluginJudgeLoadOfOtherProcess(t *testing.T) {
+	s := newMailContextService(t)
+	record := usePluginJudge(t, s, map[string]string{"weights": "4b"}, nil)
+	fa := &fakeAssets{}
+	s.assets = fa
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	j.(pluginModelJudge).rp.procs.Add(1) // as if a new process started before the entry was stored
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	require.NoError(t, err)
+	assert.Len(t, recorded(t, record, "models.load"), 2)
+	assert.Equal(t, 1, fa.released, "the old entry's lease goes")
+}

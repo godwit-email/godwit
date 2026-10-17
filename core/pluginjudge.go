@@ -119,7 +119,8 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	if err := j.rp.native.Start(ctx); err != nil {
 		return judgeFailure(ctx, err)
 	}
-	if v, ok := j.rp.loaded.Load(j.model.ID); ok && maps.Equal(v.(loadedModel).assets, j.model.Assets) { // new settings may name other files
+	proc := j.rp.procs.Load()                                                                                                            // a load the process after this one never saw does not count
+	if v, ok := j.rp.loaded.Load(j.model.ID); ok && v.(loadedModel).proc == proc && maps.Equal(v.(loadedModel).assets, j.model.Assets) { // new settings may name other files
 		return nil
 	}
 	// shortcut: release is "" until the plugin row stores its release's
@@ -150,7 +151,7 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 		lease()
 		return plugins.ErrClosed
 	}
-	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease}); had { // calls are one at a time: no other load raced this one
+	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease, proc}); had { // calls are one at a time: no other load raced this one
 		old.(loadedModel).lease()
 	}
 	return nil
@@ -179,10 +180,12 @@ func judgeFailure(ctx context.Context, err error) error {
 	return fmt.Errorf("%w: %w", ai.ErrJudgePlugin, err)
 }
 
-// loadedModel is a model the process loaded: the assets it was loaded with and their files' lease.
+// loadedModel is a model a process loaded: the assets it was loaded with,
+// their files' lease, and the process (runningPlugin.procs) it was loaded in.
 type loadedModel struct {
 	assets map[string]string
 	lease  func()
+	proc   uint64
 }
 
 // dropLoaded forgets the models rp's process loaded, releasing their files.
