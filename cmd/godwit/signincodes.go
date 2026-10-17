@@ -275,7 +275,9 @@ func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	}
 	b.win.OnMove(func() {
 		b.position.X, b.position.Y = b.win.Position()
-		b.timer.Reset(12 * time.Second)
+		if !b.hovered && !b.copied { // a drag ends under the pointer, where the countdown waits
+			b.timer.Reset(12 * time.Second)
+		}
 	})
 	b.win.OnClosed(func() {
 		b.timer.Stop()
