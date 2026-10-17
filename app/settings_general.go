@@ -275,7 +275,7 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	}
 	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
-		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Hairline, t.Border).Background(tok.Window)
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border).Background(tok.Window)
 	if on {
 		b.Border(theme.SelectedBorder, t.Primary)
 	}
