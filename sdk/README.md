@@ -15,9 +15,9 @@ export default function (ctx: Ctx) {
 }
 ```
 
-The npm package version describes the TypeScript contract, independently of
-the Godwit application version. Installing newer types does not upgrade the
-host; plugins must still declare their host compatibility in the registry.
+The npm package version matches the Godwit application version. Installing newer
+types does not upgrade the host; plugins must still declare their host
+compatibility in the registry.
 The native C header remains available in this repository under `sdk/native/`.
 
 ## Check and release
@@ -27,11 +27,12 @@ installs it into an isolated consumer, and type-checks the existing SDK example
 with strict TypeScript. It also checks that the tarball contains only the
 declarations, metadata, README, and license.
 
-The `SDK` workflow runs this check for pull requests and pushes to `main`.
-To release, update `sdk/package.json` and `sdk/package-lock.json` in a reviewed
-PR, merge it, then push a matching tag such as `sdk-v0.1.0`. CI verifies the
-version and that the tagged commit belongs to `main`, runs the package test,
-then publishes to npm with provenance. App release tags do not publish the SDK.
+The `SDK` workflow checks pull requests and pushes to `main`, including version
+agreement with the app, release metadata, and package lock. Release-please updates
+both app and SDK versions in the same release PR. Once the app release is public,
+the `Release` workflow checks out that same `vX.Y.Z` tag, tests the package, and
+publishes `@godwit/sdk@X.Y.Z` to npm with provenance. There is no separate SDK tag.
+Retry a failed SDK job from the app's release run.
 
 For the first publication, an npm maintainer with access to the `@godwit`
 scope must configure the repository's `NPM_TOKEN` secret with publish access
@@ -39,6 +40,6 @@ scope must configure the repository's `NPM_TOKEN` secret with publish access
 not create an npm organization or grant package permissions.
 
 After the package exists, configure its npm trusted publisher for GitHub Actions:
-owner `godwit-email`, repository `godwit`, workflow `sdk.yml`, no environment.
+owner `godwit-email`, repository `godwit`, workflow `release.yml`, no environment.
 Then remove `NPM_TOKEN`; subsequent releases use OIDC without a long-lived token.
 Trusted publishing requires npm >=11.5.1; the workflow installs npm 11 explicitly.

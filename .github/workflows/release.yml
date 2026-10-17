@@ -130,6 +130,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "${{ inputs.tag || needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false
 
+  # Publish matching types only after the app release is public.
+  sdk:
+    needs: [release-please, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GODWIT_RELEASE_TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: git merge-base --is-ancestor HEAD origin/main
+      - run: npm install --global npm@11
+      - run: npm ci --ignore-scripts
+        working-directory: sdk
+      - run: npm test
+        working-directory: sdk
+      - run: npm publish --access public --provenance --ignore-scripts
+        working-directory: sdk
+        env:
+          # Bootstrap the new package with a token; remove it after enabling npm OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   # Called, not triggered: a release published with GITHUB_TOKEN starts no workflow.
   homebrew:
     needs: [release-please, build]
