@@ -18,8 +18,16 @@ function ResizablePanelGroup({
   )
 }
 
-function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />
+// Clipped sideways only, as the native kit.Resizer's panes: the library's
+// overflow: auto would cut off a card's shadow below it.
+function ResizablePanel({ style, ...props }: ResizablePrimitive.PanelProps) {
+  return (
+    <ResizablePrimitive.Panel
+      data-slot="resizable-panel"
+      style={{ overflowX: "clip", overflowY: "visible", ...style }}
+      {...props}
+    />
+  )
 }
 
 /**

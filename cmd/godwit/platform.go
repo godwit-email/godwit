@@ -320,6 +320,8 @@ func composeWindowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
 		StateKey: "compose", Title: "新邮件"}
 	if goos == "darwin" {
+		// The main window's material; ?material tells the page to tint it rather than cover it.
+		o.URL, o.Vibrancy = "/compose.html?material", mygo.VibrancySidebar
 		o.TitleBarStyle = mygo.TitleBarHidden
 		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
 	}

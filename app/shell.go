@@ -168,6 +168,9 @@ func (a *App) View(c *ui.Context) {
 	root := t.Window
 	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
 		root = ui.Transparent // the material shows where the window's own color would
+		if !t.Dark {
+			root = t.Window.Alpha(theme.MaterialTint) // lighter, as the design's material, the blur still showing
+		}
 	}
 	for _, ts := range a.toasts {
 		c.AddToast(ts)

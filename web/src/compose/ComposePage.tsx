@@ -1,4 +1,5 @@
 import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
+import { cn } from "cn";
 import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
@@ -36,6 +37,8 @@ import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The window shows the main window's material (macOS): the page tints it rather than covers it. */
+const material = new URLSearchParams(location.search).has("material");
 
 /** What a closing needs of the editor: whether input is frozen, the IME composition in progress, and where the settling's blur took focus from. */
 interface CloseGate {
@@ -702,7 +705,7 @@ function Compose({
   return (
     <main
       aria-label={title}
-      className="flex h-screen flex-col bg-window"
+      className={cn("flex h-screen flex-col", material ? "bg-window-material" : "bg-window")}
       onCompositionStart={() => {
         let end = () => {};
         const ended = new Promise<void>((r) => (end = r));
