@@ -1004,10 +1004,17 @@ func TestTabsUnderline(t *testing.T) {
 	if one.H != r.H {
 		t.Errorf("tab heights differ: %v vs %v", one.H, r.H)
 	}
-	// the 32-high tab's bottom 2 px are Primary under the selected tab
-	p := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)+15)
-	if p.R != tk.Primary.R || p.G != tk.Primary.G {
-		t.Errorf("selected underline pixel %v, want primary %v", p, tk.Primary)
+	// the 32-high tab's bottom 2 px are Primary under the selected tab: look
+	// down from its label, whose box the platform's font metrics place
+	img, found := tt.Image(), false
+	for y := int(r.Y + r.H); y <= int(r.Y+r.H/2)+17; y++ {
+		if p := img.RGBAAt(int(r.X+r.W/2), y); p.R == tk.Primary.R && p.G == tk.Primary.G {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no primary %v underline under the selected tab", tk.Primary)
 	}
 }
 

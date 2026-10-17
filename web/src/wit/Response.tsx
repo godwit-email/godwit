@@ -206,7 +206,7 @@ export function Response({
             <AlertDialogTitle>{t("link.title")}</AlertDialogTitle>
             <AlertDialogDescription>{link && <Address url={link} />}</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="border-t-[0.5px]">
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <Button
               variant="outline"

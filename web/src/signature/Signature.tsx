@@ -172,7 +172,7 @@ function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
             editor.tf.focus();
           }),
         )}
-        <span className="mx-1 h-4 w-px bg-border" />
+        <span className="mx-1 h-4 border-l-[0.5px]" />
         {item("link", "compose.link", RiLink, () => {
           saved.current = editor.selection;
           setBad(false);
