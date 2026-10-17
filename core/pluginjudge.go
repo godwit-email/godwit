@@ -95,7 +95,7 @@ func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Quest
 			v, cerr := j.rp.native.Call(ctx, "models.judge", req)
 			err = decodeAnswer(v, judgeError(cerr), &res, "models.judge")
 		} else {
-			v, cerr := j.rp.p.JudgeModel(ctx, j.s.modelInvocation(j.rp), req)
+			v, cerr := j.rp.p.JudgeModel(ctx, j.s.modelInvocation(j.rp, j.cfg), req)
 			err = decodeAnswer(v, cerr, &res, "judge")
 		}
 		if err == nil {

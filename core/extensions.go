@@ -536,6 +536,7 @@ type runningPlugin struct {
 
 	native  *plugins.NativeProcess         // native plugins (p and host are nil)
 	cfg     atomic.Pointer[map[string]any] // native: the settings a new process gets
+	acked   atomic.Pointer[map[string]any] // native: the last of them a process accepted (cfgKey)
 	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
 	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
 	clients sync.Map                       // clientKey → *http.Client of its HTTP models
@@ -684,7 +685,10 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 	}
 	rp.methods.Store(&d.Methods)
 	rp.dropLoaded() // a new process has loaded nothing
-	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
+	cfg := rp.cfg.Load()
+	if _, err = call(ctx, "configure", map[string]any{"config": *cfg}); err == nil {
+		rp.acked.Store(cfg)
+	}
 	return err
 }
 
@@ -696,7 +700,9 @@ func (s *Service) configureNative(ctx context.Context, name string, rp *runningP
 		return err
 	}
 	rp.cfg.Store(&cfg)
-	_, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg})
+	if _, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg}); err == nil {
+		rp.acked.Store(&cfg)
+	}
 	return err
 }
 

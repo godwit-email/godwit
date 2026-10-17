@@ -66,7 +66,7 @@ func TestPluginJudgeAnswers(t *testing.T) {
 
 	rp := j.(pluginModelJudge).rp
 	cfg := map[string]any{}
-	rp.cfg.Store(&cfg) // as SetPluginConfig does
+	rp.acked.Store(&cfg) // as SetPluginConfig does once the process took it
 	_, err = j.Ask(t.Context(), "mail", twoQuestions)
 	assert.ErrorIs(t, err, ErrModelUnavailable, "other settings may list other models")
 	assert.Len(t, recorded(t, record, "models.judge"), 2)

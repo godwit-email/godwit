@@ -70,9 +70,11 @@ func (s *Service) ListPluginModels(ctx context.Context) ([]PluginModels, error) 
 }
 
 // cfgKey is the config snapshot rp's calls run with now.
+// A native plugin's is the settings its process acknowledged (configure
+// returned), so a list made while it reconfigures is not filed under them.
 func (rp *runningPlugin) cfgKey() any {
 	if rp.native != nil {
-		return rp.cfg.Load()
+		return rp.acked.Load()
 	}
 	return rp.host.snapshot()
 }
@@ -91,7 +93,7 @@ func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlug
 			v, cerr := rp.native.Call(ctx, "models.list", struct{}{})
 			err = decodeAnswer(v, cerr, &res, "models.list")
 		} else {
-			v, cerr := rp.p.ListModels(ctx, s.modelInvocation(rp))
+			v, cerr := rp.p.ListModels(ctx, s.modelInvocation(rp, key))
 			err = decodeAnswer(v, cerr, &res, "listModels")
 		}
 		if err == nil {
@@ -108,11 +110,13 @@ func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlug
 	return res.Models, key, nil
 }
 
-// modelInvocation admits a script plugin's models call, as a translation is admitted.
-func (s *Service) modelInvocation(rp *runningPlugin) plugins.Invocation {
+// modelInvocation admits a script plugin's models call, as a translation is
+// admitted, with cfg (a cfgKey) as its ctx.config: the snapshot the model was
+// listed with, never newer settings with an older model.
+func (s *Service) modelInvocation(rp *runningPlugin, cfg any) plugins.Invocation {
 	r := rp.row
 	hosts, _ := plugins.EgressFor(plugins.KindModels, r.m, r.granted == r.permHash, true, true)
-	return plugins.Invocation{ID: "models:" + rand.Text(), Kind: plugins.KindModels, EgressHosts: hosts, Config: rp.host.snapshot()}
+	return plugins.Invocation{ID: "models:" + rand.Text(), Kind: plugins.KindModels, EgressHosts: hosts, Config: cfg.(*plugins.ConfigSnapshot)}
 }
 
 // pluginModel is the model ref ("plugin/<name>/<model id>") names, its
@@ -339,7 +343,7 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 			v, cerr := t.rp.native.Call(ctx, "models.prepare", in)
 			err = decodeAnswer(v, cerr, &res, "models.prepare")
 		} else {
-			v, cerr := t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp), in)
+			v, cerr := t.rp.p.PrepareRequest(ctx, t.s.modelInvocation(t.rp, t.cfg), in)
 			err = decodeAnswer(v, cerr, &res, "prepareRequest")
 		}
 		if err == nil {
