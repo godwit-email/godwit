@@ -169,7 +169,8 @@ type signInBanner struct {
 	timer                     *time.Timer
 	failed, copied, hovered   bool
 	dragging, snapped, atHome bool
-	guide                     *mygo.Window   // the centre line shown while a drag is held on it
+	guide                     *mygo.Window   // the centring guide shown while a drag is held on the centre line
+	guideDashes               int            // dashes in each half of the guide
 	dragFrom, dragStart       mygo.Point     // the cursor and the banner where the drag began
 	avatar                    ui.ImageSource // the sender's image once loaded; nil keeps the initial
 	stopAvatar                context.CancelFunc
@@ -263,7 +264,8 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 	c.Invalidate() // the pointer moves without telling the view; follow it every frame
 }
 
-const codeGuideGap = 8 // between the banner and the guide's two halves
+const codeGuideGap = 8  // between the banner and the guide's two halves
+const codeGuideDash = 4 // each dash, and the space after it
 
 // showSnapGuide shows, while a banner is held on the centre line, a hairline
 // from each of its sides to the screen's edge: two equal lengths, as design
@@ -280,14 +282,25 @@ func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point, area 
 			Content: ui.View(func(c *ui.Context) {
 				t := theme.Of(c)
 				c.Root().Background(ui.Transparent)
+				// MyGo draws no dashed strokes: each half is a run of short boxes,
+				// laid from the banner outward so both halves match.
+				half := func(from ui.Align) {
+					ui.Row(c).FillHeight().Grow(1).Clip().Justify(from).Gap(codeGuideDash).Children(func() {
+						for range b.guideDashes {
+							ui.Box(c).Size(codeGuideDash, 1).Shrink(0).Background(t.Unread)
+						}
+					})
+				}
 				ui.Row(c).Fill().Gap(codeBannerWidth + 2*codeGuideGap).Children(func() {
-					ui.Box(c).FillHeight().Grow(1).Background(t.Unread)
-					ui.Box(c).FillHeight().Grow(1).Background(t.Unread)
+					half(ui.End)
+					half(ui.Start)
 				})
 			})})
 		b.guide.SetIgnoreMouseEvents(true)
 	}
+	b.guideDashes = (area.Width-codeBannerWidth)/2/(2*codeGuideDash) + 1
 	b.guide.SetSize(area.Width, 1) // the display may have changed
+	b.guide.Invalidate()
 	b.guide.SetPosition(area.X, pos.Y+codeBannerHeight/2)
 	if !b.guide.IsVisible() {
 		b.guide.ShowInactive()
