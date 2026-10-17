@@ -600,7 +600,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 			}
 			ui.Row(c).Wrap().Gap(th.Space(2)).Shrink(0).Children(func() {
 				for i, b := range card.Buttons {
-					o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+					o := kit.ButtonOpts{Variant: kit.Outline} // one height for all; the first stands out by colour
 					if i == 0 {
 						o = kit.ButtonOpts{Variant: kit.Default}
 					}
