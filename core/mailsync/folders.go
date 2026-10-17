@@ -22,8 +22,9 @@ type folder struct {
 var specialUse = map[imap.MailboxAttr]string{
 	imap.MailboxAttrSent: "sent", imap.MailboxAttrTrash: "trash", imap.MailboxAttrDrafts: "drafts",
 	imap.MailboxAttrJunk: "junk", imap.MailboxAttrArchive: "archive",
-	// Gmail's virtual folders ([Gmail]/All Mail, Starred, Important): the sidebar folds them away.
-	imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged", imap.MailboxAttrImportant: "important",
+	// Gmail's All Mail stands in for a missing archive (RoleFolder); its
+	// Starred is the unified 已标星 view, so the sidebar shows it no row.
+	imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged",
 }
 
 var roleNames = map[string]string{
@@ -34,8 +35,28 @@ var roleNames = map[string]string{
 	"archive": "archive", "归档": "archive",
 }
 
-// role is the folder's SPECIAL-USE role, else one guessed from its (last) name segment.
-func role(d *imap.ListData) string {
+// roles are the roles of LIST's folders, in its order: each folder's
+// SPECIAL-USE role, else one guessed from its (last) name segment, unless
+// another folder carries that role as SPECIAL-USE (Gmail's [Gmail]/Sent Mail
+// beats a folder named Sent Messages).
+func roles(list []*imap.ListData) []string {
+	out := make([]string, len(list))
+	marked := map[string]bool{}
+	for i, d := range list {
+		if out[i] = markedRole(d); out[i] != "" && selectable(d) { // an unusable folder reserves nothing
+			marked[out[i]] = true
+		}
+	}
+	for i, d := range list {
+		if g := guessedRole(d); out[i] == "" && !marked[g] {
+			out[i] = g
+		}
+	}
+	return out
+}
+
+// markedRole is the folder's SPECIAL-USE role, or inbox for INBOX.
+func markedRole(d *imap.ListData) string {
 	for _, a := range d.Attrs {
 		if r, ok := specialUse[a]; ok {
 			return r
@@ -44,6 +65,11 @@ func role(d *imap.ListData) string {
 	if strings.EqualFold(d.Mailbox, "INBOX") {
 		return "inbox"
 	}
+	return ""
+}
+
+// guessedRole is the role its (last) name segment suggests.
+func guessedRole(d *imap.ListData) string {
 	name := d.Mailbox
 	if d.Delim != 0 {
 		name = name[strings.LastIndexByte(name, byte(d.Delim))+1:]
@@ -85,7 +111,8 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	}
 	var names []string
 	var stmts []sqlite.Statement
-	for _, d := range list {
+	rs := roles(list)
+	for i, d := range list {
 		if !selectable(d) {
 			continue
 		}
@@ -93,7 +120,7 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO folders(account_id, name, role, delim, role_since) VALUES (?, ?, ?, ?, unixepoch())
 				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role, delim = excluded.delim`,
-			Args: []any{accountID, d.Mailbox, role(d), delim(d)},
+			Args: []any{accountID, d.Mailbox, rs[i], delim(d)},
 		})
 	}
 	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
@@ -212,8 +239,9 @@ func SentFolder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	if err != nil {
 		return "", err
 	}
-	for _, d := range list {
-		if role(d) == "sent" && selectable(d) {
+	rs := roles(list)
+	for i, d := range list {
+		if rs[i] == "sent" && selectable(d) {
 			return d.Mailbox, nil
 		}
 	}
