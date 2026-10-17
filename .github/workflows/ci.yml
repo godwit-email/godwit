@@ -105,10 +105,42 @@ jobs:
         run: go test -p 1 -count=1 ./...
         env:
           CGO_ENABLED: "0"
+
+  # The UI suite (app) runs its tests one after another and renders every
+  # frame under race instrumentation, ~15 min on one runner; split it by test.
+  # Shard 0 races every other package.
+  race:
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - id: go-cache
+        shell: bash
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.go-cache.outputs.dir }}
+          key: ${{ runner.os }}-gocache-${{ github.job }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-gocache-${{ github.job }}-
+      - run: mise run generate
       - name: test (race)
-        if: runner.os == 'Linux'
-        # The UI suite renders every frame under race instrumentation.
-        run: go test -race -count=1 -timeout 20m ./...
+        env:
+          SHARD: ${{ matrix.shard }}
+          APP_SHARDS: 4
+        run: |
+          if [[ "$SHARD" == 0 ]]; then
+            go test -race -count=1 $(go list ./... | grep -v '/godwit/app$')
+            exit
+          fi
+          tests=$(go test -list . ./app | grep '^Test' | awk -v n="$APP_SHARDS" -v i="$SHARD" 'NR % n == i % n' | paste -sd '|' -)
+          go test -race -count=1 -timeout 20m -run "^($tests)\$" ./app
 
   # Windows packages in the msix job below, which builds it anyway.
   package:
