@@ -173,11 +173,17 @@ var Roles = []string{"drafts", "sent", "junk", "trash", "archive"}
 
 // RoleFolder is the account's folder of role, the one place roles resolve: the
 // folder the user gave the role, else the lowest id detected with it, unless the
-// user gave that folder another role or none. 0 when there is none.
+// user gave that folder another role or none. Without an archive detected,
+// Gmail's All Mail is it: archiving there takes mail out of the inbox. 0 when
+// there is none.
 func RoleFolder(ctx context.Context, db *store.DB, accountID int64, role string) (id int64, name string, err error) {
+	alt := role
+	if role == "archive" {
+		alt = "all"
+	}
 	rows, err := db.Query(ctx, `SELECT id, name FROM folders WHERE account_id = ?
-		AND (role_override = ? OR (role_override = '' AND role = ?)) ORDER BY role_override = ? DESC, id LIMIT 1`,
-		accountID, role, role, role)
+		AND (role_override = ? OR (role_override = '' AND role IN (?, ?))) ORDER BY role_override = ? DESC, role = ? DESC, id LIMIT 1`,
+		accountID, role, role, alt, role, role)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, "", err
 	}

@@ -12,7 +12,8 @@ import (
 func TestSidebarFolders(t *testing.T) {
 	fs := []core.Folder{
 		{ID: 1, Name: "INBOX", Role: "inbox", Delim: ".", Unread: 3},
-		{ID: 2, Name: "[Gmail]/All Mail", Role: "all", Delim: "/"},
+		{ID: 2, Name: "[Gmail]/All Mail", Role: "archive", Delim: "/"}, // ListFolders resolves All Mail as the archive
+		{ID: 11, Name: "[Gmail]/Archive copy", Role: "all", Delim: "/"},
 		{ID: 3, Name: "[Gmail]/Starred", Role: "flagged", Delim: "/"},
 		{ID: 4, Name: "[Gmail]/Important", Role: "important", Delim: "/"},
 		{ID: 5, Name: "[Gmail]/Spam", Role: "junk", Delim: "/"},
@@ -21,6 +22,7 @@ func TestSidebarFolders(t *testing.T) {
 		{ID: 8, Name: "Projects Old", Delim: "."},
 		{ID: 9, Name: "INBOX.Projects", Delim: "."},
 		{ID: 10, Name: "flat", Delim: ""},
+		{ID: 12, Name: "Projects", Delim: ".", Unread: 4}, // not INBOX.Projects, though it shows the same name
 	}
 	var got []string
 	for _, f := range sidebarFolders(7, fs) {
@@ -34,8 +36,8 @@ func TestSidebarFolders(t *testing.T) {
 		got = append(got, row)
 	}
 	want := []string{
-		"收件箱", "草稿", "归档", "垃圾邮件", // All Mail stands in for archive; drafts are local
-		"Projects +3", "  Expenses", "  Q4 (prefix) +2", "    Contracts", "Projects Old", "flat",
+		"收件箱", "草稿", "归档", "垃圾邮件", // drafts are local
+		"Projects +3", "  Expenses", "  Q4 (prefix) +2", "    Contracts", "Projects", "Projects Old", "flat",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("rows\n%q\nwant\n%q", got, want)

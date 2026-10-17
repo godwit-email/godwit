@@ -40,21 +40,18 @@ type sideFolder struct {
 }
 
 // sidebarFolders are an account's folder rows: its role folders in roleOrder
-// (Gmail's All Mail standing in for a missing archive, the local drafts for
-// missing drafts), then its own folders as a tree split on the server's
+// (the local drafts for missing drafts), then its own folders as a tree split on the server's
 // delimiter, each parent before its children and siblings by name, with a row
-// for a parent only named in paths. Gmail's All Mail, Starred and Important
-// show no row: 已标星 at the top is Starred.
+// for a parent only named in paths. Folders under a role folder (Courier's
+// INBOX.Projects) show at the top, but keep the role folder in their key.
+// Gmail's All Mail (unless it is the archive), Starred and Important show no
+// row: 已标星 at the top is Starred.
 func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 	byRole := map[string]core.Folder{}
 	for _, f := range fs {
 		if _, ok := byRole[f.Role]; f.Role != "" && !ok {
 			byRole[f.Role] = f
 		}
-	}
-	if f, ok := byRole["all"]; ok && byRole["archive"].Role == "" {
-		f.Role = "archive"
-		byRole["archive"] = f
 	}
 	if byRole["drafts"].Role == "" {
 		byRole["drafts"] = core.Folder{AccountID: acc, Role: "drafts"}
@@ -70,21 +67,21 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 		if f.Role != "" {
 			continue
 		}
-		name := f.Name
-		for _, r := range fs { // under a role folder, as Courier's INBOX.Projects: shown at the top
-			if p := r.Name + r.Delim; r.Role != "" && r.Delim != "" && len(f.Name) > len(p) && strings.HasPrefix(f.Name, p) && len(f.Name)-len(p) < len(name) {
-				name = f.Name[len(p):]
+		segs := []string{f.Name}
+		if f.Delim != "" {
+			segs = slices.DeleteFunc(strings.Split(f.Name, f.Delim), func(s string) bool { return s == "" })
+		}
+		top := 0 // segments of the role folder it is under, shown by no row
+		for _, r := range fs {
+			if p := r.Name + f.Delim; r.Role != "" && f.Delim != "" && strings.HasPrefix(f.Name, p) {
+				top = max(top, min(len(strings.Split(r.Name, f.Delim)), len(segs)-1))
 			}
 		}
-		segs := []string{name}
-		if f.Delim != "" {
-			segs = slices.DeleteFunc(strings.Split(name, f.Delim), func(s string) bool { return s == "" })
-		}
-		for k := 1; k <= len(segs); k++ {
+		for k := top + 1; k <= len(segs); k++ {
 			key := strings.Join(segs[:k], "\x00")
 			n := nodes[key]
 			if n == nil {
-				n = &sideFolder{Folder: core.Folder{AccountID: acc}, name: segs[k-1], key: key, depth: k}
+				n = &sideFolder{Folder: core.Folder{AccountID: acc}, name: segs[k-1], key: key, depth: k - top}
 				nodes[key] = n
 			}
 			n.sum += f.Unread
