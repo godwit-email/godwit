@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -165,21 +163,13 @@ func (p *mailPage) viewShown(v core.View) bool {
 	return p.a.route.Page == PageMail && p.a.route.View == v && !p.searched
 }
 
-// account is an account's foldable row, its provider's logo (else its initial's tile), name, sync
+// account is an account's foldable row, its provider's mark, name, sync
 // trouble and unread count, over all its folders.
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
 	kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
-		if b := icons.Brand(acc.Provider); b != nil { // bare, lined up with the other rows' icons
-			ui.Image(c, b).Size(theme.Icon, theme.Icon).Shrink(0)
-		} else {
-			r, _ := utf8.DecodeRuneInString(name)
-			tile := ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0).Radius(t.Radius.Sm).Background(t.Background).Center()
-			kit.Elevate(c, tile, theme.ShadowXs).Children(func() {
-				kit.Text(c, string(unicode.ToUpper(r)), t.Text.Xs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Foreground)
-			})
-		}
+		mark(c, accountProvider(p.a, acc), theme.MarkSm) // as in the settings sidebar
 		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
 		switch p.a.syncHealth(acc).level { // which account the top bar's status means
 		case syncAction:

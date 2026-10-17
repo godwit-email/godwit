@@ -200,7 +200,7 @@ const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
-	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	MarkSm, MarkMd, MarkLg, MarkXl                   = 16, 28, 40, 48 // provider marks
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	CloseButton                                      = 20             // a toast's close button
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
