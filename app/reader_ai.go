@@ -605,10 +605,14 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					if card.Builtin { // core leaves a built-in card's words to the app
 						label = map[string]string{"copy": i18n.T("codes.copy_button"), "open-url": i18n.T("codes.open")}[b.Kind]
 					}
-					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself
-						label, o.Icon = i18n.T("codes.copied"), "check"
+					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself, stepping back to secondary
+						label, o.Icon, o.Variant = i18n.T("codes.copied"), "check", kit.Secondary
 					}
-					if !kit.SwapButton(c, label, o).Clicked() {
+					var alts []string // a copy button turns into Copied; size it for both
+					if b.Kind == "copy" {
+						alts = append(alts, i18n.T("codes.copied"))
+					}
+					if !kit.SwapButton(c, label, o, alts...).Clicked() {
 						continue
 					}
 					switch b.Kind {

@@ -213,12 +213,10 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				})
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
-			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}).Shrink(0)
+			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}, i18n.T("codes.copy_button"), i18n.T("codes.copied"), i18n.T("codes.retry")).Shrink(0)
 			b.onButton = btn.Pressed()
 			switch {
-			case b.copied:
-				btn.Background(ui.Transparent).TextColor(t.SuccessText)
-			case btn.Hovered():
+			case btn.Hovered() && !b.copied:
 				btn.Background(t.Foreground.Alpha(0.1))
 			default:
 				btn.Background(t.Foreground.Alpha(0.06))
