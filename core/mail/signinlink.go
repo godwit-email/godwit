@@ -67,6 +67,9 @@ var fallbackLabel = regexp.MustCompile(`(?i)^\s*use this link\s*$`)
 // which it is. Conflicting links are left to the reader rather than guessed.
 func ActionLink(subject, text, htmlBody string) (link, kind string) {
 	subject = simplified(subject)
+	if replySubject.MatchString(subject) { // a reply's subject is the old mail's
+		subject = ""
+	}
 	body := bodyText(text, htmlBody)
 	if linkSubject.MatchString(subject) && !linkAlert.MatchString(subject) && (linkDelivery.MatchString(subject) || linkDelivery.MatchString(body)) {
 		if l := oneLink(text, htmlBody, linkLabel, linkLead, true); l != "" {
