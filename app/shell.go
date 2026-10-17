@@ -113,10 +113,7 @@ func (a *App) onEvent(ev events.Event) {
 	case events.MessageReceived:
 		a.mailArrived(ev)
 	case events.PluginsChanged: // a card's plugin may have been switched
-		for id := range a.mail.reader.open {
-			a.mail.reader.loadCards(id, true)
-			a.mail.reader.loadTags(id, true)
-		}
+		a.mail.reader.reloadPluginParts()
 	}
 	a.dirty = append(a.dirty, ev)
 	if a.refreshStop == nil {

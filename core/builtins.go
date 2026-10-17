@@ -110,7 +110,7 @@ func (s *Service) builtinTags(ctx context.Context, id int64) ([]Tag, error) {
 func signInCodeTags(m plugins.MailMessage) []Tag {
 	var out []Tag
 	if code := mail.SignInCode(m.Subject, m.Text, m.HTML); code != "" {
-		out = append(out, Tag{Kind: "copy", Text: mail.GroupCode(code), Value: code})
+		out = append(out, Tag{Kind: "copy", Text: code, Value: code})
 	}
 	if link, kind := mail.ActionLink(m.Subject, m.Text, m.HTML); link != "" {
 		out = append(out, Tag{Kind: "open-url", Label: kind, Text: mail.LinkHost(link), Value: link})

@@ -33,7 +33,7 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 
 	tags, err := e.s.PluginTags(bg, codeID)
 	require.NoError(t, err)
-	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "482 913", Value: "482913"}}, tags)
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "482913", Value: "482913"}}, tags)
 	tags, err = e.s.PluginTags(bg, linkID)
 	require.NoError(t, err)
 	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "open-url", Label: "signin", Text: "acme.example", Value: "https://acme.example/l/1"}}, tags)
@@ -45,7 +45,7 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 	e.sync(t)
 	tags, err = e.s.PluginTags(bg, e.idOf(t, "both@x"))
 	require.NoError(t, err)
-	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "118 169", Value: "118169"},
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "118169", Value: "118169"},
 		{Plugin: SignInCodesPlugin, Builtin: true, Kind: "open-url", Label: "confirm", Text: "account.id.me", Value: "https://account.id.me/confirm/abc"}}, tags)
 	codes, err := e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)

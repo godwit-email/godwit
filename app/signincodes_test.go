@@ -133,11 +133,30 @@ func TestSignInCodesPluginOffStopsEverySurface(t *testing.T) {
 	}
 	h.app.OpenMessage(notes[0].MessageID)
 	h.until("the message", func() bool { return h.tt.HasText("验证码：001234") })
-	if h.tt.HasText("001 234") {
-		t.Fatal("tag with the plugin off")
+	tags := func() []core.Tag {
+		if st := h.app.mail.reader.ai[notes[0].MessageID]; st != nil {
+			return st.tags.v
+		}
+		return nil
+	}
+	h.until("the tags read", func() bool { st := h.app.mail.reader.ai[notes[0].MessageID]; return st != nil && st.tags.done })
+	if len(tags()) != 0 {
+		t.Fatalf("tags with the plugin off: %+v", tags())
 	}
 	if err := h.env.Svc.SetPluginEnabled(t.Context(), core.SignInCodesPlugin, true); err != nil {
 		t.Fatal(err)
 	}
-	h.waitMail("tray and card back", func() bool { return len(h.plat.codes) == 1 && h.tt.HasText("001 234") })
+	h.waitMail("tray and card back", func() bool { return len(h.plat.codes) == 1 && len(tags()) == 1 })
+}
+
+func TestSignInLinkTagAsksFirst(t *testing.T) {
+	h, acc := withAccount(t)
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Acme <id@acme.example>", acc.Email, "Sign in to Acme", "Log in here: https://acme.example/l/1\nThis link expires in 10 minutes."))
+	h.waitMail("the mail", func() bool { return h.tt.HasText("Sign in to Acme") })
+	h.click("Sign in to Acme")
+	h.until("the link tag", func() bool { return h.tt.HasText("登录链接") })
+	h.click("登录链接")
+	if !h.app.linkOpen || h.app.link != "https://acme.example/l/1" {
+		t.Fatalf("link dialog %v %q, want it asking for the link", h.app.linkOpen, h.app.link)
+	}
 }

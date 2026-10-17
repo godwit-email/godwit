@@ -161,8 +161,8 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 
 // SwapButton is a Button whose label changes in place, as Copy turning
 // into Copied: the old label fades out as the new one fades in. It is as
-// wide as the widest of label and others, the labels it may show, so it
-// never moves what sits beside it.
+// wide as the widest of label and others, the labels it may show, and its
+// content starts at its left edge, so neither it nor its icon moves.
 func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.Element {
 	th := c.Theme()
 	content := func(c *ui.Context, text string) ui.Element {
@@ -174,14 +174,14 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 		})
 	}
 	return button(c, o, false).Label(label).Children(func() {
-		// Every label, unseen and of no height, sets the width.
-		ui.Column(c).Height(0).Opacity(0).PassThrough().Children(func() {
+		ui.Column(c).AlignItems(ui.Start).Children(func() {
+			content(c.Key(label), label).
+				Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{}, Exit: &ui.Motion{}}) // a zero Motion is transparent: a fade
+			// Every label, unseen and of no height, widens the column to the widest.
 			for i, l := range append([]string{label}, others...) {
-				content(c.Key(i), l)
+				content(c.Key(i), l).Height(0).Opacity(0).PassThrough()
 			}
 		})
-		content(c.Key(label), label).Absolute().Top(0).Right(0).Bottom(0).Left(0).Justify(ui.Center).
-			Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{}, Exit: &ui.Motion{}}) // a zero Motion is transparent: a fade
 		cover(c, o, label)
 	})
 }

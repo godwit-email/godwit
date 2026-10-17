@@ -214,6 +214,18 @@ func (r *reader) loadTags(id int64, force bool) {
 	fetchInto(r, &r.state(id).tags, force, func(ctx context.Context) ([]core.Tag, error) { return get(ctx, id) }, nil)
 }
 
+// reloadPluginParts reads the open messages' cards and tags again, as a
+// plugin was switched, installed or removed.
+func (r *reader) reloadPluginParts() {
+	for id := range r.open {
+		if st := r.ai[id]; st != nil {
+			st.cards.done, st.tags.done = false, false
+		}
+		r.loadCards(id, true)
+		r.loadTags(id, true)
+	}
+}
+
 func (r *reader) loadQuick(id int64, force bool) {
 	get := r.quickFn
 	fetchInto(r, &r.state(id).quick, force, func(ctx context.Context) ([]core.QuickReply, error) { return get(ctx, id) }, nil)
@@ -637,8 +649,8 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 
 // tagChips are the plugins' tags for the newest message, as small buttons
 // after the subject: a copy tag shows its text and turns into Copied in
-// place; a link tag names what it opens and where, and opens without the
-// link dialog, its host being on it.
+// place; a link tag names what it opens and where, and asks first, as a
+// link in the body does.
 func (r *reader) tagChips(c *ui.Context) {
 	m, ok := r.last()
 	st := r.ai[m.ID]
@@ -682,7 +694,7 @@ func (r *reader) tagChips(c *ui.Context) {
 				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
 			})
 			if e.Clicked() {
-				a.do(func(context.Context) error { return a.plat.OpenURL(link) }, a.toastErr)
+				a.openLink(link)
 			}
 		}
 	}

@@ -677,7 +677,7 @@ func (r *reader) view(c *ui.Context) {
 					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
 						// Plugins' tags follow the subject, so a glance at it is enough.
 						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
-							kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1)
+							kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1).Selectable() // copied as often as read
 							r.tagChips(c)
 						})
 						r.labelRow(c)
