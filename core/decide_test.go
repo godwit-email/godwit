@@ -80,7 +80,7 @@ func withJudge(t *testing.T, e skillEnv) *judgeRecorder {
 	require.NoError(t, err)
 	st, err := e.s.GetSettings(t.Context())
 	require.NoError(t, err)
-	st.JudgeService = "ts"
+	st.JudgeModel = "ts/jev-latest"
 	_, err = e.s.SetSettings(t.Context(), st)
 	require.NoError(t, err)
 	return j

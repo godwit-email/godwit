@@ -18,6 +18,10 @@ import (
 // API is the subset of *core.Service the contract scenarios use, with the
 // same signatures.
 type API interface {
+	ListModels(context.Context) ([]core.ListedModel, error)
+	RefreshModels(context.Context) ([]core.ListedModel, error)
+	PrepareModel(context.Context, string) (core.ModelStatus, error)
+	RemoveModelFiles(context.Context, string) error
 	AddAccount(ctx context.Context, in core.AccountInput) (core.Account, error)
 	CheckAccount(ctx context.Context, in core.AccountInput) (core.CheckReport, error)
 	DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error)
@@ -298,4 +302,17 @@ func (r *Remote) CancelOAuth(flowID string) {
 	if err := r.C.Call(context.Background(), "CancelOAuth", nil, flowID); err != nil {
 		r.fail(fmt.Errorf("CancelOAuth: %w", err))
 	}
+}
+
+func (r *Remote) ListModels(ctx context.Context) ([]core.ListedModel, error) {
+	return call[[]core.ListedModel](r, ctx, "ListModels")
+}
+func (r *Remote) RefreshModels(ctx context.Context) ([]core.ListedModel, error) {
+	return call[[]core.ListedModel](r, ctx, "RefreshModels")
+}
+func (r *Remote) PrepareModel(ctx context.Context, ref string) (core.ModelStatus, error) {
+	return call[core.ModelStatus](r, ctx, "PrepareModel", ref)
+}
+func (r *Remote) RemoveModelFiles(ctx context.Context, ref string) error {
+	return r.C.Call(ctx, "RemoveModelFiles", nil, ref)
 }

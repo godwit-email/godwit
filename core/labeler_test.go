@@ -631,3 +631,24 @@ func TestRescanBeforePresets(t *testing.T) {
 	require.Equal(t, []AppliedLabel{{LabelID: l.ID, Auto: true}}, got[a])
 	require.Nil(t, labeledAt(t, s, fresh), "new mail still waits for the presets")
 }
+
+func TestLabelPluginUnavailablePreservesState(t *testing.T) {
+	for _, failure := range []error{modelCallError(&ModelError{Code: "model_not_ready", Message: "download"}), modelCallError(modelUnavailable()), ai.ErrJudgePlugin} {
+		s := newLabelService(t, "", "zh-CN")
+		id := addMessage(t, s, "test", "sender@example.com", "mail", "", 1)
+		useLabelJudge(s, &fakeJudge{p: map[string]float64{"otp": 1}})
+		_, err := s.classifyBatch(t.Context())
+		require.NoError(t, err)
+		before, err := s.MessageLabels(t.Context(), []int64{id})
+		require.NoError(t, err)
+		setLabeledAt(t, s, id, 0)
+		useLabelJudge(s, &fakeJudge{err: failure})
+		n, err := s.classifyBatch(t.Context())
+		require.ErrorIs(t, err, failure)
+		require.Zero(t, n)
+		after, err := s.MessageLabels(t.Context(), []int64{id})
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+		require.Zero(t, store.Int(labeledAt(t, s, id)))
+	}
+}

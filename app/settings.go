@@ -110,7 +110,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
-	case sec == "models" && hints == nil:
+	case sec == "models" && (hints == nil || slices.ContainsFunc(hints, func(e events.Event) bool {
+		return extChange(e) || e.Type == events.ModelsChanged || e.Type == events.SettingsChanged
+	})):
 		p.models.load()
 	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		var list []core.TranslatorInfo

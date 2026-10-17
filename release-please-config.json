@@ -13,6 +13,21 @@
         {
           "type": "generic",
           "path": "mygo.config.ts"
+        },
+        {
+          "type": "json",
+          "path": "sdk/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "sdk/package-lock.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "sdk/package-lock.json",
+          "jsonpath": "$.packages[''].version"
         }
       ],
       "include-commit-authors": true

@@ -102,8 +102,10 @@ func (f JudgeFormat) Models() []string {
 var (
 	ErrModelForbidden = errors.New("the model service refused this key for that API")
 	// ErrJudgeAnswer: the service answered, but not with a valid typed answer.
-	ErrJudgeAnswer   = errors.New("the judge gave an invalid answer")
-	ErrJudgeQuestion = errors.New("invalid judge question")
+	ErrJudgeAnswer      = errors.New("the judge gave an invalid answer")
+	ErrJudgeQuestion    = errors.New("invalid judge question")
+	ErrJudgeUnavailable = errors.New("the judge model is unavailable")
+	ErrJudgePlugin      = errors.New("the judge plugin failed")
 )
 
 // HTTPError is a judge HTTP failure; it never carries the body.
@@ -218,6 +220,10 @@ func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 		if err != nil {
 			if err := ctxError(err); err != nil {
 				return err
+			}
+			var providerErr ModelRequestError
+			if errors.As(err, &providerErr) {
+				return providerErr
 			}
 			return errUnreachable
 		}
@@ -433,3 +439,6 @@ func hasValue(os []ChoiceOption, v string) bool {
 
 // ptr is a pointer to v.
 func ptr(v float64) *float64 { return &v }
+
+// ValidateAnswers validates plugin answers using the same judge contract.
+func ValidateAnswers(qs []Question, got []Answer) ([]Answer, error) { return validateAnswers(qs, got) }

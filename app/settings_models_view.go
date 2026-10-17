@@ -16,8 +16,11 @@ import (
 )
 
 func (m *modelsView) view(c *ui.Context) {
-	empty := m.loaded && len(m.services) == 0
+	empty := m.loaded && len(m.services) == 0 && len(m.catalog) == 0
 	var add []func()
+	add = append(add, func() {
+		settingButton(c, i18n.T("settings.models.refresh"), kit.Outline, false).OnClick(func() { m.loadModels(true) })
+	})
 	if !empty {
 		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
 	}
@@ -28,11 +31,12 @@ func (m *modelsView) view(c *ui.Context) {
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
-	if len(m.services) > 0 {
-		u := deriveUsage(m.a.settings, m.services)
+	if len(m.services) > 0 || len(m.catalog) > 0 {
+		u := deriveUsage(m.a.settings, m.services, m.catalog)
 		m.usage(c, u)
 		m.list(c, u)
 	}
+	m.pluginList(c)
 	if m.form != nil {
 		m.dialog(c)
 	}
@@ -121,10 +125,10 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	a := m.a
 	t, th := theme.Of(c), c.Theme()
 	defer func() {
-		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
+		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeModel
 	}() // what the next frame shows
 	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string)) {
-		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled)
+		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled && label != i18n.T("settings.models.use.judge"))
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -158,12 +162,12 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 			},
 			func() {
 				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
-					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v })
+					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeModel = v })
 				})
 			},
 			func() {
 				help := i18n.T("settings.models.threshold.help")
-				if u.judgeSvc == nil {
+				if !u.judgeDirect {
 					help += " " + i18n.T("settings.models.threshold.binary")
 				}
 				settingRow(c, i18n.T("settings.models.threshold"), help, func() {
@@ -680,4 +684,20 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 			})
 		}
 	})
+}
+
+func (m *modelsView) pluginList(c *ui.Context) {
+	t := theme.Of(c)
+	rows := pluginCatalog(m.catalog, m.services)
+	if len(rows) > 0 {
+		sectionTitle(c, i18n.T("settings.models.plugins"))
+		for _, row := range rows {
+			settingRow(c, catalogModelLabel(row), row.Ref, func() { kit.Text(c, modelStatusText(row.Status), t.Text.Sm).TextColor(t.Muted) })
+		}
+	}
+	for _, p := range m.providers {
+		if p.ModelsRefreshError != "" {
+			kit.Text(c, i18n.Tf("settings.models.refresh_failed", p.Name), t.Text.Sm).TextColor(t.DangerText)
+		}
+	}
 }

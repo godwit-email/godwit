@@ -71,14 +71,15 @@ type NativeOptions struct {
 }
 
 type NativeProcess struct {
-	o        NativeOptions
-	sem      chan struct{}
-	mu       sync.Mutex
-	p        *nativeProc
-	next     int64
-	closed   bool
-	inflight int         // calls (and Starts) under way
-	idle     *time.Timer // ends p once no call has used it for o.Idle
+	o          NativeOptions
+	sem        chan struct{}
+	mu         sync.Mutex
+	p          *nativeProc
+	generation uint64
+	next       int64
+	closed     bool
+	inflight   int         // calls (and Starts) under way
+	idle       *time.Timer // ends p once no call has used it for o.Idle
 }
 
 type nativeLine struct {
@@ -90,13 +91,14 @@ type nativeLine struct {
 }
 
 type nativeProc struct {
-	cmd     *exec.Cmd
-	kill    func() // ends the process and whatever it started
-	stdin   io.WriteCloser
-	dead    chan struct{}
-	mu      sync.Mutex // pending, and writes to stdin
-	pending map[int64]chan nativeLine
-	stderr  *stderrTail
+	generation uint64
+	cmd        *exec.Cmd
+	kill       func() // ends the process and whatever it started
+	stdin      io.WriteCloser
+	dead       chan struct{}
+	mu         sync.Mutex // pending, and writes to stdin
+	pending    map[int64]chan nativeLine
+	stderr     *stderrTail
 
 	ready    chan struct{} // closed once OnStart is done
 	readyErr error         // OnStart's error, set before ready closes
@@ -169,6 +171,8 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 		p.kill() // also after a clean exit: helpers it started go, and on Windows its job is released
 		close(p.dead)
 	}()
+	n.generation++
+	p.generation = n.generation
 	n.p = p
 	return p, true, nil
 }
@@ -411,4 +415,59 @@ func (t *stderrTail) String() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return string(t.b)
+}
+
+// NativeSession is valid inside WithProcess; its calls stay on one process.
+// Once dispatched, Call waits for the actual result or the process watchdog.
+type NativeSession struct {
+	Generation uint64
+	Done       <-chan struct{}
+	Call       func(context.Context, string, any) (json.RawMessage, error)
+}
+
+func (n *NativeProcess) WithProcess(ctx context.Context, fn func(NativeSession) error) error {
+	n.busy()
+	defer n.done()
+	p, err := n.ready(ctx)
+	if err != nil {
+		return err
+	}
+	scope, cancel := context.WithCancel(ctx)
+	defer cancel()
+	session := NativeSession{Generation: p.generation, Done: p.dead}
+	session.Call = func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		if err := scope.Err(); err != nil {
+			return nil, err
+		}
+		select {
+		case n.sem <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-scope.Done():
+			return nil, scope.Err()
+		}
+		defer func() { <-n.sem }()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		select {
+		case <-p.dead:
+			return nil, n.exited(p)
+		default:
+		}
+		raw, _, err := n.send(context.WithoutCancel(ctx), p, method, params, nil)
+		return raw, err
+	}
+	return fn(session)
+}
+
+// StopGeneration ends a pinned process without permanently disabling its handle.
+func (n *NativeProcess) StopGeneration(generation uint64) {
+	n.mu.Lock()
+	p := n.p
+	n.mu.Unlock()
+	if p != nil && p.generation == generation {
+		p.kill()
+		<-p.dead
+	}
 }

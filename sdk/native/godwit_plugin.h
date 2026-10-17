@@ -21,6 +21,22 @@
  *              source "" asks the plugin to detect it; tags are BCP 47. One text
  *              per paragraph of the mail, in order; they may be long, so split
  *              them as your service requires and answer the same number of texts.
+ *   models.list    {} -> {"models":[ProviderModel,...]}
+ *   models.prepare {"model":HTTPModel,"sessionId":"...","sessionCreatedAt":0,
+ *                   "requestId":"...","request":{"url":"...","headers":{},"body":{}}}
+ *                  -> {"url":"...","headers":{},"body":{}}
+ *   models.load    {"modelId":"...","assets":{"engine":"/absolute/dir","model":"/absolute/dir"}} -> {}
+ *   models.judge   {"modelId":"...","input":"...","questions":[Question]} -> {"answers":[Answer]}
+ * models capability requires describe.methods to list supported methods;
+ * models.list is required, models.prepare is optional (absent means identity).
+ * Plugin judge models require models.judge; managed assets also require models.load.
+ * Old translate plugins may omit methods. configure never receives assets.
+ * ProviderModel: {"id","name","transport":"http","protocol","baseURL"} or
+ * {"id","name","transport":"plugin","operation":"judge","assets"?:{"group":"variant"}}.
+ * Model JSON is limited to 1 MiB. The host supplies only verified asset directories
+ * at load, including fixed assets; filenames remain those in the registry.
+ * Each judge call receives one standard Godwit Question and must return one Answer.
+ * Model errors additionally allow model_not_ready, model_unavailable, model_reentry.
  * Unknown methods answer invalid_request.
  */
 #ifndef GODWIT_PLUGIN_H

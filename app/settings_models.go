@@ -26,6 +26,8 @@ import (
 type modelsView struct {
 	a                    *App
 	services             []core.ModelService
+	catalog              []core.ListedModel
+	providers            []core.PluginInfo
 	listGen              uint64     // bumped per list read; only the newest applies
 	form                 *modelForm // nil until a service is chosen or added
 	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
@@ -387,7 +389,7 @@ func offWarns(f *modelForm, st core.Settings, services []core.ModelService) (gen
 			gen = i18n.Tf("settings.models.off.gen.alt", alt.Name+" / "+alt.Models[0])
 		}
 	}
-	if st.JudgeService == f.slug && !f.judgeOn && len(judgeF) > 0 {
+	if strings.HasPrefix(st.JudgeModel, f.slug+"/") && !f.judgeOn && len(judgeF) > 0 {
 		judge = i18n.T("settings.models.off.judge")
 	}
 	return gen, judge
@@ -404,14 +406,29 @@ func altGen(services []core.ModelService, id int64) *core.ModelService {
 	return nil
 }
 
-func (m *modelsView) load() {
+func (m *modelsView) load() { m.loadModels(false) }
+func (m *modelsView) loadModels(refresh bool) {
 	a := m.a
 	m.listGen++
-	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
+	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeModel
 	gen := m.listGen
 	var list []core.ModelService
+	var catalog []core.ListedModel
+	var providers []core.PluginInfo
 	a.query(func(ctx context.Context) (err error) {
 		list, err = a.svc.ListModelServices(ctx)
+		if err != nil {
+			return err
+		}
+		if refresh {
+			catalog, err = a.svc.RefreshModels(ctx)
+		} else {
+			catalog, err = a.svc.ListModels(ctx)
+		}
+		if err != nil {
+			return err
+		}
+		providers, err = a.svc.ListPlugins(ctx)
 		return err
 	}, func(err error) {
 		if gen != m.listGen {
@@ -421,7 +438,7 @@ func (m *modelsView) load() {
 			a.toastErr(err)
 			return
 		}
-		m.services, m.loaded = list, true
+		m.services, m.catalog, m.providers, m.loaded = list, catalog, providers, true
 	})
 }
 
@@ -622,15 +639,15 @@ func (m *modelsView) submit(f *modelForm) {
 		if id != 0 {
 			m.dropRefs(saved)
 		}
-		fillGen := noDefault && saved.Kind != "" && len(saved.Models) > 0                              // this service's first model becomes it: Wit needs one
-		fillJudge := a.settings.JudgeService == "" && saved.JudgeFormat != "" && snap.savedJudge == "" // judge just turned on answers the judge questions
+		fillGen := noDefault && saved.Kind != "" && len(saved.Models) > 0                            // this service's first model becomes it: Wit needs one
+		fillJudge := a.settings.JudgeModel == "" && saved.JudgeFormat != "" && snap.savedJudge == "" // judge just turned on answers the judge questions
 		if fillGen || fillJudge {
 			m.setModel(func(st *core.Settings) {
 				if fillGen {
 					st.DefaultModel = saved.Slug + "/" + saved.Models[0]
 				}
 				if fillJudge {
-					st.JudgeService = saved.Slug
+					st.JudgeModel = saved.Slug + "/" + saved.JudgeModel
 				}
 			})
 		}
@@ -667,9 +684,6 @@ func dropRefs(st core.Settings, svc core.ModelService, services []core.ModelServ
 		if model, ok := strings.CutPrefix(*ref, svc.Slug+"/"); ok && !slices.Contains(keep, model) {
 			*ref, changed = "", true
 		}
-	}
-	if st.JudgeService == svc.Slug && svc.JudgeFormat == "" {
-		st.JudgeService, changed = "", true
 	}
 	if alt := altGen(services, svc.ID); changed && st.DefaultModel == "" && alt != nil {
 		st.DefaultModel = alt.Slug + "/" + alt.Models[0]
@@ -882,68 +896,127 @@ type usage struct {
 	gen, judge                    line
 	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers
 	alert                         string             // the default generator failed its test
-	suggest                       bool               // a judge service would be faster
+	judgeDirect                   bool
+	suggest                       bool // a judge service would be faster
 }
 
 // deriveUsage is the 用途 card for st and the services.
-func deriveUsage(st core.Settings, services []core.ModelService) usage {
+func deriveUsage(st core.Settings, services []core.ModelService, catalogs ...[]core.ListedModel) usage {
 	var u usage
-	var genModel string
+	labels := map[string]string{}
+	direct := map[string]line{}
+	addGen := func(ref, label string) {
+		u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: label})
+		labels[ref] = label
+	}
+	u.judgeOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.judge.by_gen")}}
 	for i, s := range services {
 		if s.Kind != "" {
-			for _, mod := range s.Models {
-				ref := s.Slug + "/" + mod
-				u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + mod})
+			for _, id := range s.Models {
+				ref := s.Slug + "/" + id
+				addGen(ref, s.Name+" / "+id)
 				if ref == st.DefaultModel {
-					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
+					u.genSvc = &services[i]
 				}
 			}
 		}
-		if s.JudgeFormat != "" && s.Slug == st.JudgeService {
-			u.judgeSvc = &services[i]
+		if s.JudgeFormat != "" && s.JudgeModel != "" {
+			ref := s.Slug + "/" + s.JudgeModel
+			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + s.JudgeModel})
+			direct[ref] = capLine(&services[i], core.CapJudge)
+			if ref == st.JudgeModel {
+				u.judgeSvc = &services[i]
+			}
 		}
 	}
-	if len(u.genOpts) == 0 {
-		none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
-		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
-		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
-		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
-		return u
-	}
-	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
-	u.judgeOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.judge.by_gen")}}
-	for _, s := range services {
-		if s.JudgeFormat != "" {
-			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: s.Slug, Label: s.Name + " / " + s.JudgeModel})
+	for _, catalog := range catalogs {
+		for _, row := range pluginCatalog(catalog, services) {
+			if row.Status.State != core.ModelReady || row.Status.Error != nil {
+				continue
+			}
+			label := catalogModelLabel(row)
+			if generationModel(row.Model) {
+				addGen(row.Ref, label)
+			} else {
+				u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: row.Ref, Label: label})
+				direct[row.Ref] = line{label + " · " + modelStatusText(row.Status), lookOK}
+			}
 		}
 	}
-	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
-	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
-	if u.genSvc == nil {
-		u.genOpts = append([]kit.Option[string]{{Value: st.DefaultModel, Label: i18n.T("settings.models.default.none")}}, u.genOpts...)
-		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
-		if st.DefaultModel != "" {
-			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
+	for _, option := range u.genOpts {
+		if !slices.ContainsFunc(u.judgeOpts, func(o kit.Option[string]) bool { return o.Value == option.Value }) {
+			u.judgeOpts = append(u.judgeOpts, option)
 		}
-		if u.judgeSvc != nil {
-			u.judge = capLine(u.judgeSvc, core.CapJudge)
-		}
-		return u
 	}
-	u.gen = capLine(u.genSvc, core.CapGen)
-	if u.judgeSvc != nil {
-		u.judge = capLine(u.judgeSvc, core.CapJudge)
+	u.disabled = len(u.genOpts) == 0
+	if u.disabled {
+		u.genOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
+		u.smallOpts = u.genOpts
 	} else {
-		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
+		u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
+		u.smallOpts = unset(u.smallOpts, st.SmallModel)
 	}
-	if u.gen.look == lookFail {
+	u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
+	if u.genSvc != nil {
+		u.gen = capLine(u.genSvc, core.CapGen)
+	} else if label := labels[st.DefaultModel]; label != "" {
+		u.gen = line{label + " · " + i18n.T("settings.models.status.ready"), lookOK}
+	} else if st.DefaultModel != "" {
+		u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
+	}
+	if !u.disabled {
+		u.genOpts = unset(u.genOpts, st.DefaultModel)
+	}
+	u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
+	judgeRef := st.JudgeModel
+	if judgeRef == "" {
+		judgeRef = st.DefaultModel
+	}
+	if status, ok := direct[st.JudgeModel]; ok {
+		u.judge = status
+		u.judgeDirect = true
+	} else if label := labels[judgeRef]; label != "" {
+		u.judge = line{i18n.Tf("settings.models.use.judge.slow", label), lookSlow}
+		u.suggest = true
+	} else if st.JudgeModel != "" {
+		u.judge = line{i18n.Tf("settings.models.default.missing", st.JudgeModel), lookFail}
+	}
+	u.judgeOpts = unset(u.judgeOpts, st.JudgeModel)
+	if u.gen.look == lookFail && u.genSvc != nil {
 		end := i18n.T("settings.models.use.alert.end")
-		if u.judge.look == lookFail || u.judgeSvc == nil {
+		if u.judge.look == lookFail || (!u.judgeDirect && (st.JudgeModel == "" || st.JudgeModel == st.DefaultModel)) {
 			end = i18n.T("settings.models.use.alert.judge_too")
 		}
 		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
 	}
 	return u
+}
+func generationModel(m core.ProviderModel) bool {
+	return m.Transport == "http" && (m.Protocol == "openai-completions" || m.Protocol == "openai-responses" || m.Protocol == "anthropic-message")
+}
+func pluginCatalog(catalog []core.ListedModel, services []core.ModelService) []core.ListedModel {
+	out := []core.ListedModel{}
+	for _, row := range catalog {
+		if !slices.ContainsFunc(services, func(s core.ModelService) bool { return strings.HasPrefix(row.Ref, s.Slug+"/") }) {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+func catalogModelLabel(row core.ListedModel) string {
+	slug, _, _ := strings.Cut(row.Ref, "/")
+	return slug + " / " + row.Model.Name
+}
+func modelStatusText(status core.ModelStatus) string {
+	code := string(status.State)
+	if status.Error != nil {
+		code = status.Error.Code
+	}
+	switch code {
+	case "ready", "not-downloaded", "downloading", "verifying", "downloaded", "loading", "model_not_ready", "insufficient_memory", "unsupported_platform", "update_required", "verification_failed":
+		return i18n.T("settings.models.status." + code)
+	}
+	return i18n.T("settings.models.status.unavailable")
 }
 
 // unset puts v first as 未设置 when opts doesn't offer it.

@@ -157,6 +157,9 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 // valid answer, or the service rejecting the request (a content filter). The
 // message is done with its labels as they are, so one message does not stop the rest.
 func unanswerable(err error) bool {
+	if errors.Is(err, ai.ErrJudgeUnavailable) || errors.Is(err, ai.ErrJudgePlugin) {
+		return false
+	}
 	var he *ai.HTTPError
 	return errors.Is(err, ai.ErrJudgeAnswer) || errors.As(err, &he) && he.Status == 400
 }

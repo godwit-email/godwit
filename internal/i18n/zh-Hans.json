@@ -982,5 +982,28 @@
   "codes_open": "打开",
   "codes_card_confirm": "确认链接",
   "codes_card_signin": "登录链接",
-  "codes_card_reset": "重置密码链接"
+  "codes_card_reset": "重置密码链接",
+  "settings_models_refresh": "刷新模型",
+  "settings_models_plugins": "插件模型",
+  "settings_models_refresh_failed": "无法刷新 {arg1}，显示上次可用的模型。",
+  "@settings_models_refresh_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_perm_models": "使用其模型时会收到提示、上下文、工具或判断输入，并可能发送至声明的地址。",
+  "settings_models_status_ready": "可用",
+  "settings_models_status_model_not_ready": "需要下载",
+  "settings_models_status_downloading": "下载中",
+  "settings_models_status_verifying": "校验文件中",
+  "settings_models_status_downloaded": "已下载",
+  "settings_models_status_loading": "加载中",
+  "settings_models_status_insufficient_memory": "内存不足",
+  "settings_models_status_unsupported_platform": "此平台不支持",
+  "settings_models_status_update_required": "需要更新 Godwit 才能使用此模型",
+  "settings_models_status_verification_failed": "文件校验失败，请重新下载",
+  "settings_models_status_unavailable": "模型不可用",
+  "settings_models_status_not_downloaded": "需要下载"
 }

@@ -48,6 +48,7 @@ var sentinels = map[string]error{
 	"ErrSignatureImage": core.ErrSignatureImage, "ErrSignatureImageCount": core.ErrSignatureImageCount,
 	"ErrNotGrantable":  core.ErrNotGrantable,
 	"context.Canceled": context.Canceled, "context.DeadlineExceeded": context.DeadlineExceeded,
+	"ai.ErrJudgeUnavailable": ai.ErrJudgeUnavailable, "ai.ErrJudgePlugin": ai.ErrJudgePlugin,
 	"ai.ErrNoModelList": ai.ErrNoModelList, "ai.ErrModelForbidden": ai.ErrModelForbidden, "conn.ErrAuthFailed": conn.ErrAuthFailed,
 	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
 	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
@@ -229,7 +230,8 @@ func TestWireCodesPinned(t *testing.T) {
 		"translator_unavailable": core.ErrTranslatorUnavailable,
 		"registry_stale":         core.ErrRegistryStale, "registry_mismatch": core.ErrRegistryMismatch,
 		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
-		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
+		"model_not_found":   core.ErrModelNotFound,
+		"judge_unavailable": ai.ErrJudgeUnavailable, "judge_plugin": ai.ErrJudgePlugin, "model_auth": core.ErrModelAuth,
 		"model_login": core.ErrModelLogin, "model_reauth": core.ErrModelReauth, "label_exists": core.ErrLabelExists,
 		"base_url_invalid": core.ErrBaseURLInvalid, "base_url_scheme": core.ErrBaseURLScheme,
 		"no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
@@ -245,10 +247,11 @@ func TestWireCodesPinned(t *testing.T) {
 		"send_warnings":            &core.SendWarningsError{},
 		"send_blocked":             &core.SendBlockedError{},
 		"egress_approval_required": &core.EgressApprovalRequired{},
+		"model_error":              &core.ModelError{Code: "model_not_ready", Message: "download"},
 		"ai_error":                 &ai.Error{Code: ai.CodeCanceled},
 		"no_role_folder":           &core.ErrNoRoleFolder{Role: "junk"},
 	}
-	assert.Len(t, pinned, len(sentinels)+6, "every registration is pinned")
+	assert.Len(t, pinned, len(sentinels)+7, "every registration is pinned")
 	for code, err := range pinned {
 		we := c.Encode(err, nil)
 		assert.Equal(t, rpc.CodeApp, we.Code, code)
@@ -265,5 +268,18 @@ func TestBadErrorData(t *testing.T) {
 			got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "m", Data: &rpc.WireErrorData{Code: code, Detail: json.RawMessage(detail)}})
 			assert.ErrorIs(t, got, rpc.ErrBadErrorData, "%s %s", code, name)
 		}
+	}
+}
+
+func TestModelErrorRPCRoundTrip(t *testing.T) {
+	c := rpcbind.NewCodec()
+	for _, cause := range []error{ai.ErrJudgeUnavailable, ai.ErrJudgePlugin} {
+		_, raw, err := wire(t, c, errors.Join(cause, &core.ModelError{Code: "model_not_ready", Message: "Prepare the model", Retryable: true}), nil)
+		require.ErrorIs(t, err, cause)
+		var me *core.ModelError
+		require.ErrorAs(t, err, &me)
+		require.Equal(t, "model_not_ready", me.Code)
+		require.True(t, me.Retryable)
+		require.NotContains(t, raw, "/Users/")
 	}
 }

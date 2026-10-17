@@ -2061,5 +2061,28 @@
   "codes_open": "Open",
   "codes_card_confirm": "Confirmation link",
   "codes_card_signin": "Sign-in link",
-  "codes_card_reset": "Password reset link"
+  "codes_card_reset": "Password reset link",
+  "settings_models_refresh": "Refresh models",
+  "settings_models_plugins": "Plugin models",
+  "settings_models_refresh_failed": "Could not refresh {arg1}; showing the last available models.",
+  "@settings_models_refresh_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_perm_models": "Receives prompts, context, tools or judgment input when you use its models; it may send them to its declared addresses.",
+  "settings_models_status_ready": "Ready",
+  "settings_models_status_model_not_ready": "Needs download",
+  "settings_models_status_downloading": "Downloading",
+  "settings_models_status_verifying": "Verifying files",
+  "settings_models_status_downloaded": "Downloaded",
+  "settings_models_status_loading": "Loading",
+  "settings_models_status_insufficient_memory": "Not enough memory",
+  "settings_models_status_unsupported_platform": "Unsupported platform",
+  "settings_models_status_update_required": "Update Godwit to use this model",
+  "settings_models_status_verification_failed": "File verification failed; download again",
+  "settings_models_status_unavailable": "Model unavailable",
+  "settings_models_status_not_downloaded": "Needs download"
 }

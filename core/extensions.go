@@ -35,6 +35,7 @@ var (
 // PluginInfo is an installed plugin. Error is why it cannot run (its files are
 // damaged or an update was interrupted); such a plugin is listed, not hidden.
 type PluginInfo struct {
+	ModelsRefreshError    string // safe diagnostic code, never upstream error text
 	Name, Version         string
 	Title                 plugins.Text // a built-in plugin's display name; others show Name
 	Builtin               bool         // ships with Godwit (builtins.go): a switch only
@@ -166,6 +167,9 @@ func (s *Service) pluginInfo(name string, r pluginRow) PluginInfo {
 	if err := s.checkPluginFiles(name, r); err != nil {
 		info.Error = err.Error()
 	}
+	s.pluginModelsMu.Lock()
+	info.ModelsRefreshError = s.pluginModels[name].refreshError
+	s.pluginModelsMu.Unlock()
 	return info
 }
 
@@ -527,14 +531,19 @@ func (s *Service) startPlugins(ctx context.Context) error {
 
 // runningPlugin is a started plugin: the code it runs and its VM.
 type runningPlugin struct {
-	hash string          // source hash of the code it runs
-	gen  uint64          // this instance, among every instance started by the Service
-	host *pluginHost     // script plugins
-	p    *plugins.Plugin // script plugins
-	row  pluginRow       // the row it was started from: manifest and permission hashes
+	modelJudge         *pluginJudgeRuntime
+	active             atomic.Bool
+	modelConfigVersion atomic.Int64
+	hash               string          // source hash of the code it runs
+	gen                uint64          // this instance, among every instance started by the Service
+	host               *pluginHost     // script plugins
+	p                  *plugins.Plugin // script plugins
+	row                pluginRow       // the row it was started from: manifest and permission hashes
 
-	native *plugins.NativeProcess         // native plugins (p and host are nil)
-	cfg    atomic.Pointer[map[string]any] // native: the settings a new process gets
+	modelNet      *plugins.Client
+	nativeMethods atomic.Pointer[map[string]bool]
+	native        *plugins.NativeProcess         // native plugins (p and host are nil)
+	cfg           atomic.Pointer[map[string]any] // native: the settings a new process gets
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -581,7 +590,8 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r, modelNet: h.net, modelJudge: newPluginJudgeRuntime()}
+	rp.active.Store(true)
 	s.running[name] = rp
 	if err := s.registerPluginTools(name, rp); err != nil {
 		s.stopPlugin(name)
@@ -596,6 +606,11 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 
 func (s *Service) stopPlugin(name string) {
 	if rp := s.running[name]; rp != nil {
+		rp.active.Store(false)
+		s.forgetPluginModels(name)
+		if rp.modelNet != nil {
+			rp.modelNet.Transport().CloseIdleConnections()
+		}
 		if rp.stopHooks != nil {
 			rp.stopHooks() // it ends on its own; Close waits for it (s.begin)
 		}
@@ -628,12 +643,13 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
-	cfg, _, err := s.pluginConfigLocked(ctx, name)
+	cfg, configVersion, err := s.pluginConfigLocked(ctx, name)
 	if err != nil {
 		return err
 	}
-	rp := &runningPlugin{hash: r.sourceHash, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, row: r, modelNet: plugins.NewClient(s.pluginNet), modelJudge: newPluginJudgeRuntime()}
 	rp.cfg.Store(&cfg)
+	rp.modelConfigVersion.Store(configVersion)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: nativeIdle,
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
@@ -651,6 +667,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	}
 	s.pluginGen++
 	rp.gen = s.pluginGen
+	rp.active.Store(true)
 	s.running[name] = rp
 	return nil
 }
@@ -666,6 +683,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		Name, Version string
 		ABI           uint32
 		Capabilities  []string
+		Methods       []string
 	}
 	sorted := func(xs []string) []string { return slices.Sorted(slices.Values(xs)) }
 	if json.Unmarshal(res, &d) != nil || d.Name != name || d.Version != r.m.Version || d.ABI != plugins.NativeABI ||
@@ -673,18 +691,33 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		// a native failure, so failed restarts count towards disabling it
 		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
+	methods := map[string]bool{}
+	for _, method := range d.Methods {
+		if method == "" || methods[method] {
+			return fmt.Errorf("%w: invalid describe.methods", plugins.ErrNativeABI)
+		}
+		methods[method] = true
+	}
+	if slices.Contains(r.m.Capabilities, "models") && !methods["models.list"] {
+		return fmt.Errorf("%w: models.list is required", plugins.ErrNativeABI)
+	}
 	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
+	if err == nil {
+		rp.nativeMethods.Store(&methods)
+	}
 	return err
 }
 
 // configureNative saves the plugin's settings for its next processes and
 // hands them to the running one. The caller holds pluginsMu.
 func (s *Service) configureNative(ctx context.Context, name string, rp *runningPlugin) error {
-	cfg, _, err := s.pluginConfigLocked(ctx, name)
+	s.forgetPluginModels(name)
+	cfg, configVersion, err := s.pluginConfigLocked(ctx, name)
 	if err != nil {
 		return err
 	}
 	rp.cfg.Store(&cfg)
+	rp.modelConfigVersion.Store(configVersion)
 	_, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg})
 	return err
 }

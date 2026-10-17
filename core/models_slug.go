@@ -91,6 +91,13 @@ func (s *Service) newSlug(ctx context.Context, name string, exceptID int64) (str
 	if err != nil {
 		return "", err
 	}
+	providerRows, err := s.db.Query(ctx, "SELECT slug FROM plugin_model_providers")
+	if err != nil {
+		return "", err
+	}
+	for _, r := range providerRows.Values {
+		aliases[store.Str(r[0])] = true
+	}
 	return pickSlug(name, exceptID, rows, aliases), nil
 }
 

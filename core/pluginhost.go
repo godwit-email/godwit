@@ -33,6 +33,7 @@ type pluginHost struct {
 // holds pluginsMu. A read failure is kept, so ctx.config throws rather than
 // serving values that are no longer saved.
 func (h *pluginHost) refreshConfig(ctx context.Context) error {
+	h.s.forgetPluginModels(h.name)
 	vals, ver, err := h.s.pluginConfigLocked(ctx, h.name)
 	h.config.Store(&plugins.ConfigSnapshot{Values: vals, Version: ver, Err: err})
 	return err
@@ -219,6 +220,9 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		if err != nil {
 			return err
 		}
+		if err := plugins.CheckModelReentry(ctx, model.Provider); err != nil {
+			return err
+		}
 		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.complete", Decision: "run"}); err != nil {
 			return err
 		}
@@ -242,10 +246,10 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		out = b.String()
 		return nil
 	})
-	return out, err
+	return out, pluginBusinessError(err)
 }
 
-// LLMDecide asks the judge (Settings.JudgeService, else the default model)
+// LLMDecide asks the judge (Settings.JudgeModel, else the default model)
 // the plugin's typed questions about input. At most two of a plugin's calls
 // run at once; each is audited.
 func (h *pluginHost) LLMDecide(ctx context.Context, input string, qs []plugins.Question) (out []plugins.Answer, err error) {
@@ -269,7 +273,7 @@ func (h *pluginHost) LLMDecide(ctx context.Context, input string, qs []plugins.Q
 		out, err = j.Ask(ctx, input, qs)
 		return err
 	})
-	return out, err
+	return out, pluginBusinessError(err)
 }
 
 // Fetch runs the request through the plugin's hardened client, the
@@ -519,6 +523,10 @@ func (s *Service) runPluginTool(ctx context.Context, pc pluginCall, tool string,
 		return nil, errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
 	}
 	if err != nil {
+		var business *plugins.NativeError
+		if errors.As(err, &business) {
+			return nil, s.cleanError(err)
+		}
 		return nil, errors.Join(s.cleanError(err), s.pluginFailed(ctx, pc.name, pc.gen))
 	}
 	if err := s.pluginSucceeded(ctx, pc.name, pc.gen); err != nil {
@@ -559,4 +567,12 @@ func (s *Service) extToolDescription(label, d string) string {
 		r = r[:maxToolDescription]
 	}
 	return "[" + label + "] " + string(r)
+}
+
+func pluginBusinessError(err error) error {
+	var me *ModelError
+	if errors.As(err, &me) {
+		return &plugins.NativeError{Code: me.Code, Message: me.Message, Retryable: me.Retryable}
+	}
+	return err
 }

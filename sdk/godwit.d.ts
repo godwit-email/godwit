@@ -219,6 +219,8 @@ export interface Translator {
 }
 
 export interface Ctx {
+  /** Register once during initialization; requires capabilities: ["models"]. */
+  models: { register(provider: ModelProvider): void }
   on(event: "message.received", handler: (message: ReceivedMessage, info: DeliveryInfo) => MaybePromise<void>): void
   on(event: "message.beforeSend", handler: (draft: OutgoingDraft) => MaybePromise<SendCheck | void>): void
 
@@ -249,4 +251,87 @@ export interface Ctx {
     set(key: string, value: string): Promise<void>
     delete(key: string): Promise<void>
   }
+}
+
+
+export type GenerateProtocol =
+  | "openai-completions"
+  | "openai-responses"
+  | "anthropic-message"
+
+export type JudgeProtocol =
+  | "typesafe-systemone"
+  | "openai-decisions"
+
+export type ModelProtocol = GenerateProtocol | JudgeProtocol
+
+export interface ModelIdentity {
+  /** 插件内唯一、稳定；更改显示名称不改变它。允许 org/model 形式。 */
+  id: string
+  name: string
+}
+
+export interface HTTPModel extends ModelIdentity {
+  transport: "http"
+  protocol: ModelProtocol
+  baseURL: string
+}
+
+export interface PluginJudgeModel extends ModelIdentity {
+  transport: "plugin"
+  operation: "judge"
+  /** registry 中的资产名 → 变体 ID；不是下载 URL。 */
+  assets?: Record<string, string>
+}
+
+export type ProviderModel = HTTPModel | PluginJudgeModel
+
+export interface ModelsResult {
+  models: ProviderModel[]
+}
+
+
+export type JSONValue =
+  | null | boolean | number | string
+  | JSONValue[]
+  | { [key: string]: JSONValue }
+
+export interface ModelHTTPRequest {
+  url: string
+  headers: Record<string, string>
+  /** 已按该模型的 HTTP 协议编码；实际发送方法固定为 POST。 */
+  body: Record<string, JSONValue>
+}
+
+export interface PrepareModelRequest {
+  model: HTTPModel
+  /** 不包含业务数据的随机会话标识；工具续轮、审批恢复和重启后保持稳定。 */
+  sessionId: string
+  /** Unix 毫秒；和 sessionId 一起由宿主持久化。 */
+  sessionCreatedAt: number
+  /** 每次实际 HTTP 尝试唯一，重试会改变。 */
+  requestId: string
+  request: ModelHTTPRequest
+}
+
+export interface JudgeModelRequest {
+  modelId: string
+  input: string
+  questions: Question[]
+}
+
+export interface JudgeModelResult {
+  answers: Answer[]
+}
+
+export interface ModelProvider {
+  listModels(): MaybePromise<ModelsResult>
+
+  /** 可省略；省略就原样发送宿主编码的请求。 */
+  prepareRequest?(
+    request: PrepareModelRequest,
+  ): MaybePromise<ModelHTTPRequest>
+
+  /** 列表含 transport=plugin、operation=judge 的模型时必须实现。 */
+  judge?(request: JudgeModelRequest): MaybePromise<JudgeModelResult>
 }

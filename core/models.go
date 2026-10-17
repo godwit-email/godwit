@@ -3,10 +3,12 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -539,8 +541,8 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 // checkNameFree refuses a name that is another service's slug or old name:
 // references to that name resolve to that service, not to this one.
 func (s *Service) checkNameFree(ctx context.Context, name string, id int64) error {
-	rows, err := s.db.Query(ctx, "SELECT 1 FROM model_services WHERE slug = ? AND id != ? UNION ALL SELECT 1 FROM model_service_aliases WHERE name = ? AND service_id != ?",
-		name, id, name, id)
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM model_services WHERE slug = ? AND id != ? UNION ALL SELECT 1 FROM model_service_aliases WHERE name = ? AND service_id != ? UNION ALL SELECT 1 FROM plugin_model_providers WHERE slug = ?",
+		name, id, name, id, name)
 	if err != nil {
 		return err
 	}
@@ -796,7 +798,23 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 			return nil, err
 		}
 		// No modelMu here: an update holds it while it calls Forget.
-		e.Current = func(ctx context.Context, id int64) (int64, error) {
+		e.ClientFor = func(m ai.ResolvedModel, base *http.Client) *http.Client {
+			if m.Provider == "" {
+				return base
+			}
+			s.pluginModelsMu.Lock()
+			cached := s.pluginModels[m.Provider]
+			s.pluginModelsMu.Unlock()
+			if cached.snap.version != m.Version || cached.snap.rp == nil {
+				return ai.PreparingClient(base, func(context.Context, *http.Request) (*http.Request, error) { return nil, modelUnavailable() })
+			}
+			return s.modelHTTPClient(cached.snap)
+		}
+		e.Current = func(ctx context.Context, m ai.ResolvedModel) (int64, error) {
+			if m.Provider != "" {
+				return s.currentPluginModelVersion(m.Provider)
+			}
+			id := m.ServiceID
 			rows, err := s.db.Query(context.WithoutCancel(ctx), "SELECT version FROM model_services WHERE id = ?", id)
 			if err != nil || len(rows.Values) == 0 {
 				return 0, cmp.Or(err, ErrModelServiceNotFound)
@@ -894,6 +912,20 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 		return ai.ResolvedModel{}, "", err
 	}
 	m, key, err := s.serviceByRef(ctx, r.Service)
+	if errors.Is(err, ErrModelServiceNotFound) {
+		snap, model, pluginErr := s.pluginModel(ctx, ref)
+		if pluginErr != nil {
+			if errors.Is(pluginErr, ErrModelServiceNotFound) {
+				return ai.ResolvedModel{}, "", err
+			}
+			return ai.ResolvedModel{}, "", pluginErr
+		}
+		kind := map[string]string{"openai-completions": ai.KindOpenAI, "openai-responses": ai.KindResponses, "anthropic-message": ai.KindAnthropic}[model.Protocol]
+		if model.Transport != "http" || kind == "" {
+			return ai.ResolvedModel{}, "", ErrModelNotFound
+		}
+		return ai.ResolvedModel{Provider: snap.name, Version: snap.version, Kind: kind, BaseURL: strings.TrimRight(model.BaseURL, "/"), Model: model.ID}, snap.slug + "/" + model.ID, nil
+	}
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
 	}
@@ -927,27 +959,55 @@ func (s *Service) serviceByRef(ctx context.Context, name string) (ModelService, 
 	return m, key, err
 }
 
-// resolveJudge is the judge Settings.JudgeService names, and its "slug/model"
-// label. When that is unset, gone or has judge off, the default generation
-// model answers instead (ai.NewGenJudge, gen true), as SmallModel falls back to it.
+// resolveJudge uses the explicit model, or the default generator when unset.
 func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, gen bool, err error) {
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return nil, "", false, err
 	}
-	if st.JudgeService != "" {
-		m, key, err := s.serviceByRef(ctx, st.JudgeService)
-		if err != nil && !errors.Is(err, ErrModelServiceNotFound) {
-			return nil, "", false, err
+	ref := st.JudgeModel
+	if ref != "" {
+		parsed, err := ai.ParseModelRef(ref)
+		if err != nil {
+			return nil, ref, false, errors.Join(ai.ErrJudgeUnavailable, modelUnavailable())
 		}
-		if err == nil && m.JudgeFormat != "" {
-			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
-			return j, m.Slug + "/" + m.JudgeModel, false, err
+		m, key, serviceErr := s.serviceByRef(ctx, parsed.Service)
+		if serviceErr == nil && m.JudgeFormat != "" && m.JudgeModel == parsed.Model {
+			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, parsed.Model)
+			return j, ref, false, err
+		}
+		if errors.Is(serviceErr, ErrModelServiceNotFound) {
+			snap, model, err := s.pluginModel(ctx, ref)
+			if err != nil {
+				return nil, ref, false, modelCallError(errors.Join(ai.ErrJudgeUnavailable, err))
+			}
+			if model.Transport == "plugin" {
+				return pluginJudge{s: s, name: snap.name}, ref, false, nil
+			}
+			format := ai.JudgeFormat("")
+			switch model.Protocol {
+			case "typesafe-systemone":
+				format = ai.FormatSystemOne
+			case "openai-decisions":
+				format = ai.FormatDecisions
+			}
+			if format != "" {
+				j, err := ai.NewJudge(s.modelHTTPClient(snap), format, model.BaseURL, "", model.ID)
+				if err != nil {
+					return nil, ref, false, err
+				}
+				return modelHTTPJudge{judge: j, s: s, snap: snap}, ref, false, nil
+			}
+		} else if serviceErr != nil {
+			return nil, ref, false, serviceErr
 		}
 	}
-	model, ref, err := s.resolveRef(ctx, "")
+	model, resolved, err := s.resolveRef(ctx, ref)
 	if err != nil {
-		return nil, "", false, err
+		if ref != "" {
+			err = errors.Join(ai.ErrJudgeUnavailable, err)
+		}
+		return nil, ref, false, err
 	}
 	e, err := s.aiEngine()
 	if err != nil {
@@ -955,7 +1015,46 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
 		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
-	}), ref, true, nil
+	}), resolved, true, nil
+}
+
+type modelHTTPJudge struct {
+	judge ai.Judge
+	s     *Service
+	snap  modelSnapshot
+}
+
+func (j modelHTTPJudge) Ask(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
+	ctx, end, err := j.s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stop := context.AfterFunc(j.snap.life, func() { cancel(modelUnavailable()) })
+	defer stop()
+	if ctx.Err() != nil && j.snap.life.Err() == nil {
+		return nil, ctx.Err()
+	}
+	if !j.s.modelSnapshotCurrent(ctx, j.snap) {
+		return nil, modelCallError(modelUnavailable())
+	}
+	if ai.ModelSessionFromContext(ctx).ID == "" {
+		ctx = ai.WithModelSession(ctx, ai.ModelSession{ID: rand.Text(), CreatedAt: time.Now().UnixMilli()})
+	}
+	answers, err := j.judge.Ask(ctx, input, qs)
+	if ctx.Err() != nil && j.snap.life.Err() == nil {
+		return nil, ctx.Err()
+	}
+	if !j.s.modelSnapshotCurrent(ctx, j.snap) {
+		return nil, modelCallError(modelUnavailable())
+	}
+	var me *ModelError
+	if errors.As(err, &me) {
+		err = modelCallError(err)
+	}
+	return answers, err
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.

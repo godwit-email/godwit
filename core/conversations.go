@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -569,7 +570,11 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		return ai.Request{}, err
 	}
 	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools)}, nil
+	session, err := s.conversationModelSession(ctx, job.conv.ID)
+	if err != nil {
+		return ai.Request{}, err
+	}
+	return ai.Request{Model: model, Session: session, System: system, State: sent, Tools: s.specs(job, tools)}, nil
 }
 
 // track registers a run in flight. The caller holds runMu.
@@ -1000,4 +1005,19 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	req.Responses = results
 	go s.drive(job, end, e.Run, req, nil)
 	return nil
+}
+
+func (s *Service) conversationModelSession(ctx context.Context, id int64) (ai.ModelSession, error) {
+	_, err := s.db.Execute(ctx, "UPDATE conversations SET model_session_id = ?, model_session_created_at = ? WHERE id = ? AND model_session_id = ''", rand.Text(), time.Now().UnixMilli(), id)
+	if err != nil {
+		return ai.ModelSession{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT model_session_id,model_session_created_at FROM conversations WHERE id = ?", id)
+	if err != nil {
+		return ai.ModelSession{}, err
+	}
+	if len(rows.Values) == 0 {
+		return ai.ModelSession{}, errors.New("conversation not found")
+	}
+	return ai.ModelSession{ID: store.Str(rows.Values[0][0]), CreatedAt: store.Int(rows.Values[0][1])}, nil
 }

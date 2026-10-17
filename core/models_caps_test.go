@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -157,20 +158,20 @@ func TestGenOffStopsResolving(t *testing.T) {
 	assert.ErrorIs(t, err, ErrModelNotFound)
 }
 
-func TestSettingsJudgeService(t *testing.T) {
+func TestSettingsJudgeModel(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	st, err := s.GetSettings(bg)
 	require.NoError(t, err)
-	assert.Empty(t, st.JudgeService, "the default model answers until one is chosen")
-	st.JudgeService = "a/b"
+	assert.Empty(t, st.JudgeModel, "the default model answers until one is chosen")
+	st.JudgeModel = "typesafe"
 	_, err = s.SetSettings(bg, st)
-	assert.ErrorContains(t, err, "invalid judge service")
-	st.JudgeService = "typesafe"
+	assert.ErrorContains(t, err, "invalid model reference")
+	st.JudgeModel = "typesafe/jev-latest"
 	_, err = s.SetSettings(bg, st)
 	require.NoError(t, err)
 	got, err := s.GetSettings(bg)
 	require.NoError(t, err)
-	assert.Equal(t, "typesafe", got.JudgeService)
+	assert.Equal(t, "typesafe/jev-latest", got.JudgeModel)
 }
 
 // judgeAPI serves System One on srv: yes for every question, or status with
@@ -220,7 +221,7 @@ func TestResolveJudge(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, *as[0].Probability)
 
-	st.JudgeService = "ts"
+	st.JudgeModel = "ts/jev-latest"
 	_, err = s.SetSettings(bg, st)
 	require.NoError(t, err)
 	j, label, byGen, err = s.resolveJudge(bg)
@@ -231,20 +232,21 @@ func TestResolveJudge(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0.9, *as[0].Probability)
 
-	// Judge off, then removed: back to the default model.
+	// An explicit unavailable judge never falls back to the generator.
 	_, err = s.UpdateModelService(bg, ts.ID, ModelServiceInput{Name: "ts", BaseURL: srv.URL, Kind: "openai", Models: []string{"x"}})
 	require.NoError(t, err)
-	_, label, _, err = s.resolveJudge(bg)
-	require.NoError(t, err)
-	assert.Equal(t, "gen/m1", label)
+	_, _, _, err = s.resolveJudge(bg)
+	require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
 	require.NoError(t, s.RemoveModelService(bg, ts.ID))
-	_, label, _, err = s.resolveJudge(bg)
+	_, _, _, err = s.resolveJudge(bg)
+	require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
+	st.JudgeModel = ""
+	_, err = s.SetSettings(bg, st)
 	require.NoError(t, err)
-	assert.Equal(t, "gen/m1", label)
-
 	require.NoError(t, s.RemoveModelService(bg, gen.ID))
 	_, _, _, err = s.resolveJudge(bg)
-	assert.ErrorIs(t, err, ErrModelServiceNotFound, "no judge and no default model")
+	assert.ErrorIs(t, err, ErrModelServiceNotFound)
+
 }
 
 func statusOf(t *testing.T, s *Service, id int64) map[string]CapStatus {
@@ -476,4 +478,53 @@ func TestCheckJudgeModels(t *testing.T) {
 	assert.Equal(t, ai.FormatSystemOne.Models(), c.JudgeModels)
 	assert.Equal(t, []string{"jev-1", "jev-2"}, c.Models)
 	assert.Equal(t, srv.URL+"/chat/completions", c.Endpoint)
+}
+
+func TestJudgeModelMigration(t *testing.T) {
+	all := store.Migrations
+	idx := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(strings.Join(m, "\n"), "$.JudgeService") })
+	require.NotEqual(t, -1, idx)
+	for _, tc := range []struct{ old, want string }{
+		{`{"JudgeService":"ts"}`, "ts/jev-latest"},
+		{`{"JudgeService":"gone"}`, "gone/"},
+		{`{"JudgeService":"off"}`, "off/saved"},
+		{`{"JudgeService":""}`, ""},
+		{`{"JudgeService":"ts","JudgeModel":"new/m"}`, "new/m"},
+	} {
+		t.Run(tc.old, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "godwit.db")
+			store.Migrations = all[:idx]
+			db, err := store.Open(bg, path)
+			store.Migrations = all
+			require.NoError(t, err)
+			_, err = db.Execute(bg, `INSERT INTO model_services(name,slug,kind,base_url,models,judge_format,judge_model) VALUES ('ts','ts','','https://example.com','[]','systemone','jev-latest'),('off','off','','https://example.com','[]','','saved')`)
+			require.NoError(t, err)
+			_, err = db.Execute(bg, `INSERT INTO settings(key,value) VALUES ('app',?)`, tc.old)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+			for range 2 {
+				db, err = store.Open(bg, path)
+				require.NoError(t, err)
+				rows, err := db.Query(bg, `SELECT json_extract(value,'$.JudgeModel'),json_type(value,'$.JudgeService') FROM settings WHERE key='app'`)
+				require.NoError(t, err)
+				require.Equal(t, tc.want, store.Str(rows.Values[0][0]))
+				require.Nil(t, rows.Values[0][1])
+				require.NoError(t, db.Close())
+			}
+		})
+	}
+}
+func TestJudgeModelExplicitNoFallback(t *testing.T) {
+	s := modelSvc(t)
+	st, err := s.GetSettings(bg)
+	require.NoError(t, err)
+	st.JudgeModel = "missing/model"
+	_, err = s.SetSettings(bg, st)
+	require.NoError(t, err)
+	_, _, _, err = s.resolveJudge(bg)
+	require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
+}
+func TestPluginJudgeUnavailableKeepsLabels(t *testing.T) {
+	require.False(t, unanswerable(errors.Join(ai.ErrJudgeUnavailable, &ai.HTTPError{Status: 400})))
+	require.False(t, unanswerable(errors.Join(ai.ErrJudgePlugin, ai.ErrJudgeAnswer)))
 }

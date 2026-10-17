@@ -360,7 +360,7 @@ func TestShots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.setSettings(func(st *core.Settings) { st.DefaultModel, st.SmallModel, st.JudgeService = "", "", "" })
+		s.setSettings(func(st *core.Settings) { st.DefaultModel, st.SmallModel, st.JudgeModel = "", "", "" })
 		for _, ms := range list {
 			if err := s.env.Svc.RemoveModelService(ctx, ms.ID); err != nil {
 				t.Fatal(err)
@@ -389,9 +389,9 @@ func TestShots(t *testing.T) {
 			}
 		}
 		s.setSettings(func(st *core.Settings) {
-			st.DefaultModel, st.JudgeService = "openai/[MODEL A]", "openai"
+			st.DefaultModel, st.JudgeModel = "openai/[MODEL A]", "openai/[MODEL B]"
 			if view == "gen-only" {
-				st.DefaultModel, st.JudgeService = "anthropic/[MODEL D]", ""
+				st.DefaultModel, st.JudgeModel = "anthropic/[MODEL D]", ""
 			}
 		})
 	}

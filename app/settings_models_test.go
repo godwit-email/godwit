@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -629,6 +632,37 @@ func TestModelsEmptyState(t *testing.T) {
 	h.see("添加模型服务")
 }
 
+func TestModelsEmptyDiscoveryFailure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"discovery-demo","version":"1.0.0","main":"index.ts","capabilities":["models"]}`), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(`export default function(ctx) {
+  let calls = 0;
+  ctx.models.register({listModels() {
+    if (++calls === 1) throw {code:"upstream", message:"offline", retryable:true};
+    return {models:[{id:"m", name:"Recovered", transport:"http", protocol:"openai-completions", baseURL:"https://example.com/v1"}]};
+  }});
+}`), 0600))
+	h := newHarness(t, func(e *coretest.Env) {
+		e.AddAccount(t, "alice@example.com")
+		ctx := context.Background()
+		_, err := e.Svc.InstallPlugin(ctx, dir)
+		require.NoError(t, err)
+		require.NoError(t, e.Svc.GrantPermission(ctx, "discovery-demo"))
+		require.NoError(t, e.Svc.SetPluginEnabled(ctx, "discovery-demo", true))
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	m := h.openSettings("models").models
+	h.until("model discovery", func() bool { return m.loaded })
+	require.Empty(t, m.services)
+	require.Empty(t, m.catalog)
+	h.see("还没有接入模型服务")
+	failure := "无法刷新 discovery-demo，显示上次可用的模型。"
+	h.see(failure)
+	h.click("刷新模型")
+	h.until("model discovery recovered", func() bool { return len(m.catalog) == 1 && !h.tt.HasText(failure) })
+	h.see("Recovered")
+}
+
 func TestModelsDialogAutoFetchOnBlur(t *testing.T) {
 	h := withLLM(t)
 	url, _ := modelsServer(t, 0, "listed")
@@ -817,18 +851,18 @@ func TestModelsFetchAgainAfterStaleDrop(t *testing.T) {
 func TestDropRefsGenOff(t *testing.T) {
 	gw := core.ModelService{ID: 1, Slug: "gw", Models: []string{"m"}, JudgeFormat: "decisions"}
 	others := []core.ModelService{gw, {ID: 2, Slug: "ts", JudgeFormat: "systemone"}, {ID: 3, Slug: "or", Kind: "openai", Models: []string{"a", "b"}}}
-	st := core.Settings{DefaultModel: "gw/m", SmallModel: "gw/m", JudgeService: "gw"}
+	st := core.Settings{DefaultModel: "gw/m", SmallModel: "gw/m", JudgeModel: "gw/j"}
 	got, changed := dropRefs(st, gw, others)
-	if !changed || got.DefaultModel != "or/a" || got.SmallModel != "" || got.JudgeService != "gw" {
+	if !changed || got.DefaultModel != "or/a" || got.SmallModel != "" || got.JudgeModel != "gw/j" {
 		t.Fatalf("%v %+v", changed, got)
 	}
 	gw.Kind, gw.JudgeFormat = "openai", ""
 	got, changed = dropRefs(st, gw, others)
-	if !changed || got.DefaultModel != "gw/m" || got.SmallModel != "gw/m" || got.JudgeService != "" {
+	if changed || got.DefaultModel != "gw/m" || got.SmallModel != "gw/m" || got.JudgeModel != "gw/j" {
 		t.Fatalf("judge off: %v %+v", changed, got)
 	}
 	got, _ = dropRefs(st, core.ModelService{ID: 1, Slug: "gw"}, others[:2]) // removed, no alt
-	if got.DefaultModel != "" || got.SmallModel != "" || got.JudgeService != "" {
+	if got.DefaultModel != "" || got.SmallModel != "" || got.JudgeModel != "gw/j" {
 		t.Fatalf("removed: %+v", got)
 	}
 }
@@ -860,31 +894,31 @@ func TestDeriveUsage(t *testing.T) {
 		genOpts, judges []string
 		smalls          []string // nil: not checked
 	}{
-		{name: "normal", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "openai"}, svcs: []core.ModelService{oai, ant},
+		{name: "normal", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeModel: "openai/gpt-6-luna"}, svcs: []core.ModelService{oai, ant},
 			gen: line{"OpenAI · 连接正常 · 812 ms", lookOK}, judge: line{"OpenAI · 连接正常 · 143 ms", lookOK},
 			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna"}},
 		{name: "gen-only", st: core.Settings{DefaultModel: "anthropic/[MODEL D]"}, svcs: []core.ModelService{ant},
 			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"用 Anthropic / [MODEL D] 回答判断题，约慢 10 倍", lookSlow}, suggest: true,
 			genOpts: []string{"Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）"}},
-		{name: "broken", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "openai"}, svcs: []core.ModelService{broken},
+		{name: "broken", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeModel: "openai/gpt-6-luna"}, svcs: []core.ModelService{broken},
 			gen: line{"OpenAI · 401 · API Key 无效", lookFail}, judge: line{"OpenAI · 401 · API Key 无效", lookFail},
 			alert:   "生成用的 OpenAI 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用，判断也一样。",
 			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna"}},
-		{name: "broken gen, judge fine", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeService: "typesafe"}, svcs: []core.ModelService{broken, ts},
+		{name: "broken gen, judge fine", st: core.Settings{DefaultModel: "openai/[MODEL A]", JudgeModel: "typesafe/jev-latest"}, svcs: []core.ModelService{broken, ts},
 			gen: line{"OpenAI · 401 · API Key 无效", lookFail}, judge: line{"TypeSafe · 未测试", lookUntested},
 			alert:   "生成用的 OpenAI 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用。",
 			genOpts: []string{"OpenAI / [MODEL A]", "OpenAI / [MODEL B]"}, judges: []string{"由生成模型兼任（较慢）", "OpenAI / gpt-6-luna", "TypeSafe / jev-latest"}},
-		{name: "judge only: nothing generates", st: core.Settings{JudgeService: "typesafe"}, svcs: []core.ModelService{ts},
-			gen: line{"未配置，这些功能暂时不可用", lookNone}, judge: line{"未配置", lookNone}, off: true,
-			genOpts: []string{"先添加一个服务"}, judges: []string{"先添加一个服务"}},
+		{name: "judge only: nothing generates", st: core.Settings{JudgeModel: "typesafe/jev-latest"}, svcs: []core.ModelService{ts},
+			gen: line{"未配置，这些功能暂时不可用", lookNone}, judge: line{"TypeSafe · 未测试", lookUntested}, off: true,
+			genOpts: []string{"先添加一个服务"}, judges: []string{"由生成模型兼任（较慢）", "TypeSafe / jev-latest"}},
 		{name: "missing default", st: core.Settings{DefaultModel: "ghost/x"}, svcs: []core.ModelService{ant},
 			gen: line{"未找到的模型：ghost/x", lookFail}, judge: line{"未配置", lookNone},
 			genOpts: []string{"未设置", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）"}},
-		{name: "missing default, judge works", st: core.Settings{DefaultModel: "ghost/x", JudgeService: "typesafe"}, svcs: []core.ModelService{ant, ts},
+		{name: "missing default, judge works", st: core.Settings{DefaultModel: "ghost/x", JudgeModel: "typesafe/jev-latest"}, svcs: []core.ModelService{ant, ts},
 			gen: line{"未找到的模型：ghost/x", lookFail}, judge: line{"TypeSafe · 未测试", lookUntested},
 			genOpts: []string{"未设置", "Anthropic / [MODEL D]"}, judges: []string{"由生成模型兼任（较慢）", "TypeSafe / jev-latest"}},
-		{name: "small and judge name what's gone", st: core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "ghost/y", JudgeService: "ghost"}, svcs: []core.ModelService{ant},
-			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"用 Anthropic / [MODEL D] 回答判断题，约慢 10 倍", lookSlow}, suggest: true,
+		{name: "small and judge name what's gone", st: core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "ghost/y", JudgeModel: "ghost/y"}, svcs: []core.ModelService{ant},
+			gen: line{"Anthropic · 未测试", lookUntested}, judge: line{"未找到的模型：ghost/y", lookFail},
 			genOpts: []string{"Anthropic / [MODEL D]"}, smalls: []string{"未设置", "与默认模型相同", "Anthropic / [MODEL D]"}, judges: []string{"未设置", "由生成模型兼任（较慢）"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -894,6 +928,13 @@ func TestDeriveUsage(t *testing.T) {
 			}
 			if u.alert != c.alert || u.suggest != c.suggest || u.disabled != c.off {
 				t.Errorf("alert %q suggest %v disabled %v", u.alert, u.suggest, u.disabled)
+			}
+			for _, option := range u.genOpts {
+				if option.Value != "" && option.Value != c.st.DefaultModel || option.Value != "" && u.genSvc != nil {
+					if option.Label != "未设置" && !slices.Contains(c.judges, option.Label) {
+						c.judges = append(c.judges, option.Label)
+					}
+				}
 			}
 			if !slices.Equal(labels(u.genOpts), c.genOpts) || !slices.Equal(labels(u.judgeOpts), c.judges) {
 				t.Errorf("options %q %q", labels(u.genOpts), labels(u.judgeOpts))
@@ -1097,7 +1138,7 @@ func TestModelFormOffWarns(t *testing.T) {
 		{ID: 2, Name: "TypeSafe", Slug: "typesafe", Provider: core.ProviderTypeSafe, JudgeFormat: "systemone", JudgeModel: "jev-latest"},
 		{ID: 3, Name: "Anthropic", Slug: "anthropic", Provider: core.ProviderAnthropic, Kind: ai.KindAnthropic, Models: []string{"[MODEL D]"}},
 	}
-	st := core.Settings{DefaultModel: "openai/a", JudgeService: "openai"}
+	st := core.Settings{DefaultModel: "openai/a", JudgeModel: "openai/gpt-6-luna"}
 	m := &modelsView{}
 	m.edit(svcs[0])
 	f := m.form
@@ -1115,7 +1156,7 @@ func TestModelFormOffWarns(t *testing.T) {
 	if g, _ := offWarns(f, st, svcs[:2]); g != "它是唯一能生成的服务，关闭后总结、翻译、写信和 Wit 都不可用。" {
 		t.Fatalf("no alt: %q", g)
 	}
-	if g, j := offWarns(f, core.Settings{DefaultModel: "anthropic/[MODEL D]", JudgeService: "typesafe"}, svcs); g != "" || j != "" {
+	if g, j := offWarns(f, core.Settings{DefaultModel: "anthropic/[MODEL D]", JudgeModel: "typesafe/jev-latest"}, svcs); g != "" || j != "" {
 		t.Fatalf("not the default: %q %q", g, j)
 	}
 	n := newForm(core.ProviderOpenAI)
@@ -1148,7 +1189,7 @@ func TestAddKeepsDialogTest(t *testing.T) {
 		s, _ := h.modelService("added")
 		return s.Status[core.CapGen].LatencyMs == 812 && s.Status[core.CapJudge].Code == "auth"
 	})
-	h.until("judge default", func() bool { return h.app.settings.JudgeService == "added" })
+	h.until("judge default", func() bool { return h.app.settings.JudgeModel == "added/gpt-6-luna" })
 }
 
 // TestDialogTestOfOtherModelNotKept: a test of a model no longer first isn't the saved one's.
@@ -1291,4 +1332,25 @@ func TestHumanizeChatGPTUsage(t *testing.T) {
 	err := &ai.Error{Code: ai.CodeRateLimited, Detail: ai.DetailChatGPTUsage}
 	assert.Equal(t, "ChatGPT 套餐用量已达上限", humanize(err))
 	assert.Equal(t, "登录已失效，请重新登录", humanize(core.ErrModelReauth))
+}
+
+func TestPluginModelsSelector(t *testing.T) {
+	st := core.Settings{DefaultModel: "zen/m", JudgeModel: "zen/j"}
+	catalog := []core.ListedModel{
+		{Ref: "zen/m", Model: core.ProviderModel{ID: "m", Name: "Free", Transport: "http", Protocol: "openai-completions"}, Status: core.ModelStatus{State: core.ModelReady}},
+		{Ref: "zen/j", Model: core.ProviderModel{ID: "j", Name: "Judge", Transport: "plugin", Operation: "judge"}, Status: core.ModelStatus{State: core.ModelReady}},
+	}
+	u := deriveUsage(st, nil, catalog)
+	require.False(t, u.disabled)
+	require.Equal(t, "zen/m", u.genOpts[0].Value)
+	require.Nil(t, u.genSvc)
+	require.True(t, slices.ContainsFunc(u.judgeOpts, func(o kit.Option[string]) bool { return o.Value == "zen/j" }))
+	require.False(t, slices.ContainsFunc(u.genOpts, func(o kit.Option[string]) bool { return o.Value == "zen/j" }))
+	require.Equal(t, "zen/m", st.DefaultModel)
+}
+func TestAssetModelsUpdateRequired(t *testing.T) {
+	row := core.ListedModel{Ref: "local/j", Model: core.ProviderModel{ID: "j", Name: "Local", Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": "small"}}, Status: core.ModelStatus{State: core.ModelFailed, Error: &core.ModelError{Code: "update_required"}}}
+	u := deriveUsage(core.Settings{}, nil, []core.ListedModel{row})
+	require.False(t, slices.ContainsFunc(u.judgeOpts, func(o kit.Option[string]) bool { return o.Value == row.Ref }))
+	require.Contains(t, modelStatusText(row.Status), "更新")
 }
