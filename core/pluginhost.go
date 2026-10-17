@@ -47,8 +47,12 @@ func (h *pluginHost) do(ctx context.Context, f func(ctx context.Context) error) 
 		return err
 	}
 	defer end()
-	return f(ctx)
+	return f(context.WithValue(ctx, pluginCallKey{}, h.name))
 }
+
+// pluginCallKey marks a context as a host call of the named script plugin,
+// made while its VM runs that call (callModelPlugin).
+type pluginCallKey struct{}
 
 func (h *pluginHost) StorageGet(ctx context.Context, key string) (v string, ok bool, err error) {
 	if beforePluginStorageGet != nil {

@@ -28,7 +28,7 @@ func startModelPlugin(t *testing.T, s *Service, name, net, code string) {
 	}
 	dir := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
-	m := fmt.Sprintf(`{"name":%q,"version":"1.0.0","main":"index.ts","capabilities":["models"],"permissions":{"net":[%q]},
+	m := fmt.Sprintf(`{"name":%q,"version":"1.0.0","main":"index.ts","capabilities":["models"],"permissions":{"net":[%q],"llm":true},
 		"config":[{"key":"region","type":"text","label":"Region"}]}`, name, net)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(m), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(code), 0o600))
@@ -403,4 +403,30 @@ func TestPluginModelClientOfOldListing(t *testing.T) {
 	_, err := c.Do(req)
 	assert.ErrorIs(t, err, ErrModelUnavailable)
 	assert.Empty(t, srv.Requests())
+}
+
+// A plugin's own llm.complete on its own prepared model fails at once: its
+// VM, busy with that call, could not run prepareRequest until it ends.
+func TestPluginOwnModelFailsFast(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
+	srv, host := modelServer(t, s, "openai")
+	srv.Script(testllm.Turn{Text: []string{"self answer"}})
+	startModelPlugin(t, s, "p", host, fmt.Sprintf(`export default function (ctx: any) {
+  ctx.models.register({
+    listModels: () => ({ models: [{ id: "m1", name: "M1", transport: "http", protocol: "openai-completions", baseURL: "https://%s" }] }),
+    prepareRequest: (req: any) => ({ url: req.url.replace("https://", "http://"), headers: req.headers, body: req.body }),
+  })
+  ctx.actions.register({ id: "ask", label: "Ask", on: ["message"], run: async () => ctx.llm.complete("hi") })
+}`, host))
+	st, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.DefaultModel = "plugin/p/m1"
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	start := time.Now()
+	res, err := s.RunAction(t.Context(), "p/ask", Target{Kind: "message", ID: id}, RunActionOptions{})
+	assert.ErrorContains(t, err, "its own model")
+	assert.Empty(t, res.Text)
+	assert.Less(t, time.Since(start), 10*time.Second, "no wait for the plugin timeout")
 }

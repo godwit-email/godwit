@@ -127,6 +127,9 @@ func (s *Service) pluginModel(ctx context.Context, ref string) (string, *running
 		return "", nil, plugins.ProviderModel{}, nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
 	}
 	ms, cfg, err := s.pluginModels(ctx, name, rp)
+	if errors.Is(err, errOwnModel) {
+		return "", nil, plugins.ProviderModel{}, nil, err
+	}
 	if err != nil {
 		return "", nil, plugins.ProviderModel{}, nil, errors.Join(fmt.Errorf("%w: %s", ErrModelUnavailable, ref), err)
 	}
@@ -347,6 +350,9 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 	return out, nil
 }
 
+// errOwnModel: a script plugin's own call (llm.complete, llm.decide) uses one of its models.
+var errOwnModel = errors.New("a plugin cannot use its own model from its own calls; pick another default or judge model")
+
 // errPluginAnswer: a model plugin's answer is not what the call returns.
 var errPluginAnswer = errors.New("the model plugin answered wrongly")
 
@@ -371,6 +377,9 @@ func decodeAnswer[T any](v T, err error, out any, what string) error {
 // native one's error envelope is its answer, and a wrong answer
 // (errPluginAnswer) always counts.
 func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningPlugin, call func(context.Context) error) error {
+	if rp.native == nil && ctx.Value(pluginCallKey{}) == name {
+		return errOwnModel // its VM runs one call at a time: this one would wait for the call waiting for it
+	}
 	err := call(ctx)
 	if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
 		return errors.Join(ctx.Err(), err) // cancelled or stopped: not the plugin's failure
