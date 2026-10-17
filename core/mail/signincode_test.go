@@ -31,6 +31,8 @@ func TestSignInCode(t *testing.T) {
 		{"outlook header", "RE: login", "Thanks!\n\nFrom: Login <login@example.com>\nSent: Friday\nSubject: code\n\nYour verification code: 123456", ""},
 		{"wrote", "Re: login", "Thanks!\n\nOn Fri, Oct 17, 2026 at 10:00 Login wrote:\nYour verification code: 123456", ""},
 		{"sender line kept", "Your verification code", "From: Acme Security\nYour verification code: 123456", "123456"},
+		{"coupon", "Thanks for your order", "Your code is SAVE20 for 20% off", ""},
+		{"your code at sign-in", "Sign in to Acme", "Your code is 482913", "482913"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

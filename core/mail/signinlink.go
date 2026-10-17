@@ -14,7 +14,11 @@ var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\bmagic link\b
 // sign in", "登录". "Sign in activity" in a security alert is not one.
 var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |continue to )?(?:(?:sign|log)[ -]?in|magic link)(?:\s+(?:to|with)\s+\S.*)?\s*[.!]?\s*$|^\s*(?:点击|立即)?(?:登录|登入)(?:到|至)?\s*[A-Za-z0-9 ._-]*$`)
 
-var plainURL = regexp.MustCompile(`https://[^\s<>"'）)」】]+`)
+var plainURL = regexp.MustCompile(`https://[^\s<>"'）)」】\]]+`)
+
+// What a plain-text line says right before its colon: an action, not a
+// report ("Review sign-in activity:").
+var linkLead = regexp.MustCompile(`(?i)(?:(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+)?|magic link|(?:登录|登入)(?:链接)?)\s*[:：]\s*$`)
 
 // SignInLink recognizes the one sign-in link of a sign-in mail: the subject
 // asks to sign in and exactly one https link says so. Conflicting links are
@@ -50,10 +54,10 @@ func SignInLink(subject, text, htmlBody string) string {
 			}
 		})
 	} else {
-		// Plain text has no link labels: the URL must follow a colon on a line
-		// that asks to sign in ("Log in here: https://…"), or come on the line
-		// after one ending in a colon. A caveat ("If you did not sign in,
-		// visit https://…") has none.
+		// Plain text has no link labels: the URL must follow a sign-in action
+		// and a colon ("Log in here: https://…"), on its line or the one
+		// before. A caveat ("If you did not sign in, visit https://…") or a
+		// report ("Review sign-in activity: https://…") is neither.
 		lines := strings.Split(text, "\n")
 		quoted := func(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
 		for i, line := range lines {
@@ -62,10 +66,10 @@ func SignInLink(subject, text, htmlBody string) string {
 			}
 			var urls []string
 			if loc := plainURL.FindStringIndex(line); loc != nil {
-				if before := strings.TrimRight(line[:loc[0]], " \t<\"'(（「【"); strings.HasSuffix(before, ":") || strings.HasSuffix(before, "：") {
+				if linkLead.MatchString(strings.TrimRight(line[:loc[0]], " \t<\"'(（「【[")) {
 					urls = plainURL.FindAllString(line, -1)
 				}
-			} else if t := strings.TrimSpace(line); (strings.HasSuffix(t, ":") || strings.HasSuffix(t, "：")) && i+1 < len(lines) && !quoted(lines[i+1]) {
+			} else if linkLead.MatchString(line) && i+1 < len(lines) && !quoted(lines[i+1]) {
 				urls = plainURL.FindAllString(lines[i+1], -1)
 			}
 			for _, u := range urls {
