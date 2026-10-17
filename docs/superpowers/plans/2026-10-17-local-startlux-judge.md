@@ -41,17 +41,18 @@
 
 ## Open Questions（需要拍板）
 
-1. **只有 CPU 的机器**：Windows 和 Linux 上没测。如果 4B 单封太慢，是只提供 2B，还是这类平台不提供插件。Task 1 量出数字后再定。
+1. **只有 CPU 的机器**：Linux arm64 虚拟机（6 核、纯 CPU）上，约 3400 token 的长 prompt 一题 2B 要 17.9 s、0.8B 要 9.5 s，比 M5 Max 的 Metal 慢一个数量级；一封长邮件 7 个标签就是约 2 分钟。全量回扫 4479 封在纯 CPU 上要按天算。选项：(a) 纯 CPU 平台只提供 2B，并在设置里写明慢、建议只给新邮件打标签；(b) 第一版纯 CPU 平台不上架，只上 Metal / Vulkan。x64 实机和 Vulkan 量完再定，现在的数字来自虚拟机，偏悲观也偏少。
 
 ## Global Constraints
 
 - 主仓库：`CGO_ENABLED=0` 下 `go build ./...`、`go test ./...` 通过；vet、gofmt 干净；不加依赖。ABI 版本不变（v1）：新方法和 `configure` 的新字段都是增量。
 - judge 契约：请求 `{"input": "<text>", "questions": [ai.Question...]}`，响应 `{"answers": [ai.Answer...]}`。核心照常 `validateQuestions` / `validateAnswers`。
 - **失败分类**：插件崩溃、看门狗超时、ABI 错误（`plugins.IsNativeFailure`）与答案不合契约，都算插件失败（计入三次停用），以 `ErrJudgePlugin` 报出，**不是** `ai.ErrJudgeAnswer`。调用方自己的取消或截止**不算**插件失败，也不计数。插件返回的错误信封原样展示、不计数。失败计数在 `validateAnswers` 之后、用一个独立于调用方的 context 记。
-- **请求大小**：核心按 16 题分批；发给插件前检查序列化后的请求 ≤ 1 MiB，超出直接拒绝、不计失败。
-- **排队与时间预算（宿主侧）**：现在 `nativeInFlight = 4` 个调用同时在途、各自从发出起计 60 秒看门狗，调用方截止后调用被丢到后台继续跑。插件内部是串行的，4 批 16 题排队可达约 100 秒，后面的调用会白白超时、甚至触发看门狗杀掉别人的调用。所以：
+- **请求大小与分批**：**每次调用只发 1 题**。StartLux 每题本来就是一次单独的前向，合批没有计算上的好处；而纯 CPU 上一题可达约 18 s，16 题一批会超过 60 秒看门狗。发给插件前检查序列化后的请求 ≤ 1 MiB，超出直接拒绝、不计失败。
+- **不能复用前缀缓存**：同一封邮件 7 个标签的 evidence 相同，但全注意力层是双向的，后面的 token 会改变前面 token 的表示，所以不能把 evidence 的 KV 缓存给下一题用；每题都要整段重算。
+- **排队与时间预算（宿主侧）**：现在 `nativeInFlight = 4` 个调用同时在途、各自从发出起计 60 秒看门狗，调用方截止后调用被丢到后台继续跑。插件内部是串行的，4 个调用排队时后面的要等前面的全部跑完，后面的调用会白白超时、甚至触发看门狗杀掉别人的调用。所以：
   - judge 能力的调用在宿主侧先过一个**每插件一个的准入队列**（并发 1），看门狗从**真正发给插件**时开始计；
-  - 预算分三段：排队（跟调用方的截止走，排队中取消直接出队、不发给插件）、冷启动（首次装模型，单独计，上限 60 秒）、推理（每批 16 题 × 3 s，落在 60 秒看门狗内）；
+  - 预算分三段：排队（跟调用方的截止走，排队中取消直接出队、不发给插件）、冷启动（首次装模型，单独计，上限 60 秒）、推理（每次调用 1 题，落在 60 秒看门狗内）。`Ask` 的总超时不再按题数估：插件 judge 只受调用方 context 和每次调用的看门狗约束；
   - 已发出的调用在 ABI v1 下没法中止：调用方取消时宿主不再等它，但准入槽位要等插件真正返回（或看门狗杀进程）才释放，避免下一批叠上去。
 - **prompt 长度**：每个 prompt 必须 ≤ 4080 token（4096 − 16 余量）。题目说明和选项描述本身没有长度上限，所以先用空 evidence 拼出固定部分：固定部分就超限 → 这批题作为**输入错误**拒绝（不计失败，也不当作拒答，因为标签分类器会把拒答算成「否」）；否则按 Unicode 边界截短 evidence，最多重试 3 次。
 - **插件内部串行**：一个 `llama_context`，一把锁，一次一题。
@@ -65,7 +66,7 @@
 
 1. **选了 StartLux 但插件停用、卸载、资产缺失或被改**：判断返回明确错误（`ErrJudgeUnavailable` / `ErrJudgePlugin`），不静默退回生成模型；标签分类器本轮不写也不删标签。注意区分「停用 / 不受信任」（不可用）和「空闲退出、可以懒重启」（可用）。
 2. **插件答错或崩溃**：用户已有的自动标签不被删；连续三次后插件停用；错误信封、调用方取消都不让插件停用。
-3. **排队**：4 个满批并发、排队中取消、冷启动、看门狗恢复，都不产生误判的失败计数，也不让一个调用的超时杀掉另一个。
+3. **排队**：4 个接近看门狗上限的调用并发、排队中取消、冷启动、看门狗恢复，都不产生误判的失败计数，也不让一个调用的超时杀掉另一个。
 4. **大文件下载**：断网、退出应用后都能续传；sha256 不符就删并报错；插件升级、资产不变时不重新下载；卸载后无引用的资产被删。
 5. **换模型**：下载期间判断仍用旧模型；下载失败、取消或试跑失败，配置不变、旧模型还在并且能用；成功后才提交并删旧模型。
 6. **读出与参考实现一致**：分层对照（见 Task 2），2B 和 4B 两种配置、三种题型都覆盖。
@@ -131,6 +132,11 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
   - **要下载的文件**：7 个 dylib，约 11 MB：`libllama`、`libggml`、`libggml-base`、`libggml-cpu`、`libggml-blas`、`libggml-metal`、`libggml-rpc`。按 install name 存成 `lib*.0.dylib`、放在一个平铺目录里，靠 `@loader_path` 互相找到，不用符号链接、不用改依赖路径；sha256 就是官方文件本身的。
   - 新目录里的库第一次 `dlopen` 约 1.5 s（系统校验签名），之后约 15 ms。
   - **重新哈希**：Go sha256 约 2.7 GB/s，4B Q4 约 1 s、2B Q8 约 0.7 s（M5 Max）。每个进程代都完整校验可以接受，不需要折中方案；慢机器在跨平台实测里再量。
+- [x] **Linux 分发闸门**（2026-10-17，Ubuntu 26.04.1 LTS arm64 虚拟机，6 核、3 GB 内存、无 GPU；`CGO_ENABLED=0` 交叉编译的 Godwit，b11707 `ubuntu-arm64` 官方包）：
+  - **能加载**：官方 so 带 `$ORIGIN` 的 RUNPATH，平铺目录、按 soname 存成 `libllama.so.0` 等即可，不用符号链接；依赖系统的 `libstdc++` / `libgcc_s`（Ubuntu 自带）。
+  - **CPU 后端是运行时加载的模块**：Linux 包把 CPU 后端拆成 8 个按指令集区分的 `libggml-cpu-armv*.so`，必须先调 `ggml_backend_load_all_from_path(<引擎目录>)`，否则没有后端可用。Windows 包也是这种结构；macOS 包把后端直接链接进来，调用这个函数也无害。Task 2 的 `llama.go` 统一先调它。
+  - **要下载的文件**：12 个、约 14 MB（`libllama.so.0`、`libggml.so.0`、`libggml-base.so.0`、`libggml-rpc.so` 加 8 个 CPU 后端）。
+  - **纯 CPU 速度与内存**（`n_ctx = n_batch = n_ubatch = 4096`）：0.8B Q8 短 prompt 0.04 s、3401 token 9.5 s，峰值 2.1 GB；2B Q8 3401 token 17.9 s，峰值 2.9 GB。3 GB 内存的虚拟机低于两档的 `minMemoryGB`，4B 没测。
 - [ ] **Windows 分发闸门**：干净机器上开着 Defender 和 Smart App Control，plugin-host 加载下载来的 `llama.dll` / `ggml*.dll` 是否被拦。
 - [ ] **跨平台实测**：Windows x64（有 GPU 和只有 CPU 各一台）、Linux x64（同上）、一台 8 GB 内存的 Mac，用锁定版本跑 `eval/` 的 99 封：每种机器记录 2B 和 4B 的一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
@@ -140,7 +146,7 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
 ### Task 2: plugin-startlux 骨架、推理与读出
 
 - [ ] 建仓库（Apache-2.0），复制 DLX 的 `bridge.c`、`protocol.go`、`sdk/godwit_plugin.h`、CI 矩阵（先 darwin-arm64，其他平台随 Task 1 的结论加）。
-- [ ] `llama.go` / `llama.c`：`dlopen` `assets.engine` 目录下的 `libllama`，按 vendored `llama.h` 取函数指针（版本与镜像的库一致，启动时核对 `llama_print_system_info` 或构建号，不一致就拒绝）。第一次 `judge` / `probe` 时装模型、建 context（参数见 Decisions），之后复用；空闲退出时随进程释放。
+- [ ] `llama.go` / `llama.c`：`dlopen` `assets.engine` 目录下的 `libllama`，按 vendored `llama.h` 取函数指针，再调 `ggml_backend_load_all_from_path(<引擎目录>)` 加载后端模块（版本与镜像的库一致，启动时核对 `llama_print_system_info` 或构建号，不一致就拒绝）。第一次 `judge` / `probe` 时装模型、建 context（参数见 Decisions），之后复用；空闲退出时随进程释放。
 - [ ] `prompt.go`：照 `startlux_decide/prompt.py` 移植，包括 system 一行、`Evidence / Question / Options` 块、字母编号、noul 的 `yes` / `no`、选项只有 id 时只显示 id、纯字母或数字 id 在全部有描述时隐藏、score 由低到高（等级文字构造与参考实现逐字相同）、最多 26 个选项。对话模板写成常量：`<|im_start|>system\n…<|im_end|>\n<|im_start|>user\n…<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`。
 - [ ] `readout.go`：字母 token id 来自 `decision_config.json`，缺一个就报错；`p = softmax(logit / T)`，T 必须是正的有限数；predicate → noul 映射；choice 平局时保持参考实现的顺序；score 给出**从 0 起算**的期望等级与各级概率。
 - [ ] 长度：先拼空 evidence 的固定部分，超过 4080 token → 输入错误信封；否则截短 evidence（见 Global Constraints）。
@@ -161,17 +167,17 @@ plugin.json                     {"name":"startlux","native":{"abi":1,"idle":120}
 - `ai.NewBatchJudge(ask func(ctx context.Context, input string, qs []Question) ([]Answer, error), batch int, timeout func(n int) time.Duration) Judge`：现有 `judge{}` 加批大小与按题数的超时，`NewJudge` 沿用 `maxQuestions` 和 15 秒。
 - `Settings.JudgeService`：`""`、服务 slug，或 `"plugin/<name>"`。
 - `var ErrJudgeUnavailable = errors.New("the judge plugin is not running")`、`var ErrJudgePlugin = errors.New("the judge plugin failed")`；rpc code `judge_unavailable`、`judge_plugin`。
-- `nativeJudge.Ask`：内层 `NewBatchJudge(call, 16, …)`；`ai.ErrJudgeAnswer` 或 `IsNativeFailure` → `pluginFailed` 并包成 `ErrJudgePlugin`；`*NativeError` 原样；调用方取消原样返回、不计数；成功 → `pluginSucceeded`。
+- `nativeJudge.Ask`：内层 `NewBatchJudge(call, 1, …)`（不设按题数的总超时）；`ai.ErrJudgeAnswer` 或 `IsNativeFailure` → `pluginFailed` 并包成 `ErrJudgePlugin`；`*NativeError` 原样；调用方取消原样返回、不计数；成功 → `pluginSucceeded`。
 - `NativeProcess` 的准入：可按方法设并发上限（judge 为 1）；排队中的调用随调用方取消出队；看门狗从发给插件时开始计；已发出调用的槽位等插件返回或进程被杀才释放。
 - `resolveJudge`：`plugin/` 前缀 → `pluginJudge(name)`，label `plugin/<name>`，`gen == false`；停用、不受信任或未安装 → `ErrJudgeUnavailable`，不退回生成模型；空闲退出的进程算可用。
 - 标签分类器：`ErrJudgeUnavailable`、`ErrJudgePlugin` 让这一轮停下、不写也不删。
 
 - [ ] **Step 1: 失败的测试**（`core/judges_test.go`、`core/plugins/native_test.go`，原生夹具 `coretest.NativePluginFixture`）
   - `TestPluginJudge`：选 `plugin/startlux` → 标签分类与脚本插件的 `ctx.llm.decide` 得到假库答案；label 为 `plugin/startlux`。
-  - `TestPluginJudgeBatches`：17 题分两批、128 题分 8 批；超过 1 MiB 的输入被拒、不计失败。
+  - `TestPluginJudgeBatches`：7 题拆成 7 次调用，结果顺序与题目一致；超过 1 MiB 的输入被拒、不计失败。
   - `TestPluginJudgeUnavailable`：停用后 `resolveJudge` 返回 `ErrJudgeUnavailable`；没有模型调用；分类器不写也不删标签。空闲退出后仍可用，下次调用懒重启。
   - `TestPluginJudgeBadAnswerKeepsLabels`：已有自动标签的消息；假库少答一题或给出概率 1.5 → 标签还在、消息仍待分类；连续三次后插件停用；`rate_limited` 信封十次后仍启用。
-  - `TestNativeAdmission`：假库每题慢答；4 个满批并发 → 依次完成、没有看门狗误杀；排队中的调用被取消 → 从没发给插件、不计失败；冷启动慢 → 不算推理超时；假库卡死 → 看门狗杀进程、重启后下一次调用成功。
+  - `TestNativeAdmission`：假库每题慢答；4 个调用并发、每个都接近看门狗上限 → 依次完成、没有看门狗误杀；排队中的调用被取消 → 从没发给插件、不计失败；冷启动慢 → 不算推理超时；假库卡死 → 看门狗杀进程、重启后下一次调用成功。
   - `TestJudgeServiceValidate`：`plugin/Bad Name` 拒绝，`plugin/startlux` 接受。
   - 契约：插件仓库 `testdata/judge-contract/` 的样例全部通过 `validateAnswers`。
 - [ ] **Step 2: 实现**，`go test ./core/...` 通过。
