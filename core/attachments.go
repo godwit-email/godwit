@@ -193,7 +193,7 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 	c, release, abort, err := s.dialAccount(ctx, a.accountID, nil)
 	if err != nil {
 		if errors.Is(err, conn.ErrAuthFailed) {
-			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error()})
+			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
 		}
 		return nil, err
 	}

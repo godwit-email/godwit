@@ -17,8 +17,9 @@ import (
 // Border outlines panels and cards, Input the controls (a step stronger in
 // the dark), Ring the keyboard focus (at half opacity) and a hovered divider.
 // Attention is the amber of
-// status dots that ask for a look (amber-500); Unread, the blue of the dot
-// beside unread mail (blue-500).
+// status dots for a trouble that clears by itself, as a sync being retried
+// (amber-500); Danger's red marks one that needs the user. Unread, the blue
+// of the dot beside unread mail (blue-500).
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
@@ -166,6 +167,7 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	SyncMenuWidth         = 336 // the top bar's sync status list: 360 with the popover's padding
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24
 	LabelSwatchRing       = 2

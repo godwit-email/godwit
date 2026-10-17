@@ -162,11 +162,11 @@ func TestSettingsReauthBanner(t *testing.T) {
 	})
 	r, ok := h.tt.Find("需要处理")
 	if !ok {
-		t.Fatalf("no amber dot: %q", h.tt.Texts())
+		t.Fatalf("no red dot: %q", h.tt.Texts())
 	}
-	got, want := h.tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)), theme.Light().Attention.SRGB()
+	got, want := h.tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2)), theme.Light().Danger.SRGB() // signing in again is the user's to do
 	if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
-		t.Fatalf("dot %v, want amber %v", got, want)
+		t.Fatalf("dot %v, want red %v", got, want)
 	}
 
 	h.env.IMAP(acc.ID).SetPassword("secret") // the user changed it back on the server

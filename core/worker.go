@@ -6,6 +6,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
@@ -188,7 +189,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) e
 // workerFailed announces a failure outside SyncNow, unless the worker is stopping.
 func (s *Service) workerFailed(ctx context.Context, id int64, err error) error {
 	if ctx.Err() == nil {
-		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: id, Error: err.Error()})
+		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: id, Error: err.Error(), Kind: string(conn.Classify(err))})
 	}
 	return err
 }

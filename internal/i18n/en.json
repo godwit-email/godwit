@@ -982,7 +982,6 @@
   "settings_density": "Density",
   "settings_density_comfortable": "Comfortable",
   "settings_density_compact": "Compact (default)",
-  "settings_dot_attention": "Needs attention",
   "settings_dot_ok": "Working",
   "settings_ext_allow": "Allow and enable",
   "settings_ext_builtin": "Built-in",
@@ -1920,6 +1919,120 @@
     "placeholders": {
       "arg1": {
         "type": "int"
+      }
+    }
+  },
+  "settings_dot_action": "Needs attention",
+  "settings_dot_retrying": "Retrying",
+  "shell_sync_account": "{arg1} · {arg2}",
+  "@shell_sync_account": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_title": "Sync status",
+  "shell_sync_all": "Sync all now",
+  "shell_sync_retry": "Retry now",
+  "shell_sync_servers": "Check server settings",
+  "shell_sync_reauth_reason": "The sign-in expired, so this account stopped syncing and new mail is not arriving. Sign in again and it catches up.",
+  "shell_sync_missing": "No saved {arg1}",
+  "@shell_sync_missing": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_missing_reason": "The keychain has no {arg1} for this account; it may have been removed. Syncing is paused until you enter it again.",
+  "@shell_sync_missing_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_rejected": "{arg1} refused",
+  "@shell_sync_rejected": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_rejected_reason": "The server does not accept the saved {arg1}. If you changed it recently or it expired, update it. Syncing is paused until then.",
+  "@shell_sync_rejected_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_keychain": "Keychain unavailable",
+  "shell_sync_keychain_reason": "The system keychain cannot be opened right now, so Godwit cannot read this account’s password. Unlock it, then retry.",
+  "shell_sync_tls": "Certificate problem",
+  "shell_sync_tls_reason": "Cannot verify the certificate of {arg1}. The server setup may have changed, or this network is intercepting the connection. Try another network, or check the server settings.",
+  "@shell_sync_tls_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_retrying": "Retrying",
+  "shell_sync_retrying_short": "retrying",
+  "shell_sync_retrying_reason": "{arg1}. Godwit keeps retrying; this usually clears up by itself.",
+  "@shell_sync_retrying_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_stuck_reason": "Started failing {arg1}: {arg2}. Retrying has not helped. Check your network; if it is fine, the server address or port may have changed.",
+  "@shell_sync_stuck_reason": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_dns": "Cannot find the server {arg1}; the network may be down",
+  "@shell_sync_cause_dns": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_connect": "Cannot connect to {arg1}; the network may be down",
+  "@shell_sync_cause_connect": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_timeout": "{arg1} is not responding",
+  "@shell_sync_cause_timeout": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_other": "Something went wrong talking to {arg1}",
+  "@shell_sync_cause_other": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
       }
     }
   }
