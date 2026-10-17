@@ -74,8 +74,11 @@ func (j pluginModelJudge) ask(ctx context.Context, input string, q ai.Question) 
 
 // dispatch loads the model if needed and asks the plugin one question.
 func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Question) ([]ai.Answer, error) {
-	if j.rp.cfgKey() != j.cfg {
-		return nil, fmt.Errorf("%w: plugin/%s/%s (its settings changed)", ErrModelUnavailable, j.name, j.model.ID)
+	j.s.pluginsMu.RLock()
+	stale := j.s.running[j.name] != j.rp || j.rp.cfgKey() != j.cfg // stopped, replaced or reconfigured
+	j.s.pluginsMu.RUnlock()
+	if stale {
+		return nil, fmt.Errorf("%w: plugin/%s/%s", ErrModelUnavailable, j.name, j.model.ID)
 	}
 	if j.rp.native == nil {
 		if err := j.s.markHoldsMail(ctx, j.name); err != nil { // the input is mail

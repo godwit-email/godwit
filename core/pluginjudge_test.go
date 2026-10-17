@@ -256,3 +256,13 @@ func TestPluginJudgeEnvelopeResetsFailures(t *testing.T) {
 	assert.True(t, unanswerable(err))
 	assert.Equal(t, int64(0), pluginFailures(t, s, "nm"))
 }
+
+func TestPluginJudgeStoppedUnavailable(t *testing.T) {
+	s := newMailContextService(t)
+	usePluginJudge(t, s, nil, nil)
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
+	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
+	assert.ErrorIs(t, err, ErrModelUnavailable)
+}
