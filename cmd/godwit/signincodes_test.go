@@ -117,14 +117,6 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	}
 }
 
-func TestGroupCode(t *testing.T) {
-	for in, want := range map[string]string{"482913": "482 913", "001234": "001 234", "aB0123": "aB0123", "12345678": "12345678"} {
-		if got := groupCode(in); got != want {
-			t.Errorf("groupCode(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestSignInLinkBannerRenders(t *testing.T) {
 	p := &platform{}
 	b := &signInBanner{code: core.SignInCode{Link: "https://linear.app/auth/x", From: "Linear <no-reply@linear.app>"}}

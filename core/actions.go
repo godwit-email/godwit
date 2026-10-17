@@ -48,9 +48,12 @@ func (e *EgressApprovalRequired) Error() string {
 	return "plugin " + e.Plugin + " may send data to " + strings.Join(e.Hosts, ", ") + ": approval required"
 }
 
-// Card is a plugin's declarative card for a message.
+// Card is a plugin's declarative card for a message. A built-in plugin's
+// card (Builtin) names its Title by a key and leaves button labels empty;
+// the app words them in its language.
 type Card struct {
 	Plugin, Title string
+	Builtin       bool
 	Fields        []CardField
 	Buttons       []CardButton
 }
@@ -225,7 +228,10 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 	if err != nil {
 		return nil, err
 	}
-	var out []Card
+	out, err := s.builtinCards(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
 	var acct error // failures to record the plugins' failures: the host's, returned
 	for _, pc := range s.runningPlugins((*plugins.Plugin).HasCard) {
 		if err := s.markHoldsMail(ctx, pc.name); err != nil { // the host's failure: the card is left out

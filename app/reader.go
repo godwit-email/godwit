@@ -19,7 +19,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
-	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -71,9 +70,7 @@ type reader struct {
 // while the message is expanded.
 type msgBody struct {
 	msg     core.Message
-	code    string
-	link    string // a sign-in link; opens without the link dialog since its host is on the button
-	cut     bool   // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
+	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
 	loading bool
 	bodyGen uint64 // older reads cannot restore policy after a same-message folder move
 	ready   bool
@@ -298,7 +295,6 @@ func (r *reader) loadBody(id int64) {
 			return
 		}
 		b.msg, b.ready, b.trusted = m, true, trusted
-		b.code, b.link = gomail.SignInCode(m.Subject, m.Text, m.HTML), gomail.SignInLink(m.Subject, m.Text, m.HTML)
 		b.avatarBlocked = !trusted
 		r.openView(id)
 		r.loadAvatar(id, b.avatarAllow)
@@ -678,19 +674,6 @@ func (r *reader) view(c *ui.Context) {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
 					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
 						kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
-						if b := r.bodies[r.msgs[len(r.msgs)-1].ID]; b != nil && (b.code != "" || b.link != "") {
-							code, link, a := b.code, b.link, r.p.a
-							ui.Row(c).Gap(th.Space(2)).Children(func() {
-								if code != "" {
-									kit.Button(c, i18n.Tf("codes.copy", code), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "copy"}).
-										OnClick(func() { c.WriteClipboard(code); a.toast(i18n.T("reader.ai.copied")) })
-								}
-								if link != "" {
-									kit.Button(c, i18n.Tf("codes.open_link", gomail.LinkHost(link)), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "external-link"}).
-										OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(link) }, a.toastErr) })
-								}
-							})
-						}
 						r.labelRow(c)
 					})
 					for _, m := range r.msgs {

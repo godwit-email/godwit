@@ -21,7 +21,11 @@ type SignInCode struct {
 // is a display window, not a claim about the server's validity period. The
 // arrival time bounds recency; a sender's clock running ahead does not hide
 // a code.
+// None while the built-in plugin is off.
 func (s *Service) RecentSignInCodes(ctx context.Context, now time.Time) ([]SignInCode, error) {
+	if on, err := s.builtinOn(ctx, SignInCodesPlugin); !on || err != nil {
+		return nil, err
+	}
 	since := now.Add(-15 * time.Minute).Unix()
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.subject, m.from_addr, m.body_text, m.body_html, MAX(e.created_at)
 		FROM events_log e JOIN messages m ON m.id = e.message_id JOIN folders f ON f.id = m.folder_id

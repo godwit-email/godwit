@@ -183,7 +183,7 @@ button{font:inherit;cursor:pointer}
           <sc-if value="{{sel.card}}" hint-placeholder-val="{{ false }}">
             <div style="border: 1px solid #E5E5E5; border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
               <span style="display: flex; flex-direction: column; gap: 2px; flex: 1">
-                <span style="font-size: 12px; color: #737373">{{sel.card.label}} · 来自插件 {{sel.card.plugin}}</span>
+                <span style="font-size: 12px; color: #737373">{{sel.card.label}} · {{sel.card.source}}</span>
                 <span style="font-family: 'Geist Mono', monospace; font-size: 22px; letter-spacing: 3px">{{sel.card.value}}</span>
                 <span style="font-size: 12px; color: #737373">{{sel.card.hint}}</span>
               </span>
@@ -241,14 +241,14 @@ class Component extends DCLogic {
     var data = [
       { from: 'Code Host', addr: 'noreply@codehost.example', initial: 'C', time: '09:41', date: '今天 09:41', unread: true,
         subject: '[Code Host] 你的登录验证码', preview: '有人正在尝试登录你的账户，验证码 10 分钟内有效……', tag: '验证码',
-        card: { label: '验证码', plugin: 'otp-card', value: '482 913', hint: '10 分钟内有效', action: '复制' },
+        card: { label: '验证码', source: '内置插件', value: '482 913', hint: '', action: '复制' },
         blocked: 0, attachment: '',
         body: ['你好，', '有人正在尝试从一台新的设备登录你的账户。如果是你本人，请输入下面的验证码完成登录：482913。', '如果不是你本人，请忽略这封邮件，并尽快修改密码。'],
         summary: ['新设备登录验证，验证码 482913，10 分钟内有效。', '如果不是本人操作，应修改密码。'],
         translation: ['（原文已是中文，无需翻译）'] },
       { from: 'Northwind Airlines', addr: 'checkin@northwind.example', initial: 'N', time: '08:15', date: '今天 08:15', unread: true,
         subject: '值机提醒：NW 1858 上海 → 成都', preview: '你的航班将于明天 14:20 起飞，现已开放在线值机……', tag: '航班',
-        card: { label: '航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]', plugin: 'flight-cards', value: 'PVG → CTU', hint: '座位 [待选] · 行李额 [待确认]', action: '在线值机' },
+        card: { label: '航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]', source: '来自插件 flight-cards', value: 'PVG → CTU', hint: '座位 [待选] · 行李额 [待确认]', action: '在线值机' },
         blocked: 3, attachment: '',
         body: ['尊敬的旅客：', '你预订的 NW 1858 航班（上海浦东 → 成都天府）将于明天 14:20 起飞，现已开放在线值机。', '请至少在起飞前 45 分钟到达登机口。'],
         summary: ['明天 14:20 的 NW 1858，上海浦东飞成都天府。', '已开放在线值机；起飞前 45 分钟到登机口。'],
@@ -267,7 +267,7 @@ class Component extends DCLogic {
         translation: ['（原文已是中文，无需翻译）'] },
       { from: 'Acme Cloud', addr: 'billing@acme.example', initial: 'A', time: '10/02', date: '10 月 2 日', unread: false,
         subject: 'Your receipt for October', preview: 'Thanks for your payment. Amount: [AMOUNT]…', tag: '账单',
-        card: { label: '账单 · 来自 Acme Cloud', plugin: 'receipts', value: '[AMOUNT]', hint: '已于 10 月 2 日扣款', action: '查看账单' },
+        card: { label: '账单 · 来自 Acme Cloud', source: '来自插件 receipts', value: '[AMOUNT]', hint: '已于 10 月 2 日扣款', action: '查看账单' },
         blocked: 2, attachment: 'receipt-oct.pdf',
         body: ['Thanks for your payment.', 'Amount: [AMOUNT]. Paid on October 2 with the card on file.', 'You can download the receipt from the attachment.'],
         summary: ['10 月账单已付款，金额 [AMOUNT]，收据在附件里。'],

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -92,14 +91,6 @@ func codeSender(from string) string {
 		return a.Address
 	}
 	return from
-}
-
-// groupCode splits a six-digit code in two, as people read it.
-func groupCode(code string) string {
-	if len(code) == 6 && strings.Trim(code, "0123456789") == "" {
-		return code[:3] + " " + code[3:]
-	}
-	return code
 }
 
 // shortcut: plain-text items until MyGo menu items take an icon and a subtitle (#95).
@@ -204,7 +195,7 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 			kit.AvatarImage(c, sender, b.avatar)
 			action, icon := i18n.T("codes.copy_button"), "copy"
 			if b.code.Code != "" {
-				ui.Text(c, groupCode(b.code.Code)).Font(theme.Mono).FontSize(t.Text.X2l).FontWeight(500).Shrink(0)
+				ui.Text(c, gomail.GroupCode(b.code.Code)).Font(theme.Mono).FontSize(t.Text.X2l).FontWeight(500).Shrink(0)
 				note, noteColor := sender, t.Muted
 				switch {
 				case b.copied:

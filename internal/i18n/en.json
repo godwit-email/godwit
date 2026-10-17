@@ -2036,7 +2036,6 @@
       }
     }
   },
-  "codes_copy": "Copy code {arg1}",
   "codes_recent": "Recent sign-in codes",
   "codes_empty": "No codes in the last 15 minutes",
   "codes_copy_failed": "Copy failed",
@@ -2046,5 +2045,7 @@
   "codes_link": "Sign-in link",
   "codes_open": "Open",
   "codes_link_item": "Sign-in link · {arg1} · {arg2}",
-  "codes_open_link": "Open sign-in link · {arg1}"
+  "codes_card_code": "Sign-in code",
+  "codes_card_link": "Sign-in link",
+  "reader_ai_card_builtin": "{arg1} · built-in plugin"
 }

@@ -576,7 +576,11 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Sm).TextColor(t.Muted)
+				header := i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)
+				if card.Builtin {
+					header = i18n.Tf("reader.ai.card_builtin", i18n.T("codes.card."+card.Title))
+				}
+				kit.Text(c, header, t.Text.Sm).TextColor(t.Muted)
 				if len(card.Fields) == 0 {
 					return
 				}
@@ -594,7 +598,11 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					if i == 0 {
 						o = kit.ButtonOpts{Variant: kit.Default}
 					}
-					if !kit.Button(c, b.Label, o).Clicked() {
+					label := b.Label
+					if card.Builtin { // core leaves a built-in card's words to the app
+						label = map[string]string{"copy": i18n.T("codes.copy_button"), "open-url": i18n.T("codes.open")}[b.Kind]
+					}
+					if !kit.Button(c, label, o).Clicked() {
 						continue
 					}
 					switch b.Kind {
@@ -602,7 +610,12 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 						c.WriteClipboard(b.Value)
 						r.p.a.toast(i18n.T("reader.ai.copied"))
 					case "open-url":
-						r.p.a.openLink(b.Value)
+						if card.Builtin { // its host is on the card: no second ask
+							a := r.p.a
+							a.do(func(context.Context) error { return a.plat.OpenURL(b.Value) }, a.toastErr)
+						} else {
+							r.p.a.openLink(b.Value)
+						}
 					case "run-action":
 						r.runAction(b.Value, b.Label, m.ID, false)
 					}

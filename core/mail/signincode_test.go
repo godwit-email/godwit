@@ -61,3 +61,11 @@ func TestSignInCodeExcludesHTMLQuotes(t *testing.T) {
 		t.Fatalf("new code outside quote %q", got)
 	}
 }
+
+func TestGroupCode(t *testing.T) {
+	for in, want := range map[string]string{"482913": "482 913", "001234": "001 234", "aB0123": "aB0123", "12345678": "12345678"} {
+		if got := mail.GroupCode(in); got != want {
+			t.Errorf("GroupCode(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

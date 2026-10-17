@@ -164,3 +164,11 @@ func beforeReply(text string) string {
 func asciiCodeByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
 }
+
+// GroupCode splits a six-digit code in two, as people read it ("482 913").
+func GroupCode(code string) string {
+	if len(code) == 6 && strings.Trim(code, "0123456789") == "" {
+		return code[:3] + " " + code[3:]
+	}
+	return code
+}

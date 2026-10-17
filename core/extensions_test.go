@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -110,7 +111,7 @@ func TestInstallListGrantEnable(t *testing.T) {
 
 	list, err := s.ListPlugins(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, []core.PluginInfo{info}, list)
+	assert.Equal(t, []core.PluginInfo{info}, slices.DeleteFunc(list, func(p core.PluginInfo) bool { return p.Builtin }))
 
 	assert.ErrorIs(t, s.SetPluginEnabled(ctx, "hello", true), core.ErrNeedsGrant)
 	assert.ErrorIs(t, s.GrantPermission(ctx, "nope"), core.ErrPluginNotFound)
@@ -474,7 +475,7 @@ func TestUninstall(t *testing.T) {
 	waitPluginsChanged(t, ch)
 	list, err := s.ListPlugins(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, list)
+	assert.Empty(t, slices.DeleteFunc(list, func(p core.PluginInfo) bool { return p.Builtin }))
 	assert.NoDirExists(t, filepath.Join(dir, "plugins", "p"))
 	_, running := s.RunningPluginForTest("p")
 	assert.False(t, running)

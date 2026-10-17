@@ -971,7 +971,6 @@
   "shell_sync_cause_connect": "连不上 {arg1}，可能是网络断了",
   "shell_sync_cause_timeout": "{arg1} 响应超时",
   "shell_sync_cause_other": "和 {arg1} 通信出错",
-  "codes_copy": "复制验证码 {arg1}",
   "codes_recent": "最近的验证码",
   "codes_empty": "最近 15 分钟没有验证码",
   "codes_copy_failed": "复制失败",
@@ -981,5 +980,7 @@
   "codes_link": "登录链接",
   "codes_open": "打开",
   "codes_link_item": "登录链接 · {arg1} · {arg2}",
-  "codes_open_link": "打开登录链接 · {arg1}"
+  "codes_card_code": "验证码",
+  "codes_card_link": "登录链接",
+  "reader_ai_card_builtin": "{arg1} · 内置插件"
 }
