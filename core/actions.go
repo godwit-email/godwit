@@ -228,7 +228,7 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.builtinCards(ctx, msg)
+	out, err := s.builtinCards(ctx, messageID)
 	if err != nil {
 		return nil, err
 	}

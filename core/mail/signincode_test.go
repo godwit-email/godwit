@@ -43,6 +43,8 @@ func TestSignInCode(t *testing.T) {
 		{"Microsoft one-time code", "你的一次性代码", "我们已收到你要求获得 Microsoft 帐户所用的一次性代码的申请。\n\n你的一次性代码为: 188223", "188223"},
 		{"Microsoft single-use code", "Your single-use code", "Your single-use code is: 188223", "188223"},
 		{"passcode", "Sign in", "Your passcode is 731904", "731904"},
+		{"Traditional (M-Team)", "[M-Team - TP] 驗證碼 856035", "驗證碼: 856035, 20分鐘內有效\n時間: 2026-09-13 15:55:51", "856035"},
+		{"activation code (V.PS)", "Your account needs activation", "If asked, your activation code is: r23wb5.", "r23wb5"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

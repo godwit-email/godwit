@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-const codeHint = `(?:\b(?:verification|security|authentication|confirmation|login|sign[ -]?in|one[ -]time|single[ -]use)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b|\byour code\b|验证码|校验码|动态码|动态密码|一次性密码|一次性代码|安全代码|验证代码)`
+const codeHint = `(?:\b(?:verification|security|authentication|confirmation|login|sign[ -]?in|one[ -]time|single[ -]use|activation)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b|\byour code\b|验证码|校验码|动态码|动态密码|一次性密码|一次性代码|安全代码|验证代码|激活码)`
 const codeToken = `([0-9]{3}[ \t-][0-9]{3}|[A-Za-z0-9]{4,10})`
 
 var codeHints = regexp.MustCompile(`(?i)` + codeHint)
@@ -53,7 +53,7 @@ func SignInCode(subject, text, htmlBody string) string {
 			lines = append(lines, line)
 		}
 	}
-	s := strings.Join(lines, "\n")
+	s := simplified(strings.Join(lines, "\n")) // 驗證碼 reads as 验证码; offsets hold, as each pair is 3 bytes
 	code := ""
 	var candidates [][2]int
 	for _, hint := range codeHints.FindAllStringIndex(s, -1) {
@@ -175,6 +175,20 @@ func beforeReply(text string) string {
 	}
 	return text
 }
+
+// simplified writes the Traditional characters these rules look for in their
+// Simplified form, so "驗證碼" and "重置密碼" read as "验证码" and "重置密码".
+// Each pair is the same length in UTF-8, so offsets into s hold.
+func simplified(s string) string { return traditional.Replace(s) }
+
+var traditional = strings.NewReplacer(
+	"驗", "验", "證", "证", "碼", "码", "動", "动", "態", "态", "確", "确", "認", "认",
+	"錄", "录", "郵", "邮", "電", "电", "帳", "帐", "賬", "账", "戶", "户", "號", "号",
+	"鏈", "链", "結", "结", "連", "连", "設", "设", "點", "点", "擊", "击", "請", "请",
+	"訪", "访", "問", "问", "載", "载", "啟", "启", "啓", "启", "這", "这", "個", "个",
+	"從", "从", "於", "于", "後", "后", "時", "时", "鐘", "钟", "內", "内", "開", "开",
+	"復", "复", "製", "制", "輸", "输", "續", "续",
+)
 
 func asciiCodeByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'

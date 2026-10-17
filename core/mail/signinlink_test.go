@@ -37,7 +37,7 @@ func TestSignInLink(t *testing.T) {
 		{"quoted", "Re: Sign in", "", `<p>Thanks</p><blockquote><a href="https://a.example/x">Sign in</a></blockquote>`, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := mail.SignInLink(tt.subject, tt.text, tt.html); got != tt.want {
+			if got := linkOf(mail.LinkSignIn, tt.subject, tt.text, tt.html); got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
@@ -54,11 +54,40 @@ func TestConfirmLink(t *testing.T) {
 		{"not a confirm button", "", `<a href="https://x.example/s">Email settings</a>`, ""},
 		{"two", "", `<a href="https://x.example/1">Confirm your email</a><a href="https://x.example/2">Verify email</a>`, ""},
 	} {
-		if got := mail.ConfirmLink(tt.text, tt.html); got != tt.want {
+		if got := linkOf(mail.LinkConfirm, "", tt.text, tt.html); got != tt.want {
 			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
 		}
 	}
-	if got := mail.SignInLink("欢迎来到 ID.me!", "", idme); got != "" {
+	if got := linkOf(mail.LinkSignIn, "欢迎来到 ID.me!", "", idme); got != "" {
 		t.Fatalf("a confirm link is not a sign-in link: %q", got)
+	}
+}
+
+// linkOf is ActionLink's link when it is of kind, else "".
+func linkOf(kind, subject, text, html string) string {
+	if l, k := mail.ActionLink(subject, text, html); k == kind {
+		return l
+	}
+	return ""
+}
+
+func TestActionLinkBadCases(t *testing.T) {
+	for _, tt := range []struct{ name, subject, text, html, want, kind string }{
+		{"image button with a fallback line (H2NEXUS)", "Confirm your email to finish registration",
+			"Confirm your email address to finish registration and open the client area.\n (https://my.h2.nexus?func=register.activate&key=4A31) \nIf the button does not work, use this link:\nhttps://my.h2.nexus?func=register.activate&key=4A31 (https://my.h2.nexus?func=register.activate&key=4A31) \n",
+			"", "https://my.h2.nexus?func=register.activate&key=4A31", mail.LinkConfirm},
+		{"Use this link (TypeSafe)", "Sign in to TypeSafe", "",
+			`<a href="https://login.example/magic?t=1"><img alt=""></a><p>Button not working? <a href="https://login.example/magic?t=1">Use this link</a> instead.</p>`,
+			"https://login.example/magic?t=1", mail.LinkSignIn},
+		{"Traditional password reset (DMIT)", "重置密碼的驗證", "",
+			`<p>若要重置密碼，請訪問下面的連結：</p><p><a href="https://track.example/x">https://www.dmit.io/index.php?rp=/password/reset/use/key/4c6d</a></p>`,
+			"https://www.dmit.io/index.php?rp=/password/reset/use/key/4c6d", mail.LinkReset},
+		{"no fallback outside a known kind", "Your invoice", "If the button does not work, use this link:\nhttps://x.example/invoice", "", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if l, k := mail.ActionLink(tt.subject, tt.text, tt.html); l != tt.want || k != tt.kind {
+				t.Fatalf("got %q %q, want %q %q", l, k, tt.want, tt.kind)
+			}
+		})
 	}
 }

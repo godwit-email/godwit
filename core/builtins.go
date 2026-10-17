@@ -6,6 +6,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // A built-in plugin ships inside Godwit as Go code: listed and switched with
@@ -78,8 +79,14 @@ func (s *Service) setBuiltinEnabled(ctx context.Context, name string, on bool) e
 	return err
 }
 
-// builtinCards are the cards of the built-in plugins that are on.
-func (s *Service) builtinCards(ctx context.Context, m plugins.MailMessage) ([]Card, error) {
+// builtinCards are the cards of the built-in plugins that are on. They read
+// the stored body, links intact: the plugins' copy is sanitized.
+func (s *Service) builtinCards(ctx context.Context, id int64) ([]Card, error) {
+	rows, err := s.db.Query(ctx, "SELECT subject, body_text, body_html FROM messages WHERE id = ?", id)
+	if err != nil || len(rows.Values) == 0 {
+		return nil, err
+	}
+	m := plugins.MailMessage{ID: id, Subject: store.Str(rows.Values[0][0]), Text: store.Str(rows.Values[0][1]), HTML: store.Str(rows.Values[0][2])}
 	var out []Card
 	for _, b := range builtinPlugins {
 		if b.card == nil {
@@ -99,14 +106,11 @@ func (s *Service) builtinCards(ctx context.Context, m plugins.MailMessage) ([]Ca
 
 // signInCodeCard is the reader's card: a code (Copy), and its mail's sign-in
 // or confirmation link beside it (Open link); else the link alone (Open),
-// its host shown. Title and a link field's Label are keys ("link",
-// "confirm") the app words.
+// its host shown. Title and a link field's Label are keys ("code", or a
+// mail.Link* kind) the app words.
 func signInCodeCard(m plugins.MailMessage) (Card, bool) {
 	code := mail.SignInCode(m.Subject, m.Text, m.HTML)
-	kind, link := "link", mail.SignInLink(m.Subject, m.Text, m.HTML)
-	if link == "" {
-		kind, link = "confirm", mail.ConfirmLink(m.Text, m.HTML)
-	}
+	link, kind := mail.ActionLink(m.Subject, m.Text, m.HTML)
 	switch {
 	case code != "":
 		c := Card{Title: "code", Fields: []CardField{{Value: mail.GroupCode(code)}}, Buttons: []CardButton{{Kind: "copy", Value: code}}}

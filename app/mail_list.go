@@ -1296,7 +1296,10 @@ func (p *mailPage) devSignIn(it mailItem, link bool) {
 		}
 		code = core.SignInCode{MessageID: id, From: m.From, ReceivedAt: a.clock.Now()}
 		if link {
-			code.Link = cmp.Or(gomail.SignInLink(m.Subject, m.Text, m.HTML), "https://example.com/magic-link")
+			code.Link, code.LinkKind = gomail.ActionLink(m.Subject, m.Text, m.HTML)
+			if code.Link == "" {
+				code.Link, code.LinkKind = "https://example.com/magic-link", gomail.LinkSignIn
+			}
 		} else {
 			code.Code = cmp.Or(gomail.SignInCode(m.Subject, m.Text, m.HTML), "482913")
 		}

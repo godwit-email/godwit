@@ -97,10 +97,10 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 		{MessageID: 1, Code: "aB0012", From: "Login <login@example.com>", ReceivedAt: now},
 		{MessageID: 2, Code: "123456", From: "second@example.com", ReceivedAt: now},
 		{MessageID: 3, Code: "999999", From: "old@example.com", ReceivedAt: now.Add(-15 * time.Minute)},
-		{MessageID: 4, Link: "https://www.acme.example/l/1", From: "Acme <id@acme.example>", ReceivedAt: now},
+		{MessageID: 4, Link: "https://www.acme.example/l/1", LinkKind: "signin", From: "Acme <id@acme.example>", ReceivedAt: now},
 	}, now, func(code core.SignInCode) { copied = code })
 	menu := items[1].Submenu
-	if len(menu) != 3 || menu[0].Label != "aB0012 · Login" || menu[2].Label != i18n.Tf("codes.link_item", "acme.example", "Acme") {
+	if len(menu) != 3 || menu[0].Label != "aB0012 · Login" || menu[2].Label != i18n.T("codes.card.signin")+" · acme.example · Acme" {
 		t.Fatalf("menu %+v", menu)
 	}
 	menu[1].Click(menu[1], nil)
@@ -119,7 +119,7 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 
 func TestSignInLinkBannerRenders(t *testing.T) {
 	p := &platform{}
-	b := &signInBanner{code: core.SignInCode{Link: "https://linear.app/auth/x", From: "Linear <no-reply@linear.app>"}}
+	b := &signInBanner{code: core.SignInCode{Link: "https://linear.app/auth/x", LinkKind: "signin", From: "Linear <no-reply@linear.app>"}}
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c, theme.Light())
 		p.signInCodeView(c, b)
