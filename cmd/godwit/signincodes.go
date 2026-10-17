@@ -239,7 +239,7 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 	if !pressed {
 		if b.dragging {
 			b.dragging, b.snapped, b.atHome = false, false, false
-			p.showSnapGuide(b, false, b.position)
+			p.showSnapGuide(b, false, b.position, mygo.Rectangle{})
 		}
 		return
 	}
@@ -259,15 +259,16 @@ func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) 
 		snapFeedback() // a tick as it takes hold, as Keynote's guides do
 	}
 	b.snapped, b.atHome = onLine, atHome
-	p.showSnapGuide(b, onLine, pos)
+	p.showSnapGuide(b, onLine, pos, area)
 	c.Invalidate() // the pointer moves without telling the view; follow it every frame
 }
 
-const codeGuideReach = 40 // how far the centre line runs past the banner, above and below; it stops 8pt short of it
+const codeGuideGap = 8 // between the banner and the guide's two halves
 
-// showSnapGuide shows the centre line through a banner held on it, as
-// design tools draw their alignment guides, and hides it otherwise.
-func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point) {
+// showSnapGuide shows, while a banner is held on the centre line, a hairline
+// from each of its sides to the screen's edge: two equal lengths, as design
+// tools mark something centred. It hides the guide otherwise.
+func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point, area mygo.Rectangle) {
 	if !on || b.win == nil {
 		if b.guide != nil {
 			b.guide.Hide()
@@ -275,19 +276,19 @@ func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point) {
 		return
 	}
 	if b.guide == nil {
-		b.guide = mygo.NewFlyout(mygo.FlyoutOptions{Tray: p.tray, Width: 1, Height: codeBannerHeight + 2*codeGuideReach, Hidden: true,
+		b.guide = mygo.NewFlyout(mygo.FlyoutOptions{Tray: p.tray, Width: area.Width, Height: 1, Hidden: true,
 			Content: ui.View(func(c *ui.Context) {
-				// Two segments, above and below the banner, never across its code.
-				t, th := theme.Of(c), c.Theme()
+				t := theme.Of(c)
 				c.Root().Background(ui.Transparent)
-				ui.Column(c).Fill().Gap(codeBannerHeight + 2*th.Space(2)).Children(func() {
-					ui.Box(c).FillWidth().Grow(1).Background(t.Unread)
-					ui.Box(c).FillWidth().Grow(1).Background(t.Unread)
+				ui.Row(c).Fill().Gap(codeBannerWidth + 2*codeGuideGap).Children(func() {
+					ui.Box(c).FillHeight().Grow(1).Background(t.Unread)
+					ui.Box(c).FillHeight().Grow(1).Background(t.Unread)
 				})
 			})})
 		b.guide.SetIgnoreMouseEvents(true)
 	}
-	b.guide.SetPosition(pos.X+codeBannerWidth/2, pos.Y-codeGuideReach)
+	b.guide.SetSize(area.Width, 1) // the display may have changed
+	b.guide.SetPosition(area.X, pos.Y+codeBannerHeight/2)
 	if !b.guide.IsVisible() {
 		b.guide.ShowInactive()
 	}
