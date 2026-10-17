@@ -586,7 +586,11 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 				if len(card.Fields) == 0 {
 					return
 				}
-				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
+				if card.Builtin && card.Title != "code" { // a link's host is a name to read, not a code to copy
+					kit.Text(c, card.Fields[0].Value, t.Text.Lg).FontWeight(500).Shrink(1).SingleLine()
+				} else {
+					ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
+				}
 				hint := cardHint(card.Fields[1:])
 				if card.Builtin && len(card.Fields) > 1 { // the link beside the code: "也可以打开 id.me 的确认链接"
 					hint = i18n.Tf("codes.card.also_"+card.Fields[1].Label, card.Fields[1].Value)
