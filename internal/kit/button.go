@@ -159,6 +159,23 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 	})
 }
 
+// SwapButton is a Button whose label and icon change in place, as Copy
+// turning into Copied: the old content rises out and fades, the new one
+// rises in, and the width eases between them.
+func SwapButton(c *ui.Context, label string, o ButtonOpts) ui.Element {
+	th := c.Theme()
+	swap := ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{Y: 2 * theme.MotionOffset}, Exit: &ui.Motion{Y: -2 * theme.MotionOffset}}
+	return button(c, o, false).Label(label).Clip().Transition(ui.ElementTransition{Colors: true, Size: true, Duration: theme.MotionBase}).Children(func() {
+		ui.Row(c.Key(label)).Gap(th.Space(1.5)).AlignItems(ui.Center).Transition(swap).Children(func() {
+			if o.Icon != "" {
+				ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon).Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{Scale: 0.6, Opacity: 0}})
+			}
+			ui.Text(c, label)
+		})
+		cover(c, o, label)
+	})
+}
+
 // IconButton is a square button showing only an icon, named label for
 // assistive technology and tests. A SizeXs one, 16 round, holds a 12 icon.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {

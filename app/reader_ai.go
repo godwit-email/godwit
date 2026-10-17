@@ -608,7 +608,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself
 						label, o.Icon = i18n.T("codes.copied"), "check"
 					}
-					if !kit.Button(c, label, o).Clicked() {
+					if !kit.SwapButton(c, label, o).Clicked() {
 						continue
 					}
 					switch b.Kind {

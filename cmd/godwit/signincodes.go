@@ -213,7 +213,7 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				})
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
-			btn := kit.Button(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}).Shrink(0)
+			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}).Shrink(0)
 			b.onButton = btn.Pressed()
 			switch {
 			case b.copied:
