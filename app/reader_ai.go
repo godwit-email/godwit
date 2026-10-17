@@ -647,6 +647,13 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 	}
 }
 
+// hasTags reports whether the newest message has plugin tags to show.
+func (r *reader) hasTags() bool {
+	m, ok := r.last()
+	st := r.ai[m.ID]
+	return ok && st != nil && len(st.tags.v) > 0
+}
+
 // tagChips are the plugins' tags for the newest message, as small buttons
 // after the subject: a copy tag shows its text and turns into Copied in
 // place; a link tag names what it opens and where, and asks first, as a
