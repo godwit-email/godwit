@@ -150,10 +150,12 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 		}
 		return n
 	}
-	if n := count("已发送"); n != 2 {
-		t.Fatalf("%d 已发送 folders, want one per account", n)
+	if n := count("已发送"); n != 1 {
+		t.Fatalf("%d 已发送 folders, want only the first account's", n)
 	}
-	h.click("Work") // collapses the first account, animated: wait for its end
+	h.click("carol@example.com") // unfolds the second account, animated: wait for its end
+	h.until("both accounts' 已发送", func() bool { return count("已发送") == 2 })
+	h.click("Work")
 	h.until("one 已发送 folder after collapsing", func() bool { return count("已发送") == 1 })
 	h.click("已标星")
 	if v := h.app.route.View; v.Unified != "starred" {
@@ -477,6 +479,9 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred", func() bool { return h.items()[0].Flagged == 0 })
 	choose("标为未读", "标为已读", "标为未读")
 	h.waitMail("unread", func() bool { return h.items()[0].Unread == 1 })
+	// The context menu selected this row; leave it before reopening it to read.
+	h.click("已标星")
+	h.click("全部收件箱")
 	h.click("first") // reads it; the list has the focus
 	h.waitMail("read by the reader", func() bool { return h.items()[0].Unread == 0 })
 	h.click("first")
@@ -739,22 +744,25 @@ func TestAccountFoldPersists(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
 	h.tt.SetPreferences(ui.Preferences{ReduceMotion: true}) // the fold opens and closes at once
 	count := func() int { return h.countTexts("已发送") }
-	h.waitMail("both accounts' folders", func() bool { return count() == 2 })
+	h.waitMail("the first account's folders", func() bool { return count() == 1 })
+	if *h.app.mail.accountOpen(accs[1].ID) {
+		t.Fatal("the second account starts unfolded")
+	}
 	h.click("alice@example.com")
-	if n := count(); n != 1 || *h.app.mail.accountOpen(accs[0].ID) {
-		t.Fatalf("%d 已发送 folders after folding alice, want 1", n)
+	if n := count(); n != 0 || *h.app.mail.accountOpen(accs[0].ID) {
+		t.Fatalf("%d 已发送 folders after folding alice, want 0", n)
 	}
 	h.app.navigate(Route{Page: PageSettings})
 	h.tt.Frame()
 	h.app.navigate(Route{Page: PageMail})
 	h.tt.Frame()
 	h.tt.Frame()
-	if n := count(); n != 1 || *h.app.mail.accountOpen(accs[0].ID) {
+	if n := count(); n != 0 || *h.app.mail.accountOpen(accs[0].ID) {
 		t.Fatalf("%d 已发送 folders back on the mail page, want alice's still folded", n)
 	}
 	h.click("alice@example.com")
-	if n := count(); n != 2 {
-		t.Fatalf("%d 已发送 folders after unfolding alice, want 2", n)
+	if n := count(); n != 1 {
+		t.Fatalf("%d 已发送 folders after unfolding alice, want 1", n)
 	}
 }
 

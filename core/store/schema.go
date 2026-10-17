@@ -318,4 +318,8 @@ var Migrations = [][]string{{
 	// the user allowed it); library_hash is the SHA-256 of its shared library.
 	`ALTER TABLE plugins ADD COLUMN trust TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE plugins ADD COLUMN library_hash TEXT NOT NULL DEFAULT ''`,
+}, {
+	// The hierarchy delimiter LIST gives a folder's name ('' when flat), which
+	// the sidebar splits user folders on into a tree.
+	`ALTER TABLE folders ADD COLUMN delim TEXT NOT NULL DEFAULT ''`,
 }}

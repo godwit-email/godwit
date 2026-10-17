@@ -300,6 +300,25 @@ func TestRoleOverrideSurvivesSync(t *testing.T) {
 	assert.Equal(t, "Archive", e.roles(t)["archive"])
 }
 
+// Gmail has no Archive: its All Mail is the archive, unless one is detected.
+func TestAllMailIsArchive(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("All Mail", nil))
+	e.sync(t)
+	_, err := e.s.db.Execute(bg, "UPDATE folders SET role = CASE name WHEN 'All Mail' THEN 'all' ELSE '' END WHERE name IN ('Archive', 'All Mail')")
+	require.NoError(t, err)
+	assert.Equal(t, "All Mail", e.roles(t)["archive"])
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "archive", 0))
+	assert.NotContains(t, e.roles(t), "archive", "不使用 turns All Mail off too")
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "archive", e.folderID(t, "All Mail")))
+	assert.Equal(t, "All Mail", e.roles(t)["archive"])
+	_, err = e.s.db.Execute(bg, "UPDATE folders SET role_override = ''")
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "UPDATE folders SET role = 'archive' WHERE name = 'Archive'")
+	require.NoError(t, err)
+	assert.Equal(t, "Archive", e.roles(t)["archive"])
+}
+
 func TestEnteredAtFollowsFolder(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))

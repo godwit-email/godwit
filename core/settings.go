@@ -55,6 +55,10 @@ type Settings struct {
 	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
 	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
 	RemoteImages string
+	// DisabledBuiltins are the built-in plugins the user switched off; every
+	// other one is on. Only SetPluginEnabled changes it; SetSettings keeps
+	// the stored list.
+	DisabledBuiltins []string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize).
@@ -175,6 +179,7 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust
+	st.DisabledBuiltins = stored.DisabledBuiltins       // nor a plugin switch
 	return s.storeSettings(ctx, st)
 }
 

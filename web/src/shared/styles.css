@@ -41,6 +41,8 @@
   --color-background: var(--background);
   /* The window's material colour (webui.ThemeVars): what the content cards float on. */
   --color-window: var(--window);
+  /* The same over the window's material (a window with vibrancy): Window tinting it, clear in the dark. */
+  --color-window-material: var(--window-material);
   /* With the native --radius (8px, from applyTheme) sm…4xl are 4/6/8/12/16/24/32 (Tailwind v4's). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

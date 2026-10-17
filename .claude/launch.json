@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "app",
+      "runtimeExecutable": "mise",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "mise",
+      "runtimeArgs": ["run", "site:dev"],
+      "port": 4321
+    }
+  ]
+}

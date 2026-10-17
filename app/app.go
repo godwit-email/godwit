@@ -30,9 +30,12 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
-	SetTrayUnread(n int) // the inboxes' unread total on the tray; 0 clears it
-	SetAppUnread(n int)  // the inboxes' unread total on the app icon; 0 clears it
-	ShowWindow()         // shows the window, in front
+	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
+	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
+	SetSignInCodes([]core.SignInCode) // replaces the tray's recent codes; UI thread
+	ShowSignInCode(*core.SignInCode)  // a nonactivating copy card; nil dismisses it; UI thread
+	SignInCodeBannerSupported() bool  // UI thread; false keeps ordinary mail notifications
+	ShowWindow()                      // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
 	// SetLocalAPI starts (on) or stops the Local API server for request
@@ -76,6 +79,8 @@ type Platform interface {
 type Notification struct {
 	ID, Title, Subtitle, Body string
 	MessageID                 int64
+	Sender                    string // only set when preview is enabled
+	ThreadID                  int64
 }
 
 // OAuthFlow signs in with an OAuth provider; the default wraps the Service.
@@ -181,16 +186,20 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
-	foreground  bool
-	vibrancy    bool                // Deps.Vibrancy
-	newMail     map[int64]*arrivals // per account, what arrived for its pending notifications
-	logf        func(format string, args ...any)
-	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
-	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst   string                                                    // a click that came before the first load
-	inboxUnread int                                                       // the inboxes' unread total
-	trayUnread  int                                                       // what the tray shows
-	appUnread   int                                                       // what the app icon shows; -1 before the first update
+	foreground                           bool
+	vibrancy                             bool                // Deps.Vibrancy
+	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
+	logf                                 func(format string, args ...any)
+	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
+	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
+	noteFirst                            string                                                    // a click that came before the first load
+	inboxUnread                          int                                                       // the inboxes' unread total
+	trayUnread                           int                                                       // what the tray shows
+	appUnread                            int                                                       // what the app icon shows; -1 before the first update
+	codes                                []core.SignInCode
+	codesReady, codesLoading, codesAgain bool
+	codesStop                            func()
+	codesStarted                         time.Time
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
@@ -208,7 +217,8 @@ type App struct {
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
 	syncing    map[int64]bool      // accounts syncing now
-	syncErr    map[int64]string    // each account's last sync failure, until it syncs
+	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
+	syncOpen   bool                // the sync status's account list shows
 	syncedAt   time.Time           // the last successful sync; zero before one
 	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
 	ticking    bool                // a minute tick redraws the sync age
@@ -267,7 +277,7 @@ func New(d Deps) *App {
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
-	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]string{}, map[int64]time.Time{}
+	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
@@ -276,6 +286,7 @@ func New(d Deps) *App {
 // Start loads accounts and settings and starts the event pump. Cancelling
 // ctx closes the App's work as Close does.
 func (a *App) Start(ctx context.Context) {
+	a.codesStarted = a.clock.Now().Truncate(time.Second)
 	context.AfterFunc(ctx, a.cancel)
 	ch, unsub := a.svc.Subscribe()
 	go func() {
@@ -367,12 +378,13 @@ func (a *App) load() {
 		a.refreshTasks() // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
+		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)
-		maps.DeleteFunc(a.syncErr, func(id int64, _ string) bool { return gone(id, false) })
+		maps.DeleteFunc(a.syncErr, func(id int64, _ syncFail) bool { return gone(id, false) })
 		switch {
 		case len(accs) == 0 && a.route.Page != PageOnboarding:
 			a.history, a.ahead = nil, nil
@@ -392,6 +404,10 @@ func (a *App) load() {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	if a.codesStop != nil {
+		a.codesStop()
+	}
+	a.plat.ShowSignInCode(nil)
 	a.mail.reader.closeViews()
 	a.pages[PageSettings].(*settingsPage).closeSignature()
 	a.tempMu.Lock()
@@ -469,7 +485,12 @@ func (a *App) BeforeClose(proceed func()) {
 }
 
 // SetForeground records whether the window is in front.
-func (a *App) SetForeground(on bool) { a.foreground = on }
+func (a *App) SetForeground(on bool) {
+	a.foreground = on
+	if on {
+		a.plat.ShowSignInCode(nil)
+	}
+}
 
 // OnUI posts f to the UI thread unless the App has closed by then, for
 // callbacks from elsewhere (the Wit page's).

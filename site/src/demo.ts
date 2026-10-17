@@ -5,7 +5,7 @@ import type { Lang } from "./locales";
 
 export type Card =
 	| { kind: "flight"; meta: string; from: string; to: string; hint: string; action: string }
-	| { kind: "otp"; meta: string; code: string; hint: string; action: string; done: string };
+	| { kind: "otp"; code: string; done: string }; // a tag after the subject, as the sign-in codes plugin adds
 
 export interface Message {
 	id: string;
@@ -127,7 +127,7 @@ export const demos: Record<Lang, Demo> = {
 				unread: true,
 				sent: "发给 我 · 今天09:41",
 				body: ["有人正在尝试登录你的Code Host账户。", "你的验证码是142857，10分钟内有效。", "如果不是你本人在操作，忽略这封邮件即可。"],
-				card: { kind: "otp", meta: "验证码 · 来自插件otp-card", code: "142857", hint: "10分钟内有效", action: "复制", done: "已复制" },
+				card: { kind: "otp", code: "142857", done: "已复制" },
 			},
 			{
 				id: "flight",
@@ -261,7 +261,7 @@ export const demos: Record<Lang, Demo> = {
 				unread: true,
 				sent: "To me · Today 09:41",
 				body: ["Someone is signing in to your Code Host account.", "Your code is 142857. It is valid for 10 minutes.", "If this wasn't you, you can ignore this email."],
-				card: { kind: "otp", meta: "Sign-in code · from plugin otp-card", code: "142857", hint: "Valid for 10 minutes", action: "Copy", done: "Copied" },
+				card: { kind: "otp", code: "142857", done: "Copied" },
 			},
 			{
 				id: "flight",

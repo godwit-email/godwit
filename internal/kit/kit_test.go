@@ -367,9 +367,7 @@ func TestKitButtonDisabledInert(t *testing.T) {
 		tt.Frame()
 		before = px()
 		tt.Move(r.X+r.W/2, r.Y+r.H/2)
-		for start := time.Now(); time.Since(start) < 300*time.Millisecond; time.Sleep(10 * time.Millisecond) {
-			tt.Frame()
-		}
+		tt.Advance(300 * time.Millisecond)
 		return before, px()
 	}
 	for _, l := range []string{"Off", "probe-off-icon"} {
@@ -511,8 +509,7 @@ func TestKitSkeletonStillUnderReduceMotion(t *testing.T) {
 		x, y := int(r.X+r.W/2), int(r.Y+r.H/2)
 		px := func() [4]uint8 { c := tt.Image().RGBAAt(x, y); return [4]uint8{c.R, c.G, c.B, c.A} }
 		before := px()
-		time.Sleep(300 * time.Millisecond)
-		tt.Frame()
+		tt.Advance(300 * time.Millisecond)
 		if same := before == px(); same != reduce {
 			t.Errorf("reduce=%v: pixel unchanged=%v", reduce, same)
 		}
@@ -534,9 +531,7 @@ func TestKitCollapsibleToggles(t *testing.T) {
 		t.Fatalf("panel not shown after click: %q", tt.Texts())
 	}
 	_ = tt.Click("More")
-	for start := time.Now(); tt.HasText("inside") && time.Since(start) < 2*time.Second; time.Sleep(10 * time.Millisecond) {
-		tt.Frame()
-	}
+	tt.Advance(2 * theme.MotionBase)
 	if tt.HasText("inside") {
 		t.Error("panel still shown after closing")
 	}
@@ -597,8 +592,7 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt := ui.NewTester(themed(func(c *ui.Context) { Gallery(c, &g) }), 1200, 8000)
 		tt.SetDark(dark)
 		tt.Frame()
-		time.Sleep(2 * theme.MotionFast)
-		tt.Frame()
+		tt.Advance(2 * theme.MotionFast)
 		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
 			"Dialog", "Confirm", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
 			"StatusDot", "SidebarItem", "NavSwitch", "Panel", "Pressable", "Toast"} {
@@ -815,8 +809,7 @@ func TestKitSidebarIconMuted(t *testing.T) {
 	}
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
 	tt.Frame()
-	time.Sleep(2 * theme.MotionFast)
-	tt.Frame()
+	tt.Advance(2 * theme.MotionFast)
 	if got := darkest(); got >= th.Muted.R {
 		t.Errorf("hovered icon darkest %d, want darker than muted %d", got, th.Muted.R)
 	}
@@ -974,8 +967,7 @@ func TestButtonGroupTooltips(t *testing.T) {
 		t.Fatal("no Archive item")
 	}
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	time.Sleep(900 * time.Millisecond)
-	tt.Frame()
+	tt.Advance(900 * time.Millisecond)
 	n := 0
 	for _, x := range tt.Texts() {
 		if x == "Archive" {
@@ -1003,8 +995,7 @@ func TestTabsUnderline(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	time.Sleep(2 * theme.MotionFast)
-	tt.Frame()
+	tt.Advance(2 * theme.MotionFast)
 	if sel != 1 {
 		t.Fatalf("sel = %d", sel)
 	}
@@ -1044,8 +1035,7 @@ func TestDestructiveOutline(t *testing.T) {
 		}), 200, 100)
 		tt.SetDark(dark)
 		tt.Frame()
-		time.Sleep(2 * theme.MotionFast)
-		tt.Frame()
+		tt.Advance(2 * theme.MotionFast)
 		r, _ := tt.Find("Delete")
 		same := func(p color.RGBA, c ui.Color) bool { return p.R == c.R && p.G == c.G && p.B == c.B }
 		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.Background) {
@@ -1053,8 +1043,7 @@ func TestDestructiveOutline(t *testing.T) {
 		}
 		tt.Move(r.X+r.W/2, r.Y+r.H/2)
 		tt.Frame()
-		time.Sleep(2 * theme.MotionFast)
-		tt.Frame()
+		tt.Advance(2 * theme.MotionFast)
 		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
 			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
 		}
@@ -1072,8 +1061,7 @@ func TestAlertAction(t *testing.T) {
 			}), 200, 100)
 			tt.SetDark(dark)
 			tt.Frame()
-			time.Sleep(2 * theme.MotionFast)
-			tt.Frame()
+			tt.Advance(2 * theme.MotionFast)
 			r, ok := tt.Find("Fix")
 			if !ok {
 				t.Fatal("no button")
@@ -1134,8 +1122,7 @@ func TestDialogWidths(t *testing.T) {
 		tt := ui.NewTester(themed(func(c *ui.Context) {
 			Dialog(c, &open, "T", DialogOpts{Size: size, Close: "Close"}, func() { ui.Text(c, "body") }, func() { ui.Text(c, "foot") })
 		}), 900, 600)
-		time.Sleep(2 * theme.MotionBase)
-		tt.Frame()
+		tt.Advance(2 * theme.MotionBase)
 		img, first, last := tt.Image(), -1, -1
 		y := 84 // below the panel's corners, in its white header
 		for x := 0; x < 900; x++ {
@@ -1209,8 +1196,7 @@ func TestDialogBackdropBlurs(t *testing.T) {
 		})
 		Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
 	}), 800, 600)
-	time.Sleep(2 * theme.MotionBase)
-	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
 	// Just right of the black column, low in the window, well below the panel.
 	if p := tt.Image().RGBAAt(201, 500); p.R > 220 {
 		t.Errorf("edge pixel %v is not blurred", p)

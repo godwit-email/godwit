@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -583,8 +582,7 @@ func TestOnboardingDetectedBadgeInInput(t *testing.T) {
 	h.fill("邮箱地址", "x@qq.com")
 	h.advance(debounce)
 	h.see("识别为 QQ 邮箱")
-	time.Sleep(2 * theme.MotionFast)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionFast)
 	in, ok1 := h.tt.Find("邮箱地址")
 	badge, ok2 := h.tt.Find("识别为 QQ 邮箱")
 	if !ok1 || !ok2 {
@@ -644,8 +642,7 @@ func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
 	h.click("邮箱地址")
-	time.Sleep(2 * theme.MotionFast)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionFast)
 	in, _ := h.tt.Find("邮箱地址")
 	img, want := h.tt.Image(), theme.Light().Ring.SRGB()
 	y, found := int(in.Y+in.H/2), false

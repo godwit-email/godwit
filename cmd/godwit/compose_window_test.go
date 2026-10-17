@@ -134,7 +134,14 @@ func TestComposeWindowNavigation(t *testing.T) {
 func TestComposeWindowOptions(t *testing.T) {
 	for _, goos := range []string{"darwin", "windows", "linux"} {
 		o := composeWindowOptions(goos)
-		if o.URL != "/compose.html" || o.Width != 860 || o.Height != 720 || o.MinWidth != 640 || o.MinHeight != 480 || o.StateKey != "compose" || o.Title != "新邮件" {
+		url := "/compose.html"
+		if goos == "darwin" {
+			url += "?material" // the main window's material, which the page tints
+			if o.Vibrancy != mygo.VibrancySidebar {
+				t.Errorf("darwin: vibrancy %q, want the main window's", o.Vibrancy)
+			}
+		}
+		if o.URL != url || o.Width != 860 || o.Height != 720 || o.MinWidth != 640 || o.MinHeight != 480 || o.StateKey != "compose" || o.Title != "新邮件" {
 			t.Fatalf("%s: options %+v", goos, o)
 		}
 		want := mygo.TitleBarStyle("") // the page draws no window controls of Windows or Linux
@@ -180,5 +187,12 @@ func TestComposeWindowCascade(t *testing.T) {
 	c.place(fourth)
 	if *fourth != (fakePlaced{124, 104}) {
 		t.Fatalf("fourth at %+v, want past the first, the last still open", *fourth)
+	}
+}
+
+func TestQuitHookIsNotARelaunch(t *testing.T) {
+	quitHook(&fakeWindows{}, func(*mygo.QuitEvent) {}, func() {})(&mygo.QuitEvent{})
+	if relaunching.Load() {
+		t.Fatal("a plain quit counted as a relaunch")
 	}
 }

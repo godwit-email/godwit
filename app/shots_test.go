@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -83,6 +84,12 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 	h.putSeen(you, "INBOX", m("Acme Cloud <billing@acme.example>", "Your receipt for October", "Thanks for your payment. Amount: [AMOUNT]", "acme@x", day(10, 2, 9, 0)))
 	h.putSeen(you, "Sent", coretest.Msg("Me <you@example.com>", "Lena Fischer <lena@partner.example>", "Re: proposal timeline", "Sounds good. Let us aim to finalize the proposal by Friday.", coretest.MessageID("sent@x"), coretest.Date(day(10, 3, 10, 0))))
 	h.putSeen(work, "Archive", coretest.Msg("Mark Chen <mark@partner.example>", work.Email, "Partnership proposal — revised deck", "Attached is the revised proposal deck with the pricing.", coretest.MessageID("mark@x"), coretest.Date(day(9, 28, 15, 0))))
+	for _, f := range []string{"项目/Q4/合同", "项目/Q4/发票", "项目/报销"} { // the design's nested folders
+		if err := h.env.IMAP(work.ID).User.Create(f, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.put(work, "项目/Q4/合同", coretest.Msg("Mark Chen <mark@partner.example>", work.Email, "合同终稿", "请查收合同终稿。", coretest.MessageID("contract@x"), coretest.Date(day(10, 7, 16, 0))))
 	h.syncNow(you)
 	h.syncNow(work)
 	h.waitMail("the sample mail", func() bool {
@@ -159,7 +166,7 @@ func shotInstall(t *testing.T, h *harness, name, manifest, index string, grant b
 }
 
 // shotDescs are the design's plugin descriptions.
-var shotDescs = map[string]string{"otp-card": "识别验证码，显示复制卡片", "flight-cards": "航班邮件显示行程卡片", "attachment-check": "发送前检查遗漏的附件"}
+var shotDescs = map[string]string{"flight-cards": "航班邮件显示行程卡片", "attachment-check": "发送前检查遗漏的附件"}
 
 // shotPlugin installs an enabled plugin with a card on the messages whose
 // subject has match.
@@ -181,8 +188,7 @@ func TestShots(t *testing.T) {
 	}
 	write := func(h *harness, dir, name string) {
 		h.t.Helper()
-		time.Sleep(2 * theme.MotionBase) // hover, selection and theme fades run on the wall clock
-		h.tt.Frame()
+		h.tt.Advance(2 * theme.MotionBase)
 		f, err := os.Create(filepath.Join(dir, name+".png"))
 		if err != nil {
 			t.Fatal(err)
@@ -236,6 +242,9 @@ func TestShots(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)
 		shot(s.harness, "Main")
+		*s.app.mail.accountOpen(s.work.ID) = true
+		shot(s.harness, "MainFolders")
+		*s.app.mail.accountOpen(s.work.ID) = false
 		// Translation keeps the message's body page, below the summary.
 		s.llm.Script(coretest.Turn{Text: []string{`{"texts":["你好，\n\n接着上周的通话，我整理了一份 Q4 合作的提案草稿。要点是 11 月联合发布，以及一场联合网络研讨会。\n\n能否在周五前看一下，告诉我时间安排对你们来说是否可行？\n\n祝好，Lena"],"source":"en"}`}})
 		s.click("翻译")
@@ -244,6 +253,37 @@ func TestShots(t *testing.T) {
 		s.seeTranslation(m.ID, "能否在周五前看一下")
 		shot(s.harness, "MainTranslated")
 	})
+	for _, v := range []struct {
+		name string
+		evs  func(s *shotEnv) []events.Event
+		wait time.Duration
+	}{
+		{"MainSyncOk", func(s *shotEnv) []events.Event { return nil }, 0},
+		{"MainSyncRetrying", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "connect", Error: "dial tcp: connection refused"}}
+		}, 0},
+		{"MainSyncPassword", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "auth", Error: "login refused"},
+				{Type: events.SyncFailed, AccountID: s.work.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 0},
+		{"MainSyncFailed", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 2 * time.Hour},
+	} {
+		t.Run(v.name, func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.settle()
+			s.post(func() {
+				for _, ev := range v.evs(s) {
+					s.app.onEvent(ev)
+				}
+			})
+			s.drain()
+			s.advance(v.wait)
+			s.app.syncOpen = true
+			shot(s.harness, v.name)
+		})
+	}
 	t.Run("MainWindows", func(t *testing.T) {
 		old := goos
 		goos = "windows"
@@ -296,7 +336,7 @@ func TestShots(t *testing.T) {
 	t.Run("MainOTP", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		writeSkill(t, s.env, "brief")
-		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [{ label: "", value: "482 913" }, { label: "", value: "10 分钟内有效" }], buttons: [{ label: "复制", kind: "copy", value: "482913" }] }`)
+		// the built-in sign-in codes plugin draws the card
 		s.click("[Code Host] 你的登录验证码")
 		s.see("复制")
 		shot(s.harness, "MainOTP")
@@ -519,7 +559,6 @@ func TestShots(t *testing.T) {
 			"config":[{"key":"apiKey","type":"secret","label":"DeepL API Key"},
 				{"key":"plan","type":"select","label":"套餐","options":[{"value":"free","label":"Free"},{"value":"pro","label":"Pro"}],"default":"free"}]}`,
 			`export default function (_ctx: any) {}`, false)
-		shotPlugin(t, s.harness, "otp-card", "验证码", `{ title: "验证码", fields: [] }`)
 		shotPlugin(t, s.harness, "flight-cards", "NW", `{ title: "航班", fields: [] }`)
 		shotPlugin(t, s.harness, "attachment-check", "-", `{ title: "附件", fields: [] }`)
 		s.openSettings("extensions")
@@ -535,7 +574,7 @@ func TestShots(t *testing.T) {
 		s.app.toastAs(kit.ToastWarning, "work@company.example 没有归档文件夹，已跳过")
 		s.app.toast("链接已复制")
 		s.see("链接已复制")
-		time.Sleep(2 * theme.MotionBase) // the toasts' enter motion runs on the wall clock
+		s.tt.Advance(2 * theme.MotionBase)
 		shot(s.harness, "Toasts")
 	})
 	t.Run("AddAccountSheet", func(t *testing.T) {

@@ -55,6 +55,7 @@ type Account struct {
 type Folder struct {
 	ID, AccountID int64
 	Name, Role    string
+	Delim         string // the server's hierarchy delimiter in Name, "" when flat
 	Unread        int
 }
 

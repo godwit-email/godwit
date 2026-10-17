@@ -1,0 +1,32 @@
+name: Prepare macOS signing
+description: Import the release certificate, notary credentials and communication notification profile.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        keychain="$RUNNER_TEMP/signing.keychain-db"
+        password="$(openssl rand -base64 24)"
+        security create-keychain -p "$password" "$keychain"
+        security set-keychain-settings -lut 21600 "$keychain"
+        security unlock-keychain -p "$password" "$keychain"
+        printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+        security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+        rm "$RUNNER_TEMP/certificate.p12"
+        security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+        security list-keychains -d user -s "$keychain" login.keychain
+        printf '%s' "$APPLE_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+        xcrun notarytool store-credentials notary --keychain "$keychain" \
+          --key "$RUNNER_TEMP/notary.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
+        rm "$RUNNER_TEMP/notary.p8"
+        identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+        test -n "$identity" || { echo "No Developer ID Application signing identity" >&2; exit 1; }
+        test -n "$MACOS_PROFILE_BASE64" || { echo "MACOS_PROVISIONING_PROFILE secret is required" >&2; exit 1; }
+        profile="$RUNNER_TEMP/Godwit.provisionprofile"
+        printf '%s' "$MACOS_PROFILE_BASE64" | base64 --decode > "$profile"
+        swiftc -parse-as-library scripts/macos_profile.swift -o "$RUNNER_TEMP/macos-profile"
+        "$RUNNER_TEMP/macos-profile" "$profile" assets/notifications.entitlements.plist "$identity" "$keychain"
+        echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+        echo "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+        echo "MACOS_PROVISIONING_PROFILE=$profile" >> "$GITHUB_ENV"
+        echo "MACOS_ENTITLEMENTS=$GITHUB_WORKSPACE/assets/notifications.entitlements.plist" >> "$GITHUB_ENV"

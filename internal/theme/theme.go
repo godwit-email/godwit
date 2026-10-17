@@ -17,8 +17,9 @@ import (
 // Border outlines panels and cards, Input the controls (a step stronger in
 // the dark), Ring the keyboard focus (at half opacity) and a hovered divider.
 // Attention is the amber of
-// status dots that ask for a look (amber-500); Unread, the blue of the dot
-// beside unread mail (blue-500).
+// status dots for a trouble that clears by itself, as a sync being retried
+// (amber-500); Danger's red marks one that needs the user. Unread, the blue
+// of the dot beside unread mail (blue-500).
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
@@ -130,7 +131,12 @@ func (s TextScale) Line(size float32) float32 {
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline        = 1   // dividers
+	Hairline     = 1   // dividers
+	MaterialTint = 0.6 // the light Window's opacity over the window material: lighter, as the design, yet still see-through (its 95% is over a bare wallpaper, not a material)
+	// DeviceHairline is a border one device pixel wide at any scale: MyGo
+	// rounds border widths to whole device pixels, at least one. Borders
+	// only; a box or line this thin rounds away.
+	DeviceHairline  = 0.01
 	SidebarWidth    = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth = 480
@@ -166,6 +172,7 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	SyncMenuWidth         = 336 // the top bar's sync status list: 360 with the popover's padding
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24
 	LabelSwatchRing       = 2
@@ -198,7 +205,7 @@ const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
 	Logo                                             = 64             // the About page's logo
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
-	MarkSm, MarkMd, MarkLg, MarkXl                   = 20, 28, 40, 48 // provider marks
+	MarkSm, MarkMd, MarkLg, MarkXl                   = 16, 28, 40, 48 // provider marks
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	CloseButton                                      = 20             // a toast's close button
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
@@ -327,7 +334,7 @@ func status(t Tokens) Tokens {
 // Light is the light appearance (spec 7.0).
 func Light() Tokens {
 	return status(Tokens{
-		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
+		Window: p.Neutral50.Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),

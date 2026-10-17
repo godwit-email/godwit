@@ -2,6 +2,7 @@ package coretest_test
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -88,6 +89,7 @@ func TestCoretestPluginFixture(t *testing.T) {
 	}
 	list, err := e.Svc.ListPlugins(t.Context())
 	require.NoError(t, err)
+	list = slices.DeleteFunc(list, func(p core.PluginInfo) bool { return p.Builtin })
 	require.Len(t, list, 5)
 	for _, p := range list {
 		assert.True(t, p.Enabled, p.Name)

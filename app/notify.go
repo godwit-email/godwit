@@ -51,6 +51,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 	}
 	texts := i18n.In(i18n.Language())
 	plat, svc, logf := a.plat, a.svc, a.logf
+	codeBanner, now := st.NotifyPreview && plat.SignInCodeBannerSupported(), a.clock.Now()
 	a.do(func(ctx context.Context) error {
 		if !plat.NotificationsSupported() {
 			return nil
@@ -60,10 +61,18 @@ func (a *App) notify(acc int64, got *arrivals) {
 			logf("notify: account %d: reading new mail: %v", acc, err)
 			return nil
 		}
+		if codeBanner {
+			// Only the newest code takes the banner; older ones in the same batch
+			// keep their ordinary notification.
+			if codes, err := svc.RecentSignInCodes(ctx, now); err == nil && len(codes) > 0 {
+				msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID == codes[0].MessageID })
+			}
+		}
 		for _, m := range msgs {
 			n := Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
 			if st.NotifyPreview {
 				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
+				n.Sender, n.ThreadID = m.From, m.ThreadID
 			}
 			if err := plat.Notify(n); err != nil {
 				logf("notify: account %d: %v", acc, err)

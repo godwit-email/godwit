@@ -4,8 +4,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -42,22 +45,32 @@ type fetch[T any] struct {
 	done, loading bool
 	err           error
 	gen           uint64
+	seq           uint64 // bumped per read and by restart; only the newest read lands
 }
 
 // fetchInto reads into f unless it is read, being read, or (without force)
 // was tried during this visit. failed, if set, hears a failure.
+// restart forgets what was read and drops a read in flight, so the next
+// fetchInto reads afresh.
+func (f *fetch[T]) restart() {
+	f.seq++
+	f.done, f.loading = false, false
+}
+
 func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
 	if f.done || f.loading && f.gen == r.gen || !force && f.gen == r.gen {
 		return
 	}
 	a, gen, ctx := r.p.a, r.gen, r.aiContext()
+	f.seq++
+	seq := f.seq
 	f.gen, f.loading, f.err = gen, true, nil
 	var v T
 	a.do(func(context.Context) (err error) {
 		v, err = get(ctx)
 		return err
 	}, func(err error) {
-		if gen != r.gen {
+		if gen != r.gen || seq != f.seq {
 			return
 		}
 		f.loading = false
@@ -80,6 +93,7 @@ type msgAI struct {
 	showTr      bool // the translation was asked to show
 	result      *aiResult
 	cards       fetch[[]core.Card]
+	tags        fetch[[]core.Tag]
 	quick       fetch[[]core.QuickReply]
 }
 
@@ -198,11 +212,34 @@ func (r *reader) startFor(id int64) {
 		st.summary = r.stream(id, "summarize")
 	}
 	r.loadCards(id, false)
+	r.loadTags(id, false)
 }
 
 func (r *reader) loadCards(id int64, force bool) {
 	get := r.cardsFn
 	fetchInto(r, &r.state(id).cards, force, func(ctx context.Context) ([]core.Card, error) { return get(ctx, id) }, nil)
+}
+
+func (r *reader) loadTags(id int64, force bool) {
+	get := r.tagsFn
+	fetchInto(r, &r.state(id).tags, force, func(ctx context.Context) ([]core.Tag, error) { return get(ctx, id) }, nil)
+}
+
+// reloadPluginParts reads the open messages' cards and tags again, as a
+// plugin was switched, installed or removed.
+func (r *reader) reloadPluginParts() {
+	ids := maps.Clone(r.open)
+	if m, ok := r.last(); ok {
+		ids[m.ID] = true // its tags follow the subject even while it is folded
+	}
+	for id := range ids {
+		if st := r.ai[id]; st != nil {
+			st.cards.restart()
+			st.tags.restart()
+		}
+		r.loadCards(id, true)
+		r.loadTags(id, true)
+	}
 }
 
 func (r *reader) loadQuick(id int64, force bool) {
@@ -590,17 +627,31 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 			}
 			ui.Row(c).Wrap().Gap(th.Space(2)).Shrink(0).Children(func() {
 				for i, b := range card.Buttons {
-					o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+					o := kit.ButtonOpts{Variant: kit.Outline} // one height for all; the first stands out by colour
 					if i == 0 {
 						o = kit.ButtonOpts{Variant: kit.Default}
 					}
-					if !kit.Button(c, b.Label, o).Clicked() {
+					key := fmt.Sprintf("%d/%s/%d", m.ID, card.Plugin, i)
+					label := b.Label
+					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself, stepping back to secondary
+						label, o.Icon, o.Variant = i18n.T("codes.copied"), "check", kit.Secondary
+					}
+					var alts []string // a copy button turns into Copied; size it for both
+					if b.Kind == "copy" {
+						alts = append(alts, i18n.T("codes.copied"))
+					}
+					if !kit.SwapButton(c, label, o, alts...).Clicked() {
 						continue
 					}
 					switch b.Kind {
 					case "copy":
 						c.WriteClipboard(b.Value)
-						r.p.a.toast(i18n.T("reader.ai.copied"))
+						r.copiedCard = key
+						r.p.a.after(1500*time.Millisecond, func() {
+							if r.copiedCard == key {
+								r.copiedCard = ""
+							}
+						})
 					case "open-url":
 						r.p.a.openLink(b.Value)
 					case "run-action":
@@ -609,6 +660,66 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 				}
 			})
 		})
+	}
+}
+
+// hasTags reports whether the newest message has plugin tags to show.
+func (r *reader) hasTags() bool {
+	m, ok := r.last()
+	st := r.ai[m.ID]
+	return ok && st != nil && len(st.tags.v) > 0
+}
+
+// tagChips are the plugins' tags for the newest message, as small buttons
+// after the subject: a copy tag shows its text and turns into Copied in
+// place; a link tag names what it opens and where, and asks first, as a
+// link in the body does.
+func (r *reader) tagChips(c *ui.Context) {
+	m, ok := r.last()
+	st := r.ai[m.ID]
+	if !ok || st == nil {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	a := r.p.a
+	chip := func(e ui.Element) ui.Element {
+		return e.Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontSize(t.Text.Base).Shrink(0)
+	}
+	for i, tag := range st.tags.v {
+		key := fmt.Sprintf("tag/%d/%s/%d", m.ID, tag.Plugin, i)
+		switch tag.Kind {
+		case "copy":
+			label, o := tag.Text, kit.ButtonOpts{Variant: kit.Secondary, Icon: "copy"}
+			if r.copiedCard == key {
+				label, o.Icon = i18n.T("codes.copied"), "check"
+			}
+			e := chip(kit.SwapButton(c, label, o, tag.Text, i18n.T("codes.copied")))
+			if r.copiedCard != key {
+				e.Font(theme.Mono).FontWeight(500)
+			}
+			if e.Clicked() {
+				c.WriteClipboard(tag.Value)
+				r.copiedCard = key
+				a.after(1500*time.Millisecond, func() {
+					if r.copiedCard == key {
+						r.copiedCard = ""
+					}
+				})
+			}
+		case "open-url":
+			name, link := tag.Label, tag.Value
+			if tag.Builtin {
+				name = i18n.T("codes.card." + tag.Label)
+			}
+			e := chip(kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary})).Label(name).Children(func() {
+				ui.Icon(c, icons.Get("external-link")).Size(theme.Icon, theme.Icon)
+				ui.Text(c, name)
+				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
+			})
+			if e.Clicked() {
+				a.openLink(link)
+			}
+		}
 	}
 }
 

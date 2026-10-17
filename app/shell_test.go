@@ -110,7 +110,45 @@ func TestSyncStatus(t *testing.T) {
 	if err := h.env.Svc.SyncNow(ctx, acc.ID); err == nil {
 		t.Fatal("sync with a wrong password succeeded")
 	}
-	h.see("同步失败")
+	h.see("alice@example.com · 密码被拒绝") // the server refused it: named, red, not retried
+}
+
+func TestSyncRetryTurnsRed(t *testing.T) {
+	var acc core.Account // no background sync: its result would replace the injected failures
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	h.see("alice@example.com · 重试中")
+	h.click("alice@example.com · 重试中")
+	h.see("自动重试中")
+	h.see("会自动重试，一般不用处理")
+	h.post(func() { // a later failure keeps when the failures began
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	h.advance(syncGiveUp)
+	h.see("alice@example.com · 同步失败")
+	h.see("30 分钟前开始失败")
+	h.post(func() { h.app.onEvent(events.Event{Type: events.SyncFinished, AccountID: acc.ID}) })
+	h.see("已同步 · 刚刚")
+}
+
+func TestSyncWorstFirst(t *testing.T) {
+	var a, b core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: a.ID, Kind: "timeout"})
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: b.ID, Kind: "tls"})
+		h.app.onEvent(events.Event{Type: events.SyncStarted, AccountID: a.ID}) // syncing does not hide a failure
+	})
+	h.see("bob@example.com · 同步失败")
+	if hs := h.app.syncHealths(); hs[0].acc.ID != b.ID || hs[0].level != syncAction || hs[1].level != syncRetrying {
+		t.Fatalf("healths %+v", hs)
+	}
 }
 
 func TestReauthStatus(t *testing.T) {
@@ -119,9 +157,10 @@ func TestReauthStatus(t *testing.T) {
 	_ = h.env.Svc.SyncNow(context.Background(), acc.ID) // marks the account reauth_required
 	h.until("reauth shown", func() bool {
 		h.advance(250 * time.Millisecond) // the throttled refresh reloads the accounts
-		return h.tt.HasText("需要重新登录")
+		return h.tt.HasText("alice@example.com · 密码被拒绝")
 	})
-	h.click("需要重新登录")
+	h.click("alice@example.com · 密码被拒绝")
+	h.click("更新密码")
 	want := Route{Page: PageSettings, Settings: fmt.Sprintf("account:%d", acc.ID)}
 	if h.app.route != want {
 		t.Fatalf("route %+v, want %+v", h.app.route, want)
@@ -354,8 +393,7 @@ func TestSidebarWidthSharedAndSaved(t *testing.T) {
 	}
 	h.app.sidebarHidden = true
 	h.tt.Frame()
-	time.Sleep(2 * theme.MotionBase)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase)
 	pull(0) // a click
 	if h.app.sidebarHidden {
 		t.Error("a click on the edge grip left the sidebar folded")
@@ -391,11 +429,9 @@ func TestSidebarToggleAnimates(t *testing.T) {
 					t.Fatal(err)
 				}
 				first := left()
-				time.Sleep(theme.MotionFast / 2)
-				tt.Frame()
+				tt.Advance(theme.MotionFast / 2)
 				middle := left()
-				time.Sleep(2 * theme.MotionBase)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionBase)
 				last := left()
 				if (first == last) != reduce || before == last {
 					t.Errorf("hidden=%v: content jumped or stayed still: before %v, first %v, last %v", hidden, before, first, last)
@@ -409,14 +445,12 @@ func TestSidebarToggleAnimates(t *testing.T) {
 			}
 			if !reduce {
 				tt.Click(i18n.T("shell.sidebar.collapse"))
-				time.Sleep(theme.MotionFast / 2)
-				tt.Frame()
+				tt.Advance(theme.MotionFast / 2)
 				tt.Click(i18n.T("shell.sidebar.expand"))
 				if left() >= shown {
 					t.Error("reversing the animation jumped to fully expanded")
 				}
-				time.Sleep(2 * theme.MotionBase)
-				tt.Frame()
+				tt.Advance(2 * theme.MotionBase)
 				if left() != shown || a.sidebarWidth() != theme.SidebarWidth {
 					t.Errorf("toggle changed the saved width: content %v, sidebar %v", left(), a.sidebarWidth())
 				}
@@ -437,8 +471,7 @@ func TestSidebarDragDuringCollapse(t *testing.T) {
 	if err := tt.Click(i18n.T("shell.sidebar.collapse")); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(theme.MotionFast / 2)
-	tt.Frame()
+	tt.Advance(theme.MotionFast / 2)
 	if x := left(); x <= theme.GripWidth || x >= shown {
 		t.Fatalf("not in the middle of collapsing: content at %v, shown %v", x, shown)
 	}
@@ -457,8 +490,7 @@ func TestSidebarDragDuringCollapse(t *testing.T) {
 		t.Fatal("dragging during collapse did not reopen the sidebar")
 	}
 	tt.Release(x, y)
-	time.Sleep(2 * theme.MotionBase)
-	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
 	if left() != shown || a.sidebarWidth() != width || a.sidebarSave != nil {
 		t.Fatalf("reopening changed the width: content %v (want %v), width %v (want %v), save scheduled %v", left(), shown, a.sidebarWidth(), width, a.sidebarSave != nil)
 	}
@@ -475,8 +507,17 @@ func TestVibrancyShowsThroughTopBar(t *testing.T) {
 	}
 	h.tt.Frame()
 	img := h.tt.Image()
-	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 { // the top bar's middle, above its text
-		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
+	tint := float32(theme.MaterialTint)
+	// The top bar's middle, above its text: light, the Window tint over the
+	// material, which still shows a little; dark, the material alone.
+	if px, want := img.RGBAAt(img.Bounds().Dx()/2, 4).A, uint8(255*tint); px < want-1 || px > want+1 {
+		t.Errorf("top bar alpha %d: want %d, the material showing a little through the tint", px, want)
+	}
+	h.tt.SetDark(true)
+	h.tt.Frame()
+	img = h.tt.Image()
+	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 {
+		t.Errorf("dark top bar pixel %v: want transparent, the material showing", px)
 	}
 }
 

@@ -39,8 +39,8 @@ func (s *Service) SetRoleFolder(ctx context.Context, accountID int64, role strin
 	defer s.editMu.Unlock()
 	stmts := []sqlite.Statement{{SQL: "UPDATE folders SET role_override = '' WHERE account_id = ? AND role_override = ?", Args: []any{accountID, role}}}
 	if folderID == 0 {
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE folders SET role_override = 'none' WHERE account_id = ? AND role = ? AND role_override = ''",
-			Args: []any{accountID, role}})
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE folders SET role_override = 'none' WHERE account_id = ? AND role IN (?, ?) AND role_override = ''",
+			Args: []any{accountID, role, mailsync.AltRole(role)}})
 	} else {
 		rows, err := s.db.Query(ctx, "SELECT role FROM folders WHERE id = ? AND account_id = ?", folderID, accountID)
 		if err != nil {

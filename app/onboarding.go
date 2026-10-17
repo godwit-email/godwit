@@ -530,7 +530,16 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 		r = t.Radius.Xl
 	}
 	if b := icons.Brand(p.ID); b != nil {
-		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile).Border(theme.Hairline, t.Outline)
+		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile)
+		if size <= theme.MarkSm {
+			// The logo fills the tile, at a size its levels halve to, sharp, under a one device pixel outline.
+			kit.Elevate(c, tile, theme.ShadowXs).Children(func() {
+				ui.Image(c, b).Size(size, size)
+				ui.Box(c).Absolute().Left(0).Top(0).Size(size, size).Radius(r).Border(theme.DeviceHairline, t.Outline)
+			})
+			return
+		}
+		tile.Border(theme.Hairline, t.Outline)
 		in := size - 2*theme.Hairline // inside the outline: a full-size logo would sit off centre, clipped
 		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(in, in) })
 		return

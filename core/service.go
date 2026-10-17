@@ -431,7 +431,7 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
 		if ctx.Err() == nil {
 			// Safe to show: conn never includes server text or the password in login errors.
-			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error()})
+			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.Classify(err))})
 		}
 		return err
 	}
@@ -603,11 +603,11 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 }
 
 // ListFolders returns the account's folders with their unread counts. Each role
-// is on one folder at most, the one mailsync.RoleFolder resolves; inbox is
-// detected only.
+// is on one folder at most, the one mailsync.RoleFolder resolves; inbox and
+// Gmail's all, flagged and important are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
-	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role = 'inbox' THEN 'inbox' ELSE '' END,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0)
+	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'all', 'flagged', 'important') THEN f.role ELSE '' END,
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0), f.delim
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err
@@ -626,7 +626,7 @@ func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, e
 	for _, r := range rows.Values {
 		id := store.Int(r[0])
 		out = append(out, Folder{ID: id, AccountID: store.Int(r[1]), Name: store.Str(r[2]),
-			Role: cmp.Or(roles[id], store.Str(r[3])), Unread: int(store.Int(r[4]))})
+			Role: cmp.Or(roles[id], store.Str(r[3])), Delim: store.Str(r[5]), Unread: int(store.Int(r[4]))})
 	}
 	return out, nil
 }

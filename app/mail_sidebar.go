@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,35 +16,93 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// roleOrder is the order of folders with a role; the others follow by name.
+// roleOrder is the order of the role folders, above an account's own folders.
 var roleOrder = []string{"inbox", "drafts", "sent", "archive", "junk", "trash"}
-
-func sortFolders(fs []core.Folder) []core.Folder {
-	rank := func(f core.Folder) int {
-		if i := slices.Index(roleOrder, f.Role); i >= 0 {
-			return i
-		}
-		return len(roleOrder)
-	}
-	out := slices.Clone(fs)
-	slices.SortStableFunc(out, func(a, b core.Folder) int {
-		return cmp.Or(cmp.Compare(rank(a), rank(b)), strings.Compare(a.Name, b.Name))
-	})
-	return out
-}
 
 // folderIcons are the icons of folder roles; another folder shows "folder".
 var folderIcons = map[string]string{"inbox": "inbox", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
 
+// folderName is a role folder's name in the UI's language, else the server's
+// name: also for Gmail's all, flagged and important, which have none of ours.
 func folderName(f core.Folder) string {
-	if f.Role != "" {
+	if slices.Contains(roleOrder, f.Role) {
 		return i18n.T("mail.folder." + f.Role)
 	}
 	return f.Name
 }
 
-// Sidebar: the page switch and search; Compose; the unified views; each account's folders under its
-// foldable header; the outbox while it holds mail; Add account.
+// sideFolder is a row of an account's folders in the sidebar.
+type sideFolder struct {
+	core.Folder        // ID 0 and no Role: a parent only named in its children's paths
+	name        string // what the row shows
+	key         string // a user folder's path segments joined by "\x00"; "" for a role folder
+	depth       int    // 1 for role folders and top-level user folders
+	kids        bool
+	sum         int // unread in it and every folder under it
+}
+
+// sidebarFolders are an account's folder rows: its role folders in roleOrder
+// (the local drafts for missing drafts), then its own folders as a tree split on the server's
+// delimiter, each parent before its children and siblings by name, with a row
+// for a parent only named in paths. Folders under a role folder (Courier's
+// INBOX.Projects) show at the top, but keep the role folder in their key.
+// Gmail's All Mail (unless it is the archive), Starred and Important show no
+// row: 已标星 at the top is Starred.
+func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
+	byRole := map[string]core.Folder{}
+	for _, f := range fs {
+		if _, ok := byRole[f.Role]; f.Role != "" && !ok {
+			byRole[f.Role] = f
+		}
+	}
+	if byRole["drafts"].Role == "" {
+		byRole["drafts"] = core.Folder{AccountID: acc, Role: "drafts"}
+	}
+	var out []sideFolder
+	for _, r := range roleOrder {
+		if f, ok := byRole[r]; ok {
+			out = append(out, sideFolder{Folder: f, name: folderName(f), depth: 1, sum: f.Unread})
+		}
+	}
+	nodes := map[string]*sideFolder{}
+	for _, f := range fs {
+		if f.Role != "" {
+			continue
+		}
+		segs := []string{f.Name}
+		if f.Delim != "" {
+			segs = slices.DeleteFunc(strings.Split(f.Name, f.Delim), func(s string) bool { return s == "" })
+		}
+		top := 0 // segments of the role folder it is under, shown by no row
+		for _, r := range fs {
+			if p := r.Name + f.Delim; r.Role != "" && f.Delim != "" && strings.HasPrefix(f.Name, p) {
+				top = max(top, min(len(strings.Split(r.Name, f.Delim)), len(segs)-1))
+			}
+		}
+		for k := top + 1; k <= len(segs); k++ {
+			key := strings.Join(segs[:k], "\x00")
+			n := nodes[key]
+			if n == nil {
+				n = &sideFolder{Folder: core.Folder{AccountID: acc}, name: segs[k-1], key: key, depth: k - top}
+				nodes[key] = n
+			}
+			n.sum += f.Unread
+			if k == len(segs) {
+				n.Folder = f
+			} else {
+				n.kids = true
+			}
+		}
+	}
+	// "\x00" sorts before any other byte: a parent's subtree comes right after it.
+	for _, k := range slices.Sorted(maps.Keys(nodes)) {
+		out = append(out, *nodes[k])
+	}
+	return out
+}
+
+// Sidebar: the page switch and search; Compose; the unified views; the label
+// and account groups, each foldable; the outbox while it holds mail.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
@@ -60,31 +119,35 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			ui.Text(c, i18n.T("mail.compose"))
 		})
 		ui.Box(c).Height(th.Space(2))
-		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread(), 0)
-		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0, 0)
-		ui.Box(c).Height(th.Space(2.5))
-		p.labelNav(c)
-		for _, acc := range a.accounts {
-			p.account(c, acc)
-		}
+		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread())
+		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0)
 		if n := len(p.outbox); n > 0 {
-			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n, 0)
+			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
 		}
-		kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
-			a.navigate(Route{Page: PageSettings})
-			a.openAddAccount()
-		}}).Children(func() {
-			ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
-			ui.Text(c, i18n.T("mail.add_account"))
+		ui.Box(c).Height(th.Space(2))
+		p.labelNav(c)
+		kit.SidebarCollapsible(c, &p.accountsOpen, true, func() {
+			ui.Text(c, i18n.T("mail.accounts")).SingleLine().Grow(1).Shrink(1)
+		}, func() {
+			for _, acc := range a.accounts {
+				p.account(c, acc)
+			}
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: func() {
+				a.navigate(Route{Page: PageSettings})
+				a.openAddAccount()
+			}}).Children(func() {
+				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
+				ui.Text(c, i18n.T("mail.add_account"))
+			})
 		})
 	})
 }
 
-// navItem is a view in the sidebar, with its icon and count; indent is in spacing steps.
-func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int, indent float32) {
+// navItem is a view in the sidebar, with its icon and count.
+func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int) {
 	t := theme.Of(c)
-	on := p.a.route.Page == PageMail && p.a.route.View == v && !p.searched // results: no view is shown
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: indent, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+	on := p.viewShown(v)
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, icon, on)
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
@@ -94,34 +157,94 @@ func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count
 	})
 }
 
-// account is an account's foldable header over its folders; folded, the
-// header shows the unread count.
+// viewShown is whether the mail page shows v; while results show, no view is.
+func (p *mailPage) viewShown(v core.View) bool {
+	return p.a.route.Page == PageMail && p.a.route.View == v && !p.searched
+}
+
+// account is an account's foldable row, its provider's mark, name, sync
+// trouble and unread count, over all its folders.
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
-	open := p.accountOpen(acc.ID)
-	kit.Collapsible(c, open, func() {
-		ui.Text(c, cmp.Or(acc.Alias, acc.Email)).SingleLine().Grow(1).Shrink(1)
-		if n := p.a.unread[acc.ID]; !*open && n > 0 {
-			ui.Text(c, strconv.Itoa(n))
+	t := theme.Of(c)
+	name := accountName(acc)
+	kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
+		mark(c, accountProvider(p.a, acc), theme.MarkSm) // as in the settings sidebar
+		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
+		switch p.a.syncHealth(acc).level { // which account the top bar's status means
+		case syncAction:
+			kit.StatusDot(c, kit.Error).Label(i18n.T("settings.dot.action"))
+		case syncRetrying:
+			kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.retrying"))
+		}
+		if n := p.a.unread[acc.ID]; n > 0 {
+			kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
 		}
 	}, func() {
-		fs := p.folders[acc.ID]
-		if !slices.ContainsFunc(fs, func(f core.Folder) bool { return f.Role == "drafts" }) {
-			fs = append(slices.Clone(fs), core.Folder{AccountID: acc.ID, Role: "drafts"})
-		}
-		ui.Column(c).Gap(c.Theme().Space(0.5)).Children(func() { // the sidebar's own gap
-			for _, f := range sortFolders(fs) {
-				v := core.View{FolderID: f.ID}
-				if f.ID == 0 {
-					v = localDrafts(acc.ID)
-				}
-				p.navItem(c, cmp.Or(folderIcons[f.Role], "folder"), folderName(f), v, f.Unread, 4.5)
+		hide := "" // the subtree of a folded folder
+		for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
+			if hide != "" && strings.HasPrefix(f.key, hide) {
+				continue
 			}
-		})
+			hide = ""
+			open := boolAt(p.folderOpen, folderKey{acc.ID, f.key}, true)
+			if f.kids && !*open {
+				hide = f.key + "\x00"
+			}
+			p.folderRow(c, f, open)
+		}
 	})
 }
 
-// accountOpen is whether an account's folders show in the sidebar; at first they do.
-func (p *mailPage) accountOpen(id int64) *bool { return boolAt(p.accOpen, id, true) }
+// folderKey names a user folder of an account by its path, folded or not.
+type folderKey struct {
+	acc  int64
+	path string
+}
+
+// folderRow is a folder's row, indented a step per level; a parent's chevron
+// folds it, and folded it counts the unread under it too. Junk and Trash show
+// no count.
+func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
+	t := theme.Of(c)
+	v := core.View{FolderID: f.ID}
+	if f.Role == "drafts" && f.ID == 0 {
+		v = localDrafts(f.AccountID)
+	}
+	real := f.ID != 0 || f.Role != ""
+	on := real && p.viewShown(v)
+	toggle := func() { *open = !*open }
+	click := func() { p.a.navigate(Route{Page: PageMail, View: v}) }
+	if !real {
+		click = toggle
+	}
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: 4 * float32(f.depth), OnClick: click})
+	item.Children(func() {
+		kit.SidebarIcon(c, item, cmp.Or(folderIcons[f.Role], "folder"), on)
+		ui.Text(c, f.name).SingleLine().Grow(1).Shrink(1)
+		n := f.Unread
+		if f.kids && !*open {
+			n = f.sum
+		}
+		if n > 0 && f.Role != "junk" && f.Role != "trash" {
+			kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
+		}
+		if f.kids {
+			ch, label := kit.SidebarChevron(c, 0), "mail.folder.expand"
+			if *open {
+				ch, label = ch.Rotate(90), "mail.folder.collapse"
+			}
+			if real { // the row opens the folder; the chevron folds it
+				ch.OnClick(toggle).Label(i18n.Tf(label, f.name))
+			}
+		}
+	})
+}
+
+// accountOpen is whether an account's folders show in the sidebar; at first
+// only the first account's do.
+func (p *mailPage) accountOpen(id int64) *bool {
+	return boolAt(p.accOpen, id, len(p.a.accounts) > 0 && p.a.accounts[0].ID == id)
+}
 
 // boolAt is m[k], first set to def: a pointer that outlives the frame, as kit.Collapsible needs.
 func boolAt[K comparable](m map[K]*bool, k K, def bool) *bool {

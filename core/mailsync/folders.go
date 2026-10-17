@@ -22,6 +22,8 @@ type folder struct {
 var specialUse = map[imap.MailboxAttr]string{
 	imap.MailboxAttrSent: "sent", imap.MailboxAttrTrash: "trash", imap.MailboxAttrDrafts: "drafts",
 	imap.MailboxAttrJunk: "junk", imap.MailboxAttrArchive: "archive",
+	// Gmail's virtual folders ([Gmail]/All Mail, Starred, Important): the sidebar folds them away.
+	imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged", imap.MailboxAttrImportant: "important",
 }
 
 var roleNames = map[string]string{
@@ -47,6 +49,14 @@ func role(d *imap.ListData) string {
 		name = name[strings.LastIndexByte(name, byte(d.Delim))+1:]
 	}
 	return roleNames[strings.ToLower(name)]
+}
+
+// delim is the folder's hierarchy delimiter, "" when the server has none.
+func delim(d *imap.ListData) string {
+	if d.Delim == 0 {
+		return ""
+	}
+	return string(d.Delim)
 }
 
 func selectable(d *imap.ListData) bool {
@@ -81,9 +91,9 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		}
 		names = append(names, d.Mailbox)
 		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO folders(account_id, name, role, role_since) VALUES (?, ?, ?, unixepoch())
-				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role`,
-			Args: []any{accountID, d.Mailbox, role(d)},
+			SQL: `INSERT INTO folders(account_id, name, role, delim, role_since) VALUES (?, ?, ?, ?, unixepoch())
+				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role, delim = excluded.delim`,
+			Args: []any{accountID, d.Mailbox, role(d), delim(d)},
 		})
 	}
 	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
@@ -161,13 +171,25 @@ func anys[T any](s []T) []any {
 // Roles are the roles a user can give a folder (folders.role_override).
 var Roles = []string{"drafts", "sent", "junk", "trash", "archive"}
 
+// AltRole is the detected role that stands in for role when no folder is
+// detected with it: Gmail's All Mail for archive. Else role itself.
+func AltRole(role string) string {
+	if role == "archive" {
+		return "all"
+	}
+	return role
+}
+
 // RoleFolder is the account's folder of role, the one place roles resolve: the
 // folder the user gave the role, else the lowest id detected with it, unless the
-// user gave that folder another role or none. 0 when there is none.
+// user gave that folder another role or none. Without an archive detected,
+// Gmail's All Mail is it: archiving there takes mail out of the inbox. 0 when
+// there is none.
 func RoleFolder(ctx context.Context, db *store.DB, accountID int64, role string) (id int64, name string, err error) {
+	alt := AltRole(role)
 	rows, err := db.Query(ctx, `SELECT id, name FROM folders WHERE account_id = ?
-		AND (role_override = ? OR (role_override = '' AND role = ?)) ORDER BY role_override = ? DESC, id LIMIT 1`,
-		accountID, role, role, role)
+		AND (role_override = ? OR (role_override = '' AND role IN (?, ?))) ORDER BY role_override = ? DESC, role = ? DESC, id LIMIT 1`,
+		accountID, role, role, alt, role, role)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, "", err
 	}
