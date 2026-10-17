@@ -587,7 +587,11 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					return
 				}
 				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
-				if hint := cardHint(card.Fields[1:]); hint != "" {
+				hint := cardHint(card.Fields[1:])
+				if card.Builtin && len(card.Fields) > 1 { // the link beside the code: "也可以打开 id.me 的确认链接"
+					hint = i18n.Tf("codes.card.also_"+card.Fields[1].Label, card.Fields[1].Value)
+				}
+				if hint != "" {
 					kit.Text(c, hint, t.Text.Sm).TextColor(t.Muted)
 				}
 			})
@@ -604,6 +608,9 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					label := b.Label
 					if card.Builtin { // core leaves a built-in card's words to the app
 						label = map[string]string{"copy": i18n.T("codes.copy_button"), "open-url": i18n.T("codes.open")}[b.Kind]
+						if b.Kind == "open-url" && len(card.Buttons) > 1 { // beside Copy, say what opens
+							label = i18n.T("codes.open_link")
+						}
 					}
 					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself, stepping back to secondary
 						label, o.Icon, o.Variant = i18n.T("codes.copied"), "check", kit.Secondary

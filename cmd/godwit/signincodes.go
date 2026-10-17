@@ -103,7 +103,11 @@ func recentCodeMenu(codes []core.SignInCode, now time.Time, use func(core.SignIn
 		}
 		label := code.Code + " · " + codeSender(code.From)
 		if code.Code == "" {
-			label = i18n.Tf("codes.link_item", gomail.LinkHost(code.Link), codeSender(code.From))
+			key := "codes.link_item"
+			if code.Confirm {
+				key = "codes.confirm_item"
+			}
+			label = i18n.Tf(key, gomail.LinkHost(code.Link), codeSender(code.From))
 		}
 		items = append(items, &mygo.MenuItem{Label: label, Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
 	}
@@ -208,7 +212,11 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				kit.Text(c, note, t.Text.Base).TextColor(noteColor).Grow(1).Shrink(1).SingleLine()
 			} else {
 				ui.Column(c).Grow(1).Shrink(1).Children(func() {
-					kit.Text(c, i18n.T("codes.link"), t.Text.Base).FontWeight(500).SingleLine()
+					kind := i18n.T("codes.link")
+					if b.code.Confirm {
+						kind = i18n.T("codes.card.confirm")
+					}
+					kit.Text(c, kind, t.Text.Base).FontWeight(500).SingleLine()
 					kit.Text(c, sender+" · "+gomail.LinkHost(b.code.Link), t.Text.Sm).TextColor(t.Muted).SingleLine()
 				})
 				action, icon = i18n.T("codes.open"), "external-link"

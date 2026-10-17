@@ -2047,5 +2047,10 @@
   "codes_link_item": "Sign-in link · {arg1} · {arg2}",
   "codes_card_code": "Sign-in code",
   "codes_card_link": "Sign-in link",
-  "reader_ai_card_builtin": "{arg1} · built-in plugin"
+  "reader_ai_card_builtin": "{arg1} · built-in plugin",
+  "codes_card_confirm": "Confirmation link",
+  "codes_card_also_link": "Or open the sign-in link on {arg1}",
+  "codes_card_also_confirm": "Or open the confirmation link on {arg1}",
+  "codes_open_link": "Open link",
+  "codes_confirm_item": "Confirmation link · {arg1} · {arg2}"
 }

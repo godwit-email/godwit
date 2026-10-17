@@ -982,5 +982,10 @@
   "codes_link_item": "登录链接 · {arg1} · {arg2}",
   "codes_card_code": "验证码",
   "codes_card_link": "登录链接",
-  "reader_ai_card_builtin": "{arg1} · 内置插件"
+  "reader_ai_card_builtin": "{arg1} · 内置插件",
+  "codes_card_confirm": "确认链接",
+  "codes_card_also_link": "也可以打开 {arg1} 的登录链接",
+  "codes_card_also_confirm": "也可以打开 {arg1} 的确认链接",
+  "codes_open_link": "打开链接",
+  "codes_confirm_item": "确认链接 · {arg1} · {arg2}"
 }

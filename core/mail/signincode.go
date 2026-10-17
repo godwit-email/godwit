@@ -35,6 +35,8 @@ func signInNear(s string, start, end int) bool {
 	return signInContext.MatchString(subject) || signInContext.MatchString(s[from+1:end+to])
 }
 
+var aloneCode = regexp.MustCompile(`^(?:[0-9]{6,8}|[0-9]{3}[ -][0-9]{3})$`)
+var codeWord = regexp.MustCompile(`(?i)\b(?:code|passcode|OTP)\b|代码|验证码|校验码|确认码|动态码|动态密码`)
 var explicitCode = regexp.MustCompile(`(?i)[:：=]|\bis\b|为|是`)
 var codeBefore = regexp.MustCompile(`(?i)` + codeToken + `\s+(?:is your|is the)\s+` + codeHint)
 
@@ -70,6 +72,19 @@ func SignInCode(subject, text, htmlBody string) string {
 			}
 			candidates = append(candidates, [2]int{hint[1] + m[2], hint[1] + m[3]})
 		}
+	}
+	// A code alone on its line, under one that speaks of it: "Copy this
+	// code and enter it in your browser." then "118169". OTP-shaped only.
+	offset, prev := 0, ""
+	for line := range strings.SplitSeq(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			if aloneCode.MatchString(t) && codeWord.MatchString(prev) {
+				start := offset + strings.Index(line, t)
+				candidates = append(candidates, [2]int{start, start + len(t)})
+			}
+			prev = t
+		}
+		offset += len(line) + 1
 	}
 	for _, m := range codeBefore.FindAllStringSubmatchIndex(s, -1) {
 		candidates = append(candidates, [2]int{m[2], m[3]})

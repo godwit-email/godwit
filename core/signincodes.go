@@ -13,6 +13,7 @@ import (
 type SignInCode struct {
 	MessageID        int64
 	Code, Link, From string
+	Confirm          bool // Link confirms a new account's address rather than signing in
 	ReceivedAt       time.Time
 }
 
@@ -38,8 +39,13 @@ func (s *Service) RecentSignInCodes(ctx context.Context, now time.Time) ([]SignI
 	for _, row := range rows.Values {
 		subject, text, html := store.Str(row[1]), store.Str(row[3]), store.Str(row[4])
 		code, link := mail.SignInCode(subject, text, html), mail.SignInLink(subject, text, html)
+		confirm := false
+		if link == "" {
+			link = mail.ConfirmLink(text, html)
+			confirm = link != ""
+		}
 		if code != "" || link != "" {
-			out = append(out, SignInCode{MessageID: store.Int(row[0]), Code: code, Link: link, From: store.Str(row[2]), ReceivedAt: time.Unix(store.Int(row[5]), 0)})
+			out = append(out, SignInCode{MessageID: store.Int(row[0]), Code: code, Link: link, Confirm: confirm, From: store.Str(row[2]), ReceivedAt: time.Unix(store.Int(row[5]), 0)})
 		}
 	}
 	return out, nil

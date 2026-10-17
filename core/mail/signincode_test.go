@@ -73,3 +73,22 @@ func TestGroupCode(t *testing.T) {
 		}
 	}
 }
+
+const idme = `<p>感谢您创建 ID.me Wallet!</p><p>您可以通过单击下面的链接来确认您的电子邮件地址。</p>
+<a href="https://account.id.me/confirm/abc">确认您的电子邮件</a><p>请注意：此链接将在 15 分钟后过期。</p>
+<p>无法点击此电子邮件中的按钮?</p><p>复制此代码并在浏览器中输入以完成确认。</p><div>118169</div>`
+
+func TestSignInCodeAloneOnItsLine(t *testing.T) {
+	if got := mail.SignInCode("欢迎来到 ID.me!", "", idme); got != "118169" {
+		t.Fatalf("ID.me code %q", got)
+	}
+	for _, tt := range []struct{ name, body string }{
+		{"no code words above", "Order shipped\n\n482913"},
+		{"too short", "Your card code\n\n1234"},
+		{"phone-like", "Call this code line\n\n13800138000"},
+	} {
+		if got := mail.SignInCode("Hello", tt.body, ""); got != "" {
+			t.Errorf("%s: %q", tt.name, got)
+		}
+	}
+}

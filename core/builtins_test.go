@@ -37,9 +37,20 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 	cards, err = e.s.PluginCards(bg, linkID)
 	require.NoError(t, err)
 	require.Equal(t, []Card{{Plugin: SignInCodesPlugin, Title: "link", Builtin: true, Fields: []CardField{{Value: "acme.example"}}, Buttons: []CardButton{{Kind: "open-url", Value: "https://acme.example/l/1"}}}}, cards)
+	e.put(t, "INBOX", eml("both@x", "ID.me <hello@id.me>", e.acc.Email, "欢迎来到 ID.me!", now.Format(time.RFC1123Z),
+		"确认您的电子邮件：https://account.id.me/confirm/abc\n\n复制此代码并在浏览器中输入以完成确认。\n\n118169"))
+	e.sync(t)
+	cards, err = e.s.PluginCards(bg, e.idOf(t, "both@x"))
+	require.NoError(t, err)
+	require.Equal(t, []Card{{Plugin: SignInCodesPlugin, Title: "code", Builtin: true,
+		Fields:  []CardField{{Value: "118 169"}, {Label: "confirm", Value: "account.id.me"}},
+		Buttons: []CardButton{{Kind: "copy", Value: "118169"}, {Kind: "open-url", Value: "https://account.id.me/confirm/abc"}}}}, cards)
 	codes, err := e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)
-	require.Len(t, codes, 2)
+	require.Len(t, codes, 3)
+	both := codes[slices.IndexFunc(codes, func(c SignInCode) bool { return c.Code == "118169" })]
+	require.True(t, both.Confirm)
+	require.Equal(t, "https://account.id.me/confirm/abc", both.Link)
 
 	require.NoError(t, e.s.SetPluginEnabled(bg, SignInCodesPlugin, false))
 	require.False(t, builtinOf().Enabled)

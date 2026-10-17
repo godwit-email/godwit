@@ -42,3 +42,20 @@ func TestSignInLink(t *testing.T) {
 		})
 	}
 }
+
+func TestConfirmLink(t *testing.T) {
+	for _, tt := range []struct{ name, text, html, want string }{
+		{"ID.me", "", idme, "https://account.id.me/confirm/abc"},
+		{"English", "", `<a href="https://x.example/v/1">Verify email address</a>`, "https://x.example/v/1"},
+		{"plain text", "Confirm your email: https://x.example/v/2", "", "https://x.example/v/2"},
+		{"not a confirm button", "", `<a href="https://x.example/s">Email settings</a>`, ""},
+		{"two", "", `<a href="https://x.example/1">Confirm your email</a><a href="https://x.example/2">Verify email</a>`, ""},
+	} {
+		if got := mail.ConfirmLink(tt.text, tt.html); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
+	if got := mail.SignInLink("欢迎来到 ID.me!", "", idme); got != "" {
+		t.Fatalf("a confirm link is not a sign-in link: %q", got)
+	}
+}

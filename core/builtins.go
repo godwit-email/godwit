@@ -97,14 +97,26 @@ func (s *Service) builtinCards(ctx context.Context, m plugins.MailMessage) ([]Ca
 	return out, nil
 }
 
-// signInCodeCard is the reader's card for a sign-in code (Copy) or, without
-// one, a sign-in link (Open, its host shown).
+// signInCodeCard is the reader's card: a code (Copy), and its mail's sign-in
+// or confirmation link beside it (Open link); else the link alone (Open),
+// its host shown. Title and a link field's Label are keys ("link",
+// "confirm") the app words.
 func signInCodeCard(m plugins.MailMessage) (Card, bool) {
-	if code := mail.SignInCode(m.Subject, m.Text, m.HTML); code != "" {
-		return Card{Title: "code", Fields: []CardField{{Value: mail.GroupCode(code)}}, Buttons: []CardButton{{Kind: "copy", Value: code}}}, true
+	code := mail.SignInCode(m.Subject, m.Text, m.HTML)
+	kind, link := "link", mail.SignInLink(m.Subject, m.Text, m.HTML)
+	if link == "" {
+		kind, link = "confirm", mail.ConfirmLink(m.Text, m.HTML)
 	}
-	if link := mail.SignInLink(m.Subject, m.Text, m.HTML); link != "" {
-		return Card{Title: "link", Fields: []CardField{{Value: mail.LinkHost(link)}}, Buttons: []CardButton{{Kind: "open-url", Value: link}}}, true
+	switch {
+	case code != "":
+		c := Card{Title: "code", Fields: []CardField{{Value: mail.GroupCode(code)}}, Buttons: []CardButton{{Kind: "copy", Value: code}}}
+		if link != "" {
+			c.Fields = append(c.Fields, CardField{Label: kind, Value: mail.LinkHost(link)})
+			c.Buttons = append(c.Buttons, CardButton{Kind: "open-url", Value: link})
+		}
+		return c, true
+	case link != "":
+		return Card{Title: kind, Fields: []CardField{{Value: mail.LinkHost(link)}}, Buttons: []CardButton{{Kind: "open-url", Value: link}}}, true
 	}
 	return Card{}, false
 }
