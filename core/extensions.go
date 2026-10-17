@@ -1058,7 +1058,11 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 	}
 	if err == nil {
 		// The old values stay redacted: the running instance may hold them.
-		if rp := s.running[name]; rp != nil && rp.native != nil {
+		rp := s.running[name]
+		if rp != nil {
+			s.forgetPluginModels(name, rp) // runs on the old settings end, as after a model service edit
+		}
+		if rp != nil && rp.native != nil {
 			if err := s.configureNative(ctx, name, rp); err != nil {
 				return fmt.Errorf("plugin %s did not accept the saved settings: %w", name, err)
 			}

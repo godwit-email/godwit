@@ -253,16 +253,31 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if t.rp.native == nil {
 		r := t.rp.row
 		hosts, _ := plugins.EgressFor(plugins.KindModels, r.m, r.granted == r.permHash, true, true)
+		var resp *http.Response
 		err := t.rp.host.net.Allowed(out.URL, hosts)
-		e := gateway.Entry{Source: gateway.SourcePlugin, Extension: t.name, Tool: "plugin:" + t.name + ":models",
-			Decision: "allow", Destinations: []string{plugins.HostPort(out.URL)}} // host and port only, as for net.fetch
-		var ne *plugins.NetError
-		if errors.As(err, &ne) {
-			e.Decision, e.Reason = "deny", ne.Reason
+		if err == nil {
+			resp, err = t.base.RoundTrip(out)
 		}
-		if aerr := t.s.gateway().Record(context.WithoutCancel(ctx), e); err != nil || aerr != nil {
+		// Audited once its outcome is known, as net.fetch's hops are: host and port only.
+		e := gateway.Entry{Source: gateway.SourcePlugin, Extension: t.name, Tool: "plugin:" + t.name + ":models",
+			Decision: "allow", Destinations: []string{plugins.HostPort(out.URL)}}
+		var ne *plugins.NetError
+		switch {
+		case err == nil:
+		case errors.As(err, &ne):
+			e.Decision, e.Reason = "deny", ne.Reason
+		case ctx.Err() != nil:
+			e.Decision, e.Reason = "error", "cancelled"
+		default:
+			e.Decision, e.Reason = "error", plugins.FailReason(err)
+		}
+		if aerr := t.s.gateway().Record(context.WithoutCancel(ctx), e); aerr != nil {
+			if resp != nil {
+				resp.Body.Close()
+			}
 			return nil, errors.Join(err, aerr)
 		}
+		return resp, err
 	}
 	return t.base.RoundTrip(out)
 }

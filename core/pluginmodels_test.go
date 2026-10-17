@@ -278,6 +278,17 @@ func TestPluginModelWithoutPrepareHoldsMail(t *testing.T) {
 }
 
 func TestStoppingPluginEndsItsRuns(t *testing.T) {
+	for name, change := range map[string]func(*Service) error{
+		"stop": func(s *Service) error { return s.SetPluginEnabled(t.Context(), "p", false) },
+		"settings": func(s *Service) error {
+			return s.SetPluginConfig(t.Context(), "p", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)})
+		},
+	} {
+		t.Run(name, func(t *testing.T) { testPluginChangeEndsRuns(t, change) })
+	}
+}
+
+func testPluginChangeEndsRuns(t *testing.T, change func(*Service) error) {
 	s := newMailContextService(t)
 	srv, host := modelServer(t, s, "openai")
 	srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
@@ -292,7 +303,7 @@ func TestStoppingPluginEndsItsRuns(t *testing.T) {
 		done <- err
 	}()
 	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, s.SetPluginEnabled(t.Context(), "p", false))
+	require.NoError(t, change(s))
 	select {
 	case err := <-done:
 		var ae *ai.Error
@@ -324,4 +335,24 @@ func TestStoppedPluginClientRefuses(t *testing.T) {
 	_, err = j.Ask(t.Context(), "mail", qs)
 	assert.Error(t, err)
 	assert.Equal(t, int64(1), hits.Load())
+}
+
+// A model request is audited with what happened to it: here the name
+// resolves to a loopback address, which the plugin network refuses.
+func TestPluginModelRequestAuditedOutcome(t *testing.T) {
+	s := newMailContextService(t)
+	srv, host := modelServer(t, s, "openai")
+	srv.Script(testllm.Turn{Text: []string{"never"}})
+	s.pluginNet.AllowLoopback = false
+	startModelPlugin(t, s, "p", host, httpModelPlugin("openai-completions", host))
+	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
+	require.NoError(t, err)
+	e, err := s.aiEngine()
+	require.NoError(t, err)
+	_, err = s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
+	assert.Error(t, err)
+	rows, err := s.db.Query(t.Context(), "SELECT destination, decision, reason FROM audit_log WHERE tool = 'plugin:p:models'")
+	require.NoError(t, err)
+	require.NotEmpty(t, rows.Values)
+	assert.Equal(t, []any{host, "deny", "private_address"}, rows.Values[0])
 }
