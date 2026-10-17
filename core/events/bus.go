@@ -29,6 +29,9 @@ type Event struct {
 	ThreadIDs  []int64
 	MessageIDs []int64
 	Error      string
+	// Kind is a sync.failed's conn.FailureKind (dns, connect, timeout, tls,
+	// auth, protocol), or empty when the connection was fine.
+	Kind string
 	// ConversationID is set on approvals.changed.
 	ConversationID int64
 }

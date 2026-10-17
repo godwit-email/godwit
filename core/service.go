@@ -431,7 +431,7 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
 		if ctx.Err() == nil {
 			// Safe to show: conn never includes server text or the password in login errors.
-			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error()})
+			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.Classify(err))})
 		}
 		return err
 	}

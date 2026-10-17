@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -243,6 +244,37 @@ func TestShots(t *testing.T) {
 		s.seeTranslation(m.ID, "能否在周五前看一下")
 		shot(s.harness, "MainTranslated")
 	})
+	for _, v := range []struct {
+		name string
+		evs  func(s *shotEnv) []events.Event
+		wait time.Duration
+	}{
+		{"MainSyncOk", func(s *shotEnv) []events.Event { return nil }, 0},
+		{"MainSyncRetrying", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "connect", Error: "dial tcp: connection refused"}}
+		}, 0},
+		{"MainSyncPassword", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "auth", Error: "login refused"},
+				{Type: events.SyncFailed, AccountID: s.work.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 0},
+		{"MainSyncFailed", func(s *shotEnv) []events.Event {
+			return []events.Event{{Type: events.SyncFailed, AccountID: s.you.ID, Kind: "timeout", Error: "i/o timeout"}}
+		}, 2 * time.Hour},
+	} {
+		t.Run(v.name, func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.settle()
+			s.post(func() {
+				for _, ev := range v.evs(s) {
+					s.app.onEvent(ev)
+				}
+			})
+			s.drain()
+			s.advance(v.wait)
+			s.app.syncOpen = true
+			shot(s.harness, v.name)
+		})
+	}
 	t.Run("MainWindows", func(t *testing.T) {
 		old := goos
 		goos = "windows"

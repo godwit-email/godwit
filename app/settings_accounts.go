@@ -506,18 +506,10 @@ func rangeOptions(cur ...core.SyncRange) []kit.Option[core.SyncRange] {
 
 func (p *settingsPage) syncState(acc core.Account) string {
 	a := p.a
-	switch {
-	case acc.Status != "ok":
+	if acc.Status != "ok" {
 		return i18n.T("settings.account.sync.stopped")
-	case a.syncing[acc.ID]:
-		return i18n.T("shell.sync.syncing")
-	case a.syncErr[acc.ID] != "":
-		return i18n.T("shell.sync.failed")
 	}
-	if at, ok := a.syncedAtBy[acc.ID]; ok {
-		return i18n.Tf("shell.sync.synced", a.ago(at))
-	}
-	return ""
+	return a.syncHealth(acc).status
 }
 
 func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {

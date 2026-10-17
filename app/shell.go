@@ -2,11 +2,8 @@ package app
 
 import (
 	"cmp"
-	"maps"
 	"math"
 	"runtime"
-	"slices"
-	"strconv"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -106,7 +103,13 @@ func (a *App) onEvent(ev events.Event) {
 		a.tick()
 	case events.SyncFailed:
 		delete(a.syncing, ev.AccountID)
-		a.syncErr[ev.AccountID] = ev.Error
+		f := a.syncErr[ev.AccountID]
+		f.err, f.kind = ev.Error, ev.Kind
+		if f.since.IsZero() {
+			f.since = a.clock.Now()
+		}
+		a.syncErr[ev.AccountID] = f
+		a.tick() // a failure that lasts turns red
 	case events.MessageReceived:
 		a.mailArrived(ev)
 	}
@@ -274,41 +277,6 @@ func winCaption(c *ui.Context) {
 		ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		kit.Text(c, "Godwit", t.Text.Sm).SingleLine()
 	})
-}
-
-// syncStatus tells, most urgent first: an account needs signing in again
-// (a click opens its settings), a sync failed (hover for the error), a sync
-// is under way, or how long ago the last one finished.
-func (a *App) syncStatus(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	small := t.Text.Sm
-	for _, acc := range a.accounts {
-		if acc.Status == "reauth_required" {
-			r := Route{Page: PageSettings, Settings: "account:" + strconv.FormatInt(acc.ID, 10)}
-			kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(small).TextColor(t.WarningText).Children(func() {
-				kit.StatusDot(c, kit.Attention)
-				ui.Text(c, i18n.T("shell.sync.reauth"))
-			}).OnClick(func() { a.navigate(r) })
-			return
-		}
-	}
-	row := ui.Row(c).Gap(th.Space(1.5)).FontSize(small).TextColor(t.Muted)
-	switch {
-	case len(a.syncing) > 0:
-		row.Children(func() { ui.Text(c, i18n.T("shell.sync.syncing")) })
-	case len(a.syncErr) > 0:
-		id := slices.Min(slices.Collect(maps.Keys(a.syncErr)))
-		kit.Tooltip(c, row, a.syncErr[id])
-		row.Children(func() {
-			kit.StatusDot(c, kit.Error)
-			ui.Text(c, i18n.T("shell.sync.failed"))
-		})
-	case !a.syncedAt.IsZero():
-		row.Children(func() {
-			kit.StatusDot(c, kit.OK)
-			ui.Text(c, a.syncedAgo())
-		})
-	}
 }
 
 func (a *App) syncedAgo() string { return i18n.Tf("shell.sync.synced", a.ago(a.syncedAt)) }
