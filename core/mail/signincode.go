@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-const codeHint = `(?:\b(?:verification|security|authentication|confirmation|login|sign[ -]?in|one[ -]time)\s+(?:verification\s+)?code\b|\bOTP\b|\byour code\b|验证码|校验码|动态码|一次性密码)`
+const codeHint = `(?:\b(?:verification|security|authentication|confirmation|login|sign[ -]?in|one[ -]time|single[ -]use)\s+(?:verification\s+)?code\b|\bOTP\b|\bpasscode\b|\byour code\b|验证码|校验码|动态码|动态密码|一次性密码|一次性代码|安全代码|验证代码)`
 const codeToken = `([0-9]{3}[ \t-][0-9]{3}|[A-Za-z0-9]{4,10})`
 
 var codeHints = regexp.MustCompile(`(?i)` + codeHint)

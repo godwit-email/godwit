@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\bmagic link\b|登录|登入`)
+var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b|登录|登入`)
 
 // A button's own words, whole: "Sign in", "Log in to Acme", "Click here to
 // sign in", "登录". "Sign in activity" in a security alert is not one.

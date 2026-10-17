@@ -40,6 +40,9 @@ func TestSignInCode(t *testing.T) {
 		{"confirm email", "Confirm your email", "Your confirmation code: 731904", "731904"},
 		{"verified payment", "Your payment was verified", "Your code is SAVE20 for 20% off", ""},
 		{"your code at sign-in", "Sign in to Acme", "Your code is 482913", "482913"},
+		{"Microsoft one-time code", "你的一次性代码", "我们已收到你要求获得 Microsoft 帐户所用的一次性代码的申请。\n\n你的一次性代码为: 188223", "188223"},
+		{"Microsoft single-use code", "Your single-use code", "Your single-use code is: 188223", "188223"},
+		{"passcode", "Sign in", "Your passcode is 731904", "731904"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
