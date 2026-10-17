@@ -39,6 +39,23 @@ func signInCodePosition(area mygo.Rectangle, displays []mygo.Display, saved *myg
 	return mygo.Point{X: area.X + max(0, (area.Width-codeBannerWidth)/2), Y: area.Y + max(0, area.Height-codeBannerHeight-codeBannerInset)}
 }
 
+const codeBannerSnap = 16 // how close, in points, a drag comes before the banner holds still
+
+// snapSignInCode holds a dragged banner on the work area's vertical centre
+// line, and on its default spot there, once it comes within codeBannerSnap.
+func snapSignInCode(pos mygo.Point, area mygo.Rectangle) mygo.Point {
+	home := signInCodePosition(area, nil, nil)
+	if abs(pos.X-home.X) <= codeBannerSnap {
+		pos.X = home.X
+		if abs(pos.Y-home.Y) <= codeBannerSnap {
+			pos.Y = home.Y
+		}
+	}
+	return pos
+}
+
+func abs(n int) int { return max(n, -n) }
+
 func loadSignInCodePosition(path string) *mygo.Point {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -151,6 +168,8 @@ type signInBanner struct {
 	win                     *mygo.Window
 	timer                   *time.Timer
 	failed, copied, hovered bool
+	dragging                bool
+	dragFrom, dragStart     mygo.Point     // the cursor and the banner where the drag began
 	avatar                  ui.ImageSource // the sender's image once loaded; nil keeps the initial
 	stopAvatar              context.CancelFunc
 	position                mygo.Point
@@ -167,7 +186,8 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 			ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(t.Radius.X2l).
 				Material(glass.Glass{Style: glass.Clear, Tint: t.Background}).Opacity(0.28).PassThrough()
 		}
-		row := ui.Row(c).Fill().Padding(th.Space(2)).Gap(th.Space(3)).AlignItems(ui.Center).DragWindow()
+		row := ui.Row(c).Fill().Padding(th.Space(2)).Gap(th.Space(3)).AlignItems(ui.Center)
+		p.dragSignInCode(c, b, row.Pressed())
 		// The countdown waits while the pointer rests on the banner.
 		if h := row.Hovered(); h != b.hovered && !b.copied && b.timer != nil {
 			b.hovered = h
@@ -210,6 +230,24 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 			btn.OnClick(func() { p.useSignInCode(b.code) })
 		})
 	})
+}
+
+// dragSignInCode moves the banner with the pointer, as DragWindow would,
+// but snaps it (snapSignInCode) on the way, which a system drag cannot.
+func (p *platform) dragSignInCode(c *ui.Context, b *signInBanner, pressed bool) {
+	if !pressed {
+		b.dragging = false
+		return
+	}
+	cursor := mygo.Screen.CursorScreenPoint()
+	if !b.dragging {
+		b.dragging, b.dragFrom, b.dragStart = true, cursor, b.position
+	}
+	pos := mygo.Point{X: b.dragStart.X + cursor.X - b.dragFrom.X, Y: b.dragStart.Y + cursor.Y - b.dragFrom.Y}
+	if pos = snapSignInCode(pos, mygo.Screen.DisplayNearestPoint(cursor).WorkArea); pos != b.position && b.win != nil {
+		b.win.SetPosition(pos.X, pos.Y) // OnMove records it
+	}
+	c.Invalidate() // the pointer moves without telling the view; follow it every frame
 }
 
 // signInAvatar is the sender's image as the reader shows it. Without the

@@ -158,3 +158,23 @@ func TestSignInBannerShowsLoadedAvatar(t *testing.T) {
 		t.Fatalf("avatar center %v, want the sender's image", px)
 	}
 }
+
+func TestSnapSignInCode(t *testing.T) {
+	area := mygo.Rectangle{X: 0, Y: 25, Width: 1440, Height: 850} // home is {560, 803}
+	for _, tc := range []struct {
+		name    string
+		in, out mygo.Point
+	}{
+		{"near the centre line", mygo.Point{X: 572, Y: 400}, mygo.Point{X: 560, Y: 400}},
+		{"near home", mygo.Point{X: 550, Y: 790}, mygo.Point{X: 560, Y: 803}},
+		{"near home's height only", mygo.Point{X: 700, Y: 800}, mygo.Point{X: 700, Y: 800}},
+		{"free", mygo.Point{X: 200, Y: 300}, mygo.Point{X: 200, Y: 300}},
+		{"just outside", mygo.Point{X: 560 + codeBannerSnap + 1, Y: 300}, mygo.Point{X: 577, Y: 300}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := snapSignInCode(tc.in, area); got != tc.out {
+				t.Fatalf("snap %+v = %+v, want %+v", tc.in, got, tc.out)
+			}
+		})
+	}
+}
