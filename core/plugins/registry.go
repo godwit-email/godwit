@@ -48,7 +48,8 @@ type RegistryRelease struct {
 	MinGodwit string              `json:"minGodwit,omitempty"`
 	Manifest  json.RawMessage     `json:"manifest"`
 	Artifacts map[string]Artifact `json:"artifacts"`
-	Parsed    Manifest            `json:"-"` // Manifest, validated
+	Assets    []Asset             `json:"assets,omitempty"` // native only; see assets.go
+	Parsed    Manifest            `json:"-"`                // Manifest, validated
 }
 
 // Artifact is one released file: exactly Size bytes with this SHA-256.
@@ -187,6 +188,12 @@ func checkRelease(name string, rel *RegistryRelease) error {
 		if strings.Contains(m.Main, "/") || !strings.HasSuffix(m.Main, ".js") {
 			return fmt.Errorf("main %q must be one bundled .js file", m.Main)
 		}
+		if len(rel.Assets) > 0 {
+			return errors.New("a script release has no assets")
+		}
+	}
+	if err := checkAssets(rel.Assets); err != nil {
+		return err
 	}
 	for k, a := range rel.Artifacts {
 		switch {
