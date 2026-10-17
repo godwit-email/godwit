@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	mygoi18n "github.com/egoist/mygo/i18n"
@@ -203,7 +205,7 @@ func gui(ctx context.Context, dataDir string) int {
 			lang = preferred[0]
 		}
 		var err error
-		release, err = ownerlock.Acquire(dataDir)
+		release, err = acquireOwner(dataDir)
 		if err != nil {
 			i18n.SetLanguage(lang)
 			var msg string
@@ -336,7 +338,7 @@ func gui(ctx context.Context, dataDir string) int {
 		// quitHook: first the compose windows close, each flushing its page,
 		// then nq waits for the main window's writes (a failed or slow one
 		// asks first) and quits again. Hiding needs no save: nothing closes.
-		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go mygo.App.Quit() }} // mygo's calls are goroutine-safe
+		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if nq.flushed {
 				return // the quit's last step closes it
@@ -372,7 +374,55 @@ func gui(ctx context.Context, dataDir string) int {
 }
 
 // quitApp quits again once the compose windows closed; tests swap it.
-var quitApp = func() { mygo.App.Quit() }
+var quitApp = quitAgain
+
+// relaunching is whether the quit under way came from mygo.App.Relaunch, as
+// the updater's "Relaunch Now" does; quitHook records it.
+var relaunching atomic.Bool
+
+// quitAgain repeats the quit quitHook prevented: mygo forgets a prevented
+// Relaunch, so a plain Quit would leave an updated Godwit closed.
+func quitAgain() {
+	if relaunching.Load() {
+		mygo.App.Relaunch()
+	} else {
+		mygo.App.Quit()
+	}
+}
+
+// calledByRelaunch reports whether mygo.App.Relaunch is on the stack.
+// shortcut: mygo tells quit listeners nothing of a relaunch, so this matches its
+// function name; use its flag once QuitEvent has one.
+func calledByRelaunch() bool {
+	pc := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
+	for {
+		f, more := frames.Next()
+		if strings.HasPrefix(f.Function, "github.com/egoist/mygo.(*Application).Relaunch") {
+			return true
+		}
+		if !more {
+			return false
+		}
+	}
+}
+
+// ownerWait is how long a starting GUI waits for another owner to go: after
+// a relaunch the previous Godwit still closes its Service.
+const ownerWait = 5 * time.Second
+
+// acquireOwner is ownerlock.Acquire, retried for ownerWait while another
+// process owns dataDir.
+func acquireOwner(dataDir string) (func() error, error) {
+	deadline := time.Now().Add(ownerWait)
+	for {
+		release, err := ownerlock.Acquire(dataDir)
+		if !errors.Is(err, ownerlock.ErrAnotherOwner) || time.Now().After(deadline) {
+			return release, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
 
 // quitHook is the one OnBeforeQuit listener: mygo runs every listener even
 // after one prevented the quit. With compose windows open it prevents the
@@ -384,6 +434,7 @@ func quitHook(windows interface {
 	CloseAll(func(bool))
 }, native func(e *mygo.QuitEvent), reset func()) func(*mygo.QuitEvent) {
 	return func(e *mygo.QuitEvent) {
+		relaunching.Store(calledByRelaunch()) // each quit, ours repeated too, says again
 		if windows.Count() == 0 {
 			native(e)
 			return
