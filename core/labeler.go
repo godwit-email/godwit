@@ -119,6 +119,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 			return done, err
 		}
 		yes := map[string]bool{}
+		answered := true
 		if len(qs) > 0 {
 			if judge == nil {
 				if judge, err = s.labelJudge(ctx); err != nil {
@@ -138,13 +139,13 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 				if !unanswerable(err) {
 					return done, err
 				}
-				labels = nil // no answer to go by: the labels it has stay
+				answered = false // no answer to go by: the labels it has stay
 			}
 			for _, a := range answers {
 				yes[a.Name] = a.Type == ai.Predicate && a.Probability != nil && *a.Probability >= st.JudgeThreshold // a refusal is no
 			}
 		}
-		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes)); err != nil {
+		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes, answered)); err != nil {
 			return done, err
 		}
 		done++
@@ -204,8 +205,9 @@ func labelState(m Message) string {
 // statement checks the message is still that one in the Inbox (not stopped,
 // moved or rescanned meanwhile), that no label was added and no label asked
 // about was edited meanwhile (an answer to its old name or description); otherwise nothing is
-// written and the message is asked again. Hand-set rows are left alone.
-func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]bool) []sqlite.Statement {
+// written and the message is asked again. Hand-set rows are left alone; with
+// answered false no label is touched.
+func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]bool, answered bool) []sqlite.Statement {
 	guard := "EXISTS (SELECT 1 FROM messages m WHERE m.id = ? AND m.labeled_at IS ? AND " + inboxCond + ")" +
 		" AND NOT EXISTS (SELECT 1 FROM labels WHERE id > ?)" // a label added meanwhile was never asked about
 	guardArgs := []any{id, at, newest}
@@ -214,15 +216,17 @@ func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]
 		guardArgs = append(guardArgs, l.ID, l.Name, l.Description)
 	}
 	var stmts []sqlite.Statement
-	for _, l := range labels {
-		if yes[l.Slug] {
-			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
-				SELECT ?, ?, 'auto', 1 WHERE ` + guard + ` AND EXISTS (SELECT 1 FROM labels WHERE id = ?)
-				ON CONFLICT(message_id, label_id) DO UPDATE SET active = 1 WHERE source = 'auto'`,
-				Args: append(append([]any{id, l.ID}, guardArgs...), l.ID)})
-		} else {
-			stmts = append(stmts, sqlite.Statement{SQL: `DELETE FROM message_labels
-				WHERE message_id = ? AND label_id = ? AND source = 'auto' AND ` + guard, Args: append([]any{id, l.ID}, guardArgs...)})
+	if answered { // unanswered: only the guarded labeled_at update, so an edited label is still asked again
+		for _, l := range labels {
+			if yes[l.Slug] {
+				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
+					SELECT ?, ?, 'auto', 1 WHERE ` + guard + ` AND EXISTS (SELECT 1 FROM labels WHERE id = ?)
+					ON CONFLICT(message_id, label_id) DO UPDATE SET active = 1 WHERE source = 'auto'`,
+					Args: append(append([]any{id, l.ID}, guardArgs...), l.ID)})
+			} else {
+				stmts = append(stmts, sqlite.Statement{SQL: `DELETE FROM message_labels
+					WHERE message_id = ? AND label_id = ? AND source = 'auto' AND ` + guard, Args: append([]any{id, l.ID}, guardArgs...)})
+			}
 		}
 	}
 	return append(stmts, sqlite.Statement{SQL: `UPDATE messages SET labeled_at = unixepoch() WHERE id = ? AND ` + guard,

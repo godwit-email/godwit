@@ -517,6 +517,24 @@ func TestRescanNeedsModel(t *testing.T) {
 	require.True(t, s.LabelModelReady(t.Context()))
 }
 
+// TestClassifyUnanswerableAfterLabelEdit: a label edited while an unanswerable
+// request is out still sends the message back to be asked again.
+func TestClassifyUnanswerableAfterLabelEdit(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	otp := labelIDs(t, s)["otp"]
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	setLabeledAt(t, s, a, 0)
+	j := &fakeJudge{err: ai.ErrJudgeAnswer}
+	j.during = func() {
+		_, err := s.db.Execute(context.Background(), "UPDATE labels SET description = 'edited' WHERE id = ?", otp)
+		require.NoError(t, err)
+	}
+	useLabelJudge(s, j)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.EqualValues(t, 0, labeledAt(t, s, a))
+}
+
 // TestClassifyWaitsForPresets: before the presets are seeded (a headless first
 // start) nothing is classified, so the seeded labels later apply to that mail.
 func TestClassifyWaitsForPresets(t *testing.T) {
