@@ -131,7 +131,11 @@ func (s TextScale) Line(size float32) float32 {
 
 // Layout sizes that do not follow the density.
 const (
-	Hairline        = 1   // dividers
+	Hairline = 1 // dividers
+	// DeviceHairline is a border one device pixel wide at any scale: MyGo
+	// rounds border widths to whole device pixels, at least one. Borders
+	// only; a box or line this thin rounds away.
+	DeviceHairline  = 0.01
 	SidebarWidth    = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth = 480
