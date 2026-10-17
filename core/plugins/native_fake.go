@@ -9,13 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // FakeNativeOpener is a NativeOpener for tests that loads nothing: the
 // "library" file is JSON {"describe": {...}, "initFail": bool, "echoStderr":
 // "...", "record": "<path>", "describeSleepMs": n, "recordEnv": bool,
-// "source": "en", "translateWrongCount": bool, "translateError": "<code>"}.
+// "source": "en", "translateWrongCount": bool, "translateError": "<code>",
+// "models": {...}, "judgeError": "<code>", "judgeWrong": bool, "loadError": "<code>"}.
 // initFail writes echoStderr and fails init; describe answers after
 // describeSleepMs. translate answers "[<target>] <text>" per text from source
 // (default "en"), one text short with translateWrongCount, or the error
@@ -23,7 +25,11 @@ import (
 // record + ".translate", and recordEnv adds the environment to configure's record.
 // Methods: describe, configure (writes its request to record, if set),
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
-// probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2).
+// probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2); models.list
+// (answers models), models.prepare (adds header X-Native: 1),
+// models.load and models.judge (probability 0.9 for each question, no
+// answers with judgeWrong), each failing with its error code if set and,
+// with record, appending its request to record + "." + method.
 func FakeNativeOpener(stderr io.Writer) NativeOpener {
 	return func(path string, hostABI uint32) (NativeCall, error) {
 		b, err := os.ReadFile(path)
@@ -41,6 +47,10 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			Source          string          `json:"source"`
 			WrongCount      bool            `json:"translateWrongCount"`
 			TranslateError  string          `json:"translateError"`
+			Models          json.RawMessage `json:"models"`
+			JudgeError      string          `json:"judgeError"`
+			JudgeWrong      bool            `json:"judgeWrong"`
+			LoadError       string          `json:"loadError"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
@@ -60,8 +70,46 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			b, _ := json.Marshal(map[string]any{"ok": true, "result": v})
 			return b
 		}
+		fail := func(code string) []byte {
+			return []byte(`{"ok":false,"error":{"code":"` + code + `","message":"` + code + `"}}`)
+		}
 		return func(method string, req []byte) ([]byte, error) {
+			if spec.Record != "" && strings.HasPrefix(method, "models.") {
+				f, err := os.OpenFile(spec.Record+"."+method, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+				if err != nil {
+					return nil, err
+				}
+				f.Write(append(append([]byte{}, req...), '\n'))
+				f.Close()
+			}
 			switch method {
+			case "models.list":
+				return ok(spec.Models), nil
+			case "models.prepare":
+				var r map[string]any
+				json.Unmarshal(req, &r)
+				r["headers"].(map[string]any)["X-Native"] = "1"
+				return ok(r), nil
+			case "models.load":
+				if spec.LoadError != "" {
+					return fail(spec.LoadError), nil
+				}
+				return ok(struct{}{}), nil
+			case "models.judge":
+				if spec.JudgeError != "" {
+					return fail(spec.JudgeError), nil
+				}
+				var r struct {
+					Questions []struct{ Name string } `json:"questions"`
+				}
+				json.Unmarshal(req, &r)
+				answers := []map[string]any{}
+				for _, q := range r.Questions {
+					if !spec.JudgeWrong {
+						answers = append(answers, map[string]any{"type": "predicate", "name": q.Name, "probability": 0.9})
+					}
+				}
+				return ok(map[string]any{"answers": answers}), nil
 			case "describe":
 				time.Sleep(time.Duration(spec.DescribeSleepMs) * time.Millisecond)
 				return ok(spec.Describe), nil

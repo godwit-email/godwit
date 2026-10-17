@@ -535,6 +535,7 @@ type runningPlugin struct {
 
 	native *plugins.NativeProcess         // native plugins (p and host are nil)
 	cfg    atomic.Pointer[map[string]any] // native: the settings a new process gets
+	models atomic.Pointer[modelCatalog] // its last model list (pluginmodels.go)
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }

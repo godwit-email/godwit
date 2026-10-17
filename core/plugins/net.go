@@ -341,3 +341,10 @@ func (c *Client) fail(ctx, tctx context.Context, err error) error {
 	}
 	return fmt.Errorf("fetch failed: %w", err)
 }
+
+// Allowed reports why u may not be fetched with allowed as the hosts (the
+// policy's first hop): nil when it may. The redirect rules are the caller's.
+func (c *Client) Allowed(u *url.URL, allowed []string) error {
+	_, err := c.check(u, allowed)
+	return err
+}
