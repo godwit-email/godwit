@@ -932,6 +932,12 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
 		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
 		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
+		if isPluginRef(st.DefaultModel) { // its plugin stopped: say so, not "none"
+			u.gen = line{i18n.Tf("settings.models.plugin_unavailable", st.DefaultModel), lookFail}
+		}
+		if isPluginRef(st.JudgeService) && plugJudge == "" {
+			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
+		}
 		return u
 	}
 	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
@@ -950,14 +956,14 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 			u.judge = capLine(u.judgeSvc, core.CapJudge)
 		case plugJudge != "":
 			u.judge = line{plugJudge, lookNone}
-		case strings.HasPrefix(st.JudgeService, "plugin/"):
+		case isPluginRef(st.JudgeService):
 			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
 		}
 	}
 	if u.genSvc == nil && plugGen == "" {
 		u.genOpts = unset(u.genOpts, st.DefaultModel)
 		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
-		if strings.HasPrefix(st.DefaultModel, "plugin/") {
+		if isPluginRef(st.DefaultModel) {
 			u.gen = line{i18n.Tf("settings.models.plugin_unavailable", st.DefaultModel), lookFail}
 		} else if st.DefaultModel != "" {
 			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
@@ -970,7 +976,7 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 	} else {
 		u.gen = line{plugGen, lookNone}
 	}
-	if judgeLine(); u.judgeSvc == nil && !strings.HasPrefix(st.JudgeService, "plugin/") {
+	if judgeLine(); u.judgeSvc == nil && !isPluginRef(st.JudgeService) {
 		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
 	}
 	if u.gen.look == lookFail {
@@ -983,6 +989,12 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 	return u
 }
 
+// isPluginRef reports whether ref names a plugin's model (core's "plugin/<name>/<id>").
+func isPluginRef(ref string) bool {
+	rest, ok := strings.CutPrefix(ref, "plugin/")
+	return ok && strings.Contains(rest, "/")
+}
+
 // unset puts v first as 未设置 when opts doesn't offer it, or as unavailable
 // when it names a plugin's model: core does not fall back past that.
 func unset(opts []kit.Option[string], v string) []kit.Option[string] {
@@ -990,7 +1002,7 @@ func unset(opts []kit.Option[string], v string) []kit.Option[string] {
 		return opts
 	}
 	label := i18n.T("settings.models.default.none")
-	if strings.HasPrefix(v, "plugin/") {
+	if isPluginRef(v) {
 		label = i18n.Tf("settings.models.plugin_unavailable", v)
 	}
 	return append([]kit.Option[string]{{Value: v, Label: label}}, opts...)

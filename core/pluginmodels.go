@@ -194,26 +194,29 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		return nil, fmt.Errorf("%w: %s is not a judge model", ErrModelNotFound, ref)
 	}
 	if m.Transport == "plugin" {
-		return pluginModelJudge{s, name, rp, m}, nil
+		return pluginModelJudge{s, name, rp, m, rp.cfgKey()}, nil
 	}
 	return ai.NewJudge(s.pluginModelClient(name, rp, m.ID), judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 }
 
-// pluginModelClient is the client of rp's model id: one per instance and
-// model, so the engine rebuilds its Genkit instance for a restarted plugin.
+// pluginModelClient is the client of rp's model id: one per instance, model
+// and settings snapshot, so the engine rebuilds its Genkit instance for a
+// restarted or reconfigured plugin.
 func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string) *http.Client {
-	if c, ok := rp.clients.Load(id); ok {
+	cfg := rp.cfgKey()
+	if c, ok := rp.clients.Load(id); ok && c.(*http.Client).Transport.(*pluginModelTransport).cfg == cfg {
 		return c.(*http.Client)
 	}
-	t := &pluginModelTransport{s: s, name: name, rp: rp, model: id, base: cmp.Or(s.modelHTTP, ai.NoRedirectClient).Transport}
+	t := &pluginModelTransport{s: s, name: name, rp: rp, model: id, cfg: cfg, base: cmp.Or(s.modelHTTP, ai.NoRedirectClient).Transport}
 	if rp.native == nil {
 		t.base = rp.host.net.Transport()
 	}
 	if t.base == nil {
 		t.base = http.DefaultTransport
 	}
-	c, _ := rp.clients.LoadOrStore(id, &http.Client{Transport: t, CheckRedirect: ai.NoRedirectClient.CheckRedirect})
-	return c.(*http.Client)
+	c := &http.Client{Transport: t, CheckRedirect: ai.NoRedirectClient.CheckRedirect}
+	rp.clients.Store(id, c)
+	return c
 }
 
 // pluginModelTransport sends the requests an SDK encoded for a plugin's model:
@@ -224,6 +227,7 @@ type pluginModelTransport struct {
 	name  string
 	rp    *runningPlugin
 	model string
+	cfg   any               // the settings snapshot it was resolved with (cfgKey)
 	base  http.RoundTripper // native: the model client's; script: the plugin network's
 }
 
@@ -236,9 +240,9 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 		defer req.Body.Close()
 	}
 	t.s.pluginsMu.RLock()
-	stale := t.s.running[t.name] != t.rp
+	stale := t.s.running[t.name] != t.rp || t.rp.cfgKey() != t.cfg
 	t.s.pluginsMu.RUnlock()
-	if stale { // stopped or replaced: a client resolved before never sends again
+	if stale { // stopped, replaced or reconfigured: a client resolved before never sends again
 		return nil, fmt.Errorf("%w: plugin/%s/%s", ErrModelUnavailable, t.name, t.model)
 	}
 	if t.rp.native == nil {

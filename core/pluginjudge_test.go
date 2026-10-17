@@ -63,6 +63,13 @@ func TestPluginJudgeAnswers(t *testing.T) {
 	require.Len(t, calls, 2, "one question per call")
 	assert.JSONEq(t, `{"modelId":"j","input":"mail","questions":[{"name":"a","type":"predicate","instructions":"a?"}]}`, calls[0])
 	assert.Nil(t, recorded(t, record, "models.load"), "a model without assets is not loaded")
+
+	rp := j.(pluginModelJudge).rp
+	cfg := map[string]any{}
+	rp.cfg.Store(&cfg) // as SetPluginConfig does
+	_, err = j.Ask(t.Context(), "mail", twoQuestions)
+	assert.ErrorIs(t, err, ErrModelUnavailable, "other settings may list other models")
+	assert.Len(t, recorded(t, record, "models.judge"), 2)
 }
 
 func TestPluginJudgeQueuedCancel(t *testing.T) {

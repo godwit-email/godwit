@@ -231,7 +231,9 @@ func TestPluginModelRefs(t *testing.T) {
 func TestPluginHTTPJudge(t *testing.T) {
 	s := newMailContextService(t)
 	var auth atomic.Value
+	var hits atomic.Int64
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		auth.Store(r.Header.Get("Authorization"))
 		json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{"q": map[string]any{"type": "noul", "noul": 0.9}}})
 	}))
@@ -258,6 +260,16 @@ func TestPluginHTTPJudge(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.9, *got[0].Probability, 1e-9)
 	assert.Equal(t, "Bearer plugin", auth.Load())
+
+	before := hits.Load()
+	require.NoError(t, s.SetPluginConfig(t.Context(), "p", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)}))
+	_, err = j.Ask(t.Context(), "mail", []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "?"}})
+	assert.Error(t, err)
+	assert.Equal(t, before, hits.Load(), "a judge resolved on the old settings sends nothing")
+	j, _, _, err = s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "?"}})
+	assert.NoError(t, err, "resolved again, it answers")
 }
 
 func TestPluginModelWithoutPrepareHoldsMail(t *testing.T) {

@@ -27,6 +27,7 @@ type pluginModelJudge struct {
 	name  string
 	rp    *runningPlugin
 	model plugins.ProviderModel
+	cfg   any // the settings snapshot it was resolved with: other settings may list other models
 }
 
 func (j pluginModelJudge) Ask(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
@@ -73,6 +74,9 @@ func (j pluginModelJudge) ask(ctx context.Context, input string, q ai.Question) 
 
 // dispatch loads the model if needed and asks the plugin one question.
 func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Question) ([]ai.Answer, error) {
+	if j.rp.cfgKey() != j.cfg {
+		return nil, fmt.Errorf("%w: plugin/%s/%s (its settings changed)", ErrModelUnavailable, j.name, j.model.ID)
+	}
 	if j.rp.native == nil {
 		if err := j.s.markHoldsMail(ctx, j.name); err != nil { // the input is mail
 			return nil, err

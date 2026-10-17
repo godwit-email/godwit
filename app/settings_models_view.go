@@ -28,7 +28,7 @@ func (m *modelsView) view(c *ui.Context) {
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
-	if len(m.services) > 0 || len(m.plugins) > 0 {
+	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
 		u := deriveUsage(m.a.settings, m.services, m.plugins)
 		m.usage(c, u)
 		m.list(c, u)
