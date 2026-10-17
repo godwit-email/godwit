@@ -163,20 +163,14 @@ func (p *mailPage) viewShown(v core.View) bool {
 	return p.a.route.Page == PageMail && p.a.route.View == v && !p.searched
 }
 
-// account is an account's foldable row, its provider's mark, name, sync
-// trouble and unread count, over all its folders.
+// account is an account's foldable row, its provider's mark (badged while its
+// sync is in trouble), name and unread count, over all its folders.
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
 	kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
-		mark(c, accountProvider(p.a, acc), theme.MarkSm) // as in the settings sidebar
+		p.a.accountMark(c, acc) // as in the settings sidebar
 		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
-		switch p.a.syncHealth(acc).level { // which account the top bar's status means
-		case syncAction:
-			kit.StatusDot(c, kit.Error).Label(i18n.T("settings.dot.action"))
-		case syncRetrying:
-			kit.StatusDot(c, kit.Attention).Label(i18n.T("settings.dot.retrying"))
-		}
 		if n := p.a.unread[acc.ID]; n > 0 {
 			kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
 		}
