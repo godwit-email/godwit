@@ -22,8 +22,10 @@ var roleOrder = []string{"inbox", "drafts", "sent", "archive", "junk", "trash"}
 // folderIcons are the icons of folder roles; another folder shows "folder".
 var folderIcons = map[string]string{"inbox": "inbox", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
 
+// folderName is a role folder's name in the UI's language, else the server's
+// name: also for Gmail's all, flagged and important, which have none of ours.
 func folderName(f core.Folder) string {
-	if f.Role != "" {
+	if slices.Contains(roleOrder, f.Role) {
 		return i18n.T("mail.folder." + f.Role)
 	}
 	return f.Name
