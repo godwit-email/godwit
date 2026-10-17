@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.5.0](https://github.com/godwit-email/godwit/compare/v1.4.0...v1.5.0) (2026-10-17)
+
+
+### Features
+
+* account tree sidebar with nested folders ([#102](https://github.com/godwit-email/godwit/issues/102)) ([821fad1](https://github.com/godwit-email/godwit/commit/821fad1323de2496d23a1598d2c08290814b0d3a))
+* per-account sync status in the top bar ([#92](https://github.com/godwit-email/godwit/issues/92)) ([6041968](https://github.com/godwit-email/godwit/commit/6041968a9dbc4a229baff04c42a1ef469ce3ea64))
+* recognize sign-in codes and links in 14 languages through per-language lexicons ([#99](https://github.com/godwit-email/godwit/issues/99)) ([0c0dd54](https://github.com/godwit-email/godwit/commit/0c0dd5450d217582481ca869bba5de4045661412))
+* sign-in codes and links: a built-in plugin with a banner, tray list and subject tags ([#96](https://github.com/godwit-email/godwit/issues/96)) ([64d45ec](https://github.com/godwit-email/godwit/commit/64d45ec3d513f14f14e922740b472da4cbf73f70))
+
+
+### Bug Fixes
+
+* a rescan keeps model labels until the judge answers again ([#100](https://github.com/godwit-email/godwit/issues/100)) ([06805e9](https://github.com/godwit-email/godwit/commit/06805e99b61164385940e6d46773785db77214ad))
+* relaunch after an update instead of only quitting ([#93](https://github.com/godwit-email/godwit/issues/93)) ([62b7e70](https://github.com/godwit-email/godwit/commit/62b7e7052eeb8c41c8470b54b07308f7271a3c57))
+* the banner's Copy and Open buttons are icons alone ([#103](https://github.com/godwit-email/godwit/issues/103)) ([7d5901d](https://github.com/godwit-email/godwit/commit/7d5901d5715e78785a32ad1a64a546cb95f1d7ba))
+* **ui:** lighter window material and the panels' shadow, as the design ([#101](https://github.com/godwit-email/godwit/issues/101)) ([9ad23f9](https://github.com/godwit-email/godwit/commit/9ad23f91abcc2355db380d88a0b96f3a6a2b567a))
+
 ## [1.4.0](https://github.com/godwit-email/godwit/compare/v1.3.1...v1.4.0) (2026-10-16)
 
 
