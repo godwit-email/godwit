@@ -12,15 +12,13 @@ import (
 // A built-in plugin ships inside Godwit as Go code: listed and switched with
 // the installed plugins (ListPlugins, SetPluginEnabled), on unless the user
 // turned it off, but with no files, sandbox, permissions or uninstall. It
-// contributes through the same capability contracts as a script plugin
-// (cards here), and owns any surface of its own through Service methods
+// contributes through the plugin capability contracts (tags here), and owns any surface of its own through Service methods
 // that consult builtinOn.
 type builtinPlugin struct {
 	name         string
 	title, about plugins.Text
-	// card is the plugin's card for a message, as a script plugin's
-	// ctx.cards.register; nil for none.
-	card func(m plugins.MailMessage) (Card, bool)
+	// tags are what the plugin puts after a message's subject; nil for none.
+	tags func(m plugins.MailMessage) []Tag
 }
 
 // SignInCodesPlugin recognizes sign-in codes and links: the banner, the
@@ -32,7 +30,7 @@ var builtinPlugins = []builtinPlugin{{
 	title: plugins.Text{Default: "Sign-in codes & links", ByLang: map[string]string{"zh-Hans": "验证码与登录链接"}},
 	about: plugins.Text{Default: "Finds sign-in codes and links in new mail, on this Mac, and offers them to copy or open",
 		ByLang: map[string]string{"zh-Hans": "在本机识别新邮件里的验证码和登录链接，一键复制或打开"}},
-	card: signInCodeCard,
+	tags: signInCodeTags,
 }}
 
 func builtin(name string) *builtinPlugin {
@@ -79,48 +77,43 @@ func (s *Service) setBuiltinEnabled(ctx context.Context, name string, on bool) e
 	return err
 }
 
-// builtinCards are the cards of the built-in plugins that are on. They read
+// builtinTags are the tags of the built-in plugins that are on. They read
 // the stored body, links intact: the plugins' copy is sanitized.
-func (s *Service) builtinCards(ctx context.Context, id int64) ([]Card, error) {
+func (s *Service) builtinTags(ctx context.Context, id int64) ([]Tag, error) {
 	rows, err := s.db.Query(ctx, "SELECT subject, body_text, body_html FROM messages WHERE id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return nil, err
 	}
 	m := plugins.MailMessage{ID: id, Subject: store.Str(rows.Values[0][0]), Text: store.Str(rows.Values[0][1]), HTML: store.Str(rows.Values[0][2])}
-	var out []Card
+	var out []Tag
 	for _, b := range builtinPlugins {
-		if b.card == nil {
+		if b.tags == nil {
 			continue
 		}
 		on, err := s.builtinOn(ctx, b.name)
 		if err != nil {
 			return nil, err
 		}
-		if c, ok := b.card(m); on && ok {
-			c.Plugin, c.Builtin = b.name, true
-			out = append(out, c)
+		if !on {
+			continue
+		}
+		for _, t := range b.tags(m) {
+			t.Plugin, t.Builtin = b.name, true
+			out = append(out, t)
 		}
 	}
 	return out, nil
 }
 
-// signInCodeCard is the reader's card: a code (Copy), and its mail's sign-in
-// or confirmation link beside it (Open link); else the link alone (Open),
-// its host shown. Title and a link field's Label are keys ("code", or a
-// mail.Link* kind) the app words.
-func signInCodeCard(m plugins.MailMessage) (Card, bool) {
-	code := mail.SignInCode(m.Subject, m.Text, m.HTML)
-	link, kind := mail.ActionLink(m.Subject, m.Text, m.HTML)
-	switch {
-	case code != "":
-		c := Card{Title: "code", Fields: []CardField{{Value: mail.GroupCode(code)}}, Buttons: []CardButton{{Kind: "copy", Value: code}}}
-		if link != "" {
-			c.Fields = append(c.Fields, CardField{Label: kind, Value: mail.LinkHost(link)})
-			c.Buttons = append(c.Buttons, CardButton{Kind: "open-url", Value: link})
-		}
-		return c, true
-	case link != "":
-		return Card{Title: kind, Fields: []CardField{{Value: mail.LinkHost(link)}}, Buttons: []CardButton{{Kind: "open-url", Value: link}}}, true
+// signInCodeTags are a code to copy and the mail's sign-in, confirmation
+// or password-reset link to open, its host shown.
+func signInCodeTags(m plugins.MailMessage) []Tag {
+	var out []Tag
+	if code := mail.SignInCode(m.Subject, m.Text, m.HTML); code != "" {
+		out = append(out, Tag{Kind: "copy", Text: mail.GroupCode(code), Value: code})
 	}
-	return Card{}, false
+	if link, kind := mail.ActionLink(m.Subject, m.Text, m.HTML); link != "" {
+		out = append(out, Tag{Kind: "open-url", Label: kind, Text: mail.LinkHost(link), Value: link})
+	}
+	return out
 }

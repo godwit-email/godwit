@@ -61,9 +61,10 @@ type reader struct {
 	getAvatar  func(context.Context, int64, bool) (core.Avatar, error)                        // tests wrap it
 	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
 	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
-	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error)          // tests wrap it
-	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                            // tests wrap it
-	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)              // tests wrap it
+	tagsFn     func(ctx context.Context, messageID int64) ([]core.Tag, error)
+	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error) // tests wrap it
+	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                   // tests wrap it
+	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)     // tests wrap it
 }
 
 // msgBody is a message read in full, for its header, notices and
@@ -101,7 +102,7 @@ type msgBody struct {
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
 		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
-		cardsFn: p.a.svc.PluginCards, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
+		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -674,7 +675,11 @@ func (r *reader) view(c *ui.Context) {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
 					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
-						kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+						// Plugins' tags follow the subject, so a glance at it is enough.
+						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+							kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1)
+							r.tagChips(c)
+						})
 						r.labelRow(c)
 					})
 					for _, m := range r.msgs {

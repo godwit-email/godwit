@@ -48,14 +48,34 @@ func (e *EgressApprovalRequired) Error() string {
 	return "plugin " + e.Plugin + " may send data to " + strings.Join(e.Hosts, ", ") + ": approval required"
 }
 
-// Card is a plugin's declarative card for a message. A built-in plugin's
-// card (Builtin) names its Title by a key and leaves button labels empty;
-// the app words them in its language.
+// Card is a plugin's declarative card for a message.
 type Card struct {
 	Plugin, Title string
-	Builtin       bool
 	Fields        []CardField
 	Buttons       []CardButton
+}
+
+// Tag is a plugin's small action shown right after a message's subject:
+// copy a value (Kind "copy") or open a link ("open-url"). Text is what the
+// tag shows (a code; a link's host), Value what it copies or opens. A
+// built-in plugin's Label is a key the app words ("signin", "confirm",
+// "reset" for a link); a copy tag needs none.
+type Tag struct {
+	Plugin            string
+	Builtin           bool
+	Kind, Label, Text string
+	Value             string
+}
+
+// PluginTags are the tags the plugins that are on put after the message's
+// subject. Only built-in plugins contribute tags so far.
+func (s *Service) PluginTags(ctx context.Context, messageID int64) ([]Tag, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return s.builtinTags(ctx, messageID)
 }
 
 type CardField struct{ Label, Value string }
@@ -228,10 +248,7 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.builtinCards(ctx, messageID)
-	if err != nil {
-		return nil, err
-	}
+	var out []Card
 	var acct error // failures to record the plugins' failures: the host's, returned
 	for _, pc := range s.runningPlugins((*plugins.Plugin).HasCard) {
 		if err := s.markHoldsMail(ctx, pc.name); err != nil { // the host's failure: the card is left out

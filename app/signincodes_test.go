@@ -31,8 +31,8 @@ func TestSignInCodesArrivalAndCopy(t *testing.T) {
 		t.Fatal("refresh displayed the same banner again")
 	}
 	h.app.OpenMessage(h.plat.codes[0].MessageID)
-	h.until("the built-in plugin's card", func() bool { return h.tt.HasText("验证码 · 内置插件") && h.tt.HasText("aB0123") })
-	h.click("复制")
+	h.until("the plugin's tag after the subject", func() bool { return h.tt.HasText("aB0123") && !h.tt.HasText("验证码 · 内置插件") })
+	h.click("aB0123")
 	if got := h.tt.Clipboard(); got != "aB0123" {
 		t.Fatalf("clipboard %q", got)
 	}
@@ -133,11 +133,11 @@ func TestSignInCodesPluginOffStopsEverySurface(t *testing.T) {
 	}
 	h.app.OpenMessage(notes[0].MessageID)
 	h.until("the message", func() bool { return h.tt.HasText("验证码：001234") })
-	if h.tt.HasText("验证码 · 内置插件") {
-		t.Fatal("reader card with the plugin off")
+	if h.tt.HasText("001 234") {
+		t.Fatal("tag with the plugin off")
 	}
 	if err := h.env.Svc.SetPluginEnabled(t.Context(), core.SignInCodesPlugin, true); err != nil {
 		t.Fatal(err)
 	}
-	h.waitMail("tray and card back", func() bool { return len(h.plat.codes) == 1 && h.tt.HasText("验证码 · 内置插件") })
+	h.waitMail("tray and card back", func() bool { return len(h.plat.codes) == 1 && h.tt.HasText("001 234") })
 }

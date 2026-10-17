@@ -31,20 +31,22 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 	require.True(t, p.Enabled, "on by default")
 	require.Equal(t, "验证码与登录链接", p.Title.For("zh-Hans"))
 
+	tags, err := e.s.PluginTags(bg, codeID)
+	require.NoError(t, err)
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "482 913", Value: "482913"}}, tags)
+	tags, err = e.s.PluginTags(bg, linkID)
+	require.NoError(t, err)
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "open-url", Label: "signin", Text: "acme.example", Value: "https://acme.example/l/1"}}, tags)
 	cards, err := e.s.PluginCards(bg, codeID)
 	require.NoError(t, err)
-	require.Equal(t, []Card{{Plugin: SignInCodesPlugin, Title: "code", Builtin: true, Fields: []CardField{{Value: "482 913"}}, Buttons: []CardButton{{Kind: "copy", Value: "482913"}}}}, cards)
-	cards, err = e.s.PluginCards(bg, linkID)
-	require.NoError(t, err)
-	require.Equal(t, []Card{{Plugin: SignInCodesPlugin, Title: "signin", Builtin: true, Fields: []CardField{{Value: "acme.example"}}, Buttons: []CardButton{{Kind: "open-url", Value: "https://acme.example/l/1"}}}}, cards)
+	require.Empty(t, cards, "the plugin adds tags, not a card")
 	e.put(t, "INBOX", eml("both@x", "ID.me <hello@id.me>", e.acc.Email, "欢迎来到 ID.me!", now.Format(time.RFC1123Z),
 		"确认您的电子邮件：https://account.id.me/confirm/abc\n\n复制此代码并在浏览器中输入以完成确认。\n\n118169"))
 	e.sync(t)
-	cards, err = e.s.PluginCards(bg, e.idOf(t, "both@x"))
+	tags, err = e.s.PluginTags(bg, e.idOf(t, "both@x"))
 	require.NoError(t, err)
-	require.Equal(t, []Card{{Plugin: SignInCodesPlugin, Title: "code", Builtin: true,
-		Fields:  []CardField{{Value: "118 169"}, {Label: "confirm", Value: "account.id.me"}},
-		Buttons: []CardButton{{Kind: "copy", Value: "118169"}, {Kind: "open-url", Value: "https://account.id.me/confirm/abc"}}}}, cards)
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "118 169", Value: "118169"},
+		{Plugin: SignInCodesPlugin, Builtin: true, Kind: "open-url", Label: "confirm", Text: "account.id.me", Value: "https://account.id.me/confirm/abc"}}, tags)
 	codes, err := e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)
 	require.Len(t, codes, 3)
@@ -54,9 +56,9 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 
 	require.NoError(t, e.s.SetPluginEnabled(bg, SignInCodesPlugin, false))
 	require.False(t, builtinOf().Enabled)
-	cards, err = e.s.PluginCards(bg, codeID)
+	tags, err = e.s.PluginTags(bg, codeID)
 	require.NoError(t, err)
-	require.Empty(t, cards, "off: no card")
+	require.Empty(t, tags, "off: no tag")
 	codes, err = e.s.RecentSignInCodes(bg, now)
 	require.NoError(t, err)
 	require.Empty(t, codes, "off: no banner, tray entry or held-back notification")

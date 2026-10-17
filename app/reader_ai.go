@@ -82,6 +82,7 @@ type msgAI struct {
 	showTr      bool // the translation was asked to show
 	result      *aiResult
 	cards       fetch[[]core.Card]
+	tags        fetch[[]core.Tag]
 	quick       fetch[[]core.QuickReply]
 }
 
@@ -200,11 +201,17 @@ func (r *reader) startFor(id int64) {
 		st.summary = r.stream(id, "summarize")
 	}
 	r.loadCards(id, false)
+	r.loadTags(id, false)
 }
 
 func (r *reader) loadCards(id int64, force bool) {
 	get := r.cardsFn
 	fetchInto(r, &r.state(id).cards, force, func(ctx context.Context) ([]core.Card, error) { return get(ctx, id) }, nil)
+}
+
+func (r *reader) loadTags(id int64, force bool) {
+	get := r.tagsFn
+	fetchInto(r, &r.state(id).tags, force, func(ctx context.Context) ([]core.Tag, error) { return get(ctx, id) }, nil)
 }
 
 func (r *reader) loadQuick(id int64, force bool) {
@@ -578,24 +585,12 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				header := i18n.Tf("reader.ai.card_from", card.Title, card.Plugin)
-				if card.Builtin {
-					header = i18n.Tf("reader.ai.card_builtin", i18n.T("codes.card."+card.Title))
-				}
-				kit.Text(c, header, t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Sm).TextColor(t.Muted)
 				if len(card.Fields) == 0 {
 					return
 				}
-				if card.Builtin && card.Title != "code" { // a link's host is a name to read, not a code to copy
-					kit.Text(c, card.Fields[0].Value, t.Text.Lg).FontWeight(500).Shrink(1).SingleLine()
-				} else {
-					ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
-				}
-				hint := cardHint(card.Fields[1:])
-				if card.Builtin && len(card.Fields) > 1 { // the link beside the code: "也可以打开 id.me 的确认链接"
-					hint = i18n.Tf("codes.card.also_"+card.Fields[1].Label, card.Fields[1].Value)
-				}
-				if hint != "" {
+				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
+				if hint := cardHint(card.Fields[1:]); hint != "" {
 					kit.Text(c, hint, t.Text.Sm).TextColor(t.Muted)
 				}
 			})
@@ -610,12 +605,6 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 					}
 					key := fmt.Sprintf("%d/%s/%d", m.ID, card.Plugin, i)
 					label := b.Label
-					if card.Builtin { // core leaves a built-in card's words to the app
-						label = map[string]string{"copy": i18n.T("codes.copy_button"), "open-url": i18n.T("codes.open")}[b.Kind]
-						if b.Kind == "open-url" && len(card.Buttons) > 1 { // beside Copy, say what opens
-							label = i18n.T("codes.open_link")
-						}
-					}
 					if b.Kind == "copy" && r.copiedCard == key { // the click shows on the button itself, stepping back to secondary
 						label, o.Icon, o.Variant = i18n.T("codes.copied"), "check", kit.Secondary
 					}
@@ -636,18 +625,66 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 							}
 						})
 					case "open-url":
-						if card.Builtin { // its host is on the card: no second ask
-							a := r.p.a
-							a.do(func(context.Context) error { return a.plat.OpenURL(b.Value) }, a.toastErr)
-						} else {
-							r.p.a.openLink(b.Value)
-						}
+						r.p.a.openLink(b.Value)
 					case "run-action":
 						r.runAction(b.Value, b.Label, m.ID, false)
 					}
 				}
 			})
 		})
+	}
+}
+
+// tagChips are the plugins' tags for the newest message, as small buttons
+// after the subject: a copy tag shows its text and turns into Copied in
+// place; a link tag names what it opens and where, and opens without the
+// link dialog, its host being on it.
+func (r *reader) tagChips(c *ui.Context) {
+	m, ok := r.last()
+	st := r.ai[m.ID]
+	if !ok || st == nil {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	a := r.p.a
+	chip := func(e ui.Element) ui.Element {
+		return e.Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontSize(t.Text.Base).Shrink(0)
+	}
+	for i, tag := range st.tags.v {
+		key := fmt.Sprintf("tag/%d/%s/%d", m.ID, tag.Plugin, i)
+		switch tag.Kind {
+		case "copy":
+			label, o := tag.Text, kit.ButtonOpts{Variant: kit.Secondary, Icon: "copy"}
+			if r.copiedCard == key {
+				label, o.Icon = i18n.T("codes.copied"), "check"
+			}
+			e := chip(kit.SwapButton(c, label, o, tag.Text, i18n.T("codes.copied")))
+			if r.copiedCard != key {
+				e.Font(theme.Mono).FontWeight(500)
+			}
+			if e.Clicked() {
+				c.WriteClipboard(tag.Value)
+				r.copiedCard = key
+				a.after(1500*time.Millisecond, func() {
+					if r.copiedCard == key {
+						r.copiedCard = ""
+					}
+				})
+			}
+		case "open-url":
+			name, link := tag.Label, tag.Value
+			if tag.Builtin {
+				name = i18n.T("codes.card." + tag.Label)
+			}
+			e := chip(kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary})).Label(name).Children(func() {
+				ui.Icon(c, icons.Get("external-link")).Size(theme.Icon, theme.Icon)
+				ui.Text(c, name)
+				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
+			})
+			if e.Clicked() {
+				a.do(func(context.Context) error { return a.plat.OpenURL(link) }, a.toastErr)
+			}
+		}
 	}
 }
 
