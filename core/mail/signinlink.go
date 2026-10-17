@@ -15,6 +15,11 @@ const (
 	LinkReset   = "reset"   // sets a new password
 )
 
+// A magic link's mail speaks of the link itself: "This link expires in 10
+// minutes", "your sign-in link", "登录链接". A reminder to go and sign in
+// ("请登录您的 Google 相册账号") leads to a sign-in page, not a link that signs in.
+var linkDelivery = regexp.MustCompile(`(?i)\b(?:magic|secure|sign[ -]?in|log[ -]?in|login|one[ -]time|single[ -]use)\s+link\b|\bthis link\b|\blink\b[^\n]{0,60}\b(?:expires?|valid|used once)\b|(?:登录|一次性|安全)链接|链接[^\n]{0,30}(?:有效|过期|失效)`)
+
 var linkSubject = regexp.MustCompile(`(?i)\b(?:sign|log)[ -]?in\b|\b(?:magic|secure) link\b|登录|登入`)
 
 // A button's own words, whole: "Sign in", "Log in to Acme", "Click here to
@@ -59,7 +64,7 @@ var fallbackLabel = regexp.MustCompile(`(?i)^\s*use this link\s*$`)
 // which it is. Conflicting links are left to the reader rather than guessed.
 func ActionLink(subject, text, htmlBody string) (link, kind string) {
 	subject = simplified(subject)
-	if linkSubject.MatchString(subject) {
+	if linkSubject.MatchString(subject) && (linkDelivery.MatchString(subject) || linkDelivery.MatchString(bodyText(text, htmlBody))) {
 		if l := oneLink(text, htmlBody, linkLabel, linkLead, true); l != "" {
 			return l, LinkSignIn
 		}
@@ -74,6 +79,12 @@ func ActionLink(subject, text, htmlBody string) (link, kind string) {
 		}
 	}
 	return "", ""
+}
+
+// bodyText is the mail's unquoted text, Traditional read as Simplified.
+func bodyText(text, htmlBody string) string {
+	text, _ = unquoted(text, htmlBody)
+	return simplified(text)
 }
 
 // oneLink is the one https link whose button label matches labelRE, or that
