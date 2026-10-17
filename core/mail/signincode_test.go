@@ -50,6 +50,8 @@ func TestSignInCode(t *testing.T) {
 		{"reply subject", "Re: Your verification code: 123456", "Thanks, it worked.", ""},
 		{"coupon alone on its line", "Weekend sale", "Use this coupon code at checkout:\n\n123456", ""},
 		{"licence key", "Your licence", "Your activation code: XQ12RT", ""},
+		{"zh-Hant reply header", "回覆：登入", "謝謝！\n\n於 2026年10月17日 Acme 寫道：\n您的驗證碼為 482913", ""},
+		{"zh-Hant reply subject", "回覆：您的驗證碼為 482913", "謝謝！", ""},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
