@@ -33,6 +33,11 @@ func TestSignInCode(t *testing.T) {
 		{"sender line kept", "Your verification code", "From: Acme Security\nYour verification code: 123456", "123456"},
 		{"coupon", "Thanks for your order", "Your code is SAVE20 for 20% off", ""},
 		{"coupon with sign-in footer", "Thanks for your order", "Your code is SAVE20 for 20% off\n\nLots of deals inside.\n\nSign in to manage your account", ""},
+		{"booking", "Your booking", "Booking confirmation code: AB12CD", ""},
+		{"card", "Payment details", "Your card security code: 1234", ""},
+		{"security code OTP", "Your security code", "Your security code is 482913", "482913"},
+		{"coupon digits short", "Thanks for your order", "Your code is 2026", ""},
+		{"confirm email", "Confirm your email", "Your confirmation code: 731904", "731904"},
 		{"your code at sign-in", "Sign in to Acme", "Your code is 482913", "482913"},
 		{"quoted", "Re: login", "> Your verification code: 123456", ""},
 	} {

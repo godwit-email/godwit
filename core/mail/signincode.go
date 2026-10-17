@@ -14,10 +14,11 @@ const codeToken = `([0-9]{3}[ \t-][0-9]{3}|[A-Za-z0-9]{4,10})`
 var codeHints = regexp.MustCompile(`(?i)` + codeHint)
 var codeAfter = regexp.MustCompile(`(?i)^\s*(?:(?:is|为|是)\s*)?[:：=\s"'「【]*` + codeToken)
 
-// "Your code" alone is also a coupon's wording ("Your code is SAVE20"); it
-// counts only in mail that is about signing in.
-var bareHint = regexp.MustCompile(`(?i)^your code$`)
-var signInContext = regexp.MustCompile(`(?i)\b(?:verif\w*|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|登录|登入|验证`)
+// Hints that other mail uses too ("Your code is SAVE20", "Booking
+// confirmation code", "card security code") need sign-in words nearby, or a
+// code shaped like an OTP.
+var bareHint = regexp.MustCompile(`(?i)^(?:your|confirmation|security)\s+code$`)
+var signInContext = regexp.MustCompile(`(?i)\b(?:verif\w*|sign[ -]?in|log[ -]?in|authenticat\w*|two[ -]factor|2fa|password|passcode)\b|\bconfirm (?:your )?(?:email|account|identity)\b|登录|登入|验证`)
 
 // signInNear: the subject (s's first line), or the hint's line and the one
 // before it, are about signing in; a footer elsewhere is not.
@@ -54,14 +55,17 @@ func SignInCode(subject, text, htmlBody string) string {
 	code := ""
 	var candidates [][2]int
 	for _, hint := range codeHints.FindAllStringIndex(s, -1) {
-		if bareHint.MatchString(s[hint[0]:hint[1]]) && !signInNear(s, hint[0], hint[1]) {
-			continue
-		}
+		ambiguous := bareHint.MatchString(s[hint[0]:hint[1]]) && !signInNear(s, hint[0], hint[1])
 		if m := codeAfter.FindStringSubmatchIndex(s[hint[1]:]); m != nil {
 			// A word with no digit is a code only when the same line says so
 			// ("code: XQWERT"); one on the next line is prose ("IMPORTANT").
 			gap, token := s[hint[1]:hint[1]+m[2]], s[hint[1]+m[2]:hint[1]+m[3]]
 			if !strings.ContainsFunc(token, unicode.IsDigit) && (strings.Contains(gap, "\n") || !explicitCode.MatchString(gap)) {
+				continue
+			}
+			// Without sign-in words nearby, only an OTP's shape will do: six or
+			// more digits, not a CVV (1234) or a booking reference (AB12CD).
+			if digits := strings.NewReplacer(" ", "", "\t", "", "-", "").Replace(token); ambiguous && (len(digits) < 6 || strings.Trim(digits, "0123456789") != "") {
 				continue
 			}
 			candidates = append(candidates, [2]int{hint[1] + m[2], hint[1] + m[3]})
