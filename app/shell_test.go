@@ -507,8 +507,17 @@ func TestVibrancyShowsThroughTopBar(t *testing.T) {
 	}
 	h.tt.Frame()
 	img := h.tt.Image()
-	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 { // the top bar's middle, above its text
-		t.Errorf("top bar pixel %v: want transparent, the material showing", px)
+	tint := float32(theme.MaterialTint)
+	// The top bar's middle, above its text: light, the Window tint over the
+	// material, which still shows a little; dark, the material alone.
+	if px, want := img.RGBAAt(img.Bounds().Dx()/2, 4).A, uint8(255*tint); px < want-1 || px > want+1 {
+		t.Errorf("top bar alpha %d: want %d, the material showing a little through the tint", px, want)
+	}
+	h.tt.SetDark(true)
+	h.tt.Frame()
+	img = h.tt.Image()
+	if px := img.RGBAAt(img.Bounds().Dx()/2, 4); px.A != 0 {
+		t.Errorf("dark top bar pixel %v: want transparent, the material showing", px)
 	}
 }
 

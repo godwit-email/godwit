@@ -59,7 +59,17 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--warning-bg": css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
 		"--shadow-float": floatShadow(t),
 		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
+		"--window-material": windowMaterial(t),
 	}
+}
+
+// windowMaterial is a page's background over the window's material: the
+// light Window tinting it, as the main window's root; clear in the dark.
+func windowMaterial(t theme.Tokens) string {
+	if t.Dark {
+		return "transparent"
+	}
+	return css(t.Window.Alpha(theme.MaterialTint))
 }
 
 // floatShadow is a floating input's box-shadow: ShadowFloat's layers of

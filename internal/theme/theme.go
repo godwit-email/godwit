@@ -132,6 +132,7 @@ func (s TextScale) Line(size float32) float32 {
 // Layout sizes that do not follow the density.
 const (
 	Hairline        = 1   // dividers
+	MaterialTint    = 0.6 // the light Window's opacity over the window material: lighter, as the design, yet still see-through (its 95% is over a bare wallpaper, not a material)
 	SidebarWidth    = 248 // the page sidebars, until the user drags them
 	SidebarMinWidth = 240 // the narrowest and widest a drag makes them
 	SidebarMaxWidth = 480
@@ -329,7 +330,7 @@ func status(t Tokens) Tokens {
 // Light is the light appearance (spec 7.0).
 func Light() Tokens {
 	return status(Tokens{
-		Window: p.Mid(p.Neutral100, p.Neutral200).Color(), Sidebar: p.Neutral50.Color(),
+		Window: p.Neutral50.Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),

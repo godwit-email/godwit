@@ -20,7 +20,8 @@ import (
 func Resizer(c *ui.Context, size *float32, gap float32, over bool, label string, onClick func(), first, second func()) (changed, dragging bool) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(*size).Shrink(0).Clip().Children(first)
+		// ClipX, not Clip: the panes clip a sliding sidebar sideways; clipped below too, they would cut off a panel's ShadowXs.
+		ui.Column(c).Width(*size).Shrink(0).ClipX().Children(first)
 		grip := ui.Box(c).Width(gap).Shrink(0).Center().Focusable().Role(ui.RoleSplitter).Label(label).Cursor(ui.CursorResizeEW)
 		if over {
 			grip.Absolute().Left(*size + float32(theme.Hairline)/2 - gap/2).Top(0).Bottom(0)
@@ -55,7 +56,7 @@ func Resizer(c *ui.Context, size *float32, gap float32, over bool, label string,
 				}
 			})
 		})
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Clip().Children(second)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).ClipX().Children(second)
 	})
 	return changed, dragging
 }
