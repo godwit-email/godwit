@@ -214,13 +214,16 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				})
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
-			btn := kit.SwapButton(c, action, kit.ButtonOpts{Variant: kit.Ghost, Icon: icon}, i18n.T("codes.copy_button"), i18n.T("codes.copied"), i18n.T("codes.retry")).Shrink(0)
+			// An icon alone: a square that never changes size; its words are its label and tooltip.
+			btn := kit.IconButton(c, icon, action, kit.ButtonOpts{Variant: kit.Ghost}).Shrink(0)
 			b.onButton = btn.Hovered()
 			switch {
-			case btn.Hovered() && !b.copied:
-				btn.Background(t.Foreground.Alpha(0.1))
+			case b.copied:
+				btn.Background(t.Foreground.Alpha(0.06)).TextColor(t.SuccessText)
+			case btn.Hovered():
+				btn.Background(t.Foreground.Alpha(0.1)).TextColor(t.Foreground)
 			default:
-				btn.Background(t.Foreground.Alpha(0.06))
+				btn.Background(t.Foreground.Alpha(0.06)).TextColor(t.Foreground)
 			}
 			btn.OnClick(func() { p.useSignInCode(b.code) })
 		})
