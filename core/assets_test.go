@@ -441,3 +441,24 @@ func TestModelAssetsRevocation(t *testing.T) {
 	st, _ := e.a.Status(ctx, "dlx", e.release, ref4b)
 	assert.Equal(t, "model_unavailable", st.Error.Code, "the installed release is gone from the registry")
 }
+
+// Uninstalling removes the plugin's model files that nothing else holds.
+func TestModelAssetsUninstallSweeps(t *testing.T) {
+	e := newAssetEnv(t)
+	dirs, release, err := e.a.Prepare(ctx, "dlx", e.release, ref4b, nil)
+	require.NoError(t, err)
+	release()
+	require.NoError(t, e.s.UninstallPlugin(ctx, "dlx"))
+	assert.NoDirExists(t, dirs["model"])
+	assert.NoDirExists(t, dirs["engine"])
+}
+
+// A lease survives a sweep: a model in use stays even after its plugin goes.
+func TestModelAssetsSweepKeepsLeased(t *testing.T) {
+	e := newAssetEnv(t)
+	dirs, release, err := e.a.Prepare(ctx, "dlx", e.release, ref4b, nil)
+	require.NoError(t, err)
+	require.NoError(t, e.s.UninstallPlugin(ctx, "dlx"))
+	assert.DirExists(t, dirs["model"])
+	release()
+}

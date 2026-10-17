@@ -462,6 +462,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, name string) error {
 	if !skills.ValidName(name) || builtin(name) != nil { // name becomes a path below; a built-in one only switches off
 		return ErrPluginNotFound
 	}
+	defer s.sweepAssets(ctx) // after pluginsMu is released: it takes registryMu first
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
 	rows, err := s.pluginRows(ctx, name)

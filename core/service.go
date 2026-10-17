@@ -207,6 +207,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 			return nil, fmt.Errorf("plugin registry: %w", err)
 		}
 	}
+	s.sweepAssets(ctx) // best effort: what is left is only disk space
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err

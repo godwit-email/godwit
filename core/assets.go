@@ -572,3 +572,78 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 	}
 	return nil
 }
+
+// assetPartialAge is how long an unfinished download is kept for resuming.
+const assetPartialAge = 7 * 24 * time.Hour
+
+// sweepAssets removes the variant directories no installed plugin's release
+// lists and nothing holds, and unfinished downloads of those or older than
+// assetPartialAge. Call it holding neither registryMu nor pluginsMu.
+func (s *Service) sweepAssets(ctx context.Context) error {
+	h, ok := s.assets.(*hostedAssets)
+	if !ok {
+		return nil
+	}
+	ents, err := os.ReadDir(s.assetsDir())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	if src := s.opts.Registry; src != nil {
+		s.registryMu.Lock()
+		reg, err := s.cachedRegistry(src)
+		s.registryMu.Unlock()
+		if err != nil {
+			return nil // what installed plugins list is unknown: keep everything
+		}
+		s.pluginsMu.RLock()
+		rows, err := s.pluginRows(ctx, "")
+		s.pluginsMu.RUnlock()
+		if err != nil {
+			return err
+		}
+		platform := plugins.PlatformKey()
+		for _, p := range reg.Plugins {
+			r, ok := rows[p.Name]
+			if !ok || r.assetsDigest == "" {
+				continue
+			}
+			for _, rel := range p.Releases {
+				if here := rel.AssetsFor(platform); plugins.AssetsDigest(here) == r.assetsDigest {
+					for _, a := range here {
+						for _, v := range a.Variants {
+							keep[filepath.Base(h.variantDir(v))] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	h.mu.Lock()
+	for d := range h.leases {
+		keep[filepath.Base(d)] = true
+	}
+	downloading := map[string]bool{}
+	for dst := range h.downloads {
+		keep[filepath.Base(filepath.Dir(dst))] = true
+		downloading[filepath.Base(filepath.Dir(dst))] = true
+	}
+	h.mu.Unlock()
+	for _, e := range ents {
+		if e.Name() != ".partial" && !keep[e.Name()] {
+			os.RemoveAll(filepath.Join(s.assetsDir(), e.Name()))
+		}
+	}
+	parts, _ := os.ReadDir(filepath.Join(s.assetsDir(), ".partial"))
+	for _, e := range parts {
+		variant, _, _ := strings.Cut(e.Name(), "-")
+		fi, err := e.Info()
+		if err == nil && !downloading[variant] && (!keep[variant] || time.Since(fi.ModTime()) > assetPartialAge) {
+			os.Remove(filepath.Join(s.assetsDir(), ".partial", e.Name()))
+		}
+	}
+	return nil
+}
