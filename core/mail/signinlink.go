@@ -16,14 +16,17 @@ var linkLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to |conti
 
 var plainURL = regexp.MustCompile(`https://[^\s<>"'）)」】\]]+`)
 
+// "by clicking on this link", "using the button below": how, not what.
+const byLink = ` (?:by clicking|by tapping|using|with|via)(?: on)? (?:this|the)(?: (?:link|button))?(?: below)?`
+
 // What a plain-text line says right before its colon: an action, not a
 // report ("Review sign-in activity:").
-var linkLead = regexp.MustCompile(`(?i)(?:(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+)?|magic link|(?:登录|登入)(?:链接)?)\s*[:：]\s*$`)
+var linkLead = regexp.MustCompile(`(?i)(?:(?:sign|log)[ -]?in(?: here| now| below| link| to [^:：]+| with [^:：]+|` + byLink + `)?|magic link|(?:登录|登入)(?:链接)?)\s*[:：]\s*$`)
 
 // A button that confirms the address an account was made with: "Confirm
 // your email", "Verify email address", "确认您的电子邮件".
 var confirmLabel = regexp.MustCompile(`(?i)^\s*(?:(?:click|tap) (?:here )?to )?(?:confirm|verify)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)\s*[.!]?\s*$|^\s*(?:点击)?(?:确认|验证)(?:您|你)?的?(?:电子邮件|电子邮件地址|邮箱|邮箱地址|邮件地址|账户|帐户|账号)\s*$`)
-var confirmLead = regexp.MustCompile(`(?i)(?:confirm|verify)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)(?: here| below)?\s*[:：]\s*$|(?:确认|验证)(?:您|你)?的?(?:电子邮件|电子邮件地址|邮箱|邮箱地址|邮件地址|账户|帐户|账号)\s*[:：]\s*$`)
+var confirmLead = regexp.MustCompile(`(?i)(?:confirm|verify)\s+(?:your\s+)?(?:e-?mail(?:\s+address)?|account)(?: here| below|` + byLink + `)?\s*[:：]\s*$|(?:确认|验证)(?:您|你)?的?(?:电子邮件|电子邮件地址|邮箱|邮箱地址|邮件地址|账户|帐户|账号)\s*[:：]\s*$`)
 
 // SignInLink recognizes the one sign-in link of a sign-in mail: the subject
 // asks to sign in and exactly one https link says so. Conflicting links are
@@ -70,30 +73,44 @@ func oneLink(text, htmlBody string, labelRE, leadRE *regexp.Regexp) string {
 				}
 			}
 		})
-	} else {
-		// Plain text has no link labels: the URL must follow a sign-in action
-		// and a colon ("Log in here: https://…"), on its line or the one
-		// before. A caveat ("If you did not sign in, visit https://…") or a
-		// report ("Review sign-in activity: https://…") is neither.
-		lines := strings.Split(text, "\n")
-		quoted := func(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
-		for i, line := range lines {
-			if quoted(line) {
-				continue
+	}
+	// Plain text has no link labels, and HTML may write the address out
+	// as its own label ("Confirm your email address by clicking on this
+	// link:" then the URL): the URL must follow a sign-in action
+	// and a colon ("Log in here: https://…"), on its line or the one
+	// before (the next with text). A caveat ("If you did not sign in, visit https://…") or a
+	// report ("Review sign-in activity: https://…") is neither.
+	if link != "" || conflict { // a labelled button says it best; text the HTML writes out is a fallback
+		return pick(link, conflict)
+	}
+	lines := strings.Split(text, "\n")
+	quoted := func(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
+	for i, line := range lines {
+		if quoted(line) {
+			continue
+		}
+		var urls []string
+		if loc := plainURL.FindStringIndex(line); loc != nil {
+			if leadRE.MatchString(strings.TrimRight(line[:loc[0]], " \t<\"'(（「【[")) {
+				urls = plainURL.FindAllString(line, -1)
 			}
-			var urls []string
-			if loc := plainURL.FindStringIndex(line); loc != nil {
-				if leadRE.MatchString(strings.TrimRight(line[:loc[0]], " \t<\"'(（「【[")) {
-					urls = plainURL.FindAllString(line, -1)
-				}
-			} else if leadRE.MatchString(line) && i+1 < len(lines) && !quoted(lines[i+1]) {
-				urls = plainURL.FindAllString(lines[i+1], -1)
+		} else if leadRE.MatchString(line) {
+			next := i + 1
+			for next < len(lines) && strings.TrimSpace(lines[next]) == "" { // paragraphs have a blank line between
+				next++
 			}
-			for _, u := range urls {
-				add(strings.TrimRight(u, ".,;:!?。，；：！？、")) // the sentence's punctuation, not the link's
+			if next < len(lines) && !quoted(lines[next]) {
+				urls = plainURL.FindAllString(lines[next], -1)
 			}
 		}
+		for _, u := range urls {
+			add(strings.TrimRight(u, ".,;:!?。，；：！？、")) // the sentence's punctuation, not the link's
+		}
 	}
+	return pick(link, conflict)
+}
+
+func pick(link string, conflict bool) string {
 	if conflict {
 		return ""
 	}

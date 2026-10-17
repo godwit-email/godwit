@@ -13,6 +13,7 @@ func TestSignInLink(t *testing.T) {
 		{"Chinese", "登录 Acme", "", `<a href="https://acme.example/l/1"><b>立即登录</b></a>`, "https://acme.example/l/1"},
 		{"repeated", "Sign in", "", `<a href="https://a.example/x">Sign in</a><a href="https://a.example/x">Sign in</a>`, "https://a.example/x"},
 		{"plain text", "Log in to Acme", "Use this link to log in:\nhttps://acme.example/l/2\n\nThanks", "", "https://acme.example/l/2"},
+		{"button and written-out address", "Sign in to Acme", "", `<a href="https://track.example/c/1">Sign in to Acme</a><p>Or log in here:</p><p>https://acme.example/l/9</p>`, "https://track.example/c/1"},
 		{"not a sign-in mail", "Weekly digest", "", `<a href="https://a.example/x">Sign in</a>`, ""},
 		{"security alert", "New sign-in to your account", "", `<a href="https://a.example/activity">Review sign-in activity</a>`, ""},
 		{"activity button", "New sign-in to your account", "", `<a href="https://a.example/activity">Sign in activity</a>`, ""},
@@ -48,6 +49,8 @@ func TestConfirmLink(t *testing.T) {
 		{"ID.me", "", idme, "https://account.id.me/confirm/abc"},
 		{"English", "", `<a href="https://x.example/v/1">Verify email address</a>`, "https://x.example/v/1"},
 		{"plain text", "Confirm your email: https://x.example/v/2", "", "https://x.example/v/2"},
+		{"Hugging Face", "", `<div><p><b>Confirm your email address by clicking on this link:</b></p><p><a href="https://huggingface.co/email_confirmation/BUrUCuhKkJGfUBKhTYHASUpMLTdm">https://huggingface.co/email_confirmation/BUrUCuhKkJGfUBKhTYHASUpMLTdm</a></p><p>If you didn't create a Hugging Face account, you can ignore this email.</p></div>`, "https://huggingface.co/email_confirmation/BUrUCuhKkJGfUBKhTYHASUpMLTdm"},
+		{"query in an HTML link", "", `<p>Verify your email:</p><p><a href="https://x.example/v?a=1&amp;b=2">https://x.example/v?a=1&amp;b=2</a></p>`, "https://x.example/v?a=1&b=2"},
 		{"not a confirm button", "", `<a href="https://x.example/s">Email settings</a>`, ""},
 		{"two", "", `<a href="https://x.example/1">Confirm your email</a><a href="https://x.example/2">Verify email</a>`, ""},
 	} {
