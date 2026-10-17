@@ -83,26 +83,25 @@ func (s *Service) pluginModels(ctx context.Context, name string, rp *runningPlug
 	if c := rp.models.Load(); c != nil && c.cfg == key {
 		return c.models, nil
 	}
-	var raw []byte
-	if rp.native != nil {
-		res, err := rp.native.Call(ctx, "models.list", struct{}{})
-		if err != nil {
-			return nil, err
-		}
-		raw = res
-	} else {
-		v, err := rp.p.ListModels(ctx, s.modelInvocation(rp))
-		if err != nil {
-			return nil, err
-		}
-		raw, _ = json.Marshal(v)
-	}
 	var res plugins.ModelsResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return nil, fmt.Errorf("plugin %s: the model list is not {models}", name)
-	}
-	if err := plugins.ValidateModels(res, rp.native != nil); err != nil {
-		return nil, fmt.Errorf("plugin %s: %w", name, err)
+	err := s.callModelPlugin(ctx, name, rp, func(ctx context.Context) error {
+		var err error
+		if rp.native != nil {
+			v, cerr := rp.native.Call(ctx, "models.list", struct{}{})
+			err = decodeAnswer(v, cerr, &res, "models.list")
+		} else {
+			v, cerr := rp.p.ListModels(ctx, s.modelInvocation(rp))
+			err = decodeAnswer(v, cerr, &res, "listModels")
+		}
+		if err == nil {
+			if verr := plugins.ValidateModels(res, rp.native != nil); verr != nil {
+				err = fmt.Errorf("%w: %s", errPluginAnswer, verr)
+			}
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	rp.models.Store(&modelCatalog{key, res.Models})
 	return res.Models, nil

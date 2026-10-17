@@ -85,6 +85,7 @@ func TestListPluginModels(t *testing.T) {
 	require.Len(t, got, 3)
 	assert.Equal(t, "broken", got[0].Plugin)
 	assert.Contains(t, got[0].Err, "no catalog today", "a failing plugin is reported, not dropped")
+	assert.Equal(t, int64(1), pluginFailures(t, s, "broken"), "a failed list counts")
 	assert.Equal(t, PluginModels{Plugin: "lister", Models: []plugins.ProviderModel{{ID: "chat", Name: "Chat us", Transport: "http",
 		Protocol: "openai-completions", BaseURL: "https://api.example.com/v1"}}}, got[1])
 	assert.Equal(t, PluginModels{Plugin: "nm", Models: []plugins.ProviderModel{{ID: "judge", Name: "Judge", Transport: "plugin",
@@ -105,6 +106,7 @@ func TestListPluginModelsInvalid(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Contains(t, got[0].Err, "https", "a script plugin's model must be https")
+	assert.Equal(t, int64(1), pluginFailures(t, s, "bad"), "an invalid list counts")
 	assert.Empty(t, got[0].Models)
 }
 
