@@ -139,8 +139,6 @@ jobs:
     permissions:
       contents: read
       id-token: write # npm provenance
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,6 +149,8 @@ jobs:
       # Tags from before the package (a manual rebuild) have nothing to publish.
       - if: hashFiles('sdk/package.json') != ''
         working-directory: sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # only here: no action step sees the token
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::warning::NPM_TOKEN is not set: @godwit/sdk was not published."; exit 0; fi
           version=$(node -p 'require("./package.json").version')
