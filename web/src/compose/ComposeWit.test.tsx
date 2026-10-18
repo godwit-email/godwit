@@ -138,11 +138,21 @@ const withPending: WitHistory = {
   model: "",
   running: 0,
   messages: [
-    { id: "q0", role: "user", text: "改", calls: [], results: [], citations: [], runs: [7] },
+    {
+      id: "q0",
+      role: "user",
+      text: "改",
+      reasoning: "",
+      calls: [],
+      results: [],
+      citations: [],
+      runs: [7],
+    },
     {
       id: "a1",
       role: "assistant",
       text: "",
+      reasoning: "",
       calls: [{ id: "c1", name: "update_draft", args: "{}" }],
       results: [],
       citations: [],
@@ -596,6 +606,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
       withPending.messages[0],
       {
         ...withPending.messages[1],
+        reasoning: "",
         calls: [
           { id: "p1", name: "plugin_netty_ping", args: "{}" },
           { id: "p2", name: "plugin_netty_ping", args: "{}" },
@@ -682,6 +693,7 @@ test("全部允许 on a run with a tool's call and a body edit settles both: the
       withPending.messages[0],
       {
         ...withPending.messages[1],
+        reasoning: "",
         calls: [
           { id: "c1", name: "update_draft", args: "{}" },
           { id: "p1", name: "plugin_netty_ping", args: "{}" },
@@ -721,11 +733,21 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
   await setup({
     ...empty,
     messages: [
-      { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+      {
+        id: "q0",
+        role: "user",
+        text: "Q",
+        reasoning: "",
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [7],
+      },
       {
         id: "a1",
         role: "assistant",
         text: "[b](mailto:x@y.z)",
+        reasoning: "",
         calls: [],
         results: [],
         citations: [],

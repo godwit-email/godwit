@@ -18,8 +18,9 @@ export type WitUIMessage = UIMessage<WitMeta, WitData>;
 type Chunk = UIMessageChunk<WitMeta, WitData>;
 type Part = WitUIMessage["parts"][number];
 
-// The open text part's key in `seen` (no tool call ID has a NUL).
+// The open text and reasoning parts' keys in `seen` (no tool call ID has a NUL).
 const TEXT = "\0text";
+const THINK = "\0reasoning";
 
 const json = (s: string): unknown => {
   if (!s) return {};
@@ -85,6 +86,7 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
     if (seen.delete(TEXT)) out.push({ type: "text-end", id: TEXT });
   };
   if (ev.kind !== "text") closeText();
+  if (ev.kind !== "reasoning" && seen.delete(THINK)) out.push({ type: "reasoning-end", id: THINK });
   if (ev.citations.length > 0) out.push({ type: "data-citations", data: ev.citations });
   switch (ev.kind) {
     case "text":
@@ -93,6 +95,13 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
         out.push({ type: "text-start", id: TEXT });
       }
       out.push({ type: "text-delta", id: TEXT, delta: ev.text });
+      break;
+    case "reasoning":
+      if (!seen.has(THINK)) {
+        seen.add(THINK);
+        out.push({ type: "reasoning-start", id: THINK });
+      }
+      out.push({ type: "reasoning-delta", id: THINK, delta: ev.text });
       break;
     case "tool_call":
       if (ev.call) {
@@ -193,7 +202,9 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
         runs: m.runs,
       });
     } else {
-      const parts: Part[] = [];
+      const parts: Part[] = m.reasoning
+        ? [{ type: "reasoning", text: m.reasoning, state: "done" }]
+        : [];
       const as: Approval[] = [];
       for (const c of m.calls) {
         const a = byCall.get(c.id);
@@ -244,6 +255,14 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
         { type: "text-start", id },
         { type: "text-delta", id, delta: p.text },
         { type: "text-end", id },
+      ];
+    }
+    if (p.type === "reasoning") {
+      const id = `t${i}`;
+      return [
+        { type: "reasoning-start", id },
+        { type: "reasoning-delta", id, delta: p.text },
+        { type: "reasoning-end", id },
       ];
     }
     if (p.type === "data-citations" || p.type === "data-approvals") return [p as Chunk];

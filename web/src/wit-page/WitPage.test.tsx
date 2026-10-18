@@ -58,6 +58,7 @@ const msg = (id: string, role: string, t: string, runs: number[]) => ({
   id,
   role,
   text: t,
+  reasoning: "",
   calls: [],
   results: [],
   citations: [],
@@ -303,6 +304,7 @@ test("approvals decide through WitPage.decide", async () => {
       msg("q", "user", "Q", [1]),
       {
         ...msg("a", "assistant", "", [1]),
+        reasoning: "",
         calls: [{ id: "c1", name: "create_draft", args: "{}" }],
       },
     ],

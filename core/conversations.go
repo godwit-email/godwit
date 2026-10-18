@@ -590,7 +590,7 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		return ai.Request{}, err
 	}
 	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools)}, nil
+	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true}, nil
 }
 
 // track registers a run in flight. The caller holds runMu.

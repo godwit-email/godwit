@@ -69,6 +69,39 @@ const send = (tr: WitTransport, m: WitUIMessage) =>
   });
 
 describe("toChunks", () => {
+  it("streams reasoning in a part of its own, closed when the text starts", () => {
+    const seen = new Set<string>();
+    const a = toChunks(ev({ kind: "reasoning", text: "先查" }), seen);
+    const b = toChunks(ev({ kind: "reasoning", text: "账单" }), seen);
+    const c = toChunks(ev({ kind: "text", text: "三笔" }), seen);
+    expect(a.map((x) => x.type)).toEqual(["reasoning-start", "reasoning-delta"]);
+    expect(b.map((x) => x.type)).toEqual(["reasoning-delta"]);
+    expect(c.map((x) => x.type)).toEqual(["reasoning-end", "text-start", "text-delta"]);
+  });
+
+  it("an answer's saved reasoning leads its parts", () => {
+    const [m] = historyToMessages({
+      conversation: 1,
+      model: "",
+      running: 0,
+      approvals: [],
+      messages: [
+        {
+          id: "a0",
+          role: "assistant",
+          text: "三笔",
+          reasoning: "先查账单",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
+      ],
+    });
+    expect(m.parts.map((p) => p.type)).toEqual(["reasoning", "text"]);
+    expect(m.parts[0]).toMatchObject({ text: "先查账单", state: "done" });
+  });
+
   it("opens text once, closes it before anything else", () => {
     const seen = new Set<string>();
     const a = toChunks(ev({ kind: "text", text: "Hi" }), seen);
@@ -188,11 +221,21 @@ describe("historyToMessages", () => {
       model: "",
       running: 0,
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "A",
+          reasoning: "",
           calls: [
             { id: "c1", name: "search", args: '{"q":1}' },
             { id: "c2", name: "update_draft", args: "{}" },
@@ -206,6 +249,7 @@ describe("historyToMessages", () => {
           id: "q2",
           role: "user",
           text: "更正式",
+          reasoning: "",
           calls: [],
           results: [],
           citations: [],
@@ -297,11 +341,21 @@ describe("WitTransport", () => {
       running: 7,
       approvals: [],
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "Hel",
+          reasoning: "",
           calls: [],
           results: [],
           citations: [],
@@ -391,6 +445,7 @@ describe("WitTransport", () => {
       id,
       role,
       text,
+      reasoning: "",
       calls: [],
       results: [],
       citations: [],
@@ -487,7 +542,18 @@ describe("WitTransport selections", () => {
     running: 0,
     approvals: [],
     messages: runs.length
-      ? [{ id: "q", role: "user", text: "Q", calls: [], results: [], citations: [], runs }]
+      ? [
+          {
+            id: "q",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs,
+          },
+        ]
       : [],
   });
 

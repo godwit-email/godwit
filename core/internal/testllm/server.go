@@ -55,7 +55,8 @@ type Turn struct {
 	FailCode   string
 	Incomplete bool
 	Truncate   bool
-	Refusal    string // openai-responses: the reply is this refusal, not text
+	Refusal    string   // openai-responses: the reply is this refusal, not text
+	Think      []string // openai chat: reasoning_content deltas before the text
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -316,6 +317,9 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 	chunk := func(delta any, finish any) string {
 		return "data: " + js(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m",
 			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
+	}
+	for _, r := range t.Think {
+		send(chunk(map[string]any{"role": "assistant", "reasoning_content": r}, nil))
 	}
 	for _, txt := range t.Text {
 		send(chunk(map[string]any{"role": "assistant", "content": txt}, nil))

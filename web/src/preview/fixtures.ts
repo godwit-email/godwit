@@ -154,6 +154,7 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
 });
 const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">): WitMessage => ({
   text: "",
+  reasoning: "",
   calls: [],
   results: [],
   citations: [],
@@ -175,6 +176,7 @@ const turn1: WitMessage[] = [
     id: "m2",
     role: "assistant",
     runs: [1],
+    reasoning: "",
     calls: [read, upd1],
     results: [ok(read)],
     text: "已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。",
@@ -251,6 +253,7 @@ export const pending = (inline: boolean): WitHistory => {
         id: "m4",
         role: "assistant",
         runs: [2],
+        reasoning: "",
         calls: [upd2],
         text: inline
           ? "改了 2 处，正文里用删除线和高亮标出来了。"
@@ -314,6 +317,8 @@ export const witConversation = (): WitHistory =>
         id: "a2",
         role: "assistant",
         runs: [1],
+        reasoning:
+          "用户问的是本月的订阅支出。先搜索本月的账单和收据邮件，再逐封确认金额，排除促销邮件。",
         calls: [search, ...reads],
         results: [ok(search, { count: 7 }), ...reads.map((c) => ok(c))],
         citations,
@@ -329,6 +334,7 @@ export const witConversation = (): WitHistory =>
         id: "a4",
         role: "assistant",
         runs: [2],
+        reasoning: "",
         calls: [createDraft],
         text: "我起草了一封回复。创建草稿需要你确认：",
       }),

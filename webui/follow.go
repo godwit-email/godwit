@@ -23,9 +23,10 @@ type WitEvent struct {
 	// Conversation and Run are the conversation and the run it belongs to.
 	Conversation int64 `json:"conversation"`
 	Run          int64 `json:"run"`
-	// Kind is context, text, tool_call, tool_result, interrupted, done or error.
+	// Kind is context, text, reasoning, tool_call, tool_result, interrupted,
+	// done or error.
 	Kind string `json:"kind"`
-	// Text is a text delta.
+	// Text is a text or reasoning delta.
 	Text string `json:"text"`
 	// Call is a tool_call's call; Result a tool_result's result.
 	Call   *WitCall   `json:"call"`

@@ -927,6 +927,7 @@
   "wit_quote_none": "没有找到邮件",
   "wit_quote_remove": "移除 {arg1}",
   "wit_quote_search": "搜索邮件",
+  "wit_reasoning": "思考过程",
   "wit_scroll_end": "回到最新",
   "wit_send": "发送给 Wit",
   "wit_skill_longer": "更长",

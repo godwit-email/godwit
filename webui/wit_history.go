@@ -27,8 +27,10 @@ type WitHistory struct {
 type WitMessage struct {
 	ID string `json:"id"`
 	// Role is user or assistant; an answer's Text is Markdown.
-	Role      string      `json:"role"`
-	Text      string      `json:"text"`
+	Role string `json:"role"`
+	Text string `json:"text"`
+	// Reasoning is what the model showed of its reasoning (an answer only).
+	Reasoning string      `json:"reasoning"`
 	Calls     []WitCall   `json:"calls"`
 	Results   []WitResult `json:"results"`
 	Citations []Citation  `json:"citations"`
@@ -61,6 +63,12 @@ func witMessages(c core.Conversation) []WitMessage {
 				ans.Text += "\n\n"
 			}
 			ans.Text += m.Text
+		}
+		if m.Reasoning != "" {
+			if ans.Reasoning != "" {
+				ans.Reasoning += "\n\n"
+			}
+			ans.Reasoning += m.Reasoning
 		}
 		for _, call := range m.Calls {
 			ans.Calls = append(ans.Calls, callOf(call))

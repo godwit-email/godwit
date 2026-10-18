@@ -203,6 +203,7 @@ describe("Panel", () => {
             id: "a0",
             role: "assistant",
             text: "答案",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [],
@@ -301,6 +302,22 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
+  it("reasoning shows as a running trace line, then folds under 思考过程", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    emit({ kind: "reasoning", text: "先查账单" });
+    const line = await screen.findByText("正在思考…", { selector: "[data-slot=trace-title]" });
+    expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
+    emit({ kind: "text", text: "三笔" });
+    emit({ kind: "done" });
+    const folded = await screen.findByRole("button", { name: /思考过程/ });
+    expect(folded).toHaveAttribute("aria-expanded", "false");
+    await user.click(folded);
+    expect(await screen.findByText("先查账单")).toBeInTheDocument();
+  });
+
   it("an error shows 重试, which repeats the last skill", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup();
@@ -356,11 +373,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "",
+            reasoning: "",
             calls: [{ id: "c1", name: "create_draft", args: "{}" }],
             results: [],
             citations: [],
@@ -410,11 +437,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
             calls: [
               { id: "c1", name: "search", args: "{}" },
               { id: "c2", name: "search", args: "{}" },
@@ -432,10 +469,10 @@ describe("Panel", () => {
         ],
       },
     });
-    // the panel names the tools; the triangle leads
+    // the panel names the tools on a trace line, folded
     const tools = screen.getByText("调用了 search · read").closest("button");
-    expect(tools).toHaveClass("text-sm", "text-left");
-    expect(tools?.firstElementChild?.tagName).toBe("svg");
+    expect(tools?.querySelector("[data-slot=trace-line]")).toBeInTheDocument();
+    expect(tools).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
       "data-variant",
       "secondary",
@@ -465,11 +502,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [
@@ -506,6 +553,7 @@ describe("Panel", () => {
           id: "q0",
           role: "user",
           text: "更短",
+          reasoning: "",
           calls: [],
           results: [],
           citations: [],
@@ -558,11 +606,21 @@ describe("Panel", () => {
         ...empty,
         running: 7,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Hello",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [],
@@ -606,11 +664,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "",
+            reasoning: "",
             calls: [
               { id: "p1", name: "plugin_netty_ping", args: a.args },
               { id: "p2", name: "create_draft", args: "{}" },
@@ -688,11 +756,21 @@ describe("Panel", () => {
         ...empty,
         running: 9, // run 9 saved nothing yet: its question is not in the history
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Answer A",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [],
@@ -713,11 +791,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Answer A",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [],
@@ -750,11 +838,21 @@ describe("Panel", () => {
     const saved: WitHistory = {
       ...empty,
       messages: [
-        { id: "q9", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "q9",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
         {
           id: "a9",
           role: "assistant",
           text: "Hello whole world",
+          reasoning: "",
           calls: [],
           results: [],
           citations: [],
@@ -809,11 +907,21 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
             calls: [],
             results: [],
             citations: [cite(1, 50), cite(2, 51, true)],
@@ -968,11 +1076,21 @@ describe("Panel", () => {
     const history: WitHistory = {
       ...empty,
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "",
+          reasoning: "",
           calls: [{ id: "p1", name: "create_draft", args: "{}" }],
           results: [],
           citations: [],

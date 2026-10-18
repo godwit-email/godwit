@@ -963,3 +963,26 @@ func TestWitPageModel(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, h.Model, "back to the default")
 }
+
+// The model's readable reasoning streams as reasoning events, apart from the
+// answer's text, and the history keeps it on the answer.
+func TestWitPageReasoning(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Think: []string{"先查", "账单"}, Text: []string{"三笔"}})
+	rs, err := f.p.Ask(f.ctx(), 0, "订阅花了多少", nil, "")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "done")
+	var thought string
+	for _, ev := range f.events() {
+		if ev.Conversation == rs.Conversation && ev.Kind == "reasoning" {
+			thought += ev.Text
+		}
+	}
+	assert.Equal(t, "先查账单", thought)
+	assert.Equal(t, "三笔", streamed(f.events(), rs.Conversation))
+	h, err := f.p.Follow(f.ctx(), rs.Conversation)
+	require.NoError(t, err)
+	require.Len(t, h.Messages, 2)
+	assert.Equal(t, "先查账单", h.Messages[1].Reasoning)
+	assert.Equal(t, "三笔", h.Messages[1].Text)
+}

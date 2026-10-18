@@ -5,16 +5,17 @@ import {
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
+  RiBrainLine,
   RiEqualizerLine,
   RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
-  RiPlayFill,
   RiSettings3Line,
   RiStopFill,
+  RiToolsLine,
   RiTranslate2,
 } from "@remixicon/react";
-import type { DynamicToolUIPart } from "ai";
+import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -22,7 +23,6 @@ import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +48,15 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
 import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
@@ -258,6 +267,10 @@ function Answer({
     (c) =>
       c.state === "output-available" || c.state === "output-error" || c.state === "output-denied",
   );
+  // Calls under way: no result yet and none waiting on the user.
+  const going = live ? calls.filter((c) => c.state === "input-available") : [];
+  const thought = m.parts.filter((p): p is ReasoningUIPart => p.type === "reasoning" && !!p.text);
+  const thinking = live && thought.some((p) => p.state === "streaming");
   const cites = citesOf(m);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
@@ -274,25 +287,58 @@ function Answer({
   };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
-      {done.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger
-            className={cn(
-              "group flex items-start gap-1 text-left text-muted-foreground hover:text-foreground",
-              page ? "text-base" : "text-sm",
-            )}
-          >
-            <RiPlayFill className="mt-0.5 size-3 shrink-0 transition-transform group-data-panel-open:rotate-90" />
-            {toolsLabel(done, page, t)}
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-1 flex flex-col gap-1 text-muted-foreground">
-            {done.map((c) => (
-              <code key={c.toolCallId} className="break-all text-xs">
-                {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
-              </code>
-            ))}
-          </CollapsibleContent>
-        </Collapsible>
+      {(thought.length > 0 || done.length > 0 || going.length > 0) && (
+        // the answer's steps: what it thought, the tools it called, the calls under way
+        <Trace className={page ? "[&_[data-slot=trace-line]]:text-base" : undefined}>
+          {thought.length > 0 && (
+            <TraceCollapsible>
+              <TraceCollapsibleTrigger>
+                <TraceLine status={thinking ? "running" : undefined}>
+                  <TraceIcon>
+                    <RiBrainLine />
+                  </TraceIcon>
+                  <TraceTitle>{t(thinking ? "wit.thinking" : "wit.reasoning")}</TraceTitle>
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">
+                {thought.map((p) => p.text).join("\n\n")}
+              </TraceCollapsibleContent>
+            </TraceCollapsible>
+          )}
+          {done.length > 0 && (
+            <TraceCollapsible>
+              <TraceCollapsibleTrigger>
+                <TraceLine>
+                  <TraceIcon>
+                    <RiToolsLine />
+                  </TraceIcon>
+                  <TraceTitle>{toolsLabel(done, page, t)}</TraceTitle>
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent className="flex flex-col gap-1">
+                {done.map((c) => (
+                  <code
+                    key={c.toolCallId}
+                    className={cn(
+                      "break-all text-xs",
+                      c.state === "output-error" && "text-destructive",
+                    )}
+                  >
+                    {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
+                  </code>
+                ))}
+              </TraceCollapsibleContent>
+            </TraceCollapsible>
+          )}
+          {going.map((c) => (
+            <TraceLine key={c.toolCallId} status="running">
+              <TraceIcon>
+                <RiToolsLine />
+              </TraceIcon>
+              <TraceTitle>{toolLabel(c.toolName, t)}</TraceTitle>
+            </TraceLine>
+          ))}
+        </Trace>
       )}
       {cites
         .flatMap((c) => {

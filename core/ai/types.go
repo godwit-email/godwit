@@ -31,10 +31,11 @@ type ResolvedModel struct {
 
 // Message is a conversation message for display; it is never used to resume.
 type Message struct {
-	Role    string // user, model or tool
-	Text    string
-	Calls   []ToolCall
-	Results []ToolResult
+	Role      string // user, model or tool
+	Text      string
+	Reasoning string // the model's readable reasoning, if it showed any
+	Calls     []ToolCall
+	Results   []ToolResult
 }
 
 type ToolCall struct {
@@ -104,9 +105,9 @@ func (e *Error) Error() string { return e.Msg }
 // Is makes errors.Is(err, context.Canceled) hold for a canceled run.
 func (e *Error) Is(target error) bool { return e.Code == CodeCanceled && target == context.Canceled }
 
-// Event kinds: text, tool_call, tool_result, interrupted (every call of the round
-// awaiting approval, in call order), done, error. Exactly one of the last three
-// ends the stream.
+// Event kinds: text, reasoning (Request.Reasoning only), tool_call, tool_result,
+// interrupted (every call of the round awaiting approval, in call order), done,
+// error. Exactly one of the last three ends the stream.
 type Event struct {
 	Kind       string
 	Text       string
@@ -132,6 +133,8 @@ type Request struct {
 	Tools     []ToolSpec
 	Responses []ToolResult
 	MaxTurns  int
+	// Reasoning streams the model's readable reasoning as reasoning events.
+	Reasoning bool
 }
 
 type Result struct {
