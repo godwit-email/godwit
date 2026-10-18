@@ -343,7 +343,6 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private gen = 0; // the selection: bumped by each follow and send
   private endOpen?: () => void; // ends the stream open
   private watchers = new Set<(ev: WitEvent) => void>();
-  private rewound = new Set<string>(); // the questions whose run started in place: a retry asks only
   private off: () => void;
 
   constructor(
@@ -450,11 +449,6 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     return this.run ? this.api.stop(this.run) : Promise.resolve();
   }
 
-  /** Whether m was asked in place and its run started: the question it replaced is gone. */
-  askedInPlace(m: WitUIMessage): boolean {
-    return this.rewound.has(m.id);
-  }
-
   /** Whether a question can be asked again in place (the host rewinds). */
   get rewinds(): boolean {
     return !!this.api.rewinds;
@@ -530,8 +524,8 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     const quoted = m?.metadata?.quoted;
-    // A retry (regenerate) asks in place again only if that ask was refused (nothing changed).
-    const at = m && this.api.rewinds && !this.rewound.has(m.id) ? m.metadata?.rewind : undefined;
+    // A retry (regenerate) asks in place again: a run that saved nothing replaced nothing.
+    const at = this.api.rewinds ? m?.metadata?.rewind : undefined;
     (skill && this.api.skill
       ? this.api.skill(skill, m?.metadata?.lang ?? "")
       : at !== undefined
@@ -542,7 +536,6 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     )
       .then(
         (run) => {
-          if (at !== undefined && m) this.rewound.add(m.id);
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown
           named(`live${run}`); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;

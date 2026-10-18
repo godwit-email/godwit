@@ -501,6 +501,20 @@ describe("Panel", () => {
     expect(await screen.findByText("上次请求：20 tokens")).toBeInTheDocument();
   });
 
+  it("an edit stopped replaced nothing: the conversation shows as it is, the edit back", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    emit({ kind: "text", text: "半" });
+    await screen.findByText("半");
+    emit({ kind: "error", error: "" }); // the stop
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+  });
+
   it("an edit cancelled leaves the conversation as it was", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true, history: turn });

@@ -82,7 +82,7 @@ describe("rewind", () => {
       abortSignal: undefined,
     });
 
-  it("a question sent with rewind is asked in place; once started, a retry only asks", async () => {
+  it("a question sent with rewind is asked in place, and so is its retry", async () => {
     const { api, tr } = fake();
     const t2 = new WitTransport({ ...api, rewinds: true }, () => () => {});
     api.ask.mockResolvedValue(7);
@@ -91,9 +91,10 @@ describe("rewind", () => {
     const m = userMsg("again", { quoted: [3], rewind: 2 });
     void send(t2, m, "submit-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3], 2));
+    // a retry follows a run that saved nothing: core replaced nothing yet
     void send(t2, m, "regenerate-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
-    expect(api.ask).toHaveBeenLastCalledWith("again", [3]);
+    expect(api.ask).toHaveBeenLastCalledWith("again", [3], 2);
   });
 
   it("a retry after the ask in place was refused asks in place again", async () => {

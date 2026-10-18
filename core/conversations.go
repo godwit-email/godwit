@@ -218,21 +218,24 @@ func rewoundState(state []byte, at int) ([]byte, error) {
 }
 
 // saveRewind saves conversation id rewound to kept (rewoundState of at),
-// with also, in one transaction: the runs that added what went go with it,
-// and its grants.
-func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte, also ...sqlite.Statement) error {
-	stmts := []sqlite.Statement{
-		saveState(id, kept),
-		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
-	}
-	if at == 0 { // the first question titled it: the one asked in its place does
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
-	}
-	_, err := s.db.Transaction(ctx, append(stmts, also...))
+// and drops its grants.
+func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte) error {
+	_, err := s.db.Transaction(ctx, append([]sqlite.Statement{saveState(id, kept)}, rewindStmts(id, at)...))
 	if err == nil {
 		s.dropGrants(id)
 	}
 	return err
+}
+
+// rewindStmts drop what conversation id's runs added from its question at
+// Messages[at] on (runs with no span stay); the conversation's state is
+// saved apart.
+func rewindStmts(id int64, at int) []sqlite.Statement {
+	stmts := []sqlite.Statement{{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}}}
+	if at == 0 { // the first question titled it: the one asked in its place does
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
+	}
+	return stmts
 }
 
 // GetConversation returns the conversation with its messages.
@@ -674,7 +677,10 @@ type runJob struct {
 	dropped  int           // messages TrimState left out of the request
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed.
-	host   func(ctx context.Context, res ai.Result) ai.Result
+	host func(ctx context.Context, res ai.Result) ai.Result
+	// rewind, for a question asked in place, go with the run's first save
+	// (settleRun): a run that saves nothing (failed, stopped) replaces nothing.
+	rewind []sqlite.Statement
 	cited  []Citation // the mail the run's context shows the model, sent first
 	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
 	ctx    context.Context
@@ -751,10 +757,10 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 // launch claims a run and hands end to it. The quoted mail (checked IDs) goes
 // before the prompt (quote). at, unless -1, asks the prompt in place of the
 // question at Messages[at] (RewindConversation): the run starts on the
-// history before it, which is saved only once everything else that can fail
-// before the hand-off has not. claimed, if set, are saved once the run is
-// claimed and before the hand-off, in the rewind's transaction if any; their
-// error fails the run and launch.
+// history before it, and the rewind is saved with what the run saves, if it
+// does. claimed, if set, are saved once the run is claimed and before the
+// hand-off (asking in place: with the rewind); their error fails the run
+// and launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
 	quoted []int64, at int, claimed ...sqlite.Statement) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
@@ -796,8 +802,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	if err == nil && len(quoted) > 0 {
 		req.Context, err = s.quote(ctx, job, quoted)
 	}
-	if err == nil && at >= 0 { // the claimed run has no span yet: it stays
-		err = s.saveRewind(ctx, conv.ID, at, state, claimed...)
+	if err == nil && at >= 0 {
+		job.rewind = append(rewindStmts(conv.ID, at), claimed...)
+		s.dropGrants(conv.ID) // asked again, a write waits for the user
 	} else if err == nil && len(claimed) > 0 {
 		_, err = s.db.Transaction(ctx, claimed)
 	}
@@ -1052,14 +1059,18 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		err = errors.Join(err, s.exec(ctx, runUsage(job.id, res.Usage)))
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
-		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done"),
-			runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage)})
+		// the rewind first: its run's span starts where what it drops did
+		_, err := s.db.Transaction(ctx, append(slices.Clone(job.rewind), saveState(job.conv.ID, res.State), runState(job.id, "done"),
+			runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage)))
+		if err == nil {
+			job.rewind = nil
+		}
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
-	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage),
-		{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}}}
+	stmts := append(slices.Clone(job.rewind), saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage),
+		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)
 		if !ok {
@@ -1079,6 +1090,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return WitEvent{}, err
 	}
+	job.rewind = nil
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: job.conv.ID})
 	as, err := s.approvals(ctx, "a.run_id = ? AND a.seq >= ?", job.id, job.round)
 	return WitEvent{Event: ai.Event{Kind: "interrupted", Interrupts: res.Interrupts}, Approvals: as}, err

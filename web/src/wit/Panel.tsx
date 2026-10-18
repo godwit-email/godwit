@@ -527,6 +527,11 @@ export function Panel({
   const [decided, setDecided] = useState<number[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
+  // as they are now, for what a run's end decides after reading the history
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [quoted, setQuoted] = useState<MailHit[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
   // The question being edited: sending asks it in place of the one at index at.
@@ -568,8 +573,15 @@ export function Panel({
         if (
           !h.messages.some((m) => m.runs.includes(run)) &&
           !h.approvals.some((a) => a.run === run)
-        )
+        ) {
+          // A question asked in place, stopped: it replaced nothing. The conversation shows as it
+          // is, the question back in the input. (Failed, it waits for 重试, which asks in place.)
+          const q = chatRef.current.messages.findLast((m) => m.role === "user");
+          if (q?.metadata?.rewind === undefined || chatRef.current.error) return;
+          setMessages(historyToMessages(h));
+          putBackRef.current(q);
           return;
+        }
         setMessages(historyToMessages(h));
       },
       () => {}, // the stream stays as it is
@@ -600,21 +612,24 @@ export function Panel({
     onAsked?.();
     ask(handed.text);
   }, [handed]);
+  // A question not asked after all goes back to the input, unless something was typed since: its
+  // text, its quotes, and an edit still one (sent again, it still replaces the old question).
+  const putBack = (q: WitUIMessage) => {
+    if (draftRef.current) return;
+    setDraft(textOf(q));
+    setQuoted(q.metadata?.hits ?? []);
+    const r = q.metadata?.rewind;
+    if (r !== undefined) setEditing({ at: r });
+  };
+  const putBackRef = useRef(putBack);
+  putBackRef.current = putBack;
   // A start refused (nothing answered the question): its text goes back to the input, not lost.
   const refused = chat.error && !running ? chat.messages.at(-1) : undefined;
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new refusal restores
   useEffect(() => {
     if (refused?.role !== "user") return;
-    const r = refused.metadata?.rewind;
-    // once its run started the old question is gone: sent again, it is a new one
-    const inPlace = r !== undefined && !transport.askedInPlace(refused);
-    // the input keeps what was typed since; else it takes the question back, an edit still one
-    if (!draft) {
-      setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
-      setQuoted(refused.metadata?.hits ?? []);
-      if (inPlace) setEditing({ at: r });
-    }
-    if (!inPlace) return;
+    putBack(refused);
+    if (refused.metadata?.rewind === undefined) return;
     // the host changed nothing: what it would have replaced comes back, the refusal as a toast
     toast.error(witError(chat.error?.message ?? "", t));
     setMessages([...chat.messages.slice(0, -1), ...shelved.current]);

@@ -150,8 +150,16 @@ func TestAskAgain(t *testing.T) {
 	assert.Equal(t, before, messages(), "a model that does not resolve")
 
 	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
-	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
+	// accepted, but its run saves nothing (cut off): nothing is replaced either
+	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length"})
 	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "error", evs[len(evs)-1].Kind)
+	assert.Equal(t, before, messages(), "a run that failed")
+
+	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
 	require.NoError(t, err)
 	drainWit(t, ch)
 	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, messages())
