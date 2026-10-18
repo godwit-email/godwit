@@ -112,6 +112,7 @@ type Service struct {
 
 	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running     map[string]*runningPlugin  // started plugins by name
+	assets      modelAssets                // plugin models' files (assets.go); nil is noModelAssets
 	pluginGen   uint64                     // last runningPlugin.gen handed out
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
@@ -123,7 +124,6 @@ type Service struct {
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
 	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
 	nativeEnv   []string           // and its whole environment
-	assets      modelAssets        // registry-hosted model files (assets.go)
 	registryMu  sync.Mutex         // registry cache writes; registryErr
 	registryErr string             // why the last registry refresh failed; "" it did not
 

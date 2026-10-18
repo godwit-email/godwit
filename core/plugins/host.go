@@ -96,7 +96,8 @@ type Plugin struct {
 	// ctx.config is read once per call (owner goroutine only).
 	cfgCall    *CallScope
 	cfgVal     goja.Value
-	translator goja.Callable // ctx.translators.register's translate
+	translator goja.Callable  // ctx.translators.register's translate
+	models     *modelProvider // ctx.models.register's (models.go)
 }
 
 type tool struct {
@@ -266,6 +267,9 @@ func Load(ctx context.Context, vm *VM, m Manifest, h Host, cfg *ConfigSnapshot) 
 	}
 	if slices.Contains(m.Capabilities, "translate") && p.translator == nil {
 		return nil, fmt.Errorf("plugin %s declares translate but registered no translator", m.Name)
+	}
+	if slices.Contains(m.Capabilities, "models") && p.models == nil {
+		return nil, fmt.Errorf("plugin %s declares models but registered none", m.Name)
 	}
 	return p, nil
 }
@@ -559,6 +563,7 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 		"cards", object("register", fn("cards.register", p.registerCard)),
 		"tools", object("register", fn("tools.register", p.registerTool)),
 		"translators", object("register", fn("translators.register", p.registerTranslator)),
+		"models", object("register", fn("models.register", p.registerModels)),
 		"mail", mail, "llm", llm, "net", netObj, "storage", storage,
 	)
 	_ = o.DefineAccessorProperty("config", fn("config", func(c *CallScope, _ goja.FunctionCall) goja.Value {

@@ -354,7 +354,7 @@ func TestCtxCapabilityWhitelist(t *testing.T) {
 	})()`)
 	assert.Equal(t, []any{"actions.register", "cards.register", "config", "llm.complete", "llm.decide",
 		"mail.createDraft", "mail.get", "mail.move", "mail.search", "mail.setFlags", "mail.updateDraft",
-		"net.fetch", "on", "storage.delete", "storage.get", "storage.set", "tools.register", "translators.register"}, got)
+		"models.register", "net.fetch", "on", "storage.delete", "storage.get", "storage.set", "tools.register", "translators.register"}, got)
 
 	var methods []string
 	ht := reflect.TypeFor[Host]()

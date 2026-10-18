@@ -33,6 +33,10 @@ var (
 	ErrModelNotFound        = errors.New("model not found")
 	// ErrTranslatorUnavailable: the settings translate with a plugin that is not running.
 	ErrTranslatorUnavailable = errors.New("the translation plugin is not running")
+	// ErrModelUnavailable: a reference names a plugin model whose plugin is not
+	// running or no longer lists it. Unlike a removed service it never falls
+	// back to the default model.
+	ErrModelUnavailable = errors.New("the model's plugin is not running or no longer offers it")
 )
 
 // ModelService is a model service and its two capabilities. Kind is the
@@ -889,6 +893,23 @@ func (s *Service) resolveRef(ctx context.Context, override string) (ai.ResolvedM
 			return ai.ResolvedModel{}, "", ErrAINotConfigured
 		}
 	}
+	if isPluginRef(ref) {
+		m, err := s.resolvePluginModel(ctx, ref)
+		if !errors.Is(err, errNoPluginModel) { // a plugin that failed to list is not a reason to go elsewhere
+			return m, ref, err
+		}
+		// No such plugin model: a service that had the slug "plugin" may own
+		// it ("plugin/meta/model", its alias since), as a two-part ref always is.
+		if sm, sref, serr := s.serviceModelRef(ctx, ref); serr == nil {
+			return sm, sref, nil
+		}
+		return m, ref, err
+	}
+	return s.serviceModelRef(ctx, ref)
+}
+
+// serviceModelRef is resolveRef for a stored service's "slug/model" ref.
+func (s *Service) serviceModelRef(ctx context.Context, ref string) (ai.ResolvedModel, string, error) {
 	r, err := ai.ParseModelRef(ref)
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
@@ -934,6 +955,10 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return nil, "", false, err
+	}
+	if isPluginRef(st.JudgeService) { // never falls back: the user picked the plugin
+		j, err := s.pluginJudge(ctx, st.JudgeService)
+		return j, st.JudgeService, false, err
 	}
 	if st.JudgeService != "" {
 		m, key, err := s.serviceByRef(ctx, st.JudgeService)

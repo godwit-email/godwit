@@ -1,0 +1,19 @@
+{
+  "name": "@godwit/sdk",
+  "version": "1.6.0",
+  "description": "Types for Godwit plugins",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/godwit-email/godwit.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/godwit-email/godwit/tree/main/sdk",
+  "types": "godwit.d.ts",
+  "files": [
+    "godwit.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

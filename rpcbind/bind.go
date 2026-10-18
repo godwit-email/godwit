@@ -34,6 +34,7 @@ var sentinels = []struct {
 	{"needs_grant", core.ErrNeedsGrant},
 	{"plugin_not_found", core.ErrPluginNotFound},
 	{"translator_unavailable", core.ErrTranslatorUnavailable},
+	{"model_unavailable", core.ErrModelUnavailable},
 	{"registry_off", core.ErrRegistryOff},
 	{"registry_signature", core.ErrRegistrySignature},
 	{"registry_stale", core.ErrRegistryStale},

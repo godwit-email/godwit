@@ -15,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -537,8 +538,15 @@ type runningPlugin struct {
 	p    *plugins.Plugin // script plugins
 	row  pluginRow       // the row it was started from: manifest and permission hashes
 
-	native *plugins.NativeProcess         // native plugins (p and host are nil)
-	cfg    atomic.Pointer[map[string]any] // native: the settings a new process gets
+	native  *plugins.NativeProcess         // native plugins (p and host are nil)
+	cfg     atomic.Pointer[map[string]any] // native: the settings a new process gets
+	acked   atomic.Pointer[map[string]any] // native: the last of them a process accepted (cfgKey)
+	methods atomic.Pointer[[]string]       // native: the optional methods its process's describe listed
+	models  atomic.Pointer[modelCatalog]   // its last model list (pluginmodels.go)
+	clients sync.Map                       // clientKey → *http.Client of its HTTP models
+	loaded  sync.Map                       // native: model id → loadedModel, of each model its process loaded (pluginjudge.go)
+	procs   atomic.Uint64                  // native: processes started, the current one\'s number
+	judging chan struct{}                  // one judge call at a time
 
 	stopHooks func() // cancels its message.received dispatcher, if any
 }
@@ -585,7 +593,7 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 		s.running = map[string]*runningPlugin{}
 	}
 	s.pluginGen++
-	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, gen: s.pluginGen, p: p, host: h, row: r, judging: make(chan struct{}, 1)}
 	s.running[name] = rp
 	if err := s.registerPluginTools(name, rp); err != nil {
 		s.stopPlugin(name)
@@ -605,9 +613,11 @@ func (s *Service) stopPlugin(name string) {
 		}
 		if rp.native != nil {
 			rp.native.Close()
+			rp.dropLoaded()
 		} else {
 			rp.p.VM().Close()
 		}
+		s.forgetPluginModels(name, rp)
 		delete(s.running, name)
 		s.unregisterPluginTools(name)
 	}
@@ -636,7 +646,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
-	rp := &runningPlugin{hash: r.sourceHash, row: r}
+	rp := &runningPlugin{hash: r.sourceHash, row: r, judging: make(chan struct{}, 1)}
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
@@ -670,6 +680,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		Name, Version string
 		ABI           uint32
 		Capabilities  []string
+		Methods       []string
 	}
 	sorted := func(xs []string) []string { return slices.Sorted(slices.Values(xs)) }
 	if json.Unmarshal(res, &d) != nil || d.Name != name || d.Version != r.m.Version || d.ABI != plugins.NativeABI ||
@@ -677,7 +688,13 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 		// a native failure, so failed restarts count towards disabling it
 		return fmt.Errorf("%w: the library describes itself as %q %q, not as its plugin.json says", plugins.ErrNativeABI, d.Name, d.Version)
 	}
-	_, err = call(ctx, "configure", map[string]any{"config": *rp.cfg.Load()})
+	rp.methods.Store(&d.Methods)
+	rp.procs.Add(1)
+	rp.dropLoaded() // a new process has loaded nothing
+	cfg := rp.cfg.Load()
+	if _, err = call(ctx, "configure", map[string]any{"config": *cfg}); err == nil {
+		rp.acked.Store(cfg)
+	}
 	return err
 }
 
@@ -689,7 +706,9 @@ func (s *Service) configureNative(ctx context.Context, name string, rp *runningP
 		return err
 	}
 	rp.cfg.Store(&cfg)
-	_, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg})
+	if _, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg}); err == nil {
+		rp.acked.Store(&cfg)
+	}
 	return err
 }
 
@@ -1051,7 +1070,11 @@ func (s *Service) SetPluginConfig(ctx context.Context, name string, values map[s
 	}
 	if err == nil {
 		// The old values stay redacted: the running instance may hold them.
-		if rp := s.running[name]; rp != nil && rp.native != nil {
+		rp := s.running[name]
+		if rp != nil {
+			defer s.forgetPluginModels(name, rp) // runs on the old settings end, as after a model service edit
+		}
+		if rp != nil && rp.native != nil {
 			if err := s.configureNative(ctx, name, rp); err != nil {
 				return fmt.Errorf("plugin %s did not accept the saved settings: %w", name, err)
 			}

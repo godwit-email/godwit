@@ -47,7 +47,7 @@ type NativeSpec struct {
 func (m Manifest) IsNative() bool { return m.Native != nil }
 
 // capabilities a plugin may declare.
-var knownCapabilities = []string{"translate"}
+var knownCapabilities = []string{"translate", "models"}
 
 // Permissions: Mail holds "read" and/or "write" (there is no send); Net the
 // hosts, each "host" or "host:port", lowercased and without ":443" after

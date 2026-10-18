@@ -154,11 +154,13 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 }
 
 // unanswerable reports an error that would repeat for this message alone: no
-// valid answer, or the service rejecting the request (a content filter). The
-// message is done with its labels as they are, so one message does not stop the rest.
+// valid answer, or the service or judge plugin rejecting the request (a
+// content filter). The message is done with its labels as they are, so one
+// message does not stop the rest. A plugin judge that is unavailable or
+// failed (ai.ErrJudgeUnavailable, ai.ErrJudgePlugin) stops the round.
 func unanswerable(err error) bool {
 	var he *ai.HTTPError
-	return errors.Is(err, ai.ErrJudgeAnswer) || errors.As(err, &he) && he.Status == 400
+	return errors.Is(err, ai.ErrJudgeAnswer) || errors.Is(err, errJudgeInput) || errors.As(err, &he) && he.Status == 400
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has

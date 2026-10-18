@@ -16,7 +16,7 @@ import (
 )
 
 func (m *modelsView) view(c *ui.Context) {
-	empty := m.loaded && len(m.services) == 0
+	empty := m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 }) // a plugin's models are enough
 	var add []func()
 	if !empty {
 		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
@@ -28,8 +28,8 @@ func (m *modelsView) view(c *ui.Context) {
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
-	if len(m.services) > 0 {
-		u := deriveUsage(m.a.settings, m.services)
+	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
+		u := deriveUsage(m.a.settings, m.services, m.plugins)
 		m.usage(c, u)
 		m.list(c, u)
 	}
@@ -163,7 +163,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 			},
 			func() {
 				help := i18n.T("settings.models.threshold.help")
-				if u.judgeSvc == nil {
+				if u.judgeSvc == nil && !u.pluginJudge {
 					help += " " + i18n.T("settings.models.threshold.binary")
 				}
 				settingRow(c, i18n.T("settings.models.threshold"), help, func() {

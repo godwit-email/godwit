@@ -1,9 +1,9 @@
 package core
 
-// The seam between the plugin model API and registry-hosted model files
-// (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8.1,
-// 8.2). The base model API PR owns these declarations and calls modelAssets;
-// this one implements it (assets.go). When both are merged, keep one copy.
+// The seam between plugin judge models and registry-hosted model files
+// (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8,
+// godwit-email/godwit#90): pluginjudge.go calls modelAssets; until those
+// files land, noModelAssets says every model with assets needs an update.
 
 import "context"
 
@@ -65,3 +65,25 @@ type modelAssets interface {
 	// Remove deletes the model's variant files no lease holds; fixed assets stay.
 	Remove(ctx context.Context, plugin, release string, refs map[string]string) error
 }
+
+// noModelAssets is modelAssets until registry-hosted model files are
+// implemented: a model with assets cannot be prepared yet.
+type noModelAssets struct{}
+
+func errUpdateRequired() error {
+	return &ModelError{Code: codeUpdateRequired, Message: "this Godwit cannot download the model's files yet; update Godwit"}
+}
+
+func (noModelAssets) Status(context.Context, string, string, map[string]string) (ModelStatus, error) {
+	return ModelStatus{State: ModelErrorState, Error: errUpdateRequired().(*ModelError)}, nil
+}
+
+func (noModelAssets) Prepare(context.Context, string, string, map[string]string, func(ModelStatus)) (map[string]string, func(), error) {
+	return nil, nil, errUpdateRequired()
+}
+
+func (noModelAssets) Verify(context.Context, string, string, map[string]string) (map[string]string, func(), error) {
+	return nil, nil, errUpdateRequired()
+}
+
+func (noModelAssets) Remove(context.Context, string, string, map[string]string) error { return nil }
