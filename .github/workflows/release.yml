@@ -147,7 +147,7 @@ jobs:
           ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           registry-url: https://registry.npmjs.org
       # Tags from before the package (a manual rebuild) have nothing to publish.
       - if: hashFiles('sdk/package.json') != ''
