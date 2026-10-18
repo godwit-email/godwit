@@ -57,6 +57,7 @@ type Turn struct {
 	Truncate   bool
 	Refusal    string   // openai-responses: the reply is this refusal, not text
 	Think      []string // openai chat: reasoning_content deltas before the text
+	Usage      [2]int   // openai chat: the prompt and completion tokens, on a last chunk of their own
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -338,7 +339,12 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 	if t.Finish != "" {
 		finish = t.Finish
 	}
-	send(chunk(map[string]any{}, finish), "data: [DONE]")
+	send(chunk(map[string]any{}, finish))
+	if t.Usage != [2]int{} {
+		send("data: " + js(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": []any{},
+			"usage": map[string]any{"prompt_tokens": t.Usage[0], "completion_tokens": t.Usage[1], "total_tokens": t.Usage[0] + t.Usage[1]}}))
+	}
+	send("data: [DONE]")
 }
 
 func anthropicStream(send func(...string), t Turn, hang func() bool) {

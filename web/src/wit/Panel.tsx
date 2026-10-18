@@ -12,6 +12,7 @@ import {
   RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
+  RiPieChart2Line,
   RiRefreshLine,
   RiSettings3Line,
   RiStopFill,
@@ -51,6 +52,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Progress } from "@/components/ui/progress";
 import {
   Trace,
   TraceCollapsible,
@@ -527,6 +529,8 @@ export function Panel({
   const [choices, setChoices] = useState<ModelChoice[]>();
   // The question being edited: sending asks it in place of the one at index at.
   const [editing, setEditing] = useState<{ id: string; at: number }>();
+  // What the conversation took, as last read (a run's end reads it again).
+  const [usage, setUsage] = useState(history.usage);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -562,6 +566,7 @@ export function Panel({
         )
           return;
         setMessages(historyToMessages(h));
+        setUsage(h.usage);
       },
       () => {}, // the stream stays as it is
     );
@@ -839,6 +844,26 @@ export function Panel({
                 )}
               </MessageScrollerItem>
             ))}
+            {page && chat.messages.length === 0 && !running && !locked && (
+              <div className="flex flex-col items-start gap-3 pt-[12vh]">
+                <p className="text-muted-foreground">{t("wit.suggest")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 2, 3, 4].map((n) => {
+                    const q = t(`wit.suggest.${n}`);
+                    return (
+                      <Button
+                        key={n}
+                        variant="outline"
+                        className="h-auto rounded-full px-3.5 py-1.5 font-normal text-md"
+                        onClick={() => ask(q)}
+                      >
+                        {q}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {running && last?.role !== "assistant" && working}
           </MessageScrollerContent>
         </MessageScrollerViewport>
@@ -859,6 +884,8 @@ export function Panel({
       </AlertAction>
     </Alert>
   );
+  // The context meter (the page's, once there is usage) leads the input's right-hand controls.
+  const meter = page && (usage.input > 0 || usage.history > 0);
   // Send keeps the Primary look while nothing can be sent (an empty or locked input): only a
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
@@ -931,6 +958,44 @@ export function Panel({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {meter && (
+          <HoverCard>
+            <HoverCardTrigger
+              render={
+                <InputGroupButton
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm tabular-nums"
+                  aria-label={t("wit.usage")}
+                />
+              }
+            >
+              <RiPieChart2Line className="size-3.5" />
+              {Math.min(100, Math.round(usage.history * 100))}%
+            </HoverCardTrigger>
+            <HoverCardContent side="top" className="flex w-72 flex-col gap-2 text-sm">
+              <span className="font-medium">
+                {t("wit.usage.history", Math.min(100, Math.round(usage.history * 100)))}
+              </span>
+              <Progress value={Math.min(100, usage.history * 100)} />
+              <span className="text-muted-foreground">{t("wit.usage.note")}</span>
+              {usage.context > 0 && (
+                <span className="tabular-nums">
+                  {t("wit.usage.last", usage.context.toLocaleString())}
+                </span>
+              )}
+              {usage.input > 0 && (
+                <span className="tabular-nums">
+                  {t(
+                    "wit.usage.total",
+                    usage.input.toLocaleString(),
+                    usage.output.toLocaleString(),
+                  )}
+                </span>
+              )}
+            </HoverCardContent>
+          </HoverCard>
+        )}
         {model && models ? (
           <DropdownMenu
             onOpenChange={(open) => {
@@ -942,7 +1007,10 @@ export function Panel({
                 <InputGroupButton
                   variant="ghost"
                   size="sm"
-                  className="ml-auto h-8 min-w-0 gap-1 px-2 font-normal text-muted-foreground text-sm"
+                  className={cn(
+                    !meter && "ml-auto",
+                    "h-8 min-w-0 gap-1 px-2 font-normal text-muted-foreground text-sm",
+                  )}
                   title={t("wit.model.pick")}
                 >
                   <span className="truncate">{chosen}</span>
@@ -980,7 +1048,10 @@ export function Panel({
             <InputGroupButton
               variant="ghost"
               size="sm"
-              className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
+              className={cn(
+                !meter && "ml-auto",
+                "h-8 gap-1 px-2 font-normal text-muted-foreground text-sm",
+              )}
               title={t("wit.model")}
               onClick={onModels}
             >
@@ -991,7 +1062,7 @@ export function Panel({
         )}
         {running && page ? (
           <InputGroupButton
-            className={cn(!model && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto")}
             variant="outline"
             size="icon-sm"
             aria-label={t("wit.stop")}
@@ -1001,7 +1072,7 @@ export function Panel({
           </InputGroupButton>
         ) : (
           <InputGroupButton
-            className={cn(!model && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto")}
             variant="default"
             size="icon-sm"
             aria-label={t("wit.send")}

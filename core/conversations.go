@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -35,6 +36,12 @@ type Conversation struct {
 	Runs               []RunSpan
 	ActiveRunID        int64
 	UpdatedAt          time.Time
+	// Usage sums its runs' tokens; Last is the latest run's that reported any.
+	// HistoryUse is how full the history budget is (from 0; past 1, the
+	// oldest turns are left out of what the model is shown). ListConversations
+	// leaves both empty.
+	Usage      ai.Usage
+	HistoryUse float64
 }
 
 // WitEvent is one event of a Wit run. An interrupted event carries the
@@ -230,8 +237,25 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	for _, r := range rows.Values {
 		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
 	}
+	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+		COALESCE((SELECT context_tokens FROM runs WHERE conversation_id = ? AND context_tokens > 0 ORDER BY id DESC LIMIT 1), 0)
+		FROM runs WHERE conversation_id = ?`, id, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if len(rows.Values) > 0 {
+		r := rows.Values[0]
+		c.Usage = ai.Usage{Input: int(store.Int(r[0])), Output: int(store.Int(r[1])), Last: int(store.Int(r[2]))}
+	}
+	c.HistoryUse = float64(utf8.RuneCount(state)) / historyBudget
 	c.Citations, err = s.citationsOf(ctx, id)
 	return c, err
+}
+
+// runUsage adds res's tokens to runID's.
+func runUsage(runID int64, u ai.Usage) sqlite.Statement {
+	return sqlite.Statement{SQL: `UPDATE runs SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,
+		context_tokens = CASE WHEN ? > 0 THEN ? ELSE context_tokens END WHERE id = ?`, Args: []any{u.Input, u.Output, u.Last, u.Last, runID}}
 }
 
 // citationsOf is conversation id's saved citations, numbered.
@@ -963,12 +987,12 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
 		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done"),
-			runSpan(job.id, job.full, res.State)})
+			runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage)})
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
-	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State),
+	stmts := []sqlite.Statement{saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage),
 		{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}}}
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)

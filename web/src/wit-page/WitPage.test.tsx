@@ -68,6 +68,7 @@ const msg = (id: string, role: string, t: string, runs: number[]) => ({
 const hist = (conversation: number, answer?: string): WitHistory => ({
   conversation,
   model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   approvals: [],
   messages: answer
@@ -299,6 +300,7 @@ test("approvals decide through WitPage.decide", async () => {
   vi.mocked(api.follow).mockResolvedValue({
     conversation: 3,
     model: "",
+    usage: { input: 0, output: 0, context: 0, history: 0 },
     running: 0,
     approvals: [a],
     messages: [

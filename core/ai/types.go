@@ -142,4 +142,10 @@ type Result struct {
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error
+	Usage      Usage
 }
+
+// Usage is the tokens a run's model calls took, as the service reported them:
+// Input and Output summed over its calls, Last the last call's input (the
+// history the model was last shown). 0 where the service reports none.
+type Usage struct{ Input, Output, Last int }

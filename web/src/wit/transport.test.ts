@@ -120,6 +120,7 @@ describe("toChunks", () => {
     const [m] = historyToMessages({
       conversation: 1,
       model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 0,
       approvals: [],
       messages: [
@@ -257,6 +258,7 @@ describe("historyToMessages", () => {
     const h: WitHistory = {
       conversation: 1,
       model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 0,
       messages: [
         {
@@ -379,6 +381,7 @@ describe("WitTransport", () => {
     const h: WitHistory = {
       conversation: 1,
       model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 7,
       approvals: [],
       messages: [
@@ -498,6 +501,7 @@ describe("WitTransport", () => {
     const h: WitHistory = {
       conversation: 1,
       model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 5,
       messages: [
         msg("q0", "user", [1]),
@@ -541,6 +545,7 @@ describe("WitTransport", () => {
     const h: WitHistory = {
       conversation: 1,
       model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 0,
       messages: [],
       approvals: [pending],
@@ -583,6 +588,7 @@ describe("WitTransport selections", () => {
   const hist = (conversation: number, runs: number[] = []): WitHistory => ({
     conversation,
     model: "",
+    usage: { input: 0, output: 0, context: 0, history: 0 },
     running: 0,
     approvals: [],
     messages: runs.length

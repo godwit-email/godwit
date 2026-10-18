@@ -243,6 +243,9 @@ func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Res
 	go func() {
 		defer close(done)
 		res = r.run(req)
+		r.mu.Lock()
+		res.Usage = r.usage
+		r.mu.Unlock()
 		switch {
 		case res.Err != nil:
 			r.finish(Event{Kind: "error", Err: res.Err})
@@ -264,6 +267,7 @@ type runner struct {
 	key string
 	// reasoning: Request.Reasoning
 	reasoning bool
+	usage     Usage // so far, under mu
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
@@ -463,6 +467,13 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 		// Results bind to call IDs, so a turn that repeats one is unusable.
 		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {
 			resp, err := next(ctx, p)
+			if err == nil && resp.Usage != nil {
+				c.r.mu.Lock()
+				c.r.usage.Input += resp.Usage.InputTokens
+				c.r.usage.Output += resp.Usage.OutputTokens
+				c.r.usage.Last = resp.Usage.InputTokens
+				c.r.mu.Unlock()
+			}
 			if err == nil && resp.Message != nil {
 				seen := map[string]bool{}
 				for _, part := range resp.Message.Content {

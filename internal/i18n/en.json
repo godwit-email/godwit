@@ -1887,7 +1887,17 @@
       }
     }
   },
+  "wit_suggest": "Try asking Wit",
+  "wit_suggest_1": "Who is still waiting for my reply?",
+  "wit_suggest_2": "Summarize today's unread mail",
+  "wit_suggest_3": "What did my subscriptions cost this month?",
+  "wit_suggest_4": "Find my latest invoices",
   "wit_thinking": "Thinking…",
+  "wit_usage": "Context",
+  "wit_usage_history": "History {arg1}% full",
+  "wit_usage_note": "Once it is full, the oldest turns are no longer sent to the model.",
+  "wit_usage_last": "Last request: {arg1} tokens",
+  "wit_usage_total": "This conversation: {arg1} in · {arg2} out tokens",
   "wit_tool_classify_mail": "classify mail",
   "wit_tool_create_draft": "create a draft",
   "wit_tool_update_draft": "Edit the body",

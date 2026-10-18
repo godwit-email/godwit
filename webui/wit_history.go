@@ -20,6 +20,18 @@ type WitHistory struct {
 	Approvals []Approval `json:"approvals"`
 	// Model is the conversation's model (a ModelChoice's Ref); "" for the default.
 	Model string `json:"model"`
+	Usage WitUsage `json:"usage"`
+}
+
+// WitUsage is what a conversation took: its runs' input and output tokens,
+// the latest run's last input (Context; 0 when the service reported none),
+// and how full its history budget is (History, from 0; past 1 the oldest
+// turns are left out).
+type WitUsage struct {
+	Input   int     `json:"input"`
+	Output  int     `json:"output"`
+	Context int     `json:"context"`
+	History float64 `json:"history"`
 }
 
 // WitMessage is a question, or the answer to one: everything the model said

@@ -120,7 +120,14 @@ const state: ComposeState = {
   locale: "zh-Hans",
   wit: { enabled: true, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
-const empty: WitHistory = { conversation: 1, model: "", running: 0, messages: [], approvals: [] };
+const empty: WitHistory = {
+  conversation: 1,
+  model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
+  running: 0,
+  messages: [],
+  approvals: [],
+};
 const pending: Approval = {
   id: 4,
   run: 7,
@@ -136,6 +143,7 @@ const pending: Approval = {
 const withPending: WitHistory = {
   conversation: 1,
   model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   messages: [
     {

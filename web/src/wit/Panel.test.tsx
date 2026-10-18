@@ -24,7 +24,14 @@ const info: WitInfo = {
   model: "",
 };
 
-const empty: WitHistory = { conversation: 1, model: "", running: 0, messages: [], approvals: [] };
+const empty: WitHistory = {
+  conversation: 1,
+  model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
+  running: 0,
+  messages: [],
+  approvals: [],
+};
 
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
@@ -412,6 +419,34 @@ describe("Panel", () => {
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("新问题"));
     expect(api.rewind).not.toHaveBeenCalled();
     expect(screen.getByText("旧答案")).toBeInTheDocument();
+  });
+
+  it("an empty page suggests questions; one asks it", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true });
+    expect(screen.getByText("试着问 Wit")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "谁还在等我回复？" }));
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("谁还在等我回复？"));
+    expect(screen.queryByText("试着问 Wit")).toBeNull();
+  });
+
+  it("the context meter says how full the history is and what it took", async () => {
+    const user = userEvent.setup();
+    await setup({
+      page: true,
+      history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.42 } },
+    });
+    const meter = screen.getByRole("button", { name: "上下文" });
+    expect(meter).toHaveTextContent("42%");
+    await user.hover(meter);
+    expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
+    expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
+    expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
+  });
+
+  it("no meter before the conversation took anything", async () => {
+    await setup({ page: true });
+    expect(screen.queryByRole("button", { name: "上下文" })).toBeNull();
   });
 
   it("an error shows 重试, which repeats the last skill", async () => {

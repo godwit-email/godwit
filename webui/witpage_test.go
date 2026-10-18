@@ -1007,3 +1007,23 @@ func TestWitPageRewind(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, h.Messages)
 }
+
+// The history says what the conversation took: its runs' tokens, summed,
+// the last call's input, and how full the history budget is.
+func TestWitPageUsage(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Text: []string{"一"}, Usage: [2]int{100, 7}}, coretest.Turn{Text: []string{"二"}, Usage: [2]int{140, 5}})
+	rs, err := f.p.Ask(f.ctx(), 0, "hi", nil, "")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "done")
+	rs2, err := f.p.Ask(f.ctx(), rs.Conversation, "again", nil, "")
+	require.NoError(t, err)
+	f.waitEvent(t, "second done", func(ev WitEvent) bool { return ev.Run == rs2.Run && ev.Kind == "done" })
+	h, err := f.p.Follow(f.ctx(), rs.Conversation)
+	require.NoError(t, err)
+	assert.Equal(t, 240, h.Usage.Input)
+	assert.Equal(t, 12, h.Usage.Output)
+	assert.Equal(t, 140, h.Usage.Context)
+	assert.Greater(t, h.Usage.History, 0.0)
+	assert.Less(t, h.Usage.History, 0.1)
+}

@@ -28,6 +28,7 @@ const components = [
   "hover-card",
   "dropdown-menu",
   "trace",
+  "progress",
 ];
 
 const p = Bun.spawn(["bunx", `shadcn@${SHADCN}`, "add", "--yes", "--overwrite", ...components], {
