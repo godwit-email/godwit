@@ -33,6 +33,7 @@ func (m *modelsView) view(c *ui.Context) {
 		m.usage(c, u)
 		m.list(c, u)
 	}
+	m.localSection(c)
 	if m.form != nil {
 		m.dialog(c)
 	}

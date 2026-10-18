@@ -35,6 +35,7 @@ type modelsView struct {
 	group                int                       // the add dialog's provider group: index into providerGroups
 	loaded               bool                      // the list has been read once
 	avatars              map[string]ui.ImageSource // services' favicons by BaseURL; present once asked for
+	downloads            map[string]*modelDownload // plugin models' files this page is downloading, by ref
 
 	serviceAvatar func(ctx context.Context, id int64) (core.Avatar, error)
 

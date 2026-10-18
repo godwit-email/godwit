@@ -106,7 +106,9 @@ func NewCodec() *rpc.Codec {
 		func(e *core.ErrNoRoleFolder) any { return *e },
 		rpc.DecodeDetail[core.ErrNoRoleFolder])
 	rpc.RegisterType(c, "model_error",
-		func(e *core.ModelError) any { return core.ModelError{Code: e.Code, Message: e.Message, Retryable: e.Retryable} },
+		func(e *core.ModelError) any {
+			return core.ModelError{Code: e.Code, Message: e.Message, Retryable: e.Retryable}
+		},
 		rpc.DecodeDetail[core.ModelError])
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg, Detail: e.Detail} },

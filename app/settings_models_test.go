@@ -1318,3 +1318,38 @@ func TestHumanizeChatGPTUsage(t *testing.T) {
 	assert.Equal(t, "ChatGPT 套餐用量已达上限", humanize(err))
 	assert.Equal(t, "登录已失效，请重新登录", humanize(core.ErrModelReauth))
 }
+
+// Local models: each plugin model with files shows its size and state, and
+// the one thing the user can do with it now.
+func TestModelsLocalFiles(t *testing.T) {
+	h := newHarness(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	m := h.openSettings("models").models
+	judge := func(id, name string) plugins.ProviderModel {
+		return plugins.ProviderModel{ID: id, Name: name, Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": id}}
+	}
+	const gb = 1 << 30
+	h.post(func() {
+		m.plugins = []core.PluginModels{{Plugin: "startlux", Models: []plugins.ProviderModel{judge("4b", "Decision 4B"), judge("2b", "Decision 2B"), judge("9b", "Decision 9B")},
+			Files: map[string]core.ModelStatus{
+				"4b": {State: core.ModelNotDownloaded, TotalBytes: 2 * gb},
+				"2b": {State: core.ModelDownloaded, TotalBytes: gb, DownloadedBytes: gb},
+				"9b": {State: core.ModelErrorState, TotalBytes: 9 * gb, Error: &core.ModelError{Code: "insufficient_memory"}},
+			}}}
+	})
+	h.see("本地模型")
+	h.see("startlux · 2.0 GB · 未下载")
+	h.see("startlux · 1.0 GB · 已下载")
+	h.see("startlux · 这台电脑的内存不够")
+	h.see("下载")
+	h.see("删除文件")
+
+	cancelled := false
+	h.post(func() {
+		m.downloads = map[string]*modelDownload{"plugin/startlux/4b": {cancel: func() { cancelled = true },
+			status: core.ModelStatus{State: core.ModelDownloading, DownloadedBytes: gb, TotalBytes: 2 * gb}}}
+	})
+	h.see("startlux · 正在下载 50%，共 2.0 GB")
+	h.click("取消")
+	h.until("cancelled", func() bool { return cancelled })
+}
