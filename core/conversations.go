@@ -204,10 +204,14 @@ func (s *Service) RewindConversation(ctx context.Context, id int64, at int) erro
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Transaction(ctx, []sqlite.Statement{
+	stmts := []sqlite.Statement{
 		saveState(id, kept),
 		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
-	})
+	}
+	if at == 0 { // the first question titled it: the one asked in its place does
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
+	}
+	_, err = s.db.Transaction(ctx, stmts)
 	if err == nil {
 		s.dropGrants(id)
 	}

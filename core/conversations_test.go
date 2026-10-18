@@ -101,6 +101,11 @@ func TestRewindConversation(t *testing.T) {
 	assert.Equal(t, "first", c.Messages[0].Text)
 	require.Len(t, c.Runs, 1)
 
+	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET title = 'first' WHERE id = ?", conv.ID)
+	require.NoError(t, err)
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 0))
+	assert.Equal(t, "", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID), "the first question's goes")
+
 	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
 	assert.ErrorIs(t, e.s.RewindConversation(t.Context(), conv.ID, 0), ErrRunActive)
 }
