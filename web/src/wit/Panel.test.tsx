@@ -421,6 +421,34 @@ describe("Panel", () => {
     expect(screen.getAllByText("总结！")).toHaveLength(1);
   });
 
+  it("an edit whose run started and then failed comes back as a new question", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    emit({ kind: "error", error: "error.ai.unavailable" });
+    await screen.findByRole("button", { name: "重试" });
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+  });
+
+  it("a failed run that saved nothing still updates the meter", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({
+      page: true,
+      history: { ...turn, usage: { input: 10, output: 1, context: 10, history: 0.2 } },
+    });
+    api.follow.mockResolvedValue({
+      ...turn,
+      usage: { input: 30, output: 1, context: 20, history: 0.2 },
+    });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    emit({ kind: "error", error: "error.ai.unavailable" });
+    await user.hover(screen.getByRole("button", { name: "上下文" }));
+    expect(await screen.findByText("上次请求：20 tokens")).toBeInTheDocument();
+  });
+
   it("an edit cancelled leaves the conversation as it was", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true, history: turn });

@@ -450,6 +450,11 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     return this.run ? this.api.stop(this.run) : Promise.resolve();
   }
 
+  /** Whether m was asked in place and its run started: the question it replaced is gone. */
+  askedInPlace(m: WitUIMessage): boolean {
+    return this.rewound.has(m.id);
+  }
+
   /** Whether a question can be asked again in place (the host rewinds). */
   get rewinds(): boolean {
     return !!this.api.rewinds;

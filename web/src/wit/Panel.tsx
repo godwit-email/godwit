@@ -560,13 +560,13 @@ export function Panel({
     transport.history().then(
       (h) => {
         if (!live || !h) return;
+        setUsage(h.usage); // a run that saved nothing may still have taken tokens
         if (
           !h.messages.some((m) => m.runs.includes(run)) &&
           !h.approvals.some((a) => a.run === run)
         )
           return;
         setMessages(historyToMessages(h));
-        setUsage(h.usage);
       },
       () => {}, // the stream stays as it is
     );
@@ -605,7 +605,8 @@ export function Panel({
     // its quotes too, and an edit stays one: sent again, it still replaces the old question
     setQuoted(refused.metadata?.hits ?? []);
     const r = refused.metadata?.rewind;
-    if (r !== undefined) setEditing({ id: refused.id, at: r });
+    // once its run started the old question is gone: sent again, it is a new one
+    if (r !== undefined && !transport.askedInPlace(refused)) setEditing({ id: refused.id, at: r });
   }, [refused]);
   // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
   // call waits on the user (core rewinds no active run).
