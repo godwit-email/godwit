@@ -21,7 +21,7 @@ jobs:
       created: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
-      # Keeps a release PR open that bumps mygo.config.ts and CHANGELOG.md; merging
+      # Keeps a release PR open that bumps mygo.config.ts, sdk/package.json and CHANGELOG.md; merging
       # it creates the draft release that publish makes public once the builds are up.
       - id: release
         uses: googleapis/release-please-action@v5
@@ -129,6 +129,33 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "${{ inputs.tag || needs.release-please.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # The plugin types as @godwit/sdk, at the release's version, through npm trusted
+  # publishing (OIDC, with provenance). A version already on npm is skipped, so reruns pass.
+  npm:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
+      - uses: actions/setup-node@v4 # Node only for npm: bun publish has no provenance or OIDC
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+      # Tags from before the package (a manual rebuild) have nothing to publish.
+      - if: hashFiles('sdk/package.json') != ''
+        working-directory: sdk
+        run: |
+          # Provenance names the run's commit, so publish only when that is the tag's.
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then echo "::warning::$GITHUB_SHA is not the release tag's commit: @godwit/sdk was not published."; exit 0; fi
+          version=$(node -p 'require("./package.json").version')
+          if npm view "@godwit/sdk@$version" version >/dev/null 2>&1; then echo "@godwit/sdk@$version is already on npm"; exit 0; fi
+          npm publish
 
   # Called, not triggered: a release published with GITHUB_TOKEN starts no workflow.
   homebrew:
