@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -510,4 +511,84 @@ func TestPluginJudgeWithHostedAssets(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(strings.SplitN(string(loads), "\n", 2)[0]), &load))
 	assert.Equal(t, "decision-4b-q4", load.ModelID)
 	assert.Equal(t, dirs, load.Assets, "the engine and the model, verified")
+}
+
+// hostedJudgeEnv is dlx installed from the registry with a judge model per
+// variant of the release's "model" asset.
+func hostedJudgeEnv(t *testing.T) *assetEnv {
+	t.Helper()
+	core.SetPhysicalMemoryForTest(t, 16)
+	e := &assetEnv{rs: coretest.NewRegistryServer(t), files: map[string][]byte{}, hits: map[string]int{}}
+	rel := e.rs.NativeModelsRelease(t, "dlx", "0.1.0", filepath.Join(t.TempDir(), "record"), []any{
+		map[string]any{"id": "decision-4b-q4", "name": "4B", "transport": "plugin", "operation": "judge", "assets": ref4b},
+		map[string]any{"id": "decision-2b-q8", "name": "2B", "transport": "plugin", "operation": "judge", "assets": ref2b}})
+	rel["assets"] = e.assets(nil, "")
+	e.rs.Publish(t, coretest.Registry(t0, plugin("dlx", rel)))
+	e.s = regService(t, e.rs, t.TempDir())
+	require.NoError(t, e.s.RefreshPluginRegistry(ctx))
+	_, err := e.s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	e.release = e.s.PluginAssetsDigestForTest(t, "dlx")
+	return e
+}
+
+func files(t *testing.T, s *core.Service) map[string]core.ModelStatus {
+	t.Helper()
+	pms, err := s.ListPluginModels(ctx)
+	require.NoError(t, err)
+	require.Len(t, pms, 1)
+	return pms[0].Files
+}
+
+// The model list shows each local model's files; the user downloads one with
+// progress and removes it again; the list and an event follow each change.
+func TestPrepareAndRemoveModelFiles(t *testing.T) {
+	e := hostedJudgeEnv(t)
+	f := files(t, e.s)
+	assert.Equal(t, core.ModelNotDownloaded, f["decision-4b-q4"].State)
+	assert.EqualValues(t, 3000+200_000+7, f["decision-4b-q4"].TotalBytes)
+	assert.Equal(t, core.ModelNotDownloaded, f["decision-2b-q8"].State)
+
+	evs, stop := e.s.Subscribe()
+	defer stop()
+	var states []core.ModelState
+	st, err := e.s.PrepareModelWithProgress(ctx, "plugin/dlx/decision-4b-q4", func(p core.ModelStatus) {
+		if len(states) == 0 || states[len(states)-1] != p.State {
+			states = append(states, p.State)
+		}
+	})
+	require.NoError(t, err)
+	assert.Equal(t, core.ModelDownloaded, st.State)
+	assert.Equal(t, []core.ModelState{core.ModelDownloading, core.ModelVerifying}, states)
+	assert.Equal(t, core.ModelDownloaded, files(t, e.s)["decision-4b-q4"].State)
+	assert.Equal(t, core.ModelNotDownloaded, files(t, e.s)["decision-2b-q8"].State, "the other model is not fetched")
+	assert.Zero(t, e.count("/a/2b"))
+	waitEvent(t, evs, events.ModelsChanged)
+
+	require.NoError(t, e.s.RemoveModelFiles(ctx, "plugin/dlx/decision-4b-q4"))
+	assert.Equal(t, core.ModelNotDownloaded, files(t, e.s)["decision-4b-q4"].State)
+	waitEvent(t, evs, events.ModelsChanged)
+
+	core.SetPhysicalMemoryForTest(t, 7)
+	assert.Equal(t, "insufficient_memory", files(t, e.s)["decision-4b-q4"].Error.Code)
+	_, err = e.s.PrepareModel(ctx, "plugin/dlx/decision-4b-q4")
+	assert.Equal(t, "insufficient_memory", core.ModelErrorCode(err))
+
+	_, err = e.s.PrepareModel(ctx, "plugin/dlx/nope")
+	assert.ErrorIs(t, err, core.ErrModelUnavailable)
+}
+
+func waitEvent(t *testing.T, ch <-chan events.Event, typ string) {
+	t.Helper()
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case e := <-ch:
+			if e.Type == typ {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("no %s event", typ)
+		}
+	}
 }
