@@ -147,7 +147,8 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 			}
 		case "response.completed":
 			if refused { // its text and tool requests are not used either
-				return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: gai.FinishReasonBlocked}, nil
+				return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: gai.FinishReasonBlocked,
+					Usage: usageOf(ev.Response.Usage)}, nil
 			}
 			for i, t := range text {
 				if t != "" {
@@ -158,7 +159,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 			for _, i := range slices.Sorted(maps.Keys(parts)) {
 				msg.Content = append(msg.Content, parts[i])
 			}
-			return &gai.ModelResponse{Request: req, Message: msg, FinishReason: gai.FinishReasonStop}, nil
+			return &gai.ModelResponse{Request: req, Message: msg, FinishReason: gai.FinishReasonStop, Usage: usageOf(ev.Response.Usage)}, nil
 		case "response.incomplete":
 			// Cut off: no tool request survives, and the runtime keeps nothing.
 			reason := gai.FinishReasonOther
@@ -168,7 +169,7 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 			case "content_filter":
 				reason = gai.FinishReasonBlocked
 			}
-			return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: reason}, nil
+			return &gai.ModelResponse{Request: req, Message: &gai.Message{Role: gai.RoleModel}, FinishReason: reason, Usage: usageOf(ev.Response.Usage)}, nil
 		case "response.failed", "error":
 			switch ev.Response.Error.Code {
 			case "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable":
@@ -305,4 +306,9 @@ func signature(p *gai.Part) string {
 		return string(b)
 	}
 	return ""
+}
+
+// usageOf is a Responses response's token usage as Genkit's.
+func usageOf(u responses.ResponseUsage) *gai.GenerationUsage {
+	return &gai.GenerationUsage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens), TotalTokens: int(u.TotalTokens)}
 }

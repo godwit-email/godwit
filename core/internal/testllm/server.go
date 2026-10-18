@@ -57,7 +57,7 @@ type Turn struct {
 	Truncate   bool
 	Refusal    string   // openai-responses: the reply is this refusal, not text
 	Think      []string // openai chat: reasoning_content deltas before the text
-	Usage      [2]int   // openai chat: the prompt and completion tokens, on a last chunk of their own
+	Usage      [2]int   // openai chat and responses: the input and output tokens reported (responses: 1 and 1 when unset)
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".

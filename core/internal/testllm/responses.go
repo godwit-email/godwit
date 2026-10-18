@@ -190,7 +190,11 @@ func responsesStream(send func(...string), t Turn, n int, model string, hang fun
 		send(ev("response.incomplete", map[string]any{"response": r}))
 	default:
 		r := resp("completed")
-		r["usage"] = map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2,
+		u := t.Usage
+		if u == [2]int{} {
+			u = [2]int{1, 1}
+		}
+		r["usage"] = map[string]any{"input_tokens": u[0], "output_tokens": u[1], "total_tokens": u[0] + u[1],
 			"input_tokens_details": map[string]any{"cached_tokens": 0}, "output_tokens_details": map[string]any{"reasoning_tokens": 0}}
 		send(ev("response.completed", map[string]any{"response": r}))
 	}
