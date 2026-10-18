@@ -986,3 +986,24 @@ func TestWitPageReasoning(t *testing.T) {
 	assert.Equal(t, "先查账单", h.Messages[1].Reasoning)
 	assert.Equal(t, "三笔", h.Messages[1].Text)
 }
+
+// A question can be asked again: Rewind drops it and what followed, and the
+// history keeps the mail it quoted for the asking.
+func TestWitPageRewind(t *testing.T) {
+	f := newWitPageFixture(t)
+	m := f.deliverOne(t, coretest.Msg("billing@acme.example", f.acc.Email, "发票", "金额 30 元"))
+	rs, err := f.p.Ask(f.ctx(), 0, "总结一下", []int64{m.ID}, "")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "done")
+	h, err := f.p.Follow(f.ctx(), rs.Conversation)
+	require.NoError(t, err)
+	require.Len(t, h.Messages, 2)
+	require.Len(t, h.Messages[0].Quoted, 1)
+	assert.Equal(t, "发票", h.Messages[0].Quoted[0].Subject)
+	assert.Empty(t, h.Messages[1].Quoted)
+
+	require.NoError(t, f.p.Rewind(f.ctx(), rs.Conversation, 0))
+	h, err = f.p.Follow(f.ctx(), rs.Conversation)
+	require.NoError(t, err)
+	assert.Empty(t, h.Messages)
+}

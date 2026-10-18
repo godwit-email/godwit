@@ -6,10 +6,13 @@ import {
   RiArrowDownSLine,
   RiArrowUpLine,
   RiBrainLine,
+  RiCloseLine,
+  RiEditLine,
   RiEqualizerLine,
   RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
+  RiRefreshLine,
   RiSettings3Line,
   RiStopFill,
   RiToolsLine,
@@ -244,6 +247,7 @@ function Answer({
   tools,
   onLink,
   onCite,
+  onAgain,
   working,
   page,
   t,
@@ -256,6 +260,8 @@ function Answer({
   tools: (a: Approval) => ReactNode;
   onLink(url: string): void;
   onCite?(id: number): void;
+  /** Asks the answer's question again in its place (重新生成), where it can be. */
+  onAgain?(): void;
   /** What shows while the answer is live: the panel's working row, or the page's spinner. */
   working: ReactNode;
   page: boolean;
@@ -384,6 +390,18 @@ function Answer({
           >
             <RiFileCopyLine />
           </Button>
+          {onAgain && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              aria-label={t("wit.regenerate")}
+              title={t("wit.regenerate")}
+              onClick={onAgain}
+            >
+              <RiRefreshLine />
+            </Button>
+          )}
         </div>
       )}
       {cites.length > 0 && onCite && (
@@ -507,6 +525,8 @@ export function Panel({
   const [draft, setDraft] = useState("");
   const [quoted, setQuoted] = useState<MailHit[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
+  // The question being edited: sending asks it in place of the one at index at.
+  const [editing, setEditing] = useState<{ id: string; at: number }>();
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -578,13 +598,47 @@ export function Panel({
     if (refused?.role !== "user" || draft) return;
     setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
   }, [refused]);
+  // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
+  // call waits on the user (core rewinds no active run).
+  const at = (m: WitUIMessage) => {
+    const k = /^q(\d+)$/.exec(m.id);
+    const waits = chat.messages.some((x) =>
+      x.parts.some((p) => p.type === "data-approvals" && p.data.some((a) => a.state === "pending")),
+    );
+    return transport.rewinds && k && !waits ? Number(k[1]) : undefined;
+  };
+  // Asks again in place of question q: what came from it on goes, here and in the host.
+  const again = (q: WitUIMessage, text: string, hits: MailHit[]) => {
+    const i = at(q);
+    if (i === undefined || locked || running) return;
+    chat.setMessages(chat.messages.slice(0, chat.messages.indexOf(q)));
+    ask(text, { quoted: hits.map((h) => h.id), hits, rewind: i });
+  };
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;
     setDraft("");
     setQuoted([]);
     setPicking(undefined);
-    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id) } : undefined);
+    const q = editing && chat.messages.find((m) => m.id === editing.id);
+    setEditing(undefined);
+    if (q) return again(q, text, quoted);
+    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id), hits: quoted } : undefined);
+  };
+  const textOf = (m: WitUIMessage) =>
+    m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
+  const edit = (q: WitUIMessage) => {
+    const i = at(q);
+    if (i === undefined) return;
+    setEditing({ id: q.id, at: i });
+    setDraft(textOf(q));
+    setQuoted(q.metadata?.hits ?? []);
+    setTimeout(() => textarea.current?.focus());
+  };
+  const cancelEdit = () => {
+    setEditing(undefined);
+    setDraft("");
+    setQuoted([]);
   };
   // Closing the picker gives the textarea its focus back, the caret at caret.
   const closePicker = (caret?: number) => {
@@ -730,11 +784,11 @@ export function Panel({
                 key={m.id}
                 messageId={m.id}
                 // the panel: a turn's question and answer 10 apart, turns 18
-                className={!page && m.role === "user" && i > 0 ? "mt-2" : undefined}
+                className={cn("group/turn", !page && m.role === "user" && i > 0 && "mt-2")}
               >
                 {m.role === "user" ? (
                   <Message align="end">
-                    <MessageContent>
+                    <MessageContent className="items-end">
                       {/* the design's max-width is the text's (80%, the panel's 85%), padding aside */}
                       <Bubble
                         variant="secondary"
@@ -744,9 +798,22 @@ export function Panel({
                         }
                       >
                         <BubbleContent className="whitespace-pre-wrap border-0 text-md">
-                          {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
+                          {textOf(m)}
                         </BubbleContent>
                       </Bubble>
+                      {at(m) !== undefined && !running && !locked && (
+                        // shown on the turn's hover, or when focused
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
+                          aria-label={t("wit.edit")}
+                          title={t("wit.edit")}
+                          onClick={() => edit(m)}
+                        >
+                          <RiEditLine />
+                        </Button>
+                      )}
                     </MessageContent>
                   </Message>
                 ) : (
@@ -759,6 +826,12 @@ export function Panel({
                     tools={tools}
                     onLink={link}
                     onCite={onCite}
+                    onAgain={(() => {
+                      const q = chat.messages[i - 1];
+                      return m === last && !locked && q?.role === "user" && at(q) !== undefined
+                        ? () => again(q, textOf(q), q.metadata?.hits ?? [])
+                        : undefined;
+                    })()}
                     working={working}
                     page={page}
                     t={t}
@@ -791,6 +864,20 @@ export function Panel({
   const idle = locked || !draft.trim() || running;
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+      {editing && (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <RiEditLine className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">{t("wit.editing")}</span>
+          <InputGroupButton
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t("wit.edit.cancel")}
+            onClick={cancelEdit}
+          >
+            <RiCloseLine />
+          </InputGroupButton>
+        </div>
+      )}
       {picking && onSearch && (
         <QuotePicker
           search={onSearch}

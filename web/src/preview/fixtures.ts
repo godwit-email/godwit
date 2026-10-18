@@ -155,6 +155,7 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
 const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">): WitMessage => ({
   text: "",
   reasoning: "",
+  quoted: [],
   calls: [],
   results: [],
   citations: [],
@@ -177,6 +178,7 @@ const turn1: WitMessage[] = [
     role: "assistant",
     runs: [1],
     reasoning: "",
+    quoted: [],
     calls: [read, upd1],
     results: [ok(read)],
     text: "已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。",
@@ -254,6 +256,7 @@ export const pending = (inline: boolean): WitHistory => {
         role: "assistant",
         runs: [2],
         reasoning: "",
+        quoted: [],
         calls: [upd2],
         text: inline
           ? "改了 2 处，正文里用删除线和高亮标出来了。"
@@ -312,7 +315,7 @@ const createDraft = call("s9", "create_draft", {
 export const witConversation = (): WitHistory =>
   history({
     messages: [
-      msg({ id: "a1", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
+      msg({ id: "q0", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
       msg({
         id: "a2",
         role: "assistant",
@@ -335,6 +338,7 @@ export const witConversation = (): WitHistory =>
         role: "assistant",
         runs: [2],
         reasoning: "",
+        quoted: [],
         calls: [createDraft],
         text: "我起草了一封回复。创建草稿需要你确认：",
       }),

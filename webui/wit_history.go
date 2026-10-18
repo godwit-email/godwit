@@ -36,6 +36,8 @@ type WitMessage struct {
 	Citations []Citation  `json:"citations"`
 	// Runs are the runs that added it (a question: the run it started).
 	Runs []int64 `json:"runs"`
+	// Quoted is the mail a question quoted (an answer: none).
+	Quoted []MailHit `json:"quoted"`
 }
 
 // witMessages groups c's messages into questions and answers, as
@@ -87,7 +89,14 @@ func witMessages(c core.Conversation) []WitMessage {
 		}
 	}
 	for i := range out {
+		out[i].Quoted = []MailHit{}
 		if out[i].Role == "user" {
+			for _, ct := range c.Citations {
+				if ct.CallID == "" && slices.Contains(out[i].Runs, ct.RunID) {
+					q := citationOf(ct)
+					out[i].Quoted = append(out[i].Quoted, MailHit{ID: q.MessageID, Subject: q.Subject, From: q.From, Date: q.Date})
+				}
+			}
 			continue
 		}
 		ids := citedBy(c, spans[i][0], spans[i][1])

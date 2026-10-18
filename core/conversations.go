@@ -154,6 +154,54 @@ func (s *Service) SetConversationModel(ctx context.Context, id int64, ref string
 	return err
 }
 
+// RewindConversation takes the conversation back to before its question at
+// Messages[at]: that question, everything after it and the runs that added
+// them (their approvals and citations with them) are gone, so the question
+// can be asked again, as it was or edited. An active run makes it
+// ErrRunActive.
+func (s *Service) RewindConversation(ctx context.Context, id int64, at int) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	s.runMu.Lock() // no run starts meanwhile
+	defer s.runMu.Unlock()
+	_, state, err := s.conversation(ctx, id)
+	if err != nil {
+		return err
+	}
+	var msgs []json.RawMessage // the state's messages, as Messages has them
+	if len(state) > 0 {
+		if err := json.Unmarshal(state, &msgs); err != nil {
+			return err
+		}
+	}
+	shown, err := ai.Messages(state)
+	if err != nil {
+		return err
+	}
+	if at < 0 || at >= len(msgs) || len(shown) != len(msgs) || shown[at].Role != "user" {
+		return fmt.Errorf("conversation %d has no question at %d", id, at)
+	}
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) > 0 {
+		return ErrRunActive
+	}
+	kept, err := json.Marshal(msgs[:at])
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Transaction(ctx, []sqlite.Statement{
+		saveState(id, kept),
+		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
+	})
+	return err
+}
+
 // GetConversation returns the conversation with its messages.
 func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, error) {
 	ctx, end, err := s.begin(ctx, 0)

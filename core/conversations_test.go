@@ -75,3 +75,29 @@ func TestSetConversationModel(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, c.Model)
 }
+
+// Rewinding to a question drops it, what came after and its runs; only a
+// question can be rewound to, and not while a run is active.
+func TestRewindConversation(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 4)
+	require.Len(t, c.Runs, 2)
+
+	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 1), "an answer is no question")
+	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 4))
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 2)
+	assert.Equal(t, "first", c.Messages[0].Text)
+	require.Len(t, c.Runs, 1)
+
+	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
+	assert.ErrorIs(t, e.s.RewindConversation(t.Context(), conv.ID, 0), ErrRunActive)
+}

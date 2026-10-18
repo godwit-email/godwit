@@ -3,14 +3,25 @@ import {
   type Approval,
   type Citation,
   events,
+  type MailHit,
   type WitCall,
   type WitEvent,
   type WitHistory,
   type WitResult,
 } from "@/mygo";
 
-/** A question's request: free text (with the mail it quotes), or a skill (with its language) when set. */
-export type WitMeta = { skill?: string; lang?: string; quoted?: number[] };
+/**
+ * A question's request: free text (with the mail it quotes, `hits` as its chips), or a skill (with
+ * its language) when set. `rewind` asks it in place of the question at that index (and what
+ * followed it), on a host that rewinds.
+ */
+export type WitMeta = {
+  skill?: string;
+  lang?: string;
+  quoted?: number[];
+  hits?: MailHit[];
+  rewind?: number;
+};
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
 /** A question or an answer in the panel. Wit's tools are untyped here: dynamic-tool parts. */
@@ -197,8 +208,11 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
   const out: { m: WitUIMessage; runs: number[] }[] = [];
   ms.forEach((m, i) => {
     if (m.role === "user") {
+      const metadata = m.quoted.length
+        ? { quoted: m.quoted.map((h) => h.id), hits: m.quoted }
+        : undefined;
       out.push({
-        m: { id: m.id, role: "user", parts: [{ type: "text", text: m.text }] },
+        m: { id: m.id, role: "user", metadata, parts: [{ type: "text", text: m.text }] },
         runs: m.runs,
       });
     } else {
@@ -292,13 +306,15 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
 
 /**
  * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID;
- * follow reads the conversation the host shows (subscribing to it); stop cancels a run.
+ * follow reads the conversation the host shows (subscribing to it); stop cancels a run; rewind
+ * (where the host has it) drops the question at an index and what followed, to ask it again.
  */
 export type WitApi = {
   ask(text: string, quoted?: number[]): Promise<number>;
   skill?(id: string, lang: string): Promise<number>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
+  rewind?(at: number): Promise<void>;
 };
 type On = (f: (ev: WitEvent) => void) => () => void;
 
@@ -432,6 +448,11 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     return this.run ? this.api.stop(this.run) : Promise.resolve();
   }
 
+  /** Whether a question can be asked again in place (the host rewinds). */
+  get rewinds(): boolean {
+    return !!this.api.rewind;
+  }
+
   close() {
     this.off();
   }
@@ -486,6 +507,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   async sendMessages({
     messages,
     abortSignal,
+    trigger,
   }: Parameters<ChatTransport<WitUIMessage>["sendMessages"]>[0]) {
     const m = messages.findLast((x) => x.role === "user");
     const text = m?.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("") ?? "";
@@ -502,12 +524,15 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     const quoted = m?.metadata?.quoted;
-    (skill && this.api.skill
-      ? this.api.skill(skill, m?.metadata?.lang ?? "")
-      : quoted?.length
-        ? this.api.ask(text, quoted)
-        : this.api.ask(text)
-    )
+    const start = () =>
+      skill && this.api.skill
+        ? this.api.skill(skill, m?.metadata?.lang ?? "")
+        : quoted?.length
+          ? this.api.ask(text, quoted)
+          : this.api.ask(text);
+    // A retry (regenerate) asks again what failed: the rewind it came with was done.
+    const at = trigger === "submit-message" ? m?.metadata?.rewind : undefined;
+    (at !== undefined && this.api.rewind ? this.api.rewind(at).then(start) : start())
       .then(
         (run) => {
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown

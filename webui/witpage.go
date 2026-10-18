@@ -333,6 +333,20 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	return RunStart{Run: id, Conversation: conv}, nil
 }
 
+// Rewind takes conv, an ask conversation, back to before its question at
+// index at (a question's ID is "q<at>"; core RewindConversation): the page
+// asks it again, as it was or edited.
+func (p *WitPage) Rewind(ctx context.Context, conv int64, at int) error {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	if err := askConv(ctx, svc, conv); err != nil {
+		return keyed(err)
+	}
+	return keyed(svc.RewindConversation(ctx, conv, at))
+}
+
 // created notes that Ask made conv under snapshot version: the snapshot
 // takes it while it is still that version's new conversation.
 func (w *Wit) created(conv, version int64) {

@@ -68,6 +68,43 @@ const send = (tr: WitTransport, m: WitUIMessage) =>
     abortSignal: undefined,
   });
 
+describe("rewind", () => {
+  it("a question sent with rewind drops the old one first; a retry does not again", async () => {
+    const { api, tr } = fake();
+    const order: string[] = [];
+    const rewind = vi.fn(async () => {
+      order.push("rewind");
+    });
+    const t2 = new WitTransport({ ...api, rewind }, () => () => {});
+    api.ask.mockImplementation(async () => {
+      order.push("ask");
+      return 7;
+    });
+    expect(tr.rewinds).toBe(false);
+    expect(t2.rewinds).toBe(true);
+    const m = userMsg("again", { quoted: [3], rewind: 2 });
+    void t2.sendMessages({
+      trigger: "submit-message",
+      chatId: "c",
+      messageId: undefined,
+      messages: [m],
+      abortSignal: undefined,
+    });
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3]));
+    expect(rewind).toHaveBeenCalledWith(2);
+    expect(order).toEqual(["rewind", "ask"]);
+    void t2.sendMessages({
+      trigger: "regenerate-message",
+      chatId: "c",
+      messageId: undefined,
+      messages: [m],
+      abortSignal: undefined,
+    });
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
+    expect(rewind).toHaveBeenCalledOnce();
+  });
+});
+
 describe("toChunks", () => {
   it("streams reasoning in a part of its own, closed when the text starts", () => {
     const seen = new Set<string>();
@@ -91,6 +128,7 @@ describe("toChunks", () => {
           role: "assistant",
           text: "三笔",
           reasoning: "先查账单",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -226,6 +264,7 @@ describe("historyToMessages", () => {
           role: "user",
           text: "Q",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -236,6 +275,7 @@ describe("historyToMessages", () => {
           role: "assistant",
           text: "A",
           reasoning: "",
+          quoted: [],
           calls: [
             { id: "c1", name: "search", args: '{"q":1}' },
             { id: "c2", name: "update_draft", args: "{}" },
@@ -250,6 +290,7 @@ describe("historyToMessages", () => {
           role: "user",
           text: "更正式",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -346,6 +387,7 @@ describe("WitTransport", () => {
           role: "user",
           text: "Q",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -356,6 +398,7 @@ describe("WitTransport", () => {
           role: "assistant",
           text: "Hel",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -446,6 +489,7 @@ describe("WitTransport", () => {
       role,
       text,
       reasoning: "",
+      quoted: [],
       calls: [],
       results: [],
       citations: [],
@@ -548,6 +592,7 @@ describe("WitTransport selections", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],

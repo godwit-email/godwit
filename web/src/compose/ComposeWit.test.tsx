@@ -143,6 +143,7 @@ const withPending: WitHistory = {
       role: "user",
       text: "改",
       reasoning: "",
+      quoted: [],
       calls: [],
       results: [],
       citations: [],
@@ -153,6 +154,7 @@ const withPending: WitHistory = {
       role: "assistant",
       text: "",
       reasoning: "",
+      quoted: [],
       calls: [{ id: "c1", name: "update_draft", args: "{}" }],
       results: [],
       citations: [],
@@ -607,6 +609,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
       {
         ...withPending.messages[1],
         reasoning: "",
+        quoted: [],
         calls: [
           { id: "p1", name: "plugin_netty_ping", args: "{}" },
           { id: "p2", name: "plugin_netty_ping", args: "{}" },
@@ -694,6 +697,7 @@ test("全部允许 on a run with a tool's call and a body edit settles both: the
       {
         ...withPending.messages[1],
         reasoning: "",
+        quoted: [],
         calls: [
           { id: "c1", name: "update_draft", args: "{}" },
           { id: "p1", name: "plugin_netty_ping", args: "{}" },
@@ -738,6 +742,7 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
         role: "user",
         text: "Q",
         reasoning: "",
+        quoted: [],
         calls: [],
         results: [],
         citations: [],
@@ -748,6 +753,7 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
         role: "assistant",
         text: "[b](mailto:x@y.z)",
         reasoning: "",
+        quoted: [],
         calls: [],
         results: [],
         citations: [],

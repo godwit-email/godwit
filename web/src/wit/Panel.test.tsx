@@ -60,6 +60,7 @@ async function setup(
     skill: vi.fn().mockResolvedValue(7),
     follow: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
+    rewind: vi.fn().mockResolvedValue(undefined),
   };
   const tr = new WitTransport(api, (f) => {
     listener = f;
@@ -204,6 +205,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "答案",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -318,6 +320,100 @@ describe("Panel", () => {
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
   });
 
+  const turn: WitHistory = {
+    ...empty,
+    messages: [
+      {
+        id: "q0",
+        role: "user",
+        text: "总结",
+        reasoning: "",
+        quoted: [{ id: 9, subject: "发票", from: "f", date: 0 }],
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [1],
+      },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "旧答案",
+        reasoning: "",
+        quoted: [],
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [1],
+      },
+    ],
+  };
+
+  it("重新生成 asks the last question again in its place, with the mail it quoted", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "重新生成" }));
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9]));
+    expect(api.rewind).toHaveBeenCalledWith(0);
+    expect(api.rewind.mock.invocationCallOrder[0]).toBeLessThan(
+      api.ask.mock.invocationCallOrder[0],
+    );
+    expect(screen.queryByText("旧答案")).toBeNull();
+    expect(screen.getAllByText("总结")).toHaveLength(1);
+  });
+
+  it("编辑 puts a question back in the input; sending replaces it and what followed", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    const box = input("向 Wit 提问");
+    expect(box).toHaveValue("总结");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+    expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
+    await user.clear(box);
+    await user.type(box, "列出金额{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9]));
+    expect(api.rewind).toHaveBeenCalledWith(0);
+    expect(screen.queryByText("旧答案")).toBeNull();
+  });
+
+  it("no 编辑 or 重新生成 while a call waits on the user", async () => {
+    await setup({
+      page: true,
+      history: {
+        ...turn,
+        approvals: [
+          {
+            id: 4,
+            run: 1,
+            callId: "c9",
+            tool: "create_draft",
+            summary: "",
+            state: "pending",
+            error: "",
+            destinations: [],
+            sessionAllow: false,
+            args: "",
+          },
+        ],
+      },
+    });
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
+  });
+
+  it("an edit cancelled leaves the conversation as it was", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.click(screen.getByRole("button", { name: "取消编辑" }));
+    expect(input("向 Wit 提问")).toHaveValue("");
+    await user.type(input("向 Wit 提问"), "新问题{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("新问题"));
+    expect(api.rewind).not.toHaveBeenCalled();
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+  });
+
   it("an error shows 重试, which repeats the last skill", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup();
@@ -378,6 +474,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -388,6 +485,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "",
             reasoning: "",
+            quoted: [],
             calls: [{ id: "c1", name: "create_draft", args: "{}" }],
             results: [],
             citations: [],
@@ -442,6 +540,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -452,6 +551,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "A",
             reasoning: "",
+            quoted: [],
             calls: [
               { id: "c1", name: "search", args: "{}" },
               { id: "c2", name: "search", args: "{}" },
@@ -507,6 +607,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -517,6 +618,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "A",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [
@@ -554,6 +656,7 @@ describe("Panel", () => {
           role: "user",
           text: "更短",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -611,6 +714,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -621,6 +725,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "Hello",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -669,6 +774,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -679,6 +785,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "",
             reasoning: "",
+            quoted: [],
             calls: [
               { id: "p1", name: "plugin_netty_ping", args: a.args },
               { id: "p2", name: "create_draft", args: "{}" },
@@ -761,6 +868,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -771,6 +879,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "Answer A",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -796,6 +905,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -806,6 +916,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "Answer A",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -843,6 +954,7 @@ describe("Panel", () => {
           role: "user",
           text: "Q",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -853,6 +965,7 @@ describe("Panel", () => {
           role: "assistant",
           text: "Hello whole world",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -912,6 +1025,7 @@ describe("Panel", () => {
             role: "user",
             text: "Q",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -922,6 +1036,7 @@ describe("Panel", () => {
             role: "assistant",
             text: "A",
             reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [cite(1, 50), cite(2, 51, true)],
@@ -1081,6 +1196,7 @@ describe("Panel", () => {
           role: "user",
           text: "Q",
           reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -1091,6 +1207,7 @@ describe("Panel", () => {
           role: "assistant",
           text: "",
           reasoning: "",
+          quoted: [],
           calls: [{ id: "p1", name: "create_draft", args: "{}" }],
           results: [],
           citations: [],

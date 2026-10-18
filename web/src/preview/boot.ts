@@ -127,6 +127,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Models": async () => fx.witModels,
         "WitPage.Ask": async () => runStart,
         "WitPage.Stop": nothing,
+        "WitPage.Rewind": nothing,
         "WitPage.Decide": nothing,
         "WitPage.DecideAll": nothing,
         "WitPage.DecideSession": nothing,

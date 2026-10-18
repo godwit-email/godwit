@@ -67,6 +67,7 @@ export function WitPage() {
       },
       follow: () => api.follow(conv.current),
       stop: (run) => api.stop(run),
+      rewind: (at) => api.rewind(conv.current, at),
     });
     const open = (c: number) => {
       conv.current = c;
