@@ -141,7 +141,7 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 	var c *imapclient.Client
 	switch e.Security {
 	case TLS, None:
-		c = imapclient.New(nc, opts)
+		c = imapclient.New(&imapConn{Conn: nc}, opts)
 		err = c.WaitGreeting()
 	case StartTLS:
 		c, err = imapclient.NewStartTLS(nc, opts)
@@ -230,3 +230,65 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	release()
 	return c, nil
 }
+
+const emptyLiteral = "{0}\r\n"
+
+// imapConn inserts a missing space after an empty literal ("{0}\r\n") when a
+// server (such as Strato) immediately follows it with the next FETCH attribute
+// name (e.g. "{0}\r\nUID" instead of "{0}\r\n UID").
+type imapConn struct {
+	net.Conn
+	matched int    // 0..5: bytes of emptyLiteral matched at the stream tail
+	extra   []byte // leftover bytes when inserting ' ' overflowed p
+	err     error
+}
+
+func (c *imapConn) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if len(c.extra) > 0 {
+		n := copy(p, c.extra)
+		c.extra = c.extra[n:]
+		var err error
+		if len(c.extra) == 0 {
+			err, c.err = c.err, nil
+		}
+		return n, err
+	}
+	n, err := c.Conn.Read(p)
+	if n == 0 {
+		return 0, err
+	}
+	var out []byte
+	for i, b := range p[:n] {
+		if c.matched == len(emptyLiteral) && b >= 'A' && b <= 'Z' {
+			if out == nil {
+				out = make([]byte, 0, n+4)
+				out = append(out, p[:i]...)
+			}
+			out = append(out, ' ')
+		}
+		if out != nil {
+			out = append(out, b)
+		}
+		if c.matched < len(emptyLiteral) && b == emptyLiteral[c.matched] {
+			c.matched++
+		} else if b == emptyLiteral[0] {
+			c.matched = 1
+		} else {
+			c.matched = 0
+		}
+	}
+	if out == nil {
+		return n, err
+	}
+	copied := copy(p, out)
+	if copied < len(out) {
+		c.extra = append(c.extra[:0], out[copied:]...)
+		c.err = err
+		return copied, nil
+	}
+	return copied, err
+}
+
