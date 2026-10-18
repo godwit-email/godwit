@@ -604,15 +604,18 @@ export function Panel({
   const refused = chat.error && !running ? chat.messages.at(-1) : undefined;
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new refusal restores
   useEffect(() => {
-    if (refused?.role !== "user" || draft) return;
-    setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
-    // its quotes too, and an edit stays one: sent again, it still replaces the old question
-    setQuoted(refused.metadata?.hits ?? []);
+    if (refused?.role !== "user") return;
     const r = refused.metadata?.rewind;
     // once its run started the old question is gone: sent again, it is a new one
-    if (r === undefined || transport.askedInPlace(refused)) return;
+    const inPlace = r !== undefined && !transport.askedInPlace(refused);
+    // the input keeps what was typed since; else it takes the question back, an edit still one
+    if (!draft) {
+      setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
+      setQuoted(refused.metadata?.hits ?? []);
+      if (inPlace) setEditing({ at: r });
+    }
+    if (!inPlace) return;
     // the host changed nothing: what it would have replaced comes back, the refusal as a toast
-    setEditing({ at: r });
     toast.error(witError(chat.error?.message ?? "", t));
     setMessages([...chat.messages.slice(0, -1), ...shelved.current]);
     chat.clearError();

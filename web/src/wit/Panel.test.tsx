@@ -457,6 +457,22 @@ describe("Panel", () => {
     expect(screen.getAllByText("总结！")).toHaveLength(1);
   });
 
+  it("a refused edit brings the old turns back even with something typed since", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    let refuse!: (e: Error) => void;
+    api.ask.mockReturnValueOnce(new Promise((_, rej) => (refuse = rej)));
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    await user.type(input("向 Wit 提问"), "另一个问题");
+    refuse(new Error("error.ai.unavailable"));
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("另一个问题");
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(toast.error).toHaveBeenCalled();
+  });
+
   it("an edit whose run started and then failed comes back as a new question", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({ page: true, history: turn });
