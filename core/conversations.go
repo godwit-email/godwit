@@ -133,6 +133,27 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 	return out, nil
 }
 
+// SetConversationModel makes the conversation's next runs use ref ("slug/model"
+// or a plugin's); "" goes back to Settings.DefaultModel. A ref that does not
+// resolve is refused. A run going on keeps the model it started with.
+func (s *Service) SetConversationModel(ctx context.Context, id int64, ref string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	if ref != "" {
+		if _, ref, err = s.resolveRef(ctx, ref); err != nil {
+			return err
+		}
+	}
+	r, err := s.db.Execute(ctx, "UPDATE conversations SET model = ? WHERE id = ?", ref, id)
+	if err == nil && r.Changes == 0 {
+		err = fmt.Errorf("conversation %d not found", id)
+	}
+	return err
+}
+
 // GetConversation returns the conversation with its messages.
 func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, error) {
 	ctx, end, err := s.begin(ctx, 0)

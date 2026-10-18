@@ -124,6 +124,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.OpenCited": nothing,
         "WitPage.OpenLink": nothing,
         "WitPage.OpenModels": nothing,
+        "WitPage.Models": async () => fx.witModels,
         "WitPage.Ask": async () => runStart,
         "WitPage.Stop": nothing,
         "WitPage.Decide": nothing,

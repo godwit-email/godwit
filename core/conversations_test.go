@@ -55,3 +55,23 @@ func TestRunStoresSlugRef(t *testing.T) {
 	e.start(t, conv, "hello")
 	assert.Equal(t, "x-gw/m1", queryStr(t, e.s, "SELECT model FROM runs WHERE conversation_id = ?", conv.ID))
 }
+
+// A conversation's model overrides the default for its runs; "" goes back to
+// the default and a ref that does not resolve is refused.
+func TestSetConversationModel(t *testing.T) {
+	e := newApprovalEnv(t)
+	ms, err := e.s.UpdateModelService(t.Context(), e.ms.ID, ModelServiceInput{Name: e.ms.Name, Kind: "openai", BaseURL: e.srv.URL, Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	conv := e.newConv(t, "ask", 0)
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/nope"))
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID+100, ""))
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2"))
+	e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
+	e.start(t, conv, "hello")
+	assert.Equal(t, ms.Slug+"/m2", queryStr(t, e.s, "SELECT model FROM runs WHERE conversation_id = ? ORDER BY id DESC", conv.ID))
+
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Empty(t, c.Model)
+}

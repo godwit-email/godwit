@@ -185,6 +185,7 @@ describe("historyToMessages", () => {
     };
     const h: WitHistory = {
       conversation: 1,
+      model: "",
       running: 0,
       messages: [
         { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
@@ -292,6 +293,7 @@ describe("WitTransport", () => {
     const { api, tr, emit } = fake();
     const h: WitHistory = {
       conversation: 1,
+      model: "",
       running: 7,
       approvals: [],
       messages: [
@@ -396,6 +398,7 @@ describe("WitTransport", () => {
     });
     const h: WitHistory = {
       conversation: 1,
+      model: "",
       running: 5,
       messages: [
         msg("q0", "user", [1]),
@@ -436,7 +439,13 @@ describe("WitTransport", () => {
 
   it("a live skill's part has the history's ID: a resumed run updates it", async () => {
     const pending = approval({ id: 12, run: 2, callId: "skill", state: "pending" });
-    const h: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [pending] };
+    const h: WitHistory = {
+      conversation: 1,
+      model: "",
+      running: 0,
+      messages: [],
+      approvals: [pending],
+    };
     const all = historyToMessages(h);
     expect(all.map((m) => m.id)).toEqual(["w2"]);
     const { api, tr, emit } = fake();
@@ -474,6 +483,7 @@ describe("WitTransport", () => {
 describe("WitTransport selections", () => {
   const hist = (conversation: number, runs: number[] = []): WitHistory => ({
     conversation,
+    model: "",
     running: 0,
     approvals: [],
     messages: runs.length

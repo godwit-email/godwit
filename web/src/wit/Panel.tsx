@@ -6,9 +6,11 @@ import {
   RiArrowDownSLine,
   RiArrowUpLine,
   RiEqualizerLine,
+  RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
   RiPlayFill,
+  RiSettings3Line,
   RiStopFill,
   RiTranslate2,
 } from "@remixicon/react";
@@ -25,6 +27,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -43,7 +48,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import type { Approval, Citation, MailHit, WitHistory, WitInfo } from "@/mygo";
+import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
@@ -318,6 +323,23 @@ function Answer({
           cite={cite}
         />
       )}
+      {text && !live && (
+        <div className="-mt-1 -ml-1.5 flex">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground"
+            aria-label={t("wit.copy")}
+            title={t("wit.copy")}
+            onClick={() => {
+              void navigator.clipboard?.writeText(text);
+              toast(t("wit.copied"));
+            }}
+          >
+            <RiFileCopyLine />
+          </Button>
+        </div>
+      )}
       {cites.length > 0 && onCite && (
         // narrow: the cards under the answer; wide, the page's column shows them (Panel)
         <Citations items={cites} nums={nums} onOpen={onCite} t={t} className="@4xl:hidden" />
@@ -389,6 +411,7 @@ export function Panel({
   layout = "panel",
   model,
   onModels,
+  models,
   ask: handed,
   onAsked,
   onSearch,
@@ -409,6 +432,11 @@ export function Panel({
   /** The default model's label, as the input's chip (onModels opens the model settings). */
   model?: string;
   onModels?(): void;
+  /**
+   * The conversation's model (ref, "" for the default) and the models to pick from: the chip
+   * opens a menu of them (the settings last) instead of the settings.
+   */
+  models?: { ref: string; list(): Promise<ModelChoice[]>; pick(ref: string): void };
   /** A question the host hands over: asked once (by identity), then onAsked. */
   ask?: { text: string };
   onAsked?(): void;
@@ -432,6 +460,7 @@ export function Panel({
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
   const [quoted, setQuoted] = useState<MailHit[]>([]);
+  const [choices, setChoices] = useState<ModelChoice[]>();
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -553,6 +582,11 @@ export function Panel({
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
   const stop = () => void transport.stop().catch(fail);
   const link = (url: string) => void onLink(url).catch(fail);
+  // The chip names the conversation's model: its choice's label once listed, else the ref's model.
+  const chosen = models?.ref
+    ? (choices?.find((c) => c.ref === models.ref)?.label ??
+      models.ref.slice(models.ref.indexOf("/") + 1))
+    : model;
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
@@ -764,17 +798,63 @@ export function Panel({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {model && (
-          <InputGroupButton
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
-            title={t("wit.model")}
-            onClick={onModels}
+        {model && models ? (
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (open) models.list().then(setChoices, fail);
+            }}
           >
-            {model}
-            <RiArrowDownSLine className="size-3" />
-          </InputGroupButton>
+            <DropdownMenuTrigger
+              render={
+                <InputGroupButton
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-8 min-w-0 gap-1 px-2 font-normal text-muted-foreground text-sm"
+                  title={t("wit.model.pick")}
+                >
+                  <span className="truncate">{chosen}</span>
+                  <RiArrowDownSLine className="size-3" />
+                </InputGroupButton>
+              }
+            />
+            <DropdownMenuContent side="top" align="end" className="max-h-80 min-w-56">
+              <DropdownMenuRadioGroup
+                value={models.ref}
+                onValueChange={(v: string) => models.pick(v)}
+              >
+                <DropdownMenuRadioItem value="">
+                  {t("wit.model.default", model)}
+                </DropdownMenuRadioItem>
+                {choices?.map((c) => (
+                  <DropdownMenuRadioItem key={c.ref} value={c.ref}>
+                    {c.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {onModels && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onModels}>
+                    <RiSettings3Line className="text-muted-foreground" />
+                    {t("wit.model")}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          model && (
+            <InputGroupButton
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
+              title={t("wit.model")}
+              onClick={onModels}
+            >
+              {model}
+              <RiArrowDownSLine className="size-3" />
+            </InputGroupButton>
+          )
         )}
         {running && page ? (
           <InputGroupButton

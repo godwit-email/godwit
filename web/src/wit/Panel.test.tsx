@@ -24,7 +24,7 @@ const info: WitInfo = {
   model: "",
 };
 
-const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
+const empty: WitHistory = { conversation: 1, model: "", running: 0, messages: [], approvals: [] };
 
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
@@ -158,6 +158,61 @@ describe("Panel", () => {
     );
     await user.click(screen.getByRole("button", { name: /Sonnet/ }));
     expect(onModels).toHaveBeenCalledOnce();
+  });
+
+  it("with models, the chip picks the conversation's model; the settings come last", async () => {
+    const user = userEvent.setup();
+    const onModels = vi.fn();
+    const pick = vi.fn();
+    const list = vi.fn().mockResolvedValue([
+      { ref: "a/sonnet", label: "A / sonnet" },
+      { ref: "a/haiku", label: "A / haiku" },
+    ]);
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="sonnet"
+        onModels={onModels}
+        models={{ ref: "a/haiku", list, pick }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /haiku/ }));
+    await waitFor(() => expect(list).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("menuitemradio", { name: "A / haiku" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
+    expect(pick).toHaveBeenCalledWith("");
+    expect(onModels).not.toHaveBeenCalled();
+  });
+
+  it("a finished answer copies its text", async () => {
+    const user = userEvent.setup();
+    await setup({
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "a0",
+            role: "assistant",
+            text: "答案",
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [1],
+          },
+        ],
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "复制" }));
+    expect(await navigator.clipboard.readText()).toBe("答案");
   });
 
   it("translate-only: the 翻译 menu alone, no input, 调整 or chips", async () => {

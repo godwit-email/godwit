@@ -18,6 +18,8 @@ type WitHistory struct {
 	Running int64 `json:"running"`
 	// Approvals are every approval of the conversation, in any state.
 	Approvals []Approval `json:"approvals"`
+	// Model is the conversation's model (a ModelChoice's Ref); "" for the default.
+	Model string `json:"model"`
 }
 
 // WitMessage is a question, or the answer to one: everything the model said

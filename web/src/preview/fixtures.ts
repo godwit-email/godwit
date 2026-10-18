@@ -190,6 +190,7 @@ const done1 = approval({
 });
 const history = (p: Partial<WitHistory> & Pick<WitHistory, "messages">): WitHistory => ({
   conversation: 1,
+  model: "",
   running: 0,
   approvals: [],
   ...p,
@@ -377,3 +378,9 @@ export const signatureHtml =
 export const logo =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAcAQMAAACktijBAAAABlBMVEUlY+v///8tVMD8AAAAHUlEQVR4nGIYGGD/gUiO/X8w+EAKB7dpMNbAAMAAz10oe+YHgF0AAAAASUVORK5CYII=";
 export const signatureHtmlImage = `${signatureHtml}<img src="${logo}">`;
+
+export const witModels = [
+  { ref: "anthropic/claude-sonnet-5-5", label: "Anthropic / claude-sonnet-5-5" },
+  { ref: "anthropic/claude-haiku-5-5", label: "Anthropic / claude-haiku-5-5" },
+  { ref: "openai/gpt-5", label: "OpenAI / gpt-5" },
+];

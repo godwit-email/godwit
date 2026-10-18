@@ -39,6 +39,7 @@ export function WitPage() {
   const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
   const resetResume = useRef(witResume.reset);
+  const pick = useRef(""); // the shown conversation's model, as the next question asks on it
   resetResume.current = witResume.reset;
 
   useEffect(() => {
@@ -50,7 +51,7 @@ export function WitPage() {
     const tr = new WitTransport({
       ask: (text, quoted = []) => {
         const g = gen;
-        const p = api.ask(conv.current, text, quoted).then((rs) => {
+        const p = api.ask(conv.current, text, quoted, pick.current).then((rs) => {
           if (g === gen) conv.current = rs.conversation;
           return rs.run;
         });
@@ -71,10 +72,13 @@ export function WitPage() {
       conv.current = c;
       const g = ++gen;
       setView(undefined);
+      pick.current = "";
       resetResume.current();
       tr.follow().then(
         (history) => {
-          if (live && history && g === gen) setView({ history, tr, key: g });
+          if (!live || !history || g !== gen) return;
+          pick.current = history.model;
+          setView({ history, tr, key: g });
         },
         (e) => {
           if (live && g === gen) {
@@ -149,6 +153,7 @@ export function WitPage() {
           key={view.key}
           view={view}
           model={st.model}
+          pick={pick}
           resume={witResume.resume}
           decide={witResume.decide}
           handed={handed}
@@ -164,6 +169,7 @@ export function WitPage() {
 function Conversation({
   view,
   model,
+  pick,
   resume,
   decide,
   handed,
@@ -172,6 +178,7 @@ function Conversation({
 }: {
   view: { history: WitHistory; tr: WitTransport };
   model: string;
+  pick: { current: string };
   resume?: { run: number };
   decide: ReturnType<typeof useResume>["decide"];
   handed?: { text: string };
@@ -179,6 +186,7 @@ function Conversation({
   t: T;
 }) {
   const fail = (e: unknown) => toast.error(witError(message(e), t));
+  const [ref, setRef] = useState(view.history.model);
   const onDecide: Decide = async (a, accept, all) => {
     try {
       await decide(a.run, () => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
@@ -214,6 +222,14 @@ function Conversation({
       t={t}
       model={model}
       onModels={() => void api.openModels().catch(fail)}
+      models={{
+        ref,
+        list: () => api.models(),
+        pick: (r) => {
+          pick.current = r;
+          setRef(r);
+        },
+      }}
     />
   );
 }
