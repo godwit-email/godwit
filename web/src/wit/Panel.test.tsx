@@ -67,7 +67,7 @@ async function setup(
     skill: vi.fn().mockResolvedValue(7),
     follow: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
-    rewind: vi.fn().mockResolvedValue(undefined),
+    rewinds: true,
   };
   const tr = new WitTransport(api, (f) => {
     listener = f;
@@ -359,11 +359,7 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true, history: turn });
     await user.click(screen.getByRole("button", { name: "重新生成" }));
-    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9]));
-    expect(api.rewind).toHaveBeenCalledWith(0);
-    expect(api.rewind.mock.invocationCallOrder[0]).toBeLessThan(
-      api.ask.mock.invocationCallOrder[0],
-    );
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9], 0));
     expect(screen.queryByText("旧答案")).toBeNull();
     expect(screen.getAllByText("总结")).toHaveLength(1);
   });
@@ -378,8 +374,7 @@ describe("Panel", () => {
     expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
     await user.clear(box);
     await user.type(box, "列出金额{Enter}");
-    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9]));
-    expect(api.rewind).toHaveBeenCalledWith(0);
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9], 0));
     expect(screen.queryByText("旧答案")).toBeNull();
   });
 
@@ -409,6 +404,23 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
   });
 
+  it("an edit refused stays an edit, with its quotes; sent again it still replaces", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    api.ask.mockRejectedValueOnce(new Error("error.ai.unavailable"));
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    expect(
+      await screen.findByText("正在编辑这条提问，发送后会替换它和之后的对话"),
+    ).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("发票")).toBeInTheDocument();
+    await user.type(input("向 Wit 提问"), "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("总结！", [9], 0));
+    expect(screen.getAllByText("总结！")).toHaveLength(1);
+  });
+
   it("an edit cancelled leaves the conversation as it was", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true, history: turn });
@@ -417,7 +429,7 @@ describe("Panel", () => {
     expect(input("向 Wit 提问")).toHaveValue("");
     await user.type(input("向 Wit 提问"), "新问题{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("新问题"));
-    expect(api.rewind).not.toHaveBeenCalled();
+    expect(api.ask).toHaveBeenCalledTimes(1);
     expect(screen.getByText("旧答案")).toBeInTheDocument();
   });
 

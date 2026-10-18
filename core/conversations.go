@@ -176,6 +176,11 @@ func (s *Service) RewindConversation(ctx context.Context, id int64, at int) erro
 	defer end()
 	s.runMu.Lock() // no run starts meanwhile
 	defer s.runMu.Unlock()
+	return s.rewind(ctx, id, at)
+}
+
+// rewind is RewindConversation; the caller holds runMu.
+func (s *Service) rewind(ctx context.Context, id int64, at int) error {
 	_, state, err := s.conversation(ctx, id)
 	if err != nil {
 		return err
@@ -702,7 +707,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools, nil, nil)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil, nil, nil)
 	if err != nil {
 		end()
 		return nil, err
@@ -711,10 +716,12 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 }
 
 // launch claims a run and hands end to it. The quoted mail (checked IDs) goes
-// before the prompt (quote). claimed, if set, runs once the run is claimed
-// and before the hand-off; its error fails the run and launch.
+// before the prompt (quote). before, if set, runs holding runMu just before
+// the claim, once the model resolved: its error fails launch with nothing
+// claimed. claimed, if set, runs once the run is claimed and before the
+// hand-off; its error fails the run and launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
-	quoted []int64, claimed func(context.Context) error) (*witStream, error) {
+	quoted []int64, before, claimed func(context.Context) error) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
@@ -737,6 +744,11 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
+	if before != nil {
+		if err := before(ctx); err != nil {
+			return nil, err
+		}
+	}
 	job, state, err := s.claimRun(ctx, conv, ref, names)
 	if err != nil {
 		return nil, err

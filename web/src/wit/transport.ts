@@ -305,16 +305,17 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
 }
 
 /**
- * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID;
- * follow reads the conversation the host shows (subscribing to it); stop cancels a run; rewind
- * (where the host has it) drops the question at an index and what followed, to ask it again.
+ * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID,
+ * in place of the question at index rewind and what followed when given (a host that `rewinds`;
+ * refused, nothing changes); follow reads the conversation the host shows (subscribing to it);
+ * stop cancels a run.
  */
 export type WitApi = {
-  ask(text: string, quoted?: number[]): Promise<number>;
+  ask(text: string, quoted?: number[], rewind?: number): Promise<number>;
   skill?(id: string, lang: string): Promise<number>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
-  rewind?(at: number): Promise<void>;
+  rewinds?: boolean;
 };
 type On = (f: (ev: WitEvent) => void) => () => void;
 
@@ -342,7 +343,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private gen = 0; // the selection: bumped by each follow and send
   private endOpen?: () => void; // ends the stream open
   private watchers = new Set<(ev: WitEvent) => void>();
-  private rewound = new Set<string>(); // the questions whose rewind was done: a retry asks only
+  private rewound = new Set<string>(); // the questions whose run started in place: a retry asks only
   private off: () => void;
 
   constructor(
@@ -451,7 +452,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
 
   /** Whether a question can be asked again in place (the host rewinds). */
   get rewinds(): boolean {
-    return !!this.api.rewind;
+    return !!this.api.rewinds;
   }
 
   close() {
@@ -524,24 +525,19 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     const quoted = m?.metadata?.quoted;
-    const start = () =>
-      skill && this.api.skill
-        ? this.api.skill(skill, m?.metadata?.lang ?? "")
+    // A retry (regenerate) asks in place again only if that ask was refused (nothing changed).
+    const at = m && this.api.rewinds && !this.rewound.has(m.id) ? m.metadata?.rewind : undefined;
+    (skill && this.api.skill
+      ? this.api.skill(skill, m?.metadata?.lang ?? "")
+      : at !== undefined
+        ? this.api.ask(text, quoted ?? [], at)
         : quoted?.length
           ? this.api.ask(text, quoted)
-          : this.api.ask(text);
-    // A retry (regenerate) rewinds again only if the rewind is what failed.
-    const at = m && !this.rewound.has(m.id) ? m.metadata?.rewind : undefined;
-    const rewind = this.api.rewind;
-    (at !== undefined && rewind && m
-      ? rewind(at).then(() => {
-          this.rewound.add(m.id);
-          return start();
-        })
-      : start()
+          : this.api.ask(text)
     )
       .then(
         (run) => {
+          if (at !== undefined && m) this.rewound.add(m.id);
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown
           named(`live${run}`); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;

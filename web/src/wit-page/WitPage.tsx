@@ -49,9 +49,9 @@ export function WitPage() {
     let gen = 0; // the selection
     let creating: Promise<unknown> | undefined; // a first question's ask in flight
     const tr = new WitTransport({
-      ask: (text, quoted = []) => {
+      ask: (text, quoted = [], rewind = -1) => {
         const g = gen;
-        const p = api.ask(conv.current, text, quoted, pick.current).then((rs) => {
+        const p = api.ask(conv.current, text, quoted, pick.current, rewind).then((rs) => {
           if (g === gen) conv.current = rs.conversation;
           return rs.run;
         });
@@ -67,7 +67,7 @@ export function WitPage() {
       },
       follow: () => api.follow(conv.current),
       stop: (run) => api.stop(run),
-      rewind: (at) => api.rewind(conv.current, at),
+      rewinds: true,
     });
     const open = (c: number) => {
       conv.current = c;

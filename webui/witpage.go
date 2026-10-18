@@ -270,10 +270,12 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 // Ask asks input in conv, an ask conversation, with the mail the user quoted
 // (message IDs; core AskWith), on model (a ModelChoice's Ref; "": the
 // default), which the conversation keeps; conv 0 makes one first, which
-// ConversationCreated hears of. The page follows conv from before the run
+// ConversationCreated hears of. rewind, unless -1, asks it in place of the
+// question at that index (a question's ID is "q<rewind>") and what followed
+// (core AskAgain): a refused question leaves the conversation as it was. The page follows conv from before the run
 // starts, unless a newer selection came meanwhile. Only Stop cancels the
 // run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model string) (RunStart, error) {
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model string, rewind int) (RunStart, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -308,7 +310,12 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	if _, err := p.w.followConv(t, svc, conv, sel); err != nil && !errors.Is(err, errSuperseded) {
 		return RunStart{}, keyed(err)
 	}
-	ch, err := svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
+	var ch <-chan core.WitEvent
+	if rewind >= 0 && !made {
+		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, rewind, input, quoted)
+	} else {
+		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
+	}
 	if made { // titled by now, unless Ask failed
 		p.w.created(conv, version)
 	}
@@ -331,20 +338,6 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	p.w.own[id] = true // ponytail: kept for the session; a few IDs per question
 	p.w.mu.Unlock()
 	return RunStart{Run: id, Conversation: conv}, nil
-}
-
-// Rewind takes conv, an ask conversation, back to before its question at
-// index at (a question's ID is "q<at>"; core RewindConversation): the page
-// asks it again, as it was or edited.
-func (p *WitPage) Rewind(ctx context.Context, conv int64, at int) error {
-	_, svc, err := p.w.caller(ctx)
-	if err != nil {
-		return keyed(err)
-	}
-	if err := askConv(ctx, svc, conv); err != nil {
-		return keyed(err)
-	}
-	return keyed(svc.RewindConversation(ctx, conv, at))
 }
 
 // created notes that Ask made conv under snapshot version: the snapshot

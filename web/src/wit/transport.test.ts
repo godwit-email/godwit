@@ -69,61 +69,50 @@ const send = (tr: WitTransport, m: WitUIMessage) =>
   });
 
 describe("rewind", () => {
-  it("a question sent with rewind drops the old one first; a retry does not again", async () => {
+  const send = (
+    tr: WitTransport,
+    m: WitUIMessage,
+    trigger: "submit-message" | "regenerate-message",
+  ) =>
+    tr.sendMessages({
+      trigger,
+      chatId: "c",
+      messageId: undefined,
+      messages: [m],
+      abortSignal: undefined,
+    });
+
+  it("a question sent with rewind is asked in place; once started, a retry only asks", async () => {
     const { api, tr } = fake();
-    const order: string[] = [];
-    const rewind = vi.fn(async () => {
-      order.push("rewind");
-    });
-    const t2 = new WitTransport({ ...api, rewind }, () => () => {});
-    api.ask.mockImplementation(async () => {
-      order.push("ask");
-      return 7;
-    });
+    const t2 = new WitTransport({ ...api, rewinds: true }, () => () => {});
+    api.ask.mockResolvedValue(7);
     expect(tr.rewinds).toBe(false);
     expect(t2.rewinds).toBe(true);
     const m = userMsg("again", { quoted: [3], rewind: 2 });
-    void t2.sendMessages({
-      trigger: "submit-message",
-      chatId: "c",
-      messageId: undefined,
-      messages: [m],
-      abortSignal: undefined,
-    });
-    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3]));
-    expect(rewind).toHaveBeenCalledWith(2);
-    expect(order).toEqual(["rewind", "ask"]);
-    void t2.sendMessages({
-      trigger: "regenerate-message",
-      chatId: "c",
-      messageId: undefined,
-      messages: [m],
-      abortSignal: undefined,
-    });
+    void send(t2, m, "submit-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3], 2));
+    void send(t2, m, "regenerate-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
-    expect(rewind).toHaveBeenCalledOnce();
+    expect(api.ask).toHaveBeenLastCalledWith("again", [3]);
   });
 
-  it("a retry after the rewind itself failed rewinds again", async () => {
+  it("a retry after the ask in place was refused asks in place again", async () => {
     const { api } = fake();
-    const rewind = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(undefined);
-    api.ask.mockResolvedValue(7);
-    const tr = new WitTransport({ ...api, rewind }, () => () => {});
+    api.ask.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(7);
+    const tr = new WitTransport({ ...api, rewinds: true }, () => () => {});
     const m = userMsg("again", { rewind: 0 });
-    const req = (trigger: "submit-message" | "regenerate-message") =>
-      tr.sendMessages({
-        trigger,
-        chatId: "c",
-        messageId: undefined,
-        messages: [m],
-        abortSignal: undefined,
-      });
-    const failed = await readAll(await req("submit-message"));
+    const failed = await readAll(await send(tr, m, "submit-message"));
     expect(failed.at(-1)).toMatchObject({ type: "error", errorText: "boom" });
-    expect(api.ask).not.toHaveBeenCalled();
-    void req("regenerate-message");
+    void send(tr, m, "regenerate-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
+    expect(api.ask).toHaveBeenLastCalledWith("again", [], 0);
+  });
+
+  it("a host that does not rewind just asks", async () => {
+    const { api, tr } = fake();
+    api.ask.mockResolvedValue(7);
+    void send(tr, userMsg("again", { rewind: 1 }), "submit-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again"));
-    expect(rewind).toHaveBeenCalledTimes(2);
   });
 });
 

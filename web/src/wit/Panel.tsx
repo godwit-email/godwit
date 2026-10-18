@@ -602,6 +602,10 @@ export function Panel({
   useEffect(() => {
     if (refused?.role !== "user" || draft) return;
     setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
+    // its quotes too, and an edit stays one: sent again, it still replaces the old question
+    setQuoted(refused.metadata?.hits ?? []);
+    const r = refused.metadata?.rewind;
+    if (r !== undefined) setEditing({ id: refused.id, at: r });
   }, [refused]);
   // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
   // call waits on the user (core rewinds no active run).
@@ -613,9 +617,8 @@ export function Panel({
     return transport.rewinds && k && !waits ? Number(k[1]) : undefined;
   };
   // Asks again in place of question q: what came from it on goes, here and in the host.
-  const again = (q: WitUIMessage, text: string, hits: MailHit[]) => {
-    const i = at(q);
-    if (i === undefined || locked || running) return;
+  const again = (q: WitUIMessage, i: number, text: string, hits: MailHit[]) => {
+    if (locked || running) return;
     chat.setMessages(chat.messages.slice(0, chat.messages.indexOf(q)));
     ask(text, { quoted: hits.map((h) => h.id), hits, rewind: i });
   };
@@ -627,7 +630,7 @@ export function Panel({
     setPicking(undefined);
     const q = editing && chat.messages.find((m) => m.id === editing.id);
     setEditing(undefined);
-    if (q) return again(q, text, quoted);
+    if (editing && q) return again(q, editing.at, text, quoted);
     ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id), hits: quoted } : undefined);
   };
   const textOf = (m: WitUIMessage) =>
@@ -833,8 +836,9 @@ export function Panel({
                     onCite={onCite}
                     onAgain={(() => {
                       const q = chat.messages[i - 1];
-                      return m === last && !locked && q?.role === "user" && at(q) !== undefined
-                        ? () => again(q, textOf(q), q.metadata?.hits ?? [])
+                      const k = q?.role === "user" ? at(q) : undefined;
+                      return m === last && !locked && k !== undefined
+                        ? () => again(q, k, textOf(q), q.metadata?.hits ?? [])
                         : undefined;
                     })()}
                     working={working}

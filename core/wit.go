@@ -47,6 +47,22 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 // and the model gets it before the question, cited like the tools' mail (a
 // "context" event first). An ID that does not exist fails AskWith.
 func (s *Service) AskWith(ctx context.Context, conversationID int64, input string, quoted []int64) (<-chan WitEvent, error) {
+	return s.askAt(ctx, conversationID, input, quoted, -1)
+}
+
+// AskAgain is AskWith asked in place of the question at Messages[at]: the
+// conversation is rewound to before it (RewindConversation) only once
+// everything else checked out, as the run is claimed, so a refused question
+// leaves the conversation as it was.
+func (s *Service) AskAgain(ctx context.Context, conversationID int64, at int, input string, quoted []int64) (<-chan WitEvent, error) {
+	if at < 0 {
+		return nil, fmt.Errorf("no question at %d", at)
+	}
+	return s.askAt(ctx, conversationID, input, quoted, at)
+}
+
+// askAt is AskWith, rewinding to at first unless it is -1.
+func (s *Service) askAt(ctx context.Context, conversationID int64, input string, quoted []int64, at int) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
@@ -72,9 +88,13 @@ func (s *Service) AskWith(ctx context.Context, conversationID int64, input strin
 		_, err := s.db.Execute(ctx, "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", title, conv.ID)
 		return err
 	}
+	var before func(context.Context) error
+	if at >= 0 {
+		before = func(ctx context.Context) error { return s.rewind(ctx, conv.ID, at) }
+	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, before, setTitle)
 	}
 	if err != nil {
 		end()

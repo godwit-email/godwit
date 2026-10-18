@@ -119,3 +119,40 @@ func TestFailedRunUsage(t *testing.T) {
 	assert.Equal(t, "50", queryStr(t, e.s, "SELECT input_tokens FROM runs WHERE conversation_id = ?", conv.ID))
 	assert.Equal(t, "9", queryStr(t, e.s, "SELECT output_tokens FROM runs WHERE conversation_id = ?", conv.ID))
 }
+
+// AskAgain replaces a question only once its run can start: one refused (a
+// model that no longer resolves, a quote that does not exist) leaves the
+// conversation as it was.
+func TestAskAgain(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	messages := func() []string {
+		c, err := e.s.GetConversation(t.Context(), conv.ID)
+		require.NoError(t, err)
+		var out []string
+		for _, m := range c.Messages {
+			out = append(out, m.Text)
+		}
+		return out
+	}
+	before := messages()
+
+	_, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{999999})
+	require.Error(t, err)
+	assert.Equal(t, before, messages(), "a missing quote")
+	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET model = 'gone/m9' WHERE id = ?", conv.ID)
+	require.NoError(t, err)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.Error(t, err)
+	assert.Equal(t, before, messages(), "a model that does not resolve")
+
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, messages())
+}
