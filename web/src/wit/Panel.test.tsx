@@ -1,11 +1,16 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
+vi.mock("sonner", async (orig) => ({
+  ...(await orig<typeof import("sonner")>()),
+  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+}));
 
 const t = makeT("zh-Hans");
 
@@ -223,6 +228,32 @@ describe("Panel", () => {
     });
     await user.click(screen.getByRole("button", { name: "复制" }));
     expect(await navigator.clipboard.readText()).toBe("答案");
+  });
+
+  it("a copy the clipboard refuses says so", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+    await setup({
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "a0",
+            role: "assistant",
+            text: "答案",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [1],
+          },
+        ],
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("复制失败"));
+    expect(toast).not.toHaveBeenCalledWith("已复制");
   });
 
   it("translate-only: the 翻译 menu alone, no input, 调整 or chips", async () => {

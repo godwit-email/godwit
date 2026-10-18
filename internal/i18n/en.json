@@ -1833,6 +1833,7 @@
   "wit_compose_writing_banner": "The assistant is writing the body; it cannot be edited for now",
   "wit_copy": "Copy",
   "wit_copied": "Copied",
+  "wit_copy_failed": "Couldn't copy",
   "wit_edit": "Edit",
   "wit_edit_cancel": "Cancel editing",
   "wit_editing": "Editing this question: sending replaces it and what followed",

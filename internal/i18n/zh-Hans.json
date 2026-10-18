@@ -917,6 +917,7 @@
   "wit_compose_writing_banner": "助手正在写入正文，暂时不能编辑",
   "wit_copy": "复制",
   "wit_copied": "已复制",
+  "wit_copy_failed": "复制失败",
   "wit_edit": "编辑",
   "wit_edit_cancel": "取消编辑",
   "wit_editing": "正在编辑这条提问，发送后会替换它和之后的对话",

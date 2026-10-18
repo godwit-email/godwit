@@ -761,3 +761,27 @@ func TestAssistWithQuoted(t *testing.T) {
 	assert.Equal(t, other, evs[0].Citations[0].MessageID)
 	assert.Contains(t, promptOf(t, e.srv.Requests()[0]), "train at nine")
 }
+
+// A quote that goes after AskAgain checked it (sync deleted the mail) fails
+// the run before the old question goes: the conversation stays as it was.
+func TestAskAgainQuoteGone(t *testing.T) {
+	e := newSkillEnv(t)
+	other := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "train at nine", "", 1_700_000_300)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}})
+	ch, err := e.s.AskWith(t.Context(), conv.ID, "first", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	beforeRunClaim = func(ctx context.Context) {
+		_, err := e.s.db.Execute(ctx, "DELETE FROM messages WHERE id = ?", other)
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() { beforeRunClaim = nil })
+	_, err = e.s.AskAgain(t.Context(), conv.ID, 0, "first, edited", []int64{other})
+	require.Error(t, err)
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 2)
+	assert.Equal(t, "first", c.Messages[0].Text)
+	assert.Len(t, c.Runs, 1)
+}

@@ -117,7 +117,7 @@ func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, q
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, nil, nil)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, -1, nil)
 	}
 	if err != nil {
 		end()
@@ -545,7 +545,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, nil, nil)
+	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, -1, nil)
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,

@@ -385,10 +385,12 @@ function Answer({
             className="text-muted-foreground"
             aria-label={t("wit.copy")}
             title={t("wit.copy")}
-            onClick={() => {
-              void navigator.clipboard?.writeText(text);
-              toast(t("wit.copied"));
-            }}
+            onClick={() =>
+              (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+                () => toast(t("wit.copied")),
+                () => toast.error(t("wit.copy_failed")),
+              )
+            }
           >
             <RiFileCopyLine />
           </Button>

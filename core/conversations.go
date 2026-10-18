@@ -185,19 +185,6 @@ func (s *Service) rewind(ctx context.Context, id int64, at int) error {
 	if err != nil {
 		return err
 	}
-	var msgs []json.RawMessage // the state's messages, as Messages has them
-	if len(state) > 0 {
-		if err := json.Unmarshal(state, &msgs); err != nil {
-			return err
-		}
-	}
-	shown, err := ai.Messages(state)
-	if err != nil {
-		return err
-	}
-	if at < 0 || at >= len(msgs) || len(shown) != len(msgs) || shown[at].Role != "user" {
-		return fmt.Errorf("conversation %d has no question at %d", id, at)
-	}
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
 	if err != nil {
 		return err
@@ -205,10 +192,34 @@ func (s *Service) rewind(ctx context.Context, id int64, at int) error {
 	if len(rows.Values) > 0 {
 		return ErrRunActive
 	}
-	kept, err := json.Marshal(msgs[:at])
+	kept, err := rewoundState(state, at)
 	if err != nil {
-		return err
+		return fmt.Errorf("conversation %d: %w", id, err)
 	}
+	return s.saveRewind(ctx, id, at, kept)
+}
+
+// rewoundState is state before its question at Messages[at].
+func rewoundState(state []byte, at int) ([]byte, error) {
+	var msgs []json.RawMessage // the state's messages, as Messages has them
+	if len(state) > 0 {
+		if err := json.Unmarshal(state, &msgs); err != nil {
+			return nil, err
+		}
+	}
+	shown, err := ai.Messages(state)
+	if err != nil {
+		return nil, err
+	}
+	if at < 0 || at >= len(msgs) || len(shown) != len(msgs) || shown[at].Role != "user" {
+		return nil, fmt.Errorf("no question at %d", at)
+	}
+	return json.Marshal(msgs[:at])
+}
+
+// saveRewind saves conversation id rewound to kept (rewoundState of at):
+// the runs that added what went go with it, and its grants.
+func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte) error {
 	stmts := []sqlite.Statement{
 		saveState(id, kept),
 		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
@@ -216,7 +227,7 @@ func (s *Service) rewind(ctx context.Context, id int64, at int) error {
 	if at == 0 { // the first question titled it: the one asked in its place does
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
 	}
-	_, err = s.db.Transaction(ctx, stmts)
+	_, err := s.db.Transaction(ctx, stmts)
 	if err == nil {
 		s.dropGrants(id)
 	}
@@ -707,7 +718,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools, nil, nil, nil)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil, -1, nil)
 	if err != nil {
 		end()
 		return nil, err
@@ -716,12 +727,13 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 }
 
 // launch claims a run and hands end to it. The quoted mail (checked IDs) goes
-// before the prompt (quote). before, if set, runs holding runMu just before
-// the claim, once the model resolved: its error fails launch with nothing
-// claimed. claimed, if set, runs once the run is claimed and before the
-// hand-off; its error fails the run and launch.
+// before the prompt (quote). at, unless -1, asks the prompt in place of the
+// question at Messages[at] (RewindConversation): the run starts on the
+// history before it, which is saved only once everything else that can fail
+// before the hand-off has not. claimed, if set, runs once the run is claimed
+// and before the hand-off; its error fails the run and launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
-	quoted []int64, before, claimed func(context.Context) error) (*witStream, error) {
+	quoted []int64, at int, claimed func(context.Context) error) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
@@ -744,18 +756,22 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	if before != nil {
-		if err := before(ctx); err != nil {
-			return nil, err
-		}
-	}
 	job, state, err := s.claimRun(ctx, conv, ref, names)
 	if err != nil {
 		return nil, err
 	}
-	req, err := s.request(ctx, job, model, state, tools)
+	if at >= 0 {
+		state, err = rewoundState(state, at)
+	}
+	var req ai.Request
+	if err == nil {
+		req, err = s.request(ctx, job, model, state, tools)
+	}
 	if err == nil && len(quoted) > 0 {
 		req.Context, err = s.quote(ctx, job, quoted)
+	}
+	if err == nil && at >= 0 { // the claimed run has no span yet: it stays
+		err = s.saveRewind(ctx, conv.ID, at, state)
 	}
 	if err == nil && claimed != nil {
 		err = claimed(ctx)
