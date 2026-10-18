@@ -151,6 +151,8 @@ jobs:
       - if: hashFiles('sdk/package.json') != ''
         working-directory: sdk
         run: |
+          # Provenance names the run's commit, so publish only when that is the tag's.
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then echo "::warning::$GITHUB_SHA is not the release tag's commit: @godwit/sdk was not published."; exit 0; fi
           version=$(node -p 'require("./package.json").version')
           if npm view "@godwit/sdk@$version" version >/dev/null 2>&1; then echo "@godwit/sdk@$version is already on npm"; exit 0; fi
           npm publish
