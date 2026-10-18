@@ -356,10 +356,10 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 	for k, v := range req.Header {
 		in.Headers[k] = strings.Join(v, ", ")
 	}
-	var res struct {
-		URL     string            `json:"url"`
-		Headers map[string]string `json:"headers"`
-		Body    string            `json:"body"`
+	var res struct { // pointers: a missing field is a wrong answer, an empty one may be right
+		URL     string             `json:"url"`
+		Headers *map[string]string `json:"headers"`
+		Body    *string            `json:"body"`
 	}
 	var u *url.URL
 	err := t.s.callModelPlugin(ctx, t.name, t.rp, func(ctx context.Context) error {
@@ -372,8 +372,8 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 			err = decodeAnswer(v, cerr, &res, "prepareRequest")
 		}
 		if err == nil {
-			if u, err = url.Parse(res.URL); err != nil || u.Host == "" { // a wrong answer: it counts
-				err = fmt.Errorf("%w: prepareRequest returned no valid url", errPluginAnswer)
+			if u, err = url.Parse(res.URL); err != nil || u.Host == "" || res.Headers == nil || res.Body == nil { // a wrong answer: it counts
+				err = fmt.Errorf("%w: prepareRequest must return a valid url, headers and body", errPluginAnswer)
 			}
 		}
 		return err
@@ -381,11 +381,11 @@ func (t *pluginModelTransport) prepare(ctx context.Context, req *http.Request) (
 	if err != nil {
 		return nil, err
 	}
-	out, err := http.NewRequestWithContext(ctx, req.Method, u.String(), bytes.NewReader([]byte(res.Body)))
+	out, err := http.NewRequestWithContext(ctx, req.Method, u.String(), bytes.NewReader([]byte(*res.Body)))
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range res.Headers {
+	for k, v := range *res.Headers {
 		out.Header.Set(k, v)
 	}
 	return out, nil

@@ -370,15 +370,21 @@ func TestPluginModelRequestAuditedOutcome(t *testing.T) {
 }
 
 func TestPluginPrepareBadURLCounts(t *testing.T) {
+	for name, ret := range map[string]string{"url": `{ url: "", headers: req.headers, body: req.body }`, "no body": `{ url: req.url, headers: req.headers }`} {
+		t.Run(name, func(t *testing.T) { testPrepareWrongAnswer(t, ret) })
+	}
+}
+
+func testPrepareWrongAnswer(t *testing.T, ret string) {
 	s := newMailContextService(t)
 	srv, host := modelServer(t, s, "openai")
 	srv.Script(testllm.Turn{Text: []string{"never"}})
 	startModelPlugin(t, s, "p", host, fmt.Sprintf(`export default function (ctx: any) {
   ctx.models.register({
     listModels: () => ({ models: [{ id: "m1", name: "M1", transport: "http", protocol: "openai-completions", baseURL: "https://%s" }] }),
-    prepareRequest: (req: any) => ({ url: "", headers: req.headers, body: req.body }),
+    prepareRequest: (req: any) => (%s),
   })
-}`, host))
+}`, host, ret))
 	m, _, err := s.resolveRef(t.Context(), "plugin/p/m1")
 	require.NoError(t, err)
 	e, err := s.aiEngine()

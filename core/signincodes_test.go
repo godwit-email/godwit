@@ -35,7 +35,7 @@ func TestRecentSignInCodes(t *testing.T) {
 	require.Equal(t, "https://acme.example/l/1", link.Link)
 	require.Empty(t, link.Code)
 
-	got, err = e.s.RecentSignInCodes(bg, now.Add(15*time.Minute))
+	got, err = e.s.RecentSignInCodes(bg, time.Now().Add(15*time.Minute)) // not now: the sync may have run in a later second
 	require.NoError(t, err)
 	require.Empty(t, got, "the menu expires entries without deleting the mail")
 	require.NotZero(t, e.idOf(t, "new@x"))
