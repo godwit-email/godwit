@@ -659,3 +659,17 @@ func TestAssistSkillTargetLanguage(t *testing.T) {
 	assert.Contains(t, sys, "Target language: fr.")
 	assert.NotContains(t, sys, "zh-CN")
 }
+
+// A compose skill's run records the tokens its model call took, though its
+// host turns the result into an approval.
+func TestAssistSkillUsage(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>我周五到。</p>")
+	e.srv.Script(testllm.Turn{Text: []string{"<p>I'll be there on Friday.</p>"}, Usage: [2]int{70, 12}})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "interrupted", evs[len(evs)-1].Kind)
+	assert.Equal(t, "70", queryStr(t, e.s, "SELECT input_tokens FROM runs ORDER BY id DESC LIMIT 1"))
+	assert.Equal(t, "12", queryStr(t, e.s, "SELECT output_tokens FROM runs ORDER BY id DESC LIMIT 1"))
+}

@@ -217,9 +217,10 @@ func rewoundState(state []byte, at int) ([]byte, error) {
 	return json.Marshal(msgs[:at])
 }
 
-// saveRewind saves conversation id rewound to kept (rewoundState of at):
-// the runs that added what went go with it, and its grants.
-func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte) error {
+// saveRewind saves conversation id rewound to kept (rewoundState of at),
+// with also, in one transaction: the runs that added what went go with it,
+// and its grants.
+func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte, also ...sqlite.Statement) error {
 	stmts := []sqlite.Statement{
 		saveState(id, kept),
 		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
@@ -227,7 +228,7 @@ func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte)
 	if at == 0 { // the first question titled it: the one asked in its place does
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
 	}
-	_, err := s.db.Transaction(ctx, stmts)
+	_, err := s.db.Transaction(ctx, append(stmts, also...))
 	if err == nil {
 		s.dropGrants(id)
 	}
@@ -739,7 +740,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools, nil, -1, nil)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil, -1)
 	if err != nil {
 		end()
 		return nil, err
@@ -751,10 +752,11 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 // before the prompt (quote). at, unless -1, asks the prompt in place of the
 // question at Messages[at] (RewindConversation): the run starts on the
 // history before it, which is saved only once everything else that can fail
-// before the hand-off has not. claimed, if set, runs once the run is claimed
-// and before the hand-off; its error fails the run and launch.
+// before the hand-off has not. claimed, if set, are saved once the run is
+// claimed and before the hand-off, in the rewind's transaction if any; their
+// error fails the run and launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
-	quoted []int64, at int, claimed func(context.Context) error) (*witStream, error) {
+	quoted []int64, at int, claimed ...sqlite.Statement) (*witStream, error) {
 	conv, _, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
@@ -795,10 +797,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		req.Context, err = s.quote(ctx, job, quoted)
 	}
 	if err == nil && at >= 0 { // the claimed run has no span yet: it stays
-		err = s.saveRewind(ctx, conv.ID, at, state)
-	}
-	if err == nil && claimed != nil {
-		err = claimed(ctx)
+		err = s.saveRewind(ctx, conv.ID, at, state, claimed...)
+	} else if err == nil && len(claimed) > 0 {
+		_, err = s.db.Transaction(ctx, claimed)
 	}
 	if err != nil {
 		s.untrack(job)
@@ -970,7 +971,9 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 			res.State = st
 		}
 		if job.host != nil {
+			used := res.Usage
 			res = job.host(ctx, res)
+			res.Usage = used // the host's result took the run's tokens all the same
 		}
 	}
 	fin, err := s.settleRun(ctx, job, req, res)

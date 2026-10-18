@@ -83,11 +83,9 @@ func (s *Service) askAt(ctx context.Context, conversationID int64, input string,
 		title = string(r[:titleRunes])
 	}
 	// The title is saved once the run is claimed and before the run takes
-	// over end, so Close waits for both and a failure fails Ask.
-	setTitle := func(ctx context.Context) error {
-		_, err := s.db.Execute(ctx, "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", title, conv.ID)
-		return err
-	}
+	// over end (with the rewind, if any), so Close waits for both and a
+	// failure fails Ask.
+	setTitle := sqlite.Statement{SQL: "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", Args: []any{title, conversationID}}
 	var w *witStream
 	if err == nil {
 		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, at, setTitle)

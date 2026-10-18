@@ -155,4 +155,11 @@ func TestAskAgain(t *testing.T) {
 	require.NoError(t, err)
 	drainWit(t, ch)
 	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, messages())
+
+	// in place of the first question: the question asked titles it, in the rewind's transaction
+	e.srv.Script(testllm.Turn{Text: []string{"Anew."}})
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, 0, "first, edited", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	assert.Equal(t, "first, edited", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID))
 }
