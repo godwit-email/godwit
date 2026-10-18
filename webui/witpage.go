@@ -86,6 +86,9 @@ type Wit struct {
 	d     WitPageDeps
 
 	decideMu sync.Mutex // decisions run one at a time, as they come
+	// askMu holds an Ask from setting its conversation's model until its run
+	// is claimed: another Ask's model cannot come in between.
+	askMu sync.Mutex
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -297,6 +300,15 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	} else if err := askConv(ctx, svc, conv); err != nil {
 		return RunStart{}, keyed(err)
 	}
+	p.w.askMu.Lock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			unlocked = true
+			p.w.askMu.Unlock()
+		}
+	}
+	defer unlock()
 	if err := svc.SetConversationModel(ctx, conv, model); err != nil {
 		if made { // nothing was asked in it: no empty conversation is left behind
 			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
@@ -316,6 +328,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	} else {
 		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
 	}
+	unlock()  // claimed, or refused
 	if made { // titled by now, unless Ask failed
 		p.w.created(conv, version)
 	}

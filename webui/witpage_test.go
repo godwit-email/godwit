@@ -1030,3 +1030,33 @@ func TestWitPageUsage(t *testing.T) {
 	assert.Greater(t, h.Usage.History, 0.0)
 	assert.Less(t, h.Usage.History, 0.1)
 }
+
+// An Ask's model holds until its run is claimed: another Ask that picks a
+// different model meanwhile waits, then finds the run active.
+func TestWitPageAskModelHolds(t *testing.T) {
+	f := newWitPageFixture(t)
+	svcs, err := f.e.Svc.ListModelServices(t.Context())
+	require.NoError(t, err)
+	_, err = f.e.Svc.UpdateModelService(t.Context(), svcs[0].ID, core.ModelServiceInput{Name: svcs[0].Name, Kind: "openai", BaseURL: svcs[0].BaseURL, Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	conv := f.newAsk(t)
+	f.llm.Script(coretest.Turn{Text: []string{"slow"}, Hang: true})
+	other := make(chan error, 1)
+	startHook = func() {
+		startHook = nil
+		go func() {
+			_, err := f.p.Ask(f.ctx(), conv, "two", nil, "test/m2", -1)
+			other <- err
+		}()
+		time.Sleep(50 * time.Millisecond) // the other Ask would set its model now
+	}
+	t.Cleanup(func() { startHook = nil })
+	rs, err := f.p.Ask(f.ctx(), conv, "one", nil, "test/m1", -1)
+	require.NoError(t, err)
+	assert.ErrorContains(t, <-other, "active")
+	f.llm.Release()
+	f.waitEvent(t, "done", func(ev WitEvent) bool { return ev.Run == rs.Run && ev.Kind == "done" })
+	reqs := f.llm.RequestLog()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "m1", reqs[0].Model, "the run asked on its own model")
+}
