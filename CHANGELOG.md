@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/godwit-email/godwit/compare/v1.6.0...v1.7.0) (2026-10-18)
+
+
+### Features
+
+* plugin models through Godwit's SDKs (replaces [#108](https://github.com/godwit-email/godwit/issues/108)) ([#109](https://github.com/godwit-email/godwit/issues/109)) ([95eb018](https://github.com/godwit-email/godwit/commit/95eb0180654353e4e0a026a33258d6f9f0c6fb54))
+
 ## [1.6.0](https://github.com/godwit-email/godwit/compare/v1.5.0...v1.6.0) (2026-10-18)
 
 
