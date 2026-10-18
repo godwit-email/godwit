@@ -785,3 +785,34 @@ func TestAskAgainQuoteGone(t *testing.T) {
 	assert.Equal(t, "first", c.Messages[0].Text)
 	assert.Len(t, c.Runs, 1)
 }
+
+// A question asked in place numbers its quotes as the conversation will
+// have them: the replaced branch's citations no longer count.
+func TestAskAgainNumbersQuotes(t *testing.T) {
+	e := newSkillEnv(t)
+	b := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "train at nine", "", 1_700_000_300)
+	c := addMessage(t, e.s, "Hotel", "Bo <bo@x>", "room 12", "", 1_700_000_400)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}}, testllm.Turn{Text: []string{"Three."}})
+	for _, q := range []struct {
+		text string
+		id   int64
+	}{{"first", e.msg}, {"second", b}} {
+		ch, err := e.s.AskWith(t.Context(), conv.ID, q.text, []int64{q.id})
+		require.NoError(t, err)
+		drainWit(t, ch)
+	}
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{c})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "context", evs[0].Kind)
+	require.Len(t, evs[0].Citations, 1)
+	assert.Equal(t, 2, evs[0].Citations[0].N, "the replaced quote's number is free again")
+	got, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	ns := map[int64]int{}
+	for _, ct := range got.Citations {
+		ns[ct.MessageID] = ct.N
+	}
+	assert.Equal(t, map[int64]int{e.msg: 1, c: 2}, ns)
+}

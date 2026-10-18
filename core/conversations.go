@@ -317,6 +317,27 @@ func numberCitations(cs []Citation, refs map[int64]int) {
 	}
 }
 
+// keptRefs numbers job's citations as the conversation will have them once
+// rewound to at (saveRewind): only the runs it keeps count.
+func (s *Service) keptRefs(ctx context.Context, job *runJob, at int) error {
+	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ?)", job.conv.ID, at)
+	if err != nil {
+		return err
+	}
+	kept := map[int64]bool{}
+	for _, r := range rows.Values {
+		kept[store.Int(r[0])] = true
+	}
+	saved, err := s.citationsOf(ctx, job.conv.ID)
+	if err != nil {
+		return err
+	}
+	saved = slices.DeleteFunc(saved, func(c Citation) bool { return !kept[c.RunID] })
+	job.refs = map[int64]int{}
+	numberCitations(saved, job.refs)
+	return nil
+}
+
 // number numbers cs, which job's call (or its context, call "") shows the
 // model, and saves them.
 func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Citation) []Citation {
@@ -762,6 +783,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	if at >= 0 {
 		state, err = rewoundState(state, at)
+	}
+	if err == nil && at >= 0 {
+		err = s.keptRefs(ctx, job, at)
 	}
 	var req ai.Request
 	if err == nil {

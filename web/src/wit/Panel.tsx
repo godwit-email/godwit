@@ -530,7 +530,9 @@ export function Panel({
   const [quoted, setQuoted] = useState<MailHit[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
   // The question being edited: sending asks it in place of the one at index at.
-  const [editing, setEditing] = useState<{ id: string; at: number }>();
+  const [editing, setEditing] = useState<{ at: number }>();
+  // What asking in place took off the conversation shown: back if the host refuses the question.
+  const shelved = useRef<WitUIMessage[]>([]);
   // What the conversation took, as last read (a run's end reads it again).
   const [usage, setUsage] = useState(history.usage);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
@@ -608,7 +610,12 @@ export function Panel({
     setQuoted(refused.metadata?.hits ?? []);
     const r = refused.metadata?.rewind;
     // once its run started the old question is gone: sent again, it is a new one
-    if (r !== undefined && !transport.askedInPlace(refused)) setEditing({ id: refused.id, at: r });
+    if (r === undefined || transport.askedInPlace(refused)) return;
+    // the host changed nothing: what it would have replaced comes back, the refusal as a toast
+    setEditing({ at: r });
+    toast.error(witError(chat.error?.message ?? "", t));
+    setMessages([...chat.messages.slice(0, -1), ...shelved.current]);
+    chat.clearError();
   }, [refused]);
   // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
   // call waits on the user (core rewinds no active run).
@@ -619,10 +626,12 @@ export function Panel({
     );
     return transport.rewinds && k && !waits ? Number(k[1]) : undefined;
   };
-  // Asks again in place of question q: what came from it on goes, here and in the host.
-  const again = (q: WitUIMessage, i: number, text: string, hits: MailHit[]) => {
+  // Asks again in place of the question at index i: what came from it on goes, here and in the host.
+  const again = (i: number, text: string, hits: MailHit[]) => {
     if (locked || running) return;
-    chat.setMessages(chat.messages.slice(0, chat.messages.indexOf(q)));
+    const k = chat.messages.findIndex((m) => m.id === `q${i}`);
+    shelved.current = k < 0 ? [] : chat.messages.slice(k);
+    if (k >= 0) chat.setMessages(chat.messages.slice(0, k));
     ask(text, { quoted: hits.map((h) => h.id), hits, rewind: i });
   };
   const submit = () => {
@@ -631,9 +640,8 @@ export function Panel({
     setDraft("");
     setQuoted([]);
     setPicking(undefined);
-    const q = editing && chat.messages.find((m) => m.id === editing.id);
     setEditing(undefined);
-    if (editing && q) return again(q, editing.at, text, quoted);
+    if (editing) return again(editing.at, text, quoted);
     ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id), hits: quoted } : undefined);
   };
   const textOf = (m: WitUIMessage) =>
@@ -641,7 +649,7 @@ export function Panel({
   const edit = (q: WitUIMessage) => {
     const i = at(q);
     if (i === undefined) return;
-    setEditing({ id: q.id, at: i });
+    setEditing({ at: i });
     setDraft(textOf(q));
     setQuoted(q.metadata?.hits ?? []);
     setTimeout(() => textarea.current?.focus());
@@ -841,7 +849,7 @@ export function Panel({
                       const q = chat.messages[i - 1];
                       const k = q?.role === "user" ? at(q) : undefined;
                       return m === last && !locked && k !== undefined
-                        ? () => again(q, k, textOf(q), q.metadata?.hits ?? [])
+                        ? () => again(k, textOf(q), q.metadata?.hits ?? [])
                         : undefined;
                     })()}
                     working={working}

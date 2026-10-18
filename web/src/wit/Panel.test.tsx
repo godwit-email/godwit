@@ -447,6 +447,11 @@ describe("Panel", () => {
     ).toBeInTheDocument();
     expect(input("向 Wit 提问")).toHaveValue("总结！");
     expect(screen.getByText("发票")).toBeInTheDocument();
+    // nothing was replaced: the old question and answer are back, the refusal a toast
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+    expect(screen.getAllByText("总结")).toHaveLength(1);
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     await user.type(input("向 Wit 提问"), "{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("总结！", [9], 0));
     expect(screen.getAllByText("总结！")).toHaveLength(1);
