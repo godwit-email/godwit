@@ -6,7 +6,7 @@
 
 **Why StartLux:** #64 的评测（[Laya](https://github.com/godwit-email/godwit/issues/64#issuecomment-6195378184)、[StartLux](https://github.com/godwit-email/godwit/issues/64#issuecomment-6225261345)）。99 封真实收件箱邮件、生产输入，与 gpt-6-luna 的一致率（是和一个参考模型的一致率，不是普遍意义上的准确率）：StartLux-Decision v1.1 4B Instant Q4_K_M 92.1%（阈值 0.5）、90.2%（0.8）；云端 jev 92.4%（0.8）；全部答「否」82.3%；Laya 零样本最好也只到 82.3%。
 
-**依赖：基础模型 API PR 先合入。** 插件模型 API（`models` 能力、模型目录、plugin judge 路径、`JudgeModel` 设置、`modelAssets` 接缝）由另一个 PR 实现，设计见 `docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md`（以下简称「模型 API 设计」；2026-10-17 与该设计的作者逐条对齐、双方无分歧）。本计划只做该设计 §10 分工表里归 #90 的部分，不重复实现基础 PR 的内容。
+**基础：#109（已合入 main，替换了 #108）。** 插件模型走现有 SDK；`ctx.models.register` / 原生 `models.*`、`plugin/<插件名>/<模型 id>` 引用（`JudgeService` 直接接受）、plugin judge 的准入与错误映射、`core/modelseam.go` 的 `modelAssets` 接缝都已在 main。#109 走精简方案，**没有**做模型状态、`PrepareModel` / `RemoveModelFiles` 和下载 UI，这些归本计划（Task 3 Step 3）。
 
 **Architecture:** 三个仓库。
 
@@ -14,7 +14,7 @@
 - `godwit-email/godwit`：(a) registry release 的大资产（`assets`）：schema、按平台的内存要求、可信 release 解析、流式下载与续传、校验、共享资产与租约——即模型 API 设计 §8.2 `modelAssets` 的真实实现，替换基础 PR 的 `update_required` 默认实现；(b) 下载与准备的 UI（进度、取消、删除）；(c) manifest 可声明空闲退出时间、plugin-host 在 stdin 关闭后限时退出。
 - `godwit-email/plugins`：registry 条目。库与模型镜像到 dl.godwit.email。
 
-**基础 PR 负责、本计划不做的（见模型 API 设计 §10）：** `models` 能力与 `ctx.models.register` / 原生 `models.*` 方法的发现和分发；plugin judge 的 Ask 适配、每次一题、每插件准入排队、看门狗从派发时计、取消后槽位保持；`ai.ErrJudgeUnavailable` / `ai.ErrJudgePlugin` 与错误映射；模型目录、`ListModels` / `PrepareModel` / `RemoveModelFiles`、`ModelState` / `ModelStatus` / `ModelError`、`models.changed` 事件；切换事务（排空、`models.load` 新模型、失败回滚、提交 `JudgeModel`）；`JudgeService → JudgeModel` 迁移。
+**#109 已做、本计划不再做的：** 模型目录（`ListPluginModels`）、引用解析、plugin judge 的每次一题与每插件准入、看门狗从派发时计、取消后槽位保持、`ai.ErrJudgeUnavailable` / `ai.ErrJudgePlugin` 映射、`models.load` 前按进程代 `Verify`。
 
 **Spec:** #64；模型 API 设计；`docs/superpowers/specs/2026-10-14-native-plugins-design.md` §10（为什么走插件）。本计划替代已关闭的 #83（Laya 版），吸收了 2026-10-17 Oracle 对 `llama-server` 方案的审核意见。
 
@@ -200,7 +200,8 @@ registry 里 0.1.0 的资产大致是：
   - 删除：被占用的目录删除失败 → 记入待删表，重启后删掉；删掉一个模型后共享引擎还在、另一个模型仍是 `downloaded`。
   - 内存：下载 200 MiB 测试资产时堆的峰值增长 < 16 MiB。
 - [x] **Step 2: 实现** `core/plugins/assets.go`（格式与校验）、`core/assets.go`（`modelAssets` 实现与卸载清理）、`core/registry.go`（资产纳入信任身份）。§8.2 的类型暂时声明在 `core/modelseam.go`，基础 PR 合入时保留一份。简化的地方都在代码里用 `shortcut:` 注释标明：同一插件的两个模型共用一个变体时，删一个会连带删掉；Windows 上删不掉的目录不进待删表，等下次删除或启动清理时重试；下载前不预先检查磁盘剩余空间，写满时报错并删掉半截文件。
-- [ ] **Step 3: 设置页**（等基础 PR 的 `ListModels` / `PrepareModel`）：判断模型列表里的本地模型显示大小、所需内存与状态；`model_not_ready` 显示「下载并使用」，`insufficient_memory` / `unsupported_platform` 灰掉并写原因，`verification_failed` 提供「重新下载」；准备中显示进度、可取消；已下载的可「删除文件」。状态变化跟随基础 PR 的 `models.changed` 事件重新读取 `ListModels`。
+- [x] **接线**：`pluginjudge.go` 调 `Verify` 时传插件行的 `assets_digest`；端到端测试 `TestPluginJudgeWithHostedAssets`（签名 registry 安装带资产的 release → 未下载时 `model_not_ready` → `Prepare` 后 `models.load` 收到校验过的目录）。
+- [ ] **Step 3: 下载与设置页**：core 加 `ListPluginModels` 里每个带资产模型的 `ModelStatus`、`PrepareModel(ref)`（下载、校验、预加载，进度走事件）、`RemoveModelFiles(ref)`，只给 full 角色的 RPC：判断模型列表里的本地模型显示大小、所需内存与状态；`model_not_ready` 显示「下载并使用」，`insufficient_memory` / `unsupported_platform` 灰掉并写原因，`verification_failed` 提供「重新下载」；准备中显示进度、可取消；已下载的可「删除文件」。状态变化跟随基础 PR 的 `models.changed` 事件重新读取 `ListModels`。
 - [x] **Step 4:** `docs/registry/README.md` 加 `assets` 格式与审核要点；`cmd/godwit-registry check --fetch` 下载并校验资产。
 
 ### Task 4（主仓库）: 空闲时间与退出
