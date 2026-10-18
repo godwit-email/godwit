@@ -577,6 +577,20 @@ func (r *RegistryServer) NativeRelease(t *testing.T, name, version string, extra
 	return r.release(name, version, plugins.PlatformKey(), manifest, lib)
 }
 
+// NativeModelsRelease is a registry release of a native plugin offering
+// models (the fake library's "models" list), recording each models.* request
+// to record + "." + method.
+func (r *RegistryServer) NativeModelsRelease(t *testing.T, name, version, record string, models []any) map[string]any {
+	t.Helper()
+	manifest := fmt.Sprintf(`{"name":%q,"version":%q,"native":{"abi":1},"capabilities":["models"]}`, name, version)
+	lib, err := json.Marshal(map[string]any{"record": record, "models": map[string]any{"models": models},
+		"describe": map[string]any{"name": name, "version": version, "abi": 1, "capabilities": []string{"models"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.release(name, version, plugins.PlatformKey(), []byte(manifest), lib)
+}
+
 // ScriptRelease is a registry release of a one-file script plugin.
 func (r *RegistryServer) ScriptRelease(name, version, perms, code string) map[string]any {
 	manifest := fmt.Sprintf(`{"name":%q,"version":%q,"main":"index.js","permissions":%s}`, name, version, perms)

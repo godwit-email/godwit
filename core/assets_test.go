@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
@@ -461,4 +463,51 @@ func TestModelAssetsSweepKeepsLeased(t *testing.T) {
 	require.NoError(t, e.s.UninstallPlugin(ctx, "dlx"))
 	assert.DirExists(t, dirs["model"])
 	release()
+}
+
+// The whole path: a release with assets installed from the registry; until
+// the user downloads the model the judge is unavailable; after, the judge
+// verifies the files and loads them into the plugin with their directories.
+func TestPluginJudgeWithHostedAssets(t *testing.T) {
+	core.SetPhysicalMemoryForTest(t, 16)
+	e := &assetEnv{rs: coretest.NewRegistryServer(t), files: map[string][]byte{}, hits: map[string]int{}}
+	record := filepath.Join(t.TempDir(), "record")
+	rel := e.rs.NativeModelsRelease(t, "dlx", "0.1.0", record, []any{
+		map[string]any{"id": "decision-4b-q4", "name": "4B", "transport": "plugin", "operation": "judge", "assets": ref4b}})
+	rel["assets"] = e.assets(nil, "")
+	e.rs.Publish(t, coretest.Registry(t0, plugin("dlx", rel)))
+	e.s = regService(t, e.rs, t.TempDir())
+	require.NoError(t, e.s.RefreshPluginRegistry(ctx))
+	_, err := e.s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	e.release = e.s.PluginAssetsDigestForTest(t, "dlx")
+	st, err := e.s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.JudgeService = "plugin/dlx/decision-4b-q4"
+	_, err = e.s.SetSettings(ctx, st)
+	require.NoError(t, err)
+
+	j, err := e.s.JudgeForTest(ctx)
+	require.NoError(t, err)
+	qs := []ai.Question{{Name: "bill", Type: ai.Predicate, Instructions: "Is this a bill?"}}
+	_, err = j.Ask(ctx, "mail", qs)
+	require.ErrorIs(t, err, ai.ErrJudgeUnavailable)
+	assert.Equal(t, "model_not_ready", core.ModelErrorCode(err), "not downloaded: nothing is fetched behind the user's back")
+	assert.Zero(t, e.count("/a/4b"))
+
+	dirs, release, err := e.s.ModelAssetsForTest().Prepare(ctx, "dlx", e.release, ref4b, nil)
+	require.NoError(t, err)
+	release()
+	got, err := j.Ask(ctx, "mail", qs)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	loads, err := os.ReadFile(record + ".models.load")
+	require.NoError(t, err)
+	var load struct {
+		ModelID string            `json:"modelId"`
+		Assets  map[string]string `json:"assets"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(strings.SplitN(string(loads), "\n", 2)[0]), &load))
+	assert.Equal(t, "decision-4b-q4", load.ModelID)
+	assert.Equal(t, dirs, load.Assets, "the engine and the model, verified")
 }

@@ -203,3 +203,9 @@ func ModelErrorCode(err error) string {
 	}
 	return ""
 }
+
+// JudgeForTest is the judge the settings name.
+func (s *Service) JudgeForTest(ctx context.Context) (ai.Judge, error) {
+	j, _, _, err := s.resolveJudge(ctx)
+	return j, err
+}

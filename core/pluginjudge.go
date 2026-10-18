@@ -126,9 +126,7 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	if v, ok := j.rp.loaded.Load(j.model.ID); ok && v.(loadedModel).proc == proc && maps.Equal(v.(loadedModel).assets, j.model.Assets) { // new settings may name other files
 		return nil
 	}
-	// shortcut: release is "" until the plugin row stores its release's
-	// plugins.AssetsDigest (#90); noModelAssets never reads it.
-	dirs, lease, err := j.s.modelAssets().Verify(ctx, j.name, "", j.model.Assets)
+	dirs, lease, err := j.s.modelAssets().Verify(ctx, j.name, j.rp.row.assetsDigest, j.model.Assets)
 	if err != nil {
 		var me *ModelError
 		if errors.As(err, &me) && unavailableCodes[me.Code] {
