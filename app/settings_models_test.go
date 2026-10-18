@@ -628,6 +628,13 @@ func TestModelsEmptyState(t *testing.T) {
 	h.click("取消")
 	h.click("添加服务")
 	h.see("添加模型服务")
+	h.click("取消")
+
+	// a running plugin's models are enough: no "add a service first"
+	h.post(func() {
+		m.plugins = []core.PluginModels{{Plugin: "lux", Models: []plugins.ProviderModel{{ID: "chat", Name: "Chat", Transport: "http", Protocol: "openai-completions", BaseURL: "https://api.example.com"}}}}
+	})
+	h.until("empty state gone", func() bool { return !h.tt.HasText("还没有接入模型服务") })
 }
 
 func TestModelsDialogAutoFetchOnBlur(t *testing.T) {

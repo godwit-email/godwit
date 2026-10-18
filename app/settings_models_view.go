@@ -16,7 +16,7 @@ import (
 )
 
 func (m *modelsView) view(c *ui.Context) {
-	empty := m.loaded && len(m.services) == 0
+	empty := m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 }) // a plugin's models are enough
 	var add []func()
 	if !empty {
 		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
