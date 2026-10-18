@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.0](https://github.com/godwit-email/godwit/compare/v1.5.0...v1.6.0) (2026-10-18)
+
+
+### Features
+
+* publish the plugin types as @godwit/sdk ([#110](https://github.com/godwit-email/godwit/issues/110)) ([26f0cb3](https://github.com/godwit-email/godwit/commit/26f0cb35d9386dd33de6713c2827c18210b6ad41))
+
+
+### Bug Fixes
+
+* fold only folders that map onto a sidebar row ([#106](https://github.com/godwit-email/godwit/issues/106)) ([064de01](https://github.com/godwit-email/godwit/commit/064de010e0b33619f1914187b7caff92b62bc162))
+* **ui:** hairline cards and dividers; Wit page tints the material ([#105](https://github.com/godwit-email/godwit/issues/105)) ([6f44bdc](https://github.com/godwit-email/godwit/commit/6f44bdc3a89fe4d639daca488b828e0bc5eda175))
+
 ## [1.5.0](https://github.com/godwit-email/godwit/compare/v1.4.0...v1.5.0) (2026-10-17)
 
 
