@@ -4,6 +4,8 @@
 
 **Goal:** A plugin with the `models` capability publishes models. Godwit lists them in the default, small and judge model pickers, and runs them with the SDKs it already uses: no protocol code in Godwit or in plugins. Plugins only adjust the encoded request (headers, body), as aio-proxy plugins do with their `fetch`.
 
+**Spec:** docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md (#108's draft, rewritten to match this implementation).
+
 **Replaces** godwit-email/godwit#108. It keeps the user-facing design agreed there with #90 (model catalog, protocols, plugin judges, the `modelAssets` seam) and drops what only one upstream needed.
 
 ## Design
