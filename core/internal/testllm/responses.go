@@ -3,6 +3,7 @@ package testllm
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -32,6 +33,18 @@ func (s *Server) validate(kind string, body []byte) string {
 			if m.Role == "tool" && !calls[m.ToolCallID] {
 				return fmt.Sprintf("tool_call_id %q answers no earlier tool call", m.ToolCallID)
 			}
+		}
+	case "anthropic":
+		var b struct {
+			MaxTokens int `json:"max_tokens"`
+			Thinking  *struct {
+				Type   string
+				Budget int `json:"budget_tokens"`
+			}
+		}
+		json.Unmarshal(body, &b)
+		if t := b.Thinking; t != nil && t.Type == "enabled" && (t.Budget < 1024 || t.Budget >= b.MaxTokens) {
+			return "thinking.budget_tokens must be at least 1024 and less than max_tokens"
 		}
 	case "openai-responses":
 		var b struct {
@@ -124,8 +137,27 @@ func responsesStream(send func(...string), t Turn, n int, model string, hang fun
 	}
 	send(ev("response.created", map[string]any{"response": resp("in_progress")}))
 	if t.Reasoning != "" {
-		rs := map[string]any{"type": "reasoning", "id": fmt.Sprintf("rs_%d", n), "summary": []any{}, "encrypted_content": t.Reasoning}
-		item(len(output), rs, rs, func() {})
+		id, summary := fmt.Sprintf("rs_%d", n), []any{}
+		if len(t.Think) > 0 {
+			summary = append(summary, map[string]any{"type": "summary_text", "text": strings.Join(t.Think, "")})
+		}
+		rs := func(summary []any) map[string]any {
+			return map[string]any{"type": "reasoning", "id": id, "summary": summary, "encrypted_content": t.Reasoning}
+		}
+		idx := len(output)
+		item(idx, rs([]any{}), rs(summary), func() {
+			if len(t.Think) == 0 {
+				return
+			}
+			at := map[string]any{"item_id": id, "output_index": idx, "summary_index": 0}
+			with := func(k string, v any) map[string]any { m := maps.Clone(at); m[k] = v; return m }
+			send(ev("response.reasoning_summary_part.added", with("part", map[string]any{"type": "summary_text", "text": ""})))
+			for _, th := range t.Think {
+				send(ev("response.reasoning_summary_text.delta", with("delta", th)))
+			}
+			send(ev("response.reasoning_summary_text.done", with("text", summary[0].(map[string]any)["text"])),
+				ev("response.reasoning_summary_part.done", with("part", summary[0])))
+		})
 	}
 	if t.Refusal != "" {
 		id := fmt.Sprintf("msg_%d", n)

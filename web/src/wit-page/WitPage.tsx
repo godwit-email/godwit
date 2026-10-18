@@ -39,7 +39,8 @@ export function WitPage() {
   const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
   const resetResume = useRef(witResume.reset);
-  const pick = useRef(""); // the shown conversation's model, as the next question asks on it
+  // the shown conversation's model and reasoning effort, as the next question asks on them
+  const pick = useRef({ model: "", effort: "" });
   resetResume.current = witResume.reset;
 
   useEffect(() => {
@@ -51,10 +52,12 @@ export function WitPage() {
     const tr = new WitTransport({
       ask: (text, quoted = [], rewind = -1) => {
         const g = gen;
-        const p = api.ask(conv.current, text, quoted, pick.current, rewind).then((rs) => {
-          if (g === gen) conv.current = rs.conversation;
-          return rs.run;
-        });
+        const p = api
+          .ask(conv.current, text, quoted, pick.current.model, pick.current.effort, rewind)
+          .then((rs) => {
+            if (g === gen) conv.current = rs.conversation;
+            return rs.run;
+          });
         if (conv.current === 0) {
           const c: Promise<unknown> = p
             .catch(() => {})
@@ -73,12 +76,12 @@ export function WitPage() {
       conv.current = c;
       const g = ++gen;
       setView(undefined);
-      pick.current = "";
+      pick.current = { model: "", effort: "" };
       resetResume.current();
       tr.follow().then(
         (history) => {
           if (!live || !history || g !== gen) return;
-          pick.current = history.model;
+          pick.current = { model: history.model, effort: history.effort };
           setView({ history, tr, key: g });
         },
         (e) => {
@@ -179,7 +182,7 @@ function Conversation({
 }: {
   view: { history: WitHistory; tr: WitTransport };
   model: string;
-  pick: { current: string };
+  pick: { current: { model: string; effort: string } };
   resume?: { run: number };
   decide: ReturnType<typeof useResume>["decide"];
   handed?: { text: string };
@@ -188,6 +191,7 @@ function Conversation({
 }) {
   const fail = (e: unknown) => toast.error(witError(message(e), t));
   const [ref, setRef] = useState(view.history.model);
+  const [effort, setEffort] = useState(view.history.effort);
   const onDecide: Decide = async (a, accept, all) => {
     try {
       await decide(a.run, () => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
@@ -227,8 +231,15 @@ function Conversation({
         ref,
         list: () => api.models(),
         pick: (r) => {
-          pick.current = r;
+          pick.current.model = r;
           setRef(r);
+        },
+      }}
+      effort={{
+        value: effort,
+        pick: (e) => {
+          pick.current.effort = e;
+          setEffort(e);
         },
       }}
     />

@@ -32,6 +32,7 @@ const info: WitInfo = {
 const empty: WitHistory = {
   conversation: 1,
   model: "",
+  effort: "",
   usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   messages: [],
@@ -204,6 +205,38 @@ describe("Panel", () => {
     await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
     expect(pick).toHaveBeenCalledWith("");
     expect(onModels).not.toHaveBeenCalled();
+  });
+
+  it("beside the model, the effort chip picks the conversation's reasoning effort", async () => {
+    const user = userEvent.setup();
+    const pick = vi.fn();
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="sonnet"
+        models={{ ref: "", list: vi.fn().mockResolvedValue([]), pick: vi.fn() }}
+        effort={{ value: "medium", pick }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "中" }));
+    expect(await screen.findByRole("menuitemradio", { name: "中" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getAllByRole("menuitemradio").map((e) => e.textContent)).toEqual([
+      "默认",
+      "低",
+      "中",
+      "高",
+    ]);
+    await user.click(screen.getByRole("menuitemradio", { name: "默认" }));
+    expect(pick).toHaveBeenCalledWith("");
   });
 
   it("a finished answer copies its text", async () => {

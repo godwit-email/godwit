@@ -337,4 +337,7 @@ var Migrations = [][]string{{
 	// conversation took them all the same.
 	`ALTER TABLE conversations ADD COLUMN spent_input INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE conversations ADD COLUMN spent_output INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// The reasoning effort a conversation's runs ask for: '' asks for none.
+	`ALTER TABLE conversations ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
 }}

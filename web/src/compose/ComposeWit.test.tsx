@@ -123,6 +123,7 @@ const state: ComposeState = {
 const empty: WitHistory = {
   conversation: 1,
   model: "",
+  effort: "",
   usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   messages: [],
@@ -143,6 +144,7 @@ const pending: Approval = {
 const withPending: WitHistory = {
   conversation: 1,
   model: "",
+  effort: "",
   usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   messages: [

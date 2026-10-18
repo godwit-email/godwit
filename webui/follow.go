@@ -201,7 +201,7 @@ func history(ctx context.Context, svc *core.Service, conv int64) (WitHistory, er
 	if err != nil {
 		return WitHistory{}, err
 	}
-	h := WitHistory{Conversation: conv, Messages: witMessages(c), Approvals: []Approval{}, Model: c.Model,
+	h := WitHistory{Conversation: conv, Messages: witMessages(c), Approvals: []Approval{}, Model: c.Model, Effort: c.Effort,
 		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse}}
 	for _, a := range as {
 		h.Approvals = append(h.Approvals, approvalOf(a))

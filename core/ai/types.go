@@ -135,6 +135,9 @@ type Request struct {
 	MaxTurns  int
 	// Reasoning streams the model's readable reasoning as reasoning events.
 	Reasoning bool
+	// Effort is the reasoning effort asked of the model: "low", "medium" or
+	// "high"; "" asks for none (models that do not reason refuse it).
+	Effort string
 }
 
 type Result struct {

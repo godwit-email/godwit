@@ -340,18 +340,27 @@ type LLM struct{ srv *testllm.Server }
 // "test/m1" the default model.
 func (e *Env) LLM(t *testing.T) *LLM {
 	t.Helper()
-	srv := testllm.Start(t, "openai")
-	srv.SetModels("m1")
+	l := e.LLMService(t, "test", "openai")
 	ctx := context.Background()
-	if _, err := e.Svc.AddModelService(ctx, core.ModelServiceInput{Name: "test", Kind: "openai", BaseURL: srv.URL, APIKey: "test-key", Models: []string{"m1"}}); err != nil {
-		t.Fatal(err)
-	}
 	st, err := e.Svc.GetSettings(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	st.DefaultModel = "test/m1"
 	if _, err := e.Svc.SetSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+// LLMService registers a fake model service name of kind ("openai",
+// "openai-responses" or "anthropic") with model "m1": "<name>/m1" picks it.
+func (e *Env) LLMService(t *testing.T, name, kind string) *LLM {
+	t.Helper()
+	srv := testllm.Start(t, kind)
+	srv.SetModels("m1")
+	in := core.ModelServiceInput{Name: name, Kind: kind, BaseURL: srv.URL, APIKey: "test-key", Models: []string{"m1"}}
+	if _, err := e.Svc.AddModelService(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
 	return &LLM{srv}

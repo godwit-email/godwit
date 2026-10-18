@@ -18,6 +18,7 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // responsesPlugin speaks the OpenAI Responses API. It resolves any model ID
@@ -75,8 +76,8 @@ func (p *responsesPlugin) ResolveAction(t api.ActionType, id string) api.Action 
 	}
 	opts := &gai.ModelOptions{Supports: &gai.ModelSupports{Multiturn: true, Tools: true, SystemRole: true}}
 	return gai.NewModelAction(api.NewName(p.Name(), id), opts,
-		func(ctx context.Context, req *gai.ModelRequest, _ any, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
-			return p.generate(ctx, id, req, cb)
+		func(ctx context.Context, req *gai.ModelRequest, cfg any, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
+			return p.generate(ctx, id, req, cfg, cb)
 		})
 }
 
@@ -88,10 +89,14 @@ var (
 	errNotEligible   = status.Errorf(status.ErrPermissionDenied, "the ChatGPT account is not eligible for subscription sharing")
 )
 
-func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.ModelRequest, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
+// cfg is a shared.ReasoningParam (effortConfig), or nil for no reasoning params.
+func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.ModelRequest, cfg any, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
 	params, err := responsesParams(model, req)
 	if err != nil {
 		return nil, err
+	}
+	if r, ok := cfg.(shared.ReasoningParam); ok {
+		params.Reasoning = r
 	}
 	if p.codex && !params.Instructions.Valid() {
 		params.Instructions = param.NewOpt("You are a helpful assistant.") // the backend rejects none, as pi fills in
@@ -111,6 +116,19 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 			text[ev.OutputIndex] += d
 			if cb != nil && d != "" {
 				if err := cb(ctx, &gai.ModelResponseChunk{Role: gai.RoleModel, Content: []*gai.Part{gai.NewTextPart(d)}}); err != nil {
+					return nil, err
+				}
+			}
+		case "response.reasoning_summary_text.delta", "response.reasoning_summary_part.added":
+			d := ev.Delta
+			if ev.Type == "response.reasoning_summary_part.added" {
+				d = ""
+				if ev.SummaryIndex > 0 {
+					d = "\n\n" // between a reasoning item's summaries, as the history joins them
+				}
+			}
+			if cb != nil && d != "" {
+				if err := cb(ctx, &gai.ModelResponseChunk{Role: gai.RoleModel, Content: []*gai.Part{gai.NewReasoningPart(d, nil)}}); err != nil {
 					return nil, err
 				}
 			}
@@ -138,7 +156,11 @@ func (p *responsesPlugin) generate(ctx context.Context, model string, req *gai.M
 				}
 				parts[ev.OutputIndex] = gai.NewToolRequestPart(&gai.ToolRequest{Name: it.Name, Ref: it.CallID, Input: in})
 			case "reasoning":
-				r := gai.NewReasoningPart("", []byte(it.EncryptedContent))
+				var sum []string
+				for _, s := range it.Summary {
+					sum = append(sum, s.Text)
+				}
+				r := gai.NewReasoningPart(strings.Join(sum, "\n\n"), []byte(it.EncryptedContent))
 				if r.Metadata == nil {
 					r.Metadata = map[string]any{}
 				}
