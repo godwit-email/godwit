@@ -112,3 +112,15 @@ longer lists and asks the user before it runs again.
 
 Repository secrets: `GODWIT_REGISTRY_KEY`, and `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
 (the same R2 token Godwit's release workflow uses).
+
+## Trying a release locally
+
+Flows only the registry offers (a plugin's hosted model files) can be tried in a development
+build before anything is published. `godwit-registry dev spec.json` signs a registry with a key
+of its own and serves it, with its files, on https://127.0.0.1:8743. The spec names each
+plugin's built directory and, per asset variant, a directory of files (see
+plugin-startlux's `scripts/dev-registry.json`). It prints the command to run the app with:
+
+    GODWIT_DEV_REGISTRY=<spec dir>/.dev-registry/source.json mise run dev
+
+Production builds ignore `GODWIT_DEV_REGISTRY`.

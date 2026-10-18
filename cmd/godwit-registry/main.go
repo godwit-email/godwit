@@ -5,9 +5,11 @@
 //	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file (artifacts and assets) and checks its size and sha256
 //	godwit-registry sign registry.json              write registry.json.sig with the key in GODWIT_REGISTRY_KEY
 //	godwit-registry keygen                          print a new key pair
+//	godwit-registry dev [--addr host:port] spec.json  serve a local registry for development builds (dev.go)
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"slices"
 	"time"
 
@@ -31,7 +34,7 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: godwit-registry check [--fetch] registry.json | sign registry.json | keygen")
+		fmt.Fprintln(stderr, "usage: godwit-registry check [--fetch] registry.json | sign registry.json | keygen | dev [--addr host:port] spec.json")
 		return 2
 	}
 	var err error
@@ -49,6 +52,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		err = sign(args[1])
+	case "dev":
+		fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		addr := fs.String("addr", "127.0.0.1:8743", "where to serve; keep it the same so installed plugins stay valid")
+		if fs.Parse(args[1:]) != nil || fs.NArg() != 1 {
+			return 2
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		err = devRegistry(ctx, fs.Arg(0), *addr, stdout)
 	case "keygen":
 		pub, priv, kerr := ed25519.GenerateKey(nil)
 		if kerr != nil {
