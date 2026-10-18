@@ -218,6 +218,51 @@ export interface Translator {
   translate(req: TranslateRequest): MaybePromise<TranslateResult>
 }
 
+/**
+ * A model the plugin offers. An "http" model is run by Godwit with the SDK of
+ * its protocol (the first three generate, the last two judge), at baseURL; a
+ * "plugin" model is a judge the plugin answers itself.
+ */
+export type Model =
+  | {
+      id: string
+      name: string
+      transport: "http"
+      protocol: "openai-completions" | "openai-responses" | "anthropic-message" | "typesafe-systemone" | "openai-decisions"
+      baseURL: string
+    }
+  | { id: string; name: string; transport: "plugin"; operation: "judge" }
+
+/** A request Godwit's SDK encoded for one of the plugin's http models; body is its JSON text. */
+export interface ModelRequest {
+  modelId: string
+  method: string
+  url: string
+  headers: Record<string, string>
+  body: string
+}
+
+/** A plugin judge call: questions about input, which is untrusted data. */
+export interface JudgeRequest {
+  modelId: string
+  input: string
+  questions: Question[]
+}
+
+/**
+ * Models the user can pick as their default, small or judge model. The plugin
+ * must declare "capabilities": ["models"] in plugin.json and register in its
+ * default function. prepareRequest, if given, adjusts each request to an http
+ * model (credentials, headers, body) and returns it; Godwit sends it to a host
+ * in permissions.net and hands the response back to the SDK. judge answers the
+ * plugin's own "plugin" models.
+ */
+export interface ModelProvider {
+  listModels(): MaybePromise<{ models: Model[] }>
+  prepareRequest?(req: ModelRequest): MaybePromise<{ url: string; headers: Record<string, string>; body: string }>
+  judge?(req: JudgeRequest): MaybePromise<{ answers: Answer[] }>
+}
+
 export interface Ctx {
   on(event: "message.received", handler: (message: ReceivedMessage, info: DeliveryInfo) => MaybePromise<void>): void
   on(event: "message.beforeSend", handler: (draft: OutgoingDraft) => MaybePromise<SendCheck | void>): void
@@ -227,6 +272,8 @@ export interface Ctx {
   tools: { register(tool: Tool): void }
   /** needs "capabilities": ["translate"]; at most one */
   translators: { register(translator: Translator): void }
+  /** needs "capabilities": ["models"]; at most one */
+  models: { register(provider: ModelProvider): void }
 
   /** the user's configuration, secrets included; read-only */
   readonly config: Readonly<Record<string, string | number | boolean | undefined>>

@@ -191,6 +191,7 @@
   "error_stale_draft": "The draft was changed elsewhere.",
   "error_too_large": "The attachment exceeds the size limit.",
   "error_translator_unavailable": "The translation plugin is not running. Enable it in Settings › Extensions, or translate with the model again.",
+  "error_model_unavailable": "The plugin offering this model is not running or no longer offers it. Enable it in Settings › Extensions, or pick another model.",
   "error_unexpected": "An unexpected error occurred.",
   "error_unknown": "Something went wrong: {arg1}",
   "@error_unknown": {
@@ -1385,6 +1386,14 @@
     }
   },
   "settings_models_default_none": "Not set",
+  "settings_models_plugin_unavailable": "Plugin not running: {arg1}",
+  "@settings_models_plugin_unavailable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_models_default_badge": "Default",
   "settings_models_del_confirm": "Delete “{arg1}”? Skills using it fall back to the default model, and its key is removed from the keychain.",
   "@settings_models_del_confirm": {

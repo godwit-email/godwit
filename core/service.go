@@ -112,6 +112,7 @@ type Service struct {
 
 	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running     map[string]*runningPlugin  // started plugins by name
+	assets      modelAssets                // plugin models' files; nil is noModelAssets
 	pluginGen   uint64                     // last runningPlugin.gen handed out
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up

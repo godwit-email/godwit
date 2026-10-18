@@ -26,6 +26,10 @@ export default function (ctx: Ctx) {
     write: false,
     run: async (args) => ctx.llm.complete(String(args.q)),
   })
+  ctx.models.register({
+    listModels: () => ({ models: [{ id: "m", name: "M", transport: "http", protocol: "anthropic-message", baseURL: "https://api.example.com/v1" }] }),
+    prepareRequest: (req) => ({ url: req.url, headers: { ...req.headers, "x-api-key": String(ctx.config.apiKey) }, body: req.body }),
+  })
   const key = ctx.config.apiKey
   void key
 }

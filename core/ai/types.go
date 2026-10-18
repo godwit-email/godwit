@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -19,10 +20,13 @@ func ParseModelRef(s string) (ModelRef, error) {
 	return ModelRef{svc, model}, nil
 }
 
-// ResolvedModel is a model reference resolved against a stored service.
+// ResolvedModel is a model reference resolved against a stored service, or
+// a plugin's model: Client, when set, is its own HTTP client, and the engine
+// does not check its version.
 type ResolvedModel struct {
 	ServiceID, Version           int64
 	Kind, BaseURL, Model, APIKey string
+	Client                       *http.Client
 }
 
 // Message is a conversation message for display; it is never used to resume.

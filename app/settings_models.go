@@ -26,9 +26,10 @@ import (
 type modelsView struct {
 	a                    *App
 	services             []core.ModelService
-	listGen              uint64     // bumped per list read; only the newest applies
-	form                 *modelForm // nil until a service is chosen or added
-	defModel, smallModel string     // the 用途 selects' values; follow a.settings between frames
+	plugins              []core.PluginModels // the running plugins' models
+	listGen              uint64              // bumped per list read; only the newest applies
+	form                 *modelForm          // nil until a service is chosen or added
+	defModel, smallModel string              // the 用途 selects' values; follow a.settings between frames
 	judge                string
 	open                 bool                      // the add/edit dialog shows form
 	group                int                       // the add dialog's provider group: index into providerGroups
@@ -410,8 +411,12 @@ func (m *modelsView) load() {
 	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	gen := m.listGen
 	var list []core.ModelService
+	var plugs []core.PluginModels
 	a.query(func(ctx context.Context) (err error) {
-		list, err = a.svc.ListModelServices(ctx)
+		if list, err = a.svc.ListModelServices(ctx); err != nil {
+			return err
+		}
+		plugs, err = a.svc.ListPluginModels(ctx)
 		return err
 	}, func(err error) {
 		if gen != m.listGen {
@@ -421,7 +426,7 @@ func (m *modelsView) load() {
 			a.toastErr(err)
 			return
 		}
-		m.services, m.loaded = list, true
+		m.services, m.plugins, m.loaded = list, plugs, true
 	})
 }
 
@@ -880,15 +885,34 @@ type usage struct {
 	genOpts, smallOpts, judgeOpts []kit.Option[string]
 	disabled                      bool // no generate model: the selects say 先添加一个服务
 	gen, judge                    line
-	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers
+	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers, unless pluginJudge
+	pluginJudge                   bool               // the judge setting names a plugin's model: generation never answers for it
 	alert                         string             // the default generator failed its test
 	suggest                       bool               // a judge service would be faster
 }
 
-// deriveUsage is the 用途 card for st and the services.
-func deriveUsage(st core.Settings, services []core.ModelService) usage {
-	var u usage
-	var genModel string
+// deriveUsage is the 用途 card for st, the services and the running plugins' models.
+func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels) usage {
+	u := usage{pluginJudge: isPluginRef(st.JudgeService)}
+	var genModel, plugGen, plugJudge string // the defaults' labels when a plugin's model
+	var genPlug, judgePlug []kit.Option[string]
+	for _, p := range plugins {
+		for _, mod := range p.Models {
+			o := kit.Option[string]{Value: "plugin/" + p.Plugin + "/" + mod.ID, Label: p.Plugin + " / " + mod.Name}
+			switch {
+			case mod.Judges():
+				judgePlug = append(judgePlug, o)
+				if o.Value == st.JudgeService {
+					plugJudge = o.Label
+				}
+			default:
+				genPlug = append(genPlug, o)
+				if o.Value == st.DefaultModel {
+					plugGen, genModel = o.Label, o.Label
+				}
+			}
+		}
+	}
 	for i, s := range services {
 		if s.Kind != "" {
 			for _, mod := range s.Models {
@@ -903,11 +927,18 @@ func deriveUsage(st core.Settings, services []core.ModelService) usage {
 			u.judgeSvc = &services[i]
 		}
 	}
+	u.genOpts = append(u.genOpts, genPlug...)
 	if len(u.genOpts) == 0 {
 		none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
 		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
 		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
 		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
+		if isPluginRef(st.DefaultModel) { // its plugin stopped: say so, not "none"
+			u.gen = line{i18n.Tf("settings.models.plugin_unavailable", st.DefaultModel), lookFail}
+		}
+		if isPluginRef(st.JudgeService) && plugJudge == "" {
+			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
+		}
 		return u
 	}
 	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
@@ -917,28 +948,41 @@ func deriveUsage(st core.Settings, services []core.ModelService) usage {
 			u.judgeOpts = append(u.judgeOpts, kit.Option[string]{Value: s.Slug, Label: s.Name + " / " + s.JudgeModel})
 		}
 	}
+	u.judgeOpts = append(u.judgeOpts, judgePlug...)
 	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
 	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
-	if u.genSvc == nil {
-		u.genOpts = append([]kit.Option[string]{{Value: st.DefaultModel, Label: i18n.T("settings.models.default.none")}}, u.genOpts...)
+	judgeLine := func() {
+		switch {
+		case u.judgeSvc != nil:
+			u.judge = capLine(u.judgeSvc, core.CapJudge)
+		case plugJudge != "":
+			u.judge = line{plugJudge, lookNone}
+		case isPluginRef(st.JudgeService):
+			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
+		}
+	}
+	if u.genSvc == nil && plugGen == "" {
+		u.genOpts = unset(u.genOpts, st.DefaultModel)
 		u.gen, u.judge = line{i18n.T("settings.models.use.gen.none"), lookNone}, line{i18n.T("settings.models.use.judge.none"), lookNone}
-		if st.DefaultModel != "" {
+		if isPluginRef(st.DefaultModel) {
+			u.gen = line{i18n.Tf("settings.models.plugin_unavailable", st.DefaultModel), lookFail}
+		} else if st.DefaultModel != "" {
 			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
 		}
-		if u.judgeSvc != nil {
-			u.judge = capLine(u.judgeSvc, core.CapJudge)
-		}
+		judgeLine()
 		return u
 	}
-	u.gen = capLine(u.genSvc, core.CapGen)
-	if u.judgeSvc != nil {
-		u.judge = capLine(u.judgeSvc, core.CapJudge)
+	if u.genSvc != nil {
+		u.gen = capLine(u.genSvc, core.CapGen)
 	} else {
+		u.gen = line{plugGen, lookNone}
+	}
+	if judgeLine(); u.judgeSvc == nil && !u.pluginJudge {
 		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
 	}
 	if u.gen.look == lookFail {
 		end := i18n.T("settings.models.use.alert.end")
-		if u.judge.look == lookFail || u.judgeSvc == nil {
+		if u.judge.look == lookFail || u.judgeSvc == nil && !u.pluginJudge {
 			end = i18n.T("settings.models.use.alert.judge_too")
 		}
 		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
@@ -946,12 +990,23 @@ func deriveUsage(st core.Settings, services []core.ModelService) usage {
 	return u
 }
 
-// unset puts v first as 未设置 when opts doesn't offer it.
+// isPluginRef reports whether ref names a plugin's model (core's "plugin/<name>/<id>").
+func isPluginRef(ref string) bool {
+	rest, ok := strings.CutPrefix(ref, "plugin/")
+	return ok && strings.Contains(rest, "/")
+}
+
+// unset puts v first as 未设置 when opts doesn't offer it, or as unavailable
+// when it names a plugin's model: core does not fall back past that.
 func unset(opts []kit.Option[string], v string) []kit.Option[string] {
 	if slices.ContainsFunc(opts, func(o kit.Option[string]) bool { return o.Value == v }) {
 		return opts
 	}
-	return append([]kit.Option[string]{{Value: v, Label: i18n.T("settings.models.default.none")}}, opts...)
+	label := i18n.T("settings.models.default.none")
+	if isPluginRef(v) {
+		label = i18n.Tf("settings.models.plugin_unavailable", v)
+	}
+	return append([]kit.Option[string]{{Value: v, Label: label}}, opts...)
 }
 
 // capLine is a default's status line: its last test of capability c.
