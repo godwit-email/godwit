@@ -201,7 +201,7 @@ registry 里 0.1.0 的资产大致是：
   - 内存：下载 200 MiB 测试资产时堆的峰值增长 < 16 MiB。
 - [x] **Step 2: 实现** `core/plugins/assets.go`（格式与校验）、`core/assets.go`（`modelAssets` 实现与卸载清理）、`core/registry.go`（资产纳入信任身份）。§8.2 的类型暂时声明在 `core/modelseam.go`，基础 PR 合入时保留一份。简化的地方都在代码里用 `shortcut:` 注释标明：同一插件的两个模型共用一个变体时，删一个会连带删掉；Windows 上删不掉的目录不进待删表，等下次删除或启动清理时重试；下载前不预先检查磁盘剩余空间，写满时报错并删掉半截文件。
 - [x] **接线**：`pluginjudge.go` 调 `Verify` 时传插件行的 `assets_digest`；端到端测试 `TestPluginJudgeWithHostedAssets`（签名 registry 安装带资产的 release → 未下载时 `model_not_ready` → `Prepare` 后 `models.load` 收到校验过的目录）。
-- [ ] **Step 3: 下载与设置页**：core 加 `ListPluginModels` 里每个带资产模型的 `ModelStatus`、`PrepareModel(ref)`（下载、校验、预加载，进度走事件）、`RemoveModelFiles(ref)`，只给 full 角色的 RPC：判断模型列表里的本地模型显示大小、所需内存与状态；`model_not_ready` 显示「下载并使用」，`insufficient_memory` / `unsupported_platform` 灰掉并写原因，`verification_failed` 提供「重新下载」；准备中显示进度、可取消；已下载的可「删除文件」。状态变化跟随基础 PR 的 `models.changed` 事件重新读取 `ListModels`。
+- [x] **Step 3: 下载与设置页**：`ListPluginModels` 给带资产的模型附 `Files`（`ModelStatus`）；`PrepareModel` / `PrepareModelWithProgress`（后者只在 app 内用，不开放 RPC）、`RemoveModelFiles`，完成后发 `models.changed`；RPC 错误带 `model_error` 类型。设置 › 模型服务新增「本地模型」分区：大小、状态，下载（后台进行、带进度、可取消，离开页面不中断）、删除文件、重新下载（校验失败时），内存不够、平台不支持、需要更新时只写原因。截图 `SettingsModelsLocal`。没做：下载完自动设为判断模型（用户仍在「判断」下拉里选）；一个模型被插件装载时删除会提示「正在使用」，要先停用插件或换模型。
 - [x] **Step 4:** `docs/registry/README.md` 加 `assets` 格式与审核要点；`cmd/godwit-registry check --fetch` 下载并校验资产。
 
 ### Task 4（主仓库）: 空闲时间与退出
