@@ -91,7 +91,10 @@ func TestRewindConversation(t *testing.T) {
 
 	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 1), "an answer is no question")
 	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 4))
+	e.s.sessionGrants.Store(grantKey{conv: conv.ID, tool: "fake_draft"}, true)
 	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
+	_, granted := e.s.sessionGrants.Load(grantKey{conv: conv.ID, tool: "fake_draft"})
+	assert.False(t, granted, "asked again, a write waits for the user")
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	require.Len(t, c.Messages, 2)
@@ -100,4 +103,14 @@ func TestRewindConversation(t *testing.T) {
 
 	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
 	assert.ErrorIs(t, e.s.RewindConversation(t.Context(), conv.ID, 0), ErrRunActive)
+}
+
+// A run cut off still counts the tokens its model call took.
+func TestFailedRunUsage(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length", Usage: [2]int{50, 9}})
+	e.start(t, conv, "hello")
+	assert.Equal(t, "50", queryStr(t, e.s, "SELECT input_tokens FROM runs WHERE conversation_id = ?", conv.ID))
+	assert.Equal(t, "9", queryStr(t, e.s, "SELECT output_tokens FROM runs WHERE conversation_id = ?", conv.ID))
 }

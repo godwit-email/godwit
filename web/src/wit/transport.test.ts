@@ -103,6 +103,28 @@ describe("rewind", () => {
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
     expect(rewind).toHaveBeenCalledOnce();
   });
+
+  it("a retry after the rewind itself failed rewinds again", async () => {
+    const { api } = fake();
+    const rewind = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(undefined);
+    api.ask.mockResolvedValue(7);
+    const tr = new WitTransport({ ...api, rewind }, () => () => {});
+    const m = userMsg("again", { rewind: 0 });
+    const req = (trigger: "submit-message" | "regenerate-message") =>
+      tr.sendMessages({
+        trigger,
+        chatId: "c",
+        messageId: undefined,
+        messages: [m],
+        abortSignal: undefined,
+      });
+    const failed = await readAll(await req("submit-message"));
+    expect(failed.at(-1)).toMatchObject({ type: "error", errorText: "boom" });
+    expect(api.ask).not.toHaveBeenCalled();
+    void req("regenerate-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again"));
+    expect(rewind).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("toChunks", () => {

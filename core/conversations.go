@@ -164,8 +164,10 @@ func (s *Service) SetConversationModel(ctx context.Context, id int64, ref string
 // RewindConversation takes the conversation back to before its question at
 // Messages[at]: that question, everything after it and the runs that added
 // them (their approvals and citations with them) are gone, so the question
-// can be asked again, as it was or edited. An active run makes it
-// ErrRunActive.
+// can be asked again, as it was or edited. What its tools did stays done, so
+// the conversation's grants (本次对话都允许) go too: asked again, a write
+// waits for the user rather than running a second time unseen. An active run
+// makes it ErrRunActive.
 func (s *Service) RewindConversation(ctx context.Context, id int64, at int) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -206,6 +208,9 @@ func (s *Service) RewindConversation(ctx context.Context, id int64, at int) erro
 		saveState(id, kept),
 		{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}},
 	})
+	if err == nil {
+		s.dropGrants(id)
+	}
 	return err
 }
 
@@ -984,6 +989,8 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		} else {
 			err = s.exec(ctx, runState(job.id, state))
 		}
+		// a failed or cut-off call may still have taken tokens
+		err = errors.Join(err, s.exec(ctx, runUsage(job.id, res.Usage)))
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
 		_, err := s.db.Transaction(ctx, []sqlite.Statement{saveState(job.conv.ID, res.State), runState(job.id, "done"),

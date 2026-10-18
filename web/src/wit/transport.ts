@@ -342,6 +342,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private gen = 0; // the selection: bumped by each follow and send
   private endOpen?: () => void; // ends the stream open
   private watchers = new Set<(ev: WitEvent) => void>();
+  private rewound = new Set<string>(); // the questions whose rewind was done: a retry asks only
   private off: () => void;
 
   constructor(
@@ -507,7 +508,6 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   async sendMessages({
     messages,
     abortSignal,
-    trigger,
   }: Parameters<ChatTransport<WitUIMessage>["sendMessages"]>[0]) {
     const m = messages.findLast((x) => x.role === "user");
     const text = m?.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("") ?? "";
@@ -530,9 +530,16 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
         : quoted?.length
           ? this.api.ask(text, quoted)
           : this.api.ask(text);
-    // A retry (regenerate) asks again what failed: the rewind it came with was done.
-    const at = trigger === "submit-message" ? m?.metadata?.rewind : undefined;
-    (at !== undefined && this.api.rewind ? this.api.rewind(at).then(start) : start())
+    // A retry (regenerate) rewinds again only if the rewind is what failed.
+    const at = m && !this.rewound.has(m.id) ? m.metadata?.rewind : undefined;
+    const rewind = this.api.rewind;
+    (at !== undefined && rewind && m
+      ? rewind(at).then(() => {
+          this.rewound.add(m.id);
+          return start();
+        })
+      : start()
+    )
       .then(
         (run) => {
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown
