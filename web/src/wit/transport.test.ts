@@ -68,7 +68,91 @@ const send = (tr: WitTransport, m: WitUIMessage) =>
     abortSignal: undefined,
   });
 
+describe("rewind", () => {
+  const send = (
+    tr: WitTransport,
+    m: WitUIMessage,
+    trigger: "submit-message" | "regenerate-message",
+  ) =>
+    tr.sendMessages({
+      trigger,
+      chatId: "c",
+      messageId: undefined,
+      messages: [m],
+      abortSignal: undefined,
+    });
+
+  it("a question sent with rewind is asked in place, and so is its retry", async () => {
+    const { api, tr } = fake();
+    const t2 = new WitTransport({ ...api, rewinds: true }, () => () => {});
+    api.ask.mockResolvedValue(7);
+    expect(tr.rewinds).toBe(false);
+    expect(t2.rewinds).toBe(true);
+    const m = userMsg("again", { quoted: [3], rewind: 2 });
+    void send(t2, m, "submit-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3], 2));
+    // a retry follows a run that saved nothing: core replaced nothing yet
+    void send(t2, m, "regenerate-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
+    expect(api.ask).toHaveBeenLastCalledWith("again", [3], 2);
+  });
+
+  it("a retry after the ask in place was refused asks in place again", async () => {
+    const { api } = fake();
+    api.ask.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(7);
+    const tr = new WitTransport({ ...api, rewinds: true }, () => () => {});
+    const m = userMsg("again", { rewind: 0 });
+    const failed = await readAll(await send(tr, m, "submit-message"));
+    expect(failed.at(-1)).toMatchObject({ type: "error", errorText: "boom" });
+    void send(tr, m, "regenerate-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
+    expect(api.ask).toHaveBeenLastCalledWith("again", [], 0);
+  });
+
+  it("a host that does not rewind just asks", async () => {
+    const { api, tr } = fake();
+    api.ask.mockResolvedValue(7);
+    void send(tr, userMsg("again", { rewind: 1 }), "submit-message");
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again"));
+  });
+});
+
 describe("toChunks", () => {
+  it("streams reasoning in a part of its own, closed when the text starts", () => {
+    const seen = new Set<string>();
+    const a = toChunks(ev({ kind: "reasoning", text: "先查" }), seen);
+    const b = toChunks(ev({ kind: "reasoning", text: "账单" }), seen);
+    const c = toChunks(ev({ kind: "text", text: "三笔" }), seen);
+    expect(a.map((x) => x.type)).toEqual(["reasoning-start", "reasoning-delta"]);
+    expect(b.map((x) => x.type)).toEqual(["reasoning-delta"]);
+    expect(c.map((x) => x.type)).toEqual(["reasoning-end", "text-start", "text-delta"]);
+  });
+
+  it("an answer's saved reasoning leads its parts", () => {
+    const [m] = historyToMessages({
+      conversation: 1,
+      model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
+      running: 0,
+      approvals: [],
+      messages: [
+        {
+          id: "a0",
+          role: "assistant",
+          text: "三笔",
+          reasoning: "先查账单",
+          quoted: [],
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
+      ],
+    });
+    expect(m.parts.map((p) => p.type)).toEqual(["reasoning", "text"]);
+    expect(m.parts[0]).toMatchObject({ text: "先查账单", state: "done" });
+  });
+
   it("opens text once, closes it before anything else", () => {
     const seen = new Set<string>();
     const a = toChunks(ev({ kind: "text", text: "Hi" }), seen);
@@ -185,13 +269,27 @@ describe("historyToMessages", () => {
     };
     const h: WitHistory = {
       conversation: 1,
+      model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 0,
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          quoted: [],
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "A",
+          reasoning: "",
+          quoted: [],
           calls: [
             { id: "c1", name: "search", args: '{"q":1}' },
             { id: "c2", name: "update_draft", args: "{}" },
@@ -205,6 +303,8 @@ describe("historyToMessages", () => {
           id: "q2",
           role: "user",
           text: "更正式",
+          reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -292,14 +392,28 @@ describe("WitTransport", () => {
     const { api, tr, emit } = fake();
     const h: WitHistory = {
       conversation: 1,
+      model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 7,
       approvals: [],
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [1] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          quoted: [],
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [1],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "Hel",
+          reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -389,6 +503,8 @@ describe("WitTransport", () => {
       id,
       role,
       text,
+      reasoning: "",
+      quoted: [],
       calls: [],
       results: [],
       citations: [],
@@ -396,6 +512,8 @@ describe("WitTransport", () => {
     });
     const h: WitHistory = {
       conversation: 1,
+      model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
       running: 5,
       messages: [
         msg("q0", "user", [1]),
@@ -436,7 +554,14 @@ describe("WitTransport", () => {
 
   it("a live skill's part has the history's ID: a resumed run updates it", async () => {
     const pending = approval({ id: 12, run: 2, callId: "skill", state: "pending" });
-    const h: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [pending] };
+    const h: WitHistory = {
+      conversation: 1,
+      model: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
+      running: 0,
+      messages: [],
+      approvals: [pending],
+    };
     const all = historyToMessages(h);
     expect(all.map((m) => m.id)).toEqual(["w2"]);
     const { api, tr, emit } = fake();
@@ -474,10 +599,24 @@ describe("WitTransport", () => {
 describe("WitTransport selections", () => {
   const hist = (conversation: number, runs: number[] = []): WitHistory => ({
     conversation,
+    model: "",
+    usage: { input: 0, output: 0, context: 0, history: 0 },
     running: 0,
     approvals: [],
     messages: runs.length
-      ? [{ id: "q", role: "user", text: "Q", calls: [], results: [], citations: [], runs }]
+      ? [
+          {
+            id: "q",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs,
+          },
+        ]
       : [],
   });
 

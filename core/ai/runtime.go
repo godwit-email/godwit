@@ -237,12 +237,15 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
 	// One slot more than the events use: the terminal event always fits.
-	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey}
+	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning}
 	done := make(chan struct{})
 	var res Result
 	go func() {
 		defer close(done)
 		res = r.run(req)
+		r.mu.Lock()
+		res.Usage = r.usage
+		r.mu.Unlock()
 		switch {
 		case res.Err != nil:
 			r.finish(Event{Kind: "error", Err: res.Err})
@@ -262,6 +265,9 @@ type runner struct {
 	ctx context.Context
 	ch  chan Event
 	key string
+	// reasoning: Request.Reasoning
+	reasoning bool
+	usage     Usage // so far, under mu
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
@@ -416,6 +422,12 @@ func (r *runner) run(req Request) Result {
 
 func (r *runner) stream(_ context.Context, c *gai.ModelResponseChunk) error {
 	if c.Role == gai.RoleModel || c.Role == "" {
+		for _, p := range c.Content {
+			// an encrypted one (Responses) has no text
+			if r.reasoning && p != nil && p.IsReasoning() && p.Text != "" {
+				r.send(Event{Kind: "reasoning", Text: p.Text})
+			}
+		}
 		if t := c.Text(); t != "" {
 			r.send(Event{Kind: "text", Text: t})
 		}
@@ -455,6 +467,13 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 		// Results bind to call IDs, so a turn that repeats one is unusable.
 		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {
 			resp, err := next(ctx, p)
+			if err == nil && resp.Usage != nil {
+				c.r.mu.Lock()
+				c.r.usage.Input += resp.Usage.InputTokens
+				c.r.usage.Output += resp.Usage.OutputTokens
+				c.r.usage.Last = resp.Usage.InputTokens
+				c.r.mu.Unlock()
+			}
 			if err == nil && resp.Message != nil {
 				seen := map[string]bool{}
 				for _, part := range resp.Message.Content {
@@ -709,6 +728,8 @@ func display(msgs []*gai.Message) []Message {
 			switch {
 			case p.IsText() && p.Metadata[contextKey] == nil:
 				d.Text += p.Text
+			case p.IsReasoning():
+				d.Reasoning += p.Text
 			case p.IsToolRequest():
 				d.Calls = append(d.Calls, toolCall(p.ToolRequest))
 			case p.IsToolResponse():

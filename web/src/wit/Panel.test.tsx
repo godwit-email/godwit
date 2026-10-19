@@ -1,11 +1,16 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
+vi.mock("sonner", async (orig) => ({
+  ...(await orig<typeof import("sonner")>()),
+  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+}));
 
 const t = makeT("zh-Hans");
 
@@ -24,7 +29,14 @@ const info: WitInfo = {
   model: "",
 };
 
-const empty: WitHistory = { conversation: 1, running: 0, messages: [], approvals: [] };
+const empty: WitHistory = {
+  conversation: 1,
+  model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
+  running: 0,
+  messages: [],
+  approvals: [],
+};
 
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
@@ -60,6 +72,7 @@ async function setup(
     skill: vi.fn().mockResolvedValue(7),
     follow: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
+    rewinds: true,
   };
   const tr = new WitTransport(api, (f) => {
     listener = f;
@@ -160,6 +173,89 @@ describe("Panel", () => {
     expect(onModels).toHaveBeenCalledOnce();
   });
 
+  it("with models, the chip picks the conversation's model; the settings come last", async () => {
+    const user = userEvent.setup();
+    const onModels = vi.fn();
+    const pick = vi.fn();
+    const list = vi.fn().mockResolvedValue([
+      { ref: "a/sonnet", label: "A / sonnet" },
+      { ref: "a/haiku", label: "A / haiku" },
+    ]);
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="sonnet"
+        onModels={onModels}
+        models={{ ref: "a/haiku", list, pick }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /haiku/ }));
+    await waitFor(() => expect(list).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("menuitemradio", { name: "A / haiku" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
+    expect(pick).toHaveBeenCalledWith("");
+    expect(onModels).not.toHaveBeenCalled();
+  });
+
+  it("a finished answer copies its text", async () => {
+    const user = userEvent.setup();
+    await setup({
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "a0",
+            role: "assistant",
+            text: "答案",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [1],
+          },
+        ],
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "复制" }));
+    expect(await navigator.clipboard.readText()).toBe("答案");
+  });
+
+  it("a copy the clipboard refuses says so", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("denied"));
+    await setup({
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "a0",
+            role: "assistant",
+            text: "答案",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [1],
+          },
+        ],
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("复制失败"));
+    expect(toast).not.toHaveBeenCalledWith("已复制");
+  });
+
   it("translate-only: the 翻译 menu alone, no input, 调整 or chips", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ info: { ...info, translateOnly: true } });
@@ -246,6 +342,225 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
+  it("reasoning shows as a running trace line, then folds under 思考过程", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    emit({ kind: "reasoning", text: "先查账单" });
+    const line = await screen.findByText("正在思考…", { selector: "[data-slot=trace-title]" });
+    expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
+    emit({ kind: "text", text: "三笔" });
+    emit({ kind: "done" });
+    const folded = await screen.findByRole("button", { name: /思考过程/ });
+    expect(folded).toHaveAttribute("aria-expanded", "false");
+    await user.click(folded);
+    expect(await screen.findByText("先查账单")).toBeInTheDocument();
+  });
+
+  const turn: WitHistory = {
+    ...empty,
+    messages: [
+      {
+        id: "q0",
+        role: "user",
+        text: "总结",
+        reasoning: "",
+        quoted: [{ id: 9, subject: "发票", from: "f", date: 0 }],
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [1],
+      },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "旧答案",
+        reasoning: "",
+        quoted: [],
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [1],
+      },
+    ],
+  };
+
+  it("重新生成 asks the last question again in its place, with the mail it quoted", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "重新生成" }));
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9], 0));
+    expect(screen.queryByText("旧答案")).toBeNull();
+    expect(screen.getAllByText("总结")).toHaveLength(1);
+  });
+
+  it("编辑 puts a question back in the input; sending replaces it and what followed", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    const box = input("向 Wit 提问");
+    expect(box).toHaveValue("总结");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+    expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
+    await user.clear(box);
+    await user.type(box, "列出金额{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9], 0));
+    expect(screen.queryByText("旧答案")).toBeNull();
+  });
+
+  it("no 编辑 or 重新生成 while a call waits on the user", async () => {
+    await setup({
+      page: true,
+      history: {
+        ...turn,
+        approvals: [
+          {
+            id: 4,
+            run: 1,
+            callId: "c9",
+            tool: "create_draft",
+            summary: "",
+            state: "pending",
+            error: "",
+            destinations: [],
+            sessionAllow: false,
+            args: "",
+          },
+        ],
+      },
+    });
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
+  });
+
+  it("an edit refused stays an edit, with its quotes; sent again it still replaces", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    api.ask.mockRejectedValueOnce(new Error("error.ai.unavailable"));
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    expect(
+      await screen.findByText("正在编辑这条提问，发送后会替换它和之后的对话"),
+    ).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("发票")).toBeInTheDocument();
+    // nothing was replaced: the old question and answer are back, the refusal a toast
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+    expect(screen.getAllByText("总结")).toHaveLength(1);
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+    await user.type(input("向 Wit 提问"), "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith("总结！", [9], 0));
+    expect(screen.getAllByText("总结！")).toHaveLength(1);
+  });
+
+  it("a refused edit brings the old turns back even with something typed since", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    let refuse!: (e: Error) => void;
+    api.ask.mockReturnValueOnce(new Promise((_, rej) => (refuse = rej)));
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    await user.type(input("向 Wit 提问"), "另一个问题");
+    refuse(new Error("error.ai.unavailable"));
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("另一个问题");
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(toast.error).toHaveBeenCalled();
+  });
+
+  it("an edit whose run failed part-way replaced nothing: the conversation shows as it is", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    emit({ kind: "text", text: "半" });
+    await screen.findByText("半");
+    emit({ kind: "error", error: "error.ai.unavailable" });
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(screen.queryByText("半")).toBeNull();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  });
+
+  it("a failed run that saved nothing still updates the meter", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({
+      page: true,
+      history: { ...turn, usage: { input: 10, output: 1, context: 10, history: 0.2 } },
+    });
+    api.follow.mockResolvedValue({
+      ...turn,
+      usage: { input: 30, output: 1, context: 20, history: 0.2 },
+    });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalled());
+    emit({ kind: "error", error: "error.ai.unavailable" });
+    await user.hover(screen.getByRole("button", { name: "上下文" }));
+    expect(await screen.findByText("上次请求：20 tokens")).toBeInTheDocument();
+  });
+
+  it("an edit stopped replaced nothing: the conversation shows as it is, the edit back", async () => {
+    const user = userEvent.setup();
+    const { api, emit } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "！{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    emit({ kind: "text", text: "半" });
+    await screen.findByText("半");
+    emit({ kind: "error", error: "" }); // the stop
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+  });
+
+  it("an edit cancelled leaves the conversation as it was", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.click(screen.getByRole("button", { name: "取消编辑" }));
+    expect(input("向 Wit 提问")).toHaveValue("");
+    await user.type(input("向 Wit 提问"), "新问题{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("新问题"));
+    expect(api.ask).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("旧答案")).toBeInTheDocument();
+  });
+
+  it("an empty page suggests questions; one asks it", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true });
+    expect(screen.getByText("试着问 Wit")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "谁还在等我回复？" }));
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("谁还在等我回复？"));
+    expect(screen.queryByText("试着问 Wit")).toBeNull();
+  });
+
+  it("the context meter says how full the history is and what it took", async () => {
+    const user = userEvent.setup();
+    await setup({
+      page: true,
+      history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.42 } },
+    });
+    const meter = screen.getByRole("button", { name: "上下文" });
+    expect(meter).toHaveTextContent("42%");
+    await user.hover(meter);
+    expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
+    expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
+    expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
+  });
+
+  it("no meter before the conversation took anything", async () => {
+    await setup({ page: true });
+    expect(screen.queryByRole("button", { name: "上下文" })).toBeNull();
+  });
+
   it("an error shows 重试, which repeats the last skill", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup();
@@ -301,11 +616,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "",
+            reasoning: "",
+            quoted: [],
             calls: [{ id: "c1", name: "create_draft", args: "{}" }],
             results: [],
             citations: [],
@@ -355,11 +682,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
+            quoted: [],
             calls: [
               { id: "c1", name: "search", args: "{}" },
               { id: "c2", name: "search", args: "{}" },
@@ -377,10 +716,10 @@ describe("Panel", () => {
         ],
       },
     });
-    // the panel names the tools; the triangle leads
+    // the panel names the tools on a trace line, folded
     const tools = screen.getByText("调用了 search · read").closest("button");
-    expect(tools).toHaveClass("text-sm", "text-left");
-    expect(tools?.firstElementChild?.tagName).toBe("svg");
+    expect(tools?.querySelector("[data-slot=trace-line]")).toBeInTheDocument();
+    expect(tools).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
       "data-variant",
       "secondary",
@@ -410,11 +749,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [
@@ -451,6 +802,8 @@ describe("Panel", () => {
           id: "q0",
           role: "user",
           text: "更短",
+          reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -503,11 +856,23 @@ describe("Panel", () => {
         ...empty,
         running: 7,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Hello",
+            reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -551,11 +916,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "",
+            reasoning: "",
+            quoted: [],
             calls: [
               { id: "p1", name: "plugin_netty_ping", args: a.args },
               { id: "p2", name: "create_draft", args: "{}" },
@@ -633,11 +1010,23 @@ describe("Panel", () => {
         ...empty,
         running: 9, // run 9 saved nothing yet: its question is not in the history
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Answer A",
+            reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -658,11 +1047,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "Answer A",
+            reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [],
@@ -695,11 +1096,23 @@ describe("Panel", () => {
     const saved: WitHistory = {
       ...empty,
       messages: [
-        { id: "q9", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "q9",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          quoted: [],
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
         {
           id: "a9",
           role: "assistant",
           text: "Hello whole world",
+          reasoning: "",
+          quoted: [],
           calls: [],
           results: [],
           citations: [],
@@ -754,11 +1167,23 @@ describe("Panel", () => {
       history: {
         ...empty,
         messages: [
-          { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
           {
             id: "a1",
             role: "assistant",
             text: "A",
+            reasoning: "",
+            quoted: [],
             calls: [],
             results: [],
             citations: [cite(1, 50), cite(2, 51, true)],
@@ -913,11 +1338,23 @@ describe("Panel", () => {
     const history: WitHistory = {
       ...empty,
       messages: [
-        { id: "q0", role: "user", text: "Q", calls: [], results: [], citations: [], runs: [7] },
+        {
+          id: "q0",
+          role: "user",
+          text: "Q",
+          reasoning: "",
+          quoted: [],
+          calls: [],
+          results: [],
+          citations: [],
+          runs: [7],
+        },
         {
           id: "a1",
           role: "assistant",
           text: "",
+          reasoning: "",
+          quoted: [],
           calls: [{ id: "p1", name: "create_draft", args: "{}" }],
           results: [],
           citations: [],

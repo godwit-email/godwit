@@ -355,3 +355,15 @@ func TestResponsesRefusal(t *testing.T) {
 		})
 	}
 }
+
+// A Responses run reports the tokens each model call took, summed, and the
+// last call's input.
+func TestResponsesUsage(t *testing.T) {
+	srv := testllm.Start(t, kindResp)
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "call_r", Name: "read"}}, Usage: [2]int{40, 6}},
+		testllm.Turn{Text: []string{"answer"}, Usage: [2]int{60, 9}})
+	var readRuns atomic.Int64
+	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+	require.Nil(t, res.Err)
+	assert.Equal(t, Usage{Input: 100, Output: 15, Last: 60}, res.Usage)
+}

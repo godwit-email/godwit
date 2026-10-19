@@ -86,6 +86,9 @@ type Wit struct {
 	d     WitPageDeps
 
 	decideMu sync.Mutex // decisions run one at a time, as they come
+	// askMu holds an Ask from setting its conversation's model until its run
+	// is claimed: another Ask's model cannot come in between.
+	askMu sync.Mutex
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -268,11 +271,14 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 }
 
 // Ask asks input in conv, an ask conversation, with the mail the user quoted
-// (message IDs; core AskWith); conv 0 makes one first, which
-// ConversationCreated hears of. The page follows conv from before the run
+// (message IDs; core AskWith), on model (a ModelChoice's Ref; "": the
+// default), which the conversation keeps; conv 0 makes one first, which
+// ConversationCreated hears of. rewind, unless -1, asks it in place of the
+// question at that index (a question's ID is "q<rewind>") and what followed
+// (core AskAgain): a refused question leaves the conversation as it was. The page follows conv from before the run
 // starts, unless a newer selection came meanwhile. Only Stop cancels the
 // run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64) (RunStart, error) {
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model string, rewind int) (RunStart, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -294,13 +300,35 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	} else if err := askConv(ctx, svc, conv); err != nil {
 		return RunStart{}, keyed(err)
 	}
+	p.w.askMu.Lock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			unlocked = true
+			p.w.askMu.Unlock()
+		}
+	}
+	defer unlock()
+	if err := svc.SetConversationModel(ctx, conv, model); err != nil {
+		if made { // nothing was asked in it: no empty conversation is left behind
+			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
+			return RunStart{}, keyed(err)
+		}
+		return RunStart{Conversation: conv}, keyed(err)
+	}
 	if startHook != nil {
 		startHook()
 	}
 	if _, err := p.w.followConv(t, svc, conv, sel); err != nil && !errors.Is(err, errSuperseded) {
 		return RunStart{}, keyed(err)
 	}
-	ch, err := svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
+	var ch <-chan core.WitEvent
+	if rewind >= 0 && !made {
+		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, rewind, input, quoted)
+	} else {
+		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
+	}
+	unlock()  // claimed, or refused
 	if made { // titled by now, unless Ask failed
 		p.w.created(conv, version)
 	}
@@ -446,6 +474,47 @@ func (p *WitPage) OpenLink(ctx context.Context, link string) error {
 		}
 		return accs[0].ID, nil
 	}, p.w.d.OpenURL, p.w.d.OpenCompose))
+}
+
+// ModelChoice is a model Wit can answer with: Ref is what Ask takes, Label
+// "service / model" as the settings show it.
+type ModelChoice struct {
+	Ref   string `json:"ref"`
+	Label string `json:"label"`
+}
+
+// Models are the models a conversation can use: every generating service's,
+// then the running plugins' (judges aside), as the settings' default model offers.
+func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	services, err := svc.ListModelServices(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	plugins, err := svc.ListPluginModels(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	out := []ModelChoice{}
+	for _, s := range services {
+		if s.Kind == "" {
+			continue
+		}
+		for _, m := range s.Models {
+			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Label: s.Name + " / " + m})
+		}
+	}
+	for _, pm := range plugins {
+		for _, m := range pm.Models {
+			if !m.Judges() {
+				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Label: pm.Plugin + " / " + m.Name})
+			}
+		}
+	}
+	return out, nil
 }
 
 // OpenModels opens the model settings.

@@ -55,3 +55,139 @@ func TestRunStoresSlugRef(t *testing.T) {
 	e.start(t, conv, "hello")
 	assert.Equal(t, "x-gw/m1", queryStr(t, e.s, "SELECT model FROM runs WHERE conversation_id = ?", conv.ID))
 }
+
+// A conversation's model overrides the default for its runs; "" goes back to
+// the default and a ref that does not resolve is refused.
+func TestSetConversationModel(t *testing.T) {
+	e := newApprovalEnv(t)
+	ms, err := e.s.UpdateModelService(t.Context(), e.ms.ID, ModelServiceInput{Name: e.ms.Name, Kind: "openai", BaseURL: e.srv.URL, Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	conv := e.newConv(t, "ask", 0)
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/nope"))
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID+100, ""))
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2"))
+	e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
+	e.start(t, conv, "hello")
+	assert.Equal(t, ms.Slug+"/m2", queryStr(t, e.s, "SELECT model FROM runs WHERE conversation_id = ? ORDER BY id DESC", conv.ID))
+
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Empty(t, c.Model)
+}
+
+// Rewinding to a question drops it, what came after and its runs; only a
+// question can be rewound to, and not while a run is active.
+func TestRewindConversation(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 4)
+	require.Len(t, c.Runs, 2)
+
+	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 1), "an answer is no question")
+	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 4))
+	e.s.sessionGrants.Store(grantKey{conv: conv.ID, tool: "fake_draft"}, true)
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
+	_, granted := e.s.sessionGrants.Load(grantKey{conv: conv.ID, tool: "fake_draft"})
+	assert.False(t, granted, "asked again, a write waits for the user")
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Messages, 2)
+	assert.Equal(t, "first", c.Messages[0].Text)
+	require.Len(t, c.Runs, 1)
+
+	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET title = 'first' WHERE id = ?", conv.ID)
+	require.NoError(t, err)
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 0))
+	assert.Equal(t, "", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID), "the first question's goes")
+
+	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
+	assert.ErrorIs(t, e.s.RewindConversation(t.Context(), conv.ID, 0), ErrRunActive)
+}
+
+// A run cut off still counts the tokens its model call took.
+func TestFailedRunUsage(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length", Usage: [2]int{50, 9}})
+	e.start(t, conv, "hello")
+	assert.Equal(t, "50", queryStr(t, e.s, "SELECT input_tokens FROM runs WHERE conversation_id = ?", conv.ID))
+	assert.Equal(t, "9", queryStr(t, e.s, "SELECT output_tokens FROM runs WHERE conversation_id = ?", conv.ID))
+}
+
+// AskAgain replaces a question only once its run can start: one refused (a
+// model that no longer resolves, a quote that does not exist) leaves the
+// conversation as it was.
+func TestAskAgain(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	messages := func() []string {
+		c, err := e.s.GetConversation(t.Context(), conv.ID)
+		require.NoError(t, err)
+		var out []string
+		for _, m := range c.Messages {
+			out = append(out, m.Text)
+		}
+		return out
+	}
+	before := messages()
+
+	_, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{999999})
+	require.Error(t, err)
+	assert.Equal(t, before, messages(), "a missing quote")
+	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET model = 'gone/m9' WHERE id = ?", conv.ID)
+	require.NoError(t, err)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.Error(t, err)
+	assert.Equal(t, before, messages(), "a model that does not resolve")
+
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	// accepted, but its run saves nothing (cut off): nothing is replaced either
+	grant := grantKey{conv: conv.ID, tool: "fake_draft"}
+	e.s.sessionGrants.Store(grant, true)
+	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length"})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "error", evs[len(evs)-1].Kind)
+	assert.Equal(t, before, messages(), "a run that failed")
+	_, granted := e.s.sessionGrants.Load(grant)
+	assert.True(t, granted, "nor are the conversation's grants gone")
+
+	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, messages())
+
+	// in place of the first question: the question asked titles it, in the rewind's transaction
+	e.srv.Script(testllm.Turn{Text: []string{"Anew."}})
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, 0, "first, edited", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	assert.Equal(t, "first, edited", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID))
+}
+
+// A rewind drops runs, not what they took: the conversation's totals keep
+// their tokens.
+func TestRewindKeepsUsage(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}, Usage: [2]int{10, 2}}, testllm.Turn{Text: []string{"Two."}, Usage: [2]int{30, 4}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 40, c.Usage.Input)
+	assert.Equal(t, 6, c.Usage.Output)
+	assert.Equal(t, 10, c.Usage.Last, "the history the model was last shown is the kept run's")
+}

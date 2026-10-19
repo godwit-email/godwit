@@ -94,14 +94,17 @@ func (s *Service) granted(ctx context.Context, id int64) bool {
 	return ok
 }
 
-// dropGrants ends conversation conv's session grants.
-func (s *Service) dropGrants(conv int64) {
+// dropGrants ends conversation conv's session grants and returns them.
+func (s *Service) dropGrants(conv int64) []grantKey {
+	var out []grantKey
 	s.sessionGrants.Range(func(k, _ any) bool {
-		if k.(grantKey).conv == conv {
+		if g := k.(grantKey); g.conv == conv {
 			s.sessionGrants.Delete(k)
+			out = append(out, g)
 		}
 		return true
 	})
+	return out
 }
 
 // ResolveApprovalForConversation accepts pending approval id and allows its

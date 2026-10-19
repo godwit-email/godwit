@@ -327,4 +327,14 @@ var Migrations = [][]string{{
 	// the digest of the installed release's asset descriptions on this
 	// platform ('' none). A registry that changes any of them revokes the plugin.
 	`ALTER TABLE plugins ADD COLUMN assets_digest TEXT NOT NULL DEFAULT ''`,
+}, {
+	// The tokens a run's model calls took (summed over its resumes), and the
+	// input of its last call: how much history the model was last shown.
+	`ALTER TABLE runs ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE runs ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE runs ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
+	// The tokens of the runs a rewind dropped (RewindConversation): the
+	// conversation took them all the same.
+	`ALTER TABLE conversations ADD COLUMN spent_input INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversations ADD COLUMN spent_output INTEGER NOT NULL DEFAULT 0`,
 }}

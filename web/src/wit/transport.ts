@@ -3,14 +3,25 @@ import {
   type Approval,
   type Citation,
   events,
+  type MailHit,
   type WitCall,
   type WitEvent,
   type WitHistory,
   type WitResult,
 } from "@/mygo";
 
-/** A question's request: free text (with the mail it quotes), or a skill (with its language) when set. */
-export type WitMeta = { skill?: string; lang?: string; quoted?: number[] };
+/**
+ * A question's request: free text (with the mail it quotes, `hits` as its chips), or a skill (with
+ * its language) when set. `rewind` asks it in place of the question at that index (and what
+ * followed it), on a host that rewinds.
+ */
+export type WitMeta = {
+  skill?: string;
+  lang?: string;
+  quoted?: number[];
+  hits?: MailHit[];
+  rewind?: number;
+};
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
 /** A question or an answer in the panel. Wit's tools are untyped here: dynamic-tool parts. */
@@ -18,8 +29,9 @@ export type WitUIMessage = UIMessage<WitMeta, WitData>;
 type Chunk = UIMessageChunk<WitMeta, WitData>;
 type Part = WitUIMessage["parts"][number];
 
-// The open text part's key in `seen` (no tool call ID has a NUL).
+// The open text and reasoning parts' keys in `seen` (no tool call ID has a NUL).
 const TEXT = "\0text";
+const THINK = "\0reasoning";
 
 const json = (s: string): unknown => {
   if (!s) return {};
@@ -85,6 +97,7 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
     if (seen.delete(TEXT)) out.push({ type: "text-end", id: TEXT });
   };
   if (ev.kind !== "text") closeText();
+  if (ev.kind !== "reasoning" && seen.delete(THINK)) out.push({ type: "reasoning-end", id: THINK });
   if (ev.citations.length > 0) out.push({ type: "data-citations", data: ev.citations });
   switch (ev.kind) {
     case "text":
@@ -93,6 +106,13 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
         out.push({ type: "text-start", id: TEXT });
       }
       out.push({ type: "text-delta", id: TEXT, delta: ev.text });
+      break;
+    case "reasoning":
+      if (!seen.has(THINK)) {
+        seen.add(THINK);
+        out.push({ type: "reasoning-start", id: THINK });
+      }
+      out.push({ type: "reasoning-delta", id: THINK, delta: ev.text });
       break;
     case "tool_call":
       if (ev.call) {
@@ -188,12 +208,17 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
   const out: { m: WitUIMessage; runs: number[] }[] = [];
   ms.forEach((m, i) => {
     if (m.role === "user") {
+      const metadata = m.quoted.length
+        ? { quoted: m.quoted.map((h) => h.id), hits: m.quoted }
+        : undefined;
       out.push({
-        m: { id: m.id, role: "user", parts: [{ type: "text", text: m.text }] },
+        m: { id: m.id, role: "user", metadata, parts: [{ type: "text", text: m.text }] },
         runs: m.runs,
       });
     } else {
-      const parts: Part[] = [];
+      const parts: Part[] = m.reasoning
+        ? [{ type: "reasoning", text: m.reasoning, state: "done" }]
+        : [];
       const as: Approval[] = [];
       for (const c of m.calls) {
         const a = byCall.get(c.id);
@@ -246,6 +271,14 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
         { type: "text-end", id },
       ];
     }
+    if (p.type === "reasoning") {
+      const id = `t${i}`;
+      return [
+        { type: "reasoning-start", id },
+        { type: "reasoning-delta", id, delta: p.text },
+        { type: "reasoning-end", id },
+      ];
+    }
     if (p.type === "data-citations" || p.type === "data-approvals") return [p as Chunk];
     if (p.type !== "dynamic-tool") return [];
     seen.add(p.toolCallId);
@@ -272,14 +305,17 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
 }
 
 /**
- * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID;
- * follow reads the conversation the host shows (subscribing to it); stop cancels a run.
+ * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID,
+ * in place of the question at index rewind and what followed when given (a host that `rewinds`;
+ * refused, nothing changes); follow reads the conversation the host shows (subscribing to it);
+ * stop cancels a run.
  */
 export type WitApi = {
-  ask(text: string, quoted?: number[]): Promise<number>;
+  ask(text: string, quoted?: number[], rewind?: number): Promise<number>;
   skill?(id: string, lang: string): Promise<number>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
+  rewinds?: boolean;
 };
 type On = (f: (ev: WitEvent) => void) => () => void;
 
@@ -413,6 +449,11 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     return this.run ? this.api.stop(this.run) : Promise.resolve();
   }
 
+  /** Whether a question can be asked again in place (the host rewinds). */
+  get rewinds(): boolean {
+    return !!this.api.rewinds;
+  }
+
   close() {
     this.off();
   }
@@ -483,11 +524,15 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     const { s, fail, named } = this.stream(abortSignal, [], new Set());
     const skill = m?.metadata?.skill;
     const quoted = m?.metadata?.quoted;
+    // A retry (regenerate) asks in place again: a run that saved nothing replaced nothing.
+    const at = this.api.rewinds ? m?.metadata?.rewind : undefined;
     (skill && this.api.skill
       ? this.api.skill(skill, m?.metadata?.lang ?? "")
-      : quoted?.length
-        ? this.api.ask(text, quoted)
-        : this.api.ask(text)
+      : at !== undefined
+        ? this.api.ask(text, quoted ?? [], at)
+        : quoted?.length
+          ? this.api.ask(text, quoted)
+          : this.api.ask(text)
     )
       .then(
         (run) => {

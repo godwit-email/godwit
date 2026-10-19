@@ -55,7 +55,9 @@ type Turn struct {
 	FailCode   string
 	Incomplete bool
 	Truncate   bool
-	Refusal    string // openai-responses: the reply is this refusal, not text
+	Refusal    string   // openai-responses: the reply is this refusal, not text
+	Think      []string // openai chat: reasoning_content deltas before the text
+	Usage      [2]int   // openai chat and responses: the input and output tokens reported (responses: 1 and 1 when unset)
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -317,6 +319,9 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 		return "data: " + js(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m",
 			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
 	}
+	for _, r := range t.Think {
+		send(chunk(map[string]any{"role": "assistant", "reasoning_content": r}, nil))
+	}
 	for _, txt := range t.Text {
 		send(chunk(map[string]any{"role": "assistant", "content": txt}, nil))
 	}
@@ -334,7 +339,12 @@ func openAIStream(send func(...string), t Turn, hang func() bool) {
 	if t.Finish != "" {
 		finish = t.Finish
 	}
-	send(chunk(map[string]any{}, finish), "data: [DONE]")
+	send(chunk(map[string]any{}, finish))
+	if t.Usage != [2]int{} {
+		send("data: " + js(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "m", "choices": []any{},
+			"usage": map[string]any{"prompt_tokens": t.Usage[0], "completion_tokens": t.Usage[1], "total_tokens": t.Usage[0] + t.Usage[1]}}))
+	}
+	send("data: [DONE]")
 }
 
 func anthropicStream(send func(...string), t Turn, hang func() bool) {

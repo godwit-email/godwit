@@ -5,14 +5,21 @@ import {
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
+  RiBrainLine,
+  RiCloseLine,
+  RiEditLine,
   RiEqualizerLine,
+  RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
-  RiPlayFill,
+  RiPieChart2Line,
+  RiRefreshLine,
+  RiSettings3Line,
   RiStopFill,
+  RiToolsLine,
   RiTranslate2,
 } from "@remixicon/react";
-import type { DynamicToolUIPart } from "ai";
+import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -20,11 +27,13 @@ import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -43,7 +52,17 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import type { Approval, Citation, MailHit, WitHistory, WitInfo } from "@/mygo";
+import { Progress } from "@/components/ui/progress";
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace";
+import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
@@ -230,6 +249,7 @@ function Answer({
   tools,
   onLink,
   onCite,
+  onAgain,
   working,
   page,
   t,
@@ -242,6 +262,8 @@ function Answer({
   tools: (a: Approval) => ReactNode;
   onLink(url: string): void;
   onCite?(id: number): void;
+  /** Asks the answer's question again in its place (重新生成), where it can be. */
+  onAgain?(): void;
   /** What shows while the answer is live: the panel's working row, or the page's spinner. */
   working: ReactNode;
   page: boolean;
@@ -253,6 +275,10 @@ function Answer({
     (c) =>
       c.state === "output-available" || c.state === "output-error" || c.state === "output-denied",
   );
+  // Calls under way: no result yet and none waiting on the user.
+  const going = live ? calls.filter((c) => c.state === "input-available") : [];
+  const thought = m.parts.filter((p): p is ReasoningUIPart => p.type === "reasoning" && !!p.text);
+  const thinking = live && thought.some((p) => p.state === "streaming");
   const cites = citesOf(m);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
@@ -269,25 +295,58 @@ function Answer({
   };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
-      {done.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger
-            className={cn(
-              "group flex items-start gap-1 text-left text-muted-foreground hover:text-foreground",
-              page ? "text-base" : "text-sm",
-            )}
-          >
-            <RiPlayFill className="mt-0.5 size-3 shrink-0 transition-transform group-data-panel-open:rotate-90" />
-            {toolsLabel(done, page, t)}
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-1 flex flex-col gap-1 text-muted-foreground">
-            {done.map((c) => (
-              <code key={c.toolCallId} className="break-all text-xs">
-                {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
-              </code>
-            ))}
-          </CollapsibleContent>
-        </Collapsible>
+      {(thought.length > 0 || done.length > 0 || going.length > 0) && (
+        // the answer's steps: what it thought, the tools it called, the calls under way
+        <Trace className={page ? "[&_[data-slot=trace-line]]:text-base" : undefined}>
+          {thought.length > 0 && (
+            <TraceCollapsible>
+              <TraceCollapsibleTrigger>
+                <TraceLine status={thinking ? "running" : undefined}>
+                  <TraceIcon>
+                    <RiBrainLine />
+                  </TraceIcon>
+                  <TraceTitle>{t(thinking ? "wit.thinking" : "wit.reasoning")}</TraceTitle>
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">
+                {thought.map((p) => p.text).join("\n\n")}
+              </TraceCollapsibleContent>
+            </TraceCollapsible>
+          )}
+          {done.length > 0 && (
+            <TraceCollapsible>
+              <TraceCollapsibleTrigger>
+                <TraceLine>
+                  <TraceIcon>
+                    <RiToolsLine />
+                  </TraceIcon>
+                  <TraceTitle>{toolsLabel(done, page, t)}</TraceTitle>
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent className="flex flex-col gap-1">
+                {done.map((c) => (
+                  <code
+                    key={c.toolCallId}
+                    className={cn(
+                      "break-all text-xs",
+                      c.state === "output-error" && "text-destructive",
+                    )}
+                  >
+                    {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
+                  </code>
+                ))}
+              </TraceCollapsibleContent>
+            </TraceCollapsible>
+          )}
+          {going.map((c) => (
+            <TraceLine key={c.toolCallId} status="running">
+              <TraceIcon>
+                <RiToolsLine />
+              </TraceIcon>
+              <TraceTitle>{toolLabel(c.toolName, t)}</TraceTitle>
+            </TraceLine>
+          ))}
+        </Trace>
       )}
       {cites
         .flatMap((c) => {
@@ -317,6 +376,37 @@ function Answer({
           onLink={onLink}
           cite={cite}
         />
+      )}
+      {text && !live && (
+        <div className="-mt-1 -ml-1.5 flex">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground"
+            aria-label={t("wit.copy")}
+            title={t("wit.copy")}
+            onClick={() =>
+              (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+                () => toast(t("wit.copied")),
+                () => toast.error(t("wit.copy_failed")),
+              )
+            }
+          >
+            <RiFileCopyLine />
+          </Button>
+          {onAgain && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              aria-label={t("wit.regenerate")}
+              title={t("wit.regenerate")}
+              onClick={onAgain}
+            >
+              <RiRefreshLine />
+            </Button>
+          )}
+        </div>
       )}
       {cites.length > 0 && onCite && (
         // narrow: the cards under the answer; wide, the page's column shows them (Panel)
@@ -389,6 +479,7 @@ export function Panel({
   layout = "panel",
   model,
   onModels,
+  models,
   ask: handed,
   onAsked,
   onSearch,
@@ -409,6 +500,11 @@ export function Panel({
   /** The default model's label, as the input's chip (onModels opens the model settings). */
   model?: string;
   onModels?(): void;
+  /**
+   * The conversation's model (ref, "" for the default) and the models to pick from: the chip
+   * opens a menu of them (the settings last) instead of the settings.
+   */
+  models?: { ref: string; list(): Promise<ModelChoice[]>; pick(ref: string): void };
   /** A question the host hands over: asked once (by identity), then onAsked. */
   ask?: { text: string };
   onAsked?(): void;
@@ -431,7 +527,19 @@ export function Panel({
   const [decided, setDecided] = useState<number[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
+  // as they are now, for what a run's end decides after reading the history
+  const chatRef = useRef(chat);
+  chatRef.current = chat;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [quoted, setQuoted] = useState<MailHit[]>([]);
+  const [choices, setChoices] = useState<ModelChoice[]>();
+  // The question being edited: sending asks it in place of the one at index at.
+  const [editing, setEditing] = useState<{ at: number }>();
+  // What asking in place took off the conversation shown: back if the host refuses the question.
+  const shelved = useRef<WitUIMessage[]>([]);
+  // What the conversation took, as last read (a run's end reads it again).
+  const [usage, setUsage] = useState(history.usage);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -461,11 +569,25 @@ export function Panel({
     transport.history().then(
       (h) => {
         if (!live || !h) return;
+        setUsage(h.usage); // a run that saved nothing may still have taken tokens
         if (
           !h.messages.some((m) => m.runs.includes(run)) &&
           !h.approvals.some((a) => a.run === run)
-        )
+        ) {
+          // A question asked in place, stopped or failed: it replaced nothing. The conversation
+          // shows as it is, the question back in the input, a failure as a toast (no 重试: what it
+          // would retry is no longer shown).
+          const c = chatRef.current;
+          const q = c.messages.findLast((m) => m.role === "user");
+          if (q?.metadata?.rewind === undefined) return;
+          if (c.error) {
+            toast.error(witError(c.error.message, t));
+            c.clearError();
+          }
+          setMessages(historyToMessages(h));
+          putBackRef.current(q);
           return;
+        }
         setMessages(historyToMessages(h));
       },
       () => {}, // the stream stays as it is
@@ -473,7 +595,7 @@ export function Panel({
     return () => {
       live = false;
     };
-  }, [running, transport, setMessages]);
+  }, [running, transport, setMessages, t]);
 
   // A decision resumed a run: its events (logged since) go on in the last answer, if the run's.
   const last = chat.messages.at(-1);
@@ -496,20 +618,70 @@ export function Panel({
     onAsked?.();
     ask(handed.text);
   }, [handed]);
+  // A question not asked after all goes back to the input, unless something was typed since: its
+  // text, its quotes, and an edit still one (sent again, it still replaces the old question).
+  const putBack = (q: WitUIMessage) => {
+    if (draftRef.current) return;
+    setDraft(textOf(q));
+    setQuoted(q.metadata?.hits ?? []);
+    const r = q.metadata?.rewind;
+    if (r !== undefined) setEditing({ at: r });
+  };
+  const putBackRef = useRef(putBack);
+  putBackRef.current = putBack;
   // A start refused (nothing answered the question): its text goes back to the input, not lost.
   const refused = chat.error && !running ? chat.messages.at(-1) : undefined;
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new refusal restores
   useEffect(() => {
-    if (refused?.role !== "user" || draft) return;
-    setDraft(refused.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""));
+    if (refused?.role !== "user") return;
+    putBack(refused);
+    if (refused.metadata?.rewind === undefined) return;
+    // the host changed nothing: what it would have replaced comes back, the refusal as a toast
+    toast.error(witError(chat.error?.message ?? "", t));
+    setMessages([...chat.messages.slice(0, -1), ...shelved.current]);
+    chat.clearError();
   }, [refused]);
+  // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
+  // call waits on the user (core rewinds no active run).
+  const at = (m: WitUIMessage) => {
+    const k = /^q(\d+)$/.exec(m.id);
+    const waits = chat.messages.some((x) =>
+      x.parts.some((p) => p.type === "data-approvals" && p.data.some((a) => a.state === "pending")),
+    );
+    return transport.rewinds && k && !waits ? Number(k[1]) : undefined;
+  };
+  // Asks again in place of the question at index i: what came from it on goes, here and in the host.
+  const again = (i: number, text: string, hits: MailHit[]) => {
+    if (locked || running) return;
+    const k = chat.messages.findIndex((m) => m.id === `q${i}`);
+    shelved.current = k < 0 ? [] : chat.messages.slice(k);
+    if (k >= 0) chat.setMessages(chat.messages.slice(0, k));
+    ask(text, { quoted: hits.map((h) => h.id), hits, rewind: i });
+  };
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;
     setDraft("");
     setQuoted([]);
     setPicking(undefined);
-    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id) } : undefined);
+    setEditing(undefined);
+    if (editing) return again(editing.at, text, quoted);
+    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id), hits: quoted } : undefined);
+  };
+  const textOf = (m: WitUIMessage) =>
+    m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
+  const edit = (q: WitUIMessage) => {
+    const i = at(q);
+    if (i === undefined) return;
+    setEditing({ at: i });
+    setDraft(textOf(q));
+    setQuoted(q.metadata?.hits ?? []);
+    setTimeout(() => textarea.current?.focus());
+  };
+  const cancelEdit = () => {
+    setEditing(undefined);
+    setDraft("");
+    setQuoted([]);
   };
   // Closing the picker gives the textarea its focus back, the caret at caret.
   const closePicker = (caret?: number) => {
@@ -553,6 +725,11 @@ export function Panel({
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
   const stop = () => void transport.stop().catch(fail);
   const link = (url: string) => void onLink(url).catch(fail);
+  // The chip names the conversation's model: its choice's label once listed, else the ref's model.
+  const chosen = models?.ref
+    ? (choices?.find((c) => c.ref === models.ref)?.label ??
+      models.ref.slice(models.ref.indexOf("/") + 1))
+    : model;
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
@@ -650,11 +827,11 @@ export function Panel({
                 key={m.id}
                 messageId={m.id}
                 // the panel: a turn's question and answer 10 apart, turns 18
-                className={!page && m.role === "user" && i > 0 ? "mt-2" : undefined}
+                className={cn("group/turn", !page && m.role === "user" && i > 0 && "mt-2")}
               >
                 {m.role === "user" ? (
                   <Message align="end">
-                    <MessageContent>
+                    <MessageContent className="items-end">
                       {/* the design's max-width is the text's (80%, the panel's 85%), padding aside */}
                       <Bubble
                         variant="secondary"
@@ -664,9 +841,22 @@ export function Panel({
                         }
                       >
                         <BubbleContent className="whitespace-pre-wrap border-0 text-md">
-                          {m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
+                          {textOf(m)}
                         </BubbleContent>
                       </Bubble>
+                      {at(m) !== undefined && !running && !locked && (
+                        // shown on the turn's hover, or when focused
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
+                          aria-label={t("wit.edit")}
+                          title={t("wit.edit")}
+                          onClick={() => edit(m)}
+                        >
+                          <RiEditLine />
+                        </Button>
+                      )}
                     </MessageContent>
                   </Message>
                 ) : (
@@ -679,6 +869,13 @@ export function Panel({
                     tools={tools}
                     onLink={link}
                     onCite={onCite}
+                    onAgain={(() => {
+                      const q = chat.messages[i - 1];
+                      const k = q?.role === "user" ? at(q) : undefined;
+                      return m === last && !locked && k !== undefined
+                        ? () => again(k, textOf(q), q.metadata?.hits ?? [])
+                        : undefined;
+                    })()}
                     working={working}
                     page={page}
                     t={t}
@@ -686,6 +883,26 @@ export function Panel({
                 )}
               </MessageScrollerItem>
             ))}
+            {page && chat.messages.length === 0 && !running && !locked && (
+              <div className="flex flex-col items-start gap-3 pt-[12vh]">
+                <p className="text-muted-foreground">{t("wit.suggest")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {[1, 2, 3, 4].map((n) => {
+                    const q = t(`wit.suggest.${n}`);
+                    return (
+                      <Button
+                        key={n}
+                        variant="outline"
+                        className="h-auto rounded-full px-3.5 py-1.5 font-normal text-md"
+                        onClick={() => ask(q)}
+                      >
+                        {q}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {running && last?.role !== "assistant" && working}
           </MessageScrollerContent>
         </MessageScrollerViewport>
@@ -706,11 +923,27 @@ export function Panel({
       </AlertAction>
     </Alert>
   );
+  // The context meter (the page's, once there is usage) leads the input's right-hand controls.
+  const meter = page && (usage.input > 0 || usage.history > 0);
   // Send keeps the Primary look while nothing can be sent (an empty or locked input): only a
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+      {editing && (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+          <RiEditLine className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">{t("wit.editing")}</span>
+          <InputGroupButton
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t("wit.edit.cancel")}
+            onClick={cancelEdit}
+          >
+            <RiCloseLine />
+          </InputGroupButton>
+        </div>
+      )}
       {picking && onSearch && (
         <QuotePicker
           search={onSearch}
@@ -764,21 +997,111 @@ export function Panel({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {model && (
-          <InputGroupButton
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
-            title={t("wit.model")}
-            onClick={onModels}
+        {meter && (
+          <HoverCard>
+            <HoverCardTrigger
+              render={
+                <InputGroupButton
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm tabular-nums"
+                  aria-label={t("wit.usage")}
+                />
+              }
+            >
+              <RiPieChart2Line className="size-3.5" />
+              {Math.min(100, Math.round(usage.history * 100))}%
+            </HoverCardTrigger>
+            <HoverCardContent side="top" className="flex w-72 flex-col gap-2 text-sm">
+              <span className="font-medium">
+                {t("wit.usage.history", Math.min(100, Math.round(usage.history * 100)))}
+              </span>
+              <Progress value={Math.min(100, usage.history * 100)} />
+              <span className="text-muted-foreground">{t("wit.usage.note")}</span>
+              {usage.context > 0 && (
+                <span className="tabular-nums">
+                  {t("wit.usage.last", usage.context.toLocaleString())}
+                </span>
+              )}
+              {usage.input > 0 && (
+                <span className="tabular-nums">
+                  {t(
+                    "wit.usage.total",
+                    usage.input.toLocaleString(),
+                    usage.output.toLocaleString(),
+                  )}
+                </span>
+              )}
+            </HoverCardContent>
+          </HoverCard>
+        )}
+        {model && models ? (
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (open) models.list().then(setChoices, fail);
+            }}
           >
-            {model}
-            <RiArrowDownSLine className="size-3" />
-          </InputGroupButton>
+            <DropdownMenuTrigger
+              render={
+                <InputGroupButton
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    !meter && "ml-auto",
+                    "h-8 min-w-0 gap-1 px-2 font-normal text-muted-foreground text-sm",
+                  )}
+                  title={t("wit.model.pick")}
+                >
+                  <span className="truncate">{chosen}</span>
+                  <RiArrowDownSLine className="size-3" />
+                </InputGroupButton>
+              }
+            />
+            <DropdownMenuContent side="top" align="end" className="max-h-80 min-w-56">
+              <DropdownMenuRadioGroup
+                value={models.ref}
+                onValueChange={(v: string) => models.pick(v)}
+              >
+                <DropdownMenuRadioItem value="">
+                  {t("wit.model.default", model)}
+                </DropdownMenuRadioItem>
+                {choices?.map((c) => (
+                  <DropdownMenuRadioItem key={c.ref} value={c.ref}>
+                    {c.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              {onModels && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onModels}>
+                    <RiSettings3Line className="text-muted-foreground" />
+                    {t("wit.model")}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          model && (
+            <InputGroupButton
+              variant="ghost"
+              size="sm"
+              className={cn(
+                !meter && "ml-auto",
+                "h-8 gap-1 px-2 font-normal text-muted-foreground text-sm",
+              )}
+              title={t("wit.model")}
+              onClick={onModels}
+            >
+              {model}
+              <RiArrowDownSLine className="size-3" />
+            </InputGroupButton>
+          )
         )}
         {running && page ? (
           <InputGroupButton
-            className={cn(!model && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto")}
             variant="outline"
             size="icon-sm"
             aria-label={t("wit.stop")}
@@ -788,7 +1111,7 @@ export function Panel({
           </InputGroupButton>
         ) : (
           <InputGroupButton
-            className={cn(!model && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto")}
             variant="default"
             size="icon-sm"
             aria-label={t("wit.send")}

@@ -154,6 +154,8 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
 });
 const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">): WitMessage => ({
   text: "",
+  reasoning: "",
+  quoted: [],
   calls: [],
   results: [],
   citations: [],
@@ -175,6 +177,8 @@ const turn1: WitMessage[] = [
     id: "m2",
     role: "assistant",
     runs: [1],
+    reasoning: "",
+    quoted: [],
     calls: [read, upd1],
     results: [ok(read)],
     text: "已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。",
@@ -190,6 +194,8 @@ const done1 = approval({
 });
 const history = (p: Partial<WitHistory> & Pick<WitHistory, "messages">): WitHistory => ({
   conversation: 1,
+  model: "",
+  usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   approvals: [],
   ...p,
@@ -250,6 +256,8 @@ export const pending = (inline: boolean): WitHistory => {
         id: "m4",
         role: "assistant",
         runs: [2],
+        reasoning: "",
+        quoted: [],
         calls: [upd2],
         text: inline
           ? "改了 2 处，正文里用删除线和高亮标出来了。"
@@ -307,12 +315,15 @@ const createDraft = call("s9", "create_draft", {
 
 export const witConversation = (): WitHistory =>
   history({
+    usage: { input: 18400, output: 1260, context: 9800, history: 0.36 },
     messages: [
-      msg({ id: "a1", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
+      msg({ id: "q0", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
       msg({
         id: "a2",
         role: "assistant",
         runs: [1],
+        reasoning:
+          "用户问的是本月的订阅支出。先搜索本月的账单和收据邮件，再逐封确认金额，排除促销邮件。",
         calls: [search, ...reads],
         results: [ok(search, { count: 7 }), ...reads.map((c) => ok(c))],
         citations,
@@ -328,6 +339,8 @@ export const witConversation = (): WitHistory =>
         id: "a4",
         role: "assistant",
         runs: [2],
+        reasoning: "",
+        quoted: [],
         calls: [createDraft],
         text: "我起草了一封回复。创建草稿需要你确认：",
       }),
@@ -377,3 +390,9 @@ export const signatureHtml =
 export const logo =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAcAQMAAACktijBAAAABlBMVEUlY+v///8tVMD8AAAAHUlEQVR4nGIYGGD/gUiO/X8w+EAKB7dpMNbAAMAAz10oe+YHgF0AAAAASUVORK5CYII=";
 export const signatureHtmlImage = `${signatureHtml}<img src="${logo}">`;
+
+export const witModels = [
+  { ref: "anthropic/claude-sonnet-5-5", label: "Anthropic / claude-sonnet-5-5" },
+  { ref: "anthropic/claude-haiku-5-5", label: "Anthropic / claude-haiku-5-5" },
+  { ref: "openai/gpt-5", label: "OpenAI / gpt-5" },
+];

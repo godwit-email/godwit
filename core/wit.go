@@ -47,6 +47,22 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 // and the model gets it before the question, cited like the tools' mail (a
 // "context" event first). An ID that does not exist fails AskWith.
 func (s *Service) AskWith(ctx context.Context, conversationID int64, input string, quoted []int64) (<-chan WitEvent, error) {
+	return s.askAt(ctx, conversationID, input, quoted, -1)
+}
+
+// AskAgain is AskWith asked in place of the question at Messages[at]: the
+// conversation is rewound to before it (RewindConversation) only once
+// everything else that can refuse the question checked out (launch), so a
+// refused question leaves the conversation as it was.
+func (s *Service) AskAgain(ctx context.Context, conversationID int64, at int, input string, quoted []int64) (<-chan WitEvent, error) {
+	if at < 0 {
+		return nil, fmt.Errorf("no question at %d", at)
+	}
+	return s.askAt(ctx, conversationID, input, quoted, at)
+}
+
+// askAt is AskWith, rewinding to at first unless it is -1.
+func (s *Service) askAt(ctx context.Context, conversationID int64, input string, quoted []int64, at int) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
@@ -67,14 +83,12 @@ func (s *Service) AskWith(ctx context.Context, conversationID int64, input strin
 		title = string(r[:titleRunes])
 	}
 	// The title is saved once the run is claimed and before the run takes
-	// over end, so Close waits for both and a failure fails Ask.
-	setTitle := func(ctx context.Context) error {
-		_, err := s.db.Execute(ctx, "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", title, conv.ID)
-		return err
-	}
+	// over end (with the rewind, if any), so Close waits for both and a
+	// failure fails Ask.
+	setTitle := sqlite.Statement{SQL: "UPDATE conversations SET title = ? WHERE id = ? AND title = ''", Args: []any{title, conversationID}}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, setTitle)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(askTools...), s.pluginTools(true), s.mcpTools(ctx, true)), quoted, at, setTitle)
 	}
 	if err != nil {
 		end()

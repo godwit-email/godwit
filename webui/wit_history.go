@@ -18,6 +18,20 @@ type WitHistory struct {
 	Running int64 `json:"running"`
 	// Approvals are every approval of the conversation, in any state.
 	Approvals []Approval `json:"approvals"`
+	// Model is the conversation's model (a ModelChoice's Ref); "" for the default.
+	Model string   `json:"model"`
+	Usage WitUsage `json:"usage"`
+}
+
+// WitUsage is what a conversation took: its runs' input and output tokens,
+// the latest run's last input (Context; 0 when the service reported none),
+// and how full its history budget is (History, from 0; past 1 the oldest
+// turns are left out).
+type WitUsage struct {
+	Input   int     `json:"input"`
+	Output  int     `json:"output"`
+	Context int     `json:"context"`
+	History float64 `json:"history"`
 }
 
 // WitMessage is a question, or the answer to one: everything the model said
@@ -25,13 +39,17 @@ type WitHistory struct {
 type WitMessage struct {
 	ID string `json:"id"`
 	// Role is user or assistant; an answer's Text is Markdown.
-	Role      string      `json:"role"`
-	Text      string      `json:"text"`
+	Role string `json:"role"`
+	Text string `json:"text"`
+	// Reasoning is what the model showed of its reasoning (an answer only).
+	Reasoning string      `json:"reasoning"`
 	Calls     []WitCall   `json:"calls"`
 	Results   []WitResult `json:"results"`
 	Citations []Citation  `json:"citations"`
 	// Runs are the runs that added it (a question: the run it started).
 	Runs []int64 `json:"runs"`
+	// Quoted is the mail a question quoted (an answer: none).
+	Quoted []MailHit `json:"quoted"`
 }
 
 // witMessages groups c's messages into questions and answers, as
@@ -60,6 +78,12 @@ func witMessages(c core.Conversation) []WitMessage {
 			}
 			ans.Text += m.Text
 		}
+		if m.Reasoning != "" {
+			if ans.Reasoning != "" {
+				ans.Reasoning += "\n\n"
+			}
+			ans.Reasoning += m.Reasoning
+		}
 		for _, call := range m.Calls {
 			ans.Calls = append(ans.Calls, callOf(call))
 		}
@@ -77,7 +101,14 @@ func witMessages(c core.Conversation) []WitMessage {
 		}
 	}
 	for i := range out {
+		out[i].Quoted = []MailHit{}
 		if out[i].Role == "user" {
+			for _, ct := range c.Citations {
+				if ct.CallID == "" && slices.Contains(out[i].Runs, ct.RunID) {
+					q := citationOf(ct)
+					out[i].Quoted = append(out[i].Quoted, MailHit{ID: q.MessageID, Subject: q.Subject, From: q.From, Date: q.Date})
+				}
+			}
 			continue
 		}
 		ids := citedBy(c, spans[i][0], spans[i][1])
