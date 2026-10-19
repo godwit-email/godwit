@@ -57,7 +57,7 @@ type Tokens struct {
 	Highlight, HighlightText ui.Color
 	// Labels are the mail labels' colors in LabelNames' order; Label looks
 	// one up by name. An array keeps Tokens comparable.
-	Labels [8]LabelColor
+	Labels [len(LabelNames)]LabelColor
 	// Scale is the density (1.25 comfortable); outside this package sizes
 	// come from c.Theme().Space(n), which it scales.
 	FontSize, BodyFontSize, Scale float32
@@ -276,14 +276,18 @@ var labelSteps = map[string][7]p.OKLCH{
 	"red":    {p.Red500, p.Red100, p.Red200, p.Red700, p.Red950, p.Red800, p.Red300},
 	"orange": {p.Orange500, p.Orange100, p.Orange200, p.Orange700, p.Orange950, p.Orange800, p.Orange300},
 	"amber":  {p.Amber500, p.Amber100, p.Amber200, p.Amber700, p.Amber950, p.Amber800, p.Amber300},
+	"yellow": {p.Yellow500, p.Yellow100, p.Yellow200, p.Yellow700, p.Yellow950, p.Yellow800, p.Yellow300},
+	"lime":   {p.Lime500, p.Lime100, p.Lime200, p.Lime700, p.Lime950, p.Lime800, p.Lime300},
 	"green":  {p.Green500, p.Green100, p.Green200, p.Green700, p.Green950, p.Green800, p.Green300},
+	"teal":   {p.Teal500, p.Teal100, p.Teal200, p.Teal700, p.Teal950, p.Teal800, p.Teal300},
+	"sky":    {p.Sky500, p.Sky100, p.Sky200, p.Sky700, p.Sky950, p.Sky800, p.Sky300},
 	"blue":   {p.Blue500, p.Blue100, p.Blue200, p.Blue700, p.Blue950, p.Blue800, p.Blue300},
 	"violet": {p.Violet500, p.Violet100, p.Violet200, p.Violet700, p.Violet950, p.Violet800, p.Violet300},
 	"pink":   {p.Pink500, p.Pink100, p.Pink200, p.Pink700, p.Pink950, p.Pink800, p.Pink300},
 }
 
 // LabelNames are the label colors' names, in the picker's order.
-var LabelNames = [8]string{"gray", "red", "orange", "amber", "green", "blue", "violet", "pink"}
+var LabelNames = [...]string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "teal", "sky", "blue", "violet", "pink"}
 
 // Label is the label color of a name; an unknown name is gray.
 func (t Tokens) Label(name string) LabelColor {
@@ -297,7 +301,7 @@ func (t Tokens) Label(name string) LabelColor {
 
 // labels: light -100 fill, -200 edge, -700 text; dark -950, -800, -300.
 // Gray is neutral, its dot the primary.
-func labels(t Tokens) (out [8]LabelColor) {
+func labels(t Tokens) (out [len(LabelNames)]LabelColor) {
 	for i, name := range LabelNames {
 		switch s, ok := labelSteps[name]; {
 		case !ok && t.Dark:

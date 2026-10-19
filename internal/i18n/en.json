@@ -205,10 +205,14 @@
   "label_color_blue": "Blue",
   "label_color_gray": "Gray",
   "label_color_green": "Green",
+  "label_color_lime": "Lime",
   "label_color_orange": "Orange",
   "label_color_pink": "Pink",
   "label_color_red": "Red",
+  "label_color_sky": "Sky",
+  "label_color_teal": "Teal",
   "label_color_violet": "Violet",
+  "label_color_yellow": "Yellow",
   "label_more": "+{arg1, number, ::group-off}",
   "@label_more": {
     "placeholders": {

@@ -98,7 +98,7 @@ func TestLabelCRUD(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.CreateLabel(ctx, LabelInput{Name: "équipe", Color: "red", Icon: "team"})
 	require.ErrorIs(t, err, ErrLabelExists)
-	for _, bad := range []LabelInput{{Name: "  ", Color: "red", Icon: "bill"}, {Name: "x", Color: "teal", Icon: "bill"}, {Name: "y", Color: "red", Icon: "nope"},
+	for _, bad := range []LabelInput{{Name: "  ", Color: "red", Icon: "bill"}, {Name: "x", Color: "rose", Icon: "bill"}, {Name: "y", Color: "red", Icon: "nope"},
 		{Name: "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三", Color: "red", Icon: "bill"}} {
 		_, err = s.CreateLabel(ctx, bad)
 		require.Error(t, err, "%+v", bad)
