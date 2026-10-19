@@ -475,7 +475,11 @@ func TestShots(t *testing.T) {
 				return plugins.ProviderModel{ID: id, Name: name, Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": id}}
 			}
 			m.plugins = append(m.plugins, core.PluginModels{Plugin: "startlux",
-				Models: []plugins.ProviderModel{judge("4b", "StartLux Decision 4B Q4"), judge("2b", "StartLux Decision 2B Q8"), judge("9b", "StartLux Decision 9B")},
+				Models: []plugins.ProviderModel{judge("4b", "StartLux Decision 4B Q4"), func() plugins.ProviderModel {
+					m := judge("2b", "StartLux Decision 2B Q8")
+					m.Description = plugins.Text{Default: "Slow on this computer; best for labeling new mail only", ByLang: map[string]string{"zh-CN": "在这台电脑上较慢，建议只给新邮件打标签"}}
+					return m
+				}(), judge("9b", "StartLux Decision 9B")},
 				Files: map[string]core.ModelStatus{
 					"4b": {State: core.ModelNotDownloaded, TotalBytes: 2_710_000_000},
 					"2b": {State: core.ModelDownloaded, TotalBytes: 2_010_000_000, DownloadedBytes: 2_010_000_000},

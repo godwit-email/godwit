@@ -223,7 +223,8 @@ export interface Translator {
  * its protocol (the first three generate, the last two judge), at baseURL; a
  * "plugin" model is a judge the plugin answers itself.
  */
-export type Model =
+/** description: one line about the model on this computer, shown in settings. */
+export type Model = { description?: Text } & (
   | {
       id: string
       name: string
@@ -232,6 +233,7 @@ export type Model =
       baseURL: string
     }
   | { id: string; name: string; transport: "plugin"; operation: "judge" }
+)
 
 /** A request Godwit's SDK encoded for one of the plugin's http models; body is its JSON text. */
 export interface ModelRequest {

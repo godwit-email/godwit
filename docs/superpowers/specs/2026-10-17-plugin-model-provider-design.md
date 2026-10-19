@@ -18,6 +18,7 @@
 ## 2. 模型描述
 
 ```ts
+// Every model may also carry description?: string | {default: string, [lang]: string}.
 export type Model =
   | {
       id: string
@@ -36,6 +37,7 @@ Go 侧是 `plugins.ProviderModel`，由 `plugins.ValidateModels` 校验：
 - `baseURL` 与同协议的手建服务含义相同，路径由 SDK 拼接（如 `openai-completions` → `/chat/completions`）。必须是不带凭据、查询和片段的 https 地址；原生插件可用 http（本机服务）。
 - `assets` 是 registry 资产组名 → 变体 ID，不是下载地址，只有原生插件可声明。URL、大小、哈希、内存要求由宿主从受信任的 release 读取。
 - `transport` 表示谁执行请求，不表示数据是否联网。
+- `description` 可选，是插件对这个模型在本机情况的一句话（如「在这台电脑上较慢」），可按语言给；设置页只显示一行，全文在提示里。
 - 列出模型不代表已下载或已加载。
 
 ## 3. JS API

@@ -1329,8 +1329,10 @@ func TestModelsLocalFiles(t *testing.T) {
 		return plugins.ProviderModel{ID: id, Name: name, Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": id}}
 	}
 	const gb = 1 << 30
+	slow := judge("2b", "Decision 2B")
+	slow.Description = plugins.Text{Default: "Slow here", ByLang: map[string]string{"zh-CN": "在这台电脑上较慢"}}
 	h.post(func() {
-		m.plugins = []core.PluginModels{{Plugin: "startlux", Models: []plugins.ProviderModel{judge("4b", "Decision 4B"), judge("2b", "Decision 2B"), judge("9b", "Decision 9B")},
+		m.plugins = []core.PluginModels{{Plugin: "startlux", Models: []plugins.ProviderModel{judge("4b", "Decision 4B"), slow, judge("9b", "Decision 9B")},
 			Files: map[string]core.ModelStatus{
 				"4b": {State: core.ModelNotDownloaded, TotalBytes: 2 * gb},
 				"2b": {State: core.ModelDownloaded, TotalBytes: gb, DownloadedBytes: gb},
@@ -1340,6 +1342,7 @@ func TestModelsLocalFiles(t *testing.T) {
 	h.see("本地模型")
 	h.see("startlux · 2.0 GB · 未下载")
 	h.see("startlux · 1.0 GB · 已下载")
+	h.see("在这台电脑上较慢") // the plugin's note, in the UI's language
 	h.see("startlux · 这台电脑的内存不够")
 	h.see("下载")
 	h.see("删除文件")

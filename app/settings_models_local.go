@@ -13,6 +13,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // modelDownload is a download this page started: its progress and how to stop it.
@@ -22,8 +23,8 @@ type modelDownload struct {
 }
 
 type localModel struct {
-	ref, name, plugin string
-	status            core.ModelStatus
+	ref, name, plugin, note string
+	status                  core.ModelStatus
 }
 
 // localModels are the running plugins' models with files, by plugin then list order.
@@ -34,7 +35,7 @@ func (m *modelsView) localModels() []localModel {
 	for _, p := range pms {
 		for _, md := range p.Models {
 			if st, ok := p.Files[md.ID]; ok {
-				out = append(out, localModel{"plugin/" + p.Plugin + "/" + md.ID, md.Name, p.Plugin, st})
+				out = append(out, localModel{"plugin/" + p.Plugin + "/" + md.ID, md.Name, p.Plugin, md.Description.For(i18n.Language()), st})
 			}
 		}
 	}
@@ -48,11 +49,24 @@ func (m *modelsView) localSection(c *ui.Context) {
 	}
 	var rows []func()
 	for _, lm := range models {
-		rows = append(rows, func() {
-			settingRow(c.Key(lm.ref), lm.name, m.localLine(lm), func() { m.localButton(c, lm) })
-		})
+		rows = append(rows, func() { m.localRow(c.Key(lm.ref), lm) })
 	}
 	settingsSection(c, i18n.T("settings.models.files"), i18n.T("settings.models.files.foot"), rows...)
+}
+
+// localRow is a settingRow with the plugin's note on the model under its state.
+func (m *modelsView) localRow(c *ui.Context, lm localModel) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			kit.Text(c, lm.name, t.Text.Body).LineHeight(theme.LineFor(lm.name)).FontWeight(500)
+			kit.Text(c, m.localLine(lm), t.Text.Sm).TextColor(t.Muted)
+			if lm.note != "" { // the plugin's text, untrusted length: one line, all of it in the tooltip
+				kit.Tooltip(c, kit.Text(c, lm.note, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1), lm.note)
+			}
+		})
+		m.localButton(c, lm)
+	})
 }
 
 // localLine is the model's plugin, size and state.
