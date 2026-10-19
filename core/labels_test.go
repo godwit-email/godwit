@@ -57,6 +57,21 @@ func TestSeedLabelsEnglish(t *testing.T) {
 	require.Equal(t, "Bills", ls[1].Name)
 	_, err = s.CreateLabel(t.Context(), LabelInput{Name: "BILLS", Color: "red", Icon: "bill"})
 	require.ErrorIs(t, err, ErrLabelExists)
+
+	for locale, want := range map[string]string{
+		"zh-TW": "驗證碼",
+		"de-DE": "Codes",
+		"ja-JP": "認証コード",
+		"ko-KR": "인증번호",
+		"fr-FR": "Codes",
+		"es-ES": "Códigos",
+		"ru-RU": "Коды",
+	} {
+		s := newLabelService(t, "", locale)
+		ls, err := s.ListLabels(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, want, ls[0].Name, locale)
+	}
 }
 
 func TestLabelCRUD(t *testing.T) {

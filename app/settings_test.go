@@ -275,6 +275,15 @@ func TestSettingsGeneralApplies(t *testing.T) {
 	}
 	h.click("开机时自动启动")
 	h.called("SetOpenAtLogin true")
+	if got := langName("zh-TW"); got != "正體中文" {
+		t.Fatalf("langName(zh-TW) = %q, want 正體中文", got)
+	}
+	if got := langName("zh-Hant-TW"); got != "正體中文" {
+		t.Fatalf("langName(zh-Hant-TW) = %q, want 正體中文", got)
+	}
+	if got := langName("zh-HK"); got != "繁體中文" {
+		t.Fatalf("langName(zh-HK) = %q, want 繁體中文", got)
+	}
 	h.click(i18n.Tf("settings.ui_language.system", langName(h.app.sysLang)))
 	h.click("English")
 	h.see("General")

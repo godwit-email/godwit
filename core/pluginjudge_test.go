@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,12 +124,14 @@ func TestPluginJudgeInClassifier(t *testing.T) {
 // fakeAssets verifies every model's files as dirs, counting leases.
 type fakeAssets struct {
 	noModelAssets
-	verified, released int
+	verified, released atomic.Int32 // a lease may go from a process's exit
+	sleep              time.Duration
 }
 
 func (f *fakeAssets) Verify(context.Context, string, string, map[string]string) (map[string]string, func(), error) {
-	f.verified++
-	return map[string]string{"weights": "/models/4b"}, func() { f.released++ }, nil
+	f.verified.Add(1)
+	time.Sleep(f.sleep)
+	return map[string]string{"weights": "/models/4b"}, func() { f.released.Add(1) }, nil
 }
 
 func TestPluginJudgeAssets(t *testing.T) {
@@ -144,13 +147,13 @@ func TestPluginJudgeAssets(t *testing.T) {
 	s.assets = fa
 	_, err = j.Ask(t.Context(), "mail", twoQuestions)
 	require.NoError(t, err)
-	assert.Equal(t, 1, fa.verified, "verified once per process")
+	assert.EqualValues(t, 1, fa.verified.Load(), "verified once per process")
 	loads := recorded(t, record, "models.load")
 	require.Len(t, loads, 1)
 	assert.JSONEq(t, `{"modelId":"j","assets":{"weights":"/models/4b"}}`, loads[0])
 
 	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
-	assert.Equal(t, 1, fa.released, "stopping the plugin releases its files")
+	assert.EqualValues(t, 1, fa.released.Load(), "stopping the plugin releases its files")
 }
 
 func TestPluginJudgeCancelKeepsSlot(t *testing.T) {
@@ -190,8 +193,8 @@ func TestPluginJudgeReloadsAfterRestart(t *testing.T) {
 	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
 	require.NoError(t, err)
 	assert.Len(t, recorded(t, record, "models.load"), 2, "the new process loads the model again")
-	assert.Equal(t, 2, fa.verified)
-	assert.Equal(t, 1, fa.released, "the old process's lease is released")
+	assert.EqualValues(t, 2, fa.verified.Load())
+	assert.EqualValues(t, 1, fa.released.Load(), "the old process's lease is released")
 }
 
 func TestPluginJudgeReloadsOtherAssets(t *testing.T) {
@@ -212,7 +215,7 @@ func TestPluginJudgeReloadsOtherAssets(t *testing.T) {
 	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
 	require.NoError(t, err)
 	assert.Len(t, recorded(t, record, "models.load"), 2, "other files are loaded again")
-	assert.Equal(t, 1, fa.released, "the old files' lease goes")
+	assert.EqualValues(t, 1, fa.released.Load(), "the old files' lease goes")
 }
 
 func TestPluginJudgeLoadRejected(t *testing.T) {
@@ -241,7 +244,7 @@ func TestPluginJudgeLoadOfOtherProcess(t *testing.T) {
 	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
 	require.NoError(t, err)
 	assert.Len(t, recorded(t, record, "models.load"), 2)
-	assert.Equal(t, 1, fa.released, "the old entry's lease goes")
+	assert.EqualValues(t, 1, fa.released.Load(), "the old entry's lease goes")
 }
 
 // A native plugin's error envelope is an answer: it ends a run of failures.
@@ -265,4 +268,25 @@ func TestPluginJudgeStoppedUnavailable(t *testing.T) {
 	require.NoError(t, s.SetPluginEnabled(t.Context(), "nm", false))
 	_, err = j.Ask(t.Context(), "mail", twoQuestions[:1])
 	assert.ErrorIs(t, err, ErrModelUnavailable)
+}
+
+// A process that ends while the files are verified is replaced by the load
+// itself: the model is resident in the replacement, which keeps the lease.
+func TestPluginJudgeLoadAcrossRestart(t *testing.T) {
+	old := nativeIdle
+	nativeIdle = 150 * time.Millisecond
+	t.Cleanup(func() { nativeIdle = old })
+	s := newMailContextService(t)
+	usePluginJudge(t, s, map[string]string{"weights": "4b"}, nil)
+	fa := &fakeAssets{sleep: 600 * time.Millisecond} // longer than the idle timeout
+	s.assets = fa
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	_, err = j.Ask(t.Context(), "mail", twoQuestions)
+	require.NoError(t, err)
+	assert.Zero(t, fa.released.Load(), "the replacement holds the files it loaded")
+	fa.sleep = 0
+	_, err = j.Ask(t.Context(), "mail", twoQuestions)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, fa.verified.Load(), "not verified and loaded again")
 }

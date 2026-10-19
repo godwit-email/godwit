@@ -9,12 +9,11 @@ import (
 
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpcbind"
 )
-
-// anotherOwner is what a second owner of a data directory is told.
-const anotherOwner = "Godwit 已在运行（GUI 或 headless）"
 
 // headless owns dataDir and serves the Local API until ctx ends, then closes
 // the server, the Service and the lock, in that order. Logs go to stderr
@@ -22,7 +21,8 @@ const anotherOwner = "Godwit 已在运行（GUI 或 headless）"
 func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 	release, err := ownerlock.Acquire(dataDir)
 	if errors.Is(err, ownerlock.ErrAnotherOwner) {
-		fmt.Fprintln(stderr, anotherOwner)
+		i18n.SetLanguage(syslang.Detect())
+		fmt.Fprintln(stderr, i18n.T("app.another_owner"))
 		return 2
 	}
 	if err != nil {
@@ -30,7 +30,12 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 		return 1
 	}
 	defer release()
-	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, Registry: core.DefaultRegistry, AppVersion: app.Version})
+	reg, err := registrySource()
+	if err != nil {
+		fmt.Fprintln(stderr, "godwit:", err)
+		return 1
+	}
+	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, Registry: reg, AppVersion: app.Version})
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
 		return 1

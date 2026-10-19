@@ -54,7 +54,7 @@ func TestFallbackAndFormat(t *testing.T) {
 	if Language() != "zh-Hans" || T("common.save") != "保存" {
 		t.Fatalf("zh: %q %q", Language(), T("common.save"))
 	}
-	SetLanguage("fr-FR")
+	SetLanguage("sv-SE")
 	if Language() != "en" || T("common.save") != "Save" {
 		t.Fatalf("en: %q %q", Language(), T("common.save"))
 	}
@@ -81,10 +81,57 @@ func TestFallbackAndFormat(t *testing.T) {
 
 func TestChineseLocaleAliases(t *testing.T) {
 	t.Cleanup(func() { SetLanguage("zh-Hans") })
-	for _, tag := range []string{"zh", "zh-CN", "zh-SG", "zh-Hans", "zh-Hans-SG", "zh-TW", "zh-Hant"} {
+	for _, tag := range []string{"zh", "zh-CN", "zh-SG", "zh-Hans", "zh-Hans-SG"} {
 		SetLanguage(tag)
 		if Language() != "zh-Hans" || T("common.save") != "保存" {
 			t.Errorf("%s: %q %q", tag, Language(), T("common.save"))
+		}
+	}
+	for _, tag := range []string{"zh-TW", "zh-HK", "zh-MO", "zh-Hant", "zh-Hant-HK"} {
+		SetLanguage(tag)
+		if Language() != "zh-Hant" || T("common.save") != "儲存" {
+			t.Errorf("%s: %q %q", tag, Language(), T("common.save"))
+		}
+	}
+}
+
+func TestGermanLocaleAliases(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	for _, tag := range []string{"de", "de-DE", "de-AT", "de-CH"} {
+		SetLanguage(tag)
+		if Language() != "de" {
+			t.Errorf("%s: %q", tag, Language())
+		}
+	}
+}
+
+func TestAllSupportedLocales(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	for tag, want := range map[string]string{
+		"en-US": "en",
+		"zh-CN": "zh-Hans",
+		"zh-TW": "zh-Hant",
+		"ja-JP": "ja",
+		"ko-KR": "ko",
+		"fr-FR": "fr",
+		"de-DE": "de",
+		"es-ES": "es",
+		"pt-BR": "pt",
+		"it-IT": "it",
+		"ru-RU": "ru",
+		"nl-NL": "nl",
+		"tr-TR": "tr",
+		"vi-VN": "vi",
+	} {
+		SetLanguage(tag)
+		if Language() != want {
+			t.Errorf("SetLanguage(%q) = %q, want %q", tag, Language(), want)
+		}
+		if got := Plural("shell.sync.minutes_ago", 1); got == "" || got == "shell.sync.minutes_ago" {
+			t.Errorf("%s plural(1): %q", want, got)
+		}
+		if got := Plural("shell.sync.minutes_ago", 5); got == "" || got == "shell.sync.minutes_ago" {
+			t.Errorf("%s plural(5): %q", want, got)
 		}
 	}
 }

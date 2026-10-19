@@ -323,6 +323,11 @@ var Migrations = [][]string{{
 	// the sidebar splits user folders on into a tree.
 	`ALTER TABLE folders ADD COLUMN delim TEXT NOT NULL DEFAULT ''`,
 }, {
+	// Registry-hosted assets (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8.2):
+	// the digest of the installed release's asset descriptions on this
+	// platform ('' none). A registry that changes any of them revokes the plugin.
+	`ALTER TABLE plugins ADD COLUMN assets_digest TEXT NOT NULL DEFAULT ''`,
+}, {
 	// The tokens a run's model calls took (summed over its resumes), and the
 	// input of its last call: how much history the model was last shown.
 	`ALTER TABLE runs ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0`,

@@ -2,12 +2,14 @@
 // (docs/registry/README.md). The plugins repository's CI runs it with
 // `go run github.com/godwit-email/godwit/cmd/godwit-registry@main`.
 //
-//	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file and checks its size and sha256
+//	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file (artifacts and assets) and checks its size and sha256
 //	godwit-registry sign registry.json              write registry.json.sig with the key in GODWIT_REGISTRY_KEY
 //	godwit-registry keygen                          print a new key pair
+//	godwit-registry dev [--addr host:port] spec.json  serve a local registry for development builds (dev.go)
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,20 +20,25 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"slices"
 	"time"
 
 	"github.com/godwit-email/godwit/core/plugins"
 )
 
-// client downloads artifacts for check --fetch (tests replace it).
-var client = &http.Client{Timeout: 5 * time.Minute}
+// client downloads artifacts for check --fetch (tests replace it). No
+// overall timeout: a model is gigabytes; checkFile gives up on a stalled one.
+var client = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: time.Minute}}
+
+// fetchStall is how long checkFile waits for the next bytes of a file.
+var fetchStall = time.Minute
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: godwit-registry check [--fetch] registry.json | sign registry.json | keygen")
+		fmt.Fprintln(stderr, "usage: godwit-registry check [--fetch] registry.json | sign registry.json | keygen | dev [--addr host:port] spec.json")
 		return 2
 	}
 	var err error
@@ -49,6 +56,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		err = sign(args[1])
+	case "dev":
+		fs := flag.NewFlagSet("dev", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		addr := fs.String("addr", "127.0.0.1:8743", "where to serve; keep it the same so installed plugins stay valid")
+		if fs.Parse(args[1:]) != nil || fs.NArg() != 1 {
+			return 2
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		err = devRegistry(ctx, fs.Arg(0), *addr, stdout)
 	case "keygen":
 		pub, priv, kerr := ed25519.GenerateKey(nil)
 		if kerr != nil {
@@ -96,13 +113,33 @@ func check(path string, fetch bool, stdout io.Writer) error {
 					fmt.Fprintf(stdout, "%s %s %s: ok\n", p.Name, rel.Version, k)
 				}
 			}
+			for _, a := range rel.Assets {
+				for _, v := range a.Variants {
+					for _, f := range v.Files {
+						where := fmt.Sprintf("%s %s %s %s %s", p.Name, rel.Version, a.Name, v.ID, f.Name)
+						if err := checkFile(plugins.Artifact{URL: f.URL, SHA256: f.SHA256, Size: f.Size}); err != nil {
+							errs = append(errs, fmt.Errorf("%s: %w", where, err))
+						} else {
+							fmt.Fprintf(stdout, "%s: ok\n", where)
+						}
+					}
+				}
+			}
 		}
 	}
 	return errors.Join(errs...)
 }
 
 func checkFile(a plugins.Artifact) error {
-	resp, err := client.Get(a.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stall := time.AfterFunc(fetchStall, cancel)
+	defer stall.Stop()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -111,7 +148,10 @@ func checkFile(a plugins.Artifact) error {
 		return fmt.Errorf("%s answered %s", a.URL, resp.Status)
 	}
 	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(resp.Body, a.Size+1))
+	n, err := io.Copy(h, stallReader{io.LimitReader(resp.Body, a.Size+1), stall})
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s sent nothing for %s", a.URL, fetchStall)
+	}
 	if err != nil {
 		return err
 	}
@@ -138,4 +178,18 @@ func sign(path string) error {
 	}
 	sig := ed25519.Sign(ed25519.NewKeyFromSeed(seed), b)
 	return os.WriteFile(path+".sig", []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0o644)
+}
+
+// stallReader restarts its timer on every read that returns bytes.
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(fetchStall)
+	}
+	return n, err
 }

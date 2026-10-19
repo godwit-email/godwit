@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -468,6 +469,34 @@ func TestShots(t *testing.T) {
 		s.see("OpenAI")
 		modelsStatus(s, "normal")
 		shot(s.harness, "SettingsModels")
+		s.post(func() { // a local judge plugin's models: one downloading, one downloaded, one too large here
+			m := s.app.pages[PageSettings].(*settingsPage).models
+			judge := func(id, name string) plugins.ProviderModel {
+				return plugins.ProviderModel{ID: id, Name: name, Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": id}}
+			}
+			m.plugins = append(m.plugins, core.PluginModels{Plugin: "startlux",
+				Models: []plugins.ProviderModel{judge("4b", "StartLux Decision 4B Q4"), func() plugins.ProviderModel {
+					m := judge("2b", "StartLux Decision 2B Q8")
+					m.Description = plugins.Text{Default: "Slow on this computer; best for labeling new mail only", ByLang: map[string]string{"zh-CN": "在这台电脑上较慢，建议只给新邮件打标签"}}
+					return m
+				}(), judge("9b", "StartLux Decision 9B")},
+				Files: map[string]core.ModelStatus{
+					"4b": {State: core.ModelNotDownloaded, TotalBytes: 2_710_000_000},
+					"2b": {State: core.ModelDownloaded, TotalBytes: 2_010_000_000, DownloadedBytes: 2_010_000_000},
+					"9b": {State: core.ModelErrorState, TotalBytes: 9_000_000_000, Error: &core.ModelError{Code: "insufficient_memory"}},
+				}})
+			s.app.settings.JudgeService = "plugin/startlux/2b" // a long name in the judge's select
+			m.downloads = map[string]*modelDownload{"plugin/startlux/4b": {cancel: func() {},
+				status: core.ModelStatus{State: core.ModelDownloading, DownloadedBytes: 1_220_000_000, TotalBytes: 2_710_000_000}}}
+		})
+		s.resize(1440, 1240) // the section is below the fold
+		s.see("本地模型")
+		shot(s.harness, "SettingsModelsLocal")
+		s.resize(1440, 900)
+		s.post(func() {
+			m := s.app.pages[PageSettings].(*settingsPage).models
+			m.plugins, m.downloads = m.plugins[:len(m.plugins)-1], nil
+		})
 		s.click("添加服务")
 		s.see("Continue with ChatGPT")
 		shot(s.harness, "SettingsModelsSheetSubscription")

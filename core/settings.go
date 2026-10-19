@@ -201,6 +201,9 @@ func (s *Service) storeSettings(ctx context.Context, st Settings) (Settings, err
 	return st, nil
 }
 
+// SystemLanguage is the operating system language tag passed in Options.
+func (s *Service) SystemLanguage() string { return s.opts.SystemLanguage }
+
 // ReadingLanguage is the language Wit reads and writes in: the setting,
 // else the UI language, else the system language, else "en".
 func (s *Service) ReadingLanguage(ctx context.Context) string { return s.readingLanguage(ctx) }

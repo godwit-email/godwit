@@ -126,9 +126,7 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	if v, ok := j.rp.loaded.Load(j.model.ID); ok && v.(loadedModel).proc == proc && maps.Equal(v.(loadedModel).assets, j.model.Assets) { // new settings may name other files
 		return nil
 	}
-	// shortcut: release is "" until the plugin row stores its release's
-	// plugins.AssetsDigest (#90); noModelAssets never reads it.
-	dirs, lease, err := j.s.modelAssets().Verify(ctx, j.name, "", j.model.Assets)
+	dirs, lease, err := j.s.modelAssets().Verify(ctx, j.name, j.rp.row.assetsDigest, j.model.Assets)
 	if err != nil {
 		var me *ModelError
 		if errors.As(err, &me) && unavailableCodes[me.Code] {
@@ -136,8 +134,16 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 		}
 		return err
 	}
+	var gen uint64 // the process that loaded it; 0 when that is not known
 	err = j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
+		if err := j.rp.native.Start(ctx); err != nil { // verifying may have outlasted the idle timeout
+			return err
+		}
+		gen = j.rp.procs.Load()
 		_, err := j.rp.native.Call(ctx, "models.load", map[string]any{"modelId": j.model.ID, "assets": dirs})
+		if j.rp.procs.Load() != gen || j.rp.exited.Load() == gen { // it ended, and maybe another started
+			gen = 0
+		}
 		if ne := (*plugins.NativeError)(nil); errors.As(err, &ne) { // even invalid_request: no input is involved
 			return fmt.Errorf("%w: %w", ai.ErrJudgeUnavailable, err)
 		}
@@ -154,9 +160,27 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 		lease()
 		return plugins.ErrClosed
 	}
-	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease, proc}); had { // calls are one at a time: no other load raced this one
+	if gen == 0 { // nothing to remember: the next question loads it again
+		lease()
+		return nil
+	}
+	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease, gen}); had { // calls are one at a time: no other load raced this one
 		old.(loadedModel).lease()
 	}
+	if j.rp.exited.Load() == gen { // it ended before the entry went in (OnExit ran first): it holds nothing now
+		if m, ok := j.rp.loaded.LoadAndDelete(j.model.ID); ok {
+			m.(loadedModel).lease()
+		}
+	}
+	// The plugin may have unloaded the others for this one: they load again when used.
+	j.rp.loaded.Range(func(id, _ any) bool {
+		if id != j.model.ID {
+			if m, ok := j.rp.loaded.LoadAndDelete(id); ok {
+				m.(loadedModel).lease()
+			}
+		}
+		return true
+	})
 	return nil
 }
 

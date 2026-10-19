@@ -28,10 +28,12 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// PluginModels are a running plugin's models, or Err when it could not list them.
+// PluginModels are a running plugin's models, or Err when it could not list
+// them. Files are the file states of its models with registry-hosted assets, by model ID.
 type PluginModels struct {
 	Plugin string
 	Models []plugins.ProviderModel
+	Files  map[string]ModelStatus
 	Err    string
 }
 
@@ -59,7 +61,7 @@ func (s *Service) ListPluginModels(ctx context.Context) ([]PluginModels, error) 
 	var out []PluginModels
 	for name, rp := range rps {
 		ms, _, err := s.pluginModels(ctx, name, rp)
-		pm := PluginModels{Plugin: name, Models: ms}
+		pm := PluginModels{Plugin: name, Models: ms, Files: s.modelStatuses(ctx, name, rp, ms)}
 		if err != nil {
 			pm.Err = s.cleanError(err).Error()
 		}

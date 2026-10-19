@@ -88,8 +88,10 @@ func TestListPluginModels(t *testing.T) {
 	assert.Equal(t, int64(1), pluginFailures(t, s, "broken"), "a failed list counts")
 	assert.Equal(t, PluginModels{Plugin: "lister", Models: []plugins.ProviderModel{{ID: "chat", Name: "Chat us", Transport: "http",
 		Protocol: "openai-completions", BaseURL: "https://api.example.com/v1"}}}, got[1])
-	assert.Equal(t, PluginModels{Plugin: "nm", Models: []plugins.ProviderModel{{ID: "judge", Name: "Judge", Transport: "plugin",
-		Operation: "judge", Assets: map[string]string{"weights": "4b"}}}}, got[2])
+	assert.Equal(t, []plugins.ProviderModel{{ID: "judge", Name: "Judge", Transport: "plugin",
+		Operation: "judge", Assets: map[string]string{"weights": "4b"}}}, got[2].Models)
+	assert.Equal(t, "model_unavailable", got[2].Files["judge"].Error.Code, "a sideloaded plugin's files are in no registry")
+	assert.Nil(t, got[1].Files, "http models have no files")
 
 	require.NoError(t, s.SetPluginConfig(t.Context(), "lister", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)}))
 	got, err = s.ListPluginModels(t.Context())
