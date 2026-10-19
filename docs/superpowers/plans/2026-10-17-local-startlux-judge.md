@@ -142,7 +142,7 @@ plugin.json                     {"name":"startlux","version":"0.1.0","native":{"
 - [ ] **真机实测**（推迟：手上没有设备，发布后由测试用户补）：带 GPU 的 Windows / Linux（Vulkan）、8 GB 内存的 Apple 芯片 Mac、开着 Smart App Control 的 Windows。用 `eval/` 的 99 封记录一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**（推迟，同上）：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
 - [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU（推迟，同上）。
-- [x] 按结果定下纯 CPU 平台只提供 2B、Windows 门槛 12 GB（见 Decisions）。写进 #64 待做。
+- [x] 按结果定下纯 CPU 平台只提供 2B、Windows 门槛 12 GB（见 Decisions），已写进 #64。
 
 ### Task 2: plugin-startlux 骨架、推理与读出
 
