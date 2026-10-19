@@ -486,11 +486,20 @@ func MCPCommand(t *testing.T) (cmd string, args []string, env map[string]string)
 
 // RegistryServer is a plugin registry over https with its own signing key.
 type RegistryServer struct {
-	Src  *core.RegistrySource
-	srv  *httptest.Server
-	key  ed25519.PrivateKey
-	mu   sync.Mutex
-	docs map[string][]byte
+	Src       *core.RegistrySource
+	srv       *httptest.Server
+	key       ed25519.PrivateKey
+	mu        sync.Mutex
+	docs      map[string][]byte
+	intercept func(w http.ResponseWriter, req *http.Request, body []byte) bool
+}
+
+// Intercept lets fn answer a request first (body is what the path serves,
+// nil if none); returning false serves it as usual. nil removes it.
+func (r *RegistryServer) Intercept(fn func(w http.ResponseWriter, req *http.Request, body []byte) bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.intercept = fn
 }
 
 // NewRegistryServer starts an empty registry; Publish puts one up.
@@ -504,12 +513,16 @@ func NewRegistryServer(t *testing.T) *RegistryServer {
 	r.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.mu.Lock()
 		b, ok := r.docs[req.URL.Path]
+		fn := r.intercept
 		r.mu.Unlock()
+		if fn != nil && fn(w, req, b) {
+			return
+		}
 		if !ok {
 			http.NotFound(w, req)
 			return
 		}
-		w.Write(b)
+		http.ServeContent(w, req, "", time.Time{}, bytes.NewReader(b)) // with Range, for resumed downloads
 	}))
 	t.Cleanup(r.srv.Close)
 	r.Src = &core.RegistrySource{URL: r.srv.URL + "/registry.json", PublicKey: pub, Client: r.srv.Client()}
@@ -562,6 +575,20 @@ func (r *RegistryServer) NativeRelease(t *testing.T, name, version string, extra
 		t.Fatal(err)
 	}
 	return r.release(name, version, plugins.PlatformKey(), manifest, lib)
+}
+
+// NativeModelsRelease is a registry release of a native plugin offering
+// models (the fake library's "models" list), recording each models.* request
+// to record + "." + method.
+func (r *RegistryServer) NativeModelsRelease(t *testing.T, name, version, record string, models []any) map[string]any {
+	t.Helper()
+	manifest := fmt.Sprintf(`{"name":%q,"version":%q,"native":{"abi":1},"capabilities":["models"]}`, name, version)
+	lib, err := json.Marshal(map[string]any{"record": record, "models": map[string]any{"models": models},
+		"describe": map[string]any{"name": name, "version": version, "abi": 1, "capabilities": []string{"models"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.release(name, version, plugins.PlatformKey(), []byte(manifest), lib)
 }
 
 // ScriptRelease is a registry release of a one-file script plugin.

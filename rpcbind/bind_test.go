@@ -248,8 +248,9 @@ func TestWireCodesPinned(t *testing.T) {
 		"egress_approval_required": &core.EgressApprovalRequired{},
 		"ai_error":                 &ai.Error{Code: ai.CodeCanceled},
 		"no_role_folder":           &core.ErrNoRoleFolder{Role: "junk"},
+		"model_error":              &core.ModelError{Code: "model_not_ready"},
 	}
-	assert.Len(t, pinned, len(sentinels)+6, "every registration is pinned")
+	assert.Len(t, pinned, len(sentinels)+7, "every registration is pinned")
 	for code, err := range pinned {
 		we := c.Encode(err, nil)
 		assert.Equal(t, rpc.CodeApp, we.Code, code)
@@ -261,7 +262,7 @@ func TestWireCodesPinned(t *testing.T) {
 // or partial business error.
 func TestBadErrorData(t *testing.T) {
 	c := rpcbind.NewCodec()
-	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error", "no_role_folder"} {
+	for _, code := range []string{"check_failed", "send_warnings", "send_blocked", "egress_approval_required", "ai_error", "no_role_folder", "model_error"} {
 		for name, detail := range map[string]string{"missing": ``, "wrong type": `{"Plugin":1,"Steps":1,"Code":1}`, "partial": `{}`} {
 			got := c.Decode(&rpc.WireError{Code: rpc.CodeApp, Message: "m", Data: &rpc.WireErrorData{Code: code, Detail: json.RawMessage(detail)}})
 			assert.ErrorIs(t, got, rpc.ErrBadErrorData, "%s %s", code, name)

@@ -16,6 +16,7 @@ const (
 	PluginsChanged   = "plugins.changed"
 	MCPChanged       = "mcp.changed"
 	LabelsChanged    = "labels.changed"
+	ModelsChanged    = "models.changed" // a plugin model's files were downloaded or removed
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

@@ -108,7 +108,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 		minW = theme.SelectMinWidth
 	}
 	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).MinWidth(minW).Children(func() {
-		ui.Text(c, current).Grow(1)
+		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
 	if o.MaxWidth > 0 {

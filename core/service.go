@@ -112,7 +112,7 @@ type Service struct {
 
 	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
 	running     map[string]*runningPlugin  // started plugins by name
-	assets      modelAssets                // plugin models' files; nil is noModelAssets
+	assets      modelAssets                // plugin models' files (assets.go); nil is noModelAssets
 	pluginGen   uint64                     // last runningPlugin.gen handed out
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
@@ -160,6 +160,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
 	s.labelJudge = s.defaultLabelJudge
+	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
 	}
@@ -206,6 +207,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 			return nil, fmt.Errorf("plugin registry: %w", err)
 		}
 	}
+	s.sweepAssets(ctx) // best effort: what is left is only disk space
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err

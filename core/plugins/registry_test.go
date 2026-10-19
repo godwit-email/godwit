@@ -231,3 +231,102 @@ func TestPick(t *testing.T) {
 	_, _, reason = dlx.Pick("darwin-arm64", "1.2.0")
 	assert.Equal(t, "abi", reason)
 }
+
+func assetFile(name string, size int64) map[string]any {
+	return map[string]any{"name": name, "url": "https://example.com/" + name, "sha256": sha, "size": size}
+}
+
+// modelAssets is a StartLux-like assets list: an engine for one platform and
+// two model variants for every platform.
+func modelAssets() []any {
+	return []any{
+		map[string]any{"name": "engine", "platforms": []string{"darwin-arm64"}, "variants": []any{
+			map[string]any{"id": "b11707-metal", "files": []any{assetFile("libllama.0.dylib", 10)}}}},
+		map[string]any{"name": "model", "variants": []any{
+			map[string]any{"id": "4b-q4", "minMemoryGB": 8, "files": []any{assetFile("model.gguf", 100), assetFile("decision_config.json", 1)}},
+			map[string]any{"id": "2b-q8", "minMemoryGB": map[string]any{"default": 6, "windows-*": 8, "windows-arm64": 10},
+				"files": []any{assetFile("model.gguf", 50), assetFile("decision_config.json", 1)}}}},
+	}
+}
+
+func withAssets(assets any) map[string]any {
+	rel := nativeRel("0.1.0", map[string]any{"darwin-arm64": art(10)})
+	rel["assets"] = assets
+	return map[string]any{"name": "dlx", "title": "DLX", "summary": "s", "releases": []any{rel}}
+}
+
+func TestParseRegistryAssets(t *testing.T) {
+	r, err := CheckRegistry(registryJSON(t, withAssets(modelAssets())))
+	require.NoError(t, err)
+	rel := r.Plugins[0].Releases[0]
+	require.Len(t, rel.Assets, 2)
+	v := rel.Assets[1].Variants
+	assert.Equal(t, 8.0, v[0].MinMemoryGB.For("linux-amd64"), "a number is every platform's")
+	assert.Equal(t, 6.0, v[1].MinMemoryGB.For("darwin-arm64"), "default")
+	assert.Equal(t, 8.0, v[1].MinMemoryGB.For("windows-amd64"), "os wildcard")
+	assert.Equal(t, 10.0, v[1].MinMemoryGB.For("windows-arm64"), "exact platform first")
+	assert.Equal(t, []string{"engine", "model"}, assetNames(rel.AssetsFor("darwin-arm64")))
+	assert.Equal(t, []string{"model"}, assetNames(rel.AssetsFor("linux-amd64")))
+	assert.NotEqual(t, AssetsDigest(rel.AssetsFor("darwin-arm64")), AssetsDigest(rel.AssetsFor("linux-amd64")))
+	assert.Empty(t, AssetsDigest(nil), "no assets: what rows without assets hold")
+}
+
+func assetNames(as []Asset) []string {
+	var out []string
+	for _, a := range as {
+		out = append(out, a.Name)
+	}
+	return out
+}
+
+func TestParseRegistryAssetsReject(t *testing.T) {
+	mod := func(fn func(as []any)) []any { as := modelAssets(); fn(as); return as }
+	variant := func(as []any, i, j int) map[string]any {
+		return as[i].(map[string]any)["variants"].([]any)[j].(map[string]any)
+	}
+	for name, assets := range map[string]any{
+		"bad asset name":   mod(func(as []any) { as[0].(map[string]any)["name"] = "Engine!" }),
+		"no variants":      mod(func(as []any) { as[0].(map[string]any)["variants"] = []any{} }),
+		"repeated variant": mod(func(as []any) { variant(as, 1, 1)["id"] = "4b-q4" }),
+		"bad variant id":   mod(func(as []any) { variant(as, 1, 0)["id"] = "4B Q4" }),
+		"nested file":      mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("a/model.gguf", 1)} }),
+		"backslash file":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile(`a\b`, 1)} }),
+		"dot file":         mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("..", 1)} }),
+		"repeated file":    mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("x", 1), assetFile("x", 1)} }),
+		"case-only repeat": mod(func(as []any) {
+			variant(as, 1, 0)["files"] = []any{assetFile("model.gguf", 1), assetFile("MODEL.gguf", 1)}
+		}),
+		"windows device": mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("nul.txt", 1)} }),
+		"windows char":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("a?.gguf", 1)} }),
+		"trailing dot":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model.", 1)} }),
+		"trailing space": mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model ", 1)} }),
+		"too long name":  mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile(strings.Repeat("a", 256), 1)} }),
+		"no files":       mod(func(as []any) { variant(as, 1, 0)["files"] = []any{} }),
+		"http url": mod(func(as []any) {
+			f := assetFile("x", 1)
+			f["url"] = "http://example.com/x"
+			variant(as, 1, 0)["files"] = []any{f}
+		}),
+		"bad sha": mod(func(as []any) {
+			f := assetFile("x", 1)
+			f["sha256"] = "ABC"
+			variant(as, 1, 0)["files"] = []any{f}
+		}),
+		"zero size":        mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("x", 0)} }),
+		"unknown platform": mod(func(as []any) { as[0].(map[string]any)["platforms"] = []string{"plan9-amd64"} }),
+		"two for one platform": append(modelAssets(), map[string]any{"name": "engine", "variants": []any{
+			map[string]any{"id": "cpu", "files": []any{assetFile("libllama.so.0", 1)}}}}),
+		"memory no default": mod(func(as []any) { variant(as, 1, 0)["minMemoryGB"] = map[string]any{"windows-*": 8} }),
+		"memory bad key":    mod(func(as []any) { variant(as, 1, 0)["minMemoryGB"] = map[string]any{"default": 8, "windows": 9} }),
+		"memory zero":       mod(func(as []any) { variant(as, 1, 0)["minMemoryGB"] = 0 }),
+		"memory negative":   mod(func(as []any) { variant(as, 1, 0)["minMemoryGB"] = map[string]any{"default": -1} }),
+		"unknown field":     mod(func(as []any) { variant(as, 1, 0)["mirror"] = "x" }),
+	} {
+		_, err := CheckRegistry(registryJSON(t, withAssets(assets)))
+		assert.Error(t, err, name)
+	}
+	script := scriptRel("0.1.0", "index.js", map[string]any{"any": art(100)})
+	script["assets"] = modelAssets()
+	_, err := CheckRegistry(registryJSON(t, map[string]any{"name": "deepl", "title": "D", "summary": "s", "releases": []any{script}}))
+	assert.Error(t, err, "a script release has no assets")
+}

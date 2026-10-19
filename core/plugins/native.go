@@ -68,6 +68,7 @@ type NativeOptions struct {
 	Redact          func(string) string
 	OnStart         func(ctx context.Context, call func(ctx context.Context, method string, params any) (json.RawMessage, error)) error
 	Idle            time.Duration
+	OnExit          func() // a process ended (idle, crash, watchdog, Close) before another started; under the handle's lock
 }
 
 type NativeProcess struct {
@@ -167,7 +168,12 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 		}
 		cmd.Wait()
 		p.kill() // also after a clean exit: helpers it started go, and on Windows its job is released
-		close(p.dead)
+		n.mu.Lock()
+		if n.p == p && n.o.OnExit != nil { // a process started since has had its own OnStart
+			n.o.OnExit()
+		}
+		n.mu.Unlock()
+		close(p.dead) // after OnExit: Close and a failed start return once it is done
 	}()
 	n.p = p
 	return p, true, nil

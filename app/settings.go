@@ -110,7 +110,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
-	case sec == "models" && (hints == nil || slices.ContainsFunc(hints, extChange)): // a plugin's models come and go with it
+	case sec == "models" && (hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged })): // a plugin's models come and go with it
 		p.models.load()
 	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		var list []core.TranslatorInfo

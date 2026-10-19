@@ -23,15 +23,17 @@ var (
 
 // ProviderModel is one model of a plugin. An "http" model has Protocol and
 // BaseURL; a "plugin" model has Operation "judge" and, for a native plugin,
-// Assets: registry asset group to variant ID.
+// Assets: registry asset group to variant ID. Description is an optional
+// line about the model on this computer ("slow here"), shown in settings.
 type ProviderModel struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Transport string            `json:"transport"`
-	Protocol  string            `json:"protocol,omitempty"`
-	BaseURL   string            `json:"baseURL,omitempty"`
-	Operation string            `json:"operation,omitempty"`
-	Assets    map[string]string `json:"assets,omitempty"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Transport   string            `json:"transport"`
+	Protocol    string            `json:"protocol,omitempty"`
+	BaseURL     string            `json:"baseURL,omitempty"`
+	Operation   string            `json:"operation,omitempty"`
+	Assets      map[string]string `json:"assets,omitempty"`
+	Description Text              `json:"description"`
 }
 
 // Judges reports whether m answers judge questions rather than generating.

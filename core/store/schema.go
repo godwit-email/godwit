@@ -322,4 +322,9 @@ var Migrations = [][]string{{
 	// The hierarchy delimiter LIST gives a folder's name ('' when flat), which
 	// the sidebar splits user folders on into a tree.
 	`ALTER TABLE folders ADD COLUMN delim TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Registry-hosted assets (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8.2):
+	// the digest of the installed release's asset descriptions on this
+	// platform ('' none). A registry that changes any of them revokes the plugin.
+	`ALTER TABLE plugins ADD COLUMN assets_digest TEXT NOT NULL DEFAULT ''`,
 }}

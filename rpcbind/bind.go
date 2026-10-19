@@ -105,6 +105,11 @@ func NewCodec() *rpc.Codec {
 	rpc.RegisterType(c, "no_role_folder",
 		func(e *core.ErrNoRoleFolder) any { return *e },
 		rpc.DecodeDetail[core.ErrNoRoleFolder])
+	rpc.RegisterType(c, "model_error",
+		func(e *core.ModelError) any {
+			return core.ModelError{Code: e.Code, Message: e.Message, Retryable: e.Retryable}
+		},
+		rpc.DecodeDetail[core.ModelError])
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg, Detail: e.Detail} },
 		rpc.DecodeDetail[ai.Error])
@@ -115,9 +120,10 @@ func NewCodec() *rpc.Codec {
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported
-// one but Close, Redact, AuditExternal, the avatars, the install callback and the test hooks.
+// one but Close, Redact, AuditExternal, the avatars, the progress callbacks and the test hooks.
 func Expose(method string) bool {
-	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" && method != "InstallPluginFromRegistryWithProgress" && !strings.HasSuffix(method, "ForTest")
+	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
+		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && !strings.HasSuffix(method, "ForTest")
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see

@@ -203,6 +203,10 @@ func TestParseManifestNative(t *testing.T) {
 	b, err := json.Marshal(m)
 	require.NoError(t, err)
 	assert.NotContains(t, string(b), `"main"`, "a native manifest stores no main")
+	assert.Zero(t, m.Native.Idle, "unset: Godwit's default")
+	m, err = ParseManifest([]byte(`{"name":"dlx","version":"0.1.0","native":{"abi":1,"idle":120},"capabilities":["translate"]}`), "dlx")
+	require.NoError(t, err)
+	assert.Equal(t, 120, m.Native.Idle)
 }
 
 func TestParseManifestNativeRejects(t *testing.T) {
@@ -215,6 +219,9 @@ func TestParseManifestNativeRejects(t *testing.T) {
 		"no capabilities": `"native":{"abi":1}`,
 		"unknown":         `"native":{"abi":1},"capabilities":["judge"]`,
 		"duplicate":       `"native":{"abi":1},"capabilities":["translate","translate"]`,
+		"idle too short":  `"native":{"abi":1,"idle":29},"capabilities":["translate"]`,
+		"idle too long":   `"native":{"abi":1,"idle":3601},"capabilities":["translate"]`,
+		"idle negative":   `"native":{"abi":1,"idle":-1},"capabilities":["translate"]`,
 	} {
 		_, err := ParseManifest([]byte(`{"name":"dlx","version":"0.1.0",`+body+`}`), "dlx")
 		assert.Error(t, err, name)

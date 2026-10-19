@@ -301,3 +301,18 @@ func TestNativeCanceledCallKeepsSlot(t *testing.T) {
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, time.Since(start), 300*time.Millisecond, "the four abandoned calls still hold the slots")
 }
+
+// OnExit follows every end of the process: a crash, then an idle exit.
+func TestNativeOnExit(t *testing.T) {
+	lib, sha := fakeLib(t, map[string]any{})
+	var exits atomic.Int32
+	n := NewNativeProcess(NativeOptions{Command: []string{os.Args[0], "plugin-host"}, Env: []string{"PATH=" + os.Getenv("PATH"), fakeNativeEnv + "=1"},
+		Library: lib, SHA256: sha, Idle: 200 * time.Millisecond, OnExit: func() { exits.Add(1) }})
+	t.Cleanup(n.Close)
+	_, err := n.Call(context.Background(), "probe.crash", struct{}{})
+	require.Error(t, err)
+	require.Eventually(t, func() bool { return exits.Load() == 1 }, 5*time.Second, 10*time.Millisecond, "the crash")
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return exits.Load() == 2 }, 5*time.Second, 10*time.Millisecond, "the idle exit")
+}

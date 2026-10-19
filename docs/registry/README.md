@@ -49,6 +49,28 @@ Open a pull request that adds to `plugins` (or to an existing plugin's `releases
   `sdk/native/godwit_plugin.h`.
 - A script release has one file, `any`: the plugin bundled into the single `.js` file its
   `manifest.main` names, at most 5 MiB.
+- A native release may list `assets`: large files Godwit downloads and checks itself and only
+  then hands the plugin, such as a model's weights or an inference engine's libraries. Each
+  asset is a group with one or more variants (one variant: fixed, it comes with every model;
+  several: a model of the plugin picks one). `platforms` (optional) limits a group to some
+  platforms, at most one group of a name per platform. Each file has a plain `name` (no
+  directories), an https `url`, `sha256` and `size` (up to 64 GiB). `minMemoryGB` is the
+  physical memory a variant needs, a number or by platform (`{"default": 6, "windows-*": 8}`:
+  exact platform, then `<os>-*`, then `default`); measure it on each platform, since Windows
+  commits memory macOS and Linux only reserve:
+
+  ```json
+  "assets": [
+    { "name": "engine", "platforms": ["darwin-arm64"], "variants": [
+      { "id": "b11707-metal", "files": [{ "name": "libllama.0.dylib", "url": "…", "sha256": "…", "size": 3529184 }] }] },
+    { "name": "model", "variants": [
+      { "id": "4b-q4", "minMemoryGB": 8, "files": [{ "name": "model.gguf", "url": "…", "sha256": "…", "size": 2710000000 }] },
+      { "id": "2b-q8", "minMemoryGB": { "default": 6, "windows-*": 8 }, "files": [{ "name": "model.gguf", "url": "…", "sha256": "…", "size": 2010000000 }] }] }
+  ]
+  ```
+
+  A release's assets are part of what was reviewed: changing or removing any of them, even a
+  variant nobody downloaded, revokes the release for everyone who installed it.
 - Bump the top-level `updated` (RFC 3339) in every pull request.
 - **Never edit a published release**; publish a new version instead. A Godwit that cannot read a
   release (a field, capability or manifest field from a newer Godwit) sets that release aside and
@@ -63,8 +85,10 @@ Before approving:
 
 1. **Source.** Read the code, or know who builds it and from what. Prefer releases built by the
    author's public CI from a tagged commit, so the file can be traced to its source.
-2. **Files.** `check --fetch` passes: every file is at its URL with the size and SHA-256 listed.
-   URLs should be immutable (a release asset, not a branch).
+2. **Files.** `check --fetch` passes: every file, assets included, is at its URL with the size
+   and SHA-256 listed. URLs should be immutable (a release asset, not a branch). Assets that are
+   third-party builds (an engine, model weights) are pinned to an exact upstream version and
+   mirrored, so an upstream deletion cannot break installs.
 3. **Manifest.** It is the plugin's real `plugin.json`. For a native plugin, its `describe`
    answers the same name, version, ABI and capabilities, or Godwit will not start it.
    For a script plugin, the permissions are no wider than what it does.
@@ -88,3 +112,15 @@ longer lists and asks the user before it runs again.
 
 Repository secrets: `GODWIT_REGISTRY_KEY`, and `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`
 (the same R2 token Godwit's release workflow uses).
+
+## Trying a release locally
+
+Flows only the registry offers (a plugin's hosted model files) can be tried in a development
+build before anything is published. `godwit-registry dev spec.json` signs a registry with a key
+of its own and serves it, with its files, on https://127.0.0.1:8743. The spec names each
+plugin's built directory and, per asset variant, a directory of files (see
+plugin-startlux's `scripts/dev-registry.json`). It prints the command to run the app with:
+
+    GODWIT_DEV_REGISTRY=<spec dir>/.dev-registry/source.json mise run dev
+
+Production builds ignore `GODWIT_DEV_REGISTRY`.
