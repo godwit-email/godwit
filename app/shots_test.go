@@ -481,6 +481,7 @@ func TestShots(t *testing.T) {
 					"2b": {State: core.ModelDownloaded, TotalBytes: 2_010_000_000, DownloadedBytes: 2_010_000_000},
 					"9b": {State: core.ModelErrorState, TotalBytes: 9_000_000_000, Error: &core.ModelError{Code: "insufficient_memory"}},
 				}})
+			s.app.settings.JudgeService = "plugin/startlux/2b" // a long name in the judge's select
 			m.downloads = map[string]*modelDownload{"plugin/startlux/4b": {cancel: func() {},
 				status: core.ModelStatus{State: core.ModelDownloading, DownloadedBytes: 1_220_000_000, TotalBytes: 2_710_000_000}}}
 		})
