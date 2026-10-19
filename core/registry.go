@@ -422,6 +422,7 @@ func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, nam
 		return PluginInfo{}, err
 	}
 	defer end()
+	defer s.sweepAssets(ctx) // an upgrade may leave the old release's model files unused; after the locks below are released
 	src := s.opts.Registry
 	if src == nil {
 		return PluginInfo{}, ErrRegistryOff

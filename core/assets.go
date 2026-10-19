@@ -37,7 +37,7 @@ var physicalMemory = sysPhysicalMemory
 func (s *Service) assetsDir() string { return filepath.Join(s.dataDir, "plugin-assets") }
 
 func newModelAssets(s *Service) modelAssets {
-	return &hostedAssets{s: s, leases: map[string]int{}, downloads: map[string]*assetDownload{}}
+	return &hostedAssets{s: s, leases: map[string]int{}, downloads: map[string]*assetDownload{}, failed: map[string]*ModelError{}}
 }
 
 type hostedAssets struct {
@@ -45,6 +45,10 @@ type hostedAssets struct {
 	mu        sync.Mutex
 	leases    map[string]int            // variant directory → holders
 	downloads map[string]*assetDownload // destination file → the download writing it
+	// failed: variant directory → what Verify found wrong, so Status (which
+	// only compares sizes) shows it until a Prepare or Remove.
+	// shortcut: kept in memory, after a restart the next judge call finds it again; persist it if that is too late.
+	failed map[string]*ModelError
 }
 
 // assetNeed is one variant a model needs, and where it lives.
@@ -163,6 +167,14 @@ func (h *hostedAssets) Status(ctx context.Context, plugin, release string, refs 
 	if errors.As(err, &me) {
 		return ModelStatus{State: ModelErrorState, Error: me}, nil
 	}
+	h.mu.Lock()
+	for _, n := range needs {
+		if me := h.failed[n.dir]; me != nil {
+			h.mu.Unlock()
+			return ModelStatus{State: ModelErrorState, Error: me}, nil
+		}
+	}
+	h.mu.Unlock()
 	st := ModelStatus{State: ModelDownloaded}
 	seen := map[string]bool{}
 	for _, n := range needs {
@@ -185,6 +197,14 @@ func (h *hostedAssets) Status(ctx context.Context, plugin, release string, refs 
 		st.Error = modelErr(codeModelNotReady, "plugin %s: the model is not downloaded", plugin)
 	}
 	return st, nil
+}
+
+func (h *hostedAssets) forgetFailed(needs []assetNeed) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, n := range needs {
+		delete(h.failed, n.dir)
+	}
 }
 
 // lease holds dirs until the returned func runs (any number of times).
@@ -217,6 +237,11 @@ func (h *hostedAssets) Verify(ctx context.Context, plugin, release string, refs 
 	for _, n := range needs {
 		if err := verifyVariant(ctx, plugin, n); err != nil {
 			drop()
+			if me := (*ModelError)(nil); errors.As(err, &me) && me.Code == codeVerificationFailed {
+				h.mu.Lock()
+				h.failed[n.dir] = me
+				h.mu.Unlock()
+			}
 			return nil, nil, err
 		}
 	}
@@ -280,6 +305,7 @@ func (h *hostedAssets) Prepare(ctx context.Context, plugin, release string, refs
 			}
 		}
 		if bad == nil {
+			h.forgetFailed(needs)
 			return dirsOf(needs), drop, nil
 		}
 	}
@@ -309,6 +335,7 @@ func (h *hostedAssets) Remove(ctx context.Context, plugin, release string, refs 
 		if err := os.RemoveAll(n.dir); err != nil {
 			return err
 		}
+		delete(h.failed, n.dir)
 		for _, f := range n.v.Files {
 			os.Remove(h.partial(n, f))
 		}

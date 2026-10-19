@@ -71,6 +71,13 @@ func (s *Service) PrepareModelWithProgress(ctx context.Context, ref string, prog
 		return ModelStatus{}, err
 	}
 	release() // verified; a judge call verifies again before it loads them
+	s.pluginsMu.RLock()
+	cur := s.running[name]
+	s.pluginsMu.RUnlock()
+	if cur == nil || cur.row.assetsDigest != rp.row.assetsDigest { // upgraded, revoked or removed while it downloaded
+		s.sweepAssets(ctx) // what no installed release names goes
+		return ModelStatus{}, modelErr(codeModelUnavailable, "plugin %s changed while its model downloaded; download it again", name)
+	}
 	return s.modelAssets().Status(ctx, name, rp.row.assetsDigest, m.Assets)
 }
 

@@ -68,6 +68,7 @@ type NativeOptions struct {
 	Redact          func(string) string
 	OnStart         func(ctx context.Context, call func(ctx context.Context, method string, params any) (json.RawMessage, error)) error
 	Idle            time.Duration
+	OnIdle          func() // the process was told to exit for being idle; no call or start runs meanwhile
 }
 
 type NativeProcess struct {
@@ -232,6 +233,9 @@ func (n *NativeProcess) done() {
 		p.mu.Lock()
 		p.stdin.Close()
 		p.mu.Unlock()
+		if n.o.OnIdle != nil {
+			n.o.OnIdle() // under n.mu: a new process cannot start before it returns
+		}
 	})
 }
 

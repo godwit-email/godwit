@@ -27,8 +27,12 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 )
 
-// client downloads artifacts for check --fetch (tests replace it).
-var client = &http.Client{Timeout: 5 * time.Minute}
+// client downloads artifacts for check --fetch (tests replace it). No
+// overall timeout: a model is gigabytes; checkFile gives up on a stalled one.
+var client = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: time.Minute}}
+
+// fetchStall is how long checkFile waits for the next bytes of a file.
+var fetchStall = time.Minute
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
@@ -127,7 +131,15 @@ func check(path string, fetch bool, stdout io.Writer) error {
 }
 
 func checkFile(a plugins.Artifact) error {
-	resp, err := client.Get(a.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stall := time.AfterFunc(fetchStall, cancel)
+	defer stall.Stop()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -136,7 +148,10 @@ func checkFile(a plugins.Artifact) error {
 		return fmt.Errorf("%s answered %s", a.URL, resp.Status)
 	}
 	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(resp.Body, a.Size+1))
+	n, err := io.Copy(h, stallReader{io.LimitReader(resp.Body, a.Size+1), stall})
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s sent nothing for %s", a.URL, fetchStall)
+	}
 	if err != nil {
 		return err
 	}
@@ -163,4 +178,18 @@ func sign(path string) error {
 	}
 	sig := ed25519.Sign(ed25519.NewKeyFromSeed(seed), b)
 	return os.WriteFile(path+".sig", []byte(base64.StdEncoding.EncodeToString(sig)+"\n"), 0o644)
+}
+
+// stallReader restarts its timer on every read that returns bytes.
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(fetchStall)
+	}
+	return n, err
 }

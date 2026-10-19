@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // registryFile writes a registry with one script plugin whose file is at url with sum.
@@ -136,6 +137,31 @@ func TestCheckFetchAssets(t *testing.T) {
 		t.Fatalf("code %d, %q, %q", code, out, errw)
 	}
 	if code, _, errw := call("check", "--fetch", write(strings.Repeat("b", 64))); code != 1 || !strings.Contains(errw, "model.gguf") {
+		t.Fatalf("code %d, %q", code, errw)
+	}
+}
+
+// A file that stops arriving fails once nothing came for fetchStall, however
+// long the whole download may take.
+func TestCheckFetchStall(t *testing.T) {
+	file := []byte("export default function () {}")
+	stop := make(chan struct{})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(file[:5])
+		w.(http.Flusher).Flush()
+		select {
+		case <-stop:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(stop)
+	old, oldStall := client, fetchStall
+	client, fetchStall = srv.Client(), 200*time.Millisecond
+	defer func() { client, fetchStall = old, oldStall }()
+	sum := sha256.Sum256(file)
+	reg := registryFile(t, srv.URL+"/index.js", hex.EncodeToString(sum[:]), len(file))
+	if code, _, errw := call("check", "--fetch", reg); code != 1 || !strings.Contains(errw, "sent nothing") {
 		t.Fatalf("code %d, %q", code, errw)
 	}
 }
