@@ -282,6 +282,23 @@ func (s *Service) listLabels(ctx context.Context) ([]Label, error) {
 	return out, nil
 }
 
+// IsHexColor reports whether s is a valid CSS hex color (e.g. "#3B82F6" or "#FFF").
+func IsHexColor(s string) bool {
+	if len(s) != 7 && len(s) != 4 {
+		return false
+	}
+	if s[0] != '#' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // clean trims in and checks it, and that no label but self (0 for none) has its name.
 // The caller holds labelsMu.
 func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (LabelInput, error) {
@@ -293,7 +310,7 @@ func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (La
 		return in, fmt.Errorf("a label name has at most %d characters", MaxLabelName)
 	case utf8.RuneCountInString(in.Description) > MaxLabelDescription:
 		return in, fmt.Errorf("a label description has at most %d characters", MaxLabelDescription)
-	case !slices.Contains(LabelColors, in.Color):
+	case !slices.Contains(LabelColors, in.Color) && !IsHexColor(in.Color):
 		return in, fmt.Errorf("invalid label color %q", in.Color)
 	case !slices.Contains(LabelIcons, in.Icon):
 		return in, fmt.Errorf("invalid label icon %q", in.Icon)

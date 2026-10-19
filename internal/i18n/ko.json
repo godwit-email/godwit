@@ -994,5 +994,10 @@
   "codes_open": "열기",
   "codes_card_confirm": "확인 링크",
   "codes_card_signin": "로그인 링크",
-  "codes_card_reset": "비밀번호 재설정 링크"
+  "codes_card_reset": "비밀번호 재설정 링크",
+  "label_color_custom": "사용자 지정",
+  "settings_labels_color_custom_apply": "색상 적용",
+  "settings_labels_color_custom_hex": "HEX 코드",
+  "settings_labels_color_custom_hint": "예: #FF5733, #10B981 또는 #3B82F6",
+  "settings_labels_color_custom_title": "사용자 지정 색상"
 }

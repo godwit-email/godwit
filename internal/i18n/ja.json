@@ -994,5 +994,10 @@
   "codes_open": "開く",
   "codes_card_confirm": "確認リンク",
   "codes_card_signin": "サインインリンク",
-  "codes_card_reset": "パスワードリセットリンク"
+  "codes_card_reset": "パスワードリセットリンク",
+  "label_color_custom": "カスタム",
+  "settings_labels_color_custom_apply": "色を適用",
+  "settings_labels_color_custom_hex": "HEXコード",
+  "settings_labels_color_custom_hint": "例: #FF5733、#10B981、または #3B82F6",
+  "settings_labels_color_custom_title": "カスタム色"
 }

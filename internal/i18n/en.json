@@ -209,6 +209,7 @@
   "label_color_pink": "Pink",
   "label_color_red": "Red",
   "label_color_violet": "Violet",
+  "label_color_custom": "Custom",
   "label_more": "+{arg1, number, ::group-off}",
   "@label_more": {
     "placeholders": {
@@ -1254,6 +1255,10 @@
   "settings_labels_auto_on_help": "Sorts new mail in the background, Inbox only",
   "settings_labels_builtin": "Built-in",
   "settings_labels_color": "Color",
+  "settings_labels_color_custom_apply": "Apply color",
+  "settings_labels_color_custom_hex": "Hex code",
+  "settings_labels_color_custom_hint": "e.g. #FF5733, #10B981, or #3B82F6",
+  "settings_labels_color_custom_title": "Custom color",
   "settings_labels_count": "{arg1, number, ::group-off}",
   "@settings_labels_count": {
     "placeholders": {

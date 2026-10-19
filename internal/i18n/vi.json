@@ -994,5 +994,10 @@
   "codes_open": "Mở",
   "codes_card_confirm": "Liên kết xác nhận",
   "codes_card_signin": "Liên kết đăng nhập",
-  "codes_card_reset": "Liên kết đặt lại mật khẩu"
+  "codes_card_reset": "Liên kết đặt lại mật khẩu",
+  "label_color_custom": "Tùy chỉnh",
+  "settings_labels_color_custom_apply": "Áp dụng màu",
+  "settings_labels_color_custom_hex": "Mã Hex",
+  "settings_labels_color_custom_hint": "ví dụ: #FF5733, #10B981 hoặc #3B82F6",
+  "settings_labels_color_custom_title": "Màu tùy chỉnh"
 }

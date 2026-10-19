@@ -994,5 +994,10 @@
   "codes_open": "Aç",
   "codes_card_confirm": "Onay bağlantısı",
   "codes_card_signin": "Oturum açma bağlantısı",
-  "codes_card_reset": "Parola sıfırlama bağlantısı"
+  "codes_card_reset": "Parola sıfırlama bağlantısı",
+  "label_color_custom": "Özel",
+  "settings_labels_color_custom_apply": "Rengi uygula",
+  "settings_labels_color_custom_hex": "Onaltılık kod",
+  "settings_labels_color_custom_hint": "örn. #FF5733, #10B981 veya #3B82F6",
+  "settings_labels_color_custom_title": "Özel renk"
 }

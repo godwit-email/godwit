@@ -484,3 +484,25 @@ func TestNoFingerprintForPartialContent(t *testing.T) {
 	assert.Equal(t, [][]any{{nil}}, e.rows(t, "SELECT label_fp FROM messages WHERE has_attachments = 1"))
 	assert.Len(t, store.Str(e.rows(t, "SELECT label_fp FROM messages WHERE subject = 'plain'")[0][0]), 64)
 }
+
+func TestIsHexColor(t *testing.T) {
+	require.True(t, IsHexColor("#FFF"))
+	require.True(t, IsHexColor("#ffffff"))
+	require.True(t, IsHexColor("#3B82F6"))
+	require.True(t, IsHexColor("#10b981"))
+	require.False(t, IsHexColor("3B82F6"))
+	require.False(t, IsHexColor("#12345"))
+	require.False(t, IsHexColor("#1234567"))
+	require.False(t, IsHexColor("#GGG"))
+	require.False(t, IsHexColor(""))
+}
+
+func TestCustomLabelColor(t *testing.T) {
+	s := newLabelService(t, "", "en")
+	l, err := s.CreateLabel(t.Context(), LabelInput{Name: "Custom", Color: "#3B82F6", Icon: "bill"})
+	require.NoError(t, err)
+	require.Equal(t, "#3B82F6", l.Color)
+
+	_, err = s.CreateLabel(t.Context(), LabelInput{Name: "Invalid", Color: "not-a-color", Icon: "bill"})
+	require.Error(t, err)
+}

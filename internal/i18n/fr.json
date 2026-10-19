@@ -994,5 +994,10 @@
   "codes_open": "Ouvrir",
   "codes_card_confirm": "Lien de confirmation",
   "codes_card_signin": "Lien de connexion",
-  "codes_card_reset": "Lien de réinitialisation du mot de passe"
+  "codes_card_reset": "Lien de réinitialisation du mot de passe",
+  "label_color_custom": "Personnalisé",
+  "settings_labels_color_custom_apply": "Appliquer la couleur",
+  "settings_labels_color_custom_hex": "Code hexadécimal",
+  "settings_labels_color_custom_hint": "p. ex. #FF5733, #10B981 ou #3B82F6",
+  "settings_labels_color_custom_title": "Couleur personnalisée"
 }

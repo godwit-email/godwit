@@ -30,6 +30,10 @@ type labelsView struct {
 	editID                  int64 // 0: a new label
 	name, desc, color, icon string
 
+	customColors []string // saved custom hex colors
+	customOpen   bool     // custom color popover open state
+	customHex    string   // custom hex input value
+
 	order ui.ListState // the labels' list, its rows dragged to reorder them
 
 	days    int // the rescan range, a rescanDays value
@@ -140,9 +144,43 @@ func (v *labelsView) move(i, to int) {
 	a.writes.Chain("labels", func(ctx context.Context) error { return a.svc.ReorderLabels(ctx, ids) }, a.toastErr)
 }
 
+func (v *labelsView) ensureCustomColors() {
+	for _, l := range v.a.labels {
+		if core.IsHexColor(l.Color) {
+			v.addCustomColor(l.Color)
+		}
+	}
+}
+
+func (v *labelsView) addCustomColor(hex string) {
+	hex = strings.ToUpper(strings.TrimSpace(hex))
+	if !core.IsHexColor(hex) {
+		return
+	}
+	if !slices.Contains(v.customColors, hex) {
+		v.customColors = append(v.customColors, hex)
+	}
+}
+
+func (v *labelsView) removeCustomColor(hex string) {
+	hex = strings.ToUpper(strings.TrimSpace(hex))
+	v.customColors = slices.DeleteFunc(v.customColors, func(c string) bool { return strings.EqualFold(c, hex) })
+	if strings.EqualFold(v.color, hex) {
+		v.color = "gray"
+	}
+}
+
 func (v *labelsView) open(l core.Label) {
 	v.dlg, v.confirm, v.editID = true, false, l.ID
 	v.name, v.desc, v.color, v.icon = l.Name, l.Description, l.Color, l.Icon
+	v.customOpen = false
+	v.ensureCustomColors()
+	if core.IsHexColor(l.Color) {
+		v.customHex = strings.ToUpper(l.Color)
+		v.addCustomColor(l.Color)
+	} else {
+		v.customHex = ""
+	}
 }
 
 // taken reports whether another label has the name.
@@ -193,7 +231,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder"), Invalid: descErr != ""}).Label(i18n.T("settings.labels.desc"))
 		})
 		kit.Field(c, i18n.T("settings.labels.color"), "", "", func() {
-			ui.Row(c).Gap(th.Space(3)).Children(func() {
+			ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				for _, name := range core.LabelColors {
 					on := name == v.color
 					dot := t.Label(name).Dot
@@ -207,6 +245,73 @@ func (v *labelsView) dialog(c *ui.Context) {
 						ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dot)
 					})
 				}
+				for _, hex := range v.customColors {
+					h := hex
+					on := strings.EqualFold(h, v.color)
+					dot := t.Label(h).Dot
+					sw := kit.Pressable(c.Key(h), kit.PressableOpts{
+						Bare:     true,
+						Selected: on,
+						OnClick: func() {
+							if slices.Contains(v.customColors, h) {
+								v.color = h
+							}
+						},
+					}).
+						Label(h).Checked(on).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
+						Justify(ui.Center).AlignItems(ui.Center)
+					if on {
+						sw.Border(theme.LabelSwatchRing, dot)
+					}
+					sw.Children(func() {
+						dotBg := dot
+						if sw.Hovered() {
+							dotBg = dot.Mix(t.Background, 0.45)
+						}
+						ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dotBg).
+							Justify(ui.Center).AlignItems(ui.Center)
+
+						if sw.Hovered() {
+							del := kit.Pressable(c.Key("del-"+h), kit.PressableOpts{
+								Bare: true,
+								OnClick: func() {
+									v.removeCustomColor(h)
+								},
+							}).
+								Label(i18n.T("common.delete")).
+								Absolute().Top(0).Right(0).
+								Size(theme.LabelChipX, theme.LabelChipX).Radius(t.Radius.Full).
+								Background(t.Foreground).
+								Justify(ui.Center).AlignItems(ui.Center)
+							barColor := t.Background
+							if del.Hovered() {
+								del.Background(t.Danger)
+								barColor = t.OnSolid
+							}
+							del.Children(func() {
+								ui.Box(c).Width(th.Space(1.75)).Height(theme.SelectedBorder).Radius(t.Radius.Full).Background(barColor)
+							})
+						}
+					})
+				}
+				customSw := kit.Pressable(c.Key("add-custom"), kit.PressableOpts{Bare: true, OnClick: func() { v.customOpen = !v.customOpen }}).
+					Label(i18n.T("label.color.custom")).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
+					Justify(ui.Center).AlignItems(ui.Center)
+				plusColor := t.OnSolid
+				if t.Dark {
+					plusColor = t.Raised
+				}
+				customSw.Children(func() {
+					ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).
+						LinearGradient(t.LabelGradient()).
+						Justify(ui.Center).AlignItems(ui.Center).
+						Children(func() {
+							ui.Text(c, "+").Bold().FontSize(t.Text.Sm).TextColor(plusColor)
+						})
+				})
+				kit.Popover(c, customSw, &v.customOpen, func() {
+					v.customColorPicker(c)
+				})
 			})
 		})
 		kit.Field(c, i18n.T("settings.labels.icon"), "", "", func() {
@@ -379,4 +484,45 @@ func (v *labelsView) stop() {
 	}
 	v.started = false
 	a.writes.Chain("labels", a.svc.StopRescan, a.toastErr)
+}
+
+func cleanHex(s string) string {
+	s = strings.TrimSpace(s)
+	if s != "" && !strings.HasPrefix(s, "#") {
+		s = "#" + s
+	}
+	return strings.ToUpper(s)
+}
+
+func (v *labelsView) customColorPicker(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Width(th.Space(64)).Gap(th.Space(3)).Padding(th.Space(3.5)).Children(func() {
+		ui.Text(c, i18n.T("settings.labels.color.custom.title")).Bold().TextColor(t.Foreground)
+
+		norm := cleanHex(v.customHex)
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			dot := ui.Box(c).Size(th.Space(7), th.Space(7)).Radius(t.Radius.Full)
+			if core.IsHexColor(norm) {
+				dot.Background(t.Label(norm).Dot)
+			} else {
+				dot.LinearGradient(t.LabelGradient())
+			}
+			kit.Input(c, &v.customHex, kit.InputOpts{Placeholder: "#3B82F6"}).
+				Label(i18n.T("settings.labels.color.custom.hex")).Grow(1)
+		})
+
+		kit.Text(c, i18n.T("settings.labels.color.custom.hint"), t.Text.Sm).TextColor(t.Muted)
+
+		valid := core.IsHexColor(norm)
+		kit.Button(c, i18n.T("settings.labels.color.custom.apply"), kit.ButtonOpts{Variant: kit.Default, Disabled: !valid}).
+			FillWidth().
+			OnClick(func() {
+				if valid {
+					hex := norm
+					v.color = hex
+					v.addCustomColor(hex)
+					v.customOpen = false
+				}
+			})
+	})
 }

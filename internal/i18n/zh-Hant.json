@@ -994,5 +994,10 @@
   "codes_open": "開啟",
   "codes_card_confirm": "確認連結",
   "codes_card_signin": "登入連結",
-  "codes_card_reset": "重設密碼連結"
+  "codes_card_reset": "重設密碼連結",
+  "label_color_custom": "自訂",
+  "settings_labels_color_custom_apply": "套用顏色",
+  "settings_labels_color_custom_hex": "Hex 顏色代碼",
+  "settings_labels_color_custom_hint": "例如 #FF5733、#10B981 或 #3B82F6",
+  "settings_labels_color_custom_title": "自訂顏色"
 }

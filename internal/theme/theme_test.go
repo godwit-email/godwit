@@ -241,3 +241,22 @@ func TestLabelColors(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomLabelAndGradient(t *testing.T) {
+	l, d := Light(), Dark()
+	cl := l.Label("#3B82F6")
+	if cl.Dot != ui.Hex("#3B82F6") {
+		t.Errorf("cl.Dot = %v, want %v", cl.Dot, ui.Hex("#3B82F6"))
+	}
+	cd := d.Label("#3B82F6")
+	if cd.Dot != ui.Hex("#3B82F6") {
+		t.Errorf("cd.Dot = %v, want %v", cd.Dot, ui.Hex("#3B82F6"))
+	}
+	grad := l.LabelGradient()
+	if len(grad.Stops) != 3 {
+		t.Fatalf("LabelGradient stops len = %d, want 3", len(grad.Stops))
+	}
+	if grad.Stops[0].Color != p.Red500.Color() || grad.Stops[1].Color != p.Green500.Color() || grad.Stops[2].Color != p.Blue500.Color() {
+		t.Errorf("LabelGradient stops wrong: %+v", grad.Stops)
+	}
+}

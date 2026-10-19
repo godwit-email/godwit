@@ -994,5 +994,10 @@
   "codes_open": "Открыть",
   "codes_card_confirm": "Ссылка для подтверждения",
   "codes_card_signin": "Ссылка для входа",
-  "codes_card_reset": "Ссылка для сброса пароля"
+  "codes_card_reset": "Ссылка для сброса пароля",
+  "label_color_custom": "Пользовательский",
+  "settings_labels_color_custom_apply": "Применить цвет",
+  "settings_labels_color_custom_hex": "HEX-код",
+  "settings_labels_color_custom_hint": "например, #FF5733, #10B981 или #3B82F6",
+  "settings_labels_color_custom_title": "Пользовательский цвет"
 }

@@ -292,7 +292,41 @@ func (t Tokens) Label(name string) LabelColor {
 			return t.Labels[i]
 		}
 	}
+	if strings.HasPrefix(name, "#") && (len(name) == 7 || len(name) == 4) {
+		return customLabel(t, name)
+	}
 	return t.Labels[0]
+}
+
+func customLabel(t Tokens, hex string) LabelColor {
+	c := ui.Hex(hex)
+	if t.Dark {
+		return LabelColor{
+			Dot:  c,
+			Fill: c.Mix(t.Background, 0.85),
+			Edge: c.Mix(t.Background, 0.65),
+			Text: c.Mix(ui.RGB(255, 255, 255), 0.45),
+		}
+	}
+	return LabelColor{
+		Dot:  c,
+		Fill: c.Mix(t.Background, 0.85),
+		Edge: c.Mix(t.Background, 0.70),
+		Text: c.Mix(ui.RGB(0, 0, 0), 0.45),
+	}
+}
+
+// LabelGradient is the Red, Green, Blue (RGB) gradient for the custom label color button.
+func (t Tokens) LabelGradient() ui.LinearGradient {
+	return ui.LinearGradient{
+		Angle: 135,
+		Oklab: true,
+		Stops: []ui.GradientStop{
+			{Color: p.Red500.Color(), At: 0},
+			{Color: p.Green500.Color(), At: 0.5},
+			{Color: p.Blue500.Color(), At: 1},
+		},
+	}
 }
 
 // labels: light -100 fill, -200 edge, -700 text; dark -950, -800, -300.

@@ -994,5 +994,10 @@
   "codes_open": "Abrir",
   "codes_card_confirm": "Link de confirmação",
   "codes_card_signin": "Link de login",
-  "codes_card_reset": "Link de redefinição de senha"
+  "codes_card_reset": "Link de redefinição de senha",
+  "label_color_custom": "Personalizado",
+  "settings_labels_color_custom_apply": "Aplicar cor",
+  "settings_labels_color_custom_hex": "Código hexadecimal",
+  "settings_labels_color_custom_hint": "ex.: #FF5733, #10B981 ou #3B82F6",
+  "settings_labels_color_custom_title": "Cor personalizada"
 }

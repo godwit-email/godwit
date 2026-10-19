@@ -994,5 +994,10 @@
   "codes_open": "Apri",
   "codes_card_confirm": "Link di conferma",
   "codes_card_signin": "Link di accesso",
-  "codes_card_reset": "Link di reimpostazione password"
+  "codes_card_reset": "Link di reimpostazione password",
+  "label_color_custom": "Personalizzato",
+  "settings_labels_color_custom_apply": "Applica colore",
+  "settings_labels_color_custom_hex": "Codice esadecimale",
+  "settings_labels_color_custom_hint": "es. #FF5733, #10B981 o #3B82F6",
+  "settings_labels_color_custom_title": "Colore personalizzato"
 }

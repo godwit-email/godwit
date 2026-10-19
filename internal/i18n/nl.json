@@ -994,5 +994,10 @@
   "codes_open": "Openen",
   "codes_card_confirm": "Bevestigingslink",
   "codes_card_signin": "Inloglink",
-  "codes_card_reset": "Link voor wachtwoordherstel"
+  "codes_card_reset": "Link voor wachtwoordherstel",
+  "label_color_custom": "Aangepast",
+  "settings_labels_color_custom_apply": "Kleur toepassen",
+  "settings_labels_color_custom_hex": "Hex-code",
+  "settings_labels_color_custom_hint": "bijv. #FF5733, #10B981 of #3B82F6",
+  "settings_labels_color_custom_title": "Aangepaste kleur"
 }
