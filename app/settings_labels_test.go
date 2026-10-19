@@ -263,31 +263,48 @@ func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
 	}
 }
 
-// TestSettingsLabelsSwatchesFit: at comfortable density every color swatch
-// stays inside the dialog, left of its right-aligned 创建 button's edge.
+// TestSettingsLabelsSwatchesFit: at either density the color swatches sit in
+// one row across the field, from its left edge (名称's) to its right (the
+// right-aligned 创建 button's).
 func TestSettingsLabelsSwatchesFit(t *testing.T) {
-	h, _ := withAccount(t)
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	st.Density = "comfortable"
-	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
-		t.Fatal(err)
-	}
-	h.waitMail("comfortable density", func() bool { return h.app.settings.Density == "comfortable" })
-	h.labelsPage()
-	h.click("新建标签")
-	h.see("创建")
-	create, _ := h.tt.Find("创建")
-	for _, name := range core.LabelColors {
-		label := i18n.T("label.color." + name)
-		r, ok := h.tt.Find(label)
-		if !ok {
-			t.Fatalf("no swatch %s", label)
-		}
-		if r.X+r.W > create.X+create.W {
-			t.Errorf("swatch %s ends at %v, past the dialog's content edge %v", label, r.X+r.W, create.X+create.W)
-		}
+	for _, density := range []string{"compact", "comfortable"} {
+		t.Run(density, func(t *testing.T) {
+			h, _ := withAccount(t)
+			st, err := h.env.Svc.GetSettings(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			st.Density = density
+			if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+				t.Fatal(err)
+			}
+			h.waitMail(density+" density", func() bool { return h.app.settings.Density == density })
+			h.labelsPage()
+			h.click("新建标签")
+			h.see("创建")
+			name, _ := h.tt.Find("名称")
+			create, _ := h.tt.Find("创建")
+			var first, last ui.Rect
+			for i, c := range core.LabelColors {
+				label := i18n.T("label.color." + c)
+				r, ok := h.tt.Find(label)
+				if !ok {
+					t.Fatalf("no swatch %s", label)
+				}
+				if i == 0 {
+					first = r
+				}
+				if r.Y != first.Y {
+					t.Errorf("swatch %s at y %v, want one row at %v", label, r.Y, first.Y)
+				}
+				last = r
+			}
+			if d := first.X - name.X; d < -1 || d > 1 {
+				t.Errorf("first swatch at x %v, want the field's left edge %v", first.X, name.X)
+			}
+			if d := last.X + last.W - (create.X + create.W); d < -1 || d > 1 {
+				t.Errorf("last swatch ends at %v, want the field's right edge %v", last.X+last.W, create.X+create.W)
+			}
+		})
 	}
 }

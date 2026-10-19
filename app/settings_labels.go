@@ -193,24 +193,19 @@ func (v *labelsView) dialog(c *ui.Context) {
 			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder"), Invalid: descErr != ""}).Label(i18n.T("settings.labels.desc"))
 		})
 		kit.Field(c, i18n.T("settings.labels.color"), "", "", func() {
-			// Two rows: twelve swatches in one outgrow the dialog at comfortable density.
-			const perRow = 6
-			ui.Column(c).Gap(th.Space(3)).Children(func() {
-				for start := 0; start < len(core.LabelColors); start += perRow {
-					ui.Row(c.Key(start)).Gap(th.Space(3)).Children(func() {
-						for _, name := range core.LabelColors[start:min(start+perRow, len(core.LabelColors))] {
-							on := name == v.color
-							dot := t.Label(name).Dot
-							sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
-								Label(i18n.T("label.color."+name)).Checked(on).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
-								Justify(ui.Center).AlignItems(ui.Center)
-							if on {
-								sw.Border(theme.LabelSwatchRing, dot)
-							}
-							sw.Children(func() {
-								ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dot)
-							})
-						}
+			// One row across the field: the gap is a floor, the space left spreads between.
+			ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
+				for _, name := range core.LabelColors {
+					on := name == v.color
+					dot := t.Label(name).Dot
+					sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
+						Label(i18n.T("label.color."+name)).Checked(on).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
+						Justify(ui.Center).AlignItems(ui.Center)
+					if on {
+						sw.Border(theme.LabelSwatchRing, dot)
+					}
+					sw.Children(func() {
+						ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dot)
 					})
 				}
 			})
