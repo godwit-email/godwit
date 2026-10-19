@@ -1836,6 +1836,7 @@
     }
   },
   "wit_compose_review_rewrite_plain": "Rewritten.",
+  "wit_compose_review_translate": "Translated.",
   "wit_compose_review_body": "Body with changes",
   "wit_compose_rewrite": "Rewritten, about {arg1, number, ::group-off}% changed",
   "@wit_compose_rewrite": {
@@ -1846,6 +1847,7 @@
     }
   },
   "wit_compose_rewrite_plain": "Rewritten",
+  "wit_compose_translated": "Translated",
   "wit_compose_source": "Original email",
   "wit_compose_translate": "Translate",
   "wit_compose_translate_only": "No model is set up: here you can only translate the draft with the translation plugin.",

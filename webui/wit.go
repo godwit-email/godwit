@@ -427,6 +427,8 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 // editable HTML as stored, which the page adopts with the Change at once.
 type BodyChange struct {
 	Change
+	// Subject is the draft's subject as stored.
+	Subject string `json:"subject"`
 	// Body is the editable HTML as stored.
 	Body string `json:"body"`
 }
@@ -574,7 +576,7 @@ func bodyChange(ctx context.Context, svc *core.Service, s *session, err error) (
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: ch, Body: s.adopt(d)}, nil
+	return BodyChange{Change: ch, Subject: d.Subject, Body: s.adopt(d)}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's

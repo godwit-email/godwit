@@ -293,7 +293,7 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	_, err = e.s.AssistSkill(t.Context(), d.ID, "summarize", SkillOptions{})
 	require.Error(t, err, "only replace-draft skills")
 
-	e.srv.Script(testllm.Turn{Text: []string{"```html\n<p>I'll be there on Friday.</p>", "\n```"}})
+	e.srv.Script(testllm.Turn{Text: []string{"```html\n<subject>Re: 安排</subject>\n<p>I'll be there on Friday.</p>", "\n```"}})
 	ch, err := e.s.AssistSkill(t.Context(), d.ID, "translate-draft", SkillOptions{})
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
@@ -303,7 +303,7 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	a := last.Approvals[0]
 	assert.Equal(t, "update_draft", a.Tool)
 	assert.Equal(t, "pending", a.State)
-	assert.Equal(t, "rewrite", a.Summary)
+	assert.Equal(t, "translate", a.Summary)
 	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
 
 	reqs := e.srv.Requests()
@@ -315,16 +315,17 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.NotContains(t, sys, "language of the email")
 	p := promptOf(t, reqs[0])
 	assert.Contains(t, p, "我周五到。")
+	assert.Contains(t, p, "Re: Plans")
 	// Final review #4: a skill gets its target only, no other mail.
-	for _, other := range []string{"Meet on Friday at the harbour.", "Plans"} {
-		assert.NotContains(t, p, other)
-		assert.NotContains(t, sys, other)
-	}
+	assert.NotContains(t, p, "Meet on Friday at the harbour.")
+	assert.NotContains(t, sys, "Meet on Friday at the harbour.")
 	assert.NotContains(t, p, "<untrusted_email source")
 
 	e.accept(t, a)
-	ed, q2, sig2 := parts(t, e.getDraft(t, d.ID).HTML)
+	gotDraft := e.getDraft(t, d.ID)
+	ed, q2, sig2 := parts(t, gotDraft.HTML)
 	assert.Equal(t, "<p>I&#39;ll be there on Friday.</p>", ed)
+	assert.Equal(t, "Re: 安排", gotDraft.Subject)
 	assert.Equal(t, q, q2)
 	assert.Equal(t, sig, sig2)
 	c, err := e.s.GetConversation(t.Context(), a.ConversationID)

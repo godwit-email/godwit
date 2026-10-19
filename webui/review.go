@@ -18,6 +18,7 @@ const rewriteRatio = 0.5
 type Review struct {
 	Approval int64  `json:"approval"`
 	Tool     string `json:"tool"`
+	Kind     string `json:"kind"`
 	// Inline means the changes are shown and decided word by word (Finish);
 	// else it is a rewrite, decided as a whole (Decide).
 	Inline bool `json:"inline"`
@@ -32,6 +33,9 @@ type Review struct {
 	// Old and New are the editable HTML before and after, for the compare.
 	Old string `json:"old"`
 	New string `json:"new"`
+	OldSubject string     `json:"old_subject,omitempty"`
+	Subject    string     `json:"subject,omitempty"`
+	SubjectOps []ReviewOp `json:"subject_ops,omitempty"`
 }
 
 // ReviewBlock is a block of the review.
@@ -71,17 +75,19 @@ type ReviewToken struct {
 // proposal is a draft edit's old and new editable part, their word diff and
 // the changes in it.
 type proposal struct {
-	ap       core.Approval
-	oldHTML  string
-	newHTML  string
-	old, new richtext.Doc
-	blocks   []worddiff.BlockDiff
-	ok       bool // diffed, block shapes kept: changes can be decided one by one
-	exact    bool // diffed: ratio is known
-	ratio    float64
-	changes  []change
-	owner    [][]int // per block, per op: its change, -1 for none
-	whole    []int   // per block: the change adding or removing it, -1 for none
+	ap         core.Approval
+	oldHTML    string
+	newHTML    string
+	oldSubject string
+	subject    string
+	old, new   richtext.Doc
+	blocks     []worddiff.BlockDiff
+	ok         bool // diffed, block shapes kept: changes can be decided one by one
+	exact      bool // diffed: ratio is known
+	ratio      float64
+	changes    []change
+	owner      [][]int // per block, per op: its change, -1 for none
+	whole      []int   // per block: the change adding or removing it, -1 for none
 }
 
 // change is ops [from, to) of blocks[block]; a block added or removed is
@@ -89,10 +95,18 @@ type proposal struct {
 type change struct{ block, from, to int }
 
 func newProposal(ap core.Approval) *proposal {
-	var args struct{ Old, HTML string }
+	var args struct {
+		Old, HTML  string
+		OldSubject string  `json:"old_subject"`
+		Subject    *string `json:"subject"`
+	}
 	_ = json.Unmarshal(ap.Args, &args)
 	r := &proposal{ap: ap, oldHTML: args.Old, newHTML: args.HTML,
-		old: richtext.FromComposeHTML(args.Old), new: richtext.FromComposeHTML(args.HTML)}
+		oldSubject: args.OldSubject,
+		old:        richtext.FromComposeHTML(args.Old), new: richtext.FromComposeHTML(args.HTML)}
+	if args.Subject != nil {
+		r.subject = *args.Subject
+	}
 	r.blocks, r.exact = worddiff.Diff(worddiff.Tokenize(r.old), worddiff.Tokenize(r.new), worddiff.DefaultBudget)
 	r.ok = r.exact && r.shapesKept()
 	if r.exact {
@@ -245,8 +259,28 @@ var opKinds = map[worddiff.OpKind]string{worddiff.Same: "same", worddiff.Del: "d
 
 // review is r for the page.
 func (r *proposal) review() Review {
-	out := Review{Approval: r.ap.ID, Tool: r.ap.Tool, Inline: r.inline(), Ratio: r.ratio, Exact: r.exact,
-		Blocks: []ReviewBlock{}, Changes: len(r.changes), Old: r.oldHTML, New: r.newHTML}
+	out := Review{Approval: r.ap.ID, Tool: r.ap.Tool, Kind: r.ap.Summary, Inline: r.inline(), Ratio: r.ratio, Exact: r.exact,
+		Blocks: []ReviewBlock{}, Changes: len(r.changes), Old: r.oldHTML, New: r.newHTML,
+		OldSubject: r.oldSubject, Subject: r.subject}
+	if r.subject != "" && r.subject != r.oldSubject {
+		oldDoc := richtext.Doc{Blocks: []richtext.Block{{Kind: richtext.Paragraph, Inlines: []richtext.Inline{{Text: r.oldSubject}}}}}
+		newDoc := richtext.Doc{Blocks: []richtext.Block{{Kind: richtext.Paragraph, Inlines: []richtext.Inline{{Text: r.subject}}}}}
+		bDiffs, _ := worddiff.Diff(worddiff.Tokenize(oldDoc), worddiff.Tokenize(newDoc), worddiff.DefaultBudget)
+		if len(bDiffs) > 0 {
+			for _, op := range bDiffs[0].Ops {
+				o := ReviewOp{Kind: opKinds[op.Kind], Change: -1, Tokens: []ReviewToken{}}
+				for _, t := range op.Tokens {
+					tk := ReviewToken{Text: t.Text}
+					if n := len(o.Tokens); n > 0 && o.Tokens[n-1].Bold == tk.Bold && o.Tokens[n-1].Italic == tk.Italic && o.Tokens[n-1].Href == tk.Href {
+						o.Tokens[n-1].Text += tk.Text
+						continue
+					}
+					o.Tokens = append(o.Tokens, tk)
+				}
+				out.SubjectOps = append(out.SubjectOps, o)
+			}
+		}
+	}
 	if !r.ok {
 		return out
 	}

@@ -37,6 +37,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         signatureImages: [],
         updatedAt: Date.now(),
         body: body(),
+        subject: fx.compose(mode, true).subject,
       });
       const history = () =>
         state === "streaming"
