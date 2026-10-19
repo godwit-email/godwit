@@ -620,7 +620,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	var req ai.Request
 	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok && name == "translate-draft" {
 		// The plugin translates instead of a model; the proposal, its decision and undo stay as they are.
-		if _, _, err := s.pluginTranslator(plugin); err != nil {
+		if _, err := s.translatorFor(ctx, plugin); err != nil {
 			return nil, err
 		}
 		src := editable

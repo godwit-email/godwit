@@ -24,7 +24,7 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 3, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, JudgeThreshold: 0.8}, got)
 }
 
@@ -34,7 +34,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	ch, stop := s.Subscribe()
 	defer stop()
 	in, _ := s.GetSettings(t.Context())
-	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-CN", []string{"en", "fr"}, "svc/m"
+	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-Hans", []string{"en", "fr"}, "svc/m"
 	in.UnreadOnAppIcon = false
 	in.JudgeThreshold = 0.83
 	_, err := s.SetSettings(t.Context(), in)
@@ -84,6 +84,25 @@ func TestSettingsJudgeThresholdBounds(t *testing.T) {
 			require.Equal(t, want, st.JudgeThreshold)
 			_, err = s.SetSettings(t.Context(), st)
 			require.NoError(t, err)
+		})
+	}
+}
+
+// Version 4 names the script of a stored region-tagged Chinese setting;
+// a version-4 setting is left as the user chose it.
+func TestSettingsChineseScriptTags(t *testing.T) {
+	for raw, want := range map[string][3]any{
+		`{"SettingsVersion":3,"UILanguage":"zh-CN","ReadingLanguage":"zh-TW","NoTranslate":["en","zh-TW","zh-CN"]}`: {"zh-Hans", "zh-Hant", []string{"en", "zh-Hant", "zh-Hans"}},
+		`{"UILanguage":"zh-TW"}`:                          {"zh-Hant", "", []string(nil)},
+		`{"SettingsVersion":4,"ReadingLanguage":"zh-CN"}`: {"", "zh-CN", []string(nil)},
+	} {
+		t.Run(raw, func(t *testing.T) {
+			s := settingsService(t, t.TempDir(), "")
+			_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", raw)
+			require.NoError(t, err)
+			st, err := s.GetSettings(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, want, [3]any{st.UILanguage, st.ReadingLanguage, st.NoTranslate})
 		})
 	}
 }
@@ -172,7 +191,7 @@ func TestSettingsFontMigration(t *testing.T) {
 		got, err := s.GetSettings(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, want, [2]int{got.FontSize, got.BodyFontSize}, stored)
-		assert.Equal(t, 3, got.SettingsVersion, stored)
+		assert.Equal(t, settingsVersion, got.SettingsVersion, stored)
 	}
 }
 

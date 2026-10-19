@@ -104,6 +104,8 @@
   "error_stale_draft": "Der Entwurf wurde an anderer Stelle geändert.",
   "error_too_large": "Der Anhang überschreitet die Größenbeschränkung.",
   "error_translator_unavailable": "Das Übersetzungs-Plugin läuft nicht. Aktiviere es in Einstellungen › Erweiterungen oder übersetze erneut mit dem Modell.",
+  "error_system_language_not_installed": "Laden Sie diese Sprachen unter Systemeinstellungen › Allgemein › Sprache & Region › Übersetzungssprachen herunter und übersetzen Sie erneut.",
+  "error_system_language_unsupported": "macOS übersetzt nicht zwischen diesen Sprachen. Wählen Sie unter Einstellungen › Allgemein eine andere Übersetzungsart.",
   "error_model_unavailable": "Das Plugin, das dieses Modell bereitstellt, läuft nicht oder bietet es nicht mehr an. Aktiviere es in Einstellungen › Erweiterungen oder wähle ein anderes Modell.",
   "error_unexpected": "Ein unerwarteter Fehler ist aufgetreten.",
   "error_unknown": "Etwas ist schiefgelaufen: {arg1}",

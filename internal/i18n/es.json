@@ -104,6 +104,8 @@
   "error_stale_draft": "El borrador se modificó en otro lugar.",
   "error_too_large": "El archivo adjunto supera el límite de tamaño.",
   "error_translator_unavailable": "El plugin de traducción no se está ejecutando. Actívalo en Ajustes › Extensiones o vuelve a traducir con el modelo.",
+  "error_system_language_not_installed": "Descarga estos idiomas en Ajustes del Sistema › General › Idioma y región › Idiomas de traducción y vuelve a traducir.",
+  "error_system_language_unsupported": "macOS no traduce entre estos idiomas. Elige otro método de traducción en Ajustes › General.",
   "error_model_unavailable": "El plugin que ofrece este modelo no se está ejecutando o ya no lo ofrece. Actívalo en Ajustes › Extensiones o elige otro modelo.",
   "error_unexpected": "Se produjo un error inesperado.",
   "error_unknown": "Algo salió mal: {arg1}",

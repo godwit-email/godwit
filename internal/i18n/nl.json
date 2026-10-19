@@ -104,6 +104,8 @@
   "error_stale_draft": "Het concept is ergens anders gewijzigd.",
   "error_too_large": "De bijlage overschrijdt de maximale grootte.",
   "error_translator_unavailable": "De vertaalplug-in is niet actief. Schakel deze in via Instellingen › Extensies, of vertaal opnieuw met het model.",
+  "error_system_language_not_installed": "Download deze talen in Systeeminstellingen › Algemeen › Taal en regio › Vertaaltalen en vertaal opnieuw.",
+  "error_system_language_unsupported": "macOS vertaalt niet tussen deze talen. Kies een andere vertaalmethode in Instellingen › Algemeen.",
   "error_model_unavailable": "De plug-in die dit model aanbiedt is niet actief of biedt het niet meer aan. Schakel deze in via Instellingen › Extensies, of kies een ander model.",
   "error_unexpected": "Er is een onverwachte fout opgetreden.",
   "error_unknown": "Er is iets misgegaan: {arg1}",

@@ -104,6 +104,8 @@
   "error_stale_draft": "下書きが別の場所で変更されました。",
   "error_too_large": "添付ファイルがサイズ上限を超えています。",
   "error_translator_unavailable": "翻訳プラグインが実行されていません。「設定 › 拡張機能」で有効にするか、モデルによる翻訳に切り替えてください。",
+  "error_system_language_not_installed": "「システム設定 › 一般 › 言語と地域 › 翻訳言語」でこれらの言語をダウンロードしてから、もう一度翻訳してください。",
+  "error_system_language_unsupported": "macOS はこれらの言語間の翻訳に対応していません。設定 › 一般で別の翻訳方法を選んでください。",
   "error_model_unavailable": "このモデルを提供するプラグインが実行されていないか、提供を終了しています。「設定 › 拡張機能」で有効にするか、別のモデルを選択してください。",
   "error_unexpected": "予期しないエラーが発生しました。",
   "error_unknown": "エラーが発生しました：{arg1}",

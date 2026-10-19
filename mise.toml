@@ -6,8 +6,13 @@ bun = "1.4.2"
 dir = "web"
 run = "bun install --frozen-lockfile"
 
+# The system-translation bridge the Mac app ships (native/systemtranslate).
+[tasks."native:translate"]
+run = "scripts/build-system-translate.sh"
+run_windows = "echo the system-translation bridge is macOS only"
+
 [tasks.dev]
-depends = ["web:install"]
+depends = ["web:install", "native:translate"]
 run = "go tool mygo dev"
 
 [tasks."dev:sync-db"]
@@ -16,7 +21,7 @@ depends = ["generate"]
 run = "go run ./cmd/godwit dev-sync-db"
 
 [tasks.build]
-depends = ["web:install"]
+depends = ["web:install", "native:translate"]
 run = "go tool mygo build -skip-dmg -skip-notarize"
 
 [tasks.generate]

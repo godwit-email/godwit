@@ -91,18 +91,6 @@ func TestSettingsGeneralCopy(t *testing.T) {
 	}
 }
 
-func TestSettingsLegacyChineseLanguage(t *testing.T) {
-	h, _ := withAccount(t)
-	st := h.app.settings
-	st.UILanguage = "zh-CN"
-	h.app.changeSettings(st)
-	h.openSettings("general")
-	if h.app.settings.UILanguage != "zh-Hans" {
-		t.Fatalf("legacy UI language: %q", h.app.settings.UILanguage)
-	}
-	h.see("简体中文")
-}
-
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.
 func TestThemeThumbFocusTip(t *testing.T) {
 	h, _ := withAccount(t)

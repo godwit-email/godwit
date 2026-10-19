@@ -104,6 +104,8 @@
   "error_stale_draft": "草稿在别处被修改。",
   "error_too_large": "附件超过了大小上限。",
   "error_translator_unavailable": "翻译插件没有运行，到设置 › 扩展里启用它，或换回模型翻译。",
+  "error_system_language_not_installed": "请先在“系统设置 › 通用 › 语言与地区 › 翻译语言”中下载这两种语言，再重新翻译。",
+  "error_system_language_unsupported": "macOS 不支持这两种语言之间的翻译，请在设置 › 通用里换一种翻译方式。",
   "error_model_unavailable": "提供这个模型的插件没有运行，或不再提供它。到设置 › 扩展里启用它，或换一个模型。",
   "error_unexpected": "发生了意外错误。",
   "error_unknown": "出错了：{arg1}",

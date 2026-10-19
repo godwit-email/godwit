@@ -2,6 +2,7 @@
 /godwit
 *.test
 /dist/
+/resources/darwin-*/libgodwit-translate.dylib
 web/node_modules/
 web/dist/
 /.mygo/

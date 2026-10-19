@@ -61,11 +61,23 @@ type Settings struct {
 	DisabledBuiltins []string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
-	// BodyFontSize of 14, the old default, became 0 (follow FontSize).
+	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
+	// Chinese language tags name the script (zh-CN → zh-Hans, zh-TW → zh-Hant).
 	SettingsVersion int
 }
 
-const settingsVersion = 3
+const settingsVersion = 4
+
+// chineseScriptTag is the script tag a region-tagged Chinese setting became
+// in settings version 4.
+var chineseScriptTag = map[string]string{"zh-CN": "zh-Hans", "zh-TW": "zh-Hant"}
+
+func scriptTag(tag string) string {
+	if t, ok := chineseScriptTag[tag]; ok {
+		return t
+	}
+	return tag
+}
 
 // MinJudgeThreshold and MaxJudgeThreshold bound the user-adjustable cutoff.
 const (
@@ -159,6 +171,12 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	}
 	if stored.SettingsVersion < 3 && st.BodyFontSize == 14 {
 		st.BodyFontSize = 0
+	}
+	if stored.SettingsVersion < 4 {
+		st.UILanguage, st.ReadingLanguage = scriptTag(st.UILanguage), scriptTag(st.ReadingLanguage)
+		for i, l := range st.NoTranslate {
+			st.NoTranslate[i] = scriptTag(l)
+		}
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
 	st.SettingsVersion = settingsVersion

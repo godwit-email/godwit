@@ -104,6 +104,8 @@
   "error_stale_draft": "La bozza è stata modificata altrove.",
   "error_too_large": "L’allegato supera il limite di dimensione.",
   "error_translator_unavailable": "Il plugin di traduzione non è in esecuzione. Abilitalo in Impostazioni › Estensioni oppure traduci di nuovo con il modello.",
+  "error_system_language_not_installed": "Scarica queste lingue in Impostazioni di Sistema › Generali › Lingua e Zona › Lingue di traduzione, poi traduci di nuovo.",
+  "error_system_language_unsupported": "macOS non traduce tra queste lingue. Scegli un altro metodo di traduzione in Impostazioni › Generali.",
   "error_model_unavailable": "Il plugin che fornisce questo modello non è in esecuzione o non lo offre più. Abilitalo in Impostazioni › Estensioni oppure scegli un altro modello.",
   "error_unexpected": "Si è verificato un errore imprevisto.",
   "error_unknown": "Qualcosa è andato storto: {arg1}",

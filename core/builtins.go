@@ -19,11 +19,23 @@ type builtinPlugin struct {
 	title, about plugins.Text
 	// tags are what the plugin puts after a message's subject; nil for none.
 	tags func(m plugins.MailMessage) []Tag
+	// translates: a translation channel (translators.go) through
+	// Options.SystemTranslator, listed only when the app set one.
+	translates bool
+}
+
+// builtinAvailable reports whether this Godwit offers b: system translation needs the system's.
+func (s *Service) builtinAvailable(b *builtinPlugin) bool {
+	return !b.translates || s.opts.SystemTranslator != nil
 }
 
 // SignInCodesPlugin recognizes sign-in codes and links: the banner, the
 // tray's recent list and the reader's card.
 const SignInCodesPlugin = "sign-in-codes"
+
+// SystemTranslationPlugin translates with the operating system's on-device
+// translation (macOS 26's Translation framework).
+const SystemTranslationPlugin = "system-translation"
 
 var builtinPlugins = []builtinPlugin{{
 	name: SignInCodesPlugin,
@@ -59,6 +71,40 @@ var builtinPlugins = []builtinPlugin{{
 			"vi":      "Nhận diện mã và liên kết đăng nhập trong thư mới ngay trên máy Mac này để sao chép hoặc mở nhanh",
 		}},
 	tags: signInCodeTags,
+}, {
+	name: SystemTranslationPlugin,
+	title: plugins.Text{Default: "System translation", ByLang: map[string]string{
+		"zh-Hans": "系统翻译",
+		"zh-Hant": "系統翻譯",
+		"ja":      "システム翻訳",
+		"ko":      "시스템 번역",
+		"de":      "Systemübersetzung",
+		"fr":      "Traduction du système",
+		"es":      "Traducción del sistema",
+		"pt":      "Tradução do sistema",
+		"it":      "Traduzione di sistema",
+		"ru":      "Системный перевод",
+		"nl":      "Systeemvertaling",
+		"tr":      "Sistem çevirisi",
+		"vi":      "Dịch của hệ thống",
+	}},
+	about: plugins.Text{Default: "Translates mail with macOS's own translation, on this Mac, free and without a model; download languages in System Settings › General › Language & Region › Translation Languages",
+		ByLang: map[string]string{
+			"zh-Hans": "用 macOS 自带的翻译在本机翻译邮件，免费，无需模型；语言请在“系统设置 › 通用 › 语言与地区 › 翻译语言”中下载",
+			"zh-Hant": "用 macOS 內建的翻譯在本機翻譯郵件，免費，無需模型；語言請在「系統設定 › 一般 › 語言與地區 › 翻譯語言」中下載",
+			"ja":      "macOS 標準の翻訳でこの Mac 上でメールを翻訳します。無料でモデル不要です。言語は「システム設定 › 一般 › 言語と地域 › 翻訳言語」でダウンロードしてください",
+			"ko":      "macOS 기본 번역으로 이 Mac에서 메일을 번역합니다. 무료이며 모델이 필요 없습니다. 언어는 시스템 설정 › 일반 › 언어 및 지역 › 번역 언어에서 다운로드하세요",
+			"de":      "Übersetzt E-Mails mit der Übersetzung von macOS auf diesem Mac, kostenlos und ohne Modell; Sprachen laden Sie unter Systemeinstellungen › Allgemein › Sprache & Region › Übersetzungssprachen",
+			"fr":      "Traduit les e-mails avec la traduction de macOS sur ce Mac, gratuitement et sans modèle ; téléchargez les langues dans Réglages Système › Général › Langue et région › Langues de traduction",
+			"es":      "Traduce el correo con la traducción de macOS en este Mac, gratis y sin modelo; descarga los idiomas en Ajustes del Sistema › General › Idioma y región › Idiomas de traducción",
+			"pt":      "Traduz e-mails com a tradução do macOS neste Mac, de graça e sem modelo; baixe os idiomas em Ajustes do Sistema › Geral › Idioma e Região › Idiomas de Tradução",
+			"it":      "Traduce le email con la traduzione di macOS su questo Mac, gratis e senza modello; scarica le lingue in Impostazioni di Sistema › Generali › Lingua e Zona › Lingue di traduzione",
+			"ru":      "Переводит письма встроенным переводом macOS на этом Mac, бесплатно и без модели; языки загрузите в Системных настройках › Основные › Язык и регион › Языки перевода",
+			"nl":      "Vertaalt e-mail met de vertaling van macOS op deze Mac, gratis en zonder model; download talen in Systeeminstellingen › Algemeen › Taal en regio › Vertaaltalen",
+			"tr":      "E-postaları bu Mac'te macOS'un kendi çevirisiyle, ücretsiz ve model olmadan çevirir; dilleri Sistem Ayarları › Genel › Dil ve Bölge › Çeviri Dilleri'nden indirin",
+			"vi":      "Dịch thư bằng tính năng dịch của macOS ngay trên máy Mac này, miễn phí và không cần mô hình; tải ngôn ngữ trong Cài đặt hệ thống › Cài đặt chung › Ngôn ngữ & Vùng › Ngôn ngữ dịch",
+		}},
+	translates: true,
 }}
 
 func builtin(name string) *builtinPlugin {
@@ -82,7 +128,11 @@ func (s *Service) builtinInfos(ctx context.Context) ([]PluginInfo, error) {
 		return nil, err
 	}
 	var out []PluginInfo
-	for _, b := range builtinPlugins {
+	for i := range builtinPlugins {
+		b := &builtinPlugins[i]
+		if !s.builtinAvailable(b) {
+			continue
+		}
 		out = append(out, PluginInfo{Name: b.name, Title: b.title, Description: b.about, Builtin: true, Enabled: !slices.Contains(st.DisabledBuiltins, b.name)})
 	}
 	return out, nil

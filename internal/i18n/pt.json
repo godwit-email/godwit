@@ -104,6 +104,8 @@
   "error_stale_draft": "O rascunho foi alterado em outro lugar.",
   "error_too_large": "O anexo excede o limite de tamanho.",
   "error_translator_unavailable": "O plugin de tradução não está em execução. Ative-o em Configurações › Extensões ou traduza novamente com o modelo.",
+  "error_system_language_not_installed": "Baixe estes idiomas em Ajustes do Sistema › Geral › Idioma e Região › Idiomas de Tradução e traduza de novo.",
+  "error_system_language_unsupported": "O macOS não traduz entre estes idiomas. Escolha outro método de tradução em Ajustes › Geral.",
   "error_model_unavailable": "O plugin que oferece este modelo não está em execução ou deixou de oferecê-lo. Ative-o em Configurações › Extensões ou escolha outro modelo.",
   "error_unexpected": "Ocorreu um erro inesperado.",
   "error_unknown": "Algo deu errado: {arg1}",

@@ -47,6 +47,9 @@ type Options struct {
 	Registry *RegistrySource
 	// AppVersion is this build's version, for a release's minGodwit; "" or "dev" takes any.
 	AppVersion string
+	// SystemTranslator is the system's on-device translation, offered as the
+	// built-in system-translation plugin; nil leaves that plugin out.
+	SystemTranslator SystemTranslator
 }
 
 // Service owns the database and event bus of one Godwit data directory.

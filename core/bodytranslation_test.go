@@ -56,6 +56,33 @@ func TestBodyTranslationCanceledAfterReply(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
+// A translator's detected language needs no translation only in the target's
+// script: Traditional Chinese mail is translated for a Simplified reader.
+func TestBodyTranslationKeepsOnlySameScript(t *testing.T) {
+	for _, tc := range []struct {
+		source, target string
+		keep           []string
+		translated     bool
+	}{
+		{"zh-Hant", "zh-Hans", nil, true},
+		{"zh-TW", "zh-Hans", nil, true},
+		{"zh", "zh-Hans", nil, false},
+		{"zh-Hans", "zh-Hant", nil, true},
+		{"zh-Hant", "en", []string{"zh-Hans"}, true},
+		{"zh-Hant", "en", []string{"zh-Hant"}, false},
+		{"en", "en-US", nil, false},
+		{"EN", "fr", []string{"en"}, false},
+		{"ja", "zh-Hans", nil, true},
+	} {
+		result, err := translateBodyTexts(t.Context(), []string{"原文"}, tc.target, tc.keep,
+			func(_ context.Context, req translateRequest) (translateResult, error) {
+				return translateResult{Texts: []string{"译文"}, Source: tc.source}, nil
+			})
+		require.NoError(t, err)
+		assert.Equal(t, tc.translated, result.Text == "译文", "%s → %s, keep %v", tc.source, tc.target, tc.keep)
+	}
+}
+
 func TestBodyTranslationRejectsIncompleteAnswer(t *testing.T) {
 	for _, answer := range []string{`{"texts":[],"source":"en"}`, `{"texts":[""],"source":"en"}`, `<untrusted_email>hello</untrusted_email>`} {
 		t.Run(answer, func(t *testing.T) {
