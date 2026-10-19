@@ -178,9 +178,10 @@ func checkAssets(as []Asset) error {
 // windowsReserved are device names Windows will not create a file as, with any extension.
 var windowsReserved = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$`)
 
-// portableFileName: one file name that macOS, Linux and Windows can all create.
+// portableFileName: one file name that macOS, Linux and Windows can all create
+// (255 bytes is the common component limit, and never more UTF-16 units).
 func portableFileName(name string) bool {
-	return fs.ValidPath(name) && name != "." && !strings.ContainsAny(name, `/\:*?"<>|`) &&
+	return len(name) <= 255 && fs.ValidPath(name) && name != "." && !strings.ContainsAny(name, `/\:*?"<>|`) &&
 		!strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 }) &&
 		!strings.HasSuffix(name, ".") && !strings.HasSuffix(name, " ") && !windowsReserved.MatchString(name)
 }

@@ -29,6 +29,7 @@ func TestDevRegistry(t *testing.T) {
 	write("plugin/plugin.json", `{"name":"local","version":"0.1.0","native":{"abi":1},"capabilities":["models"]}`)
 	write("plugin/"+plugins.LibraryName(), "library")
 	write("small/model.gguf", "0123456789")
+	write("small/a #1%.json", "{}")
 	write("other/model.gguf", "another platform's")
 	other := "linux-amd64"
 	if plugins.PlatformKey() == other {
@@ -79,14 +80,21 @@ func TestDevRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	rel := r.Plugins[0].Releases[0]
-	f := rel.Assets[0].Variants[0].Files[0]
+	var f plugins.AssetFile
+	for _, g := range rel.Assets[0].Variants[0].Files {
+		if g.Name == "model.gguf" {
+			f = g
+		} else if string(get(g.URL, "")) != "{}" { // a # or % in the name
+			t.Fatalf("%s is not served at %s", g.Name, g.URL)
+		}
+	}
 	if rel.Version != "0.1.0" || f.Name != "model.gguf" || f.Size != 10 || rel.Assets[0].Variants[0].MinMemoryGB.For("default") != 4 {
 		t.Fatalf("release %+v", rel)
 	}
 	if len(rel.Assets) != 2 || rel.Assets[1].Name != "engine" || rel.Assets[1].Platforms[0] != plugins.PlatformKey() {
 		t.Fatalf("only this platform's assets: %+v", rel.Assets)
 	}
-	if got := string(get(rel.Assets[1].Variants[0].Files[0].URL, "")); got != "0123456789" {
+	if got := string(get(rel.Assets[1].Variants[0].Files[len(rel.Assets[1].Variants[0].Files)-1].URL, "")); got != "0123456789" {
 		t.Fatalf("this platform's engine is %q", got)
 	}
 	if got := string(get(f.URL, "bytes=4-")); got != "456789" {

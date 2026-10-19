@@ -134,10 +134,16 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 		}
 		return err
 	}
-	var gen uint64 // the process that answered: one started during the call ran its OnStart first
+	var gen uint64 // the process that loaded it; 0 when that is not known
 	err = j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
-		_, err := j.rp.native.Call(ctx, "models.load", map[string]any{"modelId": j.model.ID, "assets": dirs})
+		if err := j.rp.native.Start(ctx); err != nil { // verifying may have outlasted the idle timeout
+			return err
+		}
 		gen = j.rp.procs.Load()
+		_, err := j.rp.native.Call(ctx, "models.load", map[string]any{"modelId": j.model.ID, "assets": dirs})
+		if j.rp.procs.Load() != gen || j.rp.exited.Load() == gen { // it ended, and maybe another started
+			gen = 0
+		}
 		if ne := (*plugins.NativeError)(nil); errors.As(err, &ne) { // even invalid_request: no input is involved
 			return fmt.Errorf("%w: %w", ai.ErrJudgeUnavailable, err)
 		}
@@ -153,6 +159,10 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	if j.s.running[j.name] != j.rp {
 		lease()
 		return plugins.ErrClosed
+	}
+	if gen == 0 { // nothing to remember: the next question loads it again
+		lease()
+		return nil
 	}
 	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease, gen}); had { // calls are one at a time: no other load raced this one
 		old.(loadedModel).lease()

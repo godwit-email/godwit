@@ -300,6 +300,7 @@ func TestParseRegistryAssetsReject(t *testing.T) {
 		"windows char":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("a?.gguf", 1)} }),
 		"trailing dot":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model.", 1)} }),
 		"trailing space": mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model ", 1)} }),
+		"too long name":  mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile(strings.Repeat("a", 256), 1)} }),
 		"no files":       mod(func(as []any) { variant(as, 1, 0)["files"] = []any{} }),
 		"http url": mod(func(as []any) {
 			f := assetFile("x", 1)

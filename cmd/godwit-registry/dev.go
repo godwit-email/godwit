@@ -17,10 +17,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/godwit-email/godwit/core/plugins"
@@ -108,8 +110,12 @@ func devRegistry(ctx context.Context, specPath, addr string, stdout io.Writer) e
 		if err != nil {
 			return plugins.Artifact{}, err
 		}
-		files[urlPath] = local
-		return plugins.Artifact{URL: srv.URL + urlPath, SHA256: hex.EncodeToString(h.Sum(nil)), Size: n}, nil
+		files[urlPath] = local // r.URL.Path is unescaped, as this is
+		parts := strings.Split(urlPath, "/")
+		for i := range parts {
+			parts[i] = url.PathEscape(parts[i]) // a # or % in a file name stays in the path
+		}
+		return plugins.Artifact{URL: srv.URL + strings.Join(parts, "/"), SHA256: hex.EncodeToString(h.Sum(nil)), Size: n}, nil
 	}
 	platform := plugins.PlatformKey()
 	var out []map[string]any
