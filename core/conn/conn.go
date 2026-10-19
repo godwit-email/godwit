@@ -231,16 +231,44 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	return c, nil
 }
 
-const emptyLiteral = "{0}\r\n"
-
-// imapConn inserts a missing space after an empty literal ("{0}\r\n") when a
-// server (such as Strato) immediately follows it with the next FETCH attribute
-// name (e.g. "{0}\r\nUID" instead of "{0}\r\n UID").
+// imapConn inserts the space some servers (Strato / Open-Xchange) omit after
+// an empty literal: "{0}\r\nUID 42" instead of "{0}\r\n UID 42". It tracks
+// every "{N}\r\n" so literal contents (message bodies) pass through untouched.
+// Only the TLS and plain paths use it: STARTTLS upgrades the raw conn inside
+// imapclient, below which this would see ciphertext.
 type imapConn struct {
 	net.Conn
-	matched int    // 0..5: bytes of emptyLiteral matched at the stream tail
-	extra   []byte // leftover bytes when inserting ' ' overflowed p
-	err     error
+	state int    // 0 scanning, 1 in "{N", 2 after "}", 3 after "}\r"
+	n     int64  // literal size being parsed
+	skip  int64  // literal bytes left to pass through
+	empty bool   // the previous byte ended an empty literal
+	extra []byte // leftover bytes when an inserted ' ' overflowed p
+	err   error
+}
+
+// step consumes one byte and reports whether a space must go before it.
+func (c *imapConn) step(b byte) bool {
+	if c.skip > 0 {
+		c.skip--
+		return false
+	}
+	space := c.empty && b >= 'A' && b <= 'Z'
+	c.empty = false
+	switch {
+	case c.state == 1 && b >= '0' && b <= '9' && c.n < 1<<40:
+		c.n = c.n*10 + int64(b-'0')
+	case c.state == 1 && b == '}':
+		c.state = 2
+	case c.state == 2 && b == '\r':
+		c.state = 3
+	case c.state == 3 && b == '\n':
+		c.state, c.skip, c.empty = 0, c.n, c.n == 0
+	case b == '{':
+		c.state, c.n = 1, 0
+	default:
+		c.state = 0
+	}
+	return space
 }
 
 func (c *imapConn) Read(p []byte) (int, error) {
@@ -257,27 +285,20 @@ func (c *imapConn) Read(p []byte) (int, error) {
 		return n, err
 	}
 	n, err := c.Conn.Read(p)
-	if n == 0 {
-		return 0, err
+	if int64(n) <= c.skip {
+		c.skip -= int64(n)
+		return n, err
 	}
 	var out []byte
 	for i, b := range p[:n] {
-		if c.matched == len(emptyLiteral) && b >= 'A' && b <= 'Z' {
+		if c.step(b) {
 			if out == nil {
-				out = make([]byte, 0, n+4)
-				out = append(out, p[:i]...)
+				out = append(make([]byte, 0, n+4), p[:i]...)
 			}
 			out = append(out, ' ')
 		}
 		if out != nil {
 			out = append(out, b)
-		}
-		if c.matched < len(emptyLiteral) && b == emptyLiteral[c.matched] {
-			c.matched++
-		} else if b == emptyLiteral[0] {
-			c.matched = 1
-		} else {
-			c.matched = 0
 		}
 	}
 	if out == nil {

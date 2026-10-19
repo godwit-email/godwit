@@ -290,11 +290,14 @@ func TestIMAPEmptyLiteralWithoutSpace(t *testing.T) {
 			case "LOGIN":
 				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in\r\n"))
 			case "SELECT":
-				c.Write([]byte("* 1 EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n" + f[0] + " OK [READ-ONLY] selected\r\n"))
+				c.Write([]byte("* 2 EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n" + f[0] + " OK [READ-ONLY] selected\r\n"))
 			case "FETCH", "UID":
 				// Strato-style response: no space between empty literal "{0}\r\n" and "UID".
 				c.Write([]byte("* 1 FETCH (BODY[HEADER.FIELDS (REFERENCES)] {0}\r\n"))
-				c.Write([]byte("UID 42)\r\n" + f[0] + " OK fetch completed\r\n"))
+				c.Write([]byte("UID 42)\r\n"))
+				// A body that merely contains "{0}\r\nFoo" must pass through untouched.
+				c.Write([]byte("* 2 FETCH (UID 43 BODY[HEADER.FIELDS (REFERENCES)] {8}\r\n{0}\r"))
+				c.Write([]byte("\nFoo)\r\n" + f[0] + " OK fetch completed\r\n"))
 			case "LOGOUT":
 				c.Write([]byte("* BYE\r\n" + f[0] + " OK bye\r\n"))
 				return
@@ -313,11 +316,13 @@ func TestIMAPEmptyLiteralWithoutSpace(t *testing.T) {
 		HeaderFields: []string{"REFERENCES"},
 		Peek:         true,
 	}
-	msgs, err := c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{
+	msgs, err := c.Fetch(imap.SeqSetNum(1, 2), &imap.FetchOptions{
 		UID:         true,
 		BodySection: []*imap.FetchItemBodySection{sec},
 	}).Collect()
 	require.NoError(t, err)
-	require.Len(t, msgs, 1)
+	require.Len(t, msgs, 2)
 	assert.Equal(t, imap.UID(42), msgs[0].UID)
+	assert.Equal(t, imap.UID(43), msgs[1].UID)
+	assert.Equal(t, "{0}\r\nFoo", string(msgs[1].FindBodySection(sec)))
 }
