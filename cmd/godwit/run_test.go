@@ -161,7 +161,8 @@ func TestHeadlessSecondInstance(t *testing.T) {
 	if code := run(context.Background(), []string{"--headless", "--data-dir", dir}, nil, &stdout, &stderr); code != 2 {
 		t.Fatalf("second instance: code %d, stderr %q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "Godwit 已在运行（GUI 或 headless）") {
+	// The message follows the system language, which differs between machines.
+	if !strings.Contains(stderr.String(), i18n.T("app.another_owner")) {
 		t.Fatalf("stderr %q", stderr.String())
 	}
 	if after := outbox(false); len(before) != 2 || !reflect.DeepEqual(after, before) {

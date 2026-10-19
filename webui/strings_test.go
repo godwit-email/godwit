@@ -41,7 +41,7 @@ func webKeys(t *testing.T, dirs ...string) map[string]bool {
 func TestWebCatalogMessages(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	keys := webKeys(t, "compose", "wit", "wit-page", "reader", "signature")
-	for _, locale := range []string{"zh-CN", "en"} {
+	for _, locale := range i18n.Catalog.Languages() {
 		i18n.SetLanguage(locale)
 		for key := range keys {
 			assert.NotEqual(t, key, i18n.T(key), "%s has no %s", locale, key)

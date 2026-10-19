@@ -180,7 +180,7 @@ function draftHTML(args: string): string {
 }
 
 const fmt = (d: Date) =>
-  d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
 /** The read-only signature: its text, then its images (data: URLs from Go). */
 const sigOf = (s: { signature: string; signatureImages: string[] | null }) => ({

@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -48,16 +49,173 @@ type Label struct {
 type LabelInput struct{ Name, Description, Color, Icon string }
 
 // presetLabel is a label seeded once, in the first language Godwit ran in.
-type presetLabel struct{ slug, color, icon, zh, en, zhDesc, enDesc string }
+type presetLabel struct {
+	slug, color, icon string
+	name, desc        plugins.Text
+}
 
 var presetLabels = []presetLabel{
-	{"otp", "red", "shield-keyhole", "验证码", "Codes", "登录、注册、支付时收到的一次性验证码或登录链接", "One-time codes or sign-in links for logging in, signing up or paying"},
-	{"bill", "amber", "bill", "账单", "Bills", "账单、收据、发票和扣款通知", "Bills, receipts, invoices and payment notices"},
-	{"order", "orange", "truck", "订单与物流", "Orders", "网购订单确认、发货和快递进度", "Order confirmations, shipping and delivery updates"},
-	{"travel", "blue", "plane", "航班与出行", "Travel", "机票、火车票、酒店预订和值机提醒", "Flights, train tickets, hotel bookings and check-in reminders"},
-	{"calendar", "green", "calendar-event", "日程邀请", "Invites", "会议邀请、日程变更和活动报名确认", "Meeting invites, schedule changes and event sign-ups"},
-	{"notice", "gray", "notification-3", "通知", "Notices", "系统或服务自动发出的提醒，不需要回复", "Automatic notices from systems or services that need no reply"},
-	{"newsletter", "gray", "newspaper", "订阅与资讯", "Newsletters", "新闻简报、产品更新和营销邮件", "Newsletters, product updates and promotions"},
+	{
+		slug: "otp", color: "red", icon: "shield-keyhole",
+		name: plugins.Text{Default: "Codes", ByLang: map[string]string{
+			"zh-Hans": "验证码", "zh-Hant": "驗證碼", "ja": "認証コード", "ko": "인증번호",
+			"de": "Codes", "fr": "Codes", "es": "Códigos", "pt": "Códigos",
+			"it": "Codici", "ru": "Коды", "nl": "Codes", "tr": "Kodlar", "vi": "Mã xác minh",
+		}},
+		desc: plugins.Text{Default: "One-time codes or sign-in links for logging in, signing up or paying", ByLang: map[string]string{
+			"zh-Hans": "登录、注册、支付时收到的一次性验证码或登录链接",
+			"zh-Hant": "登入、註冊、付款時收到的一次性驗證碼或登入連結",
+			"ja":      "ログイン、登録、支払い時に届くワンタイムコードやログインリンク",
+			"ko":      "로그인, 가입, 결제 시 받는 일회용 인증 코드 또는 로그인 링크",
+			"de":      "Einmalcodes oder Anmeldelinks für Anmeldung, Registrierung oder Zahlung",
+			"fr":      "Codes à usage unique ou liens de connexion pour se connecter, s’inscrire ou payer",
+			"es":      "Códigos de un solo uso o enlaces para iniciar sesión, registrarse o pagar",
+			"pt":      "Códigos de uso único ou links de acesso para entrar, cadastrar-se ou pagar",
+			"it":      "Codici monouso o link di accesso per accedere, registrarsi o pagare",
+			"ru":      "Одноразовые коды или ссылки для входа, регистрации и оплаты",
+			"nl":      "Eenmalige codes of inloglinks voor inloggen, registreren of betalen",
+			"tr":      "Giriş yapma, kaydolma veya ödeme için tek kullanımlık kodlar ve giriş bağlantıları",
+			"vi":      "Mã dùng một lần hoặc liên kết đăng nhập khi đăng nhập, đăng ký hoặc thanh toán",
+		}},
+	},
+	{
+		slug: "bill", color: "amber", icon: "bill",
+		name: plugins.Text{Default: "Bills", ByLang: map[string]string{
+			"zh-Hans": "账单", "zh-Hant": "帳單", "ja": "請求・明細", "ko": "청구서",
+			"de": "Rechnungen", "fr": "Factures", "es": "Facturas", "pt": "Faturas",
+			"it": "Fatture", "ru": "Счета", "nl": "Facturen", "tr": "Faturalar", "vi": "Hóa đơn",
+		}},
+		desc: plugins.Text{Default: "Bills, receipts, invoices and payment notices", ByLang: map[string]string{
+			"zh-Hans": "账单、收据、发票和扣款通知",
+			"zh-Hant": "帳單、收據、發票和扣款通知",
+			"ja":      "請求書、領収書、インボイス、引き落とし通知",
+			"ko":      "청구서, 영수증, 세금계산서 및 결제 알림",
+			"de":      "Rechnungen, Quittungen, Belege und Zahlungsbenachrichtigungen",
+			"fr":      "Factures, reçus et avis de paiement ou de prélèvement",
+			"es":      "Facturas, recibos y avisos de cobro o pago",
+			"pt":      "Faturas, recibos, notas fiscais e avisos de pagamento",
+			"it":      "Fatture, ricevute e avvisi di pagamento",
+			"ru":      "Счета, квитанции, чеки и уведомления об оплате",
+			"nl":      "Facturen, betalingsbewijzen, bonnen en afschrijvingen",
+			"tr":      "Faturalar, makbuzlar ve ödeme bildirimleri",
+			"vi":      "Hóa đơn, biên lai và thông báo thanh toán",
+		}},
+	},
+	{
+		slug: "order", color: "orange", icon: "truck",
+		name: plugins.Text{Default: "Orders", ByLang: map[string]string{
+			"zh-Hans": "订单与物流", "zh-Hant": "訂單與物流", "ja": "注文・配送", "ko": "주문 및 배송",
+			"de": "Bestellungen", "fr": "Commandes", "es": "Pedidos", "pt": "Pedidos",
+			"it": "Ordini", "ru": "Заказы", "nl": "Bestellingen", "tr": "Siparişler", "vi": "Đơn hàng",
+		}},
+		desc: plugins.Text{Default: "Order confirmations, shipping and delivery updates", ByLang: map[string]string{
+			"zh-Hans": "网购订单确认、发货和快递进度",
+			"zh-Hant": "網購訂單確認、出貨和快遞進度",
+			"ja":      "注文確認、発送通知、配送状況のお知らせ",
+			"ko":      "주문 확인, 발송 및 배송 진행 알림",
+			"de":      "Bestellbestätigungen, Versand- und Lieferstatus",
+			"fr":      "Confirmations de commande, expéditions et suivi de livraison",
+			"es":      "Confirmaciones de pedido, envíos y actualizaciones de entrega",
+			"pt":      "Confirmações de pedido, envio e atualizações de entrega",
+			"it":      "Conferme d’ordine, spedizioni e aggiornamenti sulla consegna",
+			"ru":      "Подтверждения заказов, отправка и статус доставки",
+			"nl":      "Bestelbevestigingen, verzending en bezorgupdates",
+			"tr":      "Sipariş onayları, kargo ve teslimat güncellemeleri",
+			"vi":      "Xác nhận đơn hàng, vận chuyển và cập nhật giao hàng",
+		}},
+	},
+	{
+		slug: "travel", color: "blue", icon: "plane",
+		name: plugins.Text{Default: "Travel", ByLang: map[string]string{
+			"zh-Hans": "航班与出行", "zh-Hant": "航班與出行", "ja": "旅行・移動", "ko": "여행 및 교통",
+			"de": "Reisen", "fr": "Voyages", "es": "Viajes", "pt": "Viagens",
+			"it": "Viaggi", "ru": "Поездки", "nl": "Reizen", "tr": "Seyahat", "vi": "Di chuyển",
+		}},
+		desc: plugins.Text{Default: "Flights, train tickets, hotel bookings and check-in reminders", ByLang: map[string]string{
+			"zh-Hans": "机票、火车票、酒店预订和值机提醒",
+			"zh-Hant": "機票、火車票、飯店預訂和報到提醒",
+			"ja":      "航空券、鉄道チケット、ホテル予約、チェックイン案内",
+			"ko":      "항공권, 기차표, 호텔 예약 및 체크인 알림",
+			"de":      "Flüge, Bahntickets, Hotelbuchungen und Check-in-Erinnerungen",
+			"fr":      "Vols, billets de train, réservations d’hôtel et rappels d’enregistrement",
+			"es":      "Vuelos, billetes de tren, reservas de hotel y recordatorios de check-in",
+			"pt":      "Voos, passagens, reservas de hotel e lembretes de check-in",
+			"it":      "Voli, biglietti del treno, prenotazioni alberghiere e promemoria di check-in",
+			"ru":      "Авиабилеты, билеты на поезд, бронирование отелей и напоминания о регистрации",
+			"nl":      "Vluchten, treinkaartjes, hotelboekingen en incheckherinneringen",
+			"tr":      "Uçuşlar, tren biletleri, otel rezervasyonları ve check-in hatırlatmaları",
+			"vi":      "Vé máy bay, vé tàu, đặt phòng khách sạn và nhắc làm thủ tục",
+		}},
+	},
+	{
+		slug: "calendar", color: "green", icon: "calendar-event",
+		name: plugins.Text{Default: "Invites", ByLang: map[string]string{
+			"zh-Hans": "日程邀请", "zh-Hant": "日程邀請", "ja": "予定・招待", "ko": "일정 초대",
+			"de": "Termine", "fr": "Invitations", "es": "Invitaciones", "pt": "Convites",
+			"it": "Inviti", "ru": "Встречи", "nl": "Uitnodigingen", "tr": "Davetler", "vi": "Lời mời lịch",
+		}},
+		desc: plugins.Text{Default: "Meeting invites, schedule changes and event sign-ups", ByLang: map[string]string{
+			"zh-Hans": "会议邀请、日程变更和活动报名确认",
+			"zh-Hant": "會議邀請、日程變更和活動報名確認",
+			"ja":      "会議の招待、予定の変更、イベント参加登録の確認",
+			"ko":      "회의 초대, 일정 변경 및 행사 신청 확인",
+			"de":      "Besprechungseinladungen, Terminänderungen und Veranstaltungsanmeldungen",
+			"fr":      "Invitations à des réunions, modifications d’horaire et inscriptions à des événements",
+			"es":      "Invitaciones a reuniones, cambios de horario e inscripciones a eventos",
+			"pt":      "Convites para reuniões, alterações de agenda e inscrições em eventos",
+			"it":      "Inviti a riunioni, modifiche di programma e iscrizioni a eventi",
+			"ru":      "Приглашения на встречи, изменения расписания и регистрация на мероприятия",
+			"nl":      "Vergaderverzoeken, roosterwijzigingen en aanmeldingen voor evenementen",
+			"tr":      "Toplantı davetleri, program değişiklikleri ve etkinlik kayıtları",
+			"vi":      "Lời mời họp, thay đổi lịch trình và xác nhận đăng ký sự kiện",
+		}},
+	},
+	{
+		slug: "notice", color: "gray", icon: "notification-3",
+		name: plugins.Text{Default: "Notices", ByLang: map[string]string{
+			"zh-Hans": "通知", "zh-Hant": "通知", "ja": "通知", "ko": "알림",
+			"de": "Hinweise", "fr": "Notifications", "es": "Avisos", "pt": "Avisos",
+			"it": "Avvisi", "ru": "Уведомления", "nl": "Meldingen", "tr": "Bildirimler", "vi": "Thông báo",
+		}},
+		desc: plugins.Text{Default: "Automatic notices from systems or services that need no reply", ByLang: map[string]string{
+			"zh-Hans": "系统或服务自动发出的提醒，不需要回复",
+			"zh-Hant": "系統或服務自動發出的提醒，不需要回覆",
+			"ja":      "システムやサービスからの自動通知（返信不要なもの）",
+			"ko":      "회신이 필요 없는 시스템이나 서비스의 자동 알림",
+			"de":      "Automatische System- oder Dienstbenachrichtigungen, die keine Antwort erfordern",
+			"fr":      "Notifications automatiques de systèmes ou services ne nécessitant pas de réponse",
+			"es":      "Avisos automáticos de sistemas o servicios que no requieren respuesta",
+			"pt":      "Avisos automáticos de sistemas ou serviços que não precisam de resposta",
+			"it":      "Avvisi automatici da sistemi o servizi che non richiedono risposta",
+			"ru":      "Автоматические уведомления от систем и сервисов, не требующие ответа",
+			"nl":      "Automatische meldingen van systemen of diensten waarop geen antwoord nodig is",
+			"tr":      "Sistemlerden veya hizmetlerden gelen, yanıt gerektirmeyen otomatik bildirimler",
+			"vi":      "Thông báo tự động từ hệ thống hoặc dịch vụ không cần trả lời",
+		}},
+	},
+	{
+		slug: "newsletter", color: "gray", icon: "newspaper",
+		name: plugins.Text{Default: "Newsletters", ByLang: map[string]string{
+			"zh-Hans": "订阅与资讯", "zh-Hant": "訂閱與資訊", "ja": "ニュースレター", "ko": "뉴스레터",
+			"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters",
+			"it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "tr": "Bültenler", "vi": "Bản tin",
+		}},
+		desc: plugins.Text{Default: "Newsletters, product updates and promotions", ByLang: map[string]string{
+			"zh-Hans": "新闻简报、产品更新和营销邮件",
+			"zh-Hant": "電子報、產品更新和行銷郵件",
+			"ja":      "ニュースレター、製品アップデート、プロモーションメール",
+			"ko":      "뉴스레터, 제품 업데이트 및 프로모션 메일",
+			"de":      "Newsletter, Produktneuheiten und Werbe-E-Mails",
+			"fr":      "Newsletters, nouveautés produit et e-mails promotionnels",
+			"es":      "Boletines informativos, novedades de productos y promociones",
+			"pt":      "Newsletters, novidades de produtos e e-mails promocionais",
+			"it":      "Newsletter, aggiornamenti di prodotto ed email promozionali",
+			"ru":      "Дайджесты, обновления продуктов и рекламные рассылки",
+			"nl":      "Nieuwsbrieven, productupdates en aanbiedingen",
+			"tr":      "Haber bültenleri, ürün güncellemeleri ve tanıtım e-postaları",
+			"vi":      "Bản tin, cập nhật sản phẩm và thư quảng cáo",
+		}},
+	},
 }
 
 // seedLabels writes the presets once, in the UI language; a preset the user
@@ -72,11 +230,10 @@ func (s *Service) seedLabels(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lang := strings.ToLower(cmp.Or(st.UILanguage, s.opts.SystemLanguage))
+	lang := cmp.Or(st.UILanguage, s.opts.SystemLanguage)
 	if lang == "" {
 		return nil
 	}
-	zh := strings.HasPrefix(lang, "zh")
 	// A label made before (headless, through the Local API) keeps its name:
 	// the preset of that name is skipped, as CreateLabel would refuse it.
 	have, err := s.db.Query(ctx, "SELECT name FROM labels")
@@ -85,10 +242,7 @@ func (s *Service) seedLabels(ctx context.Context) error {
 	}
 	var stmts []sqlite.Statement
 	for i, p := range presetLabels {
-		name, desc := p.en, p.enDesc
-		if zh {
-			name, desc = p.zh, p.zhDesc
-		}
+		name, desc := p.name.For(lang), p.desc.For(lang)
 		if slices.ContainsFunc(have.Values, func(r []any) bool { return strings.EqualFold(strings.TrimSpace(store.Str(r[0])), name) }) {
 			continue
 		}
