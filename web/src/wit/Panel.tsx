@@ -63,7 +63,7 @@ import {
   TraceTitle,
 } from "@/components/ui/trace";
 import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
-import type { T } from "@/shared/i18n";
+import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
@@ -1256,20 +1256,29 @@ export function Panel({
                 disabled={locked}
                 render={trayButton(RiTranslate2, t("wit.compose.translate"))}
               />
-              <DropdownMenuContent className="min-w-45">
-                {info.languages.map((l) => (
-                  <DropdownMenuItem
-                    key={l.tag}
-                    onClick={() =>
-                      ask(t("wit.compose.translate_to", l.name), {
-                        skill: "translate-draft",
-                        lang: l.tag,
-                      })
-                    }
-                  >
-                    {l.name}
-                  </DropdownMenuItem>
-                ))}
+              <DropdownMenuContent className="w-auto min-w-48">
+                {info.languages.map((l) => {
+                  let label = l.name;
+                  try {
+                    const locale = currentLocale();
+                    const dn = new Intl.DisplayNames([locale], { type: "language" });
+                    const localized = dn.of(l.tag);
+                    if (localized) label = localized.charAt(0).toUpperCase() + localized.slice(1);
+                  } catch {}
+                  return (
+                    <DropdownMenuItem
+                      key={l.tag}
+                      onClick={() =>
+                        ask(t("wit.compose.translate_to", label), {
+                          skill: "translate-draft",
+                          lang: l.tag,
+                        })
+                      }
+                    >
+                      {label}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

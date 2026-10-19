@@ -62,6 +62,47 @@ public func free(_ p: UnsafeMutablePointer<CChar>?) {
     Foundation.free(p)
 }
 
+/// Returns a malloc'd NUL-terminated JSON array of installed language identifiers (e.g. ["de", "en-US", "en-GB", "fr", "tr"]),
+/// which the caller frees with godwit_st_free.
+@_cdecl("godwit_st_installed_languages")
+public func installedLanguages() -> UnsafeMutablePointer<CChar> {
+    var tags: [String] = []
+    if #available(macOS 26, *) {
+        var installed: [Locale.Language] = []
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            let availability = LanguageAvailability()
+            for s in await availability.supportedLanguages {
+                let status = await availability.status(from: s, to: nil)
+                if status == .installed {
+                    installed.append(s)
+                }
+            }
+            done.signal()
+        }
+        done.wait()
+        var codeCounts: [String: Int] = [:]
+        for s in installed {
+            if let code = s.languageCode?.identifier {
+                codeCounts[code, default: 0] += 1
+            }
+        }
+        for s in installed {
+            guard let code = s.languageCode?.identifier else { continue }
+            if code == "zh", let script = s.script?.identifier {
+                tags.append("zh-\(script)")
+            } else if (codeCounts[code] ?? 0) > 1, let region = s.region?.identifier {
+                tags.append("\(code)-\(region)")
+            } else {
+                tags.append(code)
+            }
+        }
+    }
+    let unique = Array(NSOrderedSet(array: tags)).compactMap { $0 as? String }
+    let data = (try? JSONEncoder().encode(unique)) ?? Data("[]".utf8)
+    return strdup(String(decoding: data, as: UTF8.self))!
+}
+
 private func run(_ json: String) async -> Answer {
     guard let req = try? JSONDecoder().decode(Request.self, from: Data(json.utf8)) else {
         return Answer(error: Failure(code: "invalid_request", message: "not {texts, source, target}"))

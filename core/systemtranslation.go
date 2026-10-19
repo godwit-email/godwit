@@ -14,6 +14,18 @@ type SystemTranslator interface {
 	Translate(ctx context.Context, texts []string, source, target string) (out []string, detected string, err error)
 	// Version changes when the system's translations may, as with an OS update.
 	Version() string
+	// InstalledLanguages returns the BCP 47 language identifiers downloaded for system translation.
+	InstalledLanguages() []string
+}
+
+// SystemTranslator returns the operating system's translator, if any.
+func (s *Service) SystemTranslator() SystemTranslator {
+	return s.opts.SystemTranslator
+}
+
+// SetSystemTranslator replaces the operating system's translator.
+func (s *Service) SetSystemTranslator(t SystemTranslator) {
+	s.opts.SystemTranslator = t
 }
 
 var (
