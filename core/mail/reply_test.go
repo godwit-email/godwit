@@ -25,9 +25,15 @@ func TestSubjects(t *testing.T) {
 	assert.Equal(t, "Re: Q4", mail.ReplySubject("Re: Q4"))
 	assert.Equal(t, "Re: 报销", mail.ReplySubject("报销"))
 	assert.Equal(t, "回复：报销", mail.ReplySubject("回复：报销"))
+	assert.Equal(t, "回覆：報銷", mail.ReplySubject("回覆：報銷"))
+	assert.Equal(t, "AW: Angebot", mail.ReplySubject("AW: Angebot"))
+	assert.Equal(t, "답장: 보고서", mail.ReplySubject("답장: 보고서"))
 	assert.Equal(t, "Fwd: Q4", mail.ForwardSubject("Q4"))
 	assert.Equal(t, "Fwd: Q4", mail.ForwardSubject("Fwd: Q4"))
 	assert.Equal(t, "转发：Q4", mail.ForwardSubject("转发：Q4"))
+	assert.Equal(t, "轉寄：Q4", mail.ForwardSubject("轉寄：Q4"))
+	assert.Equal(t, "WG: Angebot", mail.ForwardSubject("WG: Angebot"))
+	assert.Equal(t, "TR: Facture", mail.ForwardSubject("TR: Facture"))
 }
 
 func TestQuoteHTML(t *testing.T) {
@@ -40,4 +46,8 @@ func TestQuoteHTML(t *testing.T) {
 	assert.NotContains(t, q, "script")
 	q = mail.QuoteHTML(&mail.Parsed{From: "a@x.com", Date: d, Text: "<b>\nline2"})
 	assert.Contains(t, q, "&lt;b&gt;<br>")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "en"), "On 2026-01-02 03:04, a@x.com wrote:")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "zh-Hant"), "於 2026-01-02 03:04，a@x.com 寫道：")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "de"), "Am 2026-01-02 03:04 schrieb a@x.com:")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "ja"), "2026-01-02 03:04、a@x.com さんは書きました：")
 }

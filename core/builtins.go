@@ -26,10 +26,38 @@ type builtinPlugin struct {
 const SignInCodesPlugin = "sign-in-codes"
 
 var builtinPlugins = []builtinPlugin{{
-	name:  SignInCodesPlugin,
-	title: plugins.Text{Default: "Sign-in codes & links", ByLang: map[string]string{"zh-Hans": "验证码与登录链接"}},
+	name: SignInCodesPlugin,
+	title: plugins.Text{Default: "Sign-in codes & links", ByLang: map[string]string{
+		"zh-Hans": "验证码与登录链接",
+		"zh-Hant": "驗證碼與登入連結",
+		"ja":      "認証コードとログインリンク",
+		"ko":      "인증 코드 및 로그인 링크",
+		"de":      "Anmeldecodes & Links",
+		"fr":      "Codes et liens de connexion",
+		"es":      "Códigos y enlaces de inicio de sesión",
+		"pt":      "Códigos e links de acesso",
+		"it":      "Codici e link di accesso",
+		"ru":      "Коды и ссылки для входа",
+		"nl":      "Inlogcodes en -links",
+		"tr":      "Giriş kodları ve bağlantıları",
+		"vi":      "Mã và liên kết đăng nhập",
+	}},
 	about: plugins.Text{Default: "Finds sign-in codes and links in new mail, on this Mac, and offers them to copy or open",
-		ByLang: map[string]string{"zh-Hans": "在本机识别新邮件里的验证码和登录链接，一键复制或打开"}},
+		ByLang: map[string]string{
+			"zh-Hans": "在本机识别新邮件里的验证码和登录链接，一键复制或打开",
+			"zh-Hant": "在本機識別新郵件裡的驗證碼和登入連結，一鍵複製或打開",
+			"ja":      "新着メールの認証コードやログインリンクをこの Mac 上で検出し、すぐにコピーや開くことができます",
+			"ko":      "이 Mac에서 새 메일의 인증 코드와 로그인 링크를 찾아 바로 복사하거나 열 수 있게 합니다",
+			"de":      "Erkennt Anmeldecodes und Links in neuen E-Mails auf diesem Mac zum direkten Kopieren oder Öffnen",
+			"fr":      "Détecte les codes et liens de connexion dans les nouveaux e-mails sur ce Mac pour les copier ou les ouvrir en un clic",
+			"es":      "Detecta códigos y enlaces de inicio de sesión en los correos nuevos en este Mac para copiarlos o abrirlos al instante",
+			"pt":      "Identifica códigos e links de acesso em novos e-mails neste Mac para copiar ou abrir rapidamente",
+			"it":      "Rileva codici e link di accesso nelle nuove email su questo Mac per copiarli o aprirli subito",
+			"ru":      "Находит коды и ссылки для входа в новых письмах на этом Mac, чтобы сразу скопировать или открыть их",
+			"nl":      "Herkent inlogcodes en -links in nieuwe e-mail op deze Mac om ze direct te kopiëren of te openen",
+			"tr":      "Bu Mac'te yeni e-postalardaki giriş kodlarını ve bağlantılarını bulur, kolayca kopyalamanızı veya açmanızı sağlar",
+			"vi":      "Nhận diện mã và liên kết đăng nhập trong thư mới ngay trên máy Mac này để sao chép hoặc mở nhanh",
+		}},
 	tags: signInCodeTags,
 }}
 

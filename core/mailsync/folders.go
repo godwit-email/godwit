@@ -28,11 +28,20 @@ var specialUse = map[imap.MailboxAttr]string{
 }
 
 var roleNames = map[string]string{
-	"sent": "sent", "sent items": "sent", "sent messages": "sent", "已发送": "sent",
-	"trash": "trash", "deleted items": "trash", "deleted messages": "trash", "已删除": "trash",
-	"drafts": "drafts", "草稿": "drafts",
-	"junk": "junk", "junk email": "junk", "spam": "junk", "垃圾邮件": "junk",
-	"archive": "archive", "归档": "archive",
+	"sent": "sent", "sent items": "sent", "sent messages": "sent", "已发送": "sent", "已傳送": "sent", "寄件備份": "sent",
+	"送信済み": "sent", "보낸편지함": "sent", "gesendet": "sent", "gesendete elemente": "sent", "envoyés": "sent", "messages envoyés": "sent",
+	"enviados": "sent", "itens enviados": "sent", "inviati": "sent", "отправленные": "sent", "verzonden": "sent", "gönderilenler": "sent", "đã gửi": "sent",
+	"trash": "trash", "deleted items": "trash", "deleted messages": "trash", "已删除": "trash", "垃圾桶": "trash",
+	"削除済み": "trash", "ごみ箱": "trash", "ゴミ箱": "trash", "휴지통": "trash", "papierkorb": "trash", "gelöschte elemente": "trash",
+	"corbeille": "trash", "papelera": "trash", "lixeira": "trash", "cestino": "trash", "корзина": "trash", "удаленные": "trash", "удалённые": "trash",
+	"prullenbak": "trash", "çöp kutusu": "trash", "thùng rác": "trash",
+	"drafts": "drafts", "草稿": "drafts", "下書き": "drafts", "임시보관함": "drafts", "entwürfe": "drafts", "brouillons": "drafts",
+	"borradores": "drafts", "rascunhos": "drafts", "bozze": "drafts", "черновики": "drafts", "concepten": "drafts", "taslaklar": "drafts", "thư nháp": "drafts",
+	"junk": "junk", "junk email": "junk", "spam": "junk", "垃圾邮件": "junk", "垃圾郵件": "junk", "迷惑メール": "junk", "스팸함": "junk", "스팸": "junk",
+	"unerwünscht": "junk", "indésirables": "junk", "courrier indésirable": "junk", "correo no deseado": "junk", "lixo eletrônico": "junk",
+	"posta indesiderata": "junk", "спам": "junk", "ongewenst": "junk", "gereksiz": "junk", "thư rác": "junk",
+	"archive": "archive", "归档": "archive", "封存": "archive", "アーカイブ": "archive", "보관함": "archive", "archiv": "archive",
+	"archives": "archive", "archivo": "archive", "arquivo": "archive", "archivio": "archive", "архив": "archive", "archief": "archive", "arşiv": "archive", "lưu trữ": "archive",
 }
 
 // roles are the roles of LIST's folders, in its order: each folder's

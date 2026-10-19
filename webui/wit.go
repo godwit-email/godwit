@@ -50,17 +50,49 @@ type Language struct {
 var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer", "proofread"}
 
 // languages are the 翻译 menu's common targets (app/settings_general.go).
-var languages = []Language{{"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"}}
+var languages = []Language{
+	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+}
+
+func isZhTW(tag string) bool {
+	t, _, _ := strings.Cut(strings.ToLower(strings.ReplaceAll(tag, "_", "-")), ".")
+	return strings.HasPrefix(t, "zh-") && (t == "zh-tw" || strings.HasSuffix(t, "-tw"))
+}
 
 // langName is a language tag's name in the menu.
-func langName(tag string) string {
+func langName(tag string, zhTW bool) string {
 	switch t := strings.ToLower(tag); {
-	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"):
+	case strings.HasPrefix(t, "de"):
+		return "Deutsch"
+	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
+		if zhTW {
+			return "正體中文"
+		}
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
 		return "简体中文"
 	case strings.HasPrefix(t, "ja"):
 		return "日本語"
+	case strings.HasPrefix(t, "ko"):
+		return "한국어"
+	case strings.HasPrefix(t, "fr"):
+		return "Français"
+	case strings.HasPrefix(t, "es"):
+		return "Español"
+	case strings.HasPrefix(t, "pt"):
+		return "Português"
+	case strings.HasPrefix(t, "it"):
+		return "Italiano"
+	case strings.HasPrefix(t, "ru"):
+		return "Русский"
+	case strings.HasPrefix(t, "nl"):
+		return "Nederlands"
+	case strings.HasPrefix(t, "tr"):
+		return "Türkçe"
+	case strings.HasPrefix(t, "vi"):
+		return "Tiếng Việt"
 	}
 	return "English"
 }
@@ -160,9 +192,13 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	for _, id := range adjustSkills {
 		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
+	zhTW := isZhTW(svc.SystemLanguage())
 	read := svc.ReadingLanguage(ctx)
-	info.Languages = []Language{{read, langName(read)}}
+	info.Languages = []Language{{read, langName(read, zhTW)}}
 	for _, l := range languages {
+		if zhTW && l.Tag == "zh-TW" {
+			l.Name = "正體中文"
+		}
 		if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Name == l.Name }) {
 			info.Languages = append(info.Languages, l)
 		}

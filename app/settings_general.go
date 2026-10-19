@@ -153,18 +153,59 @@ func (p *settingsPage) syncSettings() {
 // languages are offered by their own names.
 var languages = []struct{ tag, name string }{
 	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+}
+
+var uiLanguages = []struct{ tag, name string }{
+	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+}
+
+func isZhTW(tag string) bool {
+	t, _, _ := strings.Cut(strings.ToLower(strings.ReplaceAll(tag, "_", "-")), ".")
+	return strings.HasPrefix(t, "zh-") && (t == "zh-tw" || strings.HasSuffix(t, "-tw"))
+}
+
+func (p *settingsPage) langLabel(l struct{ tag, name string }) string {
+	if (l.tag == "zh-TW" || l.tag == "zh-Hant") && isZhTW(p.a.sysLang) {
+		return "正體中文"
+	}
+	return l.name
 }
 
 func langName(tag string) string {
+	if isZhTW(tag) {
+		return "正體中文"
+	}
 	switch t := strings.ToLower(tag); {
 	case strings.HasPrefix(t, "de"):
 		return "Deutsch"
-	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"):
+	case strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
 		return "简体中文"
 	case strings.HasPrefix(t, "ja"):
 		return "日本語"
+	case strings.HasPrefix(t, "ko"):
+		return "한국어"
+	case strings.HasPrefix(t, "fr"):
+		return "Français"
+	case strings.HasPrefix(t, "es"):
+		return "Español"
+	case strings.HasPrefix(t, "pt"):
+		return "Português"
+	case strings.HasPrefix(t, "it"):
+		return "Italiano"
+	case strings.HasPrefix(t, "ru"):
+		return "Русский"
+	case strings.HasPrefix(t, "nl"):
+		return "Nederlands"
+	case strings.HasPrefix(t, "tr"):
+		return "Türkçe"
+	case strings.HasPrefix(t, "vi"):
+		return "Tiếng Việt"
 	}
 	return "English"
 }
@@ -191,6 +232,9 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	st := &p.st
 	if st.UILanguage == "zh-CN" {
 		st.UILanguage = "zh-Hans"
+	}
+	if st.UILanguage == "zh-TW" {
+		st.UILanguage = "zh-Hant"
 	}
 	sel := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, func() { control() }) }
@@ -225,17 +269,18 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		}))
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
-			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
+			opts := []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
-				{Value: "de", Label: "Deutsch"},
-				{Value: "zh-Hans", Label: "简体中文"},
-				{Value: "en", Label: "English"},
-			})
+			}
+			for _, l := range uiLanguages {
+				opts = append(opts, kit.Option[string]{Value: l.tag, Label: p.langLabel(l)})
+			}
+			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, opts)
 		}),
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
 			for _, l := range languages {
-				opts = append(opts, kit.Option[string]{Value: l.tag, Label: l.name})
+				opts = append(opts, kit.Option[string]{Value: l.tag, Label: p.langLabel(l)})
 			}
 			return settingSelect(c, i18n.T("settings.reading_language"), &st.ReadingLanguage, opts)
 		}),
@@ -302,7 +347,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	var names []string
 	for _, l := range languages {
 		if slices.Contains(p.st.NoTranslate, l.tag) {
-			names = append(names, l.name)
+			names = append(names, p.langLabel(l))
 		}
 	}
 	label := strings.Join(names, i18n.T("mail.list_sep"))
@@ -321,7 +366,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {
 			for _, l := range languages {
 				on := slices.Contains(p.st.NoTranslate, l.tag)
-				if kit.Checkbox(c.Key(l.tag), &on, l.name).Changed() {
+				if kit.Checkbox(c.Key(l.tag), &on, p.langLabel(l)).Changed() {
 					if i := slices.Index(p.st.NoTranslate, l.tag); i >= 0 {
 						p.st.NoTranslate = slices.Delete(p.st.NoTranslate, i, i+1)
 					} else {

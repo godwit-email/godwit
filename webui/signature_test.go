@@ -112,7 +112,7 @@ func TestSignatureFlushAck(t *testing.T) {
 func TestSignatureLocaleFollowsLanguage(t *testing.T) {
 	f := newSigFixture(t)
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
-	for _, locale := range []string{"zh-Hans", "en"} {
+	for _, locale := range i18n.Catalog.Languages() {
 		i18n.SetLanguage(locale)
 		st, err := f.p.State(pageCtx(f.page))
 		require.NoError(t, err)
