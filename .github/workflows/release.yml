@@ -110,7 +110,7 @@ jobs:
           echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
           echo "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
       - name: Build the system-translation bridge
-        if: matrix.name == 'macOS'
+        if: matrix.name == 'macOS' && hashFiles('scripts/build-system-translate.sh') != ''
         run: scripts/build-system-translate.sh
       # Uploads to the R2 bucket of updates.s3 in mygo.config.ts, each
       # platform's manifest last: that is what publishes its update.

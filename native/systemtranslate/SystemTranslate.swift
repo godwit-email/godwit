@@ -88,6 +88,7 @@ private func run(_ json: String) async -> Answer {
     }
     let tgt = full(Locale.Language(identifier: req.target))
     var out = req.texts
+    var translated: [String: Int] = [:]
     for (source, indices) in groups {
         let src = full(Locale.Language(identifier: source))
         // One language in one script needs no translation, and the framework has no such pair.
@@ -99,6 +100,7 @@ private func run(_ json: String) async -> Answer {
             for i in indices {
                 out[i] = req.texts[i].applyingTransform(StringTransform("\(s)-\(t)"), reverse: false) ?? req.texts[i]
             }
+            translated[source] = weight[source, default: 0]
             continue
         }
         do {
@@ -109,6 +111,7 @@ private func run(_ json: String) async -> Answer {
                     out[i] = r.targetText
                 }
             }
+            translated[source] = weight[source, default: 0]
         } catch {
             // Another language's texts stay as they are; the main one's failure is the answer.
             if source != main {
@@ -125,7 +128,11 @@ private func run(_ json: String) async -> Answer {
             }
         }
     }
-    return Answer(texts: out, source: main)
+    // The source is the main language unless the mail is mostly in the
+    // target already: then it is the main one of the texts translated, so
+    // a Chinese mail with an English paragraph is not "needs no translation".
+    let source = translated[main] != nil ? main : translated.max(by: { $0.value < $1.value })?.key ?? main
+    return Answer(texts: out, source: source)
 }
 
 /// The language of text, nil when it cannot tell (BCP 47: "en", "zh-Hant").
