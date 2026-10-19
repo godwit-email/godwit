@@ -546,6 +546,7 @@ type runningPlugin struct {
 	clients sync.Map                       // clientKey → *http.Client of its HTTP models
 	loaded  sync.Map                       // native: model id → loadedModel, of each model its process loaded (pluginjudge.go)
 	procs   atomic.Uint64                  // native: processes started, the current one\'s number
+	exited  atomic.Uint64                  // native: the number (procs) of the process that last ended
 	judging chan struct{}                  // one judge call at a time
 
 	stopHooks func() // cancels its message.received dispatcher, if any
@@ -650,7 +651,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
-		OnExit: func() { rp.procs.Add(1); rp.dropLoaded() }, // its models' files are no longer in use; a load it answered counts for nothing
+		OnExit: func() { rp.exited.Store(rp.procs.Load()); rp.dropLoaded() }, // its models' files are no longer in use; a load it answered counts for nothing
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
 			return setUpNative(ctx, name, r, rp, call)
 		}})
