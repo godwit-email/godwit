@@ -482,6 +482,8 @@
   "settings_account_servers_help": "アドレス、ポート、暗号化方式を手動で変更します",
   "settings_account_signature": "署名",
   "settings_account_signature_help": "メール作成時に本文の末尾へ自動的に追加されます（Wit が変更することはありません）。太字、リンク、画像（会社のロゴなど）を使えます。",
+  "settings_account_signature_html": "HTML コード",
+  "settings_account_signature_html_placeholder": "ここに署名の HTML コードを入力...",
   "settings_account_signature_image": "画像を挿入",
   "settings_account_signature_image_invalid": "画像は PNG、JPEG、GIF、または WebP 形式で、512 KB 以下、最大 4 枚までです",
   "settings_account_signature_label": "署名の内容",

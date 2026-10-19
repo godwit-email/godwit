@@ -3,12 +3,13 @@ import { upsertLink } from "@platejs/link";
 import {
   type RemixiconComponentType,
   RiBold,
+  RiCodeSSlashLine,
   RiImageLine,
   RiItalic,
   RiLink,
   RiUnderline,
 } from "@remixicon/react";
-import type { SlateEditor, TRange, Value } from "platejs";
+import type { Descendant, SlateEditor, TRange, Value } from "platejs";
 import {
   createPlatePlugin,
   Plate,
@@ -23,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { fromHTML, IMAGE_SRC, safeHref, toHTML, toText } from "@/compose/editor/html";
+import { deserialize, fromHTML, IMAGE_SRC, safeHref, toHTML, toText } from "@/compose/editor/html";
 import { linkPlugin, SafePastePlugin } from "@/compose/editor/plugins";
 import { SignaturePage as api, events, type SignatureState } from "@/mygo";
 import { type T, useT } from "@/shared/i18n";
@@ -94,10 +95,18 @@ function active(e: SlateEditor): string {
 const button = "size-7 min-w-7 rounded-md px-0 text-muted-foreground";
 
 /**
- * 加粗, 斜体, 下划线 | 链接, 插入图片; the link's address is asked inline (the page is too short for a
+ * 加粗, 斜体, 下划线 | 链接, 插入图片, HTML代码; the link's address is asked inline (the page is too short for a
  * popover). An image Go refused is said beside the buttons.
  */
-function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
+function Toolbar({
+  t,
+  pickImage,
+  onOpenHtml,
+}: {
+  t: T;
+  pickImage(): Promise<string>;
+  onOpenHtml(): void;
+}) {
   const editor = useEditorRef();
   const value = useEditorSelector(active, []).split(" ").filter(Boolean);
   const full = useEditorSelector((e) => images(e.children) >= MAX_IMAGES, []);
@@ -199,6 +208,7 @@ function Toolbar({ t, pickImage }: { t: T; pickImage(): Promise<string> }) {
           },
           full,
         )}
+        {item("html", "settings.account.signature.html", RiCodeSSlashLine, onOpenHtml)}
       </ToggleGroup>
       {refused && (
         <span role="alert" className="ml-2 min-w-0 truncate text-xs text-destructive">
@@ -222,6 +232,49 @@ export function SignatureEditor(props: {
 }) {
   const { initial, onChange, pickImage, t } = props;
   const editor = usePlateEditor({ plugins, value: (e) => fromHTML(e, initial, true) });
+  const [htmlOpen, setHtmlOpen] = useState(false);
+  const [htmlCode, setHtmlCode] = useState("");
+
+  const openHtml = () => {
+    const current = toHTML(editor.children);
+    const isBlank = current === "<p><br></p>" || current === "<p></p>";
+    setHtmlCode(isBlank ? "" : current);
+    setHtmlOpen(true);
+  };
+
+  const applyHtml = () => {
+    const trimmed = htmlCode.trim();
+    let imgCount = 0;
+    const filterMaxImages = (ns: Descendant[]): Descendant[] => {
+      const res: Descendant[] = [];
+      for (const n of ns) {
+        if (n.type === "img") {
+          if (imgCount < MAX_IMAGES) {
+            imgCount++;
+            res.push(n);
+          }
+        } else if ("children" in n && Array.isArray(n.children)) {
+          res.push({ ...n, children: filterMaxImages(n.children) });
+        } else {
+          res.push(n);
+        }
+      }
+      return res;
+    };
+    const rawNodes = trimmed ? deserialize(editor, trimmed, true) : [];
+    const filteredNodes = filterMaxImages(rawNodes);
+    const newChildren = (
+      filteredNodes.length ? filteredNodes : [{ type: "p", children: [{ text: "" }] }]
+    ) as Value;
+    editor.tf.setValue(newChildren);
+    editor.tf.normalize({ force: true });
+    const newHtml =
+      toText(editor.children).trim() || images(editor.children) ? toHTML(editor.children) : "";
+    onChange(newHtml);
+    setHtmlOpen(false);
+    editor.tf.focus();
+  };
+
   return (
     <Plate
       editor={editor}
@@ -229,8 +282,52 @@ export function SignatureEditor(props: {
         onChange(toText(value).trim() || images(value) ? toHTML(value) : "")
       }
     >
-      <div className="flex h-screen flex-col">
-        <Toolbar t={t} pickImage={pickImage} />
+      <div className="relative flex h-screen flex-col">
+        <Toolbar t={t} pickImage={pickImage} onOpenHtml={openHtml} />
+        {htmlOpen && (
+          <div
+            role="dialog"
+            aria-label={t("settings.account.signature.html")}
+            className="absolute inset-0 z-50 flex flex-col bg-sidebar p-2"
+          >
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">
+                {t("settings.account.signature.html")}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setHtmlOpen(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button type="button" size="sm" className="h-6 px-2 text-xs" onClick={applyHtml}>
+                  {t("common.save")}
+                </Button>
+              </div>
+            </div>
+            <textarea
+              ref={(el) => el?.focus()}
+              aria-label={t("settings.account.signature.html")}
+              className="flex-1 resize-none rounded-md border border-input bg-background p-2 font-mono text-xs leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder={t("settings.account.signature.html_placeholder")}
+              value={htmlCode}
+              onChange={(e) => setHtmlCode(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  applyHtml();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setHtmlOpen(false);
+                }
+              }}
+            />
+          </div>
+        )}
         {/* The wrapper scrolls, not the editable: WebKit stops repainting a scrolling contenteditable. */}
         <div className="min-h-0 flex-1 overflow-auto">
           <PlateContent

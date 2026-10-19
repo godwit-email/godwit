@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Modifier manuellement les adresses, les ports et le chiffrement",
   "settings_account_signature": "Signature",
   "settings_account_signature_help": "Ajoutée à la fin des e-mails que vous rédigez. Wit ne la modifie jamais. Vous pouvez utiliser du gras, des liens et des images (comme un logo d’entreprise).",
+  "settings_account_signature_html": "Code HTML",
+  "settings_account_signature_html_placeholder": "Saisissez le code HTML de la signature ici...",
   "settings_account_signature_image": "Insérer une image",
   "settings_account_signature_image_invalid": "Les images doivent être au format PNG, JPEG, GIF ou WebP, jusqu’à 512 Ko, 4 au maximum",
   "settings_account_signature_label": "Texte de la signature",

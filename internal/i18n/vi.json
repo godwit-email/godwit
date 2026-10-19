@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Thay đổi địa chỉ, cổng và phương thức mã hóa theo cách thủ công",
   "settings_account_signature": "Chữ ký",
   "settings_account_signature_help": "Được thêm vào cuối thư bạn viết. Wit không bao giờ tự ý sửa chữ ký. Bạn có thể dùng chữ đậm, liên kết và hình ảnh (như logo công ty).",
+  "settings_account_signature_html": "Mã HTML",
+  "settings_account_signature_html_placeholder": "Nhập mã HTML chữ ký tại đây...",
   "settings_account_signature_image": "Chèn hình ảnh",
   "settings_account_signature_image_invalid": "Hình ảnh phải ở định dạng PNG, JPEG, GIF hoặc WebP, tối đa 512 KB, nhiều nhất 4 ảnh",
   "settings_account_signature_label": "Nội dung chữ ký",

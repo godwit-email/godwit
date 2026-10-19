@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Pas de adressen, poorten en versleuteling handmatig aan",
   "settings_account_signature": "Handtekening",
   "settings_account_signature_help": "Wordt onderaan de e-mails toegevoegd die je schrijft. Wit verandert deze nooit. Je kunt vetgedrukte tekst, links en afbeeldingen (zoals een bedrijfslogo) gebruiken.",
+  "settings_account_signature_html": "HTML-code",
+  "settings_account_signature_html_placeholder": "Voer hier de HTML-code van de handtekening in...",
   "settings_account_signature_image": "Afbeelding invoegen",
   "settings_account_signature_image_invalid": "Afbeeldingen moeten PNG, JPEG, GIF of WebP zijn, tot 512 KB, maximaal 4",
   "settings_account_signature_label": "Handtekeningtekst",

@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Изменить адреса, порты и шифрование вручную",
   "settings_account_signature": "Подпись",
   "settings_account_signature_help": "Добавляется в конец создаваемых вами писем. Wit никогда её не меняет. Можно использовать полужирный шрифт, ссылки и изображения (например, логотип компании).",
+  "settings_account_signature_html": "HTML-код",
+  "settings_account_signature_html_placeholder": "Введите HTML-код подписи здесь...",
   "settings_account_signature_image": "Вставить изображение",
   "settings_account_signature_image_invalid": "Допускается не более 4 изображений в формате PNG, JPEG, GIF или WebP размером до 512 КБ каждое",
   "settings_account_signature_label": "Текст подписи",

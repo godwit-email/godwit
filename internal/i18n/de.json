@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Adressen, Ports und Verschlüsselung manuell anpassen",
   "settings_account_signature": "Signatur",
   "settings_account_signature_help": "Wird ans Ende deiner verfassten E-Mails angehängt. Wit ändert sie nie. Du kannst Fettschrift, Links und Bilder (z. B. ein Firmenlogo) verwenden.",
+  "settings_account_signature_html": "HTML-Code",
+  "settings_account_signature_html_placeholder": "HTML-Code der Signatur hier eingeben...",
   "settings_account_signature_image": "Bild einfügen",
   "settings_account_signature_image_invalid": "Maximal 4 Bilder im Format PNG, JPEG, GIF oder WebP (je bis zu 512 KB)",
   "settings_account_signature_label": "Signaturtext",

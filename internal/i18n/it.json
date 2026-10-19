@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Modifica manualmente indirizzi, porte e crittografia",
   "settings_account_signature": "Firma",
   "settings_account_signature_help": "Aggiunta in fondo alle email che scrivi. Wit non la modifica mai. Puoi usare grassetto, link e immagini (come il logo aziendale).",
+  "settings_account_signature_html": "Codice HTML",
+  "settings_account_signature_html_placeholder": "Inserisci qui il codice HTML della firma...",
   "settings_account_signature_image": "Inserisci immagine",
   "settings_account_signature_image_invalid": "Le immagini devono essere in formato PNG, JPEG, GIF o WebP, fino a 512 KB, massimo 4",
   "settings_account_signature_label": "Testo della firma",

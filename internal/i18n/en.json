@@ -974,6 +974,8 @@
   "settings_account_servers_help": "Change the addresses, ports and encryption by hand",
   "settings_account_signature": "Signature",
   "settings_account_signature_help": "Added to the end of mail you write. Wit never changes it. You can use bold, links and images (like a company logo).",
+  "settings_account_signature_html": "HTML code",
+  "settings_account_signature_html_placeholder": "Enter signature HTML code here...",
   "settings_account_signature_image": "Insert image",
   "settings_account_signature_image_invalid": "Images must be PNG, JPEG, GIF or WebP, up to 512 KB, at most 4",
   "settings_account_signature_label": "Signature text",

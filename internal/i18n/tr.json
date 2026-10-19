@@ -482,6 +482,8 @@
   "settings_account_servers_help": "Adresleri, bağlantı noktalarını ve şifrelemeyi elle değiştirin",
   "settings_account_signature": "İmza",
   "settings_account_signature_help": "Yazdığınız e-postaların sonuna eklenir. Wit bunu asla değiştirmez. Kalın yazı, bağlantı ve görsel (örneğin şirket logosu) kullanabilirsiniz.",
+  "settings_account_signature_html": "HTML kodu",
+  "settings_account_signature_html_placeholder": "İmza HTML kodunu buraya girin...",
   "settings_account_signature_image": "Görsel ekle",
   "settings_account_signature_image_invalid": "Görseller PNG, JPEG, GIF veya WebP biçiminde, en fazla 512 KB boyutunda ve en çok 4 adet olmalıdır",
   "settings_account_signature_label": "İmza metni",

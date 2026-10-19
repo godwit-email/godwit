@@ -84,4 +84,84 @@ describe("SignatureEditor", () => {
     render(<SignatureEditor initial={img().repeat(4)} onChange={vi.fn()} pickImage={none} t={t} />);
     expect(screen.getByRole("button", { name: "settings.account.signature.image" })).toBeDisabled();
   });
+
+  it("opens HTML dialog with current signature and saves edited HTML", async () => {
+    const onChange = vi.fn();
+    render(<SignatureEditor initial="<p>Bob</p>" onChange={onChange} pickImage={none} t={t} />);
+    const htmlBtn = screen.getByRole("button", { name: "settings.account.signature.html" });
+    fireEvent.click(htmlBtn);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    const textarea = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+    expect(textarea).toHaveValue("<p>Bob</p>");
+
+    fireEvent.change(textarea, {
+      target: {
+        value: '<p><strong>Alice</strong></p><p><a href="https://example.com">Site</a></p>',
+      },
+    });
+
+    const saveBtn = screen.getByRole("button", { name: "common.save" });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      '<p><strong>Alice</strong></p><p><a href="https://example.com/">Site</a></p>',
+    );
+
+    const box = screen.getByLabelText("settings.account.signature.label");
+    expect(box).toHaveTextContent("Alice Site");
+    expect(box.querySelector("a")).toHaveAttribute("href", "https://example.com/");
+  });
+
+  it("cancels HTML dialog without saving", async () => {
+    const onChange = vi.fn();
+    render(<SignatureEditor initial="<p>Bob</p>" onChange={onChange} pickImage={none} t={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html" }));
+    const textarea = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+    fireEvent.change(textarea, { target: { value: "<p>Charlie</p>" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalledWith("<p>Charlie</p>");
+  });
+
+  it("keyboard shortcuts Escape and Cmd+Enter in HTML dialog", async () => {
+    const onChange = vi.fn();
+    render(<SignatureEditor initial="<p>Bob</p>" onChange={onChange} pickImage={none} t={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html" }));
+    const textarea = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+
+    // Escape cancels
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // Reopen and save with Cmd+Enter
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html" }));
+    const textarea2 = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+    fireEvent.change(textarea2, { target: { value: "<p>Dave</p>" } });
+    fireEvent.keyDown(textarea2, { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(onChange).toHaveBeenLastCalledWith("<p>Dave</p>");
+  });
+
+  it("caps pasted HTML images at MAX_IMAGES", async () => {
+    const onChange = vi.fn();
+    render(<SignatureEditor initial="<p>Bob</p>" onChange={onChange} pickImage={none} t={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html" }));
+    const textarea = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+    fireEvent.change(textarea, { target: { value: img().repeat(6) } });
+    fireEvent.click(screen.getByRole("button", { name: "common.save" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(onChange).toHaveBeenLastCalledWith(img().repeat(4));
+  });
 });
