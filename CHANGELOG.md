@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.7.0](https://github.com/godwit-email/godwit/compare/v1.6.0...v1.7.0) (2026-10-19)
+
+
+### Features
+
+* **i18n:** add German (de) translation ([#113](https://github.com/godwit-email/godwit/issues/113)) ([f2dd9b6](https://github.com/godwit-email/godwit/commit/f2dd9b68ee86969511874ae109d640ae9d819a96))
+* **i18n:** complete mainstream LTR language support across client and core ([#115](https://github.com/godwit-email/godwit/issues/115)) ([231fa4d](https://github.com/godwit-email/godwit/commit/231fa4d84dad893ad362bd6fc38edf6d0f7296d6))
+* local StartLux judge: registry model assets and the native plugin ([#90](https://github.com/godwit-email/godwit/issues/90)) ([53df493](https://github.com/godwit-email/godwit/commit/53df4931044ce12b3131453bc9ff6bd78d4f9517))
+* plugin models through Godwit's SDKs (replaces [#108](https://github.com/godwit-email/godwit/issues/108)) ([#109](https://github.com/godwit-email/godwit/issues/109)) ([95eb018](https://github.com/godwit-email/godwit/commit/95eb0180654353e4e0a026a33258d6f9f0c6fb54))
+* twelve label colors from Tailwind's palette ([#119](https://github.com/godwit-email/godwit/issues/119)) ([e1e4b19](https://github.com/godwit-email/godwit/commit/e1e4b19f25ee3481e86ad1fc4522b7c2ad190837))
+* **wit:** model picker, reasoning, regenerate/edit, context meter ([#112](https://github.com/godwit-email/godwit/issues/112)) ([6cba34d](https://github.com/godwit-email/godwit/commit/6cba34d8fb11c6c87219a776d7effe5846ebc40f))
+* **wit:** reasoning effort per conversation; Anthropic and Responses show their reasoning ([#118](https://github.com/godwit-email/godwit/issues/118)) ([24f16c2](https://github.com/godwit-email/godwit/commit/24f16c2ef73b683e25e45df1e7b85329f3d1f620))
+
+
+### Bug Fixes
+
+* **imap:** tolerate missing space after empty literal in responses ([#114](https://github.com/godwit-email/godwit/issues/114)) ([a264c15](https://github.com/godwit-email/godwit/commit/a264c15a36070a4d76f6346bbba72cb0e879a9fe))
+
 ## [1.6.0](https://github.com/godwit-email/godwit/compare/v1.5.0...v1.6.0) (2026-10-18)
 
 
