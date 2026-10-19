@@ -574,10 +574,16 @@ export function Panel({
           !h.messages.some((m) => m.runs.includes(run)) &&
           !h.approvals.some((a) => a.run === run)
         ) {
-          // A question asked in place, stopped: it replaced nothing. The conversation shows as it
-          // is, the question back in the input. (Failed, it waits for 重试, which asks in place.)
-          const q = chatRef.current.messages.findLast((m) => m.role === "user");
-          if (q?.metadata?.rewind === undefined || chatRef.current.error) return;
+          // A question asked in place, stopped or failed: it replaced nothing. The conversation
+          // shows as it is, the question back in the input, a failure as a toast (no 重试: what it
+          // would retry is no longer shown).
+          const c = chatRef.current;
+          const q = c.messages.findLast((m) => m.role === "user");
+          if (q?.metadata?.rewind === undefined) return;
+          if (c.error) {
+            toast.error(witError(c.error.message, t));
+            c.clearError();
+          }
           setMessages(historyToMessages(h));
           putBackRef.current(q);
           return;
@@ -589,7 +595,7 @@ export function Panel({
     return () => {
       live = false;
     };
-  }, [running, transport, setMessages]);
+  }, [running, transport, setMessages, t]);
 
   // A decision resumed a run: its events (logged since) go on in the last answer, if the run's.
   const last = chat.messages.at(-1);

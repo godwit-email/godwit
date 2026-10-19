@@ -473,15 +473,21 @@ describe("Panel", () => {
     expect(toast.error).toHaveBeenCalled();
   });
 
-  it("an edit whose run started and then failed comes back as a new question", async () => {
+  it("an edit whose run failed part-way replaced nothing: the conversation shows as it is", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({ page: true, history: turn });
     await user.click(screen.getByRole("button", { name: "编辑" }));
     await user.type(input("向 Wit 提问"), "！{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结！", [9], 0));
+    emit({ kind: "text", text: "半" });
+    await screen.findByText("半");
     emit({ kind: "error", error: "error.ai.unavailable" });
-    await screen.findByRole("button", { name: "重试" });
-    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(await screen.findByText("旧答案")).toBeInTheDocument();
+    expect(screen.queryByText("半")).toBeNull();
+    expect(input("向 Wit 提问")).toHaveValue("总结！");
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
   it("a failed run that saved nothing still updates the meter", async () => {
