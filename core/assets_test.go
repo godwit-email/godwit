@@ -742,3 +742,20 @@ func TestVerificationFailureShows(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, core.ModelDownloaded, files(t, e.s)["decision-4b-q4"].State)
 }
+
+// Whatever stands where a model file goes (a directory here) is replaced by
+// the verified download, not left to fail every retry.
+func TestPrepareReplacesWhatIsInTheWay(t *testing.T) {
+	e := hostedJudgeEnv(t)
+	dirs, release, err := e.s.ModelAssetsForTest().Prepare(ctx, "dlx", e.release, ref4b, nil)
+	require.NoError(t, err)
+	release()
+	weights := filepath.Join(dirs["model"], "model.gguf")
+	require.NoError(t, os.Remove(weights))
+	require.NoError(t, os.MkdirAll(filepath.Join(weights, "x"), 0o700))
+	_, err = e.s.PrepareModel(ctx, "plugin/dlx/decision-4b-q4")
+	require.NoError(t, err)
+	fi, err := os.Lstat(weights)
+	require.NoError(t, err)
+	assert.True(t, fi.Mode().IsRegular())
+}

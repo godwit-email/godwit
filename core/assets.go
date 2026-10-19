@@ -509,6 +509,10 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
+	// What is there failed present: a directory or read-only file there would fail the rename on every retry.
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
 	return os.Rename(part, dst)
 }
 
