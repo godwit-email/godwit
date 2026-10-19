@@ -23,6 +23,8 @@ func SetLanguage(tag string) {
 	case mygoi18n.IsPseudo(tag):
 	case strings.HasPrefix(tag, "zh"):
 		tag = "zh-Hans"
+	case strings.HasPrefix(tag, "de"):
+		tag = "de"
 	default:
 		tag = "en"
 	}

@@ -88,3 +88,13 @@ func TestChineseLocaleAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestGermanLocaleAliases(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	for _, tag := range []string{"de", "de-DE", "de-AT", "de-CH"} {
+		SetLanguage(tag)
+		if Language() != "de" {
+			t.Errorf("%s: %q", tag, Language())
+		}
+	}
+}

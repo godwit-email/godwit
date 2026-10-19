@@ -152,11 +152,13 @@ func (p *settingsPage) syncSettings() {
 
 // languages are offered by their own names.
 var languages = []struct{ tag, name string }{
-	{"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
 }
 
 func langName(tag string) string {
 	switch t := strings.ToLower(tag); {
+	case strings.HasPrefix(t, "de"):
+		return "Deutsch"
 	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"):
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
@@ -225,6 +227,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
+				{Value: "de", Label: "Deutsch"},
 				{Value: "zh-Hans", Label: "简体中文"},
 				{Value: "en", Label: "English"},
 			})
