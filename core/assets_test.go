@@ -759,3 +759,25 @@ func TestPrepareReplacesWhatIsInTheWay(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, fi.Mode().IsRegular())
 }
+
+// A registry that revokes the installed release takes its model files with it.
+func TestRevocationSweepsModelFiles(t *testing.T) {
+	core.SetPhysicalMemoryForTest(t, 16)
+	dir := t.TempDir()
+	e := &assetEnv{rs: coretest.NewRegistryServer(t), files: map[string][]byte{}, hits: map[string]int{}}
+	rel := e.rs.NativeModelsRelease(t, "dlx", "0.1.0", filepath.Join(t.TempDir(), "record"), []any{
+		map[string]any{"id": "decision-4b-q4", "name": "4B", "transport": "plugin", "operation": "judge", "assets": ref4b}})
+	rel["assets"] = e.assets(nil, "")
+	e.rs.Publish(t, coretest.Registry(t0, plugin("dlx", rel)))
+	e.s = regService(t, e.rs, dir)
+	require.NoError(t, e.s.RefreshPluginRegistry(ctx))
+	_, err := e.s.InstallPluginFromRegistry(ctx, "dlx")
+	require.NoError(t, err)
+	_, err = e.s.PrepareModel(ctx, "plugin/dlx/decision-4b-q4")
+	require.NoError(t, err)
+	require.Len(t, assetDirs(t, dir), 2)
+
+	e.rs.Publish(t, coretest.Registry(t0.Add(time.Hour))) // the plugin is gone from the registry
+	require.NoError(t, e.s.RefreshPluginRegistry(ctx))
+	assert.Empty(t, assetDirs(t, dir))
+}

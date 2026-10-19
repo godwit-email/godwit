@@ -122,6 +122,9 @@ func (s *Service) RefreshPluginRegistry(ctx context.Context) error {
 		return ErrRegistryOff
 	}
 	err = s.refreshRegistry(ctx, src)
+	if err == nil {
+		s.sweepAssets(ctx) // a revoked release's model files go; after refreshRegistry released its locks
+	}
 	s.registryMu.Lock()
 	s.registryErr = ""
 	if err != nil {
