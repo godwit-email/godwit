@@ -56,12 +56,20 @@ var languages = []Language{
 	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
 }
 
+func isZhTW(tag string) bool {
+	t, _, _ := strings.Cut(strings.ToLower(strings.ReplaceAll(tag, "_", "-")), ".")
+	return strings.HasPrefix(t, "zh-") && (t == "zh-tw" || strings.HasSuffix(t, "-tw"))
+}
+
 // langName is a language tag's name in the menu.
-func langName(tag string) string {
+func langName(tag string, zhTW bool) string {
 	switch t := strings.ToLower(tag); {
 	case strings.HasPrefix(t, "de"):
 		return "Deutsch"
 	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
+		if zhTW {
+			return "正體中文"
+		}
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
 		return "简体中文"
@@ -184,9 +192,13 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	for _, id := range adjustSkills {
 		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
+	zhTW := isZhTW(svc.SystemLanguage())
 	read := svc.ReadingLanguage(ctx)
-	info.Languages = []Language{{read, langName(read)}}
+	info.Languages = []Language{{read, langName(read, zhTW)}}
 	for _, l := range languages {
+		if zhTW && l.Tag == "zh-TW" {
+			l.Name = "正體中文"
+		}
 		if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Name == l.Name }) {
 			info.Languages = append(info.Languages, l)
 		}

@@ -136,6 +136,8 @@ func TestComposeWitInfo(t *testing.T) {
 	info, err = f.page.WitInfo(f.ctx(2))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"原邮件", "与 Bob 的往来 1 封"}, info.Chips)
+	assert.Equal(t, "正體中文", langName("zh-TW", isZhTW("zh-TW")))
+	assert.Equal(t, "繁體中文", langName("zh-TW", isZhTW("zh-HK")))
 }
 
 func TestComposeOpenModels(t *testing.T) {
