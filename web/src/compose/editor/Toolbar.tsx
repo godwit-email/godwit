@@ -99,6 +99,7 @@ const standardFonts = [
   { label: "Standard (Systemschrift)", value: "" },
   { label: "American Typewriter", value: "'American Typewriter', serif" },
   { label: "Arial", value: "Arial, sans-serif" },
+  { label: "Arial Black", value: "'Arial Black', Gadget, sans-serif" },
   { label: "Avenir Next", value: "'Avenir Next', Avenir, sans-serif" },
   { label: "Baskerville", value: "Baskerville, serif" },
   { label: "Charter", value: "Charter, serif" },
@@ -106,13 +107,17 @@ const standardFonts = [
   { label: "Futura", value: "Futura, sans-serif" },
   { label: "Georgia", value: "Georgia, serif" },
   { label: "Gill Sans", value: "'Gill Sans', sans-serif" },
+  { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
   { label: "Helvetica Neue", value: "'Helvetica Neue', Helvetica, Arial, sans-serif" },
   { label: "Hoefler Text", value: "'Hoefler Text', serif" },
+  { label: "Impact", value: "Impact, Charcoal, sans-serif" },
+  { label: "Lucida Grande", value: "'Lucida Grande', 'Lucida Sans Unicode', sans-serif" },
   { label: "Menlo", value: "Menlo, Monaco, monospace" },
   { label: "Monaco", value: "Monaco, monospace" },
   { label: "Optima", value: "Optima, sans-serif" },
   { label: "Palatino", value: "Palatino, 'Palatino Linotype', serif" },
   { label: "SF Pro", value: "-apple-system, BlinkMacSystemFont, sans-serif" },
+  { label: "Tahoma", value: "Tahoma, Verdana, sans-serif" },
   { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
   { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
   { label: "Verdana", value: "Verdana, sans-serif" },
@@ -243,7 +248,10 @@ export function Toolbar(props: {
     if (props.fonts && props.fonts.length > 0) {
       return [
         { label: "Standard (Systemschrift)", value: "" },
-        ...props.fonts.map((name) => ({ label: name, value: `'${name}', sans-serif` })),
+        ...props.fonts.map((name) => {
+          const std = standardFonts.find((s) => s.label === name);
+          return { label: name, value: std ? std.value : `'${name}', sans-serif` };
+        }),
       ];
     }
     return standardFonts;

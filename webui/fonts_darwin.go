@@ -10,10 +10,45 @@ import (
 	"github.com/ebitengine/purego"
 )
 
+var webSafeFonts = map[string]bool{
+	"American Typewriter": true,
+	"Arial":               true,
+	"Arial Black":         true,
+	"Avenir Next":         true,
+	"Baskerville":         true,
+	"Charter":             true,
+	"Courier New":         true,
+	"Futura":              true,
+	"Georgia":             true,
+	"Gill Sans":           true,
+	"Helvetica":           true,
+	"Helvetica Neue":      true,
+	"Impact":              true,
+	"Lucida Grande":       true,
+	"Menlo":               true,
+	"Monaco":              true,
+	"Optima":              true,
+	"Palatino":            true,
+	"Tahoma":              true,
+	"Times New Roman":     true,
+	"Trebuchet MS":        true,
+	"Verdana":             true,
+}
+
 var fallbackFonts = []string{
 	"American Typewriter", "Arial", "Avenir Next", "Baskerville", "Charter", "Courier New",
 	"Futura", "Georgia", "Gill Sans", "Helvetica Neue", "Menlo", "Monaco", "Optima",
 	"Palatino", "SF Pro", "Times New Roman", "Trebuchet MS", "Verdana",
+}
+
+func isExcludedFont(name string) bool {
+	lower := strings.ToLower(name)
+	for _, sub := range []string{"symbol", "emoji", "ding", "webding", "wingding", "ornament", "math", "resort", "braille"} {
+		if strings.Contains(lower, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 var systemFontsOnce = sync.OnceValue(func() []string {
@@ -57,7 +92,7 @@ var systemFontsOnce = sync.OnceValue(func() []string {
 				idx = len(buf)
 			}
 			name := string(buf[:idx])
-			if name != "" && !strings.HasPrefix(name, ".") {
+			if name != "" && !strings.HasPrefix(name, ".") && !isExcludedFont(name) && webSafeFonts[name] {
 				fonts = append(fonts, name)
 			}
 		}
