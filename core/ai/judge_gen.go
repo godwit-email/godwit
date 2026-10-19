@@ -17,7 +17,8 @@ const genJudgeSystem = `You answer typed questions about the text in the user me
 	`Reply with one JSON object and nothing else: {"answers":[{"name":"<question name>","answer":<value>}]}, one entry per question. ` +
 	`A predicate answer is "yes" or "no". A choice answer is exactly one of the listed values. ` +
 	`A score answer is the integer index of the level, 0 being the lowest. ` +
-	`To decline a question, give {"name":"<question name>","refused":true} instead.`
+	`To decline a question, give {"name":"<question name>","refused":true} instead. ` +
+	`Omitted predicate questions default to "no".`
 
 // NewGenJudge answers with the generation model when no judge service is
 // configured. Its yes/no probabilities are 0 or 1 and its scores are integer
@@ -110,6 +111,15 @@ func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]
 			v.Type, v.Score = t, ptr(genScore(a.Answer))
 		}
 		out = append(out, v)
+	}
+	seen := make(map[string]bool, len(out))
+	for _, a := range out {
+		seen[a.Name] = true
+	}
+	for _, q := range qs {
+		if !seen[q.Name] && q.Type == Predicate {
+			out = append(out, Answer{Name: q.Name, Type: Predicate, Probability: ptr(0.0)})
+		}
 	}
 	return out, nil
 }
