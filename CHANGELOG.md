@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/godwit-email/godwit/compare/v1.7.1...v1.8.0) (2026-10-19)
+
+
+### Features
+
+* translate mail with macOS system translation ([#122](https://github.com/godwit-email/godwit/issues/122)) ([0bebd7c](https://github.com/godwit-email/godwit/commit/0bebd7cdeccbf9151ba962128cbfe1d4cc4f3730))
+
 ## [1.7.1](https://github.com/godwit-email/godwit/compare/v1.7.0...v1.7.1) (2026-10-19)
 
 
