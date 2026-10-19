@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/godwit-email/godwit/compare/v1.7.0...v1.7.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **ui:** color swatches in one row across the field ([#120](https://github.com/godwit-email/godwit/issues/120)) ([f85244b](https://github.com/godwit-email/godwit/commit/f85244bfcfc92a5ce61f76e95c2c317dcfbe1ffc))
+
 ## [1.7.0](https://github.com/godwit-email/godwit/compare/v1.6.0...v1.7.0) (2026-10-19)
 
 
