@@ -55,19 +55,12 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 	var call func(context.Context, translateRequest) (translateResult, error)
 	entry := gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:translate", TargetKind: "message", TargetID: t.ID, Decision: "run"}
 	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
-		tr, rp, err := s.pluginTranslator(plugin)
+		tr, err := s.translatorFor(ctx, plugin)
 		if err != nil {
 			return nil, err
 		}
-		_, cfgVer, err := s.pluginConfig(ctx, plugin)
-		if err != nil {
-			return nil, err
-		}
-		ref, version = st.Translator, []any{rp.hash, cfgVer}
+		ref, version, call = st.Translator, tr.version, tr.call
 		entry.Source, entry.Extension, entry.Tool = gateway.SourcePlugin, plugin, "plugin:"+plugin+"/translate"
-		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
-			return s.callTranslator(ctx, plugin, tr, rp, req)
-		}
 	} else {
 		model, modelRef, err := s.resolveTask(ctx, sk.Model, sk.Tier == "small")
 		if err != nil {
@@ -171,7 +164,7 @@ func translateBodyTexts(ctx context.Context, originals []string, target string, 
 		if len(res.Texts) != len(batch) {
 			return bodyTranslation{}, fmt.Errorf("translation returned %d texts for %d", len(res.Texts), len(batch))
 		}
-		if src := baseLang(res.Source); src != "" && (src == baseLang(target) || slices.ContainsFunc(keep, func(k string) bool { return baseLang(k) == src })) {
+		if needsNoTranslation(res.Source, target, keep) {
 			res.Texts = batch
 		}
 		for i, text := range res.Texts {

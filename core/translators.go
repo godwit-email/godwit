@@ -6,6 +6,7 @@ package core
 // behind one small interface.
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -24,16 +25,19 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+	"golang.org/x/text/language"
 )
 
 // translatorPrefix marks a plugin in Settings.Translator and in a run's model slot.
 const translatorPrefix = "plugin/"
 
 // TranslatorInfo is a translation channel: ID "" is the model, else
-// "plugin/<name>" for an installed plugin declaring translate.
+// "plugin/<name>" for an installed plugin declaring translate or a built-in
+// one that translates, whose Title is its display name.
 type TranslatorInfo struct {
-	ID, Name        string
-	Native, Running bool
+	ID, Name                 string
+	Title                    plugins.Text
+	Native, Running, Builtin bool
 }
 
 type translateRequest struct {
@@ -69,7 +73,8 @@ func (t nativeTranslator) translate(ctx context.Context, req translateRequest) (
 // errTranslatorAnswer: a translator broke the contract (a failure, unlike an error it reports).
 var errTranslatorAnswer = errors.New("the translation plugin answered wrongly")
 
-// ListTranslators lists the model and the installed plugins declaring translate, by name.
+// ListTranslators lists the model, the built-in translating plugins, and the
+// installed plugins declaring translate, by name.
 func (s *Service) ListTranslators(ctx context.Context) ([]TranslatorInfo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -89,7 +94,59 @@ func (s *Service) ListTranslators(ctx context.Context) ([]TranslatorInfo, error)
 		}
 	}
 	sort.Slice(plug, func(i, j int) bool { return plug[i].Name < plug[j].Name })
-	return append([]TranslatorInfo{{}}, plug...), nil
+	out := []TranslatorInfo{{}}
+	for i := range builtinPlugins {
+		if b := &builtinPlugins[i]; b.translates && s.builtinAvailable(b) {
+			on, err := s.builtinOn(ctx, b.name)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, TranslatorInfo{ID: translatorPrefix + b.name, Name: b.name, Title: b.title, Running: on, Builtin: true})
+		}
+	}
+	return append(out, plug...), nil
+}
+
+// boundTranslator is a translation channel ready to call: version is part of
+// its cache keys, what may change its translations.
+type boundTranslator struct {
+	version []any
+	call    func(ctx context.Context, req translateRequest) (translateResult, error)
+}
+
+// translatorFor is the plugin name as a translator: the system's for the
+// built-in system-translation when it is on, else a running plugin.
+func (s *Service) translatorFor(ctx context.Context, name string) (boundTranslator, error) {
+	if b := builtin(name); b != nil {
+		if !b.translates || !s.builtinAvailable(b) {
+			return boundTranslator{}, ErrTranslatorUnavailable
+		}
+		if on, err := s.builtinOn(ctx, name); err != nil || !on {
+			return boundTranslator{}, cmp.Or(err, ErrTranslatorUnavailable)
+		}
+		sys := s.opts.SystemTranslator
+		return boundTranslator{version: []any{sys.Version()}, call: func(ctx context.Context, req translateRequest) (translateResult, error) {
+			texts, src, err := sys.Translate(ctx, req.Texts, req.Source, req.Target)
+			if err == nil && len(texts) != len(req.Texts) {
+				err = fmt.Errorf("%w: %d texts for %d", errTranslatorAnswer, len(texts), len(req.Texts))
+			}
+			if err != nil {
+				return translateResult{}, fmt.Errorf("system translation: %w", err)
+			}
+			return translateResult{Texts: texts, Source: src}, nil
+		}}, nil
+	}
+	tr, rp, err := s.pluginTranslator(name)
+	if err != nil {
+		return boundTranslator{}, err
+	}
+	_, cfgVer, err := s.pluginConfig(ctx, name) // its settings may change its translations
+	if err != nil {
+		return boundTranslator{}, err
+	}
+	return boundTranslator{version: []any{rp.hash, cfgVer}, call: func(ctx context.Context, req translateRequest) (translateResult, error) {
+		return s.callTranslator(ctx, name, tr, rp, req)
+	}}, nil
 }
 
 // pluginTranslator is the running plugin name as a translator.
@@ -145,10 +202,25 @@ func paragraphs(text string) []string {
 	return out
 }
 
-// baseLang is a language tag's language, lower case: "en" for "en-US".
-func baseLang(tag string) string {
-	b, _, _ := strings.Cut(tag, "-")
-	return strings.ToLower(b)
+// sameLanguage reports whether two language tags name one language in one
+// script: "en-US" is "en", "zh-CN" is "zh-Hans", but "zh-Hant" is not "zh-Hans".
+func sameLanguage(a, b string) bool {
+	ta, errA := language.Parse(a)
+	tb, errB := language.Parse(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	ba, _ := ta.Base()
+	bb, _ := tb.Base()
+	sa, _ := ta.Script()
+	sb, _ := tb.Script()
+	return ba == bb && sa == sb
+}
+
+// needsNoTranslation reports whether src, a translator's detected language,
+// is the target or one of the languages kept as they are.
+func needsNoTranslation(src, target string, keep []string) bool {
+	return src != "" && (sameLanguage(src, target) || slices.ContainsFunc(keep, func(k string) bool { return sameLanguage(k, src) }))
 }
 
 // runPluginTranslate is RunSkill("translate") on the plugin the settings
@@ -156,7 +228,7 @@ func baseLang(tag string) string {
 // and the same caching; errors come back from RunSkill itself. Whatever
 // happens it does not fall back to the model.
 func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin string, t Target, st Settings) (<-chan ai.Event, error) {
-	tr, rp, err := s.pluginTranslator(plugin)
+	tr, err := s.translatorFor(ctx, plugin)
 	if err != nil {
 		return nil, err
 	}
@@ -205,11 +277,7 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		_, cfgVer, err := s.pluginConfig(ctx, plugin) // its settings may change its translations
-		if err != nil {
-			return nil, err
-		}
-		key = cacheKey("translate-plugin", plugin, rp.hash, cfgVer, t.Kind, t.ID, members, lang, keep)
+		key = cacheKey("translate-plugin", plugin, tr.version, t.Kind, t.ID, members, lang, keep)
 		if o, hit, err := s.cacheGet(ctx, key); err != nil {
 			return nil, err
 		} else if hit {
@@ -224,12 +292,12 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 		TargetKind: t.Kind, TargetID: t.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
-	res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: paras, Target: lang})
+	res, err := tr.call(ctx, translateRequest{Texts: paras, Target: lang})
 	if err != nil {
 		return nil, err
 	}
 	out := strings.Join(res.Texts, "\n\n")
-	if src := baseLang(res.Source); src != "" && (src == baseLang(lang) || slices.ContainsFunc(keep, func(k string) bool { return baseLang(k) == src })) {
+	if needsNoTranslation(res.Source, lang, keep) {
 		out = "" // cached as "needs no translation", as the model path's NO_TRANSLATION
 	}
 	if key != "" {
@@ -298,7 +366,7 @@ var (
 // several styles comes back in the first one's, which the user sees in the proposal.
 // shortcut: a sentence around inline code translates in pieces; placeholders would keep it whole, if plugins kept them.
 func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target string) (string, error) {
-	tr, rp, err := s.pluginTranslator(plugin)
+	tr, err := s.translatorFor(ctx, plugin)
 	if err != nil {
 		return "", err
 	}
@@ -374,7 +442,7 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 			batch = append(batch, pieces[end].text)
 			end++
 		}
-		res, err := s.callTranslator(ctx, plugin, tr, rp, translateRequest{Texts: batch, Target: target})
+		res, err := tr.call(ctx, translateRequest{Texts: batch, Target: target})
 		if err != nil {
 			return "", err
 		}

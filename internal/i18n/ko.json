@@ -104,6 +104,8 @@
   "error_stale_draft": "초안이 다른 곳에서 수정되었습니다.",
   "error_too_large": "첨부 파일이 크기 한도를 초과했습니다.",
   "error_translator_unavailable": "번역 플러그인이 실행 중이지 않습니다. 설정 › 확장 프로그램에서 활성화하거나 모델 번역으로 전환하세요.",
+  "error_system_language_not_installed": "시스템 설정 › 일반 › 언어 및 지역 › 번역 언어에서 이 언어들을 다운로드한 후 다시 번역하세요.",
+  "error_system_language_unsupported": "macOS는 이 언어 간 번역을 지원하지 않습니다. 설정 › 일반에서 다른 번역 방식을 선택하세요.",
   "error_model_unavailable": "이 모델을 제공하는 플러그인이 실행 중이지 않거나 더 이상 모델을 제공하지 않습니다. 설정 › 확장 프로그램에서 활성화하거나 다른 모델을 선택하세요.",
   "error_unexpected": "예기치 않은 오류가 발생했습니다.",
   "error_unknown": "오류가 발생했습니다: {arg1}",

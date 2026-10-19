@@ -150,14 +150,9 @@ func (p *settingsPage) syncSettings() {
 	p.shown.NoTranslate = slices.Clone(p.st.NoTranslate)
 }
 
-// languages are offered by their own names.
+// languages are offered by their own names, for the UI, reading and
+// no-translation settings alike.
 var languages = []struct{ tag, name string }{
-	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
-	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
-	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
-}
-
-var uiLanguages = []struct{ tag, name string }{
 	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
 	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
 	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
@@ -169,7 +164,7 @@ func isZhTW(tag string) bool {
 }
 
 func (p *settingsPage) langLabel(l struct{ tag, name string }) string {
-	if (l.tag == "zh-TW" || l.tag == "zh-Hant") && isZhTW(p.a.sysLang) {
+	if l.tag == "zh-Hant" && isZhTW(p.a.sysLang) {
 		return "正體中文"
 	}
 	return l.name
@@ -230,12 +225,6 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
-	if st.UILanguage == "zh-CN" {
-		st.UILanguage = "zh-Hans"
-	}
-	if st.UILanguage == "zh-TW" {
-		st.UILanguage = "zh-Hant"
-	}
 	sel := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, func() { control() }) }
 	}
@@ -272,7 +261,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			opts := []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
 			}
-			for _, l := range uiLanguages {
+			for _, l := range languages {
 				opts = append(opts, kit.Option[string]{Value: l.tag, Label: p.langLabel(l)})
 			}
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, opts)
@@ -388,6 +377,9 @@ func (p *settingsPage) translatorOptions(cur string) []kit.Option[string] {
 			continue
 		}
 		label := tr.Name
+		if tr.Builtin {
+			label = tr.Title.For(i18n.Language())
+		}
 		for _, en := range p.ext.reg.Entries {
 			if en.Name == tr.Name {
 				label = entryTitle(en)

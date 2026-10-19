@@ -180,6 +180,7 @@ jobs:
         if: runner.os == 'macOS' && inputs.signed_macos
         run: |
           mise run web:install
+          mise run native:translate
           go tool mygo build -platform darwin/arm64,darwin/amd64
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS' && inputs.signed_macos

@@ -104,6 +104,8 @@
   "error_stale_draft": "草稿在別處被修改。",
   "error_too_large": "附件超過了大小上限。",
   "error_translator_unavailable": "翻譯外掛沒有執行，到設定 › 擴充功能裡啟用它，或換回模型翻譯。",
+  "error_system_language_not_installed": "請先在「系統設定 › 一般 › 語言與地區 › 翻譯語言」中下載這兩種語言，再重新翻譯。",
+  "error_system_language_unsupported": "macOS 不支援這兩種語言之間的翻譯，請在設定 › 一般裡換一種翻譯方式。",
   "error_model_unavailable": "提供這個模型的外掛沒有執行，或不再提供它。到設定 › 擴充功能裡啟用它，或換一個模型。",
   "error_unexpected": "發生了意外錯誤。",
   "error_unknown": "出錯了：{arg1}",

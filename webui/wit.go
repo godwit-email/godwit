@@ -51,7 +51,7 @@ var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer",
 
 // languages are the 翻译 menu's common targets (app/settings_general.go).
 var languages = []Language{
-	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
 	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
 	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
 }
@@ -196,7 +196,7 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	read := svc.ReadingLanguage(ctx)
 	info.Languages = []Language{{read, langName(read, zhTW)}}
 	for _, l := range languages {
-		if zhTW && l.Tag == "zh-TW" {
+		if zhTW && l.Tag == "zh-Hant" {
 			l.Name = "正體中文"
 		}
 		if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Name == l.Name }) {

@@ -862,7 +862,7 @@ func (s *Service) TaskModel(ctx context.Context, skill string) (string, error) {
 			return "", err
 		}
 		if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
-			if _, _, err := s.pluginTranslator(name); err != nil {
+			if _, err := s.translatorFor(ctx, name); err != nil {
 				return "", err
 			}
 			return st.Translator, nil

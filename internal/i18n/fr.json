@@ -104,6 +104,8 @@
   "error_stale_draft": "Le brouillon a été modifié ailleurs.",
   "error_too_large": "La pièce jointe dépasse la taille maximale autorisée.",
   "error_translator_unavailable": "Le plugin de traduction n’est pas actif. Activez-le dans Réglages › Extensions, ou traduisez à nouveau avec le modèle.",
+  "error_system_language_not_installed": "Téléchargez ces langues dans Réglages Système › Général › Langue et région › Langues de traduction, puis traduisez à nouveau.",
+  "error_system_language_unsupported": "macOS ne traduit pas entre ces langues. Choisissez un autre mode de traduction dans Réglages › Général.",
   "error_model_unavailable": "Le plugin fournissant ce modèle n’est pas actif ou ne le propose plus. Activez-le dans Réglages › Extensions, ou choisissez un autre modèle.",
   "error_unexpected": "Une erreur inattendue s’est produite.",
   "error_unknown": "Une erreur s’est produite : {arg1}",

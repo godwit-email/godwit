@@ -104,6 +104,8 @@
   "error_stale_draft": "Taslak başka bir yerde değiştirildi.",
   "error_too_large": "Ek, boyut sınırını aşıyor.",
   "error_translator_unavailable": "Çeviri eklentisi çalışmıyor. Ayarlar › Uzantılar bölümünden etkinleştirin veya modelle yeniden çevirin.",
+  "error_system_language_not_installed": "Bu dilleri Sistem Ayarları › Genel › Dil ve Bölge › Çeviri Dilleri'nden indirip yeniden çevirin.",
+  "error_system_language_unsupported": "macOS bu diller arasında çeviri yapmıyor. Ayarlar › Genel'den başka bir çeviri yöntemi seçin.",
   "error_model_unavailable": "Bu modeli sunan eklenti çalışmıyor veya artık bu modeli sunmuyor. Ayarlar › Uzantılar bölümünden etkinleştirin veya başka bir model seçin.",
   "error_unexpected": "Beklenmeyen bir hata oluştu.",
   "error_unknown": "Bir sorun oluştu: {arg1}",
