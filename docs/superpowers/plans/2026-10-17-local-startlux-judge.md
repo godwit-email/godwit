@@ -33,7 +33,7 @@
 - **每个模型变体是模型目录里的一个模型**，不是插件配置项：`models.list` 返回 `decision-4b-q4`、`decision-2b-q8`，各自用 `assets: {"model": "<变体 ID>"}` 引用 registry 里 `model` 资产组的变体；固定的 `engine` 资产组由宿主按 release 补齐。插件只声明 id / name / 执行方式 / 资产引用，大小、平台、内存要求由宿主从 registry 读。新增模型 = 插件发一个新版本。
 - **第一版模型变体**（峰值内存是 M5 Max 上的实测值，不是跨平台的保证）：
   - `4b-q4`：GGUF 2.71 GB，峰值 3.3 GB，一致率 92.1% / 90.2%（0.5 / 0.8），单封 p50 2.7 s，`minMemoryGB: {"default": 8}`；
-  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9% / 85.4%，单封 p50 0.8 s，`minMemoryGB: {"default": 6, "windows-*": 8}`（Windows 值待定，见 Open Question 1）。
+  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9% / 85.4%，单封 p50 0.8 s，`minMemoryGB: {"default": 6, "windows-*": 12}`（Windows 4K 档提交量 8–10 GB，2026-10-19 定）。
   - 每个变体的文件是 GGUF 加它自己的 `decision_config.json`（选项字母的 token id、按题型的温度；2B 与 4B 的不同）。
   - **不按内存自动选变体**：内存不够的那档在目录里显示 `insufficient_memory`、不给下载；插件本身照常可装（模型 API 设计 §7）。
 - **判断模型由 `Settings.JudgeModel` 选择**（基础 PR 的迁移）；本地 judge 只能这样被选中，调用方不能逐请求指定另一个本地模型，所以不会有后台请求驱动的来回装载。插件同时只驻留一个模型。
@@ -44,7 +44,7 @@
 
 ## Open Questions（需要拍板）
 
-1. **Windows 的内存门槛**：Windows 只提供 2B，它在 4K 档的提交量是 8.2 GB（x64）/ 10.2 GB（arm64，Task 1）。选项：(a) `windows-*` 提到 12；(b) Windows 上 context 封顶 2K（更长的 evidence 截短），门槛维持 8，代价是长邮件只读前半段。
+暂无。
 
 ## Global Constraints
 
@@ -137,12 +137,12 @@ plugin.json                     {"name":"startlux","version":"0.1.0","native":{"
   - **能跑**：6 个平台（macOS arm64 / x64、Linux x64 / arm64、Windows x64 / arm64）都能装载、三档 context 都能答。macOS x64 只有 CPU 后端（没有 Metal）。
   - **和 Metal 参考不再逐位一致**：CPU 后端的概率差最大 1.2e-2（2B）到 4.9e-2（4B），超过 1e-5；但 0.8 阈值上没有一个判定翻转，0.5 上只有 Linux arm64 的 2B 有 4 个选项跨线。跨平台的验收改成「阈值上的判定一致」，1e-5 只对同一后端成立。
   - **纯 CPU 很慢**：一题在 1K 档 1–17 s、2K 档 7–47 s、4K 档 15–102 s（4B 是 2B 的 2–3 倍）。一封 2K token 左右的邮件 7 个标签，2B 约 1–4 分钟、4B 约 3–5.5 分钟。真机核数多一些会快，但量级不变。
-  - **Windows 提交量大**：4K 档 2B 峰值提交 8.2 GB（x64）/ 10.2 GB（arm64），4B 是 10.0 / 11.0 GB；macOS / Linux 的常驻内存 2B ≤ 4.6 GB、4B ≤ 6.2 GB。现在的 `windows-*: 8` 不够。
+  - **Windows 提交量大**：4K 档 2B 峰值提交 8.2 GB（x64）/ 10.2 GB（arm64），4B 是 10.0 / 11.0 GB；macOS / Linux 的常驻内存 2B ≤ 4.6 GB、4B ≤ 6.2 GB。现在的 `windows-*: 8` 不够，已提到 12（见 Decisions）。
   - **7 GB 内存的 macOS arm64 runner** 跑 4B 峰值 4.4 GB、没有换页；但它的 Metal 是虚拟化的，速度不代表 Apple 芯片真机。
 - [ ] **真机实测**（推迟：手上没有设备，发布后由测试用户补）：带 GPU 的 Windows / Linux（Vulkan）、8 GB 内存的 Apple 芯片 Mac、开着 Smart App Control 的 Windows。用 `eval/` 的 99 封记录一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**（推迟，同上）：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
 - [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU（推迟，同上）。
-- [x] 按结果回答 Open Question 1：纯 CPU 平台只提供 2B（见 Decisions）。写进 #64 待做。
+- [x] 按结果定下纯 CPU 平台只提供 2B、Windows 门槛 12 GB（见 Decisions）。写进 #64 待做。
 
 ### Task 2: plugin-startlux 骨架、推理与读出
 
@@ -180,7 +180,7 @@ registry 里 0.1.0 的资产大致是：
     {"id": "4b-q4", "minMemoryGB": {"default": 8}, "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2710000000}, {"name": "decision_config.json", …}]},
     {"id": "2b-q8", "minMemoryGB": {"default": 6}, "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2010000000}, {"name": "decision_config.json", …}]}]},
   {"name": "model", "platforms": ["darwin-amd64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"], "variants": [
-    {"id": "2b-q8", "minMemoryGB": {"default": 6, "windows-*": 8}, "files": [同上]}]}
+    {"id": "2b-q8", "minMemoryGB": {"default": 6, "windows-*": 12}, "files": [同上]}]}
 ]
 ```
 
