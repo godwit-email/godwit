@@ -43,7 +43,8 @@
 
 ## Open Questions（需要拍板）
 
-1. **只有 CPU 的机器**：Linux arm64 虚拟机（6 核、纯 CPU）上，约 3400 token 的长 prompt 一题 2B 要 17.9 s、0.8B 要 9.5 s，比 M5 Max 的 Metal 慢一个数量级；一封长邮件 7 个标签就是约 2 分钟。全量回扫 4479 封在纯 CPU 上要按天算。选项：(a) 纯 CPU 平台只提供 2B，并在设置里写明慢、建议只给新邮件打标签；(b) 第一版纯 CPU 平台不上架，只上 Metal / Vulkan。x64 实机和 Vulkan 量完再定。
+1. **只有 CPU 的机器**：Linux arm64 虚拟机（6 核、纯 CPU）上，约 3400 token 的长 prompt 一题 2B 要 17.9 s、0.8B 要 9.5 s，比 M5 Max 的 Metal 慢一个数量级；一封长邮件 7 个标签就是约 2 分钟。全量回扫 4479 封在纯 CPU 上要按天算。选项：(a) 纯 CPU 平台只提供 2B，并在设置里写明慢、建议只给新邮件打标签；(b) 第一版纯 CPU 平台不上架，只上 Metal / Vulkan。CI runner 的 x64 / arm64 数字（Task 1）证实了这个量级：2K token 的邮件一题 2B 7–36 s、4B 24–47 s。Vulkan 没有设备可测。
+2. **Windows 的内存门槛**：4K 档的提交量 2B 8–10 GB、4B 10–11 GB（Task 1）。选项：(a) `windows-*` 两档都提到 12；(b) Windows 上 context 封顶 2K（更长的 evidence 截短），门槛维持 8，代价是长邮件只读前半段。
 
 ## Global Constraints
 
@@ -132,9 +133,15 @@ plugin.json                     {"name":"startlux","version":"0.1.0","native":{"
   - **Windows 不允许超额提交**，整块缓冲都算已提交内存：4 GB 的虚拟机上，0.8B 开 4K、2B 开 2K 都申请失败（2B 是 `GGML_ASSERT` 直接让进程崩溃）。
   - **对策：按 prompt 长度选 context 大小**。`n_ctx = n_ubatch` 取 1024 / 2048 / 4096 里第一个装得下这个 prompt 的；需要更大时重建 context，空闲退出时释放。大多数标签题落在 2K 以内，Windows 上提交量就是约 2 GB 而不是 4 GB。整个 prompt 仍在一个 ubatch 里，不影响双向注意力；Task 2 的对照测试要覆盖三档 context，确认概率不受 n_ctx 影响。
   - **`minMemoryGB` 按平台算**：Windows 上至少要能放下模型加 4K 计算缓冲（2B 约 6.3 GB、4B Q4 约 7 GB）。registry 用模型 API 设计 §7 的平台映射表达（如 `{"default": 6, "windows-*": 8}`）；现在的 8 / 6 在 macOS 和 Linux 上够用，Windows 的值用 8 GB 以上的 Windows 实机确认。
-- [ ] **跨平台实测**：Windows x64（有 GPU 和只有 CPU 各一台）、Linux x64（同上）、一台 8 GB 内存的 Mac，用锁定版本跑 `eval/` 的 99 封：每种机器记录 2B 和 4B 的一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
-- [ ] **长时间运行**：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
-- [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU；确认 macOS x64 用 Metal 还是 CPU。
+- [x] **CI runner 实测**（2026-10-19，GitHub 托管 runner，都是 3–4 核虚拟机、无可用 GPU；b11707，plugin-startlux 一次性分支 `measure`，跑完已删）：43 个合成用例，每题单独计时，峰值内存在 macOS / Linux 取 `maxrss`，Windows 取峰值提交量。数字在 plugin-startlux 的 `docs/parity.md`。
+  - **能跑**：6 个平台（macOS arm64 / x64、Linux x64 / arm64、Windows x64 / arm64）都能装载、三档 context 都能答。macOS x64 只有 CPU 后端（没有 Metal）。
+  - **和 Metal 参考不再逐位一致**：CPU 后端的概率差最大 1.2e-2（2B）到 4.9e-2（4B），超过 1e-5；但 0.8 阈值上没有一个判定翻转，0.5 上只有 Linux arm64 的 2B 有 4 个选项跨线。跨平台的验收改成「阈值上的判定一致」，1e-5 只对同一后端成立。
+  - **纯 CPU 很慢**：一题在 1K 档 1–17 s、2K 档 7–47 s、4K 档 15–102 s（4B 是 2B 的 2–3 倍）。一封 2K token 左右的邮件 7 个标签，2B 约 1–4 分钟、4B 约 3–5.5 分钟。真机核数多一些会快，但量级不变。
+  - **Windows 提交量大**：4K 档 2B 峰值提交 8.2 GB（x64）/ 10.2 GB（arm64），4B 是 10.0 / 11.0 GB；macOS / Linux 的常驻内存 2B ≤ 4.6 GB、4B ≤ 6.2 GB。现在的 `windows-*: 8` 不够。
+  - **7 GB 内存的 macOS arm64 runner** 跑 4B 峰值 4.4 GB、没有换页；但它的 Metal 是虚拟化的，速度不代表 Apple 芯片真机。
+- [ ] **真机实测**（推迟：手上没有设备，发布后由测试用户补）：带 GPU 的 Windows / Linux（Vulkan）、8 GB 内存的 Apple 芯片 Mac、开着 Smart App Control 的 Windows。用 `eval/` 的 99 封记录一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
+- [ ] **长时间运行**（推迟，同上）：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
+- [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU（推迟，同上）。
 - [ ] 按结果回答 Open Question 1，写进 #64。
 
 ### Task 2: plugin-startlux 骨架、推理与读出
