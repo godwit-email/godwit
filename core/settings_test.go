@@ -93,7 +93,7 @@ func TestSettingsJudgeThresholdBounds(t *testing.T) {
 func TestSettingsChineseScriptTags(t *testing.T) {
 	for raw, want := range map[string][3]any{
 		`{"SettingsVersion":3,"UILanguage":"zh-CN","ReadingLanguage":"zh-TW","NoTranslate":["en","zh-TW","zh-CN"]}`: {"zh-Hans", "zh-Hant", []string{"en", "zh-Hant", "zh-Hans"}},
-		`{"UILanguage":"zh-TW"}`: {"zh-Hant", "", []string(nil)},
+		`{"UILanguage":"zh-TW"}`:                          {"zh-Hant", "", []string(nil)},
 		`{"SettingsVersion":4,"ReadingLanguage":"zh-CN"}`: {"", "zh-CN", []string(nil)},
 	} {
 		t.Run(raw, func(t *testing.T) {

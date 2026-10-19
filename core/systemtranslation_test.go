@@ -32,7 +32,9 @@ func (f *fakeSystemTranslator) Translate(_ context.Context, texts []string, _, t
 func isListed(t *testing.T, s *Service) bool {
 	ts, err := s.ListTranslators(t.Context())
 	require.NoError(t, err)
-	return slices.ContainsFunc(ts, func(x TranslatorInfo) bool { return x.ID == "plugin/"+SystemTranslationPlugin && x.Builtin && x.Running })
+	return slices.ContainsFunc(ts, func(x TranslatorInfo) bool {
+		return x.ID == "plugin/"+SystemTranslationPlugin && x.Builtin && x.Running
+	})
 }
 
 // The built-in system translation is a translator only where the app has
