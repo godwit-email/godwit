@@ -112,12 +112,19 @@ func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]
 		}
 		out = append(out, v)
 	}
+	// Fill omitted predicates with "no" only when the model answered at least
+	// one asked question; an empty or unmatched reply stays an ErrJudgeAnswer
+	// so callers keep existing labels instead of treating it as all-no.
 	seen := make(map[string]bool, len(out))
+	valid := false
 	for _, a := range out {
 		seen[a.Name] = true
+		if _, ok := types[a.Name]; ok {
+			valid = true
+		}
 	}
 	for _, q := range qs {
-		if !seen[q.Name] && q.Type == Predicate {
+		if valid && !seen[q.Name] && q.Type == Predicate {
 			out = append(out, Answer{Name: q.Name, Type: Predicate, Probability: ptr(0.0)})
 		}
 	}

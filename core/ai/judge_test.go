@@ -493,6 +493,11 @@ func TestGenJudgeOmittedPredicatesDefaultToNo(t *testing.T) {
 	if _, err := judgeFor(t, adapters[2], bodyMissingChoice).Ask(context.Background(), "mail", mixedQs); !errors.Is(err, ErrJudgeAnswer) {
 		t.Fatalf("want ErrJudgeAnswer for missing choice, got %v", err)
 	}
+
+	// An empty reply is not a set of "no" answers: it must still fail.
+	if _, err := judgeFor(t, adapters[2], `{"answers":[]}`).Ask(context.Background(), "mail", predQs); !errors.Is(err, ErrJudgeAnswer) {
+		t.Fatalf("want ErrJudgeAnswer for empty answers, got %v", err)
+	}
 }
 
 func TestJudgeLimitEdges(t *testing.T) {
