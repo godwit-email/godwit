@@ -153,18 +153,44 @@ func (p *settingsPage) syncSettings() {
 // languages are offered by their own names.
 var languages = []struct{ tag, name string }{
 	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+}
+
+var uiLanguages = []struct{ tag, name string }{
+	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
 }
 
 func langName(tag string) string {
 	switch t := strings.ToLower(tag); {
 	case strings.HasPrefix(t, "de"):
 		return "Deutsch"
-	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"):
+	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
 		return "简体中文"
 	case strings.HasPrefix(t, "ja"):
 		return "日本語"
+	case strings.HasPrefix(t, "ko"):
+		return "한국어"
+	case strings.HasPrefix(t, "fr"):
+		return "Français"
+	case strings.HasPrefix(t, "es"):
+		return "Español"
+	case strings.HasPrefix(t, "pt"):
+		return "Português"
+	case strings.HasPrefix(t, "it"):
+		return "Italiano"
+	case strings.HasPrefix(t, "ru"):
+		return "Русский"
+	case strings.HasPrefix(t, "nl"):
+		return "Nederlands"
+	case strings.HasPrefix(t, "tr"):
+		return "Türkçe"
+	case strings.HasPrefix(t, "vi"):
+		return "Tiếng Việt"
 	}
 	return "English"
 }
@@ -191,6 +217,9 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	st := &p.st
 	if st.UILanguage == "zh-CN" {
 		st.UILanguage = "zh-Hans"
+	}
+	if st.UILanguage == "zh-TW" {
+		st.UILanguage = "zh-Hant"
 	}
 	sel := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, func() { control() }) }
@@ -225,12 +254,13 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		}))
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.ui_language"), "", func() ui.Element {
-			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, []kit.Option[string]{
+			opts := []kit.Option[string]{
 				{Value: "", Label: i18n.Tf("settings.ui_language.system", langName(cmp.Or(p.a.sysLang, i18n.Language())))},
-				{Value: "de", Label: "Deutsch"},
-				{Value: "zh-Hans", Label: "简体中文"},
-				{Value: "en", Label: "English"},
-			})
+			}
+			for _, l := range uiLanguages {
+				opts = append(opts, kit.Option[string]{Value: l.tag, Label: l.name})
+			}
+			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, opts)
 		}),
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}

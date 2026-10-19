@@ -15,7 +15,7 @@ func TestThreadKeys(t *testing.T) {
 	assert.Equal(t, []string{"c@x", "b@x", "a@x"}, ids)
 	assert.Equal(t, "quarterly report", key)
 
-	for _, s := range []string{"Re: 同一主题", "回复: 同一主题", "转发：同一主题", "Fw: Re[2]: 同一主题", "同一主题"} {
+	for _, s := range []string{"Re: 同一主题", "回复: 同一主题", "转发：同一主题", "回覆: 同一主题", "轉寄：同一主题", "AW: WG: 同一主题", "TR: RV: 同一主题", "답장: 전달: 同一主题", "Fw: Re[2]: 同一主题", "同一主题"} {
 		_, k := mail.ThreadKeys(&mail.Parsed{Subject: s})
 		assert.Equal(t, "同一主题", k, s)
 	}

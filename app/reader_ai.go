@@ -147,11 +147,10 @@ func (r *reader) readingLang() string {
 
 // shortLang names a reading language in the UI's language, briefly: 中文, not 简体中文.
 func shortLang(tag string) string {
-	switch t := strings.ToLower(tag); {
-	case strings.HasPrefix(t, "zh"):
-		return i18n.T("reader.lang.zh")
-	case strings.HasPrefix(t, "ja"):
-		return i18n.T("reader.lang.ja")
+	base, _, _ := strings.Cut(strings.ToLower(tag), "-")
+	switch base {
+	case "de", "en", "es", "fr", "it", "ja", "ko", "nl", "pt", "ru", "tr", "vi", "zh":
+		return i18n.T("reader.lang." + base)
 	}
 	return i18n.T("reader.lang.en")
 }

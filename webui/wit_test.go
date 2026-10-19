@@ -116,7 +116,11 @@ func TestComposeWitInfo(t *testing.T) {
 	assert.Equal(t, model, info.Model, "the model chip: its name, without the provider")
 	assert.NotEmpty(t, info.Model)
 	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}}, info.Skills)
-	assert.Equal(t, []Language{{"ja", "日本語"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}}, info.Languages)
+	assert.Equal(t, []Language{
+		{"ja", "日本語"}, {"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"},
+		{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+		{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+	}, info.Languages)
 	assert.Empty(t, info.Chips)
 	st2, err := f.page.Load(f.ctx(1))
 	require.NoError(t, err)

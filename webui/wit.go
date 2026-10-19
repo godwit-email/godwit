@@ -50,17 +50,41 @@ type Language struct {
 var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer", "proofread"}
 
 // languages are the 翻译 menu's common targets (app/settings_general.go).
-var languages = []Language{{"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"}}
+var languages = []Language{
+	{"de", "Deutsch"}, {"zh-CN", "简体中文"}, {"zh-TW", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
+	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+}
 
 // langName is a language tag's name in the menu.
 func langName(tag string) string {
 	switch t := strings.ToLower(tag); {
-	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"):
+	case strings.HasPrefix(t, "de"):
+		return "Deutsch"
+	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
 		return "繁體中文"
 	case strings.HasPrefix(t, "zh"):
 		return "简体中文"
 	case strings.HasPrefix(t, "ja"):
 		return "日本語"
+	case strings.HasPrefix(t, "ko"):
+		return "한국어"
+	case strings.HasPrefix(t, "fr"):
+		return "Français"
+	case strings.HasPrefix(t, "es"):
+		return "Español"
+	case strings.HasPrefix(t, "pt"):
+		return "Português"
+	case strings.HasPrefix(t, "it"):
+		return "Italiano"
+	case strings.HasPrefix(t, "ru"):
+		return "Русский"
+	case strings.HasPrefix(t, "nl"):
+		return "Nederlands"
+	case strings.HasPrefix(t, "tr"):
+		return "Türkçe"
+	case strings.HasPrefix(t, "vi"):
+		return "Tiếng Việt"
 	}
 	return "English"
 }

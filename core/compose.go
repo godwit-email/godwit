@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -109,7 +110,9 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		}
 		// The marker blockquote only marks the quote (attribution line included)
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
-		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTML(orig) + "</blockquote>"
+		st, _ := s.loadSettings(ctx)
+		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
+		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
 	}
 	cids, err := s.signatureCIDs(ctx, accountID)
 	if err != nil {
