@@ -303,4 +303,31 @@ describe("Editor", () => {
     fireEvent.keyDown(pop, { key: "k", code: "KeyK", ...mod });
     expect(onCmdK).toHaveBeenCalledTimes(1);
   });
+
+  it("insertReplacementText preserves fontSize marks and Enter does not split block", async () => {
+    const { box, onChange } = setup('<p><span style="font-size: 72px;">Schullle</span></p>');
+    await select(box, 8, 0);
+
+    const ev = new InputEvent("beforeinput", {
+      inputType: "insertReplacementText",
+      data: "Schule",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      box.dispatchEvent(ev);
+    });
+
+    await waitFor(() => {
+      const html = last(onChange);
+      expect(html).toContain("Schule");
+      expect(html).toContain("font-size: 72px");
+      expect(html).not.toContain("Schullle");
+    });
+
+    // An Enter key right after accepting autocorrect should be suppressed
+    fireEvent.keyDown(box, { key: "Enter", code: "Enter" });
+    const htmlAfterEnter = last(onChange);
+    expect(htmlAfterEnter).toBe('<p><span style="font-size: 72px">Schule</span></p>');
+  });
 });

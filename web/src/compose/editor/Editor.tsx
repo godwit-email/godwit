@@ -1,6 +1,14 @@
 import { isHotkey, RangeApi, type TRange } from "platejs";
 import { createPlatePlugin, Plate, PlateContent, usePlateEditor } from "platejs/react";
-import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { T } from "@/shared/i18n";
 import { fromHTML, offsetOf, toHTML, toText } from "./html";
@@ -90,6 +98,78 @@ export function Editor(props: {
     />
   );
 
+  const editableRef = useRef<HTMLDivElement | null>(null);
+  const lastReplacementTime = useRef(0);
+
+  const handleReplacementText = useCallback(
+    (inputEvent: InputEvent) => {
+      if (inputEvent.inputType !== "insertReplacementText") return false;
+      const text = inputEvent.data || inputEvent.dataTransfer?.getData("text/plain");
+      if (!text) return false;
+
+      inputEvent.preventDefault();
+      if ("stopImmediatePropagation" in inputEvent) {
+        inputEvent.stopImmediatePropagation();
+      }
+      lastReplacementTime.current = Date.now();
+      if (readOnly) return true;
+
+      let targetRange: TRange | null = null;
+      const ranges = inputEvent.getTargetRanges?.();
+      if (ranges && ranges.length > 0) {
+        try {
+          const sr = ranges[0];
+          const domRange = document.createRange();
+          domRange.setStart(sr.startContainer, sr.startOffset);
+          domRange.setEnd(sr.endContainer, sr.endOffset);
+          targetRange = editor.api.toSlateRange(domRange);
+        } catch {}
+      }
+      if (!targetRange || RangeApi.isCollapsed(targetRange)) {
+        const sel = editor.selection;
+        if (sel) {
+          const head = RangeApi.isCollapsed(sel) ? sel.anchor : RangeApi.edges(sel)[1];
+          const before = editor.api.before(head, { unit: "word" }) ?? editor.api.start(head.path);
+          targetRange = { anchor: before, focus: head };
+        }
+      }
+      if (targetRange) {
+        const [start] = RangeApi.edges(targetRange);
+        const [leaf] = editor.api.leaf(start) ?? [];
+        let marks: Record<string, unknown> = {};
+        if (leaf) {
+          for (const [k, v] of Object.entries(leaf)) {
+            if (k !== "text") marks[k] = v;
+          }
+        }
+        const activeMarks = editor.api.marks();
+        if (activeMarks) {
+          marks = { ...marks, ...activeMarks };
+        }
+        editor.tf.select(targetRange);
+        editor.tf.delete();
+        for (const [k, v] of Object.entries(marks)) {
+          editor.tf.addMark(k, v);
+        }
+        editor.tf.insertText(text);
+      }
+      return true;
+    },
+    [editor, readOnly],
+  );
+
+  useEffect(() => {
+    const el = editableRef.current;
+    if (!el) return;
+    const onBeforeInput = (e: Event) => {
+      handleReplacementText(e as InputEvent);
+    };
+    el.addEventListener("beforeinput", onBeforeInput, { capture: true });
+    return () => {
+      el.removeEventListener("beforeinput", onBeforeInput, { capture: true });
+    };
+  }, [handleReplacementText]);
+
   return (
     <HeldContext.Provider value={held ? { ...mark, slot: setSlot } : null}>
       <Plate
@@ -103,80 +183,31 @@ export function Editor(props: {
             that is also a scroll container — typed text appeared only after a relayout. The page's
             wrapper around the fields and the body scrolls instead. */}
           <PlateContent
+            ref={editableRef}
             aria-label={t("compose.body")}
             placeholder={placeholder}
             decorate={decorate}
             onCompositionStart={() => onComposing(true)}
             onCompositionEnd={() => onComposing(false)}
             onDOMBeforeInput={(e: Event) => {
-              const inputEvent = e as InputEvent;
-              if (inputEvent.inputType === "insertReplacementText") {
-                const text = inputEvent.data || inputEvent.dataTransfer?.getData("text/plain");
-                if (text) {
-                  inputEvent.preventDefault();
-                  if (readOnly) return;
-                  let targetRange: TRange | null = null;
-                  const ranges = inputEvent.getTargetRanges?.();
-                  if (ranges && ranges.length > 0) {
-                    try {
-                      targetRange = editor.api.toSlateRange(ranges[0]);
-                    } catch {}
-                  }
-                  if (!targetRange) {
-                    targetRange = editor.selection;
-                  }
-                  if (targetRange) {
-                    const [leaf] = editor.api.leaf(targetRange.anchor) ?? [];
-                    const marks: Record<string, unknown> = {};
-                    if (leaf) {
-                      for (const [k, v] of Object.entries(leaf)) {
-                        if (k !== "text") marks[k] = v;
-                      }
-                    }
-                    editor.tf.select(targetRange);
-                    for (const [k, v] of Object.entries(marks)) {
-                      editor.tf.addMark(k, v);
-                    }
-                    editor.tf.insertText(text);
-                  }
-                }
-              }
+              return handleReplacementText(e as InputEvent);
             }}
             onBeforeInput={(e: React.FormEvent<HTMLDivElement> & { nativeEvent: InputEvent }) => {
-              const inputEvent = e.nativeEvent;
-              if (inputEvent.inputType === "insertReplacementText") {
-                const text = inputEvent.data || inputEvent.dataTransfer?.getData("text/plain");
-                if (text) {
-                  e.preventDefault();
-                  if (readOnly) return;
-                  let targetRange: TRange | null = null;
-                  const ranges = inputEvent.getTargetRanges?.();
-                  if (ranges && ranges.length > 0) {
-                    try {
-                      targetRange = editor.api.toSlateRange(ranges[0]);
-                    } catch {}
-                  }
-                  if (!targetRange) {
-                    targetRange = editor.selection;
-                  }
-                  if (targetRange) {
-                    const [leaf] = editor.api.leaf(targetRange.anchor) ?? [];
-                    const marks: Record<string, unknown> = {};
-                    if (leaf) {
-                      for (const [k, v] of Object.entries(leaf)) {
-                        if (k !== "text") marks[k] = v;
-                      }
-                    }
-                    editor.tf.select(targetRange);
-                    for (const [k, v] of Object.entries(marks)) {
-                      editor.tf.addMark(k, v);
-                    }
-                    editor.tf.insertText(text);
-                  }
-                }
+              if (handleReplacementText(e.nativeEvent)) {
+                e.preventDefault();
               }
             }}
             onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                Date.now() - lastReplacementTime.current < 250
+              ) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
               if (
                 e.key === "Enter" &&
                 e.shiftKey &&
