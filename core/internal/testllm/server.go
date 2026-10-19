@@ -55,9 +55,12 @@ type Turn struct {
 	FailCode   string
 	Incomplete bool
 	Truncate   bool
-	Refusal    string   // openai-responses: the reply is this refusal, not text
-	Think      []string // openai chat: reasoning_content deltas before the text
-	Usage      [2]int   // openai chat and responses: the input and output tokens reported (responses: 1 and 1 when unset)
+	Refusal    string // openai-responses: the reply is this refusal, not text
+	// Think is the readable reasoning's deltas, before the text: openai chat's
+	// reasoning_content, anthropic's thinking block, openai-responses' summary
+	// of the Reasoning item (set Reasoning too).
+	Think []string
+	Usage [2]int // openai chat and responses: the input and output tokens reported (responses: 1 and 1 when unset)
 }
 
 // Call is a tool call; an empty ID gets "call_<n>".
@@ -355,6 +358,15 @@ func anthropicStream(send func(...string), t Turn, hang func() bool) {
 	send(ev("message_start", map[string]any{"message": map[string]any{"id": "m1", "type": "message", "role": "assistant", "model": "claude",
 		"content": []any{}, "stop_reason": nil, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1}}}))
 	idx := 0
+	if len(t.Think) > 0 {
+		send(ev("content_block_start", map[string]any{"index": idx, "content_block": map[string]any{"type": "thinking", "thinking": "", "signature": ""}}))
+		for _, th := range t.Think {
+			send(ev("content_block_delta", map[string]any{"index": idx, "delta": map[string]any{"type": "thinking_delta", "thinking": th}}))
+		}
+		send(ev("content_block_delta", map[string]any{"index": idx, "delta": map[string]any{"type": "signature_delta", "signature": "sig"}}),
+			ev("content_block_stop", map[string]any{"index": idx}))
+		idx++
+	}
 	for _, txt := range t.Text {
 		send(ev("content_block_start", map[string]any{"index": idx, "content_block": map[string]any{"type": "text", "text": ""}}),
 			ev("content_block_delta", map[string]any{"index": idx, "delta": map[string]any{"type": "text_delta", "text": txt}}),

@@ -30,6 +30,7 @@ import (
 type Conversation struct {
 	ID                 int64
 	Kind, Title, Model string
+	Effort             string // the reasoning effort its runs ask for; "" sends none
 	DraftID            int64
 	Messages           []ai.Message
 	Citations          []Citation
@@ -102,11 +103,11 @@ func (s *Service) NewConversation(ctx context.Context, kind string, draftID int6
 	return c, err
 }
 
-const convCols = "id, kind, title, model, draft_id, updated_at, state FROM conversations"
+const convCols = "id, kind, title, model, draft_id, updated_at, state, effort FROM conversations"
 
 func scanConversation(r []any) Conversation {
 	return Conversation{ID: store.Int(r[0]), Kind: store.Str(r[1]), Title: store.Str(r[2]), Model: store.Str(r[3]),
-		DraftID: store.Int(r[4]), UpdatedAt: time.Unix(store.Int(r[5]), 0)}
+		DraftID: store.Int(r[4]), UpdatedAt: time.Unix(store.Int(r[5]), 0), Effort: store.Str(r[7])}
 }
 
 // conversation returns the conversation (without Messages) and its model state.
@@ -141,20 +142,25 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 }
 
 // SetConversationModel makes the conversation's next runs use ref ("slug/model"
-// or a plugin's); "" goes back to Settings.DefaultModel. A ref that does not
-// resolve is refused. A run going on keeps the model it started with.
-func (s *Service) SetConversationModel(ctx context.Context, id int64, ref string) error {
+// or a plugin's; "" goes back to Settings.DefaultModel) and ask for effort
+// ("low", "medium" or "high"; "" asks for none, as non-reasoning models need).
+// Both are checked before either is kept: a ref that does not resolve or an
+// unknown effort changes nothing. A run going on keeps what it started with.
+func (s *Service) SetConversationModel(ctx context.Context, id int64, ref, effort string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
+	if !slices.Contains([]string{"", "low", "medium", "high"}, effort) {
+		return fmt.Errorf("unknown reasoning effort %q", effort)
+	}
 	if ref != "" {
 		if _, ref, err = s.resolveRef(ctx, ref); err != nil {
 			return err
 		}
 	}
-	r, err := s.db.Execute(ctx, "UPDATE conversations SET model = ? WHERE id = ?", ref, id)
+	r, err := s.db.Execute(ctx, "UPDATE conversations SET model = ?, effort = ? WHERE id = ?", ref, effort, id)
 	if err == nil && r.Changes == 0 {
 		err = fmt.Errorf("conversation %d not found", id)
 	}
@@ -698,9 +704,10 @@ type runJob struct {
 
 // snapshot is runs.snapshot: what a resume needs besides the conversation state.
 type snapshot struct {
-	ReadMail bool `json:"read_mail"`
-	Round    int  `json:"round"`          // seq of the current interrupt's first approval
-	Host     bool `json:"host,omitempty"` // a host-made proposal: nothing to resume
+	ReadMail bool   `json:"read_mail"`
+	Round    int    `json:"round"`            // seq of the current interrupt's first approval
+	Host     bool   `json:"host,omitempty"`   // a host-made proposal: nothing to resume
+	Effort   string `json:"effort,omitempty"` // the run's reasoning effort
 }
 
 type runKey struct{}
@@ -723,7 +730,7 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		return ai.Request{}, err
 	}
 	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true}, nil
+	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort}, nil
 }
 
 // track registers a run in flight. The caller holds runMu.
@@ -1081,7 +1088,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort})
 	stmts := append(slices.Clone(job.rewind), saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
@@ -1182,6 +1189,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	req.Responses = results
+	req.Effort = snap.Effort // as the run began: Anthropic refuses thinking switched on mid-turn
 	go s.drive(job, end, e.Run, req, nil)
 	return nil
 }

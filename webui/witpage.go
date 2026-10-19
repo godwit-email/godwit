@@ -272,13 +272,14 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 
 // Ask asks input in conv, an ask conversation, with the mail the user quoted
 // (message IDs; core AskWith), on model (a ModelChoice's Ref; "": the
-// default), which the conversation keeps; conv 0 makes one first, which
+// default) with reasoning effort ("low", "medium", "high"; "": none), which
+// the conversation keeps; conv 0 makes one first, which
 // ConversationCreated hears of. rewind, unless -1, asks it in place of the
 // question at that index (a question's ID is "q<rewind>") and what followed
 // (core AskAgain): a refused question leaves the conversation as it was. The page follows conv from before the run
 // starts, unless a newer selection came meanwhile. Only Stop cancels the
 // run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model string, rewind int) (RunStart, error) {
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model, effort string, rewind int) (RunStart, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -309,7 +310,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 		}
 	}
 	defer unlock()
-	if err := svc.SetConversationModel(ctx, conv, model); err != nil {
+	if err := svc.SetConversationModel(ctx, conv, model, effort); err != nil {
 		if made { // nothing was asked in it: no empty conversation is left behind
 			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
 			return RunStart{}, keyed(err)

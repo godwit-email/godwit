@@ -19,8 +19,10 @@ type WitHistory struct {
 	// Approvals are every approval of the conversation, in any state.
 	Approvals []Approval `json:"approvals"`
 	// Model is the conversation's model (a ModelChoice's Ref); "" for the default.
-	Model string   `json:"model"`
-	Usage WitUsage `json:"usage"`
+	Model string `json:"model"`
+	// Effort is the conversation's reasoning effort: low, medium, high; "" for none.
+	Effort string   `json:"effort"`
+	Usage  WitUsage `json:"usage"`
 }
 
 // WitUsage is what a conversation took: its runs' input and output tokens,

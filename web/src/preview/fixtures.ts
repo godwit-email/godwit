@@ -195,6 +195,7 @@ const done1 = approval({
 const history = (p: Partial<WitHistory> & Pick<WitHistory, "messages">): WitHistory => ({
   conversation: 1,
   model: "",
+  effort: "",
   usage: { input: 0, output: 0, context: 0, history: 0 },
   running: 0,
   approvals: [],

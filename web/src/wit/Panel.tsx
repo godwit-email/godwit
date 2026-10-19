@@ -480,6 +480,7 @@ export function Panel({
   model,
   onModels,
   models,
+  effort,
   ask: handed,
   onAsked,
   onSearch,
@@ -505,6 +506,8 @@ export function Panel({
    * opens a menu of them (the settings last) instead of the settings.
    */
   models?: { ref: string; list(): Promise<ModelChoice[]>; pick(ref: string): void };
+  /** The conversation's reasoning effort ("" for the model's default), picked beside the model. */
+  effort?: { value: string; pick(value: string): void };
   /** A question the host hands over: asked once (by identity), then onAsked. */
   ask?: { text: string };
   onAsked?(): void;
@@ -1098,6 +1101,36 @@ export function Panel({
               <RiArrowDownSLine className="size-3" />
             </InputGroupButton>
           )
+        )}
+        {model && models && effort && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <InputGroupButton
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
+                  title={t("wit.effort")}
+                >
+                  <RiBrainLine className="size-3.5" />
+                  {t(`wit.effort.${effort.value || "default"}`)}
+                  <RiArrowDownSLine className="size-3" />
+                </InputGroupButton>
+              }
+            />
+            <DropdownMenuContent side="top" align="end">
+              <DropdownMenuRadioGroup
+                value={effort.value}
+                onValueChange={(v: string) => effort.pick(v)}
+              >
+                {(["", "low", "medium", "high"] as const).map((v) => (
+                  <DropdownMenuRadioItem key={v} value={v}>
+                    {t(`wit.effort.${v || "default"}`)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {running && page ? (
           <InputGroupButton

@@ -57,23 +57,35 @@ func TestRunStoresSlugRef(t *testing.T) {
 }
 
 // A conversation's model overrides the default for its runs; "" goes back to
-// the default and a ref that does not resolve is refused.
+// the default and a ref that does not resolve, or an unknown effort, is refused.
 func TestSetConversationModel(t *testing.T) {
 	e := newApprovalEnv(t)
 	ms, err := e.s.UpdateModelService(t.Context(), e.ms.ID, ModelServiceInput{Name: e.ms.Name, Kind: "openai", BaseURL: e.srv.URL, Models: []string{"m1", "m2"}})
 	require.NoError(t, err)
 	conv := e.newConv(t, "ask", 0)
-	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/nope"))
-	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID+100, ""))
-	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2"))
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/nope", ""))
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID+100, "", ""))
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2", ""))
 	e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
 	e.start(t, conv, "hello")
 	assert.Equal(t, ms.Slug+"/m2", queryStr(t, e.s, "SELECT model FROM runs WHERE conversation_id = ? ORDER BY id DESC", conv.ID))
 
-	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, "", ""))
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Empty(t, c.Model)
+
+	// Either one refused keeps neither.
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2", "max"))
+	require.Error(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/nope", "high"))
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Empty(t, c.Model)
+	assert.Empty(t, c.Effort)
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ms.Slug+"/m2", "high"))
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, [2]string{ms.Slug + "/m2", "high"}, [2]string{c.Model, c.Effort})
 }
 
 // Rewinding to a question drops it, what came after and its runs; only a
@@ -149,7 +161,7 @@ func TestAskAgain(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, before, messages(), "a model that does not resolve")
 
-	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
+	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, "", ""))
 	// accepted, but its run saves nothing (cut off): nothing is replaced either
 	grant := grantKey{conv: conv.ID, tool: "fake_draft"}
 	e.s.sessionGrants.Store(grant, true)

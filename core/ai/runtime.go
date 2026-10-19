@@ -18,6 +18,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	antsdk "github.com/anthropics/anthropic-sdk-go"
 	ant "github.com/anthropics/anthropic-sdk-go/option"
 	gai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
@@ -26,7 +27,10 @@ import (
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/anthropic"
 	"github.com/firebase/genkit/go/plugins/compat_oai"
+	"github.com/openai/openai-go"
 	oai "github.com/openai/openai-go/option"
+	oaishared "github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // Engine runs models through Genkit: one Genkit instance per model service
@@ -384,6 +388,9 @@ func (r *runner) run(req Request) Result {
 	if req.MaxTurns > 0 {
 		opts = append(opts, gai.WithMaxTurns(req.MaxTurns))
 	}
+	if cfg := effortConfig(req.Model.Kind, req.Effort); cfg != nil {
+		opts = append(opts, gai.WithConfig(cfg))
+	}
 
 	resp, err := genkit.Generate(r.e.logCtx(ctx), in.g, opts...)
 	if err == nil && ctx.Err() != nil {
@@ -418,6 +425,27 @@ func (r *runner) run(req Request) Result {
 		}
 	}
 	return res
+}
+
+// thinkingBudget is the Anthropic thinking budget per effort; max_tokens is
+// raised above it by the answer's own room, Genkit's default 4096.
+var thinkingBudget = map[string]int64{"low": 2048, "medium": 8192, "high": 16384}
+
+// effortConfig is the model config asking kind's API for effort; nil for "".
+func effortConfig(kind, effort string) any {
+	if effort == "" {
+		return nil
+	}
+	switch kind {
+	case "anthropic":
+		b := thinkingBudget[effort]
+		return antsdk.MessageNewParams{MaxTokens: b + 4096, Thinking: antsdk.ThinkingConfigParamOfEnabled(b)}
+	case "openai":
+		return openai.ChatCompletionNewParams{ReasoningEffort: oaishared.ReasoningEffort(effort)}
+	case KindResponses:
+		return shared.ReasoningParam{Effort: shared.ReasoningEffort(effort), Summary: shared.ReasoningSummaryAuto}
+	}
+	return nil
 }
 
 func (r *runner) stream(_ context.Context, c *gai.ModelResponseChunk) error {
