@@ -1257,28 +1257,50 @@ export function Panel({
                 render={trayButton(RiTranslate2, t("wit.compose.translate"))}
               />
               <DropdownMenuContent className="w-auto min-w-48">
-                {info.languages.map((l) => {
-                  let label = l.name;
+                {(() => {
+                  const locale = currentLocale();
+                  const baseLocale = locale.split(/[-_]/)[0].toLowerCase();
+                  let dn: Intl.DisplayNames | null = null;
                   try {
-                    const locale = currentLocale();
-                    const dn = new Intl.DisplayNames([locale], { type: "language" });
-                    const localized = dn.of(l.tag);
-                    if (localized) label = localized.charAt(0).toUpperCase() + localized.slice(1);
+                    dn = new Intl.DisplayNames([locale], { type: "language" });
                   } catch {}
-                  return (
+
+                  const items = info.languages.map((l) => {
+                    let label = l.name;
+                    if (dn) {
+                      try {
+                        const localized = dn.of(l.tag);
+                        if (localized) label = localized.charAt(0).toUpperCase() + localized.slice(1);
+                      } catch {}
+                    }
+                    return { ...l, label };
+                  });
+
+                  const isCurrentAppLang = (tag: string) => {
+                    const baseTag = tag.split(/[-_]/)[0].toLowerCase();
+                    return baseTag === baseLocale || tag.toLowerCase() === locale.toLowerCase();
+                  };
+
+                  const top = items.filter((l) => isCurrentAppLang(l.tag));
+                  const rest = items.filter((l) => !isCurrentAppLang(l.tag));
+
+                  top.sort((a, b) => a.label.localeCompare(b.label, locale));
+                  rest.sort((a, b) => a.label.localeCompare(b.label, locale));
+
+                  return [...top, ...rest].map((l) => (
                     <DropdownMenuItem
                       key={l.tag}
                       onClick={() =>
-                        ask(t("wit.compose.translate_to", label), {
+                        ask(t("wit.compose.translate_to", l.label), {
                           skill: "translate-draft",
                           lang: l.tag,
                         })
                       }
                     >
-                      {label}
+                      {l.label}
                     </DropdownMenuItem>
-                  );
-                })}
+                  ));
+                })()}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
