@@ -58,10 +58,20 @@ func TestFromMailHTMLPreAndImages(t *testing.T) {
 }
 
 func TestFromComposeHTML(t *testing.T) {
-	src := mail.SanitizeCompose(`<p>Hi <b>there</b> <a href="https://x.example/">site</a> <u>u</u> <code>c</code></p><h1>Title</h1><ul><li>a</li></ul><blockquote>q</blockquote><table><tr><td>cell</td></tr></table><hr>`)
+	src := mail.SanitizeCompose(`<p>Hi <b>there</b> <a href="https://x.example/">site</a> <u>u</u> <s>s</s> <code>c</code></p><h1>Title</h1><ul><li>a</li></ul><blockquote>q</blockquote><table><tr><td>cell</td></tr></table><hr>`)
 	d := FromComposeHTML(src)
 	assert.Equal(t, []Block{
-		{Kind: Paragraph, Inlines: []Inline{{Text: "Hi "}, {Text: "there", Bold: true}, {Text: " "}, {Text: "site", Link: "https://x.example/"}, {Text: " u c"}}},
+		{Kind: Paragraph, Inlines: []Inline{
+			{Text: "Hi "},
+			{Text: "there", Bold: true},
+			{Text: " "},
+			{Text: "site", Link: "https://x.example/"},
+			{Text: " "},
+			{Text: "u", Underline: true},
+			{Text: " "},
+			{Text: "s", Strike: true},
+			{Text: " c"},
+		}},
 		{Kind: Paragraph, Inlines: []Inline{{Text: "Title"}}},
 		{Kind: ListItem, Level: 1, Inlines: []Inline{{Text: "a"}}},
 		{Kind: Quote, Level: 1, Inlines: []Inline{{Text: "q"}}},

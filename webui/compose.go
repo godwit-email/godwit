@@ -244,7 +244,8 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	out := ComposeState{SignatureImages: imgs, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Signature: mail.HTMLToText(s.signature), Attachments: attachments(d), Revision: d.Revision,
-		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language()}
+		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(),
+		Fonts: systemFonts()}
 	for _, a := range accs {
 		out.Accounts = append(out.Accounts, Account{ID: a.ID, Email: a.Email})
 	}

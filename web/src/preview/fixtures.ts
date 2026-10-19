@@ -60,6 +60,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   theme: theme(mode),
   updatedAt: new Date().setHours(9, 52, 0, 0),
   locale: "zh-Hans",
+  fonts: [],
   wit: {
     enabled: true,
     translateOnly: false,

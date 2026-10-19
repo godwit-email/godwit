@@ -131,10 +131,10 @@ func (c *conv) element(n *html.Node, x ctx) {
 		x.style.Code = !c.compose
 		c.walk(n, x)
 	case atom.S, atom.Strike, atom.Del:
-		x.style.Strike = !c.compose
+		x.style.Strike = true
 		c.walk(n, x)
 	case atom.U, atom.Ins:
-		x.style.Underline = !c.compose
+		x.style.Underline = true
 		c.walk(n, x)
 	case atom.A:
 		key := "data-href"

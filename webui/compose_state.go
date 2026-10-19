@@ -44,6 +44,8 @@ type ComposeState struct {
 	UpdatedAt int64 `json:"updatedAt"`
 	// Locale selects the shared catalog bundled with the page.
 	Locale string `json:"locale"`
+	// Fonts are the available system font families for typography.
+	Fonts []string `json:"fonts"`
 	// Wit is what the Wit panel offers, as WitInfo.
 	Wit WitInfo `json:"wit"`
 }

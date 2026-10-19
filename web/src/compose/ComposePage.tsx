@@ -834,6 +834,7 @@ function Compose({
                         }
                         toolbarSlot={toolbarSlot}
                         attach={attach}
+                        fonts={state.fonts}
                         popover={
                           cmdk &&
                           !locked &&
@@ -883,7 +884,7 @@ function Compose({
             {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
             <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
               <div ref={setToolbarSlot} className="contents">
-                {!showEditor && <IdleToolbar t={t} attach={attach} />}
+                {!showEditor && <IdleToolbar t={t} attach={attach} fonts={state.fonts} />}
               </div>
               <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
             </div>

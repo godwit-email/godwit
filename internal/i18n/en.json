@@ -108,6 +108,9 @@
   "compose_to": "To",
   "compose_to_input": "Add recipients",
   "compose_underline": "Underline",
+  "compose_strikethrough": "Strikethrough",
+  "compose_font_size": "Font size",
+  "compose_font_family": "Font family",
   "compose_warn": "Check before sending: {arg1}",
   "@compose_warn": {
     "placeholders": {

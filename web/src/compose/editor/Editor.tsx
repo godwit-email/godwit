@@ -61,8 +61,9 @@ export function Editor(props: {
   onCmdK?(s: CmdKSelection): void;
   toolbarSlot?: HTMLElement | null;
   popover?: ReactNode;
+  fonts?: string[];
 }) {
-  const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK } = props;
+  const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK, fonts } = props;
   const { toolbarSlot, popover } = props;
   const held = !!popover;
   const editor = usePlateEditor({
@@ -80,7 +81,13 @@ export function Editor(props: {
     [held],
   );
   const toolbar = (
-    <Toolbar t={t} linkOpen={linkOpen} onLinkOpenChange={setLinkOpen} attach={attach} />
+    <Toolbar
+      t={t}
+      linkOpen={linkOpen}
+      onLinkOpenChange={setLinkOpen}
+      attach={attach}
+      fonts={fonts}
+    />
   );
 
   return (
@@ -101,7 +108,86 @@ export function Editor(props: {
             decorate={decorate}
             onCompositionStart={() => onComposing(true)}
             onCompositionEnd={() => onComposing(false)}
+            onDOMBeforeInput={(e: Event) => {
+              const inputEvent = e as InputEvent;
+              if (inputEvent.inputType === "insertReplacementText") {
+                const text = inputEvent.data || inputEvent.dataTransfer?.getData("text/plain");
+                if (text) {
+                  inputEvent.preventDefault();
+                  if (readOnly) return;
+                  let targetRange: TRange | null = null;
+                  const ranges = inputEvent.getTargetRanges?.();
+                  if (ranges && ranges.length > 0) {
+                    try {
+                      targetRange = editor.api.toSlateRange(ranges[0]);
+                    } catch {}
+                  }
+                  if (!targetRange) {
+                    targetRange = editor.selection;
+                  }
+                  if (targetRange) {
+                    const [leaf] = editor.api.leaf(targetRange.anchor) ?? [];
+                    const marks: Record<string, unknown> = {};
+                    if (leaf) {
+                      for (const [k, v] of Object.entries(leaf)) {
+                        if (k !== "text") marks[k] = v;
+                      }
+                    }
+                    editor.tf.select(targetRange);
+                    for (const [k, v] of Object.entries(marks)) {
+                      editor.tf.addMark(k, v);
+                    }
+                    editor.tf.insertText(text);
+                  }
+                }
+              }
+            }}
+            onBeforeInput={(e: React.FormEvent<HTMLDivElement> & { nativeEvent: InputEvent }) => {
+              const inputEvent = e.nativeEvent;
+              if (inputEvent.inputType === "insertReplacementText") {
+                const text = inputEvent.data || inputEvent.dataTransfer?.getData("text/plain");
+                if (text) {
+                  e.preventDefault();
+                  if (readOnly) return;
+                  let targetRange: TRange | null = null;
+                  const ranges = inputEvent.getTargetRanges?.();
+                  if (ranges && ranges.length > 0) {
+                    try {
+                      targetRange = editor.api.toSlateRange(ranges[0]);
+                    } catch {}
+                  }
+                  if (!targetRange) {
+                    targetRange = editor.selection;
+                  }
+                  if (targetRange) {
+                    const [leaf] = editor.api.leaf(targetRange.anchor) ?? [];
+                    const marks: Record<string, unknown> = {};
+                    if (leaf) {
+                      for (const [k, v] of Object.entries(leaf)) {
+                        if (k !== "text") marks[k] = v;
+                      }
+                    }
+                    editor.tf.select(targetRange);
+                    for (const [k, v] of Object.entries(marks)) {
+                      editor.tf.addMark(k, v);
+                    }
+                    editor.tf.insertText(text);
+                  }
+                }
+              }
+            }}
             onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                e.target === e.currentTarget
+              ) {
+                e.preventDefault();
+                if (readOnly) return;
+                editor.tf.insertText("\n");
+                return;
+              }
               // ⌘K on a selection: Wit's rewrite when offered, else the link popover. Not from
               // inside the popover, which sits in the editable's DOM.
               if (
@@ -126,7 +212,7 @@ export function Editor(props: {
               const v = editor.children;
               onCmdK({ text: toText(v), start: offsetOf(v, a), end: offsetOf(v, b) });
             }}
-            className="text-lg leading-[1.75] outline-none [&>*+*]:mt-3 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+            className="text-lg leading-snug outline-none [&>*+*]:mt-3 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
           />
         </div>
         {popover && slot && createPortal(popover, slot)}

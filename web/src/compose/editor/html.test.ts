@@ -17,6 +17,7 @@ describe("html", () => {
       "<ul><li><p>1</p></li></ul>",
       "<ol><li><p>1</p></li><li><p>2</p></li></ol>",
       "<blockquote><p>q</p></blockquote>",
+      '<p><u>u</u> <s>s</s> <span style="font-size: 20px">fs</span> <span style="font-family: Georgia">ff</span></p>',
       "<p>a<br>b</p>",
       // A trailing soft break is written as richtext.ToHTML writes it: a last <br> alone does not render.
       "<p>a<br><br></p>",
@@ -53,9 +54,11 @@ describe("html", () => {
 
   it("paste keeps only allowed formats", () => {
     const out = round(
-      '<h1 style="color:red">T</h1><table><tr><td>c</td></tr></table><img src="https://t/x.png"><p><u>u</u><span style="font-size:30px">s</span></p>',
+      '<h1 style="color:red">T</h1><table><tr><td>c</td></tr></table><img src="https://t/x.png"><p><u>u</u><s>s</s><span style="font-size:30px">sz</span><span style="color:blue">drop</span></p>',
     );
-    expect(out).toBe("<p>T</p><p>c</p><p>us</p>");
+    expect(out).toBe(
+      '<p>T</p><p>c</p><p><u>u</u><s>s</s><span style="font-size: 30px">sz</span>drop</p>',
+    );
   });
 
   it("pasting HTML into the editor takes the same path", () => {
