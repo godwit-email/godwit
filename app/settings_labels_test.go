@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 func (h *harness) labels() []core.Label {
@@ -259,5 +260,34 @@ func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
 	h.drain()
 	if len(h.labels()) != n {
 		t.Error("an over-long description was saved")
+	}
+}
+
+// TestSettingsLabelsSwatchesFit: at comfortable density every color swatch
+// stays inside the dialog, left of its right-aligned 创建 button's edge.
+func TestSettingsLabelsSwatchesFit(t *testing.T) {
+	h, _ := withAccount(t)
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Density = "comfortable"
+	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("comfortable density", func() bool { return h.app.settings.Density == "comfortable" })
+	h.labelsPage()
+	h.click("新建标签")
+	h.see("创建")
+	create, _ := h.tt.Find("创建")
+	for _, name := range core.LabelColors {
+		label := i18n.T("label.color." + name)
+		r, ok := h.tt.Find(label)
+		if !ok {
+			t.Fatalf("no swatch %s", label)
+		}
+		if r.X+r.W > create.X+create.W {
+			t.Errorf("swatch %s ends at %v, past the dialog's content edge %v", label, r.X+r.W, create.X+create.W)
+		}
 	}
 }
