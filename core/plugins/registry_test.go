@@ -293,7 +293,14 @@ func TestParseRegistryAssetsReject(t *testing.T) {
 		"backslash file":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile(`a\b`, 1)} }),
 		"dot file":         mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("..", 1)} }),
 		"repeated file":    mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("x", 1), assetFile("x", 1)} }),
-		"no files":         mod(func(as []any) { variant(as, 1, 0)["files"] = []any{} }),
+		"case-only repeat": mod(func(as []any) {
+			variant(as, 1, 0)["files"] = []any{assetFile("model.gguf", 1), assetFile("MODEL.gguf", 1)}
+		}),
+		"windows device": mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("nul.txt", 1)} }),
+		"windows char":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("a?.gguf", 1)} }),
+		"trailing dot":   mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model.", 1)} }),
+		"trailing space": mod(func(as []any) { variant(as, 1, 0)["files"] = []any{assetFile("model ", 1)} }),
+		"no files":       mod(func(as []any) { variant(as, 1, 0)["files"] = []any{} }),
 		"http url": mod(func(as []any) {
 			f := assetFile("x", 1)
 			f["url"] = "http://example.com/x"

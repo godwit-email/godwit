@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -154,12 +155,12 @@ func checkAssets(as []Asset) error {
 			if len(v.Files) == 0 {
 				return fmt.Errorf("asset %s %s has no files", a.Name, v.ID)
 			}
-			names := map[string]bool{}
+			names := map[string]bool{} // case-folded: macOS and Windows disks ignore case
 			for _, f := range v.Files {
 				where := fmt.Sprintf("asset %s %s: %s", a.Name, v.ID, f.Name)
 				switch {
-				case !fs.ValidPath(f.Name) || f.Name == "." || strings.ContainsAny(f.Name, `/\:`) || names[f.Name]:
-					return fmt.Errorf("%s: the name must be one file name, not repeated", where)
+				case !portableFileName(f.Name) || names[strings.ToLower(f.Name)]:
+					return fmt.Errorf("%s: the name must be one file name every platform can create, not repeated", where)
 				case !strings.HasPrefix(f.URL, "https://"):
 					return fmt.Errorf("%s: the url must be https", where)
 				case !sha256RE.MatchString(f.SHA256):
@@ -167,9 +168,19 @@ func checkAssets(as []Asset) error {
 				case f.Size <= 0 || f.Size > maxAssetFile:
 					return fmt.Errorf("%s: size must be 1 to %d bytes", where, int64(maxAssetFile))
 				}
-				names[f.Name] = true
+				names[strings.ToLower(f.Name)] = true
 			}
 		}
 	}
 	return nil
+}
+
+// windowsReserved are device names Windows will not create a file as, with any extension.
+var windowsReserved = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$`)
+
+// portableFileName: one file name that macOS, Linux and Windows can all create.
+func portableFileName(name string) bool {
+	return fs.ValidPath(name) && name != "." && !strings.ContainsAny(name, `/\:*?"<>|`) &&
+		!strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 }) &&
+		!strings.HasSuffix(name, ".") && !strings.HasSuffix(name, " ") && !windowsReserved.MatchString(name)
 }

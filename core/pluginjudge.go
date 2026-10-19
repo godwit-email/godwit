@@ -155,6 +155,11 @@ func (j pluginModelJudge) load(ctx context.Context) error {
 	if old, had := j.rp.loaded.Swap(j.model.ID, loadedModel{j.model.Assets, lease, proc}); had { // calls are one at a time: no other load raced this one
 		old.(loadedModel).lease()
 	}
+	if j.rp.procs.Load() != proc { // the process ended before the entry went in (OnExit ran first): it holds nothing now
+		if m, ok := j.rp.loaded.LoadAndDelete(j.model.ID); ok {
+			m.(loadedModel).lease()
+		}
+	}
 	// The plugin may have unloaded the others for this one: they load again when used.
 	j.rp.loaded.Range(func(id, _ any) bool {
 		if id != j.model.ID {

@@ -168,12 +168,12 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 		}
 		cmd.Wait()
 		p.kill() // also after a clean exit: helpers it started go, and on Windows its job is released
-		close(p.dead)
 		n.mu.Lock()
 		if n.p == p && n.o.OnExit != nil { // a process started since has had its own OnStart
 			n.o.OnExit()
 		}
 		n.mu.Unlock()
+		close(p.dead) // after OnExit: Close and a failed start return once it is done
 	}()
 	n.p = p
 	return p, true, nil

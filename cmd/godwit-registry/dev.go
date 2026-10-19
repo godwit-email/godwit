@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/godwit-email/godwit/core/plugins"
@@ -127,6 +128,9 @@ func devRegistry(ctx context.Context, specPath, addr string, stdout io.Writer) e
 		}
 		var assets []plugins.Asset
 		for _, a := range p.Assets {
+			if len(a.Platforms) > 0 && !slices.Contains(a.Platforms, platform) {
+				continue // only this platform's files are served, so two of one name never share a URL
+			}
 			asset := plugins.Asset{Name: a.Name, Platforms: a.Platforms}
 			for _, v := range a.Variants {
 				variant := plugins.AssetVariant{ID: v.ID, MinMemoryGB: v.MinMemoryGB}

@@ -650,7 +650,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
-		OnExit: rp.dropLoaded, // its models' files are no longer in use
+		OnExit: func() { rp.procs.Add(1); rp.dropLoaded() }, // its models' files are no longer in use; a load it answered counts for nothing
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
 			return setUpNative(ctx, name, r, rp, call)
 		}})
