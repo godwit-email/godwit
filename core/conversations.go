@@ -979,6 +979,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	res := wait()
 	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
+		used := res.Usage // whatever res becomes, the model calls took these
 		// Save the whole history, not just what this run was sent.
 		if st, err := ai.RestoreState(job.full, res.State, job.dropped); err != nil {
 			res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
@@ -986,10 +987,9 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 			res.State = st
 		}
 		if job.host != nil {
-			used := res.Usage
 			res = job.host(ctx, res)
-			res.Usage = used // the host's result took the run's tokens all the same
 		}
+		res.Usage = used
 	}
 	fin, err := s.settleRun(ctx, job, req, res)
 	applied := false
