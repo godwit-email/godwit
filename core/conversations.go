@@ -142,29 +142,11 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 }
 
 // SetConversationModel makes the conversation's next runs use ref ("slug/model"
-// or a plugin's); "" goes back to Settings.DefaultModel. A ref that does not
-// resolve is refused. A run going on keeps the model it started with.
-func (s *Service) SetConversationModel(ctx context.Context, id int64, ref string) error {
-	ctx, end, err := s.begin(ctx, 0)
-	if err != nil {
-		return err
-	}
-	defer end()
-	if ref != "" {
-		if _, ref, err = s.resolveRef(ctx, ref); err != nil {
-			return err
-		}
-	}
-	r, err := s.db.Execute(ctx, "UPDATE conversations SET model = ? WHERE id = ?", ref, id)
-	if err == nil && r.Changes == 0 {
-		err = fmt.Errorf("conversation %d not found", id)
-	}
-	return err
-}
-
-// SetConversationEffort makes the conversation's next runs ask for effort
-// ("low", "medium" or "high"); "" asks for none, as non-reasoning models need.
-func (s *Service) SetConversationEffort(ctx context.Context, id int64, effort string) error {
+// or a plugin's; "" goes back to Settings.DefaultModel) and ask for effort
+// ("low", "medium" or "high"; "" asks for none, as non-reasoning models need).
+// Both are checked before either is kept: a ref that does not resolve or an
+// unknown effort changes nothing. A run going on keeps what it started with.
+func (s *Service) SetConversationModel(ctx context.Context, id int64, ref, effort string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -173,7 +155,12 @@ func (s *Service) SetConversationEffort(ctx context.Context, id int64, effort st
 	if !slices.Contains([]string{"", "low", "medium", "high"}, effort) {
 		return fmt.Errorf("unknown reasoning effort %q", effort)
 	}
-	r, err := s.db.Execute(ctx, "UPDATE conversations SET effort = ? WHERE id = ?", effort, id)
+	if ref != "" {
+		if _, ref, err = s.resolveRef(ctx, ref); err != nil {
+			return err
+		}
+	}
+	r, err := s.db.Execute(ctx, "UPDATE conversations SET model = ?, effort = ? WHERE id = ?", ref, effort, id)
 	if err == nil && r.Changes == 0 {
 		err = fmt.Errorf("conversation %d not found", id)
 	}

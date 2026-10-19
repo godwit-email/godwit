@@ -310,7 +310,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 		}
 	}
 	defer unlock()
-	if err := errors.Join(svc.SetConversationModel(ctx, conv, model), svc.SetConversationEffort(ctx, conv, effort)); err != nil {
+	if err := svc.SetConversationModel(ctx, conv, model, effort); err != nil {
 		if made { // nothing was asked in it: no empty conversation is left behind
 			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
 			return RunStart{}, keyed(err)
