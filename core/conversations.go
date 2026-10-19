@@ -231,7 +231,13 @@ func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte)
 // Messages[at] on (runs with no span stay); the conversation's state is
 // saved apart.
 func rewindStmts(id int64, at int) []sqlite.Statement {
-	stmts := []sqlite.Statement{{SQL: "DELETE FROM runs WHERE conversation_id = ? AND hist_from >= ?", Args: []any{id, at}}}
+	const dropped = "FROM runs WHERE conversation_id = ? AND hist_from >= ?"
+	stmts := []sqlite.Statement{
+		// what they took stays counted
+		{SQL: `UPDATE conversations SET spent_input = spent_input + (SELECT COALESCE(SUM(input_tokens), 0) ` + dropped + `),
+			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `) WHERE id = ?`, Args: []any{id, at, id, at, id}},
+		{SQL: "DELETE " + dropped, Args: []any{id, at}},
+	}
 	if at == 0 { // the first question titled it: the one asked in its place does
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
 	}
@@ -266,9 +272,10 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	for _, r := range rows.Values {
 		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
 	}
-	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
+		COALESCE(SUM(output_tokens), 0) + (SELECT spent_output FROM conversations WHERE id = ?),
 		COALESCE((SELECT context_tokens FROM runs WHERE conversation_id = ? AND context_tokens > 0 ORDER BY id DESC LIMIT 1), 0)
-		FROM runs WHERE conversation_id = ?`, id, id)
+		FROM runs WHERE conversation_id = ?`, id, id, id, id)
 	if err != nil {
 		return Conversation{}, err
 	}

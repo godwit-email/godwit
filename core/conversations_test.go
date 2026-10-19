@@ -171,3 +171,19 @@ func TestAskAgain(t *testing.T) {
 	drainWit(t, ch)
 	assert.Equal(t, "first, edited", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID))
 }
+
+// A rewind drops runs, not what they took: the conversation's totals keep
+// their tokens.
+func TestRewindKeepsUsage(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}, Usage: [2]int{10, 2}}, testllm.Turn{Text: []string{"Two."}, Usage: [2]int{30, 4}})
+	e.start(t, conv, "first")
+	e.start(t, conv, "second")
+	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 40, c.Usage.Input)
+	assert.Equal(t, 6, c.Usage.Output)
+	assert.Equal(t, 10, c.Usage.Last, "the history the model was last shown is the kept run's")
+}

@@ -333,4 +333,8 @@ var Migrations = [][]string{{
 	`ALTER TABLE runs ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE runs ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE runs ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0`,
+	// The tokens of the runs a rewind dropped (RewindConversation): the
+	// conversation took them all the same.
+	`ALTER TABLE conversations ADD COLUMN spent_input INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversations ADD COLUMN spent_output INTEGER NOT NULL DEFAULT 0`,
 }}
