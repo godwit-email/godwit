@@ -151,12 +151,16 @@ func TestAskAgain(t *testing.T) {
 
 	require.NoError(t, e.s.SetConversationModel(t.Context(), conv.ID, ""))
 	// accepted, but its run saves nothing (cut off): nothing is replaced either
+	grant := grantKey{conv: conv.ID, tool: "fake_draft"}
+	e.s.sessionGrants.Store(grant, true)
 	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length"})
 	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
 	require.Equal(t, "error", evs[len(evs)-1].Kind)
 	assert.Equal(t, before, messages(), "a run that failed")
+	_, granted := e.s.sessionGrants.Load(grant)
+	assert.True(t, granted, "nor are the conversation's grants gone")
 
 	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
 	ch, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)

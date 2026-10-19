@@ -688,6 +688,7 @@ type runJob struct {
 	// rewind, for a question asked in place, go with the run's first save
 	// (settleRun): a run that saves nothing (failed, stopped) replaces nothing.
 	rewind []sqlite.Statement
+	grants []grantKey // the grants asking in place set aside: back if nothing is replaced
 	cited  []Citation // the mail the run's context shows the model, sent first
 	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
 	ctx    context.Context
@@ -811,7 +812,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	if err == nil && at >= 0 {
 		job.rewind = append(rewindStmts(conv.ID, at), claimed...)
-		s.dropGrants(conv.ID) // asked again, a write waits for the user
+		job.grants = s.dropGrants(conv.ID) // asked again, a write waits for the user
 	} else if err == nil && len(claimed) > 0 {
 		_, err = s.db.Transaction(ctx, claimed)
 	}
@@ -1052,6 +1053,11 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	}
 	switch {
 	case res.Err != nil:
+		if job.rewind != nil { // it replaced nothing: the grants set aside come back
+			for _, g := range job.grants {
+				s.sessionGrants.Store(g, true)
+			}
+		}
 		state := "failed"
 		if res.Err.Code == ai.CodeCanceled {
 			state = "cancelled"
