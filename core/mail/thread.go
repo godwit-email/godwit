@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-var subjectPrefix = regexp.MustCompile(`(?i)^\s*((re|fwd?|aw|wg|tr|rv|res|enc|antw|dr|ynt|ilt|回复|答复|转发|回覆|轉寄|轉發|답장|전달)\s*(\[\d+\])?\s*[:：]\s*)+`)
+// İlt is spelled beside ilt: Go's case-insensitive match does not fold U+0130
+// (İ) to ASCII i, so a Turkish İlt: prefix would otherwise stay in the subject
+// key and split the thread from the original.
+var subjectPrefix = regexp.MustCompile(`(?i)^\s*((re|fwd?|aw|wg|tr|rv|res|enc|antw|dr|ynt|ilt|İlt|回复|答复|转发|回覆|轉寄|轉發|답장|전달)\s*(\[\d+\])?\s*[:：]\s*)+`)
 
 // ThreadKeys returns the conversation keys of p: ids is its own Message-ID plus
 // In-Reply-To and References (deduplicated), subjectKey the lowercased subject
