@@ -164,4 +164,34 @@ describe("SignatureEditor", () => {
     });
     expect(onChange).toHaveBeenLastCalledWith(img().repeat(4));
   });
+
+  it("preserves custom HTML tables and inline styles without Plate stripping", async () => {
+    const tableHTML =
+      '<table style="color:#172E43"><tr><td><div style="background:#172E43;color:#fff">JW.</div></td><td>Jonas Weber</td></tr></table>';
+    const onChange = vi.fn();
+    render(<SignatureEditor initial={tableHTML} onChange={onChange} pickImage={none} t={t} />);
+
+    // On mount, custom HTML must not be flattened or stripped by Plate
+    expect(onChange).not.toHaveBeenCalled();
+
+    const box = screen.getByLabelText("settings.account.signature.label");
+    expect(box.querySelector("table")).toBeInTheDocument();
+    expect(box).toHaveTextContent("JW.Jonas Weber");
+
+    // Open HTML dialog, verify raw HTML is intact
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html" }));
+    const textarea = screen.getByRole("textbox", { name: "settings.account.signature.html" });
+    expect(textarea).toHaveValue(tableHTML);
+
+    // Save modified custom HTML
+    const updatedTable = tableHTML.replace("Jonas Weber", "Max Weber");
+    fireEvent.change(textarea, { target: { value: updatedTable } });
+    fireEvent.click(screen.getByRole("button", { name: "common.save" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(onChange).toHaveBeenLastCalledWith(updatedTable);
+    expect(box).toHaveTextContent("JW.Max Weber");
+  });
 });

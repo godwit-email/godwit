@@ -102,10 +102,14 @@ function Toolbar({
   t,
   pickImage,
   onOpenHtml,
+  customHtml,
+  onCustomCommand,
 }: {
   t: T;
   pickImage(): Promise<string>;
   onOpenHtml(): void;
+  customHtml?: boolean;
+  onCustomCommand?(cmd: string, val?: string): void;
 }) {
   const editor = useEditorRef();
   const value = useEditorSelector(active, []).split(" ").filter(Boolean);
@@ -123,10 +127,14 @@ function Toolbar({
           e.preventDefault();
           const href = safeHref(link);
           if (!href) return setBad(true);
-          if (saved.current) editor.tf.select(saved.current);
-          upsertLink(editor, { url: href });
+          if (customHtml && onCustomCommand) {
+            onCustomCommand("createLink", href);
+          } else {
+            if (saved.current) editor.tf.select(saved.current);
+            upsertLink(editor, { url: href });
+            editor.tf.focus();
+          }
           setLink(undefined);
-          editor.tf.focus();
         }}
       >
         <Input
@@ -177,8 +185,12 @@ function Toolbar({
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {marks.map((m) =>
           item(m.key, m.label, m.Icon, () => {
-            editor.tf.toggleMark(m.key);
-            editor.tf.focus();
+            if (customHtml && onCustomCommand) {
+              onCustomCommand(m.key);
+            } else {
+              editor.tf.toggleMark(m.key);
+              editor.tf.focus();
+            }
           }),
         )}
         <span className="mx-1 h-4 border-l-[0.5px]" />
@@ -196,7 +208,12 @@ function Toolbar({
             const at = editor.selection;
             pickImage().then(
               (url) => {
-                if (!url || images(editor.children) >= MAX_IMAGES) return;
+                if (!url) return;
+                if (customHtml && onCustomCommand) {
+                  onCustomCommand("insertImage", url);
+                  return;
+                }
+                if (images(editor.children) >= MAX_IMAGES) return;
                 editor.tf.insertNodes(
                   { type: "img", url, children: [{ text: "" }] },
                   at ? { at, select: true } : { at: [editor.children.length], select: true },
@@ -219,6 +236,14 @@ function Toolbar({
   );
 }
 
+export function isCustomHTML(html: string): boolean {
+  if (!html) return false;
+  return (
+    /<(table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|div|style|font)/i.test(html) ||
+    /style\s*=\s*["']/i.test(html)
+  );
+}
+
 /**
  * One account's signature: the toolbar over a Plate editor loaded from `initial` (at mount, its
  * images as data: URLs), reporting each change as HTML, "" once it holds no text and no image.
@@ -231,12 +256,52 @@ export function SignatureEditor(props: {
   t: T;
 }) {
   const { initial, onChange, pickImage, t } = props;
-  const editor = usePlateEditor({ plugins, value: (e) => fromHTML(e, initial, true) });
+  const isInitialCustom = useMemo(() => isCustomHTML(initial), [initial]);
+  const [customHtml, setCustomHtml] = useState<string | null>(isInitialCustom ? initial : null);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
+  const lastHtmlRef = useRef<string | null>(customHtml);
+
+  // If initial is custom HTML, avoid Plate's destructive fromHTML on mount.
+  const editor = usePlateEditor({
+    plugins,
+    value: (e) =>
+      isInitialCustom ? [{ type: "p", children: [{ text: "" }] }] : fromHTML(e, initial, true),
+  });
   const [htmlOpen, setHtmlOpen] = useState(false);
   const [htmlCode, setHtmlCode] = useState("");
 
+  useEffect(() => {
+    if (contentEditableRef.current && customHtml !== null) {
+      if (contentEditableRef.current.innerHTML !== customHtml) {
+        contentEditableRef.current.innerHTML = customHtml;
+        lastHtmlRef.current = customHtml;
+      }
+    }
+  }, [customHtml]);
+
+  const handleCustomCommand = (cmd: string, val?: string) => {
+    if (!contentEditableRef.current) return;
+    contentEditableRef.current.focus();
+    if (cmd === "createLink" && val) {
+      document.execCommand("createLink", false, val);
+    } else if (cmd === "insertImage" && val) {
+      document.execCommand("insertImage", false, val);
+    } else {
+      document.execCommand(cmd);
+    }
+    const updated = contentEditableRef.current.innerHTML;
+    lastHtmlRef.current = updated;
+    setCustomHtml(updated);
+    onChange(updated);
+  };
+
   const openHtml = () => {
-    const current = toHTML(editor.children);
+    let current = "";
+    if (customHtml !== null) {
+      current = lastHtmlRef.current ?? customHtml;
+    } else {
+      current = toHTML(editor.children);
+    }
     const isBlank = current === "<p><br></p>" || current === "<p></p>";
     setHtmlCode(isBlank ? "" : current);
     setHtmlOpen(true);
@@ -244,46 +309,64 @@ export function SignatureEditor(props: {
 
   const applyHtml = () => {
     const trimmed = htmlCode.trim();
-    let imgCount = 0;
-    const filterMaxImages = (ns: Descendant[]): Descendant[] => {
-      const res: Descendant[] = [];
-      for (const n of ns) {
-        if (n.type === "img") {
-          if (imgCount < MAX_IMAGES) {
-            imgCount++;
+    if (isCustomHTML(trimmed)) {
+      setCustomHtml(trimmed);
+      lastHtmlRef.current = trimmed;
+      if (contentEditableRef.current) {
+        contentEditableRef.current.innerHTML = trimmed;
+      }
+      onChange(trimmed);
+    } else {
+      setCustomHtml(null);
+      lastHtmlRef.current = null;
+      let imgCount = 0;
+      const filterMaxImages = (ns: Descendant[]): Descendant[] => {
+        const res: Descendant[] = [];
+        for (const n of ns) {
+          if (n.type === "img") {
+            if (imgCount < MAX_IMAGES) {
+              imgCount++;
+              res.push(n);
+            }
+          } else if ("children" in n && Array.isArray(n.children)) {
+            res.push({ ...n, children: filterMaxImages(n.children) });
+          } else {
             res.push(n);
           }
-        } else if ("children" in n && Array.isArray(n.children)) {
-          res.push({ ...n, children: filterMaxImages(n.children) });
-        } else {
-          res.push(n);
         }
-      }
-      return res;
-    };
-    const rawNodes = trimmed ? deserialize(editor, trimmed, true) : [];
-    const filteredNodes = filterMaxImages(rawNodes);
-    const newChildren = (
-      filteredNodes.length ? filteredNodes : [{ type: "p", children: [{ text: "" }] }]
-    ) as Value;
-    editor.tf.setValue(newChildren);
-    editor.tf.normalize({ force: true });
-    const newHtml =
-      toText(editor.children).trim() || images(editor.children) ? toHTML(editor.children) : "";
-    onChange(newHtml);
+        return res;
+      };
+      const rawNodes = trimmed ? deserialize(editor, trimmed, true) : [];
+      const filteredNodes = filterMaxImages(rawNodes);
+      const newChildren = (
+        filteredNodes.length ? filteredNodes : [{ type: "p", children: [{ text: "" }] }]
+      ) as Value;
+      editor.tf.setValue(newChildren);
+      editor.tf.normalize({ force: true });
+      const newHtml =
+        toText(editor.children).trim() || images(editor.children) ? toHTML(editor.children) : "";
+      onChange(newHtml);
+    }
     setHtmlOpen(false);
-    editor.tf.focus();
   };
 
   return (
     <Plate
       editor={editor}
-      onValueChange={({ value }) =>
-        onChange(toText(value).trim() || images(value) ? toHTML(value) : "")
-      }
+      onValueChange={({ value }) => {
+        if (customHtml === null) {
+          onChange(toText(value).trim() || images(value) ? toHTML(value) : "");
+        }
+      }}
     >
       <div className="relative flex h-screen flex-col">
-        <Toolbar t={t} pickImage={pickImage} onOpenHtml={openHtml} />
+        <Toolbar
+          t={t}
+          pickImage={pickImage}
+          onOpenHtml={openHtml}
+          customHtml={customHtml !== null}
+          onCustomCommand={handleCustomCommand}
+        />
         {htmlOpen && (
           <div
             role="dialog"
@@ -330,10 +413,36 @@ export function SignatureEditor(props: {
         )}
         {/* The wrapper scrolls, not the editable: WebKit stops repainting a scrolling contenteditable. */}
         <div className="min-h-0 flex-1 overflow-auto">
-          <PlateContent
-            aria-label={t("settings.account.signature.label")}
-            className="min-h-full px-3 py-2.5 leading-[1.6] outline-none [&_a]:text-primary [&_a]:underline"
-          />
+          {customHtml !== null ? (
+            // biome-ignore lint/a11y/useSemanticElements: contenteditable rich text area
+            <div
+              role="textbox"
+              tabIndex={0}
+              ref={contentEditableRef}
+              contentEditable
+              suppressContentEditableWarning
+              aria-label={t("settings.account.signature.label")}
+              className="min-h-full px-3 py-2.5 leading-[1.6] outline-none"
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: user-authored custom signature HTML
+              dangerouslySetInnerHTML={{ __html: customHtml }}
+              onInput={(e) => {
+                const next = e.currentTarget.innerHTML;
+                lastHtmlRef.current = next;
+                onChange(next);
+              }}
+              onBlur={(e) => {
+                const next = e.currentTarget.innerHTML;
+                lastHtmlRef.current = next;
+                setCustomHtml(next);
+                onChange(next);
+              }}
+            />
+          ) : (
+            <PlateContent
+              aria-label={t("settings.account.signature.label")}
+              className="min-h-full px-3 py-2.5 leading-[1.6] outline-none [&_a]:text-primary [&_a]:underline"
+            />
+          )}
         </div>
       </div>
     </Plate>

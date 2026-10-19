@@ -241,9 +241,10 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	if err != nil {
 		return ComposeState{}, err
 	}
+	sigHTML, _ := svc.InlineSignatureImages(ctx, d.AccountID, s.signature)
 	out := ComposeState{SignatureImages: imgs, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
-		Signature: mail.HTMLToText(s.signature), Attachments: attachments(d), Revision: d.Revision,
+		Signature: mail.HTMLToText(s.signature), SignatureHTML: sigHTML, Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language()}
 	for _, a := range accs {
 		out.Accounts = append(out.Accounts, Account{ID: a.ID, Email: a.Email})
@@ -464,7 +465,8 @@ var conflict = Change{Conflict: true, Attachments: []Attachment{}, SignatureImag
 func changeOf(ctx context.Context, svc *core.Service, d core.Draft) (Change, error) {
 	_, _, sig := mail.SplitDraft(d.HTML)
 	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, sig)
-	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), SignatureImages: imgs,
+	sigHTML, _ := svc.InlineSignatureImages(ctx, d.AccountID, sig)
+	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), SignatureHTML: sigHTML, SignatureImages: imgs,
 		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }
 

@@ -182,9 +182,14 @@ function draftHTML(args: string): string {
 const fmt = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
-/** The read-only signature: its text, then its images (data: URLs from Go). */
-const sigOf = (s: { signature: string; signatureImages: string[] | null }) => ({
+/** The read-only signature: its HTML/text, then its images (data: URLs from Go). */
+const sigOf = (s: {
+  signature: string;
+  signatureHtml?: string;
+  signatureImages: string[] | null;
+}) => ({
   text: s.signature,
+  html: s.signatureHtml,
   images: s.signatureImages ?? [],
 });
 
@@ -673,7 +678,14 @@ function Compose({
   // After the body's text: the signature, then the quoted mail behind its toggle.
   const tail = (
     <>
-      {(signature.text || signature.images.length > 0) && (
+      {signature.html ? (
+        <div
+          data-slot="signature-preview"
+          className="text-base leading-normal"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized signature HTML from Go
+          dangerouslySetInnerHTML={{ __html: signature.html }}
+        />
+      ) : signature.text || signature.images.length > 0 ? (
         <div className="whitespace-pre-wrap text-base text-muted-foreground">
           {signature.text}
           {signature.images.map((src, i) => (
@@ -681,7 +693,7 @@ function Compose({
             <img key={i} src={src} alt="" className="block max-w-full" />
           ))}
         </div>
-      )}
+      ) : null}
       {quote && (
         <div className="mt-2 text-base text-muted-foreground">
           <Button
