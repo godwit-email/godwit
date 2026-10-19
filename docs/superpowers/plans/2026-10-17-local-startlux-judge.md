@@ -29,10 +29,11 @@
 - **读出**：取最后一个位置的 logits，只看 k 个选项字母的 token id（来自 `decision_config.json`，缺任何一个就报错），`p = softmax(logit / T_题型)`。这和参考实现「+100 bias、`post_sampling_probs`、取 log 后除以 T 再 softmax」在数学上等价，但要用 Task 2 的对照测试实证。
 - **锁定 llama.cpp 版本并镜像**：官方 Releases 只保留近期版本（b11549 已被撤掉）。选一个版本，把各平台包里的库文件镜像到 dl.godwit.email、固定 sha256；插件仓库 vendor 同版本的 `llama.h`。升级前必须重跑 Task 2 的对照测试。
 - **平台**：macOS arm64（Metal）为首发；macOS x64、Linux x64 / arm64、Windows x64 / arm64 在 Task 1 实测通过后再上架。CUDA 包超过 150 MB，不提供。
+- **纯 CPU 平台只提供 2B**（2026-10-19 定，Task 1 的 CI 实测：2K token 的邮件一题 2B 7–36 s、4B 24–47 s）：除 macOS arm64 外的平台，插件的 `models.list` 只列 `decision-2b-q8`，并用模型的 `description` 写明「在这台电脑上较慢，建议只给新邮件打标签」，设置页显示在这个模型下面；registry 里这些平台的 `model` 资产组也只有 `2b-q8` 一个变体（同名资产按 `platforms` 分两份）。
 - **每个模型变体是模型目录里的一个模型**，不是插件配置项：`models.list` 返回 `decision-4b-q4`、`decision-2b-q8`，各自用 `assets: {"model": "<变体 ID>"}` 引用 registry 里 `model` 资产组的变体；固定的 `engine` 资产组由宿主按 release 补齐。插件只声明 id / name / 执行方式 / 资产引用，大小、平台、内存要求由宿主从 registry 读。新增模型 = 插件发一个新版本。
 - **第一版模型变体**（峰值内存是 M5 Max 上的实测值，不是跨平台的保证）：
   - `4b-q4`：GGUF 2.71 GB，峰值 3.3 GB，一致率 92.1% / 90.2%（0.5 / 0.8），单封 p50 2.7 s，`minMemoryGB: {"default": 8}`；
-  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9% / 85.4%，单封 p50 0.8 s，`minMemoryGB: {"default": 6, "windows-*": 8}`（Windows 值待 Task 1 实机确认）。
+  - `2b-q8`：GGUF 2.01 GB，峰值 2.5 GB，一致率 88.9% / 85.4%，单封 p50 0.8 s，`minMemoryGB: {"default": 6, "windows-*": 8}`（Windows 值待定，见 Open Question 1）。
   - 每个变体的文件是 GGUF 加它自己的 `decision_config.json`（选项字母的 token id、按题型的温度；2B 与 4B 的不同）。
   - **不按内存自动选变体**：内存不够的那档在目录里显示 `insufficient_memory`、不给下载；插件本身照常可装（模型 API 设计 §7）。
 - **判断模型由 `Settings.JudgeModel` 选择**（基础 PR 的迁移）；本地 judge 只能这样被选中，调用方不能逐请求指定另一个本地模型，所以不会有后台请求驱动的来回装载。插件同时只驻留一个模型。
@@ -43,8 +44,7 @@
 
 ## Open Questions（需要拍板）
 
-1. **只有 CPU 的机器**：Linux arm64 虚拟机（6 核、纯 CPU）上，约 3400 token 的长 prompt 一题 2B 要 17.9 s、0.8B 要 9.5 s，比 M5 Max 的 Metal 慢一个数量级；一封长邮件 7 个标签就是约 2 分钟。全量回扫 4479 封在纯 CPU 上要按天算。选项：(a) 纯 CPU 平台只提供 2B，并在设置里写明慢、建议只给新邮件打标签；(b) 第一版纯 CPU 平台不上架，只上 Metal / Vulkan。CI runner 的 x64 / arm64 数字（Task 1）证实了这个量级：2K token 的邮件一题 2B 7–36 s、4B 24–47 s。Vulkan 没有设备可测。
-2. **Windows 的内存门槛**：4K 档的提交量 2B 8–10 GB、4B 10–11 GB（Task 1）。选项：(a) `windows-*` 两档都提到 12；(b) Windows 上 context 封顶 2K（更长的 evidence 截短），门槛维持 8，代价是长邮件只读前半段。
+1. **Windows 的内存门槛**：Windows 只提供 2B，它在 4K 档的提交量是 8.2 GB（x64）/ 10.2 GB（arm64，Task 1）。选项：(a) `windows-*` 提到 12；(b) Windows 上 context 封顶 2K（更长的 evidence 截短），门槛维持 8，代价是长邮件只读前半段。
 
 ## Global Constraints
 
@@ -142,7 +142,7 @@ plugin.json                     {"name":"startlux","version":"0.1.0","native":{"
 - [ ] **真机实测**（推迟：手上没有设备，发布后由测试用户补）：带 GPU 的 Windows / Linux（Vulkan）、8 GB 内存的 Apple 芯片 Mac、开着 Smart App Control 的 Windows。用 `eval/` 的 99 封记录一致率、单封 p50 / 最大、整个进程树的峰值内存（含 GPU 分配）、冷启动时间。
 - [ ] **长时间运行**（推迟，同上）：在笔记本上实测首轮扫描 4479 封（现在的 3.4 小时只是按 p50 推算）：耗电、发热、界面是否卡、能否暂停与恢复；推理线程数和优先级怎么设才不抢前台。量一次空闲退出后重新哈希 3 GB 资产的耗时。
 - [ ] 确认 Vulkan 包在没有可用 GPU 时自动退回 CPU（推迟，同上）。
-- [ ] 按结果回答 Open Question 1，写进 #64。
+- [x] 按结果回答 Open Question 1：纯 CPU 平台只提供 2B（见 Decisions）。写进 #64 待做。
 
 ### Task 2: plugin-startlux 骨架、推理与读出
 
@@ -176,9 +176,11 @@ registry 里 0.1.0 的资产大致是：
 "assets": [
   {"name": "engine", "platforms": ["darwin-arm64"], "variants": [
     {"id": "b11707-metal", "files": [{"name": "libllama.0.dylib", "url": "…", "sha256": "…", "size": 3529184}, {"name": "libggml.0.dylib", …}, …（共 7 个）]}]},
-  {"name": "model", "variants": [
+  {"name": "model", "platforms": ["darwin-arm64"], "variants": [
     {"id": "4b-q4", "minMemoryGB": {"default": 8}, "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2710000000}, {"name": "decision_config.json", …}]},
-    {"id": "2b-q8", "minMemoryGB": {"default": 6, "windows-*": 8}, "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2010000000}, {"name": "decision_config.json", …}]}]}
+    {"id": "2b-q8", "minMemoryGB": {"default": 6}, "files": [{"name": "model.gguf", "url": "…", "sha256": "…", "size": 2010000000}, {"name": "decision_config.json", …}]}]},
+  {"name": "model", "platforms": ["darwin-amd64", "linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"], "variants": [
+    {"id": "2b-q8", "minMemoryGB": {"default": 6, "windows-*": 8}, "files": [同上]}]}
 ]
 ```
 
