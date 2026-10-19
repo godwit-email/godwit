@@ -30,6 +30,9 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 	require.True(t, p.Builtin)
 	require.True(t, p.Enabled, "on by default")
 	require.Equal(t, "验证码与登录链接", p.Title.For("zh-Hans"))
+	require.Equal(t, "驗證碼與登入連結", p.Title.For("zh-TW"))
+	require.Equal(t, "認証コードとログインリンク", p.Title.For("ja"))
+	require.Equal(t, "Anmeldecodes & Links", p.Title.For("de"))
 
 	tags, err := e.s.PluginTags(bg, codeID)
 	require.NoError(t, err)

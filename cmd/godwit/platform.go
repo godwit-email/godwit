@@ -318,7 +318,7 @@ func trayIcon(box trayBox) ([]byte, error) {
 // top bar as the main window's are; Title still names it in the Window menu.
 func composeWindowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
-		StateKey: "compose", Title: "新邮件"}
+		StateKey: "compose", Title: i18n.T("compose.new")}
 	if goos == "darwin" {
 		// The main window's material; ?material tells the page to tint it rather than cover it.
 		o.URL, o.Vibrancy = "/compose.html?material", mygo.VibrancySidebar
