@@ -291,4 +291,3 @@ func (c *imapConn) Read(p []byte) (int, error) {
 	}
 	return copied, err
 }
-

@@ -321,4 +321,3 @@ func TestIMAPEmptyLiteralWithoutSpace(t *testing.T) {
 	require.Len(t, msgs, 1)
 	assert.Equal(t, imap.UID(42), msgs[0].UID)
 }
-
