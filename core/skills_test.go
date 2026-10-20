@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
@@ -65,7 +66,7 @@ func TestBrokenUserSkillListed(t *testing.T) {
 	i, ok := find(infos, "broken")
 	require.True(t, ok)
 	assert.NotEmpty(t, i.Error)
-	assert.Len(t, infos, 9)
+	assert.Len(t, infos, len(skills.Builtins())+1)
 }
 
 func TestSetSkillEnabled(t *testing.T) {
