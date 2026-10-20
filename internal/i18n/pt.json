@@ -1039,5 +1039,7 @@
   "wit_usage_history": "Histórico {arg1}% cheio",
   "wit_usage_note": "Quando encher, as trocas mais antigas deixam de ser enviadas ao modelo.",
   "wit_usage_last": "Última solicitação: {arg1} tokens",
-  "wit_usage_total": "Esta conversa: {arg1} de entrada · {arg2} de saída tokens"
+  "wit_usage_total": "Esta conversa: {arg1} de entrada · {arg2} de saída tokens",
+  "wit_compose_review_translate": "Traduzido.",
+  "wit_compose_translated": "Traduzido"
 }

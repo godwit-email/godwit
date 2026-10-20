@@ -1039,5 +1039,7 @@
   "wit_usage_history": "기록 {arg1}% 사용",
   "wit_usage_note": "가득 차면 가장 오래된 대화부터 모델에 보내지 않습니다.",
   "wit_usage_last": "마지막 요청: {arg1} 토큰",
-  "wit_usage_total": "이 대화: 입력 {arg1} · 출력 {arg2} 토큰"
+  "wit_usage_total": "이 대화: 입력 {arg1} · 출력 {arg2} 토큰",
+  "wit_compose_review_translate": "번역됨.",
+  "wit_compose_translated": "번역됨"
 }

@@ -1039,5 +1039,7 @@
   "codes_open": "打开",
   "codes_card_confirm": "确认链接",
   "codes_card_signin": "登录链接",
-  "codes_card_reset": "重置密码链接"
+  "codes_card_reset": "重置密码链接",
+  "wit_compose_review_translate": "已翻译。",
+  "wit_compose_translated": "已翻译"
 }

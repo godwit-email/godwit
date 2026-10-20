@@ -1039,5 +1039,7 @@
   "wit_usage_history": "履歴の使用率 {arg1}%",
   "wit_usage_note": "いっぱいになると、古いやり取りからモデルに送られなくなります。",
   "wit_usage_last": "前回のリクエスト：{arg1} トークン",
-  "wit_usage_total": "この会話の合計：入力 {arg1} · 出力 {arg2} トークン"
+  "wit_usage_total": "この会話の合計：入力 {arg1} · 出力 {arg2} トークン",
+  "wit_compose_review_translate": "翻訳済み。",
+  "wit_compose_translated": "翻訳済み"
 }

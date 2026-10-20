@@ -1039,5 +1039,7 @@
   "wit_usage_history": "Geschiedenis {arg1}% vol",
   "wit_usage_note": "Als die vol is, worden de oudste beurten niet meer naar het model gestuurd.",
   "wit_usage_last": "Laatste verzoek: {arg1} tokens",
-  "wit_usage_total": "Dit gesprek: {arg1} in · {arg2} uit tokens"
+  "wit_usage_total": "Dit gesprek: {arg1} in · {arg2} uit tokens",
+  "wit_compose_review_translate": "Vertaald.",
+  "wit_compose_translated": "Vertaald"
 }

@@ -1039,5 +1039,7 @@
   "wit_usage_history": "歷史已用 {arg1}%",
   "wit_usage_note": "用滿以後，最早的對話不再傳給模型。",
   "wit_usage_last": "上次請求：{arg1} tokens",
-  "wit_usage_total": "本對話共：輸入 {arg1} · 輸出 {arg2} tokens"
+  "wit_usage_total": "本對話共：輸入 {arg1} · 輸出 {arg2} tokens",
+  "wit_compose_review_translate": "已翻譯。",
+  "wit_compose_translated": "已翻譯"
 }
