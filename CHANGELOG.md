@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/godwit-email/godwit/compare/v1.8.0...v1.8.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ai:** default omitted predicate questions to no in gen judge ([#124](https://github.com/godwit-email/godwit/issues/124)) ([6e0b48a](https://github.com/godwit-email/godwit/commit/6e0b48a2ffd4f12f738d02348ab19e25ab6e21f1))
+
 ## [1.8.0](https://github.com/godwit-email/godwit/compare/v1.7.1...v1.8.0) (2026-10-19)
 
 
