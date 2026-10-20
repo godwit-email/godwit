@@ -1190,12 +1190,12 @@ export function Panel({
       </div>
     );
   }
-  // 调整 / 翻译: a tray the input overlaps from below; locked, they do nothing but keep their look.
+  // 调整 / 翻译: quick actions above the input; locked, they do nothing but keep their look.
   const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
     <Button
-      variant="ghost"
+      variant="secondary"
       size="sm"
-      className="gap-1.5 px-2 font-normal text-sm disabled:opacity-100"
+      className="h-7 gap-1.5 rounded-full px-2.5 font-normal text-xs text-foreground/80 shadow-xs hover:bg-secondary/80 disabled:opacity-100"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -1227,10 +1227,7 @@ export function Panel({
         {info && (
           <div
             data-tray
-            className={cn(
-              "mx-1 flex gap-1 bg-muted px-1 pt-1",
-              only ? "rounded-2xl pb-1" : "-mb-4 rounded-t-2xl pb-5",
-            )}
+            className={cn("flex items-center gap-1.5", only ? "rounded-2xl bg-muted p-1" : "mb-2")}
           >
             {!only && (
               <DropdownMenu>
@@ -1238,14 +1235,17 @@ export function Panel({
                   disabled={locked}
                   render={trayButton(RiEqualizerLine, t("wit.compose.adjust"))}
                 />
-                <DropdownMenuContent className="min-w-45">
+                <DropdownMenuContent side="top" align="start" className="w-auto min-w-72 max-w-md">
                   {info.skills.map((s) => (
                     <DropdownMenuItem
                       key={s.id}
+                      className="flex items-center justify-between gap-4 py-1.5"
                       onClick={() => ask(s.label, { skill: s.id, lang: "" })}
                     >
-                      {s.label}
-                      <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
+                      <span className="shrink-0 font-medium">{s.label}</span>
+                      <span className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                        {s.hint}
+                      </span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -1256,7 +1256,7 @@ export function Panel({
                 disabled={locked}
                 render={trayButton(RiTranslate2, t("wit.compose.translate"))}
               />
-              <DropdownMenuContent className="min-w-45">
+              <DropdownMenuContent side="top" align="start" className="min-w-45">
                 {info.languages.map((l) => (
                   <DropdownMenuItem
                     key={l.tag}
