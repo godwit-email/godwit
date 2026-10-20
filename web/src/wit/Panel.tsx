@@ -1270,7 +1270,9 @@ export function Panel({
                     if (dn) {
                       try {
                         const localized = dn.of(l.tag);
-                        if (localized) label = localized.charAt(0).toUpperCase() + localized.slice(1);
+                        if (localized) {
+                          label = localized.charAt(0).toUpperCase() + localized.slice(1);
+                        }
                       } catch {}
                     }
                     return { ...l, label };
