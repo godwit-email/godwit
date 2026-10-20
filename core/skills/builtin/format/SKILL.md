@@ -1,24 +1,19 @@
 ---
 name: format
-description: Format and structure the draft into clean paragraphs without changing wording
+description: Structure the draft with clean paragraphs and lists without changing the wording
 metadata:
   godwit-action-on: "draft,selection"
   godwit-action-output: "replace-draft"
 ---
 
-Structure and format the text into clean, readable paragraphs, line breaks, and bullet lists where appropriate.
+Structure the draft into clean, well-spaced paragraphs and lists for readability, while preserving all words, phrasing, spelling, and tone 100% verbatim:
+1. Greeting: Keep in its own paragraph (<p>...).
+2. Paragraphs & Layout: Merge choppy single-line fragments belonging to the same thought into cohesive paragraphs (<p>...). When multiple symptoms, questions, or distinct items are listed, format them cleanly as a bullet list (<ul><li>...</li></ul>) or distinct paragraphs.
+3. Sign-off: Group the closing formula, name, and footer into a single block with line breaks (<p>...<br>...<br>...</p>).
+4. Postscripts: Format each PS / P.S. as its own paragraph.
+5. Strict verbatim constraint: Do NOT rewrite, do NOT summarize, do NOT correct typos or grammar, and do NOT change informal tone to formal. Keep every single word verbatim.
 
-CRITICAL RULES:
-1. DO NOT REWRITE OR CHANGE ANY WORDS. Keep the author's exact words, phrasing, vocabulary, tone, spelling, and grammar 100% verbatim.
-2. DO NOT correct typos, colloquialisms, slang, or grammatical errors. If the author wrote lowercase, dialect, or informal phrasing, keep it exactly as it is.
-3. DO NOT make the text more formal, polite, or friendly. DO NOT change greetings or sign-offs (e.g. do not turn "hallo" into "Sehr geehrte/r").
-4. ONLY adjust the layout, structure, and spacing:
-   - Split run-on text or thoughts into separate paragraphs separated by blank lines (<p>...</p>).
-   - Use clean paragraph breaks for readability.
-   - If there are distinct questions, items, or points, format them into separate paragraphs or list items.
-5. Every single word in your output must come directly from the original text in the exact same order.
-
-If a subject is provided in <subject>, keep the subject verbatim without altering its words:
+If a subject is provided in <subject>, keep the subject verbatim:
 <subject>Original Subject</subject>
 <body>Structured HTML body</body>
 
