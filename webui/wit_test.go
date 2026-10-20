@@ -611,7 +611,7 @@ type fakeSysTranslator struct {
 	installed []string
 }
 
-func (f *fakeSysTranslator) Version() string { return "1.0" }
+func (f *fakeSysTranslator) Version() string              { return "1.0" }
 func (f *fakeSysTranslator) InstalledLanguages() []string { return f.installed }
 func (f *fakeSysTranslator) Translate(_ context.Context, texts []string, _, _ string) ([]string, string, error) {
 	return texts, "en", nil
