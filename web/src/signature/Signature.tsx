@@ -245,6 +245,27 @@ export function isCustomHTML(html: string): boolean {
 }
 
 /**
+ * Ensures top-level tables in a custom HTML signature without an explicit width stretch to 100%.
+ * This guarantees horizontal dividers and multi-column signatures fill the available width in Godwit
+ * as well as in external email clients (Apple Mail, Outlook, Gmail).
+ */
+export function ensureRootTableFullWidth(html: string): string {
+  if (!html || !/<table/i.test(html)) return html;
+  return html.replace(/<table\b([^>]*)>/i, (match, attrs) => {
+    const hasWidthAttr = /\bwidth\s*=/i.test(attrs);
+    const hasWidthStyle = /style\s*=\s*["'][^"']*\bwidth\s*:/i.test(attrs);
+    if (hasWidthAttr || hasWidthStyle) return match;
+    let newAttrs = attrs;
+    if (/style\s*=\s*["']/i.test(newAttrs)) {
+      newAttrs = newAttrs.replace(/(style\s*=\s*["'])/i, "$1width: 100%; ");
+    } else {
+      newAttrs = ` style="width: 100%;"${newAttrs}`;
+    }
+    return `<table width="100%"${newAttrs}>`;
+  });
+}
+
+/**
  * One account's signature: the toolbar over a Plate editor loaded from `initial` (at mount, its
  * images as data: URLs), reporting each change as HTML, "" once it holds no text and no image.
  * pickImage is SignaturePage.PickImage. The editor scrolls inside the page.
@@ -308,8 +329,9 @@ export function SignatureEditor(props: {
   };
 
   const applyHtml = () => {
-    const trimmed = htmlCode.trim();
+    let trimmed = htmlCode.trim();
     if (isCustomHTML(trimmed)) {
+      trimmed = ensureRootTableFullWidth(trimmed);
       setCustomHtml(trimmed);
       lastHtmlRef.current = trimmed;
       if (contentEditableRef.current) {
@@ -422,7 +444,7 @@ export function SignatureEditor(props: {
               contentEditable
               suppressContentEditableWarning
               aria-label={t("settings.account.signature.label")}
-              className="min-h-full px-3 py-2.5 leading-[1.6] outline-none"
+              className="min-h-full px-3 py-2.5 leading-[1.6] outline-none [&_table]:w-full"
               // biome-ignore lint/security/noDangerouslySetInnerHtml: user-authored custom signature HTML
               dangerouslySetInnerHTML={{ __html: customHtml }}
               onInput={(e) => {

@@ -92,7 +92,7 @@ func TestSplitJoinDraft(t *testing.T) {
 	assert.Contains(t, q, "Their sig", "the quoted mail")
 	assert.Contains(t, q, "写道", "the attribution line is part of the quote")
 	assert.True(t, strings.HasPrefix(sig, `<div data-godwit="signature">`), sig)
-	assert.Contains(t, sig, "-- <br/>Me")
+	assert.Contains(t, sig, "<p>Me</p>")
 	assert.Equal(t, d.HTML, mail.JoinDraft(ed, q, sig))
 	assert.Equal(t, 1, strings.Count(d.HTML, `data-godwit="signature"`), "markers in the quoted mail are removed")
 

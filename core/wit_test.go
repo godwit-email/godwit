@@ -185,7 +185,7 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	require.NoError(t, json.Unmarshal(a.Args, &args))
 	assert.Equal(t, int64(1), args.AccountID, "the default account is resolved before approval")
 	assert.NotContains(t, args.HTML, "script", "the recorded HTML is sanitized")
-	assert.Contains(t, args.HTML, "-- <br/>Me", "the recorded HTML is the final body, signature included")
+	assert.Contains(t, args.HTML, "<p>Me</p>", "the recorded HTML is the final body, signature included")
 	_, err = e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Changed later' WHERE id = 1")
 	require.NoError(t, err)
 
@@ -208,7 +208,7 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	assert.Equal(t, []string{"dan@y"}, d.Cc)
 	assert.Equal(t, "Hi", d.Subject)
 	assert.Contains(t, d.HTML, "Hello")
-	assert.Contains(t, d.HTML, "-- <br/>Me", "the approved snapshot is applied, signature included")
+	assert.Contains(t, d.HTML, "<p>Me</p>", "the approved snapshot is applied, signature included")
 	assert.NotContains(t, d.HTML, "Changed later", "nothing the user did not approve")
 	assert.NotContains(t, d.HTML, "script")
 	assert.NotContains(t, d.HTML, "t.example")
