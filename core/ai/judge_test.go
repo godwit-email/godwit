@@ -458,6 +458,48 @@ func TestGenJudgeBracesInProse(t *testing.T) {
 	}
 }
 
+// Omitted predicate questions in generator responses default to no (probability 0).
+func TestGenJudgeOmittedPredicatesDefaultToNo(t *testing.T) {
+	predQs := []Question{
+		{Name: "p1", Instructions: "p1?", Type: Predicate},
+		{Name: "p2", Instructions: "p2?", Type: Predicate},
+		{Name: "p3", Instructions: "p3?", Type: Predicate},
+	}
+	body := `{"answers":[{"name":"p2","answer":true}]}`
+	got, err := judgeFor(t, adapters[2], body).Ask(context.Background(), "mail", predQs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 answers, got %d", len(got))
+	}
+	byName := map[string]float64{}
+	for _, a := range got {
+		if a.Type != Predicate || a.Probability == nil {
+			t.Fatalf("unexpected answer: %+v", a)
+		}
+		byName[a.Name] = *a.Probability
+	}
+	if byName["p1"] != 0 || byName["p2"] != 1 || byName["p3"] != 0 {
+		t.Fatalf("unexpected probabilities: %+v", byName)
+	}
+
+	// Missing non-predicate questions still fail validation.
+	mixedQs := []Question{
+		{Name: "p1", Instructions: "p1?", Type: Predicate},
+		{Name: "topic", Instructions: "Topic?", Type: Choice, Choices: []ChoiceOption{{"billing", ""}, {"support", ""}}},
+	}
+	bodyMissingChoice := `{"answers":[{"name":"p1","answer":true}]}`
+	if _, err := judgeFor(t, adapters[2], bodyMissingChoice).Ask(context.Background(), "mail", mixedQs); !errors.Is(err, ErrJudgeAnswer) {
+		t.Fatalf("want ErrJudgeAnswer for missing choice, got %v", err)
+	}
+
+	// An empty reply is not a set of "no" answers: it must still fail.
+	if _, err := judgeFor(t, adapters[2], `{"answers":[]}`).Ask(context.Background(), "mail", predQs); !errors.Is(err, ErrJudgeAnswer) {
+		t.Fatalf("want ErrJudgeAnswer for empty answers, got %v", err)
+	}
+}
+
 func TestJudgeLimitEdges(t *testing.T) {
 	opts := func(n int) []ChoiceOption {
 		o := make([]ChoiceOption, n)
