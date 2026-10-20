@@ -170,6 +170,15 @@ func (w *Wit) state(st core.Settings) WitPageState {
 
 // modelLabel is a default model's label: its name without the provider.
 func modelLabel(model string) string {
+	if strings.HasPrefix(model, "plugin/") {
+		parts := strings.Split(model, "/")
+		if len(parts) >= 2 && parts[1] == "apple-intelligence" {
+			return "Apple Intelligence"
+		}
+		if len(parts) >= 3 {
+			return parts[1] + " / " + parts[2]
+		}
+	}
 	if _, m, ok := strings.Cut(model, "/"); ok {
 		return m
 	}
@@ -510,7 +519,7 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 	}
 	for _, pm := range plugins {
 		for _, m := range pm.Models {
-			if !m.Judges() {
+			if !m.Judges() && m.Operation != "small" {
 				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Label: pm.Plugin + " / " + m.Name})
 			}
 		}
