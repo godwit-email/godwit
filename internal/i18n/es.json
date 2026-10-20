@@ -1039,5 +1039,8 @@
   "wit_usage_history": "Historial al {arg1} %",
   "wit_usage_note": "Cuando se llene, los turnos más antiguos dejarán de enviarse al modelo.",
   "wit_usage_last": "Última solicitud: {arg1} tokens",
-  "wit_usage_total": "Esta conversación: {arg1} de entrada · {arg2} de salida tokens"
+  "wit_usage_total": "Esta conversación: {arg1} de entrada · {arg2} de salida tokens",
+  "compose_strikethrough": "Tachado",
+  "compose_font_size": "Tamaño de fuente",
+  "compose_font_family": "Familia tipográfica"
 }

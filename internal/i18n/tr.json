@@ -1039,5 +1039,8 @@
   "wit_usage_history": "Geçmiş %{arg1} dolu",
   "wit_usage_note": "Dolduğunda en eski konuşmalar artık modele gönderilmez.",
   "wit_usage_last": "Son istek: {arg1} token",
-  "wit_usage_total": "Bu konuşma: {arg1} giriş · {arg2} çıkış token"
+  "wit_usage_total": "Bu konuşma: {arg1} giriş · {arg2} çıkış token",
+  "compose_strikethrough": "Üstü çizili",
+  "compose_font_size": "Yazı tipi boyutu",
+  "compose_font_family": "Yazı tipi"
 }

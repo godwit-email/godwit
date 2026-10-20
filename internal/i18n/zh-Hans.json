@@ -1039,5 +1039,8 @@
   "codes_open": "打开",
   "codes_card_confirm": "确认链接",
   "codes_card_signin": "登录链接",
-  "codes_card_reset": "重置密码链接"
+  "codes_card_reset": "重置密码链接",
+  "compose_strikethrough": "删除线",
+  "compose_font_size": "字号",
+  "compose_font_family": "字体"
 }

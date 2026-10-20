@@ -1039,5 +1039,8 @@
   "wit_usage_history": "Lịch sử đã dùng {arg1}%",
   "wit_usage_note": "Khi đầy, các lượt cũ nhất sẽ không còn được gửi cho mô hình.",
   "wit_usage_last": "Yêu cầu gần nhất: {arg1} token",
-  "wit_usage_total": "Cuộc trò chuyện này: vào {arg1} · ra {arg2} token"
+  "wit_usage_total": "Cuộc trò chuyện này: vào {arg1} · ra {arg2} token",
+  "compose_strikethrough": "Gạch ngang",
+  "compose_font_size": "Cỡ chữ",
+  "compose_font_family": "Phông chữ"
 }

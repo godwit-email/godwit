@@ -1039,5 +1039,8 @@
   "wit_usage_history": "История заполнена на {arg1}%",
   "wit_usage_note": "Когда она заполнится, самые старые реплики перестанут отправляться модели.",
   "wit_usage_last": "Последний запрос: {arg1} токенов",
-  "wit_usage_total": "Этот разговор: {arg1} на входе · {arg2} на выходе токенов"
+  "wit_usage_total": "Этот разговор: {arg1} на входе · {arg2} на выходе токенов",
+  "compose_strikethrough": "Зачеркнутый",
+  "compose_font_size": "Размер шрифта",
+  "compose_font_family": "Шрифт"
 }

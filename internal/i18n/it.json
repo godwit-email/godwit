@@ -1039,5 +1039,8 @@
   "wit_usage_history": "Cronologia al {arg1}%",
   "wit_usage_note": "Quando è piena, i turni più vecchi non vengono più inviati al modello.",
   "wit_usage_last": "Ultima richiesta: {arg1} token",
-  "wit_usage_total": "Questa conversazione: {arg1} in entrata · {arg2} in uscita token"
+  "wit_usage_total": "Questa conversazione: {arg1} in entrata · {arg2} in uscita token",
+  "compose_strikethrough": "Barrato",
+  "compose_font_size": "Dimensione del carattere",
+  "compose_font_family": "Tipo di carattere"
 }
