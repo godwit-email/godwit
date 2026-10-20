@@ -31,8 +31,8 @@ type Review struct {
 	Blocks  []ReviewBlock `json:"blocks"`
 	Changes int           `json:"changes"`
 	// Old and New are the editable HTML before and after, for the compare.
-	Old string `json:"old"`
-	New string `json:"new"`
+	Old        string     `json:"old"`
+	New        string     `json:"new"`
 	OldSubject string     `json:"old_subject,omitempty"`
 	Subject    string     `json:"subject,omitempty"`
 	SubjectOps []ReviewOp `json:"subject_ops,omitempty"`

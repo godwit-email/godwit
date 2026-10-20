@@ -258,6 +258,7 @@ export function Review({
             </span>
             <div className="flex flex-wrap items-center gap-1.5 text-base">
               {r.subject_ops && r.subject_ops.length > 0 ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
                 r.subject_ops.map((op, i) => <Op key={i} op={op} d={0} />)
               ) : (
                 <>
