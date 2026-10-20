@@ -125,6 +125,14 @@ func TestMailContextReadsOnlyTheDatabase(t *testing.T) {
 	require.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"), "no attachment fetched")
 }
 
+func TestCleanMailURLs(t *testing.T) {
+	text := "Check this deal: https://pages.example.com/promo/2026/?tracking_id=1234567890&utm_source=email&utm_campaign=summer&session=abcdefghijklmnopqrstuvwxyz1234567890 and also https://short.com/path"
+	cleaned := cleanMailURLs(text)
+	require.Contains(t, cleaned, "https://pages.example.com/promo/2026/")
+	require.NotContains(t, cleaned, "utm_source")
+	require.Contains(t, cleaned, "https://short.com/path")
+}
+
 // newLabelService is newMailContextService with a chosen data dir ("" for a
 // new one) and system language. Without LabelMail, the labeler does not run.
 func newLabelService(t *testing.T, dir, lang string) *Service {

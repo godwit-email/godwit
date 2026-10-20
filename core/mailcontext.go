@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -31,7 +32,31 @@ type mailBudget struct{ PerMessage, Total int }
 
 var defaultMailBudget = mailBudget{PerMessage: 24000, Total: 48000}
 
-const truncatedNote = "\n[truncated]"
+var (
+	longURLRe     = regexp.MustCompile(`https?://[^\s)\]>"']+`)
+	truncatedNote = "\n[truncated]"
+)
+
+// cleanMailURLs trims query strings and excessive length from URLs in mail text sent to models:
+// URLs longer than 80 characters (tracking links, session hashes, UTM tags)
+// have query and fragment parameters stripped so model context isn't dominated by tracking noise.
+func cleanMailURLs(text string) string {
+	return longURLRe.ReplaceAllStringFunc(text, func(u string) string {
+		if len(u) <= 80 {
+			return u
+		}
+		if idx := strings.IndexByte(u, '?'); idx != -1 {
+			u = u[:idx]
+		}
+		if idx := strings.IndexByte(u, '#'); idx != -1 {
+			u = u[:idx]
+		}
+		if len(u) > 80 {
+			u = u[:77] + "..."
+		}
+		return u
+	})
+}
 
 // mailForModel reads a message's text and attachment metadata from the
 // database only: no IMAP, no attachment bytes. HTML is the sanitized body
@@ -93,6 +118,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		if strings.TrimSpace(body) == "" && m.HTML != "" {
 			body = gomail.HTMLToText(m.HTML)
 		}
+		body = cleanMailURLs(body)
 		var att []string
 		for _, a := range m.Attachments {
 			att = append(att, fmt.Sprintf("%s (attachment %d, %s, %d bytes)", a.Filename, a.ID, a.ContentType, a.Size))

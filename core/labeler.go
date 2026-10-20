@@ -196,6 +196,7 @@ func labelState(m Message) string {
 	if strings.TrimSpace(body) == "" {
 		body = gomail.HTMLToText(m.HTML)
 	}
+	body = cleanMailURLs(body)
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])
 	}
