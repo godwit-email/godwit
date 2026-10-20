@@ -320,7 +320,6 @@ export function Toolbar(props: {
         </Tooltip>
         <DropdownMenuContent
           align="start"
-          initialFocus={false}
           className="w-auto min-w-56 max-h-60 overflow-y-auto"
           onMouseDown={(e) => e.preventDefault()}
         >
@@ -377,7 +376,6 @@ export function Toolbar(props: {
         </Tooltip>
         <DropdownMenuContent
           align="start"
-          initialFocus={false}
           className="w-auto min-w-44 max-h-60 overflow-y-auto"
           onMouseDown={(e) => e.preventDefault()}
         >
