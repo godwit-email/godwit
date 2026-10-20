@@ -72,10 +72,22 @@ public func installedLanguages() -> UnsafeMutablePointer<CChar> {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             let availability = LanguageAvailability()
-            for s in await availability.supportedLanguages {
-                let status = await availability.status(from: s, to: nil)
-                if status == .installed {
+            let supported = await availability.supportedLanguages
+            for s in supported {
+                if await availability.status(from: s, to: nil) == .installed {
                     installed.append(s)
+                }
+            }
+            // Apple's availability.status(from: s, to: nil) only evaluates whether s is installed
+            // as an offline source language. For languages that serve as translation targets
+            // (such as English in downloaded pairs), from: s, to: nil returns .supported rather than .installed.
+            // Check remaining supported languages as targets from any installed source:
+            for s in supported where !installed.contains(s) {
+                for other in installed {
+                    if await availability.status(from: other, to: s) == .installed {
+                        installed.append(s)
+                        break
+                    }
                 }
             }
             done.signal()
