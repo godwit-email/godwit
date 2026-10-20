@@ -955,6 +955,8 @@
   "wit_quote_search": "Поиск писем",
   "wit_scroll_end": "К последним сообщениям",
   "wit_send": "Отправить в Wit",
+  "wit_skill_format": "Форматировать",
+  "wit_skill_format_hint": "Только абзацы и структура",
   "wit_skill_longer": "Подробнее",
   "wit_skill_longer_hint": "Длина",
   "wit_skill_proofread": "Проверить текст",

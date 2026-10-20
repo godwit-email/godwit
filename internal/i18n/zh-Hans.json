@@ -970,6 +970,8 @@
   "wit_regenerate": "重新生成",
   "wit_scroll_end": "回到最新",
   "wit_send": "发送给 Wit",
+  "wit_skill_format": "排版整理",
+  "wit_skill_format_hint": "仅整理段落与结构",
   "wit_skill_longer": "更长",
   "wit_skill_longer_hint": "长度",
   "wit_skill_proofread": "校对",

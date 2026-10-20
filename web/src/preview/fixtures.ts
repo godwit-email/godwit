@@ -69,6 +69,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
       { id: "shorter", label: "更短", hint: "长度" },
       { id: "longer", label: "更长", hint: "长度" },
       { id: "proofread", label: "校对", hint: "只改错字和语法" },
+      { id: "format", label: "排版整理", hint: "仅整理段落与结构" },
     ],
     languages: [
       { tag: "en", name: "English" },
