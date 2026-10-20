@@ -1893,6 +1893,8 @@
   "wit_regenerate": "Regenerate",
   "wit_scroll_end": "Jump to latest",
   "wit_send": "Send to Wit",
+  "wit_skill_format": "Format",
+  "wit_skill_format_hint": "Only paragraphs and structure",
   "wit_skill_longer": "Longer",
   "wit_skill_longer_hint": "Length",
   "wit_skill_proofread": "Proofread",
