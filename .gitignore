@@ -3,6 +3,7 @@
 *.test
 /dist/
 /resources/darwin-*/libgodwit-translate.dylib
+/resources/darwin-*/apple-intelligence-helper
 web/node_modules/
 web/dist/
 /.mygo/

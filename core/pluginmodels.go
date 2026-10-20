@@ -67,6 +67,15 @@ func (s *Service) ListPluginModels(ctx context.Context) ([]PluginModels, error) 
 		}
 		out = append(out, pm)
 	}
+	if s.appleIntelligenceAvailable() {
+		on, err := s.builtinOn(ctx, AppleIntelligencePlugin)
+		if err == nil && on {
+			out = append(out, PluginModels{
+				Plugin: AppleIntelligencePlugin,
+				Models: appleIntelligenceModels(),
+			})
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Plugin < out[j].Plugin })
 	return out, nil
 }
@@ -161,6 +170,31 @@ var protocolKinds = map[string]string{"openai-completions": ai.KindOpenAI, "open
 
 // resolvePluginModel resolves a plugin generation model's ref for the engine.
 func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.ResolvedModel, error) {
+	rest, ok := strings.CutPrefix(ref, translatorPrefix)
+	name, id, _ := strings.Cut(rest, "/")
+	if ok && name == AppleIntelligencePlugin {
+		if !s.appleIntelligenceAvailable() {
+			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		on, err := s.builtinOn(ctx, AppleIntelligencePlugin)
+		if err != nil || !on {
+			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		if s.opts.AppleIntelligence == nil {
+			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		if id == "classifier" {
+			return ai.ResolvedModel{}, fmt.Errorf("%w: %s is a judge model", ErrModelNotFound, ref)
+		}
+		return ai.ResolvedModel{
+			ServiceID: pluginServiceID(ref),
+			Version:   1,
+			Kind:      ai.KindOpenAI,
+			BaseURL:   "http://127.0.0.1:0",
+			Model:     id,
+			Client:    s.appleIntelligenceClient(),
+		}, nil
+	}
 	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
 	if err != nil {
 		return ai.ResolvedModel{}, err
@@ -202,6 +236,21 @@ var judgeFormats = map[string]ai.JudgeFormat{"typesafe-systemone": ai.FormatSyst
 
 // pluginJudge is the judge a plugin judge model's ref names.
 func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error) {
+	rest, ok := strings.CutPrefix(ref, translatorPrefix)
+	name, _, _ := strings.Cut(rest, "/")
+	if ok && name == AppleIntelligencePlugin {
+		if !s.appleIntelligenceAvailable() {
+			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		on, err := s.builtinOn(ctx, AppleIntelligencePlugin)
+		if err != nil || !on {
+			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		if s.opts.AppleIntelligence == nil {
+			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		}
+		return appleIntelligenceJudge{s.opts.AppleIntelligence}, nil
+	}
 	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
 	if err != nil {
 		return nil, err

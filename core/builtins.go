@@ -26,7 +26,14 @@ type builtinPlugin struct {
 
 // builtinAvailable reports whether this Godwit offers b: system translation needs the system's.
 func (s *Service) builtinAvailable(b *builtinPlugin) bool {
-	return !b.translates || s.opts.SystemTranslator != nil
+	switch b.name {
+	case SystemTranslationPlugin:
+		return s.opts.SystemTranslator != nil
+	case AppleIntelligencePlugin:
+		return s.appleIntelligenceAvailable()
+	default:
+		return !b.translates || s.opts.SystemTranslator != nil
+	}
 }
 
 // SignInCodesPlugin recognizes sign-in codes and links: the banner, the
@@ -36,6 +43,10 @@ const SignInCodesPlugin = "sign-in-codes"
 // SystemTranslationPlugin translates with the operating system's on-device
 // translation (macOS 26's Translation framework).
 const SystemTranslationPlugin = "system-translation"
+
+// AppleIntelligencePlugin uses Apple Intelligence on macOS for generation,
+// small tasks, and classification.
+const AppleIntelligencePlugin = "apple-intelligence"
 
 var builtinPlugins = []builtinPlugin{{
 	name: SignInCodesPlugin,
@@ -105,6 +116,39 @@ var builtinPlugins = []builtinPlugin{{
 			"vi":      "Dịch thư bằng tính năng dịch của macOS ngay trên máy Mac này, miễn phí và không cần mô hình; tải ngôn ngữ trong Cài đặt hệ thống › Cài đặt chung › Ngôn ngữ & Vùng › Ngôn ngữ dịch",
 		}},
 	translates: true,
+}, {
+	name: AppleIntelligencePlugin,
+	title: plugins.Text{Default: "Apple Intelligence", ByLang: map[string]string{
+		"zh-Hans": "Apple Intelligence",
+		"zh-Hant": "Apple Intelligence",
+		"ja":      "Apple Intelligence",
+		"ko":      "Apple Intelligence",
+		"de":      "Apple Intelligence",
+		"fr":      "Apple Intelligence",
+		"es":      "Apple Intelligence",
+		"pt":      "Apple Intelligence",
+		"it":      "Apple Intelligence",
+		"ru":      "Apple Intelligence",
+		"nl":      "Apple Intelligence",
+		"tr":      "Apple Intelligence",
+		"vi":      "Apple Intelligence",
+	}},
+	about: plugins.Text{Default: "Uses Apple Intelligence on this Mac for text generation, small tasks, and classification",
+		ByLang: map[string]string{
+			"zh-Hans": "在 Mac 上使用 Apple Intelligence 进行文本生成、简单任务和分类",
+			"zh-Hant": "在 Mac 上使用 Apple Intelligence 進行文字生成、簡易任務和分類",
+			"ja":      "この Mac 上で Apple Intelligence を使用して、テキスト生成、小さなタスク、分類を行います",
+			"ko":      "이 Mac에서 Apple Intelligence를 사용하여 텍스트 생성, 간단한 작업 및 분류를 수행합니다",
+			"de":      "Nutzt Apple Intelligence auf diesem Mac für Textgenerierung, kleine Aufgaben und Klassifizierung",
+			"fr":      "Utilise Apple Intelligence sur ce Mac pour la génération de texte, les tâches simples et la classification",
+			"es":      "Utiliza Apple Intelligence en este Mac para la generación de texto, tareas sencillas y clasificación",
+			"pt":      "Usa o Apple Intelligence neste Mac para geração de texto, tarefas simples e classificação",
+			"it":      "Utilizza Apple Intelligence su questo Mac per la generazione di testo, piccoli compiti e classificazione",
+			"ru":      "Использует Apple Intelligence на этом Mac для генерации текста, небольших задач и классификации",
+			"nl":      "Gebruikt Apple Intelligence op deze Mac voor tekstgeneratie, kleine taken en classificatie",
+			"tr":      "Metin oluşturma, küçük görevler ve sınıflandırma için bu Mac'te Apple Intelligence'ı kullanır",
+			"vi":      "Sử dụng Apple Intelligence trên máy Mac này để tạo văn bản, tác vụ nhỏ và phân loại",
+		}},
 }}
 
 func builtin(name string) *builtinPlugin {

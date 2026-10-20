@@ -896,16 +896,25 @@ type usage struct {
 func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels) usage {
 	u := usage{pluginJudge: isPluginRef(st.JudgeService)}
 	var genModel, plugGen, plugJudge string // the defaults' labels when a plugin's model
-	var genPlug, judgePlug []kit.Option[string]
+	var genPlug, smallPlug, judgePlug []kit.Option[string]
 	for _, p := range plugins {
 		for _, mod := range p.Models {
-			o := kit.Option[string]{Value: "plugin/" + p.Plugin + "/" + mod.ID, Label: p.Plugin + " / " + mod.Name}
+			label := p.Plugin + " / " + mod.Name
+			if p.Plugin == core.AppleIntelligencePlugin {
+				label = "Apple Intelligence"
+				if mod.Name != "" && mod.Name != "Apple Intelligence" {
+					label = "Apple Intelligence (" + mod.Name + ")"
+				}
+			}
+			o := kit.Option[string]{Value: "plugin/" + p.Plugin + "/" + mod.ID, Label: label}
 			switch {
 			case mod.Judges():
 				judgePlug = append(judgePlug, o)
 				if o.Value == st.JudgeService {
 					plugJudge = o.Label
 				}
+			case mod.Operation == "small":
+				smallPlug = append(smallPlug, o)
 			default:
 				genPlug = append(genPlug, o)
 				if o.Value == st.DefaultModel {
@@ -943,6 +952,7 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		return u
 	}
 	u.smallOpts = append([]kit.Option[string]{{Value: "", Label: i18n.T("settings.models.small.same")}}, u.genOpts...)
+	u.smallOpts = append(u.smallOpts, smallPlug...)
 	u.judgeOpts = []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.judge.by_gen")}}
 	for _, s := range services {
 		if s.JudgeFormat != "" {
