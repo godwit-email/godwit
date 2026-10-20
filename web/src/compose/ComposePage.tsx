@@ -681,7 +681,7 @@ function Compose({
       {signature.html ? (
         <div
           data-slot="signature-preview"
-          className="w-full text-base leading-normal [&_table]:w-full"
+          className="text-base leading-normal"
           // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized signature HTML from Go
           dangerouslySetInnerHTML={{ __html: signature.html }}
         />

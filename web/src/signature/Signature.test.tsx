@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ensureRootTableFullWidth, SignatureEditor } from "./Signature";
+import { SignatureEditor } from "./Signature";
 
 // jsdom lacks isContentEditable, which Slate checks on every event target.
 Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
@@ -191,43 +191,7 @@ describe("SignatureEditor", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(onChange).toHaveBeenLastCalledWith(
-      '<table width="100%" style="width: 100%; color:#172E43"><tr><td><div style="background:#172E43;color:#fff">JW.</div></td><td>Max Weber</td></tr></table>',
-    );
+    expect(onChange).toHaveBeenLastCalledWith(updatedTable);
     expect(box).toHaveTextContent("JW.Max Weber");
-  });
-});
-
-describe("ensureRootTableFullWidth", () => {
-  it("adds width=100% and style width: 100% to tables without width", () => {
-    const input =
-      '<table cellpadding="0" cellspacing="0" style="font-family:Arial;color:#172E43;"><tr><td>JW</td></tr></table>';
-    const output = ensureRootTableFullWidth(input);
-    expect(output).toBe(
-      '<table width="100%" cellpadding="0" cellspacing="0" style="width: 100%; font-family:Arial;color:#172E43;"><tr><td>JW</td></tr></table>',
-    );
-  });
-
-  it("adds style width: 100% when no style attribute exists", () => {
-    const input = '<table border="0"><tr><td>JW</td></tr></table>';
-    const output = ensureRootTableFullWidth(input);
-    expect(output).toBe(
-      '<table width="100%" style="width: 100%;" border="0"><tr><td>JW</td></tr></table>',
-    );
-  });
-
-  it("leaves explicit width attribute unchanged", () => {
-    const input = '<table width="300" style="color:red"><tr><td>JW</td></tr></table>';
-    expect(ensureRootTableFullWidth(input)).toBe(input);
-  });
-
-  it("leaves explicit width in style unchanged", () => {
-    const input = '<table style="width: 300px; color:red"><tr><td>JW</td></tr></table>';
-    expect(ensureRootTableFullWidth(input)).toBe(input);
-  });
-
-  it("leaves html without table unchanged", () => {
-    const input = "<p>Just plain text</p>";
-    expect(ensureRootTableFullWidth(input)).toBe(input);
   });
 });
