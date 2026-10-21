@@ -67,12 +67,17 @@ func table() []Provider {
 		{ID: "exmail", Name: "Tencent Exmail",
 			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
 			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
-		// Feishu and DingTalk Mail are on company domains, found by MX.
+		// Feishu, Lark and DingTalk Mail are on company domains, found by MX.
 		// Feishu's servers and its 专用密码 are from its help article; an admin
 		// enables third-party clients first.
 		{ID: "feishu", Name: "Feishu Mail",
 			IMAP: tls("imap.feishu.cn"), SMTP: smtps("smtp.feishu.cn"), Login: "app_password",
 			HelpURL: "https://www.feishu.cn/hc/zh-CN/articles/902478147400"},
+		// Lark is Feishu outside China: the same product on its own servers and
+		// tenants, so a Lark mailbox is not on imap.feishu.cn.
+		{ID: "lark", Name: "Lark Mail",
+			IMAP: tls("imap.larksuite.com"), SMTP: smtps("smtp.larksuite.com"), Login: "app_password",
+			HelpURL: "https://www.larksuite.com/hc/en-US/articles/378111206512-log-in-to-lark-mail-through-a-third-party-email-client"},
 		// DingTalk Mail runs on Alibaba Mail; its client hosts are the em.dingtalk.com
 		// names its certificate carries (no official page lists them). A client
 		// takes the password, or the 三方客户端安全密码 when one is set; the help

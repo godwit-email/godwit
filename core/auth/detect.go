@@ -58,6 +58,8 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 			id = "exmail"
 		case inDomain(host, "feishu.cn."):
 			id = "feishu"
+		case inDomain(host, "larksuite.com."):
+			id = "lark"
 		case inDomain(host, "em.dingtalk.com."):
 			id = "dingtalk"
 		}

@@ -90,13 +90,13 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 
 func TestOnboardingProviderEmail(t *testing.T) {
 	for _, p := range append(auth.ListProviders(), otherProvider) {
-		if p.Login == "oauth" {
+		if p.Login == "oauth" || !listed(p) {
 			continue
 		}
 		t.Run(p.ID, func(t *testing.T) {
 			h := newHarness(t)
 			o := h.firstRun()
-			h.click(providerName(p))
+			h.click(tileName(p))
 			want := ""
 			if len(p.Domains) > 0 {
 				want = "@" + p.Domains[0]
@@ -652,5 +652,45 @@ func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("focused email row has no ring-coloured border")
+	}
+}
+
+func TestOnboardingFeishuLarkTile(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.see("飞书/Lark 邮箱")
+	if lark, _ := auth.ByID("lark"); listed(lark) {
+		t.Fatal("Lark has a tile of its own")
+	}
+	h.click("飞书/Lark 邮箱")
+	h.see("飞书/Lark 邮箱")
+	if o.prov.ID != "feishu" || o.imapHost != "imap.feishu.cn" {
+		t.Fatalf("tile chose %s on %s", o.prov.ID, o.imapHost)
+	}
+	lark, _ := auth.ByID("lark")
+	o.email = "a@corp.example"
+	o.found(lark, o.email)
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" || o.smtpHost != "smtp.larksuite.com" {
+		t.Fatalf("a Lark address left %s on %s/%s", o.prov.ID, o.imapHost, o.smtpHost)
+	}
+	h.see("Lark 邮箱")
+
+	feishu, _ := auth.ByID("feishu")
+	o.smtpHost = "smtp.custom.example"
+	o.found(feishu, o.email)
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" || o.smtpHost != "smtp.custom.example" {
+		t.Fatalf("edited servers were replaced: %s on %s/%s", o.prov.ID, o.imapHost, o.smtpHost)
+	}
+}
+
+func TestOnboardingFeishuLarkTileAfterDetection(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	lark, _ := auth.ByID("lark")
+	o.email = "a@corp.example"
+	o.found(lark, o.email) // detected on the pick screen
+	h.click("飞书/Lark 邮箱")
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" {
+		t.Fatalf("tile chose %s on %s for a Lark address", o.prov.ID, o.imapHost)
 	}
 }
