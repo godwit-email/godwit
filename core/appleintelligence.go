@@ -193,7 +193,7 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 	switch {
 	case len(prompt) <= appleIntelligencePromptBytes:
 	case isSummarize || isQuickReplies:
-		// Mail blocks run oldest to newest: keep the newest.
+		// Mail blocks run oldest to newest: keep the newest whole.
 		prompt = truncateMail(prompt, appleIntelligencePromptBytes)
 	default:
 		// Structured requests (translation batches, ...) must not be cut.
@@ -664,34 +664,45 @@ func judgeBatches(qs []ai.Question) [][]ai.Question {
 	return append(out, cur)
 }
 
-// truncateHead drops the start of s so at most n bytes remain, on a rune boundary.
-func truncateHead(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	cut := len(s) - max(n, 0)
-	for cut < len(s) && !utf8.RuneStart(s[cut]) {
-		cut++
-	}
-	return s[cut:]
-}
+// untrustedBlock is one ai.Untrusted block; tags inside its content are
+// escaped, so the first close tag ends it.
+var untrustedBlock = regexp.MustCompile(`(?s)<untrusted_email[^>]*>\n.*?\n</untrusted_email>`)
 
-// truncateMail is truncateHead that keeps the kept text inside its
-// untrusted_email block: a cut inside one gets that block's open tag back
-// (suspect flag and all), or the model would read its tail as instructions.
+// truncateMail fits a mail prompt in n bytes by whole untrusted_email
+// blocks, newest (last) first, dropping older ones. A newest block too long
+// on its own keeps its open tag, header and body start, losing its end, so
+// every kept byte of mail stays inside a block.
 func truncateMail(s string, n int) string {
-	t := truncateHead(s, n)
-	cut := len(s) - len(t)
-	i := strings.LastIndex(s[:cut], "<untrusted_email")
-	if cut == 0 || i < 0 || strings.Contains(s[i:cut], "</untrusted_email>") {
-		return t
+	locs := untrustedBlock.FindAllStringIndex(s, -1)
+	if len(s) <= n || len(locs) == 0 {
+		return truncateForContext(s, n)
 	}
-	end := strings.Index(s[i:], ">\n")
-	if end < 0 {
-		return t
+	head, foot := s[:locs[0][0]], s[locs[len(locs)-1][1]:]
+	if len(head)+len(foot) > n/2 { // the frame is not mail: it gets at most half
+		head, foot = truncateForContext(head, n/4), truncateForContext(foot, n/4)
 	}
-	open := s[i : i+end+2]
-	return open + truncateHead(s[max(cut, i+len(open)):], n-len(open))
+	left := n - len(head) - len(foot)
+	var kept []string
+	for i := len(locs) - 1; i >= 0; i-- {
+		end := locs[len(locs)-1][1]
+		if i+1 < len(locs) {
+			end = locs[i+1][0] // the block and what follows it (a truncated note, a separator)
+		}
+		unit := s[locs[i][0]:end]
+		if len(unit) > left {
+			if len(kept) == 0 {
+				block := s[locs[i][0]:locs[i][1]]
+				open := block[:strings.Index(block, ">\n")+2]
+				const closeTag = "\n</untrusted_email>"
+				content := block[len(open) : len(block)-len(closeTag)]
+				kept = append(kept, open+truncateForContext(content, left-len(open)-len(closeTag)-len(truncatedNote))+closeTag+truncatedNote)
+			}
+			break
+		}
+		kept, left = append(kept, unit), left-len(unit)
+	}
+	slices.Reverse(kept)
+	return head + strings.Join(kept, "") + foot
 }
 
 // Judge evaluates questions against input using Apple Intelligence.
