@@ -295,19 +295,12 @@ func decodeIcon(ct string, data []byte) ui.ImageSource {
 	return nil
 }
 
-// iconImage is img filling a circle of size.
-func iconImage(c *ui.Context, img ui.ImageSource, size float32) {
-	ui.Box(c).Size(size, size).Shrink(0).Radius(theme.Of(c).Radius.Full).Clip().Children(func() {
-		ui.Image(c, img).Size(size, size).Fit(ui.Cover)
-	})
-}
-
 // accountIcon is an account's icon: its uploaded image, the label icon it
 // chose, or else its provider's mark.
 func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 	if strings.HasPrefix(acc.Icon, "image:") {
 		if img := a.accountImage(acc); img != nil {
-			iconImage(c, img, size)
+			markTile(c, img, size)
 			return
 		}
 	}

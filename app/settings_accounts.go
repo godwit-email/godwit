@@ -687,7 +687,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			tempAcc.Icon = p.iconSelected
 			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
 				if p.iconPreview != nil {
-					iconImage(c, p.iconPreview, theme.MarkLg)
+					markTile(c, p.iconPreview, theme.MarkLg)
 				} else {
 					a.accountIcon(c, tempAcc, theme.MarkLg)
 				}
