@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import worker from "./worker";
 
 const page = `<a data-release data-release-link hidden href="/releases/latest"><span data-version></span></a>
@@ -26,8 +26,22 @@ function env(manifest?: object): FakeEnv {
 	};
 }
 
-const get = (path: string, e: FakeEnv, languages?: string) =>
-	worker.fetch(new Request(`https://godwit.email${path}`, { headers: languages ? { "Accept-Language": languages } : {} }) as never, e as never);
+/** What the Worker left to finish after answering, and what it sent to Umami: no test reaches the network. */
+const pending: Promise<unknown>[] = [];
+const sent: { url: string; init: RequestInit }[] = [];
+const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string, init: RequestInit) => {
+	sent.push({ url, init });
+	return new Response();
+}) as never);
+afterAll(() => fetchSpy.mockRestore());
+afterEach(() => {
+	pending.length = 0;
+	sent.length = 0;
+});
+const ctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p) };
+
+const get = (path: string, e: FakeEnv, languages?: string, headers: Record<string, string> = {}) =>
+	worker.fetch(new Request(`https://godwit.email${path}`, { headers: { ...headers, ...(languages ? { "Accept-Language": languages } : {}) } }) as never, e as never, ctx as never);
 const released = { version: "1.2.0", date: "2026-10-12T08:00:00Z" };
 
 test("/ is the page of the browser's language, without a redirect", async () => {
@@ -76,4 +90,32 @@ test("downloads still redirect", async () => {
 	const res = await get("/download/darwin-arm64", env({ version: "1.2.0" }));
 	expect(res.status).toBe(302);
 	expect(res.headers.get("Location")).toBe("https://dl.godwit.email/Godwit%201.2.0%20arm64.dmg");
+});
+
+test("a download is counted, with the referrer's origin and no IP", async () => {
+	await get("/download/linux-amd64", env({ version: "1.2.0" }), "zh-CN,zh;q=0.9", {
+		Referer: "https://github.com/godwit-email/godwit?tab=readme",
+		"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)",
+		"CF-Connecting-IP": "203.0.113.7",
+	});
+	await Promise.all(pending);
+	expect(sent).toHaveLength(1);
+	expect(sent[0].url).toBe("https://u.baran.wang/api/send");
+	expect(new Headers(sent[0].init.headers).get("User-Agent")).toBe("Mozilla/5.0 (X11; Linux x86_64)");
+	const body = sent[0].init.body as string;
+	expect(JSON.parse(body).payload).toMatchObject({
+		hostname: "godwit.email",
+		url: "/download/linux-amd64",
+		referrer: "https://github.com",
+		language: "zh-CN",
+		name: "download",
+		data: { target: "linux-amd64" },
+	});
+	expect(body).not.toContain("203.0.113.7");
+});
+
+test("a target without a release is not counted", async () => {
+	await get("/download/linux-amd64", env());
+	expect(pending).toHaveLength(0);
+	expect(sent).toHaveLength(0);
 });

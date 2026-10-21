@@ -25,7 +25,7 @@ export const policy: Record<Lang, Policy> = {
 	"zh-Hans": {
 		title: "Godwit隐私政策",
 		description: "Godwit在你的电脑上保存什么、会连接哪些服务，以及哪些数据永远不会到我们手里。",
-		updated: "最后更新：2026年10月14日",
+		updated: "最后更新：2026年10月21日",
 		back: "返回首页",
 		home: "/zh-hans/",
 		sections: [
@@ -58,7 +58,7 @@ export const policy: Record<Lang, Policy> = {
 			{
 				title: "网站",
 				body: [
-					"godwit.email是静态网站，通过Cloudflare提供服务，Cloudflare可能保留标准的访问日志，例如IP地址。网站（不是应用）使用一个统计脚本来统计访问量。应用本身不含任何统计或遥测。",
+					"godwit.email是静态网站，通过Cloudflare提供服务，Cloudflare可能保留标准的访问日志，例如IP地址。网站（不是应用）使用Umami统计访问量和按钮点击，例如下载了哪个平台的版本，不使用Cookie，也不记录你输入或复制的内容；通过网站下载时，服务器会把平台、来源网站和浏览器信息（不含IP地址）记一次下载。应用本身不含任何统计或遥测。",
 				],
 			},
 			{
@@ -93,7 +93,7 @@ export const policy: Record<Lang, Policy> = {
 	en: {
 		title: "Godwit Privacy Policy",
 		description: "What Godwit keeps on your computer, which services it connects to, and what never reaches us.",
-		updated: "Last updated: October 14, 2026",
+		updated: "Last updated: October 21, 2026",
 		back: "Back to home",
 		home: "/en/",
 		sections: [
@@ -126,7 +126,7 @@ export const policy: Record<Lang, Policy> = {
 			{
 				title: "The website",
 				body: [
-					"godwit.email is a static website served through Cloudflare, which may keep standard access logs, such as IP addresses. The website, not the app, uses an analytics script to count visits. The app itself contains no analytics or telemetry.",
+					"godwit.email is a static website served through Cloudflare, which may keep standard access logs, such as IP addresses. The website, not the app, uses Umami to count visits and button clicks, such as which platform was downloaded, without cookies and without recording anything you type or copy; a download through the website is also counted by the server, with the platform, the referring site and the browser, but not your IP address. The app itself contains no analytics or telemetry.",
 				],
 			},
 			{

@@ -1,5 +1,6 @@
 ---
 import "../styles.css";
+import { umami } from "../analytics";
 ---
 
 <!doctype html>
@@ -9,6 +10,8 @@ import "../styles.css";
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>404 · Godwit</title>
 		<link rel="icon" href="/icon.png" type="image/png" />
+		<!-- Website-only analytics, as on the other pages: which links lead nowhere. -->
+		<script is:inline defer src={`${umami.origin}/script.js`} data-website-id={umami.website} data-domains={umami.domain}></script>
 	</head>
 	<body class="grid min-h-dvh place-items-center bg-background px-6 text-center">
 		<main>

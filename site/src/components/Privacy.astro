@@ -101,11 +101,13 @@ const what = "col-start-2 text-sm leading-relaxed text-muted-foreground sm:col-s
 
 <script>
 	import { animate } from "motion";
+	import { track } from "../analytics";
 
 	for (const row of document.querySelectorAll<HTMLElement>("[data-model]")) {
 		row.addEventListener("click", (e) => {
 			const set = (e.target as HTMLElement).closest<HTMLElement>("[data-set]")?.dataset.set;
-			if (!set) return;
+			if (!set || set === row.dataset.model) return;
+			track("privacy-model-toggle", { mode: set });
 			row.dataset.model = set;
 			for (const b of row.querySelectorAll<HTMLElement>("[data-set]")) b.setAttribute("aria-checked", String(b.dataset.set === set));
 			for (const s of row.querySelectorAll<HTMLElement>("[data-when]")) {
