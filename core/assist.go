@@ -19,6 +19,8 @@ import (
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
+	xhtml "golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // assistTools are the tools of an Assist run: read mail, and propose a new
@@ -28,17 +30,23 @@ var assistTools = []string{"search_mail", "get_message", "read_attachment", "upd
 
 const (
 	assistSystem = `You are Wit, the writing assistant beside the user's draft in the Godwit compose window. ` +
-		`update_draft replaces the editable part of the draft with your HTML (paragraphs, line breaks, bold, italic, links, lists); ` +
-		`the user reviews every change except the first text of an empty draft. The quoted email and the signature stay as they are: ` +
+		`update_draft replaces the editable part of the draft with your HTML (paragraphs, line breaks, bold, italic, links, lists). ` +
+		`Give update_draft a concise subject that fits the draft when it has none or only a placeholder, and keep the subject in step with ` +
+		`the draft when the user asks to change its tone, length, dates, topic or intent. A reply's or forward's subject stays as it is ` +
+		`unless the user explicitly asks to change the subject. When the user asks for a change, actually make it. ` +
+		`Call update_draft at most once per turn. Once update_draft has been executed, do not call update_draft again: your task is complete. ` +
+		`After update_draft runs, simply give a brief confirmation or explanation in plain text without making any further tool calls. ` +
+		`The user reviews every change except the first text of an empty draft. The quoted email and the signature stay as they are: ` +
 		`never write them. You cannot send mail.`
 	selectionSystem = `You are Wit, rewriting a part of the user's draft they selected. Call update_selection once with the HTML ` +
 		`that replaces the selection, and nothing before or after it: the text around it is read-only context. ` +
 		`Keep the language of the selection unless the instruction asks for another.`
 
 	// What update_draft's Summary says about a change, for the GUI.
-	kindInitial = "initial" // the editable part was empty: applied at once
-	kindPartial = "partial" // shown as a word diff
-	kindRewrite = "rewrite" // more than half the words changed: shown side by side
+	kindInitial   = "initial"   // the editable part was empty: applied at once
+	kindPartial   = "partial"   // shown as a word diff
+	kindRewrite   = "rewrite"   // more than half the words changed: shown side by side
+	kindTranslate = "translate" // translated: shown as translation
 
 	selectionContext = 500 // runes of read-only context on each side of a selection
 	recentMail       = 5   // latest mail with the recipients in an Assist run
@@ -53,19 +61,22 @@ type Selection struct {
 }
 
 // updateArgs are update_draft's final arguments: the new and the old editable
-// HTML (the GUI diffs them) at the draft's bound revision.
+// HTML (the GUI diffs them) at the draft's bound revision, and optional subject.
 type updateArgs struct {
-	DraftID  int64  `json:"draft_id"`
-	Revision int64  `json:"revision"`
-	Old      string `json:"old"`
-	HTML     string `json:"html"`
+	DraftID    int64   `json:"draft_id"`
+	Revision   int64   `json:"revision"`
+	Old        string  `json:"old"`
+	HTML       string  `json:"html"`
+	OldSubject string  `json:"old_subject,omitempty"`
+	Subject    *string `json:"subject,omitempty"`
 }
 
-// draftUndo is an applied update_draft's undo: the editable part it replaced
-// and the revision it wrote.
+// draftUndo is an applied update_draft's undo: the editable part it replaced,
+// the revision it wrote, and the previous subject if changed.
 type draftUndo struct {
-	Editable string `json:"editable"`
-	Revision int64  `json:"revision"`
+	Editable   string  `json:"editable"`
+	Revision   int64   `json:"revision"`
+	OldSubject *string `json:"old_subject,omitempty"`
 }
 
 func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
@@ -82,8 +93,11 @@ var selectionSpec = ai.ToolSpec{Name: "update_selection",
 // is prepared only by the run RewriteSelection starts, which knows the selection.
 func (s *Service) registerAssistTools() {
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "update_draft",
-		Description: "Replace the editable part of the draft (everything but the quoted email and the signature) with html.",
-		Schema:      object(map[string]any{"html": stringProp}, "html")},
+		Description: "Replace the editable part of the draft (everything but the quoted email and the signature) with html, and set or update the subject.",
+		Schema: object(map[string]any{
+			"html":    stringProp,
+			"subject": map[string]any{"type": "string", "description": "Subject for the draft. Always provide this when drafting or when changes affect the subject; keep it consistent with the content."},
+		}, "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareUpdate, Apply: s.applyUpdate}})
 	s.mustRegister(toolDesc{Spec: selectionSpec, Write: true, Exec: &executor{
 		Prepare: func(context.Context, Conversation, json.RawMessage) (prepared, error) {
@@ -216,6 +230,14 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 	var cited []mailItem
 	editable, _, _ := mail.SplitDraft(d.HTML)
 	var b strings.Builder
+	if d.SourceMessageID == 0 {
+		b.WriteString("The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n")
+	} else {
+		// A reply's subject comes from the mail it answers; changing it splits the thread at the recipient.
+		scope.MarkReadMail()
+		b.WriteString("The draft's subject, taken from the email it answers (keep it unless the user explicitly asks to change the subject):\n" +
+			ai.Untrusted(fmt.Sprintf("draft:%d:subject", d.ID), d.Subject, ai.SuspectInjection(d.Subject)) + "\n\n")
+	}
 	b.WriteString("The editable part of the draft, as HTML (the quoted email and the signature are not shown and stay as they are):\n<draft>\n" +
 		editable + "\n</draft>")
 	if d.SourceMessageID != 0 {
@@ -286,6 +308,10 @@ func (s *Service) correspondence(ctx context.Context, accountID int64, addrs []s
 // editable part and revision now and returns the new part; the proposal binds
 // that revision.
 func (s *Service) proposeUpdate(ctx context.Context, draftID int64, edit func(old string, revision int64) (string, error)) (prepared, error) {
+	return s.proposeUpdateWithSubject(ctx, draftID, nil, edit)
+}
+
+func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, subject *string, edit func(old string, revision int64) (string, error)) (prepared, error) {
 	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
 		return prepared{}, err
@@ -299,36 +325,47 @@ func (s *Service) proposeUpdate(ctx context.Context, draftID int64, edit func(ol
 	if err != nil {
 		return prepared{}, err
 	}
-	b, err := json.Marshal(updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h})
+	args := updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h}
+	if subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject { // a blank subject would erase it unseen
+		args.Subject = subject
+		args.OldSubject = d.Subject
+		if kind == kindInitial && !mail.Blank(old) {
+			kind = kindPartial
+		}
+	}
+	b, err := json.Marshal(args)
 	if err != nil {
 		return prepared{}, err
 	}
 	return prepared{Args: b, Summary: kind, TargetKind: "draft", TargetID: d.ID, TargetVersion: d.Revision}, nil
 }
 
+type updateDraftIn struct {
+	HTML    string  `json:"html"`
+	Subject *string `json:"subject"`
+}
+
 func htmlArg(args json.RawMessage) (string, error) {
-	var in struct {
-		HTML string `json:"html"`
-	}
+	var in updateDraftIn
 	err := json.Unmarshal(args, &in)
 	return in.HTML, err
 }
 
 // prepareUpdate is update_draft's Prepare: the conversation's draft, at its
-// current revision, with the model's HTML cleaned.
+// current revision, with the model's HTML cleaned and optional subject.
 func (s *Service) prepareUpdate(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error) {
 	if conv.DraftID == 0 {
 		return prepared{}, errors.New("update_draft only edits the draft of a compose window")
 	}
-	h, err := htmlArg(args)
-	if err != nil {
+	var in updateDraftIn
+	if err := json.Unmarshal(args, &in); err != nil {
 		return prepared{}, err
 	}
-	return s.proposeUpdate(ctx, conv.DraftID, func(string, int64) (string, error) { return cleanHTML(h), nil })
+	return s.proposeUpdateWithSubject(ctx, conv.DraftID, in.Subject, func(string, int64) (string, error) { return cleanHTML(in.HTML), nil })
 }
 
 // applyUpdate writes the approved editable part between the draft's own quote
-// and signature. If the draft changed since, execute's revision check fails
+// and signature, and updates subject if provided. If the draft changed since, execute's revision check fails
 // the write, so the parts read here are those of the bound revision.
 func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
 	var in updateArgs
@@ -340,9 +377,15 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 		return nil, nil, nil, err
 	}
 	_, q, sig := mail.SplitDraft(d.HTML)
-	return []sqlite.Statement{{SQL: "UPDATE drafts SET body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
-			Args: []any{mail.JoinDraft(in.HTML, q, sig), time.Now().Unix(), d.ID}}},
-		map[string]any{"updated": true}, draftUndo{Editable: in.Old, Revision: in.Revision + 1}, nil
+	newSubject := d.Subject
+	var undoSubject *string
+	if in.Subject != nil {
+		newSubject = *in.Subject
+		undoSubject = &d.Subject
+	}
+	return []sqlite.Statement{{SQL: "UPDATE drafts SET subject = ?, body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
+			Args: []any{newSubject, mail.JoinDraft(in.HTML, q, sig), time.Now().Unix(), d.ID}}},
+		map[string]any{"updated": true}, draftUndo{Editable: in.Old, Revision: in.Revision + 1, OldSubject: undoSubject}, nil
 }
 
 // applyInitial approves, through the normal path, the pending proposals that
@@ -435,8 +478,12 @@ func (s *Service) UndoLastAssist(ctx context.Context, draftID int64) error {
 		return ErrInvalidState
 	}
 	_, q, sig := mail.SplitDraft(d.HTML)
-	r, err := s.db.Execute(ctx, "UPDATE drafts SET body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
-		mail.JoinDraft(u.Editable, q, sig), time.Now().Unix(), draftID, u.Revision)
+	newSubject := d.Subject
+	if u.OldSubject != nil {
+		newSubject = *u.OldSubject
+	}
+	r, err := s.db.Execute(ctx, "UPDATE drafts SET subject = ?, body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?",
+		newSubject, mail.JoinDraft(u.Editable, q, sig), time.Now().Unix(), draftID, u.Revision)
 	if err == nil && r.Changes == 0 {
 		err = ErrInvalidState
 	}
@@ -602,6 +649,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		return nil, err
 	}
 	editable, _, _ := mail.SplitDraft(d.HTML)
+	// A reply's or forward's subject is kept: changing it splits the thread at the recipient.
+	withSubject := sel == nil && d.SourceMessageID == 0
 	if sel != nil {
 		if d.Revision != sel.Revision {
 			return nil, ErrStaleDraft
@@ -627,7 +676,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if sel != nil {
 			src = editable[sel.Start:sel.End]
 		}
-		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target)
+		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target, d.Subject, withSubject)
 	} else {
 		if ref == "" {
 			if ref = st.DefaultModel; ref == "" {
@@ -666,6 +715,9 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	}
 	// A skill reads only its target (spec 5.1): no mail, not even the one replied to.
 	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
+	if withSubject && d.Subject != "" {
+		prompt = "The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n" + prompt
+	}
 	if sel != nil {
 		prompt = "<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>"
 	}
@@ -679,15 +731,27 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if out = unfence(out); out == "" {
 			return ai.Result{Err: &ai.Error{Code: ai.CodeBadResponse, Msg: "the skill returned no text"}}
 		}
-		p, err := s.proposeUpdate(ctx, d.ID, func(old string, rev int64) (string, error) {
+		outText := out
+		var newSubj *string
+		if sel == nil {
+			subj, body, ok := splitSubject(out)
+			if ok && withSubject {
+				newSubj = &subj
+			}
+			outText = body
+		}
+		p, err := s.proposeUpdateWithSubject(ctx, d.ID, newSubj, func(old string, rev int64) (string, error) {
 			if sel == nil {
-				return cleanHTML(out), nil
+				return cleanHTML(outText), nil
 			}
 			if rev != sel.Revision {
 				return "", ErrStaleDraft
 			}
-			return spliceSelection(old, *sel, out)
+			return spliceSelection(old, *sel, outText)
 		})
+		if err == nil && name == "translate-draft" {
+			p.Summary = kindTranslate
+		}
 		if err == nil {
 			err = s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceWit, Tool: "update_draft", TargetKind: "draft", TargetID: d.ID, Decision: "approve"})
 		}
@@ -704,6 +768,51 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 }
 
 // unfence drops a markdown code fence around a model's answer.
+// splitSubject parses a skill's answer as HTML and takes out its first
+// <subject> element: ok, its text and the rest, else out as it is. A <body>
+// wrapper is dropped by the parser; children of an unclosed <subject> stay
+// in the body.
+func splitSubject(out string) (subject, body string, ok bool) {
+	ctx := &xhtml.Node{Type: xhtml.ElementNode, Data: "body", DataAtom: atom.Body}
+	nodes, err := xhtml.ParseFragment(strings.NewReader(out), ctx)
+	if err != nil {
+		return "", out, false
+	}
+	root := &xhtml.Node{Type: xhtml.ElementNode, Data: "div", DataAtom: atom.Div}
+	for _, n := range nodes {
+		root.AppendChild(n)
+	}
+	var subj *xhtml.Node
+	for n := range root.Descendants() {
+		if n.Type == xhtml.ElementNode && n.Data == "subject" {
+			subj = n
+			break
+		}
+	}
+	if subj == nil {
+		return "", out, false
+	}
+	var text strings.Builder
+	for c := subj.FirstChild; c != nil; {
+		next := c.NextSibling
+		subj.RemoveChild(c)
+		if c.Type == xhtml.TextNode {
+			text.WriteString(c.Data)
+		} else {
+			subj.Parent.InsertBefore(c, subj)
+		}
+		c = next
+	}
+	subj.Parent.RemoveChild(subj)
+	var b strings.Builder
+	for c := range root.ChildNodes() {
+		if err := xhtml.Render(&b, c); err != nil {
+			return "", out, false
+		}
+	}
+	return strings.Join(strings.Fields(text.String()), " "), strings.TrimSpace(b.String()), true
+}
+
 func unfence(s string) string {
 	s = strings.TrimSpace(s)
 	if rest, ok := strings.CutPrefix(s, "```"); ok {

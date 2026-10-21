@@ -70,12 +70,16 @@ type mailServers struct {
 type config struct {
 	autoSync bool
 	registry *core.RegistrySource
+	sys      core.SystemTranslator
 }
 
 type Option func(*config)
 
 // WithRegistry gives the Service a plugin registry, as from NewRegistryServer.
 func WithRegistry(src *core.RegistrySource) Option { return func(c *config) { c.registry = src } }
+
+// WithSystemTranslator gives the Service the system's translation.
+func WithSystemTranslator(t core.SystemTranslator) Option { return func(c *config) { c.sys = t } }
 
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
@@ -94,7 +98,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0"})
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys})
 	if err != nil {
 		t.Fatal(err)
 	}

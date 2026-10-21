@@ -38,6 +38,7 @@ func TestDetect(t *testing.T) {
 			"corp.example": {{Host: "alt1.aspmx.l.google.com.", Pref: 20}, {Host: "aspmx.l.google.com.", Pref: 1}},
 			"biz.example":  {{Host: "mxbiz1.qq.com.", Pref: 5}},
 			"fs.example":   {{Host: "mx2.feishu.cn.", Pref: 20}, {Host: "mx1.feishu.cn.", Pref: 10}},
+			"lark.example": {{Host: "mx-sg.larksuite.com.", Pref: 10}},
 			"ding.example": {{Host: "mx1.em.dingtalk.com.", Pref: 10}},
 			"srv.example":  {{Host: "mx.unknown.example.", Pref: 5}},
 		},
@@ -59,6 +60,7 @@ func TestDetect(t *testing.T) {
 		{"a@corp.example", "gmail", "mx", "imap.gmail.com"},
 		{"a@biz.example", "exmail", "mx", "imap.exmail.qq.com"},
 		{"a@fs.example", "feishu", "mx", "imap.feishu.cn"},
+		{"a@lark.example", "lark", "mx", "imap.larksuite.com"},
 		{"a@ding.example", "dingtalk", "mx", "imap.em.dingtalk.com"},
 		{"a@srv.example", "other", "srv", "mail.srv.example"},
 		{"a@none.example", "other", "guess", "imap.none.example"},
@@ -90,7 +92,7 @@ func TestDetectRejectsBadAddress(t *testing.T) {
 }
 
 func TestProvidersComplete(t *testing.T) {
-	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "dingtalk", "icloud", "yahoo", "aol"}
+	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "lark", "dingtalk", "icloud", "yahoo", "aol"}
 	ps := auth.ListProviders()
 	if len(ps) != len(want) {
 		t.Fatalf("got %d providers", len(ps))

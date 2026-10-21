@@ -10,12 +10,15 @@ import (
 )
 
 type fakeSystemTranslator struct {
-	version string
-	err     error
-	calls   int
+	version   string
+	installed []string
+	err       error
+	calls     int
 }
 
 func (f *fakeSystemTranslator) Version() string { return f.version }
+
+func (f *fakeSystemTranslator) InstalledLanguages() []string { return f.installed }
 
 func (f *fakeSystemTranslator) Translate(_ context.Context, texts []string, _, target string) ([]string, string, error) {
 	f.calls++

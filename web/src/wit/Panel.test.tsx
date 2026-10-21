@@ -629,6 +629,28 @@ describe("Panel", () => {
     expect(screen.getByText("翻译为English")).toBeInTheDocument();
   });
 
+  it("the 翻译 menu names languages in the app's language, which comes first", async () => {
+    const user = userEvent.setup(); // jsdom's navigator.language: en-US
+    const languages = ["zh-Hans", "de", "en-GB", "en"].map((tag) => ({ tag, name: tag }));
+    await setup({ info: { ...info, languages } });
+    await user.click(screen.getByRole("button", { name: "翻译" }));
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      "British English",
+      "English",
+      "German",
+      "Simplified Chinese",
+    ]);
+  });
+
+  it("the 翻译 menu with no language says where to download one", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ info: { ...info, languages: [] } });
+    await user.click(screen.getByRole("button", { name: "翻译" }));
+    await user.click(await screen.findByRole("menuitem", { name: "请在系统设置中下载翻译语言" }));
+    expect(api.skill).not.toHaveBeenCalled();
+  });
+
   it("locked: the menus are disabled (in their usual look) and Send does nothing", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ locked: true });

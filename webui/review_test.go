@@ -2,7 +2,9 @@ package webui
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -252,4 +254,18 @@ func TestComposeOpenLink(t *testing.T) {
 	assert.Equal(t, []string{"a@b.c"}, d.To)
 	assert.Equal(t, f.acc.ID, d.AccountID)
 	assert.ErrorIs(t, f.page.OpenLink(context.Background(), "https://x.org"), ErrNoDraft, "a window with no draft")
+}
+
+func TestReviewSubjectOps(t *testing.T) {
+	ops := func(old, subject string) []ReviewOp {
+		args := `{"old":"<p>a</p>","html":"<p>a</p>","old_subject":` + strconv.Quote(old) + `,"subject":` + strconv.Quote(subject) + `}`
+		return newProposal(core.Approval{Args: json.RawMessage(args)}).review().SubjectOps
+	}
+	assert.Equal(t, []ReviewOp{
+		{Kind: "same", Change: -1, Tokens: []ReviewToken{{Text: "Meet on "}}},
+		{Kind: "del", Change: -1, Tokens: []ReviewToken{{Text: "Monday"}}},
+		{Kind: "ins", Change: -1, Tokens: []ReviewToken{{Text: "Tuesday"}}},
+	}, ops("Meet on Monday", "Meet on Tuesday"))
+	assert.Equal(t, []ReviewOp{{Kind: "ins", Change: -1, Tokens: []ReviewToken{{Text: "Hello"}}}}, ops("", "Hello"), "no subject before")
+	assert.Empty(t, ops("Same", "Same"))
 }

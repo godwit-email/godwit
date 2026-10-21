@@ -69,6 +69,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
       { id: "shorter", label: "更短", hint: "长度" },
       { id: "longer", label: "更长", hint: "长度" },
       { id: "proofread", label: "校对", hint: "只改错字和语法" },
+      { id: "format", label: "排版整理", hint: "仅整理段落与结构" },
     ],
     languages: [
       { tag: "en", name: "English" },
@@ -101,6 +102,7 @@ const block = (ops: ReviewOp[]) => ({
 export const review = (inline: boolean): Review => ({
   approval: 2,
   tool: "update_draft",
+  kind: inline ? "partial" : "rewrite",
   inline,
   ratio: inline ? 0.2 : 0.7,
   exact: true,

@@ -16,10 +16,24 @@ export function makeT(locale?: string): T {
   };
 }
 
+export function currentLocale(): string {
+  if (isMyGo()) {
+    const l = runtimeLocale();
+    if (l) return l;
+  }
+  return navigator.language || "en";
+}
+
 export function useT(locale?: string): T {
   const [changed, setChanged] = useState<string | undefined>(() =>
     isMyGo() ? runtimeLocale() : undefined,
   );
+  useEffect(() => {
+    const l = changed ?? locale ?? currentLocale();
+    if (typeof document !== "undefined" && l) {
+      document.documentElement.lang = l;
+    }
+  }, [changed, locale]);
   useEffect(() => {
     if (!isMyGo()) return;
     const off = onLocaleChange(setChanged);

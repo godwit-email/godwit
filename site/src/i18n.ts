@@ -156,7 +156,7 @@ export const strings: Record<Lang, Strings> = {
 		features: [
 			{
 				title: "Mail",
-				body: "IMAP/SMTP sync, offline changes, conversations, full-text search and HTML compose. Setup is detected for Gmail, Outlook, iCloud, Yahoo, QQ Mail, 163/126, Feishu, DingTalk and more.",
+				body: "IMAP/SMTP sync, offline changes, conversations, full-text search and HTML compose. Setup is detected for Gmail, Outlook, iCloud, Yahoo, QQ Mail, 163/126, Lark/Feishu, DingTalk and more.",
 			},
 			{ title: "Wit", body: "Answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It never sends without your approval." },
 			{ title: "AI actions", body: "Summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft." },

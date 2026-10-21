@@ -21,7 +21,7 @@ import {
 } from "@remixicon/react";
 import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -63,7 +63,7 @@ import {
   TraceTitle,
 } from "@/components/ui/trace";
 import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
-import type { T } from "@/shared/i18n";
+import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
@@ -464,6 +464,26 @@ export type PanelReview = { approval: number; summary: ReactNode; actions: React
  * run (resumed by a decision) onto the last answer if that is the run's, else into an answer of
  * its own. onRunning tells whether a run streams.
  */
+/** The 翻译 menu: names in the app's language, which comes first, the rest alphabetical. */
+function translateMenu(languages: { tag: string; name: string }[], locale: string) {
+  const base = (tag: string) => tag.split(/[-_]/)[0].toLowerCase();
+  let names: Intl.DisplayNames | undefined;
+  try {
+    names = new Intl.DisplayNames([locale], { type: "language" });
+  } catch {}
+  const label = (l: { tag: string; name: string }) => {
+    try {
+      const n = names?.of(l.tag);
+      if (n) return n.charAt(0).toUpperCase() + n.slice(1);
+    } catch {}
+    return l.name;
+  };
+  const first = (tag: string) => (base(tag) === base(locale) ? 0 : 1);
+  return languages
+    .map((l) => ({ tag: l.tag, label: label(l) }))
+    .sort((a, b) => first(a.tag) - first(b.tag) || a.label.localeCompare(b.label, locale));
+}
+
 export function Panel({
   info,
   history,
@@ -550,6 +570,11 @@ export function Panel({
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
+  const locale = currentLocale();
+  const menuLanguages = useMemo(
+    () => translateMenu(info?.languages ?? [], locale),
+    [info?.languages, locale],
+  );
 
   useEffect(() => {
     if (!history.running) return;
@@ -1190,12 +1215,12 @@ export function Panel({
       </div>
     );
   }
-  // 调整 / 翻译: a tray the input overlaps from below; locked, they do nothing but keep their look.
+  // 调整 / 翻译: quick actions above the input; locked, they do nothing but keep their look.
   const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
     <Button
-      variant="ghost"
+      variant="secondary"
       size="sm"
-      className="gap-1.5 px-2 font-normal text-sm disabled:opacity-100"
+      className="h-7 gap-1.5 rounded-full px-2.5 font-normal text-xs text-foreground/80 shadow-xs hover:bg-secondary/80 disabled:opacity-100"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -1227,10 +1252,7 @@ export function Panel({
         {info && (
           <div
             data-tray
-            className={cn(
-              "mx-1 flex gap-1 bg-muted px-1 pt-1",
-              only ? "rounded-2xl pb-1" : "-mb-4 rounded-t-2xl pb-5",
-            )}
+            className={cn("flex items-center gap-1.5", only ? "rounded-2xl bg-muted p-1" : "mb-2")}
           >
             {!only && (
               <DropdownMenu>
@@ -1238,14 +1260,17 @@ export function Panel({
                   disabled={locked}
                   render={trayButton(RiEqualizerLine, t("wit.compose.adjust"))}
                 />
-                <DropdownMenuContent className="min-w-45">
+                <DropdownMenuContent side="top" align="start" className="w-auto min-w-72 max-w-md">
                   {info.skills.map((s) => (
                     <DropdownMenuItem
                       key={s.id}
+                      className="flex items-center justify-between gap-4 py-1.5"
                       onClick={() => ask(s.label, { skill: s.id, lang: "" })}
                     >
-                      {s.label}
-                      <span className="ml-auto text-muted-foreground text-sm">{s.hint}</span>
+                      <span className="shrink-0 font-medium">{s.label}</span>
+                      <span className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                        {s.hint}
+                      </span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -1256,20 +1281,24 @@ export function Panel({
                 disabled={locked}
                 render={trayButton(RiTranslate2, t("wit.compose.translate"))}
               />
-              <DropdownMenuContent className="min-w-45">
-                {info.languages.map((l) => (
-                  <DropdownMenuItem
-                    key={l.tag}
-                    onClick={() =>
-                      ask(t("wit.compose.translate_to", l.name), {
-                        skill: "translate-draft",
-                        lang: l.tag,
-                      })
-                    }
-                  >
-                    {l.name}
-                  </DropdownMenuItem>
-                ))}
+              <DropdownMenuContent side="top" align="start" className="w-auto min-w-48">
+                {menuLanguages.length === 0 ? (
+                  <DropdownMenuItem disabled>{t("wit.compose.translate_none")}</DropdownMenuItem>
+                ) : (
+                  menuLanguages.map((l) => (
+                    <DropdownMenuItem
+                      key={l.tag}
+                      onClick={() =>
+                        ask(t("wit.compose.translate_to", l.label), {
+                          skill: "translate-draft",
+                          lang: l.tag,
+                        })
+                      }
+                    >
+                      {l.label}
+                    </DropdownMenuItem>
+                  ))
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

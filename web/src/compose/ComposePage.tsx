@@ -313,8 +313,13 @@ function Compose({
   };
 
   // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
-  const adopt = (revision: number, body: string) => {
-    cur.current = { ...cur.current, body, revision };
+  const adopt = (revision: number, body: string, subject?: string) => {
+    cur.current = {
+      ...cur.current,
+      body,
+      revision,
+      ...(subject !== undefined ? { subject } : {}),
+    };
     setF(cur.current);
     setInitial((i) => ({ body, n: i.n + 1 }));
     // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
@@ -338,7 +343,7 @@ function Compose({
       }
       if (s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
       if (edits.current !== runEdits.current) return;
-      adopt(l.revision, l.body);
+      adopt(l.revision, l.body, l.subject);
       setApplied(true);
     } catch (e) {
       if (n === reloads.current) setReloadErr(witError(message(e), t));
@@ -527,7 +532,7 @@ function Compose({
     try {
       const r = await sv.run(op);
       if (r && !r.conflict) {
-        adopt(r.revision, r.body);
+        adopt(r.revision, r.body, r.subject);
         setSignature(sigOf(r));
         setAttachments(r.attachments);
         setSavedAt(fmt(new Date(r.updatedAt)));

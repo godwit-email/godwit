@@ -62,6 +62,52 @@ public func free(_ p: UnsafeMutablePointer<CChar>?) {
     Foundation.free(p)
 }
 
+/// Returns a malloc'd NUL-terminated JSON array of installed language identifiers (e.g. ["de", "en", "en-GB", "fr", "zh-Hans"]),
+/// which the caller frees with godwit_st_free.
+@_cdecl("godwit_st_installed_languages")
+public func installedLanguages() -> UnsafeMutablePointer<CChar> {
+    var tags: [String] = []
+    if #available(macOS 26, *) {
+        var installed: [Locale.Language] = []
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            let availability = LanguageAvailability()
+            let supported = await availability.supportedLanguages
+            for s in supported {
+                if await availability.status(from: s, to: nil) == .installed {
+                    installed.append(s)
+                }
+            }
+            // Apple's availability.status(from: s, to: nil) only evaluates whether s is installed
+            // as an offline source language. For languages that serve as translation targets
+            // (such as English in downloaded pairs), from: s, to: nil returns .supported rather than .installed.
+            // Check remaining supported languages as targets from any installed source:
+            for s in supported where !installed.contains(s) {
+                for other in installed {
+                    if await availability.status(from: other, to: s) == .installed {
+                        installed.append(s)
+                        break
+                    }
+                }
+            }
+            done.signal()
+        }
+        done.wait()
+        // The minimal identifier keeps a region only where it is not the likely one
+        // (en-GB, not en-US), so full() in run maps the tag back to the variant installed.
+        for s in installed {
+            if s.languageCode?.identifier == "zh", let script = s.script?.identifier {
+                tags.append("zh-\(script)")
+            } else {
+                tags.append(s.minimalIdentifier)
+            }
+        }
+    }
+    let unique = Array(NSOrderedSet(array: tags)).compactMap { $0 as? String }
+    let data = (try? JSONEncoder().encode(unique)) ?? Data("[]".utf8)
+    return strdup(String(decoding: data, as: UTF8.self))!
+}
+
 private func run(_ json: String) async -> Answer {
     guard let req = try? JSONDecoder().decode(Request.self, from: Data(json.utf8)) else {
         return Answer(error: Failure(code: "invalid_request", message: "not {texts, source, target}"))

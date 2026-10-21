@@ -328,24 +328,46 @@ func (s *Service) callTranslator(ctx context.Context, plugin string, tr translat
 	return res, s.pluginSucceeded(ctx, plugin, rp.gen)
 }
 
-// pluginDraftRun is a run that translates the draft HTML src with plugin and
+// pluginDraftRun is a run that translates the draft HTML src (and optional subject) with plugin and
 // answers it as the model would, for assistSkill's proposal.
-func (s *Service) pluginDraftRun(plugin, src, target string) runFunc {
+func (s *Service) pluginDraftRun(plugin, src, target, subject string, translateSubject bool) runFunc {
 	return func(ctx context.Context, _ ai.Request) (<-chan ai.Event, func() ai.Result) {
 		events, done := make(chan ai.Event), make(chan struct{})
 		var res ai.Result
 		go func() {
 			defer close(done)
 			defer close(events)
-			out, err := s.translateDraftHTML(ctx, plugin, src, target)
+			outHTML, err := s.translateDraftHTML(ctx, plugin, src, target)
 			if err != nil {
 				res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
 				return
+			}
+			out := outHTML
+			if translateSubject && strings.TrimSpace(subject) != "" {
+				subjRes, err := s.translateDraftText(ctx, plugin, subject, target)
+				if err == nil && strings.TrimSpace(subjRes) != "" {
+					out = "<subject>" + html.EscapeString(strings.TrimSpace(subjRes)) + "</subject>" + outHTML
+				}
 			}
 			res = ai.Result{Messages: []ai.Message{{Role: "model", Text: out}}}
 		}()
 		return events, func() ai.Result { <-done; return res }
 	}
+}
+
+func (s *Service) translateDraftText(ctx context.Context, plugin, text, target string) (string, error) {
+	tr, err := s.translatorFor(ctx, plugin)
+	if err != nil {
+		return "", err
+	}
+	res, err := tr.call(ctx, translateRequest{Texts: []string{text}, Target: target})
+	if err != nil {
+		return "", err
+	}
+	if len(res.Texts) > 0 {
+		return res.Texts[0], nil
+	}
+	return text, nil
 }
 
 var (

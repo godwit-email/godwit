@@ -182,6 +182,7 @@ const op = (kind: string, change: number, s: string) => ({
 const inline: Review = {
   approval: 4,
   tool: "update_draft",
+  kind: "partial",
   inline: true,
   ratio: 0.2,
   exact: true,
@@ -208,6 +209,7 @@ const inline: Review = {
 };
 const change = (body: string, revision: number): BodyChange => ({
   revision,
+  subject: "",
   body,
   conflict: false,
   attachments: [],
