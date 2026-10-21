@@ -18,7 +18,8 @@ type builtinPlugin struct {
 	name         string
 	title, about plugins.Text
 	// tags are what the plugin puts after a message's subject; nil for none.
-	tags func(m plugins.MailMessage) []Tag
+	// codeMail: the message is under the Codes label (codeMailCond).
+	tags func(m plugins.MailMessage, codeMail bool) []Tag
 	// translates: a translation channel (translators.go) through
 	// Options.SystemTranslator, listed only when the app set one.
 	translates bool
@@ -158,11 +159,12 @@ func (s *Service) setBuiltinEnabled(ctx context.Context, name string, on bool) e
 // builtinTags are the tags of the built-in plugins that are on. They read
 // the stored body, links intact: the plugins' copy is sanitized.
 func (s *Service) builtinTags(ctx context.Context, id int64) ([]Tag, error) {
-	rows, err := s.db.Query(ctx, "SELECT subject, body_text, body_html FROM messages WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT subject, body_text, body_html, "+codeMailCond+" FROM messages m WHERE id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return nil, err
 	}
 	m := plugins.MailMessage{ID: id, Subject: store.Str(rows.Values[0][0]), Text: store.Str(rows.Values[0][1]), HTML: store.Str(rows.Values[0][2])}
+	codeMail := store.Int(rows.Values[0][3]) != 0
 	var out []Tag
 	for _, b := range builtinPlugins {
 		if b.tags == nil {
@@ -175,7 +177,7 @@ func (s *Service) builtinTags(ctx context.Context, id int64) ([]Tag, error) {
 		if !on {
 			continue
 		}
-		for _, t := range b.tags(m) {
+		for _, t := range b.tags(m, codeMail) {
 			t.Plugin, t.Builtin = b.name, true
 			out = append(out, t)
 		}
@@ -185,12 +187,13 @@ func (s *Service) builtinTags(ctx context.Context, id int64) ([]Tag, error) {
 
 // signInCodeTags are a code to copy and the mail's sign-in, confirmation
 // or password-reset link to open, its host shown.
-func signInCodeTags(m plugins.MailMessage) []Tag {
+func signInCodeTags(m plugins.MailMessage, codeMail bool) []Tag {
 	var out []Tag
-	if code := mail.SignInCode(m.Subject, m.Text, m.HTML); code != "" {
+	code, link, kind := signInFinds(m.Subject, m.Text, m.HTML, codeMail)
+	if code != "" {
 		out = append(out, Tag{Kind: "copy", Text: code, Value: code})
 	}
-	if link, kind := mail.ActionLink(m.Subject, m.Text, m.HTML); link != "" {
+	if link != "" {
 		out = append(out, Tag{Kind: "open-url", Label: kind, Text: mail.LinkHost(link), Value: link})
 	}
 	return out

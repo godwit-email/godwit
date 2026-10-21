@@ -2,6 +2,7 @@ package core
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,4 +40,51 @@ func TestRecentSignInCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got, "the menu expires entries without deleting the mail")
 	require.NotZero(t, e.idOf(t, "new@x"))
+}
+
+// On mail under the Codes label, how a mail looks finds what no lexicon
+// reads: a code set apart, a lone button. Elsewhere it does not.
+func TestSignInCodesByLook(t *testing.T) {
+	e := newSyncEnv(t)
+	now := time.Now().Truncate(time.Second)
+	e.sync(t)
+	html := func(id, subject, body string) string {
+		return strings.Replace(eml(id, "Acme <id@acme.example>", e.acc.Email, subject, now.Format(time.RFC1123Z), body), "text/plain", "text/html", 1)
+	}
+	e.put(t, "INBOX", html("code@x", "Acme", `<p>Συνέχεια:</p><p style="font-size:28px;letter-spacing:4px">482913</p>`))
+	e.put(t, "INBOX", html("button@x", "Acme", `<p>Συνέχεια:</p><table><tr><td bgcolor="#06c"><a href="https://acme.example/l/1">Είσοδος</a></td></tr></table>`))
+	e.put(t, "INBOX", html("order@x", "Acme", `<p>Παραγγελία</p><p><b>731904</b></p>`))
+	e.sync(t)
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Codes", Color: "red", Icon: "shield-keyhole"}) // the preset, which a test start does not seed
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "UPDATE labels SET slug = 'otp' WHERE id = ?", l.ID)
+	require.NoError(t, err)
+	otp := l.ID
+
+	codes, err := e.s.RecentSignInCodes(bg, now)
+	require.NoError(t, err)
+	require.Empty(t, codes, "unlabeled mail is read by its words alone")
+
+	require.NoError(t, e.s.SetLabel(bg, []int64{e.idOf(t, "code@x"), e.idOf(t, "button@x")}, otp, true))
+	codes, err = e.s.RecentSignInCodes(bg, now)
+	require.NoError(t, err)
+	require.Len(t, codes, 2)
+	code := codes[slices.IndexFunc(codes, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "code@x") })]
+	require.Equal(t, "482913", code.Code)
+	require.Empty(t, code.Link)
+	button := codes[slices.IndexFunc(codes, func(c SignInCode) bool { return c.MessageID == e.idOf(t, "button@x") })]
+	require.Equal(t, "https://acme.example/l/1", button.Link)
+	require.Equal(t, "signin", button.LinkKind)
+
+	tags, err := e.s.PluginTags(bg, e.idOf(t, "code@x"))
+	require.NoError(t, err)
+	require.Equal(t, []Tag{{Plugin: SignInCodesPlugin, Builtin: true, Kind: "copy", Text: "482913", Value: "482913"}}, tags)
+	tags, err = e.s.PluginTags(bg, e.idOf(t, "order@x"))
+	require.NoError(t, err)
+	require.Empty(t, tags)
+
+	require.NoError(t, e.s.SetLabel(bg, []int64{e.idOf(t, "code@x")}, otp, false))
+	tags, err = e.s.PluginTags(bg, e.idOf(t, "code@x"))
+	require.NoError(t, err)
+	require.Empty(t, tags, "taken off by hand: no longer a code mail")
 }
