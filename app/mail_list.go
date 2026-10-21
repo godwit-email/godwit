@@ -116,12 +116,12 @@ type mailPage struct {
 
 // listSel is a list's place and choice, kept on its items by key.
 type listSel struct {
-	list ui.ListState
+	list *ui.ListState // replaced, never zeroed: the last frame's tree still points at the old one
 	sel  ui.Selection[string]
 	cur  int // the row last chosen, -1 for none; the list keeps it on its item
 }
 
-func (l *listSel) reset() { *l = listSel{cur: -1} }
+func (l *listSel) reset() { *l = listSel{list: &ui.ListState{}, cur: -1} }
 
 // key is the row's identity in the list and its choice: thread and message
 // IDs are separate sequences.
@@ -702,7 +702,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := kit.List(c, &ls.list, len(es), func(i int) {
+	l := kit.List(c, ls.list, len(es), func(i int) {
 		if es[i].head != "" { // a date heading: no row, never chosen
 			// left as the header's name: the list's own Space(2) and Space(2) more
 			h := kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))
