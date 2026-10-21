@@ -10,6 +10,7 @@ import (
 	"errors"
 	"image/gif"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -56,8 +57,10 @@ func SignatureImageURL(data []byte) (string, error) {
 
 // signatureAssets turns the data: images of a signature's editor HTML into
 // stored assets of the account: their sources become cid:, and the statements
-// insert the new ones. Every image counts toward SignatureImagesMax.
-func signatureAssets(accountID int64, editor string) (string, []sqlite.Statement, error) {
+// insert the new ones. A cid: source stays only if known has it; any other
+// source is dropped. Every image kept counts toward SignatureImagesMax. The
+// result is sanitized (SanitizeDraft), keeping those images.
+func signatureAssets(accountID int64, editor string, known map[string]bool) (string, []sqlite.Statement, error) {
 	var stmts []sqlite.Statement
 	var bad error
 	seen := map[string]bool{}
@@ -85,8 +88,8 @@ func signatureAssets(accountID int64, editor string) (string, []sqlite.Statement
 			id = "sig-" + hex.EncodeToString(sum[:16]) + "@godwit"
 			stmts = append(stmts, sqlite.Statement{SQL: "INSERT OR IGNORE INTO signature_images(account_id, cid, content_type, data) VALUES (?, ?, ?, ?)",
 				Args: []any{accountID, id, ct, data}})
-		} else if c, ok := strings.CutPrefix(src, "cid:"); ok {
-			id = c // kept only if the account has it (SanitizeDraft)
+		} else if c, ok := strings.CutPrefix(src, "cid:"); ok && known[c] {
+			id = c
 		}
 		if id == "" {
 			return ""
@@ -96,7 +99,11 @@ func signatureAssets(accountID int64, editor string) (string, []sqlite.Statement
 		}
 		return "cid:" + id
 	})
-	return out, stmts, bad
+	if bad != nil {
+		return "", nil, bad
+	}
+	// Stored clean: what the HTML mode typed is never kept as typed.
+	return mail.SanitizeDraft(mail.StripMarkers(out), seen), stmts, nil
 }
 
 // unusedSignatureImages deletes the account's images that neither its
@@ -202,6 +209,24 @@ func (s *Service) SignatureEditor(ctx context.Context, accountID int64) (string,
 	}
 	return s.InlineSignatureImages(ctx, accountID, SignatureEditorHTML(acc.Signature, cids))
 }
+
+// SignatureCode is the account's signature as stored, for the editor's HTML
+// mode: sanitized, its images as cid:, one block per line.
+func (s *Service) SignatureCode(ctx context.Context, accountID int64) (string, error) {
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	cids, err := s.signatureCIDs(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	return blockLines.ReplaceAllString(SignatureEditorHTML(acc.Signature, cids), "$1\n<$2"), nil
+}
+
+// blockLines are the ends of blocks followed by an opening tag: SignatureCode
+// breaks the line there (whitespace between blocks shows nothing).
+var blockLines = regexp.MustCompile(`(</(?:p|div|table|tr|ul|ol|li|blockquote|h[1-6])>|<br/?>)<([^/])`)
 
 // stripImageMetadata drops what a picture says about where and how it was
 // taken: EXIF (GPS included), XMP, IPTC and comments. jpeg, png and webp lose

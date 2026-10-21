@@ -168,6 +168,9 @@ const (
 	// hairline) over the editor's least 96 and its 10/10 padding; the editor
 	// scrolls inside.
 	SignatureEditorHeight = 153
+	// SignatureCodeHeight is the signature page in its HTML mode: the code
+	// takes at least 200.
+	SignatureCodeHeight = 257
 	HeadingGap            = 6  // a page heading to its subtitle
 	SectionGap            = 10 // a section's title to its card
 	PortWidth             = 90 // port fields

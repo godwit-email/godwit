@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => {
   const subs: Record<string, ((v: never) => void)[]> = {};
@@ -13,6 +13,8 @@ vi.mock("@/mygo", () => ({
   SignaturePage: {
     state: vi.fn(),
     load: vi.fn(async () => "<p>Bob</p>"),
+    code: vi.fn(async () => "<p>Bob</p>\n"),
+    tall: vi.fn(async () => {}),
     save: vi.fn(async () => {}),
     saved: vi.fn(async () => {}),
   },
@@ -47,4 +49,16 @@ test("a language change relabels the toolbar without reloading the signature", a
   expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
   expect(api.load).toHaveBeenCalledOnce();
   expect(screen.getByText("Bob")).toBeInTheDocument();
+});
+
+test("the HTML toggle shows the stored code and tells native to grow, and back", async () => {
+  vi.mocked(api.state).mockResolvedValue({ account: 1, locale: "en", theme: undefined } as never);
+  vi.stubGlobal("mygo", { locale: "en", on: () => () => {} });
+  render(<SignatureApp />);
+  fireEvent.click(await screen.findByRole("button", { name: "HTML code" }));
+  expect(await screen.findByRole("textbox", { name: "HTML code" })).toHaveValue("<p>Bob</p>\n");
+  expect(api.tall).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", { name: "HTML code" }));
+  expect(await screen.findByText("Bob")).toBeInTheDocument();
+  expect(api.tall).toHaveBeenLastCalledWith(false);
 });

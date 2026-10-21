@@ -434,7 +434,11 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if p.Signature != nil {
 		sig := *p.Signature
 		if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
-			if rest, images, err = signatureAssets(id, rest); err != nil {
+			known, err := s.signatureCIDs(ctx, id)
+			if err != nil {
+				return Account{}, err
+			}
+			if rest, images, err = signatureAssets(id, rest, known); err != nil {
 				return Account{}, err
 			}
 			sig = SignatureHTMLPrefix + rest

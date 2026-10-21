@@ -228,3 +228,32 @@ func TestSignatureImageMetadataStripped(t *testing.T) {
 	require.Len(t, stored, 1)
 	assert.NotContains(t, string(stored[0][0].([]byte)), gps)
 }
+
+// The HTML mode writes cid: itself: a known image stays and counts, an
+// unknown one is dropped and does not; the fifth is refused.
+func TestSignatureCodeImages(t *testing.T) {
+	e := newSendEnv(t, false)
+	acc, err := setSignature(t, e.s, e.acc.ID, `<p>A</p><img src="`+dataURL("image/png", logo(t, 1))+`">`)
+	require.NoError(t, err)
+	cid := mail.CIDs(strings.TrimPrefix(acc.Signature, SignatureHTMLPrefix))[0]
+	code, err := e.s.SignatureCode(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "<p>A</p>\n<img src=\"cid:"+cid+"\"/>", code)
+
+	unknown := `<img src="cid:sig-00000000000000000000000000000000@godwit">`
+	known := `<img src="cid:` + cid + `">`
+	acc, err = setSignature(t, e.s, e.acc.ID, `<p>A</p>`+known+unknown+unknown+unknown+unknown)
+	require.NoError(t, err)
+	assert.Equal(t, []string{cid}, mail.CIDs(strings.TrimPrefix(acc.Signature, SignatureHTMLPrefix)))
+
+	var five strings.Builder
+	five.WriteString(known)
+	for i := range SignatureImagesMax {
+		five.WriteString(`<img src="` + dataURL("image/png", logo(t, uint8(10+i))) + `">`)
+	}
+	_, err = setSignature(t, e.s, e.acc.ID, five.String())
+	assert.ErrorIs(t, err, ErrSignatureImageCount)
+	again, err := e.s.SignatureCode(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Contains(t, again, cid, "a refused save keeps the signature as it was")
+}

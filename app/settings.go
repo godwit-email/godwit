@@ -66,6 +66,7 @@ type settingsPage struct {
 	sigErr    error
 	sigAcc    int64
 	sigPosted bool
+	sigTall   bool // the page shows its HTML mode (SignatureTall)
 
 	query string // the sidebar's search
 

@@ -161,3 +161,27 @@ func TestSignaturePickImage(t *testing.T) {
 	four := strings.Repeat(`<img src="data:image/png;base64,`+base64.StdEncoding.EncodeToString(png.Bytes())+`">`, 4)
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID, four), "the same image four times is one image, and under the size cap")
 }
+
+func TestSignatureCodeAndTall(t *testing.T) {
+	f := newSigFixture(t)
+	var talls []bool
+	f.s.OnTall = func(tall bool) { talls = append(talls, tall) }
+	_, err := f.p.Code(pageCtx(new(int)), f.acc.ID)
+	assert.ErrorIs(t, err, ErrWrongPage)
+	assert.ErrorIs(t, f.p.Tall(pageCtx(new(int)), true), ErrWrongPage)
+
+	// What the HTML mode typed is saved clean, and read back as stored.
+	require.NoError(t, f.p.Save(pageCtx(f.page), f.acc.ID,
+		`<table style="color:red"><tr><td onclick="x()">Bob<script>alert(1)</script></td></tr></table><p>A</p><img src="https://t.example/p.png">`))
+	code, err := f.p.Code(pageCtx(f.page), f.acc.ID)
+	require.NoError(t, err)
+	assert.NotContains(t, code, "script")
+	assert.NotContains(t, code, "onclick")
+	assert.NotContains(t, code, "t.example")
+	assert.Contains(t, code, `style="color: red"`)
+	assert.Contains(t, code, "</table>\n<p>A</p>", "one block per line")
+
+	require.NoError(t, f.p.Tall(pageCtx(f.page), true))
+	require.NoError(t, f.p.Tall(pageCtx(f.page), false))
+	assert.Equal(t, []bool{true, false}, talls)
+}

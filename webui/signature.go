@@ -57,6 +57,10 @@ type Signature struct {
 	pages *Pages
 	pick  func(ctx context.Context) (string, error)
 
+	// OnTall hears the page enter (true) or leave its HTML mode, which
+	// needs a taller view; set before the page runs.
+	OnTall func(tall bool)
+
 	mu      sync.Mutex
 	svc     *core.Service
 	live    bool // the page called State: it ran, and may hold edits
@@ -147,6 +151,27 @@ func (p *SignaturePage) Load(ctx context.Context, account int64) (string, error)
 		return "", err
 	}
 	return svc.SignatureEditor(ctx, account)
+}
+
+// Code is account's signature as stored, for the HTML mode: sanitized,
+// its images as cid:.
+func (p *SignaturePage) Code(ctx context.Context, account int64) (string, error) {
+	svc, err := p.s.caller(ctx)
+	if err != nil {
+		return "", err
+	}
+	return svc.SignatureCode(ctx, account)
+}
+
+// Tall tells native the page entered (true) or left its HTML mode.
+func (p *SignaturePage) Tall(ctx context.Context, tall bool) error {
+	if _, err := p.s.caller(ctx); err != nil {
+		return err
+	}
+	if p.s.OnTall != nil {
+		p.s.OnTall(tall)
+	}
+	return nil
 }
 
 // PickImage asks for an image to insert and returns it as a data: URL, ""

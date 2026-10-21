@@ -136,8 +136,15 @@ func (p *settingsPage) signature(id int64) {
 			}
 		}
 		p.sigShow(id)
+		p.sigTall = false // the page shows the next one in rich mode
 		p.sigAcc = id
 	})
+}
+
+// SignatureTall is told the signature page entered (true) or left its HTML
+// mode: its view grows to fit the code. Showing another account leaves it.
+func (a *App) SignatureTall(tall bool) {
+	a.pages[PageSettings].(*settingsPage).sigTall = tall
 }
 
 // flushSignature has the signature page save its edit, then calls then
@@ -414,15 +421,19 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.makeDefault(acc.ID)
 			}
 		})
-	settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
+	sigHelp, sigHeight := i18n.T("settings.account.signature.help"), float32(theme.SignatureEditorHeight)
+	if p.sigTall {
+		sigHelp, sigHeight = i18n.T("settings.account.signature.html.help"), theme.SignatureCodeHeight
+	}
+	settingsSection(c, i18n.T("settings.account.signature"), sigHelp, func() {
 		p.signature(acc.ID)
 		switch {
 		case p.sigErr != nil:
 			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
 		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
+			ui.WebView(c, p.sigView).FillWidth().Height(sigHeight) // the page draws its toolbar and editor
 		default:
-			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
+			ui.Box(c).FillWidth().Height(sigHeight)
 		}
 	})
 	desc := p.syncState(acc)
