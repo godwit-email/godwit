@@ -596,4 +596,9 @@ func TestAppleIntelligenceFencedQuickReplies(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rs, 1)
 	assert.Equal(t, "<p>Sounds good</p>", rs[0].HTML)
+
+	// A fenced empty array means no suggestions, not fence lines as replies.
+	rs, err = parseQuickReplies(formatQuickRepliesJSON("```json\n{\"replies\":[]}\n```"))
+	require.NoError(t, err)
+	assert.Empty(t, rs)
 }
