@@ -1,7 +1,7 @@
 package core
 
 // The seam between plugin judge models and registry-hosted model files
-// (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8,
+// (docs/adr/0020-plugin-models-host-sdk.md,
 // godwit-email/godwit#90): pluginjudge.go calls modelAssets; until those
 // files land, noModelAssets says every model with assets needs an update.
 

@@ -657,8 +657,8 @@ func unavailable(name string) toolDesc {
 }
 
 // offered applies a conversation kind's tool policy, the start's (Ask,
-// Assist) as well as a resume's: Assist offers no plugin write tool (spec
-// 7.4) and no untrusted MCP tool, so one that became one since is unavailable.
+// Assist) as well as a resume's: Assist offers no plugin write tool (ADR
+// 0003) and no untrusted MCP tool, so one that became one since is unavailable.
 func offered(kind string, tools []toolDesc) []toolDesc {
 	for i, t := range tools {
 		if kind == "assist" && (t.Source == gateway.SourcePlugin || t.Source == gateway.SourceMCP) && t.Write {

@@ -6,7 +6,7 @@ import (
 	"slices"
 )
 
-// systemOne asks TypeSafe System One (research §2), converting to and from
+// systemOne asks TypeSafe System One (docs/research/judge-apis.md §2), converting to and from
 // the Decisions shape: noul is a predicate; questions and answers are maps
 // keyed by name; probabilities are maps keyed by value or level index.
 func (h judgeHTTP) systemOne(ctx context.Context, input string, qs []Question) ([]Answer, error) {

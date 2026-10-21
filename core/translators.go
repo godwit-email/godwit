@@ -1,7 +1,7 @@
 package core
 
-// Translation channels (docs/superpowers/specs/2026-10-14-native-plugins-design.md
-// 2.7): the built-in model translation (RunSkill's streaming path) and any
+// Translation channels (docs/adr/0018-capability-layer.md):
+// the built-in model translation (RunSkill's streaming path) and any
 // running plugin that declares the translate capability, native or script,
 // behind one small interface.
 

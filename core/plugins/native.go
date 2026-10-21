@@ -1,6 +1,6 @@
 package plugins
 
-// NativeProcess is the Godwit side of a native plugin (spec 4.5): one
+// NativeProcess is the Godwit side of a native plugin (ADR 0015): one
 // `godwit plugin-host` child per plugin, JSON lines on its stdio. A call past
 // its deadline kills the process; a process that died starts again on the
 // next call.

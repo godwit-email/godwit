@@ -8,7 +8,7 @@ import (
 )
 
 // redactor passes on Error and above only, with every secret value replaced by
-// "[redacted]" in the message and attributes (spec 5.5).
+// "[redacted]" in the message and attributes.
 type redactor struct {
 	inner   slog.Handler
 	secrets func() []string

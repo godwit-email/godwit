@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
-// Pages make no remote request (spec §A5): the built HTML carries this CSP. godwit-img: is Go's
+// Pages make no remote request (ADR 0013): the built HTML carries this CSP. godwit-img: is Go's
 // image proxy, which serves a mail body's remote images.
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img:; connect-src 'self'";

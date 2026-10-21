@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// Network limits of ctx.net.fetch (spec 5.5).
+// Network limits of ctx.net.fetch.
 const (
 	MaxFetchResponse = 5 << 20
 	FetchTimeout     = 30 * time.Second

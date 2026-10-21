@@ -268,7 +268,7 @@ var Migrations = [][]string{{
 	`CREATE TABLE signature_images (account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 		cid TEXT NOT NULL, content_type TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account_id, cid))`,
 }, {
-	// Mail labels (spec 2026-10-13): slug never changes, so a later sync can use it as
+	// Mail labels (ADR 0014): slug never changes, so a later sync can use it as
 	// an IMAP keyword. A message_labels row set by hand (source manual) wins over the
 	// classifier; active 0 is a label the user took off. labeled_at: NULL new mail
 	// waiting for the classifier, 0 a rescan's target, else when it was classified.
@@ -313,7 +313,7 @@ var Migrations = [][]string{{
 	`ALTER TABLE model_services ADD COLUMN oauth_email TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
 }, {
-	// Native plugins (docs/superpowers/specs/2026-10-14-native-plugins-design.md 4.3):
+	// Native plugins (docs/adr/0016-signed-plugin-registry.md):
 	// trust is how the current file came to be allowed ('' not allowed, 'user'
 	// the user allowed it); library_hash is the SHA-256 of its shared library.
 	`ALTER TABLE plugins ADD COLUMN trust TEXT NOT NULL DEFAULT ''`,
@@ -323,7 +323,7 @@ var Migrations = [][]string{{
 	// the sidebar splits user folders on into a tree.
 	`ALTER TABLE folders ADD COLUMN delim TEXT NOT NULL DEFAULT ''`,
 }, {
-	// Registry-hosted assets (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md 8.2):
+	// Registry-hosted assets (docs/adr/0020-plugin-models-host-sdk.md):
 	// the digest of the installed release's asset descriptions on this
 	// platform ('' none). A registry that changes any of them revokes the plugin.
 	`ALTER TABLE plugins ADD COLUMN assets_digest TEXT NOT NULL DEFAULT ''`,

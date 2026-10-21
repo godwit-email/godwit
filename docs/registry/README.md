@@ -3,7 +3,7 @@
 This is the template for the `godwit-email/plugins` repository: the list of plugins Godwit's
 Extensions page offers as reviewed. Copy `registry.json` to the repository root and
 `publish.yml` to `.github/workflows/`. The design is
-`docs/superpowers/specs/2026-10-14-native-plugins-design.md` in the Godwit repository.
+recorded in `docs/adr/0015`–`0018` in the Godwit repository.
 
 ## How it works
 
