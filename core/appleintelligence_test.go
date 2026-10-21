@@ -297,7 +297,7 @@ Write the replies in de.`
 	require.NoError(t, json.NewDecoder(respQR.Body).Decode(&chatRespQR))
 
 	// The assistant message must now be valid JSON matching parseQuickReplies!
-	rs, err := parseQuickReplies(chatRespQR.Choices[0].Message.Content)
+	rs, err := parseQuickReplies(chatRespQR.Choices[0].Message.Content, func(h string) string { return h })
 	require.NoError(t, err)
 	require.Len(t, rs, 3)
 	assert.Equal(t, "Danke für den Guide!", rs[0].Preview)
@@ -592,13 +592,13 @@ func TestAppleIntelligenceJudgeBatchWireFormat(t *testing.T) {
 // A fenced JSON answer, which parseQuickReplies accepts, is kept as the replies.
 func TestAppleIntelligenceFencedQuickReplies(t *testing.T) {
 	fenced := "```json\n{\"replies\":[{\"html\":\"<p>Sounds good</p>\"}]}\n```"
-	rs, err := parseQuickReplies(formatQuickRepliesJSON(fenced))
+	rs, err := parseQuickReplies(formatQuickRepliesJSON(fenced), func(h string) string { return h })
 	require.NoError(t, err)
 	require.Len(t, rs, 1)
 	assert.Equal(t, "<p>Sounds good</p>", rs[0].HTML)
 
 	// A fenced empty array means no suggestions, not fence lines as replies.
-	rs, err = parseQuickReplies(formatQuickRepliesJSON("```json\n{\"replies\":[]}\n```"))
+	rs, err = parseQuickReplies(formatQuickRepliesJSON("```json\n{\"replies\":[]}\n```"), func(h string) string { return h })
 	require.NoError(t, err)
 	assert.Empty(t, rs)
 }
