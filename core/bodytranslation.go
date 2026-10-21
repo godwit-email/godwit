@@ -53,6 +53,7 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 	var ref string
 	var version any
 	var call func(context.Context, translateRequest) (translateResult, error)
+	mask := false // a model reads long links as references, as in mailContext
 	entry := gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:translate", TargetKind: "message", TargetID: t.ID, Decision: "run"}
 	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
 		tr, err := s.translatorFor(ctx, plugin)
@@ -70,15 +71,13 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		if err != nil {
 			return nil, err
 		}
-		ref, version = modelRef, []any{model.ServiceID, model.Version}
+		ref, version, mask = modelRef, []any{model.ServiceID, model.Version}, true
 		system := sk.Body + "\n\n" + ai.UntrustedSystemNote + "\nTarget language: " + lang +
 			". Languages needing no translation: " + strings.Join(append([]string{lang}, keep...), ", ") +
 			`. For this request return ONLY a JSON object {"texts":[...],"source":"language-tag"}. Translate each input string in order, with exactly one nonempty output per input. Preserve strings needing no translation unchanged instead of NO_TRANSLATION. Do not include headers, notes, Markdown, or the untrusted_email wrapper.`
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
-			suspect := ai.InjectionQuote(strings.Join(req.Texts, "\n")) != ""
-			texts, restore := maskLinks(req.Texts, t.ID)
-			b, _ := json.Marshal(texts)
-			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), suspect)
+			b, _ := json.Marshal(req.Texts)
+			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), ai.InjectionQuote(strings.Join(req.Texts, "\n")) != "")
 			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, 128<<10)
 			if err != nil {
 				return translateResult{}, err
@@ -86,9 +85,6 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 			var res translateResult
 			if err := json.Unmarshal([]byte(text), &res); err != nil {
 				return res, fmt.Errorf("translation returned invalid JSON: %w", err)
-			}
-			for i, s := range res.Texts {
-				res.Texts[i] = restore.Replace(s)
 			}
 			return res, nil
 		}
@@ -113,7 +109,11 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		defer close(out)
 		out <- ai.Event{Kind: "context", Text: string(b), Model: ref}
 		if !hit {
-			result, err = translateBodyTexts(ctx, originals, lang, keep, call)
+			if mask {
+				result, err = translateMasked(ctx, originals, t.ID, lang, keep, call)
+			} else {
+				result, err = translateBodyTexts(ctx, originals, lang, keep, call)
+			}
 			if err == nil {
 				cached, _ := json.Marshal(result)
 				s.cachePut(ctx, key, account, string(cached), "translate")
@@ -136,6 +136,25 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		}
 		out <- ai.Event{Kind: "done"}
 	}()
+	return out, nil
+}
+
+// translateMasked is translateBodyTexts with the long links of message id
+// masked before the texts are cut into pieces, and put back after.
+func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
+	masked, restore := maskLinks(originals, id)
+	res, err := translateBodyTexts(ctx, masked, target, keep, call)
+	if err != nil {
+		return res, err
+	}
+	out := bodyTranslation{Text: restore.Replace(res.Text), Translations: map[string]string{}}
+	for i, text := range originals {
+		if tr, ok := res.Translations[masked[i]]; ok {
+			if tr = restore.Replace(tr); tr != text {
+				out.Translations[text] = tr
+			}
+		}
+	}
 	return out, nil
 }
 

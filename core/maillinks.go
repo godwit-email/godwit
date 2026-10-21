@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	mailURLRe = regexp.MustCompile(`(?i:https?)://[^\s<>"'\]]+`)
+	mailURLRe = regexp.MustCompile(`(?i:https?)://(?:\[[0-9A-Fa-f:.]+\])?[^\s<>"'\]]*`) // a bracketed IPv6 host is one link
 	// The & may come back HTML-escaped in a draft's href.
 	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
 )
@@ -68,6 +68,8 @@ func mailLinks(text string, f func(u string) string) string {
 // linkRefs drops tracking parameters from the links in text of message id and
 // turns those still longer than maxModelURL into references.
 func linkRefs(text string, id int64) string {
+	// Only references this makes reach the model: one planted in mail is defused.
+	text = strings.ReplaceAll(text, linkRefPrefix, "godwit:link/")
 	return mailLinks(text, func(u string) string {
 		if len(u) <= maxModelURL {
 			return u
@@ -165,9 +167,16 @@ func (s *Service) linkExpander() *linkExpander {
 // the reference to a huge link cannot blow its output up without bound.
 const maxExpandURL = 8 << 10
 
+// maxExpandMessages caps the messages one expander reads: references with
+// many made-up message ids cannot make it load and scan the whole mailbox.
+const maxExpandMessages = 32
+
 // link is the link of message id with hash h, the message's links indexed once.
 func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
 	idx, ok := x.links[id]
+	if !ok && len(x.links) >= maxExpandMessages {
+		return "", false
+	}
 	if !ok {
 		idx = map[string]string{}
 		if m, err := x.s.mailForModel(ctx, id); err == nil {
@@ -191,8 +200,8 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
-		if loc[1] < len(text) && isHex(text[loc[1]]) {
-			continue // a longer hash is no reference of ours: left for the send check
+		if loc[1] < len(text) && continuesURL(text[loc[1]]) {
+			continue // more hash or query after it: no reference of ours, left for the send check
 		}
 		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
 		if u, ok := x.link(ctx, id, text[loc[4]:loc[5]]); ok {
@@ -205,7 +214,10 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 	return b.String()
 }
 
-func isHex(c byte) bool { return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F' }
+// continuesURL is whether c after a reference would make it part of a longer URL.
+func continuesURL(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || strings.IndexByte("&=#%/?+~_-@", c) != -1
+}
 
 func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawMessage {
 	if !strings.Contains(string(args), linkRefPrefix) {

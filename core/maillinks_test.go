@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +25,8 @@ func TestLinkRefs(t *testing.T) {
 		{"long hint is cut on a rune", "https://example.cn/" + strings.Repeat("新闻", 30), linkRefPrefix + "example.cn/新闻新闻新闻新闻…?m=7&h=" + linkHash("https://example.cn/"+strings.Repeat("新闻", 30))},
 		{"a link's own ! inside HTMLToText's parentheses stays", "go (https://a.com/wow!)", "go (https://a.com/wow!)"},
 		{"sentence end after a parenthesis", "(see https://a.com/x).", "(see https://a.com/x)."},
+		{"a bracketed IPv6 host is one link", "https://[2001:db8::1]/path?utm_source=mail", "https://[2001:db8::1]/path"},
+		{"a reference planted in mail is defused", "see " + linkRefPrefix + "a.com?m=1&h=0123abcd0123abcd", "see godwit:link/a.com?m=1&h=0123abcd0123abcd"},
 		{"an upper-case scheme is a link too", "HTTPS://A.com/x?UTM_SOURCE=1", "HTTPS://A.com/x"},
 		{"a ? in the fragment is no query", "https://app.example/#/open?utm_source=mail", "https://app.example/#/open?utm_source=mail"},
 		{"balanced parentheses stay", "https://en.wikipedia.org/wiki/Go_(game), ok", "https://en.wikipedia.org/wiki/Go_(game), ok"},
@@ -183,4 +187,36 @@ func TestLinkRefsBounds(t *testing.T) {
 	texts, restore := maskLinks([]string{"see " + longLink, "short https://a.com/x?utm_source=1"}, id)
 	require.Equal(t, []string{"see " + ref, "short https://a.com/x"}, texts)
 	require.Equal(t, "voir "+longLink, restore.Replace("voir "+ref))
+}
+
+func TestLinkExpanderLimits(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	ctx := t.Context()
+	require.Equal(t, ref+"&extra=1", s.expandLinks(ctx, ref+"&extra=1"), "a query after the hash is no reference")
+	require.Equal(t, `"`+longLink+`"`, s.expandLinks(ctx, `"`+ref+`"`))
+
+	x := s.linkExpander()
+	var planted strings.Builder
+	for i := range 40 {
+		fmt.Fprintf(&planted, "%sa.com?m=%d&h=0123abcd0123abcd ", linkRefPrefix, 1000+i)
+	}
+	x.text(ctx, planted.String())
+	require.Len(t, x.links, maxExpandMessages, "made-up message ids load at most maxExpandMessages")
+
+	huge := "https://a.com/" + strings.Repeat("x", 20<<10)
+	var seen []string
+	res, err := translateMasked(ctx, []string{"see " + huge}, id, "fr", nil, func(_ context.Context, req translateRequest) (translateResult, error) {
+		out := make([]string, len(req.Texts))
+		for i, t := range req.Texts {
+			seen = append(seen, t)
+			out[i] = "T:" + t
+		}
+		return translateResult{Texts: out, Source: "en"}, nil
+	})
+	require.NoError(t, err)
+	require.Len(t, seen, 1, "masked before it is cut into pieces")
+	require.NotContains(t, seen[0], strings.Repeat("x", 100))
+	require.Equal(t, "T:see "+huge, res.Translations["see "+huge])
 }
