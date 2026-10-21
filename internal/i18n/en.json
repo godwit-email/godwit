@@ -697,6 +697,7 @@
   "provider_exmail": "Tencent Exmail",
   "provider_exmail_mark": "T",
   "provider_feishu": "Feishu Mail",
+  "provider_feishu_lark": "Feishu/Lark Mail",
   "provider_feishu_mark": "L",
   "provider_gmail": "Gmail",
   "provider_gmail_mark": "G",

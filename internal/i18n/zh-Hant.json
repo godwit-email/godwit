@@ -346,6 +346,7 @@
   "provider_exmail": "騰訊企業郵",
   "provider_exmail_mark": "企",
   "provider_feishu": "飛書信箱",
+  "provider_feishu_lark": "飛書/Lark 信箱",
   "provider_feishu_mark": "飛",
   "provider_gmail": "Gmail",
   "provider_gmail_mark": "G",

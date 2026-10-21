@@ -346,6 +346,7 @@
   "provider_exmail": "腾讯企业邮",
   "provider_exmail_mark": "企",
   "provider_feishu": "飞书邮箱",
+  "provider_feishu_lark": "飞书/Lark 邮箱",
   "provider_feishu_mark": "飞",
   "provider_gmail": "Gmail",
   "provider_gmail_mark": "G",

@@ -346,6 +346,7 @@
   "provider_exmail": "Tencent Exmail",
   "provider_exmail_mark": "企",
   "provider_feishu": "Feishu メール",
+  "provider_feishu_lark": "Feishu/Lark メール",
   "provider_feishu_mark": "飛",
   "provider_gmail": "Gmail",
   "provider_gmail_mark": "G",

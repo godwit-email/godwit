@@ -153,11 +153,28 @@ func providerName(p auth.Provider) string {
 	return p.Name
 }
 
-// listed reports whether p is in the pick list: Feishu in Chinese, Lark
-// (Feishu outside China) in every other language. MX detects either.
-func listed(p auth.Provider) bool {
-	zh := strings.HasPrefix(i18n.Language(), "zh")
-	return !(p.ID == "lark" && zh || p.ID == "feishu" && !zh)
+// listed reports whether p has its own tile: Lark (Feishu outside China)
+// shares Feishu's, and the address's MX picks between them.
+func listed(p auth.Provider) bool { return p.ID != "lark" }
+
+// tileName is p's name on its tile: Feishu's is 飞书/Lark.
+func tileName(p auth.Provider) string {
+	if p.ID == "feishu" {
+		return i18n.T("provider.feishu_lark")
+	}
+	return providerName(p)
+}
+
+// feishuOrLark reports whether p is behind the 飞书/Lark tile.
+func feishuOrLark(p auth.Provider) bool { return p.ID == "feishu" || p.ID == "lark" }
+
+// provName is the sign-in's provider name: 飞书/Lark from that tile until
+// the address is found to be Feishu's.
+func (o *onboarding) provName() string {
+	if o.prov.ID == "feishu" && o.askEmail && !(o.detectedFor == o.email && o.detected.ID == "feishu") {
+		return tileName(o.prov)
+	}
+	return providerName(o.prov)
 }
 
 func providerMark(p auth.Provider) string {
@@ -202,11 +219,21 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 			o.emailErr = humanize(err)
 			return
 		}
-		o.detected, o.detectedFor = p, email
+		o.found(p, email)
 		if then != nil {
 			then(p)
 		}
 	})
+}
+
+// found records p as email's provider. From the 飞书/Lark tile, it also says
+// which of the two the sign-in is, unless the servers were edited.
+func (o *onboarding) found(p auth.Provider, email string) {
+	o.detected, o.detectedFor = p, email
+	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID && o.imapHost == o.prov.IMAP.Host {
+		o.prov = p
+		o.imapHost, o.smtpHost = p.IMAP.Host, p.SMTP.Host
+	}
 }
 
 // next goes on from the address to its provider's sign-in.
@@ -321,6 +348,10 @@ func (o *onboarding) input() core.AccountInput {
 // connect checks the account; a pass goes on to the done step, a failure
 // stays to show which step failed.
 func (o *onboarding) connect() {
+	if feishuOrLark(o.prov) && o.detectedFor != o.email && validEmail(o.email) {
+		o.detect(o.email, func(auth.Provider) { o.connect() }) // Feishu or Lark first
+		return
+	}
 	from := o.step
 	o.goTo(stepChecking)
 	o.checking, o.report = true, core.CheckReport{}
@@ -629,11 +660,11 @@ func (o *onboarding) pickView(c *ui.Context) {
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")
 					}
-					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.choose(p) }}).Label(providerName(p)).
+					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.choose(p) }}).Label(tileName(p)).
 						Grow(1).Basis(0).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
 						mark(c, p, theme.MarkMd)
 						ui.Column(c).Shrink(1).Children(func() {
-							lineText(c, providerName(p), t.Text.Body).SingleLine()
+							lineText(c, tileName(p), t.Text.Body).SingleLine()
 							lineText(c, how, t.Text.Sm).TextColor(t.Muted).SingleLine()
 						})
 					})
@@ -652,7 +683,7 @@ func (o *onboarding) providerHeader(c *ui.Context, sub string) {
 	ui.Row(c).Gap(th.Space(3)).Children(func() {
 		mark(c, o.prov, theme.MarkLg)
 		ui.Column(c).Children(func() {
-			lineText(c, providerName(o.prov), t.Text.X2l).FontWeight(600)
+			lineText(c, o.provName(), t.Text.X2l).FontWeight(600)
 			if sub != "" {
 				lineText(c, sub, t.Text.Body).TextColor(t.Muted)
 			}
@@ -714,13 +745,16 @@ func (o *onboarding) passwordView(c *ui.Context) {
 				placeholder = "you@" + o.prov.Domains[0]
 			}
 			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: placeholder}).Height(inputHeight(c))
+			if in.Changed() && feishuOrLark(o.prov) {
+				o.scheduleDetect()
+			}
 			if o.focusEmail {
 				in.Focus().SetTextSelection(0, 0)
 				o.focusEmail = false
 			}
 		})
 	}
-	name, login := providerName(o.prov), o.prov.Login
+	name, login := o.provName(), o.prov.Login
 	hint := tr("onboarding.hint." + o.prov.ID)
 	if hint == "" && tr("onboarding.hint."+login) != "" {
 		hint = i18n.Tf("onboarding.hint."+login, name)

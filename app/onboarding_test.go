@@ -12,7 +12,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -97,7 +96,7 @@ func TestOnboardingProviderEmail(t *testing.T) {
 		t.Run(p.ID, func(t *testing.T) {
 			h := newHarness(t)
 			o := h.firstRun()
-			h.click(providerName(p))
+			h.click(tileName(p))
 			want := ""
 			if len(p.Domains) > 0 {
 				want = "@" + p.Domains[0]
@@ -656,17 +655,30 @@ func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
 	}
 }
 
-func TestOnboardingListsFeishuOrLark(t *testing.T) {
-	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
-	feishu, _ := auth.ByID("feishu")
+func TestOnboardingFeishuLarkTile(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.see("飞书/Lark 邮箱")
+	if lark, _ := auth.ByID("lark"); listed(lark) {
+		t.Fatal("Lark has a tile of its own")
+	}
+	h.click("飞书/Lark 邮箱")
+	h.see("飞书/Lark 邮箱")
+	if o.prov.ID != "feishu" || o.imapHost != "imap.feishu.cn" {
+		t.Fatalf("tile chose %s on %s", o.prov.ID, o.imapHost)
+	}
 	lark, _ := auth.ByID("lark")
-	for _, tc := range []struct {
-		lang         string
-		feishu, lark bool
-	}{{"zh-CN", true, false}, {"zh-TW", true, false}, {"en", false, true}, {"ja", false, true}} {
-		i18n.SetLanguage(tc.lang)
-		if listed(feishu) != tc.feishu || listed(lark) != tc.lark {
-			t.Errorf("%s: feishu %v, lark %v", tc.lang, listed(feishu), listed(lark))
-		}
+	o.email = "a@corp.example"
+	o.found(lark, o.email)
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" || o.smtpHost != "smtp.larksuite.com" {
+		t.Fatalf("a Lark address left %s on %s/%s", o.prov.ID, o.imapHost, o.smtpHost)
+	}
+	h.see("Lark 邮箱")
+
+	feishu, _ := auth.ByID("feishu")
+	o.imapHost = "imap.custom.example"
+	o.found(feishu, o.email)
+	if o.prov.ID != "lark" || o.imapHost != "imap.custom.example" {
+		t.Fatalf("edited servers were replaced: %s on %s", o.prov.ID, o.imapHost)
 	}
 }
