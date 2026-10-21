@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -318,15 +319,16 @@ func (m *mockAI) Judge(ctx context.Context, input string, qs []ai.Question) ([]a
 func (m *mockAI) Version() string { return "mock-1.0" }
 
 type mockAIWithTemp struct {
-	out          string
-	recordedTemp float64
+	out            string
+	recordedTemp   float64
+	recordedPrompt string
 }
 
 func (m *mockAIWithTemp) Generate(ctx context.Context, system, prompt string) (string, error) {
 	return m.out, nil
 }
 func (m *mockAIWithTemp) GenerateWithTemperature(ctx context.Context, system, prompt string, temp float64) (string, error) {
-	m.recordedTemp = temp
+	m.recordedTemp, m.recordedPrompt = temp, prompt
 	return m.out, nil
 }
 func (m *mockAIWithTemp) Judge(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
@@ -391,4 +393,57 @@ func TestAppleIntelligenceJudgeKeepsQuestions(t *testing.T) {
 	require.NoError(t, json.Unmarshal(sent, &req))
 	assert.LessOrEqual(t, len(req.Text), appleIntelligencePromptBytes)
 	assert.Contains(t, req.System+req.Text, "invoice_label")
+}
+
+func TestAppleIntelligenceLongPrompts(t *testing.T) {
+	ask := func(system, user string) (*http.Response, *mockAIWithTemp, error) {
+		mock := &mockAIWithTemp{out: "- ok"}
+		body, _ := json.Marshal(map[string]any{"model": "on-device", "messages": []any{
+			map[string]string{"role": "system", "content": system},
+			map[string]string{"role": "user", "content": user},
+		}})
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "http://127.0.0.1/chat/completions", bytes.NewReader(body))
+		require.NoError(t, err)
+		resp, err := (&appleIntelligenceTransport{ai: mock}).RoundTrip(req)
+		return resp, mock, err
+	}
+	long := "OLDEST " + strings.Repeat("邮", 5000) + " NEWEST"
+
+	// A summary keeps the newest mail, the end of the prompt.
+	resp, mock, err := ask("Summarize the email text you are given.\n\nAnswer in en.", long)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.True(t, strings.HasSuffix(mock.recordedPrompt, " NEWEST"))
+	assert.NotContains(t, mock.recordedPrompt, "OLDEST")
+	assert.LessOrEqual(t, len(mock.recordedPrompt), appleIntelligencePromptBytes)
+	assert.True(t, utf8.ValidString(mock.recordedPrompt))
+
+	// A structured request (a translation batch) is refused, not cut.
+	_, _, err = ask("Translate the JSON array of texts.", long)
+	assert.ErrorIs(t, err, ErrModelUnavailable)
+}
+
+func TestAppleIntelligenceJudgeBatches(t *testing.T) {
+	desc := strings.Repeat("描述", 250) // a 500-rune label description
+	var qs []ai.Question
+	for i := range 200 {
+		qs = append(qs, ai.Question{Name: "label_" + strconv.Itoa(i), Type: ai.Predicate, Instructions: desc})
+	}
+	n := 0
+	for _, b := range judgeBatches(qs) {
+		q, _ := json.Marshal(b)
+		assert.GreaterOrEqual(t, appleIntelligencePromptBytes-len(q)-judgeFramingBytes, judgeMinInputBytes)
+		assert.LessOrEqual(t, len(b), 128)
+		n += len(b)
+	}
+	assert.Equal(t, len(qs), n)
+
+	// A judge kept by a labeling batch stops once the plugin is off.
+	e := newSkillEnv(t)
+	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "1"}
+	j, err := e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/classifier")
+	require.NoError(t, err)
+	require.NoError(t, e.s.SetPluginEnabled(t.Context(), AppleIntelligencePlugin, false))
+	_, err = j.Ask(t.Context(), "mail", []ai.Question{{Name: "x", Type: ai.Predicate, Instructions: "x?"}})
+	assert.ErrorIs(t, err, ErrModelUnavailable)
 }

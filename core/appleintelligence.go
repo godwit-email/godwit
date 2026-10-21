@@ -63,12 +63,17 @@ func appleIntelligenceModels() []plugins.ProviderModel {
 
 // appleIntelligenceJudge is an ai.Judge backed by AppleIntelligence.
 type appleIntelligenceJudge struct {
+	s  *Service
 	ai AppleIntelligence
 }
 
 func (j appleIntelligenceJudge) Ask(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
 	if err := ai.ValidateQuestions(qs); err != nil {
 		return nil, err
+	}
+	// A labeling batch keeps its judge: stop once the user turns the plugin off.
+	if on, err := j.s.builtinOn(ctx, AppleIntelligencePlugin); err != nil || !on {
+		return nil, fmt.Errorf("%w: plugin/%s", ErrModelUnavailable, AppleIntelligencePlugin)
 	}
 	return j.ai.Judge(ctx, input, qs)
 }
@@ -184,7 +189,15 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 		system, temp = adaptAppleIntelligenceQuickReplies(system)
 	}
 
-	prompt = truncateForContext(prompt, appleIntelligencePromptBytes)
+	switch {
+	case len(prompt) <= appleIntelligencePromptBytes:
+	case isSummarize || isQuickReplies:
+		// Mail blocks run oldest to newest: keep the newest.
+		prompt = truncateHead(prompt, appleIntelligencePromptBytes)
+	default:
+		// Structured requests (translation batches, ...) must not be cut.
+		return nil, fmt.Errorf("apple intelligence: %w: the input is too long for the on-device model", ErrModelUnavailable)
+	}
 	var outText string
 	if genWithTemp, ok := t.ai.(interface {
 		GenerateWithTemperature(context.Context, string, string, float64) (string, error)
@@ -622,14 +635,42 @@ func truncateForContext(s string, n int) string {
 }
 
 // judgeFramingBytes is room for what ai.NewGenJudge wraps around the input
-// and questions.
-const judgeFramingBytes = 1500
+// and questions; judgeMinInputBytes the least input a batch is asked about.
+const (
+	judgeFramingBytes  = 1500
+	judgeMinInputBytes = 2000
+)
+
+// judgeBatches splits qs so each batch's questions leave the input at least
+// judgeMinInputBytes, and at most 128 a batch (ai's maxQuestions).
+func judgeBatches(qs []ai.Question) [][]ai.Question {
+	var out [][]ai.Question
+	var cur []ai.Question
+	size := 0
+	for _, q := range qs {
+		b, _ := json.Marshal(q)
+		if len(cur) > 0 && (len(cur) == 128 || size+len(b) > appleIntelligencePromptBytes-judgeFramingBytes-judgeMinInputBytes) {
+			out, cur, size = append(out, cur), nil, 0
+		}
+		cur, size = append(cur, q), size+len(b)
+	}
+	return append(out, cur)
+}
+
+// truncateHead drops the start of s so at most n bytes remain, on a rune boundary.
+func truncateHead(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := len(s) - max(n, 0)
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++
+	}
+	return s[cut:]
+}
 
 // Judge evaluates questions against input using Apple Intelligence.
 func (d *DefaultAppleIntelligence) Judge(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
-	// Cut the input, not the whole prompt: the questions come after it and must survive.
-	q, _ := json.Marshal(qs)
-	input = truncateForContext(input, appleIntelligencePromptBytes-len(q)-judgeFramingBytes)
 	gen := func(ctx context.Context, system, prompt string) (string, error) {
 		out, err := d.Generate(ctx, system, prompt)
 		if err != nil {
@@ -637,7 +678,22 @@ func (d *DefaultAppleIntelligence) Judge(ctx context.Context, input string, qs [
 		}
 		return normalizeJudgeJSON(out), nil
 	}
-	return ai.NewGenJudge(gen).Ask(ctx, input, qs)
+	judge := ai.NewGenJudge(gen)
+	var out []ai.Answer
+	for _, batch := range judgeBatches(qs) {
+		// Cut the input, not the whole prompt: the batch's questions come after it.
+		q, _ := json.Marshal(batch)
+		budget := appleIntelligencePromptBytes - len(q) - judgeFramingBytes
+		if budget < judgeMinInputBytes { // one question too long to leave room for the mail
+			return nil, fmt.Errorf("apple intelligence: question %q is too long for the on-device model", batch[0].Name)
+		}
+		as, err := judge.Ask(ctx, truncateForContext(input, budget), batch)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, as...)
+	}
+	return out, nil
 }
 
 func normalizeJudgeJSON(raw string) string {

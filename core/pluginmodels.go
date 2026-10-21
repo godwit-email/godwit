@@ -256,7 +256,7 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		if !m.Judges() {
 			return nil, fmt.Errorf("%w: %s is not a judge model", ErrModelNotFound, ref)
 		}
-		return appleIntelligenceJudge{s.opts.AppleIntelligence}, nil
+		return appleIntelligenceJudge{s, s.opts.AppleIntelligence}, nil
 	}
 	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
 	if err != nil {
