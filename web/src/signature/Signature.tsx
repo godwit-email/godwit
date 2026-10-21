@@ -438,8 +438,10 @@ export function SignatureApp() {
         onChange={(html) => saver.edit(doc.id, html)}
         mode={{
           alert: refused && REFUSED[refused],
-          // The edit saved first: native reads the code from Go.
-          onHTML: () => saver.settle().then(() => api.editHTML().catch(() => {})),
+          // Only once the edit saved: native reads the code from Go, and an edit left pending
+          // would be saved later over what the HTML mode wrote.
+          onHTML: () =>
+            saver.settle().then((ok) => (ok ? api.editHTML().catch(() => {}) : undefined)),
         }}
       />
     </main>

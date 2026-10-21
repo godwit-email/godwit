@@ -182,14 +182,15 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	if p.sigCode != nil && p.sigCode.id != sig.ID {
 		p.closeCode()
 	}
+	coding := p.sigCode != nil && p.sigCode.id == sig.ID // a code left open for another is saving
 	help := i18n.T("settings.account.signature.help")
-	if p.sigCode != nil {
+	if coding {
 		help = i18n.T("settings.account.signature.html.help")
 	}
 	settingsSection(c, i18n.T("settings.signature.content"), help, func() {
 		p.signature(sig.ID)
 		switch {
-		case p.sigCode != nil:
+		case coding:
 			p.codeView(c)
 		case p.sigErr != nil:
 			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
@@ -442,6 +443,7 @@ type sigCode struct {
 	stop    func()
 	refused string // the toolbar's alert, a catalog key; "" none
 	loading bool
+	closing bool // leaving: the last save runs, and the mode ends if it works
 }
 
 // openCode puts the shown signature in the HTML mode: its code is read,
@@ -512,7 +514,7 @@ func (p *settingsPage) codeView(c *ui.Context) {
 
 // saveCode stores the code as the signature: Go sanitizes it. A refusal
 // stays said until a save works.
-func (p *settingsPage) saveCode(sc *sigCode) {
+func (p *settingsPage) saveCode(sc *sigCode, then ...func(error)) {
 	a, id := p.a, sc.id
 	html := sc.st.Buffer.String()
 	if strings.TrimSpace(html) != "" {
@@ -534,6 +536,9 @@ func (p *settingsPage) saveCode(sc *sigCode) {
 		default:
 			a.toastErr(err)
 		}
+		for _, f := range then {
+			f(err)
+		}
 	})
 }
 
@@ -546,18 +551,31 @@ func (p *settingsPage) commitCode() {
 	}
 }
 
-// closeCode leaves the HTML mode: the code saved first, the page shows
-// the signature again as Go cleaned it.
+// closeCode leaves the HTML mode once the code is saved: the page shows
+// the signature again as Go cleaned it. A save that fails keeps the code
+// open, its edit and what went wrong in view (leaving again tries again).
 func (p *settingsPage) closeCode() {
-	if p.sigCode == nil {
+	sc := p.sigCode
+	if sc == nil || sc.closing {
 		return
 	}
-	p.commitCode()
-	id := p.sigCode.id
-	p.sigCode = nil
-	p.a.writes.Chain(signatureRoute(id), func(context.Context) error { return nil }, func(error) {
-		if p.sigShown == id && !p.sigPosted && p.sigShow != nil {
-			p.sigShow(id) // after the save: the page reads what it stored
+	if sc.loading { // nothing typed yet
+		p.sigCode = nil
+		return
+	}
+	if sc.stop != nil {
+		sc.stop()
+		sc.stop = nil
+	}
+	sc.closing = true
+	p.saveCode(sc, func(err error) {
+		sc.closing = false
+		if err != nil || p.sigCode != sc {
+			return
+		}
+		p.sigCode = nil
+		if p.sigShown == sc.id && !p.sigPosted && p.sigShow != nil {
+			p.sigShow(sc.id) // the page reads what was stored
 		}
 	})
 }

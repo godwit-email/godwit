@@ -91,6 +91,10 @@ func signatureAssets(sigID int64, editor string, known map[string]bool) (string,
 				Args: []any{sigID, id, ct, data}})
 		} else if c, ok := strings.CutPrefix(src, "cid:"); ok && known[c] {
 			id = c
+			// Another signature's image (HTML mode) becomes this one's too: its
+			// cleanup then never takes the bytes from under this one.
+			stmts = append(stmts, sqlite.Statement{SQL: `INSERT OR IGNORE INTO signature_images(signature_id, cid, content_type, data)
+				SELECT ?, cid, content_type, data FROM signature_images WHERE cid = ? LIMIT 1`, Args: []any{sigID, id}})
 		}
 		if id == "" {
 			return ""

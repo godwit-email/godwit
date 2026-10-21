@@ -119,3 +119,27 @@ func TestSignaturePreview(t *testing.T) {
 	assert.Equal(t, []string{"Bob"}, SignaturePreview("Bob\n\n", 2))
 	assert.Empty(t, SignaturePreview("", 2))
 }
+
+// An image of signature A that signature B reuses (cid:, as the HTML mode
+// writes it) stays B's when A drops it or goes.
+func TestReusedSignatureImageKept(t *testing.T) {
+	e := newSendEnv(t, false)
+	a, err := e.s.CreateSignature(bg, "A")
+	require.NoError(t, err)
+	html := SignatureHTMLPrefix + `<img src="` + dataURL("image/png", logo(t, 3)) + `">`
+	a, err = e.s.UpdateSignature(bg, a.ID, SignaturePatch{HTML: &html})
+	require.NoError(t, err)
+	cid := mail.CIDs(strings.TrimPrefix(a.HTML, SignatureHTMLPrefix))[0]
+
+	b, err := e.s.CreateSignature(bg, "B")
+	require.NoError(t, err)
+	reuse := SignatureHTMLPrefix + `<p>B</p><img src="cid:` + cid + `">`
+	_, err = e.s.UpdateSignature(bg, b.ID, SignaturePatch{HTML: &reuse})
+	require.NoError(t, err)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM signature_images WHERE signature_id = ? AND cid = ?", b.ID, cid))
+
+	require.NoError(t, e.s.DeleteSignature(bg, a.ID))
+	shown, err := e.s.SignatureEditor(bg, b.ID)
+	require.NoError(t, err)
+	assert.Contains(t, shown, dataURL("image/png", logo(t, 3)), "B still shows it")
+}

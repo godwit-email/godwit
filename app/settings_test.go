@@ -1132,6 +1132,14 @@ func TestSignatureHTMLMode(t *testing.T) {
 
 	shows := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") }))
 	h.click("HTML 代码")
+	h.drain()
+	h.tt.Frame()
+	if p.sigCode == nil {
+		t.Fatal("left the HTML mode with its save refused: the edit would be lost")
+	}
+	p.sigCode.st.Buffer.Set("<p>Bobby</p>")
+	h.tt.Frame()
+	h.click("HTML 代码")
 	h.until("back to the page, which reads it again", func() bool {
 		return p.sigCode == nil && len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") })) > shows
 	})

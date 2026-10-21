@@ -155,6 +155,16 @@ describe("signatureSaver, a removed signature", () => {
 });
 
 describe("signatureSaver, the HTML mode and refusals", () => {
+  it("settle says false while an edit failed to save, so the HTML mode waits", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(new Error("disk"));
+    s.edit(1, "<p>a</p>");
+    expect(await s.settle()).toBe(false);
+    expect(await s.settle()).toBe(true); // retried, and saved
+  });
+
   it("settle saves every pending edit at once", async () => {
     const { api, s } = setup();
     s.show(1);
