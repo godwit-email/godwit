@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -322,6 +323,8 @@ func TestMigrationSignatures(t *testing.T) {
 		"INSERT INTO accounts(id, email, name, alias, signature) VALUES (1, 'a@x', 'Ann', 'Personal', '<!--godwit:html--><p>A</p><img src=\"cid:sig-1@godwit\">')",
 		"INSERT INTO accounts(id, email, name, signature) VALUES (2, 'b@x', 'Bob', 'Bob plain')",
 		"INSERT INTO accounts(id, email, signature) VALUES (3, 'c@x', '')",
+		"INSERT INTO accounts(id, email, alias, name, signature) VALUES (5, 'e@x', '  ', ' Eve ', 'E')",
+		"INSERT INTO accounts(id, email, alias, signature) VALUES (6, 'f@x', '" + strings.Repeat("长", 70) + "', 'F')",
 		"INSERT INTO accounts(id, email) VALUES (4, 'd@x')",
 		"INSERT INTO signature_images(account_id, cid, content_type, data) VALUES (1, 'sig-1@godwit', 'image/png', x'00')",
 	} {
@@ -338,15 +341,17 @@ func TestMigrationSignatures(t *testing.T) {
 	assert.Equal(t, [][]any{
 		{int64(1), "Personal", `<!--godwit:html--><p>A</p><img src="cid:sig-1@godwit">`},
 		{int64(2), "Bob", "Bob plain"},
-	}, rows.Values, "named by alias, else name; an empty signature makes none")
+		{int64(5), "Eve", "E"},
+		{int64(6), strings.Repeat("长", 64), "F"},
+	}, rows.Values, "named by alias, else name (trimmed, at most 64 characters); an empty signature makes none")
 	rows, err = db.Query(ctx, "SELECT id, signature_id FROM accounts ORDER BY id")
 	require.NoError(t, err)
-	assert.Equal(t, [][]any{{int64(1), int64(1)}, {int64(2), int64(2)}, {int64(3), nil}, {int64(4), nil}}, rows.Values, "each its own, by default")
+	assert.Equal(t, [][]any{{int64(1), int64(1)}, {int64(2), int64(2)}, {int64(3), nil}, {int64(4), nil}, {int64(5), int64(5)}, {int64(6), int64(6)}}, rows.Values, "each its own, by default")
 	rows, err = db.Query(ctx, "SELECT signature_id, cid FROM signature_images")
 	require.NoError(t, err)
 	assert.Equal(t, [][]any{{int64(1), "sig-1@godwit"}}, rows.Values)
 	_, err = db.Execute(ctx, "INSERT INTO signatures(name) VALUES ('new')")
 	require.NoError(t, err)
 	rows, _ = db.Query(ctx, "SELECT max(id) FROM signatures")
-	assert.Equal(t, int64(3), store.Int(rows.Values[0][0]), "new ids follow the migrated ones")
+	assert.Equal(t, int64(7), store.Int(rows.Values[0][0]), "new ids follow the migrated ones")
 }

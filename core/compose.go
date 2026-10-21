@@ -70,11 +70,15 @@ func nullID(id int64) any {
 // its non-inline attachments, downloading them if needed. The account signature
 // ends the body.
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
+	// From reading the signature to storing the draft, no signature change
+	// can clean up the images the draft is about to show.
+	s.sigMu.Lock()
 	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
-	if err != nil {
-		return Draft{}, err
+	if err == nil {
+		d, err = s.SaveDraft(ctx, d)
 	}
-	if d, err = s.SaveDraft(ctx, d); err != nil {
+	s.sigMu.Unlock()
+	if err != nil {
 		return Draft{}, err
 	}
 	if mode == "forward" {

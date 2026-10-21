@@ -143,3 +143,21 @@ func TestReusedSignatureImageKept(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, shown, dataURL("image/png", logo(t, 3)), "B still shows it")
 }
+
+// AddAccount with a signature it cannot store leaves nothing behind: no
+// account, no credential, so adding it again can work.
+func TestAddAccountSignatureFailureUndone(t *testing.T) {
+	e := newSendEnv(t, false)
+	in := internalInput(t, e.im.Addr, e.acc.SMTPHost+":"+strconv.Itoa(e.acc.SMTPPort), "bob@example.com", false)
+	in.Signature = "Bob"
+	_, err := e.s.db.Execute(bg, "ALTER TABLE signatures RENAME TO signatures_gone")
+	require.NoError(t, err)
+	_, err = e.s.AddAccount(bg, in)
+	require.Error(t, err)
+	assert.Equal(t, 0, e.count(t, "SELECT count(*) FROM accounts WHERE email = 'bob@example.com'"))
+	_, err = e.s.db.Execute(bg, "ALTER TABLE signatures_gone RENAME TO signatures")
+	require.NoError(t, err)
+	acc, err := e.s.AddAccount(bg, in)
+	require.NoError(t, err, "added again")
+	assert.Equal(t, "Bob", acc.Signature)
+}

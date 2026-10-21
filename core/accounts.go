@@ -196,27 +196,34 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, err
 	}
 	id := res[len(res)-1].LastInsertID
-	if err := keychainSet(s.keyringUser(id), secret); err != nil {
-		// Compensate on a fresh context: the caller's may already be cancelled, and a
-		// row without credentials must not survive.
-		undo := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
+	// undo takes the new account back out (a fresh context: the caller's may
+	// already be cancelled, and a half-made account must not survive), the
+	// previous default made the default again.
+	undo := func(err error) error {
+		stmts := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
 		if prevDefault != 0 {
-			undo = append(undo, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 1 WHERE id = ?", Args: []any{prevDefault}})
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 1 WHERE id = ?", Args: []any{prevDefault}})
 		}
 		uctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, derr := s.db.Transaction(uctx, undo); derr != nil {
+		if _, derr := s.db.Transaction(uctx, stmts); derr != nil {
 			err = errors.Join(err, derr)
 		}
-		return Account{}, fmt.Errorf("save credentials to keychain: %w", err)
+		return err
+	}
+	if err := keychainSet(s.keyringUser(id), secret); err != nil {
+		return Account{}, fmt.Errorf("save credentials to keychain: %w", undo(err))
+	}
+	if in.Signature != "" { // its images checked above: only the database can fail it now
+		if _, err := s.UpdateAccount(ctx, id, AccountPatch{Signature: &in.Signature}); err != nil {
+			if kerr := keychainDelete(s.keyringUser(id)); kerr != nil {
+				err = errors.Join(err, kerr)
+			}
+			return Account{}, fmt.Errorf("save the signature: %w", undo(err))
+		}
 	}
 	if g.AccessToken != "" {
 		s.cacheToken(id, g.Grant)
-	}
-	if in.Signature != "" { // checked above: only the database can fail it now
-		if _, err := s.UpdateAccount(ctx, id, AccountPatch{Signature: &in.Signature}); err != nil {
-			return Account{}, err
-		}
 	}
 	s.startWorker(id)
 	return s.account(ctx, id)

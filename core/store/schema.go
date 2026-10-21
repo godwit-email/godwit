@@ -346,7 +346,10 @@ var Migrations = [][]string{{
 	// the account, with the account's id. html is as accounts.signature was:
 	// marked editor HTML, or plain text.
 	`CREATE TABLE signatures (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, html TEXT NOT NULL DEFAULT '')`,
-	`INSERT INTO signatures(id, name, html) SELECT id, COALESCE(NULLIF(alias, ''), NULLIF(name, ''), email), signature
+	// Named as core.accountLabel names one: trimmed, the first not empty, at
+	// most 64 characters (core.MaxSignatureName).
+	`INSERT INTO signatures(id, name, html) SELECT id, substr(COALESCE(NULLIF(trim(alias, ' '||char(9, 10, 13)), ''),
+		NULLIF(trim(name, ' '||char(9, 10, 13)), ''), trim(email)), 1, 64), signature
 		FROM accounts WHERE COALESCE(signature, '') <> ''`,
 	`ALTER TABLE accounts ADD COLUMN signature_id INTEGER REFERENCES signatures(id) ON DELETE SET NULL`,
 	`UPDATE accounts SET signature_id = id WHERE id IN (SELECT id FROM signatures)`,

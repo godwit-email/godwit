@@ -22,6 +22,8 @@ func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
 // that account's, attachments and the reply's source stay, and the revision
 // grows by one. revision must be the stored one (ErrStaleDraft).
 func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision int64) (Draft, error) {
+	s.sigMu.Lock() // the signature read stays the one stored, its images with it (NewDraft)
+	defer s.sigMu.Unlock()
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return Draft{}, err
