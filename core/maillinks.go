@@ -33,7 +33,7 @@ const (
 )
 
 var (
-	mailURLRe = regexp.MustCompile(`https?://[^\s<>"'\]]+`)
+	mailURLRe = regexp.MustCompile(`(?i:https?)://[^\s<>"'\]]+`)
 	// The & may come back HTML-escaped in a draft's href.
 	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
 )
@@ -87,6 +87,24 @@ func linkRefs(text string, id int64) string {
 	})
 }
 
+// maskLinks is linkRefs over texts of message id, and the replacer that puts
+// the links back: texts cut into pieces may split a link, so the references
+// are undone from what was masked, not from the message.
+func maskLinks(texts []string, id int64) ([]string, *strings.Replacer) {
+	var pairs []string
+	out := make([]string, len(texts))
+	for i, t := range texts {
+		out[i] = mailLinks(t, func(u string) string {
+			r := linkRefs(u, id)
+			if r != u {
+				pairs = append(pairs, r, u)
+			}
+			return r
+		})
+	}
+	return out, strings.NewReplacer(pairs...)
+}
+
 func linkHash(u string) string {
 	sum := sha256.Sum256([]byte(u))
 	return hex.EncodeToString(sum[:8]) // 64 bits: a sender cannot craft two links of one mail that share it
@@ -135,38 +153,59 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 // conversation, a draft), reading each message they name once: a message is
 // sanitized and turned to text to find its links. Not for concurrent use.
 type linkExpander struct {
-	s      *Service
-	bodies map[int64]string
+	s     *Service
+	links map[int64]map[string]string // by message, then hash
 }
 
 func (s *Service) linkExpander() *linkExpander {
-	return &linkExpander{s: s, bodies: map[int64]string{}}
+	return &linkExpander{s: s, links: map[int64]map[string]string{}}
+}
+
+// maxExpandURL is the longest link a reference expands to: a model repeating
+// the reference to a huge link cannot blow its output up without bound.
+const maxExpandURL = 8 << 10
+
+// link is the link of message id with hash h, the message's links indexed once.
+func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
+	idx, ok := x.links[id]
+	if !ok {
+		idx = map[string]string{}
+		if m, err := x.s.mailForModel(ctx, id); err == nil {
+			mailLinks(modelBody(m), func(u string) string {
+				if k := linkHash(u); len(u) <= maxExpandURL && idx[k] == "" {
+					idx[k] = u // the first link with a hash wins
+				}
+				return u
+			})
+		}
+		x.links[id] = idx
+	}
+	u, ok := idx[h]
+	return u, ok
 }
 
 func (x *linkExpander) text(ctx context.Context, text string) string {
 	if !strings.Contains(text, linkRefPrefix) {
 		return text
 	}
-	return linkRefRe.ReplaceAllStringFunc(text, func(ref string) string {
-		sm := linkRefRe.FindStringSubmatch(ref)
-		id, _ := strconv.ParseInt(sm[1], 10, 64)
-		body, ok := x.bodies[id]
-		if !ok {
-			if m, err := x.s.mailForModel(ctx, id); err == nil {
-				body = modelBody(m)
-			}
-			x.bodies[id] = body
+	var b strings.Builder
+	last := 0
+	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
+		if loc[1] < len(text) && isHex(text[loc[1]]) {
+			continue // a longer hash is no reference of ours: left for the send check
 		}
-		out := ref
-		mailLinks(body, func(u string) string {
-			if out == ref && linkHash(u) == sm[2] {
-				out = u
-			}
-			return u
-		})
-		return out
-	})
+		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
+		if u, ok := x.link(ctx, id, text[loc[4]:loc[5]]); ok {
+			b.WriteString(text[last:loc[0]])
+			b.WriteString(u)
+			last = loc[1]
+		}
+	}
+	b.WriteString(text[last:])
+	return b.String()
 }
+
+func isHex(c byte) bool { return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F' }
 
 func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawMessage {
 	if !strings.Contains(string(args), linkRefPrefix) {
@@ -246,7 +285,8 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 func refCut(text string) int {
 	if i := strings.LastIndex(text, linkRefPrefix); i != -1 {
 		rest := text[i:]
-		if !strings.ContainsAny(rest, " \t\r\n") && len(rest) < 512 && linkRefRe.FindStringIndex(rest) == nil {
+		// Unfinished, or finished at the very end, where another hex digit may still come.
+		if loc := linkRefRe.FindStringIndex(rest); !strings.ContainsAny(rest, " \t\r\n") && len(rest) < 512 && (loc == nil || loc[1] == len(rest)) {
 			return i
 		}
 	}

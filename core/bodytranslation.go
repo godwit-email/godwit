@@ -75,8 +75,10 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 			". Languages needing no translation: " + strings.Join(append([]string{lang}, keep...), ", ") +
 			`. For this request return ONLY a JSON object {"texts":[...],"source":"language-tag"}. Translate each input string in order, with exactly one nonempty output per input. Preserve strings needing no translation unchanged instead of NO_TRANSLATION. Do not include headers, notes, Markdown, or the untrusted_email wrapper.`
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
-			b, _ := json.Marshal(req.Texts)
-			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), ai.InjectionQuote(strings.Join(req.Texts, "\n")) != "")
+			suspect := ai.InjectionQuote(strings.Join(req.Texts, "\n")) != ""
+			texts, restore := maskLinks(req.Texts, t.ID)
+			b, _ := json.Marshal(texts)
+			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), suspect)
 			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, 128<<10)
 			if err != nil {
 				return translateResult{}, err
@@ -84,6 +86,9 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 			var res translateResult
 			if err := json.Unmarshal([]byte(text), &res); err != nil {
 				return res, fmt.Errorf("translation returned invalid JSON: %w", err)
+			}
+			for i, s := range res.Texts {
+				res.Texts[i] = restore.Replace(s)
 			}
 			return res, nil
 		}

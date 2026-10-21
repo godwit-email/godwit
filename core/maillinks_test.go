@@ -23,6 +23,7 @@ func TestLinkRefs(t *testing.T) {
 		{"long hint is cut on a rune", "https://example.cn/" + strings.Repeat("新闻", 30), linkRefPrefix + "example.cn/新闻新闻新闻新闻…?m=7&h=" + linkHash("https://example.cn/"+strings.Repeat("新闻", 30))},
 		{"a link's own ! inside HTMLToText's parentheses stays", "go (https://a.com/wow!)", "go (https://a.com/wow!)"},
 		{"sentence end after a parenthesis", "(see https://a.com/x).", "(see https://a.com/x)."},
+		{"an upper-case scheme is a link too", "HTTPS://A.com/x?UTM_SOURCE=1", "HTTPS://A.com/x"},
 		{"a ? in the fragment is no query", "https://app.example/#/open?utm_source=mail", "https://app.example/#/open?utm_source=mail"},
 		{"balanced parentheses stay", "https://en.wikipedia.org/wiki/Go_(game), ok", "https://en.wikipedia.org/wiki/Go_(game), ok"},
 	} {
@@ -155,4 +156,31 @@ func TestExpandEventsDropsUnfinishedReference(t *testing.T) {
 		text += ev.Text
 	}
 	require.Equal(t, "Join at ", text, "a reference the model never finished is not shown")
+}
+
+func TestLinkRefsBounds(t *testing.T) {
+	s := newMailContextService(t)
+	huge := "https://a.com/" + strings.Repeat("x", maxExpandURL)
+	id := addMessage(t, s, "Sale", "shop@x", longLink+"\n"+huge, "", 1_700_000_000)
+	ref, hugeRef := linkRefs(longLink, id), linkRefs(huge, id)
+	ctx := t.Context()
+
+	require.Equal(t, hugeRef, s.expandLinks(ctx, hugeRef), "a link over maxExpandURL is not expanded")
+	require.Equal(t, ref+"f", s.expandLinks(ctx, ref+"f"), "a longer hash is no reference")
+	d := Draft{HTML: "<p>" + ref + "f</p>"}
+	require.ErrorIs(t, s.expandDraftLinks(ctx, &d), ErrLinkRef, "and sending fails closed")
+
+	in := make(chan ai.Event, 3)
+	in <- ai.Event{Kind: "text", Text: "go " + ref}
+	in <- ai.Event{Kind: "text", Text: "f now"}
+	close(in)
+	var out string
+	for ev := range s.expandEvents(ctx, in) {
+		out += ev.Text
+	}
+	require.Equal(t, "go "+ref+"f now", out, "a reference at a chunk's end waits for what follows")
+
+	texts, restore := maskLinks([]string{"see " + longLink, "short https://a.com/x?utm_source=1"}, id)
+	require.Equal(t, []string{"see " + ref, "short https://a.com/x"}, texts)
+	require.Equal(t, "voir "+longLink, restore.Replace("voir "+ref))
 }
