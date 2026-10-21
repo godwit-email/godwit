@@ -339,7 +339,9 @@ func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
 	big := addMessage(t, s, "Many", "x@x", many.String(), "", 1_700_000_200)
 	x := s.linkExpander()
 	x.link(ctx, big, "0000000000000000")
-	require.Len(t, x.links[big], 600, "every link that gets a reference is indexed, and long ones only")
+	require.Len(t, x.links[big].idx, maxIndexedLinks, "a message indexes a bounded number of links, long ones only")
+	late := fmt.Sprintf("https://a.com/%090d", 590)
+	require.Equal(t, late, x.text(ctx, linkRefs(late, big)), "a link past the index is still found")
 }
 
 func TestLinkRefsLeftBoundaryEverywhere(t *testing.T) {
@@ -358,4 +360,18 @@ func TestLinkRefsLeftBoundaryEverywhere(t *testing.T) {
 
 	masked, links := maskLinks([]string{"see " + longLink}, id)
 	require.Equal(t, "voir "+ref+"&extra=1", unmask("voir "+ref+"&extra=1", masked[0], links), "a continued reference is not restored")
+}
+
+func TestLinkRefsUnicodeSpacesAndParens(t *testing.T) {
+	require.Equal(t, "https://a.com/x\u00a0Read this", linkRefs("https://a.com/x?utm_source=e\u00a0Read this", 1), "a no-break space ends a link")
+	require.Equal(t, "https://a.com/x\u3000続き", linkRefs("https://a.com/x?utm_source=e\u3000続き", 1))
+
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	ctx := t.Context()
+	wrapped := "https://redirect.example/?u=(" + ref + ")"
+	require.Equal(t, wrapped, s.expandLinks(ctx, wrapped), "parenthesized inside another URL: no reference")
+	require.Equal(t, "(see "+longLink+")", s.expandLinks(ctx, "(see "+ref+")"), "prose parentheses still work")
+	require.Equal(t, "[x]("+longLink+")", s.expandLinks(ctx, "[x]("+ref+")"), "and a Markdown link")
 }

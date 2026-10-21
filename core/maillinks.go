@@ -35,10 +35,10 @@ const (
 )
 
 var (
-	mailURLRe    = regexp.MustCompile(`(?i:https?)://(?:\[[0-9A-Fa-f:.]+\])?[^\s<>"'\]]*`) // a bracketed IPv6 host is one link
+	mailURLRe    = regexp.MustCompile(`(?i:https?)://(?:\[[0-9A-Fa-f:.]+\])?[^\s\p{Z}<>"'\]]*`) // a bracketed IPv6 host is one link
 	plantedRefRe = regexp.MustCompile(`(?i)godwit://link/`)
 	// The & may come back HTML-escaped in a draft's href.
-	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
+	linkRefRe = regexp.MustCompile(`godwit://link/[^\s\p{Z}?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
 )
 
 // modelHead is the header of m a model reads, its attachments listed.
@@ -136,7 +136,7 @@ func unmask(text, masked string, links map[string]string) string {
 	for _, loc := range linkRefRe.FindAllStringIndex(text, -1) {
 		r := text[loc[0]:loc[1]]
 		u, ok := links[r]
-		if !ok || left[r] == 0 || refContinues(text, loc[1]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
+		if !ok || left[r] == 0 || refContinues(text, loc[1]) || insideURL(text, loc[0], 0) {
 			continue // as linkExpander.text: part of a longer URL stays as written
 		}
 		left[r]--
@@ -197,13 +197,21 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 // conversation, a draft), reading each message they name once: a message is
 // sanitized and turned to text to find its links. Not for concurrent use.
 type linkExpander struct {
-	s     *Service
-	mu    sync.Mutex                  // a run's tool calls share one, and may run at once
-	links map[int64]map[string]string // by message, then hash; under mu
+	s      *Service
+	mu     sync.Mutex // a run's tool calls share one, and may run at once; guards the rest
+	links  map[int64]*msgLinks
+	misses int // rescans of messages with more links than their index holds
+}
+
+// msgLinks is a message's long links by hash: the first maxIndexedLinks of
+// them, partial when it had more.
+type msgLinks struct {
+	idx     map[string]string
+	partial bool
 }
 
 func (s *Service) linkExpander() *linkExpander {
-	return &linkExpander{s: s, links: map[int64]map[string]string{}}
+	return &linkExpander{s: s, links: map[int64]*msgLinks{}}
 }
 
 // maxExpandURL is the longest link a reference expands to: a model repeating
@@ -214,30 +222,62 @@ const maxExpandURL = 8 << 10
 // many made-up message ids cannot make it load and scan the whole mailbox.
 const maxExpandMessages = 32
 
+// maxIndexedLinks caps the links indexed per message, and maxExpandMisses the
+// rescans for a link past that, per expander: memory and work stay bounded.
+const (
+	maxIndexedLinks = 512
+	maxExpandMisses = 8
+)
+
 // link is the link of message id with hash h, the message's links indexed once.
 func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	idx, ok := x.links[id]
+	ml, ok := x.links[id]
 	if !ok && len(x.links) >= maxExpandMessages {
 		return "", false
 	}
 	if !ok {
-		idx = map[string]string{}
-		if m, err := x.s.mailForModel(ctx, id); err == nil {
-			mailLinks(modelHead(m)+"\n"+modelBody(m), func(u string) string {
-				// Only links linkRefs makes references of. Every one is indexed, as every one
-				// gets a reference; they are mostly substrings of the body, bounded by its size.
-				if k := linkHash(u); len(u) > maxModelURL && len(u) <= maxExpandURL && idx[k] == "" {
-					idx[k] = u // the first link with a hash wins
+		ml = &msgLinks{idx: map[string]string{}}
+		x.scan(ctx, id, func(k, u string) bool {
+			if ml.idx[k] == "" {
+				if ml.partial = len(ml.idx) >= maxIndexedLinks; !ml.partial {
+					ml.idx[k] = u // the first link with a hash wins
 				}
-				return u
-			})
-		}
-		x.links[id] = idx
+			}
+			return !ml.partial
+		})
+		x.links[id] = ml
 	}
-	u, ok := idx[h]
-	return u, ok
+	if u, ok := ml.idx[h]; ok || !ml.partial || x.misses >= maxExpandMisses {
+		return u, ok
+	}
+	// A link past the index: look for it alone, a bounded number of times per expander.
+	x.misses++
+	var found string
+	x.scan(ctx, id, func(k, u string) bool {
+		if k == h {
+			found = u
+		}
+		return found == ""
+	})
+	return found, found != ""
+}
+
+// scan calls f with the hash and link of each long link of message id the
+// model reads, in order, while f returns true.
+func (x *linkExpander) scan(ctx context.Context, id int64, f func(k, u string) bool) {
+	m, err := x.s.mailForModel(ctx, id)
+	if err != nil {
+		return
+	}
+	more := true
+	mailLinks(modelHead(m)+"\n"+modelBody(m), func(u string) string {
+		if more && len(u) > maxModelURL && len(u) <= maxExpandURL { // only links linkRefs references
+			more = f(linkHash(u), u)
+		}
+		return u
+	})
 }
 
 func (x *linkExpander) text(ctx context.Context, text string) string {
@@ -253,11 +293,7 @@ func (x *linkExpander) textAfter(ctx context.Context, prev byte, text string) st
 	var b strings.Builder
 	last := 0
 	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
-		before := prev
-		if loc[0] > 0 {
-			before = text[loc[0]-1]
-		}
-		if refContinues(text, loc[1]) || before != 0 && continuesURL(before) {
+		if refContinues(text, loc[1]) || insideURL(text, loc[0], prev) {
 			continue // part of a longer URL (more hash or query, or inside another's): left for the checks
 		}
 		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
@@ -274,6 +310,20 @@ func (x *linkExpander) textAfter(ctx context.Context, prev byte, text string) st
 // continuesURL is whether c after a reference would make it part of a longer URL.
 func continuesURL(c byte) bool {
 	return '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || strings.IndexByte("&=#%/?+~_-@", c) != -1
+}
+
+// insideURL is whether a reference at start of text (after prev, 0 for none)
+// sits inside another URL: a URL character before it, past any "(" or "["
+// that groups it there ("?u=(ref)"); prose like "(see ref)" has a space.
+func insideURL(text string, start int, prev byte) bool {
+	for start > 0 && (text[start-1] == '(' || text[start-1] == '[') {
+		start--
+	}
+	before := prev
+	if start > 0 {
+		before = text[start-1]
+	}
+	return before != 0 && continuesURL(before)
 }
 
 // urlPunct is URL punctuation that may also just end a sentence.
