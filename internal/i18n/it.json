@@ -956,6 +956,8 @@
   "wit_quote_search": "Cerca email",
   "wit_scroll_end": "Vai alla fine",
   "wit_send": "Invia a Wit",
+  "wit_skill_format": "Formatta",
+  "wit_skill_format_hint": "Solo paragrafi e struttura",
   "wit_skill_longer": "Più lungo",
   "wit_skill_longer_hint": "Lunghezza",
   "wit_skill_proofread": "Correggi bozza",

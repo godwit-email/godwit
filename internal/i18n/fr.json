@@ -956,6 +956,8 @@
   "wit_quote_search": "Rechercher un e-mail",
   "wit_scroll_end": "Aller au plus récent",
   "wit_send": "Envoyer à Wit",
+  "wit_skill_format": "Mettre en forme",
+  "wit_skill_format_hint": "Paragraphes et structure uniquement",
   "wit_skill_longer": "Plus long",
   "wit_skill_longer_hint": "Longueur",
   "wit_skill_proofread": "Corriger",

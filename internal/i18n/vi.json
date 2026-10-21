@@ -956,6 +956,8 @@
   "wit_quote_search": "Tìm kiếm thư",
   "wit_scroll_end": "Chuyển đến mới nhất",
   "wit_send": "Gửi cho Wit",
+  "wit_skill_format": "Định dạng",
+  "wit_skill_format_hint": "Chỉ định dạng đoạn văn và cấu trúc",
   "wit_skill_longer": "Dài hơn",
   "wit_skill_longer_hint": "Độ dài",
   "wit_skill_proofread": "Sửa lỗi chính tả",

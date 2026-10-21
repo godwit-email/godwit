@@ -956,6 +956,8 @@
   "wit_quote_search": "메일 검색",
   "wit_scroll_end": "최신 내용으로 이동",
   "wit_send": "Wit에게 보내기",
+  "wit_skill_format": "서식 정리",
+  "wit_skill_format_hint": "단락 및 구조만 정리",
   "wit_skill_longer": "더 길게",
   "wit_skill_longer_hint": "길이",
   "wit_skill_proofread": "교정",

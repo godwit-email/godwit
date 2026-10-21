@@ -956,6 +956,8 @@
   "wit_quote_search": "E-Mail suchen",
   "wit_scroll_end": "Zum Ende springen",
   "wit_send": "An Wit senden",
+  "wit_skill_format": "Formatieren",
+  "wit_skill_format_hint": "Nur Absätze und Struktur",
   "wit_skill_longer": "Ausführlicher",
   "wit_skill_longer_hint": "Länge",
   "wit_skill_proofread": "Korrekturlesen",
