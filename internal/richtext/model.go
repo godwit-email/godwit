@@ -39,6 +39,8 @@ type Inline struct {
 	Bold, Italic, Code, Strike, Underline bool
 	Link                                  string
 	Color                                 string // a CSS color, from the sanitized inline style
+	// FontSize and FontFamily are CSS values, from compose content's inline style.
+	FontSize, FontFamily string
 }
 
 // Cell is a table cell.

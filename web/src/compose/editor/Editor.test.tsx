@@ -330,4 +330,31 @@ describe("Editor", () => {
     const htmlAfterEnter = last(onChange);
     expect(htmlAfterEnter).toBe('<p><span style="font-size: 72px">Schule</span></p>');
   });
+
+  // Without target ranges (jsdom has none), the replacement takes the selection, or the word before the caret.
+  const replace = (box: HTMLElement, data: string) =>
+    act(() => {
+      box.dispatchEvent(
+        new InputEvent("beforeinput", {
+          inputType: "insertReplacementText",
+          data,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+  it("insertReplacementText replaces a whole selection", async () => {
+    const { box, onChange } = setup("<p>foo bar</p>");
+    await select(box, 0, 7);
+    replace(box, "baz");
+    await waitFor(() => expect(last(onChange)).toBe("<p>baz</p>"));
+  });
+
+  it("insertReplacementText after a space keeps the space", async () => {
+    const { box, onChange } = setup("<p>wrd </p>");
+    await select(box, 4, 0);
+    replace(box, "word");
+    await waitFor(() => expect(last(onChange)).toBe("<p>word </p>"));
+  });
 });

@@ -36,21 +36,13 @@ export const SafePastePlugin = createSlatePlugin({ key: "safePaste" }).overrideE
         }
         const text = data.getData("text/plain");
         if (!text) return;
-        const marks = { ...(editor.api.marks() ?? {}) };
-        if (editor.selection && Object.keys(marks).length === 0) {
-          const [leaf] = editor.api.leaf(editor.selection.anchor) ?? [];
-          if (leaf) {
-            for (const [k, v] of Object.entries(leaf)) {
-              if (k !== "text") marks[k] = v;
-            }
-          }
-        }
+        // The caret's marks (the leaf's, or what the user toggled, {} included) for every line:
+        // insertBreak clears them, and the new line would take the split leaf's instead.
+        const marks = editor.api.marks() ?? {};
         text.split(/\r\n|\r|\n/).forEach((line, i) => {
           if (i) editor.tf.insertBreak();
           if (line) {
-            for (const [k, v] of Object.entries(marks)) {
-              editor.tf.addMark(k, v);
-            }
+            editor.marks = { ...marks };
             editor.tf.insertText(line);
           }
         });

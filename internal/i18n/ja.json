@@ -1042,5 +1042,7 @@
   "wit_usage_total": "この会話の合計：入力 {arg1} · 出力 {arg2} トークン",
   "compose_strikethrough": "取り消し線",
   "compose_font_size": "フォントサイズ",
-  "compose_font_family": "フォント"
+  "compose_font_family": "フォント",
+  "compose_font_default": "デフォルト",
+  "compose_size_default": "デフォルト（{arg1}）"
 }

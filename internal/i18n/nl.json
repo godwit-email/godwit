@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Dit gesprek: {arg1} in · {arg2} uit tokens",
   "compose_strikethrough": "Doorgehaald",
   "compose_font_size": "Lettergrootte",
-  "compose_font_family": "Lettertype"
+  "compose_font_family": "Lettertype",
+  "compose_font_default": "Standaard",
+  "compose_size_default": "Standaard ({arg1})"
 }

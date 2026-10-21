@@ -1042,5 +1042,7 @@
   "wit_usage_total": "本對話共：輸入 {arg1} · 輸出 {arg2} tokens",
   "compose_strikethrough": "刪除線",
   "compose_font_size": "字級",
-  "compose_font_family": "字型"
+  "compose_font_family": "字型",
+  "compose_font_default": "預設",
+  "compose_size_default": "預設（{arg1}）"
 }

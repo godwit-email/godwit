@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Questa conversazione: {arg1} in entrata · {arg2} in uscita token",
   "compose_strikethrough": "Barrato",
   "compose_font_size": "Dimensione del carattere",
-  "compose_font_family": "Tipo di carattere"
+  "compose_font_family": "Tipo di carattere",
+  "compose_font_default": "Predefinito",
+  "compose_size_default": "Predefinito ({arg1})"
 }

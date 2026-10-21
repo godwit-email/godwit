@@ -20,8 +20,9 @@ func FromMailHTML(safe string, lim Limits) (Doc, bool) {
 
 // FromComposeHTML converts compose content (mail.SanitizeCompose output or a
 // draft's editable part): links come from href, and only paragraphs, bold,
-// italic, links, lists, quotes and data: images (a draft's signature images,
-// for showing) stay; everything else becomes paragraph text.
+// italic, underline, strikethrough, font size and family, links, lists, quotes
+// and data: images (a draft's signature images, for showing) stay; everything
+// else becomes paragraph text.
 func FromComposeHTML(safe string) Doc {
 	c := &conv{lim: DefaultLimits, compose: true}
 	c.run(safe)
@@ -117,6 +118,8 @@ func (c *conv) element(n *html.Node, x ctx) {
 	x.depth++
 	if !c.compose {
 		c.styleAttrs(n, &x.style)
+	} else {
+		fontAttrs(n, &x.style)
 	}
 	switch a := n.DataAtom; a {
 	case atom.Br:
@@ -245,6 +248,19 @@ func (c *conv) styleAttrs(n *html.Node, s *Inline) {
 		case "text-decoration":
 			s.Underline = s.Underline || strings.Contains(lv, "underline")
 			s.Strike = s.Strike || strings.Contains(lv, "line-through")
+		}
+	}
+}
+
+// fontAttrs applies the compose editor's font size and family from the inline style.
+func fontAttrs(n *html.Node, s *Inline) {
+	for decl := range strings.SplitSeq(attr(n, "style"), ";") {
+		k, v, _ := strings.Cut(decl, ":")
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "font-size":
+			s.FontSize = strings.TrimSpace(v)
+		case "font-family":
+			s.FontFamily = strings.TrimSpace(v)
 		}
 	}
 }

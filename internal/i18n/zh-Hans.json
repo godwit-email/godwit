@@ -1042,5 +1042,7 @@
   "codes_card_reset": "重置密码链接",
   "compose_strikethrough": "删除线",
   "compose_font_size": "字号",
-  "compose_font_family": "字体"
+  "compose_font_family": "字体",
+  "compose_font_default": "默认",
+  "compose_size_default": "默认（{arg1}）"
 }

@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Cette conversation : {arg1} en entrée · {arg2} en sortie tokens",
   "compose_strikethrough": "Barré",
   "compose_font_size": "Taille de police",
-  "compose_font_family": "Famille de police"
+  "compose_font_family": "Famille de police",
+  "compose_font_default": "Par défaut",
+  "compose_size_default": "Par défaut ({arg1})"
 }

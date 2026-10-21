@@ -111,6 +111,8 @@
   "compose_strikethrough": "Strikethrough",
   "compose_font_size": "Font size",
   "compose_font_family": "Font family",
+  "compose_font_default": "Default",
+  "compose_size_default": "Default ({arg1})",
   "compose_warn": "Check before sending: {arg1}",
   "@compose_warn": {
     "placeholders": {

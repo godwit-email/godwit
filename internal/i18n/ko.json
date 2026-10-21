@@ -1042,5 +1042,7 @@
   "wit_usage_total": "이 대화: 입력 {arg1} · 출력 {arg2} 토큰",
   "compose_strikethrough": "취소선",
   "compose_font_size": "글꼴 크기",
-  "compose_font_family": "글꼴"
+  "compose_font_family": "글꼴",
+  "compose_font_default": "기본값",
+  "compose_size_default": "기본값 ({arg1})"
 }

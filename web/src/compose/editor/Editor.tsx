@@ -111,8 +111,8 @@ export function Editor(props: {
       if ("stopImmediatePropagation" in inputEvent) {
         inputEvent.stopImmediatePropagation();
       }
-      lastReplacementTime.current = Date.now();
       if (readOnly) return true;
+      lastReplacementTime.current = Date.now();
 
       let targetRange: TRange | null = null;
       const ranges = inputEvent.getTargetRanges?.();
@@ -127,10 +127,16 @@ export function Editor(props: {
       }
       if (!targetRange || RangeApi.isCollapsed(targetRange)) {
         const sel = editor.selection;
-        if (sel) {
-          const head = RangeApi.isCollapsed(sel) ? sel.anchor : RangeApi.edges(sel)[1];
+        if (sel && !RangeApi.isCollapsed(sel)) {
+          targetRange = sel;
+        } else if (sel) {
+          // The word before the caret, without the space typed after it.
+          const head = sel.anchor;
           const before = editor.api.before(head, { unit: "word" }) ?? editor.api.start(head.path);
-          targetRange = { anchor: before, focus: head };
+          const word = editor.api.string({ anchor: before, focus: head });
+          const trail = word.length - word.trimEnd().length;
+          const end = trail ? (editor.api.before(head, { distance: trail }) ?? head) : head;
+          targetRange = { anchor: before, focus: end };
         }
       }
       if (targetRange) {
@@ -204,6 +210,7 @@ export function Editor(props: {
                 !e.nativeEvent.isComposing &&
                 Date.now() - lastReplacementTime.current < 250
               ) {
+                lastReplacementTime.current = 0; // swallow the one Enter that accepted it, no more
                 e.preventDefault();
                 e.stopPropagation();
                 return;

@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Esta conversación: {arg1} de entrada · {arg2} de salida tokens",
   "compose_strikethrough": "Tachado",
   "compose_font_size": "Tamaño de fuente",
-  "compose_font_family": "Familia tipográfica"
+  "compose_font_family": "Familia tipográfica",
+  "compose_font_default": "Predeterminado",
+  "compose_size_default": "Predeterminado ({arg1})"
 }

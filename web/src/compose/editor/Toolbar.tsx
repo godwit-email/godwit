@@ -80,7 +80,7 @@ const items: {
 ];
 
 const fontSizes = [
-  { label: "Standard (14 pt)", value: "" },
+  { label: "", value: "" }, // compose.size_default
   { label: "9 pt", value: "9pt" },
   { label: "10 pt", value: "10pt" },
   { label: "11 pt", value: "11pt" },
@@ -96,7 +96,7 @@ const fontSizes = [
 ];
 
 const standardFonts = [
-  { label: "Standard (Systemschrift)", value: "" },
+  { label: "", value: "" }, // compose.font_default
   { label: "American Typewriter", value: "'American Typewriter', serif" },
   { label: "Arial", value: "Arial, sans-serif" },
   { label: "Arial Black", value: "'Arial Black', Gadget, sans-serif" },
@@ -122,6 +122,9 @@ const standardFonts = [
   { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
   { label: "Verdana", value: "Verdana, sans-serif" },
 ];
+
+// The browser re-quotes a font list it reads back (`'A B'` becomes `"A B"`), so compare without quotes.
+const unquoted = (s: string) => s.replace(/["']/g, "");
 
 // The pressed formats at the selection, space-separated (a string keeps the selector's equality cheap).
 function active(e: SlateEditor): string {
@@ -247,7 +250,7 @@ export function Toolbar(props: {
   const fonts: { label: string; value: string }[] = useMemo(() => {
     if (props.fonts && props.fonts.length > 0) {
       return [
-        { label: "Standard (Systemschrift)", value: "" },
+        { label: "", value: "" },
         ...props.fonts.map((name) => {
           const std = standardFonts.find((s) => s.label === name);
           return { label: name, value: std ? std.value : `'${name}', sans-serif` };
@@ -324,16 +327,16 @@ export function Toolbar(props: {
           onMouseDown={(e) => e.preventDefault()}
         >
           {fonts.map((f) => {
-            const isSelected = currentFontFamily === f.value;
+            const isSelected = unquoted(currentFontFamily) === unquoted(f.value);
             return (
               <DropdownMenuItem
-                key={f.label}
+                key={f.value}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => applyFontFamily(f.value)}
                 style={{ fontFamily: f.value || "inherit" }}
                 className="flex items-center justify-between gap-3"
               >
-                <span className="whitespace-nowrap">{f.label}</span>
+                <span className="whitespace-nowrap">{f.label || t("compose.font_default")}</span>
                 {isSelected && <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />}
               </DropdownMenuItem>
             );
@@ -383,12 +386,14 @@ export function Toolbar(props: {
             const isSelected = currentFontSize === s.value;
             return (
               <DropdownMenuItem
-                key={s.label}
+                key={s.value}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => applyFontSize(s.value)}
                 className="flex items-center justify-between gap-3"
               >
-                <span className="whitespace-nowrap">{s.label}</span>
+                <span className="whitespace-nowrap">
+                  {s.label || t("compose.size_default", "14 pt")}
+                </span>
                 {isSelected && <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />}
               </DropdownMenuItem>
             );

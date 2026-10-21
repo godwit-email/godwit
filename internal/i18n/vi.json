@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Cuộc trò chuyện này: vào {arg1} · ra {arg2} token",
   "compose_strikethrough": "Gạch ngang",
   "compose_font_size": "Cỡ chữ",
-  "compose_font_family": "Phông chữ"
+  "compose_font_family": "Phông chữ",
+  "compose_font_default": "Mặc định",
+  "compose_size_default": "Mặc định ({arg1})"
 }

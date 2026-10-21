@@ -145,6 +145,14 @@ func (w *writer) inlines(ins []Inline) {
 		}
 		tag(`<a href="`+html.EscapeString(in.Link)+`">`, "</a>", in.Link != "")
 		tag(`<span style="color: `+html.EscapeString(in.Color)+`">`, "</span>", in.Color != "")
+		var font []string
+		if in.FontSize != "" {
+			font = append(font, "font-size: "+in.FontSize)
+		}
+		if in.FontFamily != "" {
+			font = append(font, "font-family: "+in.FontFamily)
+		}
+		tag(`<span style="`+html.EscapeString(strings.Join(font, "; "))+`">`, "</span>", font != nil)
 		tag("<b>", "</b>", in.Bold)
 		tag("<i>", "</i>", in.Italic)
 		tag("<u>", "</u>", in.Underline)

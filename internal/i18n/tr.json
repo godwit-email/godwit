@@ -1042,5 +1042,7 @@
   "wit_usage_total": "Bu konuşma: {arg1} giriş · {arg2} çıkış token",
   "compose_strikethrough": "Üstü çizili",
   "compose_font_size": "Yazı tipi boyutu",
-  "compose_font_family": "Yazı tipi"
+  "compose_font_family": "Yazı tipi",
+  "compose_font_default": "Varsayılan",
+  "compose_size_default": "Varsayılan ({arg1})"
 }

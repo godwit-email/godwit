@@ -20,6 +20,14 @@ const keptImage = (el: Element) =>
 
 const SAFE_CSS_VALUE = /^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$/i;
 
+// A size in the toolbar's range (9–72 pt); a pasted font-size:0 (hidden text) or 200px is dropped.
+function inSizeRange(v: string): boolean {
+  const m = /^(\d+(?:\.\d+)?)(px|pt)$/.exec(v);
+  if (!m) return false;
+  const pt = m[2] === "px" ? Number(m[1]) * 0.75 : Number(m[1]);
+  return pt >= 9 && pt <= 72;
+}
+
 /**
  * Parses html on an inert DOMParser document (no script runs, nothing loads) and returns its body
  * with every loader element removed and every attribute dropped but <a href> and safe font styles.
@@ -34,7 +42,7 @@ export function sanitize(html: string, images = false): HTMLElement {
         const fs = el.style.fontSize;
         const ff = el.style.fontFamily;
         el.removeAttribute("style");
-        if (fs && SAFE_CSS_VALUE.test(fs)) el.style.fontSize = fs;
+        if (inSizeRange(fs)) el.style.fontSize = fs;
         if (ff && SAFE_CSS_VALUE.test(ff)) el.style.fontFamily = ff;
         if (!el.getAttribute("style")) el.removeAttribute("style");
       } else if (

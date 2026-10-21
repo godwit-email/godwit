@@ -54,11 +54,28 @@ describe("html", () => {
 
   it("paste keeps only allowed formats", () => {
     const out = round(
-      '<h1 style="color:red">T</h1><table><tr><td>c</td></tr></table><img src="https://t/x.png"><p><u>u</u><s>s</s><span style="font-size:30px">sz</span><span style="color:blue">drop</span></p>',
+      '<h1 style="color:red">T</h1><table><tr><td>c</td></tr></table><img src="https://t/x.png"><p><u>u</u><s>s</s><span style="font-size:30px">sz</span><span style="color:blue">drop</span><span style="font-size:0px">h</span><span style="font-size:200px">L</span></p>',
     );
     expect(out).toBe(
-      '<p>T</p><p>c</p><p><u>u</u><s>s</s><span style="font-size: 30px">sz</span>drop</p>',
+      '<p>T</p><p>c</p><p><u>u</u><s>s</s><span style="font-size: 30px">sz</span>drophL</p>',
     );
+  });
+
+  it("pasted plain text takes the caret's marks, a toggled-off one included", () => {
+    const e = editor();
+    fromHTML(e, "<p><strong>b</strong></p>");
+    e.tf.select(e.api.end([]));
+    const paste = () =>
+      e.tf.insertData({
+        getData: (type: string) => (type === "text/plain" ? "x\ny" : ""),
+        files: [],
+        types: ["text/plain"],
+      } as unknown as DataTransfer);
+    paste();
+    expect(toHTML(e.children)).toBe("<p><strong>bx</strong></p><p><strong>y</strong></p>");
+    e.tf.toggleMark("bold");
+    paste();
+    expect(toHTML(e.children)).toBe("<p><strong>bx</strong></p><p><strong>y</strong>x</p><p>y</p>");
   });
 
   it("pasting HTML into the editor takes the same path", () => {

@@ -69,6 +69,8 @@
   "compose_strikethrough": "Durchgestrichen",
   "compose_font_size": "Schriftgröße",
   "compose_font_family": "Schriftart",
+  "compose_font_default": "Standard",
+  "compose_size_default": "Standard ({arg1})",
   "compose_warn": "Vor dem Senden prüfen: {arg1}",
   "compose_warn_from": "Von Plugin {arg1} (message.beforeSend)",
   "error_ai_bad_response": "Der Modelldienst hat eine unerwartete Antwort zurückgegeben.",
