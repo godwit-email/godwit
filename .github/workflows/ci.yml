@@ -27,7 +27,7 @@ jobs:
     outputs:
       client: ${{ steps.paths.outputs.client }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: paths
@@ -73,8 +73,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Add-MpPreference -ExclusionPath $env:TEMP
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - id: go-cache
         shell: bash
         run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
@@ -118,8 +118,8 @@ jobs:
         shard: [0, 1, 2, 3, 4]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - id: go-cache
         shell: bash
         run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
@@ -152,8 +152,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - id: go-cache
         shell: bash
         run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
@@ -182,7 +182,7 @@ jobs:
           mise run web:install
           mise run native:translate
           go tool mygo build -platform darwin/arm64,darwin/amd64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'macOS' && inputs.signed_macos
         with:
           name: Godwit-macOS-notarized
@@ -203,6 +203,6 @@ jobs:
     if: needs.changes.outputs.client == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
       - run: mise run web:check
