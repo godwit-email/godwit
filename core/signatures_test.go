@@ -152,12 +152,35 @@ func TestAddAccountSignatureFailureUndone(t *testing.T) {
 	in.Signature = "Bob"
 	_, err := e.s.db.Execute(bg, "ALTER TABLE signatures RENAME TO signatures_gone")
 	require.NoError(t, err)
+	before := e.count(t, "SELECT count(*) FROM signatures_gone")
 	_, err = e.s.AddAccount(bg, in)
 	require.Error(t, err)
 	assert.Equal(t, 0, e.count(t, "SELECT count(*) FROM accounts WHERE email = 'bob@example.com'"))
+	assert.Equal(t, before, e.count(t, "SELECT count(*) FROM signatures_gone"), "no signature left behind")
 	_, err = e.s.db.Execute(bg, "ALTER TABLE signatures_gone RENAME TO signatures")
 	require.NoError(t, err)
 	acc, err := e.s.AddAccount(bg, in)
 	require.NoError(t, err, "added again")
 	assert.Equal(t, "Bob", acc.Signature)
+}
+
+// A name the migration left blank to Go (Unicode spaces only) takes its
+// account's name at startup; one with Unicode spaces around is trimmed.
+func TestFixSignatureNames(t *testing.T) {
+	e := newSendEnv(t, false)
+	sigs, err := e.s.ListSignatures(bg)
+	require.NoError(t, err)
+	require.Len(t, sigs, 1)
+	_, err = e.s.db.Execute(bg, "UPDATE signatures SET name = ? WHERE id = ?", "\u00a0\u3000", sigs[0].ID)
+	require.NoError(t, err)
+	other, err := e.s.CreateSignature(bg, "x")
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "UPDATE signatures SET name = ? WHERE id = ?", "\u00a0Work\u00a0", other.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, e.s.fixSignatureNames(bg))
+	sigs, err = e.s.ListSignatures(bg)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", sigs[0].Name, "its account's name")
+	assert.Equal(t, "Work", sigs[1].Name)
 }

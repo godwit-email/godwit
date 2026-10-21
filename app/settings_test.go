@@ -1145,6 +1145,26 @@ func TestSignatureHTMLMode(t *testing.T) {
 	})
 }
 
+// Deleting a signature open in the HTML mode drops its code: the HTML
+// mode works for the next one.
+func TestSignatureDeletedInHTMLMode(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSignature(0, "Other")
+	sig := h.openSignature(acc.ID, "A")
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+	h.click("删除签名「A」")
+	h.click("删除")
+	h.until("deleted", func() bool { return h.app.route.Settings == "signatures" })
+	h.until("its code dropped", func() bool { return p.sigCode == nil })
+	_ = sig
+	h.click("Other")
+	h.until("the page shows Other", func() bool { return h.plat.sigShown() != 0 && h.app.route.Settings != "signatures" })
+	h.app.SignatureHTML()
+	h.until("the HTML mode opens again", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+}
+
 // tinyPNG is a 1×1 PNG of a shade, base64.
 func tinyPNG(t *testing.T, shade uint8) string {
 	t.Helper()

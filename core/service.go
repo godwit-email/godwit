@@ -193,6 +193,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, fmt.Errorf("model service aliases: %w", err)
 	}
+	if err := s.fixSignatureNames(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("signature names: %w", err)
+	}
 	if err := s.seedLabels(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("labels: %w", err)

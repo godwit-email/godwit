@@ -200,14 +200,24 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	// already be cancelled, and a half-made account must not survive), the
 	// previous default made the default again.
 	undo := func(err error) error {
+		uctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var sigID int64 // the signature made for it (in.Signature), if it got that far
+		if rows, qerr := s.db.Query(uctx, "SELECT signature_id FROM accounts WHERE id = ?", id); qerr == nil && len(rows.Values) > 0 {
+			sigID = store.Int(rows.Values[0][0])
+		}
 		stmts := []sqlite.Statement{{SQL: "DELETE FROM accounts WHERE id = ?", Args: []any{id}}}
 		if prevDefault != 0 {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 1 WHERE id = ?", Args: []any{prevDefault}})
 		}
-		uctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 		if _, derr := s.db.Transaction(uctx, stmts); derr != nil {
-			err = errors.Join(err, derr)
+			return errors.Join(err, derr)
+		}
+		if sigID != 0 { // apart: the account goes even if this cannot
+			if _, derr := s.db.Transaction(uctx, []sqlite.Statement{
+				{SQL: "DELETE FROM signatures WHERE id = ?", Args: []any{sigID}}, unusedSignatureImages}); derr != nil {
+				err = errors.Join(err, derr)
+			}
 		}
 		return err
 	}

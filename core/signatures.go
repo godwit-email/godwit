@@ -258,3 +258,34 @@ func SignaturePreview(html string, n int) []string {
 	}
 	return out
 }
+
+// fixSignatureNames gives a signature whose name the migration could not
+// clean as Go does (Unicode spaces, SQLite trimming only ASCII ones) the
+// name of the first account using it, else "Signature". It runs at startup.
+func (s *Service) fixSignatureNames(ctx context.Context) error {
+	sigs, err := s.ListSignatures(ctx)
+	if err != nil {
+		return err
+	}
+	var stmts []sqlite.Statement
+	for _, sig := range sigs {
+		if name, err := cleanSignatureName(sig.Name); err == nil {
+			if name != sig.Name {
+				stmts = append(stmts, sqlite.Statement{SQL: "UPDATE signatures SET name = ? WHERE id = ?", Args: []any{name, sig.ID}})
+			}
+			continue
+		}
+		name := "Signature"
+		if len(sig.Accounts) > 0 {
+			if acc, err := s.account(ctx, sig.Accounts[0]); err == nil {
+				name = accountLabel(acc)
+			}
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE signatures SET name = ? WHERE id = ?", Args: []any{name, sig.ID}})
+	}
+	if len(stmts) == 0 {
+		return nil
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}

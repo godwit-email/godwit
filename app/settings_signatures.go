@@ -279,6 +279,12 @@ func (p *settingsPage) deleteSignatureDialog(c *ui.Context, sig core.Signature, 
 					f.stop()
 					*f = sigForm{}
 				}
+				if sc := p.sigCode; sc != nil && sc.id == sig.ID { // its code goes with it
+					if sc.stop != nil {
+						sc.stop()
+					}
+					p.sigCode = nil
+				}
 				a.do(func(ctx context.Context) error { return a.svc.DeleteSignature(ctx, sig.ID) }, func(err error) {
 					if err != nil {
 						a.toastErr(err)
@@ -578,7 +584,7 @@ func (p *settingsPage) closeCode() {
 	sc.closing = true
 	p.saveCode(sc, func(err error) {
 		sc.closing = false
-		if err != nil || p.sigCode != sc {
+		if p.sigCode != sc || err != nil && !errors.Is(err, core.ErrSignatureNotFound) { // a deleted one has nothing to keep
 			return
 		}
 		p.sigCode = nil
