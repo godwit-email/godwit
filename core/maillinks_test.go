@@ -238,9 +238,9 @@ func TestLinkRefsFailClosed(t *testing.T) {
 	d := Draft{Subject: "Godwit://LINK/a.com?m=1&h=0123abcd0123abcd"}
 	require.ErrorIs(t, s.expandDraftLinks(ctx, &d), ErrLinkRef, "any case of the prefix is caught")
 
-	_, err = s.toolArgs(ctx, json.RawMessage(`{"url":"`+linkRefPrefix+`a.com?m=999&h=0123abcd0123abcd"}`))
+	_, err = s.linkExpander().toolArgs(ctx, json.RawMessage(`{"url":"`+linkRefPrefix+`a.com?m=999&h=0123abcd0123abcd"}`))
 	require.Error(t, err, "a tool never gets a reference that did not expand")
-	out, err := s.toolArgs(ctx, json.RawMessage(`{"url":"`+ref+`"}`))
+	out, err := s.linkExpander().toolArgs(ctx, json.RawMessage(`{"url":"`+ref+`"}`))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"url":"`+longLink+`"}`, string(out))
 }
@@ -295,4 +295,22 @@ func TestLinkRefsDottedAndSelections(t *testing.T) {
 
 	snip := snippetLinks("Shop "+longLink+" now https://a.com/cut?utm_source=x", id)
 	require.Equal(t, "Shop "+ref+" now https://a.com/cut?utm_source=x", snip, "the last word may be cut: left alone")
+}
+
+func TestLinkRefsTranslationPieces(t *testing.T) {
+	ref := linkRefPrefix + "a.com/x?m=1&h=0123abcd0123abcd"
+	for _, lead := range []int{2730, 2725} { // the cut lands in the prefix, then in the rest
+		text := strings.Repeat("字", lead) + ref + strings.Repeat("字", 100) // no spaces: a hard cut
+		pieces := splitText(text, 8<<10)
+		require.Greater(t, len(pieces), 1)
+		whole := false
+		for _, p := range pieces {
+			require.False(t, strings.Contains(p.text, linkRefPrefix) && !strings.Contains(p.text, ref), "a piece holds part of the reference")
+			whole = whole || strings.Contains(p.text, ref)
+		}
+		require.True(t, whole)
+	}
+
+	masked, _ := maskLinks([]string{"see Godwit://LINK/a.com?m=1&h=0123abcd0123abcd"}, 1)
+	require.Equal(t, "see godwit:link/a.com?m=1&h=0123abcd0123abcd", masked[0], "planted, defused before translation")
 }

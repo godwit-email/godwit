@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -111,6 +112,7 @@ func maskLinks(texts []string, id int64) ([]string, map[string]string) {
 	links := map[string]string{}
 	out := make([]string, len(texts))
 	for i, t := range texts {
+		t = plantedRefRe.ReplaceAllString(t, "godwit:link/") // not a link to mailLinks, but a reference to the model
 		out[i] = mailLinks(t, func(u string) string {
 			r := linkRefs(u, id)
 			if r != u {
@@ -187,7 +189,8 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 // sanitized and turned to text to find its links. Not for concurrent use.
 type linkExpander struct {
 	s     *Service
-	links map[int64]map[string]string // by message, then hash
+	mu    sync.Mutex                  // a run's tool calls share one, and may run at once
+	links map[int64]map[string]string // by message, then hash; under mu
 }
 
 func (s *Service) linkExpander() *linkExpander {
@@ -204,6 +207,8 @@ const maxExpandMessages = 32
 
 // link is the link of message id with hash h, the message's links indexed once.
 func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	idx, ok := x.links[id]
 	if !ok && len(x.links) >= maxExpandMessages {
 		return "", false
@@ -378,10 +383,11 @@ func snippetLinks(snippet string, id int64) string {
 // scheme is case-insensitive to whoever reads it.
 func hasLinkRef(text string) bool { return strings.Contains(strings.ToLower(text), linkRefPrefix) }
 
-// toolArgs is expandArgs for a tool call about to run: one whose arguments
-// still hold a reference is refused, so no tool gets an internal link.
-func (s *Service) toolArgs(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
-	out := s.expandArgs(ctx, args)
+// toolArgs is args for a tool call about to run: one whose arguments still
+// hold a reference is refused, so no tool gets an internal link. A run keeps
+// one expander for all its calls, so maxExpandMessages holds for the run.
+func (x *linkExpander) toolArgs(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+	out := x.args(ctx, args)
 	if hasLinkRef(string(out)) {
 		return nil, errors.New("a " + linkRefPrefix + " reference in the arguments could not be turned back into its link: copy it exactly from the email, or leave it out")
 	}
