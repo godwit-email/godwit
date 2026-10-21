@@ -21,7 +21,7 @@ import {
 } from "@remixicon/react";
 import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -464,6 +464,26 @@ export type PanelReview = { approval: number; summary: ReactNode; actions: React
  * run (resumed by a decision) onto the last answer if that is the run's, else into an answer of
  * its own. onRunning tells whether a run streams.
  */
+/** The 翻译 menu: names in the app's language, which comes first, the rest alphabetical. */
+function translateMenu(languages: { tag: string; name: string }[], locale: string) {
+  const base = (tag: string) => tag.split(/[-_]/)[0].toLowerCase();
+  let names: Intl.DisplayNames | undefined;
+  try {
+    names = new Intl.DisplayNames([locale], { type: "language" });
+  } catch {}
+  const label = (l: { tag: string; name: string }) => {
+    try {
+      const n = names?.of(l.tag);
+      if (n) return n.charAt(0).toUpperCase() + n.slice(1);
+    } catch {}
+    return l.name;
+  };
+  const first = (tag: string) => (base(tag) === base(locale) ? 0 : 1);
+  return languages
+    .map((l) => ({ tag: l.tag, label: label(l) }))
+    .sort((a, b) => first(a.tag) - first(b.tag) || a.label.localeCompare(b.label, locale));
+}
+
 export function Panel({
   info,
   history,
@@ -550,6 +570,11 @@ export function Panel({
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
+  const locale = currentLocale();
+  const menuLanguages = useMemo(
+    () => translateMenu(info?.languages ?? [], locale),
+    [info?.languages, locale],
+  );
 
   useEffect(() => {
     if (!history.running) return;
@@ -1257,39 +1282,10 @@ export function Panel({
                 render={trayButton(RiTranslate2, t("wit.compose.translate"))}
               />
               <DropdownMenuContent className="w-auto min-w-48">
-                {(() => {
-                  const locale = currentLocale();
-                  const baseLocale = locale.split(/[-_]/)[0].toLowerCase();
-                  let dn: Intl.DisplayNames | null = null;
-                  try {
-                    dn = new Intl.DisplayNames([locale], { type: "language" });
-                  } catch {}
-
-                  const items = info.languages.map((l) => {
-                    let label = l.name;
-                    if (dn) {
-                      try {
-                        const localized = dn.of(l.tag);
-                        if (localized) {
-                          label = localized.charAt(0).toUpperCase() + localized.slice(1);
-                        }
-                      } catch {}
-                    }
-                    return { ...l, label };
-                  });
-
-                  const isCurrentAppLang = (tag: string) => {
-                    const baseTag = tag.split(/[-_]/)[0].toLowerCase();
-                    return baseTag === baseLocale || tag.toLowerCase() === locale.toLowerCase();
-                  };
-
-                  const top = items.filter((l) => isCurrentAppLang(l.tag));
-                  const rest = items.filter((l) => !isCurrentAppLang(l.tag));
-
-                  top.sort((a, b) => a.label.localeCompare(b.label, locale));
-                  rest.sort((a, b) => a.label.localeCompare(b.label, locale));
-
-                  return [...top, ...rest].map((l) => (
+                {menuLanguages.length === 0 ? (
+                  <DropdownMenuItem disabled>{t("wit.compose.translate_none")}</DropdownMenuItem>
+                ) : (
+                  menuLanguages.map((l) => (
                     <DropdownMenuItem
                       key={l.tag}
                       onClick={() =>
@@ -1301,8 +1297,8 @@ export function Panel({
                     >
                       {l.label}
                     </DropdownMenuItem>
-                  ));
-                })()}
+                  ))
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

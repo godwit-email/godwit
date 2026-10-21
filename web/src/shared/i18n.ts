@@ -21,7 +21,7 @@ export function currentLocale(): string {
     const l = runtimeLocale();
     if (l) return l;
   }
-  return navigator.language || "de";
+  return navigator.language || "en";
 }
 
 export function useT(locale?: string): T {
@@ -36,12 +36,7 @@ export function useT(locale?: string): T {
   }, [changed, locale]);
   useEffect(() => {
     if (!isMyGo()) return;
-    const off = onLocaleChange((next) => {
-      setChanged(next);
-      if (typeof document !== "undefined" && next) {
-        document.documentElement.lang = next;
-      }
-    });
+    const off = onLocaleChange(setChanged);
     setChanged(runtimeLocale());
     return off;
   }, []);

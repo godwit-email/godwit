@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Herschreven",
   "wit_compose_source": "Oorspronkelijke e-mail",
   "wit_compose_translate": "Vertalen",
+  "wit_compose_translate_none": "Download vertaaltalen in Systeeminstellingen",
   "wit_compose_translate_only": "Er is geen model ingesteld: je kunt het concept hier alleen vertalen met de vertaalplug-in.",
   "wit_compose_translate_only_models": "Model toevoegen",
   "wit_compose_translate_to": "Vertalen naar het {arg1}",

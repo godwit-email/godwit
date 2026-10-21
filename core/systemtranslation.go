@@ -23,11 +23,6 @@ func (s *Service) SystemTranslator() SystemTranslator {
 	return s.opts.SystemTranslator
 }
 
-// SetSystemTranslator replaces the operating system's translator.
-func (s *Service) SetSystemTranslator(t SystemTranslator) {
-	s.opts.SystemTranslator = t
-}
-
 var (
 	// ErrSystemLanguageNotInstalled: the system translates the pair once the
 	// user downloads its languages in the system's settings.

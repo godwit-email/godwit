@@ -618,12 +618,9 @@ func (f *fakeSysTranslator) Translate(_ context.Context, texts []string, _, _ st
 }
 
 func TestComposeWitInfoSystemTranslateInstalledLanguages(t *testing.T) {
-	f := newFixture(t, coretest.WithoutAutoSync())
+	f := newFixture(t, coretest.WithoutAutoSync(), coretest.WithSystemTranslator(&fakeSysTranslator{installed: []string{"de", "en", "tr"}}))
 	d := f.draft(t, "new", 0)
 	f.c.Attach(1, d.ID)
-
-	fakeSys := &fakeSysTranslator{installed: []string{"de", "en", "tr"}}
-	f.e.Svc.SetSystemTranslator(fakeSys)
 
 	st, err := f.e.Svc.GetSettings(t.Context())
 	require.NoError(t, err)
@@ -644,4 +641,21 @@ func TestComposeWitInfoSystemTranslateInstalledLanguages(t *testing.T) {
 	assert.NotContains(t, tags, "vi")
 	assert.NotContains(t, tags, "ja")
 	assert.NotContains(t, tags, "es")
+}
+
+// None downloaded offers none, not the reading language it cannot translate to.
+func TestComposeWitInfoSystemTranslateNoneInstalled(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync(), coretest.WithSystemTranslator(&fakeSysTranslator{}))
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Translator = "plugin/" + core.SystemTranslationPlugin
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.NotNil(t, info.Languages, "the panel reads an empty list, not null")
+	assert.Empty(t, info.Languages)
 }

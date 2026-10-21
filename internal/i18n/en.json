@@ -1848,6 +1848,7 @@
   "wit_compose_rewrite_plain": "Rewritten",
   "wit_compose_source": "Original email",
   "wit_compose_translate": "Translate",
+  "wit_compose_translate_none": "Download translation languages in System Settings",
   "wit_compose_translate_only": "No model is set up: here you can only translate the draft with the translation plugin.",
   "wit_compose_translate_only_models": "Add a model",
   "wit_compose_translate_to": "Translate to {arg1}",

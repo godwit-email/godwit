@@ -22,8 +22,8 @@ type WitInfo struct {
 	// TranslateOnly: no model, but a plugin translates. The panel offers its
 	// 翻译 menu alone: no input, no 调整, no chips.
 	TranslateOnly bool `json:"translateOnly"`
-	// Skills are the 调整 menu's; Languages the 翻译 menu's, the reading
-	// language first.
+	// Skills are the 调整 menu's; Languages the 翻译 menu's, which the panel
+	// orders: the app's language first.
 	Skills    []Skill    `json:"skills"`
 	Languages []Language `json:"languages"`
 	// Chips name what Wit knows of the draft.
@@ -213,17 +213,14 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	zhTW := isZhTW(svc.SystemLanguage())
 	read := svc.ReadingLanguage(ctx)
 
+	// The system's translation offers only what is downloaded: none leaves the menu its hint.
 	if st.Translator == "plugin/"+core.SystemTranslationPlugin && svc.SystemTranslator() != nil {
-		installed := svc.SystemTranslator().InstalledLanguages()
-		for _, code := range installed {
-			if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Tag == code }) {
-				info.Languages = append(info.Languages, Language{Tag: code, Name: langName(code, zhTW)})
-			}
+		info.Languages = []Language{}
+		for _, code := range svc.SystemTranslator().InstalledLanguages() {
+			info.Languages = append(info.Languages, Language{Tag: code, Name: langName(code, zhTW)})
 		}
 	} else {
-		if read != "" {
-			info.Languages = []Language{{read, langName(read, zhTW)}}
-		}
+		info.Languages = []Language{{read, langName(read, zhTW)}}
 		for _, l := range languages {
 			if zhTW && l.Tag == "zh-Hant" {
 				l.Name = "正體中文"
@@ -232,9 +229,6 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 				info.Languages = append(info.Languages, l)
 			}
 		}
-	}
-	if len(info.Languages) == 0 {
-		info.Languages = []Language{{read, langName(read, zhTW)}}
 	}
 	if d.SourceMessageID != 0 {
 		info.Chips = append(info.Chips, i18n.T("wit.compose.source"))
