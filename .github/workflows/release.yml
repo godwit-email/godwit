@@ -53,10 +53,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
         run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName | grep -qx -- "$TAG"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v5
       - run: mise run web:install # generating the client compiles Go, which embeds files from web/node_modules
       - name: Log in to Azure for Windows signing (OIDC)
         if: matrix.name == 'Windows'
@@ -143,10 +143,10 @@ jobs:
       contents: read
       id-token: write # npm trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ inputs.tag || needs.release-please.outputs.tag }}
-      - uses: actions/setup-node@v4 # Node only for npm: bun publish has no provenance or OIDC
+      - uses: actions/setup-node@v7 # Node only for npm: bun publish has no provenance or OIDC
         with:
           node-version: 26
           registry-url: https://registry.npmjs.org
@@ -199,11 +199,11 @@ jobs:
           if ($env:TENANT_ID -and $env:SELLER_ID -and $env:CLIENT_ID) { "ready=true" >> $env:GITHUB_OUTPUT }
           else { Write-Host "::warning::The Microsoft Store IDs are not set: the MSIX bundle was built but not submitted." }
       - if: steps.creds.outputs.ready == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: msix
       - if: steps.creds.outputs.ready == 'true'
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@v1.4
         with:
           version: v0.4.3 # supports --clientAssertion for both packaged and unpackaged apps
       - name: Get the Microsoft Store client assertion (OIDC)
