@@ -310,3 +310,43 @@ func TestMigration17(t *testing.T) {
 	rows, _ = db.Query(ctx, "SELECT role_since FROM folders")
 	assert.InDelta(t, now, store.Int(rows.Values[0][0]), 5, "a role change restarts it")
 }
+
+func TestMigrationSignatures(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:26]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, sql := range []string{
+		"INSERT INTO accounts(id, email, name, alias, signature) VALUES (1, 'a@x', 'Ann', 'Personal', '<!--godwit:html--><p>A</p><img src=\"cid:sig-1@godwit\">')",
+		"INSERT INTO accounts(id, email, name, signature) VALUES (2, 'b@x', 'Bob', 'Bob plain')",
+		"INSERT INTO accounts(id, email, signature) VALUES (3, 'c@x', '')",
+		"INSERT INTO accounts(id, email) VALUES (4, 'd@x')",
+		"INSERT INTO signature_images(account_id, cid, content_type, data) VALUES (1, 'sig-1@godwit', 'image/png', x'00')",
+	} {
+		_, err = db.Execute(ctx, sql)
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT id, name, html FROM signatures ORDER BY id")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{
+		{int64(1), "Personal", `<!--godwit:html--><p>A</p><img src="cid:sig-1@godwit">`},
+		{int64(2), "Bob", "Bob plain"},
+	}, rows.Values, "named by alias, else name; an empty signature makes none")
+	rows, err = db.Query(ctx, "SELECT id, signature_id FROM accounts ORDER BY id")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{int64(1), int64(1)}, {int64(2), int64(2)}, {int64(3), nil}, {int64(4), nil}}, rows.Values, "each its own, by default")
+	rows, err = db.Query(ctx, "SELECT signature_id, cid FROM signature_images")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{int64(1), "sig-1@godwit"}}, rows.Values)
+	_, err = db.Execute(ctx, "INSERT INTO signatures(name) VALUES ('new')")
+	require.NoError(t, err)
+	rows, _ = db.Query(ctx, "SELECT max(id) FROM signatures")
+	assert.Equal(t, int64(3), store.Int(rows.Values[0][0]), "new ids follow the migrated ones")
+}

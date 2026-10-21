@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	// SignatureAccount tells the signature page which account to show: it
+	// SignatureShow tells the signature page which signature to show: it
 	// saves the shown one's pending edit first.
-	SignatureAccount = mygo.NewEvent[int64]("signatureAccount")
+	SignatureShow = mygo.NewEvent[int64]("signatureShow")
 	// SignatureFlush asks the signature page to save now; it answers with
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
@@ -27,8 +27,8 @@ var (
 // images as the editor sends them (data: URLs).
 var maxSignatureBytes = mail.MaxBodyBytes + core.SignatureImagesMax*(base64.StdEncoding.EncodedLen(core.SignatureImageMax)+64)
 
-// ErrSignatureAccountGone is final: the saver (saver.ts) drops the pending edit.
-var ErrSignatureAccountGone = errors.New("signature account gone")
+// ErrSignatureGone is final: the saver (saver.ts) drops the pending edit.
+var ErrSignatureGone = errors.New("signature gone")
 
 // ErrSignatureTooLarge is returned for a signature over maxSignatureBytes.
 var ErrSignatureTooLarge = errors.New("the signature is too large")
@@ -42,15 +42,15 @@ func (s *Signature) Close() {
 }
 
 // SignatureState is what the signature page needs besides a signature:
-// the account shown (0 before native showed one), its locale and theme.
+// the signature shown (0 before native showed one), its locale and theme.
 type SignatureState struct {
-	Account int64  `json:"account"`
-	Locale  string `json:"locale"`
-	Theme   Theme  `json:"theme"`
+	Signature int64  `json:"signature"`
+	Locale    string `json:"locale"`
+	Theme     Theme  `json:"theme"`
 }
 
 // Signature keeps the signature page's state (role "signature", embedded
-// in the account settings): the account native shows and the flushes
+// in Settings › Signatures): the signature native shows and the flushes
 // waiting for the page. It is not bound: the page reaches it only through
 // SignaturePage.
 type Signature struct {
@@ -64,7 +64,7 @@ type Signature struct {
 	mu      sync.Mutex
 	svc     *core.Service
 	live    bool // the page called State: it ran, and may hold edits
-	account int64
+	shown   int64
 	next    int64
 	waiting map[int64]func(ok bool)
 }
@@ -83,11 +83,11 @@ func (s *Signature) SetService(svc *core.Service) {
 	s.mu.Unlock()
 }
 
-// Show records the account native shows, for a page that loads after
-// the SignatureAccount event went out.
-func (s *Signature) Show(account int64) {
+// Show records the signature native shows, for a page that loads after
+// the SignatureShow event went out.
+func (s *Signature) Show(id int64) {
 	s.mu.Lock()
-	s.account = account
+	s.shown = id
 	s.mu.Unlock()
 }
 
@@ -126,7 +126,7 @@ func (s *Signature) caller(ctx context.Context) (*core.Service, error) {
 	return s.svc, nil
 }
 
-// State is the account shown, the locale and the theme.
+// State is the signature shown, the locale and the theme.
 func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
@@ -140,27 +140,27 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	p.s.mu.Lock()
 	defer p.s.mu.Unlock()
 	p.s.live = true
-	return SignatureState{Account: p.s.account, Locale: locale, Theme: ThemeOf(st)}, nil
+	return SignatureState{Signature: p.s.shown, Locale: locale, Theme: ThemeOf(st)}, nil
 }
 
-// Load is account's signature as the editor's HTML: sanitized, a plain
-// one escaped into a paragraph, its images as data: URLs.
-func (p *SignaturePage) Load(ctx context.Context, account int64) (string, error) {
+// Load is signature id as the editor's HTML: sanitized, a plain one
+// escaped into a paragraph, its images as data: URLs.
+func (p *SignaturePage) Load(ctx context.Context, id int64) (string, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return "", err
 	}
-	return svc.SignatureEditor(ctx, account)
+	return svc.SignatureEditor(ctx, id)
 }
 
-// Code is account's signature as stored, for the HTML mode: sanitized,
-// its images as cid:.
-func (p *SignaturePage) Code(ctx context.Context, account int64) (string, error) {
+// Code is signature id as stored, for the HTML mode: sanitized, its
+// images as cid:.
+func (p *SignaturePage) Code(ctx context.Context, id int64) (string, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return "", err
 	}
-	return svc.SignatureCode(ctx, account)
+	return svc.SignatureCode(ctx, id)
 }
 
 // Tall tells native the page entered (true) or left its HTML mode.
@@ -198,10 +198,10 @@ func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
 	return core.SignatureImageURL(data) // over SignatureImageMax: ErrSignatureImage
 }
 
-// Save stores html as account's signature, marked as editor HTML ("" for
-// none); drafts sanitize it as they take it. Its data: images become the
-// account's signature images (core.ErrSignatureImage, ErrSignatureImageCount).
-func (p *SignaturePage) Save(ctx context.Context, account int64, html string) error {
+// Save stores html as signature id, marked as editor HTML ("" for empty),
+// sanitized. Its data: images become the signature's (core.ErrSignatureImage,
+// ErrSignatureImageCount).
+func (p *SignaturePage) Save(ctx context.Context, id int64, html string) error {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return err
@@ -212,9 +212,9 @@ func (p *SignaturePage) Save(ctx context.Context, account int64, html string) er
 	if html != "" {
 		html = core.SignatureHTMLPrefix + html
 	}
-	_, err = svc.UpdateAccount(ctx, account, core.AccountPatch{Signature: &html})
-	if errors.Is(err, core.ErrAccountNotFound) {
-		return ErrSignatureAccountGone
+	_, err = svc.UpdateSignature(ctx, id, core.SignaturePatch{HTML: &html})
+	if errors.Is(err, core.ErrSignatureNotFound) {
+		return ErrSignatureGone
 	}
 	return err
 }

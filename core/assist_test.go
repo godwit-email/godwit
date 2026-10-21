@@ -21,7 +21,7 @@ import (
 func newAssistEnv(t *testing.T) skillEnv {
 	t.Helper()
 	e := newSkillEnv(t)
-	_, err := e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Me' WHERE id = 1")
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me")})
 	require.NoError(t, err)
 	return e
 }

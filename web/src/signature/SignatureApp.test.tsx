@@ -19,7 +19,7 @@ vi.mock("@/mygo", () => ({
     saved: vi.fn(async () => {}),
   },
   events: {
-    signatureAccount: { on: h.on("account") },
+    signatureShow: { on: h.on("show") },
     signatureFlush: { on: h.on("flush") },
     theme: { on: h.on("theme") },
   },
@@ -33,7 +33,7 @@ afterEach(() => vi.unstubAllGlobals());
 test("a language change relabels the toolbar without reloading the signature", async () => {
   const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
   vi.mocked(api.state).mockResolvedValue({
-    account: 1,
+    signature: 1,
     locale: "zh-Hans",
     theme,
   } as never);
@@ -52,7 +52,7 @@ test("a language change relabels the toolbar without reloading the signature", a
 });
 
 test("the HTML toggle shows the stored code and tells native to grow, and back", async () => {
-  vi.mocked(api.state).mockResolvedValue({ account: 1, locale: "en", theme: undefined } as never);
+  vi.mocked(api.state).mockResolvedValue({ signature: 1, locale: "en", theme: undefined } as never);
   vi.stubGlobal("mygo", { locale: "en", on: () => () => {} });
   render(<SignatureApp />);
   fireEvent.click(await screen.findByRole("button", { name: "HTML code" }));

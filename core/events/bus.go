@@ -5,18 +5,19 @@ package events
 import "sync"
 
 const (
-	MessageReceived  = "message.received"
-	MessagesChanged  = "messages.changed"
-	SyncStarted      = "sync.started"
-	SyncFinished     = "sync.finished"
-	SyncFailed       = "sync.failed"
-	OutboxChanged    = "outbox.changed"
-	SettingsChanged  = "settings.changed"
-	ApprovalsChanged = "approvals.changed"
-	PluginsChanged   = "plugins.changed"
-	MCPChanged       = "mcp.changed"
-	LabelsChanged    = "labels.changed"
-	ModelsChanged    = "models.changed" // a plugin model's files were downloaded or removed
+	MessageReceived   = "message.received"
+	MessagesChanged   = "messages.changed"
+	SyncStarted       = "sync.started"
+	SyncFinished      = "sync.finished"
+	SyncFailed        = "sync.failed"
+	OutboxChanged     = "outbox.changed"
+	SettingsChanged   = "settings.changed"
+	ApprovalsChanged  = "approvals.changed"
+	PluginsChanged    = "plugins.changed"
+	MCPChanged        = "mcp.changed"
+	LabelsChanged     = "labels.changed"
+	SignaturesChanged = "signatures.changed"
+	ModelsChanged     = "models.changed" // a plugin model's files were downloaded or removed
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

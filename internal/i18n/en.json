@@ -976,7 +976,10 @@
   "settings_account_servers": "Server settings",
   "settings_account_servers_help": "Change the addresses, ports and encryption by hand",
   "settings_account_signature": "Signature",
+  "settings_account_signature_default": "Default signature",
+  "settings_account_signature_default_help": "Added to new mail, replies and forwards",
   "settings_account_signature_edit_html": "Edit HTML",
+  "settings_account_signature_foot": "Signatures are made and edited in Settings › Signatures; a change shows for every account using it.",
   "settings_account_signature_help": "Added to the end of mail you write. Wit never changes it. You can use bold, links and images (like a company logo).",
   "settings_account_signature_html": "HTML",
   "settings_account_signature_html_help": "Saving removes scripts, event attributes and remote images. Images are written as cid:…; to add one, switch back to rich text and use Insert image.",
@@ -985,6 +988,9 @@
   "settings_account_signature_image_invalid": "Images must be PNG, JPEG, GIF or WebP, up to 512 KB, at most 4",
   "settings_account_signature_label": "Signature text",
   "settings_account_signature_layout": "This signature uses tables and styles. You can edit its text here; to change the layout, use HTML.",
+  "settings_account_signature_manage": "Open Settings › Signatures",
+  "settings_account_signature_none": "No signature",
+  "settings_account_signature_preview": "Preview",
   "settings_account_signature_too_many": "At most 4 images; this change was not saved",
   "settings_account_status_error": "Error",
   "settings_account_status_ok": "Synced",
@@ -1689,6 +1695,74 @@
   "settings_saved": "Saved",
   "settings_search": "Search settings",
   "settings_secret_kept": "Configured · leave empty to keep it",
+  "settings_signature_content": "Content",
+  "settings_signature_default": "Default for",
+  "settings_signature_default_foot": "An account has one default signature: turning one on here replaces the one it had.",
+  "settings_signature_default_label": "{arg1} uses this signature by default",
+  "@settings_signature_default_label": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_signature_delete": "Delete signature",
+  "settings_signature_delete_aria": "Delete signature “{arg1}”",
+  "@settings_signature_delete_aria": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_signature_delete_confirm": "Delete “{arg1}”?",
+  "@settings_signature_delete_confirm": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_signature_delete_help": "Once deleted, mail from {arg1} has no signature",
+  "@settings_signature_delete_help": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_signature_delete_row": "Delete this signature",
+  "settings_signature_delete_unused": "No account uses this signature",
+  "settings_signature_list_sep": ", ",
+  "settings_signature_name": "Name",
+  "settings_signature_name_help": "Only you see it, to tell signatures apart",
+  "settings_signature_uses": "Uses “{arg1}” now",
+  "@settings_signature_uses": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_signature_uses_none": "No signature now",
+  "settings_signature_using": "Uses this signature",
+  "settings_signatures": "Signatures",
+  "settings_signatures_blank": "Empty",
+  "settings_signatures_empty_desc": "A signature is added to the end of mail you write. Make one, and use it for one or more accounts.",
+  "settings_signatures_empty_title": "No signatures yet",
+  "settings_signatures_foot": "Pick each account's default signature here in a signature, or in the account's settings.",
+  "settings_signatures_new": "New signature",
+  "settings_signatures_sub": "Several accounts can share one signature. Change it once, and every account using it follows.",
+  "settings_signatures_untitled": "Untitled signature",
+  "settings_signatures_unused": "No account uses it",
+  "settings_signatures_used_by": "{arg1, plural, one {{arg1, number, ::group-off} account uses it} other {{arg1, number, ::group-off} accounts use it}}",
+  "@settings_signatures_used_by": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "settings_startup": "Startup and window",
   "settings_summary": "Mail summaries",
   "settings_summary_help": "Summarize mail as you open it; needs a model service",

@@ -366,7 +366,7 @@ function CodeEditor(props: { t: T; initial: string; mode: Mode; onChange(html: s
 }
 
 /**
- * One account's signature: the toolbar over a Plate editor loaded from `initial` (at mount, its
+ * One signature: the toolbar over a Plate editor loaded from `initial` (at mount, its
  * images as data: URLs), reporting each change as HTML, "" once it holds no text and no image. A
  * signature with layout (hasLayout) gets LayoutEditor instead; with mode.html, the code. pickImage
  * is SignaturePage.PickImage. The editor scrolls inside the page.
@@ -418,9 +418,9 @@ function RichEditor(props: {
 }
 
 /**
- * The signature page (role "signature", embedded in the account settings): the account native
- * shows, through signatureSaver. Listeners first, then State: an account event newer than its
- * reply wins.
+ * The signature page (role "signature", embedded in Settings › Signatures): the signature native
+ * shows, through signatureSaver. Listeners first, then State: a show event newer than its reply
+ * wins.
  */
 export function SignatureApp() {
   const [state, setState] = useState<SignatureState>();
@@ -431,7 +431,7 @@ export function SignatureApp() {
 
   useEffect(() => {
     const offs = [
-      events.signatureAccount.on(saver.show),
+      events.signatureShow.on(saver.show),
       events.signatureFlush.on(saver.flush),
       events.theme.on((th) => setTheme(th as PageTheme)),
     ];
@@ -439,7 +439,7 @@ export function SignatureApp() {
     api.state().then((s) => {
       setState(s);
       setTheme((th) => th ?? (s.theme as PageTheme));
-      if (s.account && saver.gen() === g) saver.show(s.account);
+      if (s.signature && saver.gen() === g) saver.show(s.signature);
     });
     return () => {
       for (const off of offs) off();
@@ -461,15 +461,15 @@ export function SignatureApp() {
   return (
     <main>
       <SignatureEditor
-        key={`${doc.account}:${doc.code ? "code" : "rich"}`}
+        key={`${doc.id}:${doc.code ? "code" : "rich"}`}
         initial={doc.html}
         t={t}
         pickImage={() => api.pickImage()}
-        onChange={(html) => saver.edit(doc.account, html)}
+        onChange={(html) => saver.edit(doc.id, html)}
         mode={{
           html: !!doc.code,
           alert: refused && REFUSED[refused],
-          onHTML: () => saver.show(doc.account, !doc.code),
+          onHTML: () => saver.show(doc.id, !doc.code),
         }}
       />
     </main>

@@ -54,6 +54,43 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
+// openSignature makes a signature the account uses, opens it, and waits
+// for the signature page to show it.
+func (h *harness) openSignature(accountID int64, name string) core.Signature {
+	h.t.Helper()
+	sig, err := h.env.Svc.CreateSignature(context.Background(), name)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if accountID != 0 {
+		if _, err := h.env.Svc.UpdateAccount(context.Background(), accountID, core.AccountPatch{SignatureID: &sig.ID}); err != nil {
+			h.t.Fatal(err)
+		}
+	}
+	h.app.load()
+	h.until("the signature loads", func() bool {
+		return slices.ContainsFunc(h.app.signatures, func(s core.Signature) bool { return s.ID == sig.ID })
+	})
+	h.openSettings(signatureRoute(sig.ID))
+	h.until("the signature page shows it", func() bool { return h.plat.sigShown() == sig.ID })
+	return sig
+}
+
+func (h *harness) signatureHTML(id int64) string {
+	h.t.Helper()
+	sigs, err := h.env.Svc.ListSignatures(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, s := range sigs {
+		if s.ID == id {
+			return s.HTML
+		}
+	}
+	h.t.Fatalf("no signature %d", id)
+	return ""
+}
+
 func (h *harness) account(id int64) core.Account {
 	h.t.Helper()
 	accs, err := h.env.Svc.ListAccounts(context.Background())
@@ -95,7 +132,6 @@ func TestSettingsAccountEdit(t *testing.T) {
 		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
 		return !f.edits[0].pending && !f.edits[1].pending
 	})
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封")
@@ -606,8 +642,7 @@ func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
 
 func TestCloseSavesSettings(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigType("<p>Bye</p>")
 	closed := false
 	h.app.BeforeClose(func() {
@@ -995,8 +1030,7 @@ func TestSyncRangeOptionsAndFolders(t *testing.T) {
 // signatureFlushWait, then the window asks.
 func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigMute()
 	closed := false
 	h.app.BeforeClose(func() { closed = true })
@@ -1019,8 +1053,7 @@ func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
 // nor asks.
 func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigMute()
 	h.plat.sigDead()
 	closed := false
@@ -1034,35 +1067,120 @@ func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
 // Closing the App closes the signature page.
 func TestAppCloseClosesSignatureView(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.app.Close()
 	h.called("CloseSignatureView")
 }
 
-// The signature page saves an account's edit as that account when native
+// The signature page saves a signature's edit as that one when native
 // switches it to another; the other is untouched.
-func TestSignatureSwitchKeepsAccounts(t *testing.T) {
+func TestSignatureSwitchKeepsSignatures(t *testing.T) {
+	h, acc := withAccount(t)
+	a := h.openSignature(acc.ID, "A")
+	h.plat.sigType("<p>Alice</p>")
+	b := h.openSignature(0, "B")
+	if got := h.signatureHTML(a.ID); got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
+		t.Fatalf("a's signature %q", got)
+	}
+	if got := h.signatureHTML(b.ID); got != "" {
+		t.Fatalf("b's signature %q", got)
+	}
+	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
+		t.Fatalf("%d signature views, want one", n)
+	}
+}
+
+// The HTML mode grows the editor's view; showing another signature
+// leaves it.
+func TestSignatureTallView(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSignature(acc.ID, "A")
+	h.see("写信时自动加在正文末尾，Wit 不会修改它。可以加粗、加链接和图片（比如公司标志）。")
+	h.app.SignatureTall(true)
+	h.see("保存时会去掉脚本、事件属性和外链图片。图片在代码里写作 cid:…，要加新图片请切回富文本用「插入图片」上传。")
+	h.openSignature(0, "B")
+	h.see("写信时自动加在正文末尾，Wit 不会修改它。可以加粗、加链接和图片（比如公司标志）。")
+}
+
+// 签名: the empty state makes one and opens it; the list shows each with
+// its users and text; a row opens it.
+func TestSignaturesList(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings("signatures")
+	h.see("还没有签名")
+	h.click("新建签名")
+	h.until("made and opened", func() bool { return strings.HasPrefix(h.app.route.Settings, "signature:") })
+	h.see("未命名签名")
+	h.see("没有账户在用")
+
+	sig := h.openSignature(acc.ID, "Work")
+	text := core.SignatureHTMLPrefix + "<p><b>Alice</b></p><p>CEO</p><p>Acme</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
+	}
+	h.app.load()
+	h.openSettings("signatures")
+	h.see("1 个账户在用")
+	h.see("CEO")
+	if h.tt.HasText("Acme") {
+		t.Error("the preview shows more than two lines")
+	}
+	h.click("Work")
+	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
+}
+
+// A signature's page: its name saves once typing pauses; 默认用于 switches
+// replace an account's signature; 删除签名 says who loses it, then deletes.
+func TestSignatureDetail(t *testing.T) {
 	var a, b core.Account
 	h := newHarness(t, func(e *coretest.Env) {
 		a = e.AddAccount(t, "alice@example.com")
 		b = e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings(accountRoute(a.ID))
-	h.until("shows a", func() bool { return h.plat.sigShown() == a.ID })
-	h.plat.sigType("<p>Alice</p>")
-	h.openSettings(accountRoute(b.ID))
-	h.until("shows b", func() bool { return h.plat.sigShown() == b.ID })
-	if got := h.account(a.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
-		t.Fatalf("a's signature %q", got)
+	other := h.openSignature(b.ID, "Other")
+	sig := h.openSignature(a.ID, "Work")
+	h.see("1 个账户在用")
+	h.see("正在用这个签名")
+	h.see("现在用「Other」")
+
+	h.fillRow("名称", "Work 2")
+	h.advance(accountSaveDelay)
+	h.until("renamed", func() bool { return h.signatureHTML(sig.ID) == "" && h.app.signatures[1].Name == "Work 2" })
+
+	h.click("bob@example.com 默认用这个签名")
+	h.until("bob uses it", func() bool { return h.account(b.ID).SignatureID == sig.ID })
+	h.see("2 个账户在用")
+	h.see("删除后，alice@example.com、bob@example.com 写信时不再带签名")
+	_ = other
+
+	h.click("alice@example.com 默认用这个签名")
+	h.until("alice has none", func() bool { return h.account(a.ID).SignatureID == 0 })
+	h.see("现在不带签名")
+
+	h.click("删除签名「Work 2」")
+	h.see("删除「Work 2」？")
+	h.click("删除")
+	h.until("deleted", func() bool { return h.account(b.ID).SignatureID == 0 && h.app.route.Settings == "signatures" })
+	h.see("Other")
+}
+
+// The account page picks its default signature and previews it.
+func TestAccountDefaultSignature(t *testing.T) {
+	h, acc := withAccount(t)
+	sig := h.openSignature(0, "Work")
+	text := core.SignatureHTMLPrefix + "<p>Alice at work</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
 	}
-	if got := h.account(b.ID).Signature; got != "" {
-		t.Fatalf("b's signature %q", got)
-	}
-	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
-		t.Fatalf("%d signature views, want one", n)
-	}
+	h.app.load()
+	h.openSettings(accountRoute(acc.ID))
+	h.click("不使用签名")
+	h.click("Work")
+	h.until("picked", func() bool { return h.account(acc.ID).SignatureID == sig.ID })
+	h.see("Alice at work")
+	h.click("前往设置 › 签名")
+	h.until("opened", func() bool { return h.app.route.Settings == "signatures" })
 }
 
 // 隐私与安全 lists the trusted senders; 移除 stops trusting one.

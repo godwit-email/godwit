@@ -340,4 +340,23 @@ var Migrations = [][]string{{
 }, {
 	// The reasoning effort a conversation's runs ask for: '' asks for none.
 	`ALTER TABLE conversations ADD COLUMN effort TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Signatures accounts share (one each by default, signature_id). An
+	// account's signature becomes one of its own, named as the sidebar names
+	// the account, with the account's id. html is as accounts.signature was:
+	// marked editor HTML, or plain text.
+	`CREATE TABLE signatures (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, html TEXT NOT NULL DEFAULT '')`,
+	`INSERT INTO signatures(id, name, html) SELECT id, COALESCE(NULLIF(alias, ''), NULLIF(name, ''), email), signature
+		FROM accounts WHERE COALESCE(signature, '') <> ''`,
+	`ALTER TABLE accounts ADD COLUMN signature_id INTEGER REFERENCES signatures(id) ON DELETE SET NULL`,
+	`UPDATE accounts SET signature_id = id WHERE id IN (SELECT id FROM signatures)`,
+	`ALTER TABLE accounts DROP COLUMN signature`,
+	// Signature images belong to a signature now (by id; no foreign key: an
+	// image a draft shows outlives its signature). The images move with their
+	// account's id, and go once neither that signature nor a draft shows them.
+	`CREATE TABLE signature_images_by_sig (signature_id INTEGER NOT NULL, cid TEXT NOT NULL, content_type TEXT NOT NULL,
+		data BLOB NOT NULL, PRIMARY KEY(signature_id, cid))`,
+	`INSERT INTO signature_images_by_sig SELECT account_id, cid, content_type, data FROM signature_images`,
+	`DROP TABLE signature_images`,
+	`ALTER TABLE signature_images_by_sig RENAME TO signature_images`,
 }}

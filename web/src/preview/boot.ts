@@ -137,16 +137,18 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   signature: {
-    states: ["filled", "image"],
+    states: ["filled", "image", "layout"],
     entry: () => import("@/signature/main"),
     setup() {
       installFake({
         "SignaturePage.State": async () => fx.signature(mode),
         "SignaturePage.Load": async () =>
-          state === "image" ? fx.signatureHtmlImage : fx.signatureHtml,
+          ({ image: fx.signatureHtmlImage, layout: fx.signatureLayout })[state] ?? fx.signatureHtml,
+        "SignaturePage.Code": async () => fx.signatureHtml,
         "SignaturePage.PickImage": async () => fx.logo,
         "SignaturePage.Save": nothing,
         "SignaturePage.Saved": nothing,
+        "SignaturePage.Tall": nothing,
       });
     },
   },

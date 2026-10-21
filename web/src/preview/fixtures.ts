@@ -383,7 +383,7 @@ export const witPage = (mode: "light" | "dark", conversation: number): WitPageSt
 // ---- Signature ----
 
 export const signature = (mode: "light" | "dark"): SignatureState => ({
-  account: 1,
+  signature: 1,
   locale: "zh-Hans",
   theme: theme(mode),
 });
@@ -393,6 +393,8 @@ export const signatureHtml =
 export const logo =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAAAcAQMAAACktijBAAAABlBMVEUlY+v///8tVMD8AAAAHUlEQVR4nGIYGGD/gUiO/X8w+EAKB7dpMNbAAMAAz10oe+YHgF0AAAAASUVORK5CYII=";
 export const signatureHtmlImage = `${signatureHtml}<img src="${logo}">`;
+/** A signature laid out with a table and styles, as Go's sanitizer keeps it. */
+export const signatureLayout = `<table style="border-collapse: collapse"><tbody><tr><td style="padding: 0 14px 0 0; border-right: 2px solid #172E43"><img src="${logo}" width="48"></td><td style="padding: 0 0 0 14px"><div style="font-weight: 600; color: #172E43">Alex Chen</div><div style="font-size: 12px; color: #737373">Partnerships · Example Co.</div></td></tr></tbody></table>`;
 
 export const witModels = [
   { ref: "anthropic/claude-sonnet-5-5", label: "Anthropic / claude-sonnet-5-5" },

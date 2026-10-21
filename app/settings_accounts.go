@@ -102,6 +102,7 @@ func (f *accountForm) cancelEdits() {
 
 // commitEdits saves at once every field still waiting for typing to pause.
 func (p *settingsPage) commitEdits() {
+	p.commitSignatureName()
 	for id, f := range p.forms {
 		for i := range f.edits {
 			if e := &f.edits[i]; e.stop != nil {
@@ -119,11 +120,11 @@ const signatureFlushWait = 2 * time.Second
 // errSignatureUnsaved is why closing asks when the signature page did not save.
 var errSignatureUnsaved = errors.New("the signature was not saved")
 
-// signature has the signature page show account id: made at the first
-// account shown, switched outside the frame (making a web view may run
-// the event loop).
+// signature has the signature page show signature id: made at the first
+// one shown, switched outside the frame (making a web view may run the
+// event loop).
 func (p *settingsPage) signature(id int64) {
-	if p.sigAcc == id || p.sigPosted || p.sigErr != nil {
+	if p.sigShown == id || p.sigPosted || p.sigErr != nil {
 		return
 	}
 	p.sigPosted = true
@@ -137,7 +138,7 @@ func (p *settingsPage) signature(id int64) {
 		}
 		p.sigShow(id)
 		p.sigTall = false // the page shows the next one in rich mode
-		p.sigAcc = id
+		p.sigShown = id
 	})
 }
 
@@ -421,21 +422,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.makeDefault(acc.ID)
 			}
 		})
-	sigHelp, sigHeight := i18n.T("settings.account.signature.help"), float32(theme.SignatureEditorHeight)
-	if p.sigTall {
-		sigHelp, sigHeight = i18n.T("settings.account.signature.html.help"), theme.SignatureCodeHeight
-	}
-	settingsSection(c, i18n.T("settings.account.signature"), sigHelp, func() {
-		p.signature(acc.ID)
-		switch {
-		case p.sigErr != nil:
-			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
-		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(sigHeight) // the page draws its toolbar and editor
-		default:
-			ui.Box(c).FillWidth().Height(sigHeight)
-		}
-	})
+	p.accountSignatureView(c, acc)
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {
 		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")

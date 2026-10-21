@@ -114,7 +114,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
 		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
 	}
-	cids, err := s.signatureCIDs(ctx, accountID)
+	cids, err := s.signatureCIDs(ctx)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -200,17 +200,7 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	acc := d.AccountID
-	if d.ID != 0 { // the stored account's images, whatever d says
-		rows, err := s.db.Query(ctx, "SELECT account_id FROM drafts WHERE id = ?", d.ID)
-		if err != nil {
-			return Draft{}, err
-		}
-		if len(rows.Values) > 0 {
-			acc = store.Int(rows.Values[0][0])
-		}
-	}
-	html, err := s.sanitizeDraft(ctx, acc, d.HTML) // stored safe, so every read of a draft is safe
+	html, err := s.sanitizeDraft(ctx, d.HTML) // stored safe, so every read of a draft is safe
 	if err != nil {
 		return Draft{}, err
 	}
@@ -286,7 +276,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
 		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
-	if d.HTML, err = s.sanitizeDraft(ctx, d.AccountID, store.Str(r[8])); err != nil {
+	if d.HTML, err = s.sanitizeDraft(ctx, store.Str(r[8])); err != nil {
 		return Draft{}, err
 	}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
@@ -544,8 +534,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
-	// Only the draft's own account's images: another's cid was dropped by GetDraft.
-	imgs, err := s.signatureImages(ctx, d.AccountID, true)
+	imgs, err := s.signatureImages(ctx, true) // an unknown cid was dropped by GetDraft
 	if err != nil {
 		return err
 	}

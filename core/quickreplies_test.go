@@ -174,7 +174,7 @@ func TestQuickRepliesSanitized(t *testing.T) {
 
 func TestDraftFromQuickReply(t *testing.T) {
 	e := newSkillEnv(t)
-	_, err := e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Me, Inc.' WHERE id = 1")
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me, Inc.")})
 	require.NoError(t, err)
 	d, err := e.s.DraftFromQuickReply(t.Context(), e.msg, QuickReply{Preview: "Yes", HTML: `<p>Yes<script>x()</script></p>`})
 	require.NoError(t, err)

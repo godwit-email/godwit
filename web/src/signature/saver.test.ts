@@ -61,7 +61,7 @@ describe("signatureSaver", () => {
     loads[1].resolve("<p>two</p>");
     loads[0].resolve("<p>one</p>");
     await vi.runAllTimersAsync();
-    expect(docs.filter(Boolean)).toEqual([{ account: 2, html: "<p>two</p>" }]);
+    expect(docs.filter(Boolean)).toEqual([{ id: 2, html: "<p>two</p>" }]);
   });
 
   it("a flush saves at once and answers with its token", async () => {
@@ -136,13 +136,13 @@ describe("signatureSaver", () => {
   });
 });
 
-describe("signatureSaver, a removed account", () => {
-  it("drops the edit of an account that is gone instead of retrying it", async () => {
+describe("signatureSaver, a removed signature", () => {
+  it("drops the edit of a signature that is gone instead of retrying it", async () => {
     const { api, s } = setup();
     s.show(1);
     await vi.advanceTimersByTimeAsync(0);
     s.edit(1, "<p>a</p>");
-    api.save.mockRejectedValueOnce(new Error("signature account gone"));
+    api.save.mockRejectedValueOnce(new Error("signature gone"));
     s.flush(1);
     await vi.advanceTimersByTimeAsync(0);
     s.flush(2);
@@ -165,7 +165,7 @@ describe("signatureSaver, the HTML mode and refusals", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(api.save.mock.calls).toEqual([[1, "<p>a</p>"]]);
     expect(api.save.mock.invocationCallOrder[0]).toBeLessThan(api.code.mock.invocationCallOrder[0]);
-    expect(docs.at(-1)).toEqual({ account: 1, html: "<p>code 1</p>", code: true });
+    expect(docs.at(-1)).toEqual({ id: 1, html: "<p>code 1</p>", code: true });
   });
 
   it("too many images is said and never retried; the next save that works clears it", async () => {

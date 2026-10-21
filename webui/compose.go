@@ -237,7 +237,7 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 		return ComposeState{}, err
 	}
 	editable := s.adopt(d)
-	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, s.signature)
+	imgs, err := svc.SignatureImageURLs(ctx, s.signature)
 	if err != nil {
 		return ComposeState{}, err
 	}
@@ -463,7 +463,7 @@ var conflict = Change{Conflict: true, Attachments: []Attachment{}, SignatureImag
 // changeOf is d's state after a change.
 func changeOf(ctx context.Context, svc *core.Service, d core.Draft) (Change, error) {
 	_, _, sig := mail.SplitDraft(d.HTML)
-	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, sig)
+	imgs, err := svc.SignatureImageURLs(ctx, sig)
 	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), SignatureImages: imgs,
 		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }

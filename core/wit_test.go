@@ -165,7 +165,7 @@ func (e skillEnv) draft(t *testing.T) int64 {
 
 func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	e := newSkillEnv(t)
-	_, err := e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Me' WHERE id = 1")
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me")})
 	require.NoError(t, err)
 	conv := e.askConv(t)
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft",
@@ -186,7 +186,7 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	assert.Equal(t, int64(1), args.AccountID, "the default account is resolved before approval")
 	assert.NotContains(t, args.HTML, "script", "the recorded HTML is sanitized")
 	assert.Contains(t, args.HTML, "-- <br/>Me", "the recorded HTML is the final body, signature included")
-	_, err = e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Changed later' WHERE id = 1")
+	_, err = e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Changed later")})
 	require.NoError(t, err)
 
 	sub, unsub := e.s.SubscribeConversation(conv.ID)

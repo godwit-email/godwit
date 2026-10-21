@@ -47,10 +47,10 @@ func TestSignatureImagesAreStoredAndSentInline(t *testing.T) {
 	cids := mail.CIDs(strings.TrimPrefix(acc.Signature, SignatureHTMLPrefix))
 	require.Len(t, cids, 1)
 	assert.Regexp(t, `^sig-[0-9a-f]{32}@godwit$`, cids[0])
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM signature_images WHERE account_id = ?", e.acc.ID))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM signature_images WHERE signature_id = ?", acc.SignatureID))
 
 	// The editor gets data: back, and saving it again is the same signature.
-	ed, err := e.s.SignatureEditor(bg, e.acc.ID)
+	ed, err := e.s.SignatureEditor(bg, acc.SignatureID)
 	require.NoError(t, err)
 	assert.Contains(t, ed, dataURL("image/png", img))
 	again, err := setSignature(t, e.s, e.acc.ID, ed)
@@ -61,7 +61,7 @@ func TestSignatureImagesAreStoredAndSentInline(t *testing.T) {
 	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
 	require.NoError(t, err)
 	assert.Contains(t, d.HTML, `src="cid:`+cids[0]+`"`)
-	shown, err := e.s.InlineSignatureImages(bg, d.AccountID, d.HTML)
+	shown, err := e.s.InlineSignatureImages(bg, d.HTML)
 	require.NoError(t, err)
 	assert.Contains(t, shown, dataURL("image/png", img), "the drafts pane shows it")
 
@@ -112,7 +112,9 @@ func TestSignatureImageCaps(t *testing.T) {
 	assert.ErrorIs(t, err, ErrSignatureImage, "sniffed, not named")
 }
 
-func TestForeignSignatureImagesDropped(t *testing.T) {
+// Accounts share signatures, so a draft may show any stored image; a cid
+// nothing stores is dropped.
+func TestUnknownSignatureImagesDropped(t *testing.T) {
 	e := newSendEnv(t, false)
 	bobIn := internalInput(t, e.im.Addr, e.acc.SMTPHost+":"+strconv.Itoa(e.acc.SMTPPort), "bob@example.com", false)
 	bob, err := e.s.AddAccount(bg, bobIn)
@@ -130,12 +132,14 @@ func TestForeignSignatureImagesDropped(t *testing.T) {
 	d.HTML = `<p><img src="cid:` + bobCID + `"><img src="cid:sig-00000000000000000000000000000000@godwit"></p>` + d.HTML
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
-	assert.Equal(t, []string{mine}, mail.CIDs(d.HTML), "another account's and unknown cids are dropped")
+	assert.Equal(t, []string{bobCID, mine}, mail.CIDs(d.HTML), "an unknown cid is dropped")
 	require.NoError(t, e.s.Send(bg, d.ID))
 	e.sync(t)
 	got := e.smtp.Messages()
 	require.Len(t, got, 1)
-	assert.NotContains(t, string(got[0].Data), bobCID)
+	p, err := mail.Parse(got[0].Data)
+	require.NoError(t, err)
+	assert.Len(t, p.Attachments, 2)
 
 	// A draft moved to Bob takes Bob's signature and image.
 	d, err = e.s.NewDraft(bg, e.acc.ID, "new", 0)
@@ -224,7 +228,7 @@ func TestSignatureImageMetadataStripped(t *testing.T) {
 	e := newSendEnv(t, false)
 	_, err := setSignature(t, e.s, e.acc.ID, `<img src="`+dataURL("image/jpeg", jp)+`">`)
 	require.NoError(t, err)
-	stored := e.rows(t, "SELECT data FROM signature_images WHERE account_id = ?", e.acc.ID)
+	stored := e.rows(t, "SELECT data FROM signature_images")
 	require.Len(t, stored, 1)
 	assert.NotContains(t, string(stored[0][0].([]byte)), gps)
 }
@@ -236,7 +240,7 @@ func TestSignatureCodeImages(t *testing.T) {
 	acc, err := setSignature(t, e.s, e.acc.ID, `<p>A</p><img src="`+dataURL("image/png", logo(t, 1))+`">`)
 	require.NoError(t, err)
 	cid := mail.CIDs(strings.TrimPrefix(acc.Signature, SignatureHTMLPrefix))[0]
-	code, err := e.s.SignatureCode(bg, e.acc.ID)
+	code, err := e.s.SignatureCode(bg, acc.SignatureID)
 	require.NoError(t, err)
 	assert.Equal(t, "<p>A</p>\n<img src=\"cid:"+cid+"\"/>", code)
 
@@ -253,7 +257,7 @@ func TestSignatureCodeImages(t *testing.T) {
 	}
 	_, err = setSignature(t, e.s, e.acc.ID, five.String())
 	assert.ErrorIs(t, err, ErrSignatureImageCount)
-	again, err := e.s.SignatureCode(bg, e.acc.ID)
+	again, err := e.s.SignatureCode(bg, acc.SignatureID)
 	require.NoError(t, err)
 	assert.Contains(t, again, cid, "a refused save keeps the signature as it was")
 }

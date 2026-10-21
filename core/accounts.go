@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -151,6 +152,11 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 		authType, secret, in.Username, in.Provider = "oauth", g.RefreshToken, g.Email, g.provider
 	}
+	if rest, ok := strings.CutPrefix(in.Signature, SignatureHTMLPrefix); ok {
+		if _, _, err := signatureAssets(0, rest, nil); err != nil { // its images, before anything is saved
+			return Account{}, err
+		}
+	}
 	sync := SyncRange{Limit: defaultSyncLim}
 	if in.Sync != nil {
 		sync = *in.Sync
@@ -179,10 +185,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0"})
 	}
 	stmts = append(stmts, sqlite.Statement{
-		SQL: `INSERT INTO accounts(email, name, alias, signature, is_default, sync_limit, sync_since_months, auth_type, status, username,
+		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, auth_type, status, username,
 			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{in.Email, in.Name, in.Alias, in.Signature, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
 			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
@@ -207,6 +213,11 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if g.AccessToken != "" {
 		s.cacheToken(id, g.Grant)
 	}
+	if in.Signature != "" { // checked above: only the database can fail it now
+		if _, err := s.UpdateAccount(ctx, id, AccountPatch{Signature: &in.Signature}); err != nil {
+			return Account{}, err
+		}
+	}
 	s.startWorker(id)
 	return s.account(ctx, id)
 }
@@ -226,9 +237,9 @@ func b2i(b bool) int {
 	return 0
 }
 
-const accountCols = `id, email, name, alias, signature, username, is_default, sync_limit, auth_type, status,
+const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id)`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -251,7 +262,7 @@ func scanAccount(r []any) Account {
 		Sync: SyncRange{Limit: int(store.Int(r[7])), Months: int(store.Int(r[19]))}, Folders: int(store.Int(r[20])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
-		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]),
+		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -431,19 +442,12 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("alias", *p.Alias)
 	}
 	var images []sqlite.Statement
-	if p.Signature != nil {
-		sig := *p.Signature
-		if rest, ok := strings.CutPrefix(sig, SignatureHTMLPrefix); ok {
-			known, err := s.signatureCIDs(ctx, id)
-			if err != nil {
-				return Account{}, err
-			}
-			if rest, images, err = signatureAssets(id, rest, known); err != nil {
-				return Account{}, err
-			}
-			sig = SignatureHTMLPrefix + rest
+	if p.Signature != nil || p.SignatureID != nil {
+		s.sigMu.Lock()
+		defer s.sigMu.Unlock()
+		if images, err = s.accountSignature(ctx, acc, p); err != nil {
+			return Account{}, err
 		}
-		set("signature", sig)
 	}
 	if p.Sync != nil {
 		set("sync_limit", p.Sync.Limit)
@@ -488,9 +492,6 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
 	}
-	if p.Signature != nil {
-		stmts = append(stmts, unusedSignatureImages(id))
-	}
 	if p.Servers != nil && (p.Servers.IMAPHost != acc.IMAPHost || p.Servers.IMAPPort != acc.IMAPPort ||
 		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
 		// Another mailbox: its UIDs are not the old one's even where UIDVALIDITY
@@ -522,6 +523,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if p.Servers != nil || p.Sync != nil {
 		s.wakeWorker(id) // the next round dials the new servers or backfills
+	}
+	if len(images) > 0 {
+		s.bus.Publish(events.Event{Type: events.SignaturesChanged})
 	}
 	return s.account(ctx, id)
 }

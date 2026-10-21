@@ -120,6 +120,7 @@ type Service struct {
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
 	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
+	sigMu       sync.Mutex                 // signature writes: a signature is read, its images stored and its HTML saved under it
 	labelWake   chan struct{}              // wakes the label classifier
 	labelJudge  func(context.Context) (ai.Judge, error)
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock

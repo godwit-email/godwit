@@ -35,7 +35,7 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if d.Revision != revision {
 		return Draft{}, ErrStaleDraft
 	}
-	cids, err := s.signatureCIDs(ctx, accountID)
+	cids, err := s.signatureCIDs(ctx)
 	if err != nil {
 		return Draft{}, err
 	}
