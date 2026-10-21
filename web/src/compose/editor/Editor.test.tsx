@@ -216,7 +216,9 @@ describe("Editor", () => {
     await waitFor(() =>
       expect(last(onChange)).toBe('<p><span style="font-size: 24pt">hello</span> world</p>'),
     );
-    // The size split "hello" off: the family goes to the same five letters, not the stale range.
+    // jsdom drops the DOM selection when the menu refocuses the editor (a browser keeps it), and Slate's
+    // throttled selectionchange reads that back on a slow run: select again, as a user's highlight would stay.
+    await select(box, 0, 5);
     await user.click(screen.getByRole("button", { name: "compose.font_family" }));
     await user.click(await screen.findByRole("menuitem", { name: "Georgia" }));
     await waitFor(() =>
