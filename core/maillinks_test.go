@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
@@ -93,4 +94,17 @@ func TestLinkRefsExpandKeepsNumbersAndReasoning(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rs, 1)
 	require.Contains(t, rs[0].HTML, `href="`+strings.ReplaceAll(longLink, "&", "&amp;")+`"`, "the href survives the sanitizer")
+}
+
+func TestLinkRefsEdgeInputs(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	args := s.expandArgs(t.Context(), json.RawMessage(`{"by_url":{"`+ref+`":true}}`))
+	require.JSONEq(t, `{"by_url":{"`+longLink+`":true}}`, string(args), "a reference used as a key")
+
+	start := time.Now()
+	out := linkRefs("https://a.com/x"+strings.Repeat(")", 1<<20), 1)
+	require.True(t, strings.HasPrefix(out, "https://a.com/x)"))
+	require.Less(t, time.Since(start), 2*time.Second, "trailing parentheses are trimmed in linear time")
 }

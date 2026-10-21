@@ -51,11 +51,15 @@ func modelBody(m Message) string {
 func mailLinks(text string, f func(u string) string) string {
 	return mailURLRe.ReplaceAllStringFunc(text, func(u string) string {
 		// Sentence punctuation and the ")" of HTMLToText's "text (url)" are not part of the link.
-		trail := len(u)
+		// Counted once and kept up to date: mail can end a link with any number of ")".
+		trail, open, closed := len(u), strings.Count(u, "("), strings.Count(u, ")")
 		for trail > 0 {
 			c := u[trail-1]
-			if !strings.ContainsRune(".,;:!?", rune(c)) && (c != ')' || strings.Count(u[:trail], "(") >= strings.Count(u[:trail], ")")) {
+			if !strings.ContainsRune(".,;:!?", rune(c)) && (c != ')' || open >= closed) {
 				break
+			}
+			if c == ')' {
+				closed--
 			}
 			trail--
 		}
@@ -166,10 +170,12 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 			for i := range x {
 				x[i] = walk(x[i])
 			}
-		case map[string]any:
-			for k := range x {
-				x[k] = walk(x[k])
+		case map[string]any: // keys too: a tool may key its arguments by URL
+			m := make(map[string]any, len(x))
+			for k, e := range x {
+				m[s.expandLinks(ctx, k)] = walk(e)
 			}
+			return m
 		}
 		return v
 	}
