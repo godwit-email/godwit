@@ -598,3 +598,14 @@ func TestSentArchivedToOverriddenFolder(t *testing.T) {
 	assert.Empty(t, e.onServer(t, "Sent"))
 	assert.Equal(t, "done", e.state(t))
 }
+
+func TestSendRefusesLinkReference(t *testing.T) {
+	e := newSendEnv(t, false)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.HTML = []string{"bob@example.com"}, "<p>Join: "+linkRefPrefix+"zoom.us/j?m=999&h=00000000</p>"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	require.ErrorIs(t, e.s.Send(bg, d.ID), errLinkRef)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+}

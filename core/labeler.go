@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
-	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -192,12 +191,9 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 // labelState is the message for the judge: headers and the start of its text,
 // as untrusted mail.
 func labelState(m Message) string {
-	body := m.Text
-	if strings.TrimSpace(body) == "" {
-		body = gomail.HTMLToText(m.HTML)
-	}
+	body := modelBody(m)
 	suspect := ai.InjectionQuote(mailHeader(m.MessageSummary)+"\n"+body) != "" // before cuts, as in mailContext
-	body = cleanMailURLs(body, true)
+	body = linkRefs(body, m.ID)
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])
 	}

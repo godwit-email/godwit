@@ -264,6 +264,12 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if c.Messages, err = ai.Messages(state); err != nil {
 		return Conversation{}, err
 	}
+	for i, m := range c.Messages { // the saved history keeps the references the model wrote
+		c.Messages[i].Text = s.expandLinks(ctx, m.Text)
+		for j, call := range m.Calls {
+			m.Calls[j].Args = s.expandArgs(ctx, call.Args)
+		}
+	}
 	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
 	if err != nil {
 		return Conversation{}, err
@@ -935,6 +941,14 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 			job.prepared.Store(ai.CallID(ctx), p)
 			return ai.Approve, nil
 		}
+		// Link references in the arguments are expanded before the call is gated, prepared or run.
+		gated := spec.Gate
+		spec.Gate = func(ctx context.Context, args json.RawMessage) (ai.Decision, error) {
+			return gated(ctx, s.expandArgs(ctx, args))
+		}
+		if run := spec.Run; run != nil {
+			spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) { return run(ctx, s.expandArgs(ctx, args)) }
+		}
 		out = append(out, spec)
 	}
 	return out
@@ -971,7 +985,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
 	}
 	events, wait := run(job.ctx, req)
-	for ev := range events {
+	for ev := range s.expandEvents(job.ctx, events) {
 		if !terminal(WitEvent{Event: ev}) {
 			wev := WitEvent{Event: ev}
 			if ev.Kind == "tool_result" {

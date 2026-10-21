@@ -167,6 +167,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		return nil, err
 	}
 	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	events = s.expandEvents(ctx, events)
 
 	out := make(chan ai.Event, 1)
 	go func() {
@@ -339,7 +340,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		return rs, err
 	}
 
-	items, err := s.mailContext(ctx, &gateway.Scope{}, ids, mailBudget{PerMessage: defaultMailBudget.PerMessage, Total: defaultMailBudget.Total, ShortURLs: true})
+	items, err := s.mailContext(ctx, &gateway.Scope{}, ids, defaultMailBudget)
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +372,9 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	rs, err := parseQuickReplies(text.String())
 	if err != nil {
 		return nil, err
+	}
+	for i := range rs {
+		rs[i].Preview, rs[i].HTML = s.expandLinks(ctx, rs[i].Preview), s.expandLinks(ctx, rs[i].HTML)
 	}
 	b, _ := json.Marshal(rs)
 	s.cachePut(ctx, key, account, string(b), "quick_replies")

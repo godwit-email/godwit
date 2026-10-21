@@ -352,7 +352,7 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	var items []mailItem
 	var at []int // items[k] answers in.IDs[at[k]]
 	for i, id := range in.IDs {
-		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes, ShortURLs: true})
+		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
 		if errors.Is(err, errMailNotFound) { // one gone message doesn't fail the others
 			res[i] = map[string]any{"message_id": id, "error": "not found"}
 			continue

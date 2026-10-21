@@ -125,31 +125,6 @@ func TestMailContextReadsOnlyTheDatabase(t *testing.T) {
 	require.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"), "no attachment fetched")
 }
 
-func TestCleanMailURLs(t *testing.T) {
-	long := "https://pages.example.com/promo/2026/summer-sale?id=42&utm_source=email&utm_campaign=summer&session=abcdefghijklmnopqrstuvwxyz1234567890"
-	cjk := "https://example.cn/" + strings.Repeat("新闻", 20)
-	for _, c := range []struct {
-		name, in string
-		short    bool
-		want     string
-	}{
-		{"tracking params go, the rest stays", "see " + long + ".", false,
-			"see https://pages.example.com/promo/2026/summer-sale?id=42&session=abcdefghijklmnopqrstuvwxyz1234567890."},
-		{"only tracking params", "https://a.com/x?utm_source=e&FBCLID=1#top", false, "https://a.com/x#top"},
-		{"short link keeps its query", "https://a.com/watch?v=1&utm_medium=mail", true, "https://a.com/watch?v=1"},
-		{"long link loses query", "go (" + long + ")", true, "go (https://pages.example.com/promo/2026/summer-sale)"},
-		{"long path is cut", "https://a.com/" + strings.Repeat("p", 100), true, "https://a.com/" + strings.Repeat("p", 63) + "…"},
-		{"cut keeps runes whole", cjk, true, cjk[:76] + "…"},
-		{"balanced parentheses stay", "https://en.wikipedia.org/wiki/Go_(game), ok", false, "https://en.wikipedia.org/wiki/Go_(game), ok"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			got := cleanMailURLs(c.in, c.short)
-			require.Equal(t, c.want, got)
-			require.True(t, utf8.ValidString(got))
-		})
-	}
-}
-
 // newLabelService is newMailContextService with a chosen data dir ("" for a
 // new one) and system language. Without LabelMail, the labeler does not run.
 func newLabelService(t *testing.T, dir, lang string) *Service {

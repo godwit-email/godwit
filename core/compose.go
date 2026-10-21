@@ -568,6 +568,10 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
+	// Wit's draft tools expand link references; this catches one typed or pasted back in.
+	if d.Subject, d.HTML = s.expandLinks(ctx, d.Subject), s.expandLinks(ctx, d.HTML); strings.Contains(d.Subject+d.HTML, linkRefPrefix) {
+		return errLinkRef
+	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,
 		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML, Related: related}
 	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {

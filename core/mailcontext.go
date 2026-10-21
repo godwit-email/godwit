@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -27,83 +26,12 @@ type mailItem struct {
 	Block         string
 }
 
-// mailBudget caps body runes per message and across all messages. ShortURLs
-// also cuts long links down (cleanMailURLs): only for models that read the
-// mail without handing its links on.
-type mailBudget struct {
-	PerMessage, Total int
-	ShortURLs         bool
-}
+// mailBudget caps body runes per message and across all messages.
+type mailBudget struct{ PerMessage, Total int }
 
 var defaultMailBudget = mailBudget{PerMessage: 24000, Total: 48000}
 
 const truncatedNote = "\n[truncated]"
-
-// maxModelURL is the longest link cleanMailURLs keeps whole with short set.
-const maxModelURL = 80
-
-var mailURLRe = regexp.MustCompile(`https?://[^\s<>"'\]]+`)
-
-// cleanMailURLs drops tracking parameters (utm_*, click ids) from the links in
-// mail text, which leaves them working. With short, a link still longer than
-// maxModelURL loses its query and fragment, then is cut to maxModelURL bytes
-// and marked with "…": newsletters spend most of their text on such links.
-func cleanMailURLs(text string, short bool) string {
-	return mailURLRe.ReplaceAllStringFunc(text, func(u string) string {
-		// Sentence punctuation and the ")" of HTMLToText's "text (url)" are not part of the link.
-		trail := len(u)
-		for trail > 0 {
-			c := u[trail-1]
-			if !strings.ContainsRune(".,;:!?", rune(c)) && (c != ')' || strings.Count(u[:trail], "(") >= strings.Count(u[:trail], ")")) {
-				break
-			}
-			trail--
-		}
-		u, rest := u[:trail], u[trail:]
-		u = dropTrackingParams(u)
-		if short && len(u) > maxModelURL {
-			if i := strings.IndexAny(u, "?#"); i != -1 {
-				u = u[:i]
-			}
-			if len(u) > maxModelURL {
-				n := maxModelURL - len("…")
-				for n > 0 && !utf8.RuneStart(u[n]) {
-					n--
-				}
-				u = u[:n] + "…"
-			}
-		}
-		return u + rest
-	})
-}
-
-// dropTrackingParams removes query parameters that only identify a campaign
-// or recipient; the rest of the query is kept byte for byte.
-func dropTrackingParams(u string) string {
-	q := strings.IndexByte(u, '?')
-	if q == -1 {
-		return u
-	}
-	query, frag := u[q+1:], ""
-	if f := strings.IndexByte(query, '#'); f != -1 {
-		query, frag = query[:f], query[f:]
-	}
-	var kept []string
-	for _, p := range strings.Split(query, "&") {
-		k, _, _ := strings.Cut(p, "=")
-		k = strings.ToLower(k)
-		if !strings.HasPrefix(k, "utm_") && !slices.Contains(trackingParams, k) {
-			kept = append(kept, p)
-		}
-	}
-	if len(kept) == 0 {
-		return u[:q] + frag
-	}
-	return u[:q+1] + strings.Join(kept, "&") + frag
-}
-
-var trackingParams = []string{"fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "igshid",
-	"mc_cid", "mc_eid", "_hsenc", "_hsmi", "mkt_tok", "oly_anon_id", "oly_enc_id", "vero_id", "ck_subscriber_id"}
 
 // mailForModel reads a message's text and attachment metadata from the
 // database only: no IMAP, no attachment bytes. HTML is the sanitized body
@@ -161,10 +89,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 	left := budget.Total
 	for _, i := range order {
 		m := msgs[i]
-		body := m.Text
-		if strings.TrimSpace(body) == "" && m.HTML != "" {
-			body = gomail.HTMLToText(m.HTML)
-		}
+		body := modelBody(m)
 		var att []string
 		for _, a := range m.Attachments {
 			att = append(att, fmt.Sprintf("%s (attachment %d, %s, %d bytes)", a.Filename, a.ID, a.ContentType, a.Size))
@@ -175,7 +100,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		}
 		quote := ai.InjectionQuote(head + body) // before cleanMailURLs, so a link's query can still flag the mail
 		suspect := quote != ""
-		body = cleanMailURLs(body, budget.ShortURLs)
+		body = linkRefs(body, m.ID)
 		cut := m.Truncated
 		if n := min(budget.PerMessage, left); utf8.RuneCountInString(body) > n {
 			body, cut = string([]rune(body)[:max(n, 0)]), true
