@@ -709,7 +709,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 					name = providerName(pr)
 				}
 				b := icons.Brand(id)
-				brands = append(brands, iconChoice{"brand:" + id, name, func() { markTile(c, b, theme.MarkSm) }})
+				brands = append(brands, iconChoice{"brand:" + id, name, func() { markTile(c, b, theme.MarkMd) }})
 			}
 			for _, name := range core.LabelIcons {
 				symbols = append(symbols, iconChoice{"label:" + name, name, func() {
