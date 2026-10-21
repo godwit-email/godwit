@@ -533,6 +533,10 @@ func splitText(s string, max int) []draftPiece {
 			s = s[i+1:]
 			continue
 		}
+		// A link reference stays in one piece, even one the cut lands in the prefix of.
+		if i := strings.LastIndex(s[:min(cut+len(linkRefPrefix), len(s))], linkRefPrefix); i > 0 && i < cut && linkRefRe.FindStringIndex(s[i:cut]) == nil {
+			cut = i
+		}
 		out = append(out, draftPiece{text: s[:cut]})
 		s = s[cut:]
 	}

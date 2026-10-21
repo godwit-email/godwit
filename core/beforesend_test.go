@@ -404,3 +404,12 @@ func TestCloseDuringBeforeSend(t *testing.T) {
 	assert.ErrorIs(t, s.Send(context.Background(), d.ID), ErrClosed)
 	assert.ErrorIs(t, s.SendAcknowledged(context.Background(), d.ID, "x"), ErrClosed)
 }
+
+func TestBeforeSendSeesExpandedLinks(t *testing.T) {
+	s := newMailContextService(t)
+	startTestPlugin(t, s, "auditor", sendPerms, checker(`d => undefined`))
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	d := sendDraft(t, s, "see "+linkRefs(longLink, id))
+	require.NoError(t, s.Send(t.Context(), d.ID))
+	assert.Equal(t, `["see `+longLink+`"]`, seen(t, s, "auditor"), "the check sees the link that is sent")
+}

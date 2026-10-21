@@ -103,6 +103,7 @@
   "error_stale_approval": "제안된 후 이 작업의 내용이 변경되었습니다. 다시 확인하세요.",
   "error_stale_draft": "초안이 다른 곳에서 수정되었습니다.",
   "error_too_large": "첨부 파일이 크기 한도를 초과했습니다.",
+  "error_link_ref": "초안에 있는 링크가 가리키는 메일을 더 이상 사용할 수 없습니다. 보내기 전에 링크를 바꾸세요.",
   "error_translator_unavailable": "번역 플러그인이 실행 중이지 않습니다. 설정 › 확장 프로그램에서 활성화하거나 모델 번역으로 전환하세요.",
   "error_system_language_not_installed": "시스템 설정 › 일반 › 언어 및 지역 › 번역 언어에서 이 언어들을 다운로드한 후 다시 번역하세요.",
   "error_system_language_unsupported": "macOS는 이 언어 간 번역을 지원하지 않습니다. 설정 › 일반에서 다른 번역 방식을 선택하세요.",

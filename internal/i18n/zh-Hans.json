@@ -103,6 +103,7 @@
   "error_stale_approval": "这项操作在提出后有变化，请重新确认。",
   "error_stale_draft": "草稿在别处被修改。",
   "error_too_large": "附件超过了大小上限。",
+  "error_link_ref": "草稿里有一个链接指向的邮件已不存在，请先替换这个链接再发送。",
   "error_translator_unavailable": "翻译插件没有运行，到设置 › 扩展里启用它，或换回模型翻译。",
   "error_system_language_not_installed": "请先在“系统设置 › 通用 › 语言与地区 › 翻译语言”中下载这两种语言，再重新翻译。",
   "error_system_language_unsupported": "macOS 不支持这两种语言之间的翻译，请在设置 › 通用里换一种翻译方式。",

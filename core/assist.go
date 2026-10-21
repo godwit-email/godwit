@@ -258,9 +258,13 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 			names = append(names, fmt.Sprintf("%s (%s, %d bytes)", a.Filename, a.ContentType, a.Size))
 		}
 		list := strings.Join(names, "\n")
+		suspect := ai.SuspectInjection(list)
+		if d.SourceMessageID != 0 { // a forward's copied names: their links are the source message's
+			list = linkRefs(list, d.SourceMessageID)
+		}
 		scope.MarkReadMail()
 		b.WriteString("\n\nFiles attached to the draft (names only; their content is not available):\n" +
-			ai.Untrusted(fmt.Sprintf("draft:%d:attachments", d.ID), list, ai.SuspectInjection(list)))
+			ai.Untrusted(fmt.Sprintf("draft:%d:attachments", d.ID), list, suspect))
 	}
 	recent, err := s.correspondence(ctx, d.AccountID, slices.Concat(d.To, d.Cc), recentMail)
 	if err != nil {
