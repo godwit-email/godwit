@@ -1046,6 +1046,11 @@
   "wit_usage_note": "Quando encher, as trocas mais antigas deixam de ser enviadas ao modelo.",
   "wit_usage_last": "Última solicitação: {arg1} tokens",
   "wit_usage_total": "Esta conversa: {arg1} de entrada · {arg2} de saída tokens",
+  "compose_strikethrough": "Tachado",
+  "compose_font_size": "Tamanho da fonte",
+  "compose_font_family": "Família da fonte",
+  "compose_font_default": "Padrão",
+  "compose_size_default": "Padrão ({arg1})",
   "wit_compose_review_translate": "Traduzido.",
   "wit_compose_translated": "Traduzido"
 }

@@ -1046,6 +1046,11 @@
   "wit_usage_note": "用滿以後，最早的對話不再傳給模型。",
   "wit_usage_last": "上次請求：{arg1} tokens",
   "wit_usage_total": "本對話共：輸入 {arg1} · 輸出 {arg2} tokens",
+  "compose_strikethrough": "刪除線",
+  "compose_font_size": "字級",
+  "compose_font_family": "字型",
+  "compose_font_default": "預設",
+  "compose_size_default": "預設（{arg1}）",
   "wit_compose_review_translate": "已翻譯。",
   "wit_compose_translated": "已翻譯"
 }

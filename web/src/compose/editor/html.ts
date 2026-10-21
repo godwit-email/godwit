@@ -18,20 +18,38 @@ export const IMAGE_SRC = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]
 const keptImage = (el: Element) =>
   el.tagName === "IMG" && IMAGE_SRC.test(el.getAttribute("src") ?? "");
 
+const SAFE_CSS_VALUE = /^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$/i;
+
+// A size in the toolbar's range (9–36 pt); a pasted font-size:0 (hidden text) or 200px is dropped.
+function inSizeRange(v: string): boolean {
+  const m = /^(\d+(?:\.\d+)?)(px|pt)$/.exec(v);
+  if (!m) return false;
+  const pt = m[2] === "px" ? Number(m[1]) * 0.75 : Number(m[1]);
+  return pt >= 9 && pt <= 36;
+}
+
 /**
  * Parses html on an inert DOMParser document (no script runs, nothing loads) and returns its body
- * with every loader element removed and every attribute dropped but <a href>. With images (the
- * signature editor's load), an <img> whose src is IMAGE_SRC stays, with its src only.
+ * with every loader element removed and every attribute dropped but <a href> and safe font styles.
+ * With images (the signature editor's load), an <img> whose src is IMAGE_SRC stays, with its src only.
  */
 export function sanitize(html: string, images = false): HTMLElement {
   const body = new DOMParser().parseFromString(html, "text/html").body;
   for (const el of body.querySelectorAll(LOADERS)) if (!(images && keptImage(el))) el.remove();
   for (const el of [...body.querySelectorAll("*")].reverse()) {
     for (const a of [...el.attributes]) {
-      if (
+      if (a.name === "style" && el instanceof HTMLElement) {
+        const fs = el.style.fontSize;
+        const ff = el.style.fontFamily;
+        el.removeAttribute("style");
+        if (inSizeRange(fs)) el.style.fontSize = fs;
+        if (ff && SAFE_CSS_VALUE.test(ff)) el.style.fontFamily = ff;
+        if (!el.getAttribute("style")) el.removeAttribute("style");
+      } else if (
         !((el.tagName === "A" && a.name === "href") || (el.tagName === "IMG" && a.name === "src"))
-      )
+      ) {
         el.removeAttribute(a.name);
+      }
     }
     if (!BLOCKISH.has(el.tagName)) continue;
     if ([...el.children].some((c) => BLOCK.has(c.tagName))) {
@@ -107,9 +125,20 @@ const textOf = (n: Descendant): string => (isText(n) ? n.text : n.children.map(t
 function inline(n: Descendant): string {
   if (isText(n)) {
     let s = esc(n.text).replace(/\n/g, "<br>");
-    if (n.underline) s = `<u>${s}</u>`; // the signature editor's; compose has no underline
+    if (n.strikethrough) s = `<s>${s}</s>`;
+    if (n.underline) s = `<u>${s}</u>`;
     if (n.italic) s = `<em>${s}</em>`;
     if (n.bold) s = `<strong>${s}</strong>`;
+    const style: string[] = [];
+    if (typeof n.fontSize === "string" && SAFE_CSS_VALUE.test(n.fontSize)) {
+      style.push(`font-size: ${esc(n.fontSize)}`);
+    }
+    if (typeof n.fontFamily === "string" && SAFE_CSS_VALUE.test(n.fontFamily)) {
+      style.push(`font-family: ${esc(n.fontFamily)}`);
+    }
+    if (style.length > 0) {
+      s = `<span style="${style.join("; ")}">${s}</span>`;
+    }
     return s;
   }
   const kids = n.children.map(inline).join("");

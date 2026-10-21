@@ -1046,6 +1046,11 @@
   "wit_usage_note": "가득 차면 가장 오래된 대화부터 모델에 보내지 않습니다.",
   "wit_usage_last": "마지막 요청: {arg1} 토큰",
   "wit_usage_total": "이 대화: 입력 {arg1} · 출력 {arg2} 토큰",
+  "compose_strikethrough": "취소선",
+  "compose_font_size": "글꼴 크기",
+  "compose_font_family": "글꼴",
+  "compose_font_default": "기본값",
+  "compose_size_default": "기본값 ({arg1})",
   "wit_compose_review_translate": "번역됨.",
   "wit_compose_translated": "번역됨"
 }

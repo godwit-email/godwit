@@ -3,11 +3,16 @@ import { toggleBulletedList, toggleNumberedList } from "@platejs/list-classic";
 import {
   type RemixiconComponentType,
   RiBold,
+  RiCheckLine,
   RiDoubleQuotesL,
+  RiFontFamily,
+  RiFontSize,
   RiItalic,
   RiLink,
   RiListOrdered,
   RiListUnordered,
+  RiStrikethrough,
+  RiUnderline,
 } from "@remixicon/react";
 import type { SlateEditor, TRange } from "platejs";
 import {
@@ -18,6 +23,12 @@ import {
   usePlateEditor,
 } from "platejs/react";
 import { type ReactElement, type ReactNode, useEffect, useRef } from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -25,7 +36,7 @@ import type { T } from "@/shared/i18n";
 import { safeHref } from "./html";
 import { LinkPopover } from "./LinkPopover";
 
-type Key = "bold" | "italic" | "link" | "ul" | "ol" | "blockquote";
+type Key = "bold" | "italic" | "underline" | "strikethrough" | "link" | "ul" | "ol" | "blockquote";
 
 const items: {
   key: Key;
@@ -35,6 +46,18 @@ const items: {
 }[] = [
   { key: "bold", label: "compose.bold", Icon: RiBold, run: (e) => e.tf.toggleMark("bold") },
   { key: "italic", label: "compose.italic", Icon: RiItalic, run: (e) => e.tf.toggleMark("italic") },
+  {
+    key: "underline",
+    label: "compose.underline",
+    Icon: RiUnderline,
+    run: (e) => e.tf.toggleMark("underline"),
+  },
+  {
+    key: "strikethrough",
+    label: "compose.strikethrough",
+    Icon: RiStrikethrough,
+    run: (e) => e.tf.toggleMark("strikethrough"),
+  },
   { key: "link", label: "compose.link", Icon: RiLink, run: () => {} },
   {
     key: "ul",
@@ -56,6 +79,35 @@ const items: {
   },
 ];
 
+const fontSizes = [
+  { label: "", value: "" }, // compose.size_default
+  { label: "9 pt", value: "9pt" },
+  { label: "10 pt", value: "10pt" },
+  { label: "11 pt", value: "11pt" },
+  { label: "12 pt", value: "12pt" },
+  { label: "13 pt", value: "13pt" },
+  { label: "14 pt", value: "14pt" },
+  { label: "18 pt", value: "18pt" },
+  { label: "24 pt", value: "24pt" },
+  { label: "36 pt", value: "36pt" },
+];
+
+const fonts = [
+  { label: "", value: "" }, // compose.font_default
+  { label: "Arial", value: "Arial, sans-serif" },
+  { label: "Courier New", value: "'Courier New', Courier, monospace" },
+  { label: "Georgia", value: "Georgia, serif" },
+  { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+  { label: "Palatino", value: "Palatino, 'Palatino Linotype', serif" },
+  { label: "Tahoma", value: "Tahoma, Verdana, sans-serif" },
+  { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
+  { label: "Trebuchet MS", value: "'Trebuchet MS', sans-serif" },
+  { label: "Verdana", value: "Verdana, sans-serif" },
+];
+
+// The browser re-quotes a font list it reads back (`'A B'` becomes `"A B"`), so compare without quotes.
+const unquoted = (s: string) => s.replace(/["']/g, "");
+
 // The pressed formats at the selection, space-separated (a string keeps the selector's equality cheap).
 function active(e: SlateEditor): string {
   if (!e.selection) return "";
@@ -64,6 +116,8 @@ function active(e: SlateEditor): string {
   return [
     marks.bold && "bold",
     marks.italic && "italic",
+    marks.underline && "underline",
+    marks.strikethrough && "strikethrough",
     e.api.some({ match: { type: "a" } }) && "link",
     list,
     e.api.some({ match: { type: "blockquote" } }) && "blockquote",
@@ -124,6 +178,85 @@ export function Toolbar(props: {
     </ToggleGroupItem>
   );
 
+  const marks = useEditorSelector((e) => {
+    const m = e.selection ? e.api.marks() : null;
+    return `${m?.fontFamily ?? ""}\n${m?.fontSize ?? ""}`;
+  }, []);
+  const [currentFontFamily, currentFontSize] = marks.split("\n");
+
+  const applyMark = (key: "fontFamily" | "fontSize", val: string) => {
+    if (saved.current) editor.tf.select(saved.current);
+    if (val) editor.tf.addMark(key, val);
+    else editor.tf.removeMark(key);
+    saved.current = editor.selection; // the mark split the text: the old range points elsewhere
+    editor.tf.focus();
+  };
+
+  // A menu of a font mark's values, the current one checked; it keeps the editor's selection.
+  const fontMenu = (m: {
+    mark: "fontFamily" | "fontSize";
+    label: string;
+    Icon: RemixiconComponentType;
+    options: { label: string; value: string }[];
+    current: string;
+    defaultLabel: string;
+    className: string;
+  }) => (
+    <DropdownMenu
+      modal={false}
+      highlightItemOnHover={false}
+      onOpenChange={(open) => {
+        if (open) {
+          saved.current = editor.selection;
+        } else {
+          setTimeout(() => {
+            if (saved.current) editor.tf.select(saved.current);
+            editor.tf.focus();
+          }, 0);
+        }
+      }}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              aria-label={t(m.label)}
+              disabled={readOnly}
+              onMouseDown={(e) => {
+                saved.current = editor.selection;
+                e.preventDefault();
+              }}
+              className="inline-flex size-7 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            >
+              <m.Icon className="size-3.75" />
+            </DropdownMenuTrigger>
+          }
+        />
+        <TooltipContent>{t(m.label)}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="start"
+        className={`w-auto max-h-60 overflow-y-auto ${m.className}`}
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        {m.options.map((o) => (
+          <DropdownMenuItem
+            key={o.value}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyMark(m.mark, o.value)}
+            style={m.mark === "fontFamily" ? { fontFamily: o.value || "inherit" } : undefined}
+            className="flex items-center justify-between gap-3"
+          >
+            <span className="whitespace-nowrap">{o.label || m.defaultLabel}</span>
+            {unquoted(m.current) === unquoted(o.value) && (
+              <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
@@ -147,6 +280,28 @@ export function Toolbar(props: {
           );
         })}
       </ToggleGroup>
+      <Separator
+        orientation="vertical"
+        className="mx-0.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
+      />
+      {fontMenu({
+        mark: "fontFamily",
+        label: "compose.font_family",
+        Icon: RiFontFamily,
+        options: fonts,
+        current: currentFontFamily,
+        defaultLabel: t("compose.font_default"),
+        className: "min-w-56",
+      })}
+      {fontMenu({
+        mark: "fontSize",
+        label: "compose.font_size",
+        Icon: RiFontSize,
+        options: fontSizes,
+        current: currentFontSize,
+        defaultLabel: t("compose.size_default", "14 pt"),
+        className: "min-w-44",
+      })}
       {attach && (
         <>
           <Separator

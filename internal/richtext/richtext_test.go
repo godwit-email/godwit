@@ -58,10 +58,20 @@ func TestFromMailHTMLPreAndImages(t *testing.T) {
 }
 
 func TestFromComposeHTML(t *testing.T) {
-	src := mail.SanitizeCompose(`<p>Hi <b>there</b> <a href="https://x.example/">site</a> <u>u</u> <code>c</code></p><h1>Title</h1><ul><li>a</li></ul><blockquote>q</blockquote><table><tr><td>cell</td></tr></table><hr>`)
+	src := mail.SanitizeCompose(`<p>Hi <b>there</b> <a href="https://x.example/">site</a> <u>u</u> <s>s</s> <code>c</code></p><h1>Title</h1><ul><li>a</li></ul><blockquote>q</blockquote><table><tr><td>cell</td></tr></table><hr>`)
 	d := FromComposeHTML(src)
 	assert.Equal(t, []Block{
-		{Kind: Paragraph, Inlines: []Inline{{Text: "Hi "}, {Text: "there", Bold: true}, {Text: " "}, {Text: "site", Link: "https://x.example/"}, {Text: " u c"}}},
+		{Kind: Paragraph, Inlines: []Inline{
+			{Text: "Hi "},
+			{Text: "there", Bold: true},
+			{Text: " "},
+			{Text: "site", Link: "https://x.example/"},
+			{Text: " "},
+			{Text: "u", Underline: true},
+			{Text: " "},
+			{Text: "s", Strike: true},
+			{Text: " c"},
+		}},
 		{Kind: Paragraph, Inlines: []Inline{{Text: "Title"}}},
 		{Kind: ListItem, Level: 1, Inlines: []Inline{{Text: "a"}}},
 		{Kind: Quote, Level: 1, Inlines: []Inline{{Text: "q"}}},
@@ -337,9 +347,12 @@ func tableInlines(b Block) (n int) {
 
 func TestToHTMLRoundTrip(t *testing.T) {
 	src := `<p>Hi <b>bold <i>both</i></b> <a href="https://x.example/?a=1&amp;b=2">link &lt;3</a></p><p><br></p><p>a<br>b</p>` +
-		`<ul><li>one<ul><li>sub</li></ul></li><li>two</li></ul><ol><li>first</li></ol><blockquote><p>q1</p><blockquote>q2</blockquote><p>q1b</p></blockquote><p>end 中文</p>`
+		`<ul><li>one<ul><li>sub</li></ul></li><li>two</li></ul><ol><li>first</li></ol><blockquote><p>q1</p><blockquote>q2</blockquote><p>q1b</p></blockquote><p>end 中文</p>` +
+		`<p><span style="font-size: 24pt; font-family: 'American Typewriter', serif"><u>big</u></span></p>`
 	d := FromComposeHTML(mail.SanitizeCompose(src))
 	require.NotEmpty(t, d.Blocks)
+	assert.Equal(t, Inline{Text: "big", Underline: true, FontSize: "24pt", FontFamily: "'American Typewriter', serif"},
+		d.Blocks[len(d.Blocks)-1].Inlines[0], "a partly accepted Wit edit keeps the editor's fonts")
 	h := ToHTML(d)
 	assert.Equal(t, d, FromComposeHTML(h), h)
 	assert.Equal(t, h, ToHTML(FromComposeHTML(h)), "stable")

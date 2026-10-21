@@ -207,6 +207,30 @@ describe("Editor", () => {
     await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
   });
 
+  it("the font menus apply to the selection and show the choice", async () => {
+    const user = userEvent.setup();
+    const { box, onChange } = setup("<p>hello world</p>");
+    await select(box, 0, 5);
+    await user.click(screen.getByRole("button", { name: "compose.font_size" }));
+    await user.click(await screen.findByRole("menuitem", { name: "24 pt" }));
+    await waitFor(() =>
+      expect(last(onChange)).toBe('<p><span style="font-size: 24pt">hello</span> world</p>'),
+    );
+    // jsdom drops the DOM selection when the menu refocuses the editor (a browser keeps it), and Slate's
+    // throttled selectionchange reads that back on a slow run: select again, as a user's highlight would stay.
+    await select(box, 0, 5);
+    await user.click(screen.getByRole("button", { name: "compose.font_family" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Georgia" }));
+    await waitFor(() =>
+      expect(last(onChange)).toBe(
+        '<p><span style="font-size: 24pt; font-family: Georgia, serif">hello</span> world</p>',
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "compose.font_family" }));
+    const georgia = await screen.findByRole("menuitem", { name: "Georgia" });
+    expect(georgia.querySelector("svg")).not.toBeNull(); // the check
+  });
+
   it("the quote toggle unwraps a list inside a quote, keeping the list", async () => {
     const user = userEvent.setup();
     const { box, onChange } = setup("<blockquote><ul><li><p>1</p></li></ul></blockquote>");
@@ -302,5 +326,59 @@ describe("Editor", () => {
     const pop = await screen.findByRole("textbox", { name: "pop" });
     fireEvent.keyDown(pop, { key: "k", code: "KeyK", ...mod });
     expect(onCmdK).toHaveBeenCalledTimes(1);
+  });
+
+  it("insertReplacementText preserves fontSize marks and Enter does not split block", async () => {
+    const { box, onChange } = setup('<p><span style="font-size: 36px;">Schullle</span></p>');
+    await select(box, 8, 0);
+
+    const ev = new InputEvent("beforeinput", {
+      inputType: "insertReplacementText",
+      data: "Schule",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      box.dispatchEvent(ev);
+    });
+
+    await waitFor(() => {
+      const html = last(onChange);
+      expect(html).toContain("Schule");
+      expect(html).toContain("font-size: 36px");
+      expect(html).not.toContain("Schullle");
+    });
+
+    // An Enter key right after accepting autocorrect should be suppressed
+    fireEvent.keyDown(box, { key: "Enter", code: "Enter" });
+    const htmlAfterEnter = last(onChange);
+    expect(htmlAfterEnter).toBe('<p><span style="font-size: 36px">Schule</span></p>');
+  });
+
+  // Without target ranges (jsdom has none), the replacement takes the selection, or the word before the caret.
+  const replace = (box: HTMLElement, data: string) =>
+    act(() => {
+      box.dispatchEvent(
+        new InputEvent("beforeinput", {
+          inputType: "insertReplacementText",
+          data,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+  it("insertReplacementText replaces a whole selection", async () => {
+    const { box, onChange } = setup("<p>foo bar</p>");
+    await select(box, 0, 7);
+    replace(box, "baz");
+    await waitFor(() => expect(last(onChange)).toBe("<p>baz</p>"));
+  });
+
+  it("insertReplacementText after a space keeps the space", async () => {
+    const { box, onChange } = setup("<p>wrd </p>");
+    await select(box, 4, 0);
+    replace(box, "word");
+    await waitFor(() => expect(last(onChange)).toBe("<p>word </p>"));
   });
 });

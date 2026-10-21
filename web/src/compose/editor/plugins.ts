@@ -1,8 +1,15 @@
-import { BlockquotePlugin, BoldPlugin, ItalicPlugin } from "@platejs/basic-nodes/react";
+import {
+  BlockquotePlugin,
+  BoldPlugin,
+  ItalicPlugin,
+  StrikethroughPlugin,
+  UnderlinePlugin,
+} from "@platejs/basic-nodes/react";
 import { LinkPlugin } from "@platejs/link/react";
 import { ListPlugin, TaskListPlugin } from "@platejs/list-classic/react";
 import { type AnyPluginConfig, createSlatePlugin, NodeApi } from "platejs";
 import { createPlatePlugin } from "platejs/react";
+import React from "react";
 import { deserialize, safeHref, toHTML } from "./html";
 
 /**
@@ -29,9 +36,15 @@ export const SafePastePlugin = createSlatePlugin({ key: "safePaste" }).overrideE
         }
         const text = data.getData("text/plain");
         if (!text) return;
+        // The caret's marks (the leaf's, or what the user toggled, {} included) for every line:
+        // insertBreak clears them, and the new line would take the split leaf's instead.
+        const marks = editor.api.marks() ?? {};
         text.split(/\r\n|\r|\n/).forEach((line, i) => {
           if (i) editor.tf.insertBreak();
-          if (line) editor.tf.insertText(line);
+          if (line) {
+            editor.marks = { ...marks };
+            editor.tf.insertText(line);
+          }
         });
       },
     },
@@ -50,13 +63,60 @@ export const HeldPlugin = createPlatePlugin({
   node: { isLeaf: true, props: { className: "bg-border" } },
 });
 
+export const FontSizePlugin = createPlatePlugin({
+  key: "fontSize",
+  node: { isLeaf: true },
+  render: {
+    node: ({ children, leaf }) =>
+      React.createElement(
+        "span",
+        { style: { fontSize: (leaf as Record<string, unknown>).fontSize as string } },
+        children,
+      ),
+  },
+  parsers: {
+    html: {
+      deserializer: {
+        rules: [{ validStyle: { fontSize: "*" } }],
+        parse: ({ element }) => ({ fontSize: element.style.fontSize }),
+      },
+    },
+  },
+});
+
+export const FontFamilyPlugin = createPlatePlugin({
+  key: "fontFamily",
+  node: { isLeaf: true },
+  render: {
+    node: ({ children, leaf }) =>
+      React.createElement(
+        "span",
+        { style: { fontFamily: (leaf as Record<string, unknown>).fontFamily as string } },
+        children,
+      ),
+  },
+  parsers: {
+    html: {
+      deserializer: {
+        rules: [{ validStyle: { fontFamily: "*" } }],
+        parse: ({ element }) => ({ fontFamily: element.style.fontFamily }),
+      },
+    },
+  },
+});
+
 /**
- * The native compose page's formats and nothing else: paragraph (core), bold, italic, link,
- * bulleted and numbered list (list-classic ul/ol/li/lic; its task list disabled), block quote.
+ * The compose page formats: paragraph (core), bold, italic, underline, strikethrough,
+ * font size, font family, link, bulleted and numbered list (list-classic ul/ol/li/lic),
+ * block quote.
  */
 export const plugins: AnyPluginConfig[] = [
   BoldPlugin,
   ItalicPlugin,
+  UnderlinePlugin,
+  StrikethroughPlugin,
+  FontSizePlugin,
+  FontFamilyPlugin,
   linkPlugin,
   ListPlugin.configurePlugin(TaskListPlugin, { enabled: false }),
   BlockquotePlugin,

@@ -1046,6 +1046,11 @@
   "wit_usage_note": "Une fois plein, les échanges les plus anciens ne sont plus envoyés au modèle.",
   "wit_usage_last": "Dernière requête : {arg1} tokens",
   "wit_usage_total": "Cette conversation : {arg1} en entrée · {arg2} en sortie tokens",
+  "compose_strikethrough": "Barré",
+  "compose_font_size": "Taille de police",
+  "compose_font_family": "Famille de police",
+  "compose_font_default": "Par défaut",
+  "compose_size_default": "Par défaut ({arg1})",
   "wit_compose_review_translate": "Traduit.",
   "wit_compose_translated": "Traduit"
 }
