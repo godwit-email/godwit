@@ -292,7 +292,13 @@ func hidden(n *html.Node) bool {
 		return true
 	}
 	decls := styleDecls(n)
-	return decls["display"] == "none" || decls["visibility"] == "hidden" || decls["max-height"] == "0" || decls["max-height"] == "0px" || decls["font-size"] == "0" || decls["font-size"] == "0px"
+	return decls["display"] == "none" || decls["visibility"] == "hidden" || decls["mso-hide"] == "all" || transparent(decls["opacity"]) || decls["max-height"] == "0" || decls["max-height"] == "0px" || decls["font-size"] == "0" || decls["font-size"] == "0px"
+}
+
+// transparent: an opacity that shows nothing ("0", "0.0", "0%").
+func transparent(opacity string) bool {
+	v, ok := length(opacity)
+	return ok && v == 0
 }
 
 // styleDecls are an element's inline declarations, lowercased.

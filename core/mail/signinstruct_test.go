@@ -26,6 +26,8 @@ func TestEmphasizedCode(t *testing.T) {
 		{"too long", "Acme", `<b>1234567890123</b>`, ""},
 		{"in a link", "Acme", `<a href="https://x.example"><b>482913</b></a>`, ""},
 		{"hidden preheader", "Acme", `<div style="display:none"><b>111111</b></div><b>482913</b>`, "482913"},
+		{"transparent preheader", "Acme", `<div style="opacity:0"><b>111111</b></div><b>482913</b>`, "482913"},
+		{"Outlook-hidden preheader", "Acme", `<div style="mso-hide:all"><b>111111</b></div><b>482913</b>`, "482913"},
 		{"quoted", "Acme", `<p>Thanks</p><blockquote><b>482913</b></blockquote>`, ""},
 		{"reply", "Re: Acme", `<b>482913</b>`, ""},
 		{"no html", "Acme", ``, ""},
