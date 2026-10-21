@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
@@ -171,19 +173,24 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 		})
 	})
 
-	help, height := i18n.T("settings.account.signature.help"), float32(theme.SignatureEditorHeight)
-	if p.sigTall {
-		help, height = i18n.T("settings.account.signature.html.help"), theme.SignatureCodeHeight
+	if p.sigCode != nil && p.sigCode.id != sig.ID {
+		p.closeCode()
+	}
+	help := i18n.T("settings.account.signature.help")
+	if p.sigCode != nil {
+		help = i18n.T("settings.account.signature.html.help")
 	}
 	settingsSection(c, i18n.T("settings.signature.content"), help, func() {
 		p.signature(sig.ID)
 		switch {
+		case p.sigCode != nil:
+			p.codeView(c)
 		case p.sigErr != nil:
 			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
 		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(height) // the page draws its toolbar and editor
+			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
 		default:
-			ui.Box(c).FillWidth().Height(height)
+			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
 		}
 	})
 
@@ -410,5 +417,135 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 			kit.TextLink(c, i18n.T("settings.account.signature.manage"), t.Foreground, t.Text.Sm).
 				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) })
 		})
+	})
+}
+
+// sigCode is a signature in the HTML mode: its stored HTML (images as
+// cid:) in MyGo's code editor, saved as typing pauses. What Go refuses
+// (too many images, an image it cannot take) is said, never retried.
+type sigCode struct {
+	id      int64
+	st      editor.State
+	ver     uint64 // the buffer's version last saved or loaded
+	stop    func()
+	refused string // the toolbar's alert, a catalog key; "" none
+	loading bool
+}
+
+// openCode puts the shown signature in the HTML mode: its code is read,
+// then edited natively where the page was.
+func (p *settingsPage) openCode() {
+	a, id := p.a, p.sigShown
+	if id == 0 || p.sigCode != nil {
+		return
+	}
+	sc := &sigCode{id: id, loading: true}
+	sc.st = editor.State{SoftWrap: true, NoFolding: true, Label: i18n.T("settings.account.signature.html.label")}
+	p.sigCode = sc
+	var code string
+	a.do(func(ctx context.Context) (err error) {
+		code, err = a.svc.SignatureCode(ctx, id)
+		return err
+	}, func(err error) {
+		if p.sigCode != sc {
+			return
+		}
+		if err != nil {
+			p.sigCode = nil
+			a.toastErr(err)
+			return
+		}
+		sc.st.Buffer = editor.NewBuffer(code)
+		sc.st.Buffer.SetLanguage(editor.LanguageNamed("HTML"))
+		sc.ver, sc.loading = sc.st.Buffer.Version(), false
+	})
+}
+
+// codeView is the HTML mode's card body: a toolbar with what Go refused
+// and the pressed 「</> HTML」 toggle, over the code editor.
+func (p *settingsPage) codeView(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	sc := p.sigCode
+	ui.Column(c).FillWidth().Height(theme.SignatureCodeHeight).Children(func() {
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(1), th.Space(1.5)).AlignItems(ui.Center).Background(t.Sidebar).Children(func() {
+			if sc.refused != "" {
+				kit.Text(c, i18n.T(sc.refused), t.Text.Sm).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
+			}
+			ui.Box(c).Grow(1)
+			// The page's toggle, pressed: 28 high, 8 padding, a 16 icon and 12 text (Signature.tsx's Bar).
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: p.closeCode}).Label(i18n.T("settings.account.signature.html.label")).
+				Height(th.Space(7)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md).Background(t.HoverTint).Children(func() {
+				ui.Icon(c, icons.Get("code")).Size(theme.Icon, theme.Icon)
+				kit.Text(c, i18n.T("settings.account.signature.html"), t.Text.Sm).FontWeight(500)
+			})
+		})
+		hairline(c)
+		if sc.loading {
+			ui.Box(c).FillWidth().Grow(1)
+			return
+		}
+		editor.View(c, &sc.st).FillWidth().Grow(1)
+		if v := sc.st.Buffer.Version(); v != sc.ver {
+			sc.ver = v
+			if sc.stop != nil {
+				sc.stop()
+			}
+			sc.stop = p.a.after(accountSaveDelay, func() {
+				sc.stop = nil
+				p.saveCode(sc)
+			})
+		}
+	})
+}
+
+// saveCode stores the code as the signature: Go sanitizes it. A refusal
+// stays said until a save works.
+func (p *settingsPage) saveCode(sc *sigCode) {
+	a, id := p.a, sc.id
+	html := sc.st.Buffer.String()
+	if strings.TrimSpace(html) != "" {
+		html = core.SignatureHTMLPrefix + html
+	} else {
+		html = ""
+	}
+	a.writes.Chain(signatureRoute(id), func(ctx context.Context) error {
+		_, err := a.svc.UpdateSignature(ctx, id, core.SignaturePatch{HTML: &html})
+		return err
+	}, func(err error) {
+		switch {
+		case err == nil:
+			sc.refused = ""
+		case errors.Is(err, core.ErrSignatureImageCount):
+			sc.refused = "settings.account.signature.too_many"
+		case errors.Is(err, core.ErrSignatureImage):
+			sc.refused = "settings.account.signature.image_invalid"
+		default:
+			a.toastErr(err)
+		}
+	})
+}
+
+// commitCode saves at once code still waiting for typing to pause.
+func (p *settingsPage) commitCode() {
+	if sc := p.sigCode; sc != nil && sc.stop != nil {
+		sc.stop()
+		sc.stop = nil
+		p.saveCode(sc)
+	}
+}
+
+// closeCode leaves the HTML mode: the code saved first, the page shows
+// the signature again as Go cleaned it.
+func (p *settingsPage) closeCode() {
+	if p.sigCode == nil {
+		return
+	}
+	p.commitCode()
+	id := p.sigCode.id
+	p.sigCode = nil
+	p.a.writes.Chain(signatureRoute(id), func(context.Context) error { return nil }, func(error) {
+		if p.sigShown == id && !p.sigPosted && p.sigShow != nil {
+			p.sigShow(id) // after the save: the page reads what it stored
+		}
 	})
 }

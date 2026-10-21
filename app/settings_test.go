@@ -1,10 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/egoist/mygo/ui"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"slices"
 	"strings"
@@ -1090,16 +1095,58 @@ func TestSignatureSwitchKeepsSignatures(t *testing.T) {
 	}
 }
 
-// The HTML mode grows the editor's view; showing another signature
-// leaves it.
-func TestSignatureTallView(t *testing.T) {
+// The HTML mode edits the stored code in MyGo's editor in the page's
+// place: saved clean as typing pauses, too many images said and not
+// saved; the toggle goes back to the page, which reads it again.
+func TestSignatureHTMLMode(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSignature(acc.ID, "A")
-	h.see("写信时自动加在正文末尾，Wit 不会修改它。可以加粗、加链接和图片（比如公司标志）。")
-	h.app.SignatureTall(true)
+	sig := h.openSignature(acc.ID, "A")
+	text := core.SignatureHTMLPrefix + "<p>Alice</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
+	}
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+	if got := p.sigCode.st.Buffer.String(); got != "<p>Alice</p>" {
+		t.Fatalf("code %q", got)
+	}
 	h.see("保存时会去掉脚本、事件属性和外链图片。图片在代码里写作 cid:…，要加新图片请切回富文本用「插入图片」上传。")
-	h.openSignature(0, "B")
-	h.see("写信时自动加在正文末尾，Wit 不会修改它。可以加粗、加链接和图片（比如公司标志）。")
+
+	p.sigCode.st.Buffer.Set(`<p onclick="x()">Bob</p><script>alert(1)</script>`)
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.until("saved clean", func() bool { return h.signatureHTML(sig.ID) == core.SignatureHTMLPrefix+"<p>Bob</p>" })
+
+	five := "<p>Bob</p>"
+	for i := range core.SignatureImagesMax + 1 {
+		five += `<img src="data:image/png;base64,` + tinyPNG(t, uint8(i)) + `">`
+	}
+	p.sigCode.st.Buffer.Set(five)
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.see("最多 4 张图片，这次修改没有保存")
+	if got := h.signatureHTML(sig.ID); got != core.SignatureHTMLPrefix+"<p>Bob</p>" {
+		t.Fatalf("a refused save changed the signature: %q", got)
+	}
+
+	shows := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") }))
+	h.click("HTML 代码")
+	h.until("back to the page, which reads it again", func() bool {
+		return p.sigCode == nil && len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") })) > shows
+	})
+}
+
+// tinyPNG is a 1×1 PNG of a shade, base64.
+func tinyPNG(t *testing.T, shade uint8) string {
+	t.Helper()
+	img := image.NewGray(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.Gray{Y: shade})
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(b.Bytes())
 }
 
 // 签名: the empty state makes one and opens it; the list shows each with

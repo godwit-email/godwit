@@ -66,7 +66,7 @@ type settingsPage struct {
 	sigErr    error
 	sigShown  int64
 	sigPosted bool
-	sigTall   bool // the page shows its HTML mode (SignatureTall)
+	sigCode   *sigCode // the shown signature in the HTML mode: a native editor in the page's place
 
 	sigForm   sigForm          // the shown signature's name
 	sigDelete bool             // its delete confirmation is open
@@ -112,6 +112,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.closeDialog()
 		p.commitSignatureName() // another page now
 		p.sigDelete = false
+		p.closeCode() // the page shows the signature again when it is back
 	}
 	switch sec, acc := p.section(); {
 	case acc != nil:

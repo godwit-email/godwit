@@ -116,12 +116,10 @@ const item = (
   </ToggleGroupItem>
 );
 
-/** The toolbar's other side: a refused save or image, then the HTML toggle. */
-type Mode = { alert?: string; html: boolean; onHTML(): void };
+/** The toolbar's other side: a refused save or image, then the HTML toggle (native edits the code). */
+type Mode = { alert?: string; onHTML(): void };
 
-/**
- * The toolbar row: formats (none in the HTML mode), what Go refused, and 「</> HTML」 at the end.
- */
+/** The toolbar row: formats, what Go refused, and 「</> HTML」 at the end. */
 function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) {
   return (
     <div
@@ -138,10 +136,10 @@ function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) 
       <Button
         variant="ghost"
         size="sm"
-        aria-pressed={mode.html}
+        aria-pressed={false}
         aria-label={t("settings.account.signature.html.label")}
         title={t("settings.account.signature.html.label")}
-        className={`h-7 gap-1.5 px-2 text-xs ${mode.html ? "bg-accent text-foreground" : "text-muted-foreground"}`}
+        className="h-7 gap-1.5 px-2 text-muted-foreground text-xs"
         onMouseDown={(e) => e.preventDefault()}
         onClick={mode.onHTML}
       >
@@ -344,32 +342,11 @@ function LayoutEditor(props: { t: T; initial: string; mode: Mode; onChange(html:
   );
 }
 
-/** The HTML mode: the stored HTML (images as cid:) in a monospace field; Go cleans what is saved. */
-function CodeEditor(props: { t: T; initial: string; mode: Mode; onChange(html: string): void }) {
-  const { t, initial, mode, onChange } = props;
-  const [code, setCode] = useState(initial);
-  return (
-    <div className="flex h-screen flex-col">
-      <Bar t={t} mode={mode} />
-      <textarea
-        aria-label={t("settings.account.signature.html.label")}
-        spellCheck={false}
-        value={code}
-        className="min-h-0 flex-1 resize-none bg-transparent px-3 py-2.5 font-mono text-xs leading-[1.6] outline-none"
-        onChange={(e) => {
-          setCode(e.target.value);
-          onChange(e.target.value.trim() ? e.target.value : "");
-        }}
-      />
-    </div>
-  );
-}
-
 /**
  * One signature: the toolbar over a Plate editor loaded from `initial` (at mount, its
  * images as data: URLs), reporting each change as HTML, "" once it holds no text and no image. A
- * signature with layout (hasLayout) gets LayoutEditor instead; with mode.html, the code. pickImage
- * is SignaturePage.PickImage. The editor scrolls inside the page.
+ * signature with layout (hasLayout) gets LayoutEditor instead. pickImage is SignaturePage.PickImage.
+ * The editor scrolls inside the page; the HTML mode is native's (mode.onHTML).
  */
 export function SignatureEditor(props: {
   initial: string;
@@ -378,8 +355,7 @@ export function SignatureEditor(props: {
   t: T;
   mode?: Mode;
 }) {
-  const { initial, onChange, pickImage, t, mode = { html: false, onHTML() {} } } = props;
-  if (mode.html) return <CodeEditor t={t} initial={initial} mode={mode} onChange={onChange} />;
+  const { initial, onChange, pickImage, t, mode = { onHTML() {} } } = props;
   if (hasLayout(initial))
     return <LayoutEditor t={t} initial={initial} mode={mode} onChange={onChange} />;
   return (
@@ -446,11 +422,6 @@ export function SignatureApp() {
     };
   }, [saver]);
   useEffect(() => (theme ? applyTheme(theme) : undefined), [theme]);
-  // Native fits the view to the mode: the code needs more room.
-  const code = doc && "html" in doc ? !!doc.code : undefined;
-  useEffect(() => {
-    if (code !== undefined) api.tall(code).catch(() => {});
-  }, [code]);
 
   const t = useT(state?.locale);
   if (!state || !doc) return <main />;
@@ -461,15 +432,15 @@ export function SignatureApp() {
   return (
     <main>
       <SignatureEditor
-        key={`${doc.id}:${doc.code ? "code" : "rich"}`}
+        key={doc.id}
         initial={doc.html}
         t={t}
         pickImage={() => api.pickImage()}
         onChange={(html) => saver.edit(doc.id, html)}
         mode={{
-          html: !!doc.code,
           alert: refused && REFUSED[refused],
-          onHTML: () => saver.show(doc.id, !doc.code),
+          // The edit saved first: native reads the code from Go.
+          onHTML: () => saver.settle().then(() => api.editHTML().catch(() => {})),
         }}
       />
     </main>

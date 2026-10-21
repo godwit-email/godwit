@@ -9,7 +9,6 @@ function setup() {
           loads.push({ id, resolve });
         }),
     ),
-    code: vi.fn(async (id: number) => `<p>code ${id}</p>`),
     save: vi.fn(async (_id: number, _html: string) => {}),
     saved: vi.fn(async (_tok: number, _ok: boolean) => {}),
   };
@@ -156,16 +155,13 @@ describe("signatureSaver, a removed signature", () => {
 });
 
 describe("signatureSaver, the HTML mode and refusals", () => {
-  it("show with code saves first, then reads the stored HTML", async () => {
-    const { api, docs, s } = setup();
+  it("settle saves every pending edit at once", async () => {
+    const { api, s } = setup();
     s.show(1);
     await vi.advanceTimersByTimeAsync(0);
     s.edit(1, "<p>a</p>");
-    s.show(1, true);
-    await vi.advanceTimersByTimeAsync(0);
+    expect(await s.settle()).toBe(true);
     expect(api.save.mock.calls).toEqual([[1, "<p>a</p>"]]);
-    expect(api.save.mock.invocationCallOrder[0]).toBeLessThan(api.code.mock.invocationCallOrder[0]);
-    expect(docs.at(-1)).toEqual({ id: 1, html: "<p>code 1</p>", code: true });
   });
 
   it("too many images is said and never retried; the next save that works clears it", async () => {

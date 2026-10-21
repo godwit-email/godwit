@@ -57,9 +57,9 @@ type Signature struct {
 	pages *Pages
 	pick  func(ctx context.Context) (string, error)
 
-	// OnTall hears the page enter (true) or leave its HTML mode, which
-	// needs a taller view; set before the page runs.
-	OnTall func(tall bool)
+	// OnHTML hears the page ask for the HTML mode, its edit saved: native
+	// edits the code in its place. Set before the page runs.
+	OnHTML func()
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -153,23 +153,13 @@ func (p *SignaturePage) Load(ctx context.Context, id int64) (string, error) {
 	return svc.SignatureEditor(ctx, id)
 }
 
-// Code is signature id as stored, for the HTML mode: sanitized, its
-// images as cid:.
-func (p *SignaturePage) Code(ctx context.Context, id int64) (string, error) {
-	svc, err := p.s.caller(ctx)
-	if err != nil {
-		return "", err
-	}
-	return svc.SignatureCode(ctx, id)
-}
-
-// Tall tells native the page entered (true) or left its HTML mode.
-func (p *SignaturePage) Tall(ctx context.Context, tall bool) error {
+// EditHTML asks native for the HTML mode; the page saved its edit first.
+func (p *SignaturePage) EditHTML(ctx context.Context) error {
 	if _, err := p.s.caller(ctx); err != nil {
 		return err
 	}
-	if p.s.OnTall != nil {
-		p.s.OnTall(tall)
+	if p.s.OnHTML != nil {
+		p.s.OnHTML()
 	}
 	return nil
 }

@@ -168,18 +168,16 @@ func TestSignaturePickImage(t *testing.T) {
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.sig, four), "the same image four times is one image, and under the size cap")
 }
 
-func TestSignatureCodeAndTall(t *testing.T) {
+func TestSignatureSaveCleansAndEditHTML(t *testing.T) {
 	f := newSigFixture(t)
-	var talls []bool
-	f.s.OnTall = func(tall bool) { talls = append(talls, tall) }
-	_, err := f.p.Code(pageCtx(new(int)), f.sig)
-	assert.ErrorIs(t, err, ErrWrongPage)
-	assert.ErrorIs(t, f.p.Tall(pageCtx(new(int)), true), ErrWrongPage)
+	asked := 0
+	f.s.OnHTML = func() { asked++ }
+	assert.ErrorIs(t, f.p.EditHTML(pageCtx(new(int))), ErrWrongPage)
 
-	// What the HTML mode typed is saved clean, and read back as stored.
+	// Whatever the page sends is saved clean.
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.sig,
 		`<table style="color:red"><tr><td onclick="x()">Bob<script>alert(1)</script></td></tr></table><p>A</p><img src="https://t.example/p.png">`))
-	code, err := f.p.Code(pageCtx(f.page), f.sig)
+	code, err := f.e.Svc.SignatureCode(context.Background(), f.sig)
 	require.NoError(t, err)
 	assert.NotContains(t, code, "script")
 	assert.NotContains(t, code, "onclick")
@@ -187,7 +185,6 @@ func TestSignatureCodeAndTall(t *testing.T) {
 	assert.Contains(t, code, `style="color: red"`)
 	assert.Contains(t, code, "</table>\n<p>A</p>", "one block per line")
 
-	require.NoError(t, f.p.Tall(pageCtx(f.page), true))
-	require.NoError(t, f.p.Tall(pageCtx(f.page), false))
-	assert.Equal(t, []bool{true, false}, talls)
+	require.NoError(t, f.p.EditHTML(pageCtx(f.page)))
+	assert.Equal(t, 1, asked)
 }

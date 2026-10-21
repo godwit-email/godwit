@@ -103,6 +103,7 @@ func (f *accountForm) cancelEdits() {
 // commitEdits saves at once every field still waiting for typing to pause.
 func (p *settingsPage) commitEdits() {
 	p.commitSignatureName()
+	p.commitCode()
 	for id, f := range p.forms {
 		for i := range f.edits {
 			if e := &f.edits[i]; e.stop != nil {
@@ -137,15 +138,14 @@ func (p *settingsPage) signature(id int64) {
 			}
 		}
 		p.sigShow(id)
-		p.sigTall = false // the page shows the next one in rich mode
 		p.sigShown = id
 	})
 }
 
-// SignatureTall is told the signature page entered (true) or left its HTML
-// mode: its view grows to fit the code. Showing another account leaves it.
-func (a *App) SignatureTall(tall bool) {
-	a.pages[PageSettings].(*settingsPage).sigTall = tall
+// SignatureHTML is told the signature page asked for the HTML mode, its
+// edit saved: the native code editor takes its place.
+func (a *App) SignatureHTML() {
+	a.pages[PageSettings].(*settingsPage).openCode()
 }
 
 // flushSignature has the signature page save its edit, then calls then

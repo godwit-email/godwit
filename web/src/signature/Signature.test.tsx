@@ -109,7 +109,7 @@ describe("SignatureEditor modes", () => {
         onChange={vi.fn()}
         pickImage={none}
         t={t}
-        mode={{ html: false, onHTML }}
+        mode={{ onHTML }}
       />,
     );
     const box = screen.getByLabelText("settings.account.signature.label");
@@ -141,28 +141,19 @@ describe("SignatureEditor modes", () => {
     expect(onChange.mock.lastCall?.[0]).toContain("&lt;/b&gt;<br></td>");
   });
 
-  it("the HTML mode hides the formats and edits the code in a monospace field", () => {
-    const onChange = vi.fn();
+  it("says what Go refused beside the HTML toggle", () => {
+    const onHTML = vi.fn();
     render(
       <SignatureEditor
-        initial='<p><img src="cid:sig-1@godwit"></p>'
-        onChange={onChange}
+        initial="<p>Bob</p>"
+        onChange={vi.fn()}
         pickImage={none}
         t={t}
-        mode={{ html: true, alert: "settings.account.signature.too_many", onHTML: vi.fn() }}
+        mode={{ alert: "settings.account.signature.too_many", onHTML }}
       />,
     );
-    expect(screen.queryByRole("button", { name: "compose.bold" })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "settings.account.signature.html.label" }),
-    ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("alert")).toHaveTextContent("settings.account.signature.too_many");
-    const code = screen.getByRole("textbox", { name: "settings.account.signature.html.label" });
-    expect(code).toHaveValue('<p><img src="cid:sig-1@godwit"></p>');
-    expect(code.className).toContain("font-mono");
-    fireEvent.change(code, { target: { value: "<p>x</p>" } });
-    expect(onChange).toHaveBeenLastCalledWith("<p>x</p>");
-    fireEvent.change(code, { target: { value: "  " } });
-    expect(onChange).toHaveBeenLastCalledWith("");
+    fireEvent.click(screen.getByRole("button", { name: "settings.account.signature.html.label" }));
+    expect(onHTML).toHaveBeenCalledOnce();
   });
 });

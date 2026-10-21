@@ -1,15 +1,11 @@
-/**
- * A signature as loaded: its editor HTML (code: the stored HTML, for the HTML mode), or why it
- * could not be read.
- */
-export type Doc = { id: number; html: string; code?: boolean } | { id: number; error: string };
+/** A signature as loaded: its editor HTML, or why it could not be read. */
+export type Doc = { id: number; html: string } | { id: number; error: string };
 
 /** Why Go refused a save for good: too many images, or an image it cannot take. */
 export type Refusal = "count" | "image";
 
 type Api = {
   load(id: number): Promise<string>;
-  code(id: number): Promise<string>;
   save(id: number, html: string): Promise<void>;
   saved(token: number, ok: boolean): Promise<void>;
 };
@@ -26,7 +22,7 @@ const REFUSALS: [string, Refusal][] = [
 /**
  * The signature page's protocol. An edit is saved as the signature its editor showed, 600 ms after
  * typing pauses, and saves run one after another. show(B) first saves the shown signature's
- * pending edit, then loads B (its stored HTML, with code); a Load older than the newest show is
+ * pending edit, then loads B; a Load older than the newest show is
  * dropped, and edits for any signature but the shown one are ignored. flush saves at once and
  * answers Go with the token; a failed save stays pending for its signature, and every save (a
  * flush, the next debounce) tries it again, unless the signature is gone or Go refused the HTML
@@ -88,17 +84,18 @@ export function signatureSaver(
       clearTimeout(timer);
       timer = setTimeout(save, DELAY);
     },
-    show(id: number, code = false) {
+    /** Saves every pending edit now; true if they all saved (or were dropped for good). */
+    settle: () => save(),
+    show(id: number) {
       const saved = save();
       if (id !== shown) onRefused(undefined);
       shown = id;
       const g = ++gen;
       onDoc(undefined);
       saved
-        .then(() => (g === gen ? (code ? api.code(id) : api.load(id)) : undefined))
+        .then(() => (g === gen ? api.load(id) : undefined))
         .then(
-          (html) =>
-            g === gen && html !== undefined && onDoc(code ? { id, html, code } : { id, html }),
+          (html) => g === gen && html !== undefined && onDoc({ id, html }),
           (e) => g === gen && onDoc({ id, error: e instanceof Error ? e.message : String(e) }),
         );
     },

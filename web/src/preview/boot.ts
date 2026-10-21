@@ -144,11 +144,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "SignaturePage.State": async () => fx.signature(mode),
         "SignaturePage.Load": async () =>
           ({ image: fx.signatureHtmlImage, layout: fx.signatureLayout })[state] ?? fx.signatureHtml,
-        "SignaturePage.Code": async () => fx.signatureHtml,
         "SignaturePage.PickImage": async () => fx.logo,
         "SignaturePage.Save": nothing,
         "SignaturePage.Saved": nothing,
-        "SignaturePage.Tall": nothing,
+        "SignaturePage.EditHTML": nothing,
       });
     },
   },
