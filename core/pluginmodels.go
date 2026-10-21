@@ -170,20 +170,11 @@ var protocolKinds = map[string]string{"openai-completions": ai.KindOpenAI, "open
 
 // resolvePluginModel resolves a plugin generation model's ref for the engine.
 func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.ResolvedModel, error) {
-	rest, ok := strings.CutPrefix(ref, translatorPrefix)
-	name, id, _ := strings.Cut(rest, "/")
-	if ok && name == AppleIntelligencePlugin {
-		if !s.appleIntelligenceAvailable() {
-			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
+		if err != nil {
+			return ai.ResolvedModel{}, err
 		}
-		on, err := s.builtinOn(ctx, AppleIntelligencePlugin)
-		if err != nil || !on {
-			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
-		}
-		if s.opts.AppleIntelligence == nil {
-			return ai.ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
-		}
-		if id == "classifier" {
+		if m.Judges() {
 			return ai.ResolvedModel{}, fmt.Errorf("%w: %s is a judge model", ErrModelNotFound, ref)
 		}
 		return ai.ResolvedModel{
@@ -191,7 +182,7 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 			Version:   1,
 			Kind:      ai.KindOpenAI,
 			BaseURL:   "http://127.0.0.1:0",
-			Model:     id,
+			Model:     m.ID,
 			Client:    s.appleIntelligenceClient(),
 		}, nil
 	}
@@ -234,20 +225,36 @@ func (s *Service) forgetPluginModels(name string, rp *runningPlugin) {
 // judgeFormats are the judge formats of the HTTP judge protocols.
 var judgeFormats = map[string]ai.JudgeFormat{"typesafe-systemone": ai.FormatSystemOne, "openai-decisions": ai.FormatDecisions}
 
+// appleIntelligenceModel is the Apple Intelligence model ref names; ok is
+// false when ref names another plugin's.
+func (s *Service) appleIntelligenceModel(ctx context.Context, ref string) (m plugins.ProviderModel, ok bool, err error) {
+	rest, ok := strings.CutPrefix(ref, translatorPrefix)
+	name, id, _ := strings.Cut(rest, "/")
+	if !ok || name != AppleIntelligencePlugin {
+		return m, false, nil
+	}
+	if !s.appleIntelligenceAvailable() {
+		return m, true, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	}
+	if on, err := s.builtinOn(ctx, AppleIntelligencePlugin); err != nil || !on {
+		return m, true, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	}
+	for _, m := range appleIntelligenceModels() {
+		if m.ID == id {
+			return m, true, nil
+		}
+	}
+	return m, true, fmt.Errorf("%w: %s", ErrModelNotFound, ref)
+}
+
 // pluginJudge is the judge a plugin judge model's ref names.
 func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error) {
-	rest, ok := strings.CutPrefix(ref, translatorPrefix)
-	name, _, _ := strings.Cut(rest, "/")
-	if ok && name == AppleIntelligencePlugin {
-		if !s.appleIntelligenceAvailable() {
-			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
+		if err != nil {
+			return nil, err
 		}
-		on, err := s.builtinOn(ctx, AppleIntelligencePlugin)
-		if err != nil || !on {
-			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
-		}
-		if s.opts.AppleIntelligence == nil {
-			return nil, fmt.Errorf("%w: %s", ErrModelUnavailable, ref)
+		if !m.Judges() {
+			return nil, fmt.Errorf("%w: %s is not a judge model", ErrModelNotFound, ref)
 		}
 		return appleIntelligenceJudge{s.opts.AppleIntelligence}, nil
 	}

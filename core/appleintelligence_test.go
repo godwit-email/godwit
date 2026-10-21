@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -170,7 +172,7 @@ func TestAppleIntelligenceResolutionAndExecution(t *testing.T) {
 }
 
 func TestDefaultAppleIntelligence(t *testing.T) {
-	d := NewDefaultAppleIntelligence()
+	d := NewDefaultAppleIntelligence(filepath.Join("..", "resources", "darwin-"+runtime.GOARCH, "apple-intelligence-helper"))
 	assert.NotEmpty(t, d.Version())
 
 	if !d.Available() {
@@ -328,3 +330,24 @@ func (m *mockAIWithTemp) Judge(ctx context.Context, input string, qs []ai.Questi
 	return nil, nil
 }
 func (m *mockAIWithTemp) Version() string { return "mock-temp-1.0" }
+
+func TestAppleIntelligenceReviewFixes(t *testing.T) {
+	assert.Equal(t, []string{"10:00 works for me", "3 Uhr passt", "Sure, see you"},
+		extractQuickReplies("- 10:00 works for me\n2. 3 Uhr passt\n* Sure, see you"))
+
+	assert.Equal(t, "Traditional Chinese", languageName("zh-Hant"))
+	assert.Equal(t, "Simplified Chinese", languageName("zh-CN"))
+	assert.Equal(t, "German", languageName("de"))
+
+	for _, lang := range []string{"de", "en"} {
+		sys, _ := adaptAppleIntelligenceSummarize("Summarize the email text you are given.\n\nAnswer in " + lang + ".")
+		assert.Contains(t, sys, ai.UntrustedSystemNote, lang)
+	}
+
+	e := newSkillEnv(t)
+	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "1"}
+	_, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/typo")
+	assert.ErrorIs(t, err, ErrModelNotFound)
+	_, err = e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
+	assert.ErrorIs(t, err, ErrModelNotFound)
+}

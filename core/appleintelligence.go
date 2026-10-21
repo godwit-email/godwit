@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -344,6 +341,13 @@ func splitTextIntoChunks(text string) []string {
 func languageName(code string) string {
 	prefix := strings.ToLower(strings.TrimSpace(code))
 	if idx := strings.IndexAny(prefix, "-_"); idx > 0 {
+		if prefix[:idx] == "zh" {
+			switch prefix[idx+1:] {
+			case "hant", "tw", "hk", "mo":
+				return "Traditional Chinese"
+			}
+			return "Simplified Chinese"
+		}
 		prefix = prefix[:idx]
 	}
 	names := map[string]string{
@@ -378,14 +382,14 @@ func adaptAppleIntelligenceSummarize(system string) (string, float64) {
 		return "Fasse den Inhalt der E-Mail prägnant in 2 bis 4 Stichpunkten auf Deutsch zusammen.\n" +
 			"- Nenne nur Tatsachen, die tatsächlich im Text vorkommen.\n" +
 			"- Keine negativen Feststellungen (wie 'keine Fristen' oder 'nicht erwähnt').\n" +
-			"- Keine Einleitung, keine Schlussbemerkung und keine Systemhinweise.", 0.2
+			"- Keine Einleitung, keine Schlussbemerkung und keine Systemhinweise.\n\n" + ai.UntrustedSystemNote, 0.2
 	}
 
 	targetName := languageName(lang)
 	return fmt.Sprintf("Summarize the email concisely in 2 to 4 factual bullet points in %s.\n"+
 		"- Mention only facts that actually appear in the text.\n"+
 		"- Do not mention what is missing (no statements like 'no deadlines' or 'not mentioned').\n"+
-		"- No preamble, no closing remarks, and no system notes.", targetName), 0.2
+		"- No preamble, no closing remarks, and no system notes.\n\n%s", targetName, ai.UntrustedSystemNote), 0.2
 }
 
 func adaptAppleIntelligenceQuickReplies(system string) (string, float64) {
@@ -438,6 +442,9 @@ type quickRepliesResp struct {
 	Replies []quickReplyItem `json:"replies"`
 }
 
+// quickReplyMarker is a list marker: a bullet, or "1." / "1)".
+var quickReplyMarker = regexp.MustCompile(`^(?:[-*•]|\d{1,2}[.)])\s*`)
+
 func extractQuickReplies(raw string) []string {
 	lines := strings.Split(raw, "\n")
 	var bulletLines []string
@@ -451,12 +458,10 @@ func extractQuickReplies(raw string) []string {
 		if strings.HasSuffix(trimmed, ":") {
 			continue
 		}
-		isBullet := strings.HasPrefix(trimmed, "-") ||
-			strings.HasPrefix(trimmed, "*") ||
-			strings.HasPrefix(trimmed, "•") ||
-			(len(trimmed) >= 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && (trimmed[1] == '.' || trimmed[1] == ')'))
-
-		content := strings.TrimLeft(trimmed, "-*• 1234567890.)\"'“„”")
+		marker := quickReplyMarker.FindString(trimmed)
+		isBullet := marker != ""
+		// Only the list marker goes: "- 10:00 works" keeps its leading digits.
+		content := strings.TrimLeft(trimmed[len(marker):], "\"'“„”")
 		content = strings.TrimRight(content, "\"'“„”")
 		content = strings.TrimSpace(content)
 		if content == "" {
@@ -516,64 +521,16 @@ func formatQuickRepliesJSON(raw string) string {
 	return string(b)
 }
 
-// FindAppleIntelligenceHelper finds the bundled or local apple intelligence helper binary.
-func FindAppleIntelligenceHelper() string {
-	var candidates []string
-
-	// 1. App bundle Resources directory (e.g. Godwit.app/Contents/Resources/apple-intelligence-helper)
-	if exe, err := os.Executable(); err == nil {
-		resDir := filepath.Join(filepath.Dir(exe), "..", "Resources", "apple-intelligence-helper")
-		candidates = append(candidates, resDir)
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "apple-intelligence-helper"))
-	}
-
-	// 2. Relative resources from current working dir or project root
-	candidates = append(candidates,
-		"resources/darwin-arm64/apple-intelligence-helper",
-		"../resources/darwin-arm64/apple-intelligence-helper",
-	)
-
-	// 3. User's local installation
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(home, ".local", "bin", "apple-intelligence-cli"),
-			filepath.Join(home, "Library", "Application Support", "Godwit", "bin", "apple-intelligence-helper"),
-		)
-	}
-
-	for _, p := range candidates {
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && (fi.Mode()&0111 != 0) {
-			return p
-		}
-	}
-	return ""
-}
-
-// DefaultAppleIntelligence is the built-in Apple Intelligence implementation.
+// DefaultAppleIntelligence is the built-in Apple Intelligence implementation:
+// FoundationModels through the bundled helper binary.
 type DefaultAppleIntelligence struct {
 	ver        string
 	helperPath string
 }
 
-// NewDefaultAppleIntelligence creates a default Apple Intelligence engine.
-func NewDefaultAppleIntelligence() *DefaultAppleIntelligence {
-	return &DefaultAppleIntelligence{
-		ver:        "apple-intelligence-1.0",
-		helperPath: FindAppleIntelligenceHelper(),
-	}
-}
-
-// HelperPath returns the active path to the apple-intelligence-helper binary.
-func (d *DefaultAppleIntelligence) HelperPath() string {
-	if d.helperPath == "" {
-		d.helperPath = FindAppleIntelligenceHelper()
-	}
-	return d.helperPath
-}
-
-// SetHelperPath overrides the helper path (for tests).
-func (d *DefaultAppleIntelligence) SetHelperPath(p string) {
-	d.helperPath = p
+// NewDefaultAppleIntelligence runs the helper at helperPath.
+func NewDefaultAppleIntelligence(helperPath string) *DefaultAppleIntelligence {
+	return &DefaultAppleIntelligence{ver: "apple-intelligence-1.0", helperPath: helperPath}
 }
 
 func (d *DefaultAppleIntelligence) Version() string {
@@ -582,13 +539,9 @@ func (d *DefaultAppleIntelligence) Version() string {
 
 // Available reports whether Apple Intelligence is available on this Mac.
 func (d *DefaultAppleIntelligence) Available() bool {
-	bin := d.HelperPath()
-	if bin == "" {
-		return false
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "--check")
+	cmd := exec.CommandContext(ctx, d.helperPath, "--check")
 	out, err := cmd.Output()
 	if err != nil {
 		return false
@@ -606,11 +559,6 @@ func (d *DefaultAppleIntelligence) Generate(ctx context.Context, system, prompt 
 
 // GenerateWithTemperature produces text for the prompt using Apple's FoundationModels with a custom temperature.
 func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, system, prompt string, temp float64) (string, error) {
-	bin := d.HelperPath()
-	if bin == "" {
-		return "", errors.New("apple intelligence helper binary not found")
-	}
-
 	payload, err := json.Marshal(map[string]any{
 		"system":         system,
 		"text":           prompt,
@@ -621,13 +569,15 @@ func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, 
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, bin, "--json", string(payload))
+	// stdin, not argv: argv is visible to other processes and capped by ARG_MAX.
+	cmd := exec.CommandContext(ctx, d.helperPath)
+	cmd.Stdin = bytes.NewReader(payload)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("apple intelligence helper (%s): %w (stderr: %s)", bin, err, stderr.String())
+		return "", fmt.Errorf("apple intelligence helper: %w (%s%s)", err, stdout.String(), stderr.String())
 	}
 
 	var res struct {
@@ -682,16 +632,6 @@ func normalizeJudgeJSON(raw string) string {
 		}
 	}
 	return s
-}
-
-// AppleIntelligence returns the system's Apple Intelligence provider, if any.
-func (s *Service) AppleIntelligence() AppleIntelligence {
-	return s.opts.AppleIntelligence
-}
-
-// SetAppleIntelligence replaces the system's Apple Intelligence provider.
-func (s *Service) SetAppleIntelligence(ai AppleIntelligence) {
-	s.opts.AppleIntelligence = ai
 }
 
 func (s *Service) appleIntelligenceAvailable() bool {

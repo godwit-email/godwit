@@ -112,6 +112,9 @@ jobs:
       - name: Build the system-translation bridge
         if: matrix.name == 'macOS' && hashFiles('scripts/build-system-translate.sh') != ''
         run: scripts/build-system-translate.sh
+      - name: Build the Apple Intelligence helper
+        if: matrix.name == 'macOS' && hashFiles('scripts/build-apple-intelligence.sh') != ''
+        run: scripts/build-apple-intelligence.sh
       # Uploads to the R2 bucket of updates.s3 in mygo.config.ts, each
       # platform's manifest last: that is what publishes its update.
       - name: Build and upload

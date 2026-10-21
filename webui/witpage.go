@@ -170,14 +170,8 @@ func (w *Wit) state(st core.Settings) WitPageState {
 
 // modelLabel is a default model's label: its name without the provider.
 func modelLabel(model string) string {
-	if strings.HasPrefix(model, "plugin/") {
-		parts := strings.Split(model, "/")
-		if len(parts) >= 2 && parts[1] == "apple-intelligence" {
-			return "Apple Intelligence"
-		}
-		if len(parts) >= 3 {
-			return parts[1] + " / " + parts[2]
-		}
+	if strings.HasPrefix(model, "plugin/"+core.AppleIntelligencePlugin+"/") {
+		return "Apple Intelligence"
 	}
 	if _, m, ok := strings.Cut(model, "/"); ok {
 		return m
