@@ -62,7 +62,7 @@ public func free(_ p: UnsafeMutablePointer<CChar>?) {
     Foundation.free(p)
 }
 
-/// Returns a malloc'd NUL-terminated JSON array of installed language identifiers (e.g. ["de", "en-US", "en-GB", "fr", "tr"]),
+/// Returns a malloc'd NUL-terminated JSON array of installed language identifiers (e.g. ["de", "en", "en-GB", "fr", "zh-Hans"]),
 /// which the caller frees with godwit_st_free.
 @_cdecl("godwit_st_installed_languages")
 public func installedLanguages() -> UnsafeMutablePointer<CChar> {
@@ -93,20 +93,13 @@ public func installedLanguages() -> UnsafeMutablePointer<CChar> {
             done.signal()
         }
         done.wait()
-        var codeCounts: [String: Int] = [:]
+        // The minimal identifier keeps a region only where it is not the likely one
+        // (en-GB, not en-US), so full() in run maps the tag back to the variant installed.
         for s in installed {
-            if let code = s.languageCode?.identifier {
-                codeCounts[code, default: 0] += 1
-            }
-        }
-        for s in installed {
-            guard let code = s.languageCode?.identifier else { continue }
-            if code == "zh", let script = s.script?.identifier {
+            if s.languageCode?.identifier == "zh", let script = s.script?.identifier {
                 tags.append("zh-\(script)")
-            } else if (codeCounts[code] ?? 0) > 1, let region = s.region?.identifier {
-                tags.append("\(code)-\(region)")
             } else {
-                tags.append(code)
+                tags.append(s.minimalIdentifier)
             }
         }
     }
