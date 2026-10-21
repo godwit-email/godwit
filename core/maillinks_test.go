@@ -8,6 +8,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,4 +110,35 @@ func TestLinkRefsEdgeInputs(t *testing.T) {
 	out := linkRefs("https://a.com/x"+strings.Repeat(")", 1<<20), 1)
 	require.True(t, strings.HasPrefix(out, "https://a.com/x)"))
 	require.Less(t, time.Since(start), 2*time.Second, "trailing parentheses are trimmed in linear time")
+}
+
+func TestWitExpandsLinksLiveAndOnReload(t *testing.T) {
+	e := newSkillEnv(t)
+	id := addMessage(t, e.s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	e.srv.Script(testllm.Turn{Text: []string{"Here: " + ref[:25], ref[25:] + " done"}})
+	conv := e.askConv(t)
+	var live strings.Builder
+	for _, ev := range e.ask(t, conv.ID, "the link?") {
+		if ev.Kind == "text" {
+			live.WriteString(ev.Text)
+		}
+	}
+	require.Equal(t, "Here: "+longLink+" done", live.String())
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Here: "+longLink+" done", c.Messages[len(c.Messages)-1].Text)
+}
+
+func TestDropCutRef(t *testing.T) {
+	ref := linkRefPrefix + "a.com/x?m=1&h=0123abcd"
+	for in, want := range map[string]string{
+		"see " + ref[:30]:       "see ",
+		"see godwit:/":          "see ",
+		"see " + ref:            "see " + ref,
+		"see " + ref + " and g": "see " + ref + " and g",
+		"godwit: notes":         "godwit: notes",
+	} {
+		require.Equal(t, want, dropCutRef(in), in)
+	}
 }

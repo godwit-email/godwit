@@ -264,10 +264,11 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if c.Messages, err = ai.Messages(state); err != nil {
 		return Conversation{}, err
 	}
+	x := s.linkExpander()
 	for i, m := range c.Messages { // the saved history keeps the references the model wrote
-		c.Messages[i].Text, c.Messages[i].Reasoning = s.expandLinks(ctx, m.Text), s.expandLinks(ctx, m.Reasoning)
+		c.Messages[i].Text, c.Messages[i].Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
 		for j, call := range m.Calls {
-			m.Calls[j].Args = s.expandArgs(ctx, call.Args)
+			m.Calls[j].Args = x.args(ctx, call.Args)
 		}
 	}
 	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)

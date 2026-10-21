@@ -98,12 +98,12 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		if len(att) > 0 {
 			head += "Attachments: " + strings.Join(att, "; ") + "\n"
 		}
-		quote := ai.InjectionQuote(head + body) // before cleanMailURLs, so a link's query can still flag the mail
+		quote := ai.InjectionQuote(head + body) // before linkRefs, so a link's query can still flag the mail
 		suspect := quote != ""
 		body = linkRefs(body, m.ID)
 		cut := m.Truncated
 		if n := min(budget.PerMessage, left); utf8.RuneCountInString(body) > n {
-			body, cut = string([]rune(body)[:max(n, 0)]), true
+			body, cut = dropCutRef(string([]rune(body)[:max(n, 0)])), true
 		}
 		left -= utf8.RuneCountInString(body)
 		block := ai.Untrusted(fmt.Sprintf("message:%d", m.ID), head+"\n"+body, suspect)

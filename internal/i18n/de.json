@@ -103,6 +103,7 @@
   "error_stale_approval": "Diese Aktion wurde nach dem Vorschlagen geändert. Bitte prüfe sie erneut.",
   "error_stale_draft": "Der Entwurf wurde an anderer Stelle geändert.",
   "error_too_large": "Der Anhang überschreitet die Größenbeschränkung.",
+  "error_link_ref": "Ein Link in diesem Entwurf verweist auf eine E-Mail, die nicht mehr verfügbar ist. Ersetze den Link vor dem Senden.",
   "error_translator_unavailable": "Das Übersetzungs-Plugin läuft nicht. Aktiviere es in Einstellungen › Erweiterungen oder übersetze erneut mit dem Modell.",
   "error_system_language_not_installed": "Laden Sie diese Sprachen unter Systemeinstellungen › Allgemein › Sprache & Region › Übersetzungssprachen herunter und übersetzen Sie erneut.",
   "error_system_language_unsupported": "macOS übersetzt nicht zwischen diesen Sprachen. Wählen Sie unter Einstellungen › Allgemein eine andere Übersetzungsart.",

@@ -103,6 +103,7 @@
   "error_stale_approval": "Esta acción cambió después de proponerse. Revísala de nuevo.",
   "error_stale_draft": "El borrador se modificó en otro lugar.",
   "error_too_large": "El archivo adjunto supera el límite de tamaño.",
+  "error_link_ref": "Un enlace de este borrador apunta a un correo que ya no está disponible. Sustituye el enlace antes de enviar.",
   "error_translator_unavailable": "El plugin de traducción no se está ejecutando. Actívalo en Ajustes › Extensiones o vuelve a traducir con el modelo.",
   "error_system_language_not_installed": "Descarga estos idiomas en Ajustes del Sistema › General › Idioma y región › Idiomas de traducción y vuelve a traducir.",
   "error_system_language_unsupported": "macOS no traduce entre estos idiomas. Elige otro método de traducción en Ajustes › General.",

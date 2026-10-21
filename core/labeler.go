@@ -192,7 +192,11 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 // as untrusted mail.
 func labelState(m Message) string {
 	body := modelBody(m)
-	suspect := ai.InjectionQuote(mailHeader(m.MessageSummary)+"\n"+body) != "" // before cuts, as in mailContext
+	// Room for the links linkRefs shortens, without scanning a whole 2 MiB body for every new mail.
+	if r := []rune(body); len(r) > 4*labelBodyRunes {
+		body = string(r[:4*labelBodyRunes])
+	}
+	suspect := ai.InjectionQuote(mailHeader(m.MessageSummary)+"\n"+body) != "" // before linkRefs, as in mailContext
 	body = linkRefs(body, m.ID)
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])

@@ -103,6 +103,7 @@
   "error_stale_approval": "Cette action a changé après avoir été proposée. Veuillez la vérifier à nouveau.",
   "error_stale_draft": "Le brouillon a été modifié ailleurs.",
   "error_too_large": "La pièce jointe dépasse la taille maximale autorisée.",
+  "error_link_ref": "Un lien de ce brouillon renvoie à un e-mail qui n’est plus disponible. Remplacez le lien avant l’envoi.",
   "error_translator_unavailable": "Le plugin de traduction n’est pas actif. Activez-le dans Réglages › Extensions, ou traduisez à nouveau avec le modèle.",
   "error_system_language_not_installed": "Téléchargez ces langues dans Réglages Système › Général › Langue et région › Langues de traduction, puis traduisez à nouveau.",
   "error_system_language_unsupported": "macOS ne traduit pas entre ces langues. Choisissez un autre mode de traduction dans Réglages › Général.",

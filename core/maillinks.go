@@ -123,19 +123,39 @@ var trackingParams = []string{"fbclid", "gclid", "dclid", "gbraid", "wbraid", "m
 // expandLinks puts the links back for the references in model output. One
 // that resolves to nothing (its message gone) is left as it is.
 func (s *Service) expandLinks(ctx context.Context, text string) string {
+	return s.linkExpander().text(ctx, text)
+}
+
+// expandArgs is expandLinks for a tool call's JSON arguments.
+func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.RawMessage {
+	return s.linkExpander().args(ctx, args)
+}
+
+// linkExpander expands references across one output (a stream, a
+// conversation, a draft), reading each message they name once: a message is
+// sanitized and turned to text to find its links. Not for concurrent use.
+type linkExpander struct {
+	s      *Service
+	bodies map[int64]string
+}
+
+func (s *Service) linkExpander() *linkExpander {
+	return &linkExpander{s: s, bodies: map[int64]string{}}
+}
+
+func (x *linkExpander) text(ctx context.Context, text string) string {
 	if !strings.Contains(text, linkRefPrefix) {
 		return text
 	}
-	bodies := map[int64]string{}
 	return linkRefRe.ReplaceAllStringFunc(text, func(ref string) string {
 		sm := linkRefRe.FindStringSubmatch(ref)
 		id, _ := strconv.ParseInt(sm[1], 10, 64)
-		body, ok := bodies[id]
+		body, ok := x.bodies[id]
 		if !ok {
-			if m, err := s.mailForModel(ctx, id); err == nil {
+			if m, err := x.s.mailForModel(ctx, id); err == nil {
 				body = modelBody(m)
 			}
-			bodies[id] = body
+			x.bodies[id] = body
 		}
 		out := ref
 		mailLinks(body, func(u string) string {
@@ -148,8 +168,7 @@ func (s *Service) expandLinks(ctx context.Context, text string) string {
 	})
 }
 
-// expandArgs is expandLinks for a tool call's JSON arguments.
-func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.RawMessage {
+func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawMessage {
 	if !strings.Contains(string(args), linkRefPrefix) {
 		return args
 	}
@@ -161,17 +180,17 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 	}
 	var walk func(v any) any
 	walk = func(v any) any {
-		switch x := v.(type) {
+		switch v := v.(type) {
 		case string:
-			return s.expandLinks(ctx, x)
+			return x.text(ctx, v)
 		case []any:
-			for i := range x {
-				x[i] = walk(x[i])
+			for i := range v {
+				v[i] = walk(v[i])
 			}
 		case map[string]any: // keys too: a tool may key its arguments by URL
-			m := make(map[string]any, len(x))
-			for k, e := range x {
-				m[s.expandLinks(ctx, k)] = walk(e)
+			m := make(map[string]any, len(v))
+			for k, e := range v {
+				m[x.text(ctx, k)] = walk(e)
 			}
 			return m
 		}
@@ -189,33 +208,34 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 // and sent before any other event.
 func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan ai.Event {
 	out := make(chan ai.Event)
+	x := s.linkExpander()
 	go func() {
 		defer close(out)
 		var held, heldKind string
 		for ev := range in {
 			streamed := ev.Kind == "text" || ev.Kind == "reasoning"
 			if held != "" && (!streamed || ev.Kind != heldKind) {
-				out <- ai.Event{Kind: heldKind, Text: s.expandLinks(ctx, held)}
+				out <- ai.Event{Kind: heldKind, Text: x.text(ctx, held)}
 				held = ""
 			}
 			if streamed {
 				text := held + ev.Text
 				cut := refCut(text)
 				if held, heldKind = text[cut:], ev.Kind; cut > 0 {
-					ev.Text = s.expandLinks(ctx, text[:cut])
+					ev.Text = x.text(ctx, text[:cut])
 					out <- ev
 				}
 				continue
 			}
 			if ev.Call != nil {
 				c := *ev.Call
-				c.Args = s.expandArgs(ctx, c.Args)
+				c.Args = x.args(ctx, c.Args)
 				ev.Call = &c
 			}
 			out <- ev
 		}
 		if held != "" {
-			out <- ai.Event{Kind: heldKind, Text: s.expandLinks(ctx, held)}
+			out <- ai.Event{Kind: heldKind, Text: x.text(ctx, held)}
 		}
 	}()
 	return out
@@ -238,17 +258,33 @@ func refCut(text string) int {
 	return len(text)
 }
 
+// dropCutRef drops the unfinished reference a cut at the end of text left:
+// the model could copy it, and it would never expand.
+func dropCutRef(text string) string {
+	i := strings.LastIndex(text, "godwit:")
+	if i == -1 {
+		return text
+	}
+	rest := text[i:]
+	if (strings.HasPrefix(linkRefPrefix, rest) || strings.HasPrefix(rest, linkRefPrefix)) &&
+		!strings.ContainsAny(rest, " \t\r\n") && linkRefRe.FindStringIndex(rest) == nil {
+		return text[:i]
+	}
+	return text
+}
+
 // expandDraftLinks expands the link references in d's subject and body
 // before it is checked or sent: Wit's draft tools already did, but one may be
 // typed or pasted back in.
 func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
-	d.Subject, d.HTML = s.expandLinks(ctx, d.Subject), s.expandLinks(ctx, d.HTML)
+	x := s.linkExpander()
+	d.Subject, d.HTML = x.text(ctx, d.Subject), x.text(ctx, d.HTML)
 	if strings.Contains(d.Subject+d.HTML, linkRefPrefix) {
-		return errLinkRef
+		return ErrLinkRef
 	}
 	return nil
 }
 
-// errLinkRef is a draft that still holds a link reference: sending it would
+// ErrLinkRef is a draft that still holds a link reference: sending it would
 // mail the recipient a link that only works here.
-var errLinkRef = errors.New("the draft has a link reference that could not be restored (" + linkRefPrefix + "…): replace the link before sending")
+var ErrLinkRef = errors.New("the draft has a link reference that could not be restored (" + linkRefPrefix + "…): replace the link before sending")

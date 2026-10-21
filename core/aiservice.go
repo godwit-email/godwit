@@ -369,7 +369,8 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		wait() // no tools: anything else is done
 	}
 
-	rs, err := parseQuickReplies(text.String(), func(h string) string { return s.expandLinks(ctx, h) })
+	x := s.linkExpander()
+	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, h) })
 	if err != nil {
 		return nil, err
 	}

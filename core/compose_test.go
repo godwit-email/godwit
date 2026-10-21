@@ -606,6 +606,6 @@ func TestSendRefusesLinkReference(t *testing.T) {
 	d.To, d.HTML = []string{"bob@example.com"}, "<p>Join: "+linkRefPrefix+"zoom.us/j?m=999&h=00000000</p>"
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
-	require.ErrorIs(t, e.s.Send(bg, d.ID), errLinkRef)
+	require.ErrorIs(t, e.s.Send(bg, d.ID), ErrLinkRef)
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
 }

@@ -23,6 +23,7 @@ var sentinels = []struct {
 	{"use_assist", core.ErrUseAssist},
 	{"stale_approval", core.ErrStaleApproval},
 	{"too_large", core.ErrTooLarge},
+	{"link_ref", core.ErrLinkRef},
 	{"not_on_server_yet", core.ErrNotOnServerYet},
 	{"stale_draft", core.ErrStaleDraft},
 	{"not_synced", core.ErrNotSynced},
