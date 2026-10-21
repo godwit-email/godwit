@@ -174,6 +174,15 @@ func TestUpdateAccountIcon(t *testing.T) {
 	require.Len(t, list, 1)
 	assert.Equal(t, icon, list[0].Icon)
 
+	brand := "brand:gmail"
+	withBrand, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &brand})
+	require.NoError(t, err)
+	assert.Equal(t, brand, withBrand.Icon)
+	for _, bad := range []string{"brand:", "brand:Gmail!", "gmail"} {
+		_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &bad})
+		require.Error(t, err, bad)
+	}
+
 	bad := "label:nope"
 	_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &bad})
 	require.Error(t, err)

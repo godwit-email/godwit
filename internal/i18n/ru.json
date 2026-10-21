@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Загрузить значок…",
   "settings_account_icon_default": "По умолчанию",
   "settings_account_icon_symbols": "Значки",
+  "settings_account_icon_brands": "Логотипы",
   "error_account_icon": "Значок аккаунта должен быть изображением PNG, JPEG, GIF, WebP или SVG размером не более 5 МБ."
 }

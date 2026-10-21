@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Subir icono personalizado…",
   "settings_account_icon_default": "Usar predeterminado",
   "settings_account_icon_symbols": "Iconos",
+  "settings_account_icon_brands": "Logotipos",
   "error_account_icon": "El icono de la cuenta debe ser una imagen PNG, JPEG, GIF, WebP o SVG de 5 MB como máximo."
 }

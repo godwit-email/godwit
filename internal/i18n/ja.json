@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "独自のアイコンをアップロード…",
   "settings_account_icon_default": "デフォルトを使用",
   "settings_account_icon_symbols": "アイコン",
+  "settings_account_icon_brands": "ロゴ",
   "error_account_icon": "アカウントアイコンは 5 MB 以下の PNG、JPEG、GIF、WebP、SVG 画像にしてください。"
 }

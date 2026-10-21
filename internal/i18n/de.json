@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Eigenes Icon hochladen…",
   "settings_account_icon_default": "Standard verwenden",
   "settings_account_icon_symbols": "Symbole",
+  "settings_account_icon_brands": "Logos",
   "error_account_icon": "Ein Kontosymbol muss ein PNG-, JPEG-, GIF-, WebP- oder SVG-Bild von höchstens 5 MB sein."
 }

@@ -295,12 +295,18 @@ func decodeIcon(ct string, data []byte) ui.ImageSource {
 	return nil
 }
 
-// accountIcon is an account's icon: its uploaded image, the label icon it
-// chose, or else its provider's mark.
+// accountIcon is an account's icon: its uploaded image, the label icon or
+// provider logo it chose, or else its own provider's mark.
 func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 	if strings.HasPrefix(acc.Icon, "image:") {
 		if img := a.accountImage(acc); img != nil {
 			markTile(c, img, size)
+			return
+		}
+	}
+	if id, ok := strings.CutPrefix(acc.Icon, "brand:"); ok {
+		if b := icons.Brand(id); b != nil {
+			markTile(c, b, size)
 			return
 		}
 	}

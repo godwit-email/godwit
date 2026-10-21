@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Eigen pictogram uploaden…",
   "settings_account_icon_default": "Standaard gebruiken",
   "settings_account_icon_symbols": "Pictogrammen",
+  "settings_account_icon_brands": "Logo’s",
   "error_account_icon": "Een accountpictogram moet een PNG-, JPEG-, GIF-, WebP- of SVG-afbeelding van maximaal 5 MB zijn."
 }

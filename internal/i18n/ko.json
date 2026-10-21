@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "맞춤 아이콘 업로드…",
   "settings_account_icon_default": "기본값 사용",
   "settings_account_icon_symbols": "아이콘",
+  "settings_account_icon_brands": "로고",
   "error_account_icon": "계정 아이콘은 5MB 이하의 PNG, JPEG, GIF, WebP 또는 SVG 이미지여야 합니다."
 }

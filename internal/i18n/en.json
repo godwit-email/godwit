@@ -2240,5 +2240,6 @@
   "settings_account_icon_upload": "Upload custom icon…",
   "settings_account_icon_default": "Use default",
   "settings_account_icon_symbols": "Icons",
+  "settings_account_icon_brands": "Logos",
   "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB."
 }

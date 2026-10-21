@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "上傳自訂圖示…",
   "settings_account_icon_default": "使用預設",
   "settings_account_icon_symbols": "圖示",
+  "settings_account_icon_brands": "Logo",
   "error_account_icon": "帳戶圖示須為不超過 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 圖片。"
 }

@@ -702,26 +702,22 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 					})
 				})
 			})
-			kit.Field(c, i18n.T("settings.account.icon.symbols"), "", "", func() {
-				const perRow = 8
-				ui.Column(c).Gap(th.Space(1)).Children(func() {
-					for start := 0; start < len(core.LabelIcons); start += perRow {
-						ui.Row(c.Key(start)).Gap(th.Space(1)).Children(func() {
-							for _, name := range core.LabelIcons[start:min(start+perRow, len(core.LabelIcons))] {
-								key := "label:" + name
-								on := p.iconUpload == nil && p.iconSelected == key
-								cell := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { p.pickIcon(key) }}).
-									Label(name).Checked(on).Height(theme.LabelIconCell).Grow(1).Radius(t.Radius.Lg).Justify(ui.Center).AlignItems(ui.Center).
-									TextColor(t.Foreground)
-								if on {
-									cell.Background(t.Hover).TextColor(t.Foreground)
-								}
-								cell.Children(func() { ui.Icon(c, icons.Get("label-"+name)).Size(theme.IconLg, theme.IconLg) })
-							}
-						})
-					}
-				})
-			})
+			var brands, symbols []iconChoice
+			for _, id := range icons.Brands() {
+				name := id
+				if pr, ok := auth.ByID(id); ok {
+					name = providerName(pr)
+				}
+				b := icons.Brand(id)
+				brands = append(brands, iconChoice{"brand:" + id, name, func() { markTile(c, b, theme.MarkSm) }})
+			}
+			for _, name := range core.LabelIcons {
+				symbols = append(symbols, iconChoice{"label:" + name, name, func() {
+					ui.Icon(c, icons.Get("label-"+name)).Size(theme.IconLg, theme.IconLg)
+				}})
+			}
+			kit.Field(c.Key("brands"), i18n.T("settings.account.icon.brands"), "", "", func() { p.iconGrid(c, brands) })
+			kit.Field(c.Key("symbols"), i18n.T("settings.account.icon.symbols"), "", "", func() { p.iconGrid(c, symbols) })
 		}
 		confirm = func() {
 			patch := core.AccountPatch{IconImage: p.iconUpload}
@@ -747,6 +743,38 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
 		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || p.dialog == "password" && p.secret == ""}).OnClick(confirm)
+	})
+}
+
+// iconChoice is an icon the icon dialog offers: key is an Account.Icon.
+type iconChoice struct {
+	key, name string
+	draw      func()
+}
+
+// iconGrid is the icon dialog's choices, eight a row; a short last row keeps the cell width.
+func (p *settingsPage) iconGrid(c *ui.Context, choices []iconChoice) {
+	const perRow = 8
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		for start := 0; start < len(choices); start += perRow {
+			ui.Row(c.Key(start)).Gap(th.Space(1)).Children(func() {
+				row := choices[start:min(start+perRow, len(choices))]
+				for _, ch := range row {
+					on := p.iconUpload == nil && p.iconSelected == ch.key
+					cell := kit.Pressable(c.Key(ch.key), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { p.pickIcon(ch.key) }}).
+						Label(ch.name).Checked(on).Height(theme.LabelIconCell).Grow(1).Basis(0).Radius(t.Radius.Lg).Justify(ui.Center).AlignItems(ui.Center).
+						TextColor(t.Foreground)
+					if on {
+						cell.Background(t.Hover)
+					}
+					cell.Children(ch.draw)
+				}
+				for i := len(row); i < perRow; i++ {
+					ui.Box(c.Key(i)).Height(theme.LabelIconCell).Grow(1).Basis(0)
+				}
+			})
+		}
 	})
 }
 

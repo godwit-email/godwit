@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Özel simge yükle…",
   "settings_account_icon_default": "Varsayılanı kullan",
   "settings_account_icon_symbols": "Simgeler",
+  "settings_account_icon_brands": "Logolar",
   "error_account_icon": "Hesap simgesi en fazla 5 MB boyutunda PNG, JPEG, GIF, WebP veya SVG görseli olmalıdır."
 }

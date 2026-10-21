@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Téléverser une icône…",
   "settings_account_icon_default": "Par défaut",
   "settings_account_icon_symbols": "Icônes",
+  "settings_account_icon_brands": "Logos",
   "error_account_icon": "L’icône du compte doit être une image PNG, JPEG, GIF, WebP ou SVG de 5 Mo maximum."
 }

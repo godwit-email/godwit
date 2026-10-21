@@ -472,7 +472,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 			Args: []any{id, ct, p.IconImage}})
 		set("icon", "image:"+strconv.FormatInt(time.Now().UnixNano(), 36)) // a new key per upload: the GUI caches by it
 	case p.Icon != nil:
-		if name, ok := strings.CutPrefix(*p.Icon, "label:"); *p.Icon != "" && (!ok || !slices.Contains(LabelIcons, name)) {
+		if !validAccountIcon(*p.Icon) {
 			return Account{}, fmt.Errorf("invalid account icon %q", *p.Icon)
 		}
 		iconStmts = append(iconStmts, sqlite.Statement{SQL: "DELETE FROM account_icons WHERE account_id = ?", Args: []any{id}})
@@ -600,4 +600,15 @@ func (s *Service) AccountIcon(ctx context.Context, id int64) (AccountIcon, error
 	r := rows.Values[0]
 	data, _ := r[1].([]byte)
 	return AccountIcon{ContentType: store.Str(r[0]), Data: data}, nil
+}
+
+// validAccountIcon is whether icon may be set as is: ”, label:<name> or brand:<id>.
+func validAccountIcon(icon string) bool {
+	if name, ok := strings.CutPrefix(icon, "label:"); ok {
+		return slices.Contains(LabelIcons, name)
+	}
+	if id, ok := strings.CutPrefix(icon, "brand:"); ok { // the GUI's marks, more than the providers': it falls back on unknown ones
+		return id != "" && strings.Trim(id, "abcdefghijklmnopqrstuvwxyz0123456789-") == ""
+	}
+	return icon == ""
 }

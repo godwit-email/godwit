@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "Tải lên biểu tượng tùy chỉnh…",
   "settings_account_icon_default": "Dùng mặc định",
   "settings_account_icon_symbols": "Biểu tượng",
+  "settings_account_icon_brands": "Logo",
   "error_account_icon": "Biểu tượng tài khoản phải là ảnh PNG, JPEG, GIF, WebP hoặc SVG tối đa 5 MB."
 }

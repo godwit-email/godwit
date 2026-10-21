@@ -1105,5 +1105,6 @@
   "settings_account_icon_upload": "上传自定义图标…",
   "settings_account_icon_default": "使用默认",
   "settings_account_icon_symbols": "图标",
+  "settings_account_icon_brands": "Logo",
   "error_account_icon": "账户图标须为不超过 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 图片。"
 }

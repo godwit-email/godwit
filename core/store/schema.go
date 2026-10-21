@@ -363,8 +363,8 @@ var Migrations = [][]string{{
 	`DROP TABLE signature_images`,
 	`ALTER TABLE signature_images_by_sig RENAME TO signature_images`,
 }, {
-	// An account's icon: '' its provider's mark, 'label:<name>' (core.LabelIcons), or
-	// 'image:<n>' for its account_icons row, n bumped per upload.
+	// An account's icon: '' its provider's mark, 'label:<name>' (core.LabelIcons),
+	// 'brand:<provider id>', or 'image:<n>' for its account_icons row, n bumped per upload.
 	`ALTER TABLE accounts ADD COLUMN icon TEXT NOT NULL DEFAULT ''`,
 	`CREATE TABLE account_icons (account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
 		content_type TEXT NOT NULL, data BLOB NOT NULL)`,
