@@ -90,13 +90,13 @@ func TestLinkRefsExpandKeepsNumbersAndReasoning(t *testing.T) {
 	in <- ai.Event{Kind: "reasoning", Text: ref[20:]}
 	in <- ai.Event{Kind: "text", Text: "done"}
 	close(in)
-	var kinds, texts []string
+	byKind, last := map[string]string{}, ""
 	for ev := range s.expandEvents(ctx, in) {
-		kinds, texts = append(kinds, ev.Kind), append(texts, ev.Text)
+		require.False(t, last == "text" && ev.Kind == "reasoning", "reasoning comes out before the text")
+		byKind[ev.Kind] += ev.Text
+		last = ev.Kind
 	}
-	require.Equal(t, "the link "+longLink, strings.Join(texts[:len(texts)-1], ""))
-	require.Equal(t, "reasoning", kinds[len(kinds)-2])
-	require.Equal(t, "text", kinds[len(kinds)-1])
+	require.Equal(t, map[string]string{"reasoning": "the link " + longLink, "text": "done"}, byKind)
 
 	rs, err := parseQuickReplies(`{"replies":[{"html":"<p><a href=\"`+ref+`\">Join</a></p>"}]}`, func(h string) string { return s.expandLinks(ctx, h) })
 	require.NoError(t, err)
@@ -293,8 +293,9 @@ func TestLinkRefsDottedAndSelections(t *testing.T) {
 	require.Contains(t, sel.Block, ref, "a selection's links are references too")
 	require.Equal(t, longLink, s.expandLinks(ctx, ref))
 
-	snip := snippetLinks("Shop "+longLink+" now https://a.com/cut?utm_source=x", id)
-	require.Equal(t, "Shop "+ref+" now https://a.com/cut?utm_source=x", snip, "the last word may be cut: left alone")
+	long := strings.Repeat("w ", 90) + "now https://a.com/cut?utm_source=x"
+	require.Equal(t, long, snippetLinks(long, id), "at the snippet cut, the last word may be cut: left alone")
+	require.Equal(t, "Shop "+ref, snippetLinks("Shop "+longLink, id), "a shorter snippet's last word is whole")
 }
 
 func TestLinkRefsTranslationPieces(t *testing.T) {
@@ -331,12 +332,30 @@ func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
 	require.ErrorIs(t, err, errKeyCollision, "two keys that become one link refuse the call")
 
 	var many strings.Builder
-	for i := range maxIndexedLinks + 50 {
+	for i := range 600 {
 		fmt.Fprintf(&many, "https://a.com/%090d\n", i)
 	}
 	fmt.Fprintf(&many, "https://a.com/short\n")
 	big := addMessage(t, s, "Many", "x@x", many.String(), "", 1_700_000_200)
 	x := s.linkExpander()
 	x.link(ctx, big, "0000000000000000")
-	require.Len(t, x.links[big], maxIndexedLinks, "a message indexes a bounded number of links, long ones only")
+	require.Len(t, x.links[big], 600, "every link that gets a reference is indexed, and long ones only")
+}
+
+func TestLinkRefsLeftBoundaryEverywhere(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	in := make(chan ai.Event, 3)
+	in <- ai.Event{Kind: "text", Text: "go https://redirect.example/?u="}
+	in <- ai.Event{Kind: "text", Text: ref + " end"}
+	close(in)
+	var out string
+	for ev := range s.expandEvents(t.Context(), in) {
+		out += ev.Text
+	}
+	require.Equal(t, "go https://redirect.example/?u="+ref+" end", out, "a chunk edge keeps the boundary check")
+
+	masked, links := maskLinks([]string{"see " + longLink}, id)
+	require.Equal(t, "voir "+ref+"&extra=1", unmask("voir "+ref+"&extra=1", masked[0], links), "a continued reference is not restored")
 }

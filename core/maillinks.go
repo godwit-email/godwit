@@ -131,13 +131,21 @@ func unmask(text, masked string, links map[string]string) string {
 	for _, r := range linkRefRe.FindAllString(masked, -1) {
 		left[r]++
 	}
-	return linkRefRe.ReplaceAllStringFunc(text, func(r string) string {
-		if u, ok := links[r]; ok && left[r] > 0 {
-			left[r]--
-			return u
+	var b strings.Builder
+	last := 0
+	for _, loc := range linkRefRe.FindAllStringIndex(text, -1) {
+		r := text[loc[0]:loc[1]]
+		u, ok := links[r]
+		if !ok || left[r] == 0 || refContinues(text, loc[1]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
+			continue // as linkExpander.text: part of a longer URL stays as written
 		}
-		return r
-	})
+		left[r]--
+		b.WriteString(text[last:loc[0]])
+		b.WriteString(u)
+		last = loc[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
 }
 
 func linkHash(u string) string {
@@ -206,9 +214,6 @@ const maxExpandURL = 8 << 10
 // many made-up message ids cannot make it load and scan the whole mailbox.
 const maxExpandMessages = 32
 
-// maxIndexedLinks caps the links indexed per message.
-const maxIndexedLinks = 512
-
 // link is the link of message id with hash h, the message's links indexed once.
 func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
 	x.mu.Lock()
@@ -221,8 +226,9 @@ func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bo
 		idx = map[string]string{}
 		if m, err := x.s.mailForModel(ctx, id); err == nil {
 			mailLinks(modelHead(m)+"\n"+modelBody(m), func(u string) string {
-				// Only links linkRefs makes references of, and a bounded number of them.
-				if k := linkHash(u); len(u) > maxModelURL && len(u) <= maxExpandURL && idx[k] == "" && len(idx) < maxIndexedLinks {
+				// Only links linkRefs makes references of. Every one is indexed, as every one
+				// gets a reference; they are mostly substrings of the body, bounded by its size.
+				if k := linkHash(u); len(u) > maxModelURL && len(u) <= maxExpandURL && idx[k] == "" {
 					idx[k] = u // the first link with a hash wins
 				}
 				return u
@@ -235,13 +241,23 @@ func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bo
 }
 
 func (x *linkExpander) text(ctx context.Context, text string) string {
+	return x.textAfter(ctx, 0, text)
+}
+
+// textAfter is text for text that follows prev (0 for none) in a stream: prev
+// decides whether a reference at its start is inside another URL.
+func (x *linkExpander) textAfter(ctx context.Context, prev byte, text string) string {
 	if !strings.Contains(text, linkRefPrefix) {
 		return text
 	}
 	var b strings.Builder
 	last := 0
 	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
-		if refContinues(text, loc[1]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
+		before := prev
+		if loc[0] > 0 {
+			before = text[loc[0]-1]
+		}
+		if refContinues(text, loc[1]) || before != 0 && continuesURL(before) {
 			continue // part of a longer URL (more hash or query, or inside another's): left for the checks
 		}
 		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
@@ -326,17 +342,22 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 	go func() {
 		defer close(out)
 		var held, heldKind string
+		var prev byte // the last byte sent of heldKind's stream, as the model wrote it
 		for ev := range in {
 			streamed := ev.Kind == "text" || ev.Kind == "reasoning"
 			if held != "" && (!streamed || ev.Kind != heldKind) {
-				out <- ai.Event{Kind: heldKind, Text: x.text(ctx, dropCutRef(held))}
+				out <- ai.Event{Kind: heldKind, Text: x.textAfter(ctx, prev, dropCutRef(held))}
 				held = ""
+			}
+			if !streamed || ev.Kind != heldKind {
+				prev = 0
 			}
 			if streamed {
 				text := held + ev.Text
 				cut := refCut(text)
 				if held, heldKind = text[cut:], ev.Kind; cut > 0 {
-					ev.Text = x.text(ctx, text[:cut])
+					ev.Text = x.textAfter(ctx, prev, text[:cut])
+					prev = text[cut-1]
 					out <- ev
 				}
 				continue
@@ -349,7 +370,7 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 			out <- ev
 		}
 		if held != "" {
-			out <- ai.Event{Kind: heldKind, Text: x.text(ctx, dropCutRef(held))}
+			out <- ai.Event{Kind: heldKind, Text: x.textAfter(ctx, prev, dropCutRef(held))}
 		}
 	}()
 	return out
@@ -389,9 +410,15 @@ func dropCutRef(text string) string {
 	return text
 }
 
+// snippetRunes is where mail.Snippet cuts a snippet.
+const snippetRunes = 200
+
 // snippetLinks is linkRefs over a snippet but its last word, which the
 // snippet may have cut: a reference to part of a link would never expand.
 func snippetLinks(snippet string, id int64) string {
+	if utf8.RuneCountInString(snippet) < snippetRunes {
+		return linkRefs(snippet, id) // shorter than the cut: its last word is whole
+	}
 	i := strings.LastIndexAny(snippet, " \t\r\n") + 1
 	return linkRefs(snippet[:i], id) + defuseRefs(snippet[i:])
 }
