@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"strconv"
@@ -33,10 +34,24 @@ const (
 )
 
 var (
-	mailURLRe = regexp.MustCompile(`(?i:https?)://(?:\[[0-9A-Fa-f:.]+\])?[^\s<>"'\]]*`) // a bracketed IPv6 host is one link
+	mailURLRe    = regexp.MustCompile(`(?i:https?)://(?:\[[0-9A-Fa-f:.]+\])?[^\s<>"'\]]*`) // a bracketed IPv6 host is one link
+	plantedRefRe = regexp.MustCompile(`(?i)godwit://link/`)
 	// The & may come back HTML-escaped in a draft's href.
 	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
 )
+
+// modelHead is the header of m a model reads, its attachments listed.
+func modelHead(m Message) string {
+	head := mailHeader(m.MessageSummary)
+	var att []string
+	for _, a := range m.Attachments {
+		att = append(att, fmt.Sprintf("%s (attachment %d, %s, %d bytes)", a.Filename, a.ID, a.ContentType, a.Size))
+	}
+	if len(att) > 0 {
+		head += "Attachments: " + strings.Join(att, "; ") + "\n"
+	}
+	return head
+}
 
 // modelBody is the text of m a model reads: its plain text, else its HTML as text.
 func modelBody(m Message) string {
@@ -68,8 +83,8 @@ func mailLinks(text string, f func(u string) string) string {
 // linkRefs drops tracking parameters from the links in text of message id and
 // turns those still longer than maxModelURL into references.
 func linkRefs(text string, id int64) string {
-	// Only references this makes reach the model: one planted in mail is defused.
-	text = strings.ReplaceAll(text, linkRefPrefix, "godwit:link/")
+	// Only references this makes reach the model: one planted in mail, in any case, is defused.
+	text = plantedRefRe.ReplaceAllString(text, "godwit:link/")
 	return mailLinks(text, func(u string) string {
 		if len(u) <= maxModelURL {
 			return u
@@ -92,19 +107,35 @@ func linkRefs(text string, id int64) string {
 // maskLinks is linkRefs over texts of message id, and the replacer that puts
 // the links back: texts cut into pieces may split a link, so the references
 // are undone from what was masked, not from the message.
-func maskLinks(texts []string, id int64) ([]string, *strings.Replacer) {
-	var pairs []string
+func maskLinks(texts []string, id int64) ([]string, map[string]string) {
+	links := map[string]string{}
 	out := make([]string, len(texts))
 	for i, t := range texts {
 		out[i] = mailLinks(t, func(u string) string {
 			r := linkRefs(u, id)
 			if r != u {
-				pairs = append(pairs, r, u)
+				links[r] = u
 			}
 			return r
 		})
 	}
-	return out, strings.NewReplacer(pairs...)
+	return out, links
+}
+
+// unmask puts the links of maskLinks back in text, each at most as often as
+// masked holds its reference: a model repeating one cannot multiply a huge link.
+func unmask(text, masked string, links map[string]string) string {
+	left := map[string]int{}
+	for _, r := range linkRefRe.FindAllString(masked, -1) {
+		left[r]++
+	}
+	return linkRefRe.ReplaceAllStringFunc(text, func(r string) string {
+		if u, ok := links[r]; ok && left[r] > 0 {
+			left[r]--
+			return u
+		}
+		return r
+	})
 }
 
 func linkHash(u string) string {
@@ -180,7 +211,7 @@ func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bo
 	if !ok {
 		idx = map[string]string{}
 		if m, err := x.s.mailForModel(ctx, id); err == nil {
-			mailLinks(mailHeader(m.MessageSummary)+"\n"+modelBody(m), func(u string) string {
+			mailLinks(modelHead(m)+"\n"+modelBody(m), func(u string) string {
 				if k := linkHash(u); len(u) <= maxExpandURL && idx[k] == "" {
 					idx[k] = u // the first link with a hash wins
 				}

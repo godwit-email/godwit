@@ -184,9 +184,10 @@ func TestLinkRefsBounds(t *testing.T) {
 	}
 	require.Equal(t, "go "+ref+"f now", out, "a reference at a chunk's end waits for what follows")
 
-	texts, restore := maskLinks([]string{"see " + longLink, "short https://a.com/x?utm_source=1"}, id)
+	texts, links := maskLinks([]string{"see " + longLink, "short https://a.com/x?utm_source=1"}, id)
 	require.Equal(t, []string{"see " + ref, "short https://a.com/x"}, texts)
-	require.Equal(t, "voir "+longLink, restore.Replace("voir "+ref))
+	require.Equal(t, "voir "+longLink, unmask("voir "+ref, texts[0], links))
+	require.Equal(t, "voir "+longLink+" "+ref, unmask("voir "+ref+" "+ref, texts[0], links), "a link comes back only as often as it was masked")
 }
 
 func TestLinkExpanderLimits(t *testing.T) {
@@ -244,4 +245,26 @@ func TestLinkRefsFailClosed(t *testing.T) {
 	out, err := s.toolArgs(ctx, json.RawMessage(`{"url":"`+ref+`"}`))
 	require.NoError(t, err)
 	require.JSONEq(t, `{"url":"`+longLink+`"}`, string(out))
+}
+
+func TestLinkRefsInHeadersAndAttachments(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Deal "+longLink, "shop@x", "hi", "", 1_700_000_000)
+	file := "https://files.example.com/" + strings.Repeat("f", 90) + ".pdf"
+	_, err := s.db.Execute(t.Context(), "INSERT INTO attachments(message_id, filename, content_type, size, inline) VALUES (?, ?, 'application/pdf', 1, 0)", id, file)
+	require.NoError(t, err)
+	ctx := t.Context()
+
+	items, err := s.mailContext(ctx, &gateway.Scope{}, []int64{id}, defaultMailBudget)
+	require.NoError(t, err)
+	fileRef := linkRefRe.FindAllString(items[0].Block, -1)
+	require.Len(t, fileRef, 2, items[0].Block)
+	require.Equal(t, file, s.expandLinks(ctx, fileRef[1]), "an attachment name's link expands")
+
+	sum := s.summaryContext(&gateway.Scope{}, []MessageSummary{{ID: id, Subject: "Deal " + longLink, From: "shop@x"}})
+	require.NotContains(t, sum[0].Block, "session=")
+	sub := s.subjectContext(&gateway.Scope{}, []MessageSummary{{ID: id, Subject: "Deal " + longLink}})
+	require.NotContains(t, sub[0].Block, "session=")
+
+	require.Contains(t, linkRefs("Godwit://LINK/a.com?m=1&h=0123abcd0123abcd", 1), "godwit:link/", "planted, in any case, is defused")
 }

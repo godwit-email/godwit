@@ -142,15 +142,15 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 // translateMasked is translateBodyTexts with the long links of message id
 // masked before the texts are cut into pieces, and put back after.
 func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
-	masked, restore := maskLinks(originals, id)
+	masked, links := maskLinks(originals, id)
 	res, err := translateBodyTexts(ctx, masked, target, keep, call)
 	if err != nil {
 		return res, err
 	}
-	out := bodyTranslation{Text: restore.Replace(res.Text), Translations: map[string]string{}}
+	out := bodyTranslation{Text: unmask(res.Text, strings.Join(masked, "\n"), links), Translations: map[string]string{}}
 	for i, text := range originals {
 		if tr, ok := res.Translations[masked[i]]; ok {
-			if tr = restore.Replace(tr); tr != text {
+			if tr = unmask(tr, masked[i], links); tr != text {
 				out.Translations[text] = tr
 			}
 		}

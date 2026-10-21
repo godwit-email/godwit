@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -89,15 +88,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 	left := budget.Total
 	for _, i := range order {
 		m := msgs[i]
-		body := modelBody(m)
-		var att []string
-		for _, a := range m.Attachments {
-			att = append(att, fmt.Sprintf("%s (attachment %d, %s, %d bytes)", a.Filename, a.ID, a.ContentType, a.Size))
-		}
-		head := mailHeader(m.MessageSummary)
-		if len(att) > 0 {
-			head += "Attachments: " + strings.Join(att, "; ") + "\n"
-		}
+		body, head := modelBody(m), modelHead(m)
 		quote := ai.InjectionQuote(head + body) // before linkRefs, so a link's query can still flag the mail
 		suspect := quote != ""
 		head, body = linkRefs(head, m.ID), linkRefs(body, m.ID)
@@ -141,6 +132,7 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 		text := mailHeader(m) + "\n" + m.Snippet
 		quote := ai.InjectionQuote(text)
 		suspect := quote != ""
+		text = linkRefs(mailHeader(m), m.ID) + "\n" + m.Snippet // a snippet may cut a link: no reference of it would expand
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
 			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
 	}
@@ -156,7 +148,7 @@ func (s *Service) subjectContext(scope *gateway.Scope, list []MessageSummary) []
 		quote := ai.InjectionQuote(m.Subject)
 		suspect := quote != ""
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
-			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), "Subject: "+m.Subject, suspect)})
+			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), linkRefs("Subject: "+m.Subject, m.ID), suspect)})
 	}
 	return out
 }
