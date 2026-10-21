@@ -184,6 +184,7 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 		system, temp = adaptAppleIntelligenceQuickReplies(system)
 	}
 
+	prompt = truncateForContext(prompt, appleIntelligencePromptBytes)
 	var outText string
 	if genWithTemp, ok := t.ai.(interface {
 		GenerateWithTemperature(context.Context, string, string, float64) (string, error)
@@ -344,9 +345,12 @@ func languageName(code string) string {
 	prefix := strings.ToLower(strings.TrimSpace(code))
 	if idx := strings.IndexAny(prefix, "-_"); idx > 0 {
 		if prefix[:idx] == "zh" {
-			switch prefix[idx+1:] {
-			case "hant", "tw", "hk", "mo":
-				return "Traditional Chinese"
+			// Any subtag may carry it: zh-Hant, zh-TW, zh-Hant-HK.
+			for _, sub := range strings.FieldsFunc(prefix[idx+1:], func(r rune) bool { return r == '-' || r == '_' }) {
+				switch sub {
+				case "hant", "tw", "hk", "mo":
+					return "Traditional Chinese"
+				}
 			}
 			return "Simplified Chinese"
 		}
@@ -563,7 +567,7 @@ func (d *DefaultAppleIntelligence) Generate(ctx context.Context, system, prompt 
 func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, system, prompt string, temp float64) (string, error) {
 	payload, err := json.Marshal(map[string]any{
 		"system":         system,
-		"text":           truncateForContext(prompt),
+		"text":           prompt,
 		"detectLanguage": false,
 		"temperature":    temp,
 	})
@@ -605,20 +609,27 @@ func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, 
 // SystemLanguageModel.tokenCount once Godwit requires a macOS that has it.
 const appleIntelligencePromptBytes = 8000
 
-// truncateForContext cuts s to appleIntelligencePromptBytes on a rune boundary.
-func truncateForContext(s string) string {
-	if len(s) <= appleIntelligencePromptBytes {
+// truncateForContext cuts s to at most n bytes on a rune boundary.
+func truncateForContext(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	cut := appleIntelligencePromptBytes
+	cut := max(n, 0)
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
 	return s[:cut]
 }
 
+// judgeFramingBytes is room for what ai.NewGenJudge wraps around the input
+// and questions.
+const judgeFramingBytes = 1500
+
 // Judge evaluates questions against input using Apple Intelligence.
 func (d *DefaultAppleIntelligence) Judge(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
+	// Cut the input, not the whole prompt: the questions come after it and must survive.
+	q, _ := json.Marshal(qs)
+	input = truncateForContext(input, appleIntelligencePromptBytes-len(q)-judgeFramingBytes)
 	gen := func(ctx context.Context, system, prompt string) (string, error) {
 		out, err := d.Generate(ctx, system, prompt)
 		if err != nil {
