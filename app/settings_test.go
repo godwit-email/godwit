@@ -1155,6 +1155,9 @@ func TestSignaturesList(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings("signatures")
 	h.see("还没有签名")
+	if h.tt.HasText("在签名前加分隔线（-- ）") {
+		t.Error("the options show with no signature")
+	}
 	h.click("新建签名")
 	h.until("made and opened", func() bool { return strings.HasPrefix(h.app.route.Settings, "signature:") })
 	h.see("未命名签名")
@@ -1172,6 +1175,12 @@ func TestSignaturesList(t *testing.T) {
 	if h.tt.HasText("Acme") {
 		t.Error("the preview shows more than two lines")
 	}
+	h.see("方便 Mutt、Thunderbird 这类客户端识别和折叠签名")
+	h.click("在签名前加分隔线（-- ）")
+	h.until("the delimiter is on", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.SignatureDelimiter
+	})
 	h.click("Work")
 	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
 }

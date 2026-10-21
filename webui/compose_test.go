@@ -291,7 +291,6 @@ func TestComposeLoadRichBody(t *testing.T) {
 	assert.Contains(t, st.Quote, "the plan")
 	assert.NotContains(t, st.Quote, "<blockquote")
 	assert.Contains(t, st.SignatureHTML, "Godwit")
-	assert.Contains(t, st.SignatureHTML, "-- ", "the delimiter stays")
 	assert.NotContains(t, st.SignatureHTML, "data-godwit", "no draft markers")
 	assert.Equal(t, "zh-Hans", st.Locale)
 	assert.Equal(t, []Attachment{}, st.Attachments)

@@ -128,6 +128,11 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 		settingsCard(c, rows...)
 		kit.Text(c, i18n.T("settings.signatures.foot"), t.Text.Sm).TextColor(t.Muted)
 	})
+	p.syncSettings()
+	defer p.syncSettings() // what the switch changed while building
+	settingsSection(c, i18n.T("settings.signatures.options"), "", func() {
+		kit.SwitchRow(c, &p.st.SignatureDelimiter, i18n.T("settings.signatures.delimiter"), i18n.T("settings.signatures.delimiter.help"))
+	})
 }
 
 // sigForm is the shown signature's name field: typing saves once it

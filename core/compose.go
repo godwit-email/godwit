@@ -96,6 +96,10 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		return Draft{}, err
 	}
 	d := Draft{AccountID: accountID, Mode: mode}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return Draft{}, err
+	}
 	if mode != "new" {
 		orig, err := s.sourceMessage(ctx, accountID, sourceMessageID)
 		if err != nil {
@@ -110,7 +114,6 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		}
 		// The marker blockquote only marks the quote (attribution line included)
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
-		st, _ := s.loadSettings(ctx)
 		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
 		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
 	}
@@ -118,7 +121,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 	if err != nil {
 		return Draft{}, err
 	}
-	d.HTML += signatureHTML(acc.Signature, cids)
+	d.HTML += signatureHTML(acc.Signature, cids, st.SignatureDelimiter)
 	return d, nil
 }
 
@@ -142,18 +145,26 @@ func SignatureEditorHTML(sig string, cids map[string]bool) string {
 func escapeLines(s string) string { return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") }
 
 // signatureHTML is the marked signature block that ends a draft body, "" for
-// none; cids are the account's signature images.
-func signatureHTML(sig string, cids map[string]bool) string {
+// none; cids are the stored signature images. delim puts the "-- " line
+// before it (Settings.SignatureDelimiter); the text part follows the HTML.
+func signatureHTML(sig string, cids map[string]bool, delim bool) string {
 	if !strings.HasPrefix(sig, SignatureHTMLPrefix) {
 		if sig == "" {
 			return ""
 		}
-		return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+		if delim {
+			return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+		}
+		return `<div data-godwit="signature"><p>` + escapeLines(sig) + "</p></div>"
 	}
-	if body := SignatureEditorHTML(sig, cids); body != "" {
+	body := SignatureEditorHTML(sig, cids)
+	switch {
+	case body == "":
+		return ""
+	case delim:
 		return `<div data-godwit="signature"><p>-- </p>` + body + "</div>" // the delimiter a plain one has; the body is blocks
 	}
-	return ""
+	return `<div data-godwit="signature">` + body + "</div>"
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.

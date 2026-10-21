@@ -277,7 +277,6 @@ func TestSignatureShown(t *testing.T) {
 	assert.Contains(t, shown, "<table")
 	assert.Contains(t, shown, "color: red")
 	assert.Contains(t, shown, dataURL("image/png", img))
-	assert.Contains(t, shown, "-- ", "the delimiter stays")
 	assert.NotContains(t, shown, "script")
 	assert.NotContains(t, shown, "onclick")
 	assert.NotContains(t, shown, "data-godwit")

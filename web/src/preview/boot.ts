@@ -56,7 +56,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
           ...(state === "signature" && {
-            signatureHtml: `<p>-- <br>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`,
+            signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),
         }),
         "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision }),
