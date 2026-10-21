@@ -35,7 +35,7 @@ const (
 var (
 	mailURLRe = regexp.MustCompile(`https?://[^\s<>"'\]]+`)
 	// The & may come back HTML-escaped in a draft's href.
-	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{8})`)
+	linkRefRe = regexp.MustCompile(`godwit://link/[^\s?"'<>]*\?m=(\d+)&(?:amp;)?h=([0-9a-f]{16})`)
 )
 
 // modelBody is the text of m a model reads: its plain text, else its HTML as text.
@@ -89,15 +89,15 @@ func linkRefs(text string, id int64) string {
 
 func linkHash(u string) string {
 	sum := sha256.Sum256([]byte(u))
-	return hex.EncodeToString(sum[:4])
+	return hex.EncodeToString(sum[:8]) // 64 bits: a sender cannot craft two links of one mail that share it
 }
 
 // dropTrackingParams removes query parameters that only identify a campaign
 // or recipient; the rest of the query is kept byte for byte.
 func dropTrackingParams(u string) string {
 	q := strings.IndexByte(u, '?')
-	if q == -1 {
-		return u
+	if f := strings.IndexByte(u, '#'); q == -1 || f != -1 && f < q {
+		return u // no query: a "?" after "#" is the fragment's (a hash-routed app's)
 	}
 	query, frag := u[q+1:], ""
 	if f := strings.IndexByte(query, '#'); f != -1 {
@@ -159,7 +159,7 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 		}
 		out := ref
 		mailLinks(body, func(u string) string {
-			if linkHash(u) == sm[2] {
+			if out == ref && linkHash(u) == sm[2] {
 				out = u
 			}
 			return u
@@ -215,7 +215,7 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 		for ev := range in {
 			streamed := ev.Kind == "text" || ev.Kind == "reasoning"
 			if held != "" && (!streamed || ev.Kind != heldKind) {
-				out <- ai.Event{Kind: heldKind, Text: x.text(ctx, held)}
+				out <- ai.Event{Kind: heldKind, Text: x.text(ctx, dropCutRef(held))}
 				held = ""
 			}
 			if streamed {
@@ -235,7 +235,7 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 			out <- ev
 		}
 		if held != "" {
-			out <- ai.Event{Kind: heldKind, Text: x.text(ctx, held)}
+			out <- ai.Event{Kind: heldKind, Text: x.text(ctx, dropCutRef(held))}
 		}
 	}()
 	return out

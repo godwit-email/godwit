@@ -23,6 +23,7 @@ func TestLinkRefs(t *testing.T) {
 		{"long hint is cut on a rune", "https://example.cn/" + strings.Repeat("新闻", 30), linkRefPrefix + "example.cn/新闻新闻新闻新闻…?m=7&h=" + linkHash("https://example.cn/"+strings.Repeat("新闻", 30))},
 		{"a link's own ! inside HTMLToText's parentheses stays", "go (https://a.com/wow!)", "go (https://a.com/wow!)"},
 		{"sentence end after a parenthesis", "(see https://a.com/x).", "(see https://a.com/x)."},
+		{"a ? in the fragment is no query", "https://app.example/#/open?utm_source=mail", "https://app.example/#/open?utm_source=mail"},
 		{"balanced parentheses stay", "https://en.wikipedia.org/wiki/Go_(game), ok", "https://en.wikipedia.org/wiki/Go_(game), ok"},
 	} {
 		t.Run(c.name, func(t *testing.T) { require.Equal(t, c.want, linkRefs(c.in, 7)) })
@@ -42,7 +43,7 @@ func TestLinkRefsExpand(t *testing.T) {
 	require.Equal(t, "Open "+longLink+" now", s.expandLinks(ctx, "Open "+ref+" now"))
 	escaped := strings.Replace(ref, "&h=", "&amp;h=", 1)
 	require.Equal(t, `<a href="`+longLink+`">`, s.expandLinks(ctx, `<a href="`+escaped+`">`), "an HTML draft's escaped &")
-	forged := ref[:len(ref)-8] + "00000000"
+	forged := ref[:len(ref)-16] + "0000000000000000"
 	require.Equal(t, forged, s.expandLinks(ctx, forged), "a hash that is no link of the message")
 
 	args, _ := json.Marshal(map[string]any{"html": "<p>" + ref + "</p>", "to": []any{"a@x"}})
@@ -131,7 +132,7 @@ func TestWitExpandsLinksLiveAndOnReload(t *testing.T) {
 }
 
 func TestDropCutRef(t *testing.T) {
-	ref := linkRefPrefix + "a.com/x?m=1&h=0123abcd"
+	ref := linkRefPrefix + "a.com/x?m=1&h=0123abcd0123abcd"
 	for in, want := range map[string]string{
 		"see " + ref[:30]:       "see ",
 		"see godwit:/":          "see ",
@@ -141,4 +142,17 @@ func TestDropCutRef(t *testing.T) {
 	} {
 		require.Equal(t, want, dropCutRef(in), in)
 	}
+}
+
+func TestExpandEventsDropsUnfinishedReference(t *testing.T) {
+	s := newMailContextService(t)
+	in := make(chan ai.Event, 3)
+	in <- ai.Event{Kind: "text", Text: "Join at " + linkRefPrefix + "zoom.us/j?m=1&h=01"}
+	in <- ai.Event{Kind: "done"}
+	close(in)
+	var text string
+	for ev := range s.expandEvents(t.Context(), in) {
+		text += ev.Text
+	}
+	require.Equal(t, "Join at ", text, "a reference the model never finished is not shown")
 }
