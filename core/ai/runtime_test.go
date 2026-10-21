@@ -953,7 +953,7 @@ func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {
 func TestRequestArgsRewriteBeforeValidation(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)
-		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "open", Args: `{"url":"ref:1"}`}}},
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "open", Args: `{"id":12345678901,"url":"ref:1"}`}}},
 			testllm.Turn{Text: []string{"opened"}})
 		var got atomic.Value
 		tools := []ToolSpec{{Name: "open", Description: "open",
@@ -965,7 +965,8 @@ func TestRequestArgsRewriteBeforeValidation(t *testing.T) {
 		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: tools, Args: rewrite})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
-		assert.JSONEq(t, `{"url":"https://a.com/x"}`, got.Load().(string), "the schema saw the rewritten value")
+		assert.JSONEq(t, `{"id":12345678901,"url":"https://a.com/x"}`, got.Load().(string), "the schema saw the rewritten value")
+		assert.Contains(t, got.Load().(string), `"id":12345678901`, "an integer is not re-encoded as a float")
 		assert.Contains(t, string(srv.Requests()[1].Messages), "ref:1", "the state keeps what the model wrote")
 	})
 }

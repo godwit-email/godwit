@@ -50,17 +50,15 @@ func modelBody(m Message) string {
 // puts in its place what f returns.
 func mailLinks(text string, f func(u string) string) string {
 	return mailURLRe.ReplaceAllStringFunc(text, func(u string) string {
-		// Sentence punctuation and the ")" of HTMLToText's "text (url)" are not part of the link.
+		// Sentence punctuation, then unbalanced ")" (HTMLToText's "text (url)"), are
+		// not part of the link; what a ")" closes over is, so "a!)" keeps its "!".
 		// Counted once and kept up to date: mail can end a link with any number of ")".
 		trail, open, closed := len(u), strings.Count(u, "("), strings.Count(u, ")")
-		for trail > 0 {
-			c := u[trail-1]
-			if !strings.ContainsRune(".,;:!?", rune(c)) && (c != ')' || open >= closed) {
-				break
-			}
-			if c == ')' {
-				closed--
-			}
+		for trail > 0 && strings.IndexByte(".,;:!?", u[trail-1]) != -1 {
+			trail--
+		}
+		for trail > 0 && u[trail-1] == ')' && open < closed {
+			closed--
 			trail--
 		}
 		return f(dropTrackingParams(u[:trail])) + u[trail:]

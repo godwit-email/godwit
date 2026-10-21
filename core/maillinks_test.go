@@ -20,6 +20,8 @@ func TestLinkRefs(t *testing.T) {
 		{"only tracking params", "https://a.com/x?utm_source=e#top", "https://a.com/x#top"},
 		{"long link becomes a reference", "go (" + longLink + "&utm_source=email)", "go (" + ref + ")"},
 		{"long hint is cut on a rune", "https://example.cn/" + strings.Repeat("新闻", 30), linkRefPrefix + "example.cn/新闻新闻新闻新闻…?m=7&h=" + linkHash("https://example.cn/"+strings.Repeat("新闻", 30))},
+		{"a link's own ! inside HTMLToText's parentheses stays", "go (https://a.com/wow!)", "go (https://a.com/wow!)"},
+		{"sentence end after a parenthesis", "(see https://a.com/x).", "(see https://a.com/x)."},
 		{"balanced parentheses stay", "https://en.wikipedia.org/wiki/Go_(game), ok", "https://en.wikipedia.org/wiki/Go_(game), ok"},
 	} {
 		t.Run(c.name, func(t *testing.T) { require.Equal(t, c.want, linkRefs(c.in, 7)) })

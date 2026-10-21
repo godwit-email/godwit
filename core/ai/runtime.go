@@ -484,11 +484,15 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
 			if c.r.args != nil { // on a copy: the model's own request stays in the state
 				in := rawJSON(p.Request.Input)
-				var v any
-				if out := c.r.args(ctx, in); !bytes.Equal(out, in) && json.Unmarshal(out, &v) == nil {
-					req, q := *p.Request, *p
-					req.Input, q.Request = v, &req
-					p = &q
+				if out := c.r.args(ctx, in); !bytes.Equal(out, in) {
+					dec := json.NewDecoder(bytes.NewReader(out))
+					dec.UseNumber() // a large integer argument stays exact
+					var v any
+					if dec.Decode(&v) == nil {
+						req, q := *p.Request, *p
+						req.Input, q.Request = v, &req
+						p = &q
+					}
 				}
 			}
 			resp, err := next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
