@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.9.0](https://github.com/godwit-email/godwit/compare/v1.8.1...v1.9.0) (2026-10-21)
+
+
+### Features
+
+* **account:** add customizable account icons and transparent default icon ([#127](https://github.com/godwit-email/godwit/issues/127)) ([95e3445](https://github.com/godwit-email/godwit/commit/95e34454d79e942f29d119900313e2b8031cd7ec))
+* **ai:** integrate Apple Intelligence as builtin plugin for small tasks and classification ([#136](https://github.com/godwit-email/godwit/issues/136)) ([b4642f2](https://github.com/godwit-email/godwit/commit/b4642f2d90dc3f5edafb7df3daf1f37621da06fa))
+* **ai:** show long mail links to models as godwit://link references ([#135](https://github.com/godwit-email/godwit/issues/135)) ([b1b7ba0](https://github.com/godwit-email/godwit/commit/b1b7ba0549b0b0ce74c3f971be3a316b84c9d52e))
+* **auth:** add Lark Mail as Feishu's overseas provider ([#138](https://github.com/godwit-email/godwit/issues/138)) ([633686a](https://github.com/godwit-email/godwit/commit/633686abb58b80567184d5da9bc4f164156a8212))
+* **compose:** add underline, strikethrough, font controls, and autocorrect preservation ([#130](https://github.com/godwit-email/godwit/issues/130)) ([4a3f820](https://github.com/godwit-email/godwit/commit/4a3f8204ce2256c02244e611373b16a5bc204a4b))
+* **signature:** shared signatures and an HTML mode for the editor ([#140](https://github.com/godwit-email/godwit/issues/140)) ([8725b95](https://github.com/godwit-email/godwit/commit/8725b9572cc338bc6eaa1f0a20d7803835712673))
+* **signin:** recognize codes and buttons by how a code mail looks ([#141](https://github.com/godwit-email/godwit/issues/141)) ([2cae26c](https://github.com/godwit-email/godwit/commit/2cae26cf6d567749938e4fad88391a68b031443f))
+* **wit:** add format skill to structure drafts without altering wording ([#129](https://github.com/godwit-email/godwit/issues/129)) ([5ff2e59](https://github.com/godwit-email/godwit/commit/5ff2e597d7e8d0b0a42cf600aba10571c33e7ad2))
+* **wit:** support email subject in draft assist, translation, and review diffs ([#131](https://github.com/godwit-email/godwit/issues/131)) ([e58d30f](https://github.com/godwit-email/godwit/commit/e58d30f5d073c3b206332f3f0a2ee5cb068c6b0c))
+
+
+### Bug Fixes
+
+* **translate:** query installed macOS translation languages dynamically and pin active app language ([#132](https://github.com/godwit-email/godwit/issues/132)) ([c4b76a9](https://github.com/godwit-email/godwit/commit/c4b76a9ee0c5fd25610bafbcb755f3cc3e1c1fd4))
+* **ui:** align and clean up wit compose action tray ([#126](https://github.com/godwit-email/godwit/issues/126)) ([a3d2d9f](https://github.com/godwit-email/godwit/commit/a3d2d9f6955fa3b7c4b6c73f9a2759d5440d5cc2))
+
 ## [1.8.1](https://github.com/godwit-email/godwit/compare/v1.8.0...v1.8.1) (2026-10-20)
 
 
