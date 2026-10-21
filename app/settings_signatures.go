@@ -472,11 +472,11 @@ func (p *settingsPage) codeView(c *ui.Context) {
 				kit.Text(c, i18n.T(sc.refused), t.Text.Sm).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
 			}
 			ui.Box(c).Grow(1)
-			// The page's toggle, pressed: 28 high, 8 padding, a 16 icon and 12 text (Signature.tsx's Bar).
+			// The page's toggle, pressed: 28 high, 8 padding, a 16 icon and text-xs (Signature.tsx's Bar).
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: p.closeCode}).Label(i18n.T("settings.account.signature.html.label")).
 				Height(th.Space(7)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md).Background(t.HoverTint).Children(func() {
 				ui.Icon(c, icons.Get("code")).Size(theme.Icon, theme.Icon)
-				kit.Text(c, i18n.T("settings.account.signature.html"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.account.signature.html"), t.Text.Xs).FontWeight(500)
 			})
 		})
 		hairline(c)
