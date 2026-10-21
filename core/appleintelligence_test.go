@@ -172,7 +172,7 @@ func TestAppleIntelligenceResolutionAndExecution(t *testing.T) {
 }
 
 func TestDefaultAppleIntelligence(t *testing.T) {
-	d := NewDefaultAppleIntelligence(filepath.Join("..", "resources", "darwin-"+runtime.GOARCH, "apple-intelligence-helper"))
+	d := NewDefaultAppleIntelligence(filepath.Join("..", "resources", "darwin-"+runtime.GOARCH, "apple-intelligence-helper"), "test")
 	assert.NotEmpty(t, d.Version())
 
 	if !d.Available() {
@@ -350,4 +350,12 @@ func TestAppleIntelligenceReviewFixes(t *testing.T) {
 	assert.ErrorIs(t, err, ErrModelNotFound)
 	_, err = e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
 	assert.ErrorIs(t, err, ErrModelNotFound)
+
+	// An OS or helper update changes the version, so cached outputs aren't reused.
+	m1, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
+	require.NoError(t, err)
+	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "2"}
+	m2, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
+	require.NoError(t, err)
+	assert.NotEqual(t, m1.Version, m2.Version)
 }

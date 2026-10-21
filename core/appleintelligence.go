@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"html"
 	"io"
 	"net/http"
@@ -528,9 +529,10 @@ type DefaultAppleIntelligence struct {
 	helperPath string
 }
 
-// NewDefaultAppleIntelligence runs the helper at helperPath.
-func NewDefaultAppleIntelligence(helperPath string) *DefaultAppleIntelligence {
-	return &DefaultAppleIntelligence{ver: "apple-intelligence-1.0", helperPath: helperPath}
+// NewDefaultAppleIntelligence runs the helper at helperPath; version names
+// what may change its outputs (the OS build, the app that ships the helper).
+func NewDefaultAppleIntelligence(helperPath, version string) *DefaultAppleIntelligence {
+	return &DefaultAppleIntelligence{ver: version, helperPath: helperPath}
 }
 
 func (d *DefaultAppleIntelligence) Version() string {
@@ -633,6 +635,18 @@ func normalizeJudgeJSON(raw string) string {
 	}
 	return s
 }
+
+// appleIntelligenceVersion is the model version cache keys use: it follows
+// a.Version() and the prompt adaptations in this file.
+func appleIntelligenceVersion(a AppleIntelligence) int64 {
+	h := fnv.New64a()
+	fmt.Fprint(h, a.Version(), "\x00", appleIntelligenceAdaptations)
+	return int64(h.Sum64() >> 1)
+}
+
+// appleIntelligenceAdaptations: bump when the prompt adaptations or output
+// cleanup here change, so cached outputs are regenerated.
+const appleIntelligenceAdaptations = 1
 
 func (s *Service) appleIntelligenceAvailable() bool {
 	return s.opts.AppleIntelligence != nil

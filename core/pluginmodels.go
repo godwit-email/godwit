@@ -179,7 +179,7 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 		}
 		return ai.ResolvedModel{
 			ServiceID: pluginServiceID(ref),
-			Version:   1,
+			Version:   appleIntelligenceVersion(s.opts.AppleIntelligence),
 			Kind:      ai.KindOpenAI,
 			BaseURL:   "http://127.0.0.1:0",
 			Model:     m.ID,

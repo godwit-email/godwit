@@ -5,8 +5,10 @@ package main
 import (
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"github.com/egoist/mygo"
+	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 )
 
@@ -21,7 +23,8 @@ var appleIntelligence = sync.OnceValue(func() core.AppleIntelligence {
 	if err != nil {
 		return nil
 	}
-	ai := core.NewDefaultAppleIntelligence(filepath.Join(dir, appleIntelligenceHelper))
+	build, _ := syscall.Sysctl("kern.osversion") // the build: an update may change the system model
+	ai := core.NewDefaultAppleIntelligence(filepath.Join(dir, appleIntelligenceHelper), build+" "+app.Version)
 	if !ai.Available() {
 		return nil
 	}
