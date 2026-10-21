@@ -344,20 +344,6 @@ func TestAppleIntelligenceReviewFixes(t *testing.T) {
 	assert.True(t, utf8.ValidString(cut))
 	assert.Equal(t, "short", truncateForContext("short", appleIntelligencePromptBytes))
 
-	// A long classifier input keeps its questions: the helper sees every label name.
-	dir := t.TempDir()
-	got := filepath.Join(dir, "stdin")
-	helper := filepath.Join(dir, "helper")
-	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\ncat > "+got+"\necho '{\"success\":true,\"text\":\"{}\"}'\n"), 0o755))
-	d := NewDefaultAppleIntelligence(helper, "t")
-	_, _ = d.Judge(t.Context(), strings.Repeat("标签", 4000), []ai.Question{{Name: "invoice_label", Type: ai.Predicate, Instructions: "Is this an invoice?"}})
-	sent, err := os.ReadFile(got)
-	require.NoError(t, err)
-	var req struct{ Text, System string }
-	require.NoError(t, json.Unmarshal(sent, &req))
-	assert.LessOrEqual(t, len(req.Text), appleIntelligencePromptBytes)
-	assert.Contains(t, req.System+req.Text, "invoice_label")
-
 	assert.Equal(t, "- Erklärt die Arbeit der zugrundeliegenden Technologie",
 		cleanAppleIntelligenceSummary("- Erklärt die Arbeit der zugrundeliegenden Technologie"))
 
@@ -374,7 +360,7 @@ func TestAppleIntelligenceReviewFixes(t *testing.T) {
 
 	e := newSkillEnv(t)
 	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "1"}
-	_, _, err = e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/typo")
+	_, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/typo")
 	assert.ErrorIs(t, err, ErrModelNotFound)
 	_, err = e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
 	assert.ErrorIs(t, err, ErrModelNotFound)
@@ -386,4 +372,23 @@ func TestAppleIntelligenceReviewFixes(t *testing.T) {
 	m2, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
 	require.NoError(t, err)
 	assert.NotEqual(t, m1.Version, m2.Version)
+}
+
+// A long classifier input keeps its questions: the helper sees every label name.
+func TestAppleIntelligenceJudgeKeepsQuestions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake helper is a shell script; the real one is macOS only")
+	}
+	dir := t.TempDir()
+	got := filepath.Join(dir, "stdin")
+	helper := filepath.Join(dir, "helper")
+	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\ncat > "+got+"\necho '{\"success\":true,\"text\":\"{}\"}'\n"), 0o755))
+	d := NewDefaultAppleIntelligence(helper, "t")
+	_, _ = d.Judge(t.Context(), strings.Repeat("标签", 4000), []ai.Question{{Name: "invoice_label", Type: ai.Predicate, Instructions: "Is this an invoice?"}})
+	sent, err := os.ReadFile(got)
+	require.NoError(t, err)
+	var req struct{ Text, System string }
+	require.NoError(t, json.Unmarshal(sent, &req))
+	assert.LessOrEqual(t, len(req.Text), appleIntelligencePromptBytes)
+	assert.Contains(t, req.System+req.Text, "invoice_label")
 }
