@@ -7,7 +7,7 @@ import (
 )
 
 // secretSet holds the secret values of extensions (plugin secret config, MCP
-// env and header values) for value-based redaction (spec 5.5). It only grows:
+// env and header values) for value-based redaction. It only grows:
 // a value replaced or removed may still be held by a running instance or work
 // in flight, so it stays redacted for the rest of the Service's lifetime. Its
 // zero value is ready; it is safe for concurrent use.

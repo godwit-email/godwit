@@ -1,6 +1,6 @@
 // Package richtext is Godwit's rich text model: mail bodies, compose content
-// and Markdown become a flat list of blocks that the native UI draws (spec
-// 5.5), and compose content goes back to HTML.
+// and Markdown become a flat list of blocks that the native UI draws,
+// and compose content goes back to HTML.
 package richtext
 
 import "strings"

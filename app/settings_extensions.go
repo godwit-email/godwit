@@ -850,7 +850,7 @@ func (e *extView) confirmView(c *ui.Context) {
 	})
 }
 
-// registryView is the plugin directory (spec 3.1): what it lists for this
+// registryView is the plugin directory (ADR 0016): what it lists for this
 // computer, and for each entry install, update, replace, or why not.
 func (e *extView) registryView(c *ui.Context) {
 	t := theme.Of(c)

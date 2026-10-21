@@ -156,7 +156,7 @@
   overscroll-behavior: none;
 }
 
-/* No font is bundled: web pages use the system's (spec §A4). */
+/* No font is bundled: web pages use the system's (ADR 0012). */
 body {
   font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }

@@ -1,7 +1,7 @@
 package plugins
 
-// The plugin registry (docs/superpowers/specs/2026-10-14-native-plugins-design.md
-// 4.2): reviewed releases, each with its manifest and the exact files it
+// The plugin registry (docs/adr/0016-signed-plugin-registry.md):
+// reviewed releases, each with its manifest and the exact files it
 // ships. This file is the format; where it comes from and its signature are
 // core's.
 

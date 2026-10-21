@@ -24,8 +24,8 @@ import (
 )
 
 // assistTools are the tools of an Assist run: read mail, and propose a new
-// editable part for this draft, plus the running plugins' read tools (spec
-// 7.4: the compose panel changes only its draft). None of them sends mail.
+// editable part for this draft, plus the running plugins' read tools (ADR 0003;
+// the compose panel changes only its draft). None of them sends mail.
 var assistTools = []string{"search_mail", "get_message", "read_attachment", "update_draft"}
 
 const (
@@ -205,7 +205,7 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []t
 	return assistSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
 }
 
-// draftLanguage is the language a draft is written in (spec: reply language):
+// draftLanguage is the language a draft is written in (the reply language setting):
 // the reading language, or under "match" the language of the email a reply
 // answers, else of the recipients' past mail (the context shows it).
 func (s *Service) draftLanguage(ctx context.Context, d Draft) (string, error) {
@@ -389,7 +389,7 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 }
 
 // applyInitial approves, through the normal path, the pending proposals that
-// write an empty draft (spec 7.3: the first generation is written directly)
+// write an empty draft (the first generation is written directly)
 // and those a session grant covers (audited auto:session). It returns the
 // approvals as they are now, and whether any was decided; the caller then
 // resumes the run (resumeRun).
@@ -713,7 +713,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if err != nil {
 		return nil, err
 	}
-	// A skill reads only its target (spec 5.1): no mail, not even the one replied to.
+	// A skill reads only its target (ADR 0009): no mail, not even the one replied to.
 	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
 	if withSubject && d.Subject != "" {
 		prompt = "The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n" + prompt

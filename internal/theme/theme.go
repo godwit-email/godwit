@@ -341,7 +341,7 @@ func status(t Tokens) Tokens {
 	return sized(t)
 }
 
-// Light is the light appearance (spec 7.0).
+// Light is the light appearance.
 func Light() Tokens {
 	return status(Tokens{
 		Window: p.Neutral50.Color(), Sidebar: p.Neutral50.Color(),

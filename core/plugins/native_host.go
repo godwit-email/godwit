@@ -1,6 +1,6 @@
 package plugins
 
-// The plugin-host side of a native plugin (spec 4.5): the child process
+// The plugin-host side of a native plugin (ADR 0015): the child process
 // `godwit plugin-host` checks the library's SHA-256 before anything loads it
 // (loading runs its initializers), loads it, and serves JSON lines on stdio.
 
@@ -23,7 +23,7 @@ import (
 	"github.com/ebitengine/purego"
 )
 
-// ABI request and response caps (spec 4.4).
+// ABI request and response caps.
 const (
 	maxNativeRequest  = 1 << 20
 	maxNativeResponse = 4 << 20
@@ -161,7 +161,7 @@ func hostErrorLine(id int64, msg string) []byte {
 	return b
 }
 
-// The C structs of spec 4.4, as Go lays them out on 64-bit platforms.
+// The C structs of sdk/native/godwit_plugin.h, as Go lays them out on 64-bit platforms.
 type cBuffer struct {
 	Ptr unsafe.Pointer
 	Len uintptr

@@ -186,7 +186,7 @@ func NewJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judg
 }
 
 // ListJudgeModels lists the judge models for a format. Decisions has no
-// listing (research §1), so it is the static list; System One asks
+// listing (docs/research/judge-apis.md §1), so it is the static list; System One asks
 // base+"/models". On error callers may fall back to format.Models().
 func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, base, key string) ([]string, error) {
 	switch format {

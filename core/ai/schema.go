@@ -6,7 +6,7 @@ import (
 )
 
 // NormalizeSchema flattens a tool input schema for providers that keep only the
-// root type/properties/required (Genkit's Anthropic plugin, spec 6.3): local
+// root type/properties/required (Genkit's Anthropic plugin, ADR 0007): local
 // $defs/definitions references are inlined, the root description is returned as
 // descr, and constructs that cannot be flattened (recursive definitions, root
 // anyOf/oneOf/allOf, unresolved refs) are reported in warnings. Recursive

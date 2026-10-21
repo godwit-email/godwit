@@ -28,7 +28,7 @@ export default {
     infoPlist: { NSUserActivityTypes: ["INSendMessageIntent"] },
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
     // Native plugins are libraries other developers sign: the hardened runtime
-    // loads them only with library validation off (docs/superpowers/specs/2026-10-14-native-plugins-design.md 7.1).
+    // loads them only with library validation off (docs/adr/0017-macos-library-validation.md).
     entitlements: entitlements || "assets/entitlements.plist",
     notarize: env.NOTARY_KEYCHAIN ? { keychainProfile: "notary", keychain: env.NOTARY_KEYCHAIN } : undefined,
   },

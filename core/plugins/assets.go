@@ -1,7 +1,7 @@
 package plugins
 
-// Registry-hosted assets of a native release (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md
-// 2, 7): large files such as a model's weights or an inference engine's
+// Registry-hosted assets of a native release (docs/adr/0020-plugin-models-host-sdk.md):
+// large files such as a model's weights or an inference engine's
 // libraries, which Godwit downloads and checks itself; the plugin only ever
 // gets the verified directories. This file is their format.
 

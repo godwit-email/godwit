@@ -35,7 +35,7 @@ type Host interface {
 	AuditEgress(ctx context.Context, inv Invocation, dest, decision, reason string) error
 }
 
-// Host-side data limits (spec 5.5).
+// Host-side data limits.
 const (
 	MaxBodyBytes     = 256 << 10 // each of a message's text and html, as a plugin gets it
 	MaxStorageValue  = 64 << 10

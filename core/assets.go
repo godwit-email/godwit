@@ -1,7 +1,6 @@
 package core
 
-// Registry-hosted model files (docs/superpowers/specs/2026-10-17-plugin-model-provider-design.md
-// 8.2, plan docs/superpowers/plans/2026-10-17-local-startlux-judge.md Task 3):
+// Registry-hosted model files (docs/adr/0020-plugin-models-host-sdk.md):
 // each variant in DataDir/plugin-assets/<variant digest>/, named as the
 // registry names its files, downloaded with resumption and checked against
 // the signed registry's sizes and SHA-256 before every load.

@@ -245,7 +245,7 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust, assetsDigest
 	if builtin(m.Name) != nil {
 		return PluginInfo{}, fmt.Errorf("%s is the name of a plugin built into Godwit", m.Name)
 	}
-	// A native plugin's grant is for its exact files (spec 2.6); a script plugin's for its permissions.
+	// A native plugin's grant is for its exact files (ADR 0015); a script plugin's for its permissions.
 	permHash, libHash := m.PermissionHash(), ""
 	if m.IsNative() {
 		if libHash, err = plugins.FileSHA256(filepath.Join(snap, plugins.LibraryName())); err != nil {
@@ -290,7 +290,7 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust, assetsDigest
 	}
 	// The switch. If it fails nothing changed: the old version keeps running and
 	// the new directory is removed on the next start or install.
-	// A reviewed native file is granted at once (spec 3.1); it stays off if the
+	// A reviewed native file is granted at once (ADR 0016); it stays off if the
 	// user had turned it off, and comes back if Godwit had (failures, revoked).
 	// A script plugin turning native gets no native rights from an update: the
 	// user consents to them on the risk card first, as for any new native file.
@@ -631,7 +631,7 @@ var (
 	nativeIdle  = 10 * time.Minute
 )
 
-// loadNative starts a native plugin's process (spec 3.3): plugin-host checks
+// loadNative starts a native plugin's process (ADR 0015): plugin-host checks
 // the library's hash before loading it, then every new process (this one and
 // any after a crash, timeout or idle exit) must describe itself as the
 // manifest says before it gets its settings. Called with pluginsMu held.

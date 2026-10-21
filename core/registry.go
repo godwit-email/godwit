@@ -1,7 +1,7 @@
 package core
 
-// The plugin registry's source (docs/superpowers/specs/2026-10-14-native-plugins-design.md
-// 2.4, 3.1, 3.5, 3.7): a registry.json signed with ed25519, fetched over
+// The plugin registry's source (docs/adr/0016-signed-plugin-registry.md):
+// a registry.json signed with ed25519, fetched over
 // https, kept in the data directory and verified again on every read.
 
 import (
@@ -303,7 +303,7 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 }
 
 // applyRegistry revokes listed packages reg no longer lists and promotes
-// user-allowed packages it lists exactly (spec 3.5, 3.7).
+// user-allowed packages it lists exactly (ADR 0016).
 func (s *Service) applyRegistry(ctx context.Context, reg plugins.Registry) error {
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()

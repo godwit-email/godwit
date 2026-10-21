@@ -1,4 +1,4 @@
-// Package plugins runs third-party TypeScript plugins (spec 5.3–5.5): manifest
+// Package plugins runs third-party TypeScript plugins: manifest
 // validation, the sandbox and the ctx API. It does not import core; the host
 // side is injected.
 package plugins
@@ -77,7 +77,7 @@ const (
 	KindTool       InvocationKind = "tool"
 	// KindTranslate translates mail the user chose to translate with this
 	// plugin: like a hook it gets every declared host without asking each
-	// time (docs/superpowers/specs/2026-10-14-native-plugins-design.md 2.7).
+	// time (docs/adr/0004-permission-gateway-taint.md).
 	KindTranslate InvocationKind = "translate"
 	// KindModels lists, prepares and runs the plugin's models, which the user
 	// picked as a model: every declared host, as for translate.

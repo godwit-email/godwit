@@ -1,4 +1,4 @@
-// @godwit/sdk: types for Godwit plugins (spec 5.3). Types only; import them
+// @godwit/sdk: types for Godwit plugins. Types only; import them
 // with `import type { Ctx } from "@godwit/sdk"`. The host provides no way to
 // send mail.
 

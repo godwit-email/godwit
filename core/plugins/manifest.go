@@ -19,8 +19,8 @@ import (
 	"github.com/godwit-email/godwit/core/skills"
 )
 
-// Manifest is a plugin's plugin.json (spec 5.3–5.4). A script plugin has
-// Main and Permissions; a native one (docs/superpowers/specs/2026-10-14-native-plugins-design.md)
+// Manifest is a plugin's plugin.json. A script plugin has
+// Main and Permissions; a native one (docs/adr/0015-native-plugins-trusted-subprocess.md)
 // has Native instead, and its shared library is LibraryName() beside plugin.json.
 type Manifest struct {
 	Name         string        `json:"name"`
