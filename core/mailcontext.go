@@ -112,9 +112,10 @@ func (s *Service) selectionContext(scope *gateway.Scope, id int64, text string, 
 	scope.MarkReadMail()
 	quote := ai.InjectionQuote(text)
 	suspect := quote != ""
+	text = linkRefs(text, id) // a selection's links are its message's
 	cut := utf8.RuneCountInString(text) > budget.PerMessage
 	if cut {
-		text = string([]rune(text)[:budget.PerMessage])
+		text = dropCutRef(string([]rune(text)[:budget.PerMessage]))
 	}
 	block := ai.Untrusted(fmt.Sprintf("selection:%d", id), text, suspect)
 	if cut {
@@ -132,7 +133,7 @@ func (s *Service) summaryContext(scope *gateway.Scope, list []MessageSummary) []
 		text := mailHeader(m) + "\n" + m.Snippet
 		quote := ai.InjectionQuote(text)
 		suspect := quote != ""
-		text = linkRefs(mailHeader(m), m.ID) + "\n" + m.Snippet // a snippet may cut a link: no reference of it would expand
+		text = linkRefs(mailHeader(m), m.ID) + "\n" + snippetLinks(m.Snippet, m.ID)
 		out = append(out, mailItem{MessageID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date,
 			Suspect: suspect, Quote: quote, Block: ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)})
 	}

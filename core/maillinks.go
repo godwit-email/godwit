@@ -231,7 +231,7 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
-		if loc[1] < len(text) && continuesURL(text[loc[1]]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
+		if refContinues(text, loc[1]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
 			continue // part of a longer URL (more hash or query, or inside another's): left for the checks
 		}
 		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
@@ -248,6 +248,16 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 // continuesURL is whether c after a reference would make it part of a longer URL.
 func continuesURL(c byte) bool {
 	return '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || strings.IndexByte("&=#%/?+~_-@", c) != -1
+}
+
+// urlPunct is URL punctuation that may also just end a sentence.
+const urlPunct = ".,;:!*'()$[]"
+
+// refContinues is whether text from end makes a reference ending there part
+// of a longer URL: URL characters, or punctuation with more URL after it (".html").
+func refContinues(text string, end int) bool {
+	rest := strings.TrimLeft(text[end:], urlPunct)
+	return rest != "" && continuesURL(rest[0])
 }
 
 func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawMessage {
@@ -329,7 +339,8 @@ func refCut(text string) int {
 	if i := strings.LastIndex(text, linkRefPrefix); i != -1 {
 		rest := text[i:]
 		// Unfinished, or finished at the very end, where another hex digit may still come.
-		if loc := linkRefRe.FindStringIndex(rest); !strings.ContainsAny(rest, " \t\r\n") && len(rest) < 512 && (loc == nil || loc[1] == len(rest)) {
+		if loc := linkRefRe.FindStringIndex(rest); !strings.ContainsAny(rest, " \t\r\n") && len(rest) < 512 &&
+			(loc == nil || strings.Trim(rest[loc[1]:], urlPunct) == "") {
 			return i
 		}
 	}
@@ -354,6 +365,13 @@ func dropCutRef(text string) string {
 		return text[:i]
 	}
 	return text
+}
+
+// snippetLinks is linkRefs over a snippet but its last word, which the
+// snippet may have cut: a reference to part of a link would never expand.
+func snippetLinks(snippet string, id int64) string {
+	i := strings.LastIndexAny(snippet, " \t\r\n") + 1
+	return linkRefs(snippet[:i], id) + plantedRefRe.ReplaceAllString(snippet[i:], "godwit:link/")
 }
 
 // hasLinkRef is whether text still holds a link reference, in any case: the

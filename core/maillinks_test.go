@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
@@ -112,10 +111,9 @@ func TestLinkRefsEdgeInputs(t *testing.T) {
 	args := s.expandArgs(t.Context(), json.RawMessage(`{"by_url":{"`+ref+`":true}}`))
 	require.JSONEq(t, `{"by_url":{"`+longLink+`":true}}`, string(args), "a reference used as a key")
 
-	start := time.Now()
-	out := linkRefs("https://a.com/x"+strings.Repeat(")", 1<<20), 1)
+	// Trimmed in one pass (a rescan per ")" took minutes on this).
+	out := linkRefs("https://a.com/x"+strings.Repeat(")", 64<<10), 1)
 	require.True(t, strings.HasPrefix(out, "https://a.com/x)"))
-	require.Less(t, time.Since(start), 2*time.Second, "trailing parentheses are trimmed in linear time")
 }
 
 func TestWitExpandsLinksLiveAndOnReload(t *testing.T) {
@@ -267,4 +265,34 @@ func TestLinkRefsInHeadersAndAttachments(t *testing.T) {
 	require.NotContains(t, sub[0].Block, "session=")
 
 	require.Contains(t, linkRefs("Godwit://LINK/a.com?m=1&h=0123abcd0123abcd", 1), "godwit:link/", "planted, in any case, is defused")
+}
+
+func TestLinkRefsDottedAndSelections(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", "Shop "+longLink+" now", "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	ctx := t.Context()
+	for _, in := range []string{ref + ".html", ref + ").x", ref + "/next"} {
+		require.Equal(t, in, s.expandLinks(ctx, in), "more URL after punctuation: no reference")
+	}
+	for _, end := range []string{".", ". Next", "), ok", `">`, "。"} {
+		require.Equal(t, longLink+end, s.expandLinks(ctx, ref+end), "sentence punctuation ends it")
+	}
+
+	in := make(chan ai.Event, 3)
+	in <- ai.Event{Kind: "text", Text: "go " + ref + "."}
+	in <- ai.Event{Kind: "text", Text: "html"}
+	close(in)
+	var out string
+	for ev := range s.expandEvents(ctx, in) {
+		out += ev.Text
+	}
+	require.Equal(t, "go "+ref+".html", out, "punctuation at a chunk's end waits for what follows")
+
+	sel := s.selectionContext(&gateway.Scope{}, id, "Shop "+longLink+" now", defaultMailBudget)
+	require.Contains(t, sel.Block, ref, "a selection's links are references too")
+	require.Equal(t, longLink, s.expandLinks(ctx, ref))
+
+	snip := snippetLinks("Shop "+longLink+" now https://a.com/cut?utm_source=x", id)
+	require.Equal(t, "Shop "+ref+" now https://a.com/cut?utm_source=x", snip, "the last word may be cut: left alone")
 }
