@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -193,7 +194,7 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 	case len(prompt) <= appleIntelligencePromptBytes:
 	case isSummarize || isQuickReplies:
 		// Mail blocks run oldest to newest: keep the newest.
-		prompt = truncateHead(prompt, appleIntelligencePromptBytes)
+		prompt = truncateMail(prompt, appleIntelligencePromptBytes)
 	default:
 		// Structured requests (translation batches, ...) must not be cut.
 		return nil, fmt.Errorf("apple intelligence: %w: the input is too long for the on-device model", ErrModelUnavailable)
@@ -358,12 +359,15 @@ func languageName(code string) string {
 	prefix := strings.ToLower(strings.TrimSpace(code))
 	if idx := strings.IndexAny(prefix, "-_"); idx > 0 {
 		if prefix[:idx] == "zh" {
-			// Any subtag may carry it: zh-Hant, zh-TW, zh-Hant-HK.
-			for _, sub := range strings.FieldsFunc(prefix[idx+1:], func(r rune) bool { return r == '-' || r == '_' }) {
-				switch sub {
-				case "hant", "tw", "hk", "mo":
-					return "Traditional Chinese"
-				}
+			// An explicit script wins (zh-Hans-HK is Simplified); a region is the fallback.
+			subs := strings.FieldsFunc(prefix[idx+1:], func(r rune) bool { return r == '-' || r == '_' })
+			switch {
+			case slices.Contains(subs, "hant"):
+				return "Traditional Chinese"
+			case slices.Contains(subs, "hans"):
+				return "Simplified Chinese"
+			case slices.ContainsFunc(subs, func(s string) bool { return s == "tw" || s == "hk" || s == "mo" }):
+				return "Traditional Chinese"
 			}
 			return "Simplified Chinese"
 		}
@@ -646,11 +650,14 @@ const (
 func judgeBatches(qs []ai.Question) [][]ai.Question {
 	var out [][]ai.Question
 	var cur []ai.Question
-	size := 0
+	size := 2 // the batch marshals as [q,q,...]: brackets and a comma a question
 	for _, q := range qs {
 		b, _ := json.Marshal(q)
-		if len(cur) > 0 && (len(cur) == 128 || size+len(b) > appleIntelligencePromptBytes-judgeFramingBytes-judgeMinInputBytes) {
-			out, cur, size = append(out, cur), nil, 0
+		if len(cur) > 0 && (len(cur) == 128 || size+1+len(b) > appleIntelligencePromptBytes-judgeFramingBytes-judgeMinInputBytes) {
+			out, cur, size = append(out, cur), nil, 2
+		}
+		if len(cur) > 0 {
+			size++
 		}
 		cur, size = append(cur, q), size+len(b)
 	}
@@ -667,6 +674,24 @@ func truncateHead(s string, n int) string {
 		cut++
 	}
 	return s[cut:]
+}
+
+// truncateMail is truncateHead that keeps the kept text inside its
+// untrusted_email block: a cut inside one gets that block's open tag back
+// (suspect flag and all), or the model would read its tail as instructions.
+func truncateMail(s string, n int) string {
+	t := truncateHead(s, n)
+	cut := len(s) - len(t)
+	i := strings.LastIndex(s[:cut], "<untrusted_email")
+	if cut == 0 || i < 0 || strings.Contains(s[i:cut], "</untrusted_email>") {
+		return t
+	}
+	end := strings.Index(s[i:], ">\n")
+	if end < 0 {
+		return t
+	}
+	open := s[i : i+end+2]
+	return open + truncateHead(s[max(cut, i+len(open)):], n-len(open))
 }
 
 // Judge evaluates questions against input using Apple Intelligence.
