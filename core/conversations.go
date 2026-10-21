@@ -265,7 +265,7 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		return Conversation{}, err
 	}
 	for i, m := range c.Messages { // the saved history keeps the references the model wrote
-		c.Messages[i].Text = s.expandLinks(ctx, m.Text)
+		c.Messages[i].Text, c.Messages[i].Reasoning = s.expandLinks(ctx, m.Text), s.expandLinks(ctx, m.Reasoning)
 		for j, call := range m.Calls {
 			m.Calls[j].Args = s.expandArgs(ctx, call.Args)
 		}
@@ -736,7 +736,8 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		return ai.Request{}, err
 	}
 	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort}, nil
+	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
+		Args: s.expandArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
 // track registers a run in flight. The caller holds runMu.
@@ -940,14 +941,6 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 			}
 			job.prepared.Store(ai.CallID(ctx), p)
 			return ai.Approve, nil
-		}
-		// Link references in the arguments are expanded before the call is gated, prepared or run.
-		gated := spec.Gate
-		spec.Gate = func(ctx context.Context, args json.RawMessage) (ai.Decision, error) {
-			return gated(ctx, s.expandArgs(ctx, args))
-		}
-		if run := spec.Run; run != nil {
-			spec.Run = func(ctx context.Context, args json.RawMessage) (any, error) { return run(ctx, s.expandArgs(ctx, args)) }
 		}
 		out = append(out, spec)
 	}

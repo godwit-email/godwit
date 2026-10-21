@@ -949,3 +949,23 @@ func TestUsageLimitIsRateLimitedWithDetail(t *testing.T) {
 	assert.Equal(t, CodeBadResponse, res.Err.Code)
 	assert.Empty(t, res.Err.Detail)
 }
+
+func TestRequestArgsRewriteBeforeValidation(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "open", Args: `{"url":"ref:1"}`}}},
+			testllm.Turn{Text: []string{"opened"}})
+		var got atomic.Value
+		tools := []ToolSpec{{Name: "open", Description: "open",
+			Schema: map[string]any{"type": "object", "properties": map[string]any{"url": map[string]any{"type": "string", "pattern": "^https://"}}},
+			Run:    func(_ context.Context, args json.RawMessage) (any, error) { got.Store(string(args)); return "ok", nil }}}
+		rewrite := func(_ context.Context, args json.RawMessage) json.RawMessage {
+			return json.RawMessage(strings.ReplaceAll(string(args), "ref:1", "https://a.com/x"))
+		}
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: tools, Args: rewrite})
+		require.Nil(t, res.Err)
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.JSONEq(t, `{"url":"https://a.com/x"}`, got.Load().(string), "the schema saw the rewritten value")
+		assert.Contains(t, string(srv.Requests()[1].Messages), "ref:1", "the state keeps what the model wrote")
+	})
+}

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -150,8 +151,10 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 	if !strings.Contains(string(args), linkRefPrefix) {
 		return args
 	}
+	dec := json.NewDecoder(bytes.NewReader(args))
+	dec.UseNumber() // a large integer argument stays exact
 	var v any
-	if json.Unmarshal(args, &v) != nil {
+	if dec.Decode(&v) != nil {
 		return args
 	}
 	var walk func(v any) any
@@ -177,27 +180,28 @@ func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.Raw
 	return b
 }
 
-// expandEvents expands the references in a run's events: text is held back
-// while it may end in a reference cut between chunks, and sent before any
-// other event.
+// expandEvents expands the references in a run's events: streamed text or
+// reasoning is held back while it may end in a reference cut between chunks,
+// and sent before any other event.
 func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan ai.Event {
 	out := make(chan ai.Event)
 	go func() {
 		defer close(out)
-		var held string
+		var held, heldKind string
 		for ev := range in {
-			if ev.Kind == "text" {
+			streamed := ev.Kind == "text" || ev.Kind == "reasoning"
+			if held != "" && (!streamed || ev.Kind != heldKind) {
+				out <- ai.Event{Kind: heldKind, Text: s.expandLinks(ctx, held)}
+				held = ""
+			}
+			if streamed {
 				text := held + ev.Text
 				cut := refCut(text)
-				if held = text[cut:]; cut > 0 {
+				if held, heldKind = text[cut:], ev.Kind; cut > 0 {
 					ev.Text = s.expandLinks(ctx, text[:cut])
 					out <- ev
 				}
 				continue
-			}
-			if held != "" {
-				out <- ai.Event{Kind: "text", Text: s.expandLinks(ctx, held)}
-				held = ""
 			}
 			if ev.Call != nil {
 				c := *ev.Call
@@ -207,7 +211,7 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 			out <- ev
 		}
 		if held != "" {
-			out <- ai.Event{Kind: "text", Text: s.expandLinks(ctx, held)}
+			out <- ai.Event{Kind: heldKind, Text: s.expandLinks(ctx, held)}
 		}
 	}()
 	return out
@@ -228,6 +232,17 @@ func refCut(text string) int {
 		}
 	}
 	return len(text)
+}
+
+// expandDraftLinks expands the link references in d's subject and body
+// before it is checked or sent: Wit's draft tools already did, but one may be
+// typed or pasted back in.
+func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
+	d.Subject, d.HTML = s.expandLinks(ctx, d.Subject), s.expandLinks(ctx, d.HTML)
+	if strings.Contains(d.Subject+d.HTML, linkRefPrefix) {
+		return errLinkRef
+	}
+	return nil
 }
 
 // errLinkRef is a draft that still holds a link reference: sending it would

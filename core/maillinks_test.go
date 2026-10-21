@@ -65,3 +65,32 @@ func TestLinkRefsExpand(t *testing.T) {
 	}
 	require.Equal(t, 4, refCut("abc godwit:/"), "a prefix of a reference is held")
 }
+
+func TestLinkRefsExpandKeepsNumbersAndReasoning(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	ctx := t.Context()
+
+	args := s.expandArgs(ctx, json.RawMessage(`{"id":9007199254740993,"url":"`+ref+`"}`))
+	require.JSONEq(t, `{"id":9007199254740993,"url":"`+longLink+`"}`, string(args))
+	require.Contains(t, string(args), "9007199254740993", "above 2^53, kept exact")
+
+	in := make(chan ai.Event, 4)
+	in <- ai.Event{Kind: "reasoning", Text: "the link " + ref[:20]}
+	in <- ai.Event{Kind: "reasoning", Text: ref[20:]}
+	in <- ai.Event{Kind: "text", Text: "done"}
+	close(in)
+	var kinds, texts []string
+	for ev := range s.expandEvents(ctx, in) {
+		kinds, texts = append(kinds, ev.Kind), append(texts, ev.Text)
+	}
+	require.Equal(t, "the link "+longLink, strings.Join(texts[:len(texts)-1], ""))
+	require.Equal(t, "reasoning", kinds[len(kinds)-2])
+	require.Equal(t, "text", kinds[len(kinds)-1])
+
+	rs, err := parseQuickReplies(`{"replies":[{"html":"<p><a href=\"`+ref+`\">Join</a></p>"}]}`, func(h string) string { return s.expandLinks(ctx, h) })
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	require.Contains(t, rs[0].HTML, `href="`+strings.ReplaceAll(longLink, "&", "&amp;")+`"`, "the href survives the sanitizer")
+}

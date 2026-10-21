@@ -241,7 +241,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
 	// One slot more than the events use: the terminal event always fits.
-	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning}
+	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning, args: req.Args}
 	done := make(chan struct{})
 	var res Result
 	go func() {
@@ -271,7 +271,8 @@ type runner struct {
 	key string
 	// reasoning: Request.Reasoning
 	reasoning bool
-	usage     Usage // so far, under mu
+	args      func(context.Context, json.RawMessage) json.RawMessage // Request.Args
+	usage     Usage                                                  // so far, under mu
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
@@ -481,6 +482,15 @@ func (callIDs) Name() string { return "godwit_call_ids" }
 func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 	return &gai.Hooks{
 		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
+			if c.r.args != nil { // on a copy: the model's own request stays in the state
+				in := rawJSON(p.Request.Input)
+				var v any
+				if out := c.r.args(ctx, in); !bytes.Equal(out, in) && json.Unmarshal(out, &v) == nil {
+					req, q := *p.Request, *p
+					req.Input, q.Request = v, &req
+					p = &q
+				}
+			}
 			resp, err := next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
 			if err == nil || !errors.Is(err, status.ErrInvalidInput) {
 				return resp, err
