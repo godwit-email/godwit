@@ -158,7 +158,7 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	if st.ReplyLanguage == "match" {
 		drafts = "Write a new email in the language of the recipient's past emails to the user; if there are none, use " + lang + "."
 	}
-	return askSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
+	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
 }
 
 // cite numbers and records the mail a read tool showed the model, for its
