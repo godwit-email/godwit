@@ -153,6 +153,13 @@ func providerName(p auth.Provider) string {
 	return p.Name
 }
 
+// listed reports whether p is in the pick list: Feishu in Chinese, Lark
+// (Feishu outside China) in every other language. MX detects either.
+func listed(p auth.Provider) bool {
+	zh := strings.HasPrefix(i18n.Language(), "zh")
+	return !(p.ID == "lark" && zh || p.ID == "feishu" && !zh)
+}
+
 func providerMark(p auth.Provider) string {
 	if s := i18n.T("provider." + p.ID + ".mark"); s != "provider."+p.ID+".mark" {
 		return s
@@ -609,9 +616,15 @@ func (o *onboarding) pickView(c *ui.Context) {
 		kit.Separator(c, false).Grow(1)
 	})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
-		for i := 0; i < len(o.providers); i += 2 {
+		var ps []auth.Provider
+		for _, p := range o.providers {
+			if listed(p) {
+				ps = append(ps, p)
+			}
+		}
+		for i := 0; i < len(ps); i += 2 {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
-				for _, p := range o.providers[i:min(i+2, len(o.providers))] {
+				for _, p := range ps[i:min(i+2, len(ps))] {
 					how := i18n.T("onboarding.login." + p.Login)
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")

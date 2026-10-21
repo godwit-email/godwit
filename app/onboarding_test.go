@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -90,7 +91,7 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 
 func TestOnboardingProviderEmail(t *testing.T) {
 	for _, p := range append(auth.ListProviders(), otherProvider) {
-		if p.Login == "oauth" {
+		if p.Login == "oauth" || !listed(p) {
 			continue
 		}
 		t.Run(p.ID, func(t *testing.T) {
@@ -652,5 +653,20 @@ func TestOnboardingEmailRowRingsOnFocus(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("focused email row has no ring-coloured border")
+	}
+}
+
+func TestOnboardingListsFeishuOrLark(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	feishu, _ := auth.ByID("feishu")
+	lark, _ := auth.ByID("lark")
+	for _, tc := range []struct {
+		lang         string
+		feishu, lark bool
+	}{{"zh-CN", true, false}, {"zh-TW", true, false}, {"en", false, true}, {"ja", false, true}} {
+		i18n.SetLanguage(tc.lang)
+		if listed(feishu) != tc.feishu || listed(lark) != tc.lark {
+			t.Errorf("%s: feishu %v, lark %v", tc.lang, listed(feishu), listed(lark))
+		}
 	}
 }

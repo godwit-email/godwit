@@ -49,7 +49,7 @@ func TestIconsParse(t *testing.T) {
 }
 
 func TestBrands(t *testing.T) {
-	for _, id := range []string{"gmail", "outlook", "qq", "netease163", "netease126", "icloud", "feishu", "dingtalk", "exmail", "yahoo", "aol"} {
+	for _, id := range []string{"gmail", "outlook", "qq", "netease163", "netease126", "icloud", "feishu", "lark", "dingtalk", "exmail", "yahoo", "aol"} {
 		if Brand(id) == nil {
 			t.Errorf("no mark for %s", id)
 		}
