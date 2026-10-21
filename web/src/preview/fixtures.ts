@@ -102,6 +102,7 @@ const block = (ops: ReviewOp[]) => ({
 export const review = (inline: boolean): Review => ({
   approval: 2,
   tool: "update_draft",
+  kind: inline ? "partial" : "rewrite",
   inline,
   ratio: inline ? 0.2 : 0.7,
   exact: true,

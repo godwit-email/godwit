@@ -7,6 +7,7 @@ import { sanitize } from "../editor/html";
 
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
 export function reviewSummary(r: ReviewT, t: T): string {
+  if (r.kind === "translate") return t("wit.compose.review.translate");
   if (r.inline) return t("wit.compose.review.inline", r.changes);
   return r.exact
     ? t("wit.compose.review.rewrite", Math.round(r.ratio * 100))
@@ -218,11 +219,13 @@ export function Review({
       <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
         <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
-          {r.inline
-            ? t("wit.compose.pending", open)
-            : r.exact
-              ? t("wit.compose.rewrite", pct)
-              : t("wit.compose.rewrite_plain")}
+          {r.kind === "translate"
+            ? t("wit.compose.translated")
+            : r.inline
+              ? t("wit.compose.pending", open)
+              : r.exact
+                ? t("wit.compose.rewrite", pct)
+                : t("wit.compose.rewrite_plain")}
         </span>
         {!r.inline && (
           <Button
@@ -248,16 +251,45 @@ export function Review({
         </Button>
       </div>
       <section aria-label={t("wit.compose.review_body")} className={`${BODY} bg-sidebar`}>
+        {r.subject && r.subject !== r.old_subject && !compare && (
+          <div className="mb-3 flex flex-col gap-1 rounded-lg border bg-card/60 p-3 text-sm">
+            <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+              {t("compose.subject")}
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5 text-base">
+              {r.subject_ops?.map((op, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
+                <Op key={i} op={op} d={0} />
+              ))}
+            </div>
+          </div>
+        )}
         {r.inline ? (
           <div className="text-lg leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
         ) : compare ? (
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2 text-muted-foreground">
               <h2 className="font-semibold text-sm">{t("wit.compose.original")}</h2>
+              {r.subject && r.subject !== r.old_subject && (
+                <div className="flex flex-col gap-0.5 rounded border border-border/50 bg-muted/30 p-2 text-xs">
+                  <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {t("compose.subject")}
+                  </span>
+                  <span>{r.old_subject || t("mail.no_subject")}</span>
+                </div>
+              )}
               <Static html={r.old} label={t("wit.compose.original")} className="text-md" />
             </div>
             <div className="flex flex-col gap-2 border-l-[0.5px] pl-4">
               <h2 className="font-semibold text-sm">{t("wit.compose.new")}</h2>
+              {r.subject && r.subject !== r.old_subject && (
+                <div className="flex flex-col gap-0.5 rounded border border-primary/30 bg-primary/5 p-2 text-xs">
+                  <span className="font-semibold text-[10px] uppercase tracking-wider text-primary">
+                    {t("compose.subject")}
+                  </span>
+                  <span className="font-medium text-foreground">{r.subject}</span>
+                </div>
+              )}
               <Static html={r.new} label={t("wit.compose.new")} className="text-md" />
             </div>
           </div>

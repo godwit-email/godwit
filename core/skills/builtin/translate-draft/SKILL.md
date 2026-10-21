@@ -8,4 +8,10 @@ metadata:
 
 Translate the draft into the target language the host names.
 
-Return only the rewritten body as HTML. Keep the meaning, facts, names and links. Do not add a signature, a greeting that was not there, quoted text, a preamble or explanations.
+If a subject is provided in <subject>, translate it and format your output as:
+<subject>Translated Subject</subject>
+<body>Translated HTML body</body>
+
+If no subject was provided, return only the translated body as HTML.
+
+Keep the meaning, facts, names and links. Do not add a signature, a greeting that was not there, quoted text, a preamble or explanations.
