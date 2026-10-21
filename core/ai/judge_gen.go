@@ -29,7 +29,9 @@ func NewGenJudge(gen Generator) Judge {
 	}, 60 * time.Second}
 }
 
-func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]Answer, error) {
+// GenJudgeQuestions is the questions as NewGenJudge's prompt carries them,
+// for callers that must budget its size.
+func GenJudgeQuestions(qs []Question) ([]byte, error) {
 	type opt struct {
 		Value       string `json:"value,omitempty"`
 		Index       *int   `json:"index,omitempty"`
@@ -44,7 +46,6 @@ func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]
 		Levels       []opt  `json:"levels,omitempty"`
 	}
 	wire := make([]question, len(qs))
-	types := map[string]QuestionType{}
 	for i, q := range qs {
 		w := question{Name: q.Name, Type: string(q.Type), Instructions: q.Instructions}
 		switch q.Type {
@@ -57,9 +58,17 @@ func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]
 				w.Levels = append(w.Levels, opt{Index: &j, Label: l.Label, Description: l.Description})
 			}
 		}
-		wire[i], types[q.Name] = w, q.Type
+		wire[i] = w
 	}
-	qj, err := json.Marshal(wire)
+	return json.Marshal(wire)
+}
+
+func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]Answer, error) {
+	types := map[string]QuestionType{}
+	for _, q := range qs {
+		types[q.Name] = q.Type
+	}
+	qj, err := GenJudgeQuestions(qs)
 	if err != nil {
 		return nil, err
 	}

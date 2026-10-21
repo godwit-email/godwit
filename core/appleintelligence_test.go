@@ -223,7 +223,7 @@ func TestAppleIntelligenceSummarizeAdaptation(t *testing.T) {
 		"model":  "on-device",
 		"stream": false,
 		"messages": []any{
-			map[string]string{"role": "system", "content": germanSys},
+			map[string]string{"role": "system", "content": summarizeSystem("de")},
 			map[string]string{"role": "user", "content": "English email content here..."},
 		},
 	}
@@ -322,13 +322,14 @@ type mockAIWithTemp struct {
 	out            string
 	recordedTemp   float64
 	recordedPrompt string
+	recordedSystem string
 }
 
 func (m *mockAIWithTemp) Generate(ctx context.Context, system, prompt string) (string, error) {
 	return m.out, nil
 }
 func (m *mockAIWithTemp) GenerateWithTemperature(ctx context.Context, system, prompt string, temp float64) (string, error) {
-	m.recordedTemp, m.recordedPrompt = temp, prompt
+	m.recordedTemp, m.recordedPrompt, m.recordedSystem = temp, prompt, system
 	return m.out, nil
 }
 func (m *mockAIWithTemp) Judge(ctx context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
@@ -413,7 +414,7 @@ func TestAppleIntelligenceLongPrompts(t *testing.T) {
 		ai.Untrusted("message:2", "NEWEST reply", false)
 
 	// A summary keeps the newest mail whole and drops the oldest.
-	resp, mock, err := ask("Summarize the email text you are given.\n\nAnswer in en.", long)
+	resp, mock, err := ask(summarizeSystem("en"), long)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Contains(t, mock.recordedPrompt, "NEWEST reply\n</untrusted_email>")
@@ -533,4 +534,47 @@ func TestAppleIntelligenceAvailabilityRechecks(t *testing.T) {
 	assert.False(t, listed())
 	require.NoError(t, os.WriteFile(ready, nil, 0o644))
 	assert.True(t, listed())
+}
+
+// summarizeSystem is the system prompt runSkill builds for the built-in summarize skill.
+func summarizeSystem(lang string) string {
+	return builtinSkillBody("summarize") + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in " + lang + "."
+}
+
+// A user's own summarize skill keeps its instructions: only Godwit's prompt is rewritten.
+func TestAppleIntelligenceUserSkillNotRewritten(t *testing.T) {
+	ask := func(system string) *mockAIWithTemp {
+		mock := &mockAIWithTemp{out: "- ok"}
+		body, _ := json.Marshal(map[string]any{"model": "on-device", "messages": []any{
+			map[string]string{"role": "system", "content": system},
+			map[string]string{"role": "user", "content": "mail"},
+		}})
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "http://127.0.0.1/chat/completions", bytes.NewReader(body))
+		require.NoError(t, err)
+		resp, err := (&appleIntelligenceTransport{ai: mock}).RoundTrip(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		return mock
+	}
+	custom := "Summarize the email text you are given.\n\nAlways end with a line TL;DR.\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in en."
+	assert.Equal(t, custom, ask(custom).recordedSystem)
+	assert.Contains(t, ask(summarizeSystem("en")).recordedSystem, "factual bullet points in English")
+}
+
+// Batches are sized by the wire format NewGenJudge sends, score levels' index included.
+func TestAppleIntelligenceJudgeBatchWireFormat(t *testing.T) {
+	levels := make([]ai.Level, 10)
+	for i := range levels {
+		levels[i] = ai.Level{Label: "level " + strconv.Itoa(i), Description: "how urgent, step " + strconv.Itoa(i)}
+	}
+	var qs []ai.Question
+	for i := range 21 {
+		qs = append(qs, ai.Question{Name: "score_" + strconv.Itoa(i), Type: ai.Score, Instructions: "How urgent is it?", Levels: levels})
+	}
+	limit := appleIntelligencePromptBytes - judgeFramingBytes - judgeMinInputBytes
+	for _, b := range judgeBatches(qs) {
+		enc, err := ai.GenJudgeQuestions(b)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(enc), limit)
+	}
 }

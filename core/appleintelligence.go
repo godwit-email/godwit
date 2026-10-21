@@ -19,6 +19,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/skills"
 )
 
 // AppleIntelligence is the system's on-device AI provider on macOS,
@@ -183,10 +184,11 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 	temp := 0.2
 	isSummarize := false
 	isQuickReplies := false
-	if strings.Contains(system, "Summarize the email text") {
+	// Only Godwit's own prompts are rewritten: a user's summarize skill keeps its instructions.
+	if summarize := builtinSkillBody("summarize"); summarize != "" && strings.HasPrefix(system, summarize+"\n\n"+ai.UntrustedSystemNote) {
 		isSummarize = true
 		system, temp = adaptAppleIntelligenceSummarize(system)
-	} else if strings.Contains(system, "Suggest up to three short, distinct replies") {
+	} else if strings.HasPrefix(system, quickRepliesSystem) {
 		isQuickReplies = true
 		system, temp = adaptAppleIntelligenceQuickReplies(system)
 	}
@@ -654,6 +656,16 @@ const appleIntelligencePromptBytes = 8000
 // longer ones shrink the prompt's share byte for byte.
 const appleIntelligenceSystemBytes = 1500
 
+// builtinSkillBody is the body of Godwit's built-in skill name, "" if none.
+func builtinSkillBody(name string) string {
+	for _, sk := range skills.Builtins() {
+		if sk.Name == name {
+			return sk.Body
+		}
+	}
+	return ""
+}
+
 // truncateForContext cuts s to at most n bytes on a rune boundary.
 func truncateForContext(s string, n int) string {
 	if len(s) <= n {
@@ -680,7 +692,8 @@ func judgeBatches(qs []ai.Question) [][]ai.Question {
 	var cur []ai.Question
 	size := 2 // the batch marshals as [q,q,...]: brackets and a comma a question
 	for _, q := range qs {
-		b, _ := json.Marshal(q)
+		b, _ := ai.GenJudgeQuestions([]ai.Question{q})
+		b = b[1 : len(b)-1] // one question's share, without the brackets
 		if len(cur) > 0 && (len(cur) == 128 || size+1+len(b) > appleIntelligencePromptBytes-judgeFramingBytes-judgeMinInputBytes) {
 			out, cur, size = append(out, cur), nil, 2
 		}
@@ -746,7 +759,7 @@ func (d *DefaultAppleIntelligence) Judge(ctx context.Context, input string, qs [
 	var out []ai.Answer
 	for _, batch := range judgeBatches(qs) {
 		// Cut the input, not the whole prompt: the batch's questions come after it.
-		q, _ := json.Marshal(batch)
+		q, _ := ai.GenJudgeQuestions(batch)
 		budget := appleIntelligencePromptBytes - len(q) - judgeFramingBytes
 		if budget < judgeMinInputBytes { // one question too long to leave room for the mail
 			return nil, fmt.Errorf("apple intelligence: question %q is too long for the on-device model", batch[0].Name)
