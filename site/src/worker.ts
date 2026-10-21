@@ -2,6 +2,7 @@
 // release written in, at / in the browser's language and at each language's
 // fixed path; and /download/<target>, which redirects to the newest installer
 // of the target (wrangler.jsonc runs this Worker first only for those paths).
+import { countDownload } from "./analytics";
 import { dl, installerName, isTarget } from "./download";
 import { type Lang, locales, paths, pick } from "./locales";
 
@@ -42,7 +43,7 @@ function withRelease(page: Response, r: Release | null, lang: Lang): Response {
 }
 
 export default {
-	async fetch(req, env): Promise<Response> {
+	async fetch(req, env, ctx): Promise<Response> {
 		const url = new URL(req.url);
 		const fixed = locales.find((l) => paths[l] === url.pathname);
 		if (url.pathname === "/" || fixed) {
@@ -70,6 +71,8 @@ export default {
 			});
 		}
 		const { version } = await manifest.json<{ version: string }>();
+		// Counted after the redirect is answered: the download never waits on it.
+		ctx.waitUntil(countDownload(req, target));
 		return new Response(null, {
 			status: 302,
 			headers: { Location: `${dl}/${encodeURIComponent(installerName(target, version))}`, "Cache-Control": "no-store" },

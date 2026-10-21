@@ -378,6 +378,7 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 	// Each demo window: which message is open, what its reader shows, and Wit,
 	// moving as the app does (theme.MotionBase, 200 ms; MotionOffset, 4 px).
 	import { animate, inView, stagger } from "motion";
+	import { track } from "../analytics";
 	import { spring } from "../motion";
 
 	const still = !document.documentElement.classList.contains("motion");
@@ -447,17 +448,27 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 
 		root.addEventListener("click", (e) => {
 			const target = e.target as HTMLElement;
+			// What was tried in the demo, by kind: never which message or question.
+			const demo = (action: string) => track("demo-interact", { action });
 			const msg = target.closest<HTMLElement>("[data-msg]");
-			if (msg) return open(msg.dataset.msg!);
+			if (msg) {
+				demo("open-message");
+				return open(msg.dataset.msg!);
+			}
 			const t = target.closest<HTMLElement>("[data-tab]");
-			if (t) return tab(t.dataset.tab!);
+			if (t) {
+				demo(`tab-${t.dataset.tab}`);
+				return tab(t.dataset.tab!);
+			}
 			const go = target.closest<HTMLElement>("[data-open]");
 			if (go) {
+				demo("open-message");
 				tab("mail");
 				return open(go.dataset.open!);
 			}
 			const ask = target.closest<HTMLButtonElement>("[data-ask]");
 			if (ask) {
+				demo("ask-wit");
 				const chat = root.querySelector<HTMLElement>("[data-chat]")!;
 				const turn = root.querySelector<HTMLTemplateElement>(`template[data-answer="${ask.dataset.ask}"]`)!.content.cloneNode(true) as DocumentFragment;
 				const [question, thinking, reply] = [...turn.children] as HTMLElement[];
@@ -480,6 +491,8 @@ const pill = "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font
 			const act = target.closest<HTMLElement>("[data-act]");
 			const reader = act?.closest<HTMLElement>("[data-reader]");
 			if (!act || !reader) return;
+			const tracked: Record<string, string> = { summary: "summary", translate: "translate", copy: "copy-code", quick: "quick-reply" };
+			if (tracked[act.dataset.act!]) demo(tracked[act.dataset.act!]);
 			const part = (name: string) => reader.querySelector<HTMLElement>(`[data-part="${name}"]`)!;
 			const translate = reader.querySelector<HTMLElement>('[data-act="translate"]');
 			switch (act.dataset.act) {
