@@ -161,10 +161,18 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	users := a.signatureUsers(sig.ID)
 
 	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) }}).
-			Label(i18n.T("settings.signatures")).AlignSelf(ui.Start).Gap(th.Space(0.5)).TextColor(t.Muted).Children(func() {
-			ui.Icon(c, icons.Get("chevron-left")).Size(theme.Icon, theme.Icon)
-			kit.Text(c, i18n.T("settings.signatures"), t.Text.Sm)
+		// Back to the list, as a ghost button: the top bar's back arrow, muted
+		// until hovered; pulled left by its padding so the text lines up with the title.
+		back := kit.Pressable(c, kit.PressableOpts{OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) }}).
+			Label(i18n.T("settings.signatures")).AlignSelf(ui.Start).Height(th.Space(7)).PaddingX(th.Space(2)).Margin(0, 0, 0, -th.Space(2)).
+			Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md)
+		fg := t.Muted
+		if back.Hovered() {
+			fg = t.Foreground
+		}
+		back.TextColor(fg).Children(func() {
+			ui.Icon(c, icons.Get("arrow-left")).Size(theme.Icon, theme.Icon)
+			kit.Text(c, i18n.T("settings.signatures"), t.Text.Base)
 		})
 		kit.Text(c, sig.Name, t.Text.Display).FontWeight(600)
 		kit.Text(c, usedBy(len(users)), t.Text.Body).TextColor(t.Muted)

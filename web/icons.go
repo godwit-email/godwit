@@ -14,11 +14,10 @@ var RemixIcons = map[string]string{
 	"bold":                      "node_modules/remixicon/icons/Editor/bold.svg",
 	"check":                     "node_modules/remixicon/icons/System/check-line.svg",
 	"chevron-down":              "node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg",
-	"chevron-left":              "node_modules/remixicon/icons/Arrows/arrow-left-s-line.svg",
 	"chevron-right":             "node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg",
 	"circle-check":              "node_modules/remixicon/icons/System/checkbox-circle-line.svg",
 	"circle-x":                  "node_modules/remixicon/icons/System/close-circle-line.svg",
-	"code": "node_modules/remixicon/icons/Development/code-s-slash-line.svg",
+	"code":                      "node_modules/remixicon/icons/Development/code-s-slash-line.svg",
 	"component":                 "node_modules/remixicon/icons/System/apps-2-line.svg",
 	"component-fill":            "node_modules/remixicon/icons/System/apps-2-fill.svg",
 	"copy":                      "node_modules/remixicon/icons/Document/file-copy-line.svg",
@@ -148,7 +147,6 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
-//go:embed node_modules/remixicon/icons/Arrows/arrow-left-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg
 //go:embed node_modules/remixicon/icons/Buildings/home-4-line.svg

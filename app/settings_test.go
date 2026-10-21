@@ -1191,6 +1191,13 @@ func TestSignaturesList(t *testing.T) {
 	})
 	h.click("Work")
 	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
+	// ‹ 签名 above the title goes back to the list (the sidebar's 签名 is selected and does not click).
+	r, ok := h.tt.Find("Work")
+	if !ok {
+		t.Fatal("no title")
+	}
+	h.tt.ClickAt(r.X+8, r.Y-20) // the back link sits just above the title, its text aligned with it
+	h.until("back to the list", func() bool { return h.app.route.Settings == "signatures" })
 }
 
 // A signature's page: its name saves once typing pauses; 默认用于 switches
