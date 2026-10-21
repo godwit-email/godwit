@@ -8,8 +8,8 @@ metadata:
 
 Rewrite the text in a formal, polite and professional tone.
 
-If a subject is provided in <subject>, refine the subject to be formal, professional, and well-structured, and format your output as:
-<subject>Refined Formal Subject</subject>
+If a subject is provided in <subject>, keep it unless its tone clearly clashes with a formal email, in which case make it formal. Format your output as:
+<subject>Subject</subject>
 <body>Formal HTML body</body>
 
 If no subject was provided, return only the rewritten body as HTML.

@@ -257,29 +257,15 @@ export function Review({
               {t("compose.subject")}
             </span>
             <div className="flex flex-wrap items-center gap-1.5 text-base">
-              {r.subject_ops && r.subject_ops.length > 0 ? (
+              {r.subject_ops?.map((op, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
-                r.subject_ops.map((op, i) => <Op key={i} op={op} d={0} />)
-              ) : (
-                <>
-                  <span
-                    className={
-                      r.old_subject
-                        ? "line-through text-muted-foreground"
-                        : "text-muted-foreground italic"
-                    }
-                  >
-                    {r.old_subject || t("mail.no_subject")}
-                  </span>
-                  <span className="text-muted-foreground">→</span>
-                  <span className="font-medium text-foreground">{r.subject}</span>
-                </>
-              )}
+                <Op key={i} op={op} d={0} />
+              ))}
             </div>
           </div>
         )}
         {r.inline ? (
-          <div className="text-lg leading-normal [&>*+*]:mt-3">{blocks}</div>
+          <div className="text-lg leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
         ) : compare ? (
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2 text-muted-foreground">

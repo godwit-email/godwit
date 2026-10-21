@@ -346,7 +346,7 @@ func (s *Service) pluginDraftRun(plugin, src, target, subject string, translateS
 			if translateSubject && strings.TrimSpace(subject) != "" {
 				subjRes, err := s.translateDraftText(ctx, plugin, subject, target)
 				if err == nil && strings.TrimSpace(subjRes) != "" {
-					out = "<subject>" + strings.TrimSpace(subjRes) + "</subject><body>" + outHTML + "</body>"
+					out = "<subject>" + html.EscapeString(strings.TrimSpace(subjRes)) + "</subject>" + outHTML
 				}
 			}
 			res = ai.Result{Messages: []ai.Message{{Role: "model", Text: out}}}

@@ -19,6 +19,8 @@ import (
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
+	xhtml "golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // assistTools are the tools of an Assist run: read mail, and propose a new
@@ -29,11 +31,9 @@ var assistTools = []string{"search_mail", "get_message", "read_attachment", "upd
 const (
 	assistSystem = `You are Wit, the writing assistant beside the user's draft in the Godwit compose window. ` +
 		`update_draft replaces the editable part of the draft with your HTML (paragraphs, line breaks, bold, italic, links, lists). ` +
-		`Always maintain, optimize, and provide a concise, fitting subject (using the subject parameter of update_draft) whenever drafting an email ` +
-		`or whenever modifying the draft. Whenever the user requests adjustments (such as tone, formality, friendliness, length, dates, topics, or intent), ` +
-		`optimize both the draft body and the subject accordingly (e.g. formulate a professional, formal subject when asked for a formal tone). ` +
-		`Never return 0 changes: if the user asks for a change (such as 'bitte formeller'), you must actually change and elevate the wording of the email and the subject to satisfy the instruction. ` +
-		`If the subject is empty or a placeholder, always generate an appropriate subject. ` +
+		`Give update_draft a concise subject that fits the draft when it has none or only a placeholder, and keep the subject in step with ` +
+		`the draft when the user asks to change its tone, length, dates, topic or intent. A reply's or forward's subject stays as it is ` +
+		`unless the user explicitly asks to change the subject. When the user asks for a change, actually make it. ` +
 		`Call update_draft at most once per turn. Once update_draft has been executed, do not call update_draft again: your task is complete. ` +
 		`After update_draft runs, simply give a brief confirmation or explanation in plain text without making any further tool calls. ` +
 		`The user reviews every change except the first text of an empty draft. The quoted email and the signature stay as they are: ` +
@@ -230,7 +230,14 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 	var cited []mailItem
 	editable, _, _ := mail.SplitDraft(d.HTML)
 	var b strings.Builder
-	b.WriteString("The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n")
+	if d.SourceMessageID == 0 {
+		b.WriteString("The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n")
+	} else {
+		// A reply's subject comes from the mail it answers; changing it splits the thread at the recipient.
+		scope.MarkReadMail()
+		b.WriteString("The draft's subject, taken from the email it answers (keep it unless the user explicitly asks to change the subject):\n" +
+			ai.Untrusted(fmt.Sprintf("draft:%d:subject", d.ID), d.Subject, ai.SuspectInjection(d.Subject)) + "\n\n")
+	}
 	b.WriteString("The editable part of the draft, as HTML (the quoted email and the signature are not shown and stay as they are):\n<draft>\n" +
 		editable + "\n</draft>")
 	if d.SourceMessageID != 0 {
@@ -319,7 +326,7 @@ func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, s
 		return prepared{}, err
 	}
 	args := updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h}
-	if subject != nil && *subject != d.Subject {
+	if subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject { // a blank subject would erase it unseen
 		args.Subject = subject
 		args.OldSubject = d.Subject
 		if kind == kindInitial && !mail.Blank(old) {
@@ -642,6 +649,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		return nil, err
 	}
 	editable, _, _ := mail.SplitDraft(d.HTML)
+	// A reply's or forward's subject is kept: changing it splits the thread at the recipient.
+	withSubject := sel == nil && d.SourceMessageID == 0
 	if sel != nil {
 		if d.Revision != sel.Revision {
 			return nil, ErrStaleDraft
@@ -667,7 +676,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if sel != nil {
 			src = editable[sel.Start:sel.End]
 		}
-		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target, d.Subject, sel == nil)
+		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target, d.Subject, withSubject)
 	} else {
 		if ref == "" {
 			if ref = st.DefaultModel; ref == "" {
@@ -706,7 +715,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	}
 	// A skill reads only its target (spec 5.1): no mail, not even the one replied to.
 	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
-	if d.Subject != "" && sel == nil {
+	if withSubject && d.Subject != "" {
 		prompt = "The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n" + prompt
 	}
 	if sel != nil {
@@ -725,19 +734,11 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		outText := out
 		var newSubj *string
 		if sel == nil {
-			if start := strings.Index(out, "<subject>"); start >= 0 {
-				if end := strings.Index(out[start:], "</subject>"); end >= 0 {
-					s := strings.TrimSpace(out[start+len("<subject>") : start+end])
-					newSubj = &s
-					bodyPart := out[:start] + out[start+end+len("</subject>"):]
-					if bStart := strings.Index(bodyPart, "<body>"); bStart >= 0 {
-						if bEnd := strings.LastIndex(bodyPart, "</body>"); bEnd >= bStart {
-							bodyPart = bodyPart[bStart+len("<body>") : bEnd]
-						}
-					}
-					outText = strings.TrimSpace(bodyPart)
-				}
+			subj, body, ok := splitSubject(out)
+			if ok && withSubject {
+				newSubj = &subj
 			}
+			outText = body
 		}
 		p, err := s.proposeUpdateWithSubject(ctx, d.ID, newSubj, func(old string, rev int64) (string, error) {
 			if sel == nil {
@@ -767,6 +768,51 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 }
 
 // unfence drops a markdown code fence around a model's answer.
+// splitSubject parses a skill's answer as HTML and takes out its first
+// <subject> element: ok, its text and the rest, else out as it is. A <body>
+// wrapper is dropped by the parser; children of an unclosed <subject> stay
+// in the body.
+func splitSubject(out string) (subject, body string, ok bool) {
+	ctx := &xhtml.Node{Type: xhtml.ElementNode, Data: "body", DataAtom: atom.Body}
+	nodes, err := xhtml.ParseFragment(strings.NewReader(out), ctx)
+	if err != nil {
+		return "", out, false
+	}
+	root := &xhtml.Node{Type: xhtml.ElementNode, Data: "div", DataAtom: atom.Div}
+	for _, n := range nodes {
+		root.AppendChild(n)
+	}
+	var subj *xhtml.Node
+	for n := range root.Descendants() {
+		if n.Type == xhtml.ElementNode && n.Data == "subject" {
+			subj = n
+			break
+		}
+	}
+	if subj == nil {
+		return "", out, false
+	}
+	var text strings.Builder
+	for c := subj.FirstChild; c != nil; {
+		next := c.NextSibling
+		subj.RemoveChild(c)
+		if c.Type == xhtml.TextNode {
+			text.WriteString(c.Data)
+		} else {
+			subj.Parent.InsertBefore(c, subj)
+		}
+		c = next
+	}
+	subj.Parent.RemoveChild(subj)
+	var b strings.Builder
+	for c := range root.ChildNodes() {
+		if err := xhtml.Render(&b, c); err != nil {
+			return "", out, false
+		}
+	}
+	return strings.Join(strings.Fields(text.String()), " "), strings.TrimSpace(b.String()), true
+}
+
 func unfence(s string) string {
 	s = strings.TrimSpace(s)
 	if rest, ok := strings.CutPrefix(s, "```"); ok {

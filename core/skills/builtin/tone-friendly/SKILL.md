@@ -8,8 +8,8 @@ metadata:
 
 Rewrite the text in a warm, friendly and natural tone.
 
-If a subject is provided in <subject>, refine the subject to be friendly, warm, and engaging, and format your output as:
-<subject>Refined Friendly Subject</subject>
+If a subject is provided in <subject>, keep it unless its tone clearly clashes with a friendly email, in which case make it friendly. Format your output as:
+<subject>Subject</subject>
 <body>Friendly HTML body</body>
 
 If no subject was provided, return only the rewritten body as HTML.

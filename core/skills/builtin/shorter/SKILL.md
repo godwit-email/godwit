@@ -8,8 +8,8 @@ metadata:
 
 Make the text noticeably shorter by removing filler and repetition.
 
-If a subject is provided in <subject>, shorten and sharpen the subject, and format your output as:
-<subject>Concise Subject</subject>
+If a subject is provided in <subject>, keep it unless it is clearly wordy, in which case shorten it. Format your output as:
+<subject>Subject</subject>
 <body>Concise HTML body</body>
 
 If no subject was provided, return only the rewritten body as HTML.

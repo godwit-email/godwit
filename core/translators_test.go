@@ -341,6 +341,14 @@ func TestTranslateDraftWithPlugin(t *testing.T) {
 	ed, _, _ = parts(t, e.getDraft(t, d.ID).HTML)
 	assert.Contains(t, ed, `href="https://x.example/docs"`, "a block in one style keeps it")
 	assert.Contains(t, ed, "[zh-CN] Docs", "no target: the reading language")
+	assert.Equal(t, d.Subject, e.getDraft(t, d.ID).Subject, "a reply's subject is not translated")
+
+	d = e.newDraft(t, "Fish <b> & Chips", "<p>Hello</p>")
+	e.accept(t, translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"}))
+	got := e.getDraft(t, d.ID)
+	assert.Equal(t, "[fr] Fish <b> & Chips", got.Subject, "a new draft's subject is translated, as text")
+	ed, _, _ = parts(t, got.HTML)
+	assert.Equal(t, "<p>[fr] Hello</p>", ed)
 }
 
 // A draft changed after the proposal is not overwritten by it.

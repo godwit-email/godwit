@@ -315,22 +315,71 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.NotContains(t, sys, "language of the email")
 	p := promptOf(t, reqs[0])
 	assert.Contains(t, p, "我周五到。")
-	assert.Contains(t, p, "Re: Plans")
-	// Final review #4: a skill gets its target only, no other mail.
-	assert.NotContains(t, p, "Meet on Friday at the harbour.")
-	assert.NotContains(t, sys, "Meet on Friday at the harbour.")
+	// Final review #4: a skill gets its target only, no other mail; a reply's subject is kept.
+	for _, other := range []string{"Meet on Friday at the harbour.", "Plans"} {
+		assert.NotContains(t, p, other)
+		assert.NotContains(t, sys, other)
+	}
 	assert.NotContains(t, p, "<untrusted_email source")
 
 	e.accept(t, a)
 	gotDraft := e.getDraft(t, d.ID)
 	ed, q2, sig2 := parts(t, gotDraft.HTML)
 	assert.Equal(t, "<p>I&#39;ll be there on Friday.</p>", ed)
-	assert.Equal(t, "Re: 安排", gotDraft.Subject)
+	assert.Equal(t, d.Subject, gotDraft.Subject, "a reply's subject is not translated")
 	assert.Equal(t, q, q2)
 	assert.Equal(t, sig, sig2)
 	c, err := e.s.GetConversation(t.Context(), a.ConversationID)
 	require.NoError(t, err)
 	assert.Empty(t, c.Messages, "the skill run does not enter the chat history")
+}
+
+// newDraft is a new draft (no mail it answers) with subject and editable.
+func (e skillEnv) newDraft(t *testing.T, subject, editable string) Draft {
+	t.Helper()
+	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
+	require.NoError(t, err)
+	_, q, sig := mail.SplitDraft(d.HTML)
+	d.Subject, d.HTML = subject, mail.JoinDraft(editable, q, sig)
+	d, err = e.s.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	return d
+}
+
+func TestAssistSkillTranslatesNewDraftSubject(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.newDraft(t, "周五安排", "<p>我周五到。</p>")
+	e.srv.Script(testllm.Turn{Text: []string{"<subject>Q&amp;A on Friday</subject>\n<body><p>I'll be there on Friday.</p></body>"}})
+	a := translateDraft(t, e, d, SkillOptions{})
+	assert.Contains(t, promptOf(t, e.srv.Requests()[0]), "周五安排")
+	e.accept(t, a)
+	got := e.getDraft(t, d.ID)
+	assert.Equal(t, "Q&A on Friday", got.Subject, "entities unescaped")
+	ed, _, _ := parts(t, got.HTML)
+	assert.Equal(t, "<p>I&#39;ll be there on Friday.</p>", ed)
+}
+
+func TestAssistSubjectBlankKeptAndUndone(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.newDraft(t, "Old", "<p>Version one.</p>")
+	propose := func(html, subject string) Approval {
+		b, _ := json.Marshal(map[string]string{"html": html, "subject": subject})
+		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}}, testllm.Turn{Text: []string{"Updated."}})
+		evs := e.assist(t, d.ID, "improve it")
+		last := evs[len(evs)-1]
+		require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+		return last.Approvals[0]
+	}
+	e.accept(t, propose("<p>Version two.</p>", ""))
+	assert.Equal(t, "Old", e.getDraft(t, d.ID).Subject, "a blank subject does not erase it")
+
+	e.accept(t, propose("<p>Version three.</p>", "New"))
+	assert.Equal(t, "New", e.getDraft(t, d.ID).Subject)
+	require.NoError(t, e.s.UndoLastAssist(t.Context(), d.ID))
+	got := e.getDraft(t, d.ID)
+	assert.Equal(t, "Old", got.Subject, "undo puts the subject back")
+	ed, _, _ := parts(t, got.HTML)
+	assert.Equal(t, "<p>Version two.</p>", ed)
 }
 
 // selectionOf is sub's byte range in the draft's editable part.
@@ -673,4 +722,21 @@ func TestAssistSkillUsage(t *testing.T) {
 	require.Equal(t, "interrupted", evs[len(evs)-1].Kind)
 	assert.Equal(t, "70", queryStr(t, e.s, "SELECT input_tokens FROM runs ORDER BY id DESC LIMIT 1"))
 	assert.Equal(t, "12", queryStr(t, e.s, "SELECT output_tokens FROM runs ORDER BY id DESC LIMIT 1"))
+}
+
+func TestSplitSubject(t *testing.T) {
+	for _, c := range []struct{ in, subject, body string }{
+		{"<subject>Hi</subject>\n<body><p>A</p></body>", "Hi", "<p>A</p>"},
+		{"<Subject lang=\"en\"> Q&amp;A\n on Friday </Subject><p>A</p>", "Q&A on Friday", "<p>A</p>"},
+		{"<subject>Hi</subject><p>A</p><p>B</p>", "Hi", "<p>A</p><p>B</p>"},
+		{"<subject>Hi<p>A</p>", "Hi", "<p>A</p>"},
+	} {
+		subject, body, ok := splitSubject(c.in)
+		assert.True(t, ok, c.in)
+		assert.Equal(t, c.subject, subject, c.in)
+		assert.Equal(t, c.body, body, c.in)
+	}
+	_, body, ok := splitSubject("<p>No subject</p>")
+	assert.False(t, ok)
+	assert.Equal(t, "<p>No subject</p>", body)
 }

@@ -267,17 +267,12 @@ func (r *proposal) review() Review {
 		newDoc := richtext.Doc{Blocks: []richtext.Block{{Kind: richtext.Paragraph, Inlines: []richtext.Inline{{Text: r.subject}}}}}
 		bDiffs, _ := worddiff.Diff(worddiff.Tokenize(oldDoc), worddiff.Tokenize(newDoc), worddiff.DefaultBudget)
 		if len(bDiffs) > 0 {
-			for _, op := range bDiffs[0].Ops {
-				o := ReviewOp{Kind: opKinds[op.Kind], Change: -1, Tokens: []ReviewToken{}}
+			for _, op := range bDiffs[0].Ops { // a subject is plain text: one token per op
+				var text strings.Builder
 				for _, t := range op.Tokens {
-					tk := ReviewToken{Text: t.Text}
-					if n := len(o.Tokens); n > 0 && o.Tokens[n-1].Bold == tk.Bold && o.Tokens[n-1].Italic == tk.Italic && o.Tokens[n-1].Href == tk.Href {
-						o.Tokens[n-1].Text += tk.Text
-						continue
-					}
-					o.Tokens = append(o.Tokens, tk)
+					text.WriteString(t.Text)
 				}
-				out.SubjectOps = append(out.SubjectOps, o)
+				out.SubjectOps = append(out.SubjectOps, ReviewOp{Kind: opKinds[op.Kind], Change: -1, Tokens: []ReviewToken{{Text: text.String()}}})
 			}
 		}
 	}
