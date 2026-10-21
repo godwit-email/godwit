@@ -588,3 +588,12 @@ func TestAppleIntelligenceJudgeBatchWireFormat(t *testing.T) {
 		assert.LessOrEqual(t, len(enc), limit)
 	}
 }
+
+// A fenced JSON answer, which parseQuickReplies accepts, is kept as the replies.
+func TestAppleIntelligenceFencedQuickReplies(t *testing.T) {
+	fenced := "```json\n{\"replies\":[{\"html\":\"<p>Sounds good</p>\"}]}\n```"
+	rs, err := parseQuickReplies(formatQuickRepliesJSON(fenced))
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	assert.Equal(t, "<p>Sounds good</p>", rs[0].HTML)
+}

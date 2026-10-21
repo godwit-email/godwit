@@ -524,15 +524,9 @@ func extractQuickReplies(raw string) []string {
 
 func formatQuickRepliesJSON(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "{") && strings.Contains(raw, `"replies"`) {
-		var check struct {
-			Replies []struct {
-				HTML string `json:"html"`
-			} `json:"replies"`
-		}
-		if err := json.Unmarshal([]byte(raw), &check); err == nil && len(check.Replies) > 0 {
-			return raw
-		}
+	// The model answered in the requested JSON after all (fenced or not): keep it.
+	if rs, err := parseQuickReplies(raw); err == nil && len(rs) > 0 {
+		return raw
 	}
 
 	replies := extractQuickReplies(raw)
