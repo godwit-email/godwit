@@ -180,7 +180,7 @@ func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bo
 	if !ok {
 		idx = map[string]string{}
 		if m, err := x.s.mailForModel(ctx, id); err == nil {
-			mailLinks(modelBody(m), func(u string) string {
+			mailLinks(mailHeader(m.MessageSummary)+"\n"+modelBody(m), func(u string) string {
 				if k := linkHash(u); len(u) <= maxExpandURL && idx[k] == "" {
 					idx[k] = u // the first link with a hash wins
 				}
@@ -200,8 +200,8 @@ func (x *linkExpander) text(ctx context.Context, text string) string {
 	var b strings.Builder
 	last := 0
 	for _, loc := range linkRefRe.FindAllStringSubmatchIndex(text, -1) {
-		if loc[1] < len(text) && continuesURL(text[loc[1]]) {
-			continue // more hash or query after it: no reference of ours, left for the send check
+		if loc[1] < len(text) && continuesURL(text[loc[1]]) || loc[0] > 0 && continuesURL(text[loc[0]-1]) {
+			continue // part of a longer URL (more hash or query, or inside another's): left for the checks
 		}
 		id, _ := strconv.ParseInt(text[loc[2]:loc[3]], 10, 64)
 		if u, ok := x.link(ctx, id, text[loc[4]:loc[5]]); ok {
@@ -325,13 +325,27 @@ func dropCutRef(text string) string {
 	return text
 }
 
+// hasLinkRef is whether text still holds a link reference, in any case: the
+// scheme is case-insensitive to whoever reads it.
+func hasLinkRef(text string) bool { return strings.Contains(strings.ToLower(text), linkRefPrefix) }
+
+// toolArgs is expandArgs for a tool call about to run: one whose arguments
+// still hold a reference is refused, so no tool gets an internal link.
+func (s *Service) toolArgs(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
+	out := s.expandArgs(ctx, args)
+	if hasLinkRef(string(out)) {
+		return nil, errors.New("a " + linkRefPrefix + " reference in the arguments could not be turned back into its link: copy it exactly from the email, or leave it out")
+	}
+	return out, nil
+}
+
 // expandDraftLinks expands the link references in d's subject and body
 // before it is checked or sent: Wit's draft tools already did, but one may be
 // typed or pasted back in.
 func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
 	x := s.linkExpander()
 	d.Subject, d.HTML = x.text(ctx, d.Subject), x.text(ctx, d.HTML)
-	if strings.Contains(d.Subject+d.HTML, linkRefPrefix) {
+	if hasLinkRef(d.Subject + d.HTML) {
 		return ErrLinkRef
 	}
 	return nil

@@ -738,7 +738,7 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 	}
 	job.full, job.dropped = state, dropped
 	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
-		Args: s.expandArgs}, nil // link references expanded before a call is validated, gated, prepared or run
+		Args: s.toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
 // track registers a run in flight. The caller holds runMu.

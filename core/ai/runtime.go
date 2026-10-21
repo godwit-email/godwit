@@ -271,8 +271,8 @@ type runner struct {
 	key string
 	// reasoning: Request.Reasoning
 	reasoning bool
-	args      func(context.Context, json.RawMessage) json.RawMessage // Request.Args
-	usage     Usage                                                  // so far, under mu
+	args      func(context.Context, json.RawMessage) (json.RawMessage, error) // Request.Args
+	usage     Usage                                                           // so far, under mu
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
@@ -482,9 +482,21 @@ func (callIDs) Name() string { return "godwit_call_ids" }
 func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 	return &gai.Hooks{
 		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
+			// A call the tool never sees goes back to the model as an error result, which it can retry.
+			refuse := func(msg string) (*gai.MultipartToolResponse, error) {
+				call := toolCall(p.Request)
+				res := ToolResult{CallID: call.ID, Name: call.Name, Error: c.r.redact(msg)}
+				c.r.send(Event{Kind: "tool_call", Call: &call})
+				c.r.send(Event{Kind: "tool_result", Result: &res})
+				return &gai.MultipartToolResponse{Output: map[string]any{"error": res.Error}}, nil
+			}
 			if c.r.args != nil { // on a copy: the model's own request stays in the state
 				in := rawJSON(p.Request.Input)
-				if out := c.r.args(ctx, in); !bytes.Equal(out, in) {
+				out, err := c.r.args(ctx, in)
+				if err != nil {
+					return refuse(err.Error())
+				}
+				if !bytes.Equal(out, in) {
 					dec := json.NewDecoder(bytes.NewReader(out))
 					dec.UseNumber() // a large integer argument stays exact
 					var v any
@@ -500,11 +512,7 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 				return resp, err
 			}
 			// Genkit validated the arguments before the tool function ran.
-			call := toolCall(p.Request)
-			res := ToolResult{CallID: call.ID, Name: call.Name, Error: c.r.redact("invalid arguments: " + err.Error())}
-			c.r.send(Event{Kind: "tool_call", Call: &call})
-			c.r.send(Event{Kind: "tool_result", Result: &res})
-			return &gai.MultipartToolResponse{Output: map[string]any{"error": res.Error}}, nil
+			return refuse("invalid arguments: " + err.Error())
 		},
 		// Results bind to call IDs, so a turn that repeats one is unusable.
 		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {

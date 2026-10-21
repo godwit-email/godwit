@@ -100,7 +100,7 @@ func (s *Service) mailContext(ctx context.Context, scope *gateway.Scope, ids []i
 		}
 		quote := ai.InjectionQuote(head + body) // before linkRefs, so a link's query can still flag the mail
 		suspect := quote != ""
-		body = linkRefs(body, m.ID)
+		head, body = linkRefs(head, m.ID), linkRefs(body, m.ID)
 		cut := m.Truncated
 		if n := min(budget.PerMessage, left); utf8.RuneCountInString(body) > n {
 			body, cut = dropCutRef(string([]rune(body)[:max(n, 0)])), true

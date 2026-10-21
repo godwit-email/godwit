@@ -136,8 +136,9 @@ type Request struct {
 	// Reasoning streams the model's readable reasoning as reasoning events.
 	Reasoning bool
 	// Args, if set, rewrites each tool call's arguments before they are
-	// validated and the tool runs; the state keeps what the model wrote.
-	Args func(ctx context.Context, args json.RawMessage) json.RawMessage
+	// validated and the tool runs; the state keeps what the model wrote. An
+	// error refuses the call: the model gets it as the call's result.
+	Args func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
 	// Effort is the reasoning effort asked of the model: "low", "medium" or
 	// "high"; "" asks for none (models that do not reason refuse it).
 	Effort string

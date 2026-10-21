@@ -220,3 +220,28 @@ func TestLinkExpanderLimits(t *testing.T) {
 	require.NotContains(t, seen[0], strings.Repeat("x", 100))
 	require.Equal(t, "T:see "+huge, res.Translations["see "+huge])
 }
+
+func TestLinkRefsFailClosed(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Deal "+longLink, "shop@x", "hi", "", 1_700_000_000)
+	ref := linkRefs(longLink, id)
+	ctx := t.Context()
+
+	wrapped := "https://redirect.example/?u=" + ref
+	require.Equal(t, wrapped, s.expandLinks(ctx, wrapped), "a reference inside another URL is no reference")
+	require.Equal(t, "("+longLink+")", s.expandLinks(ctx, "("+ref+")"))
+
+	items, err := s.mailContext(ctx, &gateway.Scope{}, []int64{id}, defaultMailBudget)
+	require.NoError(t, err)
+	require.NotContains(t, items[0].Block, "session=", "a link in the subject is a reference too")
+	require.Equal(t, longLink, s.expandLinks(ctx, ref), "and it expands")
+
+	d := Draft{Subject: "Godwit://LINK/a.com?m=1&h=0123abcd0123abcd"}
+	require.ErrorIs(t, s.expandDraftLinks(ctx, &d), ErrLinkRef, "any case of the prefix is caught")
+
+	_, err = s.toolArgs(ctx, json.RawMessage(`{"url":"`+linkRefPrefix+`a.com?m=999&h=0123abcd0123abcd"}`))
+	require.Error(t, err, "a tool never gets a reference that did not expand")
+	out, err := s.toolArgs(ctx, json.RawMessage(`{"url":"`+ref+`"}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"url":"`+longLink+`"}`, string(out))
+}

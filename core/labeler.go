@@ -201,7 +201,7 @@ func labelState(m Message) string {
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])
 	}
-	text := mailHeader(m.MessageSummary) + "\n" + body
+	text := linkRefs(mailHeader(m.MessageSummary), m.ID) + "\n" + body
 	return ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)
 }
 
