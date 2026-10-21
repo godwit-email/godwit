@@ -1226,7 +1226,7 @@ func TestAccountDefaultSignature(t *testing.T) {
 	h.click("Work")
 	h.until("picked", func() bool { return h.account(acc.ID).SignatureID == sig.ID })
 	h.see("Alice at work")
-	h.click("前往设置 › 签名")
+	h.click("设置 › 签名")
 	h.until("opened", func() bool { return h.app.route.Settings == "signatures" })
 }
 

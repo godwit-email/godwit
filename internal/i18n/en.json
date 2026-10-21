@@ -979,7 +979,15 @@
   "settings_account_signature_default": "Default signature",
   "settings_account_signature_default_help": "Added to new mail, replies and forwards",
   "settings_account_signature_edit_html": "Edit HTML",
-  "settings_account_signature_foot": "Signatures are made and edited in Settings › Signatures; a change shows for every account using it.",
+  "settings_account_signature_foot": "Signatures are made and edited in {arg1}; a change shows for every account using it.",
+  "@settings_account_signature_foot": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_account_signature_where": "Settings › Signatures",
   "settings_account_signature_help": "Added to the end of mail you write. Wit never changes it. You can use bold, links and images (like a company logo).",
   "settings_account_signature_html": "HTML",
   "settings_account_signature_html_help": "Saving removes scripts, event attributes and remote images. Images are written as cid:…; to add one, switch back to rich text and use Insert image.",
@@ -988,7 +996,6 @@
   "settings_account_signature_image_invalid": "Images must be PNG, JPEG, GIF or WebP, up to 512 KB, at most 4",
   "settings_account_signature_label": "Signature text",
   "settings_account_signature_layout": "This signature uses tables and styles. You can edit its text here; to change the layout, use HTML.",
-  "settings_account_signature_manage": "Open Settings › Signatures",
   "settings_account_signature_none": "No signature",
   "settings_account_signature_preview": "Preview",
   "settings_account_signature_too_many": "At most 4 images; this change was not saved",

@@ -414,10 +414,15 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		sectionTitle(c, i18n.T("settings.account.signature"))
 		settingsCard(c, rows...)
-		ui.Column(c).Gap(th.Space(1)).AlignItems(ui.Start).Children(func() {
-			kit.Text(c, i18n.T("settings.account.signature.foot"), t.Text.Sm).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("settings.account.signature.manage"), t.Foreground, t.Text.Sm).
-				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) })
+		// The sentence names where signatures are edited, and that name opens it.
+		where := i18n.T("settings.account.signature.where")
+		before, after, _ := strings.Cut(i18n.Tf("settings.account.signature.foot", where), where)
+		ui.RichText(c).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
+			ui.Text(c, before)
+			if ui.Link(c, where, "").TextColor(t.Foreground).Underline().Clicked() {
+				a.navigate(Route{Page: PageSettings, Settings: "signatures"})
+			}
+			ui.Text(c, after)
 		})
 	})
 }
