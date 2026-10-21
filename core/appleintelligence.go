@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -425,7 +426,6 @@ func cleanAppleIntelligenceSummary(s string) string {
 		if strings.Contains(lower, "keine explizite nennung") ||
 			strings.Contains(lower, "keine nennung von apple") ||
 			strings.Contains(lower, "keine fristen oder entscheidungen") ||
-			strings.Contains(lower, "zugrundeliegenden technologie") ||
 			strings.Contains(lower, "no explicit mention of apple") ||
 			strings.Contains(lower, "no deadlines or decisions") {
 			continue
@@ -563,7 +563,7 @@ func (d *DefaultAppleIntelligence) Generate(ctx context.Context, system, prompt 
 func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, system, prompt string, temp float64) (string, error) {
 	payload, err := json.Marshal(map[string]any{
 		"system":         system,
-		"text":           prompt,
+		"text":           truncateForContext(prompt),
 		"detectLanguage": false,
 		"temperature":    temp,
 	})
@@ -596,6 +596,25 @@ func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, 
 	}
 
 	return strings.TrimSpace(res.Text), nil
+}
+
+// appleIntelligencePromptBytes keeps a prompt inside the on-device model's
+// 4,096-token context with room for instructions and the answer: about
+// 2,700 tokens of CJK (3 bytes a token) and fewer of Latin text.
+// shortcut: byte-based estimate, not the model's tokenizer; upgrade to
+// SystemLanguageModel.tokenCount once Godwit requires a macOS that has it.
+const appleIntelligencePromptBytes = 8000
+
+// truncateForContext cuts s to appleIntelligencePromptBytes on a rune boundary.
+func truncateForContext(s string) string {
+	if len(s) <= appleIntelligencePromptBytes {
+		return s
+	}
+	cut := appleIntelligencePromptBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // Judge evaluates questions against input using Apple Intelligence.

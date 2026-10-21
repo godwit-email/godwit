@@ -938,8 +938,8 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		}
 	}
 	u.genOpts = append(u.genOpts, genPlug...)
-	if len(u.genOpts) == 0 {
-		none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
+	none := []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.use.add_first")}}
+	if len(u.genOpts) == 0 && len(smallPlug) == 0 && len(judgePlug) == 0 {
 		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
 		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
 		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
@@ -960,6 +960,9 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		}
 	}
 	u.judgeOpts = append(u.judgeOpts, judgePlug...)
+	if len(u.genOpts) == 0 { // only a plugin's small or judge model: those stay choosable
+		u.genOpts = none
+	}
 	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
 	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
 	judgeLine := func() {

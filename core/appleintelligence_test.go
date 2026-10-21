@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/stretchr/testify/assert"
@@ -334,6 +336,15 @@ func (m *mockAIWithTemp) Version() string { return "mock-temp-1.0" }
 func TestAppleIntelligenceReviewFixes(t *testing.T) {
 	assert.Equal(t, []string{"10:00 works for me", "3 Uhr passt", "Sure, see you"},
 		extractQuickReplies("- 10:00 works for me\n2. 3 Uhr passt\n* Sure, see you"))
+
+	long := strings.Repeat("邮", 5000)
+	cut := truncateForContext(long)
+	assert.LessOrEqual(t, len(cut), appleIntelligencePromptBytes)
+	assert.True(t, utf8.ValidString(cut))
+	assert.Equal(t, "short", truncateForContext("short"))
+
+	assert.Equal(t, "- Erklärt die Arbeit der zugrundeliegenden Technologie",
+		cleanAppleIntelligenceSummary("- Erklärt die Arbeit der zugrundeliegenden Technologie"))
 
 	assert.Equal(t, "Traditional Chinese", languageName("zh-Hant"))
 	assert.Equal(t, "Simplified Chinese", languageName("zh-CN"))
