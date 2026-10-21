@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -17,16 +18,17 @@ import (
 const appleIntelligenceHelper = "apple-intelligence-helper"
 
 // appleIntelligence is the Mac's on-device intelligence, nil without the
-// helper (a build that skipped it) or where the system model is unavailable.
+// helper (a build that skipped it). Whether the system model is ready is
+// probed when used, so turning Apple Intelligence on needs no restart.
 var appleIntelligence = sync.OnceValue(func() core.AppleIntelligence {
 	dir, err := mygo.App.Path(mygo.PathResources)
 	if err != nil {
 		return nil
 	}
 	build, _ := syscall.Sysctl("kern.osversion") // the build: an update may change the system model
-	ai := core.NewDefaultAppleIntelligence(filepath.Join(dir, appleIntelligenceHelper), build+" "+app.Version)
-	if !ai.Available() {
+	helper := filepath.Join(dir, appleIntelligenceHelper)
+	if _, err := os.Stat(helper); err != nil {
 		return nil
 	}
-	return ai
+	return core.NewDefaultAppleIntelligence(helper, build+" "+app.Version)
 })

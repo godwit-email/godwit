@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -190,11 +191,15 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 		system, temp = adaptAppleIntelligenceQuickReplies(system)
 	}
 
+	// Long instructions (a user skill's body) take from the prompt's share.
+	budget := appleIntelligencePromptBytes - max(0, len(system)-appleIntelligenceSystemBytes)
 	switch {
-	case len(prompt) <= appleIntelligencePromptBytes:
+	case budget < judgeMinInputBytes:
+		return nil, fmt.Errorf("apple intelligence: %w: the instructions are too long for the on-device model", ErrModelUnavailable)
+	case len(prompt) <= budget:
 	case isSummarize || isQuickReplies:
 		// Mail blocks run oldest to newest: keep the newest whole.
-		prompt = truncateMail(prompt, appleIntelligencePromptBytes)
+		prompt = truncateMail(prompt, budget)
 	default:
 		// Structured requests (translation batches, ...) must not be cut.
 		return nil, fmt.Errorf("apple intelligence: %w: the input is too long for the on-device model", ErrModelUnavailable)
@@ -548,7 +553,15 @@ func formatQuickRepliesJSON(raw string) string {
 type DefaultAppleIntelligence struct {
 	ver        string
 	helperPath string
+
+	mu      sync.Mutex
+	checked time.Time // when avail was last probed
+	avail   bool
 }
+
+// appleIntelligenceRecheck is how long an availability probe holds: the
+// system model may finish downloading, or the user turn it on or off.
+var appleIntelligenceRecheck = time.Minute
 
 // NewDefaultAppleIntelligence runs the helper at helperPath; version names
 // what may change its outputs (the OS build, the app that ships the helper).
@@ -562,6 +575,17 @@ func (d *DefaultAppleIntelligence) Version() string {
 
 // Available reports whether Apple Intelligence is available on this Mac.
 func (d *DefaultAppleIntelligence) Available() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.checked.IsZero() && time.Since(d.checked) < appleIntelligenceRecheck {
+		return d.avail
+	}
+	d.avail, d.checked = d.probe(), time.Now()
+	return d.avail
+}
+
+// probe asks the helper whether the system model is ready.
+func (d *DefaultAppleIntelligence) probe() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, d.helperPath, "--check")
@@ -625,6 +649,10 @@ func (d *DefaultAppleIntelligence) GenerateWithTemperature(ctx context.Context, 
 // shortcut: byte-based estimate, not the model's tokenizer; upgrade to
 // SystemLanguageModel.tokenCount once Godwit requires a macOS that has it.
 const appleIntelligencePromptBytes = 8000
+
+// appleIntelligenceSystemBytes is the instructions that budget assumes;
+// longer ones shrink the prompt's share byte for byte.
+const appleIntelligenceSystemBytes = 1500
 
 // truncateForContext cuts s to at most n bytes on a rune boundary.
 func truncateForContext(s string, n int) string {
@@ -771,5 +799,9 @@ func appleIntelligenceVersion(a AppleIntelligence) int64 {
 const appleIntelligenceAdaptations = 1
 
 func (s *Service) appleIntelligenceAvailable() bool {
-	return s.opts.AppleIntelligence != nil
+	a := s.opts.AppleIntelligence
+	if p, ok := a.(interface{ Available() bool }); ok {
+		return p.Available()
+	}
+	return a != nil
 }

@@ -488,3 +488,49 @@ func TestAppleIntelligenceJudgeBatchOverhead(t *testing.T) {
 		assert.LessOrEqual(t, len(enc), limit)
 	}
 }
+
+func TestAppleIntelligenceSystemBudget(t *testing.T) {
+	ask := func(system string, n int) error {
+		body, _ := json.Marshal(map[string]any{"model": "on-device", "messages": []any{
+			map[string]string{"role": "system", "content": system},
+			map[string]string{"role": "user", "content": strings.Repeat("x", n)},
+		}})
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "http://127.0.0.1/chat/completions", bytes.NewReader(body))
+		require.NoError(t, err)
+		resp, err := (&appleIntelligenceTransport{ai: &mockAIWithTemp{out: "ok"}}).RoundTrip(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+		return err
+	}
+	skill := "A user skill.\n" + strings.Repeat("rule ", 800) // a 4 KB SKILL.md body
+	require.NoError(t, ask(skill, 5000))
+	assert.ErrorIs(t, ask(skill, 6000), ErrModelUnavailable, "the skill body shrinks the prompt's share")
+	assert.ErrorIs(t, ask(strings.Repeat("rule ", 1700), 10), ErrModelUnavailable, "instructions alone too long")
+}
+
+// Turning Apple Intelligence on while Godwit runs shows the plugin without a restart.
+func TestAppleIntelligenceAvailabilityRechecks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake helper is a shell script; the real one is macOS only")
+	}
+	old := appleIntelligenceRecheck
+	appleIntelligenceRecheck = 0
+	t.Cleanup(func() { appleIntelligenceRecheck = old })
+
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	helper := filepath.Join(dir, "helper")
+	require.NoError(t, os.WriteFile(helper, []byte("#!/bin/sh\nif [ -e "+ready+" ]; then echo '{\"available\":true}'; else echo '{\"available\":false}'; fi\n"), 0o755))
+
+	e := newSkillEnv(t)
+	e.s.opts.AppleIntelligence = NewDefaultAppleIntelligence(helper, "t")
+	listed := func() bool {
+		pms, err := e.s.ListPluginModels(t.Context())
+		require.NoError(t, err)
+		return slices.ContainsFunc(pms, func(pm PluginModels) bool { return pm.Plugin == AppleIntelligencePlugin })
+	}
+	assert.False(t, listed())
+	require.NoError(t, os.WriteFile(ready, nil, 0o644))
+	assert.True(t, listed())
+}
