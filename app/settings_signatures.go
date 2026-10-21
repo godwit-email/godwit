@@ -453,7 +453,8 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 type sigCode struct {
 	id      int64
 	st      editor.State
-	ver     uint64 // the buffer's version last saved or loaded
+	ver     uint64 // the buffer's version last seen (a change starts the save's pause)
+	saved   uint64 // the buffer's version last stored: a newer one is unsaved, a failed save's included
 	stop    func()
 	refused string // the toolbar's alert, a catalog key; "" none
 	loading bool
@@ -486,6 +487,7 @@ func (p *settingsPage) openCode() {
 		sc.st.Buffer = editor.NewBuffer(code)
 		sc.st.Buffer.SetLanguage(editor.LanguageNamed("HTML"))
 		sc.ver, sc.loading = sc.st.Buffer.Version(), false
+		sc.saved = sc.ver
 	})
 }
 
@@ -530,7 +532,7 @@ func (p *settingsPage) codeView(c *ui.Context) {
 // stays said until a save works.
 func (p *settingsPage) saveCode(sc *sigCode, then ...func(error)) {
 	a, id := p.a, sc.id
-	html := sc.st.Buffer.String()
+	html, ver := sc.st.Buffer.String(), sc.st.Buffer.Version()
 	if strings.TrimSpace(html) != "" {
 		html = core.SignatureHTMLPrefix + html
 	} else {
@@ -543,6 +545,7 @@ func (p *settingsPage) saveCode(sc *sigCode, then ...func(error)) {
 		switch {
 		case err == nil:
 			sc.refused = ""
+			sc.saved = max(sc.saved, ver)
 		case errors.Is(err, core.ErrSignatureImageCount):
 			sc.refused = "settings.account.signature.too_many"
 		case errors.Is(err, core.ErrSignatureImage):
@@ -556,13 +559,18 @@ func (p *settingsPage) saveCode(sc *sigCode, then ...func(error)) {
 	})
 }
 
-// commitCode saves at once code still waiting for typing to pause.
+// commitCode saves at once code not stored yet: waiting for typing to
+// pause, or left by a save that failed.
 func (p *settingsPage) commitCode() {
-	if sc := p.sigCode; sc != nil && sc.stop != nil {
+	sc := p.sigCode
+	if sc == nil || sc.loading || sc.stop == nil && sc.st.Buffer.Version() == sc.saved {
+		return
+	}
+	if sc.stop != nil {
 		sc.stop()
 		sc.stop = nil
-		p.saveCode(sc)
 	}
+	p.saveCode(sc)
 }
 
 // closeCode leaves the HTML mode once the code is saved: the page shows

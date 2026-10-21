@@ -6,11 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/egoist/mygo/ui"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -1163,6 +1165,43 @@ func TestSignatureDeletedInHTMLMode(t *testing.T) {
 	h.until("the page shows Other", func() bool { return h.plat.sigShown() != 0 && h.app.route.Settings != "signatures" })
 	h.app.SignatureHTML()
 	h.until("the HTML mode opens again", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+}
+
+// An HTML-mode save that failed is tried again when the App closes: the
+// code shown is never dropped unsaved.
+func TestSignatureHTMLFailedSaveRetriedOnClose(t *testing.T) {
+	h, acc := withAccount(t)
+	sig := h.openSignature(acc.ID, "A")
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(h.env.DataDir, "godwit.db"), sqlite.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exec := func(q string) {
+		if _, err := db.Execute(t.Context(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec("ALTER TABLE signatures RENAME TO signatures_away")
+	p.sigCode.st.Buffer.Set("<p>Kept</p>")
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.until("the save failed", func() bool { return p.sigCode.stop == nil && len(h.app.writes.chains) == 0 })
+	exec("ALTER TABLE signatures_away RENAME TO signatures")
+	if got := h.signatureHTML(sig.ID); got == core.SignatureHTMLPrefix+"<p>Kept</p>" {
+		t.Fatal("the first save did not fail")
+	}
+
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.until("closed", func() bool { return closed })
+	if got := h.signatureHTML(sig.ID); got != core.SignatureHTMLPrefix+"<p>Kept</p>" {
+		t.Fatalf("stored %q: the close did not save the code again", got)
+	}
 }
 
 // tinyPNG is a 1×1 PNG of a shade, base64.
