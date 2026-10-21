@@ -85,7 +85,7 @@ func mailLinks(text string, f func(u string) string) string {
 // turns those still longer than maxModelURL into references.
 func linkRefs(text string, id int64) string {
 	// Only references this makes reach the model: one planted in mail, in any case, is defused.
-	text = plantedRefRe.ReplaceAllString(text, "godwit:link/")
+	text = defuseRefs(text)
 	return mailLinks(text, func(u string) string {
 		if len(u) <= maxModelURL {
 			return u
@@ -112,7 +112,7 @@ func maskLinks(texts []string, id int64) ([]string, map[string]string) {
 	links := map[string]string{}
 	out := make([]string, len(texts))
 	for i, t := range texts {
-		t = plantedRefRe.ReplaceAllString(t, "godwit:link/") // not a link to mailLinks, but a reference to the model
+		t = defuseRefs(t) // not a link to mailLinks, but a reference to the model
 		out[i] = mailLinks(t, func(u string) string {
 			r := linkRefs(u, id)
 			if r != u {
@@ -181,7 +181,8 @@ func (s *Service) expandLinks(ctx context.Context, text string) string {
 
 // expandArgs is expandLinks for a tool call's JSON arguments.
 func (s *Service) expandArgs(ctx context.Context, args json.RawMessage) json.RawMessage {
-	return s.linkExpander().args(ctx, args)
+	out, _ := s.linkExpander().args(ctx, args) // shown as written when it cannot run
+	return out
 }
 
 // linkExpander expands references across one output (a stream, a
@@ -205,6 +206,9 @@ const maxExpandURL = 8 << 10
 // many made-up message ids cannot make it load and scan the whole mailbox.
 const maxExpandMessages = 32
 
+// maxIndexedLinks caps the links indexed per message.
+const maxIndexedLinks = 512
+
 // link is the link of message id with hash h, the message's links indexed once.
 func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bool) {
 	x.mu.Lock()
@@ -217,7 +221,8 @@ func (x *linkExpander) link(ctx context.Context, id int64, h string) (string, bo
 		idx = map[string]string{}
 		if m, err := x.s.mailForModel(ctx, id); err == nil {
 			mailLinks(modelHead(m)+"\n"+modelBody(m), func(u string) string {
-				if k := linkHash(u); len(u) <= maxExpandURL && idx[k] == "" {
+				// Only links linkRefs makes references of, and a bounded number of them.
+				if k := linkHash(u); len(u) > maxModelURL && len(u) <= maxExpandURL && idx[k] == "" && len(idx) < maxIndexedLinks {
 					idx[k] = u // the first link with a hash wins
 				}
 				return u
@@ -265,16 +270,21 @@ func refContinues(text string, end int) bool {
 	return rest != "" && continuesURL(rest[0])
 }
 
-func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawMessage {
+// errKeyCollision is arguments where two keys expand to the same link: one
+// would silently replace the other.
+var errKeyCollision = errors.New("two argument keys hold the same link once their " + linkRefPrefix + " references are expanded")
+
+func (x *linkExpander) args(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
 	if !strings.Contains(string(args), linkRefPrefix) {
-		return args
+		return args, nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(args))
 	dec.UseNumber() // a large integer argument stays exact
 	var v any
 	if dec.Decode(&v) != nil {
-		return args
+		return args, nil
 	}
+	collided := false
 	var walk func(v any) any
 	walk = func(v any) any {
 		switch v := v.(type) {
@@ -287,7 +297,11 @@ func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawM
 		case map[string]any: // keys too: a tool may key its arguments by URL
 			m := make(map[string]any, len(v))
 			for k, e := range v {
-				m[x.text(ctx, k)] = walk(e)
+				k = x.text(ctx, k)
+				if _, dup := m[k]; dup {
+					collided = true
+				}
+				m[k] = walk(e)
 			}
 			return m
 		}
@@ -295,9 +309,12 @@ func (x *linkExpander) args(ctx context.Context, args json.RawMessage) json.RawM
 	}
 	b, err := json.Marshal(walk(v))
 	if err != nil {
-		return args
+		return args, nil
 	}
-	return b
+	if collided {
+		return args, errKeyCollision
+	}
+	return b, nil
 }
 
 // expandEvents expands the references in a run's events: streamed text or
@@ -326,7 +343,7 @@ func (s *Service) expandEvents(ctx context.Context, in <-chan ai.Event) <-chan a
 			}
 			if ev.Call != nil {
 				c := *ev.Call
-				c.Args = x.args(ctx, c.Args)
+				c.Args, _ = x.args(ctx, c.Args)
 				ev.Call = &c
 			}
 			out <- ev
@@ -376,8 +393,12 @@ func dropCutRef(text string) string {
 // snippet may have cut: a reference to part of a link would never expand.
 func snippetLinks(snippet string, id int64) string {
 	i := strings.LastIndexAny(snippet, " \t\r\n") + 1
-	return linkRefs(snippet[:i], id) + plantedRefRe.ReplaceAllString(snippet[i:], "godwit:link/")
+	return linkRefs(snippet[:i], id) + defuseRefs(snippet[i:])
 }
+
+// defuseRefs turns link references in mail text, in any case, into text no
+// expander reads: only references made for a model are ever expanded.
+func defuseRefs(text string) string { return plantedRefRe.ReplaceAllString(text, "godwit:link/") }
 
 // hasLinkRef is whether text still holds a link reference, in any case: the
 // scheme is case-insensitive to whoever reads it.
@@ -387,7 +408,10 @@ func hasLinkRef(text string) bool { return strings.Contains(strings.ToLower(text
 // hold a reference is refused, so no tool gets an internal link. A run keeps
 // one expander for all its calls, so maxExpandMessages holds for the run.
 func (x *linkExpander) toolArgs(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
-	out := x.args(ctx, args)
+	out, err := x.args(ctx, args)
+	if err != nil {
+		return nil, err
+	}
 	if hasLinkRef(string(out)) {
 		return nil, errors.New("a " + linkRefPrefix + " reference in the arguments could not be turned back into its link: copy it exactly from the email, or leave it out")
 	}

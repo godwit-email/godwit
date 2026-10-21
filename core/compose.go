@@ -108,11 +108,12 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 			d.To, d.Cc = mail.ReplyRecipients(orig, acc.Email, mode == "reply_all")
 			d.Subject = mail.ReplySubject(orig.Subject)
 		}
+		d.Subject = defuseRefs(d.Subject) // a reference planted in the mail would block sending the reply
 		// The marker blockquote only marks the quote (attribution line included)
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
 		st, _ := s.loadSettings(ctx)
 		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
-		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
+		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + defuseRefs(mail.QuoteHTMLIn(orig, lang)) + "</blockquote>"
 	}
 	cids, err := s.signatureCIDs(ctx, accountID)
 	if err != nil {

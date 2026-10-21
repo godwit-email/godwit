@@ -314,3 +314,29 @@ func TestLinkRefsTranslationPieces(t *testing.T) {
 	masked, _ := maskLinks([]string{"see Godwit://LINK/a.com?m=1&h=0123abcd0123abcd"}, 1)
 	require.Equal(t, "see godwit:link/a.com?m=1&h=0123abcd0123abcd", masked[0], "planted, defused before translation")
 }
+
+func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
+	s := newMailContextService(t)
+	ctx := t.Context()
+	planted := "Godwit://link/a.com?m=1&h=0123abcd0123abcd"
+	src := addMessage(t, s, "Re "+planted, "Bob <bob@x.example>", "see "+planted, "<p>see "+planted+"</p>", 1_700_000_000)
+	d, err := s.NewDraft(ctx, 1, "reply", src)
+	require.NoError(t, err)
+	require.False(t, hasLinkRef(d.Subject+d.HTML), "a reference planted in the mail is defused in the quote")
+	require.NoError(t, s.expandDraftLinks(ctx, &d), "so the reply can be sent")
+
+	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_100)
+	ref := linkRefs(longLink, id)
+	_, err = s.linkExpander().toolArgs(ctx, json.RawMessage(`{"by_url":{"`+ref+`":1,"`+longLink+`":2}}`))
+	require.ErrorIs(t, err, errKeyCollision, "two keys that become one link refuse the call")
+
+	var many strings.Builder
+	for i := range maxIndexedLinks + 50 {
+		fmt.Fprintf(&many, "https://a.com/%090d\n", i)
+	}
+	fmt.Fprintf(&many, "https://a.com/short\n")
+	big := addMessage(t, s, "Many", "x@x", many.String(), "", 1_700_000_200)
+	x := s.linkExpander()
+	x.link(ctx, big, "0000000000000000")
+	require.Len(t, x.links[big], maxIndexedLinks, "a message indexes a bounded number of links, long ones only")
+}
