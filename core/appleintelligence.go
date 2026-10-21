@@ -184,11 +184,11 @@ func (t *appleIntelligenceTransport) RoundTrip(req *http.Request) (*http.Respons
 	temp := 0.2
 	isSummarize := false
 	isQuickReplies := false
-	// Only Godwit's own prompts are rewritten: a user's summarize skill keeps its instructions.
-	if summarize := builtinSkillBody("summarize"); summarize != "" && strings.HasPrefix(system, summarize+"\n\n"+ai.UntrustedSystemNote) {
+	// Only Godwit's own prompts are rewritten: a user's skill keeps its instructions.
+	if isBuiltinSummarize(system) {
 		isSummarize = true
 		system, temp = adaptAppleIntelligenceSummarize(system)
-	} else if strings.HasPrefix(system, quickRepliesSystem) {
+	} else if isBuiltinQuickReplies(system) {
 		isQuickReplies = true
 		system, temp = adaptAppleIntelligenceQuickReplies(system)
 	}
@@ -655,6 +655,24 @@ const appleIntelligencePromptBytes = 8000
 // appleIntelligenceSystemBytes is the instructions that budget assumes;
 // longer ones shrink the prompt's share byte for byte.
 const appleIntelligenceSystemBytes = 1500
+
+// langLine is the language tail Godwit appends: a BCP 47-ish tag and a period.
+var langLine = regexp.MustCompile(`^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8})*\.$`)
+
+// isBuiltinSummarize reports whether system is exactly the prompt runSkill
+// builds for the built-in summarize skill, not a user's copy of it.
+func isBuiltinSummarize(system string) bool {
+	body := builtinSkillBody("summarize")
+	rest, ok := strings.CutPrefix(system, body+"\n\n"+ai.UntrustedSystemNote+"\n\nAnswer in ")
+	return body != "" && ok && langLine.MatchString(rest)
+}
+
+// isBuiltinQuickReplies reports whether system is exactly the prompt
+// QuickReplies builds.
+func isBuiltinQuickReplies(system string) bool {
+	rest, ok := strings.CutPrefix(system, quickRepliesSystem+"\n\n"+ai.UntrustedSystemNote+"\n\nWrite the replies in ")
+	return ok && (rest == "the language of the email." || langLine.MatchString(rest))
+}
 
 // builtinSkillBody is the body of Godwit's built-in skill name, "" if none.
 func builtinSkillBody(name string) string {

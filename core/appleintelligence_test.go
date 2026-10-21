@@ -559,6 +559,16 @@ func TestAppleIntelligenceUserSkillNotRewritten(t *testing.T) {
 	custom := "Summarize the email text you are given.\n\nAlways end with a line TL;DR.\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in en."
 	assert.Equal(t, custom, ask(custom).recordedSystem)
 	assert.Contains(t, ask(summarizeSystem("en")).recordedSystem, "factual bullet points in English")
+
+	// A skill that copies the quick-reply prompt and adds rules is not Quick Replies.
+	qr := quickRepliesSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n"
+	customQR := quickRepliesSystem + " Also add a P.S.\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in en."
+	assert.Equal(t, customQR, ask(customQR).recordedSystem)
+	assert.False(t, isBuiltinQuickReplies(qr+"Write the replies in de. And sign as Bob."))
+	assert.True(t, isBuiltinQuickReplies(qr+"Write the replies in zh-Hant-TW."))
+	assert.True(t, isBuiltinQuickReplies(qr+"Write the replies in the language of the email."))
+	assert.True(t, isBuiltinSummarize(summarizeSystem("pt-BR")))
+	assert.False(t, isBuiltinSummarize(summarizeSystem("en")+" Then add a haiku."))
 }
 
 // Batches are sized by the wire format NewGenJudge sends, score levels' index included.
