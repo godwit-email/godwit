@@ -80,6 +80,18 @@ describe("SignatureEditor", () => {
     );
   });
 
+  it("链接 asks for the address in the toolbar row; × or Escape leaves it", async () => {
+    render(<SignatureEditor initial="<p>Bob</p>" onChange={vi.fn()} pickImage={none} t={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "compose.link" }));
+    const url = screen.getByRole("textbox", { name: "compose.link.url" });
+    fireEvent.change(url, { target: { value: "not a url" } });
+    fireEvent.click(screen.getByRole("button", { name: "compose.link.apply" }));
+    expect(url).toHaveAttribute("aria-invalid", "true");
+    fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
+    expect(screen.queryByRole("textbox", { name: "compose.link.url" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "compose.bold" })).toBeInTheDocument();
+  });
+
   it("allows at most four images", () => {
     render(<SignatureEditor initial={img().repeat(4)} onChange={vi.fn()} pickImage={none} t={t} />);
     expect(screen.getByRole("button", { name: "settings.account.signature.image" })).toBeDisabled();

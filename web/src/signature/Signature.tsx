@@ -3,6 +3,7 @@ import { upsertLink } from "@platejs/link";
 import {
   type RemixiconComponentType,
   RiBold,
+  RiCloseLine,
   RiCodeSSlashLine,
   RiImageLine,
   RiItalic,
@@ -22,7 +23,6 @@ import {
 } from "platejs/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { fromHTML, IMAGE_SRC, safeHref, toHTML, toText } from "@/compose/editor/html";
 import { linkPlugin, SafePastePlugin } from "@/compose/editor/plugins";
@@ -178,7 +178,7 @@ function Toolbar({ t, mode, pickImage }: { t: T; mode: Mode; pickImage(): Promis
   if (link !== undefined)
     return (
       <form
-        className="flex items-center gap-1 border-b-[0.5px] bg-sidebar px-1.5 py-1"
+        className="flex items-center gap-0.5 border-b-[0.5px] bg-sidebar px-1.5 py-1"
         onSubmit={(e) => {
           e.preventDefault();
           const href = safeHref(link);
@@ -189,21 +189,38 @@ function Toolbar({ t, mode, pickImage }: { t: T; mode: Mode; pickImage(): Promis
           editor.tf.focus();
         }}
       >
-        <Input
+        <RiLink aria-hidden className="mx-1.5 size-4 shrink-0 text-muted-foreground" />
+        {/* Bare, as the toolbar's own text: the row is the field. */}
+        <input
+          // biome-ignore lint/a11y/noAutofocus: the address is asked for right after 链接
           autoFocus
           aria-label={t("compose.link.url")}
           aria-invalid={bad}
           placeholder="https://"
           value={link}
-          className="h-7"
+          className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground aria-invalid:text-destructive"
           onChange={(e) => {
             setLink(e.target.value);
             setBad(false);
           }}
           onKeyDown={(e) => e.key === "Escape" && setLink(undefined)}
         />
-        <Button type="submit" size="sm">
+        <Button type="submit" variant="ghost" size="sm" className="h-7 px-2 text-xs">
           {t("compose.link.apply")}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("common.cancel")}
+          title={t("common.cancel")}
+          className="text-muted-foreground"
+          onClick={() => {
+            setLink(undefined);
+            editor.tf.focus();
+          }}
+        >
+          <RiCloseLine className="size-4" />
         </Button>
       </form>
     );
