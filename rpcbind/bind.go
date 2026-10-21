@@ -63,6 +63,7 @@ var sentinels = []struct {
 	{"signature_image_count", core.ErrSignatureImageCount},
 	{"signature_not_found", core.ErrSignatureNotFound},
 	{"signature_name", core.ErrSignatureName},
+	{"account_icon", core.ErrAccountIcon},
 	{"not_grantable", core.ErrNotGrantable},
 	{"canceled", context.Canceled},
 	{"deadline", context.DeadlineExceeded},
