@@ -339,7 +339,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		return rs, err
 	}
 
-	items, err := s.mailContext(ctx, &gateway.Scope{}, ids, defaultMailBudget)
+	items, err := s.mailContext(ctx, &gateway.Scope{}, ids, mailBudget{PerMessage: defaultMailBudget.PerMessage, Total: defaultMailBudget.Total, ShortURLs: true})
 	if err != nil {
 		return nil, err
 	}

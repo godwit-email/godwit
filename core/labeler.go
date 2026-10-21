@@ -196,12 +196,13 @@ func labelState(m Message) string {
 	if strings.TrimSpace(body) == "" {
 		body = gomail.HTMLToText(m.HTML)
 	}
-	body = cleanMailURLs(body)
+	suspect := ai.InjectionQuote(mailHeader(m.MessageSummary)+"\n"+body) != "" // before cuts, as in mailContext
+	body = cleanMailURLs(body, true)
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])
 	}
 	text := mailHeader(m.MessageSummary) + "\n" + body
-	return ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, ai.InjectionQuote(text) != "")
+	return ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)
 }
 
 // labelWrites applies the answers to a message read with labeled_at at. Every
