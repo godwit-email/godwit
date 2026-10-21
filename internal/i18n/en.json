@@ -1733,6 +1733,8 @@
   },
   "settings_signature_delete_row": "Delete this signature",
   "settings_signature_delete_unused": "No account uses this signature",
+  "settings_signature_link_invalid": "Enter an address starting with http://, https:// or mailto:",
+  "settings_signature_link_remove": "Remove link",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Name",
   "settings_signature_name_help": "Only you see it, to tell signatures apart",

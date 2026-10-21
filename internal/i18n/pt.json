@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "Depois disso, os e-mails de {arg1} ficam sem assinatura",
   "settings_signature_delete_row": "Excluir esta assinatura",
   "settings_signature_delete_unused": "Nenhuma conta usa esta assinatura",
+  "settings_signature_link_invalid": "Digite um endereço que comece com http://, https:// ou mailto:",
+  "settings_signature_link_remove": "Remover link",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Nome",
   "settings_signature_name_help": "Só você vê, para diferenciar as assinaturas",

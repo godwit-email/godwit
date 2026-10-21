@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "削除すると、{arg1} のメールには署名が付かなくなります",
   "settings_signature_delete_row": "この署名を削除",
   "settings_signature_delete_unused": "この署名を使っているアカウントはありません",
+  "settings_signature_link_invalid": "http://、https://、mailto: で始まるアドレスを入力してください",
+  "settings_signature_link_remove": "リンクを削除",
   "settings_signature_list_sep": "、",
   "settings_signature_name": "名前",
   "settings_signature_name_help": "自分だけに見える名前で、一覧で区別するためのものです",

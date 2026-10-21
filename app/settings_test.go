@@ -1288,3 +1288,61 @@ func TestSettingsMailboxPurge(t *testing.T) {
 		return err == nil && p["junk"].Days == 7 && p["trash"].Days == 0
 	})
 }
+
+// 链接 on the signature page asks in a native dialog: a bad address is
+// said, a good one answered; 移除链接 for a link already there; 取消 and
+// leaving the page cancel.
+func TestSignatureLinkDialog(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSignature(acc.ID, "A")
+	type ans struct {
+		url string
+		ok  bool
+	}
+	var got []ans
+	answer := func(url string, ok bool) { got = append(got, ans{url, ok}) }
+
+	h.app.SignatureLink("", answer)
+	h.see("链接地址")
+	h.fill("链接地址", "example.com")
+	h.click("添加链接")
+	h.see("请输入以 http://、https:// 或 mailto: 开头的地址")
+	r, _ := h.tt.Find("链接地址") // the field under its label: the error moved the focus off it
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+16)
+	h.tt.Command("selectAll")
+	h.typeText("https://example.com/a")
+	h.click("添加链接")
+	h.until("answered", func() bool { return len(got) == 1 })
+	if got[0] != (ans{"https://example.com/a", true}) {
+		t.Fatalf("answer %+v", got[0])
+	}
+
+	h.app.SignatureLink("https://example.com/a", answer)
+	h.click("移除链接")
+	h.until("taken off", func() bool { return len(got) == 2 && got[1] == ans{"", true} })
+
+	h.app.SignatureLink("", answer)
+	h.click("取消")
+	h.until("cancelled", func() bool { return len(got) == 3 && got[2] == ans{"", false} })
+
+	h.app.SignatureLink("", answer)
+	h.openSettings("general")
+	h.until("leaving cancels", func() bool { return len(got) == 4 && got[3] == ans{"", false} })
+}
+
+func TestLinkHref(t *testing.T) {
+	for in, want := range map[string]string{
+		" https://example.com/a ": "https://example.com/a",
+		"HTTP://Example.com":      "http://Example.com",
+		"mailto:bob@example.com":  "mailto:bob@example.com",
+		"example.com":             "",
+		"https://":                "",
+		"mailto:":                 "",
+		"javascript:alert(1)":     "",
+	} {
+		got, ok := linkHref(in)
+		if got != want || ok != (want != "") {
+			t.Errorf("linkHref(%q) = %q, %v", in, got, ok)
+		}
+	}
+}

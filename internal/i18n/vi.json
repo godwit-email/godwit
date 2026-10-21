@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "Sau khi xóa, thư từ {arg1} sẽ không có chữ ký",
   "settings_signature_delete_row": "Xóa chữ ký này",
   "settings_signature_delete_unused": "Không tài khoản nào dùng chữ ký này",
+  "settings_signature_link_invalid": "Nhập địa chỉ bắt đầu bằng http://, https:// hoặc mailto:",
+  "settings_signature_link_remove": "Gỡ liên kết",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Tên",
   "settings_signature_name_help": "Chỉ bạn thấy, để phân biệt các chữ ký",

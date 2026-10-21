@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "Silindikten sonra {arg1} e-postalarında imza olmaz",
   "settings_signature_delete_row": "Bu imzayı sil",
   "settings_signature_delete_unused": "Bu imzayı kullanan hesap yok",
+  "settings_signature_link_invalid": "http://, https:// veya mailto: ile başlayan bir adres girin",
+  "settings_signature_link_remove": "Bağlantıyı kaldır",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Ad",
   "settings_signature_name_help": "Yalnızca siz görürsünüz, imzaları ayırt etmek için",

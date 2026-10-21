@@ -71,6 +71,7 @@ type settingsPage struct {
 	sigForm   sigForm          // the shown signature's name
 	sigDelete bool             // its delete confirmation is open
 	sigDocs   map[int64]sigDoc // the account pages' signature previews
+	sigLink   *sigLink         // the signature page's link dialog, while it asks
 
 	query string // the sidebar's search
 
@@ -113,6 +114,10 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.commitSignatureName() // another page now
 		p.sigDelete = false
 		p.closeCode() // the page shows the signature again when it is back
+		if l := p.sigLink; l != nil {
+			p.sigLink = nil
+			l.answer("", false)
+		}
 	}
 	switch sec, acc := p.section(); {
 	case acc != nil:

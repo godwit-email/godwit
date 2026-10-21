@@ -1,16 +1,15 @@
 import { BoldPlugin, ItalicPlugin, UnderlinePlugin } from "@platejs/basic-nodes/react";
-import { upsertLink } from "@platejs/link";
+import { unwrapLink, upsertLink } from "@platejs/link";
 import {
   type RemixiconComponentType,
   RiBold,
-  RiCloseLine,
   RiCodeSSlashLine,
   RiImageLine,
   RiItalic,
   RiLink,
   RiUnderline,
 } from "@remixicon/react";
-import type { SlateEditor, TRange, Value } from "platejs";
+import type { SlateEditor, Value } from "platejs";
 import {
   createPlatePlugin,
   Plate,
@@ -24,7 +23,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { fromHTML, IMAGE_SRC, safeHref, toHTML, toText } from "@/compose/editor/html";
+import { fromHTML, IMAGE_SRC, toHTML, toText } from "@/compose/editor/html";
 import { linkPlugin, SafePastePlugin } from "@/compose/editor/plugins";
 import { SignaturePage as api, events, type SignatureState } from "@/mygo";
 import { type T, useT } from "@/shared/i18n";
@@ -162,68 +161,25 @@ function Disabled({ t }: { t: T }) {
   );
 }
 
+/** The link dialog's answer (Go's webui.SignatureLinkAnswer): ok false is cancelled; ok with url "" takes the link off. */
+export type LinkAnswer = { url: string; ok: boolean };
+
 /**
- * 加粗, 斜体, 下划线 | 链接, 插入图片; the link's address is asked inline (the page is too short for a
- * popover). An image Go refused is said beside the buttons.
+ * 加粗, 斜体, 下划线 | 链接, 插入图片. 链接's address is asked in a native dialog (the page is too
+ * short for one); the selection is kept for its answer. An image Go refused is said beside the
+ * buttons.
  */
-function Toolbar({ t, mode, pickImage }: { t: T; mode: Mode; pickImage(): Promise<string> }) {
+function Toolbar(props: {
+  t: T;
+  mode: Mode;
+  pickImage(): Promise<string>;
+  askLink(current: string): Promise<LinkAnswer>;
+}) {
+  const { t, mode, pickImage, askLink } = props;
   const editor = useEditorRef();
   const value = useEditorSelector(active, []).split(" ").filter(Boolean);
   const full = useEditorSelector((e) => images(e.children) >= MAX_IMAGES, []);
-  const [link, setLink] = useState<string>();
-  const [bad, setBad] = useState(false);
   const [refused, setRefused] = useState(false);
-  const saved = useRef<TRange | null>(null);
-
-  if (link !== undefined)
-    return (
-      <form
-        className="flex items-center gap-0.5 border-b-[0.5px] bg-sidebar px-1.5 py-1"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const href = safeHref(link);
-          if (!href) return setBad(true);
-          if (saved.current) editor.tf.select(saved.current);
-          upsertLink(editor, { url: href });
-          setLink(undefined);
-          editor.tf.focus();
-        }}
-      >
-        <RiLink aria-hidden className="mx-1.5 size-4 shrink-0 text-muted-foreground" />
-        {/* Bare, as the toolbar's own text: the row is the field. */}
-        <input
-          // biome-ignore lint/a11y/noAutofocus: the address is asked for right after 链接
-          autoFocus
-          aria-label={t("compose.link.url")}
-          aria-invalid={bad}
-          placeholder="https://"
-          value={link}
-          className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground aria-invalid:text-destructive"
-          onChange={(e) => {
-            setLink(e.target.value);
-            setBad(false);
-          }}
-          onKeyDown={(e) => e.key === "Escape" && setLink(undefined)}
-        />
-        <Button type="submit" variant="ghost" size="sm" className="h-7 px-2 text-xs">
-          {t("compose.link.apply")}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t("common.cancel")}
-          title={t("common.cancel")}
-          className="text-muted-foreground"
-          onClick={() => {
-            setLink(undefined);
-            editor.tf.focus();
-          }}
-        >
-          <RiCloseLine className="size-4" />
-        </Button>
-      </form>
-    );
 
   // The row spans the card; ToggleGroup itself is fit-to-content and rounded.
   return (
@@ -240,9 +196,19 @@ function Toolbar({ t, mode, pickImage }: { t: T; mode: Mode; pickImage(): Promis
         )}
         <span className="mx-1 h-4 border-l-[0.5px]" />
         {item(t, "link", "compose.link", RiLink, () => {
-          saved.current = editor.selection;
-          setBad(false);
-          setLink("");
+          const at = editor.selection;
+          const above = editor.api.above({ match: { type: "a" } });
+          askLink(above ? String(above[0].url ?? "") : "").then(
+            ({ url, ok }) => {
+              if (ok) {
+                if (at) editor.tf.select(at);
+                if (url) upsertLink(editor, { url });
+                else unwrapLink(editor);
+              }
+              editor.tf.focus();
+            },
+            () => {},
+          );
         })}
         {item(
           t,
@@ -369,14 +335,23 @@ export function SignatureEditor(props: {
   initial: string;
   onChange(html: string): void;
   pickImage(): Promise<string>;
+  askLink?(current: string): Promise<LinkAnswer>;
   t: T;
   mode?: Mode;
 }) {
   const { initial, onChange, pickImage, t, mode = { onHTML() {} } } = props;
+  const askLink = props.askLink ?? (() => Promise.resolve({ url: "", ok: false }));
   if (hasLayout(initial))
     return <LayoutEditor t={t} initial={initial} mode={mode} onChange={onChange} />;
   return (
-    <RichEditor initial={initial} onChange={onChange} pickImage={pickImage} t={t} mode={mode} />
+    <RichEditor
+      initial={initial}
+      onChange={onChange}
+      pickImage={pickImage}
+      askLink={askLink}
+      t={t}
+      mode={mode}
+    />
   );
 }
 
@@ -384,10 +359,11 @@ function RichEditor(props: {
   initial: string;
   onChange(html: string): void;
   pickImage(): Promise<string>;
+  askLink(current: string): Promise<LinkAnswer>;
   t: T;
   mode: Mode;
 }) {
-  const { initial, onChange, pickImage, t, mode } = props;
+  const { initial, onChange, pickImage, askLink, t, mode } = props;
   const editor = usePlateEditor({ plugins, value: (e) => fromHTML(e, initial, true) });
   return (
     <Plate
@@ -397,7 +373,7 @@ function RichEditor(props: {
       }
     >
       <div className="flex h-screen flex-col">
-        <Toolbar t={t} mode={mode} pickImage={pickImage} />
+        <Toolbar t={t} mode={mode} pickImage={pickImage} askLink={askLink} />
         {/* The wrapper scrolls, not the editable: WebKit stops repainting a scrolling contenteditable. */}
         <div className="min-h-0 flex-1 overflow-auto">
           <PlateContent
@@ -452,7 +428,13 @@ export function SignatureApp() {
         key={doc.id}
         initial={doc.html}
         t={t}
-        pickImage={() => api.pickImage()}
+        pickImage={() =>
+          answer(events.signatureImage, () => api.pickImage()).then((p) => {
+            if (p.error) throw new Error(p.error);
+            return p.url;
+          })
+        }
+        askLink={(current) => answer(events.signatureLink, () => api.askLink(current))}
         onChange={(html) => saver.edit(doc.id, html)}
         mode={{
           alert: refused && REFUSED[refused],
@@ -462,6 +444,23 @@ export function SignatureApp() {
       />
     </main>
   );
+}
+
+/**
+ * The answer native sends as ev after ask's call returns: Go answers PickImage and AskLink by an
+ * event, as a call left waiting on a native dialog gets the dialog cancelled under it.
+ */
+function answer<V>(ev: { on(fn: (v: V) => void): () => void }, ask: () => Promise<void>) {
+  return new Promise<V>((resolve, reject) => {
+    const off = ev.on((v) => {
+      off();
+      resolve(v);
+    });
+    ask().catch((e) => {
+      off();
+      reject(e);
+    });
+  });
 }
 
 const REFUSED: Record<Refusal, string> = {

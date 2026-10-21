@@ -80,16 +80,32 @@ describe("SignatureEditor", () => {
     );
   });
 
-  it("链接 asks for the address in the toolbar row; × or Escape leaves it", async () => {
-    render(<SignatureEditor initial="<p>Bob</p>" onChange={vi.fn()} pickImage={none} t={t} />);
+  it("链接 asks native for the address, with the link already there, and applies its answer", async () => {
+    const onChange = vi.fn();
+    const askLink = vi
+      .fn()
+      .mockResolvedValueOnce({ url: "https://example.com/", ok: true })
+      .mockResolvedValueOnce({ url: "", ok: true });
+    render(
+      <SignatureEditor
+        initial="<p>Bob</p>"
+        onChange={onChange}
+        pickImage={none}
+        askLink={askLink}
+        t={t}
+      />,
+    );
+    const box = screen.getByLabelText("settings.account.signature.label");
+    await selectAll(box);
     fireEvent.click(screen.getByRole("button", { name: "compose.link" }));
-    const url = screen.getByRole("textbox", { name: "compose.link.url" });
-    fireEvent.change(url, { target: { value: "not a url" } });
-    fireEvent.click(screen.getByRole("button", { name: "compose.link.apply" }));
-    expect(url).toHaveAttribute("aria-invalid", "true");
-    fireEvent.click(screen.getByRole("button", { name: "common.cancel" }));
-    expect(screen.queryByRole("textbox", { name: "compose.link.url" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "compose.bold" })).toBeInTheDocument();
+    expect(askLink).toHaveBeenLastCalledWith("");
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith('<p><a href="https://example.com/">Bob</a></p>'),
+    );
+    await selectAll(box);
+    fireEvent.click(screen.getByRole("button", { name: "compose.link" }));
+    expect(askLink).toHaveBeenLastCalledWith("https://example.com/");
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("<p>Bob</p>"));
   });
 
   it("allows at most four images", () => {

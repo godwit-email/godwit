@@ -184,6 +184,17 @@ func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// Answers to the page's PickImage and AskLink.
+	p.sig.EmitImage = func(pick webui.SignaturePick) {
+		if err := webui.SignatureImage.EmitPage(page, pick); err != nil {
+			log.Printf("an image to the signature page: %v", err)
+		}
+	}
+	p.sig.EmitLink = func(a webui.SignatureLinkAnswer) {
+		if err := webui.SignatureLink.EmitPage(page, a); err != nil {
+			log.Printf("a link to the signature page: %v", err)
+		}
+	}
 	show := func(id int64) {
 		p.sig.Show(id)
 		if err := webui.SignatureShow.EmitPage(page, id); err != nil {

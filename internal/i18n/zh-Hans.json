@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "删除后，{arg1} 写信时不再带签名",
   "settings_signature_delete_row": "删除这个签名",
   "settings_signature_delete_unused": "没有账户在用这个签名",
+  "settings_signature_link_invalid": "请输入以 http://、https:// 或 mailto: 开头的地址",
+  "settings_signature_link_remove": "移除链接",
   "settings_signature_list_sep": "、",
   "settings_signature_name": "名称",
   "settings_signature_name_help": "只有你自己看得到，用来在列表里区分",

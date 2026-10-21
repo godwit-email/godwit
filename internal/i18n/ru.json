@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "После удаления письма из {arg1} будут без подписи",
   "settings_signature_delete_row": "Удалить эту подпись",
   "settings_signature_delete_unused": "Эта подпись нигде не используется",
+  "settings_signature_link_invalid": "Введите адрес, начинающийся с http://, https:// или mailto:",
+  "settings_signature_link_remove": "Убрать ссылку",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Название",
   "settings_signature_name_help": "Видно только вам — чтобы различать подписи",

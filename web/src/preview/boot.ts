@@ -140,11 +140,16 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     states: ["filled", "image", "layout"],
     entry: () => import("@/signature/main"),
     setup() {
-      installFake({
+      const emit = installFake({
         "SignaturePage.State": async () => fx.signature(mode),
         "SignaturePage.Load": async () =>
           ({ image: fx.signatureHtmlImage, layout: fx.signatureLayout })[state] ?? fx.signatureHtml,
-        "SignaturePage.PickImage": async () => fx.logo,
+        "SignaturePage.PickImage": async () => {
+          setTimeout(() => emit("signatureImage", { url: fx.logo, error: "" }));
+        },
+        "SignaturePage.AskLink": async () => {
+          setTimeout(() => emit("signatureLink", { url: "https://example.com/", ok: true }));
+        },
         "SignaturePage.Save": nothing,
         "SignaturePage.Saved": nothing,
         "SignaturePage.EditHTML": nothing,

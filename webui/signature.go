@@ -21,7 +21,25 @@ var (
 	// SignatureFlush asks the signature page to save now; it answers with
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
+	// SignatureImage answers SignaturePage.PickImage.
+	SignatureImage = mygo.NewEvent[SignaturePick]("signatureImage")
+	// SignatureLink answers SignaturePage.AskLink.
+	SignatureLink = mygo.NewEvent[SignatureLinkAnswer]("signatureLink")
 )
+
+// SignaturePick is the image picked: its data: URL, "" for none, or why it
+// could not be used.
+type SignaturePick struct {
+	URL   string `json:"url"`
+	Error string `json:"error"`
+}
+
+// SignatureLinkAnswer is the link dialog's answer: OK false is cancelled;
+// OK with URL "" takes the link off.
+type SignatureLinkAnswer struct {
+	URL string `json:"url"`
+	OK  bool   `json:"ok"`
+}
 
 // maxSignatureBytes caps a saved signature at a mail body's limit, plus its
 // images as the editor sends them (data: URLs).
@@ -58,8 +76,13 @@ type Signature struct {
 	pick  func(ctx context.Context) (string, error)
 
 	// OnHTML hears the page ask for the HTML mode, its edit saved: native
-	// edits the code in its place. Set before the page runs.
-	OnHTML func()
+	// edits the code in its place. OnLink shows the link dialog, answer
+	// called once. EmitImage and EmitLink send the page its answers. Set
+	// them before the page runs.
+	OnHTML    func()
+	OnLink    func(current string, answer func(SignatureLinkAnswer))
+	EmitImage func(SignaturePick)
+	EmitLink  func(SignatureLinkAnswer)
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -164,14 +187,32 @@ func (p *SignaturePage) EditHTML(ctx context.Context) error {
 	return nil
 }
 
-// PickImage asks for an image to insert and returns it as a data: URL, ""
-// for none picked: a png, jpeg, gif or webp (by its content) of at most
-// 512 KB, else core.ErrSignatureImage.
-func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
+// PickImage asks for an image to insert and returns at once: the answer
+// comes as SignatureImage (EmitImage). A page call left waiting on the file
+// dialog gets the dialog cancelled under it, so the call does not wait.
+func (p *SignaturePage) PickImage(ctx context.Context) error {
 	if _, err := p.s.caller(ctx); err != nil {
-		return "", err
+		return err
 	}
-	path, err := p.s.pick(ctx)
+	ctx = context.WithoutCancel(ctx) // the dialog's window comes from it
+	go func() {
+		url, err := p.s.pickImage(ctx)
+		pick := SignaturePick{URL: url}
+		if err != nil {
+			pick.Error = err.Error()
+		}
+		if p.s.EmitImage != nil {
+			p.s.EmitImage(pick)
+		}
+	}()
+	return nil
+}
+
+// pickImage is the image picked as a data: URL, "" for none: a png, jpeg,
+// gif or webp (by its content) of at most 512 KB, else
+// core.ErrSignatureImage.
+func (s *Signature) pickImage(ctx context.Context) (string, error) {
+	path, err := s.pick(ctx)
 	if err != nil || path == "" {
 		return "", err
 	}
@@ -186,6 +227,23 @@ func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return core.SignatureImageURL(data) // over SignatureImageMax: ErrSignatureImage
+}
+
+// AskLink asks native for a link's address in a dialog, current the
+// address of the link at the selection ("" none), and returns at once:
+// the answer comes as SignatureLink (EmitLink).
+func (p *SignaturePage) AskLink(ctx context.Context, current string) error {
+	if _, err := p.s.caller(ctx); err != nil {
+		return err
+	}
+	if p.s.OnLink != nil {
+		p.s.OnLink(current, func(a SignatureLinkAnswer) {
+			if p.s.EmitLink != nil {
+				p.s.EmitLink(a)
+			}
+		})
+	}
+	return nil
 }
 
 // Save stores html as signature id, marked as editor HTML ("" for empty),

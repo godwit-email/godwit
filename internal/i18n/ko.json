@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "삭제하면 {arg1}의 메일에 서명이 붙지 않습니다",
   "settings_signature_delete_row": "이 서명 삭제",
   "settings_signature_delete_unused": "이 서명을 쓰는 계정이 없습니다",
+  "settings_signature_link_invalid": "http://, https:// 또는 mailto:로 시작하는 주소를 입력하세요",
+  "settings_signature_link_remove": "링크 제거",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "이름",
   "settings_signature_name_help": "나만 보는 이름으로, 목록에서 구분하는 데 씁니다",

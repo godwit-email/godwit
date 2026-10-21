@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -138,30 +139,36 @@ func TestSignaturePickImage(t *testing.T) {
 	var png bytes.Buffer
 	require.NoError(t, pngenc.Encode(&png, img))
 
+	picks := make(chan SignaturePick, 1)
+	f.s.EmitImage = func(p SignaturePick) { picks <- p }
+	pick := func() SignaturePick {
+		t.Helper()
+		require.NoError(t, f.p.PickImage(pageCtx(f.page)), "returns at once")
+		select {
+		case p := <-picks:
+			return p
+		case <-time.After(5 * time.Second):
+			t.Fatal("no answer")
+			return SignaturePick{}
+		}
+	}
 	f.pick = write("logo.png", png.Bytes())
-	_, err := f.p.PickImage(pageCtx(new(int)))
-	assert.ErrorIs(t, err, ErrWrongPage, "only the signature page")
-	got, err := f.p.PickImage(pageCtx(f.page))
-	require.NoError(t, err)
-	assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(png.Bytes()), got)
+	assert.ErrorIs(t, f.p.PickImage(pageCtx(new(int))), ErrWrongPage, "only the signature page")
+	assert.Equal(t, SignaturePick{URL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(png.Bytes())}, pick())
 
 	f.pick = write("logo.jpg", []byte("not an image at all"))
-	_, err = f.p.PickImage(pageCtx(f.page))
-	assert.ErrorIs(t, err, core.ErrSignatureImage, "the content decides, not the name")
+	assert.Equal(t, core.ErrSignatureImage.Error(), pick().Error, "the content decides, not the name")
 	f.pick = write("big.png", append(png.Bytes(), make([]byte, core.SignatureImageMax)...))
-	_, err = f.p.PickImage(pageCtx(f.page))
-	assert.ErrorIs(t, err, core.ErrSignatureImage)
+	assert.Equal(t, core.ErrSignatureImage.Error(), pick().Error)
 	f.pick = ""
-	got, err = f.p.PickImage(pageCtx(f.page))
-	require.NoError(t, err)
-	assert.Empty(t, got, "none picked")
+	assert.Equal(t, SignaturePick{}, pick(), "none picked")
 
 	// The editor's data: images are saved as the account's images and loaded back as data:.
 	html := `<p>Bob</p><img src="data:image/png;base64,` + base64.StdEncoding.EncodeToString(png.Bytes()) + `">`
 	require.NoError(t, f.p.Save(pageCtx(f.page), f.sig, html))
 	assert.NotContains(t, f.stored(t), "data:")
 	assert.Contains(t, f.stored(t), "cid:sig-")
-	got, err = f.p.Load(pageCtx(f.page), f.sig)
+	got, err := f.p.Load(pageCtx(f.page), f.sig)
 	require.NoError(t, err)
 	assert.Contains(t, got, `src="data:image/png;base64,`)
 	four := strings.Repeat(`<img src="data:image/png;base64,`+base64.StdEncoding.EncodeToString(png.Bytes())+`">`, 4)
@@ -187,4 +194,19 @@ func TestSignatureSaveCleansAndEditHTML(t *testing.T) {
 
 	require.NoError(t, f.p.EditHTML(pageCtx(f.page)))
 	assert.Equal(t, 1, asked)
+}
+
+func TestSignatureAskLink(t *testing.T) {
+	f := newSigFixture(t)
+	var asked []string
+	var got []SignatureLinkAnswer
+	f.s.OnLink = func(cur string, answer func(SignatureLinkAnswer)) {
+		asked = append(asked, cur)
+		answer(SignatureLinkAnswer{URL: "https://example.com/", OK: true})
+	}
+	f.s.EmitLink = func(a SignatureLinkAnswer) { got = append(got, a) }
+	assert.ErrorIs(t, f.p.AskLink(pageCtx(new(int)), ""), ErrWrongPage)
+	require.NoError(t, f.p.AskLink(pageCtx(f.page), "https://old.example/"))
+	assert.Equal(t, []string{"https://old.example/"}, asked)
+	assert.Equal(t, []SignatureLinkAnswer{{URL: "https://example.com/", OK: true}}, got)
 }

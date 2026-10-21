@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -235,6 +236,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 		})
 	})
 	p.deleteSignatureDialog(c, sig, users)
+	p.linkDialog(c)
 }
 
 // deleteHint says which accounts a deletion leaves without a signature.
@@ -548,4 +550,98 @@ func (p *settingsPage) closeCode() {
 			p.sigShow(id) // after the save: the page reads what it stored
 		}
 	})
+}
+
+// sigLink is the link dialog the signature page asked for (SignatureLink):
+// the address typed, whether it is refused, and the page's answer.
+type sigLink struct {
+	open, bad, focused bool
+	url                string
+	had                bool // the selection is in a link: the dialog can take it off
+	answer             func(url string, ok bool)
+}
+
+// SignatureLink asks for a link's address in a dialog over the signature
+// page: answer gets it (ok), "" with ok to take the link off, or ok false
+// when cancelled. current is the link's at the selection, "" none.
+func (a *App) SignatureLink(current string, answer func(url string, ok bool)) {
+	p := a.pages[PageSettings].(*settingsPage)
+	if l := p.sigLink; l != nil {
+		l.answer("", false) // an older ask the page gave up on
+	}
+	if _, ok := p.shownSignature(a.route.Settings); !ok || a.route.Page != PageSettings {
+		answer("", false)
+		return
+	}
+	p.sigLink = &sigLink{open: true, url: current, had: current != "", answer: answer}
+}
+
+// linkHref is s as a link's address when it is http(s)://host… or
+// mailto:target, as the page's safeHref takes it.
+func linkHref(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	low := strings.ToLower(s)
+	if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") && !strings.HasPrefix(low, "mailto:") {
+		return "", false
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", false
+	}
+	if u.Scheme == "mailto" && u.Opaque == "" && u.Path == "" || u.Scheme != "mailto" && u.Host == "" {
+		return "", false
+	}
+	return u.String(), true
+}
+
+// linkDialog is the link dialog: the address, 移除链接 for a link already
+// there, 取消 and 添加链接. Closing it any other way cancels.
+func (p *settingsPage) linkDialog(c *ui.Context) {
+	l := p.sigLink
+	if l == nil {
+		return
+	}
+	done := func(url string, ok bool) {
+		if p.sigLink == l {
+			p.sigLink = nil
+			l.answer(url, ok)
+		}
+	}
+	submit := func() {
+		href, ok := linkHref(l.url)
+		if !ok {
+			l.bad = true
+			return
+		}
+		done(href, true)
+	}
+	kit.Dialog(c, &l.open, i18n.T("compose.link"), kit.DialogOpts{Size: kit.DialogSm, Close: i18n.T("common.close")}, func() {
+		errText := ""
+		if l.bad {
+			errText = i18n.T("settings.signature.link.invalid")
+		}
+		kit.Field(c, i18n.T("compose.link.url"), "", errText, func() {
+			in := kit.Input(c, &l.url, kit.InputOpts{Placeholder: "https://", Invalid: l.bad}).Label(i18n.T("compose.link.url"))
+			if !l.focused {
+				l.focused = true
+				in.Focus()
+			}
+			if in.Changed() {
+				l.bad = false
+			}
+			if in.Submitted() {
+				submit()
+			}
+		})
+	}, func() {
+		if l.had {
+			kit.Button(c, i18n.T("settings.signature.link.remove"), kit.ButtonOpts{Variant: kit.DestructiveOutline}).OnClick(func() { done("", true) })
+			ui.Box(c).Grow(1)
+		}
+		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { done("", false) })
+		kit.Button(c, i18n.T("compose.link.apply"), kit.ButtonOpts{}).OnClick(submit)
+	})
+	if !l.open {
+		done("", false) // Escape, a click outside, the close button
+	}
 }

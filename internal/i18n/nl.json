@@ -883,6 +883,8 @@
   "settings_signature_delete_help": "Daarna hebben mails van {arg1} geen handtekening",
   "settings_signature_delete_row": "Deze handtekening verwijderen",
   "settings_signature_delete_unused": "Geen account gebruikt deze handtekening",
+  "settings_signature_link_invalid": "Voer een adres in dat begint met http://, https:// of mailto:",
+  "settings_signature_link_remove": "Link verwijderen",
   "settings_signature_list_sep": ", ",
   "settings_signature_name": "Naam",
   "settings_signature_name_help": "Alleen jij ziet dit, om handtekeningen uit elkaar te houden",
