@@ -265,6 +265,13 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if c.Messages, err = ai.Messages(state); err != nil {
 		return Conversation{}, err
 	}
+	for i, m := range c.Messages { // the saved history keeps the references the model wrote
+		x := s.linkExpander() // per message, as each was expanded live: history grows past maxExpandMessages
+		c.Messages[i].Text, c.Messages[i].Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
+		for j, call := range m.Calls {
+			m.Calls[j].Args, _ = x.args(ctx, call.Args)
+		}
+	}
 	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
 	if err != nil {
 		return Conversation{}, err
@@ -731,7 +738,8 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		return ai.Request{}, err
 	}
 	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort}, nil
+	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
+		Args: s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
 // track registers a run in flight. The caller holds runMu.
@@ -978,7 +986,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
 	}
 	events, wait := run(job.ctx, req)
-	for ev := range events {
+	for ev := range s.expandEvents(job.ctx, events) {
 		if !terminal(WitEvent{Event: ev}) {
 			wev := WitEvent{Event: ev}
 			if ev.Kind == "tool_result" {

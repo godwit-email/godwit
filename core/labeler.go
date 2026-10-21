@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
-	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -192,15 +191,18 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 // labelState is the message for the judge: headers and the start of its text,
 // as untrusted mail.
 func labelState(m Message) string {
-	body := m.Text
-	if strings.TrimSpace(body) == "" {
-		body = gomail.HTMLToText(m.HTML)
+	body := modelBody(m)
+	// Room for the links linkRefs shortens, without scanning a whole 2 MiB body for every new mail.
+	if r := []rune(body); len(r) > 4*labelBodyRunes {
+		body = string(r[:4*labelBodyRunes])
 	}
+	suspect := ai.InjectionQuote(mailHeader(m.MessageSummary)+"\n"+body) != "" // before linkRefs, as in mailContext
+	body = linkRefs(body, m.ID)
 	if r := []rune(body); len(r) > labelBodyRunes {
 		body = string(r[:labelBodyRunes])
 	}
-	text := mailHeader(m.MessageSummary) + "\n" + body
-	return ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, ai.InjectionQuote(text) != "")
+	text := linkRefs(mailHeader(m.MessageSummary), m.ID) + "\n" + body
+	return ai.Untrusted(fmt.Sprintf("message:%d", m.ID), text, suspect)
 }
 
 // labelWrites applies the answers to a message read with labeled_at at. Every

@@ -195,6 +195,7 @@
   "error_stale_approval": "This action changed after it was proposed. Review it again.",
   "error_stale_draft": "The draft was changed elsewhere.",
   "error_too_large": "The attachment exceeds the size limit.",
+  "error_link_ref": "A link in this draft points to an email that is no longer available. Replace the link before sending.",
   "error_translator_unavailable": "The translation plugin is not running. Enable it in Settings › Extensions, or translate with the model again.",
   "error_system_language_not_installed": "Download these languages for translation in System Settings › General › Language & Region › Translation Languages, then translate again.",
   "error_system_language_unsupported": "macOS does not translate between these languages. Choose another translation method in Settings › General.",

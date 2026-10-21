@@ -116,10 +116,11 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 			d.To, d.Cc = mail.ReplyRecipients(orig, acc.Email, mode == "reply_all")
 			d.Subject = mail.ReplySubject(orig.Subject)
 		}
+		d.Subject = defuseRefs(d.Subject) // a reference planted in the mail would block sending the reply
 		// The marker blockquote only marks the quote (attribution line included)
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
 		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
-		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
+		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + defuseRefs(mail.QuoteHTMLIn(orig, lang)) + "</blockquote>"
 	}
 	cids, err := s.signatureCIDs(ctx)
 	if err != nil {
@@ -505,6 +506,9 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 			if _, err := recipients(d); err != nil {
 				return err // not sendable: nothing to check
 			}
+			if err := s.expandDraftLinks(ctx, &d); err != nil {
+				return err // the checks see what is sent
+			}
 			warns, err := s.runSendChecks(ctx, d, cs)
 			if err != nil {
 				return err
@@ -570,6 +574,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	}
 	acc, err := s.account(ctx, d.AccountID)
 	if err != nil {
+		return err
+	}
+	if err := s.expandDraftLinks(ctx, &d); err != nil {
 		return err
 	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,

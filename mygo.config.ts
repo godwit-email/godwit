@@ -23,7 +23,7 @@ export default {
   i18n: { dir: "internal/i18n", source: "en" },
   macos: {
     icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
-    // Set both only for a signed build with an authorized profile (docs/notifications.md).
+    // Set both only for a signed build with an authorized profile (.github/actions/macos-sign/README.md).
     provisioningProfile,
     infoPlist: { NSUserActivityTypes: ["INSendMessageIntent"] },
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",

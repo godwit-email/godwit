@@ -167,6 +167,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		return nil, err
 	}
 	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	events = s.expandEvents(ctx, events)
 
 	out := make(chan ai.Event, 1)
 	go func() {
@@ -368,7 +369,8 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		wait() // no tools: anything else is done
 	}
 
-	rs, err := parseQuickReplies(text.String())
+	x := s.linkExpander()
+	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, h) })
 	if err != nil {
 		return nil, err
 	}
@@ -378,8 +380,9 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 }
 
 // parseQuickReplies reads {"replies":[{"html":...}]}, optionally inside a
-// markdown code fence, keeping the first three non-empty replies, sanitized.
-func parseQuickReplies(out string) ([]QuickReply, error) {
+// markdown code fence, keeping the first three non-empty replies, their link
+// references expanded and sanitized.
+func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, error) {
 	out = strings.TrimSpace(out)
 	if rest, ok := strings.CutPrefix(out, "```"); ok {
 		rest = strings.TrimPrefix(rest, "json")
@@ -405,7 +408,7 @@ func parseQuickReplies(out string) ([]QuickReply, error) {
 	}
 	rs := []QuickReply{}
 	for _, r := range *v.Replies {
-		h := cleanHTML(*r.HTML)
+		h := cleanHTML(expand(*r.HTML)) // before the sanitizer drops a godwit:// href
 		p := strings.Join(strings.Fields(mail.HTMLToText(h)), " ")
 		if p == "" {
 			continue

@@ -223,7 +223,7 @@ func gui(ctx context.Context, dataDir string) int {
 		reg, err := registrySource()
 		if err == nil {
 			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang,
-				Registry: reg, AppVersion: app.Version, SystemTranslator: systemTranslator()})
+				Registry: reg, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence()})
 		}
 		if err != nil {
 			i18n.SetLanguage(lang)
