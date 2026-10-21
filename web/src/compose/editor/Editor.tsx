@@ -69,9 +69,8 @@ export function Editor(props: {
   onCmdK?(s: CmdKSelection): void;
   toolbarSlot?: HTMLElement | null;
   popover?: ReactNode;
-  fonts?: string[];
 }) {
-  const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK, fonts } = props;
+  const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK } = props;
   const { toolbarSlot, popover } = props;
   const held = !!popover;
   const editor = usePlateEditor({
@@ -89,13 +88,7 @@ export function Editor(props: {
     [held],
   );
   const toolbar = (
-    <Toolbar
-      t={t}
-      linkOpen={linkOpen}
-      onLinkOpenChange={setLinkOpen}
-      attach={attach}
-      fonts={fonts}
-    />
+    <Toolbar t={t} linkOpen={linkOpen} onLinkOpenChange={setLinkOpen} attach={attach} />
   );
 
   const editableRef = useRef<HTMLDivElement | null>(null);
@@ -195,14 +188,6 @@ export function Editor(props: {
             decorate={decorate}
             onCompositionStart={() => onComposing(true)}
             onCompositionEnd={() => onComposing(false)}
-            onDOMBeforeInput={(e: Event) => {
-              return handleReplacementText(e as InputEvent);
-            }}
-            onBeforeInput={(e: React.FormEvent<HTMLDivElement> & { nativeEvent: InputEvent }) => {
-              if (handleReplacementText(e.nativeEvent)) {
-                e.preventDefault();
-              }
-            }}
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&

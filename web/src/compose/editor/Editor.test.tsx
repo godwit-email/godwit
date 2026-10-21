@@ -207,6 +207,28 @@ describe("Editor", () => {
     await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
   });
 
+  it("the font menus apply to the selection and show the choice", async () => {
+    const user = userEvent.setup();
+    const { box, onChange } = setup("<p>hello world</p>");
+    await select(box, 0, 5);
+    await user.click(screen.getByRole("button", { name: "compose.font_size" }));
+    await user.click(await screen.findByRole("menuitem", { name: "24 pt" }));
+    await waitFor(() =>
+      expect(last(onChange)).toBe('<p><span style="font-size: 24pt">hello</span> world</p>'),
+    );
+    // The size split "hello" off: the family goes to the same five letters, not the stale range.
+    await user.click(screen.getByRole("button", { name: "compose.font_family" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Georgia" }));
+    await waitFor(() =>
+      expect(last(onChange)).toBe(
+        '<p><span style="font-size: 24pt; font-family: Georgia, serif">hello</span> world</p>',
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "compose.font_family" }));
+    const georgia = await screen.findByRole("menuitem", { name: "Georgia" });
+    expect(georgia.querySelector("svg")).not.toBeNull(); // the check
+  });
+
   it("the quote toggle unwraps a list inside a quote, keeping the list", async () => {
     const user = userEvent.setup();
     const { box, onChange } = setup("<blockquote><ul><li><p>1</p></li></ul></blockquote>");

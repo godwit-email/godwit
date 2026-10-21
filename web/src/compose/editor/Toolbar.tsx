@@ -22,7 +22,7 @@ import {
   useEditorSelector,
   usePlateEditor,
 } from "platejs/react";
-import { type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useRef } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,7 +95,7 @@ const fontSizes = [
   { label: "72 pt", value: "72pt" },
 ];
 
-const standardFonts = [
+const fonts = [
   { label: "", value: "" }, // compose.font_default
   { label: "American Typewriter", value: "'American Typewriter', serif" },
   { label: "Arial", value: "Arial, sans-serif" },
@@ -153,7 +153,6 @@ export function Toolbar(props: {
   linkOpen: boolean;
   onLinkOpenChange(open: boolean): void;
   attach?: ReactNode;
-  fonts?: string[];
 }) {
   const { t, linkOpen, onLinkOpenChange, attach } = props;
   const editor = useEditorRef();
@@ -197,68 +196,84 @@ export function Toolbar(props: {
     </ToggleGroupItem>
   );
 
-  const currentFontSize = useEditorSelector(
-    (e) => (e.selection ? ((e.api.marks()?.fontSize as string) ?? "") : ""),
-    [],
-  );
-  const currentFontFamily = useEditorSelector(
-    (e) => (e.selection ? ((e.api.marks()?.fontFamily as string) ?? "") : ""),
-    [],
-  );
+  const marks = useEditorSelector((e) => {
+    const m = e.selection ? e.api.marks() : null;
+    return `${m?.fontFamily ?? ""}\n${m?.fontSize ?? ""}`;
+  }, []);
+  const [currentFontFamily, currentFontSize] = marks.split("\n");
 
-  const [fontOpen, setFontOpen] = useState(false);
-  const [sizeOpen, setSizeOpen] = useState(false);
-
-  const applyFontFamily = (val: string) => {
+  const applyMark = (key: "fontFamily" | "fontSize", val: string) => {
     if (saved.current) editor.tf.select(saved.current);
-    if (!val) {
-      editor.tf.removeMark("fontFamily");
-    } else {
-      editor.tf.addMark("fontFamily", val);
-    }
+    if (val) editor.tf.addMark(key, val);
+    else editor.tf.removeMark(key);
+    saved.current = editor.selection; // the mark split the text: the old range points elsewhere
     editor.tf.focus();
-    setTimeout(() => {
-      if (saved.current) editor.tf.select(saved.current);
-      if (!val) {
-        editor.tf.removeMark("fontFamily");
-      } else {
-        editor.tf.addMark("fontFamily", val);
-      }
-      editor.tf.focus();
-    }, 10);
   };
 
-  const applyFontSize = (val: string) => {
-    if (saved.current) editor.tf.select(saved.current);
-    if (!val) {
-      editor.tf.removeMark("fontSize");
-    } else {
-      editor.tf.addMark("fontSize", val);
-    }
-    editor.tf.focus();
-    setTimeout(() => {
-      if (saved.current) editor.tf.select(saved.current);
-      if (!val) {
-        editor.tf.removeMark("fontSize");
-      } else {
-        editor.tf.addMark("fontSize", val);
-      }
-      editor.tf.focus();
-    }, 10);
-  };
-
-  const fonts: { label: string; value: string }[] = useMemo(() => {
-    if (props.fonts && props.fonts.length > 0) {
-      return [
-        { label: "", value: "" },
-        ...props.fonts.map((name) => {
-          const std = standardFonts.find((s) => s.label === name);
-          return { label: name, value: std ? std.value : `'${name}', sans-serif` };
-        }),
-      ];
-    }
-    return standardFonts;
-  }, [props.fonts]);
+  // A menu of a font mark's values, the current one checked; it keeps the editor's selection.
+  const fontMenu = (m: {
+    mark: "fontFamily" | "fontSize";
+    label: string;
+    Icon: RemixiconComponentType;
+    options: { label: string; value: string }[];
+    current: string;
+    defaultLabel: string;
+    className: string;
+  }) => (
+    <DropdownMenu
+      modal={false}
+      highlightItemOnHover={false}
+      onOpenChange={(open) => {
+        if (open) {
+          saved.current = editor.selection;
+        } else {
+          setTimeout(() => {
+            if (saved.current) editor.tf.select(saved.current);
+            editor.tf.focus();
+          }, 0);
+        }
+      }}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              aria-label={t(m.label)}
+              disabled={readOnly}
+              onMouseDown={(e) => {
+                saved.current = editor.selection;
+                e.preventDefault();
+              }}
+              className="inline-flex size-7 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            >
+              <m.Icon className="size-3.75" />
+            </DropdownMenuTrigger>
+          }
+        />
+        <TooltipContent>{t(m.label)}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="start"
+        className={`w-auto max-h-60 overflow-y-auto ${m.className}`}
+        onMouseDown={(e) => e.preventDefault()}
+      >
+        {m.options.map((o) => (
+          <DropdownMenuItem
+            key={o.value}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyMark(m.mark, o.value)}
+            style={m.mark === "fontFamily" ? { fontFamily: o.value || "inherit" } : undefined}
+            className="flex items-center justify-between gap-3"
+          >
+            <span className="whitespace-nowrap">{o.label || m.defaultLabel}</span>
+            {unquoted(m.current) === unquoted(o.value) && (
+              <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
@@ -287,119 +302,24 @@ export function Toolbar(props: {
         orientation="vertical"
         className="mx-0.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
       />
-      <DropdownMenu
-        modal={false}
-        highlightItemOnHover={false}
-        open={fontOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            saved.current = editor.selection;
-          } else {
-            setTimeout(() => {
-              if (saved.current) editor.tf.select(saved.current);
-              editor.tf.focus();
-            }, 0);
-          }
-          setFontOpen(open);
-        }}
-      >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuTrigger
-                aria-label={t("compose.font_family")}
-                disabled={readOnly}
-                onMouseDown={(e) => {
-                  saved.current = editor.selection;
-                  e.preventDefault();
-                }}
-                className="inline-flex size-7 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-              >
-                <RiFontFamily className="size-3.75" />
-              </DropdownMenuTrigger>
-            }
-          />
-          <TooltipContent>{t("compose.font_family")}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent
-          align="start"
-          className="w-auto min-w-56 max-h-60 overflow-y-auto"
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {fonts.map((f) => {
-            const isSelected = unquoted(currentFontFamily) === unquoted(f.value);
-            return (
-              <DropdownMenuItem
-                key={f.value}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => applyFontFamily(f.value)}
-                style={{ fontFamily: f.value || "inherit" }}
-                className="flex items-center justify-between gap-3"
-              >
-                <span className="whitespace-nowrap">{f.label || t("compose.font_default")}</span>
-                {isSelected && <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu
-        modal={false}
-        highlightItemOnHover={false}
-        open={sizeOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            saved.current = editor.selection;
-          } else {
-            setTimeout(() => {
-              if (saved.current) editor.tf.select(saved.current);
-              editor.tf.focus();
-            }, 0);
-          }
-          setSizeOpen(open);
-        }}
-      >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuTrigger
-                aria-label={t("compose.font_size")}
-                disabled={readOnly}
-                onMouseDown={(e) => {
-                  saved.current = editor.selection;
-                  e.preventDefault();
-                }}
-                className="inline-flex size-7 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-              >
-                <RiFontSize className="size-3.75" />
-              </DropdownMenuTrigger>
-            }
-          />
-          <TooltipContent>{t("compose.font_size")}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent
-          align="start"
-          className="w-auto min-w-44 max-h-60 overflow-y-auto"
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {fontSizes.map((s) => {
-            const isSelected = currentFontSize === s.value;
-            return (
-              <DropdownMenuItem
-                key={s.value}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => applyFontSize(s.value)}
-                className="flex items-center justify-between gap-3"
-              >
-                <span className="whitespace-nowrap">
-                  {s.label || t("compose.size_default", "14 pt")}
-                </span>
-                {isSelected && <RiCheckLine className="ml-2 size-3.5 shrink-0 text-primary" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {fontMenu({
+        mark: "fontFamily",
+        label: "compose.font_family",
+        Icon: RiFontFamily,
+        options: fonts,
+        current: currentFontFamily,
+        defaultLabel: t("compose.font_default"),
+        className: "min-w-56",
+      })}
+      {fontMenu({
+        mark: "fontSize",
+        label: "compose.font_size",
+        Icon: RiFontSize,
+        options: fontSizes,
+        current: currentFontSize,
+        defaultLabel: t("compose.size_default", "14 pt"),
+        className: "min-w-44",
+      })}
       {attach && (
         <>
           <Separator
@@ -414,11 +334,11 @@ export function Toolbar(props: {
 }
 
 /** The toolbar while no editor shows (a review or Wit writing in its place): every toggle off. */
-export function IdleToolbar({ t, attach, fonts }: { t: T; attach?: ReactNode; fonts?: string[] }) {
+export function IdleToolbar({ t, attach }: { t: T; attach?: ReactNode }) {
   const editor = usePlateEditor({ plugins: [] });
   return (
     <Plate editor={editor} readOnly>
-      <Toolbar t={t} linkOpen={false} onLinkOpenChange={() => {}} attach={attach} fonts={fonts} />
+      <Toolbar t={t} linkOpen={false} onLinkOpenChange={() => {}} attach={attach} />
     </Plate>
   );
 }
