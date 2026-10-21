@@ -93,13 +93,13 @@ type mailPage struct {
 	folders                  map[int64][]core.Folder // by account
 	outbox                   []outboxEntry           // every account's
 	drafts                   []core.Draft            // the drafts folder's account's, when it shows
-	draftList                ui.ListState
-	draftSel                 int64               // the draft the pane shows; 0 for none
-	draftView                map[int64]draftInfo // by draft, made when the drafts load
-	sending                  draftSend           // the pane's send in flight, or awaiting warnings' acknowledgement
-	accOpen                  map[int64]*bool     // account groups unfolded in the sidebar, by account
-	folderOpen               map[folderKey]*bool // user folders unfolded in the sidebar
-	labelsOpen, accountsOpen bool                // the sidebar's groups unfolded
+	draftList                *ui.ListState           // replaced, never zeroed: the last frame's tree still points at the old one
+	draftSel                 int64                   // the draft the pane shows; 0 for none
+	draftView                map[int64]draftInfo     // by draft, made when the drafts load
+	sending                  draftSend               // the pane's send in flight, or awaiting warnings' acknowledgement
+	accOpen                  map[int64]*bool         // account groups unfolded in the sidebar, by account
+	folderOpen               map[folderKey]*bool     // user folders unfolded in the sidebar
+	labelsOpen, accountsOpen bool                    // the sidebar's groups unfolded
 
 	searchOpen, searched bool
 	query                string
@@ -133,7 +133,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -194,7 +194,7 @@ func (p *mailPage) reload() {
 		p.stopOlder()
 		p.main.reset()
 		p.closeSearch()
-		p.draftList, p.draftSel = ui.ListState{}, 0
+		p.draftList, p.draftSel = &ui.ListState{}, 0
 		p.sending.ask = false // a warnings dialog does not outlive its view
 		want, toEnd = 0, false
 	}
