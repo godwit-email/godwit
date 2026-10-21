@@ -1095,5 +1095,16 @@
   "compose_font_default": "기본값",
   "compose_size_default": "기본값 ({arg1})",
   "wit_compose_review_translate": "번역됨.",
-  "wit_compose_translated": "번역됨"
+  "wit_compose_translated": "번역됨",
+  "settings_account_icon": "계정 아이콘",
+  "settings_account_icon_help": "사이드바와 계정 목록에 표시됩니다",
+  "settings_account_icon_choose": "아이콘 선택…",
+  "settings_account_icon_reset": "재설정",
+  "settings_account_icon_title": "계정 아이콘",
+  "settings_account_icon_desc": "이 계정의 아이콘을 선택하거나 맞춤 이미지를 업로드하세요.",
+  "settings_account_icon_upload": "맞춤 아이콘 업로드…",
+  "settings_account_icon_default": "기본값 사용",
+  "settings_account_icon_symbols": "아이콘",
+  "settings_account_icon_brands": "로고",
+  "error_account_icon": "계정 아이콘은 5MB 이하의 PNG, JPEG, GIF, WebP 또는 SVG 이미지여야 합니다."
 }

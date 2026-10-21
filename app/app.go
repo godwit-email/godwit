@@ -25,6 +25,7 @@ type Platform interface {
 	OpenURL(url string) error
 	OpenPath(path string) error
 	OpenFiles(multiple bool) ([]string, error)
+	OpenImage() (string, error)
 	OpenDirectory() (string, error)
 	SaveFile(defaultName string) (string, error)
 	Notify(n Notification) error
@@ -239,6 +240,8 @@ type App struct {
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
+
+	customIcons map[int64]accountImage // by account id: its uploaded icon (accountImage)
 
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them

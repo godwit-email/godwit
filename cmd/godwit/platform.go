@@ -93,6 +93,18 @@ func (*platform) OpenPath(path string) error { return mygo.Shell.OpenPath(path) 
 func (*platform) OpenFiles(multiple bool) ([]string, error) {
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Multiple: multiple})
 }
+func (*platform) OpenImage() (string, error) {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Multiple: false,
+		Filters: []mygo.FileFilter{
+			{Name: "Images", Extensions: []string{"png", "jpg", "jpeg", "webp", "svg", "gif"}},
+		},
+	})
+	if err != nil || len(paths) == 0 {
+		return "", err
+	}
+	return paths[0], nil
+}
 func (*platform) OpenDirectory() (string, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Directory: true, CreateDirectories: true})
 	if err != nil || len(paths) == 0 {

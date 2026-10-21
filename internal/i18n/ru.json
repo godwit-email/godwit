@@ -1095,5 +1095,16 @@
   "compose_font_default": "По умолчанию",
   "compose_size_default": "По умолчанию ({arg1})",
   "wit_compose_review_translate": "Переведено.",
-  "wit_compose_translated": "Переведено"
+  "wit_compose_translated": "Переведено",
+  "settings_account_icon": "Значок аккаунта",
+  "settings_account_icon_help": "Отображается в боковой панели и списке аккаунтов",
+  "settings_account_icon_choose": "Выбрать значок…",
+  "settings_account_icon_reset": "Сбросить",
+  "settings_account_icon_title": "Значок аккаунта",
+  "settings_account_icon_desc": "Выберите значок для этого аккаунта или загрузите свое изображение.",
+  "settings_account_icon_upload": "Загрузить значок…",
+  "settings_account_icon_default": "По умолчанию",
+  "settings_account_icon_symbols": "Значки",
+  "settings_account_icon_brands": "Логотипы",
+  "error_account_icon": "Значок аккаунта должен быть изображением PNG, JPEG, GIF, WebP или SVG размером не более 5 МБ."
 }

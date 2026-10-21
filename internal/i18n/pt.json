@@ -1095,5 +1095,16 @@
   "compose_font_default": "Padrão",
   "compose_size_default": "Padrão ({arg1})",
   "wit_compose_review_translate": "Traduzido.",
-  "wit_compose_translated": "Traduzido"
+  "wit_compose_translated": "Traduzido",
+  "settings_account_icon": "Ícone da conta",
+  "settings_account_icon_help": "Exibido na barra lateral e na lista de contas",
+  "settings_account_icon_choose": "Escolher ícone…",
+  "settings_account_icon_reset": "Redefinir",
+  "settings_account_icon_title": "Ícone da conta",
+  "settings_account_icon_desc": "Escolha um símbolo para esta conta ou envie uma imagem personalizada.",
+  "settings_account_icon_upload": "Enviar ícone personalizado…",
+  "settings_account_icon_default": "Usar padrão",
+  "settings_account_icon_symbols": "Ícones",
+  "settings_account_icon_brands": "Logotipos",
+  "error_account_icon": "O ícone da conta deve ser uma imagem PNG, JPEG, GIF, WebP ou SVG de até 5 MB."
 }

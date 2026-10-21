@@ -1095,5 +1095,16 @@
   "compose_font_default": "デフォルト",
   "compose_size_default": "デフォルト（{arg1}）",
   "wit_compose_review_translate": "翻訳済み。",
-  "wit_compose_translated": "翻訳済み"
+  "wit_compose_translated": "翻訳済み",
+  "settings_account_icon": "アカウントのアイコン",
+  "settings_account_icon_help": "サイドバーおよびアカウント一覧に表示されます",
+  "settings_account_icon_choose": "アイコンを選択…",
+  "settings_account_icon_reset": "リセット",
+  "settings_account_icon_title": "アカウントのアイコン",
+  "settings_account_icon_desc": "このアカウントのアイコンを選択するか、独自の画像をアップロードしてください。",
+  "settings_account_icon_upload": "独自のアイコンをアップロード…",
+  "settings_account_icon_default": "デフォルトを使用",
+  "settings_account_icon_symbols": "アイコン",
+  "settings_account_icon_brands": "ロゴ",
+  "error_account_icon": "アカウントアイコンは 5 MB 以下の PNG、JPEG、GIF、WebP、SVG 画像にしてください。"
 }

@@ -1,15 +1,18 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/mail"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -256,7 +259,7 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -279,7 +282,7 @@ func scanAccount(r []any) Account {
 		Sync: SyncRange{Limit: int(store.Int(r[7])), Months: int(store.Int(r[19]))}, Folders: int(store.Int(r[20])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
-		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]),
+		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -458,6 +461,23 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	if p.Alias != nil {
 		set("alias", *p.Alias)
 	}
+	var iconStmts []sqlite.Statement
+	switch {
+	case p.IconImage != nil:
+		ct, err := accountIconType(p.IconImage)
+		if err != nil {
+			return Account{}, err
+		}
+		iconStmts = append(iconStmts, sqlite.Statement{SQL: "INSERT OR REPLACE INTO account_icons(account_id, content_type, data) VALUES (?, ?, ?)",
+			Args: []any{id, ct, p.IconImage}})
+		set("icon", "image:"+strconv.FormatInt(time.Now().UnixNano(), 36)) // a new key per upload: the GUI caches by it
+	case p.Icon != nil:
+		if !validAccountIcon(*p.Icon) {
+			return Account{}, fmt.Errorf("invalid account icon %q", *p.Icon)
+		}
+		iconStmts = append(iconStmts, sqlite.Statement{SQL: "DELETE FROM account_icons WHERE account_id = ?", Args: []any{id}})
+		set("icon", *p.Icon)
+	}
 	var images []sqlite.Statement
 	if p.Signature != nil || p.SignatureID != nil {
 		s.sigMu.Lock()
@@ -505,6 +525,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("is_default", 1)
 	}
 	stmts = append(stmts, images...)
+	stmts = append(stmts, iconStmts...)
 	if len(cols) > 0 {
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
@@ -545,4 +566,49 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		s.bus.Publish(events.Event{Type: events.SignaturesChanged})
 	}
 	return s.account(ctx, id)
+}
+
+// AccountIconMax is the most bytes an uploaded account icon may have.
+const AccountIconMax = 5 << 20
+
+// ErrAccountIcon is an icon that is not png, jpeg, gif, webp or svg, or is over AccountIconMax.
+var ErrAccountIcon = errors.New("an account icon must be a png, jpeg, gif, webp or svg of at most 5 MB")
+
+// accountIconType is data's sniffed type, or ErrAccountIcon.
+func accountIconType(data []byte) (string, error) {
+	if len(data) == 0 || len(data) > AccountIconMax {
+		return "", ErrAccountIcon
+	}
+	if ct := http.DetectContentType(data); signatureImageTypes[ct] {
+		return ct, nil
+	}
+	if bytes.Contains(data[:min(len(data), 1024)], []byte("<svg")) { // http sniffs svg as text
+		return "image/svg+xml", nil
+	}
+	return "", ErrAccountIcon
+}
+
+// AccountIcon is the image of an account whose Icon is image:<n>.
+func (s *Service) AccountIcon(ctx context.Context, id int64) (AccountIcon, error) {
+	rows, err := s.db.Query(ctx, "SELECT content_type, data FROM account_icons WHERE account_id = ?", id)
+	if err != nil {
+		return AccountIcon{}, err
+	}
+	if len(rows.Values) == 0 {
+		return AccountIcon{}, fmt.Errorf("account %d icon: %w", id, ErrAccountNotFound)
+	}
+	r := rows.Values[0]
+	data, _ := r[1].([]byte)
+	return AccountIcon{ContentType: store.Str(r[0]), Data: data}, nil
+}
+
+// validAccountIcon is whether icon may be set as is: ”, label:<name> or brand:<id>.
+func validAccountIcon(icon string) bool {
+	if name, ok := strings.CutPrefix(icon, "label:"); ok {
+		return slices.Contains(LabelIcons, name)
+	}
+	if id, ok := strings.CutPrefix(icon, "brand:"); ok { // the GUI's marks, more than the providers': it falls back on unknown ones
+		return id != "" && strings.Trim(id, "abcdefghijklmnopqrstuvwxyz0123456789-") == ""
+	}
+	return icon == ""
 }

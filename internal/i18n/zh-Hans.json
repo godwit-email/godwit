@@ -1095,5 +1095,16 @@
   "compose_font_default": "默认",
   "compose_size_default": "默认（{arg1}）",
   "wit_compose_review_translate": "已翻译。",
-  "wit_compose_translated": "已翻译"
+  "wit_compose_translated": "已翻译",
+  "settings_account_icon": "账户图标",
+  "settings_account_icon_help": "显示在侧边栏和账户列表中",
+  "settings_account_icon_choose": "选择图标…",
+  "settings_account_icon_reset": "重置",
+  "settings_account_icon_title": "账户图标",
+  "settings_account_icon_desc": "为此账户选择一个图标或上传自定义图片。",
+  "settings_account_icon_upload": "上传自定义图标…",
+  "settings_account_icon_default": "使用默认",
+  "settings_account_icon_symbols": "图标",
+  "settings_account_icon_brands": "Logo",
+  "error_account_icon": "账户图标须为不超过 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 图片。"
 }

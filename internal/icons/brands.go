@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"embed"
 	"image/png"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -34,6 +36,12 @@ var glyphs = func() map[string]*ui.SVG {
 	}
 	return m
 }()
+
+// Brands are the IDs of the marks Brand has, sorted: every provider's and more.
+func Brands() []string {
+	Brand("")
+	return slices.Sorted(maps.Keys(brands))
+}
 
 // Brand returns the mark of a provider ID, as "qq" (see brands/README.md),
 // or nil for a provider without one.

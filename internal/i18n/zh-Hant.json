@@ -1095,5 +1095,16 @@
   "compose_font_default": "預設",
   "compose_size_default": "預設（{arg1}）",
   "wit_compose_review_translate": "已翻譯。",
-  "wit_compose_translated": "已翻譯"
+  "wit_compose_translated": "已翻譯",
+  "settings_account_icon": "帳戶圖示",
+  "settings_account_icon_help": "顯示在側邊欄和帳戶清單中",
+  "settings_account_icon_choose": "選擇圖示…",
+  "settings_account_icon_reset": "重設",
+  "settings_account_icon_title": "帳戶圖示",
+  "settings_account_icon_desc": "為此帳戶選擇一個圖示或上傳自訂圖片。",
+  "settings_account_icon_upload": "上傳自訂圖示…",
+  "settings_account_icon_default": "使用預設",
+  "settings_account_icon_symbols": "圖示",
+  "settings_account_icon_brands": "Logo",
+  "error_account_icon": "帳戶圖示須為不超過 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 圖片。"
 }

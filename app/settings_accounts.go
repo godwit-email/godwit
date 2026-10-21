@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -366,7 +369,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	prov := accountProvider(a, acc)
 
 	ui.Row(c).Gap(th.Space(4)).Children(func() {
-		mark(c, prov, theme.MarkXl)
+		a.accountIcon(c, acc, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 			kit.Text(c, acc.Email, t.Text.Display).FontWeight(600).SingleLine()
 			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
@@ -416,6 +419,22 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	settingsSection(c, i18n.T("settings.account.basic"), "",
 		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, 0),
 		input(i18n.T("settings.account.alias"), "", &f.alias, 1),
+		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() {
+			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				ui.Box(c).Size(theme.MarkMd, theme.MarkMd).Children(func() {
+					a.accountIcon(c, acc, theme.MarkMd)
+				})
+				settingButton(c, i18n.T("settings.account.icon.choose"), kit.Outline, false).OnClick(func() {
+					p.openDialog("icon", acc)
+				})
+				if acc.Icon != "" {
+					settingButton(c, i18n.T("settings.account.icon.reset"), kit.Outline, false).OnClick(func() {
+						empty := ""
+						p.patch(acc.ID, core.AccountPatch{Icon: &empty}, nil)
+					})
+				}
+			})
+		}),
 		func() {
 			on := acc.IsDefault
 			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help")).Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
@@ -551,6 +570,7 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dlgGen++
 	p.secret = ""
 	p.showSecret = false
+	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
 		smtpPort: strconv.Itoa(acc.SMTPPort), username: acc.Username, imapSec: acc.IMAPSecurity, smtpSec: acc.SMTPSecurity}
 }
@@ -558,6 +578,7 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 func (p *settingsPage) closeDialog() {
 	p.dialog, p.open, p.busy, p.dlgErr, p.secret = "", false, false, nil, ""
 	p.showSecret = false
+	p.iconSelected, p.iconUpload, p.iconPreview = "", nil, nil
 }
 
 // act runs the dialog's action after the account's earlier writes. Success
@@ -657,6 +678,58 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		confirm = func() {
 			p.act(id, func(ctx context.Context) error { return a.svc.ClearAttachmentCache(ctx, id) }, func(bool) { p.readUsage(id) })
 		}
+	case "icon":
+		title, size = i18n.T("settings.account.icon.title"), kit.DialogMd
+		desc = i18n.T("settings.account.icon.desc")
+		body = func() {
+			t, th := theme.Of(c), c.Theme()
+			tempAcc := acc
+			tempAcc.Icon = p.iconSelected
+			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				if p.iconPreview != nil {
+					markTile(c, p.iconPreview, theme.MarkLg)
+				} else {
+					a.accountIcon(c, tempAcc, theme.MarkLg)
+				}
+				ui.Column(c).Gap(th.Space(1)).Grow(1).Children(func() {
+					ui.Row(c).Gap(th.Space(2)).Children(func() {
+						kit.Button(c, i18n.T("settings.account.icon.upload"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.uploadAccountIcon)
+						if p.iconSelected != "" || p.iconUpload != nil {
+							kit.Button(c, i18n.T("settings.account.icon.default"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+								p.pickIcon("")
+							})
+						}
+					})
+				})
+			})
+			var brands, symbols []iconChoice
+			for _, id := range icons.Brands() {
+				name := id
+				if pr, ok := auth.ByID(id); ok {
+					name = providerName(pr)
+				}
+				b := icons.Brand(id)
+				brands = append(brands, iconChoice{"brand:" + id, name, func() { markTile(c, b, theme.MarkMd) }})
+			}
+			for _, name := range core.LabelIcons {
+				symbols = append(symbols, iconChoice{"label:" + name, name, func() {
+					ui.Icon(c, icons.Get("label-"+name)).Size(theme.IconLg, theme.IconLg)
+				}})
+			}
+			kit.Field(c.Key("brands"), i18n.T("settings.account.icon.brands"), "", "", func() { p.iconGrid(c, brands) })
+			kit.Field(c.Key("symbols"), i18n.T("settings.account.icon.symbols"), "", "", func() { p.iconGrid(c, symbols) })
+		}
+		confirm = func() {
+			patch := core.AccountPatch{IconImage: p.iconUpload}
+			if p.iconUpload == nil {
+				icon := p.iconSelected
+				patch.Icon = &icon
+			}
+			p.act(id, func(ctx context.Context) error {
+				_, err := a.svc.UpdateAccount(ctx, id, patch)
+				return err
+			}, nil)
+		}
 	}
 	content := body
 	if p.dlgErr != nil {
@@ -670,6 +743,79 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
 		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || p.dialog == "password" && p.secret == ""}).OnClick(confirm)
+	})
+}
+
+// iconChoice is an icon the icon dialog offers: key is an Account.Icon.
+type iconChoice struct {
+	key, name string
+	draw      func()
+}
+
+// iconGrid is the icon dialog's choices, eight a row; a short last row keeps the cell width.
+func (p *settingsPage) iconGrid(c *ui.Context, choices []iconChoice) {
+	const perRow = 8
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		for start := 0; start < len(choices); start += perRow {
+			ui.Row(c.Key(start)).Gap(th.Space(1)).Children(func() {
+				row := choices[start:min(start+perRow, len(choices))]
+				for _, ch := range row {
+					on := p.iconUpload == nil && p.iconSelected == ch.key
+					cell := kit.Pressable(c.Key(ch.key), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { p.pickIcon(ch.key) }}).
+						Label(ch.name).Checked(on).Height(theme.LabelIconCell).Grow(1).Basis(0).Radius(t.Radius.Lg).Justify(ui.Center).AlignItems(ui.Center).
+						TextColor(t.Foreground)
+					if on {
+						cell.Background(t.Hover)
+					}
+					cell.Children(ch.draw)
+				}
+				for i := len(row); i < perRow; i++ {
+					ui.Box(c.Key(i)).Height(theme.LabelIconCell).Grow(1).Basis(0)
+				}
+			})
+		}
+	})
+}
+
+// pickIcon selects icon (” or label:<name>) in the icon dialog, over an upload.
+func (p *settingsPage) pickIcon(icon string) {
+	p.iconSelected, p.iconUpload, p.iconPreview = icon, nil, nil
+}
+
+// uploadAccountIcon asks for an image off the UI thread and selects it in the
+// icon dialog that asked, if it still shows.
+func (p *settingsPage) uploadAccountIcon() {
+	a, gen := p.a, p.dlgGen
+	var data []byte
+	var img ui.ImageSource
+	a.do(func(context.Context) error {
+		path, err := a.plat.OpenImage()
+		if err != nil || path == "" {
+			return err
+		}
+		if fi, err := os.Stat(path); err != nil {
+			return err
+		} else if fi.Size() > core.AccountIconMax {
+			return core.ErrAccountIcon
+		}
+		if data, err = os.ReadFile(path); err != nil {
+			return err
+		}
+		ct := "image/png" // any bitmap: DecodeBitmap sniffs
+		if strings.EqualFold(filepath.Ext(path), ".svg") {
+			ct = "image/svg+xml"
+		}
+		if img = decodeIcon(ct, data); img == nil {
+			return core.ErrAccountIcon
+		}
+		return nil
+	}, func(err error) {
+		if err != nil || img == nil || gen != p.dlgGen || p.dialog != "icon" {
+			a.toastErr(err)
+			return
+		}
+		p.iconUpload, p.iconPreview = data, img
 	})
 }
 

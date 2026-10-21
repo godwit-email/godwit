@@ -1095,5 +1095,16 @@
   "compose_font_default": "Mặc định",
   "compose_size_default": "Mặc định ({arg1})",
   "wit_compose_review_translate": "Đã dịch.",
-  "wit_compose_translated": "Đã dịch"
+  "wit_compose_translated": "Đã dịch",
+  "settings_account_icon": "Biểu tượng tài khoản",
+  "settings_account_icon_help": "Hiển thị ở thanh bên và danh sách tài khoản",
+  "settings_account_icon_choose": "Chọn biểu tượng…",
+  "settings_account_icon_reset": "Đặt lại",
+  "settings_account_icon_title": "Biểu tượng tài khoản",
+  "settings_account_icon_desc": "Chọn biểu tượng cho tài khoản này hoặc tải lên hình ảnh tùy chỉnh.",
+  "settings_account_icon_upload": "Tải lên biểu tượng tùy chỉnh…",
+  "settings_account_icon_default": "Dùng mặc định",
+  "settings_account_icon_symbols": "Biểu tượng",
+  "settings_account_icon_brands": "Logo",
+  "error_account_icon": "Biểu tượng tài khoản phải là ảnh PNG, JPEG, GIF, WebP hoặc SVG tối đa 5 MB."
 }

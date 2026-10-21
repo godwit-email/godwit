@@ -561,8 +561,26 @@ func lineText(c *ui.Context, s string, size float32) ui.Element {
 }
 
 // mark is a provider's mark: its logo (icons.Brand) on a white tile, else
-// its letters on a rounded square.
+// its letters on a transparent square.
 func mark(c *ui.Context, p auth.Provider, size float32) {
+	if b := icons.Brand(p.ID); b != nil {
+		markTile(c, b, size)
+		return
+	}
+	t := theme.Of(c)
+	text := providerMark(p)
+	fs := t.Text.Xs
+	if size >= theme.MarkLg {
+		fs = t.Text.Base
+	}
+	ui.Box(c).Size(size, size).Center().Children(func() {
+		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Foreground.Mix(t.Background, 0.25))
+	})
+}
+
+// markTile is img on a mark's white tile: a provider's logo or an account's
+// uploaded icon, which covers the tile.
+func markTile(c *ui.Context, img ui.ImageSource, size float32) {
 	t := theme.Of(c)
 	r := min(t.Radius.Lg, size/4) // a quarter of larger marks
 	if size <= theme.MarkSm {
@@ -571,29 +589,18 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	if size >= theme.MarkXl {
 		r = t.Radius.Xl
 	}
-	if b := icons.Brand(p.ID); b != nil {
-		tile := ui.Box(c).Size(size, size).Radius(r).Clip().Background(t.MarkTile)
-		if size <= theme.MarkSm {
-			// The logo fills the tile, at a size its levels halve to, sharp, under a one device pixel outline.
-			kit.Elevate(c, tile, theme.ShadowXs).Children(func() {
-				ui.Image(c, b).Size(size, size)
-				ui.Box(c).Absolute().Left(0).Top(0).Size(size, size).Radius(r).Border(theme.Hairline, t.Outline)
-			})
-			return
-		}
-		tile.Border(theme.Stroke, t.Outline)
-		in := size - 2*theme.Stroke // inside the outline: a full-size logo would sit off centre, clipped
-		kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, b).Size(in, in) })
+	tile := ui.Box(c).Size(size, size).Shrink(0).Radius(r).Clip().Background(t.MarkTile)
+	if size <= theme.MarkSm {
+		// The logo fills the tile, at a size its levels halve to, sharp, under a one device pixel outline.
+		kit.Elevate(c, tile, theme.ShadowXs).Children(func() {
+			ui.Image(c, img).Size(size, size).Fit(ui.Cover)
+			ui.Box(c).Absolute().Left(0).Top(0).Size(size, size).Radius(r).Border(theme.Hairline, t.Outline)
+		})
 		return
 	}
-	text := providerMark(p)
-	fs := t.Text.Xs
-	if size >= theme.MarkLg {
-		fs = t.Text.Base
-	}
-	ui.Box(c).Size(size, size).Radius(r).Background(t.Hover).Center().Children(func() {
-		kit.Text(c, text, fs).FontWeight(600).TextColor(t.Foreground.Mix(t.Background, 0.25))
-	})
+	tile.Border(theme.Stroke, t.Outline)
+	in := size - 2*theme.Stroke // inside the outline: a full-size logo would sit off centre, clipped
+	kit.Elevate(c, tile, theme.ShadowXs).Children(func() { ui.Image(c, img).Size(in, in).Fit(ui.Cover) })
 }
 
 func inputHeight(c *ui.Context) float32 { return c.Theme().Space(9) }
