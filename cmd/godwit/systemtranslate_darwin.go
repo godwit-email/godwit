@@ -23,6 +23,7 @@ const systemTranslateLib = "libgodwit-translate.dylib"
 type macTranslator struct {
 	translate func(req *byte) unsafe.Pointer
 	free      func(unsafe.Pointer)
+	installed func() unsafe.Pointer
 	version   string
 }
 
@@ -45,11 +46,28 @@ var systemTranslator = sync.OnceValue(func() core.SystemTranslator {
 	}
 	purego.RegisterLibFunc(&t.translate, lib, "godwit_st_translate")
 	purego.RegisterLibFunc(&t.free, lib, "godwit_st_free")
+	purego.RegisterLibFunc(&t.installed, lib, "godwit_st_installed_languages")
 	t.version, _ = syscall.Sysctl("kern.osversion") // the build: an update may change the translations
 	return t
 })
 
 func (t *macTranslator) Version() string { return t.version }
+
+func (t *macTranslator) InstalledLanguages() []string {
+	if t.installed == nil {
+		return nil
+	}
+	p := t.installed()
+	if p == nil {
+		return nil
+	}
+	defer t.free(p)
+	var list []string
+	if err := json.Unmarshal([]byte(goString(p)), &list); err != nil {
+		return nil
+	}
+	return list
+}
 
 func (t *macTranslator) Translate(ctx context.Context, texts []string, source, target string) ([]string, string, error) {
 	req, err := json.Marshal(map[string]any{"texts": texts, "source": source, "target": target})

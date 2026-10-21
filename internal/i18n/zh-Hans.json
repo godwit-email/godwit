@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "已整体重写",
   "wit_compose_source": "原邮件",
   "wit_compose_translate": "翻译",
+  "wit_compose_translate_none": "请在系统设置中下载翻译语言",
   "wit_compose_translate_only": "没有配置模型，这里只能用翻译插件翻译草稿。",
   "wit_compose_translate_only_models": "添加模型",
   "wit_compose_translate_to": "翻译为{arg1}",

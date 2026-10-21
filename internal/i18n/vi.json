@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Đã viết lại",
   "wit_compose_source": "Email gốc",
   "wit_compose_translate": "Dịch",
+  "wit_compose_translate_none": "Hãy tải ngôn ngữ dịch trong Cài đặt hệ thống",
   "wit_compose_translate_only": "Chưa thiết lập mô hình: tại đây bạn chỉ có thể dịch thư nháp bằng plugin dịch thuật.",
   "wit_compose_translate_only_models": "Thêm mô hình",
   "wit_compose_translate_to": "Dịch sang {arg1}",

@@ -606,3 +606,56 @@ func TestComposeWitInfoTranslateOnly(t *testing.T) {
 	assert.True(t, info.Enabled)
 	assert.False(t, info.TranslateOnly, "with a model the whole panel shows")
 }
+
+type fakeSysTranslator struct {
+	installed []string
+}
+
+func (f *fakeSysTranslator) Version() string              { return "1.0" }
+func (f *fakeSysTranslator) InstalledLanguages() []string { return f.installed }
+func (f *fakeSysTranslator) Translate(_ context.Context, texts []string, _, _ string) ([]string, string, error) {
+	return texts, "en", nil
+}
+
+func TestComposeWitInfoSystemTranslateInstalledLanguages(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync(), coretest.WithSystemTranslator(&fakeSysTranslator{installed: []string{"de", "en", "tr"}}))
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Translator = "plugin/" + core.SystemTranslationPlugin
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.True(t, info.Enabled)
+	var tags []string
+	for _, l := range info.Languages {
+		tags = append(tags, l.Tag)
+	}
+	assert.Contains(t, tags, "de")
+	assert.Contains(t, tags, "en")
+	assert.Contains(t, tags, "tr")
+	assert.NotContains(t, tags, "vi")
+	assert.NotContains(t, tags, "ja")
+	assert.NotContains(t, tags, "es")
+}
+
+// None downloaded offers none, not the reading language it cannot translate to.
+func TestComposeWitInfoSystemTranslateNoneInstalled(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync(), coretest.WithSystemTranslator(&fakeSysTranslator{}))
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Translator = "plugin/" + core.SystemTranslationPlugin
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	info, err := f.page.WitInfo(f.ctx(1))
+	require.NoError(t, err)
+	assert.NotNil(t, info.Languages, "the panel reads an empty list, not null")
+	assert.Empty(t, info.Languages)
+}

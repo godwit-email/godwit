@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Reescrito",
   "wit_compose_source": "Correo original",
   "wit_compose_translate": "Traducir",
+  "wit_compose_translate_none": "Descarga idiomas de traducción en Ajustes del Sistema",
   "wit_compose_translate_only": "No hay ningún modelo configurado: aquí solo puedes traducir el borrador con el plugin de traducción.",
   "wit_compose_translate_only_models": "Añadir un modelo",
   "wit_compose_translate_to": "Traducir al {arg1}",

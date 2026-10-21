@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Переписано",
   "wit_compose_source": "Исходное письмо",
   "wit_compose_translate": "Перевести",
+  "wit_compose_translate_none": "Загрузите языки перевода в Системных настройках",
   "wit_compose_translate_only": "Модель не настроена: здесь можно только перевести черновик с помощью плагина перевода.",
   "wit_compose_translate_only_models": "Добавить модель",
   "wit_compose_translate_to": "Перевести на {arg1}",

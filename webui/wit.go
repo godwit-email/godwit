@@ -22,8 +22,8 @@ type WitInfo struct {
 	// TranslateOnly: no model, but a plugin translates. The panel offers its
 	// 翻译 menu alone: no input, no 调整, no chips.
 	TranslateOnly bool `json:"translateOnly"`
-	// Skills are the 调整 menu's; Languages the 翻译 menu's, the reading
-	// language first.
+	// Skills are the 调整 menu's; Languages the 翻译 menu's, which the panel
+	// orders: the app's language first.
 	Skills    []Skill    `json:"skills"`
 	Languages []Language `json:"languages"`
 	// Chips name what Wit knows of the draft.
@@ -66,6 +66,12 @@ func langName(tag string, zhTW bool) string {
 	switch t := strings.ToLower(tag); {
 	case strings.HasPrefix(t, "de"):
 		return "Deutsch"
+	case strings.HasPrefix(t, "en-gb"):
+		return "English (UK)"
+	case strings.HasPrefix(t, "en-us"):
+		return "English (US)"
+	case strings.HasPrefix(t, "en"):
+		return "English"
 	case strings.HasPrefix(t, "zh-tw"), strings.HasPrefix(t, "zh-hant"), strings.HasPrefix(t, "zh-hk"), strings.HasPrefix(t, "zh-mo"):
 		if zhTW {
 			return "正體中文"
@@ -93,6 +99,18 @@ func langName(tag string, zhTW bool) string {
 		return "Türkçe"
 	case strings.HasPrefix(t, "vi"):
 		return "Tiếng Việt"
+	case strings.HasPrefix(t, "uk"):
+		return "Українська"
+	case strings.HasPrefix(t, "pl"):
+		return "Polski"
+	case strings.HasPrefix(t, "ar"):
+		return "العربية"
+	case strings.HasPrefix(t, "hi"):
+		return "हिन्दी"
+	case strings.HasPrefix(t, "th"):
+		return "ไทย"
+	case strings.HasPrefix(t, "id"):
+		return "Bahasa Indonesia"
 	}
 	return "English"
 }
@@ -194,13 +212,22 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	}
 	zhTW := isZhTW(svc.SystemLanguage())
 	read := svc.ReadingLanguage(ctx)
-	info.Languages = []Language{{read, langName(read, zhTW)}}
-	for _, l := range languages {
-		if zhTW && l.Tag == "zh-Hant" {
-			l.Name = "正體中文"
+
+	// The system's translation offers only what is downloaded: none leaves the menu its hint.
+	if st.Translator == "plugin/"+core.SystemTranslationPlugin && svc.SystemTranslator() != nil {
+		info.Languages = []Language{}
+		for _, code := range svc.SystemTranslator().InstalledLanguages() {
+			info.Languages = append(info.Languages, Language{Tag: code, Name: langName(code, zhTW)})
 		}
-		if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Name == l.Name }) {
-			info.Languages = append(info.Languages, l)
+	} else {
+		info.Languages = []Language{{read, langName(read, zhTW)}}
+		for _, l := range languages {
+			if zhTW && l.Tag == "zh-Hant" {
+				l.Name = "正體中文"
+			}
+			if !slices.ContainsFunc(info.Languages, func(x Language) bool { return x.Name == l.Name }) {
+				info.Languages = append(info.Languages, l)
+			}
 		}
 	}
 	if d.SourceMessageID != 0 {

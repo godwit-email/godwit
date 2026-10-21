@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Réécrit",
   "wit_compose_source": "E-mail d’origine",
   "wit_compose_translate": "Traduire",
+  "wit_compose_translate_none": "Téléchargez des langues de traduction dans Réglages Système",
   "wit_compose_translate_only": "Aucun modèle configuré : ici, vous pouvez uniquement traduire le brouillon avec le plugin de traduction.",
   "wit_compose_translate_only_models": "Ajouter un modèle",
   "wit_compose_translate_to": "Traduire en {arg1}",

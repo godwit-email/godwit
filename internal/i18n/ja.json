@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "全体を書き直しました",
   "wit_compose_source": "元のメール",
   "wit_compose_translate": "翻訳",
+  "wit_compose_translate_none": "システム設定で翻訳言語をダウンロードしてください",
   "wit_compose_translate_only": "モデルが設定されていないため、ここでは翻訳プラグインによる下書きの翻訳のみ利用できます。",
   "wit_compose_translate_only_models": "モデルを追加",
   "wit_compose_translate_to": "{arg1}に翻訳",

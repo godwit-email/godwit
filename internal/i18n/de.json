@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Umformuliert",
   "wit_compose_source": "Original-E-Mail",
   "wit_compose_translate": "Übersetzen",
+  "wit_compose_translate_none": "Übersetzungssprachen in den Systemeinstellungen laden",
   "wit_compose_translate_only": "Kein Modell eingerichtet: Hier kann der Entwurf nur mit dem Übersetzungs-Plugin übersetzt werden.",
   "wit_compose_translate_only_models": "Modell hinzufügen",
   "wit_compose_translate_to": "Auf {arg1} übersetzen",

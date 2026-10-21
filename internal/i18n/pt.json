@@ -939,6 +939,7 @@
   "wit_compose_rewrite_plain": "Reescrito",
   "wit_compose_source": "E-mail original",
   "wit_compose_translate": "Traduzir",
+  "wit_compose_translate_none": "Transfira idiomas de tradução nos Ajustes do Sistema",
   "wit_compose_translate_only": "Nenhum modelo configurado: aqui você só pode traduzir o rascunho com o plugin de tradução.",
   "wit_compose_translate_only_models": "Adicionar um modelo",
   "wit_compose_translate_to": "Traduzir para {arg1}",
