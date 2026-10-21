@@ -898,7 +898,7 @@
   "settings_signatures_sub": "Várias contas podem compartilhar uma assinatura. Altere uma vez e todas as contas que a usam acompanham.",
   "settings_signatures_untitled": "Assinatura sem nome",
   "settings_signatures_unused": "Nenhuma conta a usa",
-  "settings_signatures_used_by": "{arg1, plural, one {Usada por {arg1, number, ::group-off} conta} other {Usada por {arg1, number, ::group-off} contas}}",
+  "settings_signatures_used_by": "{arg1, plural, one {Usada por {arg1, number, ::group-off} conta} many {Usada por {arg1, number, ::group-off} contas} other {Usada por {arg1, number, ::group-off} contas}}",
   "settings_startup": "Inicialização e janela",
   "settings_summary": "Resumos de e-mails",
   "settings_summary_help": "Resumir e-mails ao abri-los; requer um serviço de modelo",

@@ -898,7 +898,7 @@
   "settings_signatures_sub": "Plusieurs comptes peuvent partager une signature. Modifiez-la une fois, et tous les comptes qui l’utilisent suivent.",
   "settings_signatures_untitled": "Signature sans nom",
   "settings_signatures_unused": "Aucun compte ne l’utilise",
-  "settings_signatures_used_by": "{arg1, plural, one {Utilisée par {arg1, number, ::group-off} compte} other {Utilisée par {arg1, number, ::group-off} comptes}}",
+  "settings_signatures_used_by": "{arg1, plural, one {Utilisée par {arg1, number, ::group-off} compte} many {Utilisée par {arg1, number, ::group-off} comptes} other {Utilisée par {arg1, number, ::group-off} comptes}}",
   "settings_startup": "Démarrage et fenêtre",
   "settings_summary": "Résumés d’e-mails",
   "settings_summary_help": "Résumer les e-mails à leur ouverture ; nécessite un service de modèle",

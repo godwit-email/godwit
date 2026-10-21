@@ -898,7 +898,7 @@
   "settings_signatures_sub": "Più account possono condividere una firma. Modificala una volta e tutti gli account che la usano si aggiornano.",
   "settings_signatures_untitled": "Firma senza nome",
   "settings_signatures_unused": "Nessun account la usa",
-  "settings_signatures_used_by": "{arg1, plural, one {Usata da {arg1, number, ::group-off} account} other {Usata da {arg1, number, ::group-off} account}}",
+  "settings_signatures_used_by": "{arg1, plural, one {Usata da {arg1, number, ::group-off} account} many {Usata da {arg1, number, ::group-off} account} other {Usata da {arg1, number, ::group-off} account}}",
   "settings_startup": "Avvio e finestra",
   "settings_summary": "Riassunti delle email",
   "settings_summary_help": "Riassume le email quando le apri; richiede un servizio di modelli",
