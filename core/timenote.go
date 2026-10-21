@@ -41,7 +41,7 @@ func timeNote(state []byte, now time.Time) (string, error) {
 		_, was := last.Zone()
 		_, is := now.Zone()
 		last = last.In(now.Location())
-		if was == is && last.Format(time.DateOnly) == now.Format(time.DateOnly) && now.Sub(last) < timeNoteGap {
+		if was == is && last.Format(time.DateOnly) == now.Format(time.DateOnly) && now.Sub(last) >= 0 && now.Sub(last) < timeNoteGap {
 			return "", nil
 		}
 		break
