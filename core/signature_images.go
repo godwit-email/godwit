@@ -174,24 +174,19 @@ func (s *Service) InlineSignatureImages(ctx context.Context, html string) (strin
 	}), nil
 }
 
-// SignatureImageURLs are the data: URLs of the images html shows, in order:
-// the compose page's read-only signature preview.
-func (s *Service) SignatureImageURLs(ctx context.Context, html string) ([]string, error) {
-	if len(mail.CIDs(html)) == 0 {
-		return []string{}, nil
+// SignatureShown is a draft's signature block (mail.SplitDraft's) as the
+// compose page shows it, read-only: sanitized first (SanitizeDraft, the
+// stored images kept, markers dropped), then its images as data: URLs. ""
+// for none.
+func (s *Service) SignatureShown(ctx context.Context, block string) (string, error) {
+	if strings.TrimSpace(block) == "" {
+		return "", nil
 	}
-	shown, err := s.InlineSignatureImages(ctx, html)
+	clean, err := s.sanitizeDraft(ctx, mail.StripMarkers(block))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	out := []string{}
-	mail.ReplaceImages(shown, func(src string) string {
-		if strings.HasPrefix(src, "data:") {
-			out = append(out, src)
-		}
-		return src
-	})
-	return out, nil
+	return s.InlineSignatureImages(ctx, clean)
 }
 
 // SignatureEditor is signature id as the settings editor's HTML:

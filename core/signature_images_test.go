@@ -261,3 +261,27 @@ func TestSignatureCodeImages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, again, cid, "a refused save keeps the signature as it was")
 }
+
+// The compose page shows a draft's signature as sanitized HTML: a table
+// and its styles stay, scripts go, its images come as data:.
+func TestSignatureShown(t *testing.T) {
+	e := newSendEnv(t, false)
+	img := logo(t, 1)
+	_, err := setSignature(t, e.s, e.acc.ID, `<table style="color:red"><tr><td>Alice</td><td><img src="`+dataURL("image/png", img)+`"></td></tr></table>`)
+	require.NoError(t, err)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	_, _, block := mail.SplitDraft(d.HTML)
+	shown, err := e.s.SignatureShown(bg, block+`<script>alert(1)</script><p onclick="x()">y</p>`)
+	require.NoError(t, err)
+	assert.Contains(t, shown, "<table")
+	assert.Contains(t, shown, "color: red")
+	assert.Contains(t, shown, dataURL("image/png", img))
+	assert.Contains(t, shown, "-- ", "the delimiter stays")
+	assert.NotContains(t, shown, "script")
+	assert.NotContains(t, shown, "onclick")
+	assert.NotContains(t, shown, "data-godwit")
+	none, err := e.s.SignatureShown(bg, "")
+	require.NoError(t, err)
+	assert.Empty(t, none)
+}

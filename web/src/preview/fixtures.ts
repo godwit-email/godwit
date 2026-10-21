@@ -53,8 +53,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   body: withBody ? html(formal) : "",
   quote:
     "Following up on our call last week, I put together a draft proposal for the Q4 partnership…",
-  signature: "",
-  signatureImages: [],
+  signatureHtml: "",
   attachments: [],
   revision: 1,
   theme: theme(mode),
