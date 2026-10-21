@@ -17,6 +17,7 @@ var RemixIcons = map[string]string{
 	"chevron-right":             "node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg",
 	"circle-check":              "node_modules/remixicon/icons/System/checkbox-circle-line.svg",
 	"circle-x":                  "node_modules/remixicon/icons/System/close-circle-line.svg",
+	"code":                      "node_modules/remixicon/icons/Development/code-s-slash-line.svg",
 	"component":                 "node_modules/remixicon/icons/System/apps-2-line.svg",
 	"component-fill":            "node_modules/remixicon/icons/System/apps-2-fill.svg",
 	"copy":                      "node_modules/remixicon/icons/Document/file-copy-line.svg",
@@ -98,6 +99,8 @@ var RemixIcons = map[string]string{
 	"plus":                      "node_modules/remixicon/icons/System/add-line.svg",
 	"puzzle":                    "node_modules/remixicon/icons/Development/puzzle-line.svg",
 	"puzzle-fill":               "node_modules/remixicon/icons/Development/puzzle-fill.svg",
+	"quill-pen":                 "node_modules/remixicon/icons/Design/quill-pen-line.svg",
+	"quill-pen-fill":            "node_modules/remixicon/icons/Design/quill-pen-fill.svg",
 	"quote":                     "node_modules/remixicon/icons/Editor/double-quotes-l.svg",
 	"refresh-cw":                "node_modules/remixicon/icons/System/refresh-line.svg",
 	"reply":                     "node_modules/remixicon/icons/Business/reply-line.svg",
@@ -141,6 +144,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/openai.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/grok.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
+//go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
@@ -170,6 +174,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Design/magic-line.svg
 //go:embed node_modules/remixicon/icons/Design/palette-line.svg
 //go:embed node_modules/remixicon/icons/Design/pencil-line.svg
+//go:embed node_modules/remixicon/icons/Design/quill-pen-fill.svg
 //go:embed node_modules/remixicon/icons/Design/quill-pen-line.svg
 //go:embed node_modules/remixicon/icons/Design/tools-line.svg
 //go:embed node_modules/remixicon/icons/Development/braces-line.svg

@@ -70,11 +70,15 @@ func nullID(id int64) any {
 // its non-inline attachments, downloading them if needed. The account signature
 // ends the body.
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
+	// From reading the signature to storing the draft, no signature change
+	// can clean up the images the draft is about to show.
+	s.sigMu.Lock()
 	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
-	if err != nil {
-		return Draft{}, err
+	if err == nil {
+		d, err = s.SaveDraft(ctx, d)
 	}
-	if d, err = s.SaveDraft(ctx, d); err != nil {
+	s.sigMu.Unlock()
+	if err != nil {
 		return Draft{}, err
 	}
 	if mode == "forward" {
@@ -96,6 +100,10 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		return Draft{}, err
 	}
 	d := Draft{AccountID: accountID, Mode: mode}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return Draft{}, err
+	}
 	if mode != "new" {
 		orig, err := s.sourceMessage(ctx, accountID, sourceMessageID)
 		if err != nil {
@@ -110,15 +118,14 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		}
 		// The marker blockquote only marks the quote (attribution line included)
 		// as read-only for Wit; it is styled away so the quote is not indented twice.
-		st, _ := s.loadSettings(ctx)
 		lang := cmp.Or(st.ReadingLanguage, st.UILanguage, s.opts.SystemLanguage)
 		d.HTML = `<p></p><blockquote data-godwit="quote" style="margin:0;padding:0;border:0">` + mail.QuoteHTMLIn(orig, lang) + "</blockquote>"
 	}
-	cids, err := s.signatureCIDs(ctx, accountID)
+	cids, err := s.signatureCIDs(ctx)
 	if err != nil {
 		return Draft{}, err
 	}
-	d.HTML += signatureHTML(acc.Signature, cids)
+	d.HTML += signatureHTML(acc.Signature, cids, st.SignatureDelimiter)
 	return d, nil
 }
 
@@ -142,18 +149,26 @@ func SignatureEditorHTML(sig string, cids map[string]bool) string {
 func escapeLines(s string) string { return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") }
 
 // signatureHTML is the marked signature block that ends a draft body, "" for
-// none; cids are the account's signature images.
-func signatureHTML(sig string, cids map[string]bool) string {
+// none; cids are the stored signature images. delim puts the "-- " line
+// before it (Settings.SignatureDelimiter); the text part follows the HTML.
+func signatureHTML(sig string, cids map[string]bool, delim bool) string {
 	if !strings.HasPrefix(sig, SignatureHTMLPrefix) {
 		if sig == "" {
 			return ""
 		}
-		return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+		if delim {
+			return `<div data-godwit="signature"><p>-- <br>` + escapeLines(sig) + "</p></div>"
+		}
+		return `<div data-godwit="signature"><p>` + escapeLines(sig) + "</p></div>"
 	}
-	if body := SignatureEditorHTML(sig, cids); body != "" {
+	body := SignatureEditorHTML(sig, cids)
+	switch {
+	case body == "":
+		return ""
+	case delim:
 		return `<div data-godwit="signature"><p>-- </p>` + body + "</div>" // the delimiter a plain one has; the body is blocks
 	}
-	return ""
+	return `<div data-godwit="signature">` + body + "</div>"
 }
 
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
@@ -200,17 +215,7 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	acc := d.AccountID
-	if d.ID != 0 { // the stored account's images, whatever d says
-		rows, err := s.db.Query(ctx, "SELECT account_id FROM drafts WHERE id = ?", d.ID)
-		if err != nil {
-			return Draft{}, err
-		}
-		if len(rows.Values) > 0 {
-			acc = store.Int(rows.Values[0][0])
-		}
-	}
-	html, err := s.sanitizeDraft(ctx, acc, d.HTML) // stored safe, so every read of a draft is safe
+	html, err := s.sanitizeDraft(ctx, d.HTML) // stored safe, so every read of a draft is safe
 	if err != nil {
 		return Draft{}, err
 	}
@@ -286,7 +291,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
 		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
-	if d.HTML, err = s.sanitizeDraft(ctx, d.AccountID, store.Str(r[8])); err != nil {
+	if d.HTML, err = s.sanitizeDraft(ctx, store.Str(r[8])); err != nil {
 		return Draft{}, err
 	}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
@@ -544,8 +549,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
-	// Only the draft's own account's images: another's cid was dropped by GetDraft.
-	imgs, err := s.signatureImages(ctx, d.AccountID, true)
+	imgs, err := s.signatureImages(ctx, true) // an unknown cid was dropped by GetDraft
 	if err != nil {
 		return err
 	}

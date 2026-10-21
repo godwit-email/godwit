@@ -1,11 +1,18 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/egoist/mygo/ui"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -54,6 +61,43 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
+// openSignature makes a signature the account uses, opens it, and waits
+// for the signature page to show it.
+func (h *harness) openSignature(accountID int64, name string) core.Signature {
+	h.t.Helper()
+	sig, err := h.env.Svc.CreateSignature(context.Background(), name)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if accountID != 0 {
+		if _, err := h.env.Svc.UpdateAccount(context.Background(), accountID, core.AccountPatch{SignatureID: &sig.ID}); err != nil {
+			h.t.Fatal(err)
+		}
+	}
+	h.app.load()
+	h.until("the signature loads", func() bool {
+		return slices.ContainsFunc(h.app.signatures, func(s core.Signature) bool { return s.ID == sig.ID })
+	})
+	h.openSettings(signatureRoute(sig.ID))
+	h.until("the signature page shows it", func() bool { return h.plat.sigShown() == sig.ID })
+	return sig
+}
+
+func (h *harness) signatureHTML(id int64) string {
+	h.t.Helper()
+	sigs, err := h.env.Svc.ListSignatures(context.Background())
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, s := range sigs {
+		if s.ID == id {
+			return s.HTML
+		}
+	}
+	h.t.Fatalf("no signature %d", id)
+	return ""
+}
+
 func (h *harness) account(id int64) core.Account {
 	h.t.Helper()
 	accs, err := h.env.Svc.ListAccounts(context.Background())
@@ -95,7 +139,6 @@ func TestSettingsAccountEdit(t *testing.T) {
 		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
 		return !f.edits[0].pending && !f.edits[1].pending
 	})
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封")
@@ -606,8 +649,7 @@ func TestSettingsLoadBeforeSaveKeepsBothEdits(t *testing.T) {
 
 func TestCloseSavesSettings(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigType("<p>Bye</p>")
 	closed := false
 	h.app.BeforeClose(func() {
@@ -995,8 +1037,7 @@ func TestSyncRangeOptionsAndFolders(t *testing.T) {
 // signatureFlushWait, then the window asks.
 func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigMute()
 	closed := false
 	h.app.BeforeClose(func() { closed = true })
@@ -1019,8 +1060,7 @@ func TestCloseAsksWhenSignatureUnsaved(t *testing.T) {
 // nor asks.
 func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.plat.sigMute()
 	h.plat.sigDead()
 	closed := false
@@ -1034,35 +1074,243 @@ func TestCloseIgnoresDeadSignaturePage(t *testing.T) {
 // Closing the App closes the signature page.
 func TestAppCloseClosesSignatureView(t *testing.T) {
 	h, acc := withAccount(t)
-	h.openSettings(accountRoute(acc.ID))
-	h.until("the signature page shows the account", func() bool { return h.plat.sigShown() == acc.ID })
+	h.openSignature(acc.ID, "Work")
 	h.app.Close()
 	h.called("CloseSignatureView")
 }
 
-// The signature page saves an account's edit as that account when native
+// The signature page saves a signature's edit as that one when native
 // switches it to another; the other is untouched.
-func TestSignatureSwitchKeepsAccounts(t *testing.T) {
+func TestSignatureSwitchKeepsSignatures(t *testing.T) {
+	h, acc := withAccount(t)
+	a := h.openSignature(acc.ID, "A")
+	h.plat.sigType("<p>Alice</p>")
+	b := h.openSignature(0, "B")
+	if got := h.signatureHTML(a.ID); got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
+		t.Fatalf("a's signature %q", got)
+	}
+	if got := h.signatureHTML(b.ID); got != "" {
+		t.Fatalf("b's signature %q", got)
+	}
+	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
+		t.Fatalf("%d signature views, want one", n)
+	}
+}
+
+// The HTML mode edits the stored code in MyGo's editor in the page's
+// place: saved clean as typing pauses, too many images said and not
+// saved; the toggle goes back to the page, which reads it again.
+func TestSignatureHTMLMode(t *testing.T) {
+	h, acc := withAccount(t)
+	sig := h.openSignature(acc.ID, "A")
+	text := core.SignatureHTMLPrefix + "<p>Alice</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
+	}
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+	if got := p.sigCode.st.Buffer.String(); got != "<p>Alice</p>" {
+		t.Fatalf("code %q", got)
+	}
+	h.see("保存时会去掉脚本、事件属性和外链图片。图片在代码里写作 cid:…，要加新图片请切回富文本用「插入图片」上传。")
+
+	p.sigCode.st.Buffer.Set(`<p onclick="x()">Bob</p><script>alert(1)</script>`)
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.until("saved clean", func() bool { return h.signatureHTML(sig.ID) == core.SignatureHTMLPrefix+"<p>Bob</p>" })
+
+	five := "<p>Bob</p>"
+	for i := range core.SignatureImagesMax + 1 {
+		five += `<img src="data:image/png;base64,` + tinyPNG(t, uint8(i)) + `">`
+	}
+	p.sigCode.st.Buffer.Set(five)
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.see("最多 4 张图片，这次修改没有保存")
+	if got := h.signatureHTML(sig.ID); got != core.SignatureHTMLPrefix+"<p>Bob</p>" {
+		t.Fatalf("a refused save changed the signature: %q", got)
+	}
+
+	shows := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") }))
+	h.click("HTML 代码")
+	h.drain()
+	h.tt.Frame()
+	if p.sigCode == nil {
+		t.Fatal("left the HTML mode with its save refused: the edit would be lost")
+	}
+	p.sigCode.st.Buffer.Set("<p>Bobby</p>")
+	h.tt.Frame()
+	h.click("HTML 代码")
+	h.until("back to the page, which reads it again", func() bool {
+		return p.sigCode == nil && len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") })) > shows
+	})
+}
+
+// Deleting a signature open in the HTML mode drops its code: the HTML
+// mode works for the next one.
+func TestSignatureDeletedInHTMLMode(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSignature(0, "Other")
+	sig := h.openSignature(acc.ID, "A")
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+	h.click("删除签名「A」")
+	h.click("删除")
+	h.until("deleted", func() bool { return h.app.route.Settings == "signatures" })
+	h.until("its code dropped", func() bool { return p.sigCode == nil })
+	_ = sig
+	h.click("Other")
+	h.until("the page shows Other", func() bool { return h.plat.sigShown() != 0 && h.app.route.Settings != "signatures" })
+	h.app.SignatureHTML()
+	h.until("the HTML mode opens again", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+}
+
+// An HTML-mode save that failed is tried again when the App closes: the
+// code shown is never dropped unsaved.
+func TestSignatureHTMLFailedSaveRetriedOnClose(t *testing.T) {
+	h, acc := withAccount(t)
+	sig := h.openSignature(acc.ID, "A")
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.app.SignatureHTML()
+	h.until("the code loads", func() bool { return p.sigCode != nil && !p.sigCode.loading })
+
+	db, err := sqlite.Open(t.Context(), filepath.Join(h.env.DataDir, "godwit.db"), sqlite.OpenOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	exec := func(q string) {
+		if _, err := db.Execute(t.Context(), q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec("ALTER TABLE signatures RENAME TO signatures_away")
+	p.sigCode.st.Buffer.Set("<p>Kept</p>")
+	h.tt.Frame()
+	h.advance(accountSaveDelay)
+	h.until("the save failed", func() bool { return p.sigCode.stop == nil && len(h.app.writes.chains) == 0 })
+	exec("ALTER TABLE signatures_away RENAME TO signatures")
+	if got := h.signatureHTML(sig.ID); got == core.SignatureHTMLPrefix+"<p>Kept</p>" {
+		t.Fatal("the first save did not fail")
+	}
+
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.until("closed", func() bool { return closed })
+	if got := h.signatureHTML(sig.ID); got != core.SignatureHTMLPrefix+"<p>Kept</p>" {
+		t.Fatalf("stored %q: the close did not save the code again", got)
+	}
+}
+
+// tinyPNG is a 1×1 PNG of a shade, base64.
+func tinyPNG(t *testing.T, shade uint8) string {
+	t.Helper()
+	img := image.NewGray(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.Gray{Y: shade})
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(b.Bytes())
+}
+
+// 签名: the empty state makes one and opens it; the list shows each with
+// its users and text; a row opens it.
+func TestSignaturesList(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings("signatures")
+	h.see("还没有签名")
+	if h.tt.HasText("在签名前加分隔线（-- ）") {
+		t.Error("the options show with no signature")
+	}
+	h.click("新建签名")
+	h.until("made and opened", func() bool { return strings.HasPrefix(h.app.route.Settings, "signature:") })
+	h.see("未命名签名")
+	h.see("没有账户在用")
+
+	sig := h.openSignature(acc.ID, "Work")
+	text := core.SignatureHTMLPrefix + "<p><b>Alice</b></p><p>CEO</p><p>Acme</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
+	}
+	h.app.load()
+	h.openSettings("signatures")
+	h.see("1 个账户在用")
+	h.see("CEO")
+	if h.tt.HasText("Acme") {
+		t.Error("the preview shows more than two lines")
+	}
+	h.see("方便 Mutt、Thunderbird 这类客户端识别和折叠签名")
+	h.click("在签名前加分隔线（-- ）")
+	h.until("the delimiter is on", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.SignatureDelimiter
+	})
+	h.click("Work")
+	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
+	// ‹ 签名 above the title goes back to the list (the sidebar's 签名 is selected and does not click).
+	r, ok := h.tt.Find("Work")
+	if !ok {
+		t.Fatal("no title")
+	}
+	h.tt.ClickAt(r.X+8, r.Y-20) // the back link sits just above the title, its text aligned with it
+	h.until("back to the list", func() bool { return h.app.route.Settings == "signatures" })
+}
+
+// A signature's page: its name saves once typing pauses; 默认用于 switches
+// replace an account's signature; 删除签名 says who loses it, then deletes.
+func TestSignatureDetail(t *testing.T) {
 	var a, b core.Account
 	h := newHarness(t, func(e *coretest.Env) {
 		a = e.AddAccount(t, "alice@example.com")
 		b = e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings(accountRoute(a.ID))
-	h.until("shows a", func() bool { return h.plat.sigShown() == a.ID })
-	h.plat.sigType("<p>Alice</p>")
-	h.openSettings(accountRoute(b.ID))
-	h.until("shows b", func() bool { return h.plat.sigShown() == b.ID })
-	if got := h.account(a.ID).Signature; got != core.SignatureHTMLPrefix+"<p>Alice</p>" {
-		t.Fatalf("a's signature %q", got)
+	other := h.openSignature(b.ID, "Other")
+	sig := h.openSignature(a.ID, "Work")
+	h.see("1 个账户在用")
+	h.see("正在用这个签名")
+	h.see("现在用「Other」")
+
+	h.fillRow("名称", "Work 2")
+	h.advance(accountSaveDelay)
+	h.until("renamed", func() bool { return h.signatureHTML(sig.ID) == "" && h.app.signatures[1].Name == "Work 2" })
+
+	h.click("bob@example.com 默认用这个签名")
+	h.until("bob uses it", func() bool { return h.account(b.ID).SignatureID == sig.ID })
+	h.see("2 个账户在用")
+	h.see("删除后，alice@example.com、bob@example.com 写信时不再带签名")
+	_ = other
+
+	h.click("alice@example.com 默认用这个签名")
+	h.until("alice has none", func() bool { return h.account(a.ID).SignatureID == 0 })
+	h.see("现在不带签名")
+
+	h.click("删除签名「Work 2」")
+	h.see("删除「Work 2」？")
+	h.click("删除")
+	h.until("deleted", func() bool { return h.account(b.ID).SignatureID == 0 && h.app.route.Settings == "signatures" })
+	h.see("Other")
+}
+
+// The account page picks its default signature and previews it.
+func TestAccountDefaultSignature(t *testing.T) {
+	h, acc := withAccount(t)
+	sig := h.openSignature(0, "Work")
+	text := core.SignatureHTMLPrefix + "<p>Alice at work</p>"
+	if _, err := h.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &text}); err != nil {
+		t.Fatal(err)
 	}
-	if got := h.account(b.ID).Signature; got != "" {
-		t.Fatalf("b's signature %q", got)
-	}
-	if n := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return c != "NewSignatureView" })); n != 1 {
-		t.Fatalf("%d signature views, want one", n)
-	}
+	h.app.load()
+	h.openSettings(accountRoute(acc.ID))
+	h.click("不使用签名")
+	h.click("Work")
+	h.until("picked", func() bool { return h.account(acc.ID).SignatureID == sig.ID })
+	h.see("Alice at work")
+	h.click("设置 › 签名")
+	h.until("opened", func() bool { return h.app.route.Settings == "signatures" })
 }
 
 // 隐私与安全 lists the trusted senders; 移除 stops trusting one.
@@ -1122,4 +1370,62 @@ func TestSettingsMailboxPurge(t *testing.T) {
 		p, err := h.env.Svc.Purges(context.Background(), acc.ID)
 		return err == nil && p["junk"].Days == 7 && p["trash"].Days == 0
 	})
+}
+
+// 链接 on the signature page asks in a native dialog: a bad address is
+// said, a good one answered; 移除链接 for a link already there; 取消 and
+// leaving the page cancel.
+func TestSignatureLinkDialog(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSignature(acc.ID, "A")
+	type ans struct {
+		url string
+		ok  bool
+	}
+	var got []ans
+	answer := func(url string, ok bool) { got = append(got, ans{url, ok}) }
+
+	h.app.SignatureLink("", answer)
+	h.see("链接地址")
+	h.fill("链接地址", "example.com")
+	h.click("添加链接")
+	h.see("请输入以 http://、https:// 或 mailto: 开头的地址")
+	r, _ := h.tt.Find("链接地址") // the field under its label: the error moved the focus off it
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+16)
+	h.tt.Command("selectAll")
+	h.typeText("https://example.com/a")
+	h.click("添加链接")
+	h.until("answered", func() bool { return len(got) == 1 })
+	if got[0] != (ans{"https://example.com/a", true}) {
+		t.Fatalf("answer %+v", got[0])
+	}
+
+	h.app.SignatureLink("https://example.com/a", answer)
+	h.click("移除链接")
+	h.until("taken off", func() bool { return len(got) == 2 && got[1] == ans{"", true} })
+
+	h.app.SignatureLink("", answer)
+	h.click("取消")
+	h.until("cancelled", func() bool { return len(got) == 3 && got[2] == ans{"", false} })
+
+	h.app.SignatureLink("", answer)
+	h.openSettings("general")
+	h.until("leaving cancels", func() bool { return len(got) == 4 && got[3] == ans{"", false} })
+}
+
+func TestLinkHref(t *testing.T) {
+	for in, want := range map[string]string{
+		" https://example.com/a ": "https://example.com/a",
+		"HTTP://Example.com":      "http://Example.com",
+		"mailto:bob@example.com":  "mailto:bob@example.com",
+		"example.com":             "",
+		"https://":                "",
+		"mailto:":                 "",
+		"javascript:alert(1)":     "",
+	} {
+		got, ok := linkHref(in)
+		if got != want || ok != (want != "") {
+			t.Errorf("linkHref(%q) = %q, %v", in, got, ok)
+		}
+	}
 }

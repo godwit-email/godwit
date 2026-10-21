@@ -564,22 +564,60 @@ func TestDraftReadSanitizedAndStable(t *testing.T) {
 }
 
 func TestSignatureHTMLPlainEscapes(t *testing.T) {
+	assert.Equal(t, `<div data-godwit="signature"><p>Bob &lt;bob@x.com&gt;<br>line2</p></div>`,
+		signatureHTML("Bob <bob@x.com>\nline2", nil, false), "no delimiter by default")
 	assert.Equal(t, `<div data-godwit="signature"><p>-- <br>Bob &lt;bob@x.com&gt;<br>line2</p></div>`,
-		signatureHTML("Bob <bob@x.com>\nline2", nil))
-	assert.Equal(t, "", signatureHTML("", nil))
+		signatureHTML("Bob <bob@x.com>\nline2", nil, true))
+	assert.Equal(t, "", signatureHTML("", nil, true))
 }
 
 func TestSignatureHTMLMarked(t *testing.T) {
-	got := signatureHTML(SignatureHTMLPrefix+`<p><b>Bob</b> <a href="https://x.com">site</a><script>alert(1)</script>`+
-		`<img src="https://x.com/t.png" onerror="alert(2)"></p><div data-godwit="quote">q</div>`, nil)
+	sig := SignatureHTMLPrefix + `<p><b>Bob</b> <a href="https://x.com">site</a><script>alert(1)</script>` +
+		`<img src="https://x.com/t.png" onerror="alert(2)"></p><div data-godwit="quote">q</div>`
+	got := signatureHTML(sig, nil, true)
 	assert.True(t, strings.HasPrefix(got, `<div data-godwit="signature"><p>-- </p><p><b>Bob</b>`), got)
+	assert.True(t, strings.HasPrefix(signatureHTML(sig, nil, false), `<div data-godwit="signature"><p><b>Bob</b>`), "no delimiter by default")
 	assert.Equal(t, 1, strings.Count(got, "data-godwit"), got)
 	assert.Contains(t, got, "<b>Bob</b>")
 	assert.Contains(t, got, `href="https://x.com"`)
 	for _, bad := range []string{"<script", "alert", "onerror", "t.png"} {
 		assert.NotContains(t, got, bad)
 	}
-	assert.Equal(t, "", signatureHTML(SignatureHTMLPrefix, nil))
+	assert.Equal(t, "", signatureHTML(SignatureHTMLPrefix, nil, true))
+}
+
+// Settings.SignatureDelimiter: off (the default) a new draft's signature has
+// no "-- " line in the HTML or the text part; on, both have it.
+func TestSignatureDelimiterSetting(t *testing.T) {
+	e := newSendEnv(t, false)
+	sig := SignatureHTMLPrefix + "<p>Alice</p>"
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Signature: &sig})
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(bg)
+	require.NoError(t, err)
+	assert.False(t, st.SignatureDelimiter, "off by default")
+
+	send := func(delim bool) string {
+		t.Helper()
+		st.SignatureDelimiter = delim
+		_, err := e.s.SetSettings(bg, st)
+		require.NoError(t, err)
+		d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+		require.NoError(t, err)
+		_, _, block := mail.SplitDraft(d.HTML)
+		assert.Equal(t, delim, strings.Contains(block, "-- "), "the HTML, delim %v", delim)
+		d.To, d.HTML = []string{"bob@example.com"}, "<p>hi</p>"+d.HTML
+		d, err = e.s.SaveDraft(bg, d)
+		require.NoError(t, err)
+		require.NoError(t, e.s.Send(bg, d.ID))
+		e.sync(t)
+		got := e.smtp.Messages()
+		p, err := mail.Parse(got[len(got)-1].Data)
+		require.NoError(t, err)
+		return p.Text
+	}
+	assert.NotContains(t, send(false), "-- ", "the text part follows the HTML")
+	assert.Regexp(t, `(?m)^-- \r?$`, send(true), "a line of its own")
 }
 
 func TestSignatureEditorHTMLLegacy(t *testing.T) {

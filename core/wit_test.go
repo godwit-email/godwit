@@ -165,7 +165,7 @@ func (e skillEnv) draft(t *testing.T) int64 {
 
 func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	e := newSkillEnv(t)
-	_, err := e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Me' WHERE id = 1")
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me")})
 	require.NoError(t, err)
 	conv := e.askConv(t)
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft",
@@ -185,8 +185,8 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	require.NoError(t, json.Unmarshal(a.Args, &args))
 	assert.Equal(t, int64(1), args.AccountID, "the default account is resolved before approval")
 	assert.NotContains(t, args.HTML, "script", "the recorded HTML is sanitized")
-	assert.Contains(t, args.HTML, "-- <br/>Me", "the recorded HTML is the final body, signature included")
-	_, err = e.s.db.Execute(t.Context(), "UPDATE accounts SET signature = 'Changed later' WHERE id = 1")
+	assert.Contains(t, args.HTML, `<div data-godwit="signature"><p>Me</p></div>`, "the recorded HTML is the final body, signature included")
+	_, err = e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Changed later")})
 	require.NoError(t, err)
 
 	sub, unsub := e.s.SubscribeConversation(conv.ID)
@@ -208,7 +208,7 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	assert.Equal(t, []string{"dan@y"}, d.Cc)
 	assert.Equal(t, "Hi", d.Subject)
 	assert.Contains(t, d.HTML, "Hello")
-	assert.Contains(t, d.HTML, "-- <br/>Me", "the approved snapshot is applied, signature included")
+	assert.Contains(t, d.HTML, `<div data-godwit="signature"><p>Me</p></div>`, "the approved snapshot is applied, signature included")
 	assert.NotContains(t, d.HTML, "Changed later", "nothing the user did not approve")
 	assert.NotContains(t, d.HTML, "script")
 	assert.NotContains(t, d.HTML, "t.example")

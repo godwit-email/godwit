@@ -120,6 +120,7 @@ type Service struct {
 	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
 	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
 	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
+	sigMu       sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
 	labelWake   chan struct{}              // wakes the label classifier
 	labelJudge  func(context.Context) (ai.Judge, error)
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
@@ -191,6 +192,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if err := s.captureAliases(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("model service aliases: %w", err)
+	}
+	if err := s.fixSignatureNames(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("signature names: %w", err)
 	}
 	if err := s.seedLabels(ctx); err != nil {
 		db.Close()

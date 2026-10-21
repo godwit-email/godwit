@@ -36,7 +36,8 @@ type AccountInput struct {
 // account's keychain entry holds its refresh token; access tokens stay in memory.
 type Account struct {
 	ID                                      int64
-	Email, Name, Alias, Signature, Username string
+	Email, Name, Alias, Signature, Username string // Signature is SignatureID's (Signature.HTML), "" for none
+	SignatureID                             int64  // its default signature, 0 none
 	IsDefault                               bool
 	Sync                                    SyncRange
 	Folders                                 int // folders synced so far: 0 before the first sync
@@ -76,9 +77,13 @@ type ServerSettings struct {
 // Narrowing it only stops fetching older mail; nothing stored is deleted.
 type SyncRange struct{ Limit, Months int }
 
-// AccountPatch changes the account settings that are not nil.
+// AccountPatch changes the account settings that are not nil. Signature
+// rewrites the account's default signature (for every account using it),
+// making one named as the account if it has none; SignatureID picks it, 0
+// for none.
 type AccountPatch struct {
 	Name, Alias, Signature *string
+	SignatureID            *int64
 	IsDefault              *bool
 	Sync                   *SyncRange
 	Servers                *ServerSettings

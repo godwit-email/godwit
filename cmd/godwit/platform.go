@@ -35,7 +35,7 @@ type platform struct {
 	wit         *webui.Wit
 	roles       *webui.Pages                 // the embedded pages' roles
 	reader      *webui.Reader                // the reader pages' messages
-	sig         *webui.Signature             // the signature page's account and flushes
+	sig         *webui.Signature             // the signature page's signature and flushes
 	bodies      map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
 	signInCodes []core.SignInCode
 	codeBanner  *signInBanner
@@ -163,7 +163,7 @@ func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) 
 
 // NewSignatureView makes the signature page in the main window, kept on
 // its entry and registered as "signature" before it loads. show tells it
-// the account (also kept for a page that loads later); flush's done runs
+// the signature (also kept for a page that loads later); flush's done runs
 // on the window's UI thread once the page answers (at once while the page
 // never ran); close undoes it all.
 func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), func(), error) {
@@ -184,10 +184,21 @@ func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	show := func(account int64) {
-		p.sig.Show(account)
-		if err := webui.SignatureAccount.EmitPage(page, account); err != nil {
-			log.Printf("the account to the signature page: %v", err)
+	// Answers to the page's PickImage and AskLink.
+	p.sig.EmitImage = func(pick webui.SignaturePick) {
+		if err := webui.SignatureImage.EmitPage(page, pick); err != nil {
+			log.Printf("an image to the signature page: %v", err)
+		}
+	}
+	p.sig.EmitLink = func(a webui.SignatureLinkAnswer) {
+		if err := webui.SignatureLink.EmitPage(page, a); err != nil {
+			log.Printf("a link to the signature page: %v", err)
+		}
+	}
+	show := func(id int64) {
+		p.sig.Show(id)
+		if err := webui.SignatureShow.EmitPage(page, id); err != nil {
+			log.Printf("the signature to the signature page: %v", err)
 		}
 	}
 	flush := func(done func(bool)) {

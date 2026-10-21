@@ -32,7 +32,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	kit.Text(c, title, t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
-	kit.List(c, &p.draftList, len(drafts), func(i int) {
+	kit.List(c, p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
 		b := kit.Pressable(c, kit.PressableOpts{Selected: d.ID == p.draftSel, OnClick: func() { p.draftSel = d.ID }}).
 			Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))

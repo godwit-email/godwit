@@ -93,13 +93,13 @@ type mailPage struct {
 	folders                  map[int64][]core.Folder // by account
 	outbox                   []outboxEntry           // every account's
 	drafts                   []core.Draft            // the drafts folder's account's, when it shows
-	draftList                ui.ListState
-	draftSel                 int64               // the draft the pane shows; 0 for none
-	draftView                map[int64]draftInfo // by draft, made when the drafts load
-	sending                  draftSend           // the pane's send in flight, or awaiting warnings' acknowledgement
-	accOpen                  map[int64]*bool     // account groups unfolded in the sidebar, by account
-	folderOpen               map[folderKey]*bool // user folders unfolded in the sidebar
-	labelsOpen, accountsOpen bool                // the sidebar's groups unfolded
+	draftList                *ui.ListState           // replaced, never zeroed: the last frame's tree still points at the old one
+	draftSel                 int64                   // the draft the pane shows; 0 for none
+	draftView                map[int64]draftInfo     // by draft, made when the drafts load
+	sending                  draftSend               // the pane's send in flight, or awaiting warnings' acknowledgement
+	accOpen                  map[int64]*bool         // account groups unfolded in the sidebar, by account
+	folderOpen               map[folderKey]*bool     // user folders unfolded in the sidebar
+	labelsOpen, accountsOpen bool                    // the sidebar's groups unfolded
 
 	searchOpen, searched bool
 	query                string
@@ -116,12 +116,12 @@ type mailPage struct {
 
 // listSel is a list's place and choice, kept on its items by key.
 type listSel struct {
-	list ui.ListState
+	list *ui.ListState // replaced, never zeroed: the last frame's tree still points at the old one
 	sel  ui.Selection[string]
 	cur  int // the row last chosen, -1 for none; the list keeps it on its item
 }
 
-func (l *listSel) reset() { *l = listSel{cur: -1} }
+func (l *listSel) reset() { *l = listSel{list: &ui.ListState{}, cur: -1} }
 
 // key is the row's identity in the list and its choice: thread and message
 // IDs are separate sequences.
@@ -133,7 +133,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -194,7 +194,7 @@ func (p *mailPage) reload() {
 		p.stopOlder()
 		p.main.reset()
 		p.closeSearch()
-		p.draftList, p.draftSel = ui.ListState{}, 0
+		p.draftList, p.draftSel = &ui.ListState{}, 0
 		p.sending.ask = false // a warnings dialog does not outlive its view
 		want, toEnd = 0, false
 	}
@@ -240,7 +240,7 @@ func (p *mailPage) reload() {
 			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
 			for i := range drafts { // shown, never saved: signature images as data: (richtext's only kind)
 				if err == nil {
-					drafts[i].HTML, err = a.svc.InlineSignatureImages(ctx, drafts[i].AccountID, drafts[i].HTML)
+					drafts[i].HTML, err = a.svc.InlineSignatureImages(ctx, drafts[i].HTML)
 				}
 			}
 		default:
@@ -702,7 +702,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
-	l := kit.List(c, &ls.list, len(es), func(i int) {
+	l := kit.List(c, ls.list, len(es), func(i int) {
 		if es[i].head != "" { // a date heading: no row, never chosen
 			// left as the header's name: the list's own Space(2) and Space(2) more
 			h := kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))

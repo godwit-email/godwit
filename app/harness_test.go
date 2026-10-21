@@ -284,7 +284,7 @@ type fakeSigView struct {
 
 // NewSignatureView records "NewSignatureView" and makes the fake page;
 // show records "ShowSignature <id>" and, as the page does, saves the
-// shown account's edit first; flush saves it and answers; close records
+// shown signature's edit first; flush saves it and answers; close records
 // "CloseSignatureView".
 func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(bool)), func(), error) {
 	p.record("NewSignatureView")
@@ -304,7 +304,7 @@ func (p *fakePlatform) NewSignatureView() (ui.NativeWebView, func(int64), func(f
 			return true
 		}
 		html := core.SignatureHTMLPrefix + *d
-		_, err := p.svc.UpdateAccount(context.Background(), id, core.AccountPatch{Signature: &html})
+		_, err := p.svc.UpdateSignature(context.Background(), id, core.SignaturePatch{HTML: &html})
 		return err == nil
 	}
 	return v, func(id int64) {
@@ -359,7 +359,7 @@ func (p *fakePlatform) sigMute() {
 	p.sig.mute = true
 }
 
-// sigShown is the account the signature page shows; 0 for none.
+// sigShown is the signature the signature page shows; 0 for none.
 func (p *fakePlatform) sigShown() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()

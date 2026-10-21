@@ -66,13 +66,13 @@ type Platform interface {
 	AllowImages(message int64)
 	// TranslateBody replaces only the body's text nodes; nil shows the original.
 	TranslateBody(message int64, texts map[string]string)
-	// NewSignatureView makes the signature page (the account settings'
-	// rich-text editor) in the main window; the App makes one and closes
-	// it (unregistered and destroyed) as it closes. show
-	// switches it to account: the page saves the shown account's edit as
-	// that account first. flush asks the page to save now; done hears
-	// whether it did, on the UI thread, at most once. UI thread only.
-	NewSignatureView() (view ui.NativeWebView, show func(account int64), flush func(done func(ok bool)), close func(), err error)
+	// NewSignatureView makes the signature page (a signature's rich-text
+	// editor, in Settings › Signatures) in the main window; the App makes
+	// one and closes it (unregistered and destroyed) as it closes. show
+	// switches it to signature id: the page saves the shown one's edit as
+	// that one first. flush asks the page to save now; done hears whether
+	// it did, on the UI thread, at most once. UI thread only.
+	NewSignatureView() (view ui.NativeWebView, show func(id int64), flush func(done func(ok bool)), close func(), err error)
 }
 
 // Notification is a system notification about a message.
@@ -167,10 +167,11 @@ type App struct {
 	loadErr     error // the newest load's error; nil once a load succeeds
 	loadFailing bool  // loads have failed since the last success: toast once per streak
 	accounts    []core.Account
-	labels      []core.Label    // in the user's order, as the last load read them
-	settings    core.Settings   // what the interface shows: the newest edit while one saves
-	taskModels  map[string]bool // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
-	taskGen     uint64          // bumped per refreshTasks; only the newest answer counts
+	labels      []core.Label     // in the user's order, as the last load read them
+	signatures  []core.Signature // oldest first, as the last load read them
+	settings    core.Settings    // what the interface shows: the newest edit while one saves
+	taskModels  map[string]bool  // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
+	taskGen     uint64           // bumped per refreshTasks; only the newest answer counts
 
 	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
 	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
@@ -316,6 +317,7 @@ func (a *App) load() {
 	var st core.Settings
 	var unread map[int64]int
 	var labels []core.Label
+	var sigs []core.Signature
 	inbox := 0
 	fetch, ver := a.fetch, a.settingsVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
@@ -324,7 +326,8 @@ func (a *App) load() {
 		if st, accs, err = fetch(ctx); err != nil {
 			return err
 		}
-		labels, _ = a.svc.ListLabels(ctx) // chips only: a failure keeps the last ones
+		labels, _ = a.svc.ListLabels(ctx)   // chips only: a failure keeps the last ones
+		sigs, _ = a.svc.ListSignatures(ctx) // likewise
 		unread = map[int64]int{}
 		for _, acc := range accs {
 			fs, err := a.svc.ListFolders(ctx, acc.ID)
@@ -361,6 +364,9 @@ func (a *App) load() {
 			}
 		}
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		if sigs != nil {
+			a.signatures = sigs
+		}
 		if labels != nil {
 			a.labels = labels
 			if a.mail != nil {

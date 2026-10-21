@@ -87,8 +87,7 @@ const state = {
   subject: "你好",
   body: "正文",
   quote: "> 原文",
-  signature: "-- me",
-  signatureImages: [],
+  signatureHtml: "<p>-- me</p>",
   attachments: [],
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
@@ -528,8 +527,7 @@ test("account switch keeps body", async () => {
     revision: 9,
     attachments: [],
     conflict: false,
-    signature: "-- work",
-    signatureImages: ["data:image/png;base64,AAAA"],
+    signatureHtml: '<p>-- work</p><img src="data:image/png;base64,AAAA">',
     updatedAt: new Date(2026, 9, 10, 11, 42).getTime(),
   });
   render(<ComposePage />);
@@ -540,10 +538,25 @@ test("account switch keeps body", async () => {
   await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
-  const sig = await screen.findByText("-- work");
-  expect(sig.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  const sig = (await screen.findByText("-- work")).closest('[data-slot="signature-preview"]');
+  expect(sig?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   expect(el).toHaveValue("正文!");
   expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:42")).toBeInTheDocument();
+});
+
+test("a signature laid out with a table shows as its HTML, table kept", async () => {
+  vi.mocked(api.load).mockResolvedValue({
+    ...state,
+    signatureHtml:
+      '<p>-- </p><table style="border-collapse: collapse"><tbody><tr><td style="color: red">Alice</td><td>CEO</td></tr></tbody></table>',
+  });
+  render(<ComposePage />);
+  const cell = await screen.findByText("Alice");
+  const preview = cell.closest('[data-slot="signature-preview"]');
+  expect(preview?.querySelector("table")).not.toBeNull();
+  expect(cell.tagName).toBe("TD");
+  expect(cell.getAttribute("style")).toBe("color: red");
+  expect(screen.getByText("CEO").tagName).toBe("TD");
 });
 
 test("an account switch that conflicts reverts the select", async () => {
@@ -551,8 +564,7 @@ test("an account switch that conflicts reverts the select", async () => {
     revision: 0,
     attachments: [],
     conflict: true,
-    signature: "",
-    signatureImages: [],
+    signatureHtml: "",
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -572,8 +584,7 @@ test("attachments: add reports oversize, × removes", async () => {
     revision: 9,
     attachments: [a],
     conflict: false,
-    signature: "-- me",
-    signatureImages: [],
+    signatureHtml: "<p>-- me</p>",
     tooLarge: ["big.zip"],
     failed: ["bad.bin"],
     updatedAt: new Date(2026, 9, 10, 11, 43).getTime(),
@@ -582,8 +593,7 @@ test("attachments: add reports oversize, × removes", async () => {
     revision: 10,
     attachments: [],
     conflict: false,
-    signature: "-- me",
-    signatureImages: [],
+    signatureHtml: "<p>-- me</p>",
     updatedAt: 0,
   });
   render(<ComposePage />);
@@ -614,8 +624,7 @@ test("keep mine after conflict", async () => {
   vi.mocked(api.latest).mockResolvedValue({
     ...state,
     body: "别处",
-    signature: "-- new",
-    signatureImages: [],
+    signatureHtml: "<p>-- new</p>",
     revision: 30,
   });
   vi.mocked(api.save).mockResolvedValue({ revision: 31, conflict: false });
@@ -703,8 +712,7 @@ test("a conflict stopping the adding part way still lists the files added", asyn
     revision: 12,
     attachments: [a],
     conflict: true,
-    signature: "-- me",
-    signatureImages: [],
+    signatureHtml: "<p>-- me</p>",
     updatedAt: 0,
     tooLarge: [],
     failed: [],

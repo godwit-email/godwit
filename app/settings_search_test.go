@@ -65,7 +65,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 	for _, txt := range h.tt.Texts() {
 		chrome[txt] = true
 	}
-	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labels": "labels"} {
+	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labels": "labels", "signatures": "signatures"} {
 		h.openSettings(route)
 		in := map[string]bool{}
 		for _, k := range settingsIndex[sec] {
@@ -97,7 +97,7 @@ func TestSettingsSearchFilter(t *testing.T) {
 	if m := p.matching("语言"); len(m.apps) != 1 || m.apps[0] != "general" || m.accounts {
 		t.Errorf("语言: %+v", m)
 	}
-	if m := p.matching("签名"); !m.accounts || len(m.apps) != 0 {
+	if m := p.matching("签名"); !m.accounts || !slices.Equal(m.apps, []string{"signatures"}) {
 		t.Errorf("签名: %+v", m)
 	}
 	if m := p.matching(acc.Email[:3]); !m.accounts {
@@ -108,12 +108,12 @@ func TestSettingsSearchFilter(t *testing.T) {
 			t.Errorf("option %q: %+v", l, m)
 		}
 	}
-	for _, q := range []string{"已发送", "归档", "3 个月", "插入图片"} {
+	for _, q := range []string{"已发送", "归档", "3 个月", "默认签名"} {
 		if m := p.matching(q); !m.accounts {
 			t.Errorf("%s: %+v", q, m)
 		}
 	}
-	for q, sec := range map[string]string{"mcp": "extensions", "skill": "extensions", "判断": "models"} {
+	for q, sec := range map[string]string{"mcp": "extensions", "skill": "extensions", "判断": "models", "插入图片": "signatures"} {
 		if m := p.matching(q); !slices.Contains(m.apps, sec) {
 			t.Errorf("%s: %+v, want %s", q, m, sec)
 		}

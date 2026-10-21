@@ -27,8 +27,8 @@ const repoURL = "https://github.com/godwit-email/godwit"
 var logo = ui.MustParseSVG(assets.Logo)
 
 // settingsPage is the Settings section: the accounts and the app's pages,
-// chosen by Route.Settings ("account:<id>", "general", "models",
-// "extensions", "privacy", "about").
+// chosen by Route.Settings ("account:<id>", "general", "signatures",
+// "signature:<id>", "models", "labels", "extensions", "privacy", "about").
 type settingsPage struct {
 	a *App
 
@@ -57,15 +57,21 @@ type settingsPage struct {
 	keychainSet bool  // the probe finished
 	imgSize     int64 // the remote image cache's bytes; -1 until read
 
-	// The signature page, made once (NewSignatureView), and the account it
-	// shows; sigPosted is a switch queued.
+	// The signature page, made once (NewSignatureView), and the signature
+	// it shows; sigPosted is a switch queued.
 	sigView   ui.NativeWebView
 	sigShow   func(account int64)
 	sigFlush  func(done func(ok bool))
 	sigClose  func()
 	sigErr    error
-	sigAcc    int64
+	sigShown  int64
 	sigPosted bool
+	sigCode   *sigCode // the shown signature in the HTML mode: a native editor in the page's place
+
+	sigForm   sigForm          // the shown signature's name
+	sigDelete bool             // its delete confirmation is open
+	sigDocs   map[int64]sigDoc // the account pages' signature previews
+	sigLink   *sigLink         // the signature page's link dialog, while it asks
 
 	query string // the sidebar's search
 
@@ -75,7 +81,7 @@ type settingsPage struct {
 }
 
 func newSettingsPage(a *App) *settingsPage {
-	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{},
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
 }
 
@@ -105,6 +111,13 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	a := p.a
 	if hints == nil {
 		p.closeDialog()
+		p.commitSignatureName() // another page now
+		p.sigDelete = false
+		p.closeCode() // the page shows the signature again when it is back
+		if l := p.sigLink; l != nil {
+			p.sigLink = nil
+			l.answer("", false)
+		}
 	}
 	switch sec, acc := p.section(); {
 	case acc != nil:
@@ -144,13 +157,19 @@ func (p *settingsPage) Title() (string, string) {
 	if acc != nil {
 		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + acc.Email
 	}
+	if sig, ok := p.shownSignature(sec); ok {
+		return i18n.T("settings.heading"), i18n.T("settings.signatures") + " · " + sig.Name
+	}
+	if strings.HasPrefix(sec, "signature:") {
+		sec = "signatures"
+	}
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "models", "labels", "extensions", "privacy", "about"}
+var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -158,6 +177,9 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
+	if strings.HasPrefix(cur, "signature:") {
+		cur = "signatures" // a signature is a page of the list
+	}
 	group := func(label string, top, bottom float32) {
 		kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
 	}
@@ -216,6 +238,12 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.accountView(c, *acc)
 					case sec == "general":
 						p.generalView(c)
+					case sec == "signatures" || strings.HasPrefix(sec, "signature:"):
+						if sig, ok := p.shownSignature(sec); ok {
+							p.signatureView(c, sig)
+						} else {
+							p.signaturesView(c)
+						}
 					case sec == "privacy":
 						p.privacyView(c)
 					case sec == "models":

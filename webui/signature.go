@@ -15,20 +15,38 @@ import (
 )
 
 var (
-	// SignatureAccount tells the signature page which account to show: it
+	// SignatureShow tells the signature page which signature to show: it
 	// saves the shown one's pending edit first.
-	SignatureAccount = mygo.NewEvent[int64]("signatureAccount")
+	SignatureShow = mygo.NewEvent[int64]("signatureShow")
 	// SignatureFlush asks the signature page to save now; it answers with
 	// SignaturePage.Saved and the same token.
 	SignatureFlush = mygo.NewEvent[int64]("signatureFlush")
+	// SignatureImage answers SignaturePage.PickImage.
+	SignatureImage = mygo.NewEvent[SignaturePick]("signatureImage")
+	// SignatureLink answers SignaturePage.AskLink.
+	SignatureLink = mygo.NewEvent[SignatureLinkAnswer]("signatureLink")
 )
+
+// SignaturePick is the image picked: its data: URL, "" for none, or why it
+// could not be used.
+type SignaturePick struct {
+	URL   string `json:"url"`
+	Error string `json:"error"`
+}
+
+// SignatureLinkAnswer is the link dialog's answer: OK false is cancelled;
+// OK with URL "" takes the link off.
+type SignatureLinkAnswer struct {
+	URL string `json:"url"`
+	OK  bool   `json:"ok"`
+}
 
 // maxSignatureBytes caps a saved signature at a mail body's limit, plus its
 // images as the editor sends them (data: URLs).
 var maxSignatureBytes = mail.MaxBodyBytes + core.SignatureImagesMax*(base64.StdEncoding.EncodedLen(core.SignatureImageMax)+64)
 
-// ErrSignatureAccountGone is final: the saver (saver.ts) drops the pending edit.
-var ErrSignatureAccountGone = errors.New("signature account gone")
+// ErrSignatureGone is final: the saver (saver.ts) drops the pending edit.
+var ErrSignatureGone = errors.New("signature gone")
 
 // ErrSignatureTooLarge is returned for a signature over maxSignatureBytes.
 var ErrSignatureTooLarge = errors.New("the signature is too large")
@@ -42,25 +60,34 @@ func (s *Signature) Close() {
 }
 
 // SignatureState is what the signature page needs besides a signature:
-// the account shown (0 before native showed one), its locale and theme.
+// the signature shown (0 before native showed one), its locale and theme.
 type SignatureState struct {
-	Account int64  `json:"account"`
-	Locale  string `json:"locale"`
-	Theme   Theme  `json:"theme"`
+	Signature int64  `json:"signature"`
+	Locale    string `json:"locale"`
+	Theme     Theme  `json:"theme"`
 }
 
 // Signature keeps the signature page's state (role "signature", embedded
-// in the account settings): the account native shows and the flushes
+// in Settings › Signatures): the signature native shows and the flushes
 // waiting for the page. It is not bound: the page reaches it only through
 // SignaturePage.
 type Signature struct {
 	pages *Pages
 	pick  func(ctx context.Context) (string, error)
 
+	// OnHTML hears the page ask for the HTML mode, its edit saved: native
+	// edits the code in its place. OnLink shows the link dialog, answer
+	// called once. EmitImage and EmitLink send the page its answers. Set
+	// them before the page runs.
+	OnHTML    func()
+	OnLink    func(current string, answer func(SignatureLinkAnswer))
+	EmitImage func(SignaturePick)
+	EmitLink  func(SignatureLinkAnswer)
+
 	mu      sync.Mutex
 	svc     *core.Service
 	live    bool // the page called State: it ran, and may hold edits
-	account int64
+	shown   int64
 	next    int64
 	waiting map[int64]func(ok bool)
 }
@@ -79,11 +106,11 @@ func (s *Signature) SetService(svc *core.Service) {
 	s.mu.Unlock()
 }
 
-// Show records the account native shows, for a page that loads after
-// the SignatureAccount event went out.
-func (s *Signature) Show(account int64) {
+// Show records the signature native shows, for a page that loads after
+// the SignatureShow event went out.
+func (s *Signature) Show(id int64) {
 	s.mu.Lock()
-	s.account = account
+	s.shown = id
 	s.mu.Unlock()
 }
 
@@ -122,7 +149,7 @@ func (s *Signature) caller(ctx context.Context) (*core.Service, error) {
 	return s.svc, nil
 }
 
-// State is the account shown, the locale and the theme.
+// State is the signature shown, the locale and the theme.
 func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
@@ -136,27 +163,56 @@ func (p *SignaturePage) State(ctx context.Context) (SignatureState, error) {
 	p.s.mu.Lock()
 	defer p.s.mu.Unlock()
 	p.s.live = true
-	return SignatureState{Account: p.s.account, Locale: locale, Theme: ThemeOf(st)}, nil
+	return SignatureState{Signature: p.s.shown, Locale: locale, Theme: ThemeOf(st)}, nil
 }
 
-// Load is account's signature as the editor's HTML: sanitized, a plain
-// one escaped into a paragraph, its images as data: URLs.
-func (p *SignaturePage) Load(ctx context.Context, account int64) (string, error) {
+// Load is signature id as the editor's HTML: sanitized, a plain one
+// escaped into a paragraph, its images as data: URLs.
+func (p *SignaturePage) Load(ctx context.Context, id int64) (string, error) {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return "", err
 	}
-	return svc.SignatureEditor(ctx, account)
+	return svc.SignatureEditor(ctx, id)
 }
 
-// PickImage asks for an image to insert and returns it as a data: URL, ""
-// for none picked: a png, jpeg, gif or webp (by its content) of at most
-// 512 KB, else core.ErrSignatureImage.
-func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
+// EditHTML asks native for the HTML mode; the page saved its edit first.
+func (p *SignaturePage) EditHTML(ctx context.Context) error {
 	if _, err := p.s.caller(ctx); err != nil {
-		return "", err
+		return err
 	}
-	path, err := p.s.pick(ctx)
+	if p.s.OnHTML != nil {
+		p.s.OnHTML()
+	}
+	return nil
+}
+
+// PickImage asks for an image to insert and returns at once: the answer
+// comes as SignatureImage (EmitImage). A page call left waiting on the file
+// dialog gets the dialog cancelled under it, so the call does not wait.
+func (p *SignaturePage) PickImage(ctx context.Context) error {
+	if _, err := p.s.caller(ctx); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx) // the dialog's window comes from it
+	go func() {
+		url, err := p.s.pickImage(ctx)
+		pick := SignaturePick{URL: url}
+		if err != nil {
+			pick.Error = err.Error()
+		}
+		if p.s.EmitImage != nil {
+			p.s.EmitImage(pick)
+		}
+	}()
+	return nil
+}
+
+// pickImage is the image picked as a data: URL, "" for none: a png, jpeg,
+// gif or webp (by its content) of at most 512 KB, else
+// core.ErrSignatureImage.
+func (s *Signature) pickImage(ctx context.Context) (string, error) {
+	path, err := s.pick(ctx)
 	if err != nil || path == "" {
 		return "", err
 	}
@@ -173,10 +229,27 @@ func (p *SignaturePage) PickImage(ctx context.Context) (string, error) {
 	return core.SignatureImageURL(data) // over SignatureImageMax: ErrSignatureImage
 }
 
-// Save stores html as account's signature, marked as editor HTML ("" for
-// none); drafts sanitize it as they take it. Its data: images become the
-// account's signature images (core.ErrSignatureImage, ErrSignatureImageCount).
-func (p *SignaturePage) Save(ctx context.Context, account int64, html string) error {
+// AskLink asks native for a link's address in a dialog, current the
+// address of the link at the selection ("" none), and returns at once:
+// the answer comes as SignatureLink (EmitLink).
+func (p *SignaturePage) AskLink(ctx context.Context, current string) error {
+	if _, err := p.s.caller(ctx); err != nil {
+		return err
+	}
+	if p.s.OnLink != nil {
+		p.s.OnLink(current, func(a SignatureLinkAnswer) {
+			if p.s.EmitLink != nil {
+				p.s.EmitLink(a)
+			}
+		})
+	}
+	return nil
+}
+
+// Save stores html as signature id, marked as editor HTML ("" for empty),
+// sanitized. Its data: images become the signature's (core.ErrSignatureImage,
+// ErrSignatureImageCount).
+func (p *SignaturePage) Save(ctx context.Context, id int64, html string) error {
 	svc, err := p.s.caller(ctx)
 	if err != nil {
 		return err
@@ -187,9 +260,9 @@ func (p *SignaturePage) Save(ctx context.Context, account int64, html string) er
 	if html != "" {
 		html = core.SignatureHTMLPrefix + html
 	}
-	_, err = svc.UpdateAccount(ctx, account, core.AccountPatch{Signature: &html})
-	if errors.Is(err, core.ErrAccountNotFound) {
-		return ErrSignatureAccountGone
+	_, err = svc.UpdateSignature(ctx, id, core.SignaturePatch{HTML: &html})
+	if errors.Is(err, core.ErrSignatureNotFound) {
+		return ErrSignatureGone
 	}
 	return err
 }

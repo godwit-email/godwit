@@ -102,6 +102,8 @@ func (f *accountForm) cancelEdits() {
 
 // commitEdits saves at once every field still waiting for typing to pause.
 func (p *settingsPage) commitEdits() {
+	p.commitSignatureName()
+	p.commitCode()
 	for id, f := range p.forms {
 		for i := range f.edits {
 			if e := &f.edits[i]; e.stop != nil {
@@ -119,11 +121,11 @@ const signatureFlushWait = 2 * time.Second
 // errSignatureUnsaved is why closing asks when the signature page did not save.
 var errSignatureUnsaved = errors.New("the signature was not saved")
 
-// signature has the signature page show account id: made at the first
-// account shown, switched outside the frame (making a web view may run
-// the event loop).
+// signature has the signature page show signature id: made at the first
+// one shown, switched outside the frame (making a web view may run the
+// event loop).
 func (p *settingsPage) signature(id int64) {
-	if p.sigAcc == id || p.sigPosted || p.sigErr != nil {
+	if p.sigShown == id || p.sigPosted || p.sigErr != nil {
 		return
 	}
 	p.sigPosted = true
@@ -136,8 +138,14 @@ func (p *settingsPage) signature(id int64) {
 			}
 		}
 		p.sigShow(id)
-		p.sigAcc = id
+		p.sigShown = id
 	})
+}
+
+// SignatureHTML is told the signature page asked for the HTML mode, its
+// edit saved: the native code editor takes its place.
+func (a *App) SignatureHTML() {
+	a.pages[PageSettings].(*settingsPage).openCode()
 }
 
 // flushSignature has the signature page save its edit, then calls then
@@ -414,17 +422,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.makeDefault(acc.ID)
 			}
 		})
-	settingsSection(c, i18n.T("settings.account.signature"), i18n.T("settings.account.signature.help"), func() {
-		p.signature(acc.ID)
-		switch {
-		case p.sigErr != nil:
-			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
-		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
-		default:
-			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
-		}
-	})
+	p.accountSignatureView(c, acc)
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {
 		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")

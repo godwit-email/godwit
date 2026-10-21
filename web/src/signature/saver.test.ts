@@ -1,4 +1,4 @@
-import { type Doc, signatureSaver } from "./saver";
+import { type Doc, type Refusal, signatureSaver } from "./saver";
 
 function setup() {
   const loads: { id: number; resolve(html: string): void }[] = [];
@@ -13,8 +13,13 @@ function setup() {
     saved: vi.fn(async (_tok: number, _ok: boolean) => {}),
   };
   const docs: (Doc | undefined)[] = [];
-  const s = signatureSaver(api, (d) => docs.push(d));
-  return { api, loads, docs, s };
+  const refusals: (Refusal | undefined)[] = [];
+  const s = signatureSaver(
+    api,
+    (d) => docs.push(d),
+    (r) => refusals.push(r),
+  );
+  return { api, loads, docs, refusals, s };
 }
 
 beforeEach(() => vi.useFakeTimers());
@@ -55,7 +60,7 @@ describe("signatureSaver", () => {
     loads[1].resolve("<p>two</p>");
     loads[0].resolve("<p>one</p>");
     await vi.runAllTimersAsync();
-    expect(docs.filter(Boolean)).toEqual([{ account: 2, html: "<p>two</p>" }]);
+    expect(docs.filter(Boolean)).toEqual([{ id: 2, html: "<p>two</p>" }]);
   });
 
   it("a flush saves at once and answers with its token", async () => {
@@ -130,13 +135,13 @@ describe("signatureSaver", () => {
   });
 });
 
-describe("signatureSaver, a removed account", () => {
-  it("drops the edit of an account that is gone instead of retrying it", async () => {
+describe("signatureSaver, a removed signature", () => {
+  it("drops the edit of a signature that is gone instead of retrying it", async () => {
     const { api, s } = setup();
     s.show(1);
     await vi.advanceTimersByTimeAsync(0);
     s.edit(1, "<p>a</p>");
-    api.save.mockRejectedValueOnce(new Error("signature account gone"));
+    api.save.mockRejectedValueOnce(new Error("signature gone"));
     s.flush(1);
     await vi.advanceTimersByTimeAsync(0);
     s.flush(2);
@@ -146,5 +151,57 @@ describe("signatureSaver, a removed account", () => {
       [1, true],
       [2, true],
     ]);
+  });
+});
+
+describe("signatureSaver, the HTML mode and refusals", () => {
+  it("settle says false while an edit failed to save, so the HTML mode waits", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(new Error("disk"));
+    s.edit(1, "<p>a</p>");
+    expect(await s.settle()).toBe(false);
+    expect(await s.settle()).toBe(true); // retried, and saved
+  });
+
+  it("settle saves every pending edit at once", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    s.edit(1, "<p>a</p>");
+    expect(await s.settle()).toBe(true);
+    expect(api.save.mock.calls).toEqual([[1, "<p>a</p>"]]);
+  });
+
+  it("too many images is said and never retried; the next save that works clears it", async () => {
+    const { api, refusals, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(new Error("a signature has at most 4 images"));
+    s.edit(1, "<img><img><img><img><img>");
+    s.flush(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.saved).toHaveBeenLastCalledWith(1, false);
+    expect(refusals.at(-1)).toBe("count");
+    s.flush(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save).toHaveBeenCalledTimes(1);
+    expect(api.saved).toHaveBeenLastCalledWith(2, true);
+    s.edit(1, "<img>");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(refusals.at(-1)).toBeUndefined();
+  });
+
+  it("an image Go cannot take is a refusal too", async () => {
+    const { api, refusals, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    api.save.mockRejectedValueOnce(
+      new Error("a signature image must be a png, jpeg, gif or webp of at most 512 KB"),
+    );
+    s.edit(1, "<img>");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(refusals.at(-1)).toBe("image");
   });
 });

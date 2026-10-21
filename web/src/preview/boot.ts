@@ -33,8 +33,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         revision,
         attachments: [],
         conflict: false,
-        signature: "",
-        signatureImages: [],
+        signatureHtml: "",
         updatedAt: Date.now(),
         body: body(),
         subject: fx.compose(mode, true).subject,
@@ -57,8 +56,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
           ...(state === "signature" && {
-            signature: "-- \nAlex Chen\nPartnerships · Example Co.",
-            signatureImages: [fx.logo],
+            signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),
         }),
         "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision }),
@@ -137,16 +135,22 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   signature: {
-    states: ["filled", "image"],
+    states: ["filled", "image", "layout"],
     entry: () => import("@/signature/main"),
     setup() {
-      installFake({
+      const emit = installFake({
         "SignaturePage.State": async () => fx.signature(mode),
         "SignaturePage.Load": async () =>
-          state === "image" ? fx.signatureHtmlImage : fx.signatureHtml,
-        "SignaturePage.PickImage": async () => fx.logo,
+          ({ image: fx.signatureHtmlImage, layout: fx.signatureLayout })[state] ?? fx.signatureHtml,
+        "SignaturePage.PickImage": async () => {
+          setTimeout(() => emit("signatureImage", { url: fx.logo, error: "" }));
+        },
+        "SignaturePage.AskLink": async () => {
+          setTimeout(() => emit("signatureLink", { url: "https://example.com/", ok: true }));
+        },
         "SignaturePage.Save": nothing,
         "SignaturePage.Saved": nothing,
+        "SignaturePage.EditHTML": nothing,
       });
     },
   },

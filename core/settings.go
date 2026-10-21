@@ -38,6 +38,10 @@ type Settings struct {
 	// answers keep their probabilities.
 	JudgeThreshold float64
 	LocalAPI       bool // the GUI serves the Local API; off by default
+	// SignatureDelimiter puts the RFC 3676 "-- " line before a new draft's
+	// signature, which clients such as Mutt and Thunderbird recognize and
+	// fold; off by default.
+	SignatureDelimiter bool
 	// AutoLabel lets the classifier label new Inbox mail; on by default.
 	// A rescan runs either way.
 	AutoLabel bool

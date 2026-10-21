@@ -196,6 +196,12 @@ func gui(ctx context.Context, dataDir string) int {
 	// The signature page, embedded in the account settings
 	// (platform.NewSignatureView).
 	sig := webui.NewSignature(roles, pickImage)
+	sig.OnHTML = func() { onApp((*app.App).SignatureHTML) }
+	sig.OnLink = func(current string, answer func(webui.SignatureLinkAnswer)) {
+		onApp(func(a *app.App) {
+			a.SignatureLink(current, func(url string, ok bool) { answer(webui.SignatureLinkAnswer{URL: url, OK: ok}) })
+		})
+	}
 	mygo.Bind(webui.NewSignaturePage(sig))
 	var cas cascade
 	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)

@@ -237,13 +237,13 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 		return ComposeState{}, err
 	}
 	editable := s.adopt(d)
-	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, s.signature)
+	sig, err := svc.SignatureShown(ctx, s.signature)
 	if err != nil {
 		return ComposeState{}, err
 	}
-	out := ComposeState{SignatureImages: imgs, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
+	out := ComposeState{SignatureHTML: sig, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
-		Signature: mail.HTMLToText(s.signature), Attachments: attachments(d), Revision: d.Revision,
+		Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language()}
 	for _, a := range accs {
 		out.Accounts = append(out.Accounts, Account{ID: a.ID, Email: a.Email})
@@ -458,13 +458,13 @@ func (p *ComposePage) Closed(ctx context.Context, gen int, saved bool) error {
 }
 
 // conflict is the Change for a draft not at the revision the page passed.
-var conflict = Change{Conflict: true, Attachments: []Attachment{}, SignatureImages: []string{}}
+var conflict = Change{Conflict: true, Attachments: []Attachment{}}
 
 // changeOf is d's state after a change.
 func changeOf(ctx context.Context, svc *core.Service, d core.Draft) (Change, error) {
 	_, _, sig := mail.SplitDraft(d.HTML)
-	imgs, err := svc.SignatureImageURLs(ctx, d.AccountID, sig)
-	return Change{Revision: d.Revision, Attachments: attachments(d), Signature: mail.HTMLToText(sig), SignatureImages: imgs,
+	shown, err := svc.SignatureShown(ctx, sig)
+	return Change{Revision: d.Revision, Attachments: attachments(d), SignatureHTML: shown,
 		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }
 

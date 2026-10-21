@@ -22,6 +22,8 @@ func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
 // that account's, attachments and the reply's source stay, and the revision
 // grows by one. revision must be the stored one (ErrStaleDraft).
 func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision int64) (Draft, error) {
+	s.sigMu.Lock() // the signature read stays the one stored, its images with it (NewDraft)
+	defer s.sigMu.Unlock()
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return Draft{}, err
@@ -35,12 +37,16 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if d.Revision != revision {
 		return Draft{}, ErrStaleDraft
 	}
-	cids, err := s.signatureCIDs(ctx, accountID)
+	cids, err := s.signatureCIDs(ctx)
+	if err != nil {
+		return Draft{}, err
+	}
+	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return Draft{}, err
 	}
 	ed, quote, _ := mail.SplitDraft(d.HTML)
-	body := mail.SanitizeDraft(mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids)), cids)
+	body := mail.SanitizeDraft(mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids, st.SignatureDelimiter)), cids)
 	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = ?, body_html = ?, updated_at = ?, revision = revision + 1
 		WHERE id = ? AND revision = ?`, accountID, body, time.Now().Unix(), id, revision)
 	if err != nil {
