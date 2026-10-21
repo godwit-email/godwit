@@ -38,6 +38,7 @@ type Account struct {
 	ID                                      int64
 	Email, Name, Alias, Signature, Username string // Signature is SignatureID's (Signature.HTML), "" for none
 	SignatureID                             int64  // its default signature, 0 none
+	Icon                                    string // '' the provider's mark, label:<name>, or image:<n> (AccountIcon)
 	IsDefault                               bool
 	Sync                                    SyncRange
 	Folders                                 int // folders synced so far: 0 before the first sync
@@ -87,4 +88,12 @@ type AccountPatch struct {
 	IsDefault              *bool
 	Sync                   *SyncRange
 	Servers                *ServerSettings
+	Icon                   *string // '' or label:<name>
+	IconImage              []byte  // an uploaded png, jpeg, gif, webp or svg: Icon becomes image:<n>
+}
+
+// AccountIcon is an account's uploaded icon image.
+type AccountIcon struct {
+	ContentType string
+	Data        []byte
 }

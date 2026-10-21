@@ -152,3 +152,46 @@ func TestCredentialsIsolatedPerDataDir(t *testing.T) {
 	defer b.Close()
 	require.NoError(t, b.SyncNow(ctx, accB.ID), "the namespace is stable across restarts")
 }
+
+func TestUpdateAccountIcon(t *testing.T) {
+	keyring.MockInit()
+	im, smtpAddr := servers(t)
+	dir := t.TempDir()
+	s, err := core.New(ctx, core.Options{DataDir: dir})
+	require.NoError(t, err)
+	defer s.Close()
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	assert.Empty(t, acc.Icon)
+
+	icon := "label:shield-keyhole"
+	updated, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &icon})
+	require.NoError(t, err)
+	assert.Equal(t, icon, updated.Icon)
+
+	list, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, icon, list[0].Icon)
+
+	bad := "label:nope"
+	_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &bad})
+	require.Error(t, err)
+	_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{IconImage: []byte("not an image")})
+	require.ErrorIs(t, err, core.ErrAccountIcon)
+
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)
+	withImage, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{IconImage: svg})
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(withImage.Icon, "image:"))
+	img, err := s.AccountIcon(ctx, acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, core.AccountIcon{ContentType: "image/svg+xml", Data: svg}, img)
+
+	empty := ""
+	cleared, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{Icon: &empty})
+	require.NoError(t, err)
+	assert.Empty(t, cleared.Icon)
+	_, err = s.AccountIcon(ctx, acc.ID)
+	require.ErrorIs(t, err, core.ErrAccountNotFound, "the image goes with it")
+}

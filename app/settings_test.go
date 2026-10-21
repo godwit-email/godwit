@@ -151,6 +151,54 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.see("已同步 · 刚刚")
 }
 
+func TestSettingsAccountIcon(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	p.openDialog("icon", acc)
+	if !p.open || p.dialog != "icon" {
+		t.Fatalf("dialog not open: %v, %v", p.open, p.dialog)
+	}
+
+	p.iconSelected = "label:shield-keyhole"
+	h.click("保存")
+	h.until("icon saved", func() bool {
+		return h.account(acc.ID).Icon == "label:shield-keyhole"
+	})
+	if p.open {
+		t.Fatalf("dialog stayed open")
+	}
+
+	p.openDialog("icon", h.account(acc.ID))
+	p.iconSelected = ""
+	h.click("保存")
+	h.until("icon reset", func() bool {
+		return h.account(acc.ID).Icon == ""
+	})
+}
+
+func TestSettingsAccountCustomIconUpload(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	p.openDialog("icon", acc)
+
+	svgData := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="red"/></svg>`
+	tmpFile := filepath.Join(t.TempDir(), "icon.svg")
+	if err := os.WriteFile(tmpFile, []byte(svgData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.files = []string{tmpFile}
+	p.uploadAccountIcon()
+	h.until("custom icon uploaded into selection", func() bool { return string(p.iconUpload) == svgData })
+	h.click("保存")
+	h.until("custom icon saved to account", func() bool {
+		return strings.HasPrefix(h.account(acc.ID).Icon, "image:")
+	})
+	icon, err := h.env.Svc.AccountIcon(context.Background(), acc.ID)
+	if err != nil || icon.ContentType != "image/svg+xml" || string(icon.Data) != svgData {
+		t.Fatalf("stored icon = %q %q, %v", icon.ContentType, icon.Data, err)
+	}
+}
+
 func TestSettingsAccountEditFailureReverts(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))

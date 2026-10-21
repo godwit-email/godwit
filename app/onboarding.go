@@ -561,7 +561,7 @@ func lineText(c *ui.Context, s string, size float32) ui.Element {
 }
 
 // mark is a provider's mark: its logo (icons.Brand) on a white tile, else
-// its letters on a rounded square.
+// its letters on a transparent square.
 func mark(c *ui.Context, p auth.Provider, size float32) {
 	t := theme.Of(c)
 	r := min(t.Radius.Lg, size/4) // a quarter of larger marks
@@ -591,8 +591,8 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	if size >= theme.MarkLg {
 		fs = t.Text.Base
 	}
-	ui.Box(c).Size(size, size).Radius(r).Background(t.Hover).Center().Children(func() {
-		kit.Text(c, text, fs).FontWeight(600).TextColor(t.Foreground.Mix(t.Background, 0.25))
+	ui.Box(c).Size(size, size).Center().Children(func() {
+		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Foreground.Mix(t.Background, 0.25))
 	})
 }
 

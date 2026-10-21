@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -228,13 +229,13 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	})
 }
 
-// accountMark is the account's provider mark, with a badge on its corner
+// accountMark is the account's provider mark or custom icon, with a badge on its corner
 // while its sync needs the user (red) or is retrying (amber), as the top
 // bar's status says.
 func (a *App) accountMark(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	ui.Box(c).Size(theme.MarkSm, theme.MarkSm).Shrink(0).Children(func() {
-		mark(c, accountProvider(a, acc), theme.MarkSm)
+		a.accountIcon(c, acc, theme.MarkSm)
 		color, label := t.Danger, "settings.dot.action"
 		switch a.syncHealth(acc).level {
 		case syncAction:
@@ -247,6 +248,81 @@ func (a *App) accountMark(c *ui.Context, acc core.Account) {
 		ui.Box(c).Absolute().Left(at).Top(at).Size(theme.StatusBadge, theme.StatusBadge).Radius(t.Radius.Full).
 			Background(color).Border(theme.StatusBadgeRing, t.Background).Label(i18n.T(label))
 	})
+}
+
+// accountImage is the decoded image of an account whose Icon is image:<n>,
+// nil while it loads or when it does not decode. One per account: an upload
+// gets a new key, which replaces the last one.
+func (a *App) accountImage(acc core.Account) ui.ImageSource {
+	if e, ok := a.customIcons[acc.ID]; ok && e.key == acc.Icon {
+		return e.img
+	}
+	if a.customIcons == nil {
+		a.customIcons = map[int64]accountImage{}
+	}
+	a.customIcons[acc.ID] = accountImage{key: acc.Icon}
+	var img ui.ImageSource
+	a.do(func(ctx context.Context) error {
+		icon, err := a.svc.AccountIcon(ctx, acc.ID)
+		if err == nil {
+			img = decodeIcon(icon.ContentType, icon.Data)
+		}
+		return err
+	}, func(error) {
+		if e := a.customIcons[acc.ID]; e.key == acc.Icon {
+			a.customIcons[acc.ID] = accountImage{key: acc.Icon, img: img}
+		}
+	})
+	return nil
+}
+
+type accountImage struct {
+	key string // the account's Icon
+	img ui.ImageSource
+}
+
+// decodeIcon is an icon image of type ct, nil when it does not decode.
+func decodeIcon(ct string, data []byte) ui.ImageSource {
+	if ct == "image/svg+xml" {
+		if svg, err := ui.ParseSVG(data); err == nil {
+			return svg
+		}
+		return nil
+	}
+	if bmp, err := ui.DecodeBitmap(data); err == nil {
+		return bmp
+	}
+	return nil
+}
+
+// iconImage is img filling a circle of size.
+func iconImage(c *ui.Context, img ui.ImageSource, size float32) {
+	ui.Box(c).Size(size, size).Shrink(0).Radius(theme.Of(c).Radius.Full).Clip().Children(func() {
+		ui.Image(c, img).Size(size, size).Fit(ui.Cover)
+	})
+}
+
+// accountIcon is an account's icon: its uploaded image, the label icon it
+// chose, or else its provider's mark.
+func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
+	if strings.HasPrefix(acc.Icon, "image:") {
+		if img := a.accountImage(acc); img != nil {
+			iconImage(c, img, size)
+			return
+		}
+	}
+	if name, ok := strings.CutPrefix(acc.Icon, "label:"); ok && slices.Contains(core.LabelIcons, name) {
+		t := theme.Of(c)
+		iconSize := size * 0.8
+		if size <= theme.MarkSm {
+			iconSize = size
+		}
+		ui.Box(c).Size(size, size).Shrink(0).Center().Children(func() {
+			ui.Icon(c, icons.Get("label-"+name)).Size(iconSize, iconSize).TextColor(t.Foreground)
+		})
+		return
+	}
+	mark(c, accountProvider(a, acc), size)
 }
 
 // accountName is how the sidebar names an account.

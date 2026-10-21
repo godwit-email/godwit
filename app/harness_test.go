@@ -455,6 +455,15 @@ func (p *fakePlatform) OpenFiles(multiple bool) ([]string, error) {
 	defer p.mu.Unlock()
 	return slices.Clone(p.files), nil
 }
+func (p *fakePlatform) OpenImage() (string, error) {
+	p.record("OpenImage")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.files) > 0 {
+		return p.files[0], nil
+	}
+	return "", nil
+}
 func (p *fakePlatform) OpenDirectory() (string, error) {
 	p.record("OpenDirectory")
 	p.mu.Lock()

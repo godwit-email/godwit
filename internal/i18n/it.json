@@ -1095,5 +1095,15 @@
   "compose_font_default": "Predefinito",
   "compose_size_default": "Predefinito ({arg1})",
   "wit_compose_review_translate": "Tradotto.",
-  "wit_compose_translated": "Tradotto"
+  "wit_compose_translated": "Tradotto",
+  "settings_account_icon": "Icona dell'account",
+  "settings_account_icon_help": "Mostrata nella barra laterale e nell'elenco degli account",
+  "settings_account_icon_choose": "Scegli icona…",
+  "settings_account_icon_reset": "Reimposta",
+  "settings_account_icon_title": "Icona dell'account",
+  "settings_account_icon_desc": "Scegli un simbolo per questo account o carica un'immagine personalizzata.",
+  "settings_account_icon_upload": "Carica icona personalizzata…",
+  "settings_account_icon_default": "Usa predefinita",
+  "settings_account_icon_symbols": "Icone",
+  "error_account_icon": "L’icona dell’account deve essere un’immagine PNG, JPEG, GIF, WebP o SVG di massimo 5 MB."
 }

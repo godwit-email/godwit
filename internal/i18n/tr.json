@@ -1095,5 +1095,15 @@
   "compose_font_default": "Varsayılan",
   "compose_size_default": "Varsayılan ({arg1})",
   "wit_compose_review_translate": "Çevrildi.",
-  "wit_compose_translated": "Çevrildi"
+  "wit_compose_translated": "Çevrildi",
+  "settings_account_icon": "Hesap simgesi",
+  "settings_account_icon_help": "Kenar çubuğunda ve hesap listesinde gösterilir",
+  "settings_account_icon_choose": "Simge seç…",
+  "settings_account_icon_reset": "Sıfırla",
+  "settings_account_icon_title": "Hesap simgesi",
+  "settings_account_icon_desc": "Bu hesap için bir simge seçin veya özel bir resim yükleyin.",
+  "settings_account_icon_upload": "Özel simge yükle…",
+  "settings_account_icon_default": "Varsayılanı kullan",
+  "settings_account_icon_symbols": "Simgeler",
+  "error_account_icon": "Hesap simgesi en fazla 5 MB boyutunda PNG, JPEG, GIF, WebP veya SVG görseli olmalıdır."
 }

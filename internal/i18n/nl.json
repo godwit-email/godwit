@@ -1095,5 +1095,15 @@
   "compose_font_default": "Standaard",
   "compose_size_default": "Standaard ({arg1})",
   "wit_compose_review_translate": "Vertaald.",
-  "wit_compose_translated": "Vertaald"
+  "wit_compose_translated": "Vertaald",
+  "settings_account_icon": "Accountpictogram",
+  "settings_account_icon_help": "Weergegeven in de zijbalk en de accountlijst",
+  "settings_account_icon_choose": "Pictogram kiezen…",
+  "settings_account_icon_reset": "Herstellen",
+  "settings_account_icon_title": "Accountpictogram",
+  "settings_account_icon_desc": "Kies een symbool voor dit account of upload een eigen afbeelding.",
+  "settings_account_icon_upload": "Eigen pictogram uploaden…",
+  "settings_account_icon_default": "Standaard gebruiken",
+  "settings_account_icon_symbols": "Pictogrammen",
+  "error_account_icon": "Een accountpictogram moet een PNG-, JPEG-, GIF-, WebP- of SVG-afbeelding van maximaal 5 MB zijn."
 }

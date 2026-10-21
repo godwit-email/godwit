@@ -2230,5 +2230,15 @@
   "codes_open": "Open",
   "codes_card_confirm": "Confirmation link",
   "codes_card_signin": "Sign-in link",
-  "codes_card_reset": "Password reset link"
+  "codes_card_reset": "Password reset link",
+  "settings_account_icon": "Account icon",
+  "settings_account_icon_help": "Shown in the sidebar and accounts list",
+  "settings_account_icon_choose": "Choose icon…",
+  "settings_account_icon_reset": "Reset",
+  "settings_account_icon_title": "Account icon",
+  "settings_account_icon_desc": "Choose an icon for this account or upload a custom image.",
+  "settings_account_icon_upload": "Upload custom icon…",
+  "settings_account_icon_default": "Use default",
+  "settings_account_icon_symbols": "Icons",
+  "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB."
 }
