@@ -676,9 +676,21 @@ func TestOnboardingFeishuLarkTile(t *testing.T) {
 	h.see("Lark 邮箱")
 
 	feishu, _ := auth.ByID("feishu")
-	o.imapHost = "imap.custom.example"
+	o.smtpHost = "smtp.custom.example"
 	o.found(feishu, o.email)
-	if o.prov.ID != "lark" || o.imapHost != "imap.custom.example" {
-		t.Fatalf("edited servers were replaced: %s on %s", o.prov.ID, o.imapHost)
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" || o.smtpHost != "smtp.custom.example" {
+		t.Fatalf("edited servers were replaced: %s on %s/%s", o.prov.ID, o.imapHost, o.smtpHost)
+	}
+}
+
+func TestOnboardingFeishuLarkTileAfterDetection(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	lark, _ := auth.ByID("lark")
+	o.email = "a@corp.example"
+	o.found(lark, o.email) // detected on the pick screen
+	h.click("飞书/Lark 邮箱")
+	if o.prov.ID != "lark" || o.imapHost != "imap.larksuite.com" {
+		t.Fatalf("tile chose %s on %s for a Lark address", o.prov.ID, o.imapHost)
 	}
 }

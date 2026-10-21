@@ -230,7 +230,8 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 // which of the two the sign-in is, unless the servers were edited.
 func (o *onboarding) found(p auth.Provider, email string) {
 	o.detected, o.detectedFor = p, email
-	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID && o.imapHost == o.prov.IMAP.Host {
+	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID &&
+		o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
 		o.prov = p
 		o.imapHost, o.smtpHost = p.IMAP.Host, p.SMTP.Host
 	}
@@ -252,6 +253,9 @@ func (o *onboarding) next() {
 
 // choose takes p's servers and goes to its sign-in.
 func (o *onboarding) choose(p auth.Provider) {
+	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
+		p = o.detected // the 飞书/Lark tile for an address already found
+	}
 	o.prov = p
 	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
 	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
