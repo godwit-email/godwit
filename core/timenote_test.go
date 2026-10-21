@@ -39,6 +39,7 @@ func TestTimeNote(t *testing.T) {
 		{"old note", noteState(t, note(now)), now.Add(timeNoteGap), true},
 		{"next day", noteState(t, note(now.Add(90*time.Minute))), now.Add(105 * time.Minute), true},
 		{"after quoted mail", noteState(t, note(now)+"\n\nThe user quoted these emails"), now.Add(time.Minute), false},
+		{"offset changed", noteState(t, note(now)), now.Add(10 * time.Minute).In(time.FixedZone("JST", 9*3600)), true},
 		{"quote only", noteState(t, "The user quoted these emails"), now, true},
 	}
 	for _, c := range cases {

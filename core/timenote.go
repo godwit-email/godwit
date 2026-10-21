@@ -19,10 +19,11 @@ const (
 	timeNoteGap = 30 * time.Minute
 )
 
-// timeNote is now (the user's local time), for the model before a run's prompt, or
-// "" when state (the history the run sends) has a note that still holds: from
-// now's local day and under timeNoteGap old. A note only when the time moved
-// keeps the turns short and leaves the cached history as it is.
+// timeNote is now (the user's local time), for the model before a run's
+// prompt, or "" when state (the history the run sends) has a note that still
+// holds: with now's UTC offset, from now's local day and under timeNoteGap
+// old. A note only when the time moved keeps the turns short and leaves the
+// cached history as it is.
 func timeNote(state []byte, now time.Time) (string, error) {
 	cs, err := ai.Contexts(state)
 	if err != nil {
@@ -37,8 +38,10 @@ func timeNote(state []byte, now time.Time) (string, error) {
 		if err != nil {
 			continue
 		}
+		_, was := last.Zone()
+		_, is := now.Zone()
 		last = last.In(now.Location())
-		if last.Format(time.DateOnly) == now.Format(time.DateOnly) && now.Sub(last) < timeNoteGap {
+		if was == is && last.Format(time.DateOnly) == now.Format(time.DateOnly) && now.Sub(last) < timeNoteGap {
 			return "", nil
 		}
 		break
