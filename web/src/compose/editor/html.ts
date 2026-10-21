@@ -20,12 +20,12 @@ const keptImage = (el: Element) =>
 
 const SAFE_CSS_VALUE = /^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$/i;
 
-// A size in the toolbar's range (9–72 pt); a pasted font-size:0 (hidden text) or 200px is dropped.
+// A size in the toolbar's range (9–36 pt); a pasted font-size:0 (hidden text) or 200px is dropped.
 function inSizeRange(v: string): boolean {
   const m = /^(\d+(?:\.\d+)?)(px|pt)$/.exec(v);
   if (!m) return false;
   const pt = m[2] === "px" ? Number(m[1]) * 0.75 : Number(m[1]);
-  return pt >= 9 && pt <= 72;
+  return pt >= 9 && pt <= 36;
 }
 
 /**

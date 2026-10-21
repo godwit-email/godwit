@@ -327,7 +327,7 @@ describe("Editor", () => {
   });
 
   it("insertReplacementText preserves fontSize marks and Enter does not split block", async () => {
-    const { box, onChange } = setup('<p><span style="font-size: 72px;">Schullle</span></p>');
+    const { box, onChange } = setup('<p><span style="font-size: 36px;">Schullle</span></p>');
     await select(box, 8, 0);
 
     const ev = new InputEvent("beforeinput", {
@@ -343,14 +343,14 @@ describe("Editor", () => {
     await waitFor(() => {
       const html = last(onChange);
       expect(html).toContain("Schule");
-      expect(html).toContain("font-size: 72px");
+      expect(html).toContain("font-size: 36px");
       expect(html).not.toContain("Schullle");
     });
 
     // An Enter key right after accepting autocorrect should be suppressed
     fireEvent.keyDown(box, { key: "Enter", code: "Enter" });
     const htmlAfterEnter = last(onChange);
-    expect(htmlAfterEnter).toBe('<p><span style="font-size: 72px">Schule</span></p>');
+    expect(htmlAfterEnter).toBe('<p><span style="font-size: 36px">Schule</span></p>');
   });
 
   // Without target ranges (jsdom has none), the replacement takes the selection, or the word before the caret.
