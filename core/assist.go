@@ -202,7 +202,7 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []t
 		return "", err
 	}
 	job.cited = cited
-	return assistSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
+	return assistSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
 }
 
 // draftLanguage is the language a draft is written in (the reply language setting):

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -777,8 +778,9 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	return w.ch, nil
 }
 
-// launch claims a run and hands end to it. The quoted mail (checked IDs) goes
-// before the prompt (quote). at, unless -1, asks the prompt in place of the
+// launch claims a run and hands end to it. The time note of an ask or assist
+// run (timeNote) and the quoted mail (checked IDs, quote) go before the
+// prompt. at, unless -1, asks the prompt in place of the
 // question at Messages[at] (RewindConversation): the run starts on the
 // history before it, and the rewind is saved with what the run saves, if it
 // does. claimed, if set, are saved once the run is claimed and before the
@@ -822,9 +824,14 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	if err == nil {
 		req, err = s.request(ctx, job, model, state, tools)
 	}
-	if err == nil && len(quoted) > 0 {
-		req.Context, err = s.quote(ctx, job, quoted)
+	var note, quote string
+	if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {
+		note, err = timeNote(req.State, time.Now())
 	}
+	if err == nil && len(quoted) > 0 {
+		quote, err = s.quote(ctx, job, quoted)
+	}
+	req.Context = strings.Join(slices.DeleteFunc([]string{note, quote}, func(c string) bool { return c == "" }), "\n\n")
 	if err == nil && at >= 0 {
 		job.rewind = append(rewindStmts(conv.ID, at), claimed...)
 		job.grants = s.dropGrants(conv.ID) // asked again, a write waits for the user

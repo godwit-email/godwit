@@ -526,7 +526,7 @@ func formatQuickRepliesJSON(raw string) string {
 	raw = strings.TrimSpace(raw)
 	// The model answered in the requested JSON after all (fenced or not, even
 	// with no replies): keep it.
-	if _, err := parseQuickReplies(raw); err == nil {
+	if _, err := parseQuickReplies(raw, func(h string) string { return h }); err == nil {
 		return raw
 	}
 

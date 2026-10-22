@@ -730,6 +730,23 @@ func Messages(state []byte) ([]Message, error) {
 	return display(history), nil
 }
 
+// Contexts are the Request.Context texts state holds, oldest first.
+func Contexts(state []byte) ([]string, error) {
+	history, err := decodeState(state)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, m := range history {
+		for _, p := range m.Content {
+			if p.IsText() && p.Metadata[contextKey] != nil {
+				out = append(out, p.Text)
+			}
+		}
+	}
+	return out, nil
+}
+
 func decodeState(state []byte) ([]*gai.Message, error) {
 	if len(state) == 0 {
 		return nil, nil
