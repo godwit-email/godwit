@@ -368,4 +368,8 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN icon TEXT NOT NULL DEFAULT ''`,
 	`CREATE TABLE account_icons (account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
 		content_type TEXT NOT NULL, data BLOB NOT NULL)`,
+}, {
+	// The accounts' order in the sidebars, set by dragging; ties (every account
+	// before this) go by id, the creation order.
+	`ALTER TABLE accounts ADD COLUMN position INTEGER NOT NULL DEFAULT 0`,
 }}

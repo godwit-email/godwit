@@ -13,8 +13,12 @@ var soft sync.Map // *ui.Theme → *ui.Theme
 // List is ui.List with the selected rows in the sidebar's selected gray and
 // the foreground, not mygo's accent (the primary, near-black). mygo styles a
 // row from the theme current when it builds it, so the rows' content gets the
-// frame's own theme back.
+// frame's own theme back. A reordered list that chooses no rows keeps the
+// accent: the line showing where dragged rows go is drawn in it.
 func List(c *ui.Context, s *ui.ListState, n int, row func(i int)) ui.Element {
+	if s.Reorder != nil && s.Selected == nil && s.Selection == nil {
+		return ui.List(c, s, n, row)
+	}
 	base := c.Theme()
 	q, ok := soft.Load(base)
 	if !ok {

@@ -462,7 +462,7 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 		return prepared{}, err
 	}
 	if in.AccountID == 0 {
-		rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY is_default DESC, id LIMIT 1")
+		rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY is_default DESC, position, id LIMIT 1")
 		if err != nil {
 			return prepared{}, err
 		}

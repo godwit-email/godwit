@@ -228,6 +228,44 @@ func TestSettingsDefaultAccount(t *testing.T) {
 	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
 }
 
+func TestSettingsReorderAccounts(t *testing.T) {
+	var a, b, c core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		a = e.AddAccount(t, "alice@example.com")
+		b = e.AddAccount(t, "bob@example.com")
+		c = e.AddAccount(t, "carol@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings("general")
+	first, _ := h.tt.Find("alice@example.com")
+	second, _ := h.tt.Find("bob@example.com")
+	row := second.Y - first.Y
+	x, y := first.X, first.Y+first.H/2
+	h.tt.Move(x, y)
+	h.tt.Press(x, y)
+	h.tt.Move(x, y+row/2)
+	h.tt.Move(x, y+row*2.5) // below carol: the end
+	h.tt.Release(x, y+row*2.5)
+	h.drain()
+	ids := func(accs []core.Account) []int64 {
+		var out []int64
+		for _, acc := range accs {
+			out = append(out, acc.ID)
+		}
+		return out
+	}
+	want := []int64{b.ID, c.ID, a.ID}
+	h.until("the new order saved", func() bool {
+		accs, err := h.env.Svc.ListAccounts(context.Background())
+		return err == nil && slices.Equal(ids(accs), want)
+	})
+	if got := ids(h.app.accounts); !slices.Equal(got, want) {
+		t.Fatalf("shown order %v, want %v", got, want)
+	}
+	h.click("carol@example.com")
+	h.until("a row still opens its account", func() bool { return h.app.route.Settings == accountRoute(c.ID) })
+}
+
 func TestSettingsRemoveAccount(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))

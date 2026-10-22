@@ -189,8 +189,8 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, auth_type, status, username,
-			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, position)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
 			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
 	})
@@ -292,9 +292,9 @@ func scanAccount(r []any) Account {
 	return a
 }
 
-// ListAccounts returns all accounts in creation order.
+// ListAccounts returns all accounts in their order (ReorderAccounts), new ones last.
 func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts ORDER BY id")
+	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts ORDER BY position, id")
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +303,35 @@ func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
 		out = append(out, scanAccount(r))
 	}
 	return out, nil
+}
+
+// ReorderAccounts puts the accounts in the order of ids, which names every account once.
+// An account added meanwhile fails the check or, added after it, goes last.
+func (s *Service) ReorderAccounts(ctx context.Context, ids []int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY id")
+	if err != nil {
+		return err
+	}
+	have := make([]int64, len(rows.Values))
+	for i, r := range rows.Values {
+		have[i] = store.Int(r[0])
+	}
+	want := slices.Clone(ids)
+	slices.Sort(want)
+	if !slices.Equal(have, want) {
+		return errors.New("the new order must name every account once")
+	}
+	stmts := make([]sqlite.Statement, len(ids))
+	for i, id := range ids {
+		stmts[i] = sqlite.Statement{SQL: "UPDATE accounts SET position = ? WHERE id = ?", Args: []any{i, id}}
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
 }
 
 // RemoveAccount deletes the account, its keychain entry and its cache directory.
