@@ -1,5 +1,5 @@
 import { RiSparkling2Line } from "@remixicon/react";
-import { type FocusEvent, type ReactNode, useState } from "react";
+import { type FocusEvent, type ReactNode, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
@@ -148,6 +148,24 @@ export function Review({
   const leave = (e: FocusEvent) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setActive(-1);
   };
+  // Where the buttons sit: under the hovered line of a change that wraps (the last one for focus).
+  // Offsets are from the change's first line box, the origin of an inline's containing block.
+  const [at, setAt] = useState({ left: 0, top: 0 });
+  const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const show = (k: number, el: HTMLElement, y = Infinity) => {
+    clearTimeout(closing.current);
+    if (active === k) return; // back from the buttons: keep them where they are
+    const rs = [...el.getClientRects()];
+    const line = rs.find((r) => y <= r.bottom) ?? rs[rs.length - 1];
+    setAt(
+      line ? { left: line.left - rs[0].left, top: line.bottom - rs[0].top } : { left: 0, top: 0 },
+    );
+    setActive(k);
+  };
+  // A short grace on leaving, so the mouse can cross to the buttons.
+  const hide = () => {
+    closing.current = setTimeout(() => setActive(-1), 200);
+  };
 
   let n = 0; // an ordered list item's number
   const blocks = r.blocks.map((b, bi) => {
@@ -180,30 +198,33 @@ export function Review({
               // biome-ignore lint/a11y/noNoninteractiveTabindex: the caret's stand-in: a change can take focus
               tabIndex={0}
               className="relative outline-none"
-              onMouseEnter={() => setActive(s.k)}
-              onMouseLeave={() => setActive(-1)}
-              onFocus={() => setActive(s.k)}
+              onMouseEnter={(e) => show(s.k, e.currentTarget, e.clientY)}
+              onMouseLeave={hide}
+              onFocus={(e) => show(s.k, e.currentTarget)}
               onBlur={leave}
             >
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
-                <span className="absolute top-full left-0 z-10 mt-1 flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
-                  {link && (
-                    <span className="px-1 text-muted-foreground text-sm">
-                      {t("wit.compose.link", link)}
-                    </span>
-                  )}
-                  <Button size="xs" disabled={busy} onClick={() => decide(s.k, 1)}>
-                    {t("wit.compose.accept")}
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => decide(s.k, -1)}
-                  >
-                    {t("wit.compose.reject")}
-                  </Button>
+                // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
+                <span className="absolute z-10 pt-1" style={at}>
+                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
+                    {link && (
+                      <span className="px-1 text-muted-foreground text-sm">
+                        {t("wit.compose.link", link)}
+                      </span>
+                    )}
+                    <Button size="xs" disabled={busy} onClick={() => decide(s.k, 1)}>
+                      {t("wit.compose.accept")}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => decide(s.k, -1)}
+                    >
+                      {t("wit.compose.reject")}
+                    </Button>
+                  </span>
                 </span>
               )}
             </span>
