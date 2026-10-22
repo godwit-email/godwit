@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/godwit-email/godwit/compare/v1.9.0...v1.10.0) (2026-10-22)
+
+
+### Features
+
+* **wit:** tell the model the user's local time ([#145](https://github.com/godwit-email/godwit/issues/145)) ([26fd2cb](https://github.com/godwit-email/godwit/commit/26fd2cbac20f4df5d739d4db0753bb3a54e01a2e))
+
 ## [1.9.0](https://github.com/godwit-email/godwit/compare/v1.8.1...v1.9.0) (2026-10-21)
 
 
