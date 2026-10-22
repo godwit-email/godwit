@@ -73,6 +73,43 @@ func TestAddAccount(t *testing.T) {
 	assert.False(t, acc2.IsDefault)
 }
 
+func TestReorderAccounts(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	var ids []int64
+	for _, email := range []string{"a@example.com", "b@example.com"} {
+		in := input(t, im.Addr, smtpAddr, "secret")
+		in.Email = email
+		acc, err := s.AddAccount(ctx, in)
+		require.NoError(t, err)
+		ids = append(ids, acc.ID)
+	}
+	order := func() []int64 {
+		list, err := s.ListAccounts(ctx)
+		require.NoError(t, err)
+		var out []int64
+		for _, a := range list {
+			out = append(out, a.ID)
+		}
+		return out
+	}
+	require.Equal(t, ids, order(), "creation order")
+
+	require.NoError(t, s.ReorderAccounts(ctx, []int64{ids[1], ids[0]}))
+	require.Equal(t, []int64{ids[1], ids[0]}, order())
+	require.Error(t, s.ReorderAccounts(ctx, ids[:1]), "every account must be named")
+	require.Error(t, s.ReorderAccounts(ctx, []int64{ids[0], ids[0]}), "each once")
+
+	in := input(t, im.Addr, smtpAddr, "secret")
+	in.Email = "c@example.com"
+	c, err := s.AddAccount(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, []int64{ids[1], ids[0], c.ID}, order(), "a new account goes last")
+	list, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	assert.True(t, list[1].IsDefault, "the order leaves the default alone")
+}
+
 func TestAddAccountWrongPassword(t *testing.T) {
 	s := newTestService(t)
 	im, smtpAddr := servers(t)

@@ -33,6 +33,7 @@ type settingsPage struct {
 	a *App
 
 	// accounts
+	accountOrder ui.ListState // the sidebar's accounts, dragged to reorder them
 	forms        map[int64]*accountForm
 	usage        map[int64]int64    // attachment cache bytes per account; absent until read
 	boxes        map[int64]*mailbox // 邮箱行为 per account; absent until read
@@ -196,17 +197,32 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		if hit.accounts {
 			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
 		}
-		for _, acc := range a.accounts {
-			if !hit.accounts {
-				break
-			}
-			if hit.email != "" && !strings.Contains(strings.ToLower(acc.Email), hit.email) {
-				continue
-			}
+		account := func(acc core.Account) {
 			item(accountRoute(acc.ID)).Children(func() {
 				a.accountMark(c, acc)
 				ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
 			})
+		}
+		switch n := len(a.accounts); {
+		case !hit.accounts:
+		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
+			p.accountOrder.Key = func(i int) any { return a.accounts[i].ID }
+			p.accountOrder.Label = func(i int) string { return a.accounts[i].Email }
+			p.accountOrder.Reorder = func(rows []int, to int) { p.moveAccount(rows[0], to) }
+			gap := th.Space(0.5) // the sidebar column's
+			kit.List(c, &p.accountOrder, n, func(i int) {
+				var top float32
+				if i > 0 {
+					top = gap
+				}
+				ui.Column(c).FillWidth().Padding(top, 0, 0, 0).Children(func() { account(a.accounts[i]) })
+			}).FillWidth().Height(float32(n)*(th.Space(8)+gap) - gap)
+		default:
+			for _, acc := range a.accounts {
+				if hit.email == "" || strings.Contains(strings.ToLower(acc.Email), hit.email) {
+					account(acc)
+				}
+			}
 		}
 		if hit.accounts {
 			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {

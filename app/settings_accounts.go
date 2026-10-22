@@ -972,3 +972,29 @@ func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
 	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"),
 		role(0), role(1), role(2), purge(0), role(3), purge(1), role(4))
 }
+
+// moveAccount puts the account at i before the one at to (len for the end),
+// the others in order: at once here, then saved. A failed save reloads the
+// order saved.
+func (p *settingsPage) moveAccount(i, to int) {
+	a := p.a
+	if to > i {
+		to-- // i is taken out first
+	}
+	if to == i {
+		return
+	}
+	moved := slices.Clone(a.accounts)
+	acc := moved[i]
+	a.accounts = slices.Insert(slices.Delete(moved, i, i+1), to, acc)
+	ids := make([]int64, len(a.accounts))
+	for k, acc := range a.accounts {
+		ids[k] = acc.ID
+	}
+	a.writes.Chain("accounts", func(ctx context.Context) error { return a.svc.ReorderAccounts(ctx, ids) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			a.load()
+		}
+	})
+}
