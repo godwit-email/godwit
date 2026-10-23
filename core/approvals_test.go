@@ -778,6 +778,7 @@ func TestResumeSaveFailureLeavesNoOpenCalls(t *testing.T) {
 	reqs := e.srv.Requests()
 	calls, results := toolPairs(t, reqs[len(reqs)-1])
 	assert.Equal(t, calls, results, "every tool request in the history has its result")
+	assert.NotContains(t, string(reqs[len(reqs)-1].Messages), msgRecovery, "the approved call keeps the result it recorded")
 }
 
 func TestRecoveryFailureFailsRun(t *testing.T) {

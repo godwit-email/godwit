@@ -1006,20 +1006,8 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 	}
 	// Read the history only now: a previous run may have ended after the caller's read.
 	h, err := s.history(ctx, conv.ID)
-	// No run is active, so open calls are left by one that failed without
-	// closing the state (its outcome could not be saved): close them now.
-	var calls []ai.ToolResult
-	if err == nil {
-		calls = h.OpenCalls()
-	}
-	if len(calls) > 0 {
-		for i := range calls {
-			calls[i].Error = msgRecovery
-		}
-		var ch ai.HistoryChanges
-		if h, ch, err = h.Close(calls); err == nil {
-			_, err = s.db.Transaction(ctx, historyStmts(conv.ID, ch))
-		}
+	if err == nil { // no run is active: open calls are left by one that failed
+		h, err = s.closeOrphans(ctx, conv.ID, h)
 	}
 	var scope *gateway.Scope
 	if err == nil {
@@ -1029,6 +1017,41 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 		return nil, nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(r.LastInsertID, "failed")))
 	}
 	return s.track(ctx, r.LastInsertID, conv, scope, 0), h, nil
+}
+
+// closeOrphans closes the open calls h ends with, which a run that failed
+// without closing the state (its outcome could not be saved) left behind:
+// each takes its approval's result where that was recorded, else
+// msgRecovery. No run of conversation id may be active.
+func (s *Service) closeOrphans(ctx context.Context, id int64, h *ai.History) (*ai.History, error) {
+	calls := h.OpenCalls()
+	if len(calls) == 0 {
+		return h, nil
+	}
+	as, err := s.approvalRows(ctx, "r.conversation_id = ? AND a.state != 'pending'", id)
+	if err != nil {
+		return nil, err
+	}
+	recorded := map[string]ai.ToolResult{} // by call ID, the latest run's
+	for _, a := range as {
+		if a.State == "executing" { // an external run whose outcome could not be recorded
+			a.result = msgUncertain
+		}
+		recorded[a.CallID] = a.toolResult()
+	}
+	for i, c := range calls {
+		if rec, ok := recorded[c.CallID]; ok && rec.Name == c.Name {
+			calls[i] = rec
+		} else {
+			calls[i].Error = msgRecovery
+		}
+	}
+	closed, ch, err := h.Close(calls)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.db.Transaction(ctx, historyStmts(id, ch))
+	return closed, err
 }
 
 // convScope is a new scope for a run of conversation id: it has read mail if
