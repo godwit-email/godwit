@@ -142,8 +142,10 @@ export async function mount(canvas: HTMLCanvasElement, perch: HTMLElement, headl
 	 * shows on the page, it has a depth (`far`: 1 at the page, more is further back along the line
 	 * of sight, so smaller) and a heading (`yaw`: 0 the logo's side view, less turns it toward the
 	 * reader, more away). */
-	const draw = (t: number, m: Pose) => {
-		const p = perchAt(), s = travel(), size = length() * (1 - 0.25 * s);
+	/** Draws the bird; false once it is off screen and drawn empty. `still` keeps it at its perch
+	 * rather than diving with the page's scroll. */
+	const draw = (t: number, m: Pose, still = false): boolean => {
+		const p = perchAt(), s = still ? 0 : travel(), size = length() * (1 - 0.25 * s);
 		let { x, y } = p, far = 1, yaw = 0;
 		// A bird can't hang in the air: at the perch it circles, on a flat loop around it (nearer
 		// the reader at the front, further at the back), always heading where it is going.
@@ -191,7 +193,7 @@ export async function mount(canvas: HTMLCanvasElement, perch: HTMLElement, headl
 		yaw += 2 * Math.PI * Math.round((last.yaw - yaw) / (2 * Math.PI));
 		// Off screen: drawn once empty, then left alone.
 		const off = y < -size || y > innerHeight + size || x > innerWidth + size;
-		if (off && !shown) return;
+		if (off && !shown) return false;
 		flight.visible = shown = !off;
 		// dive while moving down the page, climb while moving up, and bank into turns: from the
 		// smoothed speeds
@@ -208,20 +210,31 @@ export async function mount(canvas: HTMLCanvasElement, perch: HTMLElement, headl
 		bird.position.y = m.y;
 		bird.rotation.set(m.roll, m.yaw, pitch + m.pitch);
 		renderer.render(scene, camera);
+		return !off;
 	};
 
 	if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
 		// at its perch, wings up as in the logo, moving only with the page
-		const still = () => draw(intro, { down: 0, y: 0, roll: 0, yaw: 0, pitch: 0 });
+		const still = () => draw(intro, { down: 0, y: 0, roll: 0, yaw: 0, pitch: 0 }, true);
 		addEventListener("scroll", still, { passive: true });
 		addEventListener("resize", still);
 		still();
 		return;
 	}
-	// The browser pauses the frames of a hidden tab.
+	// The browser pauses the frames of a hidden tab; off screen, the loop stops until a scroll
+	// or resize could bring the bird back.
 	const start = performance.now();
-	renderer.setAnimationLoop((now) => {
+	const frame = (now: number) => {
 		const t = (now - start) / 1000;
-		draw(t, t < intro ? cruise(t) : glide(t - intro));
-	});
+		if (draw(t, t < intro ? cruise(t) : glide(t - intro))) return;
+		renderer.setAnimationLoop(null);
+		addEventListener("scroll", resume, { passive: true });
+		addEventListener("resize", resume);
+	};
+	const resume = () => {
+		removeEventListener("scroll", resume);
+		removeEventListener("resize", resume);
+		renderer.setAnimationLoop(frame);
+	};
+	renderer.setAnimationLoop(frame);
 }
