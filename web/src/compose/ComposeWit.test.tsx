@@ -123,7 +123,7 @@ const empty: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0 },
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
   messages: [],
   approvals: [],
@@ -144,7 +144,7 @@ const withPending: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0 },
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
   messages: [
     {

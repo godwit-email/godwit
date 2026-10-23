@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -39,11 +38,13 @@ type Conversation struct {
 	ActiveRunID        int64
 	UpdatedAt          time.Time
 	// Usage sums its runs' tokens; Last is the latest run's that reported any.
-	// HistoryUse is how full the history budget is (from 0; past 1, the
-	// oldest turns are left out of what the model is shown). ListConversations
-	// leaves both empty.
-	Usage      ai.Usage
-	HistoryUse float64
+	// HistoryUse is how full the history budget is, its summary standing in
+	// (from 0; past 1, its oldest turns are summarized or left out). ListConversations
+	// leaves both empty. Compactable: CompactConversation has turns to
+	// summarize.
+	Usage       ai.Usage
+	HistoryUse  float64
+	Compactable bool
 }
 
 // WitEvent is one event of a Wit run. An interrupted event carries the
@@ -244,6 +245,10 @@ func rewindStmts(id int64, at int) []sqlite.Statement {
 		{SQL: `UPDATE conversations SET spent_input = spent_input + (SELECT COALESCE(SUM(input_tokens), 0) ` + dropped + `),
 			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `) WHERE id = ?`, Args: []any{id, at, id, at, id}},
 		{SQL: "DELETE " + dropped, Args: []any{id, at}},
+		// a summary reaching what goes goes too; one being written is not saved
+		{SQL: `UPDATE conversations SET summary = CASE WHEN summary_upto >= ? THEN '' ELSE summary END,
+			summary_upto = CASE WHEN summary_upto >= ? THEN 0 ELSE summary_upto END, summary_epoch = summary_epoch + 1 WHERE id = ?`,
+			Args: []any{at, at, id}},
 	}
 	if at == 0 { // the first question titled it: the one asked in its place does
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
@@ -297,7 +302,20 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		r := rows.Values[0]
 		c.Usage = ai.Usage{Input: int(store.Int(r[0])), Output: int(store.Int(r[1])), Last: int(store.Int(r[2]))}
 	}
-	c.HistoryUse = float64(utf8.RuneCount(state)) / historyBudget
+	sum, _, err := s.convSummary(ctx, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	size, err := ai.CompactedSize(state, sum)
+	if err != nil {
+		return Conversation{}, err
+	}
+	point, err := ai.CompactPoint(state)
+	if err != nil {
+		return Conversation{}, err
+	}
+	c.Compactable = point > sum.Upto
+	c.HistoryUse = float64(size) / float64(s.refHistoryBudget(ctx, c.Model))
 	c.Citations, err = s.citationsOf(ctx, id)
 	return c, err
 }
@@ -723,17 +741,19 @@ type runKey struct{}
 // runOf is the run whose tool is given ctx.
 func runOf(ctx context.Context) *runJob { return ctx.Value(runKey{}).(*runJob) }
 
-// historyBudget caps the runes of the conversation state sent to the model.
-const historyBudget = 60000
-
-// request builds the run's request on state, trimmed to historyBudget; the
-// job keeps what drive needs to save the whole history.
+// request builds the run's request on state, its summary standing in and
+// trimmed to historyBudget; the job keeps what drive needs to save the whole
+// history.
 func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []toolDesc) (ai.Request, error) {
 	system, err := s.witSystem(ctx, job, tools)
 	if err != nil {
 		return ai.Request{}, err
 	}
-	sent, dropped, err := ai.TrimState(state, historyBudget)
+	sum, _, err := s.convSummary(ctx, job.conv.ID)
+	if err != nil {
+		return ai.Request{}, err
+	}
+	sent, dropped, err := ai.TrimState(state, s.historyBudget(model.BaseURL, model.Model), sum)
 	if err != nil {
 		return ai.Request{}, err
 	}
@@ -1099,6 +1119,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 			runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage)))
 		if err == nil {
 			job.rewind = nil
+			s.compactLater(job.conv.ID, req.Model, res.State)
 		}
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}

@@ -329,13 +329,30 @@ func TestAskHistoryBudget(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
 	for _, n := range []string{"1", "2", "3"} {
-		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}},
-			testllm.Turn{Text: []string{"T" + n + "-" + strings.Repeat("a", 25000)}})
+		turns := []testllm.Turn{{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}},
+			{Text: []string{"T" + n + "-" + strings.Repeat("a", 25000)}}}
+		if n == "3" { // past the budget now: the compaction's summary
+			turns = append(turns, testllm.Turn{Text: []string{"SUMMARY-OF-Q1"}})
+		}
+		e.srv.Script(turns...)
 		evs := e.ask(t, conv.ID, "q"+n)
 		require.Equal(t, "done", evs[len(evs)-1].Kind)
 	}
 	reqs := e.srv.Requests()
 	assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), "T1-", "under budget nothing is omitted")
+
+	require.Eventually(t, func() bool {
+		sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+		return err == nil && sum.Text == "SUMMARY-OF-Q1"
+	}, 5*time.Second, 10*time.Millisecond, "compacted in the background")
+	reqs = e.srv.Requests()
+	compaction := reqs[len(reqs)-1]
+	assert.Contains(t, string(compaction.System), "You condense")
+	assert.Contains(t, promptOf(t, compaction), "T1-", "the turns before the last two")
+	assert.NotContains(t, promptOf(t, compaction), "T2-")
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Less(t, c.HistoryUse, 1.0, "the summary stands in")
 
 	evs := e.ask(t, conv.ID, "q4")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
@@ -343,15 +360,16 @@ func TestAskHistoryBudget(t *testing.T) {
 	req := reqs[len(reqs)-1]
 	p := promptOf(t, req)
 	assert.Contains(t, p, "q1", "the first user message stays")
-	assert.Contains(t, p, ai.HistoryNote)
-	assert.NotContains(t, p, "T1-", "the oldest turn is omitted")
+	assert.Contains(t, p, ai.SummaryNote)
+	assert.Contains(t, p, "SUMMARY-OF-Q1")
+	assert.NotContains(t, p, "T1-", "the summary stands in for the oldest turn")
 	assert.Contains(t, p, "T2-")
 	assert.Contains(t, p, "T3-")
 	calls, results := toolPairs(t, req)
 	assert.Len(t, calls, 2)
 	assert.Equal(t, calls, results, "every tool request in the request has its result")
 
-	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	require.NotEmpty(t, c.Messages)
 	var all strings.Builder
@@ -359,7 +377,42 @@ func TestAskHistoryBudget(t *testing.T) {
 		all.WriteString(m.Text)
 	}
 	assert.Contains(t, all.String(), "T1-", "the saved conversation keeps every turn")
-	assert.NotContains(t, all.String(), ai.HistoryNote)
+	assert.NotContains(t, all.String(), ai.SummaryNote)
+
+	err = e.s.RewindConversation(t.Context(), conv.ID, 0)
+	require.NoError(t, err)
+	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Zero(t, sum, "a rewind past the summary drops it")
+}
+
+func TestCompactConversation(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	for _, n := range []string{"1", "2"} {
+		e.srv.Script(testllm.Turn{Text: []string{"A" + n}})
+		evs := e.ask(t, conv.ID, "q"+n)
+		require.Equal(t, "done", evs[len(evs)-1].Kind)
+	}
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.False(t, c.Compactable, "two turns: both stay")
+	assert.ErrorIs(t, e.s.CompactConversation(t.Context(), conv.ID), ErrNothingToCompact)
+
+	e.srv.Script(testllm.Turn{Text: []string{"A3"}}, testllm.Turn{Text: []string{"SUMMARY-OF-Q1"}})
+	evs := e.ask(t, conv.ID, "q3")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.True(t, c.Compactable)
+	require.NoError(t, e.s.CompactConversation(t.Context(), conv.ID), "under budget, on demand")
+	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "SUMMARY-OF-Q1", sum.Text)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.False(t, c.Compactable, "the summary reaches the last two turns")
+	assert.ErrorIs(t, e.s.CompactConversation(t.Context(), conv.ID), ErrNothingToCompact)
 }
 
 func TestAskCancel(t *testing.T) {

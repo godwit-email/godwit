@@ -9,6 +9,7 @@ import (
 
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/ownerlock"
@@ -35,7 +36,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "godwit:", err)
 		return 1
 	}
-	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, Registry: reg, AppVersion: app.Version,
+	svc, err := core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version,
 		AppleIntelligence: appleIntelligence()}) // no SystemTranslator: Translation needs the AppKit main loop headless mode lacks
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)

@@ -28,6 +28,8 @@ var sentinels = []struct {
 	{"stale_draft", core.ErrStaleDraft},
 	{"not_synced", core.ErrNotSynced},
 	{"run_active", core.ErrRunActive},
+	{"compacting", core.ErrCompacting},
+	{"nothing_to_compact", core.ErrNothingToCompact},
 	{"keychain_unavailable", core.ErrKeychainUnavailable},
 	{"wrong_account", core.ErrWrongAccount},
 	{"account_not_found", core.ErrAccountNotFound},

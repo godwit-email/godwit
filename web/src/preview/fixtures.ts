@@ -197,7 +197,7 @@ const history = (p: Partial<WitHistory> & Pick<WitHistory, "messages">): WitHist
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0 },
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
   approvals: [],
   ...p,
@@ -317,7 +317,7 @@ const createDraft = call("s9", "create_draft", {
 
 export const witConversation = (): WitHistory =>
   history({
-    usage: { input: 18400, output: 1260, context: 9800, history: 0.36 },
+    usage: { input: 18400, output: 1260, context: 9800, history: 0.36, compactable: true },
     messages: [
       msg({ id: "q0", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
       msg({
