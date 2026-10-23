@@ -617,7 +617,12 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, 0)
+	w, err := s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, 0)
+	if err != nil { // a run that never started leaves no conversation for findAssistConversation to take
+		_, derr := s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM conversations WHERE id = ? AND NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?)", conv.ID, conv.ID)
+		return nil, errors.Join(err, derr)
+	}
+	return w, nil
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
