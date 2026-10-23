@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ func commitRewind(convID, runID int64, rw pendingRewind, question string) []sqli
 			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `) WHERE id = ?`,
 			Args: append(append(append([]any{}, args...), args...), convID)},
 		{SQL: "DELETE " + dropped, Args: args},
-		{SQL: "UPDATE runs SET rewind_from = NULL, rewind_to = NULL, rewind_summary = 0 WHERE id = ?", Args: []any{runID}},
+		{SQL: "UPDATE runs SET " + noRewind + " WHERE id = ?", Args: []any{runID}},
 		{SQL: "UPDATE conversations SET summary_epoch = summary_epoch + 1 WHERE id = ?", Args: []any{convID}},
 	}
 	if rw.dropSummary {
@@ -121,13 +122,16 @@ func commitRewind(convID, runID int64, rw pendingRewind, question string) []sqli
 	return stmts
 }
 
+// noRewind clears a run's question asked again.
+const noRewind = "rewind_from = NULL, rewind_to = NULL, rewind_summary = 0"
+
 // discardRewind ends runID's question asked again without replacing
 // anything: what the run added goes, so the conversation is as before it.
 func discardRewind(convID, runID int64, rw pendingRewind) []sqlite.Statement {
 	return []sqlite.Statement{
 		{SQL: "DELETE FROM conversation_messages WHERE conversation_id = ? AND seq >= ?", Args: []any{convID, rw.to}},
 		{SQL: "DELETE FROM run_citations WHERE run_id = ?", Args: []any{runID}},
-		{SQL: "UPDATE runs SET hist_from = NULL, hist_to = NULL, rewind_from = NULL, rewind_to = NULL, rewind_summary = 0 WHERE id = ?", Args: []any{runID}},
+		{SQL: "UPDATE runs SET hist_from = NULL, hist_to = NULL, " + noRewind + " WHERE id = ?", Args: []any{runID}},
 	}
 }
 
@@ -197,7 +201,7 @@ func (s *Service) backfillHistory(ctx context.Context, id, draftID int64, state 
 	}
 	for _, r := range runs.Values {
 		run := store.Int(r[0])
-		if i := indexOf(skills, run); i >= 0 {
+		if i := slices.Index(skills, run); i >= 0 {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_from = ?, hist_to = ? WHERE id = ?", Args: []any{cmdSeqs[i], cmdSeqs[i] + 1, run}})
 		} else if r[1] != nil {
 			// a span ends before the commands put where it ends
@@ -226,15 +230,6 @@ func asBytes(v any) []byte {
 	return nil
 }
 
-func indexOf(xs []int64, x int64) int {
-	for i, v := range xs {
-		if v == x {
-			return i
-		}
-	}
-	return -1
-}
-
 // legacySkill is the command a skill run saved before ADR 0021 ran: its
 // proposal says a translation, else the audit log names the skill the
 // draft ran then; "" when neither does (shown as a generic adjustment).
@@ -244,7 +239,7 @@ func (s *Service) legacySkill(ctx context.Context, runID, draftID, at int64) (ai
 		return ai.Command{}, err
 	}
 	if len(rows.Values) > 0 {
-		return ai.Command{Skill: "translate-draft"}, nil
+		return ai.Command{Skill: "translate-draft"}, nil // shortcut: its target language was never kept, so none
 	}
 	rows, err = s.db.Query(ctx, `SELECT tool FROM audit_log WHERE target_kind = 'draft' AND target_id = ? AND tool LIKE 'skill:%' AND at <= ?
 		ORDER BY at DESC, id DESC LIMIT 1`, draftID, at+5)

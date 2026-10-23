@@ -533,10 +533,10 @@ func (w *witStream) close() {
 // stop drops what is queued and closes ch now.
 func (w *witStream) stop() { w.stopped.Do(func() { close(w.quit) }) }
 
-// release delivers what was held back that keep keeps, then the rest.
-func (w *witStream) release(keep func(WitEvent) bool) {
+// release delivers what keep keeps of what was held back, then the rest.
+func (w *witStream) release(keep func([]WitEvent) []WitEvent) {
 	w.mu.Lock()
-	w.q = slices.DeleteFunc(w.q, func(ev WitEvent) bool { return !keep(ev) })
+	w.q = keep(w.q)
 	w.waiting = 0
 	for _, ev := range w.q {
 		if !terminal(ev) {
@@ -643,7 +643,22 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 		return Conversation{}, nil, nil, err
 	}
 	known := store.Int(rows.Values[0][0]) // runs started before the read; any not active then had ended
-	w.release(func(ev WitEvent) bool { return ev.RunID > known || ev.RunID == c.ActiveRunID })
+	w.release(func(q []WitEvent) []WitEvent {
+		// a run waiting on the user was read with its interrupt: what it sent up to that is in c
+		last := -1
+		for i, ev := range q {
+			if c.Awaiting && ev.RunID == c.ActiveRunID && ev.Kind == "interrupted" {
+				last = i
+			}
+		}
+		out := q[:0]
+		for i, ev := range q {
+			if ev.RunID == c.ActiveRunID && i > last || ev.RunID != c.ActiveRunID && ev.RunID > known {
+				out = append(out, ev)
+			}
+		}
+		return out
+	})
 	return c, w.ch, stop, nil
 }
 
@@ -853,7 +868,7 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 	if err != nil {
 		return nil, err
 	}
-	w, err := s.launch(ctx, end, conv, prompt, tools, nil, -1)
+	w, err := s.launch(ctx, end, conv, prompt, tools, nil, 0)
 	if err != nil {
 		end()
 		return nil, err

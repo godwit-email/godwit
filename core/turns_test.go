@@ -232,3 +232,36 @@ func TestTurnsOf(t *testing.T) {
 	assert.Equal(t, []Approval{{ID: 4, RunID: 2, CallID: "c1"}}, got[1].Approvals, "an approval with no call of its turn is the turn's own")
 	assert.True(t, t0.CanAskAgain)
 }
+
+// A run that waits on the user by the time FollowConversation reads is sent
+// from its resume on: its interrupt is in what was read, not sent again.
+func TestFollowConversationInterruptedDuringRead(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["a@b.c"],"subject":"Re","html":"<p>x</p>"}`}}},
+		testllm.Turn{Text: []string{"Done."}})
+	var in WitEvent
+	beforeFollowRead = func() {
+		beforeFollowRead = nil
+		evs := e.ask(t, conv.ID, "draft it")
+		in = evs[len(evs)-1]
+		require.Equal(t, "interrupted", in.Kind)
+	}
+	t.Cleanup(func() { beforeFollowRead = nil })
+	c, ch, stop, err := e.s.FollowConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	defer stop()
+	require.True(t, c.Awaiting)
+	require.NotNil(t, c.Turns[0].Calls[0].Approval, "the interrupt is in what was read")
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	var kinds []string
+	for ev := range ch {
+		kinds = append(kinds, ev.Kind)
+		if ev.Ends {
+			break
+		}
+	}
+	assert.NotContains(t, kinds, "interrupted", "the interrupt is not sent again")
+	assert.NotContains(t, kinds, "start")
+	assert.Equal(t, "done", kinds[len(kinds)-1])
+}

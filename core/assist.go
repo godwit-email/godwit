@@ -131,7 +131,7 @@ func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, q
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, -1)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, 0)
 	}
 	if err != nil {
 		end()
@@ -594,11 +594,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 	if err := checkSelection(editable, sel); err != nil {
 		return nil, err
 	}
-	title := instruction
-	if r := []rune(title); len(r) > titleRunes {
-		title = string(r[:titleRunes])
-	}
-	conv, err := s.newAssistConversation(ctx, draftID, title)
+	conv, err := s.newAssistConversation(ctx, draftID, titleOf(instruction))
 	if err != nil {
 		return nil, err
 	}
@@ -621,7 +617,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, -1)
+	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, 0)
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,

@@ -15,5 +15,5 @@ Wit 的对话（消息、run、审批、引用、摘要）留在 `godwit.db`：�
 ## Consequences
 
 - 回退是删掉某个序号之后的行；序号由对话上的计数器分配，删行后不复用。
-- 数据库改为 `auto_vacuum=INCREMENTAL`，空闲时分批 `incremental_vacuum`；已有的库在启动时 VACUUM 一次，空闲磁盘不足就留到下次。删除对话保证回收空间，不承诺不可恢复（不开 `secure_delete`）。
+- 数据库改为 `auto_vacuum=INCREMENTAL`，空闲时分批 `incremental_vacuum`；已有的库在启动时 VACUUM 一次，空闲磁盘不足就留到下次。删除对话后，空闲空间够多（不少于 64 MiB 且占文件 25%）时交还给文件系统；不承诺不可恢复（不开 `secure_delete`）。
 - 迁移是启动时的 Go backfill：逐个对话拆成行，坏的对话跳过并保留旧数据；迁移前复制一份 `godwit.db`，下一个版本删除。`user_version` 提升后，旧版本打不开新库。
