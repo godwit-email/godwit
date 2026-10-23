@@ -109,10 +109,10 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	p.Fill(box, s.tint, 0)
 }
 
-// Frost fills a row with the page's background over what is behind it blurred: plain at
-// rest, frosted glass as a drag lifts the row over others.
-func Frost(c *ui.Context) ui.Material {
-	return scrim{theme.BackdropBlur * 2, theme.Of(c).Background.Alpha(0.7)}
+// Frost fills a row with fill (the surface it sits on) over what is behind it
+// blurred: plain at rest, frosted glass as a drag lifts the row over others.
+func Frost(fill ui.Color) ui.Material {
+	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.7)}
 }
 
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.

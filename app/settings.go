@@ -309,20 +309,21 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 		sectionTitle(c, title)
 		settingsCard(c, rows...)
 		if footnote != "" {
-			kit.Text(c, footnote, t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, footnote, t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 		}
 	})
 }
 
-// sectionTitle is a settings section's title.
+// sectionTitle is a settings section's title, inset as its card's rows.
 func sectionTitle(c *ui.Context, title string) {
-	kit.Text(c, title, theme.Of(c).Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600)
+	kit.Text(c, title, theme.Of(c).Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600).PaddingX(c.Theme().Space(4))
 }
 
-// settingsCard is a section's card of rows, with hairlines between them.
+// settingsCard is a section's card of rows, with hairlines between them: a
+// borderless Card fill, so gray chips in its rows are drawn on Background.
 func settingsCard(c *ui.Context, rows ...func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Background(t.Card).Clip().Children(func() {
 		for i, row := range rows {
 			if i > 0 {
 				hairline(c)
@@ -332,9 +333,10 @@ func settingsCard(c *ui.Context, rows ...func()) {
 	})
 }
 
-// hairline divides the rows of a settings card.
+// hairline divides the rows of a settings card, inset to the rows' text as
+// macOS's System Settings does.
 func hairline(c *ui.Context) {
-	kit.Separator(c, false).Shrink(0)
+	kit.Separator(c, false).Shrink(0).MarginX(c.Theme().Space(4))
 }
 
 // settingRow is a labelled control: label (500) and description on the

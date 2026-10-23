@@ -121,32 +121,37 @@ type Mode = { alert?: string; onHTML(): void };
 /** The toolbar row: formats, what Go refused, and 「</> HTML」 at the end. */
 function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) {
   return (
-    <div
-      data-slot="signature-toolbar"
-      className="flex items-center border-b-[0.5px] bg-sidebar px-1.5 py-1"
-    >
-      {children}
-      {mode.alert && (
-        <span role="alert" className="ml-2 min-w-0 truncate text-xs text-destructive">
-          {t(mode.alert)}
-        </span>
-      )}
-      <span className="flex-1" />
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-pressed={false}
-        aria-label={t("settings.account.signature.html.label")}
-        title={t("settings.account.signature.html.label")}
-        className="h-7 gap-1.5 px-2 text-muted-foreground text-xs"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={mode.onHTML}
-      >
-        <RiCodeSSlashLine className="size-4" />
-        {t("settings.account.signature.html")}
-      </Button>
-    </div>
+    <>
+      <div data-slot="signature-toolbar" className="flex items-center px-1.5 py-1">
+        {children}
+        {mode.alert && (
+          <span role="alert" className="ml-2 min-w-0 truncate text-xs text-destructive">
+            {t(mode.alert)}
+          </span>
+        )}
+        <span className="flex-1" />
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-pressed={false}
+          aria-label={t("settings.account.signature.html.label")}
+          title={t("settings.account.signature.html.label")}
+          className="h-7 gap-1.5 px-2 text-muted-foreground text-xs"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={mode.onHTML}
+        >
+          <RiCodeSSlashLine className="size-4" />
+          {t("settings.account.signature.html")}
+        </Button>
+      </div>
+      <Rule />
+    </>
   );
+}
+
+/** A divider inset to the text, as between the rows of a settings section. */
+function Rule() {
+  return <div className="mx-4 border-b-[0.5px]" />;
 }
 
 /** The formats, greyed out: a layout signature edits only its text. */
@@ -285,12 +290,13 @@ function LayoutEditor(props: { t: T; initial: string; mode: Mode; onChange(html:
       <Bar t={t} mode={mode}>
         <Disabled t={t} />
       </Bar>
-      <div className="flex items-center gap-2 border-b-[0.5px] px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
         <span className="flex-1">{t("settings.account.signature.layout")}</span>
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={mode.onHTML}>
           {t("settings.account.signature.edit_html")}
         </Button>
       </div>
+      <Rule />
       <div className="min-h-0 flex-1 overflow-auto">
         {/* biome-ignore lint/a11y/useSemanticElements: rich text (a table, images) cannot be a <textarea> */}
         <div
@@ -301,7 +307,7 @@ function LayoutEditor(props: { t: T; initial: string; mode: Mode; onChange(html:
           aria-label={t("settings.account.signature.label")}
           contentEditable
           suppressContentEditableWarning
-          className="min-h-full px-3 py-3 leading-normal outline-none"
+          className="min-h-full px-4 py-3 leading-normal outline-none"
           onInput={changed}
           onPaste={(e) => {
             e.preventDefault();
@@ -378,7 +384,7 @@ function RichEditor(props: {
         <div className="min-h-0 flex-1 overflow-auto">
           <PlateContent
             aria-label={t("settings.account.signature.label")}
-            className="min-h-full px-3 py-2.5 leading-[1.6] outline-none [&_a]:text-primary [&_a]:underline"
+            className="min-h-full px-4 py-2.5 leading-[1.6] outline-none [&_a]:text-primary [&_a]:underline"
           />
         </div>
       </div>

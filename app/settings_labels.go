@@ -86,7 +86,7 @@ func (v *labelsView) list(c *ui.Context) {
 	_, wh := c.Size()
 	h = min(h, wh/2)
 	kit.List(c, &v.order, n, func(i int) {
-		ui.Column(c).FillWidth().Material(kit.Frost(c)).Children(func() {
+		ui.Column(c).FillWidth().Material(kit.Frost(theme.Of(c).Card)).Children(func() {
 			if i > 0 {
 				hairline(c)
 			}
@@ -110,7 +110,7 @@ func (v *labelsView) row(c *ui.Context, l core.Label) {
 		}
 		kit.Text(c, desc, t.Text.Sm).TextColor(color).SingleLine().Grow(1).Shrink(1)
 		if l.Builtin {
-			kit.Badge(c, i18n.T("settings.labels.builtin"))
+			kit.Badge(c, i18n.T("settings.labels.builtin")).Background(t.Background)
 		}
 		kit.Text(c, i18n.Tf("settings.labels.count", l.Count), t.Text.Sm).TextColor(t.Muted)
 		kit.IconButton(c, "file-pen", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -317,7 +317,7 @@ func (v *labelsView) rescan(c *ui.Context) {
 				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
 						kit.Text(c, i18n.Tf("settings.labels.rescan.running", done, v.total), t.Text.Sm)
-						ui.Row(c).FillWidth().Height(th.Space(1)).Radius(t.Radius.Full).Background(t.Hover).Clip().
+						ui.Row(c).FillWidth().Height(th.Space(1)).Radius(t.Radius.Full).Background(t.Background).Clip().
 							Label(i18n.T("settings.labels.rescan.progress")).Children(func() {
 							ui.Box(c).Grow(float32(done)).Background(t.Primary)
 							ui.Box(c).Grow(float32(v.pending))

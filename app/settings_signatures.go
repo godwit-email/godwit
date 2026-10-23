@@ -106,7 +106,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Sm).TextColor(t.Muted).SingleLine()
 					})
 					lines := core.SignaturePreview(sig.HTML, 2)
-					ui.Column(c).FillWidth().Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+					ui.Column(c).FillWidth().Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
 						if len(lines) == 0 {
 							kit.Text(c, i18n.T("settings.signatures.blank"), t.Text.Sm).TextColor(t.Idle)
 						}
@@ -126,7 +126,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	}
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		settingsCard(c, rows...)
-		kit.Text(c, i18n.T("settings.signatures.foot"), t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.signatures.foot"), t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 	})
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
@@ -421,7 +421,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		rows = append(rows, func() {
 			settingBlock(c, func() {
 				kit.Text(c, i18n.T("settings.account.signature.preview"), t.Text.Sm).TextColor(t.Muted)
-				ui.Column(c).FillWidth().Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				ui.Column(c).FillWidth().Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
 					if doc, ok := p.signaturePreview(*cur); ok {
 						richtext.Render(c, doc, richtext.RenderOptions{OnLink: a.openLink})
 					} else {
@@ -437,7 +437,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		// The sentence names where signatures are edited, and that name opens it.
 		where := i18n.T("settings.account.signature.where")
 		before, after, _ := strings.Cut(i18n.Tf("settings.account.signature.foot", where), where)
-		ui.RichText(c).FontSize(t.Text.Sm).TextColor(t.Muted).Children(func() {
+		ui.RichText(c).FontSize(t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4)).Children(func() {
 			ui.Text(c, before)
 			if ui.Link(c, where, "").TextColor(t.Foreground).Underline().Clicked() {
 				a.navigate(Route{Page: PageSettings, Settings: "signatures"})
@@ -497,7 +497,7 @@ func (p *settingsPage) codeView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	sc := p.sigCode
 	ui.Column(c).FillWidth().Height(theme.SignatureCodeHeight).Children(func() {
-		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(1), th.Space(1.5)).AlignItems(ui.Center).Background(t.Sidebar).Children(func() {
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(1), th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if sc.refused != "" {
 				kit.Text(c, i18n.T(sc.refused), t.Text.Sm).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
 			}
@@ -514,6 +514,9 @@ func (p *settingsPage) codeView(c *ui.Context) {
 			ui.Box(c).FillWidth().Grow(1)
 			return
 		}
+		ct := editor.DefaultTheme(th) // on the card's fill, as the page's editor
+		ct.Background = t.Card
+		sc.st.Theme = ct
 		editor.View(c, &sc.st).FillWidth().Grow(1)
 		if v := sc.st.Buffer.Version(); v != sc.ver {
 			sc.ver = v
