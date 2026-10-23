@@ -61,7 +61,7 @@ async function setup(
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
     onCite?(id: number): void;
-    onDraft?(approval: number): void;
+    onDraft?(approval: number): Promise<void>;
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
     page?: boolean;
@@ -1266,7 +1266,7 @@ describe("Panel", () => {
 
   it("decided approvals fold into one line each; a draft Wit made opens in compose", async () => {
     const user = userEvent.setup();
-    const onDraft = vi.fn();
+    const onDraft = vi.fn().mockResolvedValue(undefined);
     const ap = (
       id: number,
       callId: string,
@@ -1332,6 +1332,11 @@ describe("Panel", () => {
     expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
     expect(onDraft).toHaveBeenCalledWith(6);
+    // sent or deleted meanwhile: opening it fails, and the card goes
+    onDraft.mockRejectedValueOnce(new Error("no draft from approval 6"));
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    await waitFor(() => expect(screen.queryByText("草稿 · 还没发送")).toBeNull());
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
   });
 
   it("a draft sent or deleted since leaves the record, not the card", async () => {

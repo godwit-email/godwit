@@ -395,8 +395,10 @@ function ToolCard({
 }
 
 /** A decided approval as one line (已允许 / 已拒绝 / 没有完成 · what), a draft Wit made as its card. */
-function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): void; t: T }) {
+function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise<void>; t: T }) {
   const label = toolLabel(a.tool, t);
+  // the draft sent or deleted since this history was read: opening it fails, and its card goes
+  const [gone, setGone] = useState(false);
   const [Icon, key, tone] =
     a.state === "done"
       ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
@@ -417,7 +419,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): void; t
         <span>{t(key, label)}</span>
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
       </span>
-      {a.tool === "create_draft" && a.state === "done" && a.draft > 0 && (
+      {a.tool === "create_draft" && a.state === "done" && a.draft > 0 && !gone && (
         <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
             <RiDraftLine className="size-4" />
@@ -427,7 +429,12 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): void; t
             <span className="text-muted-foreground text-sm">{t("wit.draft.saved")}</span>
           </span>
           {onDraft && (
-            <Button variant="ghost" size="sm" className="font-normal" onClick={() => onDraft(a.id)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="font-normal"
+              onClick={() => onDraft(a.id).catch(() => setGone(true))}
+            >
               {t("wit.draft.open")}
               <RiExternalLinkLine className="text-muted-foreground" />
             </Button>
@@ -461,7 +468,7 @@ function Answer({
   review?: PanelReview;
   /** The answer's calls waiting for the user, as cards (with a header over a run's several). */
   tools: (as: Approval[]) => ReactNode;
-  onDraft?(approval: number): void;
+  onDraft?(approval: number): Promise<void>;
   onLink(url: string): void;
   onCite?(id: number): void;
   /** Adds a mail to the input's quoted mail (引用邮件). */
@@ -758,7 +765,7 @@ export function Panel({
   onLink(url: string): Promise<void>;
   onCite?(id: number): void;
   /** Opens the draft an allowed create_draft made (its approval), where the host can. */
-  onDraft?(approval: number): void;
+  onDraft?(approval: number): Promise<void>;
   transport: WitTransport;
   t: T;
   layout?: "panel" | "page";
