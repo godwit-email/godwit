@@ -1097,6 +1097,8 @@
   "wit_effort_low": "Laag",
   "wit_effort_medium": "Gemiddeld",
   "wit_effort_high": "Hoog",
+  "wit_elapsed_seconds": "{arg1} s",
+  "wit_elapsed_minutes": "{arg1} min {arg2} s",
   "wit_reasoning": "Denkproces",
   "wit_regenerate": "Opnieuw genereren",
   "wit_suggest": "Vraag Wit bijvoorbeeld",

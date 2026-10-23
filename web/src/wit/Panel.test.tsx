@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
-import { Panel, type PanelReview } from "./Panel";
+import { elapsed, Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -292,6 +292,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [1],
+            elapsed: 0,
           },
         ],
       },
@@ -317,6 +318,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [1],
+            elapsed: 0,
           },
         ],
       },
@@ -428,6 +430,14 @@ describe("Panel", () => {
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
   });
 
+  it("says how long an answer worked: seconds, then minutes; nothing when not known", () => {
+    expect(elapsed(undefined, t)).toBe("");
+    expect(elapsed(0, t)).toBe("");
+    expect(elapsed(300, t)).toBe("1 秒"); // under a second still worked
+    expect(elapsed(6400, t)).toBe("6 秒");
+    expect(elapsed(95_000, t)).toBe("1 分 35 秒");
+  });
+
   it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, from: string, callIds: string[]) => ({
@@ -457,6 +467,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -480,13 +491,17 @@ describe("Panel", () => {
               cite(2, 51, "Bob <bob@x.org>", ["c1"]),
             ],
             runs: [7],
+            elapsed: 6400,
           },
         ],
       },
     });
     // one line, folded: what it did
     const folded = screen.getByRole("button", { name: /思考过程/ });
-    expect(folded).toHaveTextContent("思考过程 · 调用了 2 个工具 · search_mail ×2、read_message");
+    // and how long it worked: 6.4 s
+    expect(folded).toHaveTextContent(
+      "思考过程 · 6 秒 · 调用了 2 个工具 · search_mail ×2、read_message",
+    );
     expect(folded).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
     await user.click(folded);
@@ -514,6 +529,7 @@ describe("Panel", () => {
         results: [],
         citations: [],
         runs: [1],
+        elapsed: 0,
       },
       {
         id: "a1",
@@ -525,6 +541,7 @@ describe("Panel", () => {
         results: [],
         citations: [],
         runs: [1],
+        elapsed: 0,
       },
     ],
   };
@@ -865,6 +882,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -876,6 +894,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
         approvals: [
@@ -935,6 +954,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -955,6 +975,7 @@ describe("Panel", () => {
             })),
             citations: [cite(1, 50), cite(2, 51, true)],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1002,6 +1023,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1026,6 +1048,7 @@ describe("Panel", () => {
               },
             ],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1063,6 +1086,7 @@ describe("Panel", () => {
           results: [],
           citations: [],
           runs: [7],
+          elapsed: 0,
         },
       ],
       approvals,
@@ -1121,6 +1145,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1132,6 +1157,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1182,6 +1208,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1196,6 +1223,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
         approvals: [a, b],
@@ -1311,6 +1339,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1325,6 +1354,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
         approvals: [ap(5, "p1", "plugin_cal_free", "rejected"), draft],
@@ -1379,6 +1409,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1390,6 +1421,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
         approvals: [done],
@@ -1416,6 +1448,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1427,6 +1460,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1453,6 +1487,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1464,6 +1499,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1502,6 +1538,7 @@ describe("Panel", () => {
           results: [],
           citations: [],
           runs: [7],
+          elapsed: 0,
         },
         {
           id: "a9",
@@ -1513,6 +1550,7 @@ describe("Panel", () => {
           results: [],
           citations: [],
           runs: [7],
+          elapsed: 0,
         },
       ],
     };
@@ -1587,6 +1625,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1598,6 +1637,7 @@ describe("Panel", () => {
             results: [],
             citations: [c],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1641,6 +1681,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1665,6 +1706,7 @@ describe("Panel", () => {
               },
             ],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1767,6 +1809,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1791,6 +1834,7 @@ describe("Panel", () => {
               },
             ],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1822,6 +1866,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1846,6 +1891,7 @@ describe("Panel", () => {
               },
             ],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -1891,6 +1937,7 @@ describe("Panel", () => {
             results: [],
             citations: [],
             runs: [7],
+            elapsed: 0,
           },
           {
             id: "a1",
@@ -1902,6 +1949,7 @@ describe("Panel", () => {
             results: [],
             citations: [cite(1, 50), cite(2, 51, true)],
             runs: [7],
+            elapsed: 0,
           },
         ],
       },
@@ -2053,6 +2101,7 @@ describe("Panel", () => {
           results: [],
           citations: [],
           runs: [7],
+          elapsed: 0,
         },
         {
           id: "a1",
@@ -2064,6 +2113,7 @@ describe("Panel", () => {
           results: [],
           citations: [],
           runs: [7],
+          elapsed: 0,
         },
       ],
       approvals: [a],

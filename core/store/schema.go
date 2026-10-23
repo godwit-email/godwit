@@ -379,4 +379,8 @@ var Migrations = [][]string{{
 	`ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE conversations ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE conversations ADD COLUMN summary_epoch INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// How long a run worked, in milliseconds: each of its drives adds its
+	// time (core.drive), not the time waiting on the user's decisions.
+	`ALTER TABLE runs ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0`,
 }}

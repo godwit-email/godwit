@@ -1097,6 +1097,8 @@
   "wit_effort_low": "低",
   "wit_effort_medium": "中",
   "wit_effort_high": "高",
+  "wit_elapsed_seconds": "{arg1} 秒",
+  "wit_elapsed_minutes": "{arg1} 分 {arg2} 秒",
   "wit_reasoning": "思考プロセス",
   "wit_regenerate": "再生成",
   "wit_suggest": "Wit に聞いてみましょう",

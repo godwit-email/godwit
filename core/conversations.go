@@ -67,6 +67,9 @@ type WitEvent struct {
 type RunSpan struct {
 	ID       int64
 	From, To int
+	// Active is how long the run worked: thinking, calling tools, writing;
+	// not the time it waited for the user to decide its calls.
+	Active time.Duration
 }
 
 // Citation is a message a run's tools showed the model: RunID's call CallID
@@ -308,12 +311,13 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if len(rows.Values) > 0 {
 		c.ActiveRunID = store.Int(rows.Values[0][0])
 	}
-	rows, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
+	rows, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to, active_ms FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
 	if err != nil {
 		return Conversation{}, err
 	}
 	for _, r := range rows.Values {
-		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2]))})
+		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2])),
+			Active: time.Duration(store.Int(r[3])) * time.Millisecond})
 	}
 	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
 		COALESCE(SUM(output_tokens), 0) + (SELECT spent_output FROM conversations WHERE id = ?),
@@ -1030,6 +1034,7 @@ type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() 
 
 func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
+	start := time.Now()
 	// The Wit sidebar shows which ask conversations are answering: it re-reads as their runs
 	// start and end (a compose window's runs change nothing it shows).
 	if job.conv.Kind == "ask" {
@@ -1072,6 +1077,11 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	}
 	ctx := context.WithoutCancel(job.ctx) // the outcome is recorded even when cancelled
 	res := wait()
+	// its time at work, each drive of it (a resume is another), before the outcome is told
+	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE runs SET active_ms = active_ms + ? WHERE id = ?",
+		Args: []any{time.Since(start).Milliseconds(), job.id}}); err != nil {
+		slog.Default().Warn("could not record a run's time", "run", job.id, "err", err)
+	}
 	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
 		used := res.Usage // whatever res becomes, the model calls took these

@@ -1097,6 +1097,8 @@
   "wit_effort_low": "낮음",
   "wit_effort_medium": "보통",
   "wit_effort_high": "높음",
+  "wit_elapsed_seconds": "{arg1}초",
+  "wit_elapsed_minutes": "{arg1}분 {arg2}초",
   "wit_reasoning": "사고 과정",
   "wit_regenerate": "다시 생성",
   "wit_suggest": "Wit에게 물어보세요",

@@ -1097,6 +1097,8 @@
   "wit_effort_low": "Thấp",
   "wit_effort_medium": "Trung bình",
   "wit_effort_high": "Cao",
+  "wit_elapsed_seconds": "{arg1} giây",
+  "wit_elapsed_minutes": "{arg1} phút {arg2} giây",
   "wit_reasoning": "Quá trình suy nghĩ",
   "wit_regenerate": "Tạo lại",
   "wit_suggest": "Thử hỏi Wit",

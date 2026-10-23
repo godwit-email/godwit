@@ -148,6 +148,7 @@ describe("toChunks", () => {
           results: [],
           citations: [],
           runs: [1],
+          elapsed: 0,
         },
       ],
     });
@@ -292,6 +293,7 @@ describe("historyToMessages", () => {
           results: [],
           citations: [],
           runs: [1],
+          elapsed: 0,
         },
         {
           id: "a1",
@@ -307,6 +309,7 @@ describe("historyToMessages", () => {
           results: [{ callId: "c1", name: "search", output: '"ok"', error: "" }],
           citations: [cite],
           runs: [1],
+          elapsed: 0,
         },
         {
           id: "q2",
@@ -318,6 +321,7 @@ describe("historyToMessages", () => {
           results: [],
           citations: [],
           runs: [2],
+          elapsed: 0,
         },
       ],
       approvals: [
@@ -384,6 +388,7 @@ describe("historyToMessages call IDs", () => {
         results: [],
         citations: [],
         runs: [run],
+        elapsed: 0,
       },
       {
         id: `a${n + 1}`,
@@ -395,6 +400,7 @@ describe("historyToMessages call IDs", () => {
         results: [],
         citations: [],
         runs: [run],
+        elapsed: 0,
       },
     ];
     const h: WitHistory = {
@@ -417,6 +423,40 @@ describe("historyToMessages call IDs", () => {
     expect(second.parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
       state: "approval-requested",
     });
+  });
+});
+
+describe("historyToMessages elapsed", () => {
+  it("an answer carries how long its runs worked; none when not known", () => {
+    const m = (id: string, role: string, elapsed: number) => ({
+      id,
+      role,
+      text: id,
+      reasoning: "",
+      quoted: [],
+      calls: [],
+      results: [],
+      citations: [],
+      runs: [1],
+      elapsed,
+    });
+    const h: WitHistory = {
+      conversation: 1,
+      model: "",
+      effort: "",
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+      running: 0,
+      messages: [
+        m("q0", "user", 0),
+        m("a1", "assistant", 6400),
+        m("q2", "user", 0),
+        m("a3", "assistant", 0),
+      ],
+      approvals: [],
+    };
+    const ms = historyToMessages(h);
+    expect(ms[1].metadata).toEqual({ elapsed: 6400 });
+    expect(ms[3].metadata).toBeUndefined();
   });
 });
 
@@ -479,6 +519,7 @@ describe("WitTransport", () => {
           results: [],
           citations: [],
           runs: [1],
+          elapsed: 0,
         },
         {
           id: "a1",
@@ -490,6 +531,7 @@ describe("WitTransport", () => {
           results: [],
           citations: [],
           runs: [1],
+          elapsed: 0,
         },
       ],
     };
@@ -581,6 +623,7 @@ describe("WitTransport", () => {
       results: [],
       citations: [],
       runs,
+      elapsed: 0,
     });
     const h: WitHistory = {
       conversation: 1,
@@ -690,6 +733,7 @@ describe("WitTransport selections", () => {
             results: [],
             citations: [],
             runs,
+            elapsed: 0,
           },
         ]
       : [],

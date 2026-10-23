@@ -65,6 +65,7 @@ const msg = (id: string, role: string, t: string, runs: number[]) => ({
   results: [],
   citations: [],
   runs,
+  elapsed: 0,
 });
 const hist = (conversation: number, answer?: string): WitHistory => ({
   conversation,

@@ -21,6 +21,8 @@ export type WitMeta = {
   quoted?: number[];
   hits?: MailHit[];
   rewind?: number;
+  /** An answer's runs' time at work, in milliseconds (core's; none while it streams). */
+  elapsed?: number;
 };
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
@@ -237,7 +239,8 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
       if (as.length > 0) parts.push({ type: "data-approvals", data: as });
       if (m.text) parts.push({ type: "text", text: m.text, state: "done" });
       if (m.citations.length > 0) parts.push({ type: "data-citations", data: m.citations });
-      out.push({ m: { id: m.id, role: "assistant", parts }, runs: m.runs });
+      const metadata = m.elapsed > 0 ? { elapsed: m.elapsed } : undefined;
+      out.push({ m: { id: m.id, role: "assistant", metadata, parts }, runs: m.runs });
     }
     const as = after.get(i);
     if (as) out.push({ m: answer(as), runs: [as[0].run] });

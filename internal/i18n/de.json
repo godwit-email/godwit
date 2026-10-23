@@ -1104,6 +1104,8 @@
   "wit_effort_low": "Niedrig",
   "wit_effort_medium": "Mittel",
   "wit_effort_high": "Hoch",
+  "wit_elapsed_seconds": "{arg1} s",
+  "wit_elapsed_minutes": "{arg1} min {arg2} s",
   "wit_reasoning": "Denkprozess",
   "wit_regenerate": "Neu generieren",
   "wit_suggest": "Frag Wit zum Beispiel",

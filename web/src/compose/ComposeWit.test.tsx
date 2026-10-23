@@ -161,6 +161,7 @@ const withPending: WitHistory = {
       results: [],
       citations: [],
       runs: [7],
+      elapsed: 0,
     },
     {
       id: "a1",
@@ -172,6 +173,7 @@ const withPending: WitHistory = {
       results: [],
       citations: [],
       runs: [7],
+      elapsed: 0,
     },
   ],
   approvals: [pending],
@@ -761,6 +763,7 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
         results: [],
         citations: [],
         runs: [7],
+        elapsed: 0,
       },
       {
         id: "a1",
@@ -772,6 +775,7 @@ test("links go through the host's openLink (ComposePage.openLink)", async () => 
         results: [],
         citations: [],
         runs: [7],
+        elapsed: 0,
       },
     ],
   });

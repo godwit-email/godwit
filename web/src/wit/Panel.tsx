@@ -162,6 +162,15 @@ function toolsLabel(calls: DynamicToolUIPart[], page: boolean, t: T): string {
   return `${t("wit.tools", count.size)} · ${names.join(t("mail.list_sep"))}`;
 }
 
+/** How long an answer worked (ms) as the steps line says it: N 秒, M 分 S 秒; "" when not known. */
+export const elapsed = (ms: number | undefined, t: T) => {
+  if (!ms) return "";
+  const s = Math.max(1, Math.round(ms / 1000));
+  return s < 60
+    ? t("wit.elapsed.seconds", s)
+    : t("wit.elapsed.minutes", Math.floor(s / 60), s % 60);
+};
+
 const clip = (s: string, n = ARGS) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 const isDraftEdit = (tool: string) => tool === "update_draft" || tool === "update_selection";
@@ -557,6 +566,7 @@ function Answer({
                       ? t("wit.thinking")
                       : [
                           thought.length > 0 && t("wit.reasoning"),
+                          elapsed(m.metadata?.elapsed, t),
                           done.length > 0 && toolsLabel(done, page, t),
                         ]
                           .filter(Boolean)

@@ -1033,6 +1033,8 @@
   "wit_quote_none": "没有找到邮件",
   "wit_quote_remove": "移除 {arg1}",
   "wit_quote_search": "搜索邮件",
+  "wit_elapsed_seconds": "{arg1} 秒",
+  "wit_elapsed_minutes": "{arg1} 分 {arg2} 秒",
   "wit_reasoning": "思考过程",
   "wit_regenerate": "重新生成",
   "wit_scroll_end": "回到最新",
