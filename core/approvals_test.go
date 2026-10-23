@@ -450,12 +450,15 @@ func TestCancelRunClosesHistory(t *testing.T) {
 	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), ErrInvalidState)
 	assert.Zero(t, e.applied.Load())
 	assert.Len(t, e.srv.Requests(), 1, "cancelling does not ask the model")
-	select {
-	case ev := <-evs:
-		assert.Equal(t, "approvals.changed", ev.Type)
-		assert.Equal(t, conv.ID, ev.ConversationID)
-	case <-time.After(time.Second):
-		t.Fatal("no approvals.changed")
+	for got := false; !got; { // the interrupting run's runs.changed may still arrive first
+		select {
+		case ev := <-evs:
+			if got = ev.Type == "approvals.changed"; got {
+				assert.Equal(t, conv.ID, ev.ConversationID)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no approvals.changed")
+		}
 	}
 
 	evs2 := e.start(t, conv, "something else")
