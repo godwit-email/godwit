@@ -150,6 +150,7 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
   error: "",
   destinations: [],
   sessionAllow: false,
+  draft: 0,
   args: "",
   ...p,
 });
@@ -359,6 +360,7 @@ export const witConversation = (): WitHistory =>
         summary: "创建草稿",
         args: createDraft.args,
         sessionAllow: true,
+        draft: 0,
       }),
     ],
   });

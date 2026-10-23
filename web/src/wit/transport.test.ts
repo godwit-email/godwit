@@ -29,6 +29,7 @@ const approval = (a: Partial<Approval>): Approval => ({
   error: "",
   destinations: [],
   sessionAllow: false,
+  draft: 0,
   args: "",
   ...a,
 });
@@ -370,6 +371,7 @@ describe("historyToMessages call IDs", () => {
       destinations: [],
       args: "{}",
       sessionAllow: false,
+      draft: 0,
     });
     const turn = (n: number, run: number) => [
       {

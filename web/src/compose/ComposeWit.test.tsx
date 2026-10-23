@@ -138,6 +138,7 @@ const pending: Approval = {
   error: "",
   destinations: [],
   sessionAllow: false,
+  draft: 0,
   args: "",
 };
 const withPending: WitHistory = {

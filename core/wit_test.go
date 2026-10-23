@@ -239,7 +239,15 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	assert.Equal(t, d.ID, id, "the draft the approval made")
 	_, err = e.s.DraftForApproval(t.Context(), a.ID+999)
 	assert.Error(t, err, "an approval that made no draft")
+	got, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, d.ID, got.DraftID, "the approval names its draft")
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM drafts WHERE id = ? AND ai_approval_id = ?", d.ID, a.ID))
+	_, err = e.s.db.Execute(t.Context(), "DELETE FROM drafts WHERE id = ?", d.ID)
+	require.NoError(t, err)
+	got, err = e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Zero(t, got.DraftID, "a draft sent or deleted since is gone")
 }
 
 func TestAskInjectionInSubject(t *testing.T) {

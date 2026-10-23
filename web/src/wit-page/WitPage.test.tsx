@@ -323,6 +323,7 @@ test("approvals decide through WitPage.decide", async () => {
     error: "",
     destinations: [],
     sessionAllow: false,
+    draft: 0,
     args: "{}",
   };
   vi.mocked(api.load).mockResolvedValue(state(3, 1));

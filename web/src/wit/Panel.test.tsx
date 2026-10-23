@@ -585,6 +585,7 @@ describe("Panel", () => {
             error: "",
             destinations: [],
             sessionAllow: false,
+            draft: 0,
             args: "",
           },
         ],
@@ -884,6 +885,7 @@ describe("Panel", () => {
             destinations: [],
             args: "{}",
             sessionAllow: false,
+            draft: 0,
           },
         ],
       },
@@ -1041,6 +1043,7 @@ describe("Panel", () => {
       destinations: [],
       args: "",
       sessionAllow: false,
+      draft: 0,
     };
     const history = (approvals: Approval[]): WitHistory => ({
       ...empty,
@@ -1149,6 +1152,7 @@ describe("Panel", () => {
       destinations: ["api.x.com", "cdn.x.com"],
       args,
       sessionAllow: false,
+      draft: 0,
     });
     const a = tool(
       5,
@@ -1243,6 +1247,7 @@ describe("Panel", () => {
       destinations: [],
       args: "{}",
       sessionAllow: false,
+      draft: 0,
     });
     emit({ kind: "tool_call", call: call("p1") });
     emit({ kind: "tool_call", call: call("p2") });
@@ -1279,8 +1284,12 @@ describe("Panel", () => {
       destinations: [],
       args,
       sessionAllow: false,
+      draft: 0,
     });
-    const draft = ap(6, "p2", "create_draft", "done", '{"to":["Lena <l@x>"],"subject":"Re: Q4"}');
+    const draft = {
+      ...ap(6, "p2", "create_draft", "done", '{"to":["Lena <l@x>"],"subject":"Re: Q4"}'),
+      draft: 9,
+    };
     await setup({
       page: true,
       onDraft,
@@ -1323,6 +1332,57 @@ describe("Panel", () => {
     expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
     expect(onDraft).toHaveBeenCalledWith(6);
+  });
+
+  it("a draft sent or deleted since leaves the record, not the card", async () => {
+    const done: Approval = {
+      id: 6,
+      run: 7,
+      callId: "p2",
+      tool: "create_draft",
+      summary: "",
+      state: "done",
+      error: "",
+      destinations: [],
+      args: '{"subject":"Re: Q4"}',
+      sessionAllow: false,
+      draft: 0,
+    };
+    await setup({
+      page: true,
+      onDraft: vi.fn(),
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Drafted.",
+            reasoning: "",
+            quoted: [],
+            calls: [{ id: "p2", name: "create_draft", args: done.args }],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [done],
+      },
+    });
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
+    expect(screen.queryByText("草稿 · 还没发送")).toBeNull();
+    expect(screen.queryByRole("button", { name: /在撰写窗口打开/ })).toBeNull();
   });
 
   it("a resumed run that is not the last answer's streams into an answer of its own", async () => {
@@ -1592,8 +1652,12 @@ describe("Panel", () => {
         ],
       },
     });
+    // in the folded list, too: shown, but nothing to click
+    await user.click(screen.getByRole("button", { name: "引用了 1 封邮件" }));
+    const list = screen.getByRole("region", { name: "引用的邮件" });
+    expect(within(list).getByRole("button", { name: /Gone mail/ })).toBeDisabled();
     await user.click(await screen.findByRole("button", { name: "[1]" }));
-    expect(await screen.findByText("Gone mail")).toBeInTheDocument();
+    expect(await screen.findAllByText("Gone mail")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "查看邮件" })).toBeNull();
     expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull();
   });
@@ -1776,6 +1840,7 @@ describe("Panel", () => {
       destinations: [],
       args: "{}",
       sessionAllow: true,
+      draft: 0,
     };
     const history: WitHistory = {
       ...empty,
@@ -1822,7 +1887,7 @@ describe("Panel", () => {
     await waitFor(() => expect(screen.queryByText("Wit 想要：创建草稿")).toBeNull());
     r.unmount();
     await setup({
-      history: { ...history, approvals: [{ ...a, sessionAllow: false }] },
+      history: { ...history, approvals: [{ ...a, sessionAllow: false, draft: 0 }] },
       onSession,
       page: true,
     });

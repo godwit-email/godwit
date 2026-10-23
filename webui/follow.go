@@ -94,6 +94,8 @@ type Approval struct {
 	Args string `json:"args"`
 	// SessionAllow: 本次对话都允许 can decide it (WitPage.DecideSession).
 	SessionAllow bool `json:"sessionAllow"`
+	// Draft is the draft an allowed create_draft made, while it exists (0: none).
+	Draft int64 `json:"draft"`
 }
 
 // follow is a target's subscription to a conversation. It lasts until the
@@ -266,7 +268,7 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).

@@ -45,9 +45,11 @@ export function Citations({
           <button
             key={c.messageId}
             type="button"
+            // a message deleted since: listed, with nothing to open
+            disabled={c.gone}
             onClick={() => onOpen(c.messageId)}
             className={cn(
-              "flex min-w-0 gap-2 rounded-lg border-[0.5px] bg-background px-2.5 py-2 text-left hover:bg-accent",
+              "flex min-w-0 gap-2 rounded-lg border-[0.5px] bg-background px-2.5 py-2 text-left enabled:hover:bg-accent disabled:opacity-60",
               suspect && "border-(--warning-border)",
             )}
           >

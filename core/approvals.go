@@ -54,6 +54,9 @@ type Approval struct {
 	Destinations              []string
 	// SessionAllow: 本次对话都允许 can approve it (ResolveApprovalForConversation).
 	SessionAllow bool
+	// DraftID is the draft it made (an allowed create_draft), while that
+	// draft exists: 0 once it is sent or deleted.
+	DraftID int64
 }
 
 // ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
@@ -233,7 +236,8 @@ func (a approvalRow) toolResult() ai.ToolResult {
 func (s *Service) approvalRows(ctx context.Context, where string, args ...any) ([]approvalRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.id, a.run_id, r.conversation_id, a.seq, a.tool, a.args, a.summary, a.state, a.result,
 		a.call_id, a.target_kind, a.target_id, a.target_version, a.destinations, a.binding, a.source, a.extension,
-		CASE a.source WHEN 'mcp' THEN (SELECT name FROM mcp_servers WHERE id = CAST(a.extension AS INTEGER)) END
+		CASE a.source WHEN 'mcp' THEN (SELECT name FROM mcp_servers WHERE id = CAST(a.extension AS INTEGER)) END,
+		(SELECT MAX(id) FROM drafts WHERE ai_approval_id = a.id)
 		FROM approvals a JOIN runs r ON r.id = a.run_id
 		WHERE `+where+" ORDER BY a.run_id, a.seq", args...)
 	if err != nil {
@@ -246,6 +250,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 			State: store.Str(r[7])}, result: store.Str(r[8]), targetKind: store.Str(r[10]),
 			targetID: store.Int(r[11]), targetVersion: store.Int(r[12]), binding: store.Str(r[14]), source: store.Str(r[15]),
 			extension: store.Str(r[16]), label: store.Str(r[17])}
+		a.DraftID = store.Int(r[18])
 		if err := json.Unmarshal([]byte(store.Str(r[13])), &a.Destinations); err != nil {
 			return nil, err
 		}

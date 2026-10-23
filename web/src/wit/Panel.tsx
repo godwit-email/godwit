@@ -417,7 +417,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): void; t
         <span>{t(key, label)}</span>
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
       </span>
-      {a.tool === "create_draft" && a.state === "done" && (
+      {a.tool === "create_draft" && a.state === "done" && a.draft > 0 && (
         <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
             <RiDraftLine className="size-4" />
