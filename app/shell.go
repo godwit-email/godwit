@@ -108,8 +108,11 @@ func (a *App) onEvent(ev events.Event) {
 	case events.SyncFinished:
 		delete(a.syncing, ev.AccountID)
 		delete(a.syncErr, ev.AccountID)
-		a.syncedAt = a.clock.Now()
-		a.syncedAtBy[ev.AccountID] = a.syncedAt
+		now := a.clock.Now()
+		if a.syncBatch == nil && len(a.syncErr) == 0 {
+			a.syncedAt = now
+		}
+		a.syncedAtBy[ev.AccountID] = now
 		a.mail.older.notYet = 0
 		a.tick()
 	case events.SyncFailed:

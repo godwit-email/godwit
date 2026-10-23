@@ -194,11 +194,52 @@ func (a *App) showUnread(inbox int) {
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
-// SyncAll syncs every account now.
+// SyncAll syncs every account now in a coordinated manual batch.
 func (a *App) SyncAll() {
+	if len(a.accounts) == 0 {
+		return
+	}
+	a.syncBatchGen++
+	batchID := a.syncBatchGen
+	b := &syncBatch{
+		id:      batchID,
+		pending: make(map[int64]bool, len(a.accounts)),
+		failed:  make(map[int64]bool),
+	}
+	for _, acc := range a.accounts {
+		b.pending[acc.ID] = true
+	}
+	a.syncBatch = b
+	a.tick()
+
 	for _, acc := range a.accounts {
 		id := acc.ID
-		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
+		a.do(func(ctx context.Context) error {
+			return a.svc.SyncNow(ctx, id)
+		}, func(err error) {
+			a.onBatchDone(batchID, id, err)
+		})
+	}
+}
+
+func (a *App) onBatchDone(batchID uint64, accountID int64, err error) {
+	if a.syncBatch == nil || a.syncBatch.id != batchID {
+		if err != nil {
+			a.toastErr(err)
+		}
+		return
+	}
+	delete(a.syncBatch.pending, accountID)
+	if err != nil {
+		a.syncBatch.failed[accountID] = true
+		a.toastErr(err)
+	}
+	if len(a.syncBatch.pending) == 0 {
+		if len(a.syncBatch.failed) == 0 && len(a.syncErr) == 0 {
+			a.syncedAt = a.clock.Now()
+		}
+		a.syncBatch = nil
+		a.tick()
 	}
 }
 

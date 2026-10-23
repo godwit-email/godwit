@@ -165,6 +165,13 @@ type Route struct {
 	Settings                            string
 }
 
+// syncBatch coordinates a manual "Sync All" across multiple accounts.
+type syncBatch struct {
+	id      uint64
+	pending map[int64]bool
+	failed  map[int64]bool
+}
+
 // App is the interface's state. Every field is read and written on the UI thread.
 type App struct {
 	svc   *core.Service
@@ -236,12 +243,14 @@ type App struct {
 	refreshStop       func()         // the pending throttled refresh; nil when none
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
-	syncing    map[int64]bool      // accounts syncing now
-	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
-	syncOpen   bool                // the sync status's account list shows
-	syncedAt   time.Time           // the last successful sync; zero before one
-	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
-	ticking    bool                // a minute tick redraws the sync age
+	syncBatchGen uint64
+	syncBatch    *syncBatch
+	syncing      map[int64]bool      // accounts syncing now
+	syncErr      map[int64]syncFail  // each account's failing sync, until it syncs
+	syncOpen     bool                // the sync status's account list shows
+	syncedAt     time.Time           // the last successful sync; zero before one
+	syncedAtBy   map[int64]time.Time // each account's last successful sync since launch
+	ticking      bool                // a minute tick redraws the sync age
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
@@ -392,6 +401,19 @@ func (a *App) load() {
 			}
 		}
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		if a.syncBatch != nil {
+			for id := range a.syncBatch.pending {
+				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
+					delete(a.syncBatch.pending, id)
+				}
+			}
+			if len(a.syncBatch.pending) == 0 {
+				if len(a.syncBatch.failed) == 0 {
+					a.syncedAt = a.clock.Now()
+				}
+				a.syncBatch = nil
+			}
+		}
 		if sigs != nil {
 			a.signatures = sigs
 		}
