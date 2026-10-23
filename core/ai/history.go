@@ -315,7 +315,10 @@ func (h *History) visible() []int {
 
 // cut is where the visible messages vis go on after sum: 0 when it stands
 // for none. sum ending at the last of vis stands for it too: the question a
-// run asks next follows it (a rewind to the question after it).
+// run asks next follows it (a rewind to the question after it). It never
+// passes the second-to-last turn's question, so the last two turns go in full
+// even when sum condensed one of them (it was written before a rewind dropped
+// the turn after it).
 func (h *History) cut(vis []int, sum Summary) int {
 	if sum.Text == "" {
 		return 0
@@ -324,7 +327,16 @@ func (h *History) cut(vis []int, sum Summary) int {
 	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != gai.RoleUser {
 		return 0
 	}
-	return i + 1
+	var starts []int // where each turn after the first begins
+	for k, j := range vis {
+		if k > 0 && h.msgs[j].Role == gai.RoleUser {
+			starts = append(starts, k)
+		}
+	}
+	if len(starts) < 2 || starts[len(starts)-2] < 2 {
+		return 0
+	}
+	return min(i+1, starts[len(starts)-2])
 }
 
 // note is the model message standing in for visible messages 1..cut-1: sum's,

@@ -183,14 +183,22 @@ func TestHistorySummaryStandsIn(t *testing.T) {
 	assert.Equal(t, SummaryNote+"\n\nthey asked q1 and q2\n\n"+SummaryGapNote, shown[1].Text, "over budget, q3's turn goes after it")
 	assert.Equal(t, "q4", shown[2].Text)
 
-	rewound, _, err := h.Rewind(9, sum) // asked again: the question right after the summary
+	rewound, _, err := h.Rewind(13, sum) // q4 asked again: the summary stays
 	require.NoError(t, err)
 	s, err = rewound.Send(100000, sum)
 	require.NoError(t, err)
-	shown = display(s.Ask("q3 again", "").msgs)
-	require.Len(t, shown, 3)
-	assert.Equal(t, SummaryNote+"\n\nthey asked q1 and q2", shown[1].Text, "a summary ending the history stands in for it")
-	assert.Equal(t, "q3 again", shown[2].Text)
+	shown = display(s.msgs)
+	assert.Equal(t, []string{"q1", SummaryNote + "\n\nthey asked q1 and q2", "q2"}, texts(shown[:3]), "the last two turns still go in full")
+	assert.Equal(t, "q3", shown[len(shown)-4].Text)
+
+	late := Summary{Text: "they asked q1 to q3", Upto: more.CompactPoint()}
+	rewound, _, err = more.Rewind(late.Upto+1, late) // asked again: the question right after the summary
+	require.NoError(t, err)
+	s, err = rewound.Send(100000, late)
+	require.NoError(t, err)
+	shown = display(s.Ask("q4 again", "").msgs)
+	assert.Equal(t, []string{"q1", SummaryNote + "\n\nthey asked q1 to q3", "q2"}, texts(shown[:3]), "a summary ending the history stands in for it")
+	assert.Equal(t, "q4 again", shown[len(shown)-1].Text)
 
 	stale := Summary{Text: "x", Upto: 6} // inside a turn
 	s, err = h.Send(100000, stale)
