@@ -636,7 +636,8 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 	defer end()
 	w, stop := s.subscribe(id, true)
 	// A read is kept only if no run of the conversation moved meanwhile:
-	// otherwise what it saved may be half in it.
+	// otherwise what it saved may be half in it. Runs move a few times each,
+	// and a new one waits for the user: the reads settle.
 	var c Conversation
 	for try := 0; ; try++ {
 		before, err := s.runStates(ctx, id)
@@ -654,8 +655,12 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 			stop()
 			return Conversation{}, nil, nil, err
 		}
-		if after == before || try == followTries-1 {
+		if after == before {
 			break
+		}
+		if err := ctx.Err(); err != nil {
+			stop()
+			return Conversation{}, nil, nil, err
 		}
 	}
 	read := map[int64]bool{} // runs whose saved history is in c
@@ -682,9 +687,6 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 	}, func(run int64) bool { return run != c.ActiveRunID && read[run] })
 	return c, w.ch, stop, nil
 }
-
-// followTries caps FollowConversation's reads while runs keep moving.
-const followTries = 5
 
 // runStates is where conversation id's runs stand, to tell whether one
 // moved between two reads.

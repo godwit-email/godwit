@@ -69,12 +69,21 @@ func (s *Service) convSummary(ctx context.Context, id int64) (ai.Summary, int64,
 // its history, is past model's history budget with its summary standing in;
 // one compaction a conversation at a time.
 func (s *Service) compactLater(id int64, model ai.ResolvedModel, h *ai.History) {
-	if _, busy := s.compacting.LoadOrStore(id, true); busy {
-		return
-	}
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil {
-		s.compacting.Delete(id)
+		return
+	}
+	// Under budget, nothing to do: CompactConversation is not kept waiting for it.
+	sum, _, err := s.convSummary(ctx, id)
+	if err == nil {
+		var size int
+		if size, err = h.CompactedSize(sum); err == nil && size <= s.historyBudget(model.BaseURL, model.Model) {
+			end()
+			return
+		}
+	}
+	if _, busy := s.compacting.LoadOrStore(id, true); busy {
+		end()
 		return
 	}
 	go func() {
