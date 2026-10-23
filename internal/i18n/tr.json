@@ -450,6 +450,8 @@
   "reader_save_as": "Farklı kaydet…",
   "reader_to": "Kime: {arg1} · {arg2}",
   "reader_today": "Bugün",
+  "reader_thread_collapse": "E-posta geçmişini daralt",
+  "reader_thread_expand": "E-posta geçmişini genişlet ({arg1, number, ::group-off} e-posta)",
   "reader_truncated": "Bu ileti çok uzun; yalnızca başlangıç kısmı gösteriliyor",
   "reader_trust_sender": "Bu gönderene her zaman güven",
   "reader_unsubscribe": "Abonelikten çık",

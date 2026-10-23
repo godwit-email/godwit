@@ -450,6 +450,8 @@
   "reader_save_as": "Lưu thành…",
   "reader_to": "Đến {arg1} · {arg2}",
   "reader_today": "Hôm nay",
+  "reader_thread_collapse": "Thu gọn lịch sử email",
+  "reader_thread_expand": "Mở rộng lịch sử email ({arg1, number, ::group-off} email)",
   "reader_truncated": "Thư này quá dài; chỉ hiển thị phần đầu",
   "reader_trust_sender": "Luôn tin cậy người gửi này",
   "reader_unsubscribe": "Hủy đăng ký",

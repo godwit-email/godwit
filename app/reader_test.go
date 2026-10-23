@@ -563,6 +563,55 @@ func TestReaderThreadCollapse(t *testing.T) {
 	})
 }
 
+func TestReaderThreadHistoryCollapse(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc, base := accs[0], h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("user1@example.com", acc.Email, "Plan", "msg one", coretest.MessageID("m1@x"), at(base, 5)))
+	h.put(acc, "INBOX", coretest.Msg("user2@example.com", acc.Email, "Re: Plan", "msg two", coretest.MessageID("m2@x"), coretest.InReplyTo("m1@x"), at(base, 4)))
+	h.put(acc, "INBOX", coretest.Msg("user3@example.com", acc.Email, "Re: Plan", "msg three", coretest.MessageID("m3@x"), coretest.InReplyTo("m2@x"), at(base, 3)))
+	h.put(acc, "INBOX", coretest.Msg("user4@example.com", acc.Email, "Re: Plan", "msg four", coretest.MessageID("m4@x"), coretest.InReplyTo("m3@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("user5@example.com", acc.Email, "Re: Plan", "msg five", coretest.MessageID("m5@x"), coretest.InReplyTo("m4@x"), at(base, 1)))
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	thread := page.Items[0].ID
+	msgs := h.messages(thread)
+	if len(msgs) != 5 {
+		t.Fatalf("%d messages in the thread, want 5", len(msgs))
+	}
+	// Mark first 4 as seen so only the 5th message opens
+	seenIDs := []int64{msgs[0].ID, msgs[1].ID, msgs[2].ID, msgs[3].ID}
+	if err := h.env.Svc.SetFlags(context.Background(), seenIDs, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.openThread(thread)
+	h.seeBody(msgs[4].ID)
+	r := h.app.mail.reader
+	if !r.open[msgs[4].ID] || r.open[msgs[0].ID] {
+		t.Fatalf("open %v; want only newest open", r.open)
+	}
+	// Since 4 folded messages exist (>= 4), history card collapses them
+	if r.historyOpen {
+		t.Fatal("history starts collapsed, want historyOpen false")
+	}
+	h.until("history toggle shown", func() bool {
+		return h.tt.HasText("展开历史邮件（4 封）")
+	})
+	// The individual folded snippets should not be visible while collapsed
+	if h.tt.HasText("msg one") {
+		t.Fatalf("msg one snippet shown while history is collapsed: %q", h.tt.Texts())
+	}
+	// Click the history toggle to expand
+	h.click("展开历史邮件（4 封）")
+	h.until("history expanded", func() bool {
+		return r.historyOpen && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+	})
+	// Click again to collapse
+	h.click("折叠历史邮件")
+	h.until("history collapsed again", func() bool {
+		return !r.historyOpen && !h.tt.HasText("msg one")
+	})
+}
+
 func TestReaderMarksRead(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc, base := accs[0], h.clock.Now()

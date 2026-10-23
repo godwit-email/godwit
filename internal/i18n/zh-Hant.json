@@ -450,6 +450,8 @@
   "reader_save_as": "另存新檔…",
   "reader_to": "寄給 {arg1} · {arg2}",
   "reader_today": "今天",
+  "reader_thread_collapse": "摺疊歷史郵件",
+  "reader_thread_expand": "展開歷史郵件（{arg1, number, ::group-off} 封）",
   "reader_truncated": "內文過長，只顯示了開頭",
   "reader_trust_sender": "始終信任此寄件人",
   "reader_unsubscribe": "取消訂閱",

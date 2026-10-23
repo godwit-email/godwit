@@ -450,6 +450,8 @@
   "reader_save_as": "Сохранить как…",
   "reader_to": "Кому: {arg1} · {arg2}",
   "reader_today": "Сегодня",
+  "reader_thread_collapse": "Свернуть историю переписки",
+  "reader_thread_expand": "{arg1, plural, one {Показать 1 предыдущее письмо} few {Развернуть историю переписки ({arg1, number, ::group-off} письма)} many {Развернуть историю переписки ({arg1, number, ::group-off} писем)} other {Развернуть историю переписки ({arg1, number, ::group-off} писем)}}",
   "reader_truncated": "Это письмо слишком длинное; показана только начальная часть",
   "reader_trust_sender": "Всегда доверять этому отправителю",
   "reader_unsubscribe": "Отписаться",

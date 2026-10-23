@@ -898,6 +898,15 @@
     }
   },
   "reader_today": "Today",
+  "reader_thread_collapse": "Collapse email history",
+  "reader_thread_expand": "{arg1, plural, one {Show 1 previous email} other {Expand email history ({arg1, number, ::group-off} emails)}}",
+  "@reader_thread_expand": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",

@@ -450,6 +450,8 @@
   "reader_save_as": "Enregistrer sous…",
   "reader_to": "À {arg1} · {arg2}",
   "reader_today": "Aujourd’hui",
+  "reader_thread_collapse": "Réduire l’historique",
+  "reader_thread_expand": "{arg1, plural, one {Afficher 1 e-mail précédent} many {Afficher l’historique ({arg1, number, ::group-off} e-mails)} other {Afficher l’historique ({arg1, number, ::group-off} e-mails)}}",
   "reader_truncated": "Ce message est trop long ; seul le début est affiché",
   "reader_trust_sender": "Toujours faire confiance à cet expéditeur",
   "reader_unsubscribe": "Se désabonner",

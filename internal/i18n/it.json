@@ -450,6 +450,8 @@
   "reader_save_as": "Salva con nome…",
   "reader_to": "A {arg1} · {arg2}",
   "reader_today": "Oggi",
+  "reader_thread_collapse": "Comprimi cronologia email",
+  "reader_thread_expand": "{arg1, plural, one {Mostra 1 email precedente} many {Espandi cronologia email ({arg1, number, ::group-off} email)} other {Espandi cronologia email ({arg1, number, ::group-off} email)}}",
   "reader_truncated": "Questo messaggio è troppo lungo; viene mostrato solo l’inizio",
   "reader_trust_sender": "Fidati sempre di questo mittente",
   "reader_unsubscribe": "Annulla iscrizione",

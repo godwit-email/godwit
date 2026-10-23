@@ -450,6 +450,8 @@
   "reader_save_as": "Guardar como…",
   "reader_to": "Para {arg1} · {arg2}",
   "reader_today": "Hoy",
+  "reader_thread_collapse": "Plegar historial de correos",
+  "reader_thread_expand": "{arg1, plural, one {Mostrar 1 correo anterior} many {Desplegar historial de correos ({arg1, number, ::group-off} correos)} other {Desplegar historial de correos ({arg1, number, ::group-off} correos)}}",
   "reader_truncated": "Este mensaje es demasiado largo; solo se muestra el principio",
   "reader_trust_sender": "Confiar siempre en este remitente",
   "reader_unsubscribe": "Cancelar suscripción",
