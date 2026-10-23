@@ -354,7 +354,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		if p.Native {
 			nativeCard(c, p)
 		} else {
-			ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+			ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
 				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
 				if p.Trust == "listed" {
 					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Sm).TextColor(t.Muted)
@@ -438,7 +438,7 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 	if len(h) > 12 {
 		h = h[:8] + "…" + h[len(h)-4:]
 	}
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
 		title, body := i18n.T("settings.ext.native.risk.title"), i18n.T("settings.ext.native.risk.body")
 		if p.Trust == "listed" && p.Error == "" {
 			title, body, trust = trust, i18n.T("settings.ext.native.reviewed.body"), ""
@@ -505,7 +505,7 @@ func (e *extView) setPluginEnabled(name string, on bool) {
 // statusPill is a small status label; attention shows it amber.
 func statusPill(c *ui.Context, text string, attention bool) {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).TextColor(t.Foreground)
+	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Background).TextColor(t.Foreground)
 	if attention {
 		b.Background(t.WarningBg).TextColor(t.WarningText)
 	}
@@ -862,9 +862,9 @@ func (e *extView) registryView(c *ui.Context) {
 	if len(e.reg.Entries) == 0 {
 		ui.Column(c).Gap(theme.SectionGap).Children(func() {
 			sectionTitle(c, title)
-			ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
+			ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 			if foot != "" {
-				kit.Text(c, foot, t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, foot, t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 			}
 		})
 		return

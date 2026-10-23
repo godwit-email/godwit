@@ -47,6 +47,9 @@ type Tokens struct {
 	// Raised is a dialog's panel: Background in the light, a step up
 	// (neutral-900) in the dark, so it stands off the window behind.
 	Raised ui.Color
+	// Card is a settings section's fill: a borderless block of rows a step
+	// off Background (neutral-50; neutral-900 in the dark).
+	Card ui.Color
 	// MarkTile is the tile under a provider's logo: white in either
 	// appearance, as logos are drawn for white.
 	MarkTile ui.Color
@@ -346,7 +349,7 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Neutral50.Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover: p.Neutral100.Color(),
@@ -359,7 +362,7 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),

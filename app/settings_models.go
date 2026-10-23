@@ -1126,7 +1126,10 @@ func listCard(c *ui.Context, rows func()) {
 // Selected (on), it does not click.
 func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
+	if b.Hovered() && !on { // Hover's gray is the card's own fill; a tint shows on it
+		b.Background(t.HoverTint)
+	}
 	if i > 0 {
 		b.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
 	}

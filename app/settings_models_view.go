@@ -50,7 +50,7 @@ func (m *modelsView) close() {
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Hover).Center().Label(s.Name).Children(func() {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Background).Center().Label(s.Name).Children(func() {
 			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
 		})
 		return
@@ -107,7 +107,7 @@ func capChip(c *ui.Context, text string, check bool) {
 	if check {
 		fg = t.Foreground
 	}
-	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(th.Space(5)).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).TextColor(fg).Shrink(0).Children(func() {
+	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(th.Space(5)).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Background).TextColor(fg).Shrink(0).Children(func() {
 		if check {
 			ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs).Label(i18n.T("settings.models.default_badge"))
 		}
