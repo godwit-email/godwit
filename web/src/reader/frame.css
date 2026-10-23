@@ -13,12 +13,13 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
-/* Wide content scrolls sideways; the page reports its height to native. */
+/* Wide content scrolls sideways; the page reports its height to native.
+   Long words break only where they overflow: breaking anywhere would let a table column
+   shrink to one letter. */
 #godwit-body {
   overflow-x: auto;
   overflow-y: hidden;
   overflow-wrap: break-word;
-  word-break: break-word;
   text-autospace: normal;
 }
 
@@ -99,8 +100,4 @@ html {
 
 #godwit-body table {
   max-width: 100%;
-}
-
-:where(#godwit-body td, #godwit-body th) {
-  word-break: break-word;
 }
