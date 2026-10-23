@@ -2,80 +2,345 @@
   "v": 3,
   "attachments": {},
   "boards": {
-    "Ask.dc.html": {
+    "SettingsSignatures.dc.html": {
       "h": 900,
-      "title": "Wit · 对话与审批",
+      "is_interactive": true,
+      "page": "signature",
+      "title": "⑤ 设置 › 签名 · 签名列表（点一行进详情）",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "SettingsSignaturesEmpty.dc.html": {
+      "h": 900,
+      "page": "signature",
+      "title": "⑤b 设置 › 签名 · 还没有签名（新用户）",
+      "w": 1440,
+      "x": 0,
+      "y": 2340
+    },
+    "SettingsSignatureEdit.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "signature",
+      "title": "⑥ 设置 › 签名 › 工作 · 签名详情（开关可点）",
+      "w": 1440,
+      "x": 1520,
+      "y": 1320
+    },
+    "SettingsAccountSig.dc.html": {
+      "h": 900,
+      "page": "signature",
+      "title": "⑦ 设置 › 账户 · 选默认签名",
+      "w": 1440,
+      "x": 3040,
+      "y": 1320
+    },
+    "SettingsSignature.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "signature",
+      "title": "① 富文本模式 · 工具栏右端「HTML」切换（可点）",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "SettingsSignatureHtml.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "signature",
+      "title": "② HTML 模式 · 格式按钮停用，正文换成代码",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "SettingsSignatureLayout.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "signature",
+      "title": "③ 含表格/样式的签名 · 富文本下只读预览",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "SettingsSignatureError.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "signature",
+      "title": "④ HTML 模式 · 保存被拒（图片超过 4 张）",
       "w": 1440,
       "x": 4560,
+      "y": 0
+    },
+    "AddAccountSheet.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "onboarding",
+      "title": "添加账户 · 非首次（设置 › 账户里的弹窗）",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "Ask.dc.html": {
+      "x": 3040,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ③ 回答完成 · 表格、引用悬浮卡、来源、疑似指令提示",
+      "is_interactive": true
+    },
+    "CodeCard.dc.html": {
+      "h": 48,
+      "is_interactive": true,
+      "page": "codes",
+      "title": "组件 · 验证码浮窗",
+      "w": 320,
+      "x": 0,
+      "y": 1020
+    },
+    "CodeDesktop.dc.html": {
+      "h": 900,
+      "page": "codes",
+      "title": "验证码浮窗 · 收到验证码时（浮在当前应用上，不抢焦点）",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "CodeStates.dc.html": {
+      "h": 864,
+      "is_interactive": true,
+      "page": "codes",
+      "title": "浮窗 · 验证码四种状态 + 登录链接，浅色与深色",
+      "w": 1024,
+      "x": 1520,
       "y": 0
     },
     "Compose.dc.html": {
-      "h": 900,
+      "h": 720,
       "is_interactive": true,
+      "page": "compose",
       "title": "撰写 · ⑤ 已应用（多轮对话，可撤销）",
-      "w": 1440,
-      "x": 3040,
+      "w": 860,
+      "x": 2820,
       "y": 0
     },
     "ComposeCmdK.dc.html": {
-      "h": 900,
+      "h": 720,
       "is_interactive": true,
+      "page": "compose",
       "title": "撰写 · ⑥ 选中一段 ⌘K 改写",
-      "w": 1440,
-      "x": 4560,
-      "y": 2640
+      "w": 860,
+      "x": 3760,
+      "y": 0
     },
     "ComposeInline.dc.html": {
-      "h": 900,
+      "h": 720,
       "is_interactive": true,
+      "page": "compose",
       "title": "撰写 · ③ 局部修改待确认（逐词修订）",
-      "w": 1440,
-      "x": 1520,
-      "y": 2640
+      "w": 860,
+      "x": 940,
+      "y": 0
     },
     "ComposeRewrite.dc.html": {
-      "h": 900,
+      "h": 720,
       "is_interactive": true,
+      "page": "compose",
       "title": "撰写 · ④ 整体重写待确认（可对比原文）",
-      "w": 1440,
-      "x": 3040,
-      "y": 2640
+      "w": 860,
+      "x": 1880,
+      "y": 0
     },
     "ComposeStreaming.dc.html": {
-      "h": 900,
+      "h": 720,
       "is_interactive": true,
+      "page": "compose",
       "title": "撰写 · ② 生成中",
-      "w": 1440,
+      "w": 860,
       "x": 0,
-      "y": 2640
+      "y": 0
+    },
+    "DialogsAfter.dc.html": {
+      "h": 860,
+      "page": "dialogs",
+      "title": "浅色 · 一个 Dialog，sm / md / lg 三档宽度",
+      "w": 2160,
+      "x": 0,
+      "y": 0
+    },
+    "DialogsDark.dc.html": {
+      "h": 860,
+      "page": "dialogs",
+      "title": "深色 · 添加账户",
+      "w": 720,
+      "x": 0,
+      "y": 1280
+    },
+    "Empty.dc.html": {
+      "h": 240,
+      "is_interactive": true,
+      "page": "components",
+      "title": "组件 · 空状态",
+      "w": 560,
+      "x": 1048,
+      "y": 0
+    },
+    "LabelChip.dc.html": {
+      "h": 40,
+      "page": "labels",
+      "title": "组件 · 标签芯片",
+      "w": 88,
+      "x": 1280,
+      "y": 2820
+    },
+    "LabelChips.dc.html": {
+      "h": 560,
+      "page": "labels",
+      "title": "标签芯片 · 颜色与来源",
+      "w": 1200,
+      "x": 0,
+      "y": 2820
     },
     "Main.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "mail",
       "title": "主界面 · macOS（总结）",
       "w": 1440,
       "x": 0,
       "y": 0
     },
+    "MainDrafts.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "mail",
+      "title": "主界面 · 草稿（选中的草稿正在撰写窗口里编辑）",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
     "MainFlight.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "mail",
       "title": "状态 · 航班卡片 + 远程图片已拦截",
       "w": 1440,
       "x": 1520,
       "y": 1320
     },
+    "MainLabels.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "主界面 · 列表和读信里的标签（模型标记 / 手动标记）",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "MainLabelsMenu.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "读信 · 改标签菜单",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "MainLabelsSearch.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "搜索 · 按标签筛选",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "MainLabelsView.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "侧栏 · 按标签看（通知）",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
     "MainOTP.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "mail",
       "title": "状态 · 验证码卡片",
       "w": 1440,
       "x": 0,
       "y": 1320
     },
+    "MainSearch.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "mail",
+      "title": "搜索 · 有结果（关键词高亮，可让 Wit 接着找）",
+      "w": 1440,
+      "x": 0,
+      "y": 2640
+    },
+    "MainSearchEmpty.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "mail",
+      "title": "搜索 · 没有结果",
+      "w": 1440,
+      "x": 1520,
+      "y": 2640
+    },
+    "MainSyncAction.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "sync",
+      "title": "需要处理 · 一个要重新登录，另一个在重试",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "MainSyncFailed.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "sync",
+      "title": "长时间失败 · 重试 2 小时没恢复",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "MainSyncOk.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "sync",
+      "title": "正常 · 点开看每个邮箱",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "MainSyncPassword.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "sync",
+      "title": "需要处理 · 密码被拒绝（授权码过期）",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "MainSyncRetrying.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "sync",
+      "title": "自动重试中 · 网络断开，会自己好",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
     "MainTranslated.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "mail",
       "title": "状态 · 总结 + 已翻译",
       "w": 1440,
       "x": 3040,
@@ -84,6 +349,7 @@
     "MainWindows.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "mail",
       "title": "主界面 · Windows 11",
       "w": 1440,
       "x": 1520,
@@ -92,164 +358,817 @@
     "Onboarding.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "onboarding",
       "title": "添加账户 · 选择邮箱（首次启动）",
       "w": 1440,
       "x": 0,
-      "y": 3960
+      "y": 0
+    },
+    "OnboardingDone.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "onboarding",
+      "title": "添加账户 · 连接成功",
+      "w": 1440,
+      "x": 6080,
+      "y": 0
+    },
+    "OnboardingError.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "onboarding",
+      "title": "添加账户 · 连接失败",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "OnboardingOAuth.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "onboarding",
+      "title": "添加账户 · 浏览器登录（Outlook）",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "OnboardingPassword.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "onboarding",
+      "title": "添加账户 · 授权码登录（QQ 邮箱）",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "SettingsAccounts.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "设置 · 账户",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "SettingsAccountsReauth.dc.html": {
+      "h": 2010,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "设置 · 账户（登录过期，完整页面）",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
     },
     "SettingsExtensions.dc.html": {
       "h": 900,
       "is_interactive": true,
+      "page": "settings",
       "title": "设置 · 扩展（Skill / 插件 / MCP）",
       "w": 1440,
+      "x": 1520,
+      "y": 2430
+    },
+    "SettingsGeneral.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "设置 · 通用（外观、语言）",
+      "w": 1440,
+      "x": 0,
+      "y": 2430
+    },
+    "SettingsLabels.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "设置 · 标签",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "SettingsLabelsEdit.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "设置 · 编辑标签",
+      "w": 1440,
+      "x": 1520,
+      "y": 1320
+    },
+    "SettingsLabelsNew.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "设置 · 新建标签",
+      "w": 1440,
       "x": 3040,
-      "y": 3960
+      "y": 1320
+    },
+    "SettingsLabelsRescan.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "page": "labels",
+      "title": "设置 · 回扫中",
+      "w": 1440,
+      "x": 4560,
+      "y": 1320
     },
     "SettingsModels.dc.html": {
       "h": 900,
-      "title": "设置 · 模型服务",
+      "is_interactive": true,
+      "page": "settings",
+      "title": "模型服务 · 正常",
+      "w": 1440,
+      "x": 0,
+      "y": 3750
+    },
+    "SettingsModelsAddFailed.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · ④ 判断测试失败（仍可添加）",
+      "w": 1440,
+      "x": 4560,
+      "y": 5070
+    },
+    "SettingsModelsAddFetchFailed.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · ⑤ 拉取模型失败，手动添加",
+      "w": 1440,
+      "x": 6080,
+      "y": 5070
+    },
+    "SettingsModelsAddNoCap.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · 两种能力都关闭",
+      "w": 1440,
+      "x": 3040,
+      "y": 6390
+    },
+    "SettingsModelsAddOther.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · 其他服务（OpenRouter：Anthropic Messages + System One）",
+      "w": 1440,
+      "x": 0,
+      "y": 6390
+    },
+    "SettingsModelsAddReady.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · ③ 测试通过，可以添加",
+      "w": 1440,
+      "x": 3040,
+      "y": 5070
+    },
+    "SettingsModelsAddTesting.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · ② 测试中",
       "w": 1440,
       "x": 1520,
-      "y": 3960
+      "y": 5070
     },
-    "OnboardingPassword.dc.html": {
+    "SettingsModelsAddTypeSafe.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · TypeSafe（只有判断）",
+      "w": 1440,
+      "x": 1520,
+      "y": 6390
+    },
+    "SettingsModelsBroken.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "模型服务 · 默认服务 Key 失效",
+      "w": 1440,
+      "x": 3040,
+      "y": 3750
+    },
+    "SettingsModelsEdit.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "编辑 · OpenAI",
+      "w": 1440,
+      "x": 0,
+      "y": 7710
+    },
+    "SettingsModelsEditDelete.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "编辑 · 确认删除",
+      "w": 1440,
+      "x": 3040,
+      "y": 7710
+    },
+    "SettingsModelsEditDisableDefault.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "编辑 · 关掉默认生成能力",
+      "w": 1440,
+      "x": 1520,
+      "y": 7710
+    },
+    "SettingsModelsEmpty.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "模型服务 · 还没有服务",
+      "w": 1440,
+      "x": 4560,
+      "y": 3750
+    },
+    "SettingsModelsGenOnly.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "模型服务 · 只有生成（判断由生成兼任）",
+      "w": 1440,
+      "x": 1520,
+      "y": 3750
+    },
+    "SettingsModelsSheet.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "page": "settings",
+      "title": "添加 · ① 空白（OpenAI）",
+      "w": 1440,
+      "x": 0,
+      "y": 5070
+    },
+    "SettingsRow.dc.html": {
+      "h": 56,
+      "is_interactive": true,
+      "page": "components",
+      "print": "flow",
+      "title": "组件 · 设置项",
+      "w": 640,
+      "x": 328,
+      "y": 0
+    },
+    "SettingsSidebar.dc.html": {
+      "h": 848,
+      "is_interactive": true,
+      "page": "components",
+      "title": "组件 · 设置侧栏",
+      "w": 248,
+      "x": 0,
+      "y": 0
+    },
+    "SyncStates.dc.html": {
+      "h": 560,
+      "page": "sync",
+      "title": "右上角 · 五种状态总览",
+      "w": 1120,
+      "x": 1520,
+      "y": 1320
+    },
+    "ToastKinds.dc.html": {
+      "h": 440,
+      "page": "components",
+      "title": "反馈 · Toast 四种状态",
+      "w": 960,
+      "x": 1520,
+      "y": 1266
+    },
+    "Toasts.dc.html": {
+      "h": 900,
+      "page": "components",
+      "title": "反馈 · Toast 顶部居中",
+      "w": 1440,
+      "x": 0,
+      "y": 1266
+    },
+    "WitInput.dc.html": {
+      "h": 160,
+      "is_interactive": true,
+      "page": "components",
+      "title": "组件 · Wit 输入框",
+      "w": 480,
+      "x": 1688,
+      "y": 0
+    },
+    "WitEmpty.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ① 新对话 · 建议问题",
+      "is_interactive": true
+    },
+    "WitStreaming.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ② 回答中 · 思考过程与工具调用（可停止）",
+      "is_interactive": true
+    },
+    "WitLong.dc.html": {
+      "x": 4560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ④ 长对话 · 回到最新 + 上下文用量",
+      "is_interactive": true
+    },
+    "WitApproval.dc.html": {
+      "x": 0,
+      "y": 1320,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑤ 等你确认 · 插件发送到外部 + 创建草稿",
+      "is_interactive": true
+    },
+    "WitDecided.dc.html": {
+      "x": 1520,
+      "y": 1320,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑥ 已处理 · 拒绝 / 允许后的折叠记录与草稿",
+      "is_interactive": true
+    },
+    "WitQuote.dc.html": {
+      "x": 0,
+      "y": 2640,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑦ @ 引用邮件",
+      "is_interactive": true
+    },
+    "WitModel.dc.html": {
+      "x": 1520,
+      "y": 2640,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑧ 切换模型",
+      "is_interactive": true
+    },
+    "WitEditing.dc.html": {
+      "x": 3040,
+      "y": 2640,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑨ 编辑一条提问（替换之后的对话）",
+      "is_interactive": true
+    },
+    "WitError.dc.html": {
+      "x": 0,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑩ 模型服务出错 · 重试",
+      "is_interactive": true
+    },
+    "WitLink.dc.html": {
+      "x": 1520,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑪ 打开邮件里的链接 · 确认",
+      "is_interactive": true
+    },
+    "WitNoModel.dc.html": {
+      "x": 3040,
+      "y": 3960,
+      "w": 1440,
+      "h": 900,
+      "page": "wit",
+      "title": "Wit · ⑫ 还没有模型",
+      "is_interactive": true
+    },
+    "WitMailCard.dc.html": {
       "x": 0,
       "y": 5280,
-      "w": 1440,
-      "h": 900,
-      "title": "添加账户 · 授权码登录（QQ 邮箱）",
-      "is_interactive": true
-    },
-    "OnboardingOAuth.dc.html": {
-      "x": 1520,
-      "y": 5280,
-      "w": 1440,
-      "h": 900,
-      "title": "添加账户 · 浏览器登录（Outlook）",
-      "is_interactive": true
-    },
-    "OnboardingError.dc.html": {
-      "x": 3040,
-      "y": 5280,
-      "w": 1440,
-      "h": 900,
-      "title": "添加账户 · 连接失败",
-      "is_interactive": true
-    },
-    "OnboardingDone.dc.html": {
-      "x": 4560,
-      "y": 5280,
-      "w": 1440,
-      "h": 900,
-      "title": "添加账户 · 连接成功",
-      "is_interactive": true
-    },
-    "AddAccountSheet.dc.html": {
-      "x": 6080,
-      "y": 5280,
-      "w": 1440,
-      "h": 900,
-      "title": "添加账户 · 非首次（设置 › 账户里的弹窗）",
-      "is_interactive": true
-    },
-    "SettingsAccounts.dc.html": {
-      "x": 4560,
-      "y": 3960,
-      "w": 1440,
-      "h": 900,
-      "title": "设置 · 账户",
-      "is_interactive": true
-    },
-    "SettingsAccountsReauth.dc.html": {
-      "x": 6080,
-      "y": 3960,
-      "w": 1440,
-      "h": 900,
-      "title": "设置 · 账户（登录过期）",
-      "is_interactive": true
-    },
-    "SettingsGeneral.dc.html": {
-      "x": 7600,
-      "y": 3960,
-      "w": 1440,
-      "h": 900,
-      "title": "设置 · 通用（外观、语言）",
-      "is_interactive": true
+      "w": 560,
+      "h": 80,
+      "page": "wit",
+      "title": "组件 · 正文里的邮件卡片"
     }
   },
   "createdOnFiles": {
     "at": "2026-10-08T09:00:00Z",
     "v": 1
   },
-  "designSystems": [],
+  "designSystems": [
+    {
+      "artifact": "https://claude.ai/artifact/TJ9NZCUtJG6UgJrfNdB1iX",
+      "copiedAt": "2026-10-10T06:45:00Z",
+      "namespace": "godwit",
+      "title": "Godwit",
+      "version": "1791611646-4ef5"
+    }
+  ],
   "launch": {
+    "page": "mail",
     "view": "canvas"
   },
   "notes": {
-    "compose": {
+    "signature-1": {
       "kind": "title1",
-      "maxW": 6000,
-      "text": "撰写的不同状态",
-      "w": 240,
+      "maxW": 4480,
+      "page": "signature",
+      "text": "签名列表：多个账户共用一个签名",
       "x": 0,
-      "y": 2340
+      "y": 1020
     },
-    "row1": {
+    "signature-0": {
       "kind": "title1",
       "maxW": 6000,
-      "text": "主流程：读信 → AI → 写信 → Wit",
+      "page": "signature",
+      "text": "签名：在工具栏里直接切换 HTML",
+      "x": 0,
+      "y": -300
+    },
+    "codes-0": {
+      "kind": "title1",
+      "maxW": 2544,
+      "page": "codes",
+      "text": "验证码与登录链接",
       "w": 240,
       "x": 0,
       "y": -300
     },
-    "row2": {
+    "components-0": {
       "kind": "title1",
-      "maxW": 6000,
-      "text": "引导与设置",
+      "maxW": 2168,
+      "page": "components",
+      "text": "组件",
       "w": 240,
       "x": 0,
-      "y": 3660
+      "y": -300
     },
-    "states": {
+    "components-1": {
+      "kind": "title1",
+      "maxW": 2480,
+      "page": "components",
+      "text": "反馈提示",
+      "w": 240,
+      "x": 0,
+      "y": 966
+    },
+    "compose-0": {
+      "kind": "title1",
+      "maxW": 4620,
+      "page": "compose",
+      "text": "撰写窗口的不同状态",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "dialogs-1": {
+      "kind": "title1",
+      "maxW": 2160,
+      "page": "dialogs",
+      "text": "弹层 · 统一版",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "dialogs-2": {
+      "kind": "title1",
+      "maxW": 720,
+      "page": "dialogs",
+      "text": "深色模式",
+      "w": 240,
+      "x": 0,
+      "y": 980
+    },
+    "labels-0": {
       "kind": "title1",
       "maxW": 6000,
-      "text": "主界面的不同状态",
+      "page": "labels",
+      "text": "邮件里的标签",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "labels-1": {
+      "kind": "title1",
+      "maxW": 6000,
+      "page": "labels",
+      "text": "标签设置",
       "w": 240,
       "x": 0,
       "y": 1020
     },
-    "onboarding": {
-      "x": 0,
-      "y": 4980,
-      "text": "添加账户的不同状态",
+    "labels-2": {
       "kind": "title1",
-      "maxW": 6000
+      "maxW": 1368,
+      "page": "labels",
+      "text": "标签芯片",
+      "w": 240,
+      "x": 0,
+      "y": 2520
+    },
+    "mail-0": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "mail",
+      "text": "主界面",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "mail-1": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "mail",
+      "text": "读信时的不同状态",
+      "w": 240,
+      "x": 0,
+      "y": 1020
+    },
+    "mail-2": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "mail",
+      "text": "搜索",
+      "w": 240,
+      "x": 0,
+      "y": 2340
+    },
+    "onboarding-0": {
+      "kind": "title1",
+      "maxW": 7520,
+      "page": "onboarding",
+      "text": "首次启动",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "settings-0": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "settings",
+      "text": "账户",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "settings-1": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "settings",
+      "text": "应用",
+      "w": 240,
+      "x": 0,
+      "y": 2130
+    },
+    "settings-2": {
+      "kind": "title1",
+      "maxW": 6000,
+      "page": "settings",
+      "text": "模型服务页",
+      "w": 240,
+      "x": 0,
+      "y": 3450
+    },
+    "settings-3": {
+      "kind": "title1",
+      "maxW": 7520,
+      "page": "settings",
+      "text": "添加模型服务：填写与测试",
+      "w": 240,
+      "x": 0,
+      "y": 4770
+    },
+    "settings-4": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "settings",
+      "text": "添加模型服务：服务商与校验",
+      "w": 240,
+      "x": 0,
+      "y": 6090
+    },
+    "settings-5": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "settings",
+      "text": "编辑模型服务",
+      "w": 240,
+      "x": 0,
+      "y": 7410
+    },
+    "sync-0": {
+      "kind": "title1",
+      "maxW": 6000,
+      "page": "sync",
+      "text": "同步出问题时（点开右上角）",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "sync-1": {
+      "kind": "title1",
+      "maxW": 2640,
+      "page": "sync",
+      "text": "正常与总览",
+      "w": 240,
+      "x": 0,
+      "y": 1020
+    },
+    "wit-0": {
+      "kind": "title1",
+      "maxW": 6000,
+      "page": "wit",
+      "text": "对话主流程",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "wit-1": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "wit",
+      "text": "审批与权限",
+      "w": 240,
+      "x": 0,
+      "y": 1020
+    },
+    "wit-2": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "wit",
+      "text": "输入区",
+      "w": 240,
+      "x": 0,
+      "y": 2340
+    },
+    "wit-3": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "wit",
+      "text": "异常与边界",
+      "w": 240,
+      "x": 0,
+      "y": 3660
+    },
+    "wit-4": {
+      "kind": "title1",
+      "maxW": 2960,
+      "page": "wit",
+      "text": "组件",
+      "w": 240,
+      "x": 0,
+      "y": 4980
     }
   },
   "order": [
+    "SettingsSignatures.dc.html",
+    "SettingsSignaturesEmpty.dc.html",
+    "SettingsSignatureEdit.dc.html",
+    "SettingsAccountSig.dc.html",
+    "SettingsSignature.dc.html",
+    "SettingsSignatureHtml.dc.html",
+    "SettingsSignatureLayout.dc.html",
+    "SettingsSignatureError.dc.html",
     "Main.dc.html",
     "MainWindows.dc.html",
+    "MainDrafts.dc.html",
     "MainOTP.dc.html",
     "MainFlight.dc.html",
     "MainTranslated.dc.html",
-    "Compose.dc.html",
-    "Ask.dc.html",
+    "MainSearch.dc.html",
+    "MainSearchEmpty.dc.html",
     "ComposeStreaming.dc.html",
     "ComposeInline.dc.html",
     "ComposeRewrite.dc.html",
+    "Compose.dc.html",
     "ComposeCmdK.dc.html",
+    "Ask.dc.html",
     "Onboarding.dc.html",
-    "SettingsModels.dc.html",
-    "SettingsExtensions.dc.html",
     "OnboardingPassword.dc.html",
     "OnboardingOAuth.dc.html",
     "OnboardingError.dc.html",
     "OnboardingDone.dc.html",
     "AddAccountSheet.dc.html",
+    "SettingsSidebar.dc.html",
+    "SettingsRow.dc.html",
+    "Empty.dc.html",
+    "WitInput.dc.html",
+    "Toasts.dc.html",
+    "ToastKinds.dc.html",
     "SettingsAccounts.dc.html",
     "SettingsAccountsReauth.dc.html",
-    "SettingsGeneral.dc.html"
+    "SettingsGeneral.dc.html",
+    "SettingsExtensions.dc.html",
+    "SettingsModels.dc.html",
+    "SettingsModelsGenOnly.dc.html",
+    "SettingsModelsBroken.dc.html",
+    "SettingsModelsEmpty.dc.html",
+    "SettingsModelsSheet.dc.html",
+    "SettingsModelsAddTesting.dc.html",
+    "SettingsModelsAddReady.dc.html",
+    "SettingsModelsAddFailed.dc.html",
+    "SettingsModelsAddFetchFailed.dc.html",
+    "SettingsModelsAddOther.dc.html",
+    "SettingsModelsAddTypeSafe.dc.html",
+    "SettingsModelsAddNoCap.dc.html",
+    "SettingsModelsEdit.dc.html",
+    "SettingsModelsEditDisableDefault.dc.html",
+    "SettingsModelsEditDelete.dc.html",
+    "DialogsAfter.dc.html",
+    "DialogsDark.dc.html",
+    "MainLabels.dc.html",
+    "MainLabelsMenu.dc.html",
+    "MainLabelsView.dc.html",
+    "MainLabelsSearch.dc.html",
+    "SettingsLabels.dc.html",
+    "SettingsLabelsEdit.dc.html",
+    "SettingsLabelsNew.dc.html",
+    "SettingsLabelsRescan.dc.html",
+    "LabelChips.dc.html",
+    "LabelChip.dc.html",
+    "MainSyncRetrying.dc.html",
+    "MainSyncAction.dc.html",
+    "MainSyncPassword.dc.html",
+    "MainSyncFailed.dc.html",
+    "MainSyncOk.dc.html",
+    "SyncStates.dc.html",
+    "CodeCard.dc.html",
+    "CodeDesktop.dc.html",
+    "CodeStates.dc.html",
+    "WitEmpty.dc.html",
+    "WitStreaming.dc.html",
+    "WitLong.dc.html",
+    "WitApproval.dc.html",
+    "WitDecided.dc.html",
+    "WitQuote.dc.html",
+    "WitModel.dc.html",
+    "WitEditing.dc.html",
+    "WitError.dc.html",
+    "WitLink.dc.html",
+    "WitNoModel.dc.html",
+    "WitMailCard.dc.html"
   ],
-  "pages": [],
+  "pages": [
+    {
+      "id": "mail",
+      "name": "主界面"
+    },
+    {
+      "id": "sync",
+      "name": "同步状态"
+    },
+    {
+      "id": "compose",
+      "name": "撰写"
+    },
+    {
+      "id": "wit",
+      "name": "Wit"
+    },
+    {
+      "id": "onboarding",
+      "name": "添加账户"
+    },
+    {
+      "id": "settings",
+      "name": "设置"
+    },
+    {
+      "id": "signature",
+      "name": "签名 HTML 模式"
+    },
+    {
+      "id": "labels",
+      "name": "标签"
+    },
+    {
+      "id": "components",
+      "name": "组件与反馈"
+    },
+    {
+      "id": "dialogs",
+      "name": "弹层"
+    },
+    {
+      "id": "codes",
+      "name": "验证码"
+    }
+  ],
   "title": "Godwit UI"
 }

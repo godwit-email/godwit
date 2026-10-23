@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>验证码浮窗</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div role="dialog" aria-label="验证码" style="{{cardStyle}}">
+  <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; border-radius: 8px; background: {{avatarBg}}; color: {{avatarFg}}; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600">{{initial}}</span>
+  <sc-if value="{{isCode}}" hint-placeholder-val="{{ true }}">
+    <span style="flex: none; display: flex; gap: 6px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 20px; font-weight: 500; line-height: 1.3; font-variant-numeric: tabular-nums"><span>482</span><span>913</span></span>
+    <span style="{{noteStyle}}">{{note}}</span>
+  </sc-if>
+  <sc-if value="{{isLink}}" hint-placeholder-val="{{ false }}">
+    <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+      <span style="font-size: 13px; font-weight: 500; line-height: 1.4">登录链接</span>
+      <span style="font-size: 12px; line-height: 1.4; color: {{muted}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Linear · linear.app</span>
+    </span>
+  </sc-if>
+  <button type="button" onClick="{{copy}}" style="{{buttonStyle}}">
+    <sc-if value="{{copied}}" hint-placeholder-val="{{ false }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10.0007 15.1709L19.1931 5.97852L20.6073 7.39273L10.0007 17.9993L3.63672 11.6354L5.05093 10.2212L10.0007 15.1709Z"></path></svg>
+    </sc-if>
+    <span>{{label}}</span>
+    <sc-if value="{{isLink}}" hint-placeholder-val="{{ false }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.0037 9.41421L7.39712 18.0208L5.98291 16.6066L14.5895 8H7.00373V6H18.0037V17H16.0037V9.41421Z"></path></svg>
+    </sc-if>
+  </button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["default","hover","copied","failed"],"default":"default"},"dark":{"editor":"boolean","default":false},"kind":{"editor":"enum","options":["code","link"],"default":"code"},"$preview":{"width":320,"height":48}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? false;
+    const st = this.state.st ?? this.props.state ?? 'default';
+    const link = (this.props.kind ?? 'code') === 'link';
+    const c = dark
+      ? { bg: 'rgba(23,23,23,0.72)', fg: '#FAFAFA', muted: '#A1A1A1', tint: 'rgba(255,255,255,0.1)', tintHover: 'rgba(255,255,255,0.15)', ring: 'rgba(255,255,255,0.12)', shade: 'rgba(0,0,0,0.4)', ok: '#7BF1A8', danger: '#FFA2A2' }
+      : { bg: 'rgba(255,255,255,0.72)', fg: '#0A0A0A', muted: '#737373', tint: 'rgba(10,10,10,0.06)', tintHover: 'rgba(10,10,10,0.1)', ring: 'rgba(10,10,10,0.05)', shade: 'rgba(0,0,0,0.1)', ok: '#008236', danger: '#C10007' };
+    const copied = st === 'copied';
+    const failed = st === 'failed';
+    const btnBg = copied ? 'transparent' : st === 'hover' ? c.tintHover : c.tint;
+    return {
+      cardStyle: `width: 320px; height: 48px; box-sizing: border-box; padding: 8px; display: flex; align-items: center; gap: 12px; border-radius: 16px; background: ${c.bg}; backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: 0 0 0 1px ${c.ring}, 0 10px 15px -3px ${c.shade}, 0 4px 6px -4px ${c.shade}; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; color: ${c.fg}`,
+      noteStyle: `flex: 1; min-width: 0; font-size: 13px; color: ${failed ? c.danger : c.muted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis`,
+      buttonStyle: `height: 32px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 12px; border: 0; border-radius: 8px; background: ${btnBg}; color: ${copied ? c.ok : c.fg}; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer`,
+      note: failed ? '复制失败' : 'Acme ID',
+      label: link ? '打开' : copied ? '已复制' : failed ? '重试' : '复制',
+      isLink: link,
+      isCode: !link,
+      initial: link ? 'L' : 'A',
+      avatarBg: link ? (dark ? '#461901' : '#FEF3C6') : (dark ? '#460809' : '#FFE2E2'),
+      avatarFg: link ? (dark ? '#FFD230' : '#BB4D00') : (dark ? '#FFA2A2' : '#C10007'),
+      muted: c.muted,
+      tint: c.tint,
+      copied,
+      copy: () => { if (!link) this.setState({ st: 'copied' }); },
+    };
+  }
+}
+</script>
+</body>
+</html>

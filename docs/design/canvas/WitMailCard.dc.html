@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Wit 邮件卡片</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.wit-mail-item:hover{background:#F5F5F5}
+</style>
+</helmet>
+<div onMouseEnter="{{enter}}" onMouseLeave="{{leave}}" onFocus="{{enter}}" style="{{cardStyle}}; position: relative; display: flex; flex-direction: column; background: #FFFFFF; color: #0A0A0A; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.5">
+ <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0">
+  <span style="display: flex; align-items: center; gap: 8px">
+    <span aria-hidden="true" style="{{avatarStyle}}">{{initial}}</span>
+    <sc-if value="{{unread}}" hint-placeholder-val="{{ false }}"><span role="img" aria-label="未读" style="width: 6px; height: 6px; flex: none; border-radius: 9999px; background: #2B7FFF"></span></sc-if>
+    <span style="flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{from}}</span>
+    <sc-if value="{{attach}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="有附件" style="flex: none; color: #737373"><path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"></path></svg></sc-if>
+    <sc-if value="{{meta}}" hint-placeholder-val="{{ false }}"><span style="flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: #F5F5F5; color: #737373; font-size: 11px; display: flex; align-items: center">{{meta}}</span></sc-if>
+    <span style="flex: none; font-size: 12px; color: #737373">{{date}}</span>
+  </span>
+  <span style="margin-top: 2px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{subject}}</span>
+  <sc-if value="{{snippet}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: #737373; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{snippet}}</span></sc-if>
+ </div>
+ <sc-if value="{{hover}}" hint-placeholder-val="{{ false }}">
+  <div role="toolbar" aria-label="邮件操作" style="{{barStyle}}">
+   <a href="Main.dc.html" class="wit-mail-item" style="height: 26px; padding: 0 8px; border-radius: 6px; display: flex; align-items: center; gap: 6px; text-decoration: none; color: #0A0A0A; font-size: 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: #737373"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>查看邮件</a>
+   <button type="button" class="wit-mail-item" onClick="{{quote}}" style="height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; gap: 6px; color: #0A0A0A; font: inherit; font-size: 12px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: #737373"><path d="M9 14L4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 5 5v6"></path></svg>引用邮件</button>
+  </div>
+ </sc-if>
+ <sc-if value="{{footer}}" hint-placeholder-val="{{ false }}">
+  <div role="toolbar" aria-label="邮件操作" style="display: flex; gap: 2px; margin: 8px -6px -4px; padding-top: 6px; border-top: 1px solid #E5E5E5">
+   <a href="Main.dc.html" class="wit-mail-item" style="height: 26px; padding: 0 8px; border-radius: 6px; display: flex; align-items: center; gap: 6px; text-decoration: none; color: #0A0A0A; font-size: 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: #737373"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>查看邮件</a>
+   <button type="button" class="wit-mail-item" onClick="{{quote}}" style="height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; gap: 6px; color: #0A0A0A; font: inherit; font-size: 12px; cursor: pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: #737373"><path d="M9 14L4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 5 5v6"></path></svg>引用邮件</button>
+  </div>
+ </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"from":{"editor":null},"date":{"editor":null},"subject":{"editor":null},"snippet":{"editor":null},"initial":{"editor":null},"color":{"editor":"enum","options":["blue","violet","teal","orange","green","amber","pink","gray"],"default":"blue"},"unread":{"editor":"boolean","default":false},"attach":{"editor":"boolean","default":false},"meta":{"editor":"text","default":""},"plain":{"editor":"boolean","default":false},"onQuote":{"editor":null},"hover":{"editor":"boolean","default":false},"$preview":{"width":560,"height":80}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { hover: props.hover === true || props.hover === 'true' };
+  }
+  renderVals() {
+    var self = this, p = this.props;
+    var on = function (v) { return v === true || v === 'true'; };
+    // a sender keeps one label color (-100 fill, -700 text), as internal/kit Avatar does
+    var colors = {
+      blue: '#DBEAFE; color: #1D4ED8', violet: '#EDE9FE; color: #6D28D9', teal: '#CCFBF1; color: #0F766E', orange: '#FFEDD5; color: #C2410C',
+      green: '#DCFCE7; color: #15803D', amber: '#FEF3C7; color: #B45309', pink: '#FCE7F3; color: #BE185D', gray: '#F5F5F5; color: #404040'
+    };
+    var from = p.from ?? 'Lena Fischer';
+    return {
+      from: from,
+      date: p.date ?? '10/21',
+      subject: p.subject ?? 'Re: Q4 partnership proposal',
+      snippet: p.snippet ?? 'Would the second week of November work for a joint webinar? We could share the deck by…',
+      initial: p.initial ?? from.replace(/^\[/, '').charAt(0).toUpperCase(),
+      avatarStyle: 'width: 20px; height: 20px; flex: none; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: ' + (colors[p.color] || colors.blue),
+      unread: on(p.unread),
+      attach: on(p.attach),
+      meta: p.meta || '',
+      // in a popover the actions stay put along its foot; a card shows them on hover
+      hover: this.state.hover && !on(p.plain),
+      footer: on(p.plain),
+      enter: function () { self.setState({ hover: true }); },
+      leave: function () { self.setState({ hover: false }); },
+      quote: function () { (p.onQuote || function () {})(); },
+      // the toolbar floats over the card's top edge, from its right corner
+      barStyle: 'position: absolute; right: 8px; top: ' + '-14px' + '; display: flex; gap: 2px; padding: 2px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); z-index: 6',
+      // plain: no frame of its own, inside a popover that already has one
+      cardStyle: on(p.plain) ? 'padding: 0' : 'padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 10px'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>验证码浮窗状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FAFAFA}
+</style>
+</helmet>
+<div style="width: 1024px; height: 864px; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px; background: #FAFAFA; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; color: #0A0A0A">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600">验证码与登录链接浮窗</h1>
+    <p style="margin: 0; font-size: 13px; color: #737373">一行放下：验证码最醒目，发件人退成灰字。屏幕底部居中，拖动后记住位置；12 秒后消失，指针停留时暂停。系统材质模糊背后的窗口，不抢键盘焦点。复制后显示“已复制”约 1 秒再收起。登录链接显示发件人和链接的真实域名，点“打开”用浏览器打开并立即收起。</p>
+  </div>
+  <div style="display: grid; grid-template-columns: 64px repeat(2, minmax(0, 1fr)); gap: 16px 24px; align-items: center">
+    <span></span>
+    <span style="font-size: 12px; color: #737373">浅色</span>
+    <span style="font-size: 12px; color: #737373">深色</span>
+
+    <span style="font-size: 13px; font-weight: 600">默认</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="default" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="default" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+
+    <span style="font-size: 13px; font-weight: 600">悬停复制</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="hover" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="hover" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+
+    <span style="font-size: 13px; font-weight: 600">已复制</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="copied" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="copied" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+
+    <span style="font-size: 13px; font-weight: 600">复制失败</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="failed" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" state="failed" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+    <span style="font-size: 13px; font-weight: 600">登录链接</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" kind="link" state="default" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" kind="link" state="default" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+
+    <span style="font-size: 13px; font-weight: 600">链接 · 悬停</span>
+    <div style="height: 96px; border-radius: 12px; background: #E5E5E5; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" kind="link" state="hover" hint-size="320px,48px"></dc-import></div>
+    <div style="height: 96px; border-radius: 12px; background: #404040; display: flex; align-items: center; justify-content: center"><dc-import name="CodeCard" kind="link" state="hover" dark="{{ true }}" hint-size="320px,48px"></dc-import></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1024,"height":864}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

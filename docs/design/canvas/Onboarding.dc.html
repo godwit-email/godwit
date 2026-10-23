@@ -17,6 +17,11 @@ button{font:inherit;cursor:pointer}
 input,select{font:inherit}
 </style>
 </helmet>
+<div style="{{frameStyle}}">
+<sc-if value="{{isWindow}}" hint-placeholder-val="{{ true }}">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+</sc-if>
 <div style="{{rootStyle}}">
   <sc-if value="{{isWindow}}" hint-placeholder-val="{{ true }}">
   <div style="height: 44px; flex: none; position: relative">
@@ -31,10 +36,10 @@ input,select{font:inherit}
   <div style="{{panelStyle}}">
 
     <sc-if value="{{isWindow}}" hint-placeholder-val="{{ true }}">
-    <aside style="flex: 0 0 440px; box-sizing: border-box; padding: 48px 44px; background: #F9F9F9; border-right: 1px solid #E5E5E5; display: flex; flex-direction: column; gap: 28px">
-      <span style="display: flex; align-items: center; gap: 10px">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13c3-1 5-4 9-4 3 0 4 2 4 2l5 1-5 1s-1 3-5 3c-3 0-5-1-8-3z"></path><path d="M16 11l5-6"></path><path d="M9 16l-1 5M12 16l1 5"></path></svg>
-        <span style="font-size: 18px; font-weight: 600">Godwit</span>
+    <aside style="flex: 0 0 440px; box-sizing: border-box; padding: 48px 44px; display: flex; flex-direction: column; gap: 28px">
+      <span style="display: flex; align-items: center; gap: 8px">
+        <svg width="48" height="48" viewBox="0 0 512 512" fill="currentColor" aria-hidden="true" style="flex: none; color: #171717"><path d="M157.503 350.878c7.82-.745 22.447-2.553 28.724-3.511 15.319-2.287 33.829-3.245 50.744-2.5 16.383.692 23.351.213 33.617-2.34 22.5-5.479 38.936-17.819 58.882-44.202 10.639-14.096 15.107-18.989 24.096-26.33 11.383-9.308 28.936-18.457 61.117-31.915 10.212-4.255 33.67-13.776 42.553-17.287 18.563-7.34 31.595-12.925 30.265-13.085-.744-.106-3.51.479-6.117 1.277-2.606.745-7.819 2.287-11.648 3.404a5499 5499 0 0 0-43.351 13.085c-38.351 11.755-48.883 14.841-53.404 15.638-3.989.692-9.628.692-14.415-.053-6.436-.957-14.415-.691-18.617.585-8.032 2.447-12.819 6.33-24.893 20.213-12.287 14.149-21.968 19.681-34.415 19.681-8.511 0-16.117-2.819-24.255-8.936-6.702-5.054-11.543-10.958-22.128-26.968-12.021-18.192-21.489-27.819-36.382-36.862-14.415-8.83-35.798-16.33-63.245-22.181-14.202-3.085-31.489-8.244-41.17-12.34-17.18-7.287-30.16-15.745-43.085-28.032-4.734-4.521-5-4.734-5.744-3.723-1.915 2.5.744 17.925 5 28.67 9.095 23.191 31.223 49.627 58.138 69.521 13.404 9.893 21.01 14.308 58.51 34.202 20.798 11.01 29.521 17.606 33.723 25.532 1.809 3.351 1.915 8.085.266 11.17-1.862 3.563-7.287 8.617-12.553 11.755-12.819 7.553-30.638 14.042-63.723 23.085-7.766 2.128-10.745 3.138-9.84 3.351 2.606.585 35.425-.106 43.35-.904m69.628-86.01c-11.862-11.968-26.649-21.011-43.032-26.277-8.032-2.553-12.34-3.617-30-7.447-19.255-4.149-30-7.712-39.095-12.978-5.798-3.351-12.819-8.99-17.181-13.777-3.245-3.617-8.51-10.744-7.926-10.744.16 0 3.937 2.446 8.405 5.478 17.446 11.809 30.053 16.862 61.063 24.575 22.925 5.744 30.319 8.191 41.17 13.67 11.755 5.904 22.181 15.638 28.883 26.914 1.596 2.766 2.819 5.054 2.713 5.213-.107.107-2.341-1.968-5-4.627"></path></svg>
+        <span style="font-size: 20px; font-weight: 600">Godwit</span>
       </span>
       <div style="display: flex; flex-direction: column; gap: 10px">
         <h1 style="margin: 0; font-size: 30px; font-weight: 600; line-height: 1.25">先把邮箱接进来</h1>
@@ -42,23 +47,23 @@ input,select{font:inherit}
       </div>
       <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 18px">
         <li style="display: flex; gap: 12px">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#404040" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M19 10H20C20.5523 10 21 10.4477 21 11V21C21 21.5523 20.5523 22 20 22H4C3.44772 22 3 21.5523 3 21V11C3 10.4477 3.44772 10 4 10H5V9C5 5.13401 8.13401 2 12 2C15.866 2 19 5.13401 19 9V10ZM5 12V20H19V12H5ZM11 14H13V18H11V14ZM17 10V9C17 6.23858 14.7614 4 12 4C9.23858 4 7 6.23858 7 9V10H17Z"></path></svg>
           <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">密码只存在系统钥匙串</span><span style="color: #737373; font-size: 13px; line-height: 1.6">不会写进配置文件，也不会出现在日志里。</span></span>
         </li>
         <li style="display: flex; gap: 12px">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#404040" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M4 16H20V5H4V16ZM13 18V20H17V22H7V20H11V18H2.9918C2.44405 18 2 17.5511 2 16.9925V4.00748C2 3.45107 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.44892 22 4.00748V16.9925C22 17.5489 21.5447 18 21.0082 18H13Z"></path></svg>
           <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">邮件只保存在这台电脑上</span><span style="color: #737373; font-size: 13px; line-height: 1.6">直接连接你的邮件服务器，没有中间服务器。</span></span>
         </li>
         <li style="display: flex; gap: 12px">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#404040" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#404040" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M14 4.4375C15.3462 4.4375 16.4375 3.34619 16.4375 2H17.5625C17.5625 3.34619 18.6538 4.4375 20 4.4375V5.5625C18.6538 5.5625 17.5625 6.65381 17.5625 8H16.4375C16.4375 6.65381 15.3462 5.5625 14 5.5625V4.4375ZM1 11C4.31371 11 7 8.31371 7 5H9C9 8.31371 11.6863 11 15 11V13C11.6863 13 9 15.6863 9 19H7C7 15.6863 4.31371 13 1 13V11ZM4.87601 12C6.18717 12.7276 7.27243 13.8128 8 15.124 8.72757 13.8128 9.81283 12.7276 11.124 12 9.81283 11.2724 8.72757 10.1872 8 8.87601 7.27243 10.1872 6.18717 11.2724 4.87601 12ZM17.25 14C17.25 15.7949 15.7949 17.25 14 17.25V18.75C15.7949 18.75 17.25 20.2051 17.25 22H18.75C18.75 20.2051 20.2051 18.75 22 18.75V17.25C20.2051 17.25 18.75 15.7949 18.75 14H17.25Z"></path></svg>
           <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">AI 功能默认关闭</span><span style="color: #737373; font-size: 13px; line-height: 1.6">配置了模型服务才会启用，只发送你要处理的那封邮件。</span></span>
         </li>
       </ul>
-      <span style="margin-top: auto; font-size: 12px; color: #A3A3A3">Godwit 是开源软件 · Apache-2.0</span>
+      <span style="margin-top: auto; font-size: 12px; color: #A3A3A3">Godwit 是开源软件 · MIT</span>
     </aside>
     </sc-if>
 
-    <main style="flex: 1; min-width: 0; display: flex; justify-content: center; overflow: auto">
+    <main style="{{mainStyle}}">
       <div style="{{innerStyle}}">
         <sc-if value="{{isSheet}}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: -6px">
@@ -75,9 +80,9 @@ input,select{font:inherit}
             </div>
             <label style="display: flex; flex-direction: column; gap: 6px">
               <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">邮箱地址</span>
-              <span style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
+              <span style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
                 <input type="email" value="12345678@qq.com" style="flex: 1; border: 0; outline: none">
-                <span style="padding: 1px 8px; border-radius: 10px; background: #F5F5F5; font-size: 12px; color: #404040">识别为 QQ 邮箱</span>
+                <span style="padding: 1px 8px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #404040">识别为 QQ 邮箱</span>
               </span>
             </label>
             <button type="button" onClick="{{pickQQ}}" style="height: 36px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">继续</button>
@@ -85,7 +90,7 @@ input,select{font:inherit}
             <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
               <sc-for list="{{providers}}" as="p" hint-placeholder-count="8">
                 <button type="button" onClick="{{p.pick}}" style="height: 48px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; text-align: left">
-                  <span style="width: 28px; height: 28px; flex: none; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #404040">{{p.mark}}</span>
+                  <sc-if value="{{p.hasLogo}}" hint-placeholder-val="{{ true }}"><span style="width: 28px; height: 28px; box-sizing: border-box; flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 7px; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"><img src="{{p.logo}}" alt="" aria-hidden="true" style="width: 100%; height: 100%; display: block"></span></sc-if><sc-if value="{{p.noLogo}}" hint-placeholder-val="{{ false }}"><span style="width: 28px; height: 28px; flex: none; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #404040">{{p.mark}}</span></sc-if>
                   <span style="display: flex; flex-direction: column; min-width: 0"><span>{{p.name}}</span><span style="font-size: 12px; color: #737373">{{p.how}}</span></span>
                 </button>
               </sc-for>
@@ -97,10 +102,10 @@ input,select{font:inherit}
           <div style="display: flex; flex-direction: column; gap: 20px">
             <button type="button" onClick="{{toPick}}" style="align-self: flex-start; border: 0; background: transparent; padding: 0; color: #737373">← 换一个邮箱</button>
             <div style="display: flex; align-items: center; gap: 12px">
-              <span style="width: 40px; height: 40px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #404040">QQ</span>
+              <span style="width: 40px; height: 40px; box-sizing: border-box; flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 8px; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"><img src="/_blob/e71f2ef62b573685b58a37e7915619a5" alt="" aria-hidden="true" style="width: 100%; height: 100%; display: block"></span>
               <span style="display: flex; flex-direction: column"><span style="font-size: 20px; font-weight: 600">QQ 邮箱</span><span style="color: #737373">12345678@qq.com</span></span>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 10px; background: #FAFAFA; border: 1px solid #F0F0F0">
+            <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; background: #FAFAFA; border: 1px solid #F0F0F0">
               <span style="font-weight: 500">QQ 邮箱要用「授权码」登录，不是 QQ 密码</span>
               <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; color: #404040; line-height: 1.6">
                 <li>在网页版 QQ 邮箱打开「设置 → 账号」</li>
@@ -111,7 +116,7 @@ input,select{font:inherit}
             </div>
             <label style="display: flex; flex-direction: column; gap: 6px">
               <span style="font-weight: 500">授权码</span>
-              <input type="password" value="placeholder" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px">
+              <input type="password" value="placeholder" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 6px">
               <span style="font-size: 12px; color: #737373">保存在系统钥匙串</span>
             </label>
             <button type="button" onClick="{{connect}}" style="height: 36px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">连接</button>
@@ -131,14 +136,14 @@ input,select{font:inherit}
           <div style="display: flex; flex-direction: column; gap: 20px">
             <button type="button" onClick="{{toPick}}" style="align-self: flex-start; border: 0; background: transparent; padding: 0; color: #737373">← 换一个邮箱</button>
             <div style="display: flex; align-items: center; gap: 12px">
-              <span style="width: 40px; height: 40px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #404040">O</span>
+              <span style="width: 40px; height: 40px; box-sizing: border-box; flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 8px; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"><img src="/_blob/f87b872b0e22c9cb9ac5bef610a91628" alt="" aria-hidden="true" style="width: 100%; height: 100%; display: block"></span>
               <span style="display: flex; flex-direction: column"><span style="font-size: 20px; font-weight: 600">Outlook / Hotmail</span><span style="color: #737373">需要在浏览器里登录 Microsoft 账户</span></span>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px dashed #D4D4D4; border-radius: 10px; align-items: center; text-align: center">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px dashed #D4D4D4; border-radius: 12px; align-items: center; text-align: center">
               <span style="width: 10px; height: 10px; border-radius: 50%; background: #A3A3A3"></span>
               <span style="font-weight: 500">已在浏览器中打开登录页</span>
               <span style="color: #737373; font-size: 13px; line-height: 1.6">登录并允许 Godwit 读写邮件后，这里会自动继续。Godwit 拿到的是访问令牌，看不到你的密码。</span>
-              <span style="display: flex; gap: 8px"><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">重新打开浏览器</button><button type="button" onClick="{{connect}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #171717; color: #FAFAFA">（演示）登录完成</button></span>
+              <span style="display: flex; gap: 8px"><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">重新打开浏览器</button><button type="button" onClick="{{connect}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA">（演示）登录完成</button></span>
             </div>
           </div>
         </sc-if>
@@ -149,7 +154,7 @@ input,select{font:inherit}
               <h2 style="margin: 0; font-size: 20px; font-weight: 600">{{checkTitle}}</h2>
               <span style="color: #737373">12345678@qq.com</span>
             </div>
-            <div style="display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 10px; overflow: hidden">
+            <div style="display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 12px; overflow: hidden">
               <sc-for list="{{checks}}" as="c" hint-placeholder-count="3">
                 <div style="{{c.row}}">
                   <span style="{{c.icon}}">{{c.glyph}}</span>
@@ -164,7 +169,7 @@ input,select{font:inherit}
               </div>
             </sc-if>
             <sc-if value="{{inProgress}}" hint-placeholder-val="{{ false }}">
-              <button type="button" onClick="{{finish}}" style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">（演示）检查完成</button>
+              <button type="button" onClick="{{finish}}" style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">（演示）检查完成</button>
             </sc-if>
           </div>
         </sc-if>
@@ -178,12 +183,12 @@ input,select{font:inherit}
             </div>
             <label style="display: flex; flex-direction: column; gap: 6px">
               <span style="font-weight: 500">发件人名称</span>
-              <input type="text" value="[你的名字]" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 8px">
+              <input type="text" value="[你的名字]" style="height: 40px; padding: 0 12px; border: 1px solid #D4D4D4; border-radius: 6px">
               <span style="font-size: 12px; color: #737373">收件人看到的名字</span>
             </label>
             <label style="display: flex; flex-direction: column; gap: 6px">
               <span style="font-weight: 500">先同步多少邮件</span>
-              <select style="height: 40px; padding: 0 10px; border: 1px solid #D4D4D4; border-radius: 8px; background: #FFFFFF"><option>每个文件夹最近 2000 封（推荐）</option><option>最近 3 个月</option><option>全部</option></select>
+              <select style="height: 40px; padding: 0 10px; border: 1px solid #D4D4D4; border-radius: 6px; background: #FFFFFF"><option>每个文件夹最近 2000 封（推荐）</option><option>最近 3 个月</option><option>全部</option></select>
               <span style="font-size: 12px; color: #737373">更早的邮件在你翻到或搜索时再加载</span>
             </label>
             <div style="display: flex; flex-direction: column; gap: 8px">
@@ -196,6 +201,7 @@ input,select{font:inherit}
       </div>
     </main>
   </div>
+</div>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["window","sheet"],"default":"window"},"step":{"editor":"enum","options":["pick","password","oauth","checking","error","done"],"default":"pick"},"$preview":{"width":1440,"height":900}}'>
@@ -224,23 +230,30 @@ class Component extends DCLogic {
       mk(ok, 'IMAP 登录成功', '6 个文件夹'),
       mk(wait, 'SMTP 认证中…', '')
     ];
+    var LOGOS = {'Y': '/_blob/f46012599762b1c56a42ba9be4af9f2a', 'A': '/_blob/be17588458d965a85032e57c88b8deb0', '企': '/_blob/a5e2483d9cccc591e1cb0b13afa8a4dd', '飞': '/_blob/c115e56bfec6a491a861f0b6301225ef', '钉': '/_blob/f6b5119b58da5026e8f9d356575ca959', 'G': '/_blob/b338b52557dfe2a298d15540e7a14fd1', 'O': '/_blob/f87b872b0e22c9cb9ac5bef610a91628', 'QQ': '/_blob/e71f2ef62b573685b58a37e7915619a5', '163': '/_blob/5e5923f0241dd7c3649152f22247b457', '126': '/_blob/6dd252cf45d38ca2f0ad3bf2a6e91d10', 'i': '/_blob/c71b75b9620c3e6651e3c2ab53121dbe'};
     var providers = [
       ['G', 'Gmail', '应用专用密码', 'password'],
       ['O', 'Outlook / Hotmail', '浏览器登录', 'oauth'],
+      ['163', '网易 163 邮箱', '授权码', 'password'],
+      ['126', '网易 126 邮箱', '授权码', 'password'],
       ['QQ', 'QQ 邮箱', '授权码', 'password'],
-      ['163', '网易 163 / 126', '授权码', 'password'],
       ['企', '腾讯企业邮', '密码或授权码', 'password'],
+      ['飞', '飞书邮箱', '应用专用密码', 'password'],
+      ['钉', '钉钉邮箱', '密码或授权码', 'password'],
       ['i', 'iCloud', '应用专用密码', 'password'],
-      ['F', 'Fastmail', '应用专用密码', 'password'],
+      ['Y', '雅虎邮箱', '应用专用密码', 'password'],
+      ['A', 'AOL 邮箱', '应用专用密码', 'password'],
       ['@', '其他 IMAP 邮箱', '手动设置', 'password']
-    ].map(function (p) { return { mark: p[0], name: p[1], how: p[2], pick: go(p[3]) }; });
+    ].map(function (p) { return { mark: p[0], logo: LOGOS[p[0]] || '', hasLogo: !!LOGOS[p[0]], noLogo: !LOGOS[p[0]], name: p[1], how: p[2], pick: go(p[3]) }; });
     return {
       isWindow: !sheet,
       isSheet: sheet,
       rootStyle: sheet
-        ? "width: 560px; max-height: 760px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 14px; box-shadow: 0 24px 64px rgba(0,0,0,0.18)"
-        : "width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px",
-      panelStyle: sheet ? 'display: flex; min-height: 0; overflow: auto' : 'flex: 1; min-height: 0; margin: 0 8px 8px; display: flex; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; overflow: hidden',
+        ? "width: 560px; max-height: 760px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.18)"
+        : "width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; position: relative; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px",
+      frameStyle: sheet ? 'display: contents' : 'position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden',
+      panelStyle: sheet ? 'display: flex; min-height: 0; overflow: auto' : 'flex: 1; min-height: 0; margin: 0 8px 8px; display: flex; gap: 8px',
+      mainStyle: 'flex: 1; min-width: 0; display: flex; justify-content: center; overflow: auto' + (sheet ? '' : '; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)'),
       innerStyle: 'width: 100%; max-width: 520px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; padding: ' + (sheet ? '20px 24px 24px' : '56px 32px'),
       doneLabel: sheet ? '完成' : '开始使用',
       providers: providers,

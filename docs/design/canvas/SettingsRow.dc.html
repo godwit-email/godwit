@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>设置项</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="box-sizing: border-box; padding: 8px 16px; border-top: 1px solid #E5E5E5; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<sc-if value="{{isInline}}" hint-placeholder-val="{{ true }}">
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">{{label}}</span><sc-if value="{{hasDesc}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">{{desc}}</span></sc-if></span>
+<sc-if value="{{isSwitch}}" hint-placeholder-val="{{ true }}"><button type="button" role="switch" aria-checked="{{onText}}" onClick="{{toggle}}" style="{{track}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button></sc-if>
+<sc-if value="{{isSelect}}" hint-placeholder-val="{{ false }}"><select onChange="{{onPick}}" style="flex: none; min-width: 200px; max-width: 280px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: inherit"><sc-for list="{{opts}}" as="o" hint-placeholder-count="2"><option>{{o.text}}</option></sc-for></select></sc-if>
+<sc-if value="{{isInput}}" hint-placeholder-val="{{ false }}"><input type="{{inputType}}" value="{{value}}" placeholder="{{placeholder}}" style="{{inputStyle}}"></sc-if>
+</label>
+</sc-if>
+<sc-if value="{{isAction}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">{{label}}</span><sc-if value="{{hasDesc}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">{{desc}}</span></sc-if></span>
+<span style="display: flex; align-items: center; gap: 12px; min-width: 0">
+<sc-if value="{{hasValue}}" hint-placeholder-val="{{ false }}"><span style="{{valueStyle}}">{{value}}</span></sc-if>
+<sc-if value="{{hasAction}}" hint-placeholder-val="{{ true }}"><button type="button" style="{{btnStyle}}">{{action}}</button></sc-if>
+</span>
+</div>
+</sc-if>
+<sc-if value="{{isStacked}}" hint-placeholder-val="{{ false }}">
+<label style="display: flex; flex-direction: column; gap: 8px">
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">{{label}}</span><sc-if value="{{hasDesc}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">{{desc}}</span></sc-if></span>
+<sc-if value="{{isInput}}" hint-placeholder-val="{{ false }}"><input type="{{inputType}}" value="{{value}}" placeholder="{{placeholder}}" style="{{inputStyle}}"></sc-if>
+<sc-if value="{{isTextarea}}" hint-placeholder-val="{{ true }}"><textarea rows="3" style="padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: inherit; resize: vertical" value="{{value}}"></textarea></sc-if>
+</label>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"label":{"editor":"text","default":"开机时自动启动"},"desc":{"editor":"text","default":"登录 macOS 后在后台启动 Godwit"},"control":{"editor":"enum","options":["switch","select","input","textarea","button","value"],"default":"switch"},"layout":{"editor":"enum","options":["inline","stacked"],"default":"inline"},"on":{"editor":"boolean","default":true},"options":{"editor":"text","default":""},"value":{"editor":null},"action":{"editor":"text","default":""},"tone":{"editor":"enum","options":["default","danger"],"default":"default"},"inputType":{"editor":"text","default":"text"},"placeholder":{"editor":"text","default":""},"mono":{"editor":"boolean","default":false},"onChange":{"editor":null},"$preview":{"width":640,"height":56}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var on = props.on ?? true;
+    this.state = { on: on === true || on === 'true' };
+  }
+  renderVals() {
+    var self = this;
+    var p = this.props;
+    var flag = function (v) { return v === true || v === 'true'; };
+    var control = p.control ?? 'switch';
+    var action = control === 'button' || control === 'value';
+    var stacked = !action && (p.layout === 'stacked' || control === 'textarea');
+    var on = this.state.on;
+    var danger = p.tone === 'danger';
+    var mono = flag(p.mono);
+    return {
+      label: p.label ?? '开机时自动启动',
+      desc: p.desc ?? '',
+      hasDesc: !!p.desc,
+      isInline: !action && !stacked,
+      isAction: action,
+      isStacked: stacked,
+      isSwitch: control === 'switch',
+      isSelect: control === 'select',
+      isInput: control === 'input',
+      isTextarea: control === 'textarea',
+      opts: String(p.options ?? '').split('|').filter(Boolean).map(function (t) { return { text: t }; }),
+      onPick: p.onChange,
+      value: p.value ?? '',
+      hasValue: !!p.value,
+      valueStyle: 'min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #737373' + (mono ? "; font-family: 'Geist Mono', monospace; font-size: 12px" : ''),
+      inputType: p.inputType ?? 'text',
+      placeholder: p.placeholder ?? '',
+      inputStyle: 'height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: inherit; font: inherit' + (stacked ? '' : '; flex: none; width: 260px') + (mono ? "; font-family: 'Geist Mono', monospace; font-size: 12px" : ''),
+      action: p.action ?? '',
+      hasAction: !!p.action,
+      btnStyle: 'flex: none; height: 32px; padding: 0 12px; border-radius: 8px; background: #FFFFFF; font: inherit; border: 1px solid ' + (danger ? '#FFC9C9; color: #E7000B' : '#E5E5E5; color: #0A0A0A'),
+      onText: on ? 'true' : 'false',
+      toggle: function () { self.setState({ on: !self.state.on }); },
+      track: 'flex: none; width: 32px; height: 18px; padding: 2px; box-sizing: border-box; border: 0; border-radius: 9999px; display: flex; align-items: center; transition: background 120ms; background: ' + (on ? '#171717' : '#E5E5E5') + '; justify-content: ' + (on ? 'flex-end' : 'flex-start')
+    };
+  }
+}
+</script>
+</body>
+</html>

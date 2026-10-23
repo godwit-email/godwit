@@ -17,111 +17,451 @@ button{font:inherit;cursor:pointer}
 input,select{font:inherit}
 </style>
 </helmet>
-<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px">
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
   <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
     <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
     </span>
-    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
-    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></a>
-    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
-    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
-      <span style="font-weight: 600">设置</span>
-      <span style="font-size: 12px; color: #737373">模型服务</span>
-    </span>
-    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
   </div>
-  <div style="flex: 1; min-height: 0; display: flex">
-    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px"><a href="Main.dc.html" aria-label="邮件" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></a><a href="SettingsModels.dc.html" aria-label="设置" aria-current="page" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></a></nav>
-    <aside aria-label="设置" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: 14px; overflow: hidden"><div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373; padding-top: 4px">账户</div><a href="SettingsAccounts.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">QQ</span><span style="flex: 1">you@example.com</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span></a><a href="SettingsAccountsReauth.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">O</span><span style="flex: 1">work@company.example</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B"></span></a><a href="AddAccountSheet.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; color: #737373; justify-content: flex-start; gap: 8px"><span style="width: 20px; text-align: center">+</span>添加账户</a><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">应用</div><a href="SettingsGeneral.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 400; background: transparent"><span>通用</span></a><a href="SettingsModels.dc.html" aria-current="page" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: #EDEDED; font-weight: 500"><span>模型服务</span></a><a href="SettingsExtensions.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>扩展</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>隐私与安全</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>关于</span></a></aside>
-    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: auto; ">
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="models" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
 
     
 
-    <main style="flex: 999 1 560px; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 24px; max-width: 1040px">
-      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap">
-        <div style="display: flex; flex-direction: column; gap: 4px">
-          <h1 style="margin: 0; font-size: 22px; font-weight: 600">模型服务</h1>
-          <span style="color: #737373">支持 OpenAI 兼容和 Anthropic 兼容接口。想用订阅账户，可以先运行本地网关，再把它的地址填进来。</span>
-        </div>
-        <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #0A0A0A; color: #FFFFFF; font-weight: 500">添加服务</button>
-      </div>
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px"><div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">模型服务</h1><span style="color: #737373">生成负责写，判断负责分类和路由。同一个服务可以两样都做。</span></div><sc-if value="{{hasServices}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{openAdd}}" style="flex: none; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">添加服务</button></sc-if></div>
+<sc-if value="{{hasServices}}" hint-placeholder-val="{{ true }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">用途</h2>
+<sc-if value="{{u.alert}}" hint-placeholder-val="{{ false }}"><div role="alert" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #FFC9C9; border-radius: 12px; background: #FEF2F2; color: #C10007; flex-wrap: wrap"><span style="flex: 1; min-width: 240px">{{u.alertText}}</span><button type="button" onClick="{{u.fix}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #C10007; color: #FFFFFF">去修复</button></div></sc-if>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<div style="padding: 8px 16px; border-top: 1px solid #E5E5E5"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><label for="use-gen" style="font-weight: 500">生成</label><span style="font-size: 12px; color: #737373">{{u.gen.desc}}</span><span style="{{u.gen.statusStyle}}; margin-top: 4px"><span style="{{u.gen.dotStyle}}"></span>{{u.gen.status}}</span></span>
+<select id="use-gen" disabled="{{u.gen.disabled}}" style="flex: none; min-width: 240px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><sc-for list="{{u.gen.options}}" as="o" hint-placeholder-count="2"><option selected="{{o.selected}}">{{o.text}}</option></sc-for></select>
+</div></div>
+<div style="padding: 8px 16px; border-top: 1px solid #E5E5E5"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><label for="use-dec" style="font-weight: 500">判断</label><span style="font-size: 12px; color: #737373">{{u.dec.desc}}</span><span style="{{u.dec.statusStyle}}; margin-top: 4px"><span style="{{u.dec.dotStyle}}"></span>{{u.dec.status}}</span></span>
+<select id="use-dec" disabled="{{u.dec.disabled}}" style="flex: none; min-width: 240px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><sc-for list="{{u.dec.options}}" as="o" hint-placeholder-count="2"><option selected="{{o.selected}}">{{o.text}}</option></sc-for></select>
+</div></div>
+</div></div>
 
-      <div style="display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; overflow: hidden">
-        <sc-for list="{{services}}" as="s" hint-placeholder-count="3">
-          <div style="{{s.rowStyle}}">
-            <span style="width: 36px; height: 32px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-family: 'Geist Mono', monospace; font-size: 12px; flex: none">{{s.badge}}</span>
-            <span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0">
-              <span style="font-weight: 500">{{s.name}} <span style="font-weight: 400; color: #737373; font-size: 13px">· {{s.kind}}</span></span>
-              <span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{s.url}}</span>
-            </span>
-            <span style="font-size: 13px; color: #737373">{{s.models}}</span>
-            <sc-if value="{{s.isDefault}}" hint-placeholder-val="{{ false }}">
-              <span style="padding: 2px 8px; border-radius: 4px; background: #F5F5F5; color: #0A0A0A; font-size: 12px">默认</span>
-            </sc-if>
-          </div>
-        </sc-for>
-      </div>
-
-      <section aria-label="编辑服务" style="border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; padding: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
-        <h2 style="margin: 0; font-size: 16px; font-weight: 600; grid-column: span 2">编辑：OpenAI</h2>
-        <div role="radiogroup" aria-label="接口类型" style="grid-column: span 2; display: flex; gap: 8px">
-          <label style="display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #171717; border-radius: 8px; background: #F5F5F5"><input type="radio" name="kind" checked>OpenAI 兼容</label>
-          <label style="display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px"><input type="radio" name="kind">Anthropic 兼容</label>
-        </div>
-        <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">名称</span><input type="text" value="OpenAI" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
-        <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">Base URL</span><input type="url" value="https://api.openai.com/v1" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; font-family: 'Geist Mono', monospace; font-size: 13px"></label>
-        <label style="display: flex; flex-direction: column; gap: 6px; grid-column: span 2">
-          <span style="font-weight: 500">API Key</span>
-          <input type="password" placeholder="已配置 · 留空表示保持不变" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px">
-          <span style="font-size: 13px; color: #737373">保存在系统钥匙串，界面和日志中不会显示。</span>
-        </label>
-        <div style="grid-column: span 2; display: flex; flex-direction: column; gap: 8px">
-          <span style="display: flex; align-items: center; justify-content: space-between">
-            <span style="font-weight: 500">模型</span>
-            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">从 /models 拉取</button>
-          </span>
-          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
-            <label style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 6px"><input type="checkbox" checked>[MODEL A]</label>
-            <label style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 6px"><input type="checkbox" checked>[MODEL B]</label>
-            <label style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 6px"><input type="checkbox">[MODEL C]</label>
-          </div>
-        </div>
-        <label style="display: flex; flex-direction: column; gap: 6px; grid-column: span 2">
-          <span style="font-weight: 500">默认模型（所有 skill 和Wit使用，单个 skill 可以覆盖）</span>
-          <select style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF"><option>OpenAI / [MODEL A]</option></select>
-        </label>
-        <div style="grid-column: span 2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
-          <button type="button" style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">保存</button>
-          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">测试连接</button>
-          <span style="display: flex; align-items: center; gap: 6px; color: #15803D; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #16A34A"></span>连接正常 · 312 ms</span>
-          <button type="button" style="margin-left: auto; height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: #DC2626">删除此服务</button>
-        </div>
-      </section>
-    </main>
+</section>
+<sc-if value="{{u.suggest}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">接入 OpenAI Decisions 或 TypeSafe，判断能快一个数量级。<button type="button" onClick="{{openAdd}}" style="padding: 0; border: 0; background: transparent; color: #0A0A0A; font: inherit; text-decoration: underline">添加服务</button></span></sc-if>
+</sc-if>
+<sc-if value="{{hasServices}}" hint-placeholder-val="{{ true }}"><section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">服务</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<sc-for list="{{services}}" as="s" hint-placeholder-count="3">
+<button type="button" onClick="{{s.edit}}" aria-haspopup="dialog" style="{{s.rowStyle}}">
+<span style="width: 36px; height: 32px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-family: 'Geist Mono', monospace; font-size: 12px; flex: none">{{s.badge}}</span>
+<span style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0">
+<span style="display: flex; align-items: center; gap: 8px"><span style="font-weight: 500">{{s.name}}</span><span style="{{s.statusStyle}}"><span style="{{s.dotStyle}}"></span>{{s.status}}</span></span>
+<span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{s.url}}</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap"><sc-for list="{{s.caps}}" as="c" hint-placeholder-count="1"><span style="{{c.style}}"><sc-if value="{{c.isDef}}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-label="默认" role="img"><path d="M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z"></path></svg></sc-if>{{c.text}}</span></sc-for></span>
+</span>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z"></path></svg>
+</button>
+</sc-for>
+</div></div>
+<span style="font-size: 12px; color: #737373">带 ✓ 的是正在作为默认使用的能力。</span>
+</section></sc-if>
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}"><dc-import name="Empty" title="还没有接入模型服务" desc="总结、翻译、写信、Wit 和智能视图都需要至少一个能生成的服务。支持 OpenAI、Anthropic、TypeSafe，以及 OpenRouter、本地网关等兼容服务。" icon="{{emptyIcon}}" actions="{{emptyActions}}" hint-size="100%,280px"></dc-import></sc-if>
+</main>
   
-    </div>
+    </div></div>
   </div>
 </div>
+<sc-if value="{{d.open}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; border-radius: 12px; background: rgba(10,10,10,0.28); display: flex; align-items: flex-start; justify-content: center; padding-top: 56px">
+<div role="dialog" aria-modal="true" aria-labelledby="svc-title" style="width: 640px; max-height: 788px; box-sizing: border-box; display: flex; flex-direction: column; border-radius: 16px; background: #FFFFFF; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; overflow: hidden">
+<div style="padding: 24px 24px 0; display: flex; flex-direction: column; gap: 4px"><h2 id="svc-title" style="margin: 0; font-size: 18px; font-weight: 600">{{d.title}}</h2><span style="color: #737373">{{d.desc}}</span></div>
+<div style="flex: 1; min-height: 0; overflow: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 16px">
+
+<sc-if value="{{d.isAdd}}" hint-placeholder-val="{{ true }}">
+<div role="radiogroup" aria-label="服务商" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{d.providers}}" as="p" hint-placeholder-count="4">
+<button type="button" role="radio" aria-checked="{{p.checked}}" onClick="{{p.pick}}" style="{{p.style}}"><span style="font-weight: 500">{{p.name}}</span><span style="font-size: 12px; color: #737373">{{p.caps}}</span></button>
+</sc-for>
+</div>
+</sc-if>
+
+<div style="display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px 16px; align-items: start">
+<label for="svc-name" style="line-height: 32px">名称</label>
+<input id="svc-name" type="text" value="{{d.name}}" onChange="{{d.onName}}" placeholder="比如 OpenRouter" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font: inherit; color: #0A0A0A">
+<label for="svc-url" style="line-height: 32px">地址</label>
+<span style="display: flex; flex-direction: column; gap: 6px">
+
+<span style="display: flex; gap: 8px"><input id="svc-url" type="url" value="{{d.url}}" onChange="{{d.onUrl}}" placeholder="https://… 或 http://127.0.0.1:[PORT]/v1" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font: inherit; color: #0A0A0A; font-family: 'Geist Mono', monospace; font-size: 12px"><sc-if value="{{d.canReset}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{d.resetUrl}}" style="flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #737373">恢复默认</button></sc-if></span>
+<sc-if value="{{d.showPresets}}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px"><span style="font-size: 12px; color: #737373; margin-right: 2px">常用</span><sc-for list="{{d.presets}}" as="g" hint-placeholder-count="4"><button type="button" onClick="{{g.pick}}" aria-pressed="{{g.on}}" style="{{g.style}}">{{g.name}}</button></sc-for></span></sc-if>
+
+</span>
+<label for="svc-key" style="line-height: 32px">API Key</label>
+<span style="display: flex; flex-direction: column; gap: 6px"><span style="position: relative; display: flex"><input id="svc-key" type="{{d.keyType}}" value="{{d.key}}" onChange="{{d.onKey}}" placeholder="{{d.keyHint}}" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font: inherit; color: #0A0A0A; padding-right: 40px"><button type="button" onClick="{{d.toggleKey}}" aria-label="显示 API Key" aria-pressed="{{d.showKey}}" style="position: absolute; right: 2px; top: 2px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.0003 3C17.3924 3 21.8784 6.87976 22.8189 12C21.8784 17.1202 17.3924 21 12.0003 21C6.60812 21 2.12215 17.1202 1.18164 12C2.12215 6.87976 6.60812 3 12.0003 3ZM12.0003 19C16.2359 19 19.8603 16.052 20.7777 12C19.8603 7.94803 16.2359 5 12.0003 5C7.7646 5 4.14022 7.94803 3.22278 12C4.14022 16.052 7.7646 19 12.0003 19ZM12.0003 16.5C9.51498 16.5 7.50026 14.4853 7.50026 12C7.50026 9.51472 9.51498 7.5 12.0003 7.5C14.4855 7.5 16.5003 9.51472 16.5003 12C16.5003 14.4853 14.4855 16.5 12.0003 16.5ZM12.0003 14.5C13.381 14.5 14.5003 13.3807 14.5003 12C14.5003 10.6193 13.381 9.5 12.0003 9.5C10.6196 9.5 9.50026 10.6193 9.50026 12C9.50026 13.3807 10.6196 14.5 12.0003 14.5Z"></path></svg></button></span><span style="font-size: 12px; color: #737373">{{d.keyNote}}</span></span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px"><span style="font-weight: 600">能力</span><span style="font-size: 12px; color: #737373">同一把 Key 可以同时开启两种</span></span>
+
+<div style="{{d.gen.card}}">
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0"><span style="font-weight: 600">生成</span><span style="font-size: 12px; color: #737373">{{d.gen.desc}}</span></span>
+<sc-if value="{{d.gen.supported}}" hint-placeholder-val="{{ true }}"><button type="button" role="switch" aria-label="开启生成" aria-checked="{{d.gen.onText}}" onClick="{{d.gen.toggle}}" style="{{d.gen.track}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button></sc-if>
+<sc-if value="{{d.gen.unsupported}}" hint-placeholder-val="{{ false }}"><span style="flex: none; padding: 2px 8px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #737373">不支持</span></sc-if>
+</div>
+<sc-if value="{{d.gen.on}}" hint-placeholder-val="{{ true }}">
+<sc-if value="{{d.gen.many}}" hint-placeholder-val="{{ false }}"><span role="radiogroup" aria-label="生成接口" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 2px; border-radius: 8px; background: #F5F5F5; align-self: flex-start"><sc-for list="{{d.gen.formats}}" as="f" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{f.checked}}" onClick="{{f.pick}}" style="{{f.style}}">{{f.label}}</button></sc-for></span></sc-if>
+<span style="font-size: 12px; color: #737373; overflow-wrap: anywhere">{{d.gen.single}}请求发往 <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-size: 12px">{{d.gen.req}}</span></span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<sc-for list="{{d.gen.chips}}" as="c" hint-placeholder-count="3"><button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.toggle}}" style="{{c.style}}">{{c.id}}</button></sc-for>
+<span style="display: flex; gap: 4px"><input type="text" aria-label="添加模型 ID" placeholder="添加模型 ID" value="{{d.gen.addId}}" onChange="{{d.gen.onAddId}}" style="height: 28px; width: 132px; box-sizing: border-box; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; font-family: 'Geist Mono', monospace; font-size: 12px; font-size: 12px"><button type="button" onClick="{{d.gen.add}}" aria-label="添加模型" style="height: 28px; width: 28px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">+</button></span>
+</div>
+<sc-if value="{{d.gen.empty}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">填好 API Key 后会从 /models 拉取可用模型，点一下选中；也可以直接输入模型 ID。</span></sc-if>
+<sc-if value="{{d.gen.fetchedNote}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">已从 /models 拉取 {{d.gen.fetchedCount}} 个模型，点一下选中。</span></sc-if>
+<sc-if value="{{d.gen.fetchFailed}}" hint-placeholder-val="{{ false }}"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #973C00">拉取 /models 失败（404）。这个服务可能不提供模型列表，直接输入模型 ID 也可以。<button type="button" onClick="{{d.gen.refetch}}" style="height: 24px; padding: 0 8px; border: 1px solid #FFD230; border-radius: 6px; background: #FFFBEB; color: #973C00; font: inherit">重试</button></span></sc-if>
+<sc-if value="{{d.gen.hasStatus}}" hint-placeholder-val="{{ false }}"><span style="{{d.gen.statusStyle}}"><span style="{{d.gen.dotStyle}}"></span>{{d.gen.statusText}}</span></sc-if>
+</sc-if>
+<sc-if value="{{d.gen.offWarn}}" hint-placeholder-val="{{ false }}"><span role="alert" style="padding: 8px 10px; border: 1px solid #FFD230; border-radius: 8px; background: #FFFBEB; font-size: 12px; color: #973C00">{{d.gen.offWarnText}}</span></sc-if>
+</div>
+
+<div style="{{d.dec.card}}">
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0"><span style="font-weight: 600">判断</span><span style="font-size: 12px; color: #737373">{{d.dec.desc}}</span></span>
+<sc-if value="{{d.dec.supported}}" hint-placeholder-val="{{ true }}"><button type="button" role="switch" aria-label="开启判断" aria-checked="{{d.dec.onText}}" onClick="{{d.dec.toggle}}" style="{{d.dec.track}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button></sc-if>
+<sc-if value="{{d.dec.unsupported}}" hint-placeholder-val="{{ false }}"><span style="flex: none; padding: 2px 8px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #737373">不支持</span></sc-if>
+</div>
+<sc-if value="{{d.dec.on}}" hint-placeholder-val="{{ false }}">
+<sc-if value="{{d.dec.many}}" hint-placeholder-val="{{ false }}"><span role="radiogroup" aria-label="判断接口" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 2px; border-radius: 8px; background: #F5F5F5; align-self: flex-start"><sc-for list="{{d.dec.formats}}" as="f" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{f.checked}}" onClick="{{f.pick}}" style="{{f.style}}">{{f.label}}</button></sc-for></span></sc-if>
+<span style="font-size: 12px; color: #737373; overflow-wrap: anywhere">{{d.dec.single}}请求发往 <span style="font-family: 'Geist Mono', monospace; font-size: 12px; font-size: 12px">{{d.dec.req}}</span></span>
+<label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span>模型</span><select value="{{d.dec.model}}" disabled="{{d.dec.noList}}" onChange="{{d.dec.onModel}}" style="width: 240px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font-family: 'Geist Mono', monospace; font-size: 12px"><sc-if value="{{d.dec.noList}}" hint-placeholder-val="{{ false }}"><option value="">等待拉取</option></sc-if><sc-for list="{{d.dec.models}}" as="m" hint-placeholder-count="1"><option value="{{m.id}}">{{m.id}}</option></sc-for></select></label>
+<span style="font-size: 12px; color: #737373">{{d.dec.listNote}}</span>
+<sc-if value="{{d.dec.hasStatus}}" hint-placeholder-val="{{ false }}"><span style="{{d.dec.statusStyle}}"><span style="{{d.dec.dotStyle}}"></span>{{d.dec.statusText}}</span></sc-if>
+</sc-if>
+<sc-if value="{{d.dec.offWarn}}" hint-placeholder-val="{{ false }}"><span role="alert" style="padding: 8px 10px; border: 1px solid #FFD230; border-radius: 8px; background: #FFFBEB; font-size: 12px; color: #973C00">{{d.dec.offWarnText}}</span></sc-if>
+</div>
+</div>
+
+</div>
+<sc-if value="{{d.confirming}}" hint-placeholder-val="{{ false }}">
+<div role="alertdialog" aria-label="确认删除" style="display: flex; align-items: center; gap: 8px; padding: 16px 24px; border-top: 1px solid #FFC9C9; background: #FEF2F2">
+<span style="flex: 1; min-width: 0; color: #C10007">删除「{{d.name}}」？用到它的 skill 会改用默认模型，Key 会从钥匙串移除。</span>
+<button type="button" onClick="{{d.cancelDelete}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button>
+<button type="button" onClick="{{d.close}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #E7000B; color: #FFFFFF; font-weight: 500">删除</button>
+</div>
+</sc-if>
+<sc-if value="{{d.notConfirming}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; align-items: center; gap: 8px; padding: 16px 24px; border-top: 1px solid #E5E5E5">
+<sc-if value="{{d.isEdit}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{d.askDelete}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #E7000B">删除此服务</button></sc-if>
+<span style="flex: 1; min-width: 0; font-size: 12px; color: #737373">{{d.hint}}</span>
+<button type="button" onClick="{{d.test}}" disabled="{{d.cantTest}}" style="{{d.testStyle}}">{{d.testLabel}}</button>
+<button type="button" onClick="{{d.close}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button>
+<button type="button" onClick="{{d.close}}" disabled="{{d.disabled}}" style="{{d.primaryStyle}}">{{d.primary}}</button>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+</div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"open":{"editor":"enum","options":["","add","edit"],"default":""},"view":{"editor":"enum","options":["normal","empty","broken","gen-only"],"default":"normal"},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
-  renderVals() {
-    var rows = [
-      ['AI', 'OpenAI', 'OpenAI 兼容', 'https://api.openai.com/v1', '2 个模型', true],
-      ['AN', 'Anthropic', 'Anthropic 兼容', 'https://api.anthropic.com', '1 个模型', false],
-      ['GW', '本地网关', 'OpenAI 兼容', 'http://127.0.0.1:[PORT]/v1', '9 个模型', false]
-    ];
+  data() {
     return {
-      services: rows.map(function (r, i) {
-        return {
-          badge: r[0], name: r[1], kind: r[2], url: r[3], models: r[4], isDefault: r[5],
-          rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 16px; ' + (i ? 'border-top: 1px solid #F5F5F5; ' : '') + 'background: ' + (i === 0 ? '#FAFAFA' : '#FFFFFF')
-        };
-      })
+      FORMATS: {
+        responses: { label: 'OpenAI Responses', path: '/responses' },
+        chat: { label: 'Chat Completions', path: '/chat/completions' },
+        messages: { label: 'Anthropic Messages', path: '/messages' },
+        decisions: { label: 'OpenAI Decisions', path: '', models: ['gpt-6-luna'] },
+        systemone: { label: 'TypeSafe System One', path: '/systemone', models: ['jev-latest', 'jev-preview'] }
+      },
+      PROVIDERS: {
+        openai: { url: 'https://api.openai.com/v1', key: 'sk-…', gen: ['responses', 'chat'], dec: ['decisions'], decFetched: ['gpt-6-luna'], fetched: ['[MODEL A]', '[MODEL B]', '[MODEL C]'] },
+        anthropic: { url: 'https://api.anthropic.com/v1', key: 'sk-ant-…', gen: ['messages'], dec: [], fetched: ['[MODEL D]', '[MODEL E]'] },
+        typesafe: { url: 'https://api.typesafe.ai/v1', key: '粘贴 API Key', gen: [], dec: ['systemone'], fetched: [], decFetched: ['jev-latest', 'jev-preview', 'jev-1.13.0'] },
+        other: { url: '', key: '没有可以留空', gen: ['chat', 'responses', 'messages'], dec: ['decisions', 'systemone'], fetched: ['[VENDOR/MODEL A]', '[VENDOR/MODEL B]', '[VENDOR/MODEL C]'] }
+      },
+      PRESETS: [
+        { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
+        { name: 'Vercel AI Gateway', url: 'https://ai-gateway.vercel.sh/v1' },
+        { name: 'LiteLLM', url: 'http://127.0.0.1:4000' },
+        { name: '本地网关', url: 'http://127.0.0.1:[PORT]/v1' }
+      ],
+      HOSTS: { 'openrouter.ai': 'OpenRouter', 'ai-gateway.vercel.sh': 'Vercel AI Gateway', '127.0.0.1': '本地网关', 'localhost': '本地网关'
+      },
+      VIEWS: {
+        normal: { list: [0, 1, 2], gen: 0, dec: 0 },
+        broken: { list: [0, 1, 2], gen: 0, dec: 0, fail: 0 },
+        'gen-only': { list: [1, 2], gen: 1, dec: -1 },
+        empty: { list: [], gen: -1, dec: -1 }
+      },
+      ORDER: ['openai', 'anthropic', 'typesafe', 'other'],
+      LABELS: { openai: 'OpenAI', anthropic: 'Anthropic', typesafe: 'TypeSafe', other: '其他服务' },
+      SERVICES: [
+        { badge: 'AI', status: 'ok', name: 'OpenAI', provider: 'openai', url: 'https://api.openai.com/v1', isDefault: true, genFmt: 'responses', gen: [['[MODEL A]', true], ['[MODEL B]', true], ['[MODEL C]', false]], decFmt: 'decisions', dec: 'gpt-6-luna' },
+        { badge: 'AN', status: 'ok', name: 'Anthropic', provider: 'anthropic', url: 'https://api.anthropic.com/v1', isDefault: false, genFmt: 'messages', gen: [['[MODEL D]', true], ['[MODEL E]', false]], decFmt: '', dec: '' },
+        { badge: 'GW', status: 'untested', name: '本地网关', provider: 'other', url: 'http://127.0.0.1:[PORT]/v1', isDefault: false, genFmt: 'chat', gen: [['[MODEL F]', true], ['[MODEL G]', true], ['[MODEL H]', true], ['[MODEL I]', false]], decFmt: '', dec: '' }
+      ]
     };
+  }
+  constructor(props) {
+    super(props);
+    this.state = { d: this.preset(props.open), view: props.view || 'normal' };
+  }
+  preset(o) {
+    if (!o) return null;
+    var D = this.data();
+    var fetched = function (id, n) { return D.PROVIDERS[id].fetched.map(function (m, i) { return { id: m, on: i < n }; }); };
+    var key = { key: 'sk-proj-••••••••••••' };
+    if (o === 'edit') return this.fromService(0);
+    if (o === 'edit-disable-default') return Object.assign(this.fromService(0), { genOn: false });
+    if (o === 'edit-delete') return Object.assign(this.fromService(0), { confirmDelete: true });
+    if (o === 'add-ready') return Object.assign(this.blank('openai'), key, { models: fetched('openai', 2), fetch: 'ok', tg: 'ok', td: 'ok' });
+    if (o === 'add-testing') return Object.assign(this.blank('openai'), key, { models: fetched('openai', 2), fetch: 'ok', tg: 'testing', td: 'testing' });
+    if (o === 'add-test-failed') return Object.assign(this.blank('openai'), key, { models: fetched('openai', 2), fetch: 'ok', tg: 'ok', td: 'fail', decErr: '403 · 这把 Key 没有开通 Decisions API' });
+    if (o === 'add-fetch-failed') return Object.assign(this.blank('other'), { name: '公司网关', url: 'https://llm.example.com/v1', key: '', fetch: 'fail', models: [{ id: '[MODEL X]', on: true }] });
+    if (o === 'add-other') return Object.assign(this.blank('other'), { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', key: 'sk-or-••••••••••••', genFmt: 'messages', models: fetched('other', 2), fetch: 'ok', decOn: true, decFmt: 'systemone', decModel: 'jev-latest' });
+    if (o === 'add-typesafe') return Object.assign(this.blank('typesafe'), { key: 'ts-••••••••••••' });
+    if (o === 'add-no-cap') return Object.assign(this.blank('openai'), key, { models: fetched('openai', 2), fetch: 'ok', genOn: false, decOn: false });
+    return this.blank('openai');
+  }
+  blank(id) {
+    var D = this.data(), p = D.PROVIDERS[id];
+    return { mode: 'add', provider: id, name: id === 'other' ? '' : D.LABELS[id], nameAuto: true, url: p.url, key: '', hasKey: false, showKey: false,
+      genOn: p.gen.length > 0, genFmt: p.gen[0] || '', models: [], addId: '',
+      decOn: p.dec.length > 0 && id !== 'other', decFmt: p.dec[0] || '', decModel: p.dec.length ? D.FORMATS[p.dec[0]].models[0] : '', tg: '', td: '', fetch: '', confirmDelete: false };
+  }
+  fromService(i) {
+    var D = this.data(), s = D.SERVICES[i], p = D.PROVIDERS[s.provider];
+    var decFmt = s.decFmt || p.dec[0] || '';
+    return { mode: 'edit', svc: i, provider: s.provider, name: s.name, url: s.url, nameAuto: false, key: '', hasKey: true, showKey: false,
+      genOn: s.gen.length > 0, genFmt: s.genFmt || p.gen[0] || '', models: s.gen.map(function (m) { return { id: m[0], on: m[1] }; }), addId: '',
+      decOn: !!s.dec, decFmt: decFmt, decModel: s.dec || (decFmt ? D.FORMATS[decFmt].models[0] : ''), tg: '', td: '', fetch: '', confirmDelete: false };
+  }
+  renderVals() {
+    var self = this;
+    var D = this.data();
+    var d = this.state.d;
+    var V = D.VIEWS[this.state.view] || D.VIEWS.normal;
+    var pill = function (st, text) {
+      var c = { ok: ['#00A63E', '#737373'], untested: ['#FD9A00', '#737373'], fail: ['#E7000B', '#C10007'], slow: ['#FD9A00', '#737373'], none: ['#A1A1A1', '#737373'] }[st];
+      return { status: text, statusStyle: 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: ' + c[1], dotStyle: 'width: 6px; height: 6px; flex: none; border-radius: 50%; background: ' + c[0] };
+    };
+    var vals = {
+      openAdd: function () { self.setState({ d: self.blank('openai') }); },
+      services: V.list.map(function (i, n) {
+        var s = D.SERVICES[i];
+        var st = V.fail === i ? 'fail' : s.status;
+        var on = s.gen.filter(function (m) { return m[1]; }).length;
+        var cap = function (text, isDef) {
+          return { text: text, isDef: !!isDef, style: 'flex: none; height: 20px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: 4px; font-size: 12px; background: #F5F5F5; color: ' + (isDef ? '#0A0A0A' : '#737373') };
+        };
+        var caps = [];
+        if (on) caps.push(cap('生成 · ' + on + ' 个模型', V.gen === i));
+        if (s.dec) caps.push(cap('判断 · ' + s.dec, V.dec === i));
+        return Object.assign({ badge: s.badge, name: s.name, url: s.url, caps: caps,
+          edit: function () { self.setState({ d: self.fromService(i) }); },
+          rowStyle: 'display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 16px; border: 0; border-top: 1px solid #E5E5E5; text-align: left; font: inherit; color: #0A0A0A; background: #FFFFFF'
+        }, pill(st, { ok: '正常', untested: '未测试', fail: 'Key 失效' }[st]));
+      }),
+      hasServices: V.list.length > 0, isEmpty: !V.list.length,
+      emptyIcon: 'M6 18H18V6H6V18ZM14 20H10V22H8V20H5C4.44772 20 4 19.5523 4 19V16H2V14H4V10H2V8H4V5C4 4.44772 4.44772 4 5 4H8V2H10V4H14V2H16V4H19C19.5523 4 20 4.44772 20 5V8H22V10H20V14H22V16H20V19C20 19.5523 19.5523 20 19 20H16V22H14V20ZM8 8H16V16H8V8Z',
+      emptyActions: [
+        { label: '添加服务', primary: true, onClick: function () { self.setState({ d: self.blank('openai') }); } },
+        { label: '连接本地网关', onClick: function () { self.setState({ d: Object.assign(self.blank('other'), { name: '本地网关', url: 'http://127.0.0.1:[PORT]/v1' }) }); } }
+      ],
+      starters: D.ORDER.map(function (id) {
+        var p = D.PROVIDERS[id];
+        return { name: D.LABELS[id], caps: [p.gen.length ? '生成' : '', p.dec.length ? '判断' : ''].filter(Boolean).join(' · '), pick: function () { self.setState({ d: self.blank(id) }); } };
+      }),
+      u: (function () {
+        var genSvc = V.gen >= 0 ? D.SERVICES[V.gen] : null, decSvc = V.dec >= 0 ? D.SERVICES[V.dec] : null;
+        var genModel = genSvc ? genSvc.name + ' / ' + genSvc.gen.filter(function (m) { return m[1]; })[0][0] : '';
+        var genOpts = [];
+        V.list.forEach(function (i) { var s = D.SERVICES[i]; s.gen.forEach(function (m) { if (m[1]) genOpts.push(s.name + ' / ' + m[0]); }); });
+        var decOpts = ['由生成模型兼任（较慢）'];
+        V.list.forEach(function (i) { var s = D.SERVICES[i]; if (s.dec) decOpts.push(s.name + ' / ' + s.dec); });
+        var genBroken = V.fail === V.gen && V.gen >= 0, decBroken = V.fail === V.dec && V.dec >= 0;
+        var opts = function (list, cur) { return list.length ? list.map(function (t) { return { text: t, selected: t === cur }; }) : [{ text: '先添加一个服务', selected: true }]; };
+        var decCur = decSvc ? decSvc.name + ' / ' + decSvc.dec : decOpts[0];
+        return {
+          gen: Object.assign({ desc: '总结、翻译、写信和 Wit 对话。', disabled: !genOpts.length, options: opts(genOpts, genModel) },
+            pill(!genSvc ? 'none' : genBroken ? 'fail' : 'ok', !genSvc ? '未配置，这些功能暂时不可用' : genBroken ? genSvc.name + ' · 401 · API Key 无效' : genSvc.name + ' · 连接正常 · 812 ms')),
+          dec: Object.assign({ desc: '分类、提醒过滤、验证码识别和动作路由。', disabled: !genOpts.length, options: genOpts.length ? opts(decOpts, decCur) : opts([], '') },
+            pill(!genSvc ? 'none' : decBroken ? 'fail' : decSvc ? 'ok' : 'slow', !genSvc ? '未配置' : decBroken ? decSvc.name + ' · 401 · API Key 无效' : decSvc ? decSvc.name + ' · 连接正常 · 143 ms' : '用 ' + genModel + ' 回答判断题，约慢 10 倍')),
+          alert: genBroken,
+          alertText: genBroken ? '生成用的 ' + genSvc.name + ' 连不上（401 · API Key 无效）：总结、翻译、写信和 Wit 暂时不可用' + (decBroken ? '，判断也一样。' : '。') : '',
+          fix: function () { self.setState({ d: self.fromService(V.gen) }); },
+          suggest: !!genSvc && !decSvc
+        };
+      })(),
+      d: { open: false }
+    };
+    if (!d) return vals;
+    var P = D.PROVIDERS[d.provider];
+    var add = d.mode === 'add';
+    var custom = d.provider === 'other';
+    var set = function (patch) { self.setState({ d: Object.assign({}, self.state.d, patch) }); };
+    var val = function (k) { return function (e) { var p = {}; p[k] = e.target.value; set(p); }; };
+    var sw = function (on) {
+      return 'flex: none; width: 32px; height: 18px; padding: 2px; box-sizing: border-box; border: 0; border-radius: 9999px; display: flex; align-items: center; background: ' + (on ? '#171717; justify-content: flex-end' : '#E5E5E5; justify-content: flex-start');
+    };
+    var card = function (supported) {
+      return 'display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; border: 1px solid #E5E5E5; border-radius: 12px; background: ' + (supported ? '#FFFFFF' : '#FAFAFA');
+    };
+    var base = d.url.replace(/\/$/, '');
+    var F = D.FORMATS;
+    var fmts = function (list, cur, key, extra) {
+      return list.map(function (id) {
+        var on = id === cur;
+        return {
+          label: F[id].label, checked: on ? 'true' : 'false',
+          pick: function () { var p = {}; p[key] = id; Object.assign(p, extra ? extra(id) : {}); p.tg = ''; p.td = ''; set(p); },
+          style: 'height: 28px; padding: 0 10px; border: 0; border-radius: 6px; font: inherit; font-size: 12px; color: ' + (on ? '#0A0A0A; background: #FFFFFF; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1)' : '#737373; background: transparent')
+        };
+      });
+    };
+    var reqOf = function (id) { return base + F[id].path; };
+    var hasKey = !!d.key || d.hasKey;
+    var setUrl = function (url, name) {
+      var patch = { url: url, tg: '', td: '' };
+      if (d.nameAuto && custom) {
+        var host = (url.match(/^[a-z]+:\/\/([^\/:]+)/i) || [])[1] || '';
+        patch.name = name || D.HOSTS[host] || host;
+      }
+      set(patch);
+    };
+    var anyCap = (d.genOn && P.gen.length) || (d.decOn && P.dec.length);
+    var blocked = !d.name || !d.url || !anyCap || (add && !custom && !d.key);
+    var testing = d.tg === 'testing' || d.td === 'testing';
+    var decList = !d.decFmt || !(hasKey || custom) ? [] : (P.decFetched || F[d.decFmt].models);
+    var hint = !anyCap ? '至少开启一种能力' : !d.url ? '填上地址' : (add && !custom && !d.key) ? '填上 API Key 才能添加' : !d.name ? '填上名称' :
+      (d.tg === 'fail' || d.td === 'fail') ? '有一项没通过测试，仍然可以' + (add ? '添加' : '保存') + '，之后再改' : '';
+    var status = function (st, ok, err) {
+      var color = st === 'ok' ? '#008236' : st === 'fail' ? '#C10007' : '#737373';
+      var dot = st === 'ok' ? '#00A63E' : st === 'fail' ? '#E7000B' : '#A1A1A1';
+      return {
+        hasStatus: !!st,
+        statusText: st === 'testing' ? '正在测试…' : st === 'ok' ? ok : (err || '连接失败'),
+        statusStyle: 'display: flex; align-items: center; gap: 6px; font-size: 12px; color: ' + color,
+        dotStyle: 'width: 6px; height: 6px; flex: none; border-radius: 50%; background: ' + dot
+      };
+    };
+    var cantTest = !anyCap || (!custom && !hasKey) || !d.url || testing;
+    vals.d = {
+      open: true, isAdd: add, isEdit: !add,
+      title: add ? '添加模型服务' : '编辑 ' + d.name,
+      desc: add ? '选好服务商，填上 Key，再决定它负责生成、判断，还是两者都做。同一个服务可以支持多种接口格式，每种能力各选一种。' : D.LABELS[d.provider] + ' · ' + d.url,
+      providers: D.ORDER.map(function (id) {
+        var p = D.PROVIDERS[id];
+        var on = d.provider === id;
+        return {
+          name: D.LABELS[id],
+          caps: [p.gen.length ? '生成' : '', p.dec.length ? '判断' : ''].filter(Boolean).join(' · '),
+          checked: on ? 'true' : 'false',
+          pick: function () { self.setState({ d: self.blank(id) }); },
+          style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; font: inherit; color: #0A0A0A; text-align: left; background: ' + (on ? '#F5F5F5; border: 1px solid #171717' : '#FFFFFF; border: 1px solid #E5E5E5')
+        };
+      }),
+      name: d.name, onName: function (e) { set({ name: e.target.value, nameAuto: false }); },
+      url: d.url,
+      onUrl: function (e) { setUrl(e.target.value); },
+      showPresets: custom,
+      presets: D.PRESETS.map(function (g) {
+        var on = d.url === g.url;
+        return {
+          name: g.name, on: on ? 'true' : 'false',
+          pick: function () { setUrl(g.url, g.name); },
+          style: 'height: 24px; padding: 0 8px; border-radius: 6px; font: inherit; font-size: 12px; border: 1px solid ' + (on ? '#171717; background: #F5F5F5; color: #0A0A0A' : '#E5E5E5; background: #FFFFFF; color: #737373')
+        };
+      }),
+      canReset: !custom && d.url !== P.url,
+      resetUrl: function () { set({ url: P.url, tg: '', td: '' }); },
+      key: d.key,
+      onKey: function (e) {
+        var v = e.target.value;
+        var patch = { key: v, tg: '', td: '' };
+        if (v && !d.models.length && P.gen.length) { patch.models = P.fetched.map(function (id, i) { return { id: id, on: i === 0 }; }); patch.fetch = 'ok'; }
+        set(patch);
+      },
+      keyType: d.showKey ? 'text' : 'password',
+      keyHint: d.hasKey ? '已配置 · 留空表示保持不变' : P.key,
+      keyNote: '保存在系统钥匙串，界面和日志里都不会显示。',
+      showKey: d.showKey ? 'true' : 'false',
+      toggleKey: function () { set({ showKey: !d.showKey }); },
+      gen: {
+        supported: P.gen.length > 0, unsupported: !P.gen.length, on: !!(P.gen.length && d.genOn), onText: d.genOn ? 'true' : 'false',
+        desc: P.gen.length ? '总结、翻译、写信和 Wit 对话。' : D.LABELS[d.provider] + ' 不提供生成接口。',
+        toggle: function () { set({ genOn: !d.genOn }); },
+        track: sw(d.genOn), card: card(P.gen.length > 0),
+        many: P.gen.length > 1, formats: fmts(P.gen, d.genFmt, 'genFmt'),
+        single: P.gen.length === 1 && d.genFmt ? F[d.genFmt].label + ' · ' : '',
+        req: d.genFmt ? reqOf(d.genFmt) : '',
+        chips: d.models.map(function (m) {
+          return {
+            id: m.id, pressed: m.on ? 'true' : 'false',
+            toggle: function () { set({ models: d.models.map(function (x) { return x.id === m.id ? { id: x.id, on: !x.on } : x; }) }); },
+            style: "height: 28px; padding: 0 10px; border-radius: 6px; font-family: 'Geist Mono', monospace; font-size: 12px; " + (m.on ? 'border: 1px solid #171717; background: #F5F5F5; color: #0A0A0A' : 'border: 1px dashed #D4D4D4; background: #FFFFFF; color: #737373')
+          };
+        }),
+        empty: !d.models.length && d.fetch !== 'fail',
+        fetchedNote: d.fetch === 'ok', fetchedCount: d.models.length,
+        fetchFailed: d.fetch === 'fail',
+        refetch: function () { set({ fetch: 'ok', models: d.models.concat(P.fetched.filter(function (id) { return !d.models.some(function (m) { return m.id === id; }); }).map(function (id) { return { id: id, on: false }; })) }); },
+        addId: d.addId, onAddId: val('addId'),
+        add: function () {
+          var id = d.addId.trim();
+          if (!id || d.models.some(function (m) { return m.id === id; })) return;
+          set({ models: d.models.concat([{ id: id, on: true }]), addId: '' });
+        }
+      },
+      dec: {
+        supported: P.dec.length > 0, unsupported: !P.dec.length, on: !!(P.dec.length && d.decOn), onText: d.decOn ? 'true' : 'false',
+        desc: P.dec.length ? '分类、提醒过滤、验证码识别和动作路由。只回答预先定义的问题，比生成快一个数量级。' : D.LABELS[d.provider] + ' 不提供判断接口，判断会由生成模型兼任。',
+        toggle: function () { set({ decOn: !d.decOn }); },
+        track: sw(d.decOn), card: card(P.dec.length > 0),
+        many: P.dec.length > 1, formats: fmts(P.dec, d.decFmt, 'decFmt', function (id) { return { decModel: F[id].models[0] }; }),
+        single: P.dec.length === 1 && d.decFmt ? F[d.decFmt].label + ' · ' : '',
+        req: d.decFmt ? reqOf(d.decFmt) : '',
+        model: decList.length ? d.decModel : '', onModel: val('decModel'),
+        noList: !decList.length,
+        listNote: decList.length ? '已从 /models 拉取 ' + decList.length + ' 个判断模型。' : '填好 API Key 后会从 /models 拉取判断模型。',
+        models: decList.map(function (id) { return { id: id }; })
+      },
+      hint: hint,
+      testLabel: testing ? '测试中…' : '测试连接',
+      test: function () {
+        var g = d.genOn && P.gen.length ? 'testing' : '', t = d.decOn && P.dec.length ? 'testing' : '';
+        set({ tg: g, td: t });
+        setTimeout(function () { if (self.state.d) set({ tg: g && 'ok', td: t && 'ok' }); }, 900);
+      },
+      confirming: !!d.confirmDelete, notConfirming: !d.confirmDelete,
+      askDelete: function () { set({ confirmDelete: true }); },
+      cancelDelete: function () { set({ confirmDelete: false }); },
+      cantTest: cantTest,
+      testStyle: 'height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: ' + (cantTest ? '#A1A1A1; cursor: not-allowed' : '#0A0A0A'),
+      primary: add ? '添加' : '保存',
+      disabled: blocked,
+      primaryStyle: 'height: 32px; padding: 0 16px; border: 0; border-radius: 8px; font-weight: 500; ' + (blocked ? 'background: #F5F5F5; color: #737373; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
+      close: function () { self.setState({ d: null }); }
+    };
+    var alt = D.SERVICES.filter(function (s, i) { return i !== d.svc && V.list.indexOf(i) >= 0 && s.gen.some(function (m) { return m[1]; }); })[0];
+    var isDefGen = !add && d.svc === V.gen, isDefDec = !add && d.svc === V.dec;
+    vals.d.gen.offWarn = isDefGen && !d.genOn && P.gen.length > 0;
+    vals.d.gen.offWarnText = alt ? '它是默认生成模型。关闭后，总结、翻译、写信和 Wit 改用 ' + alt.name + ' / ' + alt.gen.filter(function (m) { return m[1]; })[0][0] + '。' : '它是唯一能生成的服务，关闭后总结、翻译、写信和 Wit 都不可用。';
+    vals.d.dec.offWarn = isDefDec && !d.decOn && P.dec.length > 0;
+    vals.d.dec.offWarnText = '它是默认判断模型。关闭后，判断改由生成模型兼任，会慢一些。';
+    Object.assign(vals.d.gen, status(d.genOn && P.gen.length ? d.tg : '', '连接正常 · 812 ms', d.genErr));
+    Object.assign(vals.d.dec, status(d.decOn && P.dec.length ? d.td : '', '连接正常 · 143 ms', d.decErr));
+    return vals;
   }
 }
 </script>

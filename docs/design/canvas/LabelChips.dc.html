@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>标签芯片 规格</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1200px; height: 560px; box-sizing: border-box; padding: 32px; display: flex; flex-direction: column; gap: 24px; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 20px; font-weight: 600">标签芯片 · 8 种颜色</h1>
+<p style="margin: 0; color: #737373">高 20 · 圆角 4 · 字号 12 · 图标 12。手动标记是浅底实心；模型标记同色但只有描边。悬停显示来源。</p>
+</div>
+<div style="flex: 1; min-height: 0; display: flex; gap: 24px">
+<section aria-label="浅色" style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 12px; border: 1px solid #E5E5E5; background: #FFFFFF; color: #0A0A0A">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">浅色</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: center">
+<span style="font-size: 12px; color: #737373">颜色</span><span style="font-size: 12px; color: #737373">手动标记（浅底）</span><span style="font-size: 12px; color: #737373">模型标记（只有描边）</span>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 13px"><span style="{{r.dot}}"></span>{{r.cname}} · {{r.key}}</span>
+<span style="display: flex"><dc-import name="LabelChip" text="{{r.text}}" color="{{r.key}}" icon="{{r.icon}}" source="manual" dark="false" hint-size="88px,20px"></dc-import></span>
+<span style="display: flex"><dc-import name="LabelChip" text="{{r.text}}" color="{{r.key}}" icon="{{r.icon}}" source="auto" dark="false" hint-size="88px,20px"></dc-import></span>
+</sc-for>
+</div>
+</section>
+<section aria-label="深色" style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 12px; border: 1px solid #FFFFFF1A; background: #0A0A0A; color: #FAFAFA">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">深色</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: center">
+<span style="font-size: 12px; color: #A1A1A1">颜色</span><span style="font-size: 12px; color: #A1A1A1">手动标记（浅底）</span><span style="font-size: 12px; color: #A1A1A1">模型标记（只有描边）</span>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<span style="display: flex; align-items: center; gap: 8px; font-size: 13px"><span style="{{r.dot}}"></span>{{r.cname}} · {{r.key}}</span>
+<span style="display: flex"><dc-import name="LabelChip" text="{{r.text}}" color="{{r.key}}" icon="{{r.icon}}" source="manual" dark="true" hint-size="88px,20px"></dc-import></span>
+<span style="display: flex"><dc-import name="LabelChip" text="{{r.text}}" color="{{r.key}}" icon="{{r.icon}}" source="auto" dark="true" hint-size="88px,20px"></dc-import></span>
+</sc-for>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var C = {"gray": {"name": "灰", "dot": "#171717", "bg": "#F5F5F5", "border": "#E5E5E5", "fg": "#404040", "dbg": "#262626", "dborder": "#404040", "dfg": "#D4D4D4"}, "red": {"name": "红", "dot": "#FB2C36", "bg": "#FFE2E2", "border": "#FFC9C9", "fg": "#C10007", "dbg": "#460809", "dborder": "#9F0712", "dfg": "#FFA2A2"}, "orange": {"name": "橙", "dot": "#FF6900", "bg": "#FFEDD4", "border": "#FFD6A7", "fg": "#CA3500", "dbg": "#441306", "dborder": "#9F2D00", "dfg": "#FFB86A"}, "amber": {"name": "黄", "dot": "#FE9A00", "bg": "#FEF3C6", "border": "#FEE685", "fg": "#BB4D00", "dbg": "#461901", "dborder": "#973C00", "dfg": "#FFD230"}, "green": {"name": "绿", "dot": "#00C950", "bg": "#DCFCE7", "border": "#B9F8CF", "fg": "#008236", "dbg": "#032E15", "dborder": "#016630", "dfg": "#7BF1A8"}, "blue": {"name": "蓝", "dot": "#2B7FFF", "bg": "#DBEAFE", "border": "#BEDBFF", "fg": "#1447E6", "dbg": "#162456", "dborder": "#193CB8", "dfg": "#8EC5FF"}, "violet": {"name": "紫", "dot": "#8E51FF", "bg": "#EDE9FE", "border": "#DDD6FF", "fg": "#7008E7", "dbg": "#2E1065", "dborder": "#5D0EC0", "dfg": "#C4B4FF"}, "pink": {"name": "粉", "dot": "#F6339A", "bg": "#FCE7F3", "border": "#FCCEE8", "fg": "#C6005C", "dbg": "#510424", "dborder": "#A3004C", "dfg": "#FDA5D5"}};
+    var R = [{"key": "gray", "cname": "灰", "text": "通知", "icon": "notification-3"}, {"key": "red", "cname": "红", "text": "验证码", "icon": "shield-keyhole"}, {"key": "orange", "cname": "橙", "text": "订单与物流", "icon": "truck"}, {"key": "amber", "cname": "黄", "text": "账单", "icon": "bill"}, {"key": "green", "cname": "绿", "text": "日程邀请", "icon": "calendar-event"}, {"key": "blue", "cname": "蓝", "text": "航班与出行", "icon": "plane"}, {"key": "violet", "cname": "紫", "text": "Q4 项目", "icon": "briefcase-4"}, {"key": "pink", "cname": "粉", "text": "报销", "icon": "money-dollar-circle"}];
+    return { rows: R.map(function (r) { return Object.assign({}, r, { dot: 'width: 12px; height: 12px; flex: none; border-radius: 9999px; background: ' + C[r.key].dot }); }) };
+  }
+}
+</script>
+</body>
+</html>

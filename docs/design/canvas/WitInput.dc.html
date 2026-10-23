@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Wit 输入框</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+        <sc-if value="{{tray}}" hint-placeholder-val="{{ true }}"><div style="position: relative; display: flex; align-items: center; gap: 4px; margin: 0 0 -16px; padding: 4px 8px 20px; border-radius: 16px 16px 0 0; background: #F5F5F5; padding-bottom: 18px; margin-left: 8px; margin-right: 8px; padding-right: 4px; padding-left: 4px; padding-top: 2px">
+          <button type="button" onClick="{{onStyle}}" aria-haspopup="menu" style="height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; font-size: 12px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M6.17071 18C6.58254 16.8348 7.69378 16 9 16C10.3062 16 11.4175 16.8348 11.8293 18H22V20H11.8293C11.4175 21.1652 10.3062 22 9 22C7.69378 22 6.58254 21.1652 6.17071 20H2V18H6.17071ZM12.1707 11C12.5825 9.83481 13.6938 9 15 9C16.3062 9 17.4175 9.83481 17.8293 11H22V13H17.8293C17.4175 14.1652 16.3062 15 15 15C13.6938 15 12.5825 14.1652 12.1707 13H2V11H12.1707ZM6.17071 4C6.58254 2.83481 7.69378 2 9 2C10.3062 2 11.4175 2.83481 11.8293 4H22V6H11.8293C11.4175 7.16519 10.3062 8 9 8C7.69378 8 6.58254 7.16519 6.17071 6H2V4H6.17071ZM9 6C9.55228 6 10 5.55228 10 5C10 4.44772 9.55228 4 9 4C8.44772 4 8 4.44772 8 5C8 5.55228 8.44772 6 9 6ZM15 13C15.5523 13 16 12.5523 16 12C16 11.4477 15.5523 11 15 11C14.4477 11 14 11.4477 14 12C14 12.5523 14.4477 13 15 13ZM9 20C9.55228 20 10 19.5523 10 19C10 18.4477 9.55228 18 9 18C8.44772 18 8 18.4477 8 19C8 19.5523 8.44772 20 9 20Z"></path></svg>调整<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #A1A1A1"><path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path></svg></button>
+          <button type="button" onClick="{{onLang}}" aria-haspopup="menu" style="height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; font-size: 12px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M5 15V17C5 18.0544 5.81588 18.9182 6.85074 18.9945L7 19H10V21H7C4.79086 21 3 19.2091 3 17V15H5ZM18 10L22.4 21H20.245L19.044 18H14.954L13.755 21H11.601L16 10H18ZM17 12.8852L15.753 16H18.245L17 12.8852ZM8 2V4H12V11H8V14H6V11H2V4H6V2H8ZM17 3C19.2091 3 21 4.79086 21 7V9H19V7C19 5.89543 18.1046 5 17 5H14V3H17ZM6 6H4V9H6V6ZM10 6H8V9H10V6Z"></path></svg>翻译<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #A1A1A1"><path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path></svg></button>
+          <sc-if value="{{menu}}" hint-placeholder-val="{{ false }}">
+            <div role="menu" style="position: absolute; left: 0; bottom: 100%; margin-bottom: 8px; min-width: 180px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column; z-index: 3">
+              <sc-for list="{{menu}}" as="m" hint-placeholder-count="5">
+                <button type="button" role="menuitem" onClick="{{m.run}}" style="height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 12px"><span>{{m.label}}</span><span style="font-size: 12px; color: #737373">{{m.hint}}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div></sc-if>
+        <div style="position: relative; background: #FFFFFF; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 80px 8px #00000006; border-radius: 16px; min-height: 88px">
+          <sc-if value="{{picker}}" hint-placeholder-val="{{ false }}">
+            <div role="listbox" aria-label="引用邮件" style="position: absolute; left: 0; bottom: 100%; margin-bottom: 8px; width: 380px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; z-index: 4">
+              <div style="height: 36px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #E5E5E5; font-size: 13px; color: #737373"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>搜索邮件 · <span style="color: #0A0A0A">{{pickerQuery}}</span></div>
+              <div style="padding: 4px; display: flex; flex-direction: column; gap: 2px">
+                <sc-for list="{{pickerRows}}" as="r" hint-placeholder-count="3">
+                  <button type="button" role="option" aria-selected="{{r.sel}}" onClick="{{r.pick}}" style="{{r.style}}">
+                    <span aria-hidden="true" style="{{r.avatar}}">{{r.initial}}</span>
+                    <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+                      <span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px"><span style="font-weight: 500">{{r.from}}</span><span style="font-size: 12px; color: #737373">{{r.date}}</span></span>
+                      <span style="font-size: 12px; color: #737373; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.subject}}</span>
+                    </span>
+                  </button>
+                </sc-for>
+              </div>
+              <div style="padding: 6px 12px; border-top: 1px solid #E5E5E5; display: flex; gap: 12px; font-size: 11px; color: #737373"><span><kbd style="font: inherit; padding: 0 4px; border-radius: 4px; background: #FAFAFA; border: 1px solid #E5E5E5">↑↓</kbd> 选择</span><span><kbd style="font: inherit; padding: 0 4px; border-radius: 4px; background: #FAFAFA; border: 1px solid #E5E5E5">Enter</kbd> 引用</span><span><kbd style="font: inherit; padding: 0 4px; border-radius: 4px; background: #FAFAFA; border: 1px solid #E5E5E5">Esc</kbd> 关闭</span><span style="margin-left: auto">最多引用 10 封</span></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{hasQuotes}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <sc-for list="{{quotes}}" as="q" hint-placeholder-count="1">
+                <span style="height: 26px; max-width: 280px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FAFAFA; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM20 7.23792L12.0718 14.338L4 7.21594V19H20V7.23792ZM4.51146 5L12.0619 11.662L19.501 5H4.51146Z"></path></svg><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{q.label}}</span><button type="button" onClick="{{q.remove}}" aria-label="移除引用" style="width: 18px; height: 18px; flex: none; border: 0; border-radius: 4px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></span>
+              </sc-for>
+            </div>
+          </sc-if>
+          <label for="{{inputId}}" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">{{label}}</label>
+          <textarea id="{{inputId}}" rows="2" placeholder="{{placeholder}}" disabled="{{disabled}}" style="border: 0; resize: none; font: inherit; outline: none; height: 42px; background: transparent" value="{{value}}"></textarea>
+          <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap; position: static; flex-grow: 0">
+            <span style="position: relative; display: flex"><button type="button" onClick="{{openPlus}}" aria-label="添加" aria-haspopup="menu" aria-expanded="{{plusOpen}}" disabled="{{disabled}}" style="width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg></button><sc-if value="{{plusMenu}}" hint-placeholder-val="{{ false }}"><div role="menu" style="position: absolute; left: 0; bottom: 100%; margin-bottom: 8px; min-width: 180px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column; z-index: 3"><button type="button" role="menuitem" onClick="{{quoteFromPlus}}" style="height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM20 7.23792L12.0718 14.338L4 7.21594V19H20V7.23792ZM4.51146 5L12.0619 11.662L19.501 5H4.51146Z"></path></svg><span style="flex: 1">引用邮件</span><span style="font-size: 12px; color: #A1A1A1">@</span></button></div></sc-if></span>
+            <span style="margin-left: auto; position: relative; display: flex; align-items: center">
+              <sc-if value="{{usage}}" hint-placeholder-val="{{ false }}">
+                <button type="button" onClick="{{toggleUsage}}" aria-label="上下文用量 {{usage}}" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 8px; background: transparent"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#E5E5E5" stroke-width="2"></circle><circle cx="8" cy="8" r="6" fill="none" stroke="{{usageColor}}" stroke-width="2" stroke-linecap="round" stroke-dasharray="{{usageDash}}" transform="rotate(-90 8 8)"></circle></svg></button>
+              </sc-if>
+              <sc-if value="{{usageCard}}" hint-placeholder-val="{{ false }}">
+                <div role="dialog" aria-label="上下文用量" style="position: absolute; right: 0; bottom: 100%; margin-bottom: 8px; width: 264px; padding: 12px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 8px; font-size: 12px; z-index: 4">
+                  <span style="display: flex; justify-content: space-between; font-size: 13px"><span style="font-weight: 500">历史已用 {{usage}}</span><span style="color: #737373">[MODEL] 上下文</span></span>
+                  <span aria-hidden="true" style="height: 6px; border-radius: 9999px; background: #F5F5F5; overflow: hidden; display: flex"><span style="{{usageBar}}"></span></span>
+                  <span style="display: flex; justify-content: space-between; color: #737373"><span>上次请求</span><span style="color: #0A0A0A; font-family: 'Geist Mono', monospace">12,400 tokens</span></span>
+                  <span style="display: flex; justify-content: space-between; color: #737373"><span>本对话共</span><span style="color: #0A0A0A; font-family: 'Geist Mono', monospace">输入 48,200 · 输出 3,100</span></span>
+                  <span style="padding-top: 8px; border-top: 1px solid #E5E5E5; color: #737373; line-height: 1.5">快满时，较早的工具结果会先被精简；想从头聊可以开新对话。</span>
+                </div>
+              </sc-if>
+            </span>
+            <span style="position: relative; display: flex">
+              <button type="button" onClick="{{toggleModel}}" aria-haspopup="menu" aria-expanded="{{modelOpen}}" aria-label="模型和思考强度" disabled="{{disabled}}" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 8px; background: {{modelBg}}; color: #0A0A0A; font-size: 12px">{{model}}<sc-if value="{{effort}}" hint-placeholder-val="{{ true }}"><span style="color: #737373">{{effort}}</span></sc-if><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path></svg></button>
+              <sc-if value="{{modelMenu}}" hint-placeholder-val="{{ false }}">
+                <div role="menu" aria-label="模型" style="position: absolute; right: 0; bottom: 100%; margin-bottom: 8px; width: 248px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column; z-index: 4">
+                  <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+                    <span style="{{g.style}}">{{g.label}}</span>
+                    <sc-for list="{{g.models}}" as="m" hint-placeholder-count="2">
+                      <button type="button" role="menuitemradio" aria-checked="{{m.checked}}" onClick="{{m.pick}}" style="height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; align-items: center; gap: 8px"><span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.name}}</span><sc-if value="{{m.hint}}" hint-placeholder-val="{{ false }}"><span style="height: 18px; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 9999px; font-size: 11px; color: #737373; display: flex; align-items: center">{{m.hint}}</span></sc-if><sc-if value="{{m.on}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if></button>
+                    </sc-for>
+                  </sc-for>
+                  <span aria-hidden="true" style="height: 1px; margin: 4px 0; background: #E5E5E5"></span>
+                  <span style="position: relative; display: flex; flex-direction: column">
+                    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded="{{effortOpen}}" onClick="{{toggleEffort}}" style="height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: {{effortRowBg}}; color: #0A0A0A; text-align: left; display: flex; align-items: center; gap: 8px"><span style="flex: 1">思考强度</span><span style="font-size: 12px; color: #737373">{{effortName}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: #737373"><path d="M9 6l6 6-6 6"></path></svg></button>
+                    <sc-if value="{{effortMenu}}" hint-placeholder-val="{{ false }}">
+                      <div role="menu" aria-label="思考强度" style="position: absolute; right: calc(100% + 8px); bottom: -4px; width: 272px; padding: 4px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column">
+                        <sc-for list="{{efforts}}" as="e" hint-placeholder-count="4">
+                          <button type="button" role="menuitemradio" aria-checked="{{e.checked}}" onClick="{{e.pick}}" style="height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; align-items: center; gap: 8px"><span>{{e.label}}</span><sc-if value="{{e.hint}}" hint-placeholder-val="{{ false }}"><span style="{{e.hintStyle}}">{{e.hint}}</span></sc-if><span style="flex: 1"></span><sc-if value="{{e.on}}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if></button>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </span>
+                  <span aria-hidden="true" style="height: 1px; margin: 4px 0; background: #E5E5E5"></span>
+                  <button type="button" role="menuitem" style="height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left; display: flex; align-items: center; gap: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M7 3V6H3V8H7V11H9V3H7ZM11 8H21V6H11V8ZM17 13V16H21V18H17V21H15V13H17ZM13 18H3V16H13V18Z"></path></svg>模型服务设置…</button>
+                </div>
+              </sc-if>
+            </span>
+            <sc-if value="{{running}}" hint-placeholder-val="{{ false }}">
+              <button type="button" onClick="{{onStop}}" aria-label="停止" style="width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" rx="2" fill="currentColor"></rect></svg></button>
+            </sc-if>
+            <sc-if value="{{idle}}" hint-placeholder-val="{{ true }}">
+              <button type="button" onClick="{{onSend}}" aria-label="发送给 Wit" disabled="{{disabled}}" style="width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; background: {{sendBg}}; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 7.82843V20H11V7.82843L5.63604 13.1924L4.22183 11.7782L12 4L19.7782 11.7782L18.364 13.1924L13 7.82843Z"></path></svg></button>
+            </sc-if>
+          </div>
+        </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"placeholder":{"editor":"text","default":"问点什么，比如：上周谁还在等我回复？"},"label":{"editor":"text","default":"向 Wit 提问"},"tray":{"editor":"boolean","default":true},"running":{"editor":"boolean","default":false},"disabled":{"editor":"boolean","default":false},"picker":{"editor":"boolean","default":false},"modelMenu":{"editor":"boolean","default":false},"effortMenu":{"editor":"boolean","default":false},"usageCard":{"editor":"boolean","default":false},"usage":{"editor":"text","default":""},"effort":{"editor":"text","default":""},"model":{"editor":null},"value":{"editor":null},"quotes":{"editor":null},"menu":{"editor":null},"onStyle":{"editor":null},"onLang":{"editor":null},"onSend":{"editor":null},"onStop":{"editor":null},"onPick":{"editor":null},"$preview":{"width":480,"height":160}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var on = function (v) { return v === true || v === 'true'; };
+    this.state = {
+      plus: false,
+      picker: on(props.picker),
+      model: on(props.modelMenu) || on(props.effortMenu),
+      effortMenu: on(props.effortMenu),
+      usageCard: on(props.usageCard),
+      pickedModel: 0,
+      pickedEffort: Math.max(0, ['默认', '低', '中', '高'].indexOf(props.effort || '默认')),
+      pickerSel: 0
+    };
+  }
+  renderVals() {
+    var self = this, p = this.props, st = this.state;
+    var on = function (v) { return v === true || v === 'true'; };
+    var noop = function () {};
+    var tray = p.tray ?? true;
+    var running = on(p.running);
+    var disabled = on(p.disabled);
+    var value = p.value ?? '';
+    var close = { plus: false, picker: false, model: false, effortMenu: false, usageCard: false };
+    var pickerRows = [
+      ['L', 'Lena Fischer', '10/21', 'Re: Q4 partnership proposal', 'background: #DBEAFE; color: #1D4ED8'],
+      ['L', 'Lena Fischer', '10/14', 'Webinar 日程草案', 'background: #DBEAFE; color: #1D4ED8'],
+      ['P', 'Partner Ops', '10/09', 'Lena 已加入共享文件夹', 'background: #FEF3C7; color: #B45309']
+    ].map(function (r, i) {
+      var sel = i === st.pickerSel;
+      return {
+        initial: r[0], avatar: 'width: 28px; height: 28px; flex: none; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; ' + r[4], from: r[1], date: r[2], subject: r[3], sel: sel ? 'true' : 'false',
+        style: 'width: 100%; padding: 6px 8px; border: 0; border-radius: 8px; text-align: left; color: #0A0A0A; display: flex; align-items: center; gap: 10px; background: ' + (sel ? '#F5F5F5' : 'transparent'),
+        pick: function () { self.setState({ picker: false }); (p.onPick || noop)(r[3]); }
+      };
+    });
+    var groups = [
+      ['Anthropic', [['[MODEL A]', '默认'], ['[MODEL B]', '']]],
+      ['OpenAI', [['[MODEL C]', '']]],
+      ['Ollama · 本机', [['[MODEL D]', '不支持思考强度']]]
+    ];
+    var models = [];
+    groups = groups.map(function (g, gi) {
+      return {
+        label: g[0],
+        style: 'padding: ' + (gi ? '8px' : '6px') + ' 8px 4px; font-size: 12px; color: #737373' + (gi ? '; border-top: 1px solid #E5E5E5; margin-top: 4px' : ''),
+        models: g[1].map(function (m) {
+          var i = models.length, sel = i === st.pickedModel;
+          var row = { name: m[0], hint: m[1], on: sel, checked: sel ? 'true' : 'false', pick: function () { self.setState({ pickedModel: i, model: false, effortMenu: false }); } };
+          models.push(row);
+          return row;
+        })
+      };
+    });
+    var effortNames = ['默认', '低', '中', '高'];
+    var efforts = [['默认', '跟随模型'], ['低', ''], ['中', ''], ['高', '']].map(function (e, i) {
+      var sel = i === st.pickedEffort;
+      return {
+        label: e[0], hint: e[1], on: sel, checked: sel ? 'true' : 'false',
+        hintStyle: 'height: 18px; padding: 0 6px; border-radius: 9999px; font-size: 11px; display: flex; align-items: center; border: 1px solid #E5E5E5; color: #737373',
+        pick: function () { self.setState({ pickedEffort: i, model: false, effortMenu: false }); }
+      };
+    });
+    var pct = parseInt(p.usage || '0', 10) || 0;
+    var circ = 37.7; // 2πr, r = 6
+    var usageColor = pct >= 80 ? '#FD9A00' : '#737373';
+    var quotes = (p.quotes || []).map(function (q) { return { label: q.label || q, remove: q.remove || noop }; });
+    var effortLabel = p.effort && st.pickedEffort > 0 ? effortNames[st.pickedEffort] : '';
+    return {
+      tray: tray === true || tray === 'true',
+      placeholder: p.placeholder ?? '问点什么，比如：上周谁还在等我回复？',
+      label: p.label ?? '向 Wit 提问',
+      inputId: 'wit-input',
+      value: value,
+      disabled: disabled,
+      menu: p.menu || null,
+      onStyle: p.onStyle || noop,
+      onLang: p.onLang || noop,
+      onSend: p.onSend || noop,
+      onStop: p.onStop || noop,
+      running: running,
+      idle: !running,
+      sendBg: disabled ? '#A1A1A1' : '#171717',
+      plusMenu: st.plus,
+      plusOpen: st.plus ? 'true' : 'false',
+      openPlus: function () { self.setState(Object.assign({}, close, { plus: !st.plus })); },
+      quoteFromPlus: function () { self.setState(Object.assign({}, close, { picker: true })); },
+      picker: st.picker,
+      pickerQuery: 'Lena',
+      pickerRows: pickerRows,
+      quotes: quotes,
+      hasQuotes: quotes.length > 0,
+      model: st.pickedModel === 0 ? (p.model ?? '[MODEL]') : models[st.pickedModel].name,
+      modelBg: st.model ? '#F5F5F5' : 'transparent',
+      modelOpen: st.model ? 'true' : 'false',
+      modelMenu: st.model,
+      groups: groups,
+      toggleModel: function () { self.setState(Object.assign({}, close, { model: !st.model })); },
+      effort: effortLabel,
+      effortMenu: st.effortMenu,
+      effortOpen: st.effortMenu ? 'true' : 'false',
+      efforts: efforts,
+      toggleEffort: function () { self.setState({ effortMenu: !st.effortMenu }); },
+      effortName: effortNames[st.pickedEffort],
+      effortRowBg: st.effortMenu ? '#F5F5F5' : 'transparent',
+
+      usage: p.usage ? pct + '%' : '',
+      usageColor: usageColor,
+      usageDash: (circ * pct / 100).toFixed(1) + ' ' + circ,
+      usageBar: 'width: ' + pct + '%; background: ' + usageColor + '; border-radius: 9999px',
+      usageCard: st.usageCard,
+      toggleUsage: function () { self.setState(Object.assign({}, close, { usageCard: !st.usageCard })); }
+    };
+  }
+}
+</script>
+</body>
+</html>
