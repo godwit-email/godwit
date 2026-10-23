@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -72,10 +73,9 @@ type WitPageDeps struct {
 	// ConversationCreated is told Ask made conversation id, asked under
 	// snapshot version.
 	ConversationCreated func(id, version int64)
-	// OpenURL opens an http(s) link in the browser; OpenCompose opens draft
-	// id in a compose window.
-	OpenURL     func(url string) error
-	OpenCompose func(draftID int64)
+	// OnLink opens a link of an answer as mail's own: http(s) after the
+	// native confirmation, mailto as a draft.
+	OnLink func(url string)
 }
 
 // Wit keeps the Wit page's state: the route's conversation as a versioned
@@ -460,24 +460,22 @@ func (p *WitPage) OpenCited(ctx context.Context, message int64) error {
 	return nil
 }
 
-// OpenLink opens a link from Wit's answer: an http or https one in the
-// browser; a mailto one as a new draft to its addresses, from the default
-// account, in a compose window. Any other is ErrBadLink.
+// OpenLink hands an http, https or mailto link of Wit's answer to native,
+// which treats it as a link in mail (OnLink); any other is ErrBadLink.
 func (p *WitPage) OpenLink(ctx context.Context, link string) error {
-	_, svc, err := p.w.caller(ctx)
-	if err != nil {
+	if _, _, err := p.w.caller(ctx); err != nil {
 		return keyed(err)
 	}
-	return keyed(openLink(ctx, svc, link, func() (int64, error) {
-		accs, err := svc.ListAccounts(ctx)
-		if err != nil || len(accs) == 0 {
-			return 0, err
-		}
-		if i := slices.IndexFunc(accs, func(a core.Account) bool { return a.IsDefault }); i >= 0 {
-			return accs[i].ID, nil
-		}
-		return accs[0].ID, nil
-	}, p.w.d.OpenURL, p.w.d.OpenCompose))
+	u, err := url.Parse(link)
+	if err != nil {
+		return ErrBadLink
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "mailto":
+		p.w.d.OnLink(link)
+		return nil
+	}
+	return ErrBadLink
 }
 
 // ModelChoice is a model Wit can answer with: Ref is what Ask takes; Service

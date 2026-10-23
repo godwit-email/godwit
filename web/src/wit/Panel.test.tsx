@@ -1244,6 +1244,17 @@ describe("Panel", () => {
     expect(screen.getByText("kept")).toBeInTheDocument();
   });
 
+  it("on the page, a link goes straight to the host, which confirms it as mail's links", async () => {
+    const user = userEvent.setup();
+    const { emit, onLink } = await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "Q{Enter}");
+    emit({ kind: "text", text: "[b](https://ok.org/p)" });
+    emit({ kind: "done" });
+    await user.click(await screen.findByText("b"));
+    expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
+    expect(screen.queryByText("打开这个链接？")).toBeNull();
+  });
+
   it("links go through the host's openLink", async () => {
     const user = userEvent.setup();
     const { emit, onLink } = await setup();

@@ -40,7 +40,6 @@ type witPageFixture struct {
 	asks     []string
 	navs     []int
 	urls     []string
-	composed []int64
 }
 
 func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixture {
@@ -72,8 +71,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
-		OpenURL:             func(u string) error { f.record(func() { f.urls = append(f.urls, u) }); return nil },
-		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
+		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 	})
 	f.w.SetService(f.e.Svc)
 	f.p = NewWitPage(f.w)
@@ -247,15 +245,11 @@ func TestWitPageCallbacks(t *testing.T) {
 	assert.Equal(t, 1, f.models)
 	assert.Equal(t, []int{-1, 1}, f.navs)
 
+	// links go to native, which handles them as mail's: http(s) after its dialog, mailto as a draft
 	require.NoError(t, f.p.OpenLink(f.ctx(), "https://example.com/a"))
-	assert.Equal(t, []string{"https://example.com/a"}, f.urls)
-	assert.ErrorIs(t, f.p.OpenLink(f.ctx(), "javascript:alert(1)"), ErrBadLink)
 	require.NoError(t, f.p.OpenLink(f.ctx(), "mailto:bob@example.com"))
-	require.Len(t, f.composed, 1)
-	d, err := f.e.Svc.GetDraft(t.Context(), f.composed[0])
-	require.NoError(t, err)
-	assert.Equal(t, f.acc.ID, d.AccountID, "from the default account")
-	assert.Equal(t, []string{"bob@example.com"}, d.To)
+	assert.ErrorIs(t, f.p.OpenLink(f.ctx(), "javascript:alert(1)"), ErrBadLink)
+	assert.Equal(t, []string{"https://example.com/a", "mailto:bob@example.com"}, f.urls)
 }
 
 // Review Focus 5.

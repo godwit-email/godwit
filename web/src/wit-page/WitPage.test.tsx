@@ -294,7 +294,7 @@ test("cmd-[ forwards", async () => {
   expect(api.navigate).toHaveBeenCalledTimes(2);
 });
 
-test("answer hardening holds through this page; links go through WitPage.openLink", async () => {
+test("answer hardening holds through this page; links go straight to WitPage.openLink (native confirms)", async () => {
   const user = userEvent.setup();
   vi.mocked(api.openLink).mockResolvedValue(undefined);
   const md =
@@ -304,9 +304,8 @@ test("answer hardening holds through this page; links go through WitPage.openLin
   expect(container.querySelector("img, script, a, [onerror]")).toBeNull();
   expect(screen.getByText("a").closest("[role=link]")).toBeNull();
   await user.click(screen.getByText("b"));
-  expect(api.openLink).not.toHaveBeenCalled();
-  await user.click(await screen.findByRole("button", { name: "打开" }));
   expect(api.openLink).toHaveBeenCalledWith("https://ok.org/p");
+  expect(screen.queryByText("打开这个链接？")).toBeNull();
 });
 
 test("approvals decide through WitPage.decide", async () => {

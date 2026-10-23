@@ -157,9 +157,12 @@ export function Response({
   size = "panel",
   cite,
   card,
+  confirm = true,
 }: {
   text: string;
   onLink(url: string): void;
+  /** false: a link goes straight to onLink, whose host confirms it (the Wit page: native's dialog). */
+  confirm?: boolean;
   t: T;
   streaming?: boolean;
   /** "page": the Wit page's reading leading (1.75). */
@@ -172,6 +175,8 @@ export function Response({
   citeRef.current = cite;
   const cardRef = useRef(card);
   cardRef.current = card;
+  const follow = useRef((_url: string) => {});
+  follow.current = (url: string) => (confirm ? setLink(url) : onLink(url));
   const components = useMemo<Components>(
     () => ({
       img: () => null,
@@ -210,18 +215,19 @@ export function Response({
         }
         const url = safeLink(href);
         if (!url) return <span>{children}</span>;
-        // No href: nothing opens the address but the confirmation (no middle-click, no "open link").
+        // No href: nothing opens the address but the confirmation, here or the host's (no
+        // middle-click, no "open link").
         return (
           // biome-ignore lint/a11y/useSemanticElements: an <a> needs an href, which would open without the confirmation
           <span
             role="link"
             tabIndex={0}
             className="cursor-pointer text-primary underline underline-offset-3"
-            onClick={() => setLink(url)}
+            onClick={() => follow.current(url)}
             onKeyDown={(e: KeyboardEvent) => {
               if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
-              setLink(url);
+              follow.current(url);
             }}
           >
             {children}

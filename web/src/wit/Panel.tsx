@@ -423,6 +423,7 @@ function Answer({
           size={page ? "page" : "panel"}
           t={t}
           onLink={onLink}
+          confirm={!page}
           cite={(n) => mail(n, false)}
           card={(n) => mail(n, true)}
         />

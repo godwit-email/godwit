@@ -145,8 +145,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenModels:          func() { onApp((*app.App).OpenModels) },
 		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
-		OpenURL:             mygo.Shell.OpenExternal,
-		OpenCompose:         openCompose,
+		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each

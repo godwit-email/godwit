@@ -26,6 +26,10 @@ func (a *App) openLink(link string) {
 	}
 }
 
+// OpenLink handles a link a page shows (the Wit page's answers) as one in
+// mail content: openLink.
+func (a *App) OpenLink(link string) { a.openLink(link) }
+
 // mailto starts a new draft from the reader's account (else the default
 // one) to the link's addresses, and opens it in a compose window.
 func (a *App) mailto(u *url.URL) {
