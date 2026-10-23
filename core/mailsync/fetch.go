@@ -554,11 +554,11 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 		if err != nil {
 			b = raw // undecodable: keep the raw text rather than nothing
 		}
-		b = bytes.ToValidUTF8(b, []byte("�")) // a mislabeled charset must not fail the folder's sync in SQLite
-		dst := &p.Text
-		if tp.ContentType == "text/html" {
+		dst, html := &p.Text, tp.ContentType == "text/html"
+		if html {
 			dst = &p.HTML
 		}
+		b = mail.ValidText(b, tp.Charset, html) // a mislabeled charset must not fail the folder's sync in SQLite
 		p.Truncated = appendCapped(dst, b) || p.Truncated
 	}
 	if p.Text == "" && p.HTML != "" {

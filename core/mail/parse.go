@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime/quotedprintable"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 const (
@@ -251,6 +253,42 @@ func DecodePart(data []byte, encoding, cs string) ([]byte, error) {
 		return nil, err
 	}
 	return io.ReadAll(r)
+}
+
+var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset\s*=\s*["']?([\w.:-]+)`)
+
+// ValidText makes a decoded text part valid UTF-8 when its declared charset cs
+// did not: an HTML part's <meta charset> when MIME names none, then GB18030
+// when that reads as Chinese, else U+FFFD for the bad bytes.
+func ValidText(b []byte, cs string, html bool) []byte {
+	if utf8.Valid(b) {
+		return b
+	}
+	if m := metaCharset.FindSubmatch(b[:min(len(b), 1024)]); html && cs == "" && m != nil {
+		if d, err := DecodePart(b, "", string(m[1])); err == nil && utf8.Valid(d) {
+			return d
+		}
+	}
+	if d, err := simplifiedchinese.GB18030.NewDecoder().Bytes(b); err == nil && mostlyHan(d) {
+		return d
+	}
+	return bytes.ToValidUTF8(b, []byte("�"))
+}
+
+// mostlyHan reports whether nearly all of s's non-ASCII is Chinese, so a
+// mislabeled Latin-1 body is not turned into stray Han characters.
+func mostlyHan(s []byte) bool {
+	var han, other int
+	for _, r := range string(s) {
+		switch {
+		case r < utf8.RuneSelf:
+		case unicode.Is(unicode.Han, r), r >= 0x3000 && r <= 0x303f, r >= 0xff00 && r <= 0xffef:
+			han++
+		default:
+			other++
+		}
+	}
+	return han > 0 && other*10 <= han && !bytes.ContainsRune(s, utf8.RuneError)
 }
 
 // ParseStructure walks an IMAP BODYSTRUCTURE and reports the displayable body

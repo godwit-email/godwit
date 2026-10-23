@@ -219,3 +219,23 @@ func TestFormatAddressQuotesLocalPart(t *testing.T) {
 	assert.Equal(t, `"a b"@example.com`, mail.FormatAddress("", "a b@example.com"))
 	assert.Equal(t, "plain.dot+tag@example.com", mail.FormatAddress("", "plain.dot+tag@example.com"))
 }
+
+// A part whose bytes are not what its charset says still comes out as valid
+// UTF-8, recovering Chinese where it can and never inventing it (#151).
+func TestValidText(t *testing.T) {
+	gbk := "\xc7\xeb\xb2\xe9\xca\xd5\xb7\xa2\xc6\xb1" // 请查收发票
+	for _, tc := range []struct {
+		name, in, cs string
+		html         bool
+		want         string
+	}{
+		{"valid kept", "café 你好", "utf-8", false, "café 你好"},
+		{"meta charset", `<meta charset="gbk"><p>` + gbk, "", true, `<meta charset="gbk"><p>请查收发票`},
+		{"http-equiv", `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">` + gbk, "", true, `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">请查收发票`},
+		{"gbk labelled utf-8", "Hi " + gbk, "utf-8", false, "Hi 请查收发票"},
+		{"latin-1 labelled utf-8", "caf\xe9 cr\xe8me", "utf-8", false, "caf� cr�me"},
+	} {
+		got := mail.ValidText([]byte(tc.in), tc.cs, tc.html)
+		assert.Equal(t, tc.want, string(got), tc.name)
+	}
+}
