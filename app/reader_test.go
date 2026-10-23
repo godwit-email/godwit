@@ -610,6 +610,29 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	h.until("history collapsed again", func() bool {
 		return !r.historyOpen && !h.tt.HasText("msg one")
 	})
+
+	// Disabling ThreadCollapse in settings shows all folded messages without history card
+	st := h.app.settings
+	st.ThreadCollapse = false
+	h.app.changeSettings(st)
+	h.until("history toggle disabled", func() bool {
+		return !h.tt.HasText("展开历史邮件（4 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+	})
+
+	// Raising threshold to 10 keeps folded messages individual
+	st.ThreadCollapse = true
+	st.ThreadCollapseThreshold = 10
+	h.app.changeSettings(st)
+	h.until("threshold 10 does not collapse 4 messages", func() bool {
+		return !h.tt.HasText("展开历史邮件（4 封）") && h.tt.HasText("msg one")
+	})
+
+	// Lowering threshold back to 5 collapses them again
+	st.ThreadCollapseThreshold = 5
+	h.app.changeSettings(st)
+	h.until("threshold 5 collapses again", func() bool {
+		return h.tt.HasText("展开历史邮件（4 封）") && !h.tt.HasText("msg one")
+	})
 }
 
 func TestReaderMarksRead(t *testing.T) {

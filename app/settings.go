@@ -57,9 +57,10 @@ type settingsPage struct {
 	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	// general
-	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
-	noTrans     bool                  // the no-translate language list is open
-	translators []core.TranslatorInfo // the 翻译方式 choices, read on opening General
+	st, shown             core.Settings         // what the controls are bound to, and what they showed last frame
+	collapseThresholdText string                // the thread collapse threshold text input
+	noTrans               bool                  // the no-translate language list is open
+	translators           []core.TranslatorInfo // the 翻译方式 choices, read on opening General
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished

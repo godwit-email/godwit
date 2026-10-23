@@ -41,14 +41,14 @@ type reader struct {
 	msgs    []core.MessageSummary // oldest first
 	// threadIDs are every message of the thread, msgs or not (a route to one
 	// message shows only it): what label changes apply to.
-	threadIDs  []int64
-	labels     []core.AppliedLabel // the thread's
+	threadIDs   []int64
+	labels      []core.AppliedLabel // the thread's
 	labelMenu   bool
 	labelQuery  string
 	open        map[int64]bool // messages shown in full
 	historyOpen bool           // thread's collapsed intermediate messages are shown
 	bodies      map[int64]*msgBody
-	scroll     ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
+	scroll      ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
 	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	aiCtx     context.Context          // the AI work of the key shown; nil until some starts
@@ -744,8 +744,9 @@ func (r *reader) toolbar(c *ui.Context) {
 	})
 }
 
-// renderMessages renders a thread's messages: when there are 4 or more
-// consecutive folded messages, they collapse into a single history toggle card
+// renderMessages renders a thread's messages: when there are enough
+// consecutive folded messages (governed by Settings.ThreadCollapse and
+// Settings.ThreadCollapseThreshold), they collapse into a single history toggle card
 // unless the user expanded the history.
 func (r *reader) renderMessages(c *ui.Context) {
 	type run struct {
@@ -761,15 +762,16 @@ func (r *reader) renderMessages(c *ui.Context) {
 			runs[len(runs)-1].msgs = append(runs[len(runs)-1].msgs, m)
 		}
 	}
+	collapse, minFolded := r.collapseThreshold()
 	for _, rn := range runs {
 		if rn.open {
 			for _, m := range rn.msgs {
 				r.message(c, m)
 			}
-		} else if len(rn.msgs) >= 4 && !r.historyOpen {
+		} else if collapse && len(rn.msgs) >= minFolded && !r.historyOpen {
 			r.historyToggle(c, len(rn.msgs), false)
 		} else {
-			if len(rn.msgs) >= 4 {
+			if collapse && len(rn.msgs) >= minFolded {
 				r.historyToggle(c, len(rn.msgs), true)
 			}
 			for _, m := range rn.msgs {
@@ -777,6 +779,25 @@ func (r *reader) renderMessages(c *ui.Context) {
 			}
 		}
 	}
+}
+
+func (r *reader) collapseThreshold() (bool, int) {
+	if r.p == nil || r.p.a == nil {
+		return true, 4
+	}
+	st := r.p.a.settings
+	if !st.ThreadCollapse {
+		return false, 0
+	}
+	thresh := st.ThreadCollapseThreshold
+	if thresh < 1 || thresh > 100 {
+		thresh = 5
+	}
+	minFolded := thresh - 1
+	if minFolded < 1 {
+		minFolded = 1
+	}
+	return true, minFolded
 }
 
 // historyToggle is a card matching the folded message row format to expand

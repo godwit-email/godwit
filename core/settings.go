@@ -26,6 +26,8 @@ type Settings struct {
 	UnreadOnAppIcon                                  bool
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
+	ThreadCollapse                                   bool // collapse thread history into an expandable card
+	ThreadCollapseThreshold                          int  // minimum messages in conversation to collapse (default 5, 1..100)
 	DefaultModel, SmallModel                         string
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).
@@ -94,7 +96,8 @@ const (
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8,
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
+		ThreadCollapse: true, ThreadCollapseThreshold: 5, AutoLabel: true, JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm}
 }
 
@@ -128,6 +131,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("list width must be between 280 and 560")
 	case !(st.JudgeThreshold >= MinJudgeThreshold && st.JudgeThreshold <= MaxJudgeThreshold):
 		return fmt.Errorf("judge threshold must be between %g and %g", MinJudgeThreshold, MaxJudgeThreshold)
+	case st.ThreadCollapseThreshold != 0 && (st.ThreadCollapseThreshold < 1 || st.ThreadCollapseThreshold > 100):
+		return fmt.Errorf("thread collapse threshold must be between 1 and 100")
 	}
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
@@ -189,6 +194,9 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 		}
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
+	if st.ThreadCollapseThreshold <= 0 {
+		st.ThreadCollapseThreshold = 5
+	}
 	st.SettingsVersion = settingsVersion
 	return st, nil
 }

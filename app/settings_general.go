@@ -5,6 +5,7 @@ import (
 	"context"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -297,7 +298,30 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
 	settingsSection(c, i18n.T("settings.mail"), "",
-		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")))
+		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")),
+		sw(&st.ThreadCollapse, i18n.T("settings.thread_collapse"), i18n.T("settings.thread_collapse.help")),
+		func() {
+			if !st.ThreadCollapse {
+				return
+			}
+			t, th := theme.Of(c), c.Theme()
+			if p.collapseThresholdText == "" {
+				p.collapseThresholdText = strconv.Itoa(cmp.Or(st.ThreadCollapseThreshold, 5))
+			}
+			val, err := strconv.Atoi(strings.TrimSpace(p.collapseThresholdText))
+			bad := err != nil || val < 1 || val > 100
+			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					in := kit.Input(c, &p.collapseThresholdText, kit.InputOpts{Invalid: bad}).
+						Width(theme.PortWidth).Radius(t.Radius.Md).Label(i18n.T("settings.thread_collapse_threshold"))
+					if in.Changed() {
+						if n, err := strconv.Atoi(strings.TrimSpace(p.collapseThresholdText)); err == nil && n >= 1 && n <= 100 {
+							st.ThreadCollapseThreshold = n
+						}
+					}
+				})
+			})
+		})
 }
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and
