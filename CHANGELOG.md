@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.11.0](https://github.com/godwit-email/godwit/compare/v1.10.0...v1.11.0) (2026-10-23)
+
+
+### Features
+
+* **settings:** reorder accounts by dragging them in the settings sidebar ([#150](https://github.com/godwit-email/godwit/issues/150)) ([c39aaed](https://github.com/godwit-email/godwit/commit/c39aaed7122d6925aebe8e56c625713eca152db4))
+* **wit:** redesign the Wit page (design canvas + [#154](https://github.com/godwit-email/godwit/issues/154)–[#163](https://github.com/godwit-email/godwit/issues/163)) ([#164](https://github.com/godwit-email/godwit/issues/164)) ([5fdf72a](https://github.com/godwit-email/godwit/commit/5fdf72a1a4672c6536468286153f4b57fce5ad48))
+* **wit:** size history to the model's context window and compact it with a summary ([#152](https://github.com/godwit-email/godwit/issues/152)) ([e8ed318](https://github.com/godwit-email/godwit/commit/e8ed31886269333cf2d2aaaaaef24938a05e35b5))
+
+
+### Bug Fixes
+
+* **compose:** keep a change's accept/reject buttons reachable on hover ([#148](https://github.com/godwit-email/godwit/issues/148)) ([abc0a12](https://github.com/godwit-email/godwit/commit/abc0a122d3d6b5966e9a17dcbe22fbfedbc48e6e))
+* **sync:** replace invalid UTF-8 in message bodies so a folder's sync can't fail ([#165](https://github.com/godwit-email/godwit/issues/165)) ([e1eb9d5](https://github.com/godwit-email/godwit/commit/e1eb9d5555a0ef1c5d96d1f7d13e6da37f0d8c0a))
+
 ## [1.10.0](https://github.com/godwit-email/godwit/compare/v1.9.0...v1.10.0) (2026-10-22)
 
 
