@@ -563,6 +563,7 @@ export function Panel({
   const shelved = useRef<WitUIMessage[]>([]);
   // What the conversation took, as last read (a run's end reads it again).
   const [usage, setUsage] = useState(history.usage);
+  const [compacting, setCompacting] = useState(false);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -689,6 +690,11 @@ export function Panel({
   const submit = () => {
     const text = draft.trim();
     if (!text || locked || running) return;
+    if (text === "/compact" && transport.compacts && !editing) {
+      setDraft("");
+      if (!compacting) compact();
+      return;
+    }
     setDraft("");
     setQuoted([]);
     setPicking(undefined);
@@ -752,6 +758,19 @@ export function Panel({
   const fail = (e: unknown) =>
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
   const stop = () => void transport.stop().catch(fail);
+  // Compacting on demand (the meter's button, or /compact sent): the usage is read again once the
+  // summary is saved.
+  const compact = () => {
+    setCompacting(true);
+    transport
+      .compact()
+      .then(() => {
+        toast.success(t("wit.usage.compacted"));
+        return transport.history();
+      })
+      .then((h) => h && setUsage(h.usage), fail)
+      .finally(() => setCompacting(false));
+  };
   const link = (url: string) => void onLink(url).catch(fail);
   // The chip names the conversation's model: its choice's label once listed, else the ref's model.
   const chosen = models?.ref
@@ -1046,6 +1065,18 @@ export function Panel({
               </span>
               <Progress value={Math.min(100, usage.history * 100)} />
               <span className="text-muted-foreground">{t("wit.usage.note")}</span>
+              {transport.compacts && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start font-normal"
+                  disabled={compacting || running || !usage.compactable}
+                  onClick={compact}
+                >
+                  {compacting && <RiLoaderLine className="size-3.5 animate-spin" />}
+                  {t(compacting ? "wit.usage.compacting" : "wit.usage.compact")}
+                </Button>
+              )}
               {usage.context > 0 && (
                 <span className="tabular-nums">
                   {t("wit.usage.last", usage.context.toLocaleString())}

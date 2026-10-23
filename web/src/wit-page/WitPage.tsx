@@ -70,6 +70,7 @@ export function WitPage() {
       },
       follow: () => api.follow(conv.current),
       stop: (run) => api.stop(run),
+      compact: () => api.compact(conv.current),
       rewinds: true,
     });
     const open = (c: number) => {

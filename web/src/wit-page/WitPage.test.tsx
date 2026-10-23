@@ -69,7 +69,7 @@ const hist = (conversation: number, answer?: string): WitHistory => ({
   conversation,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0 },
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
   approvals: [],
   messages: answer
@@ -313,7 +313,7 @@ test("approvals decide through WitPage.decide", async () => {
     conversation: 3,
     model: "",
     effort: "",
-    usage: { input: 0, output: 0, context: 0, history: 0 },
+    usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
     running: 0,
     approvals: [a],
     messages: [

@@ -27,13 +27,15 @@ type WitHistory struct {
 
 // WitUsage is what a conversation took: its runs' input and output tokens,
 // the latest run's last input (Context; 0 when the service reported none),
-// and how full its history budget is (History, from 0; past 1 the oldest
-// turns are left out).
+// how full its history budget is (History, from 0; past 1 the oldest turns
+// are summarized or left out), and whether WitPage.Compact has turns to
+// summarize (Compactable).
 type WitUsage struct {
-	Input   int     `json:"input"`
-	Output  int     `json:"output"`
-	Context int     `json:"context"`
-	History float64 `json:"history"`
+	Input       int     `json:"input"`
+	Output      int     `json:"output"`
+	Context     int     `json:"context"`
+	History     float64 `json:"history"`
+	Compactable bool    `json:"compactable"`
 }
 
 // WitMessage is a question, or the answer to one: everything the model said

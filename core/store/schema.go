@@ -372,4 +372,11 @@ var Migrations = [][]string{{
 	// The accounts' order in the sidebars, set by dragging; ties (every account
 	// before this) go by id, the creation order.
 	`ALTER TABLE accounts ADD COLUMN position INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A conversation's compaction (core.compactLater): summary stands in for
+	// its state's messages after the first through summary_upto. A rewind
+	// clears it and bumps summary_epoch, so one begun before is not saved.
+	`ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE conversations ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversations ADD COLUMN summary_epoch INTEGER NOT NULL DEFAULT 0`,
 }}

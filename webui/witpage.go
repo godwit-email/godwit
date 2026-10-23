@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -165,13 +166,19 @@ func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
+	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(context.Background(), w.svc, st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
 }
 
-// modelLabel is a default model's label: its name without the provider.
-func modelLabel(model string) string {
+// modelLabel is a default model's label: its display name (svc nil: none),
+// else its ID without the provider.
+func modelLabel(ctx context.Context, svc *core.Service, model string) string {
 	if strings.HasPrefix(model, "plugin/"+core.AppleIntelligencePlugin+"/") {
 		return "Apple Intelligence"
+	}
+	if svc != nil {
+		if n := svc.ModelName(ctx, model); n != "" {
+			return n
+		}
 	}
 	if _, m, ok := strings.Cut(model, "/"); ok {
 		return m
@@ -368,6 +375,19 @@ func (w *Wit) created(conv, version int64) {
 	w.d.ConversationCreated(conv, version)
 }
 
+// Compact summarizes ask conversation conv's turns before its last two now
+// (core CompactConversation); the page reads its usage again after.
+func (p *WitPage) Compact(ctx context.Context, conv int64) error {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	if err := askConv(ctx, svc, conv); err != nil {
+		return keyed(err)
+	}
+	return keyed(svc.CompactConversation(ctx, conv))
+}
+
 // Stop cancels run: one the page's Ask started (a Stop pressed before Ask
 // returned may come after a switch), or one of the conversation it follows.
 func (p *WitPage) Stop(ctx context.Context, run int64) error {
@@ -508,7 +528,7 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 			continue
 		}
 		for _, m := range s.Models {
-			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Label: s.Name + " / " + m})
+			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Label: s.Name + " / " + cmp.Or(s.Names[m], m)})
 		}
 	}
 	for _, pm := range plugins {
