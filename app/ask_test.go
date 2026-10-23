@@ -155,6 +155,19 @@ func TestAskConversationsList(t *testing.T) {
 	}
 }
 
+// A conversation waiting on the user's decision says so in the sidebar.
+func TestAskConversationAwaiting(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.app.refresh(nil)
+	p := h.ask()
+	p.convs = []core.Conversation{{ID: 1, Kind: "ask", Title: "回复 Lena", Awaiting: true}, {ID: 2, Kind: "ask", Title: "这个月的订阅", Answering: true}}
+	p.listGen++ // the refresh's read, still under way, is dropped
+	h.see("回复 Lena")
+	h.see("待确认")
+	h.ask().convs[0].Awaiting = false
+	h.until("the badge gone once decided", func() bool { return !h.tt.HasText("待确认") })
+}
+
 // Deleting the conversation shown opens a new one and drops it from the history.
 func TestAskDeleteShown(t *testing.T) {
 	h, _, opens := askHarness(t, true)

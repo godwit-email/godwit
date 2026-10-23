@@ -190,10 +190,21 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	_, err = e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Changed later")})
 	require.NoError(t, err)
 
+	listed := func() Conversation {
+		cs, err := e.s.ListConversations(t.Context(), "ask")
+		require.NoError(t, err)
+		i := slices.IndexFunc(cs, func(c Conversation) bool { return c.ID == conv.ID })
+		require.GreaterOrEqual(t, i, 0)
+		return cs[i]
+	}
+	assert.True(t, listed().Awaiting, "the list says a call waits on the user")
+	assert.False(t, listed().Answering)
+
 	sub, unsub := e.s.SubscribeConversation(conv.ID)
 	defer unsub()
 	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, true))
 	assert.Equal(t, "done", waitTerminal(t, sub).Kind)
+	require.Eventually(t, func() bool { c := listed(); return !c.Awaiting && !c.Answering }, time.Second, 10*time.Millisecond)
 	reqs := e.srv.Requests()
 	require.Len(t, reqs, 2)
 	assert.Equal(t, string(reqs[0].System), string(reqs[1].System), "the resume has the conversation's system prompt")

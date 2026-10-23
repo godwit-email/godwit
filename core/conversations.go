@@ -45,6 +45,9 @@ type Conversation struct {
 	// leaves both empty.
 	Usage      ai.Usage
 	HistoryUse float64
+	// Answering means a run of it is running or resuming; Awaiting that one
+	// waits for the user to decide its calls. Only ListConversations sets them.
+	Answering, Awaiting bool
 }
 
 // WitEvent is one event of a Wit run. An interrupted event carries the
@@ -140,6 +143,21 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 	out := make([]Conversation, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, scanConversation(r))
+	}
+	// Each conversation's active run, if any: under way, or waiting on pending calls.
+	runs, err := s.db.Query(ctx, `SELECT r.conversation_id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending')
+		FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.kind = ? AND r.state IN ('running', 'resuming', 'interrupted')`, kind)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range runs.Values {
+		if i := slices.IndexFunc(out, func(c Conversation) bool { return c.ID == store.Int(r[0]) }); i >= 0 {
+			if store.Str(r[1]) == "interrupted" {
+				out[i].Awaiting = store.Int(r[2]) != 0
+			} else {
+				out[i].Answering = true
+			}
+		}
 	}
 	return out, nil
 }
@@ -987,6 +1005,9 @@ type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() 
 
 func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
+	// Lists that show which conversations are answering re-read as the run starts and ends.
+	s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+	defer s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
 	defer func() {
 		if beforeUntrack != nil {
 			beforeUntrack(job.id)
