@@ -1032,6 +1032,15 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 // without a model (a plugin translating a draft).
 type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() ai.Result)
 
+// worked adds the time since start to run's time at work: its drives and its
+// approved calls, not the user's wait to decide them.
+func (s *Service) worked(ctx context.Context, run int64, start time.Time) {
+	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE runs SET active_ms = active_ms + ? WHERE id = ?",
+		Args: []any{time.Since(start).Milliseconds(), run}}); err != nil {
+		slog.Default().Warn("could not record a run's time", "run", run, "err", err)
+	}
+}
+
 func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
 	start := time.Now()
@@ -1077,11 +1086,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	}
 	ctx := context.WithoutCancel(job.ctx) // the outcome is recorded even when cancelled
 	res := wait()
-	// its time at work, each drive of it (a resume is another), before the outcome is told
-	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE runs SET active_ms = active_ms + ? WHERE id = ?",
-		Args: []any{time.Since(start).Milliseconds(), job.id}}); err != nil {
-		slog.Default().Warn("could not record a run's time", "run", job.id, "err", err)
-	}
+	s.worked(ctx, job.id, start) // each drive of it (a resume is another), before the outcome is told
 	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
 		used := res.Usage // whatever res becomes, the model calls took these

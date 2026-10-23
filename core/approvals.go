@@ -361,7 +361,9 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 		return errors.New("simulated crash")
 	}
 	ctx = context.WithoutCancel(ctx) // claimed: always reach an end state
+	start := time.Now()
 	err = s.execute(ctx, a, ex, args, decision)
+	s.worked(ctx, a.RunID, start)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 	if resume {
 		err = errors.Join(err, s.resumeRun(ctx, a.RunID))
