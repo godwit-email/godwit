@@ -133,7 +133,7 @@ describe("toChunks", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 0,
       approvals: [],
       messages: [
@@ -276,7 +276,7 @@ describe("historyToMessages", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 0,
       messages: [
         {
@@ -397,7 +397,7 @@ describe("historyToMessages call IDs", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 0,
       messages: [...turn(0, 1), ...turn(2, 3)],
       approvals: [ap(5, 1, "done"), ap(6, 3, "pending")],
@@ -461,7 +461,7 @@ describe("WitTransport", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 7,
       approvals: [],
       messages: [
@@ -582,7 +582,7 @@ describe("WitTransport", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 5,
       messages: [
         msg("q0", "user", [1]),
@@ -627,7 +627,7 @@ describe("WitTransport", () => {
       conversation: 1,
       model: "",
       effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0 },
+      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
       running: 0,
       messages: [],
       approvals: [pending],
@@ -671,7 +671,7 @@ describe("WitTransport selections", () => {
     conversation,
     model: "",
     effort: "",
-    usage: { input: 0, output: 0, context: 0, history: 0 },
+    usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
     running: 0,
     approvals: [],
     messages: runs.length

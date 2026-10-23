@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -53,6 +54,9 @@ type Options struct {
 	// AppleIntelligence is the system's on-device intelligence on macOS,
 	// offered as the built-in apple-intelligence plugin; nil leaves that plugin out.
 	AppleIntelligence AppleIntelligence
+	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
+	// display names and context windows come from; "" fetches none (the apps set it).
+	ModelsDev string
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -98,6 +102,8 @@ type Service struct {
 	modelTokens     map[int64]modelToken    // OAuth model services' access tokens; never stored
 	modelRefreshing map[int64]chan struct{} // per-service 1-slot semaphore around a token refresh
 
+	compacting sync.Map // conversation ID -> true while compactLater runs for it
+
 	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
 	active map[int64]*runJob // runs in flight, guarded by runMu
 	extRun map[int64]extExec // approvals executing outside runMu (external mode) by ID, guarded by runMu
@@ -134,6 +140,10 @@ type Service struct {
 	nativeEnv   []string           // and its whole environment
 	registryMu  sync.Mutex         // registry cache writes; registryErr
 	registryErr string             // why the last registry refresh failed; "" it did not
+
+	catalog     atomic.Pointer[ai.ModelCatalog] // models.dev's (modelcatalog.go); nil knows none
+	catalogTry  atomic.Int64                    // when a fetch last started, Unix nanoseconds
+	catalogBusy atomic.Bool                     // a fetch is running
 
 	mcpMu   sync.Mutex          // MCP server changes and connecting, one at a time; before mcpStMu and toolsMu
 	mcpStMu sync.Mutex          // guards mcpSt
@@ -235,6 +245,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s.startImagePrefetch()
 	if opts.Registry != nil {
 		s.startRegistryRefresh()
+	}
+	if opts.ModelsDev != "" {
+		s.loadCatalog()
+		s.startCatalogRefresh()
 	}
 	accs, err := s.ListAccounts(ctx)
 	if err != nil {

@@ -178,8 +178,8 @@ func TestAskRunsChangedReloadsTheList(t *testing.T) {
 	if h.ask().listGen == gen {
 		t.Fatal("the list was not read again")
 	}
-	if len(h.app.dirty) != 0 || h.app.refreshes != before {
-		t.Fatalf("a window refresh was queued: %d dirty, %d refreshes", len(h.app.dirty), h.app.refreshes-before)
+	if slices.ContainsFunc(h.app.dirty, func(e events.Event) bool { return e.Type == events.RunsChanged }) || h.app.refreshes != before {
+		t.Fatalf("a window refresh was queued: %v dirty, %d refreshes", h.app.dirty, h.app.refreshes-before)
 	}
 }
 

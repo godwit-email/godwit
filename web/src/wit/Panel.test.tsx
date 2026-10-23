@@ -9,7 +9,7 @@ import { WitTransport } from "./transport";
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 vi.mock("sonner", async (orig) => ({
   ...(await orig<typeof import("sonner")>()),
-  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
 const t = makeT("zh-Hans");
@@ -33,7 +33,7 @@ const empty: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0 },
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
   messages: [],
   approvals: [],
@@ -74,6 +74,7 @@ async function setup(
     skill: vi.fn().mockResolvedValue(7),
     follow: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
+    compact: vi.fn().mockResolvedValue(undefined),
     rewinds: true,
   };
   const tr = new WitTransport(api, (f) => {
@@ -648,11 +649,14 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({
       page: true,
-      history: { ...turn, usage: { input: 10, output: 1, context: 10, history: 0.2 } },
+      history: {
+        ...turn,
+        usage: { input: 10, output: 1, context: 10, history: 0.2, compactable: false },
+      },
     });
     api.follow.mockResolvedValue({
       ...turn,
-      usage: { input: 30, output: 1, context: 20, history: 0.2 },
+      usage: { input: 30, output: 1, context: 20, history: 0.2, compactable: false },
     });
     await user.type(input("向 Wit 提问"), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
@@ -702,7 +706,10 @@ describe("Panel", () => {
     const user = userEvent.setup();
     await setup({
       page: true,
-      history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.42 } },
+      history: {
+        ...turn,
+        usage: { input: 1200, output: 80, context: 900, history: 0.42, compactable: false },
+      },
     });
     // a ring alone: no percentage beside it; a click shows the details
     const meter = screen.getByRole("button", { name: "上下文" });
@@ -717,11 +724,42 @@ describe("Panel", () => {
   it("the ring turns to the attention colour from 80%", async () => {
     await setup({
       page: true,
-      history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.8 } },
+      history: {
+        ...turn,
+        usage: { input: 1200, output: 80, context: 900, history: 0.8, compactable: false },
+      },
     });
     expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
       "text-amber-500",
     );
+  });
+
+  it("compacting now summarizes the older turns and reads the usage again", async () => {
+    const user = userEvent.setup();
+    const before = {
+      ...turn,
+      usage: { input: 1200, output: 80, context: 900, history: 0.9, compactable: true },
+    };
+    const { api } = await setup({ page: true, history: before });
+    api.follow.mockResolvedValue({
+      ...before,
+      usage: { ...before.usage, history: 0.3, compactable: false },
+    });
+    await user.click(screen.getByRole("button", { name: "上下文" }));
+    await user.click(await screen.findByRole("button", { name: "立即压缩" }));
+    expect(api.compact).toHaveBeenCalled();
+    expect(await screen.findByText("历史已用 30%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "立即压缩" })).toBeDisabled();
+    expect(toast.success).toHaveBeenCalledWith("已压缩：较早的对话已总结成摘要。");
+  });
+
+  it("/compact sent compacts instead of asking", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup({ page: true, history: turn });
+    await user.type(screen.getByRole("textbox"), "/compact{Enter}");
+    await waitFor(() => expect(api.compact).toHaveBeenCalled());
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
   it("no meter before the conversation took anything", async () => {

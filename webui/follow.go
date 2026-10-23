@@ -206,7 +206,7 @@ func history(ctx context.Context, svc *core.Service, conv int64) (WitHistory, er
 		return WitHistory{}, err
 	}
 	h := WitHistory{Conversation: conv, Messages: witMessages(c), Approvals: []Approval{}, Model: c.Model, Effort: c.Effort,
-		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse}}
+		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse, Compactable: c.Compactable}}
 	for _, a := range as {
 		h.Approvals = append(h.Approvals, approvalOf(a))
 	}
@@ -278,6 +278,8 @@ var witErrorKeys = []struct {
 	{core.ErrModelAuth, "error.model_auth"},
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
+	{core.ErrCompacting, "error.compacting"},
+	{core.ErrNothingToCompact, "error.nothing_to_compact"},
 }
 
 // errorKey is the i18n key of what err means to the user, as app's

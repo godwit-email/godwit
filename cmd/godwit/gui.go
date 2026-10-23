@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/ownerlock"
@@ -223,7 +224,7 @@ func gui(ctx context.Context, dataDir string) int {
 		reg, err := registrySource()
 		if err == nil {
 			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang,
-				Registry: reg, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence()})
+				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence()})
 		}
 		if err != nil {
 			i18n.SetLanguage(lang)

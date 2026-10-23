@@ -180,6 +180,8 @@
   "error_registry_mismatch": "The downloaded file does not match the plugin directory; it was discarded.",
   "error_registry_signature": "The plugin directory''s signature is wrong; it was not used.",
   "error_run_active": "Wit is still responding. Wait for it or stop it first.",
+  "error_compacting": "Wit is already compacting this conversation.",
+  "error_nothing_to_compact": "There is nothing in this conversation to compact yet.",
   "error_send_blocked": "Extension “{arg1}” blocked sending: {arg2}",
   "@error_send_blocked": {
     "placeholders": {
@@ -2051,9 +2053,12 @@
   "wit_thinking": "Thinking…",
   "wit_usage": "Context",
   "wit_usage_history": "History {arg1}% full",
-  "wit_usage_note": "Once it is full, the oldest turns are no longer sent to the model.",
+  "wit_usage_note": "Once it is full, the oldest turns are summarized, and the model is sent the summary in their place.",
   "wit_usage_last": "Last request: {arg1} tokens",
   "wit_usage_total": "This conversation: {arg1} in · {arg2} out tokens",
+  "wit_usage_compact": "Compact now",
+  "wit_usage_compacting": "Compacting…",
+  "wit_usage_compacted": "Compacted: the older turns are now a summary.",
   "wit_tool_classify_mail": "classify mail",
   "wit_tool_create_draft": "create a draft",
   "wit_tool_update_draft": "Edit the body",

@@ -50,6 +50,7 @@ type ModelService struct {
 	Provider                string // ProviderOpenAI, …: the formats it offers; fixed once added
 	Slug                    string // the service part of its "slug/model" references; kept on rename
 	Models                  []string
+	Names                   map[string]string // model ID -> models.dev's display name, for the IDs it lists (ListModelServices)
 	JudgeFormat, JudgeModel string
 	Email                   string // OAuth sign-in address (chatgpt, grok); "" for API-key services
 	HasKey                  bool
@@ -366,7 +367,7 @@ func (s *Service) ListModelServices(ctx context.Context) ([]ModelService, error)
 		if err != nil {
 			return nil, err
 		}
-		m.Status = st[m.ID]
+		m.Status, m.Names = st[m.ID], s.catalogNames(m)
 		out = append(out, m)
 	}
 	return out, nil

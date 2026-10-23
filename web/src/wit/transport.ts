@@ -308,13 +308,14 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
  * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID,
  * in place of the question at index rewind and what followed when given (a host that `rewinds`;
  * refused, nothing changes); follow reads the conversation the host shows (subscribing to it);
- * stop cancels a run.
+ * stop cancels a run; compact (where the host has it) summarizes the conversation's older turns.
  */
 export type WitApi = {
   ask(text: string, quoted?: number[], rewind?: number): Promise<number>;
   skill?(id: string, lang: string): Promise<number>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
+  compact?(): Promise<void>;
   rewinds?: boolean;
 };
 type On = (f: (ev: WitEvent) => void) => () => void;
@@ -447,6 +448,16 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
       return Promise.resolve();
     }
     return this.run ? this.api.stop(this.run) : Promise.resolve();
+  }
+
+  /** Whether the host compacts a conversation when asked. */
+  get compacts(): boolean {
+    return !!this.api.compact;
+  }
+
+  /** Summarizes the conversation's older turns now (the host's compact). */
+  compact(): Promise<void> {
+    return this.api.compact ? this.api.compact() : Promise.resolve();
   }
 
   /** Whether a question can be asked again in place (the host rewinds). */

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
@@ -218,4 +219,33 @@ func TestFormatAddressQuotesLocalPart(t *testing.T) {
 	}
 	assert.Equal(t, `"a b"@example.com`, mail.FormatAddress("", "a b@example.com"))
 	assert.Equal(t, "plain.dot+tag@example.com", mail.FormatAddress("", "plain.dot+tag@example.com"))
+}
+
+// A part whose bytes are not what its charset says still comes out as valid
+// UTF-8: decoded by an HTML <meta charset> when MIME names none, otherwise
+// never guessed into another script (#151).
+func TestValidText(t *testing.T) {
+	gbk := "\xc7\xeb\xb2\xe9\xca\xd5\xb7\xa2\xc6\xb1" // 请查收发票
+	for _, tc := range []struct {
+		name, in, cs string
+		html         bool
+		want         string
+	}{
+		{"valid kept", "café 你好", "utf-8", false, "café 你好"},
+		{"meta charset", `<meta charset="gbk"><p>` + gbk, "", true, `<meta charset="gbk"><p>请查收发票`},
+		{"http-equiv", `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">` + gbk, "", true, `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">请查收发票`},
+		{"commented-out meta", "<!-- <meta charset=windows-1252> -->你好\xff", "", true, "<!-- <meta charset=windows-1252> -->你好\uFFFD"},
+		{"latin-1 labelled utf-8", "caf\xe9 cr\xe8me", "utf-8", false, "caf\uFFFD cr\uFFFDme"},
+	} {
+		got := mail.ValidText([]byte(tc.in), tc.cs, tc.html)
+		assert.Equal(t, tc.want, string(got), tc.name)
+	}
+	for name, in := range map[string]string{
+		"gbk":       gbk,
+		"euc-kr":    "\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4", // 안녕하세요, not 救崇窍技夸
+		"shift_jis": "\x82\xb1\x82\xf1\x82\xc9\x82\xbf\x82\xcd", // こんにちは, not 偙傫偵偪偼
+	} {
+		got := mail.ValidText([]byte(in), "utf-8", false)
+		assert.True(t, utf8.Valid(got) && !strings.ContainsFunc(string(got), func(r rune) bool { return unicode.Is(unicode.Han, r) }), "%s labelled utf-8: %q", name, got)
+	}
 }

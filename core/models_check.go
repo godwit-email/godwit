@@ -13,7 +13,7 @@ import (
 type ServiceCheck struct {
 	BaseURL, Endpoint string
 	Models            []string
-	Names             map[string]string // model ID -> display name, for the IDs the service names
+	Names             map[string]string // model ID -> display name, the service's or else models.dev's, for the IDs either names
 	ListSupported     bool              // false: the service has no model list; models are typed by hand
 	NoListStatus      int               // the HTTP status that said so, when known
 	JudgeEndpoint     string
@@ -49,6 +49,9 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 		ms, err = ai.ListModelsNamed(ctx, s.modelHTTP, in.Kind, in.BaseURL, key)
 		for _, m := range ms {
 			c.Models = append(c.Models, m.ID)
+			if m.Name == "" { // the service's own name first
+				m.Name = s.catalogNames(ModelService{BaseURL: in.BaseURL, Models: []string{m.ID}})[m.ID]
+			}
 			if m.Name != "" {
 				if c.Names == nil {
 					c.Names = map[string]string{}

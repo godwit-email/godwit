@@ -386,7 +386,7 @@ func offWarns(f *modelForm, st core.Settings, services []core.ModelService) (gen
 	if strings.HasPrefix(st.DefaultModel, f.slug+"/") && !f.genOn && len(genF) > 0 {
 		gen = i18n.T("settings.models.off.gen.only")
 		if alt := altGen(services, f.id); alt != nil {
-			gen = i18n.Tf("settings.models.off.gen.alt", alt.Name+" / "+alt.Models[0])
+			gen = i18n.Tf("settings.models.off.gen.alt", alt.Name+" / "+cmp.Or(alt.Names[alt.Models[0]], alt.Models[0]))
 		}
 	}
 	if st.JudgeService == f.slug && !f.judgeOn && len(judgeF) > 0 {
@@ -436,7 +436,7 @@ func (m *modelsView) edit(s core.ModelService) {
 	gen, judge := core.ProviderFormats(p)
 	savedURL, _ := core.NormalizeModelBaseURL(s.BaseURL)
 	f := &modelForm{id: s.ID, title: s.Name, slug: s.Slug, savedKind: s.Kind, savedJudge: s.JudgeFormat, savedURL: cmp.Or(savedURL, s.BaseURL), provider: p,
-		email: s.Email, name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models),
+		email: s.Email, name: s.Name, baseURL: s.BaseURL, hasKey: s.HasKey, models: slices.Clone(s.Models), offered: slices.Clone(s.Models), names: maps.Clone(s.Names),
 		kind: cmp.Or(s.Kind, first(gen)), genOn: s.Kind != "", judgeOn: s.JudgeFormat != "", judgeFormat: cmp.Or(s.JudgeFormat, first(judge)), judgeModel: s.JudgeModel}
 	if f.judgeModel == "" {
 		f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
@@ -927,7 +927,7 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		if s.Kind != "" {
 			for _, mod := range s.Models {
 				ref := s.Slug + "/" + mod
-				u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + mod})
+				u.genOpts = append(u.genOpts, kit.Option[string]{Value: ref, Label: s.Name + " / " + cmp.Or(s.Names[mod], mod)})
 				if ref == st.DefaultModel {
 					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
 				}
