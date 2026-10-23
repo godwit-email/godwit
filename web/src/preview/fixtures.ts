@@ -3,6 +3,7 @@ import type {
   Citation,
   ComposeState,
   MailHit,
+  ModelChoice,
   Review,
   ReviewOp,
   SignatureState,
@@ -400,8 +401,8 @@ export const signatureHtmlImage = `${signatureHtml}<img src="${logo}">`;
 /** A signature laid out with a table and styles, as Go's sanitizer keeps it. */
 export const signatureLayout = `<table style="border-collapse: collapse"><tbody><tr><td style="padding: 0 14px 0 0; border-right: 2px solid #172E43"><img src="${logo}" width="48"></td><td style="padding: 0 0 0 14px"><div style="font-weight: 600; color: #172E43">Alex Chen</div><div style="font-size: 12px; color: #737373">Partnerships · Example Co.</div></td></tr></tbody></table>`;
 
-export const witModels = [
-  { ref: "anthropic/claude-sonnet-5-5", label: "Anthropic / claude-sonnet-5-5" },
-  { ref: "anthropic/claude-haiku-5-5", label: "Anthropic / claude-haiku-5-5" },
-  { ref: "openai/gpt-5", label: "OpenAI / gpt-5" },
+export const witModels: ModelChoice[] = [
+  { ref: "anthropic/claude-sonnet-5-5", service: "Anthropic", name: "claude-sonnet-5-5" },
+  { ref: "anthropic/claude-haiku-5-5", service: "Anthropic", name: "claude-haiku-5-5" },
+  { ref: "openai/gpt-5", service: "OpenAI", name: "gpt-5" },
 ];

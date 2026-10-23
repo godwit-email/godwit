@@ -43,6 +43,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -1538,11 +1539,12 @@ export function Panel({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
+                    {/* the value as the item's shortcut, the trigger's arrow right by it */}
+                    <DropdownMenuSubTrigger className="[&>svg]:ml-0">
                       {t("wit.effort")}
-                      <span className="ml-auto text-muted-foreground">
+                      <DropdownMenuShortcut>
                         {t(`wit.effort.${effort.value || "default"}`)}
-                      </span>
+                      </DropdownMenuShortcut>
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent>
                       <DropdownMenuRadioGroup
