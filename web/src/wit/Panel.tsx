@@ -489,13 +489,17 @@ function Answer({
     return a ? [a] : [];
   });
   const waiting = requested.filter((a) => a.id === review?.approval);
-  // Its calls the user decided (draft edits have their own rows).
-  const settled = [...approvals.values()].filter(
-    (a) =>
-      ["done", "failed", "rejected", "stale"].includes(a.state) &&
-      !isDraftEdit(a.tool) &&
-      calls.some((c) => c.toolCallId === a.callId),
-  );
+  // Its own calls the user decided (draft edits have their own rows), as they stand now: an
+  // answer's approvals are its run's (a call ID alone may be another run's).
+  const settled = m.parts
+    .flatMap((p) => (p.type === "data-approvals" ? p.data : []))
+    .map((a) => approvals.get(String(a.id)) ?? a)
+    .filter(
+      (a, i, all) =>
+        all.findIndex((x) => x.id === a.id) === i &&
+        ["done", "failed", "rejected", "stale"].includes(a.state) &&
+        !isDraftEdit(a.tool),
+    );
   // [n] in the answer shows citation n's mail in a popover, [[n]] as a card in the text: either
   // opens it (when the host opens cited mail) or quotes it in the input.
   const mail = (n: number, card: boolean) => {
@@ -1289,7 +1293,14 @@ export function Panel({
         onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
           if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
-          if (e.key === "Escape" && editing && !picking) {
+          // not while an input method composes: its Esc closes the candidates
+          if (
+            e.key === "Escape" &&
+            editing &&
+            !picking &&
+            !e.nativeEvent.isComposing &&
+            e.keyCode !== 229
+          ) {
             e.preventDefault();
             return cancelEdit();
           }

@@ -553,6 +553,9 @@ describe("Panel", () => {
     expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
     expect(input("向 Wit 提问")).toHaveValue("");
     await user.click(screen.getByRole("button", { name: "编辑" }));
+    // an input method's Esc closes its candidates, not the edit
+    fireEvent.keyDown(input("向 Wit 提问"), { key: "Escape", isComposing: true });
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
     await user.type(input("向 Wit 提问"), "{Escape}");
     expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
     expect(

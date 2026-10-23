@@ -355,6 +355,67 @@ describe("historyToMessages", () => {
   });
 });
 
+describe("historyToMessages call IDs", () => {
+  it("a call ID two runs reuse gets each run's own approval", () => {
+    const ap = (id: number, run: number, state: string): Approval => ({
+      id,
+      run,
+      callId: "call_0",
+      tool: "create_draft",
+      summary: "",
+      state,
+      error: "",
+      destinations: [],
+      args: "{}",
+      sessionAllow: false,
+    });
+    const turn = (n: number, run: number) => [
+      {
+        id: `q${n}`,
+        role: "user",
+        text: "Q",
+        reasoning: "",
+        quoted: [],
+        calls: [],
+        results: [],
+        citations: [],
+        runs: [run],
+      },
+      {
+        id: `a${n + 1}`,
+        role: "assistant",
+        text: "",
+        reasoning: "",
+        quoted: [],
+        calls: [{ id: "call_0", name: "create_draft", args: "{}" }],
+        results: [],
+        citations: [],
+        runs: [run],
+      },
+    ];
+    const h: WitHistory = {
+      conversation: 1,
+      model: "",
+      effort: "",
+      usage: { input: 0, output: 0, context: 0, history: 0 },
+      running: 0,
+      messages: [...turn(0, 1), ...turn(2, 3)],
+      approvals: [ap(5, 1, "done"), ap(6, 3, "pending")],
+    };
+    const [, first, , second] = historyToMessages(h);
+    const approvals = (m: WitUIMessage) =>
+      m.parts.flatMap((p) => (p.type === "data-approvals" ? p.data.map((a) => a.id) : []));
+    expect(approvals(first)).toEqual([5]);
+    expect(approvals(second)).toEqual([6]);
+    expect(first.parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
+      state: "output-available",
+    });
+    expect(second.parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
+      state: "approval-requested",
+    });
+  });
+});
+
 describe("WitTransport", () => {
   it("listener before start: events before ask resolves are not lost", async () => {
     const { api, tr, emit } = fake();
