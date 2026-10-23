@@ -248,6 +248,15 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 }
 
 // GetMessage returns the message with sanitized HTML. Inline images are
+// MessageExists says whether message id is still stored: a row lookup, nothing loaded.
+func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
+	if err != nil {
+		return false, err
+	}
+	return len(rows.Values) > 0, nil
+}
+
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)

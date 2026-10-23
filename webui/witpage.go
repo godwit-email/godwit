@@ -490,7 +490,12 @@ func (p *WitPage) CheckCited(ctx context.Context, message int64) error {
 	if err != nil {
 		return keyed(err)
 	}
-	if _, err := svc.GetMessage(ctx, message, false); err != nil {
+	// a row lookup: loading the message could fetch its inline images over IMAP
+	ok, err := svc.MessageExists(ctx, message)
+	if err != nil {
+		return keyed(err)
+	}
+	if !ok {
 		return keyed(ErrMailGone)
 	}
 	return nil

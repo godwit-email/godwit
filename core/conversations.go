@@ -146,8 +146,10 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 	for _, r := range rows.Values {
 		out = append(out, scanConversation(r))
 	}
-	// Each conversation's active run, if any: under way, or waiting on pending calls.
-	runs, err := s.db.Query(ctx, `SELECT r.conversation_id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending')
+	// Each conversation's active run, if any: under way, waiting on pending calls, or
+	// interrupted while an allowed call executes (an external one, up to its timeout).
+	runs, err := s.db.Query(ctx, `SELECT r.conversation_id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending'),
+		EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'executing')
 		FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.kind = ? AND r.state IN ('running', 'resuming', 'interrupted')`, kind)
 	if err != nil {
 		return nil, err
@@ -156,6 +158,7 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 		if i := slices.IndexFunc(out, func(c Conversation) bool { return c.ID == store.Int(r[0]) }); i >= 0 {
 			if store.Str(r[1]) == "interrupted" {
 				out[i].Awaiting = store.Int(r[2]) != 0
+				out[i].Answering = !out[i].Awaiting && store.Int(r[3]) != 0
 			} else {
 				out[i].Answering = true
 			}

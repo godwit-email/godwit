@@ -105,7 +105,13 @@ func TestAskSearchesAndCites(t *testing.T) {
 	assert.Zero(t, c.ActiveRunID)
 
 	// a cited message deleted since stays cited, marked gone
+	ok, err := e.s.MessageExists(t.Context(), e.msg)
+	require.NoError(t, err)
+	assert.True(t, ok)
 	_, err = e.s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", e.msg)
+	require.NoError(t, err)
+	ok, err = e.s.MessageExists(t.Context(), e.msg)
+	assert.False(t, ok)
 	require.NoError(t, err)
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
@@ -208,6 +214,13 @@ func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	}
 	assert.True(t, listed().Awaiting, "the list says a call waits on the user")
 	assert.False(t, listed().Answering)
+	// allowed and executing (an external call, up to its timeout): answering, not awaiting
+	_, err = e.s.db.Execute(t.Context(), "UPDATE approvals SET state = 'executing' WHERE id = ?", a.ID)
+	require.NoError(t, err)
+	assert.True(t, listed().Answering)
+	assert.False(t, listed().Awaiting)
+	_, err = e.s.db.Execute(t.Context(), "UPDATE approvals SET state = 'pending' WHERE id = ?", a.ID)
+	require.NoError(t, err)
 
 	sub, unsub := e.s.SubscribeConversation(conv.ID)
 	defer unsub()
