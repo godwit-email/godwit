@@ -762,6 +762,24 @@ func TestResumeClaimFailureFailsRun(t *testing.T) {
 	assert.Equal(t, "done", evs[len(evs)-1].Kind)
 }
 
+func TestResumeSaveFailureLeavesNoOpenCalls(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"A"}`})
+	_, err := e.s.db.Execute(t.Context(), `CREATE TRIGGER fail_save BEFORE UPDATE OF next_seq ON conversations
+		BEGIN SELECT RAISE(ABORT, 'injected save failure'); END`)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	e.waitRun(t, in.RunID, "failed") // the resume's outcome could not be saved
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER fail_save")
+	require.NoError(t, err)
+	evs := e.start(t, conv, "again")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	calls, results := toolPairs(t, reqs[len(reqs)-1])
+	assert.Equal(t, calls, results, "every tool request in the history has its result")
+}
+
 func TestRecoveryFailureFailsRun(t *testing.T) {
 	e := newApprovalEnv(t)
 	// A run left interrupted with nothing open, whose resume claim will fail at startup.

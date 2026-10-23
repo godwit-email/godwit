@@ -1006,6 +1006,21 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 	}
 	// Read the history only now: a previous run may have ended after the caller's read.
 	h, err := s.history(ctx, conv.ID)
+	// No run is active, so open calls are left by one that failed without
+	// closing the state (its outcome could not be saved): close them now.
+	var calls []ai.ToolResult
+	if err == nil {
+		calls = h.OpenCalls()
+	}
+	if len(calls) > 0 {
+		for i := range calls {
+			calls[i].Error = msgRecovery
+		}
+		var ch ai.HistoryChanges
+		if h, ch, err = h.Close(calls); err == nil {
+			_, err = s.db.Transaction(ctx, historyStmts(conv.ID, ch))
+		}
+	}
 	var scope *gateway.Scope
 	if err == nil {
 		scope, err = s.convScope(ctx, conv.ID, false)
