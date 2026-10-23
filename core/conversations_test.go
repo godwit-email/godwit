@@ -234,8 +234,13 @@ func TestAskAgainInterrupted(t *testing.T) {
 		assert.Equal(t, []string{"first", "One.", "second, edited"}, texts(), "what it replaces is hidden")
 		return evs[len(evs)-1]
 	}
+	grant := grantKey{conv: conv.ID, tool: "create_draft"}
+	e.s.sessionGrants.Store(grant, true)
 	require.NoError(t, e.s.CancelRun(t.Context(), ask().RunID))
 	assert.Equal(t, before, texts(), "stopped: nothing is replaced")
+	_, granted := e.s.sessionGrants.Load(grant)
+	assert.True(t, granted, "nor are the grants it set aside gone")
+	e.s.sessionGrants.Delete(grant)
 
 	ev := ask()
 	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})

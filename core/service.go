@@ -116,6 +116,7 @@ type Service struct {
 
 	assistMu      sync.Mutex // finding or creating a draft's assist conversation
 	sessionGrants sync.Map   // grantKey -> true: session grants (本次对话都允许)
+	setAside      sync.Map   // run ID -> []grantKey: the grants a question asked again set aside till it replaces or not
 
 	toolsMu sync.Mutex
 	tools   map[string]toolDesc // tools Wit runs can offer, by name

@@ -425,3 +425,22 @@ func TestAutoVacuumAndReclaim(t *testing.T) {
 	assert.Less(t, pages("page_count"), before/2, "most of the free pages go")
 	assert.Positive(t, pages("freelist_count"), "some stay free for reuse")
 }
+
+// A backup an earlier attempt made stays as it is.
+func TestMigrationKeepsEarlierBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:store.HistoryRowsVersion-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	db.Close()
+	backup := fmt.Sprintf("%s.bak-v%d", path, store.HistoryRowsVersion-1)
+	require.NoError(t, os.WriteFile(backup, []byte("earlier"), 0o600))
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	db.Close()
+	b, err := os.ReadFile(backup)
+	require.NoError(t, err)
+	assert.Equal(t, "earlier", string(b))
+}

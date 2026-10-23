@@ -113,6 +113,25 @@ func (s *Service) dropGrants(conv int64) []grantKey {
 	return out
 }
 
+// setGrantsAside drops conversation conv's grants for runID, a question
+// asked again (asked again, a write waits for the user), till putGrantsBack
+// or forgetGrants settles them.
+func (s *Service) setGrantsAside(conv, runID int64) {
+	s.setAside.Store(runID, s.dropGrants(conv))
+}
+
+// putGrantsBack restores what runID set aside: it replaced nothing.
+func (s *Service) putGrantsBack(runID int64) {
+	if v, ok := s.setAside.LoadAndDelete(runID); ok {
+		for _, g := range v.([]grantKey) {
+			s.sessionGrants.Store(g, true)
+		}
+	}
+}
+
+// forgetGrants drops what runID set aside: it replaced what they were for.
+func (s *Service) forgetGrants(runID int64) { s.setAside.Delete(runID) }
+
 // ResolveApprovalForConversation accepts pending approval id and allows its
 // tool for the rest of its conversation (本次对话都允许): the run's other
 // pending calls of the tool are accepted too, and later ones as soon as they
@@ -610,7 +629,9 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{closed.Next(), runID}})
 	}
 	stmts = append(stmts, runState(runID, final))
-	_, err = s.db.Transaction(ctx, stmts)
+	if _, err = s.db.Transaction(ctx, stmts); err == nil && rw != nil {
+		s.putGrantsBack(runID) // it replaced nothing
+	}
 	return convID, err
 }
 

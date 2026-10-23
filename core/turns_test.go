@@ -265,3 +265,28 @@ func TestFollowConversationInterruptedDuringRead(t *testing.T) {
 	assert.NotContains(t, kinds, "start")
 	assert.Equal(t, "done", kinds[len(kinds)-1])
 }
+
+// A run that starts and ends while FollowConversation reads is in what it
+// read: none of its events is sent after.
+func TestFollowConversationRunWithinRead(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"quick"}}, testllm.Turn{Text: []string{"next"}})
+	beforeFollowRead = func() {
+		beforeFollowRead = nil
+		e.ask(t, conv.ID, "hi")
+	}
+	t.Cleanup(func() { beforeFollowRead = nil })
+	c, ch, stop, err := e.s.FollowConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	defer stop()
+	require.Len(t, c.Turns, 1)
+	first := c.Turns[0].Runs[0]
+	e.ask(t, conv.ID, "again")
+	for ev := range ch {
+		assert.NotEqual(t, first, ev.RunID, "the read run's events are in what was read: %+v", ev)
+		if ev.Ends {
+			break
+		}
+	}
+}

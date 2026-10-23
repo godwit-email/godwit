@@ -87,8 +87,11 @@ func backup(ctx context.Context, db *DB, path string, cur int) {
 		return
 	}
 	dst := fmt.Sprintf("%s.bak-v%d", path, cur)
+	if _, err := os.Stat(dst); err == nil {
+		return // an earlier attempt's: kept as it is
+	}
 	if err := copyFile(path, dst); err != nil {
-		os.Remove(dst)
+		os.Remove(dst) // what this attempt wrote of it
 		slog.Default().Warn("could not back the database up", "err", err)
 	}
 }

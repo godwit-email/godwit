@@ -651,9 +651,16 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 				last = i
 			}
 		}
+		read := map[int64]bool{} // runs whose saved history is in c
+		for _, t := range c.Turns {
+			for _, r := range t.Runs {
+				read[r] = true
+			}
+		}
 		out := q[:0]
 		for i, ev := range q {
-			if ev.RunID == c.ActiveRunID && i > last || ev.RunID != c.ActiveRunID && ev.RunID > known {
+			// another run is new only if it started after known and saved nothing c holds
+			if ev.RunID == c.ActiveRunID && i > last || ev.RunID != c.ActiveRunID && ev.RunID > known && !read[ev.RunID] {
 				out = append(out, ev)
 			}
 		}
@@ -795,7 +802,6 @@ type runJob struct {
 	// rewind, for a question asked in place, is what the run replaces once it
 	// is done (commitRewind); one that ends otherwise replaces nothing.
 	rewind *pendingRewind
-	grants []grantKey // the grants asking in place set aside: back if nothing is replaced
 	cited  []Citation // the mail the run's context shows the model, sent first
 	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
 	ctx    context.Context
@@ -938,7 +944,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	if err == nil && job.rewind != nil {
 		err = s.exec(ctx, claimRewind(job.id, *job.rewind))
-		job.grants = s.dropGrants(conv.ID) // asked again, a write waits for the user
+		s.setGrantsAside(conv.ID, job.id)
 	} else if err == nil && len(claimed) > 0 {
 		_, err = s.db.Transaction(ctx, claimed)
 	}
@@ -1198,9 +1204,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	switch {
 	case res.Err != nil:
 		if job.rewind != nil && len(req.Responses) == 0 { // it replaced nothing: the grants set aside come back
-			for _, g := range job.grants {
-				s.sessionGrants.Store(g, true)
-			}
+			s.putGrantsBack(job.id)
 		}
 		state := "failed"
 		if res.Err.Code == ai.CodeCanceled {
@@ -1223,6 +1227,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		}
 		_, err := s.db.Transaction(ctx, stmts)
 		if err == nil {
+			s.forgetGrants(job.id)
 			s.compactLater(job.conv.ID, req.Model, job.after)
 		}
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
