@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
@@ -60,7 +60,9 @@ async function setup(
     review?: PanelReview;
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
-    onCite?(id: number): void;
+    onCite?(id: number): Promise<void> | void;
+    onCheckCited?(id: number): Promise<void>;
+    onDraft?(approval: number): Promise<void>;
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
     page?: boolean;
@@ -94,6 +96,8 @@ async function setup(
       onDecide={o.onDecide}
       onLink={onLink}
       onCite={o.onCite}
+      onCheckCited={o.onCheckCited}
+      onDraft={o.onDraft}
       onSearch={o.onSearch}
       onSession={o.onSession}
       layout={o.page ? "page" : "panel"}
@@ -175,13 +179,14 @@ describe("Panel", () => {
     expect(onModels).toHaveBeenCalledOnce();
   });
 
-  it("with models, the chip picks the conversation's model; the settings come last", async () => {
+  it("with models, one chip picks the model, grouped by service, and the effort in a submenu", async () => {
     const user = userEvent.setup();
     const onModels = vi.fn();
     const pick = vi.fn();
     const list = vi.fn().mockResolvedValue([
-      { ref: "a/sonnet", label: "A / sonnet" },
-      { ref: "a/haiku", label: "A / haiku" },
+      { ref: "a/sonnet", service: "A", name: "sonnet", default: true },
+      { ref: "a/haiku", service: "A", name: "haiku", default: false },
+      { ref: "b/gpt", service: "B", name: "gpt", default: false },
     ]);
     render(
       <Panel
@@ -195,20 +200,30 @@ describe("Panel", () => {
         model="sonnet"
         onModels={onModels}
         models={{ ref: "a/haiku", list, pick }}
+        effort={{ value: "medium", pick: vi.fn() }}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /haiku/ }));
+    // one chip: the model and the effort; no chip of its own for the effort
+    const chip = screen.getByRole("button", { name: /haiku/ });
+    expect(chip).toHaveTextContent("haiku中");
+    expect(screen.queryByRole("button", { name: "中" })).toBeNull();
+    await user.click(chip);
     await waitFor(() => expect(list).toHaveBeenCalledOnce());
-    expect(await screen.findByRole("menuitemradio", { name: "A / haiku" })).toHaveAttribute(
+    expect(await screen.findByRole("menuitemradio", { name: "haiku" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
+    // the default model in its group, tagged; no row of its own
+    expect(screen.getByRole("group", { name: "A" })).toHaveTextContent("Asonnet默认haiku");
+    expect(screen.getByRole("group", { name: "B" })).toHaveTextContent("Bgpt");
+    expect(screen.queryByRole("menuitemradio", { name: /默认（/ })).toBeNull();
+    // picking it follows the default again
+    await user.click(screen.getByRole("menuitemradio", { name: /sonnet/ }));
     expect(pick).toHaveBeenCalledWith("");
     expect(onModels).not.toHaveBeenCalled();
   });
 
-  it("beside the model, the effort chip picks the conversation's reasoning effort", async () => {
+  it("the effort is a submenu of the model menu", async () => {
     const user = userEvent.setup();
     const pick = vi.fn();
     render(
@@ -225,19 +240,40 @@ describe("Panel", () => {
         effort={{ value: "medium", pick }}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "中" }));
+    await user.click(screen.getByRole("button", { name: /sonnet/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /思考强度/ }));
     expect(await screen.findByRole("menuitemradio", { name: "中" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getAllByRole("menuitemradio").map((e) => e.textContent)).toEqual([
-      "默认",
-      "低",
-      "中",
-      "高",
-    ]);
-    await user.click(screen.getByRole("menuitemradio", { name: "默认" }));
-    expect(pick).toHaveBeenCalledWith("");
+    expect(
+      screen
+        .getAllByRole("menuitemradio")
+        .filter((e) => ["默认", "低", "中", "高"].includes(e.textContent ?? ""))
+        .map((e) => e.textContent),
+    ).toEqual(["默认", "低", "中", "高"]);
+    // jsdom leaves the submenu inert to the pointer while it opens: pick from the keyboard
+    screen.getByRole("menuitemradio", { name: "高" }).focus();
+    await user.keyboard("{Enter}");
+    expect(pick).toHaveBeenCalledWith("high");
+  });
+
+  it("the default effort shows the model alone on the chip", () => {
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="sonnet"
+        models={{ ref: "", list: vi.fn().mockResolvedValue([]), pick: vi.fn() }}
+        effort={{ value: "", pick: vi.fn() }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /sonnet/ })).toHaveTextContent(/^sonnet$/);
   });
 
   it("a finished answer copies its text", async () => {
@@ -392,6 +428,79 @@ describe("Panel", () => {
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
   });
 
+  it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
+    const user = userEvent.setup();
+    const cite = (n: number, id: number, from: string, callIds: string[]) => ({
+      n,
+      messageId: id,
+      subject: `S${id}`,
+      from,
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "",
+      gone: false,
+      callIds,
+    });
+    await setup({
+      page: true,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Two receipts.",
+            reasoning: "先按收据搜",
+            quoted: [],
+            calls: [
+              { id: "c1", name: "search_mail", args: '{"query":"receipt OR 账单"}' },
+              { id: "c2", name: "read_message", args: '{"id":51}' },
+              { id: "c3", name: "search_mail", args: '{"query":"invoice"}' },
+            ],
+            results: [
+              { callId: "c1", name: "search_mail", output: "{}", error: "" },
+              { callId: "c2", name: "read_message", output: "{}", error: "" },
+              { callId: "c3", name: "search_mail", output: "{}", error: "" },
+            ],
+            citations: [
+              // Acme's mail: found by both searches, not only the first
+              cite(1, 50, "Acme Cloud <billing@acme.example>", ["c1", "c3"]),
+              cite(2, 51, "Bob <bob@x.org>", ["c1"]),
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    // one line, folded: what it did
+    const folded = screen.getByRole("button", { name: /思考过程/ });
+    expect(folded).toHaveTextContent("思考过程 · 调用了 2 个工具 · search_mail ×2、read_message");
+    expect(folded).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
+    await user.click(folded);
+    const steps = within(await screen.findByRole("list", { name: "思考过程" })).getAllByRole(
+      "listitem",
+    );
+    expect(steps.map((s) => s.textContent)).toEqual([
+      "先按收据搜",
+      "search_mailreceipt OR 账单Acme CloudBob",
+      "read_message",
+      "search_mailinvoiceAcme Cloud",
+    ]);
+  });
+
   const turn: WitHistory = {
     ...empty,
     messages: [
@@ -437,10 +546,32 @@ describe("Panel", () => {
     expect(box).toHaveValue("总结");
     expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
     expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
+    // what the edit replaces dims
+    expect(screen.getByText("旧答案").closest("[data-role=assistant]")?.parentElement).toHaveClass(
+      "opacity-40",
+    );
     await user.clear(box);
     await user.type(box, "列出金额{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9], 0));
     expect(screen.queryByText("旧答案")).toBeNull();
+  });
+
+  it("an edit's strip cancels it, as Esc in the input does", async () => {
+    const user = userEvent.setup();
+    await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.click(screen.getByRole("button", { name: /取消/ }));
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(input("向 Wit 提问")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    // an input method's Esc closes its candidates, not the edit
+    fireEvent.keyDown(input("向 Wit 提问"), { key: "Escape", isComposing: true });
+    expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
+    await user.type(input("向 Wit 提问"), "{Escape}");
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(
+      screen.getByText("旧答案").closest("[data-role=assistant]")?.parentElement,
+    ).not.toHaveClass("opacity-40");
   });
 
   it("no 编辑 or 重新生成 while a call waits on the user", async () => {
@@ -459,6 +590,7 @@ describe("Panel", () => {
             error: "",
             destinations: [],
             sessionAllow: false,
+            draft: 0,
             args: "",
           },
         ],
@@ -573,6 +705,8 @@ describe("Panel", () => {
   it("an empty page suggests questions; one asks it", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true });
+    expect(screen.getByRole("heading", { name: "今天想让 Wit 帮你做什么？" })).toBeInTheDocument();
+    expect(screen.getByText(/写草稿、调用插件前都会先问你/)).toBeInTheDocument();
     expect(screen.getByText("试着问 Wit")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "谁还在等我回复？" }));
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("谁还在等我回复？"));
@@ -588,12 +722,27 @@ describe("Panel", () => {
         usage: { input: 1200, output: 80, context: 900, history: 0.42, compactable: false },
       },
     });
+    // a ring alone: no percentage beside it; a click shows the details
     const meter = screen.getByRole("button", { name: "上下文" });
-    expect(meter).toHaveTextContent("42%");
-    await user.hover(meter);
+    expect(meter).toHaveTextContent(/^$/);
+    expect(meter.querySelector("svg")).not.toHaveClass("text-amber-500");
+    await user.click(meter);
     expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
     expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
     expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
+  });
+
+  it("the ring turns to the attention colour from 80%", async () => {
+    await setup({
+      page: true,
+      history: {
+        ...turn,
+        usage: { input: 1200, output: 80, context: 900, history: 0.8, compactable: false },
+      },
+    });
+    expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
+      "text-amber-500",
+    );
   });
 
   it("compacting now summarizes the older turns and reads the usage again", async () => {
@@ -607,12 +756,10 @@ describe("Panel", () => {
       ...before,
       usage: { ...before.usage, history: 0.3, compactable: false },
     });
-    await user.hover(screen.getByRole("button", { name: "上下文" }));
+    await user.click(screen.getByRole("button", { name: "上下文" }));
     await user.click(await screen.findByRole("button", { name: "立即压缩" }));
     expect(api.compact).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "上下文" })).toHaveTextContent("30%"),
-    );
+    expect(await screen.findByText("历史已用 30%")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即压缩" })).toBeDisabled();
     expect(toast.success).toHaveBeenCalledWith("已压缩：较早的对话已总结成摘要。");
   });
@@ -743,6 +890,7 @@ describe("Panel", () => {
             destinations: [],
             args: "{}",
             sessionAllow: false,
+            draft: 0,
           },
         ],
       },
@@ -769,6 +917,9 @@ describe("Panel", () => {
       date: 0,
       suspect,
       quote: "",
+      snippet: "",
+      callIds: [],
+      gone: false,
     });
     const { emit } = await setup({
       history: {
@@ -861,7 +1012,18 @@ describe("Panel", () => {
             calls: [],
             results: [],
             citations: [
-              { n: 5, messageId: 9, subject: "S", from: "f", date: 0, suspect: true, quote },
+              {
+                n: 5,
+                messageId: 9,
+                subject: "S",
+                from: "f",
+                date: 0,
+                suspect: true,
+                quote,
+                snippet: "",
+                callIds: [],
+                gone: false,
+              },
             ],
             runs: [7],
           },
@@ -886,6 +1048,7 @@ describe("Panel", () => {
       destinations: [],
       args: "",
       sessionAllow: false,
+      draft: 0,
     };
     const history = (approvals: Approval[]): WitHistory => ({
       ...empty,
@@ -981,7 +1144,7 @@ describe("Panel", () => {
     expect(api.stop).toHaveBeenCalledWith(7);
   });
 
-  it("a tool's approval shows its card: what, arguments, destinations; Allow / Allow all / Reject", async () => {
+  it("a tool's approval shows its card: what, arguments, destinations; a header decides them all", async () => {
     const user = userEvent.setup();
     const tool = (id: number, callId: string, tool: string, args: string): Approval => ({
       id,
@@ -994,6 +1157,7 @@ describe("Panel", () => {
       destinations: ["api.x.com", "cdn.x.com"],
       args,
       sessionAllow: false,
+      draft: 0,
     });
     const a = tool(
       5,
@@ -1044,10 +1208,17 @@ describe("Panel", () => {
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
     expect(screen.getByText("Hi")).toBeInTheDocument();
     expect(screen.getByText("Body text")).toBeInTheDocument();
-    expect(screen.getAllByText("会把数据发送到：api.x.com、cdn.x.com")).toHaveLength(2);
+    expect(screen.getAllByText("发送到")).toHaveLength(2);
+    expect(screen.getAllByText("api.x.com")).toHaveLength(2);
+    expect(screen.getAllByText("cdn.x.com")).toHaveLength(2);
+    expect(screen.getByText("插件")).toBeInTheDocument(); // the plugin's tool only
+    expect(screen.getAllByText("待确认")).toHaveLength(2);
     expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument(); // create_draft's only
-    expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(2); // two of run 7
-    for (const n of ["允许", "全部允许", "拒绝"])
+    // two of run 7: one header over them
+    expect(screen.getByText("2 个操作等你确认")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "全部拒绝" })).toHaveLength(1);
+    for (const n of ["允许", "拒绝"])
       for (const b of screen.getAllByRole("button", { name: n })) {
         expect(b).toHaveClass("h-8", "text-md"); // default size, not sm
       }
@@ -1059,6 +1230,7 @@ describe("Panel", () => {
     expect(onDecide).toHaveBeenCalledWith(a, true, false);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
     expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull(); // one left
+    expect(screen.queryByText(/个操作等你确认/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onDecide).toHaveBeenLastCalledWith(b, false, false);
   });
@@ -1080,6 +1252,7 @@ describe("Panel", () => {
       destinations: [],
       args: "{}",
       sessionAllow: false,
+      draft: 0,
     });
     emit({ kind: "tool_call", call: call("p1") });
     emit({ kind: "tool_call", call: call("p2") });
@@ -1088,12 +1261,143 @@ describe("Panel", () => {
       interrupts: [call("p1"), call("p2")],
       approvals: [ap(5, "p1"), ap(6, "p2")],
     });
-    const all = await screen.findAllByRole("button", { name: "全部允许" });
-    await user.click(all[0]);
+    await user.click(await screen.findByRole("button", { name: "全部允许" }));
     expect(onDecide).toHaveBeenCalledWith(ap(5, "p1"), true, true);
     expect(screen.getAllByText("Wit 想要：plugin_netty_ping")).toHaveLength(2); // refused: kept
-    await user.click(screen.getAllByRole("button", { name: "全部允许" })[1]);
+    await user.click(screen.getByRole("button", { name: "全部拒绝" }));
+    expect(onDecide).toHaveBeenLastCalledWith(ap(5, "p1"), false, true);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+  });
+
+  it("decided approvals fold into one line each; a draft Wit made opens in compose", async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn().mockResolvedValue(undefined);
+    const ap = (
+      id: number,
+      callId: string,
+      tool: string,
+      state: string,
+      args = "{}",
+    ): Approval => ({
+      id,
+      run: 7,
+      callId,
+      tool,
+      summary: "",
+      state,
+      error: "",
+      destinations: [],
+      args,
+      sessionAllow: false,
+      draft: 0,
+    });
+    const draft = {
+      ...ap(6, "p2", "create_draft", "done", '{"to":["Lena <l@x>"],"subject":"Re: Q4"}'),
+      draft: 9,
+    };
+    await setup({
+      page: true,
+      onDraft,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Drafted.",
+            reasoning: "",
+            quoted: [],
+            calls: [
+              { id: "p1", name: "plugin_cal_free", args: "{}" },
+              { id: "p2", name: "create_draft", args: draft.args },
+            ],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [ap(5, "p1", "plugin_cal_free", "rejected"), draft],
+      },
+    });
+    expect(screen.getByText("已拒绝 · plugin_cal_free")).toBeInTheDocument();
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
+    expect(screen.queryByText(/Wit 想要/)).toBeNull();
+    expect(screen.getByText("Re: Q4")).toBeInTheDocument();
+    expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    expect(onDraft).toHaveBeenCalledWith(6);
+    // sent or deleted meanwhile: opening it fails, and the card goes
+    // a passing failure keeps it: Open can be tried again
+    onDraft.mockRejectedValueOnce(new Error("error.unknown"));
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    await waitFor(() => expect(onDraft).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
+    onDraft.mockRejectedValueOnce(new Error("wit.draft.gone"));
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    await waitFor(() => expect(screen.queryByText("草稿 · 还没发送")).toBeNull());
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
+  });
+
+  it("a draft sent or deleted since leaves the record, not the card", async () => {
+    const done: Approval = {
+      id: 6,
+      run: 7,
+      callId: "p2",
+      tool: "create_draft",
+      summary: "",
+      state: "done",
+      error: "",
+      destinations: [],
+      args: '{"subject":"Re: Q4"}',
+      sessionAllow: false,
+      draft: 0,
+    };
+    await setup({
+      page: true,
+      onDraft: vi.fn(),
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Drafted.",
+            reasoning: "",
+            quoted: [],
+            calls: [{ id: "p2", name: "create_draft", args: done.args }],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [done],
+      },
+    });
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
+    expect(screen.queryByText("草稿 · 还没发送")).toBeNull();
+    expect(screen.queryByRole("button", { name: /在撰写窗口打开/ })).toBeNull();
   });
 
   it("a resumed run that is not the last answer's streams into an answer of its own", async () => {
@@ -1230,6 +1534,17 @@ describe("Panel", () => {
     expect(screen.getByText("kept")).toBeInTheDocument();
   });
 
+  it("on the page, a link goes straight to the host, which confirms it as mail's links", async () => {
+    const user = userEvent.setup();
+    const { emit, onLink } = await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "Q{Enter}");
+    emit({ kind: "text", text: "[b](https://ok.org/p)" });
+    emit({ kind: "done" });
+    await user.click(await screen.findByText("b"));
+    expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
+    expect(screen.queryByText("打开这个链接？")).toBeNull();
+  });
+
   it("links go through the host's openLink", async () => {
     const user = userEvent.setup();
     const { emit, onLink } = await setup();
@@ -1241,7 +1556,311 @@ describe("Panel", () => {
     expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
   });
 
-  it("citations: both layouts render; cited click opens", async () => {
+  it("[n] and [[n]] show the cited mail as a card that opens it or quotes it in the input", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn();
+    const c = {
+      n: 1,
+      messageId: 50,
+      subject: "Your receipt",
+      from: "Acme Cloud <billing@acme.example>",
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "Amount charged this month",
+      callIds: [],
+      gone: false,
+    };
+    await setup({
+      page: true,
+      onCite,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Acme charged you [1].\n\n[[1]]",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [c],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    // [[1]] shows the mail as a card in the answer, its actions on a hover toolbar
+    const inline = await screen.findByRole("toolbar", { name: "Your receipt" });
+    expect(inline).toHaveClass("group-hover:opacity-100");
+    expect(inline.parentElement).toHaveTextContent("Amount charged this month");
+    await user.click(screen.getByRole("button", { name: "[1]" }));
+    const card = (await screen.findAllByRole("toolbar", { name: "Your receipt" })).find(
+      (e) => e !== inline,
+    ) as HTMLElement;
+    expect(card.parentElement).toHaveTextContent("Acme Cloud");
+    expect(card.parentElement).toHaveTextContent("Amount charged this month");
+    await user.click(within(card).getByRole("button", { name: "引用邮件" }));
+    expect(await screen.findByRole("button", { name: "移除 Your receipt" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getAllByRole("toolbar", { name: "Your receipt" })).toHaveLength(1),
+    );
+    await user.click(within(inline).getByRole("button", { name: "查看邮件" }));
+    expect(onCite).toHaveBeenCalledWith(50);
+  });
+
+  it("引用邮件 checks the mail first: one deleted since is not quoted and loses its actions", async () => {
+    const user = userEvent.setup();
+    const onCheckCited = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));
+    await setup({
+      page: true,
+      onCite: vi.fn(),
+      onCheckCited,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "See [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [
+              {
+                n: 1,
+                messageId: 50,
+                subject: "Old mail",
+                from: "Bob",
+                date: 0,
+                suspect: false,
+                quote: "",
+                snippet: "",
+                gone: false,
+                callIds: [],
+              },
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    await user.click(await screen.findByRole("button", { name: "引用邮件" }));
+    expect(onCheckCited).toHaveBeenCalledWith(50);
+    expect(screen.queryByRole("button", { name: "移除 Old mail" })).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    await screen.findAllByText("Old mail");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull());
+  });
+
+  it("sending checks the quoted mail first: a deleted one leaves the input, the rest wait", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([
+      { id: 9, subject: "发票", from: "f", date: 0 },
+      { id: 8, subject: "合同", from: "f", date: 0 },
+    ]);
+    const onCheckCited = vi.fn((id: number) =>
+      id === 9 ? Promise.reject(new Error("wit.mail.gone")) : Promise.resolve(),
+    );
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "@y");
+    await screen.findByRole("option", { name: /合同/ });
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除 合同" })).toBeInTheDocument();
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "移除 发票" })).toBeNull());
+    expect(screen.getByRole("button", { name: "移除 合同" })).toBeInTheDocument();
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(box).toHaveValue("总结");
+    await user.type(box, "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [8]));
+  });
+
+  it("a check that fails for another reason neither marks the mail gone nor sends", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ id: 9, subject: "发票", from: "f", date: 0 }]);
+    const onCheckCited = vi.fn().mockRejectedValue(new Error("error.unknown"));
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalledWith(9));
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument(); // kept: retry
+    expect(api.ask).not.toHaveBeenCalled();
+    onCheckCited.mockResolvedValue(undefined);
+    await user.type(box, "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9]));
+  });
+
+  it("what changes in the input while the quotes are checked is not overtaken by the old send", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ id: 9, subject: "发票", from: "f", date: 0 }]);
+    let answer = () => {};
+    const onCheckCited = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalled());
+    await user.type(box, "一下");
+    await act(async () => answer());
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(box).toHaveValue("总结一下");
+  });
+
+  it("a cited mail found deleted when opened loses its actions everywhere", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));
+    await setup({
+      page: true,
+      onCite,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "See [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [
+              {
+                n: 1,
+                messageId: 50,
+                subject: "Old mail",
+                from: "Bob",
+                date: 0,
+                suspect: false,
+                quote: "",
+                snippet: "",
+                gone: false,
+                callIds: [],
+              },
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    await user.click(await screen.findByRole("button", { name: "查看邮件" }));
+    expect(onCite).toHaveBeenCalledWith(50);
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    expect(await screen.findByText("Old mail")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "查看邮件" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull();
+  });
+
+  it("a cited mail deleted since shows its card with nothing to open or quote", async () => {
+    const user = userEvent.setup();
+    await setup({
+      page: true,
+      onCite: vi.fn(),
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "See [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [
+              {
+                n: 1,
+                messageId: 50,
+                subject: "Gone mail",
+                from: "Bob",
+                date: 0,
+                suspect: false,
+                quote: "",
+                snippet: "",
+                gone: true,
+                callIds: [],
+              },
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    // in the folded list, too: shown, but nothing to click
+    await user.click(screen.getByRole("button", { name: "引用了 1 封邮件" }));
+    const list = screen.getByRole("region", { name: "引用的邮件" });
+    expect(within(list).getByRole("button", { name: /Gone mail/ })).toBeDisabled();
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    expect(await screen.findAllByText("Gone mail")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "查看邮件" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull();
+  });
+
+  it("citations fold under the answer as 引用了 N 封邮件; a cited click opens", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn();
     const cite = (n: number, id: number, suspect = false) => ({
@@ -1252,6 +1871,9 @@ describe("Panel", () => {
       date: 0,
       suspect,
       quote: "",
+      snippet: "",
+      callIds: [],
+      gone: false,
     });
     await setup({
       page: true,
@@ -1284,29 +1906,19 @@ describe("Panel", () => {
         ],
       },
     });
-    // jsdom has no container queries: both branches are in the DOM, each behind its query
-    const lists = screen.getAllByRole("region", { name: "引用的邮件" });
-    expect(lists).toHaveLength(2);
-    const column = lists.find((l) => l.closest("aside"));
-    const under = lists.find((l) => !l.closest("aside"));
-    expect(column?.closest("aside")?.className).toContain("@4xl:flex");
-    expect(column?.closest("aside")?.className).toContain("hidden");
-    expect(column?.closest("aside")).toHaveClass(
-      "w-80",
-      "rounded-xl",
-      "border-[0.5px]",
-      "bg-background",
-    );
-    expect(column?.closest("aside")).not.toHaveClass("border-l", "bg-sidebar");
-    expect(under?.className).toContain("@4xl:hidden");
-    expect(under?.closest("[data-role=assistant]")).not.toBeNull();
+    // no column beside the conversation: each answer folds its citations under its actions
+    expect(document.querySelector("aside aside, [data-slot=citations-column]")).toBeNull();
+    expect(screen.queryByRole("region", { name: "引用的邮件" })).toBeNull();
+    const toggle = screen.getByRole("button", { name: "引用了 2 封邮件" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle.closest("[data-role=assistant]")).not.toBeNull();
+    await user.click(toggle);
+    const list = screen.getByRole("region", { name: "引用的邮件" });
+    expect(list.textContent).toContain("f50");
+    expect(list.textContent).toContain("（无主题）");
+    expect(list.textContent).toContain("含疑似指令，已作为数据处理");
     expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();
-    for (const l of lists) {
-      expect(l.textContent).toContain("[1] f50");
-      expect(l.textContent).toContain("（无主题）");
-      expect(l.textContent).toContain("含疑似指令，已作为数据处理");
-    }
-    await user.click(screen.getAllByRole("button", { name: /\[2\] f51/ })[0]);
+    await user.click(within(list).getByRole("button", { name: /f51/ }));
     expect(onCite).toHaveBeenCalledWith(51);
   });
 
@@ -1426,6 +2038,7 @@ describe("Panel", () => {
       destinations: [],
       args: "{}",
       sessionAllow: true,
+      draft: 0,
     };
     const history: WitHistory = {
       ...empty,
@@ -1459,10 +2072,11 @@ describe("Panel", () => {
     const onDecide = vi.fn().mockResolvedValue(true);
     const r = await setup({ history, onDecide, onSession, page: true });
     const buttons = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(buttons.slice(buttons.indexOf("允许"), buttons.indexOf("允许") + 3)).toEqual([
-      "允许",
-      "本次对话都允许",
+    // the primary last, as the design's: 拒绝 / 本次对话都允许 / 允许
+    expect(buttons.slice(buttons.indexOf("拒绝"), buttons.indexOf("拒绝") + 3)).toEqual([
       "拒绝",
+      "本次对话都允许",
+      "允许",
     ]);
     expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "本次对话都允许" }));
@@ -1471,7 +2085,7 @@ describe("Panel", () => {
     await waitFor(() => expect(screen.queryByText("Wit 想要：创建草稿")).toBeNull());
     r.unmount();
     await setup({
-      history: { ...history, approvals: [{ ...a, sessionAllow: false }] },
+      history: { ...history, approvals: [{ ...a, sessionAllow: false, draft: 0 }] },
       onSession,
       page: true,
     });

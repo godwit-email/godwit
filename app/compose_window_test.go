@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
 )
 
 // lastCompose is the draft of the newest compose window the platform was
@@ -82,6 +83,19 @@ func TestMailtoOpensWindow(t *testing.T) {
 	d := h.draft(h.composeOpened(0))
 	if d.AccountID != accs[0].ID || len(d.To) != 1 || d.To[0] != "lena@example.com" {
 		t.Fatalf("draft %+v", d)
+	}
+}
+
+// A page's mailto (the Wit page's) drafts from the default account, not the
+// account of the message the reader last showed.
+func TestPageMailtoFromDefaultAccount(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@example.com", "work@example.com")
+	m := h.deliverOne(accs[1], coretest.Msg("Bob <bob@example.com>", accs[1].Email, "Hi", "hi"))
+	h.openThread(m.ThreadID)
+	h.until("the reader showing the work account's message", func() bool { return h.app.mail.reader.account() == accs[1].ID })
+	h.app.OpenLink("mailto:lena@example.com")
+	if d := h.draft(h.composeOpened(0)); d.AccountID != h.app.defaultAccount() || d.AccountID == accs[1].ID {
+		t.Fatalf("draft from account %d, default %d", d.AccountID, h.app.defaultAccount())
 	}
 }
 

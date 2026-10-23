@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 设置 签名列表</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <button type="button" aria-label="后退" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></button>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="signatures" height="{{side}}" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: flex-end; gap: 16px">
+<span style="display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">签名</h1>
+<span style="color: #737373">多个账户可以共用一个签名。改一处，用它的账户都会跟着变。</span>
+</span>
+<sc-if value="{{has}}" hint-placeholder-val="{{ true }}">
+<a href="SettingsSignatureEdit.dc.html" style="flex: none; height: 32px; padding: 0 12px; border-radius: 8px; background: #171717; color: #FFFFFF; display: flex; align-items: center; gap: 6px; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>新建签名</a>
+</sc-if>
+</div>
+<sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+<dc-import name="Empty" title="还没有签名" desc="签名会自动加在你写的邮件末尾。建好一个，就能给一个或多个账户用。" icon="{{quill}}" actions="{{emptyActions}}" hint-size="100%,240px"></dc-import>
+</sc-if>
+<sc-if value="{{has}}" hint-placeholder-val="{{ true }}">
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden">
+<sc-for list="{{sigs}}" as="s" hint-placeholder-count="3">
+<a href="SettingsSignatureEdit.dc.html" style="{{s.rowStyle}}">
+<span style="display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0">
+<span style="display: flex; align-items: center; gap: 8px"><span style="font-weight: 500">{{s.name}}</span><span style="font-size: 12px; color: #737373">{{s.usedBy}}</span></span>
+<span style="padding: 8px 10px; border-radius: 8px; background: #FAFAFA; font-size: 12px; line-height: 1.6">
+<span style="display: block; font-weight: 600">{{s.line1}}</span>
+<span style="display: block; color: #737373">{{s.line2}}</span>
+</span>
+</span>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z"></path></svg>
+</a>
+</sc-for>
+</div>
+<span style="font-size: 12px; color: #737373">每个账户默认用哪个签名，可以在签名详情里设，也可以在账户设置里选。</span>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px; margin-top: 8px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">选项</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="在签名前加分隔线（-- ）" desc="方便 Mutt、Thunderbird 这类客户端识别和折叠签名" control="switch" on="{{no}}" hint-size="100%,56px"></dc-import>
+</div></div>
+</section>
+</sc-if>
+</main>
+    </div></div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"empty":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var empty = this.props.empty === true || this.props.empty === 'true';
+    var sigs = [
+      { name: '个人', usedBy: '1 个账户在用', line1: '[你的名字]', line2: '[电话] · [你的网站]' },
+      { name: '工作', usedBy: '1 个账户在用', line1: '[你的名字]', line2: '[职位] · [公司] · [公司网站]' },
+      { name: 'English', usedBy: '没有账户在用', line1: '[Your name]', line2: '[Title] · [Company] · [Company site]' }
+    ];
+    return {
+      side: 848,
+      empty: empty,
+      has: !empty,
+      no: false,
+      quill: 'M21 1.99669C6 1.99669 4 15.9967 3 21.9967C3.66667 21.9967 4.33275 21.9967 4.99824 21.9967C5.66421 18.6636 7.33146 16.8303 10 16.4967C14 15.9967 17 12.4967 18 9.49669L16.5 8.49669C16.8333 8.16336 17.1667 7.83002 17.5 7.49669C18.5 6.49669 19.5042 4.99669 21 1.99669Z',
+      emptyActions: [{ label: '新建签名', primary: true }],
+      sigs: sigs.map(function (s, i) {
+        return Object.assign({}, s, {
+          rowStyle: 'display: flex; align-items: center; gap: 16px; padding: 12px 16px; color: #0A0A0A; text-decoration: none' + (i ? '; border-top: 1px solid #E5E5E5' : '')
+        });
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

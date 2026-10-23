@@ -139,7 +139,7 @@ func TestComposeAskAfterRewriteRunsAssist(t *testing.T) {
 
 	llm.Script(coretest.Turn{Text: []string{"这是 Assist 的回答。"}})
 	n = len(f.events(1))
-	run, err := f.page.Ask(f.ctx(1), "更具体一点", nil)
+	run, err := f.page.Ask(f.ctx(1), "更具体一点", nil, "", "")
 	require.NoError(t, err)
 	f.doneAfter(t, n, run)
 	cs, err := draftConversations(t.Context(), f.e.Svc, d.ID)

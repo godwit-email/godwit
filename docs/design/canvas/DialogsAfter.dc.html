@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>弹层 · 统一后</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+button,input{font:inherit}
+</style>
+</helmet>
+<div style="width: 2160px; height: 860px; box-sizing: border-box; padding: 40px; display: flex; gap: 40px; align-items: flex-start; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+
+  <div style="display: flex; flex-direction: column; gap: 16px; width: 640px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="font-size: 16px; font-weight: 600">kit.Dialog · md 560 · 添加账户</div>
+      <div style="font-size: 13px; line-height: 1.5; color: #737373">标题说这是什么，描述说该做什么；正文不再重复一个大标题<br>头部、正文、底栏四边都是 16；× 贴角，离边 8</div>
+    </div>
+    <div style="height: 720px; border-radius: 0px; display: flex; justify-content: center; align-items: flex-start; padding-top: 64px; box-sizing: border-box; background-color: #0000001A; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px)">
+      <div style="width: 560px; box-sizing: border-box; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E5E5; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden">
+        <div style="display: flex; align-items: flex-start; gap: 16px; padding: 16px 16px 0 16px">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; padding-top: 0px">
+            <div style="font-size: 16px; font-weight: 600; line-height: 1.4">添加账户</div>
+            <div style="color: #737373; line-height: 1.6">输入邮箱地址，自动识别服务商；也可以直接在下面选择。</div>
+          </div>
+          <button type="button" aria-label="关闭" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; margin-right: -8px; margin-top: -8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px">
+          <div style="display: flex; gap: 8px">
+            <input type="email" aria-label="邮箱地址" placeholder="you@example.com" style="flex: 1; min-width: 0; height: 36px; box-sizing: border-box; border: 1px solid #E5E5E5; border-radius: 6px; padding: 0 12px; font-size: 14px; color: #0A0A0A; background: #FFFFFF">
+            <button type="button" disabled="" style="height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: #171717; opacity: 0.5; color: #FFFFFF; font-weight: 500">继续</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; color: #737373; font-size: 12px"><div style="flex: 1; height: 1px; background: #E5E5E5"></div>或选择服务商<div style="flex: 1; height: 1px; background: #E5E5E5"></div></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <button type="button" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; text-align: left"><span style="width: 28px; height: 28px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #404040">G</span><span style="display: flex; flex-direction: column"><span style="font-size: 14px; font-weight: 500; color: #0A0A0A">Gmail</span><span style="font-size: 12px; color: #737373">应用专用密码</span></span></button>
+            <button type="button" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; text-align: left"><span style="width: 28px; height: 28px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #404040">O</span><span style="display: flex; flex-direction: column"><span style="font-size: 14px; font-weight: 500; color: #0A0A0A">Outlook / Hotmail</span><span style="font-size: 12px; color: #737373">浏览器登录</span></span></button>
+            <button type="button" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; text-align: left"><span style="width: 28px; height: 28px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #404040">163</span><span style="display: flex; flex-direction: column"><span style="font-size: 14px; font-weight: 500; color: #0A0A0A">网易 163 邮箱</span><span style="font-size: 12px; color: #737373">授权码</span></span></button>
+            <button type="button" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; text-align: left"><span style="width: 28px; height: 28px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #404040">@</span><span style="display: flex; flex-direction: column"><span style="font-size: 14px; font-weight: 500; color: #0A0A0A">其他 IMAP 邮箱</span><span style="font-size: 12px; color: #737373">手动设置</span></span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px; width: 720px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="font-size: 16px; font-weight: 600">kit.Dialog · lg 640 · 编辑模型服务</div>
+      <div style="font-size: 13px; line-height: 1.5; color: #737373">同一个头部（16px 标题 + 描述 + ×），投影 shadow-sm，两种主题都有描边<br>有操作时用底栏：危险操作靠左，主操作靠右</div>
+    </div>
+    <div style="height: 720px; border-radius: 0px; display: flex; justify-content: center; align-items: flex-start; padding-top: 64px; box-sizing: border-box; background-color: #0000001A; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px)">
+      <div style="width: 640px; box-sizing: border-box; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E5E5; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden">
+        <div style="display: flex; align-items: flex-start; gap: 16px; padding: 16px 16px 0 16px">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; padding-top: 0px">
+            <div style="font-size: 16px; font-weight: 600; line-height: 1.4">编辑 · OpenAI</div>
+            <div style="color: #737373; line-height: 1.6">Key 只存在本机钥匙串里。</div>
+          </div>
+          <button type="button" aria-label="关闭" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; margin-right: -8px; margin-top: -8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px">
+          <label style="display: flex; flex-direction: column; gap: 8px; font-weight: 500">名称<input type="text" value="OpenAI" style="height: 36px; box-sizing: border-box; border: 1px solid #E5E5E5; border-radius: 6px; padding: 0 12px; font-size: 14px; font-weight: 400; color: #0A0A0A"></label>
+          <label style="display: flex; flex-direction: column; gap: 8px; font-weight: 500">API Key<input type="password" value="sk-placeholder" style="height: 36px; box-sizing: border-box; border: 1px solid #E5E5E5; border-radius: 6px; padding: 0 12px; font-size: 14px; font-weight: 400; color: #0A0A0A"></label>
+          <label style="display: flex; flex-direction: column; gap: 8px; font-weight: 500">Base URL<input type="url" value="https://api.openai.com/v1" style="height: 36px; box-sizing: border-box; border: 1px solid #E5E5E5; border-radius: 6px; padding: 0 12px; font-size: 14px; font-weight: 400; color: #0A0A0A"></label>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid #E5E5E5; background: #FAFAFA">
+          <button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #E7000B; font-weight: 500">删除</button>
+          <div style="flex: 1"></div>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">取消</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px; width: 640px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="font-size: 16px; font-weight: 600">kit.Dialog · sm 440 · 确认</div>
+      <div style="font-size: 13px; line-height: 1.5; color: #737373">也贴顶 64；遮罩黑 10% + 4px 模糊：所有弹层从同一个位置出现<br>没有正文时，头部直接接底栏</div>
+    </div>
+    <div style="height: 720px; border-radius: 0px; display: flex; justify-content: center; align-items: flex-start; padding-top: 64px; box-sizing: border-box; background-color: #0000001A; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px)">
+      <div style="width: 440px; box-sizing: border-box; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E5E5; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden">
+        <div style="display: flex; align-items: flex-start; gap: 16px; padding: 16px">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px; padding-top: 0px">
+            <div style="font-size: 16px; font-weight: 600; line-height: 1.4">移除 MCP 服务器 filesystem？</div>
+            <div style="color: #737373; line-height: 1.6">Wit 将不能再调用它的工具。之后可以重新添加。</div>
+          </div>
+          <button type="button" aria-label="关闭" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; margin-right: -8px; margin-top: -8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #E5E5E5; background: #FAFAFA">
+          <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">取消</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #E7000B; color: #FFFFFF; font-weight: 500">删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2160,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

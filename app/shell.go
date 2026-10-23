@@ -90,6 +90,11 @@ func (a *App) setRoute(r Route) {
 func (a *App) onEvent(ev events.Event) {
 	a.events++
 	switch ev.Type {
+	case events.RunsChanged: // only the Wit sidebar shows it: no refresh of the rest
+		if p, ok := a.pages[PageWit].(*askPage); ok && a.route.Page == PageWit {
+			p.load()
+		}
+		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 	case events.SyncStarted:

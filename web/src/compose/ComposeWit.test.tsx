@@ -31,6 +31,9 @@ vi.mock("@/mygo", () => ({
     rewrite: vi.fn(),
     openLink: vi.fn(),
     send: vi.fn(),
+    models: vi.fn(),
+    openCited: vi.fn(),
+    checkCited: vi.fn(),
   },
   events: {
     closing: { on: () => () => {} },
@@ -138,6 +141,7 @@ const pending: Approval = {
   error: "",
   destinations: [],
   sessionAllow: false,
+  draft: 0,
   args: "",
 };
 const withPending: WitHistory = {
@@ -409,7 +413,7 @@ test("locked while running: typing in the body toasts once", async () => {
   vi.mocked(api.ask).mockResolvedValue(7);
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "改短{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", []));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", [], "", ""));
   expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
   const b = await body();
   expect(b).toHaveAttribute("readonly");
@@ -576,7 +580,7 @@ test("after a ⌘K run, free input in the panel runs Ask", async () => {
     screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }),
     "更正式{Enter}",
   );
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式", []));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("更正式", [], "", ""));
   expect(api.rewrite).toHaveBeenCalledTimes(1);
 });
 
@@ -643,7 +647,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
   // the next question can start: nothing waits
   vi.mocked(api.ask).mockResolvedValue(9);
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", []));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", [], "", ""));
 });
 
 test("Stop while ⌘K starts stops its run once Rewrite returns it, never another run", async () => {
@@ -729,7 +733,7 @@ test("全部允许 on a run with a tool's call and a body edit settles both: the
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
   vi.mocked(api.ask).mockResolvedValue(9);
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", []));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", [], "", ""));
 });
 
 test("a run's end drops its body edits no longer waiting", async () => {
@@ -796,4 +800,19 @@ test("a language change keeps the draft and the panel's unsent question", async 
   await waitFor(() => expect(api.follow).toHaveBeenCalledOnce());
   expect(question).toBeInTheDocument();
   expect(question).toHaveValue("unsent question");
+});
+
+test("the panel picks the conversation's model as the Wit page does: the next Ask runs on it", async () => {
+  vi.mocked(api.models).mockResolvedValue([
+    { ref: "a/sonnet", service: "A", name: "sonnet", default: true },
+    { ref: "b/gpt", service: "B", name: "gpt", default: false },
+  ]);
+  vi.mocked(api.ask).mockResolvedValue(10);
+  vi.mocked(api.load).mockResolvedValue({ ...state, wit: { ...state.wit, model: "sonnet" } });
+  await setup();
+  const user = userEvent.setup();
+  await user.click(screen.getByTitle("选择模型"));
+  await user.click(await screen.findByRole("menuitemradio", { name: "gpt" }));
+  await user.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "改短{Enter}");
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", [], "b/gpt", ""));
 });

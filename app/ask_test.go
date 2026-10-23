@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/events"
 )
 
 // fakeWitView stands for the Wit page's *mygo.WebView.
@@ -152,6 +153,33 @@ func TestAskConversationsList(t *testing.T) {
 	})
 	if title, _ := h.ask().Title(); title != "" {
 		t.Fatalf("a new conversation titled %q", title)
+	}
+}
+
+// A conversation waiting on the user's decision says so in the sidebar.
+func TestAskConversationAwaiting(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.app.refresh(nil)
+	p := h.ask()
+	p.convs = []core.Conversation{{ID: 1, Kind: "ask", Title: "回复 Lena", Awaiting: true}, {ID: 2, Kind: "ask", Title: "这个月的订阅", Answering: true}}
+	p.listGen++ // the refresh's read, still under way, is dropped
+	h.see("回复 Lena")
+	h.see("待确认")
+	h.ask().convs[0].Awaiting = false
+	h.until("the badge gone once decided", func() bool { return !h.tt.HasText("待确认") })
+}
+
+// A run starting or ending re-reads the Wit sidebar alone, not the whole window.
+func TestAskRunsChangedReloadsTheList(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.app.refresh(nil)
+	before, gen := h.app.refreshes, h.ask().listGen
+	h.app.onEvent(events.Event{Type: events.RunsChanged, ConversationID: 1})
+	if h.ask().listGen == gen {
+		t.Fatal("the list was not read again")
+	}
+	if slices.ContainsFunc(h.app.dirty, func(e events.Event) bool { return e.Type == events.RunsChanged }) || h.app.refreshes != before {
+		t.Fatalf("a window refresh was queued: %v dirty, %d refreshes", h.app.dirty, h.app.refreshes-before)
 	}
 }
 

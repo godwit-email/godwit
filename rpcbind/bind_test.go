@@ -31,7 +31,7 @@ var sentinels = map[string]error{
 	"ErrUseAssist": core.ErrUseAssist, "ErrStaleApproval": core.ErrStaleApproval,
 	"ErrTooLarge": core.ErrTooLarge, "ErrLinkRef": core.ErrLinkRef, "ErrNotOnServerYet": core.ErrNotOnServerYet,
 	"ErrStaleDraft": core.ErrStaleDraft, "ErrRunActive": core.ErrRunActive, "ErrNotSynced": core.ErrNotSynced,
-	"ErrCompacting": core.ErrCompacting, "ErrNothingToCompact": core.ErrNothingToCompact,
+	"ErrCompacting": core.ErrCompacting, "ErrNothingToCompact": core.ErrNothingToCompact, "ErrDraftGone": core.ErrDraftGone,
 	"ErrKeychainUnavailable": core.ErrKeychainUnavailable, "ErrWrongAccount": core.ErrWrongAccount,
 	"ErrAccountNotFound":  core.ErrAccountNotFound,
 	"ErrProviderMismatch": core.ErrProviderMismatch, "ErrNeedsGrant": core.ErrNeedsGrant,
@@ -227,7 +227,7 @@ func TestWireCodesPinned(t *testing.T) {
 	pinned := map[string]error{
 		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge, "link_ref": core.ErrLinkRef,
 		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "not_synced": core.ErrNotSynced,
-		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact,
+		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
 		"account_not_found": core.ErrAccountNotFound,
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,

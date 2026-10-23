@@ -17,100 +17,109 @@ button{font:inherit;cursor:pointer}
 input,select{font:inherit}
 </style>
 </helmet>
-<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px">
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
   <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
     <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
     </span>
-    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
-    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></a>
-    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
-    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
-      <span style="font-weight: 600">设置</span>
-      <span style="font-size: 12px; color: #737373">通用</span>
-    </span>
-    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
   </div>
-  <div style="flex: 1; min-height: 0; display: flex">
-    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px"><a href="Main.dc.html" aria-label="邮件" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></a><a href="SettingsModels.dc.html" aria-label="设置" aria-current="page" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></a></nav>
-    <aside aria-label="设置" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: 14px; overflow: hidden"><div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373; padding-top: 4px">账户</div><a href="SettingsAccounts.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">QQ</span><span style="flex: 1">you@example.com</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span></a><a href="SettingsAccountsReauth.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">O</span><span style="flex: 1">work@company.example</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B"></span></a><a href="AddAccountSheet.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; color: #737373; justify-content: flex-start; gap: 8px"><span style="width: 20px; text-align: center">+</span>添加账户</a><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">应用</div><a href="SettingsGeneral.dc.html" aria-current="page" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 400; background: #EDEDED; font-weight: 500"><span>通用</span></a><a href="SettingsModels.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 400; background: transparent"><span>模型服务</span></a><a href="SettingsExtensions.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>扩展</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>隐私与安全</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>关于</span></a></aside>
-    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: auto; ">
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="general" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
 
     
 
-    <main style="flex: 999 1 560px; min-width: 0; padding: 24px; display: flex; flex-direction: column; max-width: 1040px">
-        <div style="display: flex; flex-direction: column; gap: 4px; padding-bottom: 16px">
-          <h1 style="margin: 0; font-size: 22px; font-weight: 600">通用</h1>
-          <span style="color: #737373">外观、语言和应用行为。</span>
-        </div>
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h2 style="margin: 0; font-size: 14px; font-weight: 600">外观</h2></div>
-          <div style="display: flex; flex-direction: column; gap: 14px"><div role="radiogroup" aria-label="主题" style="display: flex; gap: 12px; flex-wrap: wrap">
-            <sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
-              <button type="button" role="radio" onClick="{{t.pick}}" style="display: flex; flex-direction: column; gap: 6px; border: 0; background: transparent; padding: 0; color: #0A0A0A">
-                <span style="{{t.frame}}"><span style="{{t.rail}}"></span><span style="{{t.side}}"></span><span style="{{t.body}}"><span style="{{t.line}}"></span><span style="{{t.line2}}"></span></span></span>
-                <span style="font-size: 13px">{{t.name}}</span>
-              </button>
-            </sc-for>
-          </div><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>界面密度</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>紧凑（默认）</option><option>标准</option></select></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>字号</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>14 px（默认）</option><option>13 px</option><option>15 px</option><option>16 px</option></select></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>邮件正文字号</span><span style="font-size: 12px; color: #737373">只影响阅读区的正文</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>跟随界面</option><option>16 px</option><option>18 px</option></select></label></div>
-        </section>
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h2 style="margin: 0; font-size: 14px; font-weight: 600">语言</h2></div>
-          <div style="display: flex; flex-direction: column; gap: 14px"><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>界面语言</span><span style="font-size: 12px; color: #737373">重启后生效</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>跟随系统（简体中文）</option><option>简体中文</option><option>繁體中文</option><option>English</option><option>日本語</option></select></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>阅读语言</span><span style="font-size: 12px; color: #737373">给你看的内容用这种语言：总结、翻译、Wit 的回答</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>跟随界面语言</option><option>简体中文</option><option>English</option><option>日本語</option></select></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>回复语言</span><span style="font-size: 12px; color: #737373">Wit 和即时回复起草邮件时用的语言。默认用对方来信的语言，新写的邮件按收件人以往的来信判断</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>跟随来信语言（默认）</option><option>总是用阅读语言</option></select></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>不需要翻译的语言</span><span style="font-size: 12px; color: #737373">这些语言的邮件不显示翻译建议</span></span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; min-width: 220px"><option>简体中文、English</option></select></label></div>
-        </section>
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h2 style="margin: 0; font-size: 14px; font-weight: 600">启动与窗口</h2></div>
-          <div style="display: flex; flex-direction: column; gap: 14px"><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>开机时自动启动</span></span><button type="button" role="switch" aria-checked="{{sw.autostart.on}}" onClick="{{sw.autostart.toggle}}" style="{{sw.autostart.track}}"><span style="{{sw.autostart.thumb}}"></span></button></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>关闭窗口后保持在后台</span><span style="font-size: 12px; color: #737373">继续同步和接收通知，可从菜单栏图标打开</span></span><button type="button" role="switch" aria-checked="{{sw.background.on}}" onClick="{{sw.background.toggle}}" style="{{sw.background.track}}"><span style="{{sw.background.thumb}}"></span></button></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>在菜单栏显示未读数</span></span><button type="button" role="switch" aria-checked="{{sw.tray.on}}" onClick="{{sw.tray.toggle}}" style="{{sw.tray.track}}"><span style="{{sw.tray.thumb}}"></span></button></label></div>
-        </section>
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h2 style="margin: 0; font-size: 14px; font-weight: 600">通知</h2></div>
-          <div style="display: flex; flex-direction: column; gap: 14px"><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>新邮件通知</span></span><button type="button" role="switch" aria-checked="{{sw.notify.on}}" onClick="{{sw.notify.toggle}}" style="{{sw.notify.track}}"><span style="{{sw.notify.thumb}}"></span></button></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>只通知「待回复」等智能视图里的邮件</span><span style="font-size: 12px; color: #737373">其余邮件静默同步</span></span><button type="button" role="switch" aria-checked="{{sw.smartOnly.on}}" onClick="{{sw.smartOnly.toggle}}" style="{{sw.smartOnly.track}}"><span style="{{sw.smartOnly.thumb}}"></span></button></label><label style="display: flex; align-items: center; justify-content: space-between; gap: 16px"><span style="display: flex; flex-direction: column; gap: 2px"><span>通知里显示邮件预览</span><span style="font-size: 12px; color: #737373">关闭后只显示发件人</span></span><button type="button" role="switch" aria-checked="{{sw.preview.on}}" onClick="{{sw.preview.toggle}}" style="{{sw.preview.track}}"><span style="{{sw.preview.thumb}}"></span></button></label></div>
-        </section>
-      </main>
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px"><div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">通用</h1><span style="color: #737373">外观、语言和应用行为。</span></div></div>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">外观</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<div style="padding: 8px 16px; border-top: 1px solid #E5E5E5"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">主题</span><span style="font-size: 12px; color: #737373">跟随系统时随 macOS 的外观切换</span></span>
+<div role="radiogroup" aria-label="主题" style="flex: none; display: flex; gap: 10px">
+<sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
+<button type="button" role="radio" aria-checked="{{t.checked}}" aria-label="{{t.name}}" onClick="{{t.pick}}" onMouseEnter="{{t.enter}}" onMouseLeave="{{t.leave}}" onFocus="{{t.enter}}" onBlur="{{t.leave}}" style="position: relative; display: flex; border: 0; background: transparent; padding: 0; color: #0A0A0A">
+<span style="{{t.frame}}"><span style="{{t.rail}}"></span><span style="{{t.side}}"></span><span style="{{t.body}}"><span style="{{t.line}}"></span><span style="{{t.line2}}"></span></span></span>
+<sc-if value="{{t.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none">{{t.name}}</span></sc-if>
+</button>
+</sc-for>
+</div></div></div>
+<dc-import name="SettingsRow" label="界面密度" control="select" options="紧凑（默认）|标准" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="字号" control="select" options="14 px（默认）|13 px|15 px|16 px" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="邮件正文字号" desc="只影响阅读区的正文" control="select" options="跟随界面|16 px|18 px" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">语言</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="界面语言" desc="重启后生效" control="select" options="跟随系统（简体中文）|简体中文|繁體中文|English|日本語" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="阅读语言" desc="总结、翻译和 Wit 的回答用这种语言" control="select" options="跟随界面语言|简体中文|English|日本語" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="回复语言" desc="Wit 和即时回复起草邮件时用。默认跟随来信，新邮件按收件人以往的来信判断" control="select" options="跟随来信语言（默认）|总是用阅读语言" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="不需要翻译的语言" desc="这些语言的邮件不显示翻译建议" control="select" options="简体中文、English" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">启动与窗口</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="开机时自动启动" desc="登录后在后台启动 Godwit" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="关闭窗口后保持在后台" desc="继续同步和接收通知，可从菜单栏图标打开" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="在菜单栏显示未读数" control="switch" on="false" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">通知</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="新邮件通知" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="只通知智能视图里的邮件" desc="比如「待回复」，其余邮件静默同步" control="switch" on="false" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="通知里显示邮件预览" desc="关闭后只显示发件人" control="switch" on="false" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+</main>
   
-    </div>
+    </div></div>
   </div>
+</div>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { theme: 'system', sw: { autostart: true, background: true, tray: false, notify: true, smartOnly: false, preview: false } };
+    this.state = { theme: 'system', hover: null };
   }
   renderVals() {
     var self = this;
-    var pal = { light: ['#ECECEC', '#F9F9F9', '#FFFFFF', '#E5E5E5'], dark: ['#1C1C1C', '#232323', '#171717', '#333333'] };
-    var tile = function (id, name, colors, split) {
+    var pal = { light: ['#EDEDED', '#FAFAFA', '#FFFFFF', '#E5E5E5'], dark: ['#1E1E1E', '#171717', '#0A0A0A', '#404040'] };
+    var tile = function (id, name, c, split) {
       var on = self.state.theme === id;
-      var c = colors;
       return {
         name: name,
+        checked: on ? 'true' : 'false',
         pick: function () { self.setState({ theme: id }); },
-        frame: 'width: 132px; height: 84px; box-sizing: border-box; display: flex; overflow: hidden; border-radius: 8px; border: ' + (on ? '2px solid #171717' : '1px solid #E5E5E5') + '; background: ' + c[0] + (split ? '; background-image: linear-gradient(135deg, #ECECEC 50%, #1C1C1C 50%)' : ''),
-        rail: 'width: 14px',
-        side: 'width: 34px; margin-top: 10px; background: ' + c[1] + '; border-top-left-radius: 6px',
-        body: 'flex: 1; margin-top: 10px; background: ' + c[2] + '; display: flex; flex-direction: column; gap: 6px; padding: 10px',
-        line: 'height: 5px; width: 70%; border-radius: 3px; background: ' + c[3],
-        line2: 'height: 5px; width: 45%; border-radius: 3px; background: ' + c[3]
+        frame: 'width: 76px; height: 48px; box-sizing: border-box; display: flex; overflow: hidden; border-radius: 6px; border: ' + (on ? '2px solid #171717' : '1px solid #E5E5E5') + '; background: ' + c[0] + (split ? '; background-image: linear-gradient(135deg, #EDEDED 50%, #1E1E1E 50%)' : ''),
+        rail: 'width: 8px',
+        tip: self.state.hover === id,
+        enter: function () { self.setState({ hover: id }); },
+        leave: function () { self.setState({ hover: null }); },
+        side: 'width: 18px; margin-top: 6px; background: ' + c[1] + '; border-top-left-radius: 6px',
+        body: 'flex: 1; margin-top: 6px; background: ' + c[2] + '; display: flex; flex-direction: column; gap: 4px; padding: 6px',
+        line: 'height: 3px; width: 70%; border-radius: 2px; background: ' + c[3],
+        line2: 'height: 3px; width: 45%; border-radius: 2px; background: ' + c[3]
       };
     };
-    var sw = {};
-    Object.keys(this.state.sw).forEach(function (k) {
-      var on = self.state.sw[k];
-      sw[k] = {
-        on: on ? 'true' : 'false',
-        toggle: function () { var n = Object.assign({}, self.state.sw); n[k] = !on; self.setState({ sw: n }); },
-        track: 'flex: none; width: 32px; height: 18px; padding: 2px; box-sizing: border-box; border: 0; border-radius: 9px; display: flex; align-items: center; transition: background 120ms; background: ' + (on ? '#171717' : '#E5E5E5') + '; justify-content: ' + (on ? 'flex-end' : 'flex-start'),
-        thumb: 'width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)'
-      };
-    });
-    return {
-      sw: sw,
-      themes: [tile('system', '跟随系统', pal.light, true), tile('light', '浅色', pal.light, false), tile('dark', '深色', pal.dark, false)]
-    };
+    return { themes: [tile('system', '跟随系统', pal.light, true), tile('light', '浅色', pal.light, false), tile('dark', '深色', pal.dark, false)] };
   }
 }
 </script>

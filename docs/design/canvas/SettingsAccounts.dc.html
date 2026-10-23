@@ -17,122 +17,146 @@ button{font:inherit;cursor:pointer}
 input,select{font:inherit}
 </style>
 </helmet>
-<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px">
+<div style="{{frame.outer}}">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="{{frame.wall}}">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="{{frame.win}}; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
   <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
     <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
     </span>
-    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
-    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></a>
-    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
-    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
-      <span style="font-weight: 600">设置</span>
-      <span style="font-size: 12px; color: #737373">账户 · {{sel.email}}</span>
-    </span>
-    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
   </div>
-  <div style="flex: 1; min-height: 0; display: flex">
-    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px"><a href="Main.dc.html" aria-label="邮件" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></a><a href="SettingsModels.dc.html" aria-label="设置" aria-current="page" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></a></nav>
-    <aside aria-label="设置" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: 14px; overflow: hidden"><div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div>
-      <div style="padding: 14px 8px 6px; font-size: 12px; color: #737373; padding-top: 4px">账户</div>
-      <sc-for list="{{accounts}}" as="a" hint-placeholder-count="2">
-        <button type="button" onClick="{{a.pick}}" style="{{a.sideStyle}}">
-          <span style="width: 20px; height: 20px; flex: none; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">{{a.mark}}</span>
-          <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left">{{a.email}}</span>
-          <span style="{{a.dotStyle}}"></span>
-        </button>
-      </sc-for>
-      <a href="AddAccountSheet.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; color: #737373; justify-content: flex-start; gap: 8px"><span style="width: 20px; text-align: center">+</span>添加账户</a>
-      <div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">应用</div>
-      <a href="SettingsGeneral.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 400; background: transparent"><span>通用</span></a><a href="SettingsModels.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>模型服务</span></a>
-      <a href="SettingsExtensions.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>扩展</span></a>
-      <a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>隐私与安全</span></a>
-      <a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>关于</span></a>
-    </aside>
-    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: auto; ">
-<main style="flex: 1; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 20px; max-width: 1040px">
-      <div style="display: flex; align-items: center; gap: 14px">
-        <span style="width: 44px; height: 44px; flex: none; border-radius: 10px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-weight: 600; color: #404040">{{sel.mark}}</span>
-        <span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0">
-          <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><h1 style="margin: 0; font-size: 20px; font-weight: 600">{{sel.email}}</h1><sc-if value="{{sel.isDefault}}" hint-placeholder-val="{{ false }}"><span style="padding: 1px 8px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #404040">默认发件</span></sc-if></span>
-          <span style="color: #737373; font-size: 13px">{{sel.meta}}</span>
-        </span>
-        <span style="{{sel.statusStyle}}">{{sel.status}}</span>
-      </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="{{sideCurrent}}" height="{{frame.side}}" hint-size="248px,{{frame.side}}px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: center; gap: 16px">
+<span style="width: 48px; height: 48px; box-sizing: border-box; flex: none; overflow: hidden; border-radius: 12px; background: #FFFFFF; border: 1px solid rgba(10,10,10,0.05); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"><img src="{{sel.logo}}" alt="" aria-hidden="true" style="width: 100%; height: 100%; display: block"></span>
+<span style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{sel.email}}</h1>
+<span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: #737373"><span>{{sel.meta}}</span><sc-if value="{{sel.isDefault}}" hint-placeholder-val="{{ false }}"><span style="padding: 2px 8px; border-radius: 4px; background: #F5F5F5; font-size: 12px; color: #0A0A0A">默认发件</span></sc-if><span style="{{sel.statusStyle}}">{{sel.status}}</span></span>
+</span>
+</div>
+<sc-if value="{{sel.reauth}}" hint-placeholder-val="{{ false }}">
+<div role="alert" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #FFD230; border-radius: 12px; background: #FFFBEB; color: #973C00; flex-wrap: wrap">
+<span style="flex: 1; min-width: 240px">登录已过期，3 小时前起停止同步。本地邮件仍可查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。</span>
+<button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #973C00; color: #FFFFFF">在浏览器中重新登录</button>
+</div>
+</sc-if>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">基本信息</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="发件人名称" desc="收件人看到的名字" control="input" value="{{sel.sender}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="侧栏显示名称" control="input" value="{{sel.alias}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="设为默认发件账户" desc="在「全部收件箱」里写邮件时使用" control="switch" on="{{sel.isDefault}}" hint-size="100%,48px"></dc-import>
+</div></div>
 
-      <div style="display: flex; flex-direction: column">
-        <sc-if value="{{sel.reauth}}" hint-placeholder-val="{{ false }}">
-          <div role="alert" style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 8px; border: 1px solid #FCD34D; border-radius: 8px; background: #FFFBEB; color: #92400E; flex-wrap: wrap">
-            <span style="flex: 1; min-width: 240px">登录已过期，3 小时前起停止同步。本地已有的邮件仍然可以查看和搜索，写好的邮件会留在发件箱，重新登录后自动发出。</span>
-            <button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 6px; background: #92400E; color: #FFFFFF">在浏览器中重新登录</button>
-          </div>
-        </sc-if>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 id="sig-label" style="margin: 0; font-size: 14px; font-weight: 600">签名</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden">
+<div role="toolbar" aria-label="签名格式" style="display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid #E5E5E5; background: #FAFAFA"><button type="button" aria-label="加粗" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 11H12.5C13.8807 11 15 9.88071 15 8.5C15 7.11929 13.8807 6 12.5 6H8V11ZM18 15.5C18 17.9853 15.9853 20 13.5 20H6V4H12.5C14.9853 4 17 6.01472 17 8.5C17 9.70431 16.5269 10.7981 15.7564 11.6058C17.0979 12.3847 18 13.837 18 15.5ZM8 13V18H13.5C14.8807 18 16 16.8807 16 15.5C16 14.1193 14.8807 13 13.5 13H8Z"></path></svg></button><button type="button" aria-label="斜体" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 20H7V18H9.92661L12.0425 6H9V4H17V6H14.0734L11.9575 18H15V20Z"></path></svg></button><button type="button" aria-label="下划线" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 3V12C8 14.2091 9.79086 16 12 16C14.2091 16 16 14.2091 16 12V3H18V12C18 15.3137 15.3137 18 12 18C8.68629 18 6 15.3137 6 12V3H8ZM4 20H20V22H4V20Z"></path></svg></button><span aria-hidden="true" style="width: 1px; height: 16px; margin: 0 4px; background: #E5E5E5"></span><button type="button" aria-label="链接" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.3638 15.5355L16.9496 14.1213L18.3638 12.7071C20.3164 10.7545 20.3164 7.58866 18.3638 5.63604C16.4112 3.68341 13.2453 3.68341 11.2927 5.63604L9.87849 7.05025L8.46428 5.63604L9.87849 4.22182C12.6122 1.48815 17.0443 1.48815 19.778 4.22182C22.5117 6.95549 22.5117 11.3876 19.778 14.1213L18.3638 15.5355ZM15.5353 18.364L14.1211 19.7782C11.3875 22.5118 6.95531 22.5118 4.22164 19.7782C1.48797 17.0445 1.48797 12.6123 4.22164 9.87868L5.63585 8.46446L7.05007 9.87868L5.63585 11.2929C3.68323 13.2455 3.68323 16.4113 5.63585 18.364C7.58847 20.3166 10.7543 20.3166 12.7069 18.364L14.1211 16.9497L15.5353 18.364ZM14.8282 7.75736L16.2425 9.17157L9.17139 16.2426L7.75717 14.8284L14.8282 7.75736Z"></path></svg></button><button type="button" aria-label="插入图片" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.9918 21C2.44405 21 2 20.5551 2 20.0066V3.9934C2 3.44476 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.44495 22 3.9934V20.0066C22 20.5552 21.5447 21 21.0082 21H2.9918ZM20 15V5H4V19L14 9L20 15ZM20 17.8284L14 11.8284L6.82843 19H20V17.8284ZM8 11C6.89543 11 6 10.1046 6 9C6 7.89543 6.89543 7 8 7C9.10457 7 10 7.89543 10 9C10 10.1046 9.10457 11 8 11Z"></path></svg></button></div>
+<div contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="sig-label" style="min-height: 96px; padding: 10px 12px; line-height: 1.6; outline: none">
+<div style="font-weight: 600">{{sel.sigName}}</div>
+<div style="color: #737373">{{sel.sigLine}}</div>
+<div><a href="#" style="color: #0A0A0A; text-decoration: underline">{{sel.sigLink}}</a></div>
+</div>
+</div>
+<span style="font-size: 12px; color: #737373">写信时自动加在正文末尾，Wit 不会修改它。可以加粗、加链接和图片（比如公司标志）。</span>
 
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">基本信息</h3></div>
-          <div style="display: flex; flex-direction: column; gap: 12px"><label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">发件人名称</span><input type="text" value="{{sel.sender}}" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
-          <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">侧栏显示名称</span><input type="text" value="{{sel.alias}}" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px"></label>
-          <label style="display: flex; align-items: center; gap: 8px"><input type="checkbox" checked="{{sel.isDefault}}">设为默认发件账户（在「全部收件箱」里写邮件时使用）</label></div>
-        </section>
 
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">签名</h3><span style="font-size: 13px; color: #737373">写信时自动加在正文末尾，Wit 不会修改它。</span></div>
-          <div style="display: flex; flex-direction: column; gap: 12px"><textarea rows="3" aria-label="签名" style="padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 6px; font: inherit; resize: vertical">{{sel.signature}}</textarea></div>
-        </section>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">同步</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="同步状态" desc="{{sel.syncState}}" control="button" action="立即同步" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="同步范围" control="select" options="每个文件夹最近 2000 封|最近 3 个月|全部" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="本地占用" desc="邮件缓存和附件" control="button" value="{{sel.disk}}" action="清理附件缓存" hint-size="100%,48px"></dc-import>
+</div></div>
 
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">同步</h3></div>
-          <div style="display: flex; flex-direction: column; gap: 12px"><div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><span>{{sel.syncState}}</span><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">立即同步</button></div>
-          <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">同步范围</span><select style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF"><option>每个文件夹最近 2000 封</option><option>最近 3 个月</option><option>全部</option></select></label>
-          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><span style="color: #737373">本地占用 {{sel.disk}}</span><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">清理附件缓存</button></div></div>
-        </section>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">邮箱行为</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="草稿" desc="写到一半的邮件存在这里" control="select" options="{{sel.box.drafts}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="已发送" control="select" options="{{sel.box.sent}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="垃圾邮件" control="select" options="{{sel.box.junk}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="清除垃圾邮件" desc="超过这个时间的垃圾邮件会被永久删除" control="select" options="永不|一天后|一周后|一个月后" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="已删除" desc="删除的邮件先移到这里" control="select" options="{{sel.box.trash}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="清除已删除的邮件" desc="超过这个时间的已删除邮件会被永久删除" control="select" options="永不|一天后|一周后|一个月后" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="归档" desc="按「归档」时邮件移到这里" control="select" options="{{sel.box.archive}}" hint-size="100%,48px"></dc-import>
+</div></div>
+<span style="font-size: 12px; color: #737373">服务器一般会标明哪个文件夹是草稿、已发送、垃圾邮件，Godwit 会自动识别；认错了再在这里改。清除是从服务器上永久删除，其他设备也会看不到。</span>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">登录与服务器</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="登录方式" desc="{{sel.auth}}" control="button" action="{{sel.authAction}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="IMAP" control="value" value="{{sel.imap}}" mono="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="SMTP" control="value" value="{{sel.smtp}}" mono="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="服务器设置" desc="手动修改地址、端口和加密方式" control="button" action="编辑" hint-size="100%,48px"></dc-import>
+</div></div>
 
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">登录与服务器</h3></div>
-          <div style="display: flex; flex-direction: column; gap: 12px"><div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap"><span>{{sel.auth}}</span><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">{{sel.authAction}}</button></div>
-          <div style="display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 6px 12px; font-family: 'Geist Mono', monospace; font-size: 12px; color: #404040"><span style="color: #737373">IMAP</span><span>{{sel.imap}}</span><span style="color: #737373">SMTP</span><span>{{sel.smtp}}</span></div>
-          <button type="button" style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A">编辑服务器设置</button></div>
-        </section>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">删除账户</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="从本机移除这个账户" desc="清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响" control="button" action="删除账户" tone="danger" hint-size="100%,48px"></dc-import>
+</div></div>
 
-        <section style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 20px 0; border-top: 1px solid #F0F0F0">
-          <div style="display: flex; flex-direction: column; gap: 4px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">删除账户</h3><span style="font-size: 13px; color: #737373">清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响。</span></div>
-          <div style="display: flex; flex-direction: column; gap: 12px"><button type="button" style="align-self: flex-start; height: 32px; padding: 0 12px; border: 1px solid #FECACA; border-radius: 6px; background: #FFFFFF; color: #DC2626">删除 {{sel.email}}</button></div>
-        </section>
-      </div>
-    </main>
-    </div>
+</section>
+</main>
+    </div></div>
   </div>
 </div>
+</div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"initialAccount":{"editor":"int","min":0,"max":1,"default":0},"$preview":{"width":1440,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"initialAccount":{"editor":"int","min":0,"max":1,"default":0},"height":{"editor":"int","default":900},"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
-  constructor(props) {
-    super(props);
-    this.state = { sel: Number(props.initialAccount ?? 0) };
-  }
   renderVals() {
-    var self = this;
+    var i = Number(this.props.initialAccount ?? 0);
     var data = [
-      { mark: 'QQ', email: 'you@example.com', meta: 'QQ 邮箱 · 6 个文件夹', isDefault: true, status: '已同步 · 刚刚', ok: true, reauth: false,
-        sender: '[你的名字]', alias: '个人', signature: '[你的名字]\n[职位 · 电话]', syncState: '已同步 · 刚刚 · 12 封未读', disk: '1.2 GB',
+      { logo: '/_blob/e71f2ef62b573685b58a37e7915619a5', email: 'you@example.com', meta: 'QQ 邮箱 · 6 个文件夹', isDefault: true, status: '已同步 · 刚刚', ok: true, reauth: false,
+        sender: '[你的名字]', alias: '个人', sigName: '[你的名字]', sigLine: '[职位] · [电话]', sigLink: '[你的网站]', syncState: '已同步 · 刚刚 · 12 封未读', disk: '1.2 GB',
+        folders: ['Drafts', 'Sent Messages', 'Junk', 'Deleted Messages'], roles: { drafts: 'Drafts', sent: 'Sent Messages', junk: 'Junk', trash: 'Deleted Messages', archive: '' },
         auth: '授权码 · 保存在系统钥匙串', authAction: '更新授权码', imap: 'imap.qq.com:993 · SSL/TLS', smtp: 'smtp.qq.com:465 · SSL/TLS' },
-      { mark: 'O', email: 'work@company.example', meta: 'Outlook · 9 个文件夹', isDefault: false, status: '需要重新登录', ok: false, reauth: true,
-        sender: '[你的名字]', alias: '工作', signature: '[你的名字] | [公司]', syncState: '3 小时前停止同步', disk: '640 MB',
+      { logo: '/_blob/f87b872b0e22c9cb9ac5bef610a91628', email: 'work@company.example', meta: 'Outlook · 9 个文件夹', isDefault: false, status: '需要重新登录', ok: false, reauth: true,
+        sender: '[你的名字]', alias: '工作', sigName: '[你的名字]', sigLine: '[职位] · [公司]', sigLink: '[公司网站]', syncState: '3 小时前停止同步', disk: '640 MB',
+        folders: ['Drafts', 'Sent Items', 'Junk Email', 'Deleted Items', 'Archive', 'Conversation History'], roles: { drafts: 'Drafts', sent: 'Sent Items', junk: 'Junk Email', trash: 'Deleted Items', archive: 'Archive' },
         auth: '浏览器登录（OAuth）· 令牌已过期', authAction: '重新登录', imap: 'outlook.office365.com:993 · SSL/TLS', smtp: 'smtp.office365.com:587 · STARTTLS' }
     ];
-    var sel = this.state.sel;
+    var a = data[i] || data[0];
+    var H = Number(this.props.height ?? 900);
     return {
-      accounts: data.map(function (a, i) {
-        var on = i === sel;
-        return Object.assign({}, a, {
-          pick: function () { self.setState({ sel: i }); },
-          sideStyle: 'display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; color: #0A0A0A; background: ' + (on ? '#EDEDED' : 'transparent') + '; font-weight: ' + (on ? '500' : '400'),
-          dotStyle: 'width: 6px; height: 6px; flex: none; border-radius: 50%; background: ' + (a.ok ? '#16A34A' : '#F59E0B')
-        });
-      }),
-      sel: Object.assign({}, data[sel], { statusStyle: 'font-size: 12px; padding: 2px 8px; border-radius: 4px; flex: none; ' + (data[sel].ok ? 'color: #15803D; background: #F0FDF4' : 'color: #92400E; background: #FFFBEB') })
+      frame: {
+        outer: 'position: relative; width: 1440px; height: ' + H + 'px; border-radius: 12px; overflow: hidden',
+        wall: 'position: absolute; left: -120px; top: -120px; width: 1680px; height: ' + (H + 240) + 'px; object-fit: cover',
+        win: 'position: relative; width: 1440px; height: ' + H + 'px',
+        side: H - 52
+      },
+      sideCurrent: 'account-' + i,
+      sel: Object.assign({}, a, {
+        box: (function () {
+          var out = {};
+          Object.keys(a.roles).forEach(function (k) {
+            var cur = a.roles[k];
+            var rest = a.folders.filter(function (f) { return f !== cur; });
+            var list = (cur ? [cur] : ['不使用']).concat(rest);
+            if (cur && k === 'archive') list.push('不使用');
+            out[k] = list.join('|');
+          });
+          return out;
+        })(),
+        diskText: '本地占用 ' + a.disk,
+        deleteText: '从本机移除 ' + a.email,
+        statusStyle: 'font-size: 12px; padding: 2px 8px; border-radius: 4px; flex: none; ' + (a.ok ? 'color: #008236; background: #F0FDF4' : 'color: #973C00; background: #FFFBEB')
+      })
     };
   }
 }

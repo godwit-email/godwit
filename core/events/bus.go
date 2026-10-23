@@ -13,6 +13,7 @@ const (
 	OutboxChanged     = "outbox.changed"
 	SettingsChanged   = "settings.changed"
 	ApprovalsChanged  = "approvals.changed"
+	RunsChanged       = "runs.changed" // a run of an ask conversation started or ended
 	PluginsChanged    = "plugins.changed"
 	MCPChanged        = "mcp.changed"
 	LabelsChanged     = "labels.changed"
@@ -34,7 +35,7 @@ type Event struct {
 	// Kind is a sync.failed's conn.FailureKind (dns, connect, timeout, tls,
 	// auth, protocol), or empty when the connection was fine.
 	Kind string
-	// ConversationID is set on approvals.changed.
+	// ConversationID is set on approvals.changed and runs.changed.
 	ConversationID int64
 }
 

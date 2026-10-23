@@ -17,128 +17,90 @@ button{font:inherit;cursor:pointer}
 input,select{font:inherit}
 </style>
 </helmet>
-<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: #ECECEC; border: 1px solid #D4D4D4; border-radius: 12px">
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
   <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
     <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
       <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
     </span>
-    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M9 4v16"></path></svg></button>
-    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></a>
-    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
-    <span style="position: absolute; left: 304px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid #DDDDDD; margin: 10px 0">
-      <span style="font-weight: 600">设置</span>
-      <span style="font-size: 12px; color: #737373">扩展</span>
-    </span>
-    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span>已同步 · 刚刚</span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
   </div>
-  <div style="flex: 1; min-height: 0; display: flex">
-    <nav aria-label="主导航" style="flex: 0 0 56px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0 12px"><a href="Main.dc.html" aria-label="邮件" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="M3.5 7l8.5 6 8.5-6"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" style="width: 40px; height: 40px; border-radius: 10px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg></a><a href="SettingsModels.dc.html" aria-label="设置" aria-current="page" style="margin-top: auto; width: 40px; height: 40px; border-radius: 10px; background: #DEDEDE; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></a></nav>
-    <aside aria-label="设置" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; background: #F9F9F9; border-top: 1px solid #E5E5E5; border-left: 1px solid #E5E5E5; border-right: 1px solid #E5E5E5; border-top-left-radius: 14px; overflow: hidden"><div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373; padding-top: 4px">账户</div><a href="SettingsAccounts.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">QQ</span><span style="flex: 1">you@example.com</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #16A34A"></span></a><a href="SettingsAccountsReauth.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; justify-content: flex-start; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 5px; background: #EDEDED; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #404040">O</span><span style="flex: 1">work@company.example</span><span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B"></span></a><a href="AddAccountSheet.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400; color: #737373; justify-content: flex-start; gap: 8px"><span style="width: 20px; text-align: center">+</span>添加账户</a><div style="padding: 14px 8px 6px; font-size: 12px; color: #737373">应用</div><a href="SettingsGeneral.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; font-weight: 400; background: transparent"><span>通用</span></a><a href="SettingsModels.dc.html" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>模型服务</span></a><a href="SettingsExtensions.dc.html" aria-current="page" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: #EDEDED; font-weight: 500"><span>扩展</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>隐私与安全</span></a><a href="#" style="display: flex; justify-content: space-between; align-items: center; height: 32px; padding: 0 8px 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: transparent; font-weight: 400"><span>关于</span></a></aside>
-    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-top: 1px solid #E5E5E5; display: flex; overflow: auto; ">
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="extensions" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
 
     
 
-    <main style="flex: 999 1 560px; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 20px">
-      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap">
-        <div style="display: flex; flex-direction: column; gap: 4px">
-          <h1 style="margin: 0; font-size: 22px; font-weight: 600">扩展</h1>
-          <span style="color: #737373">Skill 写 prompt 就能用；插件运行在沙箱里，只能用你批准的权限；MCP 给 Wit 接入外部工具。</span>
-        </div>
-        <button type="button" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #0A0A0A; color: #FFFFFF; font-weight: 500">从文件夹安装</button>
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px"><div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">扩展</h1><span style="color: #737373">Skill 写 prompt 就能用；插件运行在沙箱里，只能用你批准的权限；MCP 给 Wit 接入外部工具。</span></div><button type="button" onClick="{{openAdd}}" style="flex: none; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">从文件夹安装</button></div>
+<div role="tablist" aria-label="扩展类型" style="display: flex; gap: 4px; border-bottom: 1px solid #E5E5E5">
+        <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #737373">Skill · 5</button>
+        <button type="button" role="tab" aria-selected="true" style="height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid #171717; background: transparent; color: #0A0A0A; font-weight: 600">插件 · 4</button>
+        <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #737373">MCP · 1</button>
       </div>
-
-      <div role="tablist" aria-label="扩展类型" style="display: flex; gap: 4px; border-bottom: 1px solid #E5E5E5">
-        <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #737373">Skill · 5</button>
-        <button type="button" role="tab" aria-selected="true" style="height: 32px; padding: 0 14px; border: 0; border-bottom: 2px solid #171717; background: transparent; color: #0A0A0A; font-weight: 600">插件 · 4</button>
-        <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #737373">MCP · 1</button>
-      </div>
-
-      <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start">
-        <div style="flex: 1 1 300px; max-width: 380px; display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; overflow: hidden">
-          <sc-for list="{{plugins}}" as="p" hint-placeholder-count="4">
-            <div style="{{p.rowStyle}}">
-              <span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0">
-                <span style="font-weight: 500">{{p.name}}</span>
-                <span style="font-size: 13px; color: #737373">{{p.desc}}</span>
-              </span>
-              <span style="{{p.statusStyle}}">{{p.status}}</span>
-            </div>
-          </sc-for>
-        </div>
-
-        <section aria-label="插件详情" style="flex: 999 1 420px; min-width: 0; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; padding: 20px; display: flex; flex-direction: column; gap: 18px">
-          <div style="display: flex; flex-direction: column; gap: 4px">
-            <h2 style="margin: 0; font-size: 17px; font-weight: 600">deepl-translate <span style="font-weight: 400; color: #737373; font-size: 13px">0.1.0 · 待授权</span></h2>
-            <span style="color: #737373">在邮件上增加「DeepL 翻译」按钮，不经过大模型。</span>
-          </div>
-
-          <div style="display: flex; flex-direction: column; gap: 8px">
-            <span style="font-weight: 600">它请求的权限</span>
-            <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px">
-              <li style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #F5F5F5">mail:read</span><span>读取你打开的邮件内容</span></li>
-              <li style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #F5F5F5">net</span><span>只能访问 api-free.deepl.com、api.deepl.com</span></li>
-              <li style="display: flex; gap: 10px; align-items: baseline; color: #737373"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #FAFAFA">不包含</span><span>修改邮件、调用大模型、发送邮件（任何插件都不能发送）</span></li>
-            </ul>
-          </div>
-
-          <div style="display: flex; flex-direction: column; gap: 14px; padding-top: 16px; border-top: 1px solid #F5F5F5">
-            <span style="font-weight: 600">配置 <span style="font-weight: 400; color: #737373; font-size: 13px">· 表单由插件的 config 声明自动生成</span></span>
-            <label style="display: flex; flex-direction: column; gap: 6px">
-              <span style="font-weight: 500">DeepL API Key</span>
-              <input type="password" placeholder="粘贴你的 key" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px">
-            </label>
-            <label style="display: flex; flex-direction: column; gap: 6px">
-              <span style="font-weight: 500">套餐</span>
-              <select onChange="{{pickPlan}}" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF">
-                <option value="free">Free</option>
-                <option value="pro">Pro</option>
-              </select>
-            </label>
-            <sc-if value="{{isPro}}" hint-placeholder-val="{{ false }}">
-              <label style="display: flex; flex-direction: column; gap: 6px">
-                <span style="font-weight: 500">自定义地址 <span style="font-weight: 400; color: #737373; font-size: 13px">（套餐为 Pro 时显示）</span></span>
-                <input type="url" placeholder="https://api.deepl.com" style="height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px">
-              </label>
-            </sc-if>
-          </div>
-
-          <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button type="button" style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">允许并启用</button>
-            <button type="button" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button>
-          </div>
-        </section>
-      </div>
-    </main>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 600">插件</h2>
+<div style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<sc-for list="{{plugins}}" as="p" hint-placeholder-count="4">
+<sc-if value="{{p.enabled}}" hint-placeholder-val="{{ true }}"><dc-import name="SettingsRow" label="{{p.name}}" desc="{{p.desc}}" control="switch" on="true" hint-size="100%,48px"></dc-import></sc-if>
+<sc-if value="{{p.pending}}" hint-placeholder-val="{{ false }}">
+<div style="border-top: 1px solid #E5E5E5">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 8px 16px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">{{p.name}} <span style="font-weight: 400; font-size: 12px; color: #737373">0.1.0</span></span><span style="font-size: 12px; color: #737373">{{p.desc}}</span></span>
+<span style="flex: none; padding: 2px 8px; border-radius: 4px; background: #FFFBEB; color: #973C00; font-size: 12px">待授权</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px; padding: 4px 16px 16px">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-radius: 8px; background: #FAFAFA"><span style="font-weight: 500">它请求的权限</span><ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px">
+              <li style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #F5F5F5">mail:read</span><span>读取你打开的邮件内容</span></li>
+              <li style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #F5F5F5">net</span><span>只能访问 api-free.deepl.com、api.deepl.com</span></li>
+              <li style="display: flex; gap: 10px; align-items: baseline; color: #737373"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #F5F5F5">不包含</span><span>修改邮件、调用大模型、发送邮件（任何插件都不能发送）</span></li>
+            </ul></div>
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span style="font-weight: 500">配置 <span style="font-weight: 400; font-size: 12px; color: #737373">· 表单由插件的 config 声明生成</span></span>
+<label style="display: flex; flex-direction: column; gap: 6px"><span>DeepL API Key</span><input type="password" placeholder="粘贴你的 key" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span>套餐</span><select onChange="{{pickPlan}}" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><option value="Free">Free</option><option value="Pro">Pro</option></select></label>
+<sc-if value="{{isPro}}" hint-placeholder-val="{{ false }}"><label style="display: flex; flex-direction: column; gap: 6px"><span>自定义地址 <span style="font-size: 12px; color: #737373">（套餐为 Pro 时显示）</span></span><input type="url" placeholder="https://api.deepl.com" style="height: 32px; box-sizing: border-box; width: 100%; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A; font-family: 'Geist Mono', monospace; font-size: 12px"></label></sc-if>
+</div>
+<div style="display: flex; gap: 8px"><button type="button" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">允许并启用</button><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">暂不启用</button></div>
+</div>
+</div>
+</sc-if>
+</sc-for>
+</div></div>
+<span style="font-size: 12px; color: #737373">任何插件都不能发送邮件。</span>
+</section>
+</main>
   
-    </div>
+    </div></div>
   </div>
+</div>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { plan: 'free' };
+    this.state = { plan: 'Free' };
   }
   renderVals() {
     var self = this;
     var rows = [
-      ['内置 · 验证码与登录链接', '在本机识别新邮件里的验证码和登录链接，一键复制或打开', '已启用', false],
-      ['flight-cards', '航班邮件显示行程卡片', '已启用', false],
-      ['attachment-check', '发送前检查遗漏的附件', '已启用', false],
-      ['deepl-translate', '用 DeepL 翻译邮件', '待授权', true]
+      ['内置 · 验证码与登录链接', '在本机识别新邮件里的验证码和登录链接，一键复制或打开', false],
+      ['deepl-translate', '用 DeepL 翻译邮件，不经过大模型', true],
+      ['flight-cards', '航班邮件显示行程卡片', false],
+      ['attachment-check', '发送前检查遗漏的附件', false]
     ];
     return {
-      plugins: rows.map(function (r, i) {
-        return {
-          name: r[0], desc: r[1], status: r[2],
-          rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 16px; ' + (i ? 'border-top: 1px solid #F5F5F5; ' : '') + 'background: ' + (r[3] ? '#F5F5F5' : '#FFFFFF'),
-          statusStyle: 'font-size: 12px; padding: 2px 8px; border-radius: 4px; flex: none; ' + (r[3] ? 'background: #FFFBEB; color: #92400E' : 'background: #F5F5F5; color: #404040')
-        };
-      }),
-      isPro: this.state.plan === 'pro',
+      openAdd: function () {},
+      plugins: rows.map(function (r) { return { name: r[0], desc: r[1], pending: r[2], enabled: !r[2] }; }),
+      isPro: this.state.plan === 'Pro',
       pickPlan: function (e) { self.setState({ plan: e.target.value }); }
     };
   }

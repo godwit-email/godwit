@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>空状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div role="status" style="{{frame}}; text-align: center; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<span aria-hidden="true" style="width: 40px; height: 40px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #F5F5F5; color: #0A0A0A"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="{{icon}}"></path></svg></span>
+<span style="display: flex; flex-direction: column; gap: 4px; max-width: 400px"><span style="font-size: 16px; font-weight: 600">{{title}}</span><span style="color: #737373; line-height: 1.6">{{desc}}</span></span>
+<sc-if value="{{hasActions}}" hint-placeholder-val="{{ true }}"><span style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px"><sc-for list="{{actions}}" as="a" hint-placeholder-count="2"><button type="button" onClick="{{a.onClick}}" style="{{a.style}}">{{a.label}}</button></sc-for></span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"title":{"editor":"text","default":"还没有内容"},"desc":{"editor":"text","default":"说明这里会出现什么，以及怎么开始。"},"icon":{"editor":null},"actions":{"editor":null},"bare":{"editor":"boolean","default":false},"$preview":{"width":560,"height":240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var p = this.props;
+    var acts = p.actions || [{ label: '开始', primary: true }, { label: '了解更多' }];
+    var bare = p.bare === true || p.bare === 'true';
+    return {
+      frame: 'box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px 24px' + (bare ? '' : '; border: 1px dashed #D4D4D4; border-radius: 12px'),
+      title: p.title ?? '还没有内容',
+      desc: p.desc ?? '说明这里会出现什么，以及怎么开始。',
+      icon: p.icon || 'M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM11 7H13V9H11V7ZM11 11H13V17H11V11Z',
+      hasActions: acts.length > 0,
+      actions: acts.map(function (a) {
+        return {
+          label: a.label, onClick: a.onClick,
+          style: 'height: 32px; padding: 0 12px; border-radius: 8px; font: inherit; ' + (a.primary ? 'border: 0; background: #171717; color: #FFFFFF; font-weight: 500' : 'border: 1px solid #E5E5E5; background: #FFFFFF; color: #0A0A0A')
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

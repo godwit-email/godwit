@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -45,6 +46,9 @@ type Conversation struct {
 	Usage       ai.Usage
 	HistoryUse  float64
 	Compactable bool
+	// Answering means a run of it is running or resuming; Awaiting that one
+	// waits for the user to decide its calls. Only ListConversations sets them.
+	Answering, Awaiting bool
 }
 
 // WitEvent is one event of a Wit run. An interrupted event carries the
@@ -76,6 +80,8 @@ type Citation struct {
 	Date          time.Time
 	Suspect       bool
 	Quote         string // the suspect text, from where it starts (ai.InjectionQuote): show as plain text
+	Snippet       string // the message's snippet, for the card that shows it
+	Gone          bool   // the message was deleted since: nothing to open or quote
 	RunID         int64
 	CallID        string
 }
@@ -139,6 +145,24 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 	out := make([]Conversation, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, scanConversation(r))
+	}
+	// Each conversation's active run, if any: under way, waiting on pending calls, or
+	// interrupted while an allowed call executes (an external one, up to its timeout).
+	runs, err := s.db.Query(ctx, `SELECT r.conversation_id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending'),
+		EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'executing')
+		FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.kind = ? AND r.state IN ('running', 'resuming', 'interrupted')`, kind)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range runs.Values {
+		if i := slices.IndexFunc(out, func(c Conversation) bool { return c.ID == store.Int(r[0]) }); i >= 0 {
+			if store.Str(r[1]) == "interrupted" {
+				out[i].Awaiting = store.Int(r[2]) != 0
+				out[i].Answering = !out[i].Awaiting && store.Int(r[3]) != 0
+			} else {
+				out[i].Answering = true
+			}
+		}
 	}
 	return out, nil
 }
@@ -328,15 +352,16 @@ func runUsage(runID int64, u ai.Usage) sqlite.Statement {
 
 // citationsOf is conversation id's saved citations, numbered.
 func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
-	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote
-		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet, m.id IS NULL
+		FROM run_citations rc JOIN runs r ON r.id = rc.run_id LEFT JOIN messages m ON m.id = rc.message_id
+		WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
 		return nil, err
 	}
 	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
-			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7])}
+			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8])), Gone: store.Int(r[9]) != 0}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
@@ -401,8 +426,30 @@ func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Cit
 	numberCitations(cs, job.refs)
 	if len(cs) > 0 {
 		s.saveCitations(ctx, job.id, cs)
+		s.snippets(ctx, cs)
 	}
 	return cs
+}
+
+// snippets fills in cs's messages' snippets (citationsOf reads them the same way).
+func (s *Service) snippets(ctx context.Context, cs []Citation) {
+	ids := make([]any, len(cs))
+	for i, c := range cs {
+		ids[i] = c.MessageID
+	}
+	rows, err := s.db.Query(ctx, `SELECT id, snippet FROM messages WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, ids...)
+	if err != nil {
+		slog.Default().Warn("could not read cited messages' snippets", "err", err)
+		return
+	}
+	by := map[int64]string{}
+	for _, r := range rows.Values {
+		by[store.Int(r[0])] = gomail.Snippet(store.Str(r[1]))
+	}
+	for i := range cs {
+		snip, ok := by[cs[i].MessageID]
+		cs[i].Snippet, cs[i].Gone = snip, !ok
+	}
 }
 
 // saveCitations records what a run's event cites, for GetConversation.
@@ -983,6 +1030,12 @@ type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() 
 
 func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
+	// The Wit sidebar shows which ask conversations are answering: it re-reads as their runs
+	// start and end (a compose window's runs change nothing it shows).
+	if job.conv.Kind == "ask" {
+		s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+		defer s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+	}
 	defer func() {
 		if beforeUntrack != nil {
 			beforeUntrack(job.id)

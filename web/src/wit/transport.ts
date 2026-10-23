@@ -182,7 +182,6 @@ function toolPart(c: WitCall, r: WitResult | undefined, a: Approval | undefined)
  * run's question, else a message of its own (one per run) placed in run order among the others.
  */
 export function historyToMessages(h: WitHistory): WitUIMessage[] {
-  const byCall = new Map(h.approvals.map((a) => [a.callId, a]));
   const calls = new Set(h.messages.flatMap((m) => m.calls.map((c) => c.id)));
   const ms = h.messages;
   const on = new Map<number, Approval[]>(); // on answer i
@@ -221,7 +220,8 @@ export function historyToMessages(h: WitHistory): WitUIMessage[] {
         : [];
       const as: Approval[] = [];
       for (const c of m.calls) {
-        const a = byCall.get(c.id);
+        // a call's approval is its run's: a provider may reuse a call ID in another run
+        const a = h.approvals.find((x) => x.callId === c.id && m.runs.includes(x.run));
         if (a) as.push(a);
         parts.push(
           toolPart(

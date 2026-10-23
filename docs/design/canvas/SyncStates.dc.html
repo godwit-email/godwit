@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>右上角同步状态 · 总览</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1120px; height: 560px; box-sizing: border-box; padding: 32px; display: flex; flex-direction: column; gap: 24px; background: #FAFAFA; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; color: #0A0A0A">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600">右上角同步状态</h1>
+    <p style="margin: 0; font-size: 13px; color: #737373">任何状态都能点开，按邮箱列出各自的情况。有问题时直接写出是哪个邮箱；同时有几个问题，显示最严重的那个。会自己恢复的用橙色，需要你处理的用红色。</p>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: center; gap: 24px">
+      <span style="width: 96px; flex: none; font-size: 13px; font-weight: 600">正常</span>
+      <div style="width: 320px; flex: none; display: flex"><span style="height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #00A63E"></span>已同步 · 刚刚</span></div>
+      <span style="font-size: 13px; color: #737373">所有邮箱都正常</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px">
+      <span style="width: 96px; flex: none; font-size: 13px; font-weight: 600">同步中</span>
+      <div style="width: 320px; flex: none; display: flex"><span style="height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 12px; color: #737373">同步中…</span></div>
+      <span style="font-size: 13px; color: #737373">有邮箱在同步，且没有任何问题；有问题时问题优先，不会被“同步中”盖住</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px">
+      <span style="width: 96px; flex: none; font-size: 13px; font-weight: 600">自动重试中</span>
+      <div style="width: 320px; flex: none; display: flex"><span style="height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 12px; color: #973C00"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FD9A00"></span>you@example.com · 重试中</span></div>
+      <span style="font-size: 13px; color: #737373">网络断开、连接超时、服务器暂时不响应；会自己好，不用处理</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px">
+      <span style="width: 96px; flex: none; font-size: 13px; font-weight: 600">需要处理</span>
+      <div style="width: 320px; flex: none; display: flex"><span style="height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 12px; color: #C10007"><span style="width: 6px; height: 6px; border-radius: 50%; background: #E7000B"></span>work@company.example 需要重新登录</span></div>
+      <span style="font-size: 13px; color: #737373">登录过期、授权被撤销、密码被拒绝、钥匙串里找不到密码；已停止重试，等你处理</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px">
+      <span style="width: 96px; flex: none; font-size: 13px; font-weight: 600">长时间失败</span>
+      <div style="width: 320px; flex: none; display: flex"><span style="height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 12px; color: #C10007"><span style="width: 6px; height: 6px; border-radius: 50%; background: #E7000B"></span>you@example.com 同步失败</span></div>
+      <span style="font-size: 13px; color: #737373">本来会自己好的问题，重试了很久（比如 30 分钟）还没恢复，从橙色升级成红色</span>
+    </div>
+  </div>
+  <p style="margin: 0; font-size: 12px; color: #737373">左侧栏的邮箱名旁边也会出现同色的小点，不用打开弹层也能看出是哪个邮箱。</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -72,7 +72,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
-		OpenURL:             func(u string) error { f.record(func() { f.urls = append(f.urls, u) }); return nil },
+		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
 	})
 	f.w.SetService(f.e.Svc)
@@ -212,6 +212,8 @@ func TestWitPageRoleRefused(t *testing.T) {
 		_, err = f.p.SearchMail(ctx, "x")
 		assert.ErrorIs(t, err, ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenCited(ctx, 1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.OpenDraft(ctx, 1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.CheckCited(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://example.com"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
@@ -247,22 +249,26 @@ func TestWitPageCallbacks(t *testing.T) {
 	assert.Equal(t, 1, f.models)
 	assert.Equal(t, []int{-1, 1}, f.navs)
 
+	// links go to native, which handles them as mail's: http(s) after its dialog, mailto as a draft
 	require.NoError(t, f.p.OpenLink(f.ctx(), "https://example.com/a"))
-	assert.Equal(t, []string{"https://example.com/a"}, f.urls)
-	assert.ErrorIs(t, f.p.OpenLink(f.ctx(), "javascript:alert(1)"), ErrBadLink)
 	require.NoError(t, f.p.OpenLink(f.ctx(), "mailto:bob@example.com"))
-	require.Len(t, f.composed, 1)
-	d, err := f.e.Svc.GetDraft(t.Context(), f.composed[0])
-	require.NoError(t, err)
-	assert.Equal(t, f.acc.ID, d.AccountID, "from the default account")
-	assert.Equal(t, []string{"bob@example.com"}, d.To)
+	assert.ErrorIs(t, f.p.OpenLink(f.ctx(), "javascript:alert(1)"), ErrBadLink)
+	assert.Equal(t, []string{"https://example.com/a", "mailto:bob@example.com"}, f.urls)
 }
 
 // Review Focus 5.
 func TestWitPageOpenCited(t *testing.T) {
 	f := newWitPageFixture(t)
-	require.NoError(t, f.p.OpenCited(f.ctx(), 42))
-	assert.Equal(t, []int64{42}, f.messages)
+	m := f.deliverOne(t, coretest.Msg("Bob <bob@x.org>", f.acc.Email, "Hi", "hi"))
+	require.NoError(t, f.p.OpenCited(f.ctx(), m.ID))
+	assert.Equal(t, []int64{m.ID}, f.messages)
+	// one deleted since: nothing opens, and the page hears it is gone
+	require.NoError(t, f.p.CheckCited(f.ctx(), m.ID))
+	assert.ErrorIs(t, f.p.CheckCited(f.ctx(), m.ID+999), ErrMailGone, "checked before quoting")
+	err := f.p.OpenCited(f.ctx(), m.ID+999)
+	assert.ErrorIs(t, err, ErrMailGone)
+	assert.EqualError(t, err, "wit.mail.gone")
+	assert.Equal(t, []int64{m.ID}, f.messages)
 }
 
 // Review Focus 2.
@@ -561,6 +567,12 @@ func TestAskApproveDraft(t *testing.T) {
 		assert.Equal(t, before+1, f.drafts(t))
 		h, _ := f.answer(t, conv)
 		assert.Equal(t, "done", h.Approvals[0].State)
+		// the draft it made opens from its approval
+		require.NoError(t, f.p.OpenDraft(f.ctx(), ap.ID))
+		require.Len(t, f.composed, 1)
+		d, err := f.e.Svc.GetDraft(t.Context(), f.composed[0])
+		require.NoError(t, err)
+		assert.Contains(t, d.To[0], "lena@partner.example")
 	})
 	t.Run("reject", func(t *testing.T) {
 		f := newWitPageFixture(t)
@@ -572,6 +584,7 @@ func TestAskApproveDraft(t *testing.T) {
 		f.waitKind(t, conv, "done")
 		assert.Contains(t, streamed(f.events(), conv), "好的，不创建。")
 		assert.Equal(t, before, f.drafts(t))
+		assert.EqualError(t, f.p.OpenDraft(f.ctx(), ev.Approvals[0].ID), "wit.draft.gone", "no draft from a rejected approval")
 	})
 	t.Run("all", func(t *testing.T) {
 		f := newWitPageFixture(t)
@@ -942,7 +955,7 @@ func TestWitPageModel(t *testing.T) {
 	f := newWitPageFixture(t)
 	ms, err := f.p.Models(f.ctx())
 	require.NoError(t, err)
-	require.Equal(t, []ModelChoice{{Ref: "test/m1", Label: "test / m1"}}, ms)
+	require.Equal(t, []ModelChoice{{Ref: "test/m1", Service: "test", Name: "m1", Default: true}}, ms, "the settings' default")
 
 	_, err = f.p.Ask(f.ctx(), 0, "hi", nil, "test/nope", "", -1)
 	require.Error(t, err, "a model that does not resolve")

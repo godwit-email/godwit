@@ -278,6 +278,22 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 }
 
 // GetDraft returns the draft with its attachments. HTML is sanitized again on
+// ErrDraftGone: an approval made no draft, or it was sent or deleted since.
+var ErrDraftGone = errors.New("the draft is gone")
+
+// DraftForApproval is the draft approval approvalID made (a create_draft the
+// user allowed), to open from where it was asked for.
+func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64, error) {
+	rows, err := s.db.Query(ctx, "SELECT id FROM drafts WHERE ai_approval_id = ? ORDER BY id DESC LIMIT 1", approvalID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, fmt.Errorf("approval %d: %w", approvalID, ErrDraftGone)
+	}
+	return store.Int(rows.Values[0][0]), nil
+}
+
 // read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,

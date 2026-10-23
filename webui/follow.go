@@ -69,6 +69,13 @@ type Citation struct {
 	Suspect bool `json:"suspect"`
 	// Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text.
 	Quote string `json:"quote"`
+	// Snippet is the message's snippet, for its card; Gone means the message
+	// was deleted since (nothing to open or quote).
+	Snippet string `json:"snippet"`
+	Gone    bool   `json:"gone"`
+	// CallIDs are the tool calls of its answer that showed the mail (none:
+	// only the run's context did).
+	CallIDs []string `json:"callIds"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -87,6 +94,8 @@ type Approval struct {
 	Args string `json:"args"`
 	// SessionAllow: 本次对话都允许 can decide it (WitPage.DecideSession).
 	SessionAllow bool `json:"sessionAllow"`
+	// Draft is the draft an allowed create_draft made, while it exists (0: none).
+	Draft int64 `json:"draft"`
 }
 
 // follow is a target's subscription to a conversation. It lasts until the
@@ -247,7 +256,10 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet, Gone: c.Gone, CallIDs: []string{}}
+	if c.CallID != "" {
+		out.CallIDs = append(out.CallIDs, c.CallID)
+	}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}
@@ -256,7 +268,7 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).
@@ -276,6 +288,8 @@ var witErrorKeys = []struct {
 	{core.ErrKeychainUnavailable, "error.keychain"},
 	{core.ErrCompacting, "error.compacting"},
 	{core.ErrNothingToCompact, "error.nothing_to_compact"},
+	{ErrMailGone, "wit.mail.gone"},
+	{core.ErrDraftGone, "wit.draft.gone"},
 }
 
 // errorKey is the i18n key of what err means to the user, as app's

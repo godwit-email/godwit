@@ -91,7 +91,18 @@ func (p *askPage) Sidebar(c *ui.Context) {
 			id := conv.ID
 			on := id == a.route.ConversationID
 			kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageWit, ConversationID: id}) }}).
-				Children(func() { ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1) }).
+				Children(func() {
+					ui.Text(c, p.title(id)).SingleLine().Grow(1).Shrink(1)
+					// seen from another conversation: one answering, one waiting on the user
+					switch {
+					case conv.Answering:
+						kit.Spinner(c).Size(th.Space(3.5), th.Space(3.5)).Shrink(0).Label(i18n.T("wit.thinking"))
+					case conv.Awaiting:
+						ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.WarningBg).Shrink(0).Children(func() {
+							kit.Text(c, i18n.T("wit.approval.pending"), t.Text.Xs).TextColor(t.WarningText)
+						})
+					}
+				}).
 				ContextMenu(func(m *ui.Menu) {
 					if m.Item(i18n.T("ask.delete")).Chosen() {
 						p.remove(id)

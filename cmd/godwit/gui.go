@@ -119,6 +119,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
 		OpenModels:  func() { onApp((*app.App).OpenModels) },
+		OpenMessage: func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
 	}))
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.
@@ -146,7 +147,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenModels:          func() { onApp((*app.App).OpenModels) },
 		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
-		OpenURL:             mygo.Shell.OpenExternal,
+		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 		OpenCompose:         openCompose,
 	})
 	mygo.Bind(webui.NewWitPage(wit))

@@ -20,15 +20,26 @@ func (a *App) openLink(link string) {
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "mailto":
-		a.mailto(u)
+		a.mailto(u, a.mail.reader.account())
 	case "http", "https":
 		a.link, a.linkOpen = link, true
 	}
 }
 
-// mailto starts a new draft from the reader's account (else the default
-// one) to the link's addresses, and opens it in a compose window.
-func (a *App) mailto(u *url.URL) {
+// OpenLink handles a link a page shows (the Wit page's answers) as one in
+// mail content, but its mailto drafts from the default account: no message
+// is shown there, whatever the reader last showed.
+func (a *App) OpenLink(link string) {
+	if u, err := url.Parse(link); err == nil && strings.EqualFold(u.Scheme, "mailto") {
+		a.mailto(u, 0)
+		return
+	}
+	a.openLink(link)
+}
+
+// mailto starts a new draft from account acc (0: the default one) to the
+// link's addresses, and opens it in a compose window.
+func (a *App) mailto(u *url.URL, acc int64) {
 	addrs, _ := url.PathUnescape(u.Opaque)
 	var to []string
 	for _, s := range strings.Split(addrs, ",") {
@@ -36,7 +47,6 @@ func (a *App) mailto(u *url.URL) {
 			to = append(to, s)
 		}
 	}
-	acc := a.mail.reader.account()
 	if acc == 0 {
 		acc = a.defaultAccount()
 	}

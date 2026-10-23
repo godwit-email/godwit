@@ -6,7 +6,7 @@ import type { T } from "@/shared/i18n";
  * Citations' numbers through the conversation, by message ID; suspect once any citation is, with
  * the first quote of the suspect text (mail text: plain text only).
  */
-export type Nums = Map<number, { n: number; suspect: boolean; quote: string }>;
+export type Nums = Map<number, { n: number; suspect: boolean; quote: string; c: Citation }>;
 
 /** A citation's date, absolute: M/DD this year, YYYY/M/DD another ("" for none). */
 export function citeDate(ms: number): string {
@@ -17,9 +17,9 @@ export function citeDate(ms: number): string {
 }
 
 /**
- * The mail an answer cites (引用的邮件): each 「[n] 发件人」, its date and subject, a suspect one
- * noted and edged in the warning colour; a click opens it. The Wit page shows it as a column when
- * wide and under each answer when narrow (a container query on the page, Panel).
+ * The mail an answer cites (引用的邮件), unfolded under it: each its number, sender, date and
+ * subject, two to a row when there is room; a suspect one noted and edged in the warning colour.
+ * A click opens it.
  */
 export function Citations({
   items,
@@ -35,34 +35,37 @@ export function Citations({
   className?: string;
 }) {
   return (
-    <section aria-label={t("ask.citations")} className={cn("flex flex-col gap-2.5", className)}>
-      <h2 className="font-semibold text-md">{t("ask.citations")}</h2>
+    <section
+      aria-label={t("ask.citations")}
+      className={cn("grid grid-cols-1 gap-1.5 @xl:grid-cols-2", className)}
+    >
       {items.map((c) => {
         const suspect = nums.get(c.messageId)?.suspect ?? c.suspect;
         return (
           <button
             key={c.messageId}
             type="button"
+            // a message deleted since: listed, with nothing to open
+            disabled={c.gone}
             onClick={() => onOpen(c.messageId)}
             className={cn(
-              "flex flex-col gap-1 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-left hover:bg-accent",
+              "flex min-w-0 gap-2 rounded-lg border-[0.5px] bg-background px-2.5 py-2 text-left enabled:hover:bg-accent disabled:opacity-60",
               suspect && "border-(--warning-border)",
             )}
           >
-            <span className="flex items-baseline gap-2 leading-tight">
-              <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">
-                [{nums.get(c.messageId)?.n ?? c.n}] {c.from}
-              </span>
-              <span className="shrink-0 text-muted-foreground text-sm">{citeDate(c.date)}</span>
+            <span className="flex size-4.5 shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground text-xs tabular-nums">
+              {nums.get(c.messageId)?.n ?? c.n}
             </span>
-            <span className="truncate text-foreground text-md leading-tight">
-              {c.subject || t("mail.no_subject")}
-            </span>
-            {suspect && (
-              <span className="text-(--warning-text) text-sm leading-tight">
-                {t("ask.citation.suspect")}
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-baseline gap-2 text-muted-foreground text-xs">
+                <span className="min-w-0 flex-1 truncate">{c.from}</span>
+                <span className="shrink-0">{citeDate(c.date)}</span>
               </span>
-            )}
+              <span className="truncate text-sm">{c.subject || t("mail.no_subject")}</span>
+              {suspect && (
+                <span className="text-(--warning-text) text-xs">{t("ask.citation.suspect")}</span>
+              )}
+            </span>
           </button>
         );
       })}

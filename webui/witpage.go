@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -73,9 +74,10 @@ type WitPageDeps struct {
 	// ConversationCreated is told Ask made conversation id, asked under
 	// snapshot version.
 	ConversationCreated func(id, version int64)
-	// OpenURL opens an http(s) link in the browser; OpenCompose opens draft
-	// id in a compose window.
-	OpenURL     func(url string) error
+	// OnLink opens a link of an answer as mail's own: http(s) after the
+	// native confirmation, mailto as a draft. OpenCompose opens draft id in
+	// a compose window.
+	OnLink      func(url string)
 	OpenCompose func(draftID int64)
 }
 
@@ -473,52 +475,107 @@ func (p *WitPage) decide(ctx context.Context, is func(core.Approval) bool, act f
 
 // OpenCited opens cited message id in the reader.
 func (p *WitPage) OpenCited(ctx context.Context, message int64) error {
-	if _, _, err := p.w.caller(ctx); err != nil {
-		return keyed(err)
+	if err := p.CheckCited(ctx, message); err != nil {
+		return err
 	}
 	p.w.d.OpenMessage(message)
 	return nil
 }
 
-// OpenLink opens a link from Wit's answer: an http or https one in the
-// browser; a mailto one as a new draft to its addresses, from the default
-// account, in a compose window. Any other is ErrBadLink.
-func (p *WitPage) OpenLink(ctx context.Context, link string) error {
+// CheckCited is ErrMailGone for a cited message deleted since it was cited
+// (a sync removed it): the page checks before it quotes one, and drops its
+// actions.
+func (p *WitPage) CheckCited(ctx context.Context, message int64) error {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return keyed(err)
 	}
-	return keyed(openLink(ctx, svc, link, func() (int64, error) {
-		accs, err := svc.ListAccounts(ctx)
-		if err != nil || len(accs) == 0 {
-			return 0, err
-		}
-		if i := slices.IndexFunc(accs, func(a core.Account) bool { return a.IsDefault }); i >= 0 {
-			return accs[i].ID, nil
-		}
-		return accs[0].ID, nil
-	}, p.w.d.OpenURL, p.w.d.OpenCompose))
+	return checkCited(ctx, svc, message)
 }
 
-// ModelChoice is a model Wit can answer with: Ref is what Ask takes, Label
-// "service / model" as the settings show it.
+// checkCited is ErrMailGone for message deleted since it was cited.
+func checkCited(ctx context.Context, svc *core.Service, message int64) error {
+	// a row lookup: loading the message could fetch its inline images over IMAP
+	ok, err := svc.MessageExists(ctx, message)
+	if err != nil {
+		return keyed(err)
+	}
+	if !ok {
+		return keyed(ErrMailGone)
+	}
+	return nil
+}
+
+// ErrMailGone: a cited message was deleted since (wit.mail.gone).
+var ErrMailGone = errors.New("the cited mail is gone")
+
+// OpenDraft opens the draft an allowed create_draft (approval) made, in a
+// compose window.
+func (p *WitPage) OpenDraft(ctx context.Context, approval int64) error {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	id, err := svc.DraftForApproval(ctx, approval)
+	if err != nil {
+		return keyed(err)
+	}
+	p.w.d.OpenCompose(id)
+	return nil
+}
+
+// OpenLink hands an http, https or mailto link of Wit's answer to native,
+// which treats it as a link in mail (OnLink); any other is ErrBadLink.
+func (p *WitPage) OpenLink(ctx context.Context, link string) error {
+	if _, _, err := p.w.caller(ctx); err != nil {
+		return keyed(err)
+	}
+	u, err := url.Parse(link)
+	if err != nil {
+		return ErrBadLink
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "mailto":
+		p.w.d.OnLink(link)
+		return nil
+	}
+	return ErrBadLink
+}
+
+// ModelChoice is a model Wit can answer with: Ref is what Ask takes; Service
+// the model service (or plugin) it comes from, which the menu groups by, and
+// Name the model as the settings show it.
 type ModelChoice struct {
-	Ref   string `json:"ref"`
-	Label string `json:"label"`
+	Ref     string `json:"ref"`
+	Service string `json:"service"`
+	Name    string `json:"name"`
+	// Default: it is the settings' default model, which a conversation
+	// with no model of its own answers with.
+	Default bool `json:"default"`
 }
 
-// Models are the models a conversation can use: every generating service's,
-// then the running plugins' (judges aside), as the settings' default model offers.
+// Models are the models a conversation can use (modelChoices).
 func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return nil, keyed(err)
 	}
+	return modelChoices(ctx, svc)
+}
+
+// modelChoices are the models a conversation can use: every generating
+// service's, then the running plugins' (judges aside), as the settings'
+// default model offers; the default one says so.
+func modelChoices(ctx context.Context, svc *core.Service) ([]ModelChoice, error) {
 	services, err := svc.ListModelServices(ctx)
 	if err != nil {
 		return nil, keyed(err)
 	}
 	plugins, err := svc.ListPluginModels(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	st, err := svc.GetSettings(ctx)
 	if err != nil {
 		return nil, keyed(err)
 	}
@@ -528,15 +585,18 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 			continue
 		}
 		for _, m := range s.Models {
-			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Label: s.Name + " / " + cmp.Or(s.Names[m], m)})
+			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Service: s.Name, Name: cmp.Or(s.Names[m], m)})
 		}
 	}
 	for _, pm := range plugins {
 		for _, m := range pm.Models {
 			if !m.Judges() && m.Operation != "small" {
-				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Label: pm.Plugin + " / " + m.Name})
+				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Service: pm.Plugin, Name: m.Name})
 			}
 		}
+	}
+	for i := range out {
+		out[i].Default = out[i].Ref == st.DefaultModel
 	}
 	return out, nil
 }
