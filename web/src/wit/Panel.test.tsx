@@ -1699,6 +1699,47 @@ describe("Panel", () => {
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [8]));
   });
 
+  it("a check that fails for another reason neither marks the mail gone nor sends", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ id: 9, subject: "发票", from: "f", date: 0 }]);
+    const onCheckCited = vi.fn().mockRejectedValue(new Error("error.unknown"));
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalledWith(9));
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument(); // kept: retry
+    expect(api.ask).not.toHaveBeenCalled();
+    onCheckCited.mockResolvedValue(undefined);
+    await user.type(box, "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [9]));
+  });
+
+  it("what changes in the input while the quotes are checked is not overtaken by the old send", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ id: 9, subject: "发票", from: "f", date: 0 }]);
+    let answer = () => {};
+    const onCheckCited = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalled());
+    await user.type(box, "一下");
+    await act(async () => answer());
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(box).toHaveValue("总结一下");
+  });
+
   it("a cited mail found deleted when opened loses its actions everywhere", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));

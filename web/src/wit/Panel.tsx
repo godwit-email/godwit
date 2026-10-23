@@ -733,6 +733,9 @@ function translateMenu(languages: { tag: string; name: string }[], locale: strin
     .sort((a, b) => first(a.tag) - first(b.tag) || a.label.localeCompare(b.label, locale));
 }
 
+/** The host's answer that a cited message was deleted since (WitPage.CheckCited). */
+const isGone = (e: unknown) => (e as Error | undefined)?.message === "wit.mail.gone";
+
 export function Panel({
   info,
   history,
@@ -819,6 +822,9 @@ export function Panel({
   const [choices, setChoices] = useState<ModelChoice[]>();
   // The question being edited: sending asks it in place of the one at index at.
   const [editing, setEditing] = useState<{ at: number }>();
+  // what the input holds now, for a submit whose checks answer later
+  const latest = useRef({ draft, quoted, editing });
+  latest.current = { draft, quoted, editing };
   // What asking in place took off the conversation shown: back if the host refuses the question.
   const shelved = useRef<WitUIMessage[]>([]);
   // What the conversation took, as last read (a run's end reads it again).
@@ -957,15 +963,26 @@ export function Panel({
     }
     // The quoted mail is checked first, where the host can: one deleted since (a sync) would make
     // core refuse the whole question. A gone one leaves the input; the rest wait to be sent again.
+    // It sends only what is still in the input once the checks answer, and nothing after a check
+    // that failed for another reason (the host showed it; Enter tries again).
     if (onCheckCited && quoted.length > 0) {
       if (checking.current) return;
       checking.current = true;
+      const asked = { text, ids: quoted.map((h) => h.id).join(), editing };
       void Promise.allSettled(quoted.map((h) => onCheckCited(h.id))).then((rs) => {
         checking.current = false;
-        const gone = quoted.filter((_, i) => rs[i].status === "rejected").map((h) => h.id);
-        if (gone.length === 0) return send(text, quoted);
+        const failed = (i: number) => rs[i].status === "rejected";
+        const gone = quoted
+          .filter((_, i) => failed(i) && isGone((rs[i] as PromiseRejectedResult).reason))
+          .map((h) => h.id);
         for (const id of gone) markGone(id);
         setQuoted((q) => q.filter((h) => !gone.includes(h.id)));
+        const now = latest.current;
+        const same =
+          now.draft.trim() === asked.text &&
+          now.quoted.map((h) => h.id).join() === asked.ids &&
+          now.editing === asked.editing;
+        if (same && !rs.some((_, i) => failed(i))) send(text, quoted);
       });
       return;
     }
@@ -1065,16 +1082,18 @@ export function Panel({
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
-  // Opens a cited message; one deleted since (the host says so) loses its actions here.
+  // Opens a cited message; one deleted since (the host says so: wit.mail.gone, not any failure,
+  // which may pass) loses its actions here.
   const markGone = (id: number) => setGone((g) => (g.includes(id) ? g : [...g, id]));
   const openCited =
-    onCite && ((id: number) => void Promise.resolve(onCite(id)).catch(() => markGone(id)));
+    onCite &&
+    ((id: number) => void Promise.resolve(onCite(id)).catch((e) => isGone(e) && markGone(id)));
   // Quotes a cited message once the host says it still exists (else it is gone, unquoted).
   const quoteCited = (h: MailHit) =>
     onCheckCited
       ? void onCheckCited(h.id).then(
           () => quote(h),
-          () => markGone(h.id),
+          (e) => isGone(e) && markGone(h.id),
         )
       : quote(h);
   const nums: Nums = new Map();
