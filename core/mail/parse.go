@@ -259,7 +259,7 @@ var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset\s*=\s*["']?([\w.:-]+
 
 // ValidText makes a decoded text part valid UTF-8 when its declared charset cs
 // did not: an HTML part's <meta charset> when MIME names none, then GB18030
-// when that reads as Chinese, else U+FFFD for the bad bytes.
+// when its bytes look like GB2312, else U+FFFD for the bad bytes.
 func ValidText(b []byte, cs string, html bool) []byte {
 	if utf8.Valid(b) {
 		return b
@@ -269,26 +269,30 @@ func ValidText(b []byte, cs string, html bool) []byte {
 			return d
 		}
 	}
-	if d, err := simplifiedchinese.GB18030.NewDecoder().Bytes(b); err == nil && mostlyHan(d) {
-		return d
-	}
-	return bytes.ToValidUTF8(b, []byte("�"))
-}
-
-// mostlyHan reports whether nearly all of s's non-ASCII is Chinese, so a
-// mislabeled Latin-1 body is not turned into stray Han characters.
-func mostlyHan(s []byte) bool {
-	var han, other int
-	for _, r := range string(s) {
-		switch {
-		case r < utf8.RuneSelf:
-		case unicode.Is(unicode.Han, r), r >= 0x3000 && r <= 0x303f, r >= 0xff00 && r <= 0xffef:
-			han++
-		default:
-			other++
+	if gb2312ish(b) {
+		if d, err := simplifiedchinese.GB18030.NewDecoder().Bytes(b); err == nil {
+			return d
 		}
 	}
-	return han > 0 && other*10 <= han && !bytes.ContainsRune(s, utf8.RuneError)
+	return bytes.ToValidUTF8(b, []byte("\uFFFD"))
+}
+
+// gb2312ish reports whether b's high bytes nearly all pair up as GB2312
+// (EUC-CN), where Chinese text lives. Output script alone cannot tell: GB18030
+// also turns Shift_JIS kana into rare Han, but those bytes fall outside GB2312.
+func gb2312ish(b []byte) bool {
+	var ok, bad int
+	for i := 0; i < len(b); i++ {
+		switch {
+		case b[i] < 0x80:
+		case i+1 < len(b) && b[i] >= 0xa1 && b[i] <= 0xf7 && b[i+1] >= 0xa1 && b[i+1] <= 0xfe:
+			ok++
+			i++
+		default:
+			bad++
+		}
+	}
+	return ok > 0 && bad*20 <= ok
 }
 
 // ParseStructure walks an IMAP BODYSTRUCTURE and reports the displayable body

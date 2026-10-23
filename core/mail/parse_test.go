@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
@@ -233,9 +234,12 @@ func TestValidText(t *testing.T) {
 		{"meta charset", `<meta charset="gbk"><p>` + gbk, "", true, `<meta charset="gbk"><p>请查收发票`},
 		{"http-equiv", `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">` + gbk, "", true, `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">请查收发票`},
 		{"gbk labelled utf-8", "Hi " + gbk, "utf-8", false, "Hi 请查收发票"},
-		{"latin-1 labelled utf-8", "caf\xe9 cr\xe8me", "utf-8", false, "caf� cr�me"},
+		{"latin-1 labelled utf-8", "caf\xe9 cr\xe8me", "utf-8", false, "caf\uFFFD cr\uFFFDme"},
 	} {
 		got := mail.ValidText([]byte(tc.in), tc.cs, tc.html)
 		assert.Equal(t, tc.want, string(got), tc.name)
 	}
+	// Shift_JIS こんにちは decodes as GB18030 to 偙傫偵偪偼; its bytes are not GB2312, so no Han appears.
+	got := mail.ValidText([]byte("\x82\xb1\x82\xf1\x82\xc9\x82\xbf\x82\xcd"), "utf-8", false)
+	assert.True(t, utf8.Valid(got) && !strings.ContainsFunc(string(got), func(r rune) bool { return unicode.Is(unicode.Han, r) }), "shift_jis: %q", got)
 }
