@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.12.0](https://github.com/godwit-email/godwit/compare/v1.11.0...v1.12.0) (2026-10-23)
+
+
+### Features
+
+* redraw the godwit logo and fly an origami godwit through the site hero ([#181](https://github.com/godwit-email/godwit/issues/181)) ([641516b](https://github.com/godwit-email/godwit/commit/641516bce9d9a1cd65855a6801e0dc3d6f0a2d28))
+* **settings:** draw sections as borderless filled blocks ([#169](https://github.com/godwit-email/godwit/issues/169)) ([8bf8612](https://github.com/godwit-email/godwit/commit/8bf86122461635510057ebaa544ef156cccd826d))
+* **wit:** say how long an answer worked on its steps line ([#166](https://github.com/godwit-email/godwit/issues/166)) ([8dccf25](https://github.com/godwit-email/godwit/commit/8dccf25071f25cc1f2569ed5d5e4b5d11ec235fc))
+
+
+### Bug Fixes
+
+* **reader:** stop table columns in HTML mail shrinking to one letter ([#168](https://github.com/godwit-email/godwit/issues/168)) ([4b7a466](https://github.com/godwit-email/godwit/commit/4b7a46615b0b95818443355ea534e319f50f15f7))
+
 ## [1.11.0](https://github.com/godwit-email/godwit/compare/v1.10.0...v1.11.0) (2026-10-23)
 
 
