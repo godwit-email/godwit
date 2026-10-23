@@ -1977,6 +1977,7 @@
   "wit_loading": "Wit is replying…",
   "wit_model": "Model service settings",
   "wit_model_pick": "Model",
+  "wit_model_default_tag": "Default",
   "wit_model_default": "Default ({arg1})",
   "wit_effort": "Reasoning effort",
   "wit_effort_default": "Default",

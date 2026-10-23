@@ -184,9 +184,9 @@ describe("Panel", () => {
     const onModels = vi.fn();
     const pick = vi.fn();
     const list = vi.fn().mockResolvedValue([
-      { ref: "a/sonnet", service: "A", name: "sonnet" },
-      { ref: "a/haiku", service: "A", name: "haiku" },
-      { ref: "b/gpt", service: "B", name: "gpt" },
+      { ref: "a/sonnet", service: "A", name: "sonnet", default: true },
+      { ref: "a/haiku", service: "A", name: "haiku", default: false },
+      { ref: "b/gpt", service: "B", name: "gpt", default: false },
     ]);
     render(
       <Panel
@@ -213,9 +213,12 @@ describe("Panel", () => {
       "aria-checked",
       "true",
     );
-    expect(screen.getByRole("group", { name: "A" })).toHaveTextContent("Asonnethaiku");
+    // the default model in its group, tagged; no row of its own
+    expect(screen.getByRole("group", { name: "A" })).toHaveTextContent("Asonnet默认haiku");
     expect(screen.getByRole("group", { name: "B" })).toHaveTextContent("Bgpt");
-    await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
+    expect(screen.queryByRole("menuitemradio", { name: /默认（/ })).toBeNull();
+    // picking it follows the default again
+    await user.click(screen.getByRole("menuitemradio", { name: /sonnet/ }));
     expect(pick).toHaveBeenCalledWith("");
     expect(onModels).not.toHaveBeenCalled();
   });

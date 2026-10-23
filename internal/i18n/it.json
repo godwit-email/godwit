@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Annulla modifica",
   "wit_editing": "Stai modificando questa domanda: inviandola sostituisci lei e quanto segue",
   "wit_model_pick": "Modello",
+  "wit_model_default_tag": "Predefinito",
   "wit_model_default": "Predefinito ({arg1})",
   "wit_effort": "Sforzo di ragionamento",
   "wit_effort_default": "Predefinito",

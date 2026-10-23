@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Bewerken annuleren",
   "wit_editing": "Deze vraag wordt bewerkt: versturen vervangt de vraag en alles wat erna kwam",
   "wit_model_pick": "Model",
+  "wit_model_default_tag": "Standaard",
   "wit_model_default": "Standaard ({arg1})",
   "wit_effort": "Denkinspanning",
   "wit_effort_default": "Standaard",

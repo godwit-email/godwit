@@ -1005,6 +1005,7 @@
   "wit_loading": "Wit 正在回复…",
   "wit_model": "模型服务设置",
   "wit_model_pick": "选择模型",
+  "wit_model_default_tag": "默认",
   "wit_model_default": "默认（{arg1}）",
   "wit_effort": "思考强度",
   "wit_effort_default": "默认",

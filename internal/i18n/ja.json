@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "編集をキャンセル",
   "wit_editing": "この質問を編集中：送信すると、この質問とそれ以降の会話が置き換わります",
   "wit_model_pick": "モデル",
+  "wit_model_default_tag": "デフォルト",
   "wit_model_default": "デフォルト（{arg1}）",
   "wit_effort": "推論の強さ",
   "wit_effort_default": "デフォルト",

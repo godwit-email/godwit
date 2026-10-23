@@ -1081,6 +1081,8 @@ export function Panel({
     ? (choices?.find((c) => c.ref === models.ref)?.name ??
       models.ref.slice(models.ref.indexOf("/") + 1))
     : model;
+  // The settings' default among them (none: it is not a model listed).
+  const listedDefault = choices?.find((c) => c.default);
   // The menu groups the choices by their service, in the order they come.
   const services = new Map<string, ModelChoice[]>();
   for (const c of choices ?? []) services.set(c.service, [...(services.get(c.service) ?? []), c]);
@@ -1511,25 +1513,38 @@ export function Panel({
               }
             />
             <DropdownMenuContent side="top" align="end" className="max-h-80 min-w-56">
-              <DropdownMenuRadioGroup
-                value={models.ref}
-                onValueChange={(v: string) => models.pick(v)}
-              >
-                <DropdownMenuRadioItem closeOnClick value="">
-                  {t("wit.model.default", model)}
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              {[...services].map(([service, list]) => (
+              {!listedDefault && (
+                // the default only by its name when it is none of the models listed
+                <DropdownMenuRadioGroup
+                  value={models.ref}
+                  onValueChange={(v: string) => models.pick(v)}
+                >
+                  <DropdownMenuRadioItem closeOnClick value="">
+                    {t("wit.model.default", model)}
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              )}
+              {[...services].map(([service, list], i) => (
                 <DropdownMenuGroup key={service}>
-                  <DropdownMenuSeparator />
+                  {(i > 0 || !listedDefault) && <DropdownMenuSeparator />}
                   <DropdownMenuLabel>{service}</DropdownMenuLabel>
                   <DropdownMenuRadioGroup
-                    value={models.ref}
-                    onValueChange={(v: string) => models.pick(v)}
+                    // the default model is checked while the conversation follows the default
+                    value={models.ref || (listedDefault?.ref ?? "")}
+                    // picking the default follows it again (no model of its own)
+                    onValueChange={(v: string) => models.pick(v === listedDefault?.ref ? "" : v)}
                   >
                     {list.map((c) => (
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>
                         {c.name}
+                        {c.default && (
+                          <Badge
+                            variant="outline"
+                            className="h-4.5 px-1.5 font-normal text-muted-foreground"
+                          >
+                            {t("wit.model.default_tag")}
+                          </Badge>
+                        )}
                       </DropdownMenuRadioItem>
                     ))}
                   </DropdownMenuRadioGroup>

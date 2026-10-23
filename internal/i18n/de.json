@@ -1097,6 +1097,7 @@
   "wit_edit_cancel": "Bearbeiten abbrechen",
   "wit_editing": "Diese Frage wird bearbeitet: Beim Senden ersetzt sie sich selbst und alles danach",
   "wit_model_pick": "Modell",
+  "wit_model_default_tag": "Standard",
   "wit_model_default": "Standard ({arg1})",
   "wit_effort": "Denkaufwand",
   "wit_effort_default": "Standard",

@@ -544,6 +544,9 @@ type ModelChoice struct {
 	Ref     string `json:"ref"`
 	Service string `json:"service"`
 	Name    string `json:"name"`
+	// Default: it is the settings' default model, which a conversation
+	// with no model of its own answers with.
+	Default bool `json:"default"`
 }
 
 // Models are the models a conversation can use: every generating service's,
@@ -558,6 +561,10 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 		return nil, keyed(err)
 	}
 	plugins, err := svc.ListPluginModels(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	st, err := svc.GetSettings(ctx)
 	if err != nil {
 		return nil, keyed(err)
 	}
@@ -576,6 +583,9 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Service: pm.Plugin, Name: m.Name})
 			}
 		}
+	}
+	for i := range out {
+		out[i].Default = out[i].Ref == st.DefaultModel
 	}
 	return out, nil
 }

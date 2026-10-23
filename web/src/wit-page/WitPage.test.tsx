@@ -223,7 +223,9 @@ test("witState updates the model label and copy without a new follow", async () 
 test("the model chip picks the next question's model; its last item opens settings", async () => {
   const user = userEvent.setup();
   vi.mocked(api.openModels).mockResolvedValue(undefined);
-  vi.mocked(api.models).mockResolvedValue([{ ref: "s/m2", service: "S", name: "m2" }]);
+  vi.mocked(api.models).mockResolvedValue([
+    { ref: "s/m2", service: "S", name: "m2", default: false },
+  ]);
   vi.mocked(api.ask).mockResolvedValue({ run: 7, conversation: 3, revision: 0, conflict: false });
   await start(3);
   await user.click(screen.getByRole("button", { name: /m1/ }));

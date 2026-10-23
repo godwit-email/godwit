@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Annuler la modification",
   "wit_editing": "Modification de cette question : l’envoyer la remplace, ainsi que la suite",
   "wit_model_pick": "Modèle",
+  "wit_model_default_tag": "Par défaut",
   "wit_model_default": "Par défaut ({arg1})",
   "wit_effort": "Effort de réflexion",
   "wit_effort_default": "Par défaut",

@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Düzenlemeyi iptal et",
   "wit_editing": "Bu soru düzenleniyor: gönderince kendisinin ve sonrasının yerini alır",
   "wit_model_pick": "Model",
+  "wit_model_default_tag": "Varsayılan",
   "wit_model_default": "Varsayılan ({arg1})",
   "wit_effort": "Akıl yürütme düzeyi",
   "wit_effort_default": "Varsayılan",

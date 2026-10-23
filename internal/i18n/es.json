@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Cancelar edición",
   "wit_editing": "Editando esta pregunta: al enviarla, la reemplaza junto con lo que vino después",
   "wit_model_pick": "Modelo",
+  "wit_model_default_tag": "Predeterminado",
   "wit_model_default": "Predeterminado ({arg1})",
   "wit_effort": "Esfuerzo de razonamiento",
   "wit_effort_default": "Predeterminado",

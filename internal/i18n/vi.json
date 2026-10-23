@@ -1090,6 +1090,7 @@
   "wit_edit_cancel": "Hủy sửa",
   "wit_editing": "Đang sửa câu hỏi này: gửi đi sẽ thay thế câu hỏi và mọi thứ sau nó",
   "wit_model_pick": "Mô hình",
+  "wit_model_default_tag": "Mặc định",
   "wit_model_default": "Mặc định ({arg1})",
   "wit_effort": "Mức suy luận",
   "wit_effort_default": "Mặc định",
