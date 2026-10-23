@@ -1031,12 +1031,14 @@ export function Panel({
   const tools = (as: Approval[]) => {
     const shown = as.filter((a) => !decided.includes(a.id));
     const busy = !onDecide || deciding.length > 0;
+    // all of the run's calls waiting, a body edit's among them
+    const pending = shown.length > 0 ? open.filter((x) => x.run === shown[0].run).length : 0;
     return (
       <>
-        {shown.length > 1 && (
+        {pending > 1 && (
           <div className="flex items-center gap-2 px-0.5">
             <span className="text-muted-foreground text-sm">
-              {t("wit.approval.count", shown.length)}
+              {t("wit.approval.count", pending)}
             </span>
             <span className="ml-auto flex gap-1.5">
               <Button
