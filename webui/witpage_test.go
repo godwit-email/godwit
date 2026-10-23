@@ -213,6 +213,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 		assert.ErrorIs(t, err, ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenCited(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenDraft(ctx, 1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.CheckCited(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://example.com"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
@@ -262,6 +263,8 @@ func TestWitPageOpenCited(t *testing.T) {
 	require.NoError(t, f.p.OpenCited(f.ctx(), m.ID))
 	assert.Equal(t, []int64{m.ID}, f.messages)
 	// one deleted since: nothing opens, and the page hears it is gone
+	require.NoError(t, f.p.CheckCited(f.ctx(), m.ID))
+	assert.ErrorIs(t, f.p.CheckCited(f.ctx(), m.ID+999), ErrMailGone, "checked before quoting")
 	err := f.p.OpenCited(f.ctx(), m.ID+999)
 	assert.ErrorIs(t, err, ErrMailGone)
 	assert.EqualError(t, err, "wit.mail.gone")

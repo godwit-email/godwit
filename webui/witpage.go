@@ -475,15 +475,24 @@ func (p *WitPage) decide(ctx context.Context, is func(core.Approval) bool, act f
 
 // OpenCited opens cited message id in the reader.
 func (p *WitPage) OpenCited(ctx context.Context, message int64) error {
+	if err := p.CheckCited(ctx, message); err != nil {
+		return err
+	}
+	p.w.d.OpenMessage(message)
+	return nil
+}
+
+// CheckCited is ErrMailGone for a cited message deleted since it was cited
+// (a sync removed it): the page checks before it quotes one, and drops its
+// actions.
+func (p *WitPage) CheckCited(ctx context.Context, message int64) error {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return keyed(err)
 	}
-	// deleted since it was cited (a sync removed it): the page drops its actions
 	if _, err := svc.GetMessage(ctx, message, false); err != nil {
 		return keyed(ErrMailGone)
 	}
-	p.w.d.OpenMessage(message)
 	return nil
 }
 

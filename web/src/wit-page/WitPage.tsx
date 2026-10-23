@@ -228,6 +228,12 @@ function Conversation({
           throw e;
         })
       }
+      onCheckCited={(id) =>
+        api.checkCited(id).catch((e) => {
+          fail(e);
+          throw e;
+        })
+      }
       onDraft={(id) =>
         api.openDraft(id).catch((e) => {
           fail(e);

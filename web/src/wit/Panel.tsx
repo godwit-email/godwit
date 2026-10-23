@@ -743,6 +743,7 @@ export function Panel({
   onDecide,
   onLink,
   onCite,
+  onCheckCited,
   onDraft,
   transport,
   t,
@@ -766,6 +767,8 @@ export function Panel({
   onLink(url: string): Promise<void>;
   /** Opens cited message id; a rejection (the message gone since) drops its actions. */
   onCite?(id: number): Promise<void> | void;
+  /** Checks cited message id still exists before it is quoted; rejects when it is gone. */
+  onCheckCited?(id: number): Promise<void>;
   /** Opens the draft an allowed create_draft made (its approval), where the host can. */
   onDraft?(approval: number): Promise<void>;
   transport: WitTransport;
@@ -1044,12 +1047,17 @@ export function Panel({
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
   // Opens a cited message; one deleted since (the host says so) loses its actions here.
+  const markGone = (id: number) => setGone((g) => (g.includes(id) ? g : [...g, id]));
   const openCited =
-    onCite &&
-    ((id: number) =>
-      void Promise.resolve(onCite(id)).catch(() =>
-        setGone((g) => (g.includes(id) ? g : [...g, id])),
-      ));
+    onCite && ((id: number) => void Promise.resolve(onCite(id)).catch(() => markGone(id)));
+  // Quotes a cited message once the host says it still exists (else it is gone, unquoted).
+  const quoteCited = (h: MailHit) =>
+    onCheckCited
+      ? void onCheckCited(h.id).then(
+          () => quote(h),
+          () => markGone(h.id),
+        )
+      : quote(h);
   const nums: Nums = new Map();
   const approvals = new Map<string, Approval>();
   for (const m of chat.messages) {
@@ -1235,7 +1243,7 @@ export function Panel({
                     onDraft={onDraft}
                     onLink={link}
                     onCite={openCited}
-                    onQuote={quote}
+                    onQuote={quoteCited}
                     onAgain={(() => {
                       const q = chat.messages[i - 1];
                       const k = q?.role === "user" ? at(q) : undefined;
