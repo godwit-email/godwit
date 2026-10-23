@@ -998,6 +998,7 @@
   "wit_model": "Model servisi ayarları",
   "wit_placeholder": "Bir şey sorun, ör. geçen haftadan hâlâ yanıtımı bekleyen kim var?",
   "wit_mail_open": "E-postayı görüntüle",
+  "wit_citations_count": "{arg1} e-posta alıntılandı",
   "wit_quote": "Bir e-postayı alıntıla",
   "wit_quote_none": "E-posta bulunamadı",
   "wit_quote_remove": "{arg1} öğesini kaldır",

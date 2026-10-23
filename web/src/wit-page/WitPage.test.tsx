@@ -261,14 +261,24 @@ test("cited click opens", async () => {
       {
         ...msg("a", "assistant", "A", [1]),
         citations: [
-          { n: 1, messageId: 51, subject: "S", from: "f", date: 0, suspect: false, quote: "", snippet: "" },
+          {
+            n: 1,
+            messageId: 51,
+            subject: "S",
+            from: "f",
+            date: 0,
+            suspect: false,
+            quote: "",
+            snippet: "",
+          },
         ],
       },
     ],
   });
   render(<WitPage />);
-  const cards = await screen.findAllByRole("button", { name: /\[1\] f/ });
-  await userEvent.setup().click(cards[0]);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "引用了 1 封邮件" }));
+  await user.click(screen.getByRole("button", { name: /^1f/ }));
   expect(api.openCited).toHaveBeenCalledWith(51);
 });
 

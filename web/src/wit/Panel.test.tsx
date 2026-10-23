@@ -1318,7 +1318,7 @@ describe("Panel", () => {
     expect(onCite).toHaveBeenCalledWith(50);
   });
 
-  it("citations: both layouts render; cited click opens", async () => {
+  it("citations fold under the answer as 引用了 N 封邮件; a cited click opens", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn();
     const cite = (n: number, id: number, suspect = false) => ({
@@ -1362,29 +1362,19 @@ describe("Panel", () => {
         ],
       },
     });
-    // jsdom has no container queries: both branches are in the DOM, each behind its query
-    const lists = screen.getAllByRole("region", { name: "引用的邮件" });
-    expect(lists).toHaveLength(2);
-    const column = lists.find((l) => l.closest("aside"));
-    const under = lists.find((l) => !l.closest("aside"));
-    expect(column?.closest("aside")?.className).toContain("@4xl:flex");
-    expect(column?.closest("aside")?.className).toContain("hidden");
-    expect(column?.closest("aside")).toHaveClass(
-      "w-80",
-      "rounded-xl",
-      "border-[0.5px]",
-      "bg-background",
-    );
-    expect(column?.closest("aside")).not.toHaveClass("border-l", "bg-sidebar");
-    expect(under?.className).toContain("@4xl:hidden");
-    expect(under?.closest("[data-role=assistant]")).not.toBeNull();
+    // no column beside the conversation: each answer folds its citations under its actions
+    expect(document.querySelector("aside aside, [data-slot=citations-column]")).toBeNull();
+    expect(screen.queryByRole("region", { name: "引用的邮件" })).toBeNull();
+    const toggle = screen.getByRole("button", { name: "引用了 2 封邮件" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle.closest("[data-role=assistant]")).not.toBeNull();
+    await user.click(toggle);
+    const list = screen.getByRole("region", { name: "引用的邮件" });
+    expect(list.textContent).toContain("f50");
+    expect(list.textContent).toContain("（无主题）");
+    expect(list.textContent).toContain("含疑似指令，已作为数据处理");
     expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();
-    for (const l of lists) {
-      expect(l.textContent).toContain("[1] f50");
-      expect(l.textContent).toContain("（无主题）");
-      expect(l.textContent).toContain("含疑似指令，已作为数据处理");
-    }
-    await user.click(screen.getAllByRole("button", { name: /\[2\] f51/ })[0]);
+    await user.click(within(list).getByRole("button", { name: /f51/ }));
     expect(onCite).toHaveBeenCalledWith(51);
   });
 

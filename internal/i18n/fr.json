@@ -998,6 +998,7 @@
   "wit_model": "Réglages des services de modèles",
   "wit_placeholder": "Posez une question, p. ex. : qui attend encore ma réponse de la semaine dernière ?",
   "wit_mail_open": "Voir l’e-mail",
+  "wit_citations_count": "{arg1} e-mails cités",
   "wit_quote": "Citer un e-mail",
   "wit_quote_none": "Aucun e-mail trouvé",
   "wit_quote_remove": "Retirer {arg1}",

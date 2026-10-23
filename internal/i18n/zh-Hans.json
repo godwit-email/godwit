@@ -1011,6 +1011,7 @@
   "wit_effort_high": "高",
   "wit_placeholder": "问点什么，比如：上周谁还在等我回复？",
   "wit_mail_open": "查看邮件",
+  "wit_citations_count": "引用了 {arg1} 封邮件",
   "wit_quote": "引用邮件",
   "wit_quote_none": "没有找到邮件",
   "wit_quote_remove": "移除 {arg1}",

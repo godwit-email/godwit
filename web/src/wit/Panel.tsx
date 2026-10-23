@@ -315,6 +315,7 @@ function Answer({
   const thought = m.parts.filter((p): p is ReasoningUIPart => p.type === "reasoning" && !!p.text);
   const thinking = live && thought.some((p) => p.state === "streaming");
   const cites = citesOf(m);
+  const [sources, setSources] = useState(false);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
     .join("\n\n");
@@ -426,40 +427,58 @@ function Answer({
           card={(n) => mail(n, true)}
         />
       )}
-      {text && !live && (
-        <div className="-mt-1 -ml-1.5 flex">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-muted-foreground"
-            aria-label={t("wit.copy")}
-            title={t("wit.copy")}
-            onClick={() =>
-              (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
-                () => toast(t("wit.copied")),
-                () => toast.error(t("wit.copy_failed")),
-              )
-            }
-          >
-            <RiFileCopyLine />
-          </Button>
-          {onAgain && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              aria-label={t("wit.regenerate")}
-              title={t("wit.regenerate")}
-              onClick={onAgain}
-            >
-              <RiRefreshLine />
-            </Button>
+      {((text && !live) || (cites.length > 0 && onCite)) && (
+        <div className="-mt-1 -ml-1.5 flex items-center">
+          {text && !live && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground"
+                aria-label={t("wit.copy")}
+                title={t("wit.copy")}
+                onClick={() =>
+                  (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+                    () => toast(t("wit.copied")),
+                    () => toast.error(t("wit.copy_failed")),
+                  )
+                }
+              >
+                <RiFileCopyLine />
+              </Button>
+              {onAgain && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-muted-foreground"
+                  aria-label={t("wit.regenerate")}
+                  title={t("wit.regenerate")}
+                  onClick={onAgain}
+                >
+                  <RiRefreshLine />
+                </Button>
+              )}
+            </>
+          )}
+          {cites.length > 0 && onCite && (
+            <>
+              {text && !live && <span aria-hidden="true" className="mx-1.5 h-3.5 w-px bg-border" />}
+              <Button
+                variant="ghost"
+                size="xs"
+                className="font-normal text-muted-foreground"
+                aria-expanded={sources}
+                onClick={() => setSources((o) => !o)}
+              >
+                {t("wit.citations.count", cites.length)}
+                <RiArrowDownSLine className={cn("transition-transform", sources && "rotate-180")} />
+              </Button>
+            </>
           )}
         </div>
       )}
-      {cites.length > 0 && onCite && (
-        // narrow: the cards under the answer; wide, the page's column shows them (Panel)
-        <Citations items={cites} nums={nums} onOpen={onCite} t={t} className="@4xl:hidden" />
+      {cites.length > 0 && onCite && sources && (
+        <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
       )}
       {cites.length > 0 && !onCite && (
         <div className="flex flex-wrap gap-1">
@@ -502,8 +521,8 @@ export type PanelReview = { approval: number; summary: ReactNode; actions: React
 /**
  * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
  * what Wit knows (chips), 调整 / 翻译 (`info`), the conversation, and the input. As the Wit page
- * (layout "page"): the conversation centred, the input floating under it, the cited mail opening
- * by onCite in a column when the page is wide, else under each answer. Both inputs show the model
+ * (layout "page"): the conversation centred, the input floating under it, each answer's cited
+ * mail folded under its actions (引用了 N 封邮件), opening by onCite. Both inputs show the model
  * (`model`, its chip opening onModels); the panel's live answer says Wit writes the body. Links
  * open through the host's onLink (after the confirmation); its failure toasts.
  * A run's end reconciles: the history read again replaces what streamed, once it has the run.
@@ -1258,7 +1277,6 @@ export function Panel({
   // a card on the window's material: the native layout's content cards
   const card = "rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)";
   if (page) {
-    const cites = citesOf(...chat.messages);
     return (
       <div className="@container flex h-full min-h-0 gap-2">
         <div className={cn("flex min-w-0 flex-1 flex-col overflow-hidden", card)}>
@@ -1271,12 +1289,6 @@ export function Panel({
             </div>
           </div>
         </div>
-        {cites.length > 0 && onCite && (
-          // wide: a card of 320 (narrow: under each answer, Answer)
-          <aside className={cn("hidden w-80 shrink-0 flex-col overflow-auto p-4 @4xl:flex", card)}>
-            <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
-          </aside>
-        )}
       </div>
     );
   }

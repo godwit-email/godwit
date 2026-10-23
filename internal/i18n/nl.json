@@ -998,6 +998,7 @@
   "wit_model": "Instellingen modeldiensten",
   "wit_placeholder": "Vraag iets, zoals: wie wacht er nog op mijn antwoord van vorige week?",
   "wit_mail_open": "E-mail bekijken",
+  "wit_citations_count": "{arg1} e-mails geciteerd",
   "wit_quote": "Een e-mail citeren",
   "wit_quote_none": "Geen e-mail gevonden",
   "wit_quote_remove": "{arg1} verwijderen",

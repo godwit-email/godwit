@@ -998,6 +998,7 @@
   "wit_model": "Ajustes de servicios de modelos",
   "wit_placeholder": "Pregunta algo, por ejemplo: ¿quién sigue esperando mi respuesta de la semana pasada?",
   "wit_mail_open": "Ver correo",
+  "wit_citations_count": "{arg1} correos citados",
   "wit_quote": "Citar un correo",
   "wit_quote_none": "No se encontraron correos",
   "wit_quote_remove": "Quitar {arg1}",
