@@ -1670,6 +1670,35 @@ describe("Panel", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull());
   });
 
+  it("sending checks the quoted mail first: a deleted one leaves the input, the rest wait", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([
+      { id: 9, subject: "发票", from: "f", date: 0 },
+      { id: 8, subject: "合同", from: "f", date: 0 },
+    ]);
+    const onCheckCited = vi.fn((id: number) =>
+      id === 9 ? Promise.reject(new Error("wit.mail.gone")) : Promise.resolve(),
+    );
+    const { api } = await setup({ page: true, onSearch, onCheckCited });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "@y");
+    await screen.findByRole("option", { name: /合同/ });
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除 合同" })).toBeInTheDocument();
+    await user.type(box, "总结{Enter}");
+    await waitFor(() => expect(onCheckCited).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "移除 发票" })).toBeNull());
+    expect(screen.getByRole("button", { name: "移除 合同" })).toBeInTheDocument();
+    expect(api.ask).not.toHaveBeenCalled();
+    expect(box).toHaveValue("总结");
+    await user.type(box, "{Enter}");
+    await waitFor(() => expect(api.ask).toHaveBeenCalledWith("总结", [8]));
+  });
+
   it("a cited mail found deleted when opened loses its actions everywhere", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));

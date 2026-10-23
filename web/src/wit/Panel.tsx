@@ -812,6 +812,8 @@ export function Panel({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [quoted, setQuoted] = useState<MailHit[]>([]);
+  // a submit checking its quoted mail
+  const checking = useRef(false);
   // cited messages found deleted since this conversation was read
   const [gone, setGone] = useState<number[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
@@ -953,12 +955,29 @@ export function Panel({
       if (!compacting) compact();
       return;
     }
+    // The quoted mail is checked first, where the host can: one deleted since (a sync) would make
+    // core refuse the whole question. A gone one leaves the input; the rest wait to be sent again.
+    if (onCheckCited && quoted.length > 0) {
+      if (checking.current) return;
+      checking.current = true;
+      void Promise.allSettled(quoted.map((h) => onCheckCited(h.id))).then((rs) => {
+        checking.current = false;
+        const gone = quoted.filter((_, i) => rs[i].status === "rejected").map((h) => h.id);
+        if (gone.length === 0) return send(text, quoted);
+        for (const id of gone) markGone(id);
+        setQuoted((q) => q.filter((h) => !gone.includes(h.id)));
+      });
+      return;
+    }
+    send(text, quoted);
+  };
+  const send = (text: string, hits: MailHit[]) => {
     setDraft("");
     setQuoted([]);
     setPicking(undefined);
     setEditing(undefined);
-    if (editing) return again(editing.at, text, quoted);
-    ask(text, quoted.length > 0 ? { quoted: quoted.map((h) => h.id), hits: quoted } : undefined);
+    if (editing) return again(editing.at, text, hits);
+    ask(text, hits.length > 0 ? { quoted: hits.map((h) => h.id), hits } : undefined);
   };
   const textOf = (m: WitUIMessage) =>
     m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
