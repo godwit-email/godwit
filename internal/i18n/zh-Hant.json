@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "沒有完成 · {arg1}",
   "wit_draft_saved": "草稿 · 尚未傳送",
   "wit_draft_open": "在撰寫視窗開啟",
+  "wit_empty_title": "今天想讓 Wit 幫你做什麼？",
+  "wit_empty_note": "Wit 能讀你所有帳戶的郵件。寫草稿、呼叫外掛程式前都會先問你，傳送永遠由你自己按。",
   "wit_quote": "引用郵件",
   "wit_quote_none": "沒有找到郵件",
   "wit_quote_remove": "移除 {arg1}",

@@ -8,7 +8,6 @@ import {
   RiBrainLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
-  RiCloseLine,
   RiDraftLine,
   RiEditLine,
   RiEqualizerLine,
@@ -22,6 +21,7 @@ import {
   RiSearchLine,
   RiSettings3Line,
   RiShieldLine,
+  RiSparkling2Line,
   RiStopFill,
   RiToolsLine,
   RiTranslate2,
@@ -937,6 +937,8 @@ export function Panel({
     setQuoted(q.metadata?.hits ?? []);
     setTimeout(() => textarea.current?.focus());
   };
+  // The edited question's index in the messages (-1: none).
+  const editingAt = editing ? chat.messages.findIndex((m) => m.id === `q${editing.at}`) : -1;
   const cancelEdit = () => {
     setEditing(undefined);
     setDraft("");
@@ -1127,7 +1129,12 @@ export function Panel({
                 key={m.id}
                 messageId={m.id}
                 // the panel: a turn's question and answer 10 apart, turns 18
-                className={cn("group/turn", !page && m.role === "user" && i > 0 && "mt-2")}
+                className={cn(
+                  "group/turn transition-opacity",
+                  !page && m.role === "user" && i > 0 && "mt-2",
+                  // what an edit replaces: the turns after the question it edits
+                  editingAt >= 0 && i > editingAt && "opacity-40",
+                )}
               >
                 {m.role === "user" ? (
                   <Message align="end">
@@ -1186,9 +1193,16 @@ export function Panel({
               </MessageScrollerItem>
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
-              <div className="flex flex-col items-start gap-3 pt-[12vh]">
-                <p className="text-muted-foreground">{t("wit.suggest")}</p>
-                <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
+                <span className="flex size-12 items-center justify-center rounded-2xl border-[0.5px] bg-sidebar">
+                  <RiSparkling2Line className="size-6" />
+                </span>
+                <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
+                <p className="max-w-110 text-muted-foreground text-sm leading-relaxed">
+                  {t("wit.empty.note")}
+                </p>
+                <p className="mt-3 text-muted-foreground text-sm">{t("wit.suggest")}</p>
+                <div className="flex max-w-150 flex-wrap justify-center gap-2">
                   {[1, 2, 3, 4].map((n) => {
                     const q = t(`wit.suggest.${n}`);
                     return (
@@ -1233,16 +1247,18 @@ export function Panel({
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
       {editing && (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+        <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-sm">
           <RiEditLine className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1">{t("wit.editing")}</span>
           <InputGroupButton
             variant="ghost"
-            size="icon-xs"
+            size="xs"
+            className="font-normal text-foreground"
             aria-label={t("wit.edit.cancel")}
             onClick={cancelEdit}
           >
-            <RiCloseLine />
+            {t("common.cancel")}
+            <kbd className="font-sans text-muted-foreground">Esc</kbd>
           </InputGroupButton>
         </div>
       )}
@@ -1271,6 +1287,10 @@ export function Panel({
         onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
           if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
+          if (e.key === "Escape" && editing && !picking) {
+            e.preventDefault();
+            return cancelEdit();
+          }
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229)
             return;
           e.preventDefault();

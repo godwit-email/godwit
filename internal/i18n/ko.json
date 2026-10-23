@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "완료하지 못함 · {arg1}",
   "wit_draft_saved": "초안 · 아직 보내지 않음",
   "wit_draft_open": "작성 창에서 열기",
+  "wit_empty_title": "오늘 Wit에게 무엇을 맡길까요?",
+  "wit_empty_note": "Wit은 모든 계정의 메일을 읽을 수 있습니다. 초안을 쓰거나 플러그인을 쓰기 전에는 먼저 묻고, 보내기는 항상 직접 누릅니다.",
   "wit_quote": "메일 인용",
   "wit_quote_none": "메일을 찾을 수 없음",
   "wit_quote_remove": "{arg1} 제거",

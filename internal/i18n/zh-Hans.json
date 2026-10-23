@@ -1022,6 +1022,8 @@
   "wit_approval_failed": "没有完成 · {arg1}",
   "wit_draft_saved": "草稿 · 还没发送",
   "wit_draft_open": "在撰写窗口打开",
+  "wit_empty_title": "今天想让 Wit 帮你做什么？",
+  "wit_empty_note": "Wit 能读你所有账户的邮件。写草稿、调用插件前都会先问你，发送永远由你自己点。",
   "wit_quote": "引用邮件",
   "wit_quote_none": "没有找到邮件",
   "wit_quote_remove": "移除 {arg1}",

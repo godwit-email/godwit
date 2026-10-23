@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "Não concluído · {arg1}",
   "wit_draft_saved": "Rascunho · ainda não enviado",
   "wit_draft_open": "Abrir na janela de escrita",
+  "wit_empty_title": "Como o Wit pode ajudar hoje?",
+  "wit_empty_note": "O Wit pode ler o e-mail de todas as suas contas. Ele pergunta antes de escrever um rascunho ou usar um plugin, e enviar é sempre com você.",
   "wit_quote": "Citar um e-mail",
   "wit_quote_none": "Nenhum e-mail encontrado",
   "wit_quote_remove": "Remover {arg1}",

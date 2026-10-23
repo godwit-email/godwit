@@ -535,10 +535,29 @@ describe("Panel", () => {
     expect(box).toHaveValue("总结");
     expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
     expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
+    // what the edit replaces dims
+    expect(screen.getByText("旧答案").closest("[data-role=assistant]")?.parentElement).toHaveClass(
+      "opacity-40",
+    );
     await user.clear(box);
     await user.type(box, "列出金额{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("列出金额", [9], 0));
     expect(screen.queryByText("旧答案")).toBeNull();
+  });
+
+  it("an edit's strip cancels it, as Esc in the input does", async () => {
+    const user = userEvent.setup();
+    await setup({ page: true, history: turn });
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.click(screen.getByRole("button", { name: /取消/ }));
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(input("向 Wit 提问")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "编辑" }));
+    await user.type(input("向 Wit 提问"), "{Escape}");
+    expect(screen.queryByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeNull();
+    expect(
+      screen.getByText("旧答案").closest("[data-role=assistant]")?.parentElement,
+    ).not.toHaveClass("opacity-40");
   });
 
   it("no 编辑 or 重新生成 while a call waits on the user", async () => {
@@ -668,6 +687,8 @@ describe("Panel", () => {
   it("an empty page suggests questions; one asks it", async () => {
     const user = userEvent.setup();
     const { api } = await setup({ page: true });
+    expect(screen.getByRole("heading", { name: "今天想让 Wit 帮你做什么？" })).toBeInTheDocument();
+    expect(screen.getByText(/写草稿、调用插件前都会先问你/)).toBeInTheDocument();
     expect(screen.getByText("试着问 Wit")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "谁还在等我回复？" }));
     await waitFor(() => expect(api.ask).toHaveBeenCalledWith("谁还在等我回复？"));

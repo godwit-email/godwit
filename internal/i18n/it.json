@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "Non completato · {arg1}",
   "wit_draft_saved": "Bozza · non ancora inviata",
   "wit_draft_open": "Apri nella finestra di composizione",
+  "wit_empty_title": "Cosa può fare Wit per te oggi?",
+  "wit_empty_note": "Wit può leggere la posta di tutti i tuoi account. Chiede prima di scrivere una bozza o usare un plugin, e l’invio spetta sempre a te.",
   "wit_quote": "Cita un’email",
   "wit_quote_none": "Nessuna email trovata",
   "wit_quote_remove": "Rimuovi {arg1}",

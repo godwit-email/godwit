@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "Chưa hoàn tất · {arg1}",
   "wit_draft_saved": "Bản nháp · chưa gửi",
   "wit_draft_open": "Mở trong cửa sổ soạn thư",
+  "wit_empty_title": "Hôm nay Wit có thể giúp gì cho bạn?",
+  "wit_empty_note": "Wit có thể đọc thư của mọi tài khoản của bạn. Wit luôn hỏi trước khi viết bản nháp hay dùng plugin, và việc gửi luôn do bạn bấm.",
   "wit_quote": "Trích dẫn email",
   "wit_quote_none": "Không tìm thấy thư nào",
   "wit_quote_remove": "Xóa {arg1}",

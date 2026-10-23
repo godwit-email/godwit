@@ -1009,6 +1009,8 @@
   "wit_approval_failed": "完了できませんでした · {arg1}",
   "wit_draft_saved": "下書き · 未送信",
   "wit_draft_open": "作成ウインドウで開く",
+  "wit_empty_title": "今日は Wit に何を手伝ってもらいますか？",
+  "wit_empty_note": "Wit はすべてのアカウントのメールを読めます。下書きの作成やプラグインの使用の前には必ず確認し、送信はいつもあなたが行います。",
   "wit_quote": "メールを引用",
   "wit_quote_none": "メールが見つかりません",
   "wit_quote_remove": "{arg1} を外す",

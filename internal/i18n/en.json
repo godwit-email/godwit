@@ -1994,6 +1994,8 @@
   "wit_approval_failed": "Didn't finish · {arg1}",
   "wit_draft_saved": "Draft · not sent yet",
   "wit_draft_open": "Open in compose",
+  "wit_empty_title": "What can Wit do for you today?",
+  "wit_empty_note": "Wit can read the mail of all your accounts. It asks before writing a draft or using a plugin, and sending is always yours to click.",
   "wit_quote": "Quote an email",
   "wit_quote_none": "No mail found",
   "wit_quote_remove": "Remove {arg1}",
